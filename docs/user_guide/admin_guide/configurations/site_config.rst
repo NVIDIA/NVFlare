@@ -132,7 +132,7 @@ When ``allow_log_streaming`` is set to ``false``:
 
 - :class:`~nvflare.app_common.logging.job_log_streamer.JobLogStreamer` logs a
   warning at job start and does nothing — no live stream is opened.
-- :class:`~nvflare.app_common.logging.system_log_streamer.SystemLogStreamer`
+- :class:`~nvflare.app_common.logging.site_log_streamer.SiteLogStreamer`
   strips any pre-declared ``JobLogStreamer`` from the deployed job
   configuration, skips its own automatic injection, and skips the
   post-completion error-log upload.

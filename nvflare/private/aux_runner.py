@@ -31,13 +31,18 @@ from nvflare.security.logging import secure_format_exception, secure_format_trac
 
 
 class AuxMsgTarget:
-    def __init__(self, name: str, fqcn: str):
+    def __init__(self, name: str, fqcn: str, job_scoped: bool = True):
         self.name = name
         self.fqcn = fqcn
+        self.job_scoped = job_scoped
 
     @staticmethod
     def server_target():
         return AuxMsgTarget(FQCN.ROOT_SERVER, FQCN.ROOT_SERVER)
+
+    @staticmethod
+    def server_parent_target():
+        return AuxMsgTarget(FQCN.ROOT_SERVER, FQCN.ROOT_SERVER, job_scoped=False)
 
     @staticmethod
     def client_target(client: Client):
@@ -419,6 +424,9 @@ class AuxRunner(FLComponent):
 
     @staticmethod
     def _get_target_fqcn(target: AuxMsgTarget, fl_ctx: FLContext):
+        if not target.job_scoped:
+            return target.fqcn
+
         process_type = fl_ctx.get_process_type()
         if process_type in [ProcessType.CLIENT_PARENT, ProcessType.SERVER_PARENT]:
             # parent process

@@ -4,20 +4,21 @@
     "deploy_map": {
         "app": ["site-1", "server", "site-2"]
     },
-    "resource_spec": {
+    "launcher_spec": {
         "server": {
             "docker": {"image": "nvflare-job:latest"}
         },
         "site-1": {
             "docker": {
                 "image": "nvflare-job:latest",
-                "num_of_gpus": 1,
                 "shm_size": "8g",
                 "ipc_mode": "host"
-            },
-            "process": {
-                "num_of_gpus": 1
             }
+        }
+    },
+    "resource_spec": {
+        "site-1": {
+            "num_of_gpus": 1
         }
     }
 }

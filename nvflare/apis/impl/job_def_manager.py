@@ -35,6 +35,7 @@ from nvflare.apis.job_def import (
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.storage import WORKSPACE, StorageException, StorageSpec
+from nvflare.apis.utils.format_check import check_job_app_name, check_job_id
 from nvflare.apis.utils.job_submit_token import (
     canonical_job_content_hash,
     canonical_json_hash,
@@ -151,6 +152,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
         return store
 
     def job_uri(self, jid: str):
+        check_job_id(jid)
         return os.path.join(self.uri_root, jid)
 
     def submit_record_uri(self, study: str, submitter, submit_token: str):
@@ -310,6 +312,8 @@ class SimpleJobDefManager(JobDefManagerSpec):
         if not jid:
             jid = new_job_id()
             meta[JobMetaKey.JOB_ID.value] = jid
+        else:
+            check_job_id(jid)
 
         now = time.time()
         meta[JobMetaKey.SUBMIT_TIME.value] = now
@@ -321,14 +325,17 @@ class SimpleJobDefManager(JobDefManagerSpec):
 
         # write it to the store
         store = self._get_job_store(fl_ctx)
-        store.create_object(self.job_uri(jid), uploaded_content, meta, overwrite_existing=True)
+        store.create_object(self.job_uri(jid), uploaded_content, meta, overwrite_existing=False)
         return meta
 
     def clone(self, from_jid: str, meta: dict, fl_ctx: FLContext) -> Dict[str, Any]:
+        check_job_id(from_jid)
         jid = meta.get(JobMetaKey.JOB_ID.value, None)
         if not jid:
             jid = new_job_id()
             meta[JobMetaKey.JOB_ID.value] = jid
+        else:
+            check_job_id(jid)
 
         now = time.time()
         meta[JobMetaKey.SUBMIT_TIME.value] = now
@@ -340,7 +347,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
         # write it to the store
         store = self._get_job_store(fl_ctx)
         store.clone_object(
-            from_uri=self.job_uri(from_jid), to_uri=self.job_uri(jid), meta=meta, overwrite_existing=True
+            from_uri=self.job_uri(from_jid), to_uri=self.job_uri(jid), meta=meta, overwrite_existing=False
         )
         return meta
 
@@ -384,15 +391,24 @@ class SimpleJobDefManager(JobDefManagerSpec):
         return self.get_job(jid, fl_ctx)
 
     def get_app(self, job: Job, app_name: str, fl_ctx: FLContext) -> bytes:
-        temp_dir = tempfile.mkdtemp()
-        job_id_dir = self._load_job_data_from_store(job, temp_dir, fl_ctx)
-        job_folder = os.path.join(job_id_dir, job.meta[JobMetaKey.JOB_FOLDER_NAME.value])
-        fullpath_src = os.path.join(job_folder, app_name)
-        result = zip_directory_to_bytes(fullpath_src, "")
-        shutil.rmtree(temp_dir)
+        check_job_id(job.job_id)
+        check_job_app_name(app_name)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job_id_dir = self._load_job_data_from_store(job, temp_dir, fl_ctx)
+            job_folder = os.path.join(job_id_dir, job.meta[JobMetaKey.JOB_FOLDER_NAME.value])
+            fullpath_src = os.path.join(job_folder, app_name)
+            job_id_dir_real = os.path.realpath(job_id_dir)
+            job_folder_real = os.path.realpath(job_folder)
+            fullpath_src_real = os.path.realpath(fullpath_src)
+            if os.path.commonpath([job_id_dir_real, job_folder_real]) != job_id_dir_real:
+                raise ValueError(f"job folder for app '{app_name}' escapes job data folder")
+            if os.path.commonpath([job_folder_real, fullpath_src_real]) != job_folder_real:
+                raise ValueError(f"app '{app_name}' escapes job folder")
+            result = zip_directory_to_bytes(fullpath_src_real, "")
         return result
 
     def _load_job_data_from_store(self, job: Job, temp_dir: str, fl_ctx: FLContext):
+        check_job_id(job.job_id)
         data_bytes = self.get_content(job.meta, fl_ctx)
         job_id_dir = os.path.join(temp_dir, job.job_id)
         if os.path.exists(job_id_dir):
@@ -566,6 +582,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
             fl_ctx: FLContext
         """
         store = self._get_job_store(fl_ctx)
+        job_uri = self.job_uri(jid)
         os.makedirs(os.path.join(download_dir, jid), exist_ok=True)
         destination_file = os.path.join(download_dir, jid, download_file)
-        store.get_data_for_download(self.job_uri(jid), component, destination_file)
+        store.get_data_for_download(job_uri, component, destination_file)

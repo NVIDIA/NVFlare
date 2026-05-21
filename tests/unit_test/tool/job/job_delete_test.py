@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound
+from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotDone, JobNotFound
 from nvflare.tool import cli_output
 
 
@@ -160,6 +160,27 @@ class TestJobDelete:
         assert envelope["error_code"] == "JOB_NOT_FOUND"
         assert "searched study 'default'" in envelope["message"]
         assert "nvflare job list --study <study_name>" in envelope["hint"]
+
+    def test_delete_running_job_exits_job_not_done(self, capsys):
+        """Running jobs are not deleted as internal errors."""
+        from nvflare.tool.job.job_cli import cmd_job_delete
+
+        args = self._make_args(job_id="running", force=True)
+        args.study = "cancer"
+        mock_sess = MagicMock()
+        mock_sess.delete_job.side_effect = JobNotDone("job running is still running")
+
+        with patch("nvflare.tool.job.job_cli._get_session", return_value=mock_sess):
+            with pytest.raises(SystemExit) as exc_info:
+                cmd_job_delete(args)
+
+        assert exc_info.value.code == 4
+        envelope = json.loads(capsys.readouterr().out)
+        assert envelope["status"] == "error"
+        assert envelope["error_code"] == "JOB_NOT_DONE"
+        assert envelope["exit_code"] == 4
+        assert "job running is still running; searched study 'cancer'" in envelope["message"]
+        assert "nvflare job abort running --study cancer" in envelope["hint"]
 
     def test_delete_authentication_error_propagates(self):
         from nvflare.tool.job.job_cli import cmd_job_delete

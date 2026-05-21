@@ -52,7 +52,9 @@ class DockerStatus:
 
 
 TERMINAL_STATUSES = {DockerStatus.EXITED, DockerStatus.DEAD}
-_WORKSPACE_TMPFS_MODE = 0o555
+# Docker tmpfs mounts are commonly owned by root; use sticky world-writable mode so the
+# non-root job-container user can initialize ephemeral top-level workspace directories.
+_WORKSPACE_TMPFS_MODE = 0o1777
 _RESERVED_WORKSPACE_CHILD_NAMES = {
     WorkspaceConstants.STARTUP_FOLDER_NAME,
     WorkspaceConstants.SITE_FOLDER_NAME,
@@ -269,7 +271,8 @@ class DockerJobLauncher(JobLauncherSpec):
     Assumptions:
     - Docker network already exists (created by start_docker.sh or site admin).
     - Job containers get an isolated workspace view at /var/tmp/nvflare/workspace:
-      startup/local are read-only; only the current job workspace is read-write.
+      the root is writable ephemeral tmpfs, startup/local are read-only, and only the current
+      job workspace is read-write and persistent on the host.
     - SP/CP container name is known and reachable via Docker DNS on the network.
     - parent_url is derived at runtime from the site name and the port in JOB_PROCESS_ARGS.
     """
@@ -495,8 +498,10 @@ class DockerJobLauncher(JobLauncherSpec):
         if num_gpus and "device_requests" not in job_container_kwargs:
             merged_container_kwargs["device_requests"] = [{"Count": num_gpus, "Capabilities": [["gpu"]]}]
 
-        # Give the job an isolated workspace view: startup/local are read-only,
-        # and only this job's workspace is read-write and persistent on the host.
+        # Give the job an isolated workspace view. The root tmpfs must be writable by the non-root
+        # container user because server job startup may create ephemeral storage dirs such as
+        # snapshot-storage and jobs-storage.
+        # startup/local are read-only, and only this job's workspace is read-write and persistent on the host.
         job_workspace_name = WorkspaceConstants.WORKSPACE_PREFIX + str(job_id)
         host_job_workspace = _safe_workspace_child_path(workspace, job_workspace_name)
         host_startup_dir = _safe_workspace_child_path(
@@ -517,8 +522,8 @@ class DockerJobLauncher(JobLauncherSpec):
         study_data_file = os.path.join(self.WORKSPACE_MOUNT, self.STUDY_DATA_PATH_FILE)
         study = job_meta.get(JobMetaKey.STUDY.value)
         if should_mount_study_data(study):
-            study_data_map = load_study_data_file(study_data_file)
-            data_mounts = resolve_study_dataset_mounts(study_data_map, study, study_data_file)
+            study_data_map = load_study_data_file(study_data_file, logger=self.logger)
+            data_mounts = resolve_study_dataset_mounts(study_data_map, study, study_data_file, logger=self.logger)
             for dataset_mount in data_mounts:
                 self.logger.info(
                     "mounting study '%s' dataset '%s' from %s -> %s",

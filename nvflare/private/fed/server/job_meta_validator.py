@@ -22,6 +22,8 @@ from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.fl_constant import JobConstants
 from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME, JobMetaKey
 from nvflare.apis.job_meta_validator_spec import JobMetaValidatorSpec
+from nvflare.apis.utils.format_check import check_job_app_name, check_job_id
+from nvflare.app_opt.flower.defs import Constant as FlowerConstant
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.private.fed.utils.fed_utils import extract_participants
@@ -29,6 +31,7 @@ from nvflare.security.logging import secure_format_exception
 
 CONFIG_FOLDER = "/config/"
 CUSTOM_FOLDER = "/custom/"
+FLOWER_APP_PATH_KEY = "flower_app_path"
 
 MAX_CLIENTS = 1000000
 
@@ -89,6 +92,10 @@ class JobMetaValidator(JobMetaValidatorSpec):
                 meta_data = zf.read(meta_file)
                 meta = config_loader.load_config_from_str(meta_data.decode()).to_dict()
                 break
+        if meta:
+            job_id = meta.get(JobMetaKey.JOB_ID.value)
+            if job_id:
+                check_job_id(job_id)
         return meta
 
     @staticmethod
@@ -102,9 +109,12 @@ class JobMetaValidator(JobMetaValidatorSpec):
         deploy_map = meta.get(JobMetaKey.DEPLOY_MAP.value)
         if not deploy_map:
             raise ValueError(f"deploy_map is empty for job {job_name}")
+        if not isinstance(deploy_map, dict):
+            raise ValueError(f"deploy_map must be a dictionary for job {job_name}")
 
         site_list = []
-        for deployments in deploy_map.values():
+        for app, deployments in deploy_map.items():
+            check_job_app_name(app)
             if isinstance(deployments, list):
                 for item in deployments:
                     if isinstance(item, dict):
@@ -141,6 +151,7 @@ class JobMetaValidator(JobMetaValidatorSpec):
         deploy_map = meta.get(JobMetaKey.DEPLOY_MAP.value)
 
         has_byoc = False
+        has_flower_predeployed = False
         for app, deployments in deploy_map.items():
             deployments = extract_participants(deployments)
 
@@ -153,10 +164,13 @@ class JobMetaValidator(JobMetaValidatorSpec):
 
             all_sites = ALL_SITES.casefold() in (site.casefold() for site in deployments)
 
-            if (all_sites or SERVER_SITE_NAME in deployments) and not self._config_exists(
-                zip_file, config_folder, JobConstants.SERVER_JOB_CONFIG
-            ):
-                raise ValueError(f"App '{app}' will be deployed to server but server config is missing")
+            if all_sites or SERVER_SITE_NAME in deployments:
+                if not self._config_exists(zip_file, config_folder, JobConstants.SERVER_JOB_CONFIG):
+                    raise ValueError(f"App '{app}' will be deployed to server but server config is missing")
+
+                server_config = self._load_config(zip_file, config_folder, JobConstants.SERVER_JOB_CONFIG)
+                if self._has_flower_app_path(server_config):
+                    has_flower_predeployed = True
 
             if (all_sites or [site for site in deployments if site != SERVER_SITE_NAME]) and not self._config_exists(
                 zip_file, config_folder, JobConstants.CLIENT_JOB_CONFIG
@@ -169,6 +183,33 @@ class JobMetaValidator(JobMetaValidatorSpec):
 
         if has_byoc:
             meta[AppValidationKey.BYOC] = True
+        if has_flower_predeployed:
+            meta[FlowerConstant.FLOWER_PREDEPLOYED] = True
+        else:
+            meta.pop(FlowerConstant.FLOWER_PREDEPLOYED, None)
+
+    @staticmethod
+    def _load_config(zip_file: ZipFile, zip_folder: str, init_config_path: str) -> Optional[dict]:
+        basename = ConfigFactory.get_file_basename(init_config_path)
+        for ext, fmt in ConfigFormat.config_ext_formats().items():
+            config_path = f"{zip_folder}{basename}{ext}"
+            if config_path in zip_file.namelist():
+                config_loader = ConfigFactory.get_config_loader(fmt)
+                config_data = zip_file.read(config_path)
+                return config_loader.load_config_from_str(config_data.decode()).to_dict()
+        return None
+
+    @staticmethod
+    def _has_flower_app_path(config) -> bool:
+        if isinstance(config, dict):
+            for k, v in config.items():
+                if k == FLOWER_APP_PATH_KEY and v:
+                    return True
+                if JobMetaValidator._has_flower_app_path(v):
+                    return True
+        elif isinstance(config, list):
+            return any(JobMetaValidator._has_flower_app_path(item) for item in config)
+        return False
 
     @staticmethod
     def _convert_value_to_int(v) -> int:

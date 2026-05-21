@@ -368,6 +368,26 @@ class _FakeListEngine:
         return FLContext()
 
 
+class _FakeListComponentsJobDefManager:
+    def __init__(self, components):
+        self.components = components
+        self.jid = None
+
+    def list_components(self, jid, fl_ctx):
+        self.jid = jid
+        return self.components
+
+
+class _FakeListComponentsEngine:
+    def __init__(self, components):
+        self.job_def_manager = _FakeListComponentsJobDefManager(components)
+
+    def new_context(self):
+        from nvflare.apis.fl_context import FLContext
+
+        return FLContext()
+
+
 class _FakeWorkspace:
     def __init__(self, root_dir):
         self.root_dir = str(root_dir)
@@ -1056,6 +1076,23 @@ def test_list_jobs_by_submit_token_returns_deleted_status(monkeypatch):
     assert conn.tables == []
 
 
+def test_list_job_components_returns_empty_list_for_system_components(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListComponentsEngine(["data", "meta", "workspace"])
+    conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1"})
+
+    JobCommandModule().list_job_components(conn, ["list_job_components", "job-1"])
+
+    assert conn.errors == []
+    assert conn.strings == []
+    assert len(conn.successes) == 1
+    msg, meta = conn.successes[0]
+    assert msg == ""
+    assert meta[MetaKey.STATUS] == MetaStatusValue.OK
+    assert meta[MetaKey.JOB_COMPONENTS] == []
+    assert engine.job_def_manager.jid == "job-1"
+
+
 def test_clone_job_preserves_source_study(monkeypatch):
     monkeypatch.setattr(job_cmds_module, "ServerEngine", object)
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
@@ -1156,6 +1193,29 @@ def test_list_jobs_ignores_duration_parse_failures(monkeypatch):
     assert first_row[0] == "job-1"
 
 
+def test_list_jobs_shows_execution_exception_status(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    jobs = [
+        _FakeListedJob(
+            {
+                JobMetaKey.JOB_ID.value: "job-1",
+                JobMetaKey.JOB_NAME.value: "k8s-pending-timeout",
+                JobMetaKey.STATUS.value: RunStatus.FINISHED_EXECUTION_EXCEPTION.value,
+            }
+        )
+    ]
+    conn = _MockConnection(app_ctx=_FakeListEngine(jobs), props={ConnProps.ACTIVE_STUDY: "default"})
+
+    JobCommandModule().list_jobs(conn, ["list_jobs"])
+
+    assert conn.errors == []
+    assert len(conn.tables) == 1
+    assert len(conn.tables[0].rows) == 1
+    first_row, row_meta = conn.tables[0].rows[0]
+    assert first_row[2] == RunStatus.FINISHED_EXECUTION_EXCEPTION.value
+    assert row_meta[MetaKey.STATUS] == RunStatus.FINISHED_EXECUTION_EXCEPTION.value
+
+
 def test_job_match_tolerates_missing_job_id_and_name():
     assert JobCommandModule._job_match({}, "job", "name", "", "default") is False
 
@@ -1170,6 +1230,30 @@ def test_get_job_meta_normalizes_legacy_job_study(monkeypatch):
     assert conn.errors == []
     assert len(conn.dicts) == 1
     assert conn.dicts[0][0][JobMetaKey.STUDY.value] == "default"
+
+
+def test_get_job_meta_uses_canonical_missing_job_message(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    job_id = "123e4567-e89b-42d3-a456-426614174000"
+    conn = _MockConnection(app_ctx=_FakeListEngine([]), props={JobCommandModule.JOB_ID: job_id})
+
+    JobCommandModule().get_job_meta(conn, ["get_job_meta", job_id])
+
+    assert conn.errors and conn.errors[0][0] == f"no such job: {job_id}"
+    assert conn.errors[0][1][MetaKey.STATUS] == MetaStatusValue.INVALID_JOB_ID
+
+
+def test_list_job_components_uses_canonical_missing_job_message(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    job_id = "123e4567-e89b-42d3-a456-426614174000"
+    engine = _FakeServerEngine(_FakeWorkspace(tmp_path))
+    engine.job_def_manager.list_components.return_value = []
+    conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: job_id})
+
+    JobCommandModule().list_job_components(conn, ["list_job_components", job_id])
+
+    assert conn.errors and conn.errors[0][0] == f"no such job: {job_id}"
+    assert conn.errors[0][1][MetaKey.STATUS] == MetaStatusValue.INVALID_JOB_ID
 
 
 def test_get_job_log_client_target_returns_persisted_log(tmp_path, monkeypatch):
@@ -1616,7 +1700,7 @@ def test_authorize_job_id_hides_jobs_from_other_studies(monkeypatch):
     rc = JobCommandModule().authorize_job_id(conn, ["authorize_job_id", job_id])
 
     assert rc == PreAuthzReturnCode.ERROR
-    assert conn.errors and conn.errors[0][0] == f"Job with ID {job_id} doesn't exist"
+    assert conn.errors and conn.errors[0][0] == f"no such job: {job_id}"
     assert conn.get_prop(JobCommandModule.JOB) is None
     assert conn.get_prop(ConnProps.SUBMITTER_ROLE) is None
 
@@ -1645,7 +1729,7 @@ def test_authorize_job_id_hides_non_default_jobs_from_default_session_without_re
     rc = JobCommandModule().authorize_job_id(conn, ["authorize_job_id", job_id])
 
     assert rc == PreAuthzReturnCode.ERROR
-    assert conn.errors and conn.errors[0][0] == f"Job with ID {job_id} doesn't exist"
+    assert conn.errors and conn.errors[0][0] == f"no such job: {job_id}"
     assert conn.get_prop(JobCommandModule.JOB) is None
     assert conn.get_prop(ConnProps.SUBMITTER_ROLE) is None
 
@@ -1803,6 +1887,52 @@ def test_submit_job_rejects_deploy_map_sites_outside_study(monkeypatch):
 
     assert conn.errors
     assert "site 'site3' is not enrolled in study 'cancer-research'" in conn.errors[0][0]
+
+
+def test_download_job_rejects_unfinished_job_before_packaging(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine(
+        [_FakeListedJob({JobMetaKey.JOB_ID.value: "job-1", JobMetaKey.STATUS.value: RunStatus.RUNNING.value})]
+    )
+    engine.job_def_manager.get_storage_for_download = MagicMock()
+    conn = _MockConnection(app_ctx=engine, props={ConnProps.DOWNLOAD_DIR: str(tmp_path)})
+
+    JobCommandModule().download_job(conn, ["download_job", "job-1"])
+
+    assert conn.errors
+    assert conn.errors[0][1][MetaKey.STATUS] == MetaStatusValue.JOB_RUNNING
+    engine.job_def_manager.get_storage_for_download.assert_not_called()
+
+
+def test_download_job_uses_canonical_missing_job_message(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    job_id = "123e4567-e89b-42d3-a456-426614174000"
+    engine = _FakeListEngine([])
+    engine.job_def_manager.get_storage_for_download = MagicMock()
+    conn = _MockConnection(app_ctx=engine, props={ConnProps.DOWNLOAD_DIR: str(tmp_path)})
+
+    JobCommandModule().download_job(conn, ["download_job", job_id])
+
+    assert conn.errors and conn.errors[0][0] == f"no such job: {job_id}"
+    assert conn.errors[0][1][MetaKey.STATUS] == MetaStatusValue.INVALID_JOB_ID
+    engine.job_def_manager.get_storage_for_download.assert_not_called()
+
+
+def test_download_job_packages_all_default_components_for_finished_job(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine(
+        [_FakeListedJob({JobMetaKey.JOB_ID.value: "job-1", JobMetaKey.STATUS.value: RunStatus.FINISHED_ABORTED.value})]
+    )
+    engine.job_def_manager.get_storage_for_download = MagicMock()
+    conn = _MockConnection(app_ctx=engine, props={ConnProps.DOWNLOAD_DIR: str(tmp_path)})
+    module = JobCommandModule()
+    module.download_folder = MagicMock()
+
+    module.download_job(conn, ["download_job", "job-1"])
+
+    assert conn.errors == []
+    assert engine.job_def_manager.get_storage_for_download.call_count == 3
+    module.download_folder.assert_called_once()
 
 
 def test_get_job_log_returns_server_log(monkeypatch, tmp_path):

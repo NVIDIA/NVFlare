@@ -126,7 +126,7 @@ and the new way with FLARE API.
     reset_errors,reset_errors,2.4.0,
     get_connected_client_list,get_connected_client_list,2.4.0,
     abort,,2.4.0,obsolete
-    remove_client,,2.4.0,not exposed
+    remove_client,remove_client,2.4.0,Releases the active client token only; use disable_client to prevent reconnect
 
 Get System Info from Check Status
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

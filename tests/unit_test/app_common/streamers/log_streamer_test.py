@@ -12,13 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+import tempfile
 import threading
 from unittest.mock import Mock
 
 import pytest
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable
+from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.apis.streaming import StreamContextKey
 from nvflare.app_common.streamers.log_streamer import (
     KEY_DATA,
@@ -28,6 +30,7 @@ from nvflare.app_common.streamers.log_streamer import (
     KEY_HEARTBEAT,
     LogChunkConsumerFactory,
     LogStreamer,
+    _LogTailProducer,
     dispatch_stream_done,
 )
 
@@ -171,3 +174,155 @@ def test_stream_log_rejects_liveness_interval_not_less_than_idle_timeout():
             liveness_interval=10.0,
             idle_timeout=10.0,
         )
+
+
+def _make_producer(file_path: str) -> _LogTailProducer:
+    return _LogTailProducer(
+        file_name=file_path,
+        chunk_size=1024,
+        chunk_timeout=5.0,
+        poll_interval=0.5,
+        stop_event=threading.Event(),
+        liveness_interval=10.0,
+    )
+
+
+def _produce_data_chunk(producer: _LogTailProducer):
+    """Drive produce() once for a data chunk, with abort_signal absent."""
+    fl_ctx = Mock(spec=FLContext)
+    fl_ctx.get_run_abort_signal.return_value = None
+    return producer.produce({}, fl_ctx)
+
+
+def test_first_chunk_execution_exception_is_transient_and_retries():
+    """Bootstrap miss: first reply is EXECUTION_EXCEPTION; producer must roll back
+    the file offset and not log an ERROR. The same bytes should be re-emitted on
+    the next produce() call."""
+    with tempfile.NamedTemporaryFile("wb", suffix=".log", delete=False) as f:
+        f.write(b"hello world")
+        path = f.name
+    try:
+        producer = _make_producer(path)
+        first_request, _ = _produce_data_chunk(producer)
+        assert first_request[KEY_DATA] == b"hello world"
+
+        replies = {"server": make_reply(ReturnCode.EXECUTION_EXCEPTION)}
+        result = producer.process_replies(replies, {}, Mock(spec=FLContext))
+        assert result is None  # stream must continue
+        assert producer._first_ok_received is False
+        assert producer._bootstrap_miss_count == 1
+
+        retry_request, _ = _produce_data_chunk(producer)
+        assert retry_request[KEY_DATA] == b"hello world"  # bytes re-emitted, not lost
+    finally:
+        producer.close()
+        os.unlink(path)
+
+
+def test_first_chunk_execution_exception_on_heartbeat_does_not_seek():
+    """Heartbeats don't move the file pointer, so the bootstrap-tolerant path
+    must not attempt to seek the (possibly None) file handle."""
+    producer = _LogTailProducer(
+        file_name="/nonexistent/log/path",  # forces self.file = None
+        chunk_size=1024,
+        chunk_timeout=5.0,
+        poll_interval=0.5,
+        stop_event=threading.Event(),
+        liveness_interval=10.0,
+    )
+    producer._last_was_data = False  # simulate heartbeat last-emit
+    replies = {"server": make_reply(ReturnCode.EXECUTION_EXCEPTION)}
+    result = producer.process_replies(replies, {}, Mock(spec=FLContext))
+    assert result is None  # transient miss, stream continues
+    assert producer._first_ok_received is False
+    assert producer._bootstrap_miss_count == 1
+
+
+def test_execution_exception_after_first_ok_still_ends_stream():
+    """Once the receiver has acked at least one chunk OK, subsequent failures
+    must surface as real errors (return False to terminate the stream),
+    matching the pre-fix behavior for steady-state failures."""
+    with tempfile.NamedTemporaryFile("wb", suffix=".log", delete=False) as f:
+        f.write(b"x")
+        path = f.name
+    try:
+        producer = _make_producer(path)
+        producer._first_ok_received = True  # simulate prior success
+        producer._last_was_data = True
+        replies = {"server": make_reply(ReturnCode.EXECUTION_EXCEPTION)}
+        result = producer.process_replies(replies, {}, Mock(spec=FLContext))
+        assert result is False  # stream should tear down
+    finally:
+        producer.close()
+        os.unlink(path)
+
+
+def test_process_replies_tolerates_falsy_replies_after_first_ok():
+    producer = _LogTailProducer(
+        file_name="/nonexistent/log/path",
+        chunk_size=1024,
+        chunk_timeout=5.0,
+        poll_interval=0.5,
+        stop_event=threading.Event(),
+        liveness_interval=10.0,
+    )
+    try:
+        producer._first_ok_received = True
+
+        assert producer.process_replies(None, {}, Mock(spec=FLContext)) is None
+        assert producer.process_replies({}, {}, Mock(spec=FLContext)) is None
+
+        producer.eof = True
+        assert producer.process_replies(None, {}, Mock(spec=FLContext)) == {}
+        assert producer.process_replies({}, {}, Mock(spec=FLContext)) == {}
+    finally:
+        producer.close()
+
+
+def test_persistent_bootstrap_execution_exception_is_capped():
+    """A receiver that never acks OK should eventually surface as a real
+    failure instead of retrying the same first chunk forever."""
+    with tempfile.NamedTemporaryFile("wb", suffix=".log", delete=False) as f:
+        f.write(b"never acked")
+        path = f.name
+    try:
+        producer = _make_producer(path)
+        first_request, _ = _produce_data_chunk(producer)
+        assert first_request[KEY_DATA] == b"never acked"
+
+        replies = {"server": make_reply(ReturnCode.EXECUTION_EXCEPTION)}
+        for i in range(producer._MAX_BOOTSTRAP_MISSES):
+            result = producer.process_replies(replies, {}, Mock(spec=FLContext))
+            assert result is None
+            assert producer._bootstrap_miss_count == i + 1
+
+        result = producer.process_replies(replies, {}, Mock(spec=FLContext))
+        assert result is False
+        assert producer._first_ok_received is False
+        assert producer._bootstrap_miss_count == producer._MAX_BOOTSTRAP_MISSES
+    finally:
+        producer.close()
+        os.unlink(path)
+
+
+def test_first_chunk_ok_flips_strict_mode():
+    """A first OK reply must flip the producer into strict mode so the next
+    failure is treated as a real error rather than another transient miss."""
+    with tempfile.NamedTemporaryFile("wb", suffix=".log", delete=False) as f:
+        f.write(b"abc")
+        path = f.name
+    try:
+        producer = _make_producer(path)
+        producer._last_was_data = True
+        producer._bootstrap_miss_count = 3
+        ok_replies = {"server": make_reply(ReturnCode.OK)}
+        producer.process_replies(ok_replies, {}, Mock(spec=FLContext))
+        assert producer._first_ok_received is True
+        assert producer._bootstrap_miss_count == 0
+
+        fail_replies = {"server": make_reply(ReturnCode.EXECUTION_EXCEPTION)}
+        result = producer.process_replies(fail_replies, {}, Mock(spec=FLContext))
+        assert result is False
+    finally:
+        producer.close()
+        os.unlink(path)

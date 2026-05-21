@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Launch one provisioned NVFlare participant inside a Brev single-node Kubernetes
+Launch one prepared NVFlare participant inside a Brev single-node Kubernetes
 environment. Run this script separately in the server, site-1, and site-2 Brev
 environments after prepare_brev_startup_kits.sh copies the matching archive.
 The Brev instance names are only needed by prepare_brev_startup_kits.sh; this
@@ -20,11 +20,15 @@ Defaults:
   ARCHIVE=~/nvflare-<participant-name>.tgz
   WORK_DIR=~/nvflare
   NAMESPACE=nvflare
-  WORKSPACE_PVC=nvflws
   DATA_PVC=nvfldata
   WORKSPACE_STORAGE=10Gi
   DATA_STORAGE=50Gi
-  WORKSPACE_MOUNT_PATH=/var/tmp/nvflare/workspace
+
+The workspace PVC name is read from the prepared Helm chart's
+persistence.workspace.claimName and used for PVC creation and staging. Set
+WORKSPACE_PVC at prepare time (prepare_brev_startup_kits.sh). If WORKSPACE_PVC
+is also set at launch and disagrees with the prepared chart, this script
+fails so the chart, PVC, and staged content stay consistent.
 EOF
 }
 
@@ -40,70 +44,113 @@ require_cmd() {
   done
 }
 
-infer_role() {
+detect_role() {
   if [[ -n "${ROLE:-}" ]]; then
     echo "${ROLE}"
-  elif [[ "${PARTICIPANT}" == "server" || "${PARTICIPANT}" == "server1" ]]; then
+  elif [[ -f "${PARTICIPANT_DIR}/startup/fed_server.json" ]]; then
     echo "server"
-  else
+  elif [[ -f "${PARTICIPANT_DIR}/startup/fed_client.json" ]]; then
     echo "client"
+  else
+    fail "Cannot detect participant role from ${PARTICIPANT_DIR}/startup"
   fi
 }
 
-patch_launcher() {
-  local resources_file
-  if [[ -f "${PARTICIPANT_DIR}/local/resources.json" ]]; then
-    resources_file="${PARTICIPANT_DIR}/local/resources.json"
-  elif [[ -f "${PARTICIPANT_DIR}/local/resources.json.default" ]]; then
-    resources_file="${PARTICIPANT_DIR}/local/resources.json.default"
-  else
-    fail "No resources.json or resources.json.default found under ${PARTICIPANT_DIR}/local"
-  fi
+verify_prepared_launcher() {
+  local resources_file="${PARTICIPANT_DIR}/local/resources.json.default"
+  [[ -f "${resources_file}" ]] || fail "No resources.json.default found under ${PARTICIPANT_DIR}/local"
+  [[ ! -f "${PARTICIPANT_DIR}/local/resources.json" ]] || {
+    fail "Prepared kit contains local/resources.json. Rerun nvflare deploy prepare and copy the prepared archive."
+  }
 
-  python3 - "${resources_file}" "${ROLE}" "${NAMESPACE}" "${WORKSPACE_MOUNT_PATH}" <<'PY'
+  python3 - "${resources_file}" "${ROLE}" "${NAMESPACE}" <<'PY'
 import json
 import sys
 
-resources_file, role, namespace, workspace_mount_path = sys.argv[1:5]
+resources_file, role, namespace = sys.argv[1:4]
 
 with open(resources_file, "r", encoding="utf-8") as f:
     data = json.load(f)
 
 if role == "server":
-    old_path = "nvflare.app_common.job_launcher.server_process_launcher.ServerProcessJobLauncher"
-    new_path = "nvflare.app_opt.job_launcher.k8s_launcher.ServerK8sJobLauncher"
+    expected_path = "nvflare.app_opt.job_launcher.k8s_launcher.ServerK8sJobLauncher"
 elif role == "client":
-    old_path = "nvflare.app_common.job_launcher.client_process_launcher.ClientProcessJobLauncher"
-    new_path = "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher"
+    expected_path = "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher"
 else:
     raise SystemExit(f"ROLE must be 'server' or 'client', got {role!r}")
 
 components = data.get("components", [])
-target = None
-for component in components:
-    if component.get("path") in {old_path, new_path} or component.get("id") in {"process_launcher", "k8s_launcher"}:
-        target = component
-        break
+target = next((component for component in components if component.get("id") == "k8s_launcher"), None)
 
 if target is None:
-    raise SystemExit(f"No process launcher component found in {resources_file}")
+    raise SystemExit(f"No k8s_launcher component found in {resources_file}. Rerun nvflare deploy prepare.")
+if target.get("path") != expected_path:
+    raise SystemExit(f"k8s_launcher path is {target.get('path')!r}; expected {expected_path!r}")
 
-target["id"] = "k8s_launcher"
-target["path"] = new_path
-target["args"] = {
-    "config_file_path": None,
-    "study_data_pvc_file_path": f"{workspace_mount_path}/local/study_data.yaml",
-    "namespace": namespace,
-    "python_path": "/usr/local/bin/python3",
-    "pending_timeout": 300,
-    "ephemeral_storage": "1Gi",
+args = target.get("args") or {}
+prepared_namespace = args.get("namespace")
+if prepared_namespace != namespace:
+    raise SystemExit(
+        f"Prepared launcher namespace is {prepared_namespace!r}, but launch NAMESPACE is {namespace!r}. "
+        "Use the same NAMESPACE for prepare and launch."
+    )
+if not args.get("workspace_mount_path"):
+    raise SystemExit("k8s_launcher args missing workspace_mount_path")
+
+print(f"Verified {resources_file} contains {expected_path} for namespace {namespace}")
+PY
 }
 
-with open(resources_file, "w", encoding="utf-8") as f:
-    json.dump(data, f, indent=2)
-    f.write("\n")
+read_prepared_workspace_pvc() {
+  local values_file="${PARTICIPANT_DIR}/helm_chart/values.yaml"
+  [[ -f "${values_file}" ]] || fail "Prepared chart values not found: ${values_file}"
 
-print(f"Patched {resources_file} to use {new_path}")
+  python3 - "${values_file}" "${WORKSPACE_PVC:-}" <<'PY'
+import re
+import sys
+
+values_file, user_value = sys.argv[1], sys.argv[2]
+with open(values_file, "r", encoding="utf-8") as f:
+    lines = f.readlines()
+
+# Walk yaml.safe_dump output (deterministic 2-space indent, no flow style)
+# emitted by nvflare deploy prepare.
+in_persistence = in_workspace = False
+claim = None
+for raw in lines:
+    line = raw.rstrip("\n")
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#"):
+        continue
+    if not line.startswith(" "):
+        in_persistence = stripped.startswith("persistence:")
+        in_workspace = False
+        continue
+    if in_persistence and line.startswith("  ") and not line.startswith("   "):
+        in_workspace = stripped.startswith("workspace:")
+        continue
+    if in_persistence and in_workspace and line.startswith("    "):
+        match = re.match(r"\s*claimName:\s*(\S+)", line)
+        if match:
+            claim = match.group(1).strip("\"'")
+            break
+
+if not claim:
+    raise SystemExit(
+        f"persistence.workspace.claimName not found in {values_file}. "
+        "Rerun nvflare deploy prepare and copy the prepared archive."
+    )
+
+if user_value and user_value != claim:
+    raise SystemExit(
+        f"WORKSPACE_PVC={user_value!r} does not match prepared chart "
+        f"persistence.workspace.claimName={claim!r}. The chart was prepared "
+        f"with claimName={claim}; rerun prepare_brev_startup_kits.sh with "
+        f"WORKSPACE_PVC={user_value} to rebuild the chart, or unset "
+        "WORKSPACE_PVC at launch to use the prepared value."
+    )
+
+print(claim)
 PY
 }
 
@@ -171,9 +218,12 @@ EOF
   if [[ "${CLEAN_WORKSPACE_PVC:-false}" == "true" ]]; then
     kubectl -n "${NAMESPACE}" exec "${COPY_POD}" -- sh -c \
       'rm -rf /mnt/nvflws/* /mnt/nvflws/.[!.]* /mnt/nvflws/..?* 2>/dev/null || true'
+  else
+    kubectl -n "${NAMESPACE}" exec "${COPY_POD}" -- rm -rf /mnt/nvflws/startup /mnt/nvflws/local
   fi
 
-  kubectl -n "${NAMESPACE}" cp "${PARTICIPANT_DIR}/." "${COPY_POD}:/mnt/nvflws/"
+  kubectl -n "${NAMESPACE}" cp "${PARTICIPANT_DIR}/startup" "${COPY_POD}:/mnt/nvflws/startup"
+  kubectl -n "${NAMESPACE}" cp "${PARTICIPANT_DIR}/local" "${COPY_POD}:/mnt/nvflws/local"
   kubectl -n "${NAMESPACE}" exec "${COPY_POD}" -- ls -la /mnt/nvflws/startup /mnt/nvflws/local
   kubectl -n "${NAMESPACE}" delete pod "${COPY_POD}" --ignore-not-found=true
 }
@@ -260,17 +310,14 @@ PARTICIPANT="${1:-${PARTICIPANT:-}}"
 }
 
 NAMESPACE="${NAMESPACE:-nvflare}"
-WORKSPACE_PVC="${WORKSPACE_PVC:-nvflws}"
 DATA_PVC="${DATA_PVC:-nvfldata}"
 WORKSPACE_STORAGE="${WORKSPACE_STORAGE:-10Gi}"
 DATA_STORAGE="${DATA_STORAGE:-50Gi}"
-WORKSPACE_MOUNT_PATH="${WORKSPACE_MOUNT_PATH:-/var/tmp/nvflare/workspace}"
 WORK_DIR="${WORK_DIR:-${HOME}/nvflare}"
 ARCHIVE="${ARCHIVE:-${HOME}/nvflare-${PARTICIPANT}.tgz}"
 COPY_POD="${COPY_POD:-nvflare-pvc-copy}"
 ROLLOUT_TIMEOUT="${ROLLOUT_TIMEOUT:-300s}"
 LOG_TAIL="${LOG_TAIL:-100}"
-ROLE="$(infer_role)"
 
 require_cmd kubectl helm tar python3
 [[ -f "${ARCHIVE}" ]] || fail "Archive not found: ${ARCHIVE}"
@@ -285,6 +332,12 @@ fi
 tar -xzf "${ARCHIVE}" -C "${WORK_DIR}"
 PARTICIPANT_DIR="${WORK_DIR}/${PARTICIPANT}"
 [[ -d "${PARTICIPANT_DIR}/helm_chart" ]] || fail "Helm chart not found: ${PARTICIPANT_DIR}/helm_chart"
+[[ -d "${PARTICIPANT_DIR}/startup" ]] || fail "startup directory not found: ${PARTICIPANT_DIR}/startup"
+[[ -d "${PARTICIPANT_DIR}/local" ]] || fail "local directory not found: ${PARTICIPANT_DIR}/local"
+ROLE="$(detect_role)"
+verify_prepared_launcher
+WORKSPACE_PVC="$(read_prepared_workspace_pvc)"
+echo "Using prepared workspace PVC: ${WORKSPACE_PVC}"
 
 PVC_FILE="${WORK_DIR}/nvflare-pvcs.yaml"
 COPY_POD_FILE="${WORK_DIR}/copy-to-pvcs.yaml"
@@ -296,8 +349,6 @@ kubectl create namespace "${NAMESPACE}" --dry-run=client -o yaml | kubectl apply
 write_pvc_manifest
 kubectl -n "${NAMESPACE}" apply -f "${PVC_FILE}"
 kubectl -n "${NAMESPACE}" get pvc
-
-patch_launcher
 
 trap 'kubectl -n "${NAMESPACE}" delete pod "${COPY_POD}" --ignore-not-found=true >/dev/null 2>&1 || true' EXIT
 stage_workspace_pvc

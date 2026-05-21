@@ -351,7 +351,7 @@ class TestRestart:
 
 
 class TestRemoveClient:
-    def test_sends_remove_client_command(self):
+    def test_remove_client_keeps_legacy_command_for_compatibility(self):
         session = _make_session()
         with patch.object(session, "_do_command", return_value=_ok_meta_result()) as mock_cmd:
             session.remove_client("site-1")

@@ -15,6 +15,7 @@ import socket
 import time
 import traceback
 import uuid
+from typing import Callable, Optional
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
@@ -28,9 +29,12 @@ from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.message import Message as CellMessage
+from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeaderKeys, ClientRegMsgKey, new_cell_message
 from nvflare.private.fed.utils.identity_utils import IdentityAsserter, IdentityVerifier, TokenVerifier, load_crt_bytes
+
+MISSING_CLIENT_FQCN = ""
 
 
 def _get_client_ip():
@@ -299,12 +303,45 @@ class Authenticator:
         return token, token_signature, ssid, token_verifier
 
 
-def validate_auth_headers(message: CellMessage, token_verifier: TokenVerifier, logger):
+def _origin_matches_fqcn(origin: str, fqcn: str, channel: Optional[str] = None) -> bool:
+    if not origin or not fqcn:
+        return False
+    if origin == fqcn or FQCN.is_ancestor(fqcn, origin):
+        return True
+
+    # Direct CellPipe stream cells use sibling names such as
+    # "site-1_<job-id>_active" and "site-1_<job-id>_passive", but their auth
+    # token is issued to the registered site FQCN ("site-1").  Treat only those
+    # stream aliases as the owning site; normal server-command origins remain
+    # bound to the exact registered FQCN/descendant relationship above.
+    if channel != STREAM_CHANNEL or not origin.startswith(f"{fqcn}_"):
+        return False
+
+    runtime_id, sep, mode = origin[len(fqcn) + 1 :].rpartition("_")
+    if not sep or mode not in {"active", "passive"}:
+        return False
+
+    # Deployed CellPipe aliases use the job UUID as the runtime id. Do not allow
+    # FQCN separators or alias separators inside this portion: otherwise a token
+    # for "site" could validate an origin such as "site_x_<job>_active" when
+    # "site_x" is also a valid client FQCN.
+    return bool(runtime_id) and "." not in runtime_id and "_" not in runtime_id
+
+
+def validate_auth_headers(
+    message: CellMessage,
+    token_verifier: TokenVerifier,
+    logger,
+    client_fqcn_resolver: Optional[Callable[[str, str], Optional[str]]] = None,
+):
     """Validate auth headers from messages that go through the server.
 
     Args:
         message: the message to validate
         token_verifier: the TokenVerifier to be used to verify the token and signature
+        client_fqcn_resolver: optional resolver used to bind a client token to its registered CellNet origin.
+            Return None only when the token/name cannot be resolved; return MISSING_CLIENT_FQCN for a registered
+            client with no stored origin so validation fails closed.
 
     Returns:
     """
@@ -343,6 +380,17 @@ def validate_auth_headers(message: CellMessage, token_verifier: TokenVerifier, l
         err = "invalid auth token signature"
         logger.error(f"{err_text}: {err}")
         return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED, error=err)
+
+    if client_fqcn_resolver:
+        client_fqcn = client_fqcn_resolver(client_name, token)
+        if client_fqcn is not None and not _origin_matches_fqcn(origin, client_fqcn, channel):
+            registered_origin = client_fqcn or "<missing>"
+            err = (
+                f"auth token for client {client_name} is bound to origin {registered_origin}, "
+                f"not message origin {origin}"
+            )
+            logger.error(f"{err_text}: {err}")
+            return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED, error=err)
 
     # all good
     logger.debug(f"auth headers valid from {origin}: {topic=} {channel=}")

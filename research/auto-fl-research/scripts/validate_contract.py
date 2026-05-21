@@ -151,7 +151,7 @@ class ClientContractVisitor(ast.NodeVisitor):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("path", nargs="?", default="client.py")
+    parser.add_argument("path", nargs="?", default="tasks/cifar10/client.py")
     args = parser.parse_args()
 
     path = Path(args.path)

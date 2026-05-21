@@ -39,15 +39,16 @@ from nvflare.apis.fl_constant import (
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import NotAuthenticated
 from nvflare.apis.job_def import JobMetaKey, RunStatus
+from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import Message
 from nvflare.fuel.f3.cellnet.core_cell import make_reply as make_cellnet_reply
-from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey, MessageType
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
-from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.cellnet.fqcn import FQCN, FqcnInfo
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
@@ -65,7 +66,7 @@ from nvflare.private.defs import (
     JobFailureMsgKey,
     new_cell_message,
 )
-from nvflare.private.fed.authenticator import validate_auth_headers
+from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN, validate_auth_headers
 from nvflare.private.fed.server.cred_keeper import CredKeeper
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.server.server_runner import ServerRunner
@@ -412,6 +413,24 @@ class FederatedServer(BaseServer):
         )
         self.logger.debug(f"added auth headers:  {origin=} {dest=} {channel=} {topic=}")
 
+    def _strip_peer_transit_reply_auth_headers(self, message: Message):
+        if message.get_header(MessageHeaderKey.MSG_TYPE) != MessageType.REPLY:
+            return
+
+        destination = message.get_header(MessageHeaderKey.DESTINATION)
+        if not destination or FqcnInfo(destination).is_on_server:
+            return
+
+        # Model: peer replies authenticate to the server if the server is the next hop, but peer clients must not
+        # receive another client's bearer material. This runs after successful server validation and before forwarding.
+        for key in [
+            CellMessageHeaderKeys.CLIENT_NAME,
+            CellMessageHeaderKeys.TOKEN,
+            CellMessageHeaderKeys.TOKEN_SIGNATURE,
+            CellMessageHeaderKeys.SSID,
+        ]:
+            message.remove_header(key)
+
     def _validate_auth_headers(self, message: Message):
         """Validate auth headers from messages that go through the server.
         Args:
@@ -424,11 +443,21 @@ class FederatedServer(BaseServer):
 
         token_verifier = TokenVerifier(id_asserter.cert)
 
-        return validate_auth_headers(
+        reply = validate_auth_headers(
             message=message,
             token_verifier=token_verifier,
             logger=self.logger,
+            client_fqcn_resolver=self._resolve_client_fqcn_for_auth,
         )
+        if not reply:
+            self._strip_peer_transit_reply_auth_headers(message)
+        return reply
+
+    def _resolve_client_fqcn_for_auth(self, client_name: str, token: str):
+        client = self.client_manager.clients.get(token)
+        if client and client.name == client_name:
+            return client.get_fqcn() or MISSING_CLIENT_FQCN
+        return None
 
     def sign_auth_token(self, client_name: str, token: str):
         id_asserter = self._get_id_asserter()
@@ -499,7 +528,9 @@ class FederatedServer(BaseServer):
         with self.engine.new_context() as fl_ctx:
             job = job_manager.get_job(job_id, fl_ctx)
             if job.meta.get(JobMetaKey.STATUS) == RunStatus.RUNNING:
-                job_manager.set_status(job_id, RunStatus.FINISHED_ABORTED, fl_ctx)
+                error = self.engine.job_runner.mark_run_aborted(job_id, fl_ctx)
+                if error:
+                    self.logger.warning(error)
 
     def _create_server_engine(self, args, snapshot_persistor):
         return ServerEngine(
@@ -801,7 +832,11 @@ class FederatedServer(BaseServer):
 
         code = payload.get(JobFailureMsgKey.CODE)
         reason = payload.get(JobFailureMsgKey.REASON, "?")
-        if code == ProcessExitCode.UNSAFE_COMPONENT:
+        if code in (ProcessExitCode.CONFIG_ERROR, ProcessExitCode.EXCEPTION):
+            with self.engine.new_context() as fl_ctx:
+                self.logger.info(f"Failing job {job_id} due to reported failure from {client}: {reason}")
+                self.engine.job_runner.fail_run(job_id, ProcessExitCode.EXCEPTION, fl_ctx)
+        elif code in (ProcessExitCode.UNSAFE_COMPONENT, JobReturnCode.ABORTED):
             with self.engine.new_context() as fl_ctx:
                 self.logger.info(f"Aborting job {job_id} due to reported failure from {client}: {reason}")
                 self.engine.job_runner.stop_run(job_id, fl_ctx)
@@ -1060,7 +1095,6 @@ class FederatedServer(BaseServer):
                 cb=self._validate_auth_headers,
             )
 
-            # set filter to add additional auth headers
             core_cell.add_outgoing_reply_filter(channel="*", topic="*", cb=self._add_auth_headers)
             core_cell.add_outgoing_request_filter(channel="*", topic="*", cb=self._add_auth_headers)
 

@@ -106,6 +106,10 @@ def _active_study_from_conn(conn: Connection) -> str:
     return conn.get_prop(ConnProps.ACTIVE_STUDY, DEFAULT_STUDY) or DEFAULT_STUDY
 
 
+def _append_no_such_job_error(conn: Connection, job_id: str):
+    conn.append_error(f"no such job: {job_id}", meta=make_meta(MetaStatusValue.INVALID_JOB_ID, job_id))
+
+
 def _create_list_job_cmd_parser():
     parser = SafeArgumentParser(prog=AdminCommandNames.LIST_JOBS)
     parser.add_argument("job_id", nargs="?", help="Job ID prefix")
@@ -288,16 +292,12 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             job = job_def_manager.get_job(job_id, fl_ctx)
 
         if not job:
-            conn.append_error(
-                f"Job with ID {job_id} doesn't exist", meta=make_meta(MetaStatusValue.INVALID_JOB_ID, job_id)
-            )
+            _append_no_such_job_error(conn, job_id)
             return PreAuthzReturnCode.ERROR
 
         requested_study = _active_study_from_conn(conn)
         if requested_study and get_job_meta_study(job.meta) != requested_study:
-            conn.append_error(
-                f"Job with ID {job_id} doesn't exist", meta=make_meta(MetaStatusValue.INVALID_JOB_ID, job_id)
-            )
+            _append_no_such_job_error(conn, job_id)
             return PreAuthzReturnCode.ERROR
 
         conn.set_prop(self.JOB, job)
@@ -534,9 +534,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     normalized_meta, meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOB_META: normalized_meta})
                 )
             else:
-                conn.append_error(
-                    f"job {job_id} does not exist", meta=make_meta(MetaStatusValue.INVALID_JOB_ID, job_id)
-                )
+                _append_no_such_job_error(conn, job_id)
 
     def get_job_log(self, conn: Connection, args: List[str]):
         try:
@@ -1020,18 +1018,11 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 if filtered_data:
                     data_str = ", ".join(filtered_data)
                     conn.append_string(data_str)
-                    conn.append_success(
-                        "", meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOB_COMPONENTS: filtered_data})
-                    )
-                else:
-                    conn.append_error(
-                        "No additional job components found.",
-                        meta=make_meta(MetaStatusValue.NO_JOB_COMPONENTS, "No additional job components found."),
-                    )
-            else:
-                conn.append_error(
-                    f"job {job_id} does not exist", meta=make_meta(MetaStatusValue.INVALID_JOB_ID, job_id)
+                conn.append_success(
+                    "", meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOB_COMPONENTS: filtered_data})
                 )
+            else:
+                _append_no_such_job_error(conn, job_id)
 
     def abort_job(self, conn: Connection, args: List[str]):
         engine = conn.app_ctx
@@ -1671,7 +1662,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         job_download_dir = self.tx_path(conn, tx_id)
         shutil.rmtree(job_download_dir, ignore_errors=True)
 
-    def _download_job_comps(self, conn: Connection, args: List[str], get_comps_f):
+    def _download_job_comps(self, conn: Connection, args: List[str], get_comps_f, require_finished: bool = False):
         """
         Job download uses binary protocol for more efficient download.
         - Retrieve job data from job store. This puts job files (meta, data, and workspace) in a transfer folder
@@ -1696,6 +1687,18 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         job_id = args[1]
 
         with engine.new_context() as fl_ctx:
+            if require_finished:
+                job = job_def_manager.get_job(job_id, fl_ctx)
+                if not job:
+                    _append_no_such_job_error(conn, job_id)
+                    return
+                job_status = job.meta.get(JobMetaKey.STATUS)
+                if not job_status or not job_status.startswith("FINISHED:"):
+                    conn.append_error(
+                        f"job {job_id} is not done",
+                        meta=make_meta(MetaStatusValue.JOB_RUNNING, job_id),
+                    )
+                    return
             comps = get_comps_f(job_def_manager, job_id, fl_ctx)
             if not comps:
                 conn.append_string(
@@ -1732,7 +1735,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         - Returns job file names, a TX ID, and a command name for downloading files to the admin client
         - Admin client downloads received file names one by one. It signals the end of download in the last command.
         """
-        self._download_job_comps(conn, args, self._get_default_job_components)
+        self._download_job_comps(conn, args, self._get_default_job_components, require_finished=True)
 
     def download_job_components(self, conn: Connection, args: List[str]):
         """Download additional job components (e.g., ERRORLOG_site-1) for a specified job.

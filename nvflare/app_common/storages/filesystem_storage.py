@@ -143,11 +143,33 @@ class FilesystemStorage(StorageSpec):
             raise ValueError(f"root_dir {root_dir} exists but is not a directory.")
         if not os.path.exists(root_dir):
             os.makedirs(root_dir, exist_ok=False)
-        self.root_dir = root_dir
+        self.root_dir = os.path.realpath(root_dir)
         self.uri_root = uri_root
 
     def _object_path(self, uri: str):
-        return os.path.join(self.root_dir, uri.lstrip(self.uri_root))
+        uri_root = os.path.normpath(self.uri_root or os.sep)
+        if not os.path.isabs(uri_root):
+            uri_root = os.path.normpath(os.path.join(os.sep, uri_root))
+
+        uri_path = os.path.normpath(uri)
+        if not os.path.isabs(uri_path):
+            uri_path = os.path.normpath(os.path.join(os.sep, uri_path))
+
+        if uri_root != os.sep:
+            try:
+                if os.path.commonpath([uri_root, uri_path]) != uri_root:
+                    raise StorageException(f"uri {uri} is outside storage uri_root {self.uri_root}")
+            except ValueError as e:
+                raise StorageException(f"invalid storage uri {uri}: {secure_format_exception(e)}")
+
+        rel_path = os.path.relpath(uri_path, uri_root)
+        if rel_path == os.curdir:
+            rel_path = ""
+
+        full_path = os.path.realpath(os.path.join(self.root_dir, rel_path))
+        if os.path.commonpath([self.root_dir, full_path]) != self.root_dir:
+            raise StorageException(f"uri {uri} escapes storage root")
+        return full_path
 
     def create_object(self, uri: str, data, meta: dict, overwrite_existing: bool = False):
         """Creates an object.

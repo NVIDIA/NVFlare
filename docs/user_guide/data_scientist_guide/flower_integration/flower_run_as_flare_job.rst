@@ -3,18 +3,24 @@ Run Flower Application as FLARE Job
 ***********************************
 
 Before running Flower applications with FLARE, you must have both FLARE and Flower frameworks
-installed in your Python environment. NVFlare 2.7 Flower integration currently requires
-``flwr>=1.26``.
+installed in your Python environment. Current NVFlare ``main`` and the NVFlare 2.8 release
+candidate line use Flower's SuperLink configuration flow and require ``flwr>=1.26``.
 
 .. code-block:: shell
 
     pip install 'flwr>=1.26'
 
+If you are using released NVFlare 2.7.x, use ``flwr>=1.16,<1.26`` and the 2.7 branch or tag of
+the Flower examples. NVFlare 2.7.x still uses Flower's legacy ``--federation-config`` CLI
+option, which Flower 1.26+ ignores.
+
 With Flower 1.26 and newer, SuperLink connections are no longer configured in
 ``pyproject.toml`` for NVFlare jobs. Instead, NVFlare writes a job-scoped Flower
 configuration file at ``$FLWR_HOME/config.toml`` and uses it to connect
 ``flwr run``, ``flwr list``, and ``flwr stop`` to the job's dynamically assigned
-SuperLink control API address.
+SuperLink control API address. Do not create a global ``~/.flwr/config.toml`` as a workaround
+for NVFlare 2.7.x compatibility; the dynamic port must be configured by an NVFlare version that
+supports Flower 1.26+.
 
 To run a Flower application as a job in FLARE, follow these steps:
 

@@ -86,9 +86,10 @@ Client Disable Semantics
 ------------------------
 
 ``nvflare system remove-client`` is not exposed as a supported public CLI
-command. The legacy interactive-console ``remove_client`` operation remains a
-registry cleanup operation only; it does not stop the client process, revoke
-credentials, or prevent reconnect.
+command. The legacy interactive-console ``remove_client`` command is hidden
+from normal help and remains a registry cleanup operation only: it releases
+the active token so the client can register again. It does not stop the client
+process, revoke credentials, or prevent reconnect.
 
 Use the new durable access-control commands when the intent is to keep a client
 out of the federation:

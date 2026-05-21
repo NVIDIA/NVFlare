@@ -27,6 +27,7 @@ from nvflare.tool.deploy.deploy_commands import (
     GPU_RESOURCE_CONSUMER,
     GPU_RESOURCE_MANAGER,
     HELM_RELEASE_NAME_MAX_LENGTH,
+    K8S_PARENT_PYTHON_PATH,
     PROCESS_CLIENT_LAUNCHER,
     _k8s_release_name,
     prepare_deployment,
@@ -358,10 +359,39 @@ def test_prepare_k8s_server_exposes_admin_port_only_when_distinct(tmp_path, caps
     values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
     assert values["fedLearnPort"] == 8002
     assert values["adminPort"] == expected_admin_port
+    assert values["command"] == ["/usr/local/bin/python3"]
 
     tcp_services = (output / "helm_chart" / "templates" / "server-tcp-services.yaml").read_text()
     assert ".Values.fedLearnPort" in tcp_services
     assert ".Values.adminPort" in tcp_services
+
+
+def test_prepare_k8s_server_uses_configured_service_name(tmp_path, capsys):
+    kit = _make_server_kit(tmp_path, fed_learn_port=8002, admin_port=8003)
+    output = tmp_path / "server-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "namespace": "nvflare",
+            "server_service_name": "custom-nvflare-server",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    comm_config = json.loads((output / "local" / "comm_config.json").read_text())
+    service = (output / "helm_chart" / "templates" / "server-service.yaml").read_text()
+    tcp_services = (output / "helm_chart" / "templates" / "server-tcp-services.yaml").read_text()
+
+    assert values["serviceName"] == "custom-nvflare-server"
+    assert comm_config["internal"]["resources"]["host"] == "custom-nvflare-server"
+    assert "name: {{ .Values.serviceName }}" in service
+    assert "nvflare-server:%v" not in tcp_services
+    assert ".Values.serviceName" in tcp_services
 
 
 @pytest.mark.parametrize("runtime", ["docker", "k8s"])
@@ -414,6 +444,65 @@ def test_prepare_server_warns_when_snapshot_persistor_shape_is_unexpected(tmp_pa
     resources = json.loads((output / "local" / "resources.json.default").read_text())
     assert "args" not in resources["snapshot_persistor"]["args"]["storage"]
     assert _component(resources, "job_manager")["args"]["uri_root"] == "/var/tmp/nvflare/workspace/jobs-storage"
+
+
+def test_prepare_k8s_server_uses_parent_python_path_for_chart_command(tmp_path, capsys):
+    kit = _make_server_kit(tmp_path)
+    output = tmp_path / "server-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev", "python_path": "/opt/conda/bin/python"},
+            "job_launcher": {"default_python_path": "/usr/bin/python3"},
+        },
+    )
+    capsys.readouterr()
+
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    assert values["command"] == ["/opt/conda/bin/python"]
+
+
+def test_prepare_k8s_server_does_not_use_job_launcher_python_path_for_chart_command(tmp_path, capsys):
+    kit = _make_server_kit(tmp_path)
+    output = tmp_path / "server-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+            "job_launcher": {"default_python_path": "/usr/bin/python3"},
+        },
+    )
+    capsys.readouterr()
+
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    assert values["command"] == [K8S_PARENT_PYTHON_PATH]
+
+
+def test_prepare_k8s_launcher_default_python_path_matches_parent_default(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    resources = json.loads((output / "local" / "resources.json.default").read_text())
+    launcher = _component(resources, "k8s_launcher")
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    assert launcher["args"]["default_python_path"] == K8S_PARENT_PYTHON_PATH
+    assert values["command"] == [K8S_PARENT_PYTHON_PATH]
 
 
 def test_prepare_docker_reads_org_from_cert_without_sub_start(tmp_path, capsys):
@@ -524,8 +613,9 @@ def test_prepare_k8s_client_writes_chart_and_launcher_config(tmp_path, capsys):
             "job_launcher": {
                 "config_file_path": None,
                 "pending_timeout": 7,
-                "default_python_path": "/usr/bin/python",
+                "default_python_path": "/usr/bin/python3",
                 "job_pod_security_context": {"runAsNonRoot": True},
+                "image_pull_secrets": ["job-regcred", "site.registry.example.com"],
             },
         },
     )
@@ -537,9 +627,11 @@ def test_prepare_k8s_client_writes_chart_and_launcher_config(tmp_path, capsys):
     assert launcher["path"] == "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher"
     assert launcher["args"]["namespace"] == "flare"
     assert launcher["args"]["study_data_pvc_file_path"] == "/workspace/local/study_data.yaml"
-    assert launcher["args"]["default_python_path"] == "/usr/bin/python"
+    assert launcher["args"]["workspace_mount_path"] == "/workspace"
+    assert launcher["args"]["default_python_path"] == "/usr/bin/python3"
     assert launcher["args"]["pending_timeout"] == 7
     assert launcher["args"]["security_context"] == {"runAsNonRoot": True}
+    assert launcher["args"]["image_pull_secrets"] == ["job-regcred", "site.registry.example.com"]
 
     comm_config = json.loads((output / "local" / "comm_config.json").read_text())
     assert comm_config["internal"]["resources"] == {
@@ -562,9 +654,43 @@ def test_prepare_k8s_client_writes_chart_and_launcher_config(tmp_path, capsys):
     assert values["persistence"]["workspace"]["volumeName"] == "workspace"
     assert values["persistence"]["workspace"]["mountPath"] == "/workspace"
     assert values["port"] == 9102
+    assert values["command"] == [K8S_PARENT_PYTHON_PATH]
     assert values["securityContext"] == {"runAsUser": 1000}
     assert values["resources"] == {"requests": {"cpu": "1", "memory": "2Gi"}}
     assert (output / "helm_chart" / "templates" / "client-deployment.yaml").exists()
+
+
+@pytest.mark.parametrize(
+    "make_kit, template_name",
+    [
+        (_make_server_kit, "server-deployment.yaml"),
+        (_make_client_kit, "client-deployment.yaml"),
+    ],
+)
+def test_prepare_k8s_parent_image_pull_secrets_written_to_chart(tmp_path, capsys, make_kit, template_name):
+    kit = make_kit(tmp_path)
+    output = tmp_path / "prepared-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {
+                "docker_image": "repo/nvflare:dev",
+                "image_pull_secrets": ["gitlab-regcred", "mirror.registry.example.com"],
+            },
+        },
+    )
+    capsys.readouterr()
+
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    deployment = (output / "helm_chart" / "templates" / template_name).read_text()
+    assert values["imagePullSecrets"] == [
+        {"name": "gitlab-regcred"},
+        {"name": "mirror.registry.example.com"},
+    ]
+    assert ".Values.imagePullSecrets" in deployment
 
 
 @pytest.mark.parametrize("namespace", ["nvflare", "1abc", "2026-prod"])
@@ -610,6 +736,83 @@ def test_prepare_k8s_rejects_invalid_namespace(tmp_path, capsys, namespace):
     err = capsys.readouterr().err
     assert "INVALID_CONFIG" in err
     assert "k8s config.namespace" in err
+    assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    "image_pull_secrets",
+    ["gitlab-regcred", [""], ["GitLab-Regcred"], ["gitlab_regcred"], [7], ["bad..name"], ["a."], [".a"]],
+)
+def test_prepare_k8s_rejects_invalid_parent_image_pull_secrets(tmp_path, capsys, image_pull_secrets):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "prepared"
+
+    with pytest.raises(SystemExit):
+        _run_prepare(
+            kit,
+            output,
+            {
+                "runtime": "k8s",
+                "parent": {
+                    "docker_image": "repo/nvflare:dev",
+                    "image_pull_secrets": image_pull_secrets,
+                },
+            },
+        )
+
+    err = capsys.readouterr().err
+    assert "INVALID_CONFIG" in err
+    assert "parent image pull references" in err
+    assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    "image_pull_secrets",
+    ["gitlab-regcred", [""], ["GitLab-Regcred"], ["gitlab_regcred"], [7], ["bad..name"], ["a."], [".a"]],
+)
+def test_prepare_k8s_rejects_invalid_job_launcher_image_pull_secrets(tmp_path, capsys, image_pull_secrets):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "prepared"
+
+    with pytest.raises(SystemExit):
+        _run_prepare(
+            kit,
+            output,
+            {
+                "runtime": "k8s",
+                "parent": {"docker_image": "repo/nvflare:dev"},
+                "job_launcher": {"image_pull_secrets": image_pull_secrets},
+            },
+        )
+
+    err = capsys.readouterr().err
+    assert "INVALID_CONFIG" in err
+    assert "job launcher image pull references" in err
+    assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    "service_name",
+    ["Nvflare", "server_name", "server.name", "-server", "server-", "1server", "", "a" * 64, None, 7],
+)
+def test_prepare_k8s_rejects_invalid_server_service_name(tmp_path, capsys, service_name):
+    kit = _make_server_kit(tmp_path)
+    output = tmp_path / "prepared"
+
+    with pytest.raises(SystemExit):
+        _run_prepare(
+            kit,
+            output,
+            {
+                "runtime": "k8s",
+                "server_service_name": service_name,
+                "parent": {"docker_image": "repo/nvflare:dev"},
+            },
+        )
+
+    err = capsys.readouterr().err
+    assert "INVALID_CONFIG" in err
+    assert "k8s config.server_service_name" in err
     assert not output.exists()
 
 
@@ -793,6 +996,10 @@ def test_prepare_rejects_admin_kit_without_writing_output(tmp_path, capsys):
         (
             {"runtime": "k8s", "parent": {"docker_image": "repo/nvflare:dev", "workspace_mount_path": []}},
             "parent.workspace_mount_path",
+        ),
+        (
+            {"runtime": "k8s", "parent": {"docker_image": "repo/nvflare:dev", "python_path": 7}},
+            "parent.python_path",
         ),
         (
             {

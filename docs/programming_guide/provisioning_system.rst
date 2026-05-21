@@ -396,10 +396,13 @@ own requirements:
 
     - :class:`WorkspaceBuilder<nvflare.lighter.impl.workspace.WorkspaceBuilder>`
     - :class:`TemplateBuilder<nvflare.lighter.impl.template.TemplateBuilder>`
-    - :class:`DockerBuilder<nvflare.lighter.impl.docker.DockerBuilder>`
+    - :class:`DockerBuilder<nvflare.lighter.impl.docker.DockerBuilder>` (legacy Docker Compose builder)
     - :class:`StaticFileBuilder<nvflare.lighter.impl.static_file.StaticFileBuilder>`
     - :class:`CertBuilder<nvflare.lighter.impl.cert.CertBuilder>`
     - :class:`SignatureBuilder<nvflare.lighter.impl.signature.SignatureBuilder>`
+
+Current Docker and Kubernetes runtime launch preparation is handled after
+startup kits are created with ``nvflare deploy prepare``.
 
 ::
 

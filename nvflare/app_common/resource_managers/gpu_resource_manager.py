@@ -12,10 +12,53 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Union
+import os
+from typing import Optional, Union
 
 from nvflare.app_common.resource_managers.auto_clean_resource_manager import AutoCleanResourceManager
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids, get_host_gpu_memory_total
+
+CUDA_VISIBLE_DEVICES = "CUDA_VISIBLE_DEVICES"
+
+
+def _get_cuda_visible_device_indices(host_gpu_ids: list[int]) -> Optional[list[int]]:
+    """Gets visible nvidia-smi GPU indices from CUDA_VISIBLE_DEVICES.
+
+    NVIDIA CUDA also supports GPU UUID and MIG identifiers in CUDA_VISIBLE_DEVICES. Those are not interpreted here
+    because GPUResourceManager uses nvidia-smi integer GPU indices as resource IDs, and POC -gpu sets integer IDs.
+    """
+    value = os.environ.get(CUDA_VISIBLE_DEVICES)
+    if value is None:
+        return None
+
+    value = value.strip()
+    if not value:
+        return []
+
+    gpu_ids = []
+    seen = set()
+    for item in value.split(","):
+        item = item.strip()
+        if not item:
+            break
+        try:
+            gpu_id = int(item)
+        except ValueError:
+            return None
+        if gpu_id not in host_gpu_ids:
+            break
+        if gpu_id not in seen:
+            gpu_ids.append(gpu_id)
+            seen.add(gpu_id)
+    return gpu_ids
+
+
+def _get_managed_host_gpu_ids(host_gpu_ids: list[int]) -> list[int]:
+    visible_gpu_ids = _get_cuda_visible_device_indices(host_gpu_ids)
+    if visible_gpu_ids is None:
+        return host_gpu_ids
+
+    return visible_gpu_ids
 
 
 class GPUResource:
@@ -69,22 +112,36 @@ class GPUResourceManager(AutoCleanResourceManager):
         if not isinstance(ignore_host, bool):
             raise ValueError(f"ignore_host should be of type bool, but got {type(ignore_host)}.")
 
+        resource_gpu_ids = list(range(num_of_gpus))
         if not ignore_host:
             if num_of_gpus > 0:
-                num_host_gpus = len(get_host_gpu_ids())
+                host_gpu_ids = get_host_gpu_ids()
+                managed_host_gpu_ids = _get_managed_host_gpu_ids(host_gpu_ids)
+                num_host_gpus = len(managed_host_gpu_ids)
                 if num_of_gpus > num_host_gpus:
                     raise ValueError(f"num_of_gpus specified ({num_of_gpus}) exceeds available GPUs: {num_host_gpus}.")
 
                 host_gpu_mem = get_host_gpu_memory_total()
-                for i in host_gpu_mem:
-                    if mem_per_gpu_in_GiB * 1024 > i:
+                host_gpu_mem_by_id = {
+                    gpu_id: host_gpu_mem[index]
+                    for index, gpu_id in enumerate(host_gpu_ids)
+                    if index < len(host_gpu_mem)
+                }
+                resource_gpu_ids = managed_host_gpu_ids[:num_of_gpus]
+                for gpu_id in resource_gpu_ids:
+                    try:
+                        available_gpu_mem = host_gpu_mem_by_id[gpu_id]
+                    except KeyError as e:
+                        raise RuntimeError(f"Failed to determine GPU memory for GPU ID {gpu_id}.") from e
+                    if mem_per_gpu_in_GiB * 1024 > available_gpu_mem:
                         raise ValueError(
-                            f"Memory per GPU specified ({mem_per_gpu_in_GiB * 1024}) exceeds available GPU memory: {i}."
+                            f"Memory per GPU specified ({mem_per_gpu_in_GiB * 1024}) exceeds available GPU memory "
+                            f"for GPU ID {gpu_id}: {available_gpu_mem}."
                         )
 
         self.num_gpu_key = num_gpu_key
         self.gpu_mem_key = gpu_mem_key
-        resources = {i: GPUResource(gpu_id=i, gpu_memory=mem_per_gpu_in_GiB) for i in range(num_of_gpus)}
+        resources = {i: GPUResource(gpu_id=i, gpu_memory=mem_per_gpu_in_GiB) for i in resource_gpu_ids}
 
         super().__init__(resources=resources, expiration_period=expiration_period)
 

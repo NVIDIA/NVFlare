@@ -55,16 +55,20 @@ class JobLogReceiver(Widget):
     **Job-level configuration** (``config_fed_server.json``)
         Add it via ``job.to_server(JobLogReceiver())`` in the Job API, or
         declare it in the job's server config.  In this mode the handler is
-        registered on ``START_RUN``, which fires when the job begins.  The
-        widget is only active for that specific job.
+        registered on ``START_RUN`` (and on ``ABOUT_TO_START_RUN`` where
+        available) so that the stream handler is wired up before any client
+        chunk can arrive.  The widget is only active for that specific job.
 
     **System-level resources** (``resources.json`` on the server)
         Declare it as a system component so it is instantiated when the server
-        process starts.  In this mode the handler is registered on
-        ``SYSTEM_START`` and remains active for every job that runs on that
-        server for the lifetime of the process.
+        process starts.  In the long-lived parent process the handler is
+        registered on ``SYSTEM_START`` and remains active across jobs.  In
+        per-job server subprocesses (where ``SYSTEM_START`` does not fire) the
+        same instance re-registers on every ``START_RUN`` against the new
+        job-scoped ``ObjectStreamer``.
 
-    Regardless of placement, the stream handler is registered exactly once.
+    The stream handler may be (re-)registered on every triggering event;
+    ``registry.set`` is idempotent for the same channel/topic pair.
 
     Args:
         dest_dir: directory where incoming log files are written.
@@ -78,14 +82,27 @@ class JobLogReceiver(Widget):
         super().__init__()
         self._dest_dir = dest_dir
         self._idle_timeout = idle_timeout
-        self._registered = False
         # Tracks (client, job_id) pairs we've already logged a "site does not allow
         # streaming" error for, so the warning is emitted at most once per job.
         # Bounded with FIFO eviction (see _UNAUTHORIZED_LOG_CAP) and guarded by a
         # lock so the check-then-add is atomic across concurrent stream chunks.
         self._unauthorized_logged: OrderedDict = OrderedDict()
         self._unauthorized_lock = threading.Lock()
-        self.register_event_handler([EventType.SYSTEM_START, EventType.START_RUN], self._register)
+        # Trigger on every event that may bring up a fresh ObjectStreamer:
+        #   - SYSTEM_START fires once in the long-lived server parent process.
+        #   - ABOUT_TO_START_RUN fires only on the client side, but listing it
+        #     keeps the receiver usable if it is ever placed there.
+        #   - START_RUN is the only one that fires in the server-job subprocess
+        #     (see ServerRunner.run) and is also the point at which an in-process
+        #     deployment swaps engine.run_manager to the job's RunManager.
+        # Re-registering on each trigger is safe: the underlying registry.set
+        # is idempotent for the same channel/topic, and registering against a
+        # new ObjectStreamer is exactly what we want when the run manager has
+        # been replaced.
+        self.register_event_handler(
+            [EventType.SYSTEM_START, EventType.ABOUT_TO_START_RUN, EventType.START_RUN],
+            self._register,
+        )
 
     def _effective_dest_dir(self) -> str:
         return self._dest_dir or tempfile.gettempdir()
@@ -222,9 +239,12 @@ class JobLogReceiver(Widget):
         job_manager.set_client_data(job_id, file_path, client, data_type, fl_ctx)
 
     def _register(self, event_type: str, fl_ctx: FLContext):
-        if self._registered:
-            return
-        self._registered = True
+        # Re-register on every triggering event. The active ObjectStreamer is
+        # owned by the current run_manager and is replaced whenever the engine
+        # transitions to a new run, so caching a "registered once" flag would
+        # leave the new run_manager's registry empty and produce
+        # "no stream processing info registered for log_streaming:live_log"
+        # on the first incoming chunk.
         LogStreamer.register_stream_processing(
             fl_ctx,
             channel=Channels.LOG_STREAMING_CHANNEL,

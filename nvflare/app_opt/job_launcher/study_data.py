@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from typing import Optional
@@ -48,11 +49,17 @@ def _validate_path_component(value: str, label: str, file_path: str) -> None:
         raise ValueError(f"{label} {value!r} in '{file_path}' is not a valid study-data path component.")
 
 
-def load_study_data_file(file_path: str) -> dict:
+def _log_warning(logger: Optional[logging.Logger], message: str, *args) -> None:
+    if logger:
+        logger.warning(message, *args)
+
+
+def load_study_data_file(file_path: str, logger: Optional[logging.Logger] = None) -> dict:
     try:
         with open(file_path, "rt") as f:
             study_data = yaml.safe_load(f)
     except FileNotFoundError:
+        _log_warning(logger, "study data file '%s' was not found; no study data mounts will be configured", file_path)
         return {}
     except OSError as e:
         raise ValueError(f"Could not read study data file '{file_path}': {e}") from e
@@ -64,6 +71,11 @@ def load_study_data_file(file_path: str) -> dict:
 
     if not isinstance(study_data, dict):
         raise ValueError(f"file at study_data_file_path '{file_path}' does not contain a dictionary.")
+
+    if not study_data:
+        _log_warning(
+            logger, "study data file '%s' has no study entries; no study data mounts will be configured", file_path
+        )
 
     for study, datasets in study_data.items():
         _validate_path_component(study, "study name", file_path)
@@ -92,11 +104,27 @@ def should_mount_study_data(study: Optional[str]) -> bool:
     return bool(study)
 
 
-def resolve_study_dataset_mounts(study_data: dict, study: str, file_path: str) -> list[StudyDatasetMount]:
+def resolve_study_dataset_mounts(
+    study_data: dict, study: str, file_path: str, logger: Optional[logging.Logger] = None
+) -> list[StudyDatasetMount]:
+    """Resolve mounts for a study. Empty-file warnings are emitted by load_study_data_file()."""
     datasets = study_data.get(study)
     if datasets is None:
+        if study_data:
+            _log_warning(
+                logger,
+                "study data file '%s' has no entry for study '%s'; no study data mounts will be configured",
+                file_path,
+                study,
+            )
         return []
     if not datasets:
+        _log_warning(
+            logger,
+            "study data file '%s' entry for study '%s' has no datasets; no study data mounts will be configured",
+            file_path,
+            study,
+        )
         return []
 
     _validate_path_component(study, "study name", file_path)

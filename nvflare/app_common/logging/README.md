@@ -20,7 +20,7 @@ That behavior is insufficient when:
 - a job runs in a separate runtime boundary such as Docker or Kubernetes
 - the parent client process cannot directly access the job subprocess log files
 
-In those environments, a client-side system component running in
+In those environments, a client-side site-level component running in
 `CLIENT_PARENT` cannot reliably read the job's log file. The streaming logic
 must execute inside the job subprocess that owns the filesystem view of the
 active log.
@@ -51,17 +51,17 @@ active log.
 |-----------|----------|----------------|
 | `JobLogStreamer` | Job subprocess | Tails a log file, sends data chunks, emits liveness heartbeats, drains remaining bytes on shutdown |
 | `JobLogReceiver` | Server | Receives stream chunks, writes them to disk immediately, finalizes the result into job-managed storage |
-| `SystemLogStreamer` | Client `resources.json` / `CLIENT_PARENT` | Injects `JobLogStreamer` into jobs that do not already declare one |
+| `SiteLogStreamer` | Client `resources.json` / `CLIENT_PARENT` | Injects `JobLogStreamer` into jobs that do not already declare one |
 
 ## 5. High-Level Architecture
 
 The design splits the feature into three responsibilities:
 
-1. System-level injection on the client.
+1. Site-level injection on the client.
 2. Runtime streaming in the job subprocess.
 3. Stream reception and persistence on the server.
 
-`SystemLogStreamer` handles policy and configuration. It modifies the deployed
+`SiteLogStreamer` handles policy and configuration. It modifies the deployed
 job configuration just before launch so that the job process loads a
 `JobLogStreamer` component even when the job author did not explicitly add one.
 
@@ -84,12 +84,12 @@ job may execute in a different container or pod, and the parent process may
 have no filesystem access to the log path at all.
 
 Running `JobLogStreamer` inside the job guarantees that the streamer executes in
-the same environment as the log-producing process. `SystemLogStreamer` exists
+the same environment as the log-producing process. `SiteLogStreamer` exists
 to make that placement automatic.
 
 ## 7. Configuration Injection Flow
 
-`SystemLogStreamer` is declared in the client's `resources.json`. On
+`SiteLogStreamer` is declared in the client's `resources.json`. On
 `BEFORE_JOB_LAUNCH`, after the job configuration has been deployed to disk but
 before the subprocess starts, it performs the following steps:
 
@@ -233,7 +233,7 @@ the current shutdown sequence.
 
 ## 15. Operational Guidance
 
-- Prefer `SystemLogStreamer` in client `resources.json` when jobs should receive
+- Prefer `SiteLogStreamer` in client `resources.json` when jobs should receive
   log streaming automatically.
 - Keep `liveness_interval` strictly smaller than `idle_timeout`.
 - Use one `JobLogStreamer` per log file when multiple files must be streamed.
@@ -243,7 +243,7 @@ the current shutdown sequence.
 ## 16. Summary
 
 The live job log streaming design moves log transport into the job subprocess,
-adds system-level injection for broad coverage, uses heartbeat-based liveness
+adds site-level injection for broad coverage, uses heartbeat-based liveness
 detection, and preserves compatibility with NVFlare's server-side job artifact
 storage model.
 

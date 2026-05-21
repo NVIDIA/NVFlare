@@ -76,14 +76,18 @@ class TestRunClass:
         assert self.run._cached_status == "FINISHED"
         assert self.run._cached_result == "/tmp/workspace/test_job_123"
 
-    def test_get_result_cleanup_false_preserves_workspace(self):
-        """Test that get_result(cleanup=False) forwards clean_up=False to exec_env.stop()."""
+    def test_get_result_clean_up_false_forwards_to_exec_env_stop(self):
+        """Test that get_result(clean_up=False) forwards clean_up=False to exec_env.stop()."""
         self.mock_env.get_job_result.return_value = "/tmp/workspace/test_job_123"
         self.mock_env.get_job_status.return_value = "FINISHED"
 
-        self.run.get_result(cleanup=False)
+        result = self.run.get_result(clean_up=False)
 
+        assert result == "/tmp/workspace/test_job_123"
         self.mock_env.stop.assert_called_once_with(clean_up=False)
+        assert self.run._stopped is True
+        assert self.run._cached_status == "FINISHED"
+        assert self.run._cached_result == "/tmp/workspace/test_job_123"
 
     def test_get_result_default_timeout(self):
         """Test get_result with default timeout."""

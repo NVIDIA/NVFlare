@@ -18,9 +18,9 @@ import os
 import numpy as np
 import torch
 import torch.optim as optim
-from pt.networks.cifar10_nets import ModerateCNN
-from pt.utils.cifar10_data_utils import CIFAR10_ROOT
-from pt.utils.cifar10_dataset import CIFAR10_Idx
+from data.cifar10_data_utils import CIFAR10_ROOT
+from data.cifar10_dataset import CIFAR10_Idx
+from model import ModerateCNN
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import datasets, transforms
 
