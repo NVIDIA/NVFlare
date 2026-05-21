@@ -128,7 +128,7 @@ If you have more real devices you can adjust the number.
 #### Start the Mobile App
 To run on the real device, app developers need to integrate their applications with our edge device SDK (Android/iOS).
 
-You can get an example app from [nvflare/edge/device](../../../nvflare/edge/device/), which includes SDK implementations and example apps for both Android ([android](../../../nvflare/edge/device/android/)) and iOS ([ios](../../../nvflare/edge/device/ios/)) platforms.
+You can get example apps from [mobile](mobile/), which includes SDK implementations and example apps for both Android ([android](mobile/android/)) and iOS ([ios](mobile/ios/)) platforms. The Android example is source-only; create or use an Android Studio project and copy the provided SDK/sample sources into it.
 
 It can be installed on your device and started.
 
