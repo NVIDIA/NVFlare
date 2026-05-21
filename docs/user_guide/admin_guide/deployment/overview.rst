@@ -81,7 +81,7 @@ Customize the provision configuration
 For advanced users, you can customize your provision with additional behavior through additional builders:
 
     - **Zip**: To create password protected zip archives for the startup kits, see :ref:`distribution_builder`
-    - **Docker-compose** *(deprecated)*: Previously used for launching NVIDIA FLARE via docker containers. See :ref:`containerized_deployment` for the current approach.
+    - **Docker Compose** *(deprecated)*: Previously used for launching NVIDIA FLARE via docker containers. See :ref:`containerized_deployment` for the current approach.
     - **Docker and Kubernetes runtime preparation**: Prepare existing server or client startup kits with :ref:`deploy_prepare_command`. For runtime-specific deployment steps, see :ref:`containerized_deployment` and :ref:`helm_chart`.
     - **CUSTOM**: you can build custom builders specific to your needs like in :ref:`distribution_builder`.
 

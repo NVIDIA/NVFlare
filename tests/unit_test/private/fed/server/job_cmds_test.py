@@ -368,6 +368,26 @@ class _FakeListEngine:
         return FLContext()
 
 
+class _FakeListComponentsJobDefManager:
+    def __init__(self, components):
+        self.components = components
+        self.jid = None
+
+    def list_components(self, jid, fl_ctx):
+        self.jid = jid
+        return self.components
+
+
+class _FakeListComponentsEngine:
+    def __init__(self, components):
+        self.job_def_manager = _FakeListComponentsJobDefManager(components)
+
+    def new_context(self):
+        from nvflare.apis.fl_context import FLContext
+
+        return FLContext()
+
+
 class _FakeWorkspace:
     def __init__(self, root_dir):
         self.root_dir = str(root_dir)
@@ -1054,6 +1074,23 @@ def test_list_jobs_by_submit_token_returns_deleted_status(monkeypatch):
     assert conn.errors[0][1][MetaKey.STATUS] == SUBMIT_TOKEN_JOB_DELETED_STATUS
     assert conn.errors[0][1][MetaKey.JOB_ID] == "job-1"
     assert conn.tables == []
+
+
+def test_list_job_components_returns_empty_list_for_system_components(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListComponentsEngine(["data", "meta", "workspace"])
+    conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1"})
+
+    JobCommandModule().list_job_components(conn, ["list_job_components", "job-1"])
+
+    assert conn.errors == []
+    assert conn.strings == []
+    assert len(conn.successes) == 1
+    msg, meta = conn.successes[0]
+    assert msg == ""
+    assert meta[MetaKey.STATUS] == MetaStatusValue.OK
+    assert meta[MetaKey.JOB_COMPONENTS] == []
+    assert engine.job_def_manager.jid == "job-1"
 
 
 def test_clone_job_preserves_source_study(monkeypatch):

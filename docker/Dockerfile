@@ -1,14 +1,21 @@
-# For Running NVIDIA FLARE in a Docker container, see
-# https://nvflare.readthedocs.io/en/main/quickstart.html#containerized-deployment-with-docker
-# This Dockerfile is primarily for building Docker images to publish for dashboard.
+FROM python:3.14.5-slim-trixie@sha256:7a500125bc50693f2214e842a621440a1b1b9cbb2188f74ab045d29ed2ea5856
 
-FROM python:3.10
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get -y install zip
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends zip \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY nvflare /opt/NVFlare/nvflare
-COPY setup.py /opt/NVFlare/setup.py
-COPY versioneer.py /opt/NVFlare/versioneer.py
-COPY README.md /opt/NVFlare/README.md
-COPY setup.cfg /opt/NVFlare/setup.cfg
+COPY job_templates /opt/NVFlare/job_templates
+COPY MANIFEST.in README.md pyproject.toml setup.cfg setup.py versioneer.py /opt/NVFlare/
+
 WORKDIR /opt/NVFlare
-RUN pip install -U pip
-RUN pip install -e .[K8S]
+
+RUN python -m pip install --upgrade "pip==26.1.1" \
+    && python -m pip install ".[K8S]" \
+    && python -m pip check

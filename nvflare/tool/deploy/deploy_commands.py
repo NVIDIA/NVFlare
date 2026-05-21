@@ -109,8 +109,10 @@ STUDY_DATA_TEMPLATE = """# Study data mapping used by Docker and Kubernetes job 
 
 K8S_NAME_PATTERN = re.compile(r"^[a-z]([-a-z0-9]*[a-z0-9])?$")
 K8S_NAMESPACE_PATTERN = re.compile(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
+K8S_SECRET_NAME_PATTERN = re.compile(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$")
 K8S_NAMESPACE_MAX_LENGTH = 63
 K8S_SERVICE_NAME_MAX_LENGTH = 63
+K8S_SECRET_NAME_MAX_LENGTH = 253
 HELM_RELEASE_NAME_MAX_LENGTH = 53
 DEFAULT_K8S_SERVER_SERVICE_NAME = "nvflare-server"
 
@@ -282,6 +284,8 @@ def _prepare_k8s(kit_info: KitInfo, final_output: Path, config: dict[str, Any]) 
         launcher_args["pending_timeout"] = job_launcher["pending_timeout"]
     if job_launcher.get("job_pod_security_context"):
         launcher_args["security_context"] = job_launcher["job_pod_security_context"]
+    if job_launcher.get("image_pull_secrets") is not None:
+        launcher_args["image_pull_secrets"] = job_launcher["image_pull_secrets"]
 
     _patch_resources(kit_info.kit_dir, "k8s_launcher", launcher_path, launcher_args)
     _patch_comm_config_for_k8s(kit_info.kit_dir, kit_info.role, kit_info.name, parent_port, server_service_name)
@@ -364,12 +368,19 @@ def _validate_runtime_config(runtime: str, config: dict[str, Any]) -> None:
                 "python_path",
                 "resources",
                 "pod_security_context",
+                "image_pull_secrets",
             },
             "parent",
         )
         _validate_allowed_keys(
             job_launcher,
-            {"config_file_path", "pending_timeout", "default_python_path", "job_pod_security_context"},
+            {
+                "config_file_path",
+                "pending_timeout",
+                "default_python_path",
+                "job_pod_security_context",
+                "image_pull_secrets",
+            },
             "job_launcher",
         )
         _required_str(parent, "docker_image", "parent")
@@ -383,10 +394,12 @@ def _validate_runtime_config(runtime: str, config: dict[str, Any]) -> None:
         _optional_str(parent, "python_path", "parent")
         _optional_mapping(parent, "resources", "parent")
         _optional_mapping(parent, "pod_security_context", "parent")
+        _optional_k8s_secret_name_list(parent, "image_pull_secrets", "parent image pull references")
         _optional_str(job_launcher, "config_file_path", "job_launcher")
         _optional_str(job_launcher, "default_python_path", "job_launcher")
         _optional_int(job_launcher, "pending_timeout", "job_launcher")
         _optional_mapping(job_launcher, "job_pod_security_context", "job_launcher")
+        _optional_k8s_secret_name_list(job_launcher, "image_pull_secrets", "job launcher image pull references")
 
 
 def _validate_kit(kit_dir: Path) -> KitInfo:
@@ -828,6 +841,7 @@ def _write_server_helm_chart(
         "name": kit_info.name,
         "serviceName": server_service_name,
         "image": {"repository": repo, "tag": tag, "pullPolicy": "IfNotPresent"},
+        "imagePullSecrets": _image_pull_secret_refs(parent),
         "serviceAccount": {"create": True, "annotations": {}, "automountServiceAccountToken": True},
         "podAnnotations": {},
         "rbac": {"create": True},
@@ -893,6 +907,7 @@ def _write_client_helm_chart(
         "siteName": kit_info.name,
         "serviceName": _k8s_parent_service_name(kit_info.role, kit_info.name),
         "image": {"repository": repo, "tag": tag, "pullPolicy": "Always"},
+        "imagePullSecrets": _image_pull_secret_refs(parent),
         "serviceAccount": {"create": True, "annotations": {}, "automountServiceAccountToken": True},
         "podAnnotations": {},
         "rbac": {"create": True},
@@ -951,6 +966,10 @@ def _split_image(docker_image: str) -> tuple[str, str]:
     if ":" in docker_image:
         return docker_image.rsplit(":", 1)
     return docker_image, ""
+
+
+def _image_pull_secret_refs(parent: dict[str, Any]) -> list[dict[str, str]]:
+    return [{"name": name} for name in parent.get("image_pull_secrets") or []]
 
 
 def _helm_src(role: str, filename: str) -> Path:
@@ -1031,6 +1050,32 @@ def _validate_k8s_service_name(data: dict[str, Any], key: str, where: str) -> No
             "Use lower case alphanumeric characters or '-', start with a letter, end with an alphanumeric character, "
             f"and keep length <= {K8S_SERVICE_NAME_MAX_LENGTH}.",
         )
+
+
+def _validate_k8s_secret_name(name: str, label: str) -> None:
+    if (
+        not isinstance(name, str)
+        or not name
+        or len(name) > K8S_SECRET_NAME_MAX_LENGTH
+        or not K8S_SECRET_NAME_PATTERN.fullmatch(name)
+    ):
+        _fail(
+            "INVALID_CONFIG",
+            f"{label} must contain valid Kubernetes object names.",
+            "Use lower case alphanumeric characters, '-', or '.', start and end with an alphanumeric character, "
+            "and keep length <= 253.",
+        )
+
+
+def _optional_k8s_secret_name_list(data: dict[str, Any], key: str, label: str) -> list[str] | None:
+    if key not in data or data[key] is None:
+        return None
+    names = data[key]
+    if not isinstance(names, list):
+        _fail("INVALID_CONFIG", f"{label} must be a list of Kubernetes object names.", "Fix the runtime config.")
+    for name in names:
+        _validate_k8s_secret_name(name, label)
+    return names
 
 
 def _optional_str(data: dict[str, Any], key: str, where: str) -> str | None:

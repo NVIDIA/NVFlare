@@ -56,27 +56,46 @@ To run this example:
 
 .. code-block:: shell
 
-   $ python fedavg_script_runner_pt.py
+   $ python job.py
 
-The script will create an NVFlare job in /tmp/nvflare/jobs/job_config/hello-pt_cifar10_fedavg
-and run it using the FL Simulator.
+The script creates an NVFlare job recipe and runs it using the FL Simulator.
+
+To export the job folder for submission to a running FL system, use the standard Recipe API export flags:
+
+.. code-block:: shell
+
+   $ python job.py --export --export-dir /tmp/nvflare/jobs/job_config
+
+The exported job is written to ``/tmp/nvflare/jobs/job_config/hello-pt``.
+You can combine the export flags with example-specific options, for example:
+
+.. code-block:: shell
+
+   $ python job.py --export --export-dir /tmp/nvflare/jobs/job_config \
+       --enable_log_streaming --synthetic_data --train_size 2048 --test_size 256 \
+       --num_rounds 2 --epochs 1 --batch_size 64 --num_workers 0
 
 NVIDIA FLARE Job API
 --------------------
 
-The ``fedavg_script_runner_pt.py`` script for this hello-pt example is very similar to the ``fedavg_script_runner_hello-numpy.py`` script
-for the :doc:`Hello NumPy <hello_numpy>` exercise. Other than changes to the names of the job and client script, the only difference
-is a line to define the initial global model for the server:
+The ``job.py`` script for this hello-pt example defines a :class:`FedAvgRecipe<nvflare.app_opt.pt.recipes.fedavg.FedAvgRecipe>`.
+The recipe combines the PyTorch model, client training script, and simulator/export behavior:
 
 .. code-block:: python
 
-   # Define the initial global model and send to server
-   job.to(SimpleNetwork(), "server")
+   recipe = FedAvgRecipe(
+       name="hello-pt",
+       min_clients=n_clients,
+       num_rounds=num_rounds,
+       model=SimpleNetwork(),
+       train_script="client.py",
+       train_args=train_args,
+   )
 
 
 NVIDIA FLARE Client Training Script
 ------------------------------------
-The training script for this example, ``hello-pt_cifar10_fl.py``, is the main script that will be run on the clients. It contains the PyTorch specific
+The training script for this example, ``client.py``, is the main script that will be run on the clients. It contains the PyTorch specific
 logic for training.
 
 Neural Network
@@ -90,7 +109,7 @@ Let's see the simplified CIFAR10 model used in this example:
 - :github_nvflare_link:`model.py <examples/hello-world/hello-pt/model.py>`
 
 This ``SimpleNetwork`` class is your convolutional neural network to train with the CIFAR10 dataset.
-This is not related to NVIDIA FLARE, so we implement it in a file called ``simple_network.py``.
+This is not related to NVIDIA FLARE, so we implement it in a file called ``model.py``.
 
 Dataset & Setup
 ^^^^^^^^^^^^^^^^
@@ -101,7 +120,7 @@ the dataset we will be using on each client.
 Additionally, you need to set up the optimizer, loss function and transform to process the data.
 You can think of all of this code as part of your local training loop, as every deep learning training has a similar setup.
 
-In the ``hello-pt_cifar10_fl.py`` script, we take care of all of this setup before the ``flare.init()``.
+In the ``client.py`` script, we take care of all of this setup before the ``flare.init()``.
 
 Local Train
 ^^^^^^^^^^^
@@ -137,7 +156,7 @@ Now with the network and dataset setup, let's also implement the local training 
       flare.send(output_model)
 
 
-The code above is simplified from the ``hello-pt_cifar10_fl.py`` script to focus on the three essential methods of the NVFlare's Client API to
+The code above is simplified from the ``client.py`` script to focus on the three essential methods of the NVFlare's Client API to
 achieve the training workflow:
 
    - `init()`: Initializes NVFlare Client API environment.
@@ -148,9 +167,9 @@ NVIDIA FLARE Server & Application
 ---------------------------------
 In this example, the server runs :class:`FedAvg<nvflare.app_common.workflows.fedavg.FedAvg>` with the default settings.
 
-If you export the job with the :func:`export<nvflare.job_config.api.FedJob.export>` function, you will see the
+If you export the job with ``python job.py --export --export-dir <job_folder>``, you will see the
 configurations for the server and each client. The server configuration is ``config_fed_server.json`` in the config folder
-in app_server:
+in the exported app folder:
 
 .. code-block:: json
 
@@ -161,6 +180,7 @@ in app_server:
                "id": "controller",
                "path": "nvflare.app_common.workflows.fedavg.FedAvg",
                "args": {
+                  "aggregation_weights": {},
                   "num_clients": 2,
                   "num_rounds": 2
                }
@@ -185,6 +205,7 @@ in app_server:
                "path": "nvflare.app_opt.tracking.tb.tb_receiver.TBAnalyticsReceiver",
                "args": {
                   "events": [
+                     "analytix_log_stats",
                      "fed.analytix_log_stats"
                   ]
                }
@@ -194,13 +215,13 @@ in app_server:
                "path": "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor",
                "args": {
                   "model": {
-                     "path": "src.simple_network.SimpleNetwork",
+                     "path": "model.SimpleNetwork",
                      "args": {}
                   }
                }
          },
          {
-               "id": "model_locator",
+               "id": "locator",
                "path": "nvflare.app_opt.pt.file_model_locator.PTFileModelLocator",
                "args": {
                   "pt_persistor_id": "persistor"
@@ -213,8 +234,8 @@ in app_server:
 
 This is automatically created by the Job API. The server application configuration leverages NVIDIA FLARE built-in components.
 
-Note that ``persistor`` points to ``PTFileModelPersistor``. This is automatically configured when the model SimpleNetwork is added
-to the server with the :func:`to<nvflare.job_config.api.FedJob.to>` function. The Job API detects that the model is a PyTorch model
+Note that ``persistor`` points to ``PTFileModelPersistor``. This is automatically configured from the
+``SimpleNetwork`` model supplied to the recipe. The Job API detects that the model is a PyTorch model
 and automatically configures :class:`PTFileModelPersistor<nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor>`
 and :class:`PTFileModelLocator<nvflare.app_opt.pt.file_model_locator.PTFileModelLocator>`.
 
@@ -236,7 +257,8 @@ The client configuration is ``config_fed_client.json`` in the config folder of e
             "executor": {
                "path": "nvflare.app_opt.pt.in_process_client_api_executor.PTInProcessClientAPIExecutor",
                "args": {
-                  "task_script_path": "src/hello-pt_cifar10_fl.py"
+                  "task_script_path": "client.py",
+                  "task_script_args": "--batch_size 16 --epochs 2 --num_workers 2"
                }
             }
          }
