@@ -194,8 +194,10 @@ class FedJobConfig:
                 new_env = os.environ.copy()
                 process = subprocess.Popen(shlex.split(command, True), shell=False, preexec_fn=os.setsid, env=new_env)
 
-                process.wait()
-                return process.returncode
+                return_code = process.wait()
+                if return_code != 0:
+                    raise RuntimeError(f"Simulator run failed with exit code {return_code}.")
+                return return_code
 
             except KeyboardInterrupt:
                 self.logger.info("KeyboardInterrupt, terminate all the child processes.")
