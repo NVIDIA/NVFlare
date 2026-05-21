@@ -156,11 +156,20 @@ class TestStaticFileBuilder:
 
         sub_start = template["sub_start_sh"]
         stop_fl = template["stop_fl_sh"]
+        copy_cmd = 'cp -a "$SOURCE_WORKSPACE" "$WORKSPACE"'
+        verify_cmd = 'verify_startup_kits -f "$WORKSPACE" -c "$WORKSPACE/startup/rootCA.pem"'
 
         assert 'SOURCE_WORKSPACE" == "/user_config"' in sub_start
         assert 'SOURCE_WORKSPACE" == /user_config/*' in sub_start
-        assert 'WORKSPACE="/vault/workspace/$(basename "$SOURCE_WORKSPACE")"' in sub_start
-        assert 'WORKSPACE="/vault/workspace/$(basename "$SOURCE_WORKSPACE")"' in stop_fl
+        assert 'SOURCE_WORKSPACE" == "/user_config"' in stop_fl
+        assert 'SOURCE_WORKSPACE" == /user_config/*' in stop_fl
+        assert 'WORKSPACE="/vault/workspace/kit"' in sub_start
+        assert 'WORKSPACE="/vault/workspace/$(basename "$SOURCE_WORKSPACE")/kit"' in sub_start
+        assert 'WORKSPACE="/vault/workspace/kit"' in stop_fl
+        assert 'WORKSPACE="/vault/workspace/$(basename "$SOURCE_WORKSPACE")/kit"' in stop_fl
+        assert copy_cmd in sub_start
         assert '-m "$WORKSPACE"' in sub_start
-        assert 'verify_startup_kits -f "$WORKSPACE"' in sub_start
+        assert verify_cmd in sub_start
+        assert sub_start.index(copy_cmd) < sub_start.index(verify_cmd)
+        assert sub_start.index(verify_cmd) < sub_start.index('mkdir -p "$WORKSPACE/transfer"')
         assert 'touch "$WORKSPACE/shutdown.fl"' in stop_fl
