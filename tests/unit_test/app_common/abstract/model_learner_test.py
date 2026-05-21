@@ -16,10 +16,14 @@ import inspect
 
 import pytest
 
-from nvflare.app_common.abstract.model_learner import ModelLearner
+from nvflare.app_common.abstract.model_learner import _MODEL_LEARNER_DEPRECATION_MSG, ModelLearner
+from nvflare.fuel.utils.deprecated import _WARNED_DEPRECATION_MESSAGES
 
 
 class TestModelLearner:
+    def setup_method(self):
+        _WARNED_DEPRECATION_MESSAGES.discard(_MODEL_LEARNER_DEPRECATION_MSG)
+
     def test_init_warns_deprecated(self):
         with pytest.warns(DeprecationWarning, match="ModelLearner is deprecated"):
             learner = ModelLearner()

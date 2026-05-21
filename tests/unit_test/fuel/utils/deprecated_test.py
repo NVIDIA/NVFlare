@@ -29,6 +29,16 @@ class TestDeprecated:
         assert str(records[0].message) == "custom deprecation message"
         assert records[0].filename == __file__
 
+    def test_warn_deprecated_once_per_message(self):
+        with warnings.catch_warnings(record=True) as records:
+            warn_deprecated("unique same deprecation message")
+            warn_deprecated("unique same deprecation message")
+            warn_deprecated("unique different deprecation message")
+
+        assert len(records) == 2
+        assert str(records[0].message) == "unique same deprecation message"
+        assert str(records[1].message) == "unique different deprecation message"
+
     def test_deprecated_func_one_arg(self):
         @deprecated
         def test_f(a, b):

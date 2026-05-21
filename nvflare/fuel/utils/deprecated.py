@@ -18,10 +18,11 @@ import threading
 import warnings
 
 _DEPRECATION_WARNING_LOCK = threading.Lock()
+_WARNED_DEPRECATION_MESSAGES = set()
 
 
 def warn_deprecated(message: str, stacklevel: int = 2):
-    """Issue a DeprecationWarning unconditionally.
+    """Issue a DeprecationWarning once per process for each unique message.
 
     ``stacklevel`` follows the same convention as :func:`warnings.warn`:
     2 (the default) points at the direct caller of ``warn_deprecated``.
@@ -29,9 +30,12 @@ def warn_deprecated(message: str, stacklevel: int = 2):
     is the code that instantiates the class rather than the ``__init__`` body.
     """
     with _DEPRECATION_WARNING_LOCK:
+        if message in _WARNED_DEPRECATION_MESSAGES:
+            return
         with warnings.catch_warnings():
             warnings.simplefilter("always", DeprecationWarning)
             warnings.warn(message, category=DeprecationWarning, stacklevel=stacklevel)
+        _WARNED_DEPRECATION_MESSAGES.add(message)
 
 
 def deprecated(reason):

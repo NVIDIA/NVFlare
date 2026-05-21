@@ -16,10 +16,14 @@ import inspect
 
 import pytest
 
-from nvflare.app_common.np.np_trainer import NPTrainer
+from nvflare.app_common.np.np_trainer import _NP_TRAINER_DEPRECATION_MSG, NPTrainer
+from nvflare.fuel.utils.deprecated import _WARNED_DEPRECATION_MESSAGES
 
 
 class TestNPTrainer:
+    def setup_method(self):
+        _WARNED_DEPRECATION_MESSAGES.discard(_NP_TRAINER_DEPRECATION_MSG)
+
     def test_init_warns_deprecated(self):
         with pytest.warns(DeprecationWarning, match="NPTrainer is deprecated"):
             trainer = NPTrainer()
