@@ -121,10 +121,9 @@ cd cvm_xxx
 The confidential VM will start, and the NVFLARE server and clients will automatically connect and begin operation.
 You can now use the NVFlare admin console to communicate with the NVFlare system.
 
-> **Note:** `user_config.qcow2` and `user_data.qcow2` are not encrypted. The generated `sub_start.sh` detects when it
-> is launched from `/user_config` and uses a namespaced folder under `/vault/workspace` as the runtime workspace so job
-> artifacts, such as `FL_global_model.pt`, stay on the encrypted root filesystem. Set `NVFL_WORKSPACE` before launch to
-> choose another encrypted workspace path.
+> **Note:** `user_config.qcow2` and `user_data.qcow2` are not encrypted. When a provisioned NVFlare startup script is
+> launched from `/user_config`, runtime artifacts such as `FL_global_model.pt` are written to a namespaced encrypted
+> workspace under `/vault/workspace`. Set `NVFL_WORKSPACE` before launch to choose another encrypted workspace path.
 
 ## 7. Notes on using NVIDIA GPU CC
 

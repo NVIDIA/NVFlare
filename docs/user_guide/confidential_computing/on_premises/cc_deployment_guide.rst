@@ -296,9 +296,8 @@ Each startup kit (e.g., ``server1.tgz``) contains:
 .. note::
 
    The ``user_config.qcow2`` and ``user_data.qcow2`` drives are not encrypted. When a provisioned NVFlare startup
-   script is launched from ``/user_config``, it copies the signed startup/local configuration into a namespaced folder
-   under ``/vault/workspace`` and uses that path as the runtime workspace. This keeps job artifacts such as
-   model checkpoints on the encrypted root filesystem. Set ``NVFL_WORKSPACE`` before launching the script to choose a
+   script is launched from ``/user_config``, runtime artifacts such as model checkpoints are written to a namespaced
+   encrypted workspace under ``/vault/workspace``. Set ``NVFL_WORKSPACE`` before launching the script to choose a
    different encrypted workspace path.
 
 Step 4: User Data
