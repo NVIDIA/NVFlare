@@ -46,7 +46,7 @@ The command-line selectors are not required. When provided, they take precedence
 over the active startup kit for the current command only and do not change
 ``startup_kits.active`` in ``~/.nvflare/config.conf``.
 
-A user can register and activate a startup kit once with :ref:`kit_command`:
+A user can register and activate a startup kit once with :ref:`config_command`:
 
 .. code-block:: shell
 
