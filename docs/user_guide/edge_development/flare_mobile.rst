@@ -91,7 +91,9 @@ Android Setup
 Installation
 ------------
 
-1. **Add Dependencies** to your ``build.gradle.kts``:
+The Android example source under ``examples/advanced/edge/mobile/android`` does not include Gradle build files. Create a new Android Studio Kotlin project, or use an existing Android app, and add the NVFlare Android SDK/source files to that project.
+
+1. **Add Dependencies** to your app module's ``build.gradle.kts``:
 
 .. code-block:: kotlin
 
@@ -116,7 +118,7 @@ Installation
 
 .. code-block:: bash
 
-   cp -r nvflare/edge/device/android/sdk \
+   cp -r examples/advanced/edge/mobile/android/sdk \
          app/src/main/java/com/nvidia/nvflare/
 
 3. **Add ExecuTorch Libraries** to the ``app/libs/`` directory.
@@ -178,7 +180,7 @@ Installation
 
 .. code-block:: bash
 
-   cp -r nvflare/edge/device/ios/NVFlareSDK YourProject/
+   cp -r examples/advanced/edge/mobile/ios/NVFlareSDK YourProject/
 
 3. **Add Framework** to your Xcode project target.
 
@@ -453,8 +455,8 @@ Examples and Tutorials
 
 Complete working examples are available in the NVIDIA FLARE repository:
 
-* **iOS Example App**: `iOS Example Project <https://github.com/NVIDIA/NVFlare/tree/main/nvflare/edge/device/ios/ExampleProject>`_
-* **Android Example App**: `Android Example Project <https://github.com/NVIDIA/NVFlare/tree/main/nvflare/edge/device/android>`_
+* **iOS Example App**: `iOS Example Project <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/edge/mobile/ios/ExampleProject>`_
+* **Android Example App**: `Android Example Project <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/edge/mobile/android>`_
 * **How to Run NVIDIA FLARE with Edge**: `Edge Examples <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/edge>`_ - includes both simulation and real devices
 
 .. tip::
@@ -468,4 +470,3 @@ Getting Help
 * **Issues**: Report issues on the `NVIDIA FLARE GitHub repository <https://github.com/NVIDIA/NVFlare>`_.
 * **Community**: Join the NVIDIA FLARE community discussions.
 * **ExecuTorch Support**: `ExecuTorch documentation <https://pytorch.org/executorch/>`_ for mobile-specific issues.
-
