@@ -121,6 +121,10 @@ cd cvm_xxx
 The confidential VM will start, and the NVFLARE server and clients will automatically connect and begin operation.
 You can now use the NVFlare admin console to communicate with the NVFlare system.
 
+> **Note:** `user_config.qcow2` and `user_data.qcow2` are not encrypted. When a provisioned NVFlare startup script is
+> launched from `/user_config`, runtime artifacts such as `FL_global_model.pt` are written to a namespaced encrypted
+> workspace under `/vault/workspace`. Set `NVFL_WORKSPACE` before launch to choose another encrypted workspace path.
+
 ## 7. Notes on using NVIDIA GPU CC
 
 1. Follow the [NVIDIA Confidential Computing documentation](https://nvflare.readthedocs.io/en/main/user_guide/confidential_computing/on_premises/cc_deployment_guide.html) to set up a machine with NVIDIA GPU CC enabled.
@@ -163,4 +167,3 @@ echo 10de $NVIDIA_PASSTHROUGH > /sys/bus/pci/drivers/vfio-pci/new_id
 
 1. Before re-building the initramfs for the CVM, remove the ``initrd.img`` file from the ``image_builder/base_images/`` directory.
    This ensures the Image Builder regenerates a fresh initramfs during the build process.
-

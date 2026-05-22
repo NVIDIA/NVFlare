@@ -17,8 +17,10 @@ import os
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 from lifelines import KaplanMeierFitter
-from sksurv.datasets import load_veterans_lung_cancer
+
+DEFAULT_DATA_PATH = "/tmp/nvflare/dataset/veteran/veteran.csv"
 
 
 def args_parser():
@@ -29,14 +31,19 @@ def args_parser():
         default="/tmp/nvflare/baseline/km_curve_baseline.png",
         help="save path for the output curve",
     )
+    parser.add_argument(
+        "--data_path",
+        type=str,
+        default=DEFAULT_DATA_PATH,
+        help=f"Path to the Veterans' Lung Cancer dataset CSV. Default: {DEFAULT_DATA_PATH}",
+    )
     return parser
 
 
-def prepare_data(bin_days: int = 7):
-    data_x, data_y = load_veterans_lung_cancer()
-    total_data_num = data_x.shape[0]
-    event = data_y["Status"]
-    time = data_y["Survival_in_days"]
+def prepare_data(data_path: str, bin_days: int = 7):
+    data = pd.read_csv(data_path)
+    event = data["status"].astype(bool)
+    time = data["time"].astype(float)
     # Categorize data to a bin, default is a week (7 days)
     time = np.ceil(time / bin_days).astype(int) * bin_days
     return event, time
@@ -56,7 +63,7 @@ def main():
     # Fit and plot Kaplan Meier curve with lifelines
 
     # Generate data with binning
-    event, time = prepare_data(bin_days=7)
+    event, time = prepare_data(args.data_path, bin_days=7)
     kmf = KaplanMeierFitter()
     # Fit the survival data
     kmf.fit(time, event)
@@ -64,7 +71,7 @@ def main():
     kmf.plot_survival_function(label="Binned Weekly")
 
     # Generate data without binning
-    event, time = prepare_data(bin_days=1)
+    event, time = prepare_data(args.data_path, bin_days=1)
     kmf = KaplanMeierFitter()
     # Fit the survival data
     kmf.fit(time, event)

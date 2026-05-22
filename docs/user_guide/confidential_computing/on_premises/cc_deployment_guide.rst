@@ -293,6 +293,13 @@ Each startup kit (e.g., ``server1.tgz``) contains:
    * - ``vmlinuz``
      - Linux kernel
 
+.. note::
+
+   The ``user_config.qcow2`` and ``user_data.qcow2`` drives are not encrypted. When a provisioned NVFlare startup
+   script is launched from ``/user_config``, runtime artifacts such as model checkpoints are written to a namespaced
+   encrypted workspace under ``/vault/workspace``. Set ``NVFL_WORKSPACE`` before launching the script to choose a
+   different encrypted workspace path.
+
 Step 4: User Data
 -----------------
 

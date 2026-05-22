@@ -105,3 +105,45 @@ class TestStaticFileBuilder:
 
         registry_path = tmp_path / server.name / "local" / "study_registry.json"
         assert not registry_path.exists()
+
+    def test_master_template_moves_user_config_runtime_workspace(self):
+        """CC startup kits live in plaintext /user_config, so runtime artifacts must not default there."""
+        import os
+
+        import yaml
+
+        template_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
+            "nvflare",
+            "lighter",
+            "templates",
+            "master_template.yml",
+        )
+
+        with open(template_path, "r") as f:
+            template = yaml.safe_load(f)
+
+        sub_start = template["sub_start_sh"]
+        stop_fl = template["stop_fl_sh"]
+        copy_cmd = 'cp -a "$SOURCE_WORKSPACE" "$KIT_WORKSPACE"'
+        verify_cmd = 'verify_startup_kits -f "$KIT_WORKSPACE" -c "$KIT_WORKSPACE/startup/rootCA.pem"'
+
+        assert 'SOURCE_WORKSPACE" == "/user_config"' in sub_start
+        assert 'SOURCE_WORKSPACE" == /user_config/*' in sub_start
+        assert 'SOURCE_WORKSPACE" == "/user_config"' in stop_fl
+        assert 'SOURCE_WORKSPACE" == /user_config/*' in stop_fl
+        assert 'WORKSPACE="/vault/workspace"' in sub_start
+        assert 'WORKSPACE="/vault/workspace/$(basename "$SOURCE_WORKSPACE")"' in sub_start
+        assert 'WORKSPACE="/vault/workspace"' in stop_fl
+        assert 'WORKSPACE="/vault/workspace/$(basename "$SOURCE_WORKSPACE")"' in stop_fl
+        assert 'KIT_WORKSPACE="$WORKSPACE/kit"' in sub_start
+        assert copy_cmd in sub_start
+        assert 'rm -rf "$KIT_WORKSPACE"' in sub_start
+        assert 'rm -rf "$WORKSPACE"' not in sub_start
+        assert 'ln -s "$KIT_WORKSPACE/startup" "$WORKSPACE/startup"' in sub_start
+        assert 'ln -s "$KIT_WORKSPACE/local" "$WORKSPACE/local"' in sub_start
+        assert '-m "$WORKSPACE"' in sub_start
+        assert verify_cmd in sub_start
+        assert sub_start.index(copy_cmd) < sub_start.index(verify_cmd)
+        assert sub_start.index(verify_cmd) < sub_start.index('mkdir -p "$WORKSPACE/transfer"')
+        assert 'touch "$WORKSPACE/shutdown.fl"' in stop_fl
