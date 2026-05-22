@@ -19,6 +19,7 @@ from unittest.mock import patch
 
 import pytest
 
+from nvflare.apis.fl_constant import ConfigVarName
 from nvflare.app_common.abstract.model_learner import ModelLearner
 from nvflare.app_common.executors.model_learner_executor import ModelLearnerExecutor
 from nvflare.app_common.workflows.fedavg import FedAvg
@@ -91,6 +92,62 @@ class TestFedJob:
             for key, value in client_params.items():
                 assert key in client_config
                 assert client_config[key] == value
+
+    def test_fail_fast_false_by_default(self):
+        """fail_fast should default to False and not inject dead_client_grace_period."""
+        job = FedJob(name="test_job")
+        assert job._fail_fast is False
+
+        controller = FedAvg()
+        job.to_server(controller)
+        executor = ModelLearnerExecutor(learner_id=job.as_id(ModelLearner()))
+        job.to_clients(executor)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job.export_job(temp_dir)
+            server_config_path = os.path.join(temp_dir, "test_job", "app", "config", "config_fed_server.json")
+            with open(server_config_path, "r") as f:
+                server_config = json.load(f)
+            assert ConfigVarName.DEAD_CLIENT_GRACE_PERIOD not in server_config
+
+    def test_fail_fast_true_sets_grace_period_zero(self):
+        """fail_fast=True should write dead_client_grace_period=0 to config_fed_server.json."""
+        job = FedJob(name="test_job", fail_fast=True)
+        assert job._fail_fast is True
+
+        controller = FedAvg()
+        job.to_server(controller)
+        executor = ModelLearnerExecutor(learner_id=job.as_id(ModelLearner()))
+        job.to_clients(executor)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job.export_job(temp_dir)
+            server_config_path = os.path.join(temp_dir, "test_job", "app", "config", "config_fed_server.json")
+            with open(server_config_path, "r") as f:
+                server_config = json.load(f)
+            assert ConfigVarName.DEAD_CLIENT_GRACE_PERIOD in server_config
+            assert server_config[ConfigVarName.DEAD_CLIENT_GRACE_PERIOD] == 0
+
+    def test_fail_fast_invalid_type_raises(self):
+        """fail_fast must be a bool; passing a non-bool should raise TypeError."""
+        with pytest.raises(TypeError, match="fail_fast must be a bool"):
+            FedJob(name="test_job", fail_fast=1)  # type: ignore[arg-type]
+
+    def test_fail_fast_does_not_affect_client_config(self):
+        """fail_fast=True should only modify the server config, not the client config."""
+        job = FedJob(name="test_job", fail_fast=True)
+
+        controller = FedAvg()
+        job.to_server(controller)
+        executor = ModelLearnerExecutor(learner_id=job.as_id(ModelLearner()))
+        job.to_clients(executor)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job.export_job(temp_dir)
+            client_config_path = os.path.join(temp_dir, "test_job", "app", "config", "config_fed_client.json")
+            with open(client_config_path, "r") as f:
+                client_config = json.load(f)
+            assert ConfigVarName.DEAD_CLIENT_GRACE_PERIOD not in client_config
 
 
 class TestFedAppAddResource:
