@@ -250,7 +250,8 @@ Large Models and LLM Workflows
 ==============================
 
 FLARE 2.8.0 builds on the large-model work from 2.7.2 with additional tensor
-offload, cleanup, and example coverage.
+offload, run-scoped temp cleanup, improved timeout guidance for large transfers,
+and new example coverage.
 
 These improvements help large-model FL jobs operate under tighter memory and
 runtime constraints, while the new examples give teams concrete starting points
@@ -276,8 +277,7 @@ To enable, set ``enable_tensor_disk_offload=True`` on ``FedAvgRecipe`` or the
    admin must point ``TMPDIR`` to a disk-backed mount before starting the server.
    See :ref:`notes_on_large_models` for deployment guidance.
 
-For large-model operations, see :ref:`notes_on_large_models`,
-:doc:`/programming_guide/tensor_downloader`, and
+For configuration details, see :doc:`/programming_guide/tensor_downloader` and
 :doc:`/programming_guide/memory_management`.
 
 Corresponding examples include
