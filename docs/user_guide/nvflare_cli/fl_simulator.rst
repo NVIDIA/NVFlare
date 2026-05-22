@@ -1,3 +1,7 @@
+.. deprecated:: 2.8
+   Use ``nvflare.recipe.SimEnv`` from Python instead. See :ref:`recipe_command`
+   and the SimEnv examples under ``examples/advanced``.
+
 .. _fl_simulator:
 
 #########################
@@ -759,7 +763,7 @@ Run an NVFlare job
 This command will run the job following the meta.json in the job. The executing client list can be provided in the command line with the ``-c`` option
 ("client0,client1,client2,client3"). If there is any client not defined in the deploy_map of the meta.json, the simulator will report an error and not run.
 
-.. code-block:: python
+.. code-block:: shell
 
     nvflare simulator NVFlare/examples/hello-world/hello-numpy -w /tmp/nvflare/workspace_folder/ -c client0,client1,client2,client3 -t 1
 
@@ -774,7 +778,7 @@ Run a job with no client name list
 If there is no client name list provided and no number of clients (-n) option provided, the simulator extracts the list of client names from the deployment_map
 in meta.json to run.
 
-.. code-block:: python
+.. code-block:: shell
 
     nvflare simulator NVFlare/examples/hello-world/hello-numpy -w /tmp/nvflare/workspace_folder/ -t 1
 
@@ -896,7 +900,7 @@ clients list will be distributed among the GPU groups.
 
 For example:
 
-.. code-block::shell
+.. code-block:: shell
 
     -c  c1,c2,c3,c4,c5 -gpu 0,1
 
@@ -909,7 +913,7 @@ memory to support the applications.
 
 .. note::
 
-    If you have invalid GPU IDs assigned and ``nvidia-smi`` is available, the simuilation will be aborted. Otherwise if ``nvidia-smi`` is not available,
+    If you have invalid GPU IDs assigned and ``nvidia-smi`` is available, the simulation will be aborted. Otherwise if ``nvidia-smi`` is not available,
     the simulation will run on CPU.
 
 To change the MAX_CLIENTS
