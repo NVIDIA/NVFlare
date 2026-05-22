@@ -476,6 +476,38 @@ class TestDockerJobLauncherLaunchJob:
         with pytest.raises(RuntimeError, match="no job image was specified"):
             launcher.launch_job(job_meta, fl_ctx)
 
+    @pytest.mark.parametrize(
+        "bad_image,type_name",
+        [
+            # Truthy non-string values.
+            (123, "int"),
+            (1.5, "float"),
+            (True, "bool"),
+            (["nvflare-job", "latest"], "list"),
+            ({"name": "nvflare-job"}, "dict"),
+            # Falsy non-None non-string values — also non-string, so the
+            # isinstance(str) guard fires before the existing falsy-image
+            # branch. Both paths are valid error reports; this set pins the
+            # type-check path so future refactors don't accidentally let
+            # `False` / `0` reach the docker daemon.
+            (False, "bool"),
+            (0, "int"),
+            (0.0, "float"),
+            ([], "list"),
+            ({}, "dict"),
+        ],
+    )
+    def test_launch_raises_if_image_is_not_a_string(self, bad_image, type_name):
+        launcher = _make_launcher()
+        fl_ctx, _ = _make_fl_ctx(identity_name="site-1")
+        job_meta = _make_job_meta(site_name="site-1", docker_spec={"image": bad_image})
+
+        with pytest.raises(
+            RuntimeError,
+            match=rf"launcher_spec docker image for site 'site-1' must be a string, got {type_name}",
+        ):
+            launcher.launch_job(job_meta, fl_ctx)
+
     def test_launch_returns_handle(self):
         launcher = _make_launcher()
         dc = launcher._docker_client
