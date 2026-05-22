@@ -51,7 +51,7 @@ Release Highlights
   significantly reduces server peak memory during FedAvg aggregation. Instead of
   holding all client tensor updates in memory simultaneously, each update is written
   to a temporary safetensors file on disk and consumed lazily during aggregation.
-  This is particularly impactful for large models (7B+ parameters) with many clients.
+  The benefit scales with model size and client count.
 - **New examples and contributed research**: MedGemma, Qwen3-VL, Codon-FM,
   FedUMM, financial-services fraud detection, Docker job examples, distributed
   provisioning examples, Hello JAX, and Hello log streaming help teams start
@@ -260,49 +260,21 @@ Server Memory: Tensor Disk Offload
 -----------------------------------
 
 FLARE 2.8.0 introduces tensor disk offload for PyTorch FedAvg jobs, which
-significantly reduces peak server memory during aggregation.
+significantly reduces peak server memory during aggregation. Instead of holding
+all client tensor updates in memory simultaneously, each update is written to a
+temporary safetensors file on disk and consumed lazily. The benefit scales with
+model size and client count.
 
-Without this feature, the server holds all client tensor updates in memory
-simultaneously during the aggregation phase. As the number of clients and model
-size grow, this becomes the dominant source of server memory pressure.
-
-With disk offload enabled, each client's update is written to a temporary
-safetensors file on disk as it arrives and is consumed lazily during aggregation.
-This avoids accumulating all client updates in memory at the same time, which
-significantly reduces peak server memory — the actual reduction depends on model
-size, client count, aggregation pattern, and garbage collection timing.
-
-To enable disk offload, set ``enable_tensor_disk_offload=True`` on the recipe
-or FedAvg controller:
-
-.. code-block:: python
-
-    from nvflare.app_opt.pt.recipes import FedAvgRecipe
-
-    recipe = FedAvgRecipe(
-        name="fedavg-pt",
-        min_clients=4,
-        num_rounds=10,
-        model=MyLargeModel(),
-        train_script="train.py",
-        enable_tensor_disk_offload=True,
-    )
+To enable, set ``enable_tensor_disk_offload=True`` on ``FedAvgRecipe`` or the
+``FedAvg`` controller. This feature applies to PyTorch FedAvg workflows only.
 
 .. warning::
 
-   Temporary files use the server process temp directory (``TMPDIR`` or the
-   OS default such as ``/tmp``). In containers or Kubernetes, ``/tmp`` is
-   often RAM-backed (``tmpfs``), which eliminates the memory-saving benefit.
-   The server admin must set ``TMPDIR`` to a writable, disk-backed mount
-   before starting the server. See :ref:`notes_on_large_models` for
-   deployment guidance.
-
-This feature applies to PyTorch FedAvg workflows only. It has no effect on
-NumPy or TensorFlow models, or on non-FedAvg workflows.
-
-For configuration details and the custom-aggregator contract, see
-:doc:`/programming_guide/tensor_downloader` and
-:doc:`/programming_guide/memory_management`.
+   Temporary files use the server process temp directory (``TMPDIR`` or the OS
+   default such as ``/tmp``). In containers or Kubernetes, ``/tmp`` is often
+   RAM-backed (``tmpfs``), which eliminates the memory-saving benefit. The server
+   admin must point ``TMPDIR`` to a disk-backed mount before starting the server.
+   See :ref:`notes_on_large_models` for deployment guidance.
 
 For large-model operations, see :ref:`notes_on_large_models`,
 :doc:`/programming_guide/tensor_downloader`, and
