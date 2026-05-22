@@ -1,3 +1,2 @@
 lifelines
 tenseal
-scikit-survival
