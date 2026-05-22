@@ -46,7 +46,7 @@ The command-line selectors are not required. When provided, they take precedence
 over the active startup kit for the current command only and do not change
 ``startup_kits.active`` in ``~/.nvflare/config.conf``.
 
-A user can register and activate a startup kit once with :ref:`kit_command`:
+A user can register and activate a startup kit once with :ref:`config_command`:
 
 .. code-block:: shell
 
@@ -241,25 +241,38 @@ Errors are returned as:
 
 Common error codes:
 
-+----------------------------+-----------------------------------------------------------+
-| Error code                 | Meaning                                                   |
-+============================+===========================================================+
-| ``STARTUP_KIT_MISSING``    | No startup kit could be resolved (exit 4)                 |
-+----------------------------+-----------------------------------------------------------+
-| ``INVALID_ARGS``           | Argument shape violates role contract (exit 4)            |
-+----------------------------+-----------------------------------------------------------+
-| ``STUDY_NOT_FOUND``        | Named study does not exist                                |
-+----------------------------+-----------------------------------------------------------+
-| ``STUDY_ALREADY_EXISTS``   | Study name is already registered                          |
-+----------------------------+-----------------------------------------------------------+
-| ``INVALID_SITE``           | Site is not enrolled or does not belong to the caller org |
-+----------------------------+-----------------------------------------------------------+
-| ``INVALID_STUDY_NAME``     | Study name fails naming rules                             |
-+----------------------------+-----------------------------------------------------------+
-| ``STUDY_HAS_RUNNING_JOBS`` | Cannot remove a study while jobs are running              |
-+----------------------------+-----------------------------------------------------------+
-| ``LOCK_TIMEOUT``           | Registry is busy; another mutation is in progress         |
-+----------------------------+-----------------------------------------------------------+
+.. list-table::
+   :header-rows: 1
+   :widths: 35 65
+
+   * - Error code
+     - Meaning
+   * - ``STARTUP_KIT_MISSING``
+     - No startup kit could be resolved from ``--kit-id``, ``--startup-kit``, ``NVFLARE_STARTUP_KIT_DIR``, or the active config entry (exit 4).
+   * - ``STARTUP_KIT_NOT_CONFIGURED``
+     - No active startup kit is configured and no per-command selector or environment override was provided (exit 4).
+   * - ``CONNECTION_FAILED``
+     - Cannot connect to or authenticate with the server (exit 2).
+   * - ``INVALID_ARGS``
+     - Argument shape violates role contract (exit 4).
+   * - ``STUDY_NOT_FOUND``
+     - Named study does not exist or is not visible to the caller (exit 1).
+   * - ``STUDY_ALREADY_EXISTS``
+     - Study name is already registered (exit 1).
+   * - ``INVALID_SITE``
+     - Site is not enrolled or does not belong to the caller org (exit 4).
+   * - ``INVALID_STUDY_NAME``
+     - Study name fails naming rules (exit 4).
+   * - ``STUDY_HAS_JOBS``
+     - Cannot remove a study with associated jobs (exit 1).
+   * - ``USER_ALREADY_IN_STUDY``
+     - ``add-user`` rejected because the user is already in this study's membership list (exit 1).
+   * - ``USER_NOT_IN_STUDY``
+     - ``remove-user`` rejected because the user is not in this study's membership list (exit 1).
+   * - ``NOT_AUTHORIZED``
+     - Caller's cert role is insufficient for this operation (exit 1).
+   * - ``LOCK_TIMEOUT``
+     - Registry is busy; another mutation is in progress (exit 3).
 
 *****************************
 Schema Output
