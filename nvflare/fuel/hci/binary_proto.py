@@ -433,7 +433,11 @@ class GenerateDataFromFile(DataGenerator):
 
     def __init__(self, file_name: str):
         self.file = open(file_name, "rb")
-        self.size = os.fstat(self.file.fileno()).st_size
+        try:
+            self.size = os.fstat(self.file.fileno()).st_size
+        except Exception:
+            self.file.close()
+            raise
 
     def data_size(self) -> int:
         return self.size

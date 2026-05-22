@@ -131,3 +131,10 @@ class TestGenerateDataFromFile:
         with pytest.raises(IOError):
             send_binary_data(FailingSender(fail_after=3), gen, meta="m")
         assert gen.file.closed
+
+    def test_fd_closed_on_successful_send(self, tmp_path: Path):
+        path = tmp_path / "data.bin"
+        path.write_bytes(b"y" * (MAX_BLOCK_SIZE * 2))
+        gen = GenerateDataFromFile(str(path))
+        send_binary_data(MySender(), gen, meta="m")
+        assert gen.file.closed
