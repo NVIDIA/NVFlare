@@ -110,7 +110,7 @@ Change runtime logging:
    startup kit for the current invocation only and do not change
    ``startup_kits.active``. Use ``nvflare config add`` and
    ``nvflare config use`` to manage the active startup kit. See
-   :ref:`kit_command`.
+   :ref:`config_command`.
 
 ****************
 Status and Resources

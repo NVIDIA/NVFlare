@@ -8,7 +8,7 @@ The ``nvflare job`` command family is used to submit, inspect, monitor, and
 manage federated learning jobs from an admin startup kit.
 
 Before using server-connected job commands, either run ``nvflare poc prepare``
-or activate a registered startup kit with :ref:`kit_command`:
+or activate a registered startup kit with :ref:`config_command`:
 
 .. code-block:: shell
 
