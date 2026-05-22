@@ -393,6 +393,11 @@ class DockerJobLauncher(JobLauncherSpec):
         docker_spec = get_job_launcher_spec(job_meta, site_name, "docker")
         job_image = docker_spec.get("image")
         container_name = _sanitize_container_name(f"{site_name}-{job_id}")
+        if job_image is not None and not isinstance(job_image, str):
+            raise RuntimeError(
+                f"launcher_spec docker image for site '{site_name}' must be a string, "
+                f"got {type(job_image).__name__}: {job_image!r}"
+            )
         if not job_image:
             raise RuntimeError(
                 f"DockerJobLauncher is configured for site '{site_name}' but no job image "
