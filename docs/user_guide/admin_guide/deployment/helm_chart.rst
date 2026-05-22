@@ -13,6 +13,12 @@ kits and then preparing each server or client kit for the Kubernetes runtime.
 The prepared kit contains a participant-specific Helm chart plus the
 ``startup/`` and ``local/`` folders that must be staged into Kubernetes storage.
 
+For example scripts that automate temporary Kubernetes and managed cloud cluster
+testing flows, see
+:github_nvflare_link:`examples/devops <examples/devops>`. These scripts are
+for development, smoke testing, demos, and learning only; they are not
+production deployment guidance.
+
 Prerequisites
 =============
 
