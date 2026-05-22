@@ -63,16 +63,15 @@ class ServerAppRunner(Runner):
                 args=args,
                 kv_list=kv_list,
             )
-            if event_handlers:
-                fl_ctx = FLContext()
-                fl_ctx.set_prop(FLContextKey.ARGS, args, sticky=False)
-                fl_ctx.set_prop(FLContextKey.APP_ROOT, app_root, private=True, sticky=False)
-                fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True)
-                fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job_id, private=False, sticky=False)
-                fl_ctx.set_prop(FLContextKey.CURRENT_RUN, job_id, private=False, sticky=False)
-                conf.set_component_build_authorizer(
-                    authorize_build_component, fl_ctx=fl_ctx, event_handlers=event_handlers
-                )
+            fl_ctx = FLContext()
+            fl_ctx.set_prop(FLContextKey.ARGS, args, sticky=False)
+            fl_ctx.set_prop(FLContextKey.APP_ROOT, app_root, private=True, sticky=False)
+            fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True)
+            fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job_id, private=False, sticky=False)
+            fl_ctx.set_prop(FLContextKey.CURRENT_RUN, job_id, private=False, sticky=False)
+            conf.set_component_build_authorizer(
+                authorize_build_component, fl_ctx=fl_ctx, event_handlers=event_handlers or []
+            )
             conf.configure()
 
             _set_up_run_config(workspace, self.server, conf)
