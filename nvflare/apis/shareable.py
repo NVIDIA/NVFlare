@@ -12,13 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
-from typing import Optional
 
 from ..fuel.utils import fobs
 from .fl_constant import ReservedKey, ReturnCode, ServerCommandKey
 
 
-class ReservedHeaderKey(object):
+class ReservedHeaderKey:
 
     HEADERS = "__headers__"
     TOPIC = "__topic__"
@@ -46,7 +45,7 @@ class Shareable(dict):
     It is recommended that keys are strings. Values must be serializable.
     """
 
-    def __init__(self, data: Optional[dict] = None):
+    def __init__(self, data: dict | None = None):
         """Init the Shareable."""
         super().__init__()
         if data:
@@ -66,7 +65,7 @@ class Shareable(dict):
             return default
         else:
             if not isinstance(header, dict):
-                raise ValueError("header object must be a dict, but got {}".format(type(header)))
+                raise ValueError(f"header object must be a dict, but got {type(header)}")
             return header.get(key, default)
 
     # some convenience methods
