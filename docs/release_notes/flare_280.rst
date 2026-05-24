@@ -191,7 +191,8 @@ commands, and data access scoped to that study. Study support is available in
 administration workflows, CLI workflows, the FLARE API, production environments,
 and local PoC development.
 
-See :ref:`multi_study_guide` and :ref:`study_command`.
+See :ref:`multi_study_guide` for design and configuration details, and
+:ref:`study_command` for runtime management.
 
 Live Log Streaming
 ------------------
