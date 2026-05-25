@@ -508,7 +508,10 @@ This replaces the separate per-runtime files used previously:
 Both launchers and `workspace_cell_transfer.py` must be updated to use
 `local/study_data.yaml`.
 
-The detailed study data schema follows [Study Dataset Mapping](https://docs.google.com/document/d/1JCKHbjQaDto_SBuTB-wSAaEvfIO8NLA_T2I_u8rf2sQ/edit?tab=t.0#heading=h.s3ol8f3q17a5).
+For the shipped multi-study design and study-scoped behavior, see
+[Multi-Study Support](../user_guide/admin_guide/multi_study_guide.rst). For
+runtime dataset mapping examples, see
+[Docker Job Launcher Design](docker_job_launcher_design.md).
 
 ## Job Python, GPU, and Resource Handling
 
