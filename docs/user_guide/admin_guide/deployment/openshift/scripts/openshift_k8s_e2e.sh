@@ -12,7 +12,8 @@ three phase scripts in order:
 
 Required environment:
   IMAGE  Container image pullable by the cluster. It must contain this NVFlare
-         version, Python, numpy, sh, sleep, tar, and the nvflare CLI.
+         version with the K8S extra/Kubernetes Python client, Python, numpy,
+         sh, sleep, tar, and the nvflare CLI.
 
 Common optional environment:
   KUBE_CMD=oc

@@ -94,7 +94,9 @@ Images and registry:
 * The image must contain this NVFlare version, the ``nvflare`` CLI, Python,
   ``numpy`` for the ``hello-numpy`` job, ``sh``, ``sleep``, and ``tar``.
 * The parent image must include NVFlare's Kubernetes dependency support because
-  parent pods create job pods through the Kubernetes Python client.
+  parent pods create job pods through the Kubernetes Python client. The deploy
+  script verifies this by importing ``kubernetes`` inside each rolled-out parent
+  pod.
 * The image must run under OpenShift's restricted SCC. In practice, it should
   support arbitrary UIDs and root-group writable application/workspace paths.
 * If the registry is private, create image pull Secrets in the target namespace
@@ -465,7 +467,7 @@ What it does:
 * runs ``nvflare deploy prepare`` for ``nvflare-server``, ``site-1``, and
   ``site-2`` using ``runtime: k8s``;
 * verifies that server and client prepared kits contain the Kubernetes job
-  launcher components;
+  launcher components configured for in-cluster ServiceAccount auth;
 * creates ``NAMESPACE`` if it does not already exist;
 * creates one workspace PVC per server/client participant;
 * creates temporary copy pods, waits for PVC binding, and copies each prepared
@@ -473,7 +475,9 @@ What it does:
 * installs or upgrades the generated Helm chart for each participant;
 * restarts existing Deployments after an upgrade so repeated runs pick up new
   startup-kit content from the PVC;
-* waits for all parent Deployments to roll out.
+* waits for all parent Deployments to roll out;
+* verifies that each parent pod can import the Kubernetes Python client needed
+  by the launcher.
 
 Expected result:
 
@@ -679,7 +683,11 @@ After preparation, verify that
 ``local/resources.json.default`` contains ``k8s_launcher``. Server kits should
 use ``nvflare.app_opt.job_launcher.k8s_launcher.ServerK8sJobLauncher`` and
 client kits should use
-``nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher``.
+``nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher``. For
+in-cluster deployments, ``config_file_path`` should be ``null`` or empty so the
+launcher uses the parent pod's ServiceAccount token. NVFlare handles Kubernetes
+Python client 36.x token values that already include the ``bearer`` scheme
+prefix.
 
 Create PVCs and Stage Kits
 --------------------------

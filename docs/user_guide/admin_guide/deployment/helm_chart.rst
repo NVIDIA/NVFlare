@@ -94,6 +94,13 @@ The generated Helm chart does not run submitted jobs directly. It installs the
 parent participant process, its Kubernetes Service, its ServiceAccount, and the
 Role/RoleBinding that allow the launcher to create job pods.
 
+When ``job_launcher.config_file_path`` is omitted or set to ``null``, the
+launcher uses Kubernetes in-cluster config from the parent pod's ServiceAccount.
+Kubernetes Python client 36.x stores that token under ``api_key["authorization"]``
+as a full ``bearer <token>`` authorization value. NVFlare normalizes that value
+before passing it to the generated ``BearerToken`` auth path so the resulting
+API requests use one ``Bearer`` scheme prefix.
+
 The parent Service is the stable in-cluster address for dynamically launched job
 pods. ``nvflare deploy prepare`` patches the prepared kit's internal
 communication settings to use the generated Service name and ``parent_port``.

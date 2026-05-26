@@ -308,6 +308,12 @@ The repository ``docker/Dockerfile.parent`` already installs the NVFlare
 ``K8S`` extra, which includes this dependency. Keep that install line, or add
 the explicit ``pip install kubernetes`` line above before building your image.
 
+The prepared Brev launcher uses in-cluster Kubernetes config
+(``job_launcher.config_file_path: null``), so the parent pod authenticates with
+its ServiceAccount token. NVFlare normalizes Kubernetes Python client 36.x
+``api_key["authorization"]`` values that already include the ``bearer`` scheme
+prefix before generated clients send API requests.
+
 .. code-block:: shell
 
    docker build -t "$IMAGE" -f docker/Dockerfile.parent .

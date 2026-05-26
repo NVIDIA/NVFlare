@@ -176,7 +176,10 @@ Top-level keys:
 ``job_launcher`` keys:
 
 - ``config_file_path``: kubeconfig path used by ``K8sJobLauncher``. Use
-  ``null`` for in-cluster config.
+  ``null`` for in-cluster config. In this mode the launcher uses the pod's
+  ServiceAccount token and normalizes the Kubernetes Python client 36.x
+  ``authorization`` value before generated clients emit the ``Authorization``
+  header.
 - ``pending_timeout``: seconds to wait for a job pod to leave ``Pending``.
 - ``default_python_path``: Python executable used in job pods unless a job
   overrides it with ``launcher_spec[site]["k8s"]["python_path"]``. Defaults to

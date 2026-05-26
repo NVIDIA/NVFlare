@@ -348,6 +348,11 @@ if launcher.get("path") != expected:
 args = launcher.get("args") or {}
 if args.get("namespace") != namespace:
     raise SystemExit(f"k8s_launcher namespace {args.get('namespace')!r}; expected {namespace!r}")
+config_file_path = args.get("config_file_path")
+if config_file_path not in (None, ""):
+    raise SystemExit(
+        f"k8s_launcher config_file_path {config_file_path!r}; expected null/empty for in-cluster config"
+    )
 launcher_workspace_mount_path = args.get("workspace_mount_path", "/var/tmp/nvflare/workspace")
 if launcher_workspace_mount_path != workspace_mount_path:
     raise SystemExit(
@@ -511,6 +516,16 @@ verify_runtime_deployments() {
   for participant in "${RUNTIME_PARTICIPANTS[@]}"; do
     "${KUBE_CMD}" -n "${NAMESPACE}" rollout status "deployment/${participant}" --timeout="${ROLLOUT_TIMEOUT}"
   done
+}
+
+verify_parent_kubernetes_client() {
+  local participant=$1
+
+  "${KUBE_CMD}" -n "${NAMESPACE}" exec "deploy/${participant}" -- "${PARENT_PYTHON_PATH}" -c '
+import kubernetes
+
+print(f"kubernetes-python-client={kubernetes.__version__}")
+'
 }
 
 export_hello_numpy_job() {
@@ -681,8 +696,10 @@ report_missing_pieces() {
   cat <<EOF
 
 Missing pieces these scripts cannot create for the cluster:
-  - A pullable IMAGE/JOB_IMAGE with NVFlare, numpy, sh, sleep, tar, and the
-    nvflare CLI installed.
+  - A pullable parent IMAGE with NVFlare, its K8S extra/Kubernetes Python
+    client, sh, sleep, tar, and the nvflare CLI installed.
+  - A pullable JOB_IMAGE with NVFlare, Python, numpy, sh, sleep, and the
+    runtime tools needed by submitted job pods.
   - Registry pull secrets, if the image is private. Set
     PARENT_IMAGE_PULL_SECRETS and JOB_IMAGE_PULL_SECRETS to existing Secret names.
   - A working StorageClass/PV provisioner. Set STORAGE_CLASS if the cluster has
@@ -758,6 +775,10 @@ run_deploy_phase() {
     install_chart "${participant}"
   done
   verify_runtime_deployments
+  info "Verifying parent images include the Kubernetes Python client"
+  for participant in "${RUNTIME_PARTICIPANTS[@]}"; do
+    verify_parent_kubernetes_client "${participant}"
+  done
   "${KUBE_CMD}" -n "${NAMESPACE}" get pods,svc,pvc
 }
 
