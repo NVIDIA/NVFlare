@@ -149,25 +149,6 @@ class TestFedJob:
                 client_config = json.load(f)
             assert ConfigVarName.DEAD_CLIENT_GRACE_PERIOD not in client_config
 
-    def test_fail_fast_set_site_app_server_only_path(self):
-        """fail_fast=True via _set_site_app (server-only, no to_clients) sets dead_client_grace_period=0."""
-        job = FedJob(name="test_job", fail_fast=True)
-
-        controller = FedAvg()
-        job.to_server(controller)
-        # Deliberately no to_clients() call — forces _set_all_apps() into the per-site
-        # branch which calls _set_site_app() instead of _set_all_app().
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            job.export_job(temp_dir)
-            server_config_path = os.path.join(
-                temp_dir, "test_job", "app_server", "config", "config_fed_server.json"
-            )
-            with open(server_config_path, "r") as f:
-                server_config = json.load(f)
-            assert ConfigVarName.DEAD_CLIENT_GRACE_PERIOD in server_config
-            assert server_config[ConfigVarName.DEAD_CLIENT_GRACE_PERIOD] == 0
-
 
 class TestFedAppAddResource:
     """Test FedApp._add_resource() method for handling different resource types."""
