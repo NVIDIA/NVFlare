@@ -130,7 +130,7 @@ class TestFedJob:
 
     def test_fail_fast_invalid_type_raises(self):
         """fail_fast must be a bool; passing a non-bool should raise TypeError."""
-        with pytest.raises(TypeError, match="fail_fast must be a bool"):
+        with pytest.raises(TypeError, match="fail_fast must be"):
             FedJob(name="test_job", fail_fast=1)  # type: ignore[arg-type]
 
     def test_fail_fast_does_not_affect_client_config(self):

@@ -189,10 +189,14 @@ class FedJob:
             min_clients: the minimum number of clients for the job
             mandatory_clients: mandatory clients to run the job (optional)
             meta_props: additional meta properties for the job (optional)
-            fail_fast: if True, the server will immediately abort the job when any participating
-                client disconnects or dies, instead of waiting for the default grace period (60 s).
-                This is useful during development to surface client failures quickly rather than
-                having the server hang indefinitely waiting for responses from a dead client.
+            fail_fast: if True, sets dead_client_grace_period to 0 so that a client already
+                reported dead is declared disconnected on the next monitor tick (~0.2 s) rather
+                than after the default 60-second grace period. The job then aborts only when the
+                normal deployment policy is violated: alive clients drop below min_clients, all
+                clients die, or a mandatory client is lost. In the common development scenario
+                where min_clients equals the total number of enrolled clients, this means an
+                immediate abort on any client failure; when min_clients < total enrolled, the
+                disconnect is simply detected faster without necessarily aborting the job.
                 When False (the default), the existing dead-client grace period behaviour applies.
 
         """
@@ -202,8 +206,7 @@ class FedJob:
             check_object_type("mandatory_clients", mandatory_clients, list)
         if meta_props:
             check_object_type("meta_props", meta_props, dict)
-        if not isinstance(fail_fast, bool):
-            raise TypeError(f"fail_fast must be a bool but got {type(fail_fast)}")
+        check_object_type("fail_fast", fail_fast, bool)
 
         self.name = name
         self.clients = []
@@ -610,7 +613,7 @@ class FedJob:
             app_config = FedAppConfig(server_app=None, client_app=client_server_config)
             app_name = f"app_{target}"
         elif isinstance(client_server_config, ServerAppConfig):
-            self._apply_fail_fast(client_server_config)
+            self._apply_fail_fast(client_server_config)  # intentionally server-only; clients don't read this key
             app_config = FedAppConfig(server_app=client_server_config, client_app=None)
             app_name = "app_server"
         else:
