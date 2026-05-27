@@ -14,6 +14,7 @@
 
 import json
 import shutil
+from pathlib import Path
 
 from nvflare.tool.agent import skill_manager
 from nvflare.tool.agent.skill_manager import (
@@ -228,6 +229,52 @@ def test_install_skills_replace_copy_error_keeps_existing_install(monkeypatch, t
     ]
     assert "First Skill" in (target / "nvflare-test-skill" / "SKILL.md").read_text(encoding="utf-8")
     assert not (target / ".nvflare_bak").exists()
+
+
+def test_install_skills_replace_reports_publish_error_when_recovery_fails(monkeypatch, tmp_path):
+    root = tmp_path / "skills"
+    _write_skill(root, "nvflare-test-skill", heading="First Skill")
+    source = SkillSource(
+        source_type="editable",
+        root=root,
+        manifest=build_skill_manifest(root, source_type="editable", nvflare_version="2.8.0"),
+    )
+    target = tmp_path / "target"
+    install_skills(agent="codex", target_dir=target, source=source)
+
+    _write_skill(root, "nvflare-test-skill", heading="Second Skill")
+    updated_source = SkillSource(
+        source_type="editable",
+        root=root,
+        manifest=build_skill_manifest(root, source_type="editable", nvflare_version="2.8.0"),
+    )
+    real_move = shutil.move
+
+    def publish_with_failure(src, dst):
+        raise OSError("publish failed")
+
+    def move_with_recovery_failure(src, dst, *args, **kwargs):
+        if ".nvflare_bak" in Path(src).parts:
+            raise OSError("restore failed")
+        return real_move(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(skill_manager, "_publish_staged_skill", publish_with_failure)
+    monkeypatch.setattr(skill_manager.shutil, "move", move_with_recovery_failure)
+
+    plan = install_skills(agent="codex", target_dir=target, source=updated_source)
+
+    assert plan["applied"] is False
+    assert plan["errors"] == [
+        {
+            "skill": "nvflare-test-skill",
+            "code": "skill_install_failed",
+            "type": "OSError",
+            "message": "publish failed",
+            "recovery_error": {"type": "OSError", "message": "restore failed"},
+        }
+    ]
+    assert not (target / "nvflare-test-skill").exists()
+    assert any((target / ".nvflare_bak").iterdir())
 
 
 def test_install_skills_reports_copy_error_and_continues(monkeypatch, tmp_path):

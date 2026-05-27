@@ -120,12 +120,7 @@ def install_skills(
             else:
                 entry["status"] = "skipped"
         except Exception as e:
-            error = {
-                "skill": entry["name"],
-                "code": "skill_install_failed",
-                "type": type(e).__name__,
-                "message": str(e),
-            }
+            error = _install_error(entry["name"], e)
             entry["status"] = "failed"
             entry["error"] = error
             plan["errors"].append(error)
@@ -258,10 +253,29 @@ def _replace_skill(
         shutil.move(target_dir, backup_path)
         try:
             _publish_staged_skill(temp_skill_dir, target_dir)
-        except Exception:
+        except Exception as publish_error:
             if not target_dir.exists() and backup_path.exists():
-                shutil.move(backup_path, target_dir)
+                try:
+                    shutil.move(backup_path, target_dir)
+                except Exception as recovery_error:
+                    publish_error.recovery_error = recovery_error
             raise
+
+
+def _install_error(skill_name: str, error: Exception) -> dict:
+    result = {
+        "skill": skill_name,
+        "code": "skill_install_failed",
+        "type": type(error).__name__,
+        "message": str(error),
+    }
+    recovery_error = getattr(error, "recovery_error", None)
+    if recovery_error is not None:
+        result["recovery_error"] = {
+            "type": type(recovery_error).__name__,
+            "message": str(recovery_error),
+        }
+    return result
 
 
 def _publish_staged_skill(staged_dir: Path, target_dir: Path) -> None:
