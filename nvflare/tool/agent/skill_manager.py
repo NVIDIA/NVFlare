@@ -109,10 +109,13 @@ def install_skills(
                 _copy_skill(source.root / entry["relative_path"], Path(entry["target_path"]), entry, source)
                 entry["status"] = "installed"
             elif entry["action"] == "replace":
-                backup_path = Path(entry["backup_path"])
-                backup_path.parent.mkdir(parents=True, exist_ok=True)
-                shutil.move(entry["target_path"], backup_path)
-                _copy_skill(source.root / entry["relative_path"], Path(entry["target_path"]), entry, source)
+                _replace_skill(
+                    source.root / entry["relative_path"],
+                    Path(entry["target_path"]),
+                    Path(entry["backup_path"]),
+                    entry,
+                    source,
+                )
                 entry["status"] = "replaced"
             else:
                 entry["status"] = "skipped"
@@ -234,24 +237,57 @@ def _copy_skill(source_dir: Path, target_dir: Path, plan_entry: dict, source: Sk
     target_dir.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=f".{target_dir.name}.", dir=target_dir.parent) as temp_root:
         temp_skill_dir = Path(temp_root) / target_dir.name
-        shutil.copytree(source_dir, temp_skill_dir, ignore=shutil.ignore_patterns(*IGNORED_SKILL_FILE_NAMES))
-        manifest = {
-            "schema_version": "1",
-            "managed_by": "nvflare",
-            "name": plan_entry["name"],
-            "skill_version": plan_entry.get("skill_version"),
-            "nvflare_version": nvflare.__version__,
-            "source_type": source.source_type,
-            "source_hash": plan_entry["source_hash"],
-            "installed_paths": [str(target_dir)],
-            "installed_at": datetime.now(timezone.utc).isoformat(),
-        }
-        (temp_skill_dir / INSTALL_MANIFEST_FILE_NAME).write_text(
-            json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-        )
+        _stage_skill(source_dir, temp_skill_dir, plan_entry, source, installed_path=target_dir)
         if target_dir.exists():
             raise FileExistsError(f"target skill directory already exists: {target_dir}")
-        shutil.move(temp_skill_dir, target_dir)
+        _publish_staged_skill(temp_skill_dir, target_dir)
+
+
+def _replace_skill(
+    source_dir: Path, target_dir: Path, backup_path: Path, plan_entry: dict, source: SkillSource
+) -> None:
+    target_dir.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=f".{target_dir.name}.", dir=target_dir.parent) as temp_root:
+        temp_skill_dir = Path(temp_root) / target_dir.name
+        _stage_skill(source_dir, temp_skill_dir, plan_entry, source, installed_path=target_dir)
+        if not target_dir.exists():
+            raise FileNotFoundError(f"target skill directory no longer exists: {target_dir}")
+        if backup_path.exists():
+            raise FileExistsError(f"backup skill directory already exists: {backup_path}")
+        backup_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(target_dir, backup_path)
+        try:
+            _publish_staged_skill(temp_skill_dir, target_dir)
+        except Exception:
+            if not target_dir.exists() and backup_path.exists():
+                shutil.move(backup_path, target_dir)
+            raise
+
+
+def _publish_staged_skill(staged_dir: Path, target_dir: Path) -> None:
+    if target_dir.exists():
+        raise FileExistsError(f"target skill directory already exists: {target_dir}")
+    os.replace(staged_dir, target_dir)
+
+
+def _stage_skill(
+    source_dir: Path, staged_dir: Path, plan_entry: dict, source: SkillSource, *, installed_path: Path
+) -> None:
+    shutil.copytree(source_dir, staged_dir, ignore=shutil.ignore_patterns(*IGNORED_SKILL_FILE_NAMES))
+    manifest = {
+        "schema_version": "1",
+        "managed_by": "nvflare",
+        "name": plan_entry["name"],
+        "skill_version": plan_entry.get("skill_version"),
+        "nvflare_version": nvflare.__version__,
+        "source_type": source.source_type,
+        "source_hash": plan_entry["source_hash"],
+        "installed_paths": [str(installed_path)],
+        "installed_at": datetime.now(timezone.utc).isoformat(),
+    }
+    (staged_dir / INSTALL_MANIFEST_FILE_NAME).write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
 
 
 def _select_skills(manifest: dict, skill_name: Optional[str]) -> tuple[list[dict], list[str]]:

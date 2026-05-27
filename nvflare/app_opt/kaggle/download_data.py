@@ -15,12 +15,22 @@
 import shutil
 from pathlib import Path
 
-import kagglehub
+kagglehub = None
+
+
+def _get_kagglehub():
+    global kagglehub
+
+    if kagglehub is None:
+        import kagglehub as imported_kagglehub
+
+        kagglehub = imported_kagglehub
+    return kagglehub
 
 
 def download(input_path: str, output_path: str, overwrite: bool = False):
     # Download latest version
-    path = kagglehub.dataset_download(input_path)
+    path = _get_kagglehub().dataset_download(input_path)
     print("Path to dataset files:", path)
 
     # Move downloaded data to output path
