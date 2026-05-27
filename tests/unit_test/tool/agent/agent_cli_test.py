@@ -20,6 +20,8 @@ from unittest.mock import patch
 import pytest
 
 from nvflare.tool import cli_output
+from nvflare.tool.agent.skill_manager import SkillSource
+from nvflare.tool.agent.skill_manifest import build_skill_manifest
 
 
 @pytest.fixture(autouse=True)
@@ -255,3 +257,143 @@ def test_agent_invalid_subcommand_json_error_is_structured(capsys):
     assert "terminal" not in payload
     assert "not-a-pr1-command" in payload["message"]
     assert captured.err == ""
+
+
+def test_agent_skills_install_dry_run_json_uses_native_source(capsys, monkeypatch, tmp_path):
+    _patch_skill_source(monkeypatch, tmp_path)
+    target = tmp_path / "target"
+
+    exit_code = _run_main(
+        [
+            "nvflare",
+            "agent",
+            "skills",
+            "install",
+            "--agent",
+            "codex",
+            "--target",
+            str(target),
+            "--dry-run",
+            "--format",
+            "json",
+        ]
+    )
+
+    assert exit_code == 0
+    payload = _load_single_stdout_json(capsys.readouterr())
+    _assert_envelope_shape(payload, "ok")
+    assert payload["data"]["applied"] is False
+    assert payload["data"]["source"]["type"] == "editable"
+    assert payload["data"]["skills"][0]["name"] == "nvflare-test-skill"
+    assert not target.exists()
+
+
+def test_agent_skills_install_and_list_json(capsys, monkeypatch, tmp_path):
+    _patch_skill_source(monkeypatch, tmp_path)
+    target = tmp_path / "target"
+
+    install_exit = _run_main(
+        [
+            "nvflare",
+            "agent",
+            "skills",
+            "install",
+            "--agent",
+            "codex",
+            "--target",
+            str(target),
+            "--format",
+            "json",
+        ]
+    )
+    install_payload = _load_single_stdout_json(capsys.readouterr())
+    assert install_exit == 0
+    assert install_payload["data"]["applied"] is True
+    assert target.joinpath("nvflare-test-skill", "SKILL.md").is_file()
+
+    list_exit = _run_main(
+        [
+            "nvflare",
+            "agent",
+            "skills",
+            "list",
+            "--agent",
+            "codex",
+            "--target",
+            str(target),
+            "--format",
+            "json",
+        ]
+    )
+    list_payload = _load_single_stdout_json(capsys.readouterr())
+    assert list_exit == 0
+    assert list_payload["data"]["available"][0]["name"] == "nvflare-test-skill"
+    assert list_payload["data"]["installed"][0]["name"] == "nvflare-test-skill"
+
+
+def test_agent_skills_missing_named_skill_is_structured_json_error(capsys, monkeypatch, tmp_path):
+    _patch_skill_source(monkeypatch, tmp_path)
+
+    exit_code = _run_main(
+        [
+            "nvflare",
+            "agent",
+            "skills",
+            "install",
+            "--agent",
+            "codex",
+            "--target",
+            str(tmp_path / "target"),
+            "--skill",
+            "nvflare-missing",
+            "--format",
+            "json",
+        ]
+    )
+
+    assert exit_code == 4
+    payload = _load_single_stdout_json(capsys.readouterr())
+    _assert_envelope_shape(payload, "error")
+    assert payload["code"] == "AGENT_SKILL_NOT_FOUND"
+    assert payload["data"]["missing"] == ["nvflare-missing"]
+
+
+def test_agent_skills_install_schema_exits_zero(capsys):
+    exit_code = _run_main(["nvflare", "agent", "skills", "install", "--schema"])
+
+    assert exit_code == 0
+    schema = json.loads(capsys.readouterr().out)
+    assert schema["command"] == "nvflare agent skills install"
+    assert schema["mutating"] is True
+    assert schema["output_modes"] == ["json"]
+
+
+def _patch_skill_source(monkeypatch, tmp_path):
+    from nvflare.tool.agent import skill_manager
+
+    root = tmp_path / "skills"
+    _write_skill(root, "nvflare-test-skill")
+    source = SkillSource(
+        source_type="editable",
+        root=root,
+        manifest=build_skill_manifest(root, source_type="editable", nvflare_version="2.8.0"),
+    )
+    monkeypatch.setattr(skill_manager, "find_skill_source", lambda: source)
+    return source
+
+
+def _write_skill(root, name):
+    skill_dir = root / name
+    skill_dir.mkdir(parents=True)
+    skill_dir.joinpath("SKILL.md").write_text(
+        "---\n"
+        f"name: {name}\n"
+        "description: Test skill fixture.\n"
+        'min_flare_version: "2.8.0"\n'
+        "blast_radius: read_only\n"
+        "---\n"
+        "\n"
+        "# Test Skill\n",
+        encoding="utf-8",
+    )
+    return skill_dir

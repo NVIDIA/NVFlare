@@ -1,0 +1,187 @@
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import json
+
+from nvflare.tool.agent.skill_manager import (
+    INSTALL_MANIFEST_FILE_NAME,
+    SkillSource,
+    install_skills,
+    list_skills,
+    resolve_agent_target_dir,
+)
+from nvflare.tool.agent.skill_manifest import build_skill_manifest
+
+
+def test_resolve_codex_target_uses_codex_home(tmp_path):
+    target = resolve_agent_target_dir("codex", env={"CODEX_HOME": str(tmp_path / "codex-home")})
+
+    assert target == tmp_path / "codex-home" / "skills"
+
+
+def test_resolve_claude_target_uses_home(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    target = resolve_agent_target_dir("claude")
+
+    assert target == tmp_path / ".claude" / "skills"
+
+
+def test_install_skills_dry_run_reports_plan_without_copying(tmp_path):
+    source = _skill_source(tmp_path)
+    target = tmp_path / "target"
+
+    plan = install_skills(agent="codex", dry_run=True, target_dir=target, source=source)
+
+    assert plan["applied"] is False
+    assert plan["skills"][0]["action"] == "copy"
+    assert plan["skills"][0]["files"]
+    assert not target.exists()
+
+
+def test_install_skills_installs_all_by_default(tmp_path):
+    source = _skill_source(tmp_path)
+    target = tmp_path / "target"
+
+    plan = install_skills(agent="codex", target_dir=target, source=source)
+
+    skill_dir = target / "nvflare-test-skill"
+    assert plan["applied"] is True
+    assert skill_dir.joinpath("SKILL.md").is_file()
+    install_manifest = json.loads(skill_dir.joinpath(INSTALL_MANIFEST_FILE_NAME).read_text(encoding="utf-8"))
+    assert install_manifest["managed_by"] == "nvflare"
+    assert install_manifest["name"] == "nvflare-test-skill"
+
+
+def test_install_skills_reports_missing_named_skill(tmp_path):
+    source = _skill_source(tmp_path)
+
+    plan = install_skills(agent="codex", skill_name="nvflare-missing", target_dir=tmp_path / "target", source=source)
+
+    assert plan["applied"] is False
+    assert plan["missing"] == ["nvflare-missing"]
+    assert plan["skills"] == []
+
+
+def test_install_skills_preserves_external_target_directory(tmp_path):
+    source = _skill_source(tmp_path)
+    target = tmp_path / "target"
+    external = target / "nvflare-test-skill"
+    external.mkdir(parents=True)
+    external.joinpath("SKILL.md").write_text("external content\n", encoding="utf-8")
+
+    plan = install_skills(agent="codex", target_dir=target, source=source)
+
+    assert plan["applied"] is True
+    assert plan["skills"][0]["action"] == "skip"
+    assert plan["conflicts"][0]["code"] == "external_install_detected"
+    assert external.joinpath("SKILL.md").read_text(encoding="utf-8") == "external content\n"
+
+
+def test_install_skills_is_idempotent_for_same_managed_version(tmp_path):
+    source = _skill_source(tmp_path)
+    target = tmp_path / "target"
+    install_skills(agent="codex", target_dir=target, source=source)
+
+    plan = install_skills(agent="codex", target_dir=target, source=source)
+
+    assert plan["applied"] is True
+    assert plan["skills"][0]["action"] == "skip"
+    assert plan["skills"][0]["reason"] == "already_installed"
+
+
+def test_install_skills_preserves_modified_managed_install(tmp_path):
+    source = _skill_source(tmp_path)
+    target = tmp_path / "target"
+    install_skills(agent="codex", target_dir=target, source=source)
+    skill_file = target / "nvflare-test-skill" / "SKILL.md"
+    skill_file.write_text(skill_file.read_text(encoding="utf-8") + "\n# User Edit\n", encoding="utf-8")
+
+    plan = install_skills(agent="codex", target_dir=target, source=source)
+
+    assert plan["applied"] is True
+    assert plan["skills"][0]["action"] == "skip"
+    assert plan["skills"][0]["conflict"] == "local_modifications_detected"
+    assert plan["conflicts"][0]["code"] == "local_modifications_detected"
+    assert "# User Edit" in skill_file.read_text(encoding="utf-8")
+
+
+def test_install_skills_replaces_unmodified_managed_install_with_backup(tmp_path):
+    root = tmp_path / "skills"
+    _write_skill(root, "nvflare-test-skill", heading="First Skill")
+    source = SkillSource(
+        source_type="editable",
+        root=root,
+        manifest=build_skill_manifest(root, source_type="editable", nvflare_version="2.8.0"),
+    )
+    target = tmp_path / "target"
+    install_skills(agent="codex", target_dir=target, source=source)
+
+    _write_skill(root, "nvflare-test-skill", heading="Second Skill")
+    updated_source = SkillSource(
+        source_type="editable",
+        root=root,
+        manifest=build_skill_manifest(root, source_type="editable", nvflare_version="2.8.0"),
+    )
+    plan = install_skills(agent="codex", target_dir=target, source=updated_source)
+
+    skill_plan = plan["skills"][0]
+    assert skill_plan["action"] == "replace"
+    assert skill_plan["status"] == "replaced"
+    assert skill_plan["version_delta"] == "update"
+    assert "Second Skill" in (target / "nvflare-test-skill" / "SKILL.md").read_text(encoding="utf-8")
+    backup_runs = list((target / ".nvflare_bak").iterdir())
+    assert len(backup_runs) == 1
+    backup_file = backup_runs[0] / "nvflare-test-skill" / "SKILL.md"
+    assert "First Skill" in backup_file.read_text(encoding="utf-8")
+
+
+def test_list_skills_reports_available_installed_and_external_conflicts(tmp_path):
+    source = _skill_source(tmp_path)
+    target = tmp_path / "target"
+    install_skills(agent="codex", target_dir=target, source=source)
+    (target / "external-skill").mkdir()
+
+    data = list_skills(agent="codex", target_dir=target, source=source)
+
+    assert data["available"][0]["name"] == "nvflare-test-skill"
+    assert data["installed"][0]["name"] == "nvflare-test-skill"
+    assert data["conflicts"][0]["skill"] == "external-skill"
+
+
+def _skill_source(tmp_path):
+    root = tmp_path / "skills"
+    _write_skill(root, "nvflare-test-skill")
+    return SkillSource(
+        source_type="editable",
+        root=root,
+        manifest=build_skill_manifest(root, source_type="editable", nvflare_version="2.8.0"),
+    )
+
+
+def _write_skill(root, name, heading="Test Skill"):
+    skill_dir = root / name
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    skill_dir.joinpath("SKILL.md").write_text(
+        "---\n"
+        f"name: {name}\n"
+        "description: Test skill fixture.\n"
+        'min_flare_version: "2.8.0"\n'
+        "blast_radius: read_only\n"
+        "---\n"
+        "\n"
+        f"# {heading}\n",
+        encoding="utf-8",
+    )
+    return skill_dir
