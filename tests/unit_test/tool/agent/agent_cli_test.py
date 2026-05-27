@@ -77,14 +77,14 @@ def _required_operational_args(parser):
 def _minimal_agent_command():
     agent_parser = _parse_for_agent_parser()
     choices = _subparser_choices(agent_parser)
-    assert choices, "PR1 should register at least one minimal nvflare agent subcommand"
+    assert choices, "nvflare agent should register at least one read-only subcommand"
 
     for name, parser in choices.items():
         if _required_operational_args(parser):
             continue
         return name, parser
 
-    assert False, "PR1 should expose a read-only nvflare agent subcommand that needs no operational arguments"
+    assert False, "nvflare agent should expose a read-only subcommand that needs no operational arguments"
 
 
 def _load_single_stdout_json(captured):
