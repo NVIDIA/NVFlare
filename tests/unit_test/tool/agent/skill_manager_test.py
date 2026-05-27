@@ -231,6 +231,45 @@ def test_install_skills_replace_copy_error_keeps_existing_install(monkeypatch, t
     assert not (target / ".nvflare_bak").exists()
 
 
+def test_install_skills_replace_publish_error_restores_existing_install(monkeypatch, tmp_path):
+    root = tmp_path / "skills"
+    _write_skill(root, "nvflare-test-skill", heading="First Skill")
+    source = SkillSource(
+        source_type="editable",
+        root=root,
+        manifest=build_skill_manifest(root, source_type="editable", nvflare_version="2.8.0"),
+    )
+    target = tmp_path / "target"
+    install_skills(agent="codex", target_dir=target, source=source)
+
+    _write_skill(root, "nvflare-test-skill", heading="Second Skill")
+    updated_source = SkillSource(
+        source_type="editable",
+        root=root,
+        manifest=build_skill_manifest(root, source_type="editable", nvflare_version="2.8.0"),
+    )
+
+    def publish_with_failure(src, dst):
+        raise OSError("publish failed")
+
+    monkeypatch.setattr(skill_manager, "_publish_staged_skill", publish_with_failure)
+
+    plan = install_skills(agent="codex", target_dir=target, source=updated_source)
+
+    assert plan["applied"] is False
+    assert plan["errors"] == [
+        {
+            "skill": "nvflare-test-skill",
+            "code": "skill_install_failed",
+            "type": "OSError",
+            "message": "publish failed",
+        }
+    ]
+    assert "First Skill" in (target / "nvflare-test-skill" / "SKILL.md").read_text(encoding="utf-8")
+    assert "Second Skill" not in (target / "nvflare-test-skill" / "SKILL.md").read_text(encoding="utf-8")
+    assert not any((target / ".nvflare_bak").iterdir())
+
+
 def test_install_skills_replace_reports_publish_error_when_recovery_fails(monkeypatch, tmp_path):
     root = tmp_path / "skills"
     _write_skill(root, "nvflare-test-skill", heading="First Skill")
