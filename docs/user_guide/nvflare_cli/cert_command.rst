@@ -214,7 +214,7 @@ profile:
 
 .. code-block:: shell
 
-   nvflare cert approve hospital-a.request.zip --ca-dir ./ca --profile project_profile.yaml
+   nvflare cert approve hospital-a/hospital-a.request.zip --ca-dir ./ca --profile project_profile.yaml
 
 This validates the request zip, verifies that the request project matches the
 CA and project profile, signs the CSR, injects the Project Admin-approved
@@ -223,7 +223,7 @@ server endpoint from ``project_profile.yaml``, signs CA metadata into
 
 .. code-block:: text
 
-   hospital-a.signed.zip
+   hospital-a/hospital-a.signed.zip
      signed.json
      signed.json.sig
      site.yaml
@@ -249,7 +249,7 @@ Use ``--out`` to choose the signed zip location:
 
 .. code-block:: shell
 
-   nvflare cert approve hospital-a.request.zip \
+   nvflare cert approve hospital-a/hospital-a.request.zip \
        --ca-dir ./ca \
        --profile project_profile.yaml \
        --out ./signed/hospital-a.signed.zip
@@ -284,13 +284,13 @@ Project Admin:
 .. code-block:: shell
 
    nvflare cert init --profile project_profile.yaml -o ./ca --deploy-version 00
-   nvflare cert approve hospital-a.request.zip --ca-dir ./ca --profile project_profile.yaml
+   nvflare cert approve hospital-a/hospital-a.request.zip --ca-dir ./ca --profile project_profile.yaml
 
 Requester:
 
 .. code-block:: shell
 
-   nvflare package hospital-a.signed.zip --fingerprint <rootca_fingerprint_sha256>
+   nvflare package hospital-a/hospital-a.signed.zip --fingerprint <rootca_fingerprint_sha256>
 
 For the full workflow, including participant definition examples and artifact
 layout, see :ref:`distributed_provisioning`.
