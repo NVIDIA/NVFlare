@@ -22,6 +22,7 @@ This example shows how to configure per-client MLflow tracking:
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.app_opt.tracking.mlflow.mlflow_receiver import MLflowReceiver
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
+from nvflare.recipe import SimEnv
 
 # Create recipe WITHOUT default server-side tracking
 recipe = FedAvgRecipe(
@@ -48,7 +49,8 @@ for i in range(2):
 
     recipe.job.to(receiver, site_name, id="mlflow_receiver")
 
-recipe.run()
+env = SimEnv(num_clients=2)
+run = recipe.execute(env)
 ```
 
 **Key points**:
