@@ -58,7 +58,7 @@ class SkillFrontmatterError(ValueError):
 def parse_skill_frontmatter(skill_file: Path | str) -> dict[str, Any]:
     """Parse YAML frontmatter from a SKILL.md file."""
     path = Path(skill_file)
-    text = path.read_text(encoding="utf-8")
+    text = path.read_text(encoding="utf-8-sig")
     lines = text.splitlines()
     if not lines or lines[0].strip() != "---":
         raise SkillFrontmatterError("SKILL.md must start with YAML frontmatter delimiter '---'")
@@ -131,9 +131,17 @@ def _validate_required_fields(
 ) -> None:
     for field in REQUIRED_FRONTMATTER_FIELDS:
         value = metadata.get(field)
-        if not isinstance(value, str) or not value.strip():
+        if value is None or (isinstance(value, str) and not value.strip()):
             issues.append(
                 _issue("skill-frontmatter-field-required", f"frontmatter field '{field}' is required", skill_file)
+            )
+        elif not isinstance(value, str):
+            issues.append(
+                _issue(
+                    "skill-frontmatter-field-type",
+                    f"frontmatter field '{field}' must be a non-empty string; " f"got {type(value).__name__}={value!r}",
+                    skill_file,
+                )
             )
 
 
