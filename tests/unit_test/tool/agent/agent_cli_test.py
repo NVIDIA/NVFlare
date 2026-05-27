@@ -358,6 +358,50 @@ def test_agent_skills_missing_named_skill_is_structured_json_error(capsys, monke
     assert payload["data"]["missing"] == ["nvflare-missing"]
 
 
+def test_agent_skills_install_failure_is_structured_json_error(capsys, monkeypatch, tmp_path):
+    from nvflare.tool.agent import skill_manager
+
+    monkeypatch.setattr(
+        skill_manager,
+        "install_skills",
+        lambda **_kwargs: {
+            "agent": "codex",
+            "target_path": str(tmp_path / "target"),
+            "requested_skill": None,
+            "source": {},
+            "available": [],
+            "skills": [],
+            "conflicts": [],
+            "errors": [{"skill": "nvflare-test-skill", "code": "skill_install_failed", "message": "disk full"}],
+            "deprecated_skills_skipped": [],
+            "missing": [],
+            "applied": False,
+        },
+    )
+
+    exit_code = _run_main(
+        [
+            "nvflare",
+            "agent",
+            "skills",
+            "install",
+            "--agent",
+            "codex",
+            "--target",
+            str(tmp_path / "target"),
+            "--format",
+            "json",
+        ]
+    )
+
+    assert exit_code == 1
+    payload = _load_single_stdout_json(capsys.readouterr())
+    _assert_envelope_shape(payload, "error")
+    assert payload["code"] == "AGENT_SKILL_INSTALL_FAILED"
+    assert payload["recovery_category"] == "FIXABLE_BY_ENV"
+    assert payload["data"]["errors"][0]["code"] == "skill_install_failed"
+
+
 def test_agent_skills_install_schema_exits_zero(capsys):
     exit_code = _run_main(["nvflare", "agent", "skills", "install", "--schema"])
 

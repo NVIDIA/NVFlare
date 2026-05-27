@@ -99,7 +99,11 @@ def def_agent_cli_parser(sub_cmd) -> dict:
 
 
 def _add_agent_target_args(parser) -> None:
-    parser.add_argument("--agent", choices=["codex", "claude"], required=True, help="agent skill target to manage")
+    from nvflare.tool.agent.skill_manager import SUPPORTED_AGENT_TARGETS
+
+    parser.add_argument(
+        "--agent", choices=list(SUPPORTED_AGENT_TARGETS), required=True, help="agent skill target to manage"
+    )
     parser.add_argument("--target", help="override the resolved agent skill directory")
 
 
@@ -240,6 +244,16 @@ def _handle_agent_skills_cmd(args, handle_schema_flag, output_error_message, out
                 recovery_category="FIXABLE_BY_CONFIG",
             )
             return
+        if plan["errors"]:
+            output_error_message(
+                "AGENT_SKILL_INSTALL_FAILED",
+                "One or more NVFLARE skills failed to install.",
+                "Review data.errors and rerun the install after fixing the reported filesystem issue.",
+                exit_code=1,
+                data=plan,
+                recovery_category="FIXABLE_BY_ENV",
+            )
+            return
         output_ok(
             plan,
             code="OK",
@@ -276,6 +290,8 @@ def _handle_agent_skills_cmd(args, handle_schema_flag, output_error_message, out
 
 
 def _schema_agent_skills_sub_cmd(argv: list[str]) -> Optional[str]:
+    # The top-level CLI bypasses nested argparse parsing for --schema, so infer
+    # the third-level agent skills command from argv until that parser path is generalized.
     if "--schema" not in argv or CMD_AGENT_SKILLS not in argv:
         return None
     index = argv.index(CMD_AGENT_SKILLS) + 1
