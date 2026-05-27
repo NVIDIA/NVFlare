@@ -218,7 +218,7 @@ def test_direct_authorize_component_config_skips_all_checks_for_byoc_job():
     fl_ctx = FLContext()
     fl_ctx.set_prop(FLContextKey.JOB_META, {AppValidationKey.BYOC: True}, private=True, sticky=False)
 
-    authorizer.authorize_component_config({"name": "Popen"}, fl_ctx=fl_ctx)
+    authorizer.authorize_component_config({"path": "subprocess.Popen"}, fl_ctx=fl_ctx)
 
 
 @pytest.mark.parametrize(
@@ -267,11 +267,19 @@ def test_allows_component_with_class_path():
     authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
 
 
-def test_allows_name_component_without_checking_name_value():
+def test_rejects_component_with_name():
     authorizer = ComponentPathAuthorizer()
-    fl_ctx = _make_fl_ctx({"name": ""})
+    fl_ctx = _make_fl_ctx({"name": "MetricRelay"})
 
-    authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
+    with pytest.raises(UnsafeComponentError, match="name is not allowed"):
+        authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
+
+
+def test_direct_authorize_component_config_rejects_name():
+    authorizer = ComponentPathAuthorizer()
+
+    with pytest.raises(UnsafeComponentError, match="name is not allowed"):
+        authorizer.authorize_component_config({"name": "MetricRelay"})
 
 
 def test_path_takes_precedence_over_class_path():
@@ -284,20 +292,21 @@ def test_path_takes_precedence_over_class_path():
     authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
 
 
-def test_path_takes_precedence_over_name():
+def test_rejects_component_with_path_and_name():
     _set_class_allow_list(["nvflare."])
     authorizer = ComponentPathAuthorizer()
     fl_ctx = _make_fl_ctx({"path": "nvflare.app_common.widgets.metric_relay.MetricRelay", "name": "Popen"})
 
-    authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
+    with pytest.raises(UnsafeComponentError, match="name is not allowed"):
+        authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
 
 
-def test_rejects_path_missing_from_allow_list_even_when_name_is_present():
+def test_rejects_component_with_path_missing_from_allow_list_and_name():
     _set_class_allow_list(["nvflare."])
     authorizer = ComponentPathAuthorizer()
     fl_ctx = _make_fl_ctx({"path": "subprocess.Popen", "name": "MetricRelay"})
 
-    with pytest.raises(UnsafeComponentError, match="subprocess.Popen.*allow_list"):
+    with pytest.raises(UnsafeComponentError, match="name is not allowed"):
         authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
 
 
@@ -360,7 +369,9 @@ def test_empty_allow_list_rejects_component():
         authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
 
 
-@pytest.mark.parametrize("component_config", [{}, {"path": ""}, {"path": 1}, {"class_path": ""}, {"class_path": 1}, []])
+@pytest.mark.parametrize(
+    "component_config", [{}, {"path": ""}, {"path": 1}, {"class_path": ""}, {"class_path": 1}, {"name": ""}, []]
+)
 def test_rejects_invalid_component_config(component_config):
     _set_class_allow_list(["nvflare."])
     authorizer = ComponentPathAuthorizer()

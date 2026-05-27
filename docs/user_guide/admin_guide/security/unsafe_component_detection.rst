@@ -35,7 +35,9 @@ implementation of component safety policy.
         def handle_event(self, event_type: str, fl_ctx: FLContext):
             if event_type == EventType.BEFORE_BUILD_COMPONENT:
                 comp_config = fl_ctx.get_prop(FLContextKey.COMPONENT_CONFIG)
-                if "path" in comp_config:
+                if "name" in comp_config:
+                    raise UnsafeComponentError("component config must use path or class_path")
+                elif "path" in comp_config:
                     component_path = comp_config["path"]
                 elif "class_path" in comp_config:
                     component_path = comp_config["class_path"]
@@ -90,12 +92,11 @@ entries are still built as components later. The authorizer can also be called d
 When BYOC is enabled for the job, this built-in class allow-list check is skipped because BYOC authorization already permits
 loading job-provided custom code.
 
-Under this policy, component configs may use either ``path`` or ``class_path`` as the fully qualified class path key.
-The key precedence is ``path`` then ``class_path`` then ``name``, matching the component builder's class path resolution
-behavior. Key presence is used, not truthiness: if ``path`` is present but empty or invalid, it is rejected instead of
-falling through to ``class_path`` or ``name``. Components that use only ``name`` are allowed to pass through this built-in
-path authorizer without checking the value of ``name``, because ``name`` is resolved by the component builder rather than
-compared as a fully qualified class path.
+Under this policy, component configs must use either ``path`` or ``class_path`` as the fully qualified class path key.
+If both are present, ``path`` takes precedence. Key presence is used, not truthiness: if ``path`` is present but empty or
+invalid, it is rejected instead of falling through to ``class_path``. Component configs that include ``name`` are rejected
+by the built-in path authorizer; non-BYOC jobs should use ``path`` or ``class_path`` so the fully qualified class path can
+be checked against ``class_allow_list``.
 
 ``class_allow_list`` is a list of allowed component path prefixes. Package prefixes should end with ``.`` to match on a
 Python package boundary, for example ``"nvflare."``. Entries without a trailing ``.`` must be fully qualified dotted paths

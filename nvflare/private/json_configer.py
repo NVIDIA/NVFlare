@@ -219,6 +219,9 @@ class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
             if new_auth_scope:
                 self._authorized_config_ids = None
 
+    def _is_in_current_authorized_build_scope(self, config_dict):
+        return self._authorized_config_ids is not None and id(config_dict) in self._authorized_config_ids
+
     def _make_nested_component_node(self, config_dict, arg_name):
         node = Node(config_dict)
         node.processor = self
@@ -255,11 +258,17 @@ class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
         return super().build_component(config_dict)
 
     def build_component(self, config_dict):
-        if self.build_auth_func is None or self._building_authorized_component_depth > 0:
+        if self.build_auth_func is None:
+            return self._build_component(config_dict)
+
+        if self._building_authorized_component_depth > 0 and self._is_in_current_authorized_build_scope(config_dict):
             return self._build_component(config_dict)
 
         node = self._make_runtime_component_node(config_dict)
-        return self.authorize_and_build_component(config_dict, self._get_config_ctx(), node)
+        config_ctx = self._get_config_ctx()
+        if self._build_node_stack:
+            config_ctx, _ = self._build_node_stack[-1]
+        return self.authorize_and_build_component(config_dict, config_ctx, node)
 
     def get_module_scanner(self):
         return self.module_scanner

@@ -76,6 +76,14 @@ class ThreadBlockingComponent:
             raise RuntimeError("timed out waiting to release ThreadBlockingComponent")
 
 
+class BuildDuringInitComponent:
+    configurator = None
+    runtime_component_config = None
+
+    def __init__(self):
+        BuildDuringInitComponent.configurator.build_component(BuildDuringInitComponent.runtime_component_config)
+
+
 class _TestMultiProcessExecutor(MultiProcessExecutor):
     instantiated = False
 
@@ -337,6 +345,34 @@ def test_runtime_build_authorization_state_is_thread_local(tmp_path):
     assert not thread.is_alive()
     assert errors == []
     assert ("MainThread", "subprocess.Popen", "runtime_component") in seen
+
+
+def test_runtime_build_during_authorized_build_is_authorized(tmp_path, monkeypatch):
+    config_file = tmp_path / "config.json"
+    _write_component_config(config_file, {"path": _component_path(BuildDuringInitComponent), "args": {}})
+    configurator = _make_authorized_configurator(config_file)
+    BuildDuringInitComponent.configurator = configurator
+    BuildDuringInitComponent.runtime_component_config = {"path": "subprocess.Popen", "args": {}}
+    loaded_paths = []
+    original_load_class = class_utils.load_class
+
+    def record_load_class(class_path):
+        loaded_paths.append(class_path)
+        if class_path == "subprocess.Popen":
+            raise AssertionError("load_class should not be called for blocked runtime component subprocess.Popen")
+        return original_load_class(class_path)
+
+    monkeypatch.setattr(class_utils, "load_class", record_load_class)
+
+    try:
+        with pytest.raises(ComponentNotAuthorized, match="subprocess.Popen.*runtime_component"):
+            configurator.configure()
+    finally:
+        BuildDuringInitComponent.configurator = None
+        BuildDuringInitComponent.runtime_component_config = None
+
+    assert _component_path(BuildDuringInitComponent) in loaded_paths
+    assert "subprocess.Popen" not in loaded_paths
 
 
 def test_deeply_nested_component_path_authorizer_blocks_before_build(tmp_path):

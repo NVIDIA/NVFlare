@@ -180,14 +180,15 @@ class ComponentPathAuthorizer(Widget):
         if not isinstance(component_config, dict):
             raise UnsafeComponentError(f"Component config must be dict but got {type(component_config)}")
 
+        if "name" in component_config:
+            raise UnsafeComponentError("Component config must use path or class_path; name is not allowed")
+
         if "path" in component_config:
             component_path = component_config["path"]
             key = "path"
         elif "class_path" in component_config:
             component_path = component_config["class_path"]
             key = "class_path"
-        elif "name" in component_config:
-            return None
         else:
             raise UnsafeComponentError("Component config must specify path or class_path")
 
