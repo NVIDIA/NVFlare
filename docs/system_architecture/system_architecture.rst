@@ -198,7 +198,9 @@ K8s-native Architecture: Control and Execution Planes Separation
 
 .. note::
 
-   The K8s-native feature is coming soon.
+   K8s-native deployment support was introduced in FLARE 2.8.0. For deployment
+   steps, Helm chart generation, parent pods, and dynamically launched job
+   pods, see :ref:`helm_chart`.
 
 Parent pods manage the system lifecycle and spawn job pods (server job pod, client job pod) for workload execution.
 The server hosts the central coordination logic and is designed to be resilient, scalable, and capable of handling
