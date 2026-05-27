@@ -35,6 +35,24 @@ def test_parse_skill_frontmatter_reads_required_fields():
     assert metadata["blast_radius"] == "read_only"
 
 
+def test_parse_skill_frontmatter_accepts_utf8_bom(tmp_path):
+    skill_file = tmp_path / "SKILL.md"
+    skill_file.write_bytes(
+        b"\xef\xbb\xbf---\n"
+        b"name: nvflare-bom-skill\n"
+        b"description: Test skill fixture.\n"
+        b'min_flare_version: "2.8.0"\n'
+        b"blast_radius: read_only\n"
+        b"---\n"
+        b"\n"
+        b"# Test Skill\n"
+    )
+
+    metadata = parse_skill_frontmatter(skill_file)
+
+    assert metadata["name"] == "nvflare-bom-skill"
+
+
 def test_validate_skill_dir_accepts_fixture_skill():
     result = validate_skill_dir(FIXTURES / "valid" / "nvflare-example-skill")
 
@@ -72,6 +90,29 @@ def test_validate_skill_dir_reports_missing_required_fields(tmp_path):
     assert len(result.issues) == 2
 
 
+def test_validate_skill_dir_reports_wrong_type_fields(tmp_path):
+    skill_dir = tmp_path / "nvflare-wrong-type"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: nvflare-wrong-type\n"
+        "description: Wrong type fixture.\n"
+        "min_flare_version: 2.8\n"
+        "blast_radius: read_only\n"
+        "---\n"
+        "\n"
+        "# Wrong Type\n",
+        encoding="utf-8",
+    )
+
+    result = validate_skill_dir(skill_dir)
+
+    assert not result.ok
+    assert _issue_codes(result) == {"skill-frontmatter-field-type"}
+    assert "min_flare_version" in result.issues[0].message
+    assert "float=2.8" in result.issues[0].message
+
+
 def test_validate_skill_dir_rejects_invalid_blast_radius(tmp_path):
     skill_dir = _write_skill(tmp_path, "nvflare-invalid-radius", blast_radius="global_admin")
 
@@ -89,6 +130,40 @@ def test_parse_skill_frontmatter_requires_delimiters(tmp_path):
         parse_skill_frontmatter(skill_file)
 
 
+def test_parse_skill_frontmatter_requires_closing_delimiter(tmp_path):
+    skill_file = tmp_path / "SKILL.md"
+    skill_file.write_text(
+        "---\n" "name: nvflare-no-closing-delimiter\n" "description: Missing closing delimiter.\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SkillFrontmatterError, match="must end"):
+        parse_skill_frontmatter(skill_file)
+
+
+def test_parse_skill_frontmatter_rejects_malformed_yaml(tmp_path):
+    skill_file = tmp_path / "SKILL.md"
+    skill_file.write_text("---\nname: [unclosed\n---\n", encoding="utf-8")
+
+    with pytest.raises(SkillFrontmatterError, match="failed to parse YAML"):
+        parse_skill_frontmatter(skill_file)
+
+
+def test_parse_skill_frontmatter_rejects_non_mapping(tmp_path):
+    skill_file = tmp_path / "SKILL.md"
+    skill_file.write_text("---\n- name\n- description\n---\n", encoding="utf-8")
+
+    with pytest.raises(SkillFrontmatterError, match="must be a mapping"):
+        parse_skill_frontmatter(skill_file)
+
+
+def test_validate_skill_dir_reports_missing_directory(tmp_path):
+    result = validate_skill_dir(tmp_path / "nvflare-missing-directory")
+
+    assert not result.ok
+    assert _issue_codes(result) == {"skill-dir-missing"}
+
+
 def test_validate_skill_dir_reports_missing_skill_file(tmp_path):
     skill_dir = tmp_path / "nvflare-missing-skill-md"
     skill_dir.mkdir()
@@ -102,6 +177,7 @@ def test_validate_skill_dir_reports_missing_skill_file(tmp_path):
 def test_validate_skills_root_skips_non_skill_files(tmp_path):
     _write_skill(tmp_path, "nvflare-valid-one")
     (tmp_path / "README.md").write_text("not a skill\n", encoding="utf-8")
+    (tmp_path / ".hidden-dir").mkdir()
 
     results = validate_skills_root(tmp_path)
 
