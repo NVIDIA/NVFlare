@@ -201,6 +201,15 @@ class TestOutputOk:
         mock_print.assert_called_once()
         assert mock_print.call_args.kwargs["flush"] is True
 
+    def test_json_mode_output_ok_flushes_stdout(self, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "json")
+
+        with patch("builtins.print") as mock_print:
+            output_ok({"key": "value"})
+
+        mock_print.assert_called_once()
+        assert mock_print.call_args.kwargs["flush"] is True
+
     def test_human_mode_dict_renders_as_table(self, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         output_ok({"status": "running", "id": "abc"})
