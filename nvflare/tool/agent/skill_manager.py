@@ -303,7 +303,7 @@ def _conflict(skill_name: str, code: str, target_path: Path) -> dict:
     return {
         "skill": skill_name,
         "code": code,
-        "message": messages[code],
+        "message": messages.get(code, code),
         "target_path": str(target_path),
     }
 
