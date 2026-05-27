@@ -23,11 +23,12 @@ The ``input`` positional argument is the ``*.signed.zip`` file produced by
 Basic Package Flow
 *******************
 
-For a site request created in ``./hospital-a``:
+For a site request created in ``./hospital-a`` and approved with the default
+``--out`` (which writes the signed zip next to the request zip):
 
 .. code-block:: shell
 
-   nvflare package hospital-a.signed.zip
+   nvflare package hospital-a/hospital-a.signed.zip
 
 This still validates the signed zip, signed metadata, certificate chain, and
 local private-key match. It does not perform an out-of-band root CA fingerprint
@@ -38,17 +39,18 @@ Admin through a trusted out-of-band channel, pass the expected fingerprint:
 
 .. code-block:: shell
 
-   nvflare package hospital-a.signed.zip --fingerprint <rootca_fingerprint_sha256>
+   nvflare package hospital-a/hospital-a.signed.zip --fingerprint <rootca_fingerprint_sha256>
 
 The longer spelling ``--expected-fingerprint`` is also accepted:
 
 .. code-block:: shell
 
-   nvflare package hospital-a.signed.zip \
+   nvflare package hospital-a/hospital-a.signed.zip \
        --expected-fingerprint <rootca_fingerprint_sha256>
 
-If the signed zip is not next to the request folder and package cannot find the
-folder from local request state, specify it:
+If the signed zip is not next to the request folder (for example, after a
+remote transfer back to the requester), specify the local request folder
+explicitly:
 
 .. code-block:: shell
 
@@ -174,8 +176,8 @@ For a lead user:
 .. code-block:: shell
 
    nvflare cert request --participant alice.yaml
-   nvflare cert approve alice@hospital-alpha.org.request.zip --ca-dir ./ca --profile project_profile.yaml
-   nvflare package alice@hospital-alpha.org.signed.zip --fingerprint <rootca_fingerprint_sha256>
+   nvflare cert approve alice@hospital-alpha.org/alice@hospital-alpha.org.request.zip --ca-dir ./ca --profile project_profile.yaml
+   nvflare package alice@hospital-alpha.org/alice@hospital-alpha.org.signed.zip --fingerprint <rootca_fingerprint_sha256>
 
 The generated startup kit contains:
 
@@ -222,7 +224,7 @@ The top-level CLI also supports JSON output mode:
 
 .. code-block:: shell
 
-   nvflare package hospital-a.signed.zip \
+   nvflare package hospital-a/hospital-a.signed.zip \
        --fingerprint <rootca_fingerprint_sha256> \
        --format json
 
