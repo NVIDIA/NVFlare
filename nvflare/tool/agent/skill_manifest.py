@@ -15,6 +15,7 @@
 """Build and validate the manifest for NVFLARE-owned agent skills."""
 
 import hashlib
+import importlib
 import importlib.util
 import json
 import shutil
@@ -138,14 +139,25 @@ def _validate_skill_dir(skill_dir: Path):
     global _FRONTMATTER_MODULE
 
     if _FRONTMATTER_MODULE is None:
-        module_name = "nvflare_agent_skill_frontmatter"
-        module_path = Path(__file__).resolve().parents[1] / "agent_skill_checks" / "frontmatter.py"
-        spec = importlib.util.spec_from_file_location(module_name, module_path)
-        if spec is None or spec.loader is None:
-            raise RuntimeError(f"Failed to load agent skill frontmatter validator from {module_path}")
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[module_name] = module
-        spec.loader.exec_module(module)
-        _FRONTMATTER_MODULE = module
+        _FRONTMATTER_MODULE = _load_frontmatter_module()
 
     return _FRONTMATTER_MODULE.validate_skill_dir(skill_dir)
+
+
+def _load_frontmatter_module():
+    try:
+        return importlib.import_module("nvflare.tool.agent_skill_checks.frontmatter")
+    except ImportError:
+        pass
+
+    # setup.py loads this file before build isolation has all NVFLARE runtime
+    # dependencies, so fall back to loading the validator file directly.
+    module_name = "nvflare_agent_skill_frontmatter"
+    module_path = Path(__file__).resolve().parents[1] / "agent_skill_checks" / "frontmatter.py"
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Failed to load agent skill frontmatter validator from {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module

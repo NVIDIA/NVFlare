@@ -13,15 +13,18 @@
 # limitations under the License.
 
 import json
+import shutil
 
+from nvflare.tool.agent import skill_manager
 from nvflare.tool.agent.skill_manager import (
     INSTALL_MANIFEST_FILE_NAME,
     SkillSource,
+    find_skill_source,
     install_skills,
     list_skills,
     resolve_agent_target_dir,
 )
-from nvflare.tool.agent.skill_manifest import build_skill_manifest
+from nvflare.tool.agent.skill_manifest import build_skill_manifest, write_manifest
 
 
 def test_resolve_codex_target_uses_codex_home(tmp_path):
@@ -36,6 +39,48 @@ def test_resolve_claude_target_uses_home(monkeypatch, tmp_path):
     target = resolve_agent_target_dir("claude")
 
     assert target == tmp_path / ".claude" / "skills"
+
+
+def test_resolve_target_override_skips_agent_home_resolution(tmp_path):
+    target = resolve_agent_target_dir("codex", target_dir=tmp_path / "custom-target", env={"CODEX_HOME": "ignored"})
+
+    assert target == tmp_path / "custom-target"
+
+
+def test_resolve_unsupported_agent_raises_value_error():
+    try:
+        resolve_agent_target_dir("unsupported")
+    except ValueError as e:
+        assert "unsupported agent target" in str(e)
+    else:
+        assert False, "unsupported agent target should raise ValueError"
+
+
+def test_find_skill_source_does_not_misclassify_site_packages_skills(monkeypatch, tmp_path):
+    fake_site_packages = tmp_path / "site-packages"
+    fake_module = fake_site_packages / "nvflare" / "tool" / "agent" / "skill_manager.py"
+    fake_module.parent.mkdir(parents=True)
+    fake_module.write_text("# fake installed module\n", encoding="utf-8")
+    _write_skill(fake_site_packages / "skills", "unrelated-skill")
+    bundle_root = tmp_path / "bundle"
+    bundle_root.mkdir()
+    write_manifest(
+        {
+            "schema_version": "1",
+            "source_type": "wheel",
+            "nvflare_version": "2.8.0",
+            "skills": [],
+            "findings": [],
+        },
+        bundle_root / "manifest.json",
+    )
+    monkeypatch.setattr(skill_manager, "__file__", str(fake_module))
+    monkeypatch.setattr(skill_manager.resources, "files", lambda _package: bundle_root)
+
+    source = find_skill_source()
+
+    assert source.source_type == "wheel"
+    assert source.root == bundle_root
 
 
 def test_install_skills_dry_run_reports_plan_without_copying(tmp_path):
@@ -145,6 +190,42 @@ def test_install_skills_replaces_unmodified_managed_install_with_backup(tmp_path
     assert len(backup_runs) == 1
     backup_file = backup_runs[0] / "nvflare-test-skill" / "SKILL.md"
     assert "First Skill" in backup_file.read_text(encoding="utf-8")
+
+
+def test_install_skills_reports_copy_error_and_continues(monkeypatch, tmp_path):
+    root = tmp_path / "skills"
+    _write_skill(root, "nvflare-a-skill")
+    _write_skill(root, "nvflare-failing-skill")
+    _write_skill(root, "nvflare-z-skill")
+    source = SkillSource(
+        source_type="editable",
+        root=root,
+        manifest=build_skill_manifest(root, source_type="editable", nvflare_version="2.8.0"),
+    )
+    target = tmp_path / "target"
+    real_copytree = shutil.copytree
+
+    def copytree_with_failure(src, dst, *args, **kwargs):
+        if src.name == "nvflare-failing-skill":
+            raise OSError("disk full")
+        return real_copytree(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(skill_manager.shutil, "copytree", copytree_with_failure)
+
+    plan = install_skills(agent="codex", target_dir=target, source=source)
+
+    assert plan["applied"] is False
+    assert plan["errors"] == [
+        {
+            "skill": "nvflare-failing-skill",
+            "code": "skill_install_failed",
+            "type": "OSError",
+            "message": "disk full",
+        }
+    ]
+    assert (target / "nvflare-a-skill" / "SKILL.md").is_file()
+    assert not (target / "nvflare-failing-skill").exists()
+    assert (target / "nvflare-z-skill" / "SKILL.md").is_file()
 
 
 def test_list_skills_reports_available_installed_and_external_conflicts(tmp_path):

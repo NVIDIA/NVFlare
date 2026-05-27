@@ -51,6 +51,32 @@ def test_skill_tree_hash_changes_when_skill_content_changes(tmp_path):
     assert skill_tree_hash(skill_dir) != first_hash
 
 
+def test_build_skill_manifest_reports_invalid_skill_findings(tmp_path):
+    skill_dir = tmp_path / "nvflare-invalid-skill"
+    skill_dir.mkdir()
+    skill_dir.joinpath("SKILL.md").write_text(
+        "---\n" "name: nvflare-invalid-skill\n" "description: Missing required fields.\n" "---\n",
+        encoding="utf-8",
+    )
+
+    manifest = build_skill_manifest(tmp_path, source_type="editable", nvflare_version="2.8.0")
+
+    assert manifest["skills"] == []
+    assert manifest["findings"][0]["skill_dir"] == "nvflare-invalid-skill"
+    assert manifest["findings"][0]["issues"][0]["code"] == "skill-frontmatter-field-required"
+
+
+def test_skill_tree_hash_ignores_python_cache_files(tmp_path):
+    skill_dir = _write_skill(tmp_path, "nvflare-test-skill")
+    first_hash = skill_tree_hash(skill_dir)
+    cache_dir = skill_dir / "__pycache__"
+    cache_dir.mkdir()
+    cache_dir.joinpath("SKILL.cpython-310.pyc").write_bytes(b"compiled cache")
+    skill_dir.joinpath("cache.pyo").write_bytes(b"optimized cache")
+
+    assert skill_tree_hash(skill_dir) == first_hash
+
+
 def test_copy_released_skills_to_bundle_writes_manifest_and_files(tmp_path):
     source_root = tmp_path / "skills"
     bundle_root = tmp_path / "bundle"
@@ -63,6 +89,25 @@ def test_copy_released_skills_to_bundle_writes_manifest_and_files(tmp_path):
     saved_manifest = json.loads(bundle_root.joinpath("manifest.json").read_text(encoding="utf-8"))
     assert saved_manifest == manifest
     assert saved_manifest["skills"][0]["name"] == "nvflare-test-skill"
+
+
+def test_copy_released_skills_to_bundle_cleans_existing_bundle_content(tmp_path):
+    source_root = tmp_path / "skills"
+    bundle_root = tmp_path / "bundle"
+    bundle_root.mkdir()
+    bundle_root.joinpath("__init__.py").write_text("# keep package marker\n", encoding="utf-8")
+    bundle_root.joinpath("stale.txt").write_text("stale\n", encoding="utf-8")
+    stale_dir = bundle_root / "stale-skill"
+    stale_dir.mkdir()
+    stale_dir.joinpath("SKILL.md").write_text("stale\n", encoding="utf-8")
+    _write_skill(source_root, "nvflare-test-skill")
+
+    copy_released_skills_to_bundle(source_root, bundle_root, nvflare_version="2.8.0")
+
+    assert bundle_root.joinpath("__init__.py").is_file()
+    assert not bundle_root.joinpath("stale.txt").exists()
+    assert not stale_dir.exists()
+    assert bundle_root.joinpath("nvflare-test-skill", "SKILL.md").is_file()
 
 
 def test_bundled_skill_manifest_resource_exists():

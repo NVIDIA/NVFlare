@@ -17,6 +17,7 @@
 import json
 import os
 import shutil
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from importlib import resources
@@ -64,8 +65,8 @@ def resolve_agent_target_dir(
 
 def find_skill_source() -> SkillSource:
     """Find skills from an editable/source checkout first, then from the installed package bundle."""
-    source_root = Path(__file__).resolve().parents[3] / "skills"
-    if source_root.is_dir():
+    source_root = _source_checkout_root()
+    if source_root:
         return SkillSource(
             source_type="editable",
             root=source_root,
@@ -103,18 +104,29 @@ def install_skills(
 
     target.mkdir(parents=True, exist_ok=True)
     for entry in plan["skills"]:
-        if entry["action"] == "copy":
-            _copy_skill(source.root / entry["relative_path"], Path(entry["target_path"]), entry, source)
-            entry["status"] = "installed"
-        elif entry["action"] == "replace":
-            backup_path = Path(entry["backup_path"])
-            backup_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(entry["target_path"], backup_path)
-            _copy_skill(source.root / entry["relative_path"], Path(entry["target_path"]), entry, source)
-            entry["status"] = "replaced"
-        else:
-            entry["status"] = "skipped"
-    plan["applied"] = True
+        try:
+            if entry["action"] == "copy":
+                _copy_skill(source.root / entry["relative_path"], Path(entry["target_path"]), entry, source)
+                entry["status"] = "installed"
+            elif entry["action"] == "replace":
+                backup_path = Path(entry["backup_path"])
+                backup_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(entry["target_path"], backup_path)
+                _copy_skill(source.root / entry["relative_path"], Path(entry["target_path"]), entry, source)
+                entry["status"] = "replaced"
+            else:
+                entry["status"] = "skipped"
+        except Exception as e:
+            error = {
+                "skill": entry["name"],
+                "code": "skill_install_failed",
+                "type": type(e).__name__,
+                "message": str(e),
+            }
+            entry["status"] = "failed"
+            entry["error"] = error
+            plan["errors"].append(error)
+    plan["applied"] = not plan["errors"]
     return plan
 
 
@@ -168,6 +180,7 @@ def _install_plan(
     conflicts = []
     for skill in skills:
         target_skill_dir = target / skill["name"]
+        # version_delta: new, unknown external state, blocked local edit, same, or update.
         entry = {
             "name": skill["name"],
             "skill_version": skill.get("skill_version"),
@@ -212,26 +225,33 @@ def _install_plan(
         "available": source.manifest.get("skills", []),
         "skills": planned_skills,
         "conflicts": conflicts,
+        "errors": [],
         "deprecated_skills_skipped": [],
     }
 
 
 def _copy_skill(source_dir: Path, target_dir: Path, plan_entry: dict, source: SkillSource) -> None:
-    shutil.copytree(source_dir, target_dir, ignore=shutil.ignore_patterns(*IGNORED_SKILL_FILE_NAMES))
-    manifest = {
-        "schema_version": "1",
-        "managed_by": "nvflare",
-        "name": plan_entry["name"],
-        "skill_version": plan_entry.get("skill_version"),
-        "nvflare_version": nvflare.__version__,
-        "source_type": source.source_type,
-        "source_hash": plan_entry["source_hash"],
-        "installed_paths": [str(target_dir)],
-        "installed_at": datetime.now(timezone.utc).isoformat(),
-    }
-    (target_dir / INSTALL_MANIFEST_FILE_NAME).write_text(
-        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    target_dir.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=f".{target_dir.name}.", dir=target_dir.parent) as temp_root:
+        temp_skill_dir = Path(temp_root) / target_dir.name
+        shutil.copytree(source_dir, temp_skill_dir, ignore=shutil.ignore_patterns(*IGNORED_SKILL_FILE_NAMES))
+        manifest = {
+            "schema_version": "1",
+            "managed_by": "nvflare",
+            "name": plan_entry["name"],
+            "skill_version": plan_entry.get("skill_version"),
+            "nvflare_version": nvflare.__version__,
+            "source_type": source.source_type,
+            "source_hash": plan_entry["source_hash"],
+            "installed_paths": [str(target_dir)],
+            "installed_at": datetime.now(timezone.utc).isoformat(),
+        }
+        (temp_skill_dir / INSTALL_MANIFEST_FILE_NAME).write_text(
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        if target_dir.exists():
+            raise FileExistsError(f"target skill directory already exists: {target_dir}")
+        shutil.move(temp_skill_dir, target_dir)
 
 
 def _select_skills(manifest: dict, skill_name: Optional[str]) -> tuple[list[dict], list[str]]:
@@ -286,3 +306,11 @@ def _conflict(skill_name: str, code: str, target_path: Path) -> dict:
         "message": messages[code],
         "target_path": str(target_path),
     }
+
+
+def _source_checkout_root() -> Optional[Path]:
+    repo_root = Path(__file__).resolve().parents[3]
+    source_root = repo_root / "skills"
+    if source_root.is_dir() and (repo_root / "pyproject.toml").is_file() and (repo_root / "setup.py").is_file():
+        return source_root
+    return None
