@@ -147,14 +147,61 @@ def output(data: Any, fmt: Optional[str]) -> None:
         _render_table(data)
 
 
-def output_ok(data: Any, exit_code: int = 0) -> None:
-    """Print command success output."""
+def _add_agent_envelope_fields(
+    payload: dict,
+    code: str = None,
+    message: str = None,
+    hint: str = None,
+    recovery_category: str = None,
+    suggested_skill: str = None,
+) -> dict:
+    if code is not None:
+        payload["code"] = code
+    if message is not None:
+        payload["message"] = message
+    if hint is not None:
+        payload["hint"] = hint
+    if recovery_category is not None:
+        payload["recovery_category"] = recovery_category
+    if suggested_skill is not None:
+        payload["suggested_skill"] = suggested_skill
+    return payload
+
+
+def output_ok(
+    data: Any,
+    exit_code: int = 0,
+    code: str = None,
+    message: str = None,
+    hint: str = None,
+    recovery_category: str = None,
+    suggested_skill: str = None,
+) -> None:
+    """Print command success output.
+
+    code/message/hint/recovery fields are emitted in JSON/JSONL modes only;
+    human mode renders command data.
+    """
     if _is_jsonl_mode():
-        output_jsonl_event(
-            {"event": "terminal", "status": "ok", "exit_code": exit_code, "data": data, "terminal": True}
+        payload = _add_agent_envelope_fields(
+            {"event": "terminal", "status": "ok", "exit_code": exit_code, "data": data, "terminal": True},
+            code=code,
+            message=message,
+            hint=hint,
+            recovery_category=recovery_category,
+            suggested_skill=suggested_skill,
         )
+        output_jsonl_event(payload)
     elif _is_json_mode():
-        print(json.dumps({"schema_version": SCHEMA_VERSION, "status": "ok", "exit_code": exit_code, "data": data}))
+        payload = _add_agent_envelope_fields(
+            {"schema_version": SCHEMA_VERSION, "status": "ok", "exit_code": exit_code, "data": data},
+            code=code,
+            message=message,
+            hint=hint,
+            recovery_category=recovery_category,
+            suggested_skill=suggested_skill,
+        )
+        print(json.dumps(payload))
     else:
         _render_table(data)
     if exit_code != 0:
@@ -167,6 +214,8 @@ def output_error(
     hint: str = None,
     data: Any = None,
     detail: str = None,
+    recovery_category: str = None,
+    suggested_skill: str = None,
     **kwargs,
 ) -> None:
     """Print an error from ERROR_REGISTRY and exit. Never returns."""
@@ -187,9 +236,15 @@ def output_error(
             "status": "error",
             "exit_code": exit_code,
             "error_code": error_code,
+            "code": error_code,
             "message": message,
             "hint": resolved_hint,
         }
+        _add_agent_envelope_fields(
+            payload,
+            recovery_category=recovery_category,
+            suggested_skill=suggested_skill,
+        )
         if data is not None:
             payload["data"] = data
         if _is_jsonl_mode():
@@ -224,8 +279,16 @@ def output_error_message(
     fmt: Optional[str] = None,
     exit_code: int = 1,
     detail: str = None,
+    data: Any = None,
+    include_data: bool = False,
+    recovery_category: str = None,
+    suggested_skill: str = None,
 ) -> None:
-    """Print an explicit error message/hint pair and exit. Never returns."""
+    """Print an explicit error message/hint pair and exit. Never returns.
+
+    In machine modes, data is omitted when data is None unless include_data=True.
+    This lets callers distinguish an absent data field from an explicit JSON null.
+    """
     resolved_hint = hint or ""
     if detail:
         message = f"{message} \u2014 {detail}"
@@ -236,9 +299,17 @@ def output_error_message(
             "status": "error",
             "exit_code": exit_code,
             "error_code": error_code,
+            "code": error_code,
             "message": message,
             "hint": resolved_hint,
         }
+        _add_agent_envelope_fields(
+            payload,
+            recovery_category=recovery_category,
+            suggested_skill=suggested_skill,
+        )
+        if include_data or data is not None:
+            payload["data"] = data
         if jsonl_mode:
             payload["event"] = "terminal"
             payload["terminal"] = True
