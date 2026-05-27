@@ -577,9 +577,12 @@ class FedJob:
     def _apply_fail_fast(self, server_config: ServerAppConfig):
         """Inject fail_fast configuration into the server app config.
 
-        When fail_fast is enabled, sets dead_client_grace_period to 0 so the server
-        immediately aborts the job upon detecting a client disconnection, rather than
-        waiting for the default 60-second grace period.
+        When fail_fast is enabled, sets dead_client_grace_period to 0 so a client
+        already reported dead is declared disconnected on the next monitor tick
+        instead of after the default 60-second grace period. The job still aborts
+        only when the normal deployment policy is violated (alive < min_clients,
+        all dead, or a required client lost) - this only changes how quickly that
+        check trips.
 
         Args:
             server_config: the ServerAppConfig to update.
