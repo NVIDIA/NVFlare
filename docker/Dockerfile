@@ -1,4 +1,10 @@
-FROM python:3.14.5-slim-trixie@sha256:7a500125bc50693f2214e842a621440a1b1b9cbb2188f74ab045d29ed2ea5856
+ARG PYTHON_BUILD_BASE=python:3.14.5-slim-trixie@sha256:7a500125bc50693f2214e842a621440a1b1b9cbb2188f74ab045d29ed2ea5856
+ARG PYTHON_RUNTIME_BASE=nvcr.io/nvidia/distroless/python:3.14-v4.0.7@sha256:49751a52c1b4f59e0b68d6caf6728f305afc9e47c507008f8a9e8e1253929676
+ARG PYTHON_VERSION=3.14
+
+FROM ${PYTHON_BUILD_BASE} AS builder
+
+ARG PYTHON_VERSION
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -6,16 +12,31 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PYTHONUNBUFFERED=1
 
 RUN apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends zip \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git zip \
     && rm -rf /var/lib/apt/lists/*
 
-COPY nvflare /opt/NVFlare/nvflare
-COPY job_templates /opt/NVFlare/job_templates
-COPY MANIFEST.in README.md pyproject.toml setup.cfg setup.py versioneer.py /opt/NVFlare/
-
 WORKDIR /opt/NVFlare
+COPY . .
 
-RUN python -m pip install --upgrade "pip==26.1.1" \
-    && python -m pip install ".[K8S]" \
-    && python -m pip check
+# Make the prefix install importable without relying on PYTHONPATH.
+RUN NVFL_RELEASE=1 python -m pip install --prefix=/opt/nvflare ".[K8S]" \
+    && PYTHONPATH="/opt/nvflare/lib/python${PYTHON_VERSION}/site-packages" python -m pip check \
+    && mkdir -p "/usr/local/lib/python${PYTHON_VERSION}/site-packages" \
+    && printf "/opt/nvflare/lib/python%s/site-packages\n" "${PYTHON_VERSION}" \
+        > "/usr/local/lib/python${PYTHON_VERSION}/site-packages/nvflare-prefix.pth"
+
+FROM ${PYTHON_RUNTIME_BASE}
+
+ARG PYTHON_VERSION
+
+ENV PATH=/opt/nvflare/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+COPY --from=builder /opt/nvflare /opt/nvflare
+COPY --from=builder /usr/local/lib/python${PYTHON_VERSION}/site-packages/nvflare-prefix.pth /usr/local/lib/python${PYTHON_VERSION}/site-packages/nvflare-prefix.pth
+COPY --from=builder /usr/bin/zip /usr/bin/zip
+
+CMD ["python"]
