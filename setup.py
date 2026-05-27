@@ -101,6 +101,7 @@ tmp_job_template_folder = "./nvflare/tool/job/templates"
 copy_package(src_dir="job_templates", dst_dir=tmp_job_template_folder)
 job_templates = package_files(root="nvflare/tool/job", starting="templates")
 deploy_templates = package_files(root="nvflare/tool/deploy", starting="templates")
+agent_skill_package_data = ["manifest.json", "*", "*/*", "*/*/*", "*/*/*/*", "*/*/*/*/*"]
 
 cmdclass = versioneer.get_cmdclass()
 _base_build_py = cmdclass["build_py"]
@@ -136,7 +137,7 @@ setup(
         "nvflare.dashboard.application": extra_files,
         "nvflare.tool.job": job_templates,
         "nvflare.tool.deploy": deploy_templates,
-        "nvflare.tool.agent.bundled_skills": ["manifest.json", "**/*"],
+        "nvflare.tool.agent.bundled_skills": agent_skill_package_data,
     },
     include_package_data=True,
 )

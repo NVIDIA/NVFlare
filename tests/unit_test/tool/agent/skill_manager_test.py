@@ -241,6 +241,13 @@ def test_list_skills_reports_available_installed_and_external_conflicts(tmp_path
     assert data["conflicts"][0]["skill"] == "external-skill"
 
 
+def test_conflict_falls_back_to_code_for_unknown_conflict(tmp_path):
+    conflict = skill_manager._conflict("nvflare-test-skill", "future_conflict", tmp_path / "target")
+
+    assert conflict["code"] == "future_conflict"
+    assert conflict["message"] == "future_conflict"
+
+
 def _skill_source(tmp_path):
     root = tmp_path / "skills"
     _write_skill(root, "nvflare-test-skill")
