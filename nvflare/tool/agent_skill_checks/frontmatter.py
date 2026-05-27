@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Minimal V1 validation for NVFLARE agent skill frontmatter."""
+"""Validation for NVFLARE agent skill frontmatter."""
 
 from dataclasses import dataclass
 from pathlib import Path
