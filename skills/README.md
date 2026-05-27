@@ -1,8 +1,9 @@
 # NVFLARE Agent Skills
 
-This directory is the source root for NVFLARE-owned agent skills.
+This directory contains NVFLARE-owned agent skills for supported coding agents.
 
-V1 skill directories should follow the guide-compatible shape:
+Each skill lives in its own directory with a `SKILL.md` file. Skills may also
+include supporting references, evaluation fixtures, and benchmark notes:
 
 ```text
 skills/
@@ -15,11 +16,7 @@ skills/
     BENCHMARK.md
 ```
 
-Milestone 1 establishes the source root and minimal frontmatter validation.
-Public skill content, runtime evals, packaging, and native install/list commands
-land in later milestones.
-
-Required `SKILL.md` frontmatter fields for V1:
+Required `SKILL.md` frontmatter fields:
 
 ```yaml
 ---
@@ -30,8 +27,8 @@ blast_radius: read_only
 ---
 ```
 
-The skill name above is illustrative; released skill content lands in later
-milestones.
+The skill name above is illustrative; actual skill directories use their
+published skill names.
 
 `blast_radius` must be one of:
 
