@@ -257,9 +257,17 @@ def _replace_skill(
             if not target_dir.exists() and backup_path.exists():
                 try:
                     shutil.move(backup_path, target_dir)
+                    _remove_empty_dir(backup_path.parent)
                 except Exception as recovery_error:
                     publish_error.recovery_error = recovery_error
             raise
+
+
+def _remove_empty_dir(path: Path) -> None:
+    try:
+        path.rmdir()
+    except OSError:
+        pass
 
 
 def _install_error(skill_name: str, error: Exception) -> dict:
