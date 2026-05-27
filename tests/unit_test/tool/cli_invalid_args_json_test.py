@@ -58,6 +58,9 @@ def test_invalid_subcommand_json_error(capsys, monkeypatch):
     captured = capsys.readouterr()
     payload = json.loads(captured.out)
     assert payload["error_code"] == "INVALID_ARGS"
+    assert payload["code"] == "INVALID_ARGS"
+    assert "event" not in payload
+    assert "terminal" not in payload
     assert "usage" in payload["data"]
     assert "list" in payload["data"]["choices"]
 
