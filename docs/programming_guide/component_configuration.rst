@@ -187,9 +187,10 @@ By default ``config_type`` is "Component" if not specified.
 Name, Path, and class_path
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 The standard job configuration parser runs built-in component path authorization. In protected job configs, specify components
-with ``"path"``. Component aliases such as ``"name"`` and ``"class_path"`` are rejected by this policy. The lower-level component
-builder can still resolve these aliases in contexts outside the protected job configuration flow, but job configuration examples
-should use ``"path"``.
+with ``"path"`` or ``"class_path"``. ``"class_path"`` is an alias for ``"path"``. If both are present, ``"path"`` takes
+precedence and is validated as written. Component configs that use ``"name"`` are rejected by this policy. The lower-level
+component builder can still resolve ``"name"`` in contexts outside the protected job configuration flow, but job configuration
+examples should use ``"path"`` or ``"class_path"``.
 
 The configuration::
 
@@ -198,7 +199,7 @@ The configuration::
 .. note::
 
     Recipe APIs may still accept ``class_path`` and normalize it when exporting job configuration. Runtime job configuration
-    should use ``path`` for component configs.
+    can use ``path`` or its ``class_path`` alias for component configs.
 
 Looking up the component
 ^^^^^^^^^^^^^^^^^^^^^^^^

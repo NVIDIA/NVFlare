@@ -157,6 +157,10 @@ their non-BYOC jobs are allowed to load.
             "nvflare.app_opt.he.model_shareable_generator.HEModelShareableGenerator",
             "nvflare.app_opt.psi.dh_psi.dh_psi_task_handler.DhPSITaskHandler",
             "nvflare.app_opt.pt.fedopt.PTFedOptModelShareableGenerator",
+            "tensorflow.keras.optimizers.SGD",
+            "tensorflow.keras.optimizers.schedules.CosineDecay",
+            "torch.optim.SGD",
+            "torch.optim.lr_scheduler.CosineAnnealingLR",
             "nvflare.app_opt.pt.file_model_locator.PTFileModelLocator",
             "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor",
             "nvflare.app_opt.pt.recipes.fedeval.EvalController",
@@ -185,6 +189,9 @@ their non-BYOC jobs are allowed to load.
 
 With the policy above, a non-BYOC job component configured with ``"path": "subprocess.Popen"`` is rejected because it does
 not match any entry in ``class_allow_list``. The same rule applies to ``"class_path": "subprocess.Popen"``.
+The provisioned list includes the default FedOpt optimizer and scheduler paths shown above. If a job configures different
+optimizer, scheduler, or framework classes, each site must add the reviewed class paths or package prefixes to
+``class_allow_list`` before running the job with BYOC disabled.
 
 This is an allow-list baseline. It is not a replacement for secure job review, least-privilege runtime environments, container or
 process sandboxing, and other controls appropriate to your deployment.

@@ -178,3 +178,32 @@ class TestStaticFileBuilder:
         assert sub_start.index(copy_cmd) < sub_start.index(verify_cmd)
         assert sub_start.index(verify_cmd) < sub_start.index('mkdir -p "$WORKSPACE/transfer"')
         assert 'touch "$WORKSPACE/shutdown.fl"' in stop_fl
+
+    def test_master_template_includes_fedopt_default_optimizer_allow_list(self):
+        """FedOpt default optimizer configs must pass protected non-BYOC component authorization."""
+        import os
+
+        import yaml
+
+        template_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
+            "nvflare",
+            "lighter",
+            "templates",
+            "master_template.yml",
+        )
+        assert os.path.exists(template_path)
+
+        with open(template_path, "r") as f:
+            template = yaml.safe_load(f)
+
+        expected_paths = {
+            "tensorflow.keras.optimizers.SGD",
+            "tensorflow.keras.optimizers.schedules.CosineDecay",
+            "torch.optim.SGD",
+            "torch.optim.lr_scheduler.CosineAnnealingLR",
+        }
+        for resource_key in ("local_client_resources", "local_server_resources"):
+            resource_template = template[resource_key]
+            for expected_path in expected_paths:
+                assert f'"{expected_path}"' in resource_template
