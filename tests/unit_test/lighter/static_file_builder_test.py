@@ -177,6 +177,7 @@ class TestStaticFileBuilder:
             "nvflare.app_common.ccwf.comps.simple_intime_model_selector.SimpleIntimeModelSelector",
             "nvflare.app_common.executors.client_api_launcher_executor.ClientAPILauncherExecutor",
             "nvflare.app_common.executors.in_process_client_api_executor.InProcessClientAPIExecutor",
+            "nvflare.app_common.executors.multi_process_executor.MultiProcessExecutor",
             "nvflare.app_common.executors.splitnn_learner_executor.SplitNNLearnerExecutor",
             "nvflare.app_common.filters.exclude_vars.ExcludeVars",
             "nvflare.app_common.filters.percentile_privacy.PercentilePrivacy",
