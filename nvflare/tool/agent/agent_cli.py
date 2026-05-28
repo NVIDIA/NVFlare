@@ -301,7 +301,8 @@ def _output_agent_skill_target_error(output_error_message, target, error: ValueE
     output_error_message(
         "AGENT_SKILL_TARGET_INVALID",
         "Invalid agent skill target.",
-        "Choose a target directory without symlink components.",
+        "Choose a target directory without symlink components. On macOS, use real paths such as /private/tmp "
+        "instead of /tmp.",
         exit_code=4,
         detail=str(error),
         data={"target": target},

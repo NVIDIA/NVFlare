@@ -378,7 +378,7 @@ def test_install_skills_reports_copy_error_and_continues(monkeypatch, tmp_path):
 
 
 @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are not supported on this platform")
-def test_install_skills_rejects_source_symlink_before_copytree(tmp_path):
+def test_install_skills_dry_run_reports_source_symlink_conflict(tmp_path):
     root = tmp_path / "skills"
     skill_dir = _write_skill(root, "nvflare-test-skill")
     outside_file = tmp_path / "outside.txt"
@@ -402,13 +402,82 @@ def test_install_skills_rejects_source_symlink_before_copytree(tmp_path):
             "findings": [],
         },
     )
+    target = tmp_path / "target"
 
-    plan = install_skills(agent="codex", target_dir=tmp_path / "target", source=source)
+    plan = install_skills(agent="codex", target_dir=target, source=source, dry_run=True)
 
     assert plan["applied"] is False
-    assert plan["errors"][0]["type"] == "ValueError"
-    assert "skill source must not contain symlinks" in plan["errors"][0]["message"]
-    assert not (tmp_path / "target" / "nvflare-test-skill").exists()
+    assert plan["errors"] == []
+    assert plan["skills"][0]["action"] == "skip"
+    assert plan["skills"][0]["conflict"] == "source_symlink_detected"
+    assert plan["skills"][0]["files"] == []
+    assert plan["skills"][0]["source_issue"]["symlink_path"] == str(skill_dir / "outside-link.txt")
+    assert plan["conflicts"] == [
+        {
+            "skill": "nvflare-test-skill",
+            "code": "source_symlink_detected",
+            "message": "source skill directory contains a symlink",
+            "source_path": str(skill_dir),
+            "symlink_path": str(skill_dir / "outside-link.txt"),
+        }
+    ]
+    assert not (target / "nvflare-test-skill").exists()
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are not supported on this platform")
+def test_install_skills_skips_source_symlink_before_copytree(tmp_path):
+    root = tmp_path / "skills"
+    skill_dir = _write_skill(root, "nvflare-test-skill")
+    outside_file = tmp_path / "outside.txt"
+    outside_file.write_text("outside content\n", encoding="utf-8")
+    skill_dir.joinpath("outside-link.txt").symlink_to(outside_file)
+    source = SkillSource(
+        source_type="editable",
+        root=root,
+        manifest={
+            "schema_version": "1",
+            "source_type": "editable",
+            "nvflare_version": "2.8.0",
+            "skills": [
+                {
+                    "name": "nvflare-test-skill",
+                    "skill_version": "0.0.0",
+                    "source_hash": "fake-source-hash",
+                    "relative_path": "nvflare-test-skill",
+                }
+            ],
+            "findings": [],
+        },
+    )
+    target = tmp_path / "target"
+
+    plan = install_skills(agent="codex", target_dir=target, source=source)
+
+    assert plan["applied"] is True
+    assert plan["errors"] == []
+    assert plan["skills"][0]["action"] == "skip"
+    assert plan["skills"][0]["status"] == "skipped"
+    assert plan["conflicts"][0]["code"] == "source_symlink_detected"
+    assert not (target / "nvflare-test-skill").exists()
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are not supported on this platform")
+def test_stage_skill_rejects_source_symlink_before_copytree(tmp_path):
+    root = tmp_path / "skills"
+    skill_dir = _write_skill(root, "nvflare-test-skill")
+    outside_file = tmp_path / "outside.txt"
+    outside_file.write_text("outside content\n", encoding="utf-8")
+    skill_dir.joinpath("outside-link.txt").symlink_to(outside_file)
+    source = SkillSource(source_type="editable", root=root, manifest={})
+
+    with pytest.raises(ValueError, match="skill source must not contain symlinks"):
+        skill_manager._stage_skill(
+            skill_dir,
+            tmp_path / "staged",
+            {"name": "nvflare-test-skill", "source_hash": "fake-source-hash"},
+            source,
+            installed_path=tmp_path / "target" / "nvflare-test-skill",
+        )
 
 
 def test_list_skills_reports_available_installed_and_external_conflicts(tmp_path):

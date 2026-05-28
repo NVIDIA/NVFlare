@@ -177,7 +177,9 @@ def _install_plan(
     planned_skills = []
     conflicts = []
     for skill in skills:
+        source_skill_dir = source.root / skill["relative_path"]
         target_skill_dir = target / skill["name"]
+        source_symlink = _first_symlink_in_tree(source_skill_dir)
         # version_delta: new, unknown external state, blocked local edit, same, or update.
         entry = {
             "name": skill["name"],
@@ -185,10 +187,21 @@ def _install_plan(
             "source_hash": skill["source_hash"],
             "relative_path": skill["relative_path"],
             "target_path": str(target_skill_dir),
-            "files": _files_to_copy(source.root / skill["relative_path"], target_skill_dir),
+            "files": [] if source_symlink else _files_to_copy(source_skill_dir, target_skill_dir),
             "version_delta": "new",
         }
-        if not target_skill_dir.exists():
+        if source_symlink:
+            entry["action"] = "skip"
+            entry["conflict"] = "source_symlink_detected"
+            entry["version_delta"] = "blocked"
+            entry["source_issue"] = {
+                "code": "source_symlink_detected",
+                "message": "source skill directory contains a symlink",
+                "source_path": str(source_skill_dir),
+                "symlink_path": str(source_symlink),
+            }
+            conflicts.append(_source_conflict(skill["name"], source_skill_dir, source_symlink))
+        elif not target_skill_dir.exists():
             entry["action"] = "copy"
         else:
             install_manifest = _read_install_manifest(target_skill_dir)
@@ -410,6 +423,16 @@ def _conflict(skill_name: str, code: str, target_path: Path) -> dict:
         "code": code,
         "message": messages.get(code, code),
         "target_path": str(target_path),
+    }
+
+
+def _source_conflict(skill_name: str, source_path: Path, symlink_path: Path) -> dict:
+    return {
+        "skill": skill_name,
+        "code": "source_symlink_detected",
+        "message": "source skill directory contains a symlink",
+        "source_path": str(source_path),
+        "symlink_path": str(symlink_path),
     }
 
 
