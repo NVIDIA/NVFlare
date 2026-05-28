@@ -18,6 +18,7 @@ import hashlib
 import importlib
 import importlib.util
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -108,7 +109,9 @@ def copy_released_skills_to_bundle(
     for child in list(target_root.iterdir()):
         if child.name == "__init__.py":
             continue
-        if child.is_dir():
+        if child.is_symlink():
+            child.unlink()
+        elif child.is_dir():
             shutil.rmtree(child)
         else:
             child.unlink()
@@ -125,14 +128,34 @@ def copy_released_skills_to_bundle(
 
 
 def _iter_skill_files(skill_dir: Path, *, exclude_names: set[str]) -> Iterable[Path]:
-    for path in sorted(skill_dir.rglob("*"), key=lambda p: p.relative_to(skill_dir).as_posix()):
-        if not path.is_file():
+    for root, dir_names, file_names in os.walk(skill_dir, topdown=True, followlinks=False):
+        root_path = Path(root)
+        rel_root = root_path.relative_to(skill_dir)
+        if any(part in exclude_names for part in rel_root.parts):
+            dir_names[:] = []
             continue
-        if any(part in exclude_names for part in path.relative_to(skill_dir).parts):
-            continue
-        if path.suffix in {".pyc", ".pyo"}:
-            continue
-        yield path
+
+        dir_names.sort()
+        file_names.sort()
+        for dir_name in list(dir_names):
+            dir_path = root_path / dir_name
+            if dir_path.is_symlink():
+                raise ValueError(f"skill directory contains symlink: {dir_path.relative_to(skill_dir).as_posix()}")
+            if dir_name in exclude_names:
+                dir_names.remove(dir_name)
+
+        for file_name in file_names:
+            file_path = root_path / file_name
+            rel_path = file_path.relative_to(skill_dir)
+            if file_path.is_symlink():
+                raise ValueError(f"skill directory contains symlink: {rel_path.as_posix()}")
+            if any(part in exclude_names for part in rel_path.parts):
+                continue
+            if file_path.suffix in {".pyc", ".pyo"}:
+                continue
+            if not file_path.is_file():
+                continue
+            yield file_path
 
 
 def _validate_skill_dir(skill_dir: Path):

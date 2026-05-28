@@ -228,12 +228,16 @@ def _handle_agent_skills_cmd(args, handle_schema_flag, output_error_message, out
             mutating=True,
             idempotent=True,
         )
-        plan = install_skills(
-            agent=args.agent,
-            skill_name=getattr(args, "skill", None),
-            dry_run=getattr(args, "dry_run", False),
-            target_dir=getattr(args, "target", None),
-        )
+        try:
+            plan = install_skills(
+                agent=args.agent,
+                skill_name=getattr(args, "skill", None),
+                dry_run=getattr(args, "dry_run", False),
+                target_dir=getattr(args, "target", None),
+            )
+        except ValueError as e:
+            _output_agent_skill_target_error(output_error_message, getattr(args, "target", None), e)
+            return
         if plan["missing"]:
             output_error_message(
                 "AGENT_SKILL_NOT_FOUND",
@@ -277,7 +281,11 @@ def _handle_agent_skills_cmd(args, handle_schema_flag, output_error_message, out
             mutating=False,
             idempotent=True,
         )
-        data = list_skills(agent=args.agent, target_dir=getattr(args, "target", None))
+        try:
+            data = list_skills(agent=args.agent, target_dir=getattr(args, "target", None))
+        except ValueError as e:
+            _output_agent_skill_target_error(output_error_message, getattr(args, "target", None), e)
+            return
         output_ok(
             data,
             code="OK",
@@ -287,6 +295,18 @@ def _handle_agent_skills_cmd(args, handle_schema_flag, output_error_message, out
         return
 
     raise CLIUnknownCmdException(f"unknown agent skills subcommand: {skills_sub_cmd}")
+
+
+def _output_agent_skill_target_error(output_error_message, target, error: ValueError) -> None:
+    output_error_message(
+        "AGENT_SKILL_TARGET_INVALID",
+        "Invalid agent skill target.",
+        "Choose a target directory without symlink components.",
+        exit_code=4,
+        detail=str(error),
+        data={"target": target},
+        recovery_category="FIXABLE_BY_CONFIG",
+    )
 
 
 def _schema_agent_skills_sub_cmd(argv: list[str]) -> Optional[str]:

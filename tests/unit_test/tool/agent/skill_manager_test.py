@@ -13,8 +13,11 @@
 # limitations under the License.
 
 import json
+import os
 import shutil
 from pathlib import Path
+
+import pytest
 
 from nvflare.tool.agent import skill_manager
 from nvflare.tool.agent.skill_manager import (
@@ -46,6 +49,28 @@ def test_resolve_target_override_skips_agent_home_resolution(tmp_path):
     target = resolve_agent_target_dir("codex", target_dir=tmp_path / "custom-target", env={"CODEX_HOME": "ignored"})
 
     assert target == tmp_path / "custom-target"
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are not supported on this platform")
+def test_resolve_target_override_rejects_symlink_target(tmp_path):
+    actual_target = tmp_path / "actual-target"
+    actual_target.mkdir()
+    link_target = tmp_path / "link-target"
+    link_target.symlink_to(actual_target, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="symlink components"):
+        resolve_agent_target_dir("codex", target_dir=link_target)
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are not supported on this platform")
+def test_resolve_target_override_rejects_symlink_parent(tmp_path):
+    actual_parent = tmp_path / "actual-parent"
+    actual_parent.mkdir()
+    link_parent = tmp_path / "link-parent"
+    link_parent.symlink_to(actual_parent, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="symlink components"):
+        resolve_agent_target_dir("codex", target_dir=link_parent / "skills")
 
 
 def test_resolve_unsupported_agent_raises_value_error():
@@ -350,6 +375,40 @@ def test_install_skills_reports_copy_error_and_continues(monkeypatch, tmp_path):
     assert (target / "nvflare-a-skill" / "SKILL.md").is_file()
     assert not (target / "nvflare-failing-skill").exists()
     assert (target / "nvflare-z-skill" / "SKILL.md").is_file()
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are not supported on this platform")
+def test_install_skills_rejects_source_symlink_before_copytree(tmp_path):
+    root = tmp_path / "skills"
+    skill_dir = _write_skill(root, "nvflare-test-skill")
+    outside_file = tmp_path / "outside.txt"
+    outside_file.write_text("outside content\n", encoding="utf-8")
+    skill_dir.joinpath("outside-link.txt").symlink_to(outside_file)
+    source = SkillSource(
+        source_type="editable",
+        root=root,
+        manifest={
+            "schema_version": "1",
+            "source_type": "editable",
+            "nvflare_version": "2.8.0",
+            "skills": [
+                {
+                    "name": "nvflare-test-skill",
+                    "skill_version": "0.0.0",
+                    "source_hash": "fake-source-hash",
+                    "relative_path": "nvflare-test-skill",
+                }
+            ],
+            "findings": [],
+        },
+    )
+
+    plan = install_skills(agent="codex", target_dir=tmp_path / "target", source=source)
+
+    assert plan["applied"] is False
+    assert plan["errors"][0]["type"] == "ValueError"
+    assert "skill source must not contain symlinks" in plan["errors"][0]["message"]
+    assert not (tmp_path / "target" / "nvflare-test-skill").exists()
 
 
 def test_list_skills_reports_available_installed_and_external_conflicts(tmp_path):

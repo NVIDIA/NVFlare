@@ -14,6 +14,7 @@
 
 import argparse
 import json
+import os
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -402,6 +403,38 @@ def test_agent_skills_install_failure_is_structured_json_error(capsys, monkeypat
     assert "code" not in payload
     assert payload["recovery_category"] == "FIXABLE_BY_ENV"
     assert payload["data"]["errors"][0]["code"] == "skill_install_failed"
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are not supported on this platform")
+def test_agent_skills_target_symlink_is_structured_json_error(capsys, monkeypatch, tmp_path):
+    _patch_skill_source(monkeypatch, tmp_path)
+    actual_target = tmp_path / "actual-target"
+    actual_target.mkdir()
+    link_target = tmp_path / "link-target"
+    link_target.symlink_to(actual_target, target_is_directory=True)
+
+    exit_code = _run_main(
+        [
+            "nvflare",
+            "agent",
+            "skills",
+            "install",
+            "--agent",
+            "codex",
+            "--target",
+            str(link_target),
+            "--dry-run",
+            "--format",
+            "json",
+        ]
+    )
+
+    assert exit_code == 4
+    payload = _load_single_stdout_json(capsys.readouterr())
+    _assert_envelope_shape(payload, "error")
+    assert payload["error_code"] == "AGENT_SKILL_TARGET_INVALID"
+    assert payload["recovery_category"] == "FIXABLE_BY_CONFIG"
+    assert payload["data"]["target"] == str(link_target)
 
 
 def test_agent_skills_install_schema_exits_zero(capsys):
