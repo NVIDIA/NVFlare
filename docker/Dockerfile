@@ -1,5 +1,6 @@
 ARG PYTHON_BUILD_BASE=python:3.14.5-slim-trixie@sha256:7a500125bc50693f2214e842a621440a1b1b9cbb2188f74ab045d29ed2ea5856
 ARG PYTHON_RUNTIME_BASE=nvcr.io/nvidia/distroless/python:3.14-v4.0.7@sha256:49751a52c1b4f59e0b68d6caf6728f305afc9e47c507008f8a9e8e1253929676
+# Keep this in sync with the Python minor version used by both base images.
 ARG PYTHON_VERSION=3.14
 
 FROM ${PYTHON_BUILD_BASE} AS builder
@@ -38,5 +39,8 @@ WORKDIR /app
 COPY --from=builder /opt/nvflare /opt/nvflare
 COPY --from=builder /usr/local/lib/python${PYTHON_VERSION}/site-packages/nvflare-prefix.pth /usr/local/lib/python${PYTHON_VERSION}/site-packages/nvflare-prefix.pth
 COPY --from=builder /usr/bin/zip /usr/bin/zip
+
+RUN ["python", "-c", "import nvflare; import kubernetes"]
+RUN ["/usr/bin/zip", "--version"]
 
 CMD ["python"]
