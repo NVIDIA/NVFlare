@@ -22,6 +22,8 @@ import nvflare
 from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
 
 CMD_AGENT_INFO = "info"
+CMD_AGENT_INSPECT = "inspect"
+CMD_AGENT_DOCTOR = "doctor"
 CMD_AGENT_SKILLS = "skills"
 CMD_AGENT_SKILLS_INSTALL = "install"
 CMD_AGENT_SKILLS_LIST = "list"
@@ -29,6 +31,9 @@ CMD_AGENT_SKILLS_LIST = "list"
 _AGENT_OUTPUT_MODES = ["json"]
 _AGENT_EXAMPLES = [
     "nvflare agent info --format json",
+    "nvflare agent inspect ./train.py --format json",
+    "nvflare agent doctor --format json",
+    "nvflare agent doctor --online --format json",
     "nvflare agent skills install --agent codex --dry-run --format json",
     "nvflare agent skills list --agent claude --format json",
     "nvflare agent info --schema",
@@ -63,6 +68,33 @@ def def_agent_cli_parser(sub_cmd) -> dict:
     info_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _agent_sub_cmd_parsers[CMD_AGENT_INFO] = info_parser
 
+    inspect_parser = agent_subparser.add_parser(
+        CMD_AGENT_INSPECT,
+        description="Statically inspect local code or FLARE job artifacts for agent routing.",
+        help="statically inspect local code or FLARE job artifacts",
+    )
+    inspect_parser.add_argument("path", help="local file or directory to inspect without executing user code")
+    inspect_parser.add_argument(
+        "--redact",
+        choices=["on", "off"],
+        default="on",
+        help="redact secret-like literals and sensitive absolute paths (default: on)",
+    )
+    inspect_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
+
+    doctor_parser = agent_subparser.add_parser(
+        CMD_AGENT_DOCTOR,
+        description="Check local NVFLARE agent readiness without modifying state.",
+        help="check local NVFLARE agent readiness",
+    )
+    doctor_parser.add_argument(
+        "--online",
+        action="store_true",
+        help="also run a bounded read-only status check through the selected startup kit",
+    )
+    _add_startup_kit_selection_args(doctor_parser)
+    doctor_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
+
     skills_parser = agent_subparser.add_parser(
         CMD_AGENT_SKILLS,
         description="Install and list NVFLARE-owned agent skills.",
@@ -90,6 +122,8 @@ def def_agent_cli_parser(sub_cmd) -> dict:
     _add_agent_target_args(list_parser)
     list_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
 
+    _agent_sub_cmd_parsers[CMD_AGENT_INSPECT] = inspect_parser
+    _agent_sub_cmd_parsers[CMD_AGENT_DOCTOR] = doctor_parser
     _agent_sub_cmd_parsers[CMD_AGENT_SKILLS] = skills_parser
     _agent_skills_sub_cmd_parsers[CMD_AGENT_SKILLS_INSTALL] = install_parser
     _agent_skills_sub_cmd_parsers[CMD_AGENT_SKILLS_LIST] = list_parser
@@ -107,6 +141,12 @@ def _add_agent_target_args(parser) -> None:
     parser.add_argument("--target", help="override the resolved agent skill directory")
 
 
+def _add_startup_kit_selection_args(parser) -> None:
+    from nvflare.tool.cli_session import add_startup_kit_selection_args
+
+    add_startup_kit_selection_args(parser)
+
+
 def _agent_info_data() -> dict:
     return {
         "nvflare_version": nvflare.__version__,
@@ -114,6 +154,20 @@ def _agent_info_data() -> dict:
             {
                 "name": "info",
                 "command": "nvflare agent info",
+                "status": "available",
+                "mutating": False,
+                "streaming": False,
+            },
+            {
+                "name": "inspect",
+                "command": "nvflare agent inspect",
+                "status": "available",
+                "mutating": False,
+                "streaming": False,
+            },
+            {
+                "name": "doctor",
+                "command": "nvflare agent doctor",
                 "status": "available",
                 "mutating": False,
                 "streaming": False,
@@ -181,11 +235,99 @@ def handle_agent_cmd(args) -> None:
         )
         return
 
+    if sub_cmd == CMD_AGENT_INSPECT:
+        _handle_agent_inspect_cmd(args, handle_schema_flag, output_error_message, output_ok)
+        return
+
+    if sub_cmd == CMD_AGENT_DOCTOR:
+        _handle_agent_doctor_cmd(args, handle_schema_flag, output_error_message, output_ok)
+        return
+
     if sub_cmd == CMD_AGENT_SKILLS:
         _handle_agent_skills_cmd(args, handle_schema_flag, output_error_message, output_ok)
         return
 
     raise CLIUnknownCmdException(f"unknown agent subcommand: {sub_cmd}")
+
+
+def _handle_agent_inspect_cmd(args, handle_schema_flag, output_error_message, output_ok) -> None:
+    from nvflare.tool.agent.inspector import inspect_path
+
+    handle_schema_flag(
+        _agent_sub_cmd_parsers[CMD_AGENT_INSPECT],
+        "nvflare agent inspect",
+        _AGENT_EXAMPLES,
+        sys.argv[1:],
+        streaming=False,
+        output_modes=_AGENT_OUTPUT_MODES,
+        mutating=False,
+        idempotent=True,
+    )
+    try:
+        data = inspect_path(args.path, redact=getattr(args, "redact", "on") != "off")
+    except FileNotFoundError as e:
+        output_error_message(
+            "AGENT_INSPECT_PATH_NOT_FOUND",
+            str(e),
+            "Pass an existing local file or directory to inspect.",
+            exit_code=4,
+            include_data=True,
+            recovery_category="FIXABLE_BY_CONFIG",
+        )
+        return
+    except Exception as e:
+        output_error_message(
+            "AGENT_INSPECT_FAILED",
+            "Static inspection failed.",
+            "Check file permissions or reduce the inspected path scope.",
+            exit_code=1,
+            detail=str(e),
+            include_data=True,
+            recovery_category="ENVIRONMENT_FAILURE",
+        )
+        return
+
+    output_ok(
+        data,
+        code="OK",
+        message="NVFLARE agent inspect completed.",
+        hint="Use the framework and conversion_state fields to choose the next skill.",
+    )
+
+
+def _handle_agent_doctor_cmd(args, handle_schema_flag, output_error_message, output_ok) -> None:
+    from nvflare.tool.agent.doctor import doctor_environment
+
+    handle_schema_flag(
+        _agent_sub_cmd_parsers[CMD_AGENT_DOCTOR],
+        "nvflare agent doctor",
+        _AGENT_EXAMPLES,
+        sys.argv[1:],
+        streaming=False,
+        output_modes=_AGENT_OUTPUT_MODES,
+        mutating=False,
+        idempotent=True,
+    )
+    try:
+        data = doctor_environment(online=getattr(args, "online", False), args=args)
+    except Exception as e:
+        output_error_message(
+            "AGENT_DOCTOR_FAILED",
+            "NVFLARE agent doctor failed.",
+            "Review local NVFLARE installation and startup-kit configuration.",
+            exit_code=1,
+            detail=str(e),
+            include_data=True,
+            recovery_category="ENVIRONMENT_FAILURE",
+        )
+        return
+
+    output_ok(
+        data,
+        code="OK",
+        message="NVFLARE agent doctor completed.",
+        hint="Resolve warning/error findings before production or online workflows.",
+    )
 
 
 def _handle_agent_skills_cmd(args, handle_schema_flag, output_error_message, output_ok) -> None:
