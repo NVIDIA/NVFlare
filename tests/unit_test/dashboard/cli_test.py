@@ -86,6 +86,15 @@ class TestDashboardCli:
 
         start_mock.assert_called_once_with(args)
 
+    def test_start_requires_image_when_called_directly(self, capsys):
+        args = _parse_dashboard_args(["--start"])
+
+        with pytest.raises(SystemExit) as exc_info:
+            dashboard_cli.start(args)
+
+        assert exc_info.value.code == 4
+        assert "-i/--image is required" in capsys.readouterr().err
+
     def test_start_uses_installed_package_entrypoint(self, capsys):
         args = _parse_dashboard_args(["--start", "-i", "nvflare-parent:test", "--cred", "admin@example.com:pw:org"])
         container = SimpleNamespace(id="container-1", status="running", reload=Mock(), logs=Mock())
@@ -105,7 +114,7 @@ class TestDashboardCli:
         assert "model" not in run_kwargs["volumes"][str(dashboard_cli.os.getcwd())]
         assert "Dashboard container started" in capsys.readouterr().out
 
-    @pytest.mark.parametrize("status", ["exited", "removing"])
+    @pytest.mark.parametrize("status", ["dead", "exited", "removing"])
     def test_start_reports_immediate_container_exit(self, capsys, status):
         args = _parse_dashboard_args(["--start", "-i", "nvflare-parent:test", "--cred", "admin@example.com:pw:org"])
         container = SimpleNamespace(

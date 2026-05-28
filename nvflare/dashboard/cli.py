@@ -43,6 +43,9 @@ def _require_image(args):
 
 
 def start(args):
+    if not args.local:
+        _require_image(args)
+
     cwd = os.getcwd()
     if not args.folder:
         folder = cwd
