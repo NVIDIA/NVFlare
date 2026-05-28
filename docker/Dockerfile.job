@@ -14,10 +14,11 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
 WORKDIR /opt/NVFlare
 COPY . .
 
-# DockerJobLauncher defaults to /usr/local/bin/python. The NGC PyTorch image
-# provides Python at /usr/bin/python, so add the default launcher path.
+# NVFlare launchers commonly use /usr/local/bin/python or python3. The NGC
+# PyTorch image provides Python at /usr/bin/python, so add those launcher paths.
 RUN mkdir -p /usr/local/bin \
     && ln -sf /usr/bin/python /usr/local/bin/python \
+    && ln -sf /usr/bin/python /usr/local/bin/python3 \
     && python -m pip install --ignore-installed "PyYAML>=6.0" \
     && NVFL_RELEASE=1 python -m pip install "." \
     && python -c "import nvflare; import torch"
