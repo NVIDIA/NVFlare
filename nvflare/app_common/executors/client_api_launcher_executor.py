@@ -95,9 +95,10 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                 microseconds), so 300 s is a very generous allowance.  Without reverse PASS_THROUGH, CJ must
                 download the full result before ACKing; in that case this should be at least as large as the
                 expected transfer time.  Configurable via recipe.add_client_config({"submit_result_timeout": N}).
-            max_resends (int): Maximum number of times the subprocess retries sending the result if CJ does not
-                ACK within submit_result_timeout.  Defaults to 3.  None means unlimited (unsafe for large models
-                — each retry creates a new download transaction) and is rejected at job initialization. Configurable via
+            max_resends (int): Maximum number of retries after the initial result send if CJ does not ACK within
+                submit_result_timeout. Defaults to 3. Set to a finite non-negative integer; 0 disables retries.
+                None means unlimited retries (unsafe for large models because each retry creates a new download
+                transaction) and is rejected at job initialization. Configurable via
                 recipe.add_client_config({"max_resends": N}).
             download_complete_timeout (float): How long (seconds) the subprocess waits after send_to_peer() ACKs
                 for the server to finish downloading its tensors from the subprocess DownloadService.  Without
@@ -252,7 +253,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         if self._max_resends is None:
             msg = (
                 "max_resends is None (unbounded). This can turn one delayed large-model transfer into an "
-                "unlimited resend storm. Set max_resends to a bounded value (e.g. 3) in job config."
+                "unlimited resend storm. Set max_resends to a finite non-negative integer (e.g. 3) in job config."
             )
             self.log_error(fl_ctx, msg)
             raise ValueError(msg)
@@ -261,9 +262,11 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         """Validate timeout parameters at job start.
 
         Timeout relationship checks are advisory so existing jobs continue to run while
-        operators get actionable guidance before the first download attempt. Missing
-        download-completion timeout and unbounded resends are rejected because they break
-        subprocess lifecycle guarantees for large-model transfers.
+        operators get actionable guidance before the first download attempt. The None
+        cases are rejected because they remove bounded lifecycle guarantees entirely:
+        without a download-completion wait the subprocess can exit before the server
+        finishes pulling tensors, and unbounded resends can create an unlimited number of
+        replacement download transactions.
         """
         self._validate_required_timeout_values(fl_ctx)
 
@@ -308,7 +311,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                 f"Set peer_read_timeout >= {per_req}s in job config.",
             )
 
-        if self._download_complete_timeout < per_req:
+        if configured_per_req is not None and self._download_complete_timeout < per_req:
             self.log_warning(
                 fl_ctx,
                 f"Timeout inconsistency: download_complete_timeout ({self._download_complete_timeout}s) < "

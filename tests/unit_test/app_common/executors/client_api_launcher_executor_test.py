@@ -854,6 +854,34 @@ def test_timeout_warning_download_complete_less_than_per_req(monkeypatch):
     """A warning must fire when download_complete_timeout is lower than streaming_per_request_timeout."""
     import nvflare.fuel.utils.app_config_utils as acu
     from nvflare.apis.fl_constant import ConfigVarName
+    from nvflare.fuel.utils.config_service import ConfigService
+
+    executor, warnings, _ = _make_validating_executor(monkeypatch, download_complete_timeout=300.0)
+    cell = _FakeCell()
+    fl_ctx = _FakeFLContext(cell)
+
+    def _fake_get(name, default):
+        if ConfigVarName.MIN_DOWNLOAD_TIMEOUT in name:
+            return 700.0
+        if ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT in name:
+            return 600.0
+        return default
+
+    monkeypatch.setattr(acu, "get_positive_float_var", _fake_get)
+    monkeypatch.setattr(
+        ConfigService,
+        "get_float_var",
+        lambda name, conf=None, default=None: 600.0 if ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT in name else default,
+    )
+    executor.initialize(fl_ctx)
+
+    assert any("download_complete_timeout" in w and "streaming_per_request_timeout" in w for w in warnings), warnings
+
+
+def test_download_complete_timeout_does_not_warn_without_configured_per_req(monkeypatch):
+    """The download_complete_timeout check should not warn when streaming timeout is only the fallback."""
+    import nvflare.fuel.utils.app_config_utils as acu
+    from nvflare.apis.fl_constant import ConfigVarName
 
     executor, warnings, _ = _make_validating_executor(monkeypatch, download_complete_timeout=300.0)
     cell = _FakeCell()
@@ -869,7 +897,7 @@ def test_timeout_warning_download_complete_less_than_per_req(monkeypatch):
     monkeypatch.setattr(acu, "get_positive_float_var", _fake_get)
     executor.initialize(fl_ctx)
 
-    assert any("download_complete_timeout" in w and "streaming_per_request_timeout" in w for w in warnings), warnings
+    assert not any("download_complete_timeout" in w for w in warnings), warnings
 
 
 # ---------------------------------------------------------------------------
