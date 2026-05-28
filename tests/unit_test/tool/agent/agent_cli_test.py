@@ -448,6 +448,70 @@ def test_agent_skills_install_schema_exits_zero(capsys):
     assert schema["output_modes"] == ["json"]
 
 
+def test_agent_inspect_json_reports_static_framework_evidence(capsys, tmp_path):
+    script = tmp_path / "train.py"
+    script.write_text("import torch\n\ndef train():\n    return None\n", encoding="utf-8")
+
+    exit_code = _run_main(["nvflare", "agent", "inspect", str(script), "--format", "json"])
+
+    assert exit_code == 0
+    payload = _load_single_stdout_json(capsys.readouterr())
+    _assert_envelope_shape(payload, "ok")
+    assert payload["data"]["static_only"] is True
+    assert payload["data"]["frameworks"][0]["name"] == "pytorch"
+    assert payload["data"]["conversion_state"] == "not_converted"
+    assert payload["data"]["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
+
+
+def test_agent_inspect_missing_path_is_structured_json_error(capsys, tmp_path):
+    exit_code = _run_main(["nvflare", "agent", "inspect", str(tmp_path / "missing"), "--format", "json"])
+
+    assert exit_code == 4
+    payload = _load_single_stdout_json(capsys.readouterr())
+    _assert_envelope_shape(payload, "error")
+    assert payload["error_code"] == "AGENT_INSPECT_PATH_NOT_FOUND"
+    assert payload["data"] is None
+
+
+def test_agent_inspect_schema_exits_zero(capsys):
+    exit_code = _run_main(["nvflare", "agent", "inspect", "--schema"])
+
+    assert exit_code == 0
+    schema = json.loads(capsys.readouterr().out)
+    assert schema["command"] == "nvflare agent inspect"
+    assert schema["mutating"] is False
+    assert schema["output_modes"] == ["json"]
+    path_arg = next(arg for arg in schema["args"] if arg["name"] == "path")
+    assert path_arg["required"] is True
+
+
+def test_agent_doctor_json_reports_local_readiness(capsys, monkeypatch, tmp_path):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("NVFLARE_STARTUP_KIT_DIR", raising=False)
+
+    exit_code = _run_main(["nvflare", "agent", "doctor", "--format", "json"])
+
+    assert exit_code == 0
+    payload = _load_single_stdout_json(capsys.readouterr())
+    _assert_envelope_shape(payload, "ok")
+    assert payload["data"]["nvflare"]["import_ok"] is True
+    assert payload["data"]["online"] == {"enabled": False, "status": "not_requested"}
+    assert any(finding["code"] == "STARTUP_KIT_NOT_CONFIGURED" for finding in payload["data"]["findings"])
+    assert not home.joinpath(".nvflare", "config.conf").exists()
+
+
+def test_agent_doctor_schema_exits_zero(capsys):
+    exit_code = _run_main(["nvflare", "agent", "doctor", "--schema"])
+
+    assert exit_code == 0
+    schema = json.loads(capsys.readouterr().out)
+    assert schema["command"] == "nvflare agent doctor"
+    assert schema["mutating"] is False
+    assert schema["output_modes"] == ["json"]
+    assert any(arg["name"] == "--online" for arg in schema["args"])
+
+
 def _patch_skill_source(monkeypatch, tmp_path):
     from nvflare.tool.agent import skill_manager
 
