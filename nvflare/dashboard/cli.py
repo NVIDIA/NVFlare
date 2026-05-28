@@ -25,6 +25,20 @@ from nvflare.dashboard.utils import EnvVar
 from nvflare.lighter import tplt_utils, utils
 
 supported_csp = ("azure", "aws")
+_dashboard_parser = None
+
+
+def _require_image(args):
+    if args.image:
+        return
+
+    from nvflare.tool.cli_output import output_usage_error
+
+    output_usage_error(
+        _dashboard_parser,
+        "-i/--image is required when starting dashboard with Docker or launching dashboard on cloud.",
+        exit_code=4,
+    )
 
 
 def start(args):
@@ -193,6 +207,9 @@ def main():
 
 
 def define_dashboard_parser(parser):
+    global _dashboard_parser
+    _dashboard_parser = parser
+
     parser.add_argument(
         "--cloud",
         type=str,
@@ -210,7 +227,7 @@ def define_dashboard_parser(parser):
     )
     parser.add_argument("-e", "--env", action="append", help="additional environment variables: var1=value1")
     parser.add_argument("--cred", help="set credential directly in the form of USER_EMAIL:PASSWORD")
-    parser.add_argument("-i", "--image", help="set the container image name")
+    parser.add_argument("-i", "--image", help="set the container image name (required for --start and --cloud)")
     parser.add_argument("--local", action="store_true", help="start dashboard locally without docker image")
     parser.add_argument(
         "--vpc-id",
@@ -231,9 +248,12 @@ def handle_dashboard(args):
     if args.stop:
         stop()
     elif args.start or args.local:
+        if not args.local:
+            _require_image(args)
         start(args)
     elif args.cloud:
         if args.cloud in supported_csp:
+            _require_image(args)
             cloud(args)
         else:
             print(

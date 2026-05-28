@@ -108,7 +108,7 @@ administrator to deploy a website to gather information about the sites and dist
 
 Introduction to NVFLARE Dashboard
 ---------------------------------
-You can install and run :ref:`nvflare_dashboard_ui` using the dashboard CLI command, ``nvflare dashboard –start`` (stop with ``nvflare dashboard –stop``).
+You can install and run :ref:`nvflare_dashboard_ui` using the dashboard CLI command, ``nvflare dashboard --start -i nvflare/nvflare:<version>`` (stop with ``nvflare dashboard --stop``).
 
 For details on how to start Dashboard can be found :ref:`here <dashboard_api>`. The usage information for the Dashboard UI can be found :ref:`here <nvflare_dashboard_ui>`.
 
