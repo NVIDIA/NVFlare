@@ -97,7 +97,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                 expected transfer time.  Configurable via recipe.add_client_config({"submit_result_timeout": N}).
             max_resends (int): Maximum number of times the subprocess retries sending the result if CJ does not
                 ACK within submit_result_timeout.  Defaults to 3.  None means unlimited (unsafe for large models
-                — each retry creates a new download transaction).  Configurable via
+                — each retry creates a new download transaction) and is rejected at job initialization. Configurable via
                 recipe.add_client_config({"max_resends": N}).
             download_complete_timeout (float): How long (seconds) the subprocess waits after send_to_peer() ACKs
                 for the server to finish downloading its tensors from the subprocess DownloadService.  Without
@@ -239,22 +239,46 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         """
         return "np_"
 
-    def _validate_timeout_config(self, fl_ctx: FLContext):
-        """Warn at job start if timeout parameters are inconsistent.
+    def _validate_required_timeout_values(self, fl_ctx: FLContext):
+        if self._download_complete_timeout is None:
+            msg = (
+                "download_complete_timeout is None. This timeout is required to keep the subprocess alive while "
+                "the server downloads large tensor results. Set download_complete_timeout to a positive value "
+                "in job config."
+            )
+            self.log_error(fl_ctx, msg)
+            raise ValueError(msg)
 
-        Checks are advisory (log_warning, not raise) so a misconfigured job
-        can still run — the messages give the operator actionable guidance
-        before the first download attempt.
+        if self._max_resends is None:
+            msg = (
+                "max_resends is None (unbounded). This can turn one delayed large-model transfer into an "
+                "unlimited resend storm. Set max_resends to a bounded value (e.g. 3) in job config."
+            )
+            self.log_error(fl_ctx, msg)
+            raise ValueError(msg)
+
+    def _validate_timeout_config(self, fl_ctx: FLContext):
+        """Validate timeout parameters at job start.
+
+        Timeout relationship checks are advisory so existing jobs continue to run while
+        operators get actionable guidance before the first download attempt. Missing
+        download-completion timeout and unbounded resends are rejected because they break
+        subprocess lifecycle guarantees for large-model transfers.
         """
+        self._validate_required_timeout_values(fl_ctx)
+
         try:
             import nvflare.fuel.utils.app_config_utils as acu
-            from nvflare.apis.fl_constant import ConfigVarName
+            from nvflare.apis.fl_constant import ConfigVarName, SystemConfigs
+            from nvflare.fuel.utils.config_service import ConfigService
         except ImportError as e:
             self.log_warning(fl_ctx, f"_validate_timeout_config skipped: {e}")
             return
 
         prefix = self._decomposer_prefix()
-        per_req = acu.get_positive_float_var(f"{prefix}{ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT}", 600.0)
+        per_req_key = f"{prefix}{ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT}"
+        configured_per_req = ConfigService.get_float_var(per_req_key, conf=SystemConfigs.APPLICATION_CONF, default=None)
+        per_req = acu.get_positive_float_var(per_req_key, 600.0)
         min_dl = acu.get_positive_float_var(
             f"{prefix}{ConfigVarName.MIN_DOWNLOAD_TIMEOUT}", MIN_DOWNLOAD_TIMEOUT_DEFAULT
         )
@@ -268,6 +292,31 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                 f"Set {prefix}min_download_timeout >= {per_req}s in job config.",
             )
 
+        if configured_per_req is not None and self.peer_read_timeout is None:
+            self.log_warning(
+                fl_ctx,
+                "Timeout inconsistency: peer_read_timeout is not set after applying job-config overrides. "
+                "Large task payloads may fall back to a shorter pipe default and resend while the subprocess is "
+                f"still downloading. Set peer_read_timeout >= {per_req}s in job config.",
+            )
+        elif configured_per_req is not None and self.peer_read_timeout < per_req:
+            self.log_warning(
+                fl_ctx,
+                f"Timeout inconsistency: peer_read_timeout ({self.peer_read_timeout}s, after job-config overrides) < "
+                f"{prefix}streaming_per_request_timeout ({per_req}s). "
+                "The CJ may resend the task while the subprocess is still downloading large payloads. "
+                f"Set peer_read_timeout >= {per_req}s in job config.",
+            )
+
+        if self._download_complete_timeout < per_req:
+            self.log_warning(
+                fl_ctx,
+                f"Timeout inconsistency: download_complete_timeout ({self._download_complete_timeout}s) < "
+                f"{prefix}streaming_per_request_timeout ({per_req}s). "
+                "The subprocess may stop before the server finishes downloading tensor results. "
+                f"Set download_complete_timeout >= {per_req}s in job config.",
+            )
+
         if self._submit_result_timeout > min_dl:
             self.log_warning(
                 fl_ctx,
@@ -276,13 +325,6 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                 f"Each send attempt may expire the download transaction before the next retry. "
                 f"Fix: set {prefix}min_download_timeout >= {self._submit_result_timeout}s in job config "
                 f'(e.g. recipe.add_client_config({{"{prefix}min_download_timeout": {int(self._submit_result_timeout)}}})).',
-            )
-
-        if self._max_resends is None:
-            self.log_warning(
-                fl_ctx,
-                "max_resends is None (unbounded). This risks OOM on large model transfers. "
-                "Set max_resends to a bounded value (e.g. 3) in job config.",
             )
 
     def check_output_shareable(self, task_name: str, shareable: Shareable, fl_ctx: FLContext) -> bool:
@@ -330,6 +372,8 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         return not launcher.needs_deferred_stop()
 
     def prepare_config_for_launch(self, fl_ctx: FLContext):
+        self._validate_required_timeout_values(fl_ctx)
+
         pipe_export_class, pipe_export_args = self.pipe.export(ExportMode.PEER)
         task_exchange_attributes = {
             ConfigKey.TRAIN_WITH_EVAL: self._train_with_evaluation,
