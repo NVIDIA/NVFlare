@@ -91,13 +91,12 @@ def start(args):
         print("Unable to communicate to docker daemon/socket.  Please make sure your docker is up and running.")
         exit(0)
     version = nvflare.__version__
-    dashboard_image = f"nvflare/nvflare:{version}"
-    if args.image:
-        if dashboard_image != args.image:
-            print(
-                f"Current dashboard container image is nvflare/nvflare:{version}, but requesting to use {args.image}.  Use it at your own risk."
-            )
-            dashboard_image = args.image
+    expected_image = f"nvflare/nvflare:{version}"
+    dashboard_image = args.image
+    if expected_image != dashboard_image:
+        print(
+            f"Current dashboard container image is {expected_image}, but requesting to use {dashboard_image}.  Use it at your own risk."
+        )
     try:
         print(f"Pulling {dashboard_image}, may take some time to finish.")
         _ = client.images.pull(dashboard_image)
@@ -176,7 +175,7 @@ def cloud(args):
             f"Unable to launching dashboard on cloud with {version}.  Please install official NVFlare release from PyPi."
         )
         exit(0)
-    replacement_dict = {"NVFLARE": f"nvflare=={version}", "START_OPT": f"-i {args.image}" if args.image else ""}
+    replacement_dict = {"NVFLARE": f"nvflare=={version}", "START_OPT": f"-i {args.image}"}
     utils._write(
         dest,
         utils.sh_replace(tplt.get_cloud_script_header() + dsb_start, replacement_dict),
