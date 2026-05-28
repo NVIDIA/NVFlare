@@ -434,6 +434,7 @@ def test_agent_skills_target_symlink_is_structured_json_error(capsys, monkeypatc
     _assert_envelope_shape(payload, "error")
     assert payload["error_code"] == "AGENT_SKILL_TARGET_INVALID"
     assert payload["recovery_category"] == "FIXABLE_BY_CONFIG"
+    assert "/private/tmp" in payload["hint"]
     assert payload["data"]["target"] == str(link_target)
 
 
