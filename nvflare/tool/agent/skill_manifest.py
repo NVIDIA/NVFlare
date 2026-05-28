@@ -128,6 +128,8 @@ def copy_released_skills_to_bundle(
 
 
 def _iter_skill_files(skill_dir: Path, *, exclude_names: set[str]) -> Iterable[Path]:
+    if skill_dir.is_symlink():
+        raise ValueError("skill directory contains symlink: .")
     for root, dir_names, file_names in os.walk(skill_dir, topdown=True, followlinks=False):
         root_path = Path(root)
         rel_root = root_path.relative_to(skill_dir)
