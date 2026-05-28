@@ -14,8 +14,12 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
 WORKDIR /opt/NVFlare
 COPY . .
 
-RUN NVFL_RELEASE=1 python -m pip install ".[K8S]" \
-    && python -m pip check \
+# DockerJobLauncher defaults to /usr/local/bin/python. The NGC PyTorch image
+# provides Python at /usr/bin/python, so add the default launcher path.
+RUN mkdir -p /usr/local/bin \
+    && ln -sf /usr/bin/python /usr/local/bin/python \
+    && python -m pip install --ignore-installed "PyYAML>=6.0" \
+    && NVFL_RELEASE=1 python -m pip install ".[K8S]" \
     && python -c "import nvflare; import kubernetes; import torch"
 
 WORKDIR /app
