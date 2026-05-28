@@ -137,11 +137,17 @@ Subprocess Large-Model Result Submission Timeout
 **Applies to**: Subprocess-mode clients (``launch_external_process=True``) with large models
 
 **Symptom**: Training completes in the subprocess but the job hangs or fails immediately
-after, with no result acknowledgment received.
+after, with no result acknowledgment received. With very large payloads and many
+clients, logs may also show repeated ``no ref found`` messages from
+``DownloadService`` after delayed retries.
 
-**Cause**: ``submit_result_timeout`` (default 60 s) is the time the training subprocess
-waits for the client training process to acknowledge its result.  For large models (5 GB+),
-the transfer alone exceeds this limit.
+**Cause**: ``submit_result_timeout`` is the time the training subprocess waits for
+the client job process to acknowledge its result. ``peer_read_timeout`` is the
+parent client job's corresponding wait for the subprocess to read a task. For
+large models (5 GB+) and many clients, either side can exceed short defaults if
+streaming request timeouts are configured higher than the pipe timeout. The
+subprocess also must remain alive long enough for the server to finish pulling
+tensors from its ``DownloadService`` after result ACK.
 
 **Solution**:
 
@@ -149,8 +155,11 @@ the transfer alone exceeds this limit.
 
    recipe.add_client_config({
        "submit_result_timeout": 1800,      # 30 min for LLM-scale results
+       "download_complete_timeout": 1800,  # keep subprocess alive for server tensor download
+       "PEER_READ_TIMEOUT": 600,           # parent CJ read budget; match configured streaming timeout
        "tensor_min_download_timeout": 600, # PyTorch: increase if inter-chunk gaps exceed 300s default
        # "np_min_download_timeout": 600,   # NumPy/sklearn: same, use instead of tensor variant
+       "max_resends": 3,                   # finite value; 0 disables retries, None is rejected
    })
 
 .. note::
@@ -159,6 +168,12 @@ the transfer alone exceeds this limit.
    for the client to deliver a result.  For large models, set ``submit_task_result_timeout``
    (server-side) to be at least as large as ``submit_result_timeout`` (subprocess-side)
    so the server is still listening when the subprocess finishes sending.
+
+.. note::
+   In FLARE 2.8.0, ``ClientAPILauncherExecutor`` rejects
+   ``download_complete_timeout=None`` and ``max_resends=None`` at job
+   initialization. Use a positive ``download_complete_timeout`` and a finite
+   non-negative ``max_resends`` value.
 
 Swarm Learning P2P Transfer Timeout
 ------------------------------------
@@ -221,14 +236,20 @@ Most Commonly Adjusted Timeouts
      - None
      - Large result payloads
    * - submit_result_timeout (subprocess mode only)
-     - 60 s
+     - 300 s through Client API job config; 60 s in raw ``FlareAgent``
      - Large model result transfers from subprocess; set 1800 s for LLMs
    * - tensor_min_download_timeout / np_min_download_timeout (subprocess mode only)
      - 300 s
      - 70B+ models on congested networks; increase to 600 s (tensor = PyTorch, np = NumPy/sklearn)
+   * - PEER_READ_TIMEOUT (Client API subprocess only)
+     - 300 s
+     - Large task payloads when streaming per-request timeout is explicitly increased
+   * - download_complete_timeout (subprocess mode only)
+     - 1800 s
+     - Keep subprocess alive while the server downloads large tensor results
    * - max_resends (subprocess mode only)
      - 3
-     - Persistent network failures; increase to 5–10
+     - Persistent network failures; use a finite non-negative value
    * - round_timeout (Swarm Learning only)
      - 3600 s
      - 7B+ model P2P transfers between Swarm peers
@@ -323,7 +344,9 @@ Large Model Training (100M+ parameters)
        "get_task_timeout": 600,
        "submit_task_result_timeout": 600,
        "submit_result_timeout": 600,        # subprocess mode only
+       "download_complete_timeout": 1800,   # subprocess mode only
        "tensor_min_download_timeout": 300,  # subprocess mode only; use np_min_download_timeout for NumPy
+       "PEER_READ_TIMEOUT": 600,            # subprocess mode only
    })
 
 
@@ -336,7 +359,9 @@ LLM/Foundation Model Training
        "get_task_timeout": 1200,
        "submit_task_result_timeout": 1800,  # server-side; must be >= submit_result_timeout
        "submit_result_timeout": 1800,       # subprocess mode only
+       "download_complete_timeout": 1800,   # subprocess mode only
        "tensor_min_download_timeout": 600,  # PyTorch; use np_min_download_timeout for NumPy
+       "PEER_READ_TIMEOUT": 600,            # subprocess mode only
        "max_resends": 5,                    # subprocess mode only
    })
 
