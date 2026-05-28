@@ -1,0 +1,23 @@
+# NVFlare job runtime image for user training and evaluation workloads.
+# The base is NVIDIA's NGC PyTorch image, which includes the GPU framework
+# stack. Install NVFlare without the PT extra so pip does not replace the
+# tested PyTorch packages that come with the NGC image.
+ARG PYTORCH_RUNTIME_BASE=nvcr.io/nvidia/pytorch:26.04-py3
+
+FROM ${PYTORCH_RUNTIME_BASE}
+
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /opt/NVFlare
+COPY . .
+
+RUN NVFL_RELEASE=1 python -m pip install ".[K8S]" \
+    && python -m pip check \
+    && python -c "import nvflare; import kubernetes; import torch"
+
+WORKDIR /app
+
+CMD ["python"]
