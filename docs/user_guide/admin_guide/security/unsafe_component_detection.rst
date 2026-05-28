@@ -182,8 +182,8 @@ their non-BYOC jobs are allowed to load.
 
 With the policy above, a non-BYOC job component configured with ``"path": "subprocess.Popen"`` is rejected because it does
 not match any entry in ``class_allow_list``. The same rule applies to ``"class_path": "subprocess.Popen"``.
-The provisioned list includes the default FedOpt optimizer and scheduler paths shown above. If a job configures different
-optimizer, scheduler, or framework classes, each site must add the reviewed class paths or package prefixes to
+The provisioned list intentionally excludes framework optimizer, scheduler, and model classes. If a job configures those
+classes, each site must add the reviewed class paths or package prefixes to
 ``class_allow_list`` before running the job with BYOC disabled.
 
 This is an allow-list baseline. It is not a replacement for secure job review, least-privilege runtime environments, container or
