@@ -171,7 +171,6 @@ The following example shows how the model learner is configured in the job's ``c
                "train"
             ],
             "executor": {
-               "name": "LearnerExecutor",
                "path": "nvflare.app_common.executors.model_learner_executor.ModelLearnerExecutor",
                "args": {
                   "learner_id": "np_learner"
