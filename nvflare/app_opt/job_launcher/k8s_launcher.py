@@ -98,8 +98,6 @@ DEFAULT_EPHEMERAL_STORAGE = "1Gi"
 # startup/ are dropped to shrink the Secret. local/ is bundled whole with each
 # job workspace so job resource files and local custom code keep working.
 _STARTUP_KEEP_SUFFIXES = (".crt", ".key", ".pem", ".json")
-_BEARER_AUTH_VALUE = re.compile(r"^bearer\s+(.+)$", re.IGNORECASE | re.DOTALL)
-_BEARER_TOKEN_REFRESH_HOOK = "_nvflare_bearer_token_refresh_hook"
 
 
 def _keep_startup_file(fname: str) -> bool:
@@ -115,53 +113,6 @@ def _normalize_image_pull_secrets(image_pull_secrets) -> list[str]:
         if not isinstance(name, str) or not name.strip():
             raise ValueError("image_pull_secrets entries must be non-empty strings")
     return list(image_pull_secrets)
-
-
-def _sync_bearer_token_api_key(configuration, overwrite=False) -> bool:
-    api_key = getattr(configuration, "api_key", None)
-    if not isinstance(api_key, dict) or (not overwrite and "BearerToken" in api_key):
-        return False
-
-    authorization = api_key.get("authorization")
-    if not authorization:
-        return False
-
-    api_key_prefix = getattr(configuration, "api_key_prefix", None)
-    if not isinstance(api_key_prefix, dict):
-        api_key["BearerToken"] = authorization
-        return True
-
-    # Kubernetes 36.x incluster_config writes a full "bearer <token>" value
-    # under "authorization"; generated 36.x API clients read "BearerToken".
-    # Split full header values so auth generation cannot emit "Bearer bearer ...".
-    match = _BEARER_AUTH_VALUE.match(str(authorization))
-    if match:
-        api_key["BearerToken"] = match.group(1)
-        api_key_prefix["BearerToken"] = "Bearer"
-        return True
-
-    api_key["BearerToken"] = authorization
-    authorization_prefix = api_key_prefix.get("authorization")
-    if authorization_prefix:
-        api_key_prefix["BearerToken"] = authorization_prefix
-    return True
-
-
-def _ensure_bearer_token_api_key(configuration) -> None:
-    if not _sync_bearer_token_api_key(configuration):
-        return
-
-    refresh_api_key_hook = getattr(configuration, "refresh_api_key_hook", None)
-    if not callable(refresh_api_key_hook) or getattr(refresh_api_key_hook, _BEARER_TOKEN_REFRESH_HOOK, False):
-        return
-
-    def _refresh_api_key_and_sync(client_configuration):
-        refresh_api_key_hook(client_configuration)
-        _sync_bearer_token_api_key(client_configuration, overwrite=True)
-        client_configuration.refresh_api_key_hook = _refresh_api_key_and_sync
-
-    setattr(_refresh_api_key_and_sync, _BEARER_TOKEN_REFRESH_HOOK, True)
-    configuration.refresh_api_key_hook = _refresh_api_key_and_sync
 
 
 def uuid4_to_rfc1123(uuid_str: str) -> str:
@@ -525,7 +476,6 @@ class K8sJobLauncher(JobLauncherSpec):
                 else:
                     config.load_incluster_config()
                 c = Configuration().get_default_copy()
-                _ensure_bearer_token_api_key(c)
             except AttributeError:
                 c = Configuration()
                 c.assert_hostname = False

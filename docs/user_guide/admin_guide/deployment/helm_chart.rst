@@ -96,10 +96,6 @@ Role/RoleBinding that allow the launcher to create job pods.
 
 When ``job_launcher.config_file_path`` is omitted or set to ``null``, the
 launcher uses Kubernetes in-cluster config from the parent pod's ServiceAccount.
-Kubernetes Python client 36.x stores that token under ``api_key["authorization"]``
-as a full ``bearer <token>`` authorization value. NVFlare normalizes that value
-before passing it to the generated ``BearerToken`` auth path so the resulting
-API requests use one ``Bearer`` scheme prefix.
 
 The parent Service is the stable in-cluster address for dynamically launched job
 pods. ``nvflare deploy prepare`` patches the prepared kit's internal
@@ -984,7 +980,8 @@ Check the parent logs for Kubernetes import or authorization failures:
        --as=system:serviceaccount:"$NAMESPACE":server
 
 If the logs show that the ``kubernetes`` Python package is missing, rebuild the
-parent image with the NVFlare ``K8S`` extra or ``pip install kubernetes``.
+parent image with the NVFlare ``K8S`` extra or
+``pip install "kubernetes!=36.0.0"``.
 
 If the logs show ``SSLCertVerificationError`` with
 ``CA cert does not include key usage extension``, the parent Kubernetes client

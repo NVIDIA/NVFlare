@@ -14,7 +14,7 @@
 
 import logging
 import sys
-from types import ModuleType, SimpleNamespace
+from types import ModuleType
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
@@ -65,7 +65,6 @@ from nvflare.app_opt.job_launcher.k8s_launcher import (
     JobState,
     K8sJobHandle,
     PodPhase,
-    _ensure_bearer_token_api_key,
     _job_args_dict,
     job_pod_name,
     site_name_to_rfc1123,
@@ -1103,82 +1102,6 @@ class TestK8sJobLauncherInit:
 
 
 # ---------------------------------------------------------------------------
-# Kubernetes client 36.x auth compatibility
-# ---------------------------------------------------------------------------
-class TestK8sAuthCompatibility:
-    @staticmethod
-    def _auth_header_value(configuration):
-        token = configuration.api_key.get("BearerToken")
-        prefix = configuration.api_key_prefix.get("BearerToken")
-        if prefix:
-            return f"{prefix} {token}"
-        return token
-
-    def test_incluster_authorization_full_bearer_value_is_split(self):
-        configuration = SimpleNamespace(api_key={"authorization": "bearer service-account-token"}, api_key_prefix={})
-
-        _ensure_bearer_token_api_key(configuration)
-
-        assert configuration.api_key["BearerToken"] == "service-account-token"
-        assert configuration.api_key_prefix["BearerToken"] == "Bearer"
-        assert self._auth_header_value(configuration) == "Bearer service-account-token"
-
-    def test_existing_bearer_token_prefix_does_not_duplicate_full_authorization_value(self):
-        configuration = SimpleNamespace(
-            api_key={"authorization": "bearer service-account-token"},
-            api_key_prefix={"BearerToken": "Bearer"},
-        )
-
-        _ensure_bearer_token_api_key(configuration)
-
-        assert self._auth_header_value(configuration) == "Bearer service-account-token"
-
-    def test_existing_bearer_token_is_not_overwritten(self):
-        configuration = SimpleNamespace(
-            api_key={
-                "authorization": "bearer service-account-token",
-                "BearerToken": "existing-token",
-            },
-            api_key_prefix={"BearerToken": "Bearer"},
-        )
-
-        _ensure_bearer_token_api_key(configuration)
-
-        assert self._auth_header_value(configuration) == "Bearer existing-token"
-
-    def test_legacy_raw_authorization_token_keeps_authorization_prefix(self):
-        configuration = SimpleNamespace(
-            api_key={"authorization": "service-account-token"},
-            api_key_prefix={"authorization": "Bearer"},
-        )
-
-        _ensure_bearer_token_api_key(configuration)
-
-        assert configuration.api_key["BearerToken"] == "service-account-token"
-        assert configuration.api_key_prefix["BearerToken"] == "Bearer"
-        assert self._auth_header_value(configuration) == "Bearer service-account-token"
-
-    def test_incluster_refresh_hook_keeps_bearer_token_in_sync(self):
-        def refresh_api_key(configuration):
-            configuration.api_key["authorization"] = "bearer rotated-token"
-            configuration.refresh_api_key_hook = refresh_api_key
-
-        configuration = SimpleNamespace(
-            api_key={"authorization": "bearer service-account-token"},
-            api_key_prefix={},
-            refresh_api_key_hook=refresh_api_key,
-        )
-
-        _ensure_bearer_token_api_key(configuration)
-        configuration.refresh_api_key_hook(configuration)
-
-        assert configuration.api_key["BearerToken"] == "rotated-token"
-        assert configuration.api_key_prefix["BearerToken"] == "Bearer"
-        assert self._auth_header_value(configuration) == "Bearer rotated-token"
-        assert configuration.refresh_api_key_hook is not refresh_api_key
-
-
-# ---------------------------------------------------------------------------
 # ClientK8sJobLauncher.get_module_args
 # ---------------------------------------------------------------------------
 class TestClientK8sJobLauncherGetModuleArgs:
@@ -1381,16 +1304,12 @@ class TestK8sJobLauncherLaunchJob:
         finally:
             _exit_patches(patches)
 
-    def test_incluster_config_normalizes_kubernetes_36_authorization_key(self):
+    def test_incluster_config_is_loaded_when_config_file_path_is_none(self):
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
         captured = {}
 
         class FakeConfiguration:
-            def __init__(self):
-                self.api_key = {"authorization": "bearer service-account-token"}
-                self.api_key_prefix = {}
-
             def get_default_copy(self):
                 return self
 
@@ -1426,9 +1345,7 @@ class TestK8sJobLauncherLaunchJob:
             launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
 
             mock_load_incluster_config.assert_called_once()
-            configuration = captured["configuration"]
-            assert configuration.api_key["BearerToken"] == "service-account-token"
-            assert configuration.api_key_prefix["BearerToken"] == "Bearer"
+            assert isinstance(captured["configuration"], FakeConfiguration)
         finally:
             _exit_patches(patches)
 
