@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
+import json
 import os
 import shutil
 import sys
@@ -38,10 +39,18 @@ class MockCell:
 
 
 class TestSimulatorRunner:
+    @staticmethod
+    def _write_resources(workspace):
+        local_dir = os.path.join(workspace, WorkspaceConstants.SITE_FOLDER_NAME)
+        os.makedirs(local_dir, exist_ok=True)
+        with open(os.path.join(local_dir, "resources.json"), "w") as f:
+            json.dump({"class_allow_list": ["nvflare."]}, f)
+
     def setup_method(self, method):
         self.workspace_name = str(uuid.uuid4())
         self.cwd = os.getcwd()
         os.makedirs(os.path.join(self.cwd, self.workspace_name, WorkspaceConstants.STARTUP_FOLDER_NAME))
+        self._write_resources(os.path.join(self.cwd, self.workspace_name))
 
     def teardown_method(self, method):
         os.chdir(self.cwd)
@@ -135,6 +144,7 @@ class TestSimulatorRunner:
     @patch("nvflare.private.fed.server.fed_server.BaseServer.get_cell", return_value=MockCell())
     def test_start_server_app(self, mock_deploy, mock_admin, mock_register, mock_cell):
         with TemporaryDirectory() as workspace:
+            self._write_resources(workspace)
             job_folder = os.path.join(os.path.dirname(__file__), "../../../../data/jobs/valid_job")
             runner = SimulatorRunner(
                 job_folder=job_folder,

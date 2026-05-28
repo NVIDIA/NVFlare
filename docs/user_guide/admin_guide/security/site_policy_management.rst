@@ -203,14 +203,14 @@ The following is a sample policy:
                 },
                 "task_result_filters": [
                 {
-                    "name": "AddNoiseToMinMax",
+                    "path": "nvflare.app_common.statistics.min_max_cleanser.AddNoiseToMinMax",
                     "args": {
                     "min_noise_level": 0.2,
                     "max_noise_level": 0.2
                     }
                 },
                 {
-                    "name": "PercentilePrivacy",
+                    "path": "nvflare.app_common.filters.percentile_privacy.PercentilePrivacy",
                     "args": {
                     "percentile": 10,
                     "gamma": 0.02
@@ -219,7 +219,7 @@ The following is a sample policy:
                 ],
                 "task_data_filters": [
                 {
-                    "name": "BadModelDetector"
+                    "path": "custom_filters.BadModelDetector"
                 }
                 ]
             },
@@ -231,14 +231,14 @@ The following is a sample policy:
                 },
                 "task_result_filters": [
                 {
-                    "name": "AddNoiseToMinMax",
+                    "path": "nvflare.app_common.statistics.min_max_cleanser.AddNoiseToMinMax",
                     "args": {
                     "min_noise_level": 0.1,
                     "max_noise_level": 0.1
                     }
                 },
                 {
-                    "name": "SVTPrivacy",
+                    "path": "nvflare.app_common.filters.svt_privacy.SVTPrivacy",
                     "args": {
                     "fraction": 0.1,
                     "epsilon": 0.2

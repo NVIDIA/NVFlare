@@ -657,19 +657,19 @@ For users who need fine-grained control, here is the equivalent JSON configurati
         },
         {
           "id": "shareable_generator",
-          "name": "FullModelShareableGenerator",
+          "path": "nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator",
           "args": {}
         },
         {
           "id": "aggregator",
-          "name": "InTimeAccumulateWeightedAggregator",
+          "path": "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",
           "args": {
             "expected_data_kind": "WEIGHT_DIFF"
           }
         },
         {
           "id": "model_selector",
-          "name": "IntimeModelSelector",
+          "path": "nvflare.app_common.widgets.intime_model_selector.IntimeModelSelector",
           "args": {}
         }
       ]
@@ -1081,7 +1081,7 @@ Cross Site Evaluation: config_fed_server.json
       "components": [
         {
           "id": "json_generator",
-          "name": "ValidationJsonGenerator",
+          "path": "nvflare.app_common.widgets.validation_json_generator.ValidationJsonGenerator",
           "args": {}
         }
       ],
@@ -1162,19 +1162,19 @@ Cross Site Evaluation: config_fed_client.json
         },
         {
           "id": "shareable_generator",
-          "name": "FullModelShareableGenerator",
+          "path": "nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator",
           "args": {}
         },
         {
           "id": "aggregator",
-          "name": "InTimeAccumulateWeightedAggregator",
+          "path": "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",
           "args": {
             "expected_data_kind": "WEIGHT_DIFF"
           }
         },
         {
           "id": "model_selector",
-          "name": "IntimeModelSelector",
+          "path": "nvflare.app_common.widgets.intime_model_selector.IntimeModelSelector",
           "args": {}
         }
       ]

@@ -318,6 +318,9 @@
     "FLComponentWrapper": [
         "nvflare.app_common.utils.fl_component_wrapper"
     ],
+    "ComponentPathAuthorizer": [
+        "nvflare.app_common.widgets.component_path_authorizer"
+    ],
     "ConvertToFedEvent": [
         "nvflare.app_common.widgets.convert_to_fed_event"
     ],
