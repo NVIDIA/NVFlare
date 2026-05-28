@@ -18,8 +18,8 @@ require_cmd() {
 }
 
 is_truthy() {
-  case "${1,,}" in
-    1|true|yes|y)
+  case "${1:-}" in
+    1|[Tt][Rr][Uu][Ee]|[Yy][Ee][Ss]|[Yy])
       return 0
       ;;
     *)
@@ -733,7 +733,10 @@ run_provision_phase() {
   [[ -d "${PROD_DIR}" ]] || fail "Expected packaged prod dir not found: ${PROD_DIR}"
 
   info "Provisioned startup kits"
-  find "${PROD_DIR}" -maxdepth 1 -mindepth 1 -type d -printf "%f\n" | sort
+  for participant_dir in "${PROD_DIR}"/*; do
+    [[ -d "${participant_dir}" ]] || continue
+    basename "${participant_dir}"
+  done | sort
 }
 
 run_deploy_phase() {

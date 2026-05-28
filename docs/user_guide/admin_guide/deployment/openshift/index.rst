@@ -103,6 +103,62 @@ Images and registry:
   before deployment and pass their names with ``PARENT_IMAGE_PULL_SECRETS`` and
   ``JOB_IMAGE_PULL_SECRETS``.
 
+Host Support Matrix
+===================
+
+The helper scripts are Bash scripts. Run them with ``bash`` as shown in this
+guide; they are not supported under ``sh``, ``dash``, ``zsh``, PowerShell, or
+``cmd.exe``. The scripts avoid Bash 4-only syntax and GNU-only coreutils so they
+can run with macOS's system Bash 3.2 and BSD userlands, provided the required
+external commands are installed.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 25 20 30
+
+   * - Workflow
+     - Host OS / Platform
+     - Shell
+     - Support and requirements
+   * - Deploy to an existing OpenShift cluster:
+       ``openshift_k8s_provision.sh``, ``openshift_k8s_deploy.sh``,
+       ``openshift_k8s_submit_job.sh``, and ``openshift_k8s_e2e.sh``
+     - Linux, macOS, or BSD
+     - Bash 3.2 or newer
+     - Supported when ``python3``, ``tar``, ``oc``, ``helm``, and ``nvflare``
+       are installed and can reach the target cluster.
+   * - Watch created pods:
+       ``openshift_k8s_watch.sh`` and ``openshift_k8s_watch.py``
+     - Linux, macOS, or BSD
+     - Bash 3.2 or newer for the wrapper; Python 3 for the watcher
+     - Supported when ``python3``, the Python ``rich`` package, and ``oc`` (or
+       ``KUBE_CMD``) are installed.
+   * - Create or start a local OpenShift Local / CRC cluster:
+       ``create_openshift_cluster.sh`` and ``start_openshift_cluster.sh``
+     - Linux or macOS hosts where Red Hat OpenShift Local is installed and
+       works
+     - Bash 3.2 or newer
+     - Supported by these scripts when ``crc`` and ``oc`` are available. Generic
+       BSD hosts are not supported for this workflow unless the ``crc`` tool
+       itself supports that host.
+   * - Native Windows shell
+     - Windows without WSL or another Unix-like Bash environment
+     - PowerShell, ``cmd.exe``, Git Bash, or MSYS Bash
+     - Not supported by these scripts. Use a Linux/macOS/BSD host or a Linux
+       environment with the required Kubernetes/OpenShift tools.
+   * - POSIX shell invocation
+     - Any host
+     - ``sh``, ``dash``, or another POSIX-only shell
+     - Not supported. The scripts intentionally use Bash features such as
+       arrays, ``[[ ... ]]``, ``(( ... ))``, ``pipefail``, and
+       ``BASH_SOURCE``.
+
+The command examples in this guide avoid Linux-only utilities such as
+``getent`` and GNU-only options such as ``find -printf``. Commands implemented
+by external tools, such as ``oc --sort-by``, ``oc wait --timeout``, ``helm
+upgrade --install``, and ``crc start`` flags, depend on those tools rather than
+the host operating system's core utilities.
+
 Create a Local OpenShift Cluster
 ================================
 
@@ -859,7 +915,7 @@ Also verify local DNS for the CRC API endpoint:
 
 .. code-block:: bash
 
-   getent hosts api.crc.testing
+   python3 -c 'import socket; print(socket.gethostbyname("api.crc.testing"))'
    curl -k https://api.crc.testing:6443/readyz?verbose
 
 If ``api.crc.testing`` does not resolve, rerun ``crc setup`` and restart CRC.

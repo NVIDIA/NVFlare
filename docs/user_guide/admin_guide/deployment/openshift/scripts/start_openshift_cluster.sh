@@ -70,8 +70,8 @@ crc_log_path() {
 }
 
 is_truthy() {
-  case "${1,,}" in
-    1|true|yes|y)
+  case "${1:-}" in
+    1|[Tt][Rr][Uu][Ee]|[Yy][Ee][Ss]|[Yy])
       return 0
       ;;
     *)
