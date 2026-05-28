@@ -344,6 +344,9 @@ class DownloadService:
     _init_lock = threading.Lock()
     _tx_table = {}
     _ref_table = {}
+    # Finished refs are tombstoned briefly so a late retry of a lost EOF response can still complete cleanly.
+    _finished_ref_table = {}
+    _finished_ref_ttl = 900.0
     _logger = None
     _tx_monitor = None
     _tx_lock = threading.Lock()
@@ -403,6 +406,7 @@ class DownloadService:
         ref = tx.add_object(obj, ref_id)
         with cls._tx_lock:
             cls._ref_table[ref.rid] = ref
+            cls._finished_ref_table.pop(ref.rid, None)
         return ref.rid
 
     @classmethod
@@ -410,7 +414,7 @@ class DownloadService:
         with cls._tx_lock:
             tx = cls._tx_table.get(transaction_id)
             if tx:
-                cls._delete_tx(tx)
+                cls._delete_tx(tx, TransactionDoneStatus.DELETED)
                 tx.transaction_done(TransactionDoneStatus.DELETED)
 
     @classmethod
@@ -424,16 +428,28 @@ class DownloadService:
             tx_list = list(cls._tx_table.values())
             if tx_list:
                 for tx in tx_list:
-                    cls._delete_tx(tx)
+                    cls._delete_tx(tx, TransactionDoneStatus.DELETED)
                     tx.transaction_done(TransactionDoneStatus.DELETED)
+            cls._finished_ref_table.clear()
 
     @classmethod
-    def _delete_tx(cls, tx: _Transaction):
+    def _delete_tx(cls, tx: _Transaction, status: str = TransactionDoneStatus.DELETED):
         cls._tx_table.pop(tx.tid, None)
+        ref_expiration_time = time.time() + cls._finished_ref_ttl
 
         # remove all refs
         for r in tx.refs:
             cls._ref_table.pop(r.rid, None)
+            if status == TransactionDoneStatus.FINISHED:
+                cls._finished_ref_table[r.rid] = ref_expiration_time
+            else:
+                cls._finished_ref_table.pop(r.rid, None)
+
+    @classmethod
+    def _purge_finished_refs(cls, now: float):
+        expired_refs = [rid for rid, expiration_time in cls._finished_ref_table.items() if expiration_time <= now]
+        for rid in expired_refs:
+            cls._finished_ref_table.pop(rid, None)
 
     @classmethod
     def get_transaction_info(cls, transaction_id: str) -> Optional[TransactionInfo]:
@@ -464,8 +480,12 @@ class DownloadService:
 
         current_state = payload.get(_PropKey.STATE)
         with cls._tx_lock:
+            now = time.time()
+            cls._purge_finished_refs(now)
             ref = cls._ref_table.get(rid)
             if not ref:
+                if rid in cls._finished_ref_table:
+                    return make_reply(ReturnCode.OK, body={_PropKey.STATUS: ProduceRC.EOF})
                 cls._logger.error(f"no ref found for {rid} from {requester}")
                 return make_reply(ReturnCode.INVALID_REQUEST)
 
@@ -522,11 +542,13 @@ class DownloadService:
                 for tx in expired_tx:
                     assert isinstance(tx, _Transaction)
                     tx.transaction_done(TransactionDoneStatus.TIMEOUT)
-                    cls._delete_tx(tx)
+                    cls._delete_tx(tx, TransactionDoneStatus.TIMEOUT)
 
                 for tx in finished_tx:
                     tx.transaction_done(TransactionDoneStatus.FINISHED)
-                    cls._delete_tx(tx)
+                    cls._delete_tx(tx, TransactionDoneStatus.FINISHED)
+
+                cls._purge_finished_refs(now)
 
             time.sleep(5.0)
 

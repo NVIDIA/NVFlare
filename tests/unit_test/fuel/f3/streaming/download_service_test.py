@@ -19,6 +19,8 @@ from unittest.mock import Mock, patch
 import pytest
 
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.download_service import (
     Consumer,
     Downloadable,
@@ -102,9 +104,19 @@ def _make_isolated_download_service():
     class IsolatedDownloadService(DownloadService):
         _tx_table = {}
         _ref_table = {}
+        _finished_ref_table = {}
+        _finished_ref_ttl = 900.0
+        _logger = Mock()
         _tx_lock = threading.Lock()
 
     return IsolatedDownloadService
+
+
+def _make_download_request(ref_id: str, state: dict = None, requester: str = "receiver"):
+    payload = {"ref_id": ref_id}
+    if state is not None:
+        payload["state"] = state
+    return Message(headers={MessageHeaderKey.ORIGIN: requester}, payload=payload)
 
 
 def _run_monitor_once(service_cls, now):
@@ -346,16 +358,82 @@ class TestDownloadService:
 
             assert tx.is_finished()
             tx.transaction_done(TransactionDoneStatus.FINISHED)
-            service._delete_tx(tx)
+            service._delete_tx(tx, TransactionDoneStatus.FINISHED)
 
             assert tx.tid not in service._tx_table
             assert ref.rid not in service._ref_table
+            assert ref.rid in service._finished_ref_table
 
         # Verify transaction_done was called
         assert len(obj.transaction_done_calls) == 1
         transaction_id, status = obj.transaction_done_calls[0]
         assert transaction_id == tx_id
         assert status == TransactionDoneStatus.FINISHED
+
+    def test_finished_ref_late_retry_returns_eof(self):
+        """Late retry after normal transaction completion should receive EOF, not INVALID_REQUEST."""
+        from nvflare.fuel.f3.streaming.download_service import _Transaction
+
+        service = _make_isolated_download_service()
+        obj = MockDownloadable([b"chunk1"])
+        tx = _Transaction(timeout=10.0, num_receivers=1)
+        ref = tx.add_object(obj)
+
+        with service._tx_lock:
+            service._tx_table[tx.tid] = tx
+            service._ref_table[ref.rid] = ref
+            ref.obj_downloaded(to_receiver="receiver", status=DownloadStatus.SUCCESS)
+            assert tx.is_finished()
+            service._delete_tx(tx, TransactionDoneStatus.FINISHED)
+
+        reply = service._handle_download(_make_download_request(ref.rid, state={"chunk_idx": 1}))
+
+        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+        assert reply.payload == {"status": ProduceRC.EOF}
+        service._logger.error.assert_not_called()
+
+    @pytest.mark.parametrize("status", [TransactionDoneStatus.TIMEOUT, TransactionDoneStatus.DELETED])
+    def test_non_finished_ref_late_retry_remains_invalid(self, status):
+        """Only normally finished refs get EOF tombstones; timeout/deleted refs still fail."""
+        from nvflare.fuel.f3.streaming.download_service import _Transaction
+
+        service = _make_isolated_download_service()
+        obj = MockDownloadable([b"chunk1"])
+        tx = _Transaction(timeout=10.0, num_receivers=1)
+        ref = tx.add_object(obj)
+
+        with service._tx_lock:
+            service._tx_table[tx.tid] = tx
+            service._ref_table[ref.rid] = ref
+            service._delete_tx(tx, status)
+
+        reply = service._handle_download(_make_download_request(ref.rid, state={"chunk_idx": 1}))
+
+        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.INVALID_REQUEST
+        assert ref.rid not in service._finished_ref_table
+
+    def test_finished_ref_tombstone_expires(self):
+        """Finished-ref tombstones are temporary and eventually return to invalid-ref behavior."""
+        from nvflare.fuel.f3.streaming import download_service as download_service_module
+        from nvflare.fuel.f3.streaming.download_service import _Transaction
+
+        service = _make_isolated_download_service()
+        service._finished_ref_ttl = 10.0
+        obj = MockDownloadable([b"chunk1"])
+        tx = _Transaction(timeout=10.0, num_receivers=1)
+        ref = tx.add_object(obj)
+
+        with patch.object(download_service_module.time, "time", return_value=100.0):
+            with service._tx_lock:
+                service._tx_table[tx.tid] = tx
+                service._ref_table[ref.rid] = ref
+                service._delete_tx(tx, TransactionDoneStatus.FINISHED)
+
+        with patch.object(download_service_module.time, "time", return_value=111.0):
+            reply = service._handle_download(_make_download_request(ref.rid, state={"chunk_idx": 1}))
+
+        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.INVALID_REQUEST
+        assert ref.rid not in service._finished_ref_table
 
     def test_get_transaction_id_from_ref_id(self, cell):
         """Test retrieving transaction ID from reference ID."""
