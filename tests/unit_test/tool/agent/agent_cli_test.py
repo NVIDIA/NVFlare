@@ -162,8 +162,8 @@ def test_agent_error_envelope_fields_are_supported(capsys, monkeypatch):
     payload = _load_single_stdout_json(capsys.readouterr())
     assert payload["schema_version"] == "1"
     assert payload["status"] == "error"
-    assert payload["code"] == "AGENT_ERROR"
     assert payload["error_code"] == "AGENT_ERROR"
+    assert "code" not in payload
     assert payload["message"] == "Agent command failed."
     assert payload["hint"] == "Use a valid agent command."
     assert payload["recovery_category"] == "FIXABLE_BY_CONFIG"

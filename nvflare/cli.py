@@ -301,7 +301,7 @@ def _get_subcommand_choices(parser):
     return []
 
 
-def _emit_argparse_error_json(parser, message, jsonl_mode: bool = False):
+def _emit_argparse_error_json(parser, message):
     from nvflare.tool.cli_output import SCHEMA_VERSION
 
     # Parser errors intentionally expose usage/choices inline because they are generated before any
@@ -311,7 +311,6 @@ def _emit_argparse_error_json(parser, message, jsonl_mode: bool = False):
         "status": "error",
         "exit_code": 4,
         "error_code": "INVALID_ARGS",
-        "code": "INVALID_ARGS",
         "message": message,
         "hint": "Run with --help to see usage.",
         "data": {
@@ -319,12 +318,7 @@ def _emit_argparse_error_json(parser, message, jsonl_mode: bool = False):
             "choices": _get_subcommand_choices(parser),
         },
     }
-    if jsonl_mode:
-        payload["event"] = "terminal"
-        payload["terminal"] = True
-        print(json.dumps(payload), flush=True)
-    else:
-        print(json.dumps(payload))
+    print(json.dumps(payload))
     parser.exit(4)
 
 
@@ -369,7 +363,7 @@ def _display_unknown_args(argv, cmd: str, args, unknown: list) -> list:
     return display_unknown
 
 
-def _patch_help_on_error(parser, json_mode: bool = False, jsonl_mode: bool = False):
+def _patch_help_on_error(parser, json_mode: bool = False):
     """Recursively patch every parser in the tree to print help before error-exit.
 
     When argparse detects a missing required argument it calls parser.error(),
@@ -379,7 +373,7 @@ def _patch_help_on_error(parser, json_mode: bool = False, jsonl_mode: bool = Fal
 
     def _error_with_help(message):
         if json_mode:
-            _emit_argparse_error_json(parser, message, jsonl_mode=jsonl_mode)
+            _emit_argparse_error_json(parser, message)
         else:
             _emit_argparse_error_human(parser, message, exit_code=4)
 
@@ -387,7 +381,7 @@ def _patch_help_on_error(parser, json_mode: bool = False, jsonl_mode: bool = Fal
     for action in parser._actions:
         if isinstance(action, argparse._SubParsersAction):
             for sub in action.choices.values():
-                _patch_help_on_error(sub, json_mode=json_mode, jsonl_mode=jsonl_mode)
+                _patch_help_on_error(sub, json_mode=json_mode)
 
 
 def _build_global_arg_parser():
@@ -513,9 +507,7 @@ def parse_args(prog_name: str):
         return _parser, ns, sub_cmd_parsers
 
     # Patch every parser so it prints full help before exiting on error.
-    _patch_help_on_error(
-        _parser, json_mode=global_args.format in {"json", "jsonl"}, jsonl_mode=global_args.format == "jsonl"
-    )
+    _patch_help_on_error(_parser, json_mode=global_args.format in {"json", "jsonl"})
 
     args, unknown = _parser.parse_known_args(normalized_argv)
     args._raw_sub_command = args.__dict__.get("sub_command")
@@ -527,16 +519,14 @@ def parse_args(prog_name: str):
         display_unknown = _display_unknown_args(normalized_argv, cmd, args, unknown)
         msg = f"unrecognized arguments: {' '.join(display_unknown)}"
         if args.format in {"json", "jsonl"}:
-            _emit_argparse_error_json(
-                sub_cmd_parser or _parser, f"{prog_name} {cmd}: {msg}", jsonl_mode=args.format == "jsonl"
-            )
+            _emit_argparse_error_json(sub_cmd_parser or _parser, f"{prog_name} {cmd}: {msg}")
         else:
             _emit_argparse_error_human(sub_cmd_parser or _parser, msg, exit_code=4)
     if args.format == "jsonl":
         command_path = (getattr(args, "sub_command", None), getattr(args, "job_sub_cmd", None))
         if command_path not in _JSONL_COMMANDS:
             detail = "--format jsonl is only supported by streaming commands: nvflare job monitor"
-            _emit_argparse_error_json(sub_cmd_parser or _parser, detail, jsonl_mode=True)
+            _emit_argparse_error_json(sub_cmd_parser or _parser, detail)
     return _parser, args, sub_cmd_parsers
 
 
