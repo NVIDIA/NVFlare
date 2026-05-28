@@ -116,6 +116,7 @@ For framework-agnostic or NumPy-based models.
         name="fedavg-numpy",
         min_clients=2,
         num_rounds=5,
+        model=[0.0, 0.0, 0.0],
         train_script="client.py",
     )
     env = SimEnv(num_clients=2)
