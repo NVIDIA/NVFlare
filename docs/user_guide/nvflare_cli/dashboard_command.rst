@@ -55,7 +55,11 @@ Running ``nvflare dashboard -h`` shows all available options.
     For AWS cloud launches, specify ``--vpc-id`` and ``--subnet-id`` together.
     If only one of these options is provided, Dashboard ignores it.
 
-To start Dashboard, run ``nvflare dashboard --start -i nvflare/nvflare:<version>``.
+To start Dashboard, run ``nvflare dashboard --start -i nvflare/nvflare:2.7.2``.
+The image is a standard container image reference and can come from any registry that the runtime can pull from,
+for example ``nvflare/nvflare:2.7.2``, ``nvcr.io/nvidia/nvflare:2.7.2``, or
+``registry.example.com/nvflare/nvflare:2.7.2``. Different deployments can use image names from different
+registries as long as each Docker host or cloud VM has pull access.
 
 The Dashboard Docker will detect if the database is initialized.  If not, it will ask for the project_admin email address and will generate a random password:
 
@@ -73,13 +77,13 @@ Note that for the first time, it may take a while to download the nvflare image 
 
 .. code-block::
 
-    Pulling nvflare/nvflare:<version>, may take some time to finish.
+    Pulling nvflare/nvflare:2.7.2, may take some time to finish.
 
 After pulling the image, you should see output similar to the following:
 
 .. code-block::
 
-    Launching nvflare/nvflare:<version>
+    Launching nvflare/nvflare:2.7.2
     Dashboard will listen to port 443
     /path_to_folder_for_db on host mounted to /var/tmp/nvflare/dashboard in container
     No additional environment variables set to the launched container.
