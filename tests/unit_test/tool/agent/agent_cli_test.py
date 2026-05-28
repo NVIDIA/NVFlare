@@ -354,7 +354,8 @@ def test_agent_skills_missing_named_skill_is_structured_json_error(capsys, monke
     assert exit_code == 4
     payload = _load_single_stdout_json(capsys.readouterr())
     _assert_envelope_shape(payload, "error")
-    assert payload["code"] == "AGENT_SKILL_NOT_FOUND"
+    assert payload["error_code"] == "AGENT_SKILL_NOT_FOUND"
+    assert "code" not in payload
     assert payload["data"]["missing"] == ["nvflare-missing"]
 
 
@@ -397,7 +398,8 @@ def test_agent_skills_install_failure_is_structured_json_error(capsys, monkeypat
     assert exit_code == 1
     payload = _load_single_stdout_json(capsys.readouterr())
     _assert_envelope_shape(payload, "error")
-    assert payload["code"] == "AGENT_SKILL_INSTALL_FAILED"
+    assert payload["error_code"] == "AGENT_SKILL_INSTALL_FAILED"
+    assert "code" not in payload
     assert payload["recovery_category"] == "FIXABLE_BY_ENV"
     assert payload["data"]["errors"][0]["code"] == "skill_install_failed"
 
