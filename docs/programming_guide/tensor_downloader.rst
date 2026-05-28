@@ -212,6 +212,13 @@ For very large models (multiple GB), you may want to tune chunk sizes for optima
 Larger chunks mean fewer network requests but higher per-chunk memory usage. Smaller chunks
 reduce memory but increase network overhead.
 
+When tensor streaming is used from subprocess-mode Client API jobs, also tune the
+subprocess timeout settings that govern task reads, result ACKs, and server-side
+download completion. In particular, keep ``PEER_READ_TIMEOUT``,
+``download_complete_timeout``, and ``tensor_min_download_timeout`` aligned with
+the configured streaming per-request timeout. See :ref:`timeout_troubleshooting`
+and :doc:`/programming_guide/timeouts`.
+
 **Example config_fed_server.conf with chunk size tuning:**
 
 .. code-block::
@@ -441,3 +448,4 @@ See Also
 - :ref:`decomposer_for_large_object` - Details on the FOBS decomposer system and file-based decomposers
 - :ref:`file_streaming` - File streaming for other large data types
 - :ref:`swarm_learning_large_models` - Parameter tuning for large model workflows
+- :ref:`timeout_troubleshooting` - Timeout tuning for large Client API subprocess jobs

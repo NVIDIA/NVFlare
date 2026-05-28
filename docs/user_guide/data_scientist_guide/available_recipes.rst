@@ -766,8 +766,10 @@ Decentralized federated learning without a central server.
      Increase for 7B+ models where P2P tensor streaming can take several minutes.
    - ``pipe_type`` (default ``"cell_pipe"``): set to ``"file_pipe"`` when cell networking
      is unavailable or for third-party subprocess integrations.
-   - ``submit_result_timeout`` and ``tensor_min_download_timeout``: set via
-     ``recipe.add_client_config({...})`` — see :ref:`timeout_troubleshooting`.
+   - ``submit_result_timeout``, ``download_complete_timeout``,
+     ``tensor_min_download_timeout``, ``PEER_READ_TIMEOUT``, and finite
+     ``max_resends``: set via ``recipe.add_client_config({...})`` — see
+     :ref:`timeout_troubleshooting`.
 
 
 Edge Recipes
