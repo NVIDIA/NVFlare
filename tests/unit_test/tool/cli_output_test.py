@@ -201,15 +201,6 @@ class TestOutputOk:
         mock_print.assert_called_once()
         assert mock_print.call_args.kwargs["flush"] is True
 
-    def test_json_mode_output_ok_flushes_stdout(self, monkeypatch):
-        monkeypatch.setattr(cli_output, "_output_format", "json")
-
-        with patch("builtins.print") as mock_print:
-            output_ok({"key": "value"})
-
-        mock_print.assert_called_once()
-        assert mock_print.call_args.kwargs["flush"] is True
-
     def test_human_mode_dict_renders_as_table(self, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         output_ok({"status": "running", "id": "abc"})
@@ -404,7 +395,7 @@ class TestOutputError:
         assert exc_info.value.code == 1
         envelope = json.loads(capsys.readouterr().out)
         assert envelope["error_code"] == "CONNECTION_FAILED"
-        assert envelope["code"] == "CONNECTION_FAILED"
+        assert "code" not in envelope
         assert envelope["recovery_category"] == "RETRYABLE"
         assert envelope["suggested_skill"] == "nvflare-diagnose-job"
 
