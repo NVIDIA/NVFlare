@@ -697,6 +697,32 @@ def _write_docker_start_script(kit_info: KitInfo, docker_image: str, network: st
 DIR="$( cd "$( dirname "${{BASH_SOURCE[0]}}" )" >/dev/null 2>&1 && pwd )"
 HOST_WORKSPACE="$(cd "$DIR/.." && pwd)"
 DOCKER_IMAGE=${{NVFL_P_IMAGE:-{_bash_double_quote(docker_image)}}}
+DOCKER_SOCK="${{NVFL_DOCKER_SOCK:-/var/run/docker.sock}}"
+
+if [ -z "${{NVFL_DOCKER_SOCK:-}}" ] && [ -L "$DOCKER_SOCK" ]; then
+    RESOLVED_DOCKER_SOCK=$(readlink "$DOCKER_SOCK")
+    if [ -n "$RESOLVED_DOCKER_SOCK" ]; then
+        case "$RESOLVED_DOCKER_SOCK" in
+            /*)
+                DOCKER_SOCK="$RESOLVED_DOCKER_SOCK"
+                ;;
+            *)
+                RESOLVED_DOCKER_SOCK_DIR="$(
+                    cd "$(dirname "$DOCKER_SOCK")" &&
+                    cd "$(dirname "$RESOLVED_DOCKER_SOCK")" &&
+                    pwd
+                )"
+                DOCKER_SOCK="$RESOLVED_DOCKER_SOCK_DIR/$(basename "$RESOLVED_DOCKER_SOCK")"
+                ;;
+        esac
+    fi
+fi
+
+if [ ! -S "$DOCKER_SOCK" ]; then
+    echo "ERROR: Docker socket not found or not a socket: $DOCKER_SOCK"
+    echo "Set NVFL_DOCKER_SOCK=/path/to/docker.sock to override the Docker socket path."
+    exit 1
+fi
 
 if ! docker info > /dev/null 2>&1; then
     echo "ERROR: cannot connect to Docker daemon. Make sure your user has permission to run docker."
@@ -716,18 +742,18 @@ fi
 
 rm -f "$HOST_WORKSPACE/daemon_pid.fl"
 
-SOCK_GID=$(stat -c '%g' /var/run/docker.sock 2>/dev/null || stat -f '%g' /var/run/docker.sock 2>/dev/null || echo "")
-GROUP_ADD_ARG=""
+SOCK_GID=$(stat -c '%g' "$DOCKER_SOCK" 2>/dev/null || stat -f '%g' "$DOCKER_SOCK" 2>/dev/null || echo "")
+GROUP_ADD_ARGS=(--group-add 0)
 if [ -n "$SOCK_GID" ] && [ "$SOCK_GID" != "0" ]; then
-    GROUP_ADD_ARG="--group-add $SOCK_GID"
+    GROUP_ADD_ARGS+=(--group-add "$SOCK_GID")
 fi
 
 docker run --name {shlex.quote(kit_info.name)} \\
     --user "$(id -u):$(id -g)" \\
-    $GROUP_ADD_ARG \\
+    "${{GROUP_ADD_ARGS[@]}}" \\
     --network "$NETWORK_NAME" \\
 {network_alias}    -v "$HOST_WORKSPACE":{WORKSPACE_MOUNT_PATH} \\
-    -v /var/run/docker.sock:/var/run/docker.sock \\
+    -v "$DOCKER_SOCK":/var/run/docker.sock \\
     -e NVFL_DOCKER_WORKSPACE="$HOST_WORKSPACE" \\
 {publish_port}    --rm "$DOCKER_IMAGE" \\
     {_docker_parent_command(kit_info)}
