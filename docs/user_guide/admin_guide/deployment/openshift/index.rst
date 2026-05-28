@@ -29,6 +29,7 @@ All OpenShift-specific deployment material is kept under this directory:
        Dockerfile
        create_openshift_cluster.sh
        start_openshift_cluster.sh
+       cleanup_openshift_cluster.sh
        openshift_k8s_provision.sh
        openshift_k8s_deploy.sh
        openshift_k8s_submit_job.sh
@@ -981,19 +982,30 @@ name, for example ``nvflare-server``, is the simplest path.
 Clean Up
 ========
 
-Uninstall Helm releases:
+To delete scripted deployment resources and stop OpenShift Local:
 
 .. code-block:: bash
 
-   helm uninstall nvflare-server -n nvflare
-   helm uninstall site-1 -n nvflare
-   helm uninstall site-2 -n nvflare
+   bash docs/user_guide/admin_guide/deployment/openshift/scripts/cleanup_openshift_cluster.sh
 
-Delete the namespace only if it is dedicated to this test:
+By default, the cleanup script removes the generated Helm releases, temporary
+admin/copy pods, the last submitted job pods recorded under ``WORK_DIR``, and
+workspace PVCs in ``NAMESPACE`` before running ``crc stop``.
+
+Delete the namespace only if it is dedicated to this test. This removes all
+resources in the project before stopping CRC:
 
 .. code-block:: bash
 
-   oc delete project nvflare
+   bash docs/user_guide/admin_guide/deployment/openshift/scripts/cleanup_openshift_cluster.sh --delete-namespace
 
-Depending on the storage reclaim policy, PVC-backed volumes may remain after the
-namespace is deleted.
+Useful cleanup options:
+
+* ``--no-stop``: delete resources but leave CRC running.
+* ``--delete-work-dir``: also delete ``WORK_DIR`` when it is under
+  ``/tmp/nvflare``.
+* ``--keep-namespace``: keep the namespace even when ``DELETE_NAMESPACE=true``
+  is set in the environment.
+
+Depending on the storage reclaim policy, PVC-backed volumes may remain after
+PVCs or the namespace are deleted.

@@ -6,6 +6,7 @@ This directory contains the OpenShift-specific NVFlare deployment guide and help
 - `scripts/Dockerfile` builds a restricted-SCC-compatible NVFlare image.
 - `scripts/create_openshift_cluster.sh` configures Red Hat OpenShift Local (CRC) and optionally starts it.
 - `scripts/start_openshift_cluster.sh` starts CRC, logs in with `oc`, and prepares the target project.
+- `scripts/cleanup_openshift_cluster.sh` deletes scripted deployment resources and stops CRC.
 - `scripts/openshift_k8s_provision.sh` runs `nvflare provision` for the sample server, `site-1`, `site-2`, and admin.
 - `scripts/openshift_k8s_deploy.sh` prepares K8s startup kits, stages PVC workspaces, installs Helm charts, and verifies parent pods can import the Kubernetes Python client.
 - `scripts/openshift_k8s_submit_job.sh` submits `hello-numpy` from an in-cluster admin pod and waits for successful completion.
@@ -26,4 +27,10 @@ The watch tool requires the Python `rich` package:
 
 ```bash
 python3 -m pip install rich
+```
+
+Clean up generated resources and stop OpenShift Local:
+
+```bash
+bash docs/user_guide/admin_guide/deployment/openshift/scripts/cleanup_openshift_cluster.sh
 ```
