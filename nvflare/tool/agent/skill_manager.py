@@ -50,7 +50,7 @@ def resolve_agent_target_dir(
 ) -> Path:
     """Resolve a named agent target to its skill installation directory."""
     if target_dir:
-        return Path(target_dir).expanduser()
+        return _resolve_target_override(target_dir)
 
     env_map = env or os.environ
     if agent == "codex":
@@ -295,6 +295,9 @@ def _publish_staged_skill(staged_dir: Path, target_dir: Path) -> None:
 def _stage_skill(
     source_dir: Path, staged_dir: Path, plan_entry: dict, source: SkillSource, *, installed_path: Path
 ) -> None:
+    symlink = _first_symlink_in_tree(source_dir)
+    if symlink:
+        raise ValueError(f"skill source must not contain symlinks: {symlink.relative_to(source_dir).as_posix()}")
     shutil.copytree(source_dir, staged_dir, ignore=shutil.ignore_patterns(*IGNORED_SKILL_FILE_NAMES))
     manifest = {
         "schema_version": "1",
@@ -331,15 +334,59 @@ def _source_summary(source: SkillSource) -> dict:
     }
 
 
+def _resolve_target_override(target_dir: Path | str) -> Path:
+    target = Path(target_dir).expanduser()
+    symlink = _first_symlink_component(target)
+    if symlink:
+        raise ValueError(f"agent skill target must not contain symlink components: {symlink}")
+    return target.resolve(strict=False)
+
+
+def _first_symlink_component(path: Path) -> Optional[Path]:
+    current = Path(path.anchor) if path.is_absolute() else Path.cwd()
+    parts = path.parts[1:] if path.is_absolute() else path.parts
+    for part in parts:
+        if part in ("", "."):
+            continue
+        if part == "..":
+            current = current.parent
+            continue
+        current = current / part
+        if current.is_symlink():
+            return current
+    return None
+
+
+def _first_symlink_in_tree(root_dir: Path) -> Optional[Path]:
+    for root, dir_names, file_names in os.walk(root_dir, topdown=True, followlinks=False):
+        root_path = Path(root)
+        dir_names.sort()
+        file_names.sort()
+        for name in dir_names + file_names:
+            path = root_path / name
+            if path.is_symlink():
+                return path
+        dir_names[:] = [name for name in dir_names if not (root_path / name).is_symlink()]
+    return None
+
+
 def _files_to_copy(source_dir: Path, target_dir: Path) -> list[dict]:
     files = []
-    for file_path in sorted(source_dir.rglob("*"), key=lambda p: p.relative_to(source_dir).as_posix()):
-        if not file_path.is_file():
-            continue
-        rel_path = file_path.relative_to(source_dir)
-        if "__pycache__" in rel_path.parts or file_path.suffix in {".pyc", ".pyo"}:
-            continue
-        files.append({"source": str(file_path), "target": str(target_dir / rel_path)})
+    for root, dir_names, file_names in os.walk(source_dir, topdown=True, followlinks=False):
+        root_path = Path(root)
+        dir_names.sort()
+        file_names.sort()
+        dir_names[:] = [name for name in dir_names if name != "__pycache__" and not (root_path / name).is_symlink()]
+        for file_name in file_names:
+            file_path = root_path / file_name
+            if file_path.is_symlink():
+                continue
+            if file_path.suffix in {".pyc", ".pyo"}:
+                continue
+            if not file_path.is_file():
+                continue
+            rel_path = file_path.relative_to(source_dir)
+            files.append({"source": str(file_path), "target": str(target_dir / rel_path)})
     return files
 
 

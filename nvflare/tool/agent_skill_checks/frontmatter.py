@@ -14,6 +14,7 @@
 
 """Validation for NVFLARE agent skill frontmatter."""
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Optional
@@ -85,8 +86,14 @@ def validate_skill_dir(skill_dir: Path | str) -> SkillValidationResult:
     metadata: dict[str, Any] = {}
 
     skill_file = path / SKILL_FILE_NAME
+    if path.is_symlink():
+        issues.append(_issue("skill-symlink-not-allowed", "skill path must not be a symlink", path))
+        return SkillValidationResult(str(path), metadata, tuple(issues))
     if not path.is_dir():
         issues.append(_issue("skill-dir-missing", "skill path must be a directory", path))
+        return SkillValidationResult(str(path), metadata, tuple(issues))
+    _validate_no_symlinks(path, issues)
+    if issues:
         return SkillValidationResult(str(path), metadata, tuple(issues))
     if not skill_file.is_file():
         issues.append(_issue("skill-md-missing", "skill directory must contain SKILL.md", skill_file))
@@ -167,6 +174,18 @@ def _validate_blast_radius(radius: Any, skill_file: Path, issues: list[SkillVali
                 skill_file,
             )
         )
+
+
+def _validate_no_symlinks(skill_dir: Path, issues: list[SkillValidationIssue]) -> None:
+    for root, dir_names, file_names in os.walk(skill_dir, topdown=True, followlinks=False):
+        root_path = Path(root)
+        dir_names.sort()
+        file_names.sort()
+        for name in dir_names + file_names:
+            path = root_path / name
+            if path.is_symlink():
+                issues.append(_issue("skill-symlink-not-allowed", "skill directories must not contain symlinks", path))
+        dir_names[:] = [name for name in dir_names if not (root_path / name).is_symlink()]
 
 
 def _issue(code: str, message: str, path: Path) -> SkillValidationIssue:
