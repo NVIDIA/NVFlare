@@ -590,7 +590,10 @@ def test_cj_cleanup_passes_cuda_empty_cache(monkeypatch):
 def _make_validating_executor(monkeypatch, **executor_kwargs):
     """Return an executor whose initialize() runs _validate_timeout_config() and
     records all log_warning calls into a list for assertion."""
+    from nvflare.fuel.utils.config_service import ConfigService
+
     warnings_emitted = []
+    errors_emitted = []
 
     monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
     monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
@@ -600,10 +603,16 @@ def _make_validating_executor(monkeypatch, **executor_kwargs):
         "log_warning",
         lambda self, fl_ctx, msg: warnings_emitted.append(msg),
     )
+    monkeypatch.setattr(
+        ClientAPILauncherExecutor,
+        "log_error",
+        lambda self, fl_ctx, msg: errors_emitted.append(msg),
+    )
+    monkeypatch.setattr(ConfigService, "get_float_var", lambda name, conf=None, default=None: default)
 
     executor = ClientAPILauncherExecutor(pipe_id="test_pipe", **executor_kwargs)
     executor.pipe = _make_fake_cell_pipe()
-    return executor, warnings_emitted
+    return executor, warnings_emitted, errors_emitted
 
 
 def test_timeout_warning_min_dl_less_than_per_req(monkeypatch):
@@ -611,7 +620,7 @@ def test_timeout_warning_min_dl_less_than_per_req(monkeypatch):
     import nvflare.fuel.utils.app_config_utils as acu
     from nvflare.apis.fl_constant import ConfigVarName
 
-    executor, warnings = _make_validating_executor(monkeypatch)
+    executor, warnings, _ = _make_validating_executor(monkeypatch)
     cell = _FakeCell()
     fl_ctx = _FakeFLContext(cell)
 
@@ -633,7 +642,7 @@ def test_no_timeout_warning_when_min_dl_ge_per_req(monkeypatch):
     import nvflare.fuel.utils.app_config_utils as acu
     from nvflare.apis.fl_constant import ConfigVarName
 
-    executor, warnings = _make_validating_executor(monkeypatch)
+    executor, warnings, _ = _make_validating_executor(monkeypatch)
     cell = _FakeCell()
     fl_ctx = _FakeFLContext(cell)
 
@@ -655,7 +664,7 @@ def test_timeout_warning_submit_exceeds_min_dl(monkeypatch):
     import nvflare.fuel.utils.app_config_utils as acu
     from nvflare.apis.fl_constant import ConfigVarName
 
-    executor, warnings = _make_validating_executor(monkeypatch, submit_result_timeout=400.0)
+    executor, warnings, _ = _make_validating_executor(monkeypatch, submit_result_timeout=400.0)
     cell = _FakeCell()
     fl_ctx = _FakeFLContext(cell)
 
@@ -672,12 +681,12 @@ def test_timeout_warning_submit_exceeds_min_dl(monkeypatch):
     assert any("submit_result_timeout" in w for w in warnings), warnings
 
 
-def test_timeout_warning_unbounded_max_resends(monkeypatch):
-    """A warning must fire when max_resends is None (unbounded)."""
+def test_timeout_error_unbounded_max_resends(monkeypatch):
+    """Initialization must fail when max_resends is None (unbounded)."""
     import nvflare.fuel.utils.app_config_utils as acu
     from nvflare.apis.fl_constant import ConfigVarName
 
-    executor, warnings = _make_validating_executor(monkeypatch, max_resends=None)
+    executor, _warnings, errors = _make_validating_executor(monkeypatch, max_resends=None)
     cell = _FakeCell()
     fl_ctx = _FakeFLContext(cell)
 
@@ -690,9 +699,55 @@ def test_timeout_warning_unbounded_max_resends(monkeypatch):
         return default
 
     monkeypatch.setattr(acu, "get_positive_float_var", _fake_get)
-    executor.initialize(fl_ctx)
 
-    assert any("max_resends" in w for w in warnings), warnings
+    with pytest.raises(ValueError, match="max_resends is None"):
+        executor.initialize(fl_ctx)
+
+    assert any("max_resends" in e for e in errors), errors
+
+
+def test_timeout_error_download_complete_timeout_none(monkeypatch):
+    """Initialization must fail when download_complete_timeout is None."""
+    executor, _warnings, errors = _make_validating_executor(monkeypatch, download_complete_timeout=None)
+    cell = _FakeCell()
+    fl_ctx = _FakeFLContext(cell)
+
+    with pytest.raises(ValueError, match="download_complete_timeout is None"):
+        executor.initialize(fl_ctx)
+
+    assert any("download_complete_timeout" in e for e in errors), errors
+
+
+@pytest.mark.parametrize(
+    "executor_kwargs,error_match",
+    [
+        ({"max_resends": None}, "max_resends is None"),
+        ({"download_complete_timeout": None}, "download_complete_timeout is None"),
+    ],
+)
+def test_required_timeout_errors_stop_before_config_write(monkeypatch, executor_kwargs, error_match):
+    """Invalid required timeout values must fail before writing subprocess config."""
+    from unittest.mock import MagicMock
+
+    writes = []
+    errors = []
+    monkeypatch.setattr(
+        "nvflare.app_common.executors.client_api_launcher_executor.write_config_to_file",
+        lambda config_data, config_file_path: writes.append(config_data),
+    )
+    monkeypatch.setattr(
+        ClientAPILauncherExecutor,
+        "log_error",
+        lambda self, fl_ctx, msg: errors.append(msg),
+    )
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe", **executor_kwargs)
+
+    with pytest.raises(ValueError, match=error_match):
+        executor.prepare_config_for_launch(MagicMock())
+
+    assert writes == []
+    assert any(error_match in e for e in errors), errors
 
 
 def test_no_warning_when_all_timeouts_consistent(monkeypatch):
@@ -700,7 +755,7 @@ def test_no_warning_when_all_timeouts_consistent(monkeypatch):
     import nvflare.fuel.utils.app_config_utils as acu
     from nvflare.apis.fl_constant import ConfigVarName
 
-    executor, warnings = _make_validating_executor(monkeypatch, submit_result_timeout=200.0, max_resends=3)
+    executor, warnings, _ = _make_validating_executor(monkeypatch, submit_result_timeout=200.0, max_resends=3)
     cell = _FakeCell()
     fl_ctx = _FakeFLContext(cell)
 
@@ -715,6 +770,134 @@ def test_no_warning_when_all_timeouts_consistent(monkeypatch):
     executor.initialize(fl_ctx)
 
     assert warnings == [], warnings
+
+
+def test_timeout_warning_peer_read_less_than_per_req(monkeypatch):
+    """A warning must fire when peer_read_timeout is lower than streaming_per_request_timeout."""
+    import nvflare.fuel.utils.app_config_utils as acu
+    from nvflare.apis.fl_constant import ConfigVarName
+    from nvflare.fuel.utils.config_service import ConfigService
+
+    executor, warnings, _ = _make_validating_executor(monkeypatch, peer_read_timeout=300.0)
+    cell = _FakeCell()
+    fl_ctx = _FakeFLContext(cell)
+
+    def _fake_get(name, default):
+        if ConfigVarName.MIN_DOWNLOAD_TIMEOUT in name:
+            return 700.0
+        if ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT in name:
+            return 600.0
+        return default
+
+    monkeypatch.setattr(acu, "get_positive_float_var", _fake_get)
+    monkeypatch.setattr(
+        ConfigService,
+        "get_float_var",
+        lambda name, conf=None, default=None: 600.0 if ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT in name else default,
+    )
+    executor.initialize(fl_ctx)
+
+    assert any("peer_read_timeout" in w and "streaming_per_request_timeout" in w for w in warnings), warnings
+
+
+def test_timeout_warning_peer_read_none_when_per_req_is_configured(monkeypatch):
+    """A warning must fire when peer_read_timeout is unset and streaming timeout is configured."""
+    import nvflare.fuel.utils.app_config_utils as acu
+    from nvflare.apis.fl_constant import ConfigVarName
+    from nvflare.fuel.utils.config_service import ConfigService
+
+    executor, warnings, _ = _make_validating_executor(monkeypatch, peer_read_timeout=None)
+    cell = _FakeCell()
+    fl_ctx = _FakeFLContext(cell)
+
+    def _fake_get(name, default):
+        if ConfigVarName.MIN_DOWNLOAD_TIMEOUT in name:
+            return 700.0
+        if ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT in name:
+            return 600.0
+        return default
+
+    monkeypatch.setattr(acu, "get_positive_float_var", _fake_get)
+    monkeypatch.setattr(
+        ConfigService,
+        "get_float_var",
+        lambda name, conf=None, default=None: 600.0 if ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT in name else default,
+    )
+    executor.initialize(fl_ctx)
+
+    assert any("peer_read_timeout is not set" in w for w in warnings), warnings
+
+
+def test_default_peer_read_timeout_does_not_warn_without_configured_per_req(monkeypatch):
+    """The production default peer_read_timeout should not warn when streaming timeout is only the fallback."""
+    import nvflare.fuel.utils.app_config_utils as acu
+    from nvflare.apis.fl_constant import ConfigVarName
+
+    executor, warnings, _ = _make_validating_executor(monkeypatch)
+    cell = _FakeCell()
+    fl_ctx = _FakeFLContext(cell)
+
+    def _fake_get(name, default):
+        if ConfigVarName.MIN_DOWNLOAD_TIMEOUT in name:
+            return 700.0
+        if ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT in name:
+            return 600.0
+        return default
+
+    monkeypatch.setattr(acu, "get_positive_float_var", _fake_get)
+    executor.initialize(fl_ctx)
+
+    assert not any("peer_read_timeout" in w for w in warnings), warnings
+
+
+def test_timeout_warning_download_complete_less_than_per_req(monkeypatch):
+    """A warning must fire when download_complete_timeout is lower than streaming_per_request_timeout."""
+    import nvflare.fuel.utils.app_config_utils as acu
+    from nvflare.apis.fl_constant import ConfigVarName
+    from nvflare.fuel.utils.config_service import ConfigService
+
+    executor, warnings, _ = _make_validating_executor(monkeypatch, download_complete_timeout=300.0)
+    cell = _FakeCell()
+    fl_ctx = _FakeFLContext(cell)
+
+    def _fake_get(name, default):
+        if ConfigVarName.MIN_DOWNLOAD_TIMEOUT in name:
+            return 700.0
+        if ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT in name:
+            return 600.0
+        return default
+
+    monkeypatch.setattr(acu, "get_positive_float_var", _fake_get)
+    monkeypatch.setattr(
+        ConfigService,
+        "get_float_var",
+        lambda name, conf=None, default=None: 600.0 if ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT in name else default,
+    )
+    executor.initialize(fl_ctx)
+
+    assert any("download_complete_timeout" in w and "streaming_per_request_timeout" in w for w in warnings), warnings
+
+
+def test_download_complete_timeout_does_not_warn_without_configured_per_req(monkeypatch):
+    """The download_complete_timeout check should not warn when streaming timeout is only the fallback."""
+    import nvflare.fuel.utils.app_config_utils as acu
+    from nvflare.apis.fl_constant import ConfigVarName
+
+    executor, warnings, _ = _make_validating_executor(monkeypatch, download_complete_timeout=300.0)
+    cell = _FakeCell()
+    fl_ctx = _FakeFLContext(cell)
+
+    def _fake_get(name, default):
+        if ConfigVarName.MIN_DOWNLOAD_TIMEOUT in name:
+            return 700.0
+        if ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT in name:
+            return 600.0
+        return default
+
+    monkeypatch.setattr(acu, "get_positive_float_var", _fake_get)
+    executor.initialize(fl_ctx)
+
+    assert not any("download_complete_timeout" in w for w in warnings), warnings
 
 
 # ---------------------------------------------------------------------------
