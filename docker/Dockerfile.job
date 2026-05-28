@@ -19,8 +19,8 @@ COPY . .
 RUN mkdir -p /usr/local/bin \
     && ln -sf /usr/bin/python /usr/local/bin/python \
     && python -m pip install --ignore-installed "PyYAML>=6.0" \
-    && NVFL_RELEASE=1 python -m pip install ".[K8S]" \
-    && python -c "import nvflare; import kubernetes; import torch"
+    && NVFL_RELEASE=1 python -m pip install "." \
+    && python -c "import nvflare; import torch"
 
 WORKDIR /app
 

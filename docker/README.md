@@ -38,8 +38,9 @@ framework stack.
 The starter job image uses `nvcr.io/nvidia/pytorch:26.04-py3` as its base. The
 NGC PyTorch container is a ready-to-run GPU framework image with CUDA, NVIDIA
 libraries, PyTorch, and related runtime dependencies. The Dockerfile installs
-NVFlare with the `K8S` extra, but does not install the NVFlare `PT` extra so pip
-does not replace the PyTorch packages supplied by the NGC image.
+NVFlare without optional extras so the job image does not inherit parent-only
+launcher dependencies and pip does not replace the PyTorch packages supplied by
+the NGC image.
 
 Build from the repository root:
 
