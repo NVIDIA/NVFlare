@@ -42,7 +42,7 @@ To run NVFlare dashboard on Azure, run:
 
 .. code-block:: shell
 
-    nvflare dashboard --cloud azure
+    nvflare dashboard --cloud azure -i nvflare/nvflare:<version>
 
 
 .. note::
@@ -100,7 +100,7 @@ To run NVFlare dashboard on AWS, run:
 
 .. code-block:: shell
 
-    nvflare dashboard --cloud aws
+    nvflare dashboard --cloud aws -i nvflare/nvflare:<version>
 
 .. note::
 
