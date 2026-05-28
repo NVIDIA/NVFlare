@@ -681,40 +681,86 @@ def test_timeout_warning_submit_exceeds_min_dl(monkeypatch):
     assert any("submit_result_timeout" in w for w in warnings), warnings
 
 
-def test_timeout_error_unbounded_max_resends(monkeypatch):
-    """Initialization must fail when max_resends is None (unbounded)."""
+def test_initialize_validates_required_timeout_values_once(monkeypatch):
+    """initialize() should not repeat required timeout validation after config preparation."""
     import nvflare.fuel.utils.app_config_utils as acu
     from nvflare.apis.fl_constant import ConfigVarName
+    from nvflare.fuel.utils.config_service import ConfigService
 
-    executor, _warnings, errors = _make_validating_executor(monkeypatch, max_resends=None)
-    cell = _FakeCell()
-    fl_ctx = _FakeFLContext(cell)
+    calls = []
+
+    def _spy_required_values(self, fl_ctx):
+        calls.append(fl_ctx)
+
+    def _prepare_config(self, fl_ctx):
+        self._validate_required_timeout_values(fl_ctx)
 
     def _fake_get(name, default):
-        # Return values that won't trigger other warnings
         if ConfigVarName.MIN_DOWNLOAD_TIMEOUT in name:
             return 700.0
         if ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT in name:
             return 600.0
         return default
 
+    monkeypatch.setattr(ClientAPILauncherExecutor, "_validate_required_timeout_values", _spy_required_values)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", _prepare_config)
+    monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(_GCV_MODULE, _make_gcv_stub({}))
+    monkeypatch.setattr(ConfigService, "get_float_var", lambda name, conf=None, default=None: default)
     monkeypatch.setattr(acu, "get_positive_float_var", _fake_get)
 
-    with pytest.raises(ValueError, match="max_resends is None"):
-        executor.initialize(fl_ctx)
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
+    executor.pipe = _make_fake_cell_pipe()
+    fl_ctx = _FakeFLContext(_FakeCell())
 
+    executor.initialize(fl_ctx)
+
+    assert calls == [fl_ctx]
+
+
+def test_timeout_error_unbounded_max_resends(monkeypatch):
+    """Initialization must fail when max_resends is None (unbounded)."""
+    errors = []
+    writes = []
+    monkeypatch.setattr(
+        "nvflare.app_common.executors.client_api_launcher_executor.write_config_to_file",
+        lambda config_data, config_file_path: writes.append(config_data),
+    )
+    monkeypatch.setattr(
+        ClientAPILauncherExecutor,
+        "log_error",
+        lambda self, fl_ctx, msg: errors.append(msg),
+    )
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe", max_resends=None)
+    with pytest.raises(ValueError, match="max_resends is None"):
+        executor.initialize(_FakeFLContext(_FakeCell()))
+
+    assert writes == []
     assert any("max_resends" in e for e in errors), errors
 
 
 def test_timeout_error_download_complete_timeout_none(monkeypatch):
     """Initialization must fail when download_complete_timeout is None."""
-    executor, _warnings, errors = _make_validating_executor(monkeypatch, download_complete_timeout=None)
-    cell = _FakeCell()
-    fl_ctx = _FakeFLContext(cell)
+    errors = []
+    writes = []
+    monkeypatch.setattr(
+        "nvflare.app_common.executors.client_api_launcher_executor.write_config_to_file",
+        lambda config_data, config_file_path: writes.append(config_data),
+    )
+    monkeypatch.setattr(
+        ClientAPILauncherExecutor,
+        "log_error",
+        lambda self, fl_ctx, msg: errors.append(msg),
+    )
 
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe", download_complete_timeout=None)
     with pytest.raises(ValueError, match="download_complete_timeout is None"):
-        executor.initialize(fl_ctx)
+        executor.initialize(_FakeFLContext(_FakeCell()))
 
+    assert writes == []
     assert any("download_complete_timeout" in e for e in errors), errors
 
 
