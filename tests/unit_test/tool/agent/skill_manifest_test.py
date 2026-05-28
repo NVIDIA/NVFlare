@@ -95,6 +95,16 @@ def test_skill_tree_hash_rejects_skill_symlinks(tmp_path):
         skill_tree_hash(skill_dir)
 
 
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are not supported on this platform")
+def test_skill_tree_hash_rejects_symlink_skill_root(tmp_path):
+    skill_dir = _write_skill(tmp_path, "nvflare-test-skill")
+    link_dir = tmp_path / "nvflare-link-skill"
+    link_dir.symlink_to(skill_dir, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="skill directory contains symlink"):
+        skill_tree_hash(link_dir)
+
+
 def test_skill_tree_hash_ignores_python_cache_files(tmp_path):
     skill_dir = _write_skill(tmp_path, "nvflare-test-skill")
     first_hash = skill_tree_hash(skill_dir)

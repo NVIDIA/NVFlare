@@ -204,28 +204,51 @@ def _install_plan(
         elif not target_skill_dir.exists():
             entry["action"] = "copy"
         else:
-            install_manifest = _read_install_manifest(target_skill_dir)
-            if not install_manifest or install_manifest.get("managed_by") != "nvflare":
+            target_symlink = _first_symlink_in_tree(target_skill_dir)
+            if target_symlink:
                 entry["action"] = "skip"
-                entry["conflict"] = "external_install_detected"
-                entry["version_delta"] = "unknown"
-                conflicts.append(_conflict(skill["name"], "external_install_detected", target_skill_dir))
-            elif skill_tree_hash(target_skill_dir, exclude_names={INSTALL_MANIFEST_FILE_NAME}) != install_manifest.get(
-                "source_hash"
-            ):
-                entry["action"] = "skip"
-                entry["conflict"] = "local_modifications_detected"
+                entry["conflict"] = "target_symlink_detected"
                 entry["version_delta"] = "blocked"
-                conflicts.append(_conflict(skill["name"], "local_modifications_detected", target_skill_dir))
-            elif install_manifest.get("source_hash") == skill["source_hash"]:
-                entry["action"] = "skip"
-                entry["reason"] = "already_installed"
-                entry["version_delta"] = "same"
+                entry["target_issue"] = {
+                    "code": "target_symlink_detected",
+                    "message": "target skill directory contains a symlink",
+                    "target_path": str(target_skill_dir),
+                    "symlink_path": str(target_symlink),
+                }
+                conflicts.append(_target_symlink_conflict(skill["name"], target_skill_dir, target_symlink))
             else:
-                backup_path = target / ".nvflare_bak" / now / skill["name"]
-                entry["action"] = "replace"
-                entry["backup_path"] = str(backup_path)
-                entry["version_delta"] = "update"
+                install_manifest = _read_install_manifest(target_skill_dir)
+                if not install_manifest or install_manifest.get("managed_by") != "nvflare":
+                    entry["action"] = "skip"
+                    entry["conflict"] = "external_install_detected"
+                    entry["version_delta"] = "unknown"
+                    conflicts.append(_conflict(skill["name"], "external_install_detected", target_skill_dir))
+                else:
+                    try:
+                        installed_source_hash = skill_tree_hash(
+                            target_skill_dir, exclude_names={INSTALL_MANIFEST_FILE_NAME}
+                        )
+                    except ValueError as e:
+                        installed_source_hash = None
+                        entry["target_issue"] = {
+                            "code": "local_modifications_detected",
+                            "message": str(e),
+                            "target_path": str(target_skill_dir),
+                        }
+                    if installed_source_hash != install_manifest.get("source_hash"):
+                        entry["action"] = "skip"
+                        entry["conflict"] = "local_modifications_detected"
+                        entry["version_delta"] = "blocked"
+                        conflicts.append(_conflict(skill["name"], "local_modifications_detected", target_skill_dir))
+                    elif install_manifest.get("source_hash") == skill["source_hash"]:
+                        entry["action"] = "skip"
+                        entry["reason"] = "already_installed"
+                        entry["version_delta"] = "same"
+                    else:
+                        backup_path = target / ".nvflare_bak" / now / skill["name"]
+                        entry["action"] = "replace"
+                        entry["backup_path"] = str(backup_path)
+                        entry["version_delta"] = "update"
         planned_skills.append(entry)
 
     return {
@@ -371,6 +394,8 @@ def _first_symlink_component(path: Path) -> Optional[Path]:
 
 
 def _first_symlink_in_tree(root_dir: Path) -> Optional[Path]:
+    if root_dir.is_symlink():
+        return root_dir
     for root, dir_names, file_names in os.walk(root_dir, topdown=True, followlinks=False):
         root_path = Path(root)
         dir_names.sort()
@@ -432,6 +457,16 @@ def _source_conflict(skill_name: str, source_path: Path, symlink_path: Path) -> 
         "code": "source_symlink_detected",
         "message": "source skill directory contains a symlink",
         "source_path": str(source_path),
+        "symlink_path": str(symlink_path),
+    }
+
+
+def _target_symlink_conflict(skill_name: str, target_path: Path, symlink_path: Path) -> dict:
+    return {
+        "skill": skill_name,
+        "code": "target_symlink_detected",
+        "message": "target skill directory contains a symlink",
+        "target_path": str(target_path),
         "symlink_path": str(symlink_path),
     }
 

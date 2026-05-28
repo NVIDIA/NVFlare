@@ -480,6 +480,101 @@ def test_stage_skill_rejects_source_symlink_before_copytree(tmp_path):
         )
 
 
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are not supported on this platform")
+def test_install_skills_reports_source_symlink_root_conflict(tmp_path):
+    actual_root = tmp_path / "actual-skills"
+    skill_dir = _write_skill(actual_root, "nvflare-test-skill")
+    root = tmp_path / "skills"
+    root.mkdir()
+    source_link = root / "nvflare-test-skill"
+    source_link.symlink_to(skill_dir, target_is_directory=True)
+    source = SkillSource(
+        source_type="editable",
+        root=root,
+        manifest={
+            "schema_version": "1",
+            "source_type": "editable",
+            "nvflare_version": "2.8.0",
+            "skills": [
+                {
+                    "name": "nvflare-test-skill",
+                    "skill_version": "0.0.0",
+                    "source_hash": "fake-source-hash",
+                    "relative_path": "nvflare-test-skill",
+                }
+            ],
+            "findings": [],
+        },
+    )
+
+    plan = install_skills(agent="codex", target_dir=tmp_path / "target", source=source, dry_run=True)
+
+    assert plan["skills"][0]["action"] == "skip"
+    assert plan["skills"][0]["conflict"] == "source_symlink_detected"
+    assert plan["conflicts"][0]["symlink_path"] == str(source_link)
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are not supported on this platform")
+def test_stage_skill_rejects_source_symlink_root(tmp_path):
+    actual_root = tmp_path / "actual-skills"
+    skill_dir = _write_skill(actual_root, "nvflare-test-skill")
+    source_link = tmp_path / "nvflare-test-skill"
+    source_link.symlink_to(skill_dir, target_is_directory=True)
+    source = SkillSource(source_type="editable", root=tmp_path, manifest={})
+
+    with pytest.raises(ValueError, match="skill source must not contain symlinks"):
+        skill_manager._stage_skill(
+            source_link,
+            tmp_path / "staged",
+            {"name": "nvflare-test-skill", "source_hash": "fake-source-hash"},
+            source,
+            installed_path=tmp_path / "target" / "nvflare-test-skill",
+        )
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are not supported on this platform")
+def test_install_skills_reports_installed_skill_nested_symlink_conflict(tmp_path):
+    source = _skill_source(tmp_path)
+    target = tmp_path / "target"
+    install_skills(agent="codex", target_dir=target, source=source)
+    outside_file = tmp_path / "outside.txt"
+    outside_file.write_text("outside content\n", encoding="utf-8")
+    symlink = target / "nvflare-test-skill" / "outside-link.txt"
+    symlink.symlink_to(outside_file)
+
+    plan = install_skills(agent="codex", target_dir=target, source=source, dry_run=True)
+
+    assert plan["skills"][0]["action"] == "skip"
+    assert plan["skills"][0]["conflict"] == "target_symlink_detected"
+    assert plan["skills"][0]["target_issue"]["symlink_path"] == str(symlink)
+    assert plan["conflicts"] == [
+        {
+            "skill": "nvflare-test-skill",
+            "code": "target_symlink_detected",
+            "message": "target skill directory contains a symlink",
+            "target_path": str(target / "nvflare-test-skill"),
+            "symlink_path": str(symlink),
+        }
+    ]
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are not supported on this platform")
+def test_install_skills_reports_installed_skill_root_symlink_conflict(tmp_path):
+    source = _skill_source(tmp_path)
+    target = tmp_path / "target"
+    install_skills(agent="codex", target_dir=target, source=source)
+    installed_skill = target / "nvflare-test-skill"
+    actual_skill = tmp_path / "actual-installed-skill"
+    shutil.move(installed_skill, actual_skill)
+    installed_skill.symlink_to(actual_skill, target_is_directory=True)
+
+    plan = install_skills(agent="codex", target_dir=target, source=source, dry_run=True)
+
+    assert plan["skills"][0]["action"] == "skip"
+    assert plan["skills"][0]["conflict"] == "target_symlink_detected"
+    assert plan["conflicts"][0]["symlink_path"] == str(installed_skill)
+
+
 def test_list_skills_reports_available_installed_and_external_conflicts(tmp_path):
     source = _skill_source(tmp_path)
     target = tmp_path / "target"
