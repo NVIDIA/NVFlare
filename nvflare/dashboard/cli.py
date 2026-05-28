@@ -25,6 +25,20 @@ from nvflare.dashboard.utils import EnvVar
 from nvflare.lighter import tplt_utils, utils
 
 supported_csp = ("azure", "aws")
+_dashboard_parser = None
+
+
+def _require_image(args):
+    if args.image:
+        return
+
+    from nvflare.tool.cli_output import output_usage_error
+
+    output_usage_error(
+        _dashboard_parser,
+        "-i/--image is required when starting dashboard with Docker or launching dashboard on cloud.",
+        exit_code=4,
+    )
 
 
 def start(args):
@@ -77,13 +91,12 @@ def start(args):
         print("Unable to communicate to docker daemon/socket.  Please make sure your docker is up and running.")
         exit(0)
     version = nvflare.__version__
-    dashboard_image = f"nvflare/nvflare:{version}"
-    if args.image:
-        if dashboard_image != args.image:
-            print(
-                f"Current dashboard container image is nvflare/nvflare:{version}, but requesting to use {args.image}.  Use it at your own risk."
-            )
-            dashboard_image = args.image
+    expected_image = f"nvflare/nvflare:{version}"
+    dashboard_image = args.image
+    if expected_image != dashboard_image:
+        print(
+            f"Current dashboard container image is {expected_image}, but requesting to use {dashboard_image}.  Use it at your own risk."
+        )
     try:
         print(f"Pulling {dashboard_image}, may take some time to finish.")
         _ = client.images.pull(dashboard_image)
@@ -162,7 +175,7 @@ def cloud(args):
             f"Unable to launching dashboard on cloud with {version}.  Please install official NVFlare release from PyPi."
         )
         exit(0)
-    replacement_dict = {"NVFLARE": f"nvflare=={version}", "START_OPT": f"-i {args.image}" if args.image else ""}
+    replacement_dict = {"NVFLARE": f"nvflare=={version}", "START_OPT": f"-i {args.image}"}
     utils._write(
         dest,
         utils.sh_replace(tplt.get_cloud_script_header() + dsb_start, replacement_dict),
@@ -193,6 +206,9 @@ def main():
 
 
 def define_dashboard_parser(parser):
+    global _dashboard_parser
+    _dashboard_parser = parser
+
     parser.add_argument(
         "--cloud",
         type=str,
@@ -210,7 +226,7 @@ def define_dashboard_parser(parser):
     )
     parser.add_argument("-e", "--env", action="append", help="additional environment variables: var1=value1")
     parser.add_argument("--cred", help="set credential directly in the form of USER_EMAIL:PASSWORD")
-    parser.add_argument("-i", "--image", help="set the container image name")
+    parser.add_argument("-i", "--image", help="set the container image name (required for --start and --cloud)")
     parser.add_argument("--local", action="store_true", help="start dashboard locally without docker image")
     parser.add_argument(
         "--vpc-id",
@@ -231,9 +247,12 @@ def handle_dashboard(args):
     if args.stop:
         stop()
     elif args.start or args.local:
+        if not args.local:
+            _require_image(args)
         start(args)
     elif args.cloud:
         if args.cloud in supported_csp:
+            _require_image(args)
             cloud(args)
         else:
             print(
