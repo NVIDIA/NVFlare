@@ -304,13 +304,13 @@ Dockerfile, install the dependency in the image:
 
    RUN pip install kubernetes
 
-The repository ``docker/Dockerfile`` already installs the NVFlare ``K8S`` extra,
-which includes this dependency. Keep that install line, or add the explicit
-``pip install kubernetes`` line above before building your image.
+The repository ``docker/Dockerfile.parent`` already installs the NVFlare
+``K8S`` extra, which includes this dependency. Keep that install line, or add
+the explicit ``pip install kubernetes`` line above before building your image.
 
 .. code-block:: shell
 
-   docker build -t "$IMAGE" -f docker/Dockerfile .
+   docker build -t "$IMAGE" -f docker/Dockerfile.parent .
    docker push "$IMAGE"
 
 If the registry is private, make sure both clusters can pull the image. Depending
