@@ -17,8 +17,10 @@ from enum import Enum, IntEnum
 
 import pytest
 
+from nvflare.apis.shareable import Shareable, make_copy
 from nvflare.fuel.utils import fobs
-from nvflare.fuel.utils.fobs.decomposer import DictDecomposer
+from nvflare.fuel.utils.fobs.datum import DatumManager, DatumRef
+from nvflare.fuel.utils.fobs.decomposer import DictDecomposer, Externalizer
 
 
 class DataClass:
@@ -103,6 +105,30 @@ class TestDecomposers:
         new_list = list(new_data.items())
 
         assert test_list == new_list
+
+    def test_externalizer_does_not_mutate_shared_nested_payload(self):
+        blob = b"x" * 2048
+        list_blob = b"y" * 2048
+        nested_list_blob = b"z" * 2048
+        source = Shareable({"data": {"blob": blob, "items": [list_blob, {"nested": nested_list_blob}]}})
+
+        first_copy = make_copy(source)
+        # Payloads are larger than the 1024-byte threshold, so externalize()
+        # must replace them with DatumRefs in the returned tree only.
+        Externalizer(DatumManager(1024)).externalize(first_copy)
+
+        assert source["data"]["blob"] == blob
+        assert source["data"]["items"][0] == list_blob
+        assert source["data"]["items"][1]["nested"] == nested_list_blob
+        assert not isinstance(source["data"]["blob"], DatumRef)
+        assert not isinstance(source["data"]["items"][0], DatumRef)
+        assert not isinstance(source["data"]["items"][1]["nested"], DatumRef)
+
+        second_copy = make_copy(source)
+        restored = fobs.loads(fobs.dumps(second_copy, max_value_size=1024))
+        assert restored["data"]["blob"] == blob
+        assert restored["data"]["items"][0] == list_blob
+        assert restored["data"]["items"][1]["nested"] == nested_list_blob
 
     @staticmethod
     def _check_decomposer(data, clear_decomposers=True):
