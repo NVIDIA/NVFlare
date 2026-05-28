@@ -1,0 +1,28 @@
+# NVFlare job runtime image for user training and evaluation workloads.
+# The base is NVIDIA's NGC PyTorch image, which includes the GPU framework
+# stack. Install NVFlare without the PT extra so pip does not replace the
+# tested PyTorch packages that come with the NGC image.
+ARG PYTORCH_RUNTIME_BASE=nvcr.io/nvidia/pytorch:26.04-py3
+
+FROM ${PYTORCH_RUNTIME_BASE}
+
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /opt/NVFlare
+COPY . .
+
+# NVFlare launchers commonly use /usr/local/bin/python or python3. The NGC
+# PyTorch image provides Python at /usr/bin/python, so add those launcher paths.
+RUN mkdir -p /usr/local/bin \
+    && ln -sf /usr/bin/python /usr/local/bin/python \
+    && ln -sf /usr/bin/python /usr/local/bin/python3 \
+    && python -m pip install --ignore-installed "PyYAML>=6.0" \
+    && NVFL_RELEASE=1 python -m pip install "." \
+    && python -c "import nvflare; import torch"
+
+WORKDIR /app
+
+CMD ["python"]
