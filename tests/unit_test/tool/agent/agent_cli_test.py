@@ -501,6 +501,25 @@ def test_agent_doctor_json_reports_local_readiness(capsys, monkeypatch, tmp_path
     assert not home.joinpath(".nvflare", "config.conf").exists()
 
 
+def test_agent_doctor_human_output_is_summarized(capsys, monkeypatch, tmp_path):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("NVFLARE_STARTUP_KIT_DIR", raising=False)
+
+    exit_code = _run_main(["nvflare", "agent", "doctor"])
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert "NVFLARE Agent Doctor" in captured.out
+    assert "status: attention" in captured.out
+    assert "startup kits: 0/0 valid (active: none)" in captured.out
+    assert "findings (1):" in captured.out
+    assert "STARTUP_KIT_NOT_CONFIGURED" in captured.out
+    assert "startup_kits:" not in captured.out
+    assert "{'import_ok':" not in captured.out
+
+
 def test_agent_doctor_schema_exits_zero(capsys):
     exit_code = _run_main(["nvflare", "agent", "doctor", "--schema"])
 
