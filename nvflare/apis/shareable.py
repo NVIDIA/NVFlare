@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
+from typing import TypeAlias
 
 try:
     import numpy as np
@@ -24,6 +25,7 @@ from nvflare.fuel.utils import fobs
 _NO_COPY_VALUE_TYPES = (bytes, bytearray, memoryview)
 if np is not None:
     _NO_COPY_VALUE_TYPES = _NO_COPY_VALUE_TYPES + (np.ndarray,)
+_NoCopyTypes: TypeAlias = type | tuple[type, ...] | list[type] | None
 
 
 class ReservedHeaderKey:
@@ -163,6 +165,22 @@ def make_reply(rc, headers=None) -> Shareable:
     return reply
 
 
+def _iter_slot_names(value):
+    for cls in type(value).__mro__:
+        slots = getattr(cls, "__slots__", ())
+        if isinstance(slots, str):
+            slots = (slots,)
+        elif isinstance(slots, dict):
+            slots = slots.keys()
+
+        for slot in slots:
+            if not isinstance(slot, str) or slot in ("__dict__", "__weakref__"):
+                continue
+            if slot.startswith("__") and not slot.endswith("__"):
+                slot = f"_{cls.__name__.lstrip('_')}{slot}"
+            yield slot
+
+
 def _collect_no_copy_values(value, no_copy_value_types: tuple, memo: dict, seen: set):
     value_id = id(value)
     if value_id in seen:
@@ -181,12 +199,19 @@ def _collect_no_copy_values(value, no_copy_value_types: tuple, memo: dict, seen:
         for item in value:
             _collect_no_copy_values(item, no_copy_value_types, memo, seen)
     else:
+        for slot in _iter_slot_names(value):
+            try:
+                slot_value = getattr(value, slot)
+            except AttributeError:
+                continue
+            _collect_no_copy_values(slot_value, no_copy_value_types, memo, seen)
+
         attrs = getattr(value, "__dict__", None)
         if attrs:
             _collect_no_copy_values(attrs, no_copy_value_types, memo, seen)
 
 
-def _normalize_no_copy_types(no_copy_types) -> tuple:
+def _normalize_no_copy_types(no_copy_types: _NoCopyTypes) -> tuple:
     if no_copy_types is None:
         return _NO_COPY_VALUE_TYPES
     if isinstance(no_copy_types, type):
@@ -194,13 +219,13 @@ def _normalize_no_copy_types(no_copy_types) -> tuple:
     return _NO_COPY_VALUE_TYPES + tuple(no_copy_types)
 
 
-def _make_no_copy_memo(source: Shareable, no_copy_types) -> dict:
+def _make_no_copy_memo(source: Shareable, no_copy_types: _NoCopyTypes) -> dict:
     memo = {}
     _collect_no_copy_values(source, _normalize_no_copy_types(no_copy_types), memo, set())
     return memo
 
 
-def make_copy(source: Shareable, exclude_headers: list = None, no_copy_types=None) -> Shareable:
+def make_copy(source: Shareable, exclude_headers: list = None, no_copy_types: _NoCopyTypes = None) -> Shareable:
     """Make a copy from the source.
 
     The content and headers will be deep-copied into the new instance, but large binary/array values are reused.

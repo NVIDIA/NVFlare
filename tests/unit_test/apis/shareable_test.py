@@ -21,12 +21,21 @@ class TensorLike:
     pass
 
 
+class SlottedWrapper:
+    __slots__ = ("nested", "tensor")
+
+    def __init__(self, tensor):
+        self.tensor = tensor
+        self.nested = {"values": [1, 2, 3]}
+
+
 def test_make_copy_deep_copies_containers_and_reuses_large_values():
     bytes_data = b"x" * 2048
     bytearray_data = bytearray(b"abc")
     memoryview_data = memoryview(bytearray(b"view"))
     ndarray_data = np.arange(4)
     tensor_data = TensorLike()
+    slotted_wrapper = SlottedWrapper(tensor_data)
     header_array = np.arange(2)
     source = Shareable(
         {
@@ -38,6 +47,7 @@ def test_make_copy_deep_copies_containers_and_reuses_large_values():
                         "memoryview": memoryview_data,
                         "ndarray": ndarray_data,
                         "tensor": tensor_data,
+                        "slotted_wrapper": slotted_wrapper,
                     }
                 ],
                 "metrics": [1, 2, 3],
@@ -59,6 +69,9 @@ def test_make_copy_deep_copies_containers_and_reuses_large_values():
     assert copied["payload"]["items"][0]["memoryview"] is memoryview_data
     assert copied["payload"]["items"][0]["ndarray"] is ndarray_data
     assert copied["payload"]["items"][0]["tensor"] is tensor_data
+    assert copied["payload"]["items"][0]["slotted_wrapper"] is not slotted_wrapper
+    assert copied["payload"]["items"][0]["slotted_wrapper"].tensor is tensor_data
+    assert copied["payload"]["items"][0]["slotted_wrapper"].nested is not slotted_wrapper.nested
     assert copied["payload"]["metrics"] is not source["payload"]["metrics"]
     assert copied.get_header("keep") is not source.get_header("keep")
     assert copied.get_header("keep")["nested"] == source.get_header("keep")["nested"]
@@ -69,6 +82,18 @@ def test_make_copy_deep_copies_containers_and_reuses_large_values():
 
     copied["payload"]["metrics"].append(4)
     copied.get_header("keep")["nested"].append("copy")
+    copied["payload"]["items"][0]["slotted_wrapper"].nested["values"].append(4)
 
     assert source["payload"]["metrics"] == [1, 2, 3]
     assert source.get_header("keep")["nested"] == ["value"]
+    assert slotted_wrapper.nested["values"] == [1, 2, 3]
+
+
+def test_make_copy_accepts_single_no_copy_type():
+    tensor_data = TensorLike()
+    source = Shareable({"tensor": tensor_data})
+
+    copied = make_copy(source, no_copy_types=TensorLike)
+
+    assert copied is not source
+    assert copied["tensor"] is tensor_data
