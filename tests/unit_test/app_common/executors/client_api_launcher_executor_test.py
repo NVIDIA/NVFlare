@@ -504,6 +504,7 @@ def test_client_config_overrides_apply_before_subprocess_config_write(monkeypatc
     assert executor._submit_result_timeout == 650.0
     assert executor.max_resends == 8
     assert executor._download_complete_timeout == 2400.0
+    assert executor._stop_task_wait_timeout == 2400.0
 
 
 def test_client_config_max_resends_override_rejects_negative(monkeypatch):

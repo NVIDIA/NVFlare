@@ -261,6 +261,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         self._apply_positive_float_client_config_override(
             fl_ctx, ConfigKey.DOWNLOAD_COMPLETE_TIMEOUT, "_download_complete_timeout"
         )
+        self._stop_task_wait_timeout = self._download_complete_timeout
 
     def _decomposer_prefix(self) -> str:
         """Return the config-var prefix for the active decomposer type.
