@@ -105,6 +105,27 @@ def test_read_stream_fails_when_unknown_size_exceeds_limit():
         future.result(timeout=0.1)
 
 
+def test_read_stream_stops_task_when_unknown_size_exceeds_limit():
+    handler = BlobHandler(lambda future: None)
+    future = StreamFuture(stream_id=9)
+    stopped = {}
+
+    def stop(err):
+        stopped["error"] = err
+        future.set_exception(err)
+
+    stream = _FakeStream(declared_size=0, chunks=[b"abcd", b"ef"])
+    stream.task = SimpleNamespace(stop=stop)
+    blob_task = BlobTask(future=future, stream=stream, max_size=4)
+
+    handler._read_stream(blob_task)
+
+    error = future.exception(timeout=0.1)
+    assert isinstance(error, StreamError)
+    assert "configured limit 4" in str(error)
+    assert stopped["error"] is error
+
+
 def _make_stream_with_task(stop_cb):
     task = SimpleNamespace(stop=stop_cb)
     stream = SimpleNamespace(task=task)

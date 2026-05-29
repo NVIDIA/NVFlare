@@ -169,12 +169,14 @@ class BlobHandler:
                                 f"{blob_task} Size limit exceeded: {thread_id=} {next_size=} "
                                 f"limit={blob_task.max_size}"
                             )
-                            blob_task.future.set_exception(
-                                StreamError(
-                                    f"Blob received more data than configured limit {blob_task.max_size}: "
-                                    f"received at least {next_size} bytes"
-                                )
+                            error = StreamError(
+                                f"Blob received more data than configured limit {blob_task.max_size}: "
+                                f"received at least {next_size} bytes"
                             )
+                            if hasattr(blob_task.stream, "task"):
+                                blob_task.stream.task.stop(error)
+                            else:
+                                blob_task.future.set_exception(error)
                             return
                         blob_task.buffer.append(buf)
                 except Exception as ex:
