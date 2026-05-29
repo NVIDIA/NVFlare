@@ -114,25 +114,32 @@ class InProcessClientAPI(APISpec):
             self.logger.info(f"Memory management enabled: cleanup every {gc_rounds} round(s)")
 
     def receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
-        result = self.__receive()
-        self.receive_called = True
+        result = self.__receive(timeout)
         if result is not None:
+            self.receive_called = True
             self._mem_round = result.current_round
             self._mem_site = self.get_site_name()
             log_rss(f"CA s={self._mem_site} r={result.current_round} recv")
         return result
 
-    def __receive(self) -> Optional[FLModel]:
+    def __receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
         if self.fl_model:
             return self.fl_model
 
+        start_time = time.monotonic()
         while True:
             if not self.__continue_job():
                 break
 
             if self.fl_model is None:
-                self.logger.debug(f"no result global message available, sleep {self.result_check_interval} sec")
-                time.sleep(self.result_check_interval)
+                sleep_time = self.result_check_interval
+                if timeout is not None:
+                    remaining = timeout - (time.monotonic() - start_time)
+                    if remaining <= 0:
+                        break
+                    sleep_time = min(sleep_time, remaining)
+                self.logger.debug(f"no result global message available, sleep {sleep_time} sec")
+                time.sleep(sleep_time)
             else:
                 break
 
@@ -221,6 +228,7 @@ class InProcessClientAPI(APISpec):
 
     def clear(self):
         self.fl_model = None
+        self.receive_called = False
 
     def _prepare_param_diff(self, model: FLModel) -> FLModel:
         exchange_format = self.client_config.get_exchange_format()

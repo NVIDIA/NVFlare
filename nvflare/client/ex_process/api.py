@@ -248,9 +248,9 @@ class ExProcessClientAPI(APISpec):
             raise e
 
     def receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
-        result = self.__receive()
-        self.receive_called = True
+        result = self.__receive(timeout)
         if result is not None:
+            self.receive_called = True
             self._mem_round = result.current_round
             self._mem_site = self.get_site_name()
             log_rss(f"CA s={self._mem_site} r={result.current_round} recv")
