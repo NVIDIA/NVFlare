@@ -437,7 +437,9 @@ The phase scripts share these common variables:
        used as the default parent, admin, and job image.
    * - ``COPY_IMAGE``
      - Image for temporary PVC copy pods. Default: ``busybox:1.36``. Set this
-       to ``IMAGE`` if your cluster cannot pull from Docker Hub.
+       to ``IMAGE`` if your cluster cannot pull from Docker Hub. The image must
+       contain ``sh``, ``sleep``, and ``tar`` because the scripts use ``oc cp``
+       to stage files into PVCs.
    * - ``STORAGE_CLASS``
      - Optional StorageClass for generated workspace PVCs. Leave unset to use
        the cluster default.
@@ -517,7 +519,9 @@ Prerequisites:
   restricted SCC.
 * The namespace has registry pull Secrets if the image is private.
 * The cluster has a default StorageClass, or ``STORAGE_CLASS`` is set.
-* ``COPY_IMAGE`` is pullable by the cluster and contains ``sh`` and ``sleep``.
+* ``COPY_IMAGE`` is pullable by the cluster and contains ``sh``, ``sleep``,
+  and ``tar``. ``oc cp`` requires ``tar`` in the target container when staging
+  prepared startup files into workspace PVCs.
 
 What it does:
 
