@@ -30,17 +30,17 @@ All OpenShift-specific deployment material is kept under this directory:
        create_openshift_cluster.sh
        start_openshift_cluster.sh
        cleanup_openshift_cluster.sh
-       openshift_k8s_provision.sh
-       openshift_k8s_deploy.sh
-       openshift_k8s_submit_job.sh
-       openshift_k8s_watch.sh
-       openshift_k8s_watch.py
-       openshift_k8s_e2e.sh
-       openshift_k8s_common.sh
+       k8s_provision.sh
+       k8s_deploy.sh
+       k8s_submit_job.sh
+       k8s_watch.sh
+       k8s_watch.py
+       k8s_e2e.sh
+       k8s_common.sh
 
 Run the scripts from the NVFlare repository root unless a command explicitly
 states otherwise. The scripts share defaults through
-``scripts/openshift_k8s_common.sh``; that common file is an implementation
+``scripts/k8s_common.sh``; that common file is an implementation
 detail and is not meant to be run directly.
 
 Runtime Model
@@ -123,14 +123,14 @@ external commands are installed.
      - Shell
      - Support and requirements
    * - Deploy to an existing OpenShift cluster:
-       ``openshift_k8s_provision.sh``, ``openshift_k8s_deploy.sh``,
-       ``openshift_k8s_submit_job.sh``, and ``openshift_k8s_e2e.sh``
+       ``k8s_provision.sh``, ``k8s_deploy.sh``,
+       ``k8s_submit_job.sh``, and ``k8s_e2e.sh``
      - Linux, macOS, or BSD
      - Bash 3.2 or newer
      - Supported when ``python3``, ``tar``, ``oc``, ``helm``, and ``nvflare``
        are installed and can reach the target cluster.
    * - Watch created pods:
-       ``openshift_k8s_watch.sh`` and ``openshift_k8s_watch.py``
+       ``k8s_watch.sh`` and ``k8s_watch.py``
      - Linux, macOS, or BSD
      - Bash 3.2 or newer for the wrapper; Python 3 for the watcher
      - Supported when ``python3``, the Python ``rich`` package, and ``oc`` (or
@@ -389,15 +389,15 @@ Scripted Workflow
 The scripted workflow is split into three phases so provisioning, deployment,
 and job execution can be verified independently:
 
-* :download:`openshift_k8s_provision.sh <scripts/openshift_k8s_provision.sh>`
-* :download:`openshift_k8s_deploy.sh <scripts/openshift_k8s_deploy.sh>`
-* :download:`openshift_k8s_submit_job.sh <scripts/openshift_k8s_submit_job.sh>`
+* :download:`k8s_provision.sh <scripts/k8s_provision.sh>`
+* :download:`k8s_deploy.sh <scripts/k8s_deploy.sh>`
+* :download:`k8s_submit_job.sh <scripts/k8s_submit_job.sh>`
 
 Two additional helpers are provided:
 
-* :download:`openshift_k8s_watch.sh <scripts/openshift_k8s_watch.sh>` shows
+* :download:`k8s_watch.sh <scripts/k8s_watch.sh>` shows
   an in-place live concise pod table for pods created by the scripts.
-* :download:`openshift_k8s_e2e.sh <scripts/openshift_k8s_e2e.sh>` runs the
+* :download:`k8s_e2e.sh <scripts/k8s_e2e.sh>` runs the
   three phase scripts in order.
 
 Shared Script Environment
@@ -466,7 +466,7 @@ Run:
 
 .. code-block:: bash
 
-   bash docs/user_guide/admin_guide/deployment/openshift/scripts/openshift_k8s_provision.sh
+   bash docs/user_guide/admin_guide/deployment/openshift/scripts/k8s_provision.sh
 
 Prerequisites:
 
@@ -509,11 +509,11 @@ Run:
    export IMAGE=registry.example.com/nvflare-openshift:dev
    export NAMESPACE=nvflare-e2e
 
-   bash docs/user_guide/admin_guide/deployment/openshift/scripts/openshift_k8s_deploy.sh
+   bash docs/user_guide/admin_guide/deployment/openshift/scripts/k8s_deploy.sh
 
 Prerequisites:
 
-* ``openshift_k8s_provision.sh`` completed successfully with the same
+* ``k8s_provision.sh`` completed successfully with the same
   ``WORK_DIR``, ``PROJECT_NAME``, ``SERVER_NAME``, ``CLIENTS``, and
   ``ADMIN_USER`` settings.
 * ``oc`` is logged in and can create or update resources in ``NAMESPACE``.
@@ -563,11 +563,11 @@ Run:
    export IMAGE=registry.example.com/nvflare-openshift:dev
    export NAMESPACE=nvflare-e2e
 
-   bash docs/user_guide/admin_guide/deployment/openshift/scripts/openshift_k8s_submit_job.sh
+   bash docs/user_guide/admin_guide/deployment/openshift/scripts/k8s_submit_job.sh
 
 Prerequisites:
 
-* ``openshift_k8s_deploy.sh`` completed successfully and the parent server and
+* ``k8s_deploy.sh`` completed successfully and the parent server and
   client Deployments are ready.
 * ``ADMIN_IMAGE`` or ``IMAGE`` contains the ``nvflare`` CLI, ``sh``, ``sleep``,
   and ``tar``. ``oc cp`` requires ``tar`` in the target container when staging
@@ -607,13 +607,13 @@ Run once:
 
 .. code-block:: bash
 
-   bash docs/user_guide/admin_guide/deployment/openshift/scripts/openshift_k8s_watch.sh --once
+   bash docs/user_guide/admin_guide/deployment/openshift/scripts/k8s_watch.sh --once
 
 Run as a live view:
 
 .. code-block:: bash
 
-   bash docs/user_guide/admin_guide/deployment/openshift/scripts/openshift_k8s_watch.sh --interval 3
+   bash docs/user_guide/admin_guide/deployment/openshift/scripts/k8s_watch.sh --interval 3
 
 Prerequisites:
 
@@ -645,7 +645,7 @@ Run:
    export IMAGE=registry.example.com/nvflare-openshift:dev
    export NAMESPACE=nvflare-e2e
 
-   bash docs/user_guide/admin_guide/deployment/openshift/scripts/openshift_k8s_e2e.sh
+   bash docs/user_guide/admin_guide/deployment/openshift/scripts/k8s_e2e.sh
 
 Prerequisites:
 
@@ -654,9 +654,9 @@ Prerequisites:
 
 What it does:
 
-* runs ``openshift_k8s_provision.sh`` with ``CLEAN_WORK_DIR=true`` by default;
-* runs ``openshift_k8s_deploy.sh`` against the generated startup kits;
-* runs ``openshift_k8s_submit_job.sh`` against the deployed parent pods.
+* runs ``k8s_provision.sh`` with ``CLEAN_WORK_DIR=true`` by default;
+* runs ``k8s_deploy.sh`` against the generated startup kits;
+* runs ``k8s_submit_job.sh`` against the deployed parent pods.
 
 Expected result:
 
@@ -671,7 +671,7 @@ If your cluster has no default StorageClass, pass ``STORAGE_CLASS``:
 
    STORAGE_CLASS=ocs-storagecluster-ceph-rbd \
    IMAGE="$IMAGE" \
-   bash docs/user_guide/admin_guide/deployment/openshift/scripts/openshift_k8s_e2e.sh
+   bash docs/user_guide/admin_guide/deployment/openshift/scripts/k8s_e2e.sh
 
 The scripted path intentionally submits the job from inside the cluster. This
 keeps the quickstart independent of external Routes, load balancers, and TCP

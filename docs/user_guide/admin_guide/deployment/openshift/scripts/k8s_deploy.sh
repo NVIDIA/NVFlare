@@ -6,7 +6,7 @@ usage() {
 Prepare NVFlare K8s startup kits, deploy them into OpenShift/Kubernetes, and
 verify the parent server/client pods are running.
 
-Run openshift_k8s_provision.sh before this script.
+Run k8s_provision.sh before this script.
 
 Required environment:
   IMAGE  Container image pullable by the cluster. It must contain this NVFlare
@@ -30,7 +30,7 @@ Common optional environment:
 
 Example:
   IMAGE=registry.example.com/nvflare:dev \
-    bash docs/user_guide/admin_guide/deployment/openshift/scripts/openshift_k8s_deploy.sh
+    bash docs/user_guide/admin_guide/deployment/openshift/scripts/k8s_deploy.sh
 EOF
 }
 
@@ -40,8 +40,8 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=openshift_k8s_common.sh
-source "${SCRIPT_DIR}/openshift_k8s_common.sh"
+# shellcheck source=k8s_common.sh
+source "${SCRIPT_DIR}/k8s_common.sh"
 
-init_openshift_k8s_env true
+init_k8s_env true
 run_deploy_phase

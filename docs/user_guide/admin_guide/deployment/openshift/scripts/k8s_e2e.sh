@@ -6,9 +6,9 @@ usage() {
 Run the complete OpenShift/Kubernetes NVFlare e2e workflow by invoking the
 three phase scripts in order:
 
-  1. openshift_k8s_provision.sh
-  2. openshift_k8s_deploy.sh
-  3. openshift_k8s_submit_job.sh
+  1. k8s_provision.sh
+  2. k8s_deploy.sh
+  3. k8s_submit_job.sh
 
 Required environment:
   IMAGE  Container image pullable by the cluster. It must contain this NVFlare
@@ -37,12 +37,12 @@ Common optional environment:
 
 Examples:
   IMAGE=registry.example.com/nvflare:dev \
-    bash docs/user_guide/admin_guide/deployment/openshift/scripts/openshift_k8s_e2e.sh
+    bash docs/user_guide/admin_guide/deployment/openshift/scripts/k8s_e2e.sh
 
   IMAGE=registry.example.com/nvflare:dev \
   PARENT_CPU=500m \
   PARENT_MEMORY=1Gi \
-    bash docs/user_guide/admin_guide/deployment/openshift/scripts/openshift_k8s_e2e.sh
+    bash docs/user_guide/admin_guide/deployment/openshift/scripts/k8s_e2e.sh
 EOF
 }
 
@@ -53,6 +53,6 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-CLEAN_WORK_DIR="${CLEAN_WORK_DIR:-true}" bash "${SCRIPT_DIR}/openshift_k8s_provision.sh"
-CLEAN_WORK_DIR=false bash "${SCRIPT_DIR}/openshift_k8s_deploy.sh"
-CLEAN_WORK_DIR=false bash "${SCRIPT_DIR}/openshift_k8s_submit_job.sh"
+CLEAN_WORK_DIR="${CLEAN_WORK_DIR:-true}" bash "${SCRIPT_DIR}/k8s_provision.sh"
+CLEAN_WORK_DIR=false bash "${SCRIPT_DIR}/k8s_deploy.sh"
+CLEAN_WORK_DIR=false bash "${SCRIPT_DIR}/k8s_submit_job.sh"

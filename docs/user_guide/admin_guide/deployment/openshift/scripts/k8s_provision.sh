@@ -26,7 +26,7 @@ Common optional environment:
   CLEAN_WORK_DIR=true
 
 Example:
-  bash docs/user_guide/admin_guide/deployment/openshift/scripts/openshift_k8s_provision.sh
+  bash docs/user_guide/admin_guide/deployment/openshift/scripts/k8s_provision.sh
 EOF
 }
 
@@ -36,9 +36,9 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=openshift_k8s_common.sh
-source "${SCRIPT_DIR}/openshift_k8s_common.sh"
+# shellcheck source=k8s_common.sh
+source "${SCRIPT_DIR}/k8s_common.sh"
 
 CLEAN_WORK_DIR="${CLEAN_WORK_DIR:-true}"
-init_openshift_k8s_env false
+init_k8s_env false
 run_provision_phase

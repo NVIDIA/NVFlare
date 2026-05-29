@@ -20,7 +20,7 @@ try:
     from rich.table import Table
     from rich.text import Text
 except ImportError:
-    sys.exit("openshift_k8s_watch requires the Python package 'rich'. Install it with: python3 -m pip install rich")
+    sys.exit("k8s_watch requires the Python package 'rich'. Install it with: python3 -m pip install rich")
 
 
 STATUS_STYLES = {

@@ -97,7 +97,7 @@ append_k8s_image_pull_secrets() {
   done
 }
 
-init_openshift_k8s_env() {
+init_k8s_env() {
   local require_image=${1:-false}
 
   SCRIPT_DIR="${SCRIPT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
@@ -195,7 +195,7 @@ ensure_work_dirs() {
 require_provisioned_workspace() {
   local participant
 
-  [[ -d "${PROD_DIR}" ]] || fail "Provisioned prod dir not found: ${PROD_DIR}. Run openshift_k8s_provision.sh first."
+  [[ -d "${PROD_DIR}" ]] || fail "Provisioned prod dir not found: ${PROD_DIR}. Run k8s_provision.sh first."
   for participant in "${PARTICIPANTS[@]}"; do
     [[ -d "${PROD_DIR}/${participant}" ]] || fail "Missing provisioned participant folder: ${PROD_DIR}/${participant}"
   done
