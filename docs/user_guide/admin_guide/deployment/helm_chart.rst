@@ -28,6 +28,9 @@ Before you start, make sure you have:
   ``nvflare deploy prepare``.
 * ``kubectl`` configured for the target cluster. Use a ``kubectl`` version that
   is compatible with the Kubernetes API server.
+* ``tar`` installed locally and in any temporary pod image used with
+  ``kubectl cp``. The staging examples below use ``busybox:1.36``, which
+  includes ``tar``.
 * Helm 3.
 * A Kubernetes cluster with standard ``apps/v1`` Deployment,
   ``rbac.authorization.k8s.io/v1`` Role/RoleBinding, Service, Secret, and PVC
@@ -318,7 +321,9 @@ mounts ``parent.workspace_pvc`` at ``parent.workspace_mount_path``, but it does
 not upload files to the PVC. Copy the prepared kit's ``startup/`` and
 ``local/`` directories into the root of that workspace PVC before installing the
 chart. For server kits, also create or copy ``transfer/`` at the workspace root
-for admin file-transfer storage.
+for admin file-transfer storage. If you use ``kubectl cp`` as shown below, the
+temporary copy pod image must contain ``tar`` because ``kubectl cp`` requires it
+in the target container.
 
 Example ``workspace-pvc.yaml``:
 

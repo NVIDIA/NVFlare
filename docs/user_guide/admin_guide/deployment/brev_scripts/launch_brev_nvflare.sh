@@ -202,6 +202,7 @@ spec:
   restartPolicy: Never
   containers:
     - name: copy
+      # kubectl cp requires tar in the target container; busybox includes it.
       image: busybox:1.36
       command:
         - sh

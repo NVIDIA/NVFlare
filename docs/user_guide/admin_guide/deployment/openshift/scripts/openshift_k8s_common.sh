@@ -697,7 +697,12 @@ report_missing_pieces() {
 
 Missing pieces these scripts cannot create for the cluster:
   - A pullable parent IMAGE with NVFlare, its K8S extra/Kubernetes Python
-    client, sh, sleep, tar, and the nvflare CLI installed.
+    client, sh, sleep, and the nvflare CLI installed.
+  - A pullable COPY_IMAGE with sh, sleep, and tar installed. The deploy phase
+    uses oc cp to stage prepared startup files into workspace PVCs.
+  - A pullable ADMIN_IMAGE with the nvflare CLI, sh, sleep, and tar installed.
+    The submit phase uses oc cp to stage the admin startup kit and job into the
+    admin pod.
   - A pullable JOB_IMAGE with NVFlare, Python, numpy, sh, sleep, and the
     runtime tools needed by submitted job pods.
   - Registry pull secrets, if the image is private. Set
@@ -786,7 +791,7 @@ run_deploy_phase() {
 }
 
 run_submit_job_phase() {
-  require_cmd "${KUBE_CMD}" nvflare python3
+  require_cmd "${KUBE_CMD}" nvflare python3 tar
   require_provisioned_workspace
   [[ -n "${ADMIN_IMAGE}" ]] || fail "Set IMAGE or ADMIN_IMAGE before running this script."
   [[ -n "${JOB_IMAGE}" ]] || fail "Set IMAGE or JOB_IMAGE before running this script."

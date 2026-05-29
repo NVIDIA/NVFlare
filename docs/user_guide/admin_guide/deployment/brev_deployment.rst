@@ -580,7 +580,9 @@ in that namespace.
 Copy the prepared server ``startup/`` and ``local/`` directories into the
 ``nvflws`` PVC. The chart starts the server with
 ``-m /var/tmp/nvflare/workspace``, so the PVC root must contain ``startup/``
-and ``local/`` directly.
+and ``local/`` directly. The temporary copy pod image must contain ``tar``
+because ``kubectl cp`` requires it in the target container; ``busybox:1.36``
+includes ``tar``.
 
 .. code-block:: shell
 
@@ -705,7 +707,9 @@ same launcher settings from ``/tmp/nvflare-k8s.yaml``. Keep the Helm namespace
 consistent with the ``namespace`` value used by ``nvflare deploy prepare``.
 
 Copy the prepared ``site-1`` ``startup/`` and ``local/`` directories into the
-client ``nvflws`` PVC:
+client ``nvflws`` PVC. The temporary copy pod image must contain ``tar``
+because ``kubectl cp`` requires it in the target container; ``busybox:1.36``
+includes ``tar``:
 
 .. code-block:: shell
 

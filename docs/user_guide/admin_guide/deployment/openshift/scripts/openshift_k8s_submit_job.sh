@@ -11,7 +11,9 @@ Run these first:
   2. openshift_k8s_deploy.sh
 
 Required environment:
-  IMAGE  Used as the default ADMIN_IMAGE and JOB_IMAGE.
+  IMAGE  Used as the default ADMIN_IMAGE and JOB_IMAGE. When used as
+         ADMIN_IMAGE, it must contain the nvflare CLI, sh, sleep, and tar
+         because the script uses oc cp to stage files into the admin pod.
 
 Common optional environment:
   KUBE_CMD=oc
@@ -20,7 +22,7 @@ Common optional environment:
   CLIENTS="site-1 site-2"
   ADMIN_USER=admin@nvidia.com
   WORK_DIR=/tmp/nvflare/openshift-e2e
-  ADMIN_IMAGE=$IMAGE
+  ADMIN_IMAGE=$IMAGE  # must contain nvflare, sh, sleep, and tar for oc cp
   JOB_IMAGE=$IMAGE
   JOB_WAIT_TIMEOUT=900
   JOB_POD_APPEAR_TIMEOUT=180

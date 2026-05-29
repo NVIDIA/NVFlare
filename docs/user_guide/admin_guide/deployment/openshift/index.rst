@@ -83,8 +83,9 @@ Local tooling:
   can run ``nvflare provision``, ``nvflare deploy prepare``, and job export
   code from this repository.
 * The Python ``rich`` package for the live pod table tool.
-* ``python3`` and ``tar`` available on the local machine. ``oc cp`` uses
-  ``tar`` when staging prepared startup kits into PVCs.
+* ``python3`` and ``tar`` available on the local machine. ``oc cp`` uses local
+  ``tar`` when staging prepared startup kits into PVCs and when copying the
+  admin startup kit and exported job into the in-cluster admin pod.
 * For the local CRC helper scripts only: the ``crc`` command, hardware
   virtualization, and a Red Hat OpenShift pull secret.
 
@@ -451,7 +452,9 @@ The phase scripts share these common variables:
    * - ``JOB_IMAGE``
      - Image for dynamically created job pods. Default: ``IMAGE``.
    * - ``ADMIN_IMAGE``
-     - Image for the temporary in-cluster admin pod. Default: ``IMAGE``.
+     - Image for the temporary in-cluster admin pod. Default: ``IMAGE``. It
+       must contain the ``nvflare`` CLI, ``sh``, ``sleep``, and ``tar`` because
+       the submit script uses ``oc cp`` to stage files into this pod.
    * - ``PARENT_IMAGE_PULL_SECRETS`` and ``JOB_IMAGE_PULL_SECRETS``
      - Space-separated image pull Secret names that already exist in
        ``NAMESPACE``.
@@ -566,8 +569,9 @@ Prerequisites:
 
 * ``openshift_k8s_deploy.sh`` completed successfully and the parent server and
   client Deployments are ready.
-* ``ADMIN_IMAGE`` or ``IMAGE`` contains the ``nvflare`` CLI, ``sh``, and
-  ``sleep``.
+* ``ADMIN_IMAGE`` or ``IMAGE`` contains the ``nvflare`` CLI, ``sh``, ``sleep``,
+  and ``tar``. ``oc cp`` requires ``tar`` in the target container when staging
+  the admin startup kit and exported job into the admin pod.
 * ``JOB_IMAGE`` or ``IMAGE`` contains NVFlare, Python, ``numpy``, and the
   runtime tools needed by the job pods.
 * The generated ServiceAccounts and RBAC from ``nvflare deploy prepare`` are
@@ -763,7 +767,9 @@ Create the namespace and workspace PVCs:
 
 The Helm chart mounts the workspace PVC, but it does not upload the prepared
 startup kit. Copy the prepared ``startup/`` and ``local/`` directories into the
-PVC root before installing the chart. One common method is a temporary copy pod:
+PVC root before installing the chart. One common method is a temporary copy pod.
+The copy pod image must contain ``tar`` because ``oc cp`` requires it in the
+target container:
 
 .. code-block:: bash
 
@@ -853,7 +859,9 @@ Submit from a machine that can reach the FLARE admin endpoint:
        --startup-kit workspace/<project>/prod_00/admin@nvidia.com
 
 For an in-cluster-only deployment, run the admin CLI in a temporary pod using an
-image that contains NVFlare and the admin startup kit.
+image that contains NVFlare, the ``nvflare`` CLI, ``sh``, ``sleep``, and
+``tar``. If you copy the admin startup kit or job into that pod with ``oc cp``,
+``tar`` must be present in the pod image.
 
 Expose Admin and FL Traffic
 ===========================

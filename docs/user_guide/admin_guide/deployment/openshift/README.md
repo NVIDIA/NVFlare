@@ -14,7 +14,7 @@ This directory contains the OpenShift-specific NVFlare deployment guide and help
 - `scripts/openshift_k8s_watch.py` implements the Rich table used by the shell wrapper.
 - `scripts/openshift_k8s_e2e.sh` runs provision, deploy, and submit in order.
 
-Run scripts from the repository root. At minimum, the deploy and submit phases need `IMAGE` set to a cluster-pullable NVFlare image with the `K8S` extra/Kubernetes Python client:
+Run scripts from the repository root. At minimum, the deploy and submit phases need `IMAGE` set to a cluster-pullable NVFlare image with the `K8S` extra/Kubernetes Python client, the `nvflare` CLI, `sh`, `sleep`, and `tar`. The submit phase copies files into the admin pod with `oc cp`, which requires `tar` in that pod image.
 
 ```bash
 export IMAGE=registry.example.com/nvflare-openshift:dev

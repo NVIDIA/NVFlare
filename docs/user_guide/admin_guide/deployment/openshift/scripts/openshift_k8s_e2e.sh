@@ -13,7 +13,8 @@ three phase scripts in order:
 Required environment:
   IMAGE  Container image pullable by the cluster. It must contain this NVFlare
          version with the K8S extra/Kubernetes Python client, Python, numpy,
-         sh, sleep, tar, and the nvflare CLI.
+         sh, sleep, tar, and the nvflare CLI. The full workflow uses this image
+         as ADMIN_IMAGE by default, and oc cp requires tar in the admin pod.
 
 Common optional environment:
   KUBE_CMD=oc
@@ -26,8 +27,10 @@ Common optional environment:
   WORK_DIR=/tmp/nvflare/openshift-e2e
   STORAGE_CLASS=<cluster storage class>
   WORKSPACE_STORAGE=2Gi
+  COPY_IMAGE=busybox:1.36  # must contain sh, sleep, and tar for oc cp
   PARENT_CPU=<optional parent pod CPU request, for example 500m>
   PARENT_MEMORY=<optional parent pod memory request, for example 1Gi>
+  ADMIN_IMAGE=$IMAGE
   JOB_IMAGE=$IMAGE
   JOB_WAIT_TIMEOUT=900
   CLEAN_WORK_DIR=true
