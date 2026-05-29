@@ -575,7 +575,7 @@ def test_install_skills_reports_installed_skill_root_symlink_conflict(tmp_path):
     assert plan["conflicts"][0]["symlink_path"] == str(installed_skill)
 
 
-def test_list_skills_reports_available_installed_and_external_conflicts(tmp_path):
+def test_list_skills_reports_available_installed_and_ignores_unrelated_external_skills(tmp_path):
     source = _skill_source(tmp_path)
     target = tmp_path / "target"
     install_skills(agent="codex", target_dir=target, source=source)
@@ -585,7 +585,27 @@ def test_list_skills_reports_available_installed_and_external_conflicts(tmp_path
 
     assert data["available"][0]["name"] == "nvflare-test-skill"
     assert data["installed"][0]["name"] == "nvflare-test-skill"
-    assert data["conflicts"][0]["skill"] == "external-skill"
+    assert data["conflicts"] == []
+
+
+def test_list_skills_flags_name_overlap_external_skill_as_conflict(tmp_path):
+    source = _skill_source(tmp_path)
+    target = tmp_path / "target"
+    external = target / "nvflare-test-skill"
+    external.mkdir(parents=True)
+    external.joinpath("SKILL.md").write_text("external content\n", encoding="utf-8")
+
+    data = list_skills(agent="codex", target_dir=target, source=source)
+
+    assert data["installed"] == []
+    assert data["conflicts"] == [
+        {
+            "skill": "nvflare-test-skill",
+            "code": "external_install_detected",
+            "message": "target skill directory is not managed by nvflare",
+            "target_path": str(external),
+        }
+    ]
 
 
 def test_conflict_falls_back_to_code_for_unknown_conflict(tmp_path):
