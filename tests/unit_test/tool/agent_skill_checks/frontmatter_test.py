@@ -70,6 +70,15 @@ def test_validate_skill_dir_requires_directory_name_to_match_frontmatter(tmp_pat
     assert _issue_codes(result) == {"skill-name-directory-mismatch"}
 
 
+def test_validate_skill_dir_allows_name_prefix_for_visibility_aware_lint(tmp_path):
+    skill_dir = _write_skill(tmp_path, "example-skill")
+
+    result = validate_skill_dir(skill_dir)
+
+    assert result.ok
+    assert result.metadata["name"] == "example-skill"
+
+
 def test_validate_skill_dir_reports_missing_required_fields(tmp_path):
     skill_dir = tmp_path / "nvflare-missing-fields"
     skill_dir.mkdir()

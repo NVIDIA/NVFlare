@@ -503,7 +503,10 @@ def test_agent_doctor_json_reports_local_readiness(capsys, monkeypatch, tmp_path
 
 def test_agent_doctor_human_output_is_summarized(capsys, monkeypatch, tmp_path):
     home = tmp_path / "home"
+    poc_workspace = tmp_path / "poc"
+    poc_workspace.mkdir()
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("NVFLARE_POC_WORKSPACE", str(poc_workspace))
     monkeypatch.delenv("NVFLARE_STARTUP_KIT_DIR", raising=False)
 
     exit_code = _run_main(["nvflare", "agent", "doctor"])
