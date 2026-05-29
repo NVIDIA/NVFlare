@@ -26,7 +26,6 @@ All OpenShift-specific deployment material is kept under this directory:
      index.rst
      README.md
      scripts/
-       Dockerfile
        create_openshift_cluster.sh
        start_openshift_cluster.sh
        cleanup_openshift_cluster.sh
@@ -84,22 +83,26 @@ Local tooling:
   code from this repository.
 * The Python ``rich`` package for the live pod table tool.
 * ``python3`` and ``tar`` available on the local machine. ``oc cp`` uses local
-  ``tar`` when staging prepared startup kits into PVCs and when copying the
-  admin startup kit and exported job into the in-cluster admin pod.
+  ``tar`` when staging prepared startup kits into PVCs. The submit script also
+  uses local ``tar`` when streaming the admin startup kit and exported job into
+  the in-cluster admin pod.
 * For the local CRC helper scripts only: the ``crc`` command, hardware
   virtualization, and a Red Hat OpenShift pull secret.
 
 Images and registry:
 
-* A container image that OpenShift nodes can pull. The scripted workflow uses
-  ``IMAGE`` as the default parent, admin, and job image.
-* The image must contain this NVFlare version, the ``nvflare`` CLI, Python,
-  ``numpy`` for the ``hello-numpy`` job, ``sh``, ``sleep``, and ``tar``.
-* The parent image must include NVFlare's Kubernetes dependency support because
-  parent pods create job pods through the Kubernetes Python client. The deploy
-  script verifies this by importing ``kubernetes`` inside each rolled-out parent
-  pod.
-* The image must run under OpenShift's restricted SCC. In practice, it should
+* A parent image that OpenShift nodes can pull. Set this image as ``IMAGE``.
+  It must contain this NVFlare version, Python, and NVFlare's Kubernetes
+  dependency support because parent pods create job pods through the Kubernetes
+  Python client. The deploy script verifies this by importing ``kubernetes``
+  inside each rolled-out parent pod.
+* An admin image for the temporary in-cluster admin pod. ``ADMIN_IMAGE``
+  defaults to ``IMAGE``, so the parent image can be used for this pod. It must
+  contain NVFlare and the Python executable named by ``ADMIN_PYTHON_PATH``.
+* A job image for submitted workload pods. Set this image as ``JOB_IMAGE`` when
+  it is different from ``IMAGE``. The ``hello-numpy`` workflow needs NVFlare,
+  Python, ``numpy``, and the runtime tools needed by the job.
+* Images must run under OpenShift's restricted SCC. In practice, they should
   support arbitrary UIDs and root-group writable application/workspace paths.
 * If the registry is private, create image pull Secrets in the target namespace
   before deployment and pass their names with ``PARENT_IMAGE_PULL_SECRETS`` and
@@ -331,31 +334,45 @@ Common variables for ``start_openshift_cluster.sh``:
 Build an OpenShift-Compatible Image
 ===================================
 
-The parent image must include NVFlare with the ``K8S`` extra because the parent
-process creates job pods with the Kubernetes Python client. For the scripted
-end-to-end workflow below, the same image is also used for the admin and
-``hello-numpy`` job pods unless you override ``ADMIN_IMAGE`` or ``JOB_IMAGE``.
-
-Build the included OpenShift Dockerfile:
+The maintained NVFlare Dockerfiles are in the repository ``docker/`` directory.
+Use the parent image for long-running server/client parent pods and the
+temporary admin pod. Use a job image for the submitted ``hello-numpy`` job pods:
 
 .. code-block:: bash
 
-   export IMAGE=registry.example.com/nvflare-openshift:dev
+   export PARENT_IMAGE=registry.example.com/nvflare-parent:dev
+   export WORKLOAD_IMAGE=registry.example.com/nvflare-job:dev
 
-   docker build -t "$IMAGE" \
-       -f docs/user_guide/admin_guide/deployment/openshift/scripts/Dockerfile .
-   docker push "$IMAGE"
+   docker build -t "$PARENT_IMAGE" -f docker/Dockerfile.parent .
+   docker build -t "$WORKLOAD_IMAGE" -f docker/Dockerfile.job .
 
-The Dockerfile is designed for the OpenShift restricted SCC:
+   docker push "$PARENT_IMAGE"
+   docker push "$WORKLOAD_IMAGE"
 
-* it installs NVFlare with ``.[K8S]``;
-* it includes ``tar`` and ``zip``, which are used by ``oc cp`` and packaging
-  flows;
-* it creates writable FLARE workspace paths;
-* it makes those paths group-writable by GID ``0``;
-* it defaults to ``USER 1001:0`` instead of root.
+Set the OpenShift workflow image variables from those pushed images:
 
-If you use your own Dockerfile, keep the same arbitrary-UID behavior. OpenShift
+.. code-block:: bash
+
+   export IMAGE="$PARENT_IMAGE"
+   export JOB_IMAGE="$WORKLOAD_IMAGE"
+
+``docker/Dockerfile.parent`` installs NVFlare with the ``K8S`` extra because
+parent processes create job pods with the Kubernetes Python client. Its final
+stage is a minimal distroless Python image. The scripted submit phase can use
+this image as ``ADMIN_IMAGE`` because the admin pod starts with Python and the
+script stages files through Python instead of requiring shell utilities or
+``tar`` inside the admin container.
+
+``docker/Dockerfile.job`` installs NVFlare into an NGC PyTorch runtime image.
+For this scripted workflow it is suitable as the ``hello-numpy`` job image. If
+your cluster cannot pull the default ``COPY_IMAGE`` from Docker Hub, set
+``COPY_IMAGE`` to an image that contains ``sh``, ``sleep``, and ``tar``.
+
+If you use one custom all-purpose image instead of separate parent and workload
+images, leave ``JOB_IMAGE`` unset and set ``IMAGE`` to that image. It must
+satisfy the parent, admin, and job requirements.
+
+If you use your own Dockerfile, make sure it supports arbitrary UIDs. OpenShift
 may run the container with a generated UID from the project range, so the image
 must not require a fixed user or root-owned writable directories.
 
@@ -434,13 +451,14 @@ The phase scripts share these common variables:
        prepared kits, job files, and the last job ID. Default:
        ``/tmp/nvflare/openshift-e2e``.
    * - ``IMAGE``
-     - Required by deployment and submit phases. Cluster-pullable NVFlare image
-       used as the default parent, admin, and job image.
+     - Required by the deployment phase. Cluster-pullable parent image with
+       NVFlare, the ``K8S`` extra, and the Python executable named by
+       ``PARENT_PYTHON_PATH``.
    * - ``COPY_IMAGE``
      - Image for temporary PVC copy pods. Default: ``busybox:1.36``. Set this
-       to ``IMAGE`` if your cluster cannot pull from Docker Hub. The image must
-       contain ``sh``, ``sleep``, and ``tar`` because the scripts use ``oc cp``
-       to stage files into PVCs.
+       to an internal image if your cluster cannot pull from Docker Hub. The
+       image must contain ``sh``, ``sleep``, and ``tar`` because the scripts use
+       ``oc cp`` to stage files into PVCs.
    * - ``STORAGE_CLASS``
      - Optional StorageClass for generated workspace PVCs. Leave unset to use
        the cluster default.
@@ -449,12 +467,19 @@ The phase scripts share these common variables:
    * - ``PARENT_CPU`` and ``PARENT_MEMORY``
      - Optional resource requests for long-running parent pods, for example
        ``500m`` and ``1Gi``.
+   * - ``PARENT_PYTHON_PATH``
+     - Python command used by parent pods. Default: ``python``, matching
+       ``docker/Dockerfile.parent``.
+   * - ``ADMIN_PYTHON_PATH``
+     - Python command used by the temporary admin pod. Default:
+       ``PARENT_PYTHON_PATH``.
    * - ``JOB_IMAGE``
-     - Image for dynamically created job pods. Default: ``IMAGE``.
+     - Image for dynamically created job pods. Default: ``IMAGE``. Set this to
+       the workload image when ``IMAGE`` is parent-only.
    * - ``ADMIN_IMAGE``
-     - Image for the temporary in-cluster admin pod. Default: ``IMAGE``. It
-       must contain the ``nvflare`` CLI, ``sh``, ``sleep``, and ``tar`` because
-       the submit script uses ``oc cp`` to stage files into this pod.
+     - Image for the temporary in-cluster admin pod. Default: ``IMAGE``. The
+       parent image can be used when it contains NVFlare and the Python
+       executable named by ``ADMIN_PYTHON_PATH``.
    * - ``PARENT_IMAGE_PULL_SECRETS`` and ``JOB_IMAGE_PULL_SECRETS``
      - Space-separated image pull Secret names that already exist in
        ``NAMESPACE``.
@@ -506,7 +531,7 @@ Run:
 
 .. code-block:: bash
 
-   export IMAGE=registry.example.com/nvflare-openshift:dev
+   export IMAGE=registry.example.com/nvflare-parent:dev
    export NAMESPACE=nvflare-e2e
 
    bash docs/user_guide/admin_guide/deployment/openshift/scripts/k8s_deploy.sh
@@ -518,8 +543,8 @@ Prerequisites:
   ``ADMIN_USER`` settings.
 * ``oc`` is logged in and can create or update resources in ``NAMESPACE``.
 * ``helm`` is installed locally.
-* ``IMAGE`` is set to an image that the cluster can pull and run under the
-  restricted SCC.
+* ``IMAGE`` is set to a parent image that the cluster can pull and run under
+  the restricted SCC.
 * The namespace has registry pull Secrets if the image is private.
 * The cluster has a default StorageClass, or ``STORAGE_CLASS`` is set.
 * ``COPY_IMAGE`` is pullable by the cluster and contains ``sh``, ``sleep``,
@@ -560,7 +585,8 @@ Run:
 
 .. code-block:: bash
 
-   export IMAGE=registry.example.com/nvflare-openshift:dev
+   export IMAGE=registry.example.com/nvflare-parent:dev
+   export JOB_IMAGE=registry.example.com/nvflare-job:dev
    export NAMESPACE=nvflare-e2e
 
    bash docs/user_guide/admin_guide/deployment/openshift/scripts/k8s_submit_job.sh
@@ -569,9 +595,9 @@ Prerequisites:
 
 * ``k8s_deploy.sh`` completed successfully and the parent server and
   client Deployments are ready.
-* ``ADMIN_IMAGE`` or ``IMAGE`` contains the ``nvflare`` CLI, ``sh``, ``sleep``,
-  and ``tar``. ``oc cp`` requires ``tar`` in the target container when staging
-  the admin startup kit and exported job into the admin pod.
+* ``ADMIN_IMAGE`` or ``IMAGE`` contains NVFlare and the Python executable named
+  by ``ADMIN_PYTHON_PATH``. The default ``ADMIN_IMAGE=IMAGE`` can use the parent
+  image.
 * ``JOB_IMAGE`` or ``IMAGE`` contains NVFlare, Python, ``numpy``, and the
   runtime tools needed by the job pods.
 * The generated ServiceAccounts and RBAC from ``nvflare deploy prepare`` are
@@ -642,7 +668,8 @@ Run:
 
 .. code-block:: bash
 
-   export IMAGE=registry.example.com/nvflare-openshift:dev
+   export IMAGE=registry.example.com/nvflare-parent:dev
+   export JOB_IMAGE=registry.example.com/nvflare-job:dev
    export NAMESPACE=nvflare-e2e
 
    bash docs/user_guide/admin_guide/deployment/openshift/scripts/k8s_e2e.sh
@@ -650,7 +677,8 @@ Run:
 Prerequisites:
 
 * all prerequisites for the provision, deploy, and submit scripts are satisfied;
-* ``IMAGE`` is set before the deploy phase starts.
+* ``IMAGE`` is set before the deploy phase starts;
+* ``JOB_IMAGE`` is set when ``IMAGE`` is parent-only.
 
 What it does:
 
@@ -671,6 +699,7 @@ If your cluster has no default StorageClass, pass ``STORAGE_CLASS``:
 
    STORAGE_CLASS=ocs-storagecluster-ceph-rbd \
    IMAGE="$IMAGE" \
+   JOB_IMAGE="$JOB_IMAGE" \
    bash docs/user_guide/admin_guide/deployment/openshift/scripts/k8s_e2e.sh
 
 The scripted path intentionally submits the job from inside the cluster. This
@@ -718,13 +747,13 @@ Example ``k8s.yaml``:
    namespace: nvflare
    server_service_name: nvflare-server
    parent:
-     docker_image: registry.example.com/nvflare-openshift:dev
+     docker_image: registry.example.com/nvflare-parent:dev
      image_pull_secrets:
        - registry-credentials
      parent_port: 8102
      workspace_pvc: nvflare-ws-server
      workspace_mount_path: /var/tmp/nvflare/workspace
-     python_path: /usr/local/bin/python3
+     python_path: python
    job_launcher:
      config_file_path:
      default_python_path: /usr/local/bin/python3
@@ -841,7 +870,7 @@ uses ``launcher_spec`` to create the job pods:
      "launcher_spec": {
        "default": {
          "k8s": {
-           "image": "registry.example.com/nvflare-openshift:dev",
+           "image": "registry.example.com/nvflare-job:dev",
            "python_path": "/usr/local/bin/python3",
            "cpu": "1",
            "memory": "2Gi",
@@ -859,9 +888,9 @@ Submit from a machine that can reach the FLARE admin endpoint:
        --startup-kit workspace/<project>/prod_00/admin@nvidia.com
 
 For an in-cluster-only deployment, run the admin CLI in a temporary pod using an
-image that contains NVFlare, the ``nvflare`` CLI, ``sh``, ``sleep``, and
-``tar``. If you copy the admin startup kit or job into that pod with ``oc cp``,
-``tar`` must be present in the pod image.
+image that contains NVFlare and Python. The scripted quickstart can use the
+parent image for this pod. If you manually copy the admin startup kit or job
+into that pod with ``oc cp``, ``tar`` must be present in the pod image.
 
 Expose Admin and FL Traffic
 ===========================

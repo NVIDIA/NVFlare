@@ -117,9 +117,10 @@ init_k8s_env() {
   ADMIN_PORT="${ADMIN_PORT:-8003}"
   PARENT_PORT="${PARENT_PORT:-8102}"
   WORKSPACE_MOUNT_PATH="${WORKSPACE_MOUNT_PATH:-/var/tmp/nvflare/workspace}"
-  PARENT_PYTHON_PATH="${PARENT_PYTHON_PATH:-/usr/local/bin/python3}"
+  PARENT_PYTHON_PATH="${PARENT_PYTHON_PATH:-python}"
   PARENT_CPU="${PARENT_CPU:-}"
   PARENT_MEMORY="${PARENT_MEMORY:-}"
+  ADMIN_PYTHON_PATH="${ADMIN_PYTHON_PATH:-${PARENT_PYTHON_PATH}}"
   JOB_PYTHON_PATH="${JOB_PYTHON_PATH:-/usr/local/bin/python3}"
   JOB_PENDING_TIMEOUT="${JOB_PENDING_TIMEOUT:-300}"
   WORKSPACE_STORAGE="${WORKSPACE_STORAGE:-2Gi}"
@@ -610,9 +611,9 @@ spec:
     - name: admin
       image: ${ADMIN_IMAGE}
       command:
-        - sh
+        - ${ADMIN_PYTHON_PATH}
         - -c
-        - sleep 3600
+        - "import time; time.sleep(3600)"
       volumeMounts:
         - name: admin-work
           mountPath: /workspace
@@ -623,16 +624,49 @@ EOF
   append_k8s_image_pull_secrets "${ADMIN_POD_FILE}" 2 "${PARENT_IMAGE_PULL_SECRETS}"
 }
 
+copy_dir_to_admin_pod() {
+  local src=$1
+  local dest=$2
+
+  [[ -d "${src}" ]] || fail "Directory not found: ${src}"
+  tar -C "${src}" -cf - . | "${KUBE_CMD}" -n "${NAMESPACE}" exec -i "${ADMIN_POD}" -- "${ADMIN_PYTHON_PATH}" -c '
+import pathlib
+import sys
+import tarfile
+
+dest = pathlib.Path(sys.argv[1])
+dest.mkdir(parents=True, exist_ok=True)
+dest_root = dest.resolve()
+
+with tarfile.open(fileobj=sys.stdin.buffer, mode="r|*") as archive:
+    for member in archive:
+        target = (dest / member.name).resolve()
+        if target != dest_root and dest_root not in target.parents:
+            raise RuntimeError(f"Refusing unsafe tar member: {member.name}")
+        archive.extract(member, dest, set_attrs=False)
+' "${dest}"
+}
+
+admin_pod_file_exists() {
+  local path=$1
+
+  "${KUBE_CMD}" -n "${NAMESPACE}" exec "${ADMIN_POD}" -- "${ADMIN_PYTHON_PATH}" -c '
+import pathlib
+import sys
+
+raise SystemExit(0 if pathlib.Path(sys.argv[1]).is_file() else 1)
+' "${path}"
+}
+
 prepare_admin_pod() {
   "${KUBE_CMD}" -n "${NAMESPACE}" delete pod "${ADMIN_POD}" --ignore-not-found=true >/dev/null
   write_admin_pod_manifest
   "${KUBE_CMD}" -n "${NAMESPACE}" apply -f "${ADMIN_POD_FILE}" >/dev/null
   "${KUBE_CMD}" -n "${NAMESPACE}" wait --for=condition=Ready "pod/${ADMIN_POD}" --timeout="${POD_READY_TIMEOUT}"
-  "${KUBE_CMD}" -n "${NAMESPACE}" exec "${ADMIN_POD}" -- mkdir -p /workspace/admin /workspace/job
-  "${KUBE_CMD}" -n "${NAMESPACE}" cp "${PROD_DIR}/${ADMIN_USER}/." "${ADMIN_POD}:/workspace/admin"
-  "${KUBE_CMD}" -n "${NAMESPACE}" cp "${JOB_DIR}/." "${ADMIN_POD}:/workspace/job"
-  "${KUBE_CMD}" -n "${NAMESPACE}" exec "${ADMIN_POD}" -- test -f /workspace/admin/startup/fed_admin.json
-  "${KUBE_CMD}" -n "${NAMESPACE}" exec "${ADMIN_POD}" -- test -f /workspace/job/meta.json
+  copy_dir_to_admin_pod "${PROD_DIR}/${ADMIN_USER}" /workspace/admin
+  copy_dir_to_admin_pod "${JOB_DIR}" /workspace/job
+  admin_pod_file_exists /workspace/admin/startup/fed_admin.json
+  admin_pod_file_exists /workspace/job/meta.json
 }
 
 wait_for_job_pods() {
@@ -672,7 +706,7 @@ submit_and_wait_for_job() {
   local job_status
 
   submit_out="$("${KUBE_CMD}" -n "${NAMESPACE}" exec "${ADMIN_POD}" -- \
-    nvflare --format json --connect-timeout "${NVFLARE_CONNECT_TIMEOUT}" \
+    "${ADMIN_PYTHON_PATH}" -m nvflare.cli --format json --connect-timeout "${NVFLARE_CONNECT_TIMEOUT}" \
     job submit -j /workspace/job --startup-kit /workspace/admin --submit-token "${SUBMIT_TOKEN}")"
   job_id="$(printf '%s' "${submit_out}" | json_data_field job_id)"
   [[ -n "${job_id}" ]] || fail "Job submission did not return a job_id: ${submit_out}"
@@ -685,7 +719,7 @@ submit_and_wait_for_job() {
   wait_for_job_pods "${normalized_job_id}" "${min_job_pods}" "${JOB_POD_APPEAR_TIMEOUT}"
 
   wait_out="$("${KUBE_CMD}" -n "${NAMESPACE}" exec "${ADMIN_POD}" -- \
-    nvflare --format json --connect-timeout "${NVFLARE_CONNECT_TIMEOUT}" \
+    "${ADMIN_PYTHON_PATH}" -m nvflare.cli --format json --connect-timeout "${NVFLARE_CONNECT_TIMEOUT}" \
     job wait "${job_id}" --startup-kit /workspace/admin --timeout "${JOB_WAIT_TIMEOUT}" --interval "${JOB_WAIT_INTERVAL}")"
   echo "${wait_out}"
   job_status="$(printf '%s' "${wait_out}" | json_data_field status)"
@@ -697,14 +731,14 @@ report_missing_pieces() {
 
 Missing pieces these scripts cannot create for the cluster:
   - A pullable parent IMAGE with NVFlare, its K8S extra/Kubernetes Python
-    client, sh, sleep, and the nvflare CLI installed.
+    client, and the Python executable named by PARENT_PYTHON_PATH installed.
   - A pullable COPY_IMAGE with sh, sleep, and tar installed. The deploy phase
     uses oc cp to stage prepared startup files into workspace PVCs.
-  - A pullable ADMIN_IMAGE with the nvflare CLI, sh, sleep, and tar installed.
-    The submit phase uses oc cp to stage the admin startup kit and job into the
-    admin pod.
-  - A pullable JOB_IMAGE with NVFlare, Python, numpy, sh, sleep, and the
-    runtime tools needed by submitted job pods.
+  - A pullable ADMIN_IMAGE with NVFlare and the Python executable named by
+    ADMIN_PYTHON_PATH installed. The submit phase can use the parent IMAGE as
+    ADMIN_IMAGE.
+  - A pullable JOB_IMAGE with NVFlare, Python, numpy, and the runtime tools
+    needed by submitted job pods.
   - Registry pull secrets, if the image is private. Set
     PARENT_IMAGE_PULL_SECRETS and JOB_IMAGE_PULL_SECRETS to existing Secret names.
   - A working StorageClass/PV provisioner. Set STORAGE_CLASS if the cluster has

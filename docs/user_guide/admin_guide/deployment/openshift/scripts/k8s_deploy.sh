@@ -9,9 +9,9 @@ verify the parent server/client pods are running.
 Run k8s_provision.sh before this script.
 
 Required environment:
-  IMAGE  Container image pullable by the cluster. It must contain this NVFlare
-         version with the K8S extra/Kubernetes Python client, Python, numpy,
-         sh, sleep, and the nvflare CLI.
+  IMAGE  Parent container image pullable by the cluster. It must contain this
+         NVFlare version with the K8S extra/Kubernetes Python client and the
+         Python executable named by PARENT_PYTHON_PATH.
 
 Common optional environment:
   KUBE_CMD=oc
@@ -20,6 +20,7 @@ Common optional environment:
   SERVER_NAME=nvflare-server
   CLIENTS="site-1 site-2"
   WORK_DIR=/tmp/nvflare/openshift-e2e
+  PARENT_PYTHON_PATH=python
   STORAGE_CLASS=<cluster storage class>
   WORKSPACE_STORAGE=2Gi
   COPY_IMAGE=busybox:1.36  # must contain sh, sleep, and tar for oc cp
@@ -29,7 +30,7 @@ Common optional environment:
   JOB_IMAGE_PULL_SECRETS="registry-secret another-secret"
 
 Example:
-  IMAGE=registry.example.com/nvflare:dev \
+  IMAGE=registry.example.com/nvflare-parent:dev \
     bash docs/user_guide/admin_guide/deployment/openshift/scripts/k8s_deploy.sh
 EOF
 }

@@ -11,10 +11,14 @@ three phase scripts in order:
   3. k8s_submit_job.sh
 
 Required environment:
-  IMAGE  Container image pullable by the cluster. It must contain this NVFlare
-         version with the K8S extra/Kubernetes Python client, Python, numpy,
-         sh, sleep, tar, and the nvflare CLI. The full workflow uses this image
-         as ADMIN_IMAGE by default, and oc cp requires tar in the admin pod.
+  IMAGE  Parent container image pullable by the cluster. It must contain this
+         NVFlare version with the K8S extra/Kubernetes Python client and the
+         Python executable named by PARENT_PYTHON_PATH.
+
+  JOB_IMAGE is required when IMAGE is parent-only, such as an image built from
+         docker/Dockerfile.parent. ADMIN_IMAGE defaults to IMAGE and can use the
+         parent image. JOB_IMAGE must contain NVFlare, Python, numpy, and the
+         runtime tools needed by the job.
 
 Common optional environment:
   KUBE_CMD=oc
@@ -25,6 +29,8 @@ Common optional environment:
   CLIENTS="site-1 site-2"
   ADMIN_USER=admin@nvidia.com
   WORK_DIR=/tmp/nvflare/openshift-e2e
+  PARENT_PYTHON_PATH=python
+  ADMIN_PYTHON_PATH=python
   STORAGE_CLASS=<cluster storage class>
   WORKSPACE_STORAGE=2Gi
   COPY_IMAGE=busybox:1.36  # must contain sh, sleep, and tar for oc cp
@@ -36,10 +42,12 @@ Common optional environment:
   CLEAN_WORK_DIR=true
 
 Examples:
-  IMAGE=registry.example.com/nvflare:dev \
+  IMAGE=registry.example.com/nvflare-parent:dev \
+  JOB_IMAGE=registry.example.com/nvflare-job:dev \
     bash docs/user_guide/admin_guide/deployment/openshift/scripts/k8s_e2e.sh
 
-  IMAGE=registry.example.com/nvflare:dev \
+  IMAGE=registry.example.com/nvflare-parent:dev \
+  JOB_IMAGE=registry.example.com/nvflare-job:dev \
   PARENT_CPU=500m \
   PARENT_MEMORY=1Gi \
     bash docs/user_guide/admin_guide/deployment/openshift/scripts/k8s_e2e.sh

@@ -11,9 +11,11 @@ Run these first:
   2. k8s_deploy.sh
 
 Required environment:
-  IMAGE  Used as the default ADMIN_IMAGE and JOB_IMAGE. When used as
-         ADMIN_IMAGE, it must contain the nvflare CLI, sh, sleep, and tar
-         because the script uses oc cp to stage files into the admin pod.
+  ADMIN_IMAGE or IMAGE  Image for the temporary admin pod. It must contain the
+         NVFlare package and the Python executable named by ADMIN_PYTHON_PATH.
+         The parent IMAGE can be used as ADMIN_IMAGE.
+  JOB_IMAGE or IMAGE  Image for dynamically created job pods. It must contain
+         NVFlare, Python, numpy, and the runtime tools needed by the job.
 
 Common optional environment:
   KUBE_CMD=oc
@@ -22,7 +24,8 @@ Common optional environment:
   CLIENTS="site-1 site-2"
   ADMIN_USER=admin@nvidia.com
   WORK_DIR=/tmp/nvflare/openshift-e2e
-  ADMIN_IMAGE=$IMAGE  # must contain nvflare, sh, sleep, and tar for oc cp
+  ADMIN_IMAGE=$IMAGE
+  ADMIN_PYTHON_PATH=python
   JOB_IMAGE=$IMAGE
   JOB_WAIT_TIMEOUT=900
   JOB_POD_APPEAR_TIMEOUT=180
@@ -30,7 +33,8 @@ Common optional environment:
   DELETE_NAMESPACE_ON_EXIT=false
 
 Example:
-  IMAGE=registry.example.com/nvflare:dev \
+  IMAGE=registry.example.com/nvflare-parent:dev \
+  JOB_IMAGE=registry.example.com/nvflare-job:dev \
     bash docs/user_guide/admin_guide/deployment/openshift/scripts/k8s_submit_job.sh
 EOF
 }
@@ -44,6 +48,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=k8s_common.sh
 source "${SCRIPT_DIR}/k8s_common.sh"
 
-init_k8s_env true
+init_k8s_env false
 trap cleanup_on_exit EXIT
 run_submit_job_phase
