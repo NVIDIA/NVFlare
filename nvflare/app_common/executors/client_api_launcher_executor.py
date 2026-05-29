@@ -261,15 +261,11 @@ class ClientAPILauncherExecutor(LauncherExecutor):
     def _validate_timeout_config(self, fl_ctx: FLContext):
         """Validate timeout parameters at job start.
 
-        Timeout relationship checks are advisory so existing jobs continue to run while
-        operators get actionable guidance before the first download attempt. The None
-        cases are rejected because they remove bounded lifecycle guarantees entirely:
-        without a download-completion wait the subprocess can exit before the server
-        finishes pulling tensors, and unbounded resends can create an unlimited number of
-        replacement download transactions.
+        Required timeout values are validated in prepare_config_for_launch(), before
+        the subprocess config is written. These timeout relationship checks are advisory
+        so existing jobs continue to run while operators get actionable guidance before
+        the first download attempt.
         """
-        self._validate_required_timeout_values(fl_ctx)
-
         try:
             import nvflare.fuel.utils.app_config_utils as acu
             from nvflare.apis.fl_constant import ConfigVarName, SystemConfigs

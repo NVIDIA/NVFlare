@@ -255,10 +255,20 @@ FlareAgent for external process integration (flare_agent.py):
      - Timeout for submitting task result to the client training process. 60 s is too short
        for large models; configure via ``add_client_config({"submit_result_timeout": 1800})``.
    * - max_resends
-     - 3
-     - Maximum send retries on failure. Configurable via ``add_client_config({"max_resends": N})``.
+     - None in raw ``FlareAgent``; 3 through Client API job config
+     - Maximum send retries on failure. For ``ClientAPILauncherExecutor`` jobs,
+       use a finite non-negative value; ``None`` is rejected at job initialization.
+       Configurable via ``add_client_config({"max_resends": N})``.
+   * - download_complete_timeout
+     - 1800.0
+     - Time the subprocess waits after result ACK while the server finishes
+       downloading tensors from the subprocess ``DownloadService``. Must not be
+       ``None`` for ``ClientAPILauncherExecutor`` jobs.
 
-**Note**: FlareAgentWithCellPipe uses 30.0s defaults.
+**Note**: Raw ``FlareAgentWithCellPipe`` defaults to 60.0 s for
+``submit_result_timeout`` and unlimited ``max_resends``. When launched through
+``ClientAPILauncherExecutor``, the generated Client API config supplies the
+safer job defaults described above.
 
 IPC Agent
 ^^^^^^^^^
@@ -526,6 +536,38 @@ The Client API executor extends base timeouts with more conservative defaults
    * - heartbeat_timeout
      - 300.0
      - Extended heartbeat timeout for Client API
+   * - submit_result_timeout
+     - 300.0
+     - Subprocess-side wait for CJ to acknowledge each result message
+   * - max_resends
+     - 3
+     - Maximum retries after the initial result send; ``None`` is rejected
+   * - download_complete_timeout
+     - 1800.0
+     - Time the subprocess remains alive for server-side tensor download completion
+
+For subprocess-mode Client API jobs with large payloads, FLARE validates the
+following at job start:
+
+- ``download_complete_timeout`` must not be ``None``.
+- ``max_resends`` must be a finite non-negative integer. Use ``0`` to disable
+  retries; do not use ``None`` for unlimited retries.
+
+When ``tensor_streaming_per_request_timeout`` or
+``np_streaming_per_request_timeout`` is explicitly configured, FLARE also warns
+if ``PEER_READ_TIMEOUT`` or ``download_complete_timeout`` is shorter than that
+streaming timeout. Set ``PEER_READ_TIMEOUT`` through ``add_client_config`` when
+the parent client job needs a larger pipe-read budget:
+
+.. code-block:: python
+
+   recipe.add_client_config({
+       "tensor_streaming_per_request_timeout": 600,
+       "tensor_min_download_timeout": 600,
+       "PEER_READ_TIMEOUT": 600,
+       "download_complete_timeout": 1800,
+       "max_resends": 3,
+   })
 
 External Pre-Init Override
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -1369,6 +1411,9 @@ Object download transaction timeouts (download_service.py, obj_downloader.py):
      - Timeout for each request to object owner
 
 **Note**: Transaction times out if no activity from any receiver for the specified duration.
+Normally finished download refs are tombstoned temporarily so a late retry from
+the same receiver can receive the original EOF or error status instead of a
+fatal missing-ref response. Timeout and deleted transactions are not tombstoned.
 
 
 Tensor Streaming Timeouts
@@ -1478,6 +1523,19 @@ Framework-level settings for large payload transfers (fl_constant.py:553, comm_c
      - 2097152
      - Chunk size for PyTorch tensor downloads (bytes)
 
+For Client API subprocess jobs, keep these download settings aligned with the
+subprocess pipe settings:
+
+- ``tensor_min_download_timeout`` / ``np_min_download_timeout`` should be at
+  least ``tensor_streaming_per_request_timeout`` /
+  ``np_streaming_per_request_timeout``.
+- ``PEER_READ_TIMEOUT`` should be at least the configured streaming per-request
+  timeout so the parent client job does not resend the task while the subprocess
+  is still downloading a large payload.
+- ``download_complete_timeout`` should be at least the configured streaming
+  per-request timeout and long enough for the server to pull large tensor
+  results from the subprocess after result ACK.
+
 Swarm Learning Large Model Setup
 --------------------------------
 
@@ -1505,7 +1563,9 @@ Recommended timeouts for large models in Swarm Learning:
    # Subprocess-mode timeouts (when launch_external_process=True)
    recipe.add_client_config({
        "submit_result_timeout": 1800,
+       "download_complete_timeout": 1800,
        "tensor_min_download_timeout": 600,
+       "PEER_READ_TIMEOUT": 600,
        "max_resends": 5,
    })
 
