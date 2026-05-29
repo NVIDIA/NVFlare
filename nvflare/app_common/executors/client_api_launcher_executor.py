@@ -346,6 +346,23 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                 f"Set peer_read_timeout >= {per_req}s in job config.",
             )
 
+        if configured_per_req is not None and self.heartbeat_timeout is None:
+            self.heartbeat_timeout = per_req
+            self.log_warning(
+                fl_ctx,
+                "Timeout inconsistency: heartbeat_timeout is not set after applying job-config overrides. "
+                "The CJ/subprocess pipe may miss liveness detection while large payloads are downloading. "
+                f"Using {per_req}s for this run. Set heartbeat_timeout >= {per_req}s in job config.",
+            )
+        elif configured_per_req is not None and self.heartbeat_timeout < per_req:
+            self.log_warning(
+                fl_ctx,
+                f"Timeout inconsistency: heartbeat_timeout ({self.heartbeat_timeout}s) < "
+                f"{prefix}streaming_per_request_timeout ({per_req}s). "
+                "The CJ/subprocess pipe may be marked unhealthy while a large payload is still downloading. "
+                f"Set heartbeat_timeout >= {per_req}s in job config.",
+            )
+
         if configured_per_req is not None and self._download_complete_timeout < per_req:
             self.log_warning(
                 fl_ctx,

@@ -976,6 +976,34 @@ def test_timeout_warning_peer_read_less_than_per_req(monkeypatch):
     assert any("peer_read_timeout" in w and "streaming_per_request_timeout" in w for w in warnings), warnings
 
 
+def test_timeout_warning_heartbeat_less_than_per_req(monkeypatch):
+    """A warning must fire when heartbeat_timeout is lower than streaming_per_request_timeout."""
+    import nvflare.fuel.utils.app_config_utils as acu
+    from nvflare.apis.fl_constant import ConfigVarName
+    from nvflare.fuel.utils.config_service import ConfigService
+
+    executor, warnings, _ = _make_validating_executor(monkeypatch, heartbeat_timeout=300.0)
+    cell = _FakeCell()
+    fl_ctx = _FakeFLContext(cell)
+
+    def _fake_get(name, default):
+        if ConfigVarName.MIN_DOWNLOAD_TIMEOUT in name:
+            return 700.0
+        if ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT in name:
+            return 600.0
+        return default
+
+    monkeypatch.setattr(acu, "get_positive_float_var", _fake_get)
+    monkeypatch.setattr(
+        ConfigService,
+        "get_float_var",
+        lambda name, conf=None, default=None: 600.0 if ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT in name else default,
+    )
+    executor.initialize(fl_ctx)
+
+    assert any("heartbeat_timeout" in w and "streaming_per_request_timeout" in w for w in warnings), warnings
+
+
 def test_timeout_warning_peer_read_none_when_per_req_is_configured(monkeypatch):
     """A warning must fire when peer_read_timeout is unset and streaming timeout is configured."""
     import nvflare.fuel.utils.app_config_utils as acu
@@ -1002,6 +1030,35 @@ def test_timeout_warning_peer_read_none_when_per_req_is_configured(monkeypatch):
     executor.initialize(fl_ctx)
 
     assert any("peer_read_timeout is not set" in w for w in warnings), warnings
+
+
+def test_heartbeat_timeout_none_is_corrected_when_per_req_is_configured(monkeypatch):
+    """Unset heartbeat_timeout is corrected because PipeHandler requires a numeric value."""
+    import nvflare.fuel.utils.app_config_utils as acu
+    from nvflare.apis.fl_constant import ConfigVarName
+    from nvflare.fuel.utils.config_service import ConfigService
+
+    executor, warnings, _ = _make_validating_executor(monkeypatch, heartbeat_timeout=None)
+    cell = _FakeCell()
+    fl_ctx = _FakeFLContext(cell)
+
+    def _fake_get(name, default):
+        if ConfigVarName.MIN_DOWNLOAD_TIMEOUT in name:
+            return 700.0
+        if ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT in name:
+            return 600.0
+        return default
+
+    monkeypatch.setattr(acu, "get_positive_float_var", _fake_get)
+    monkeypatch.setattr(
+        ConfigService,
+        "get_float_var",
+        lambda name, conf=None, default=None: 600.0 if ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT in name else default,
+    )
+    executor.initialize(fl_ctx)
+
+    assert executor.heartbeat_timeout == 600.0
+    assert any("heartbeat_timeout is not set" in w and "Using 600.0s" in w for w in warnings), warnings
 
 
 def test_default_peer_read_timeout_does_not_warn_without_configured_per_req(monkeypatch):

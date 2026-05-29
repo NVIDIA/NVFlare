@@ -135,6 +135,24 @@ class TestReleaseParamsReceivedModel(unittest.TestCase):
         self.assertIsNone(received.params)
 
 
+class TestGetModelTimeout(unittest.TestCase):
+    def test_returns_none_when_agent_get_task_times_out(self):
+        registry = _make_registry()
+        registry.flare_agent.get_task.return_value = None
+
+        self.assertIsNone(registry.get_model(timeout=12.5))
+        registry.flare_agent.get_task.assert_called_once_with(12.5)
+        self.assertFalse(registry.cache_loaded)
+
+    def test_allows_received_model_with_none_param_values(self):
+        registry = _make_registry()
+        model = FLModel(params={"center": np.ones((2, 2)), "count": None})
+        task = Task(task_name="train", task_id="test-task-1", data=model)
+        registry._set_task(task)
+
+        self.assertIs(registry.get_model(), model)
+
+
 class TestReleaseParamsMemoryRelease(unittest.TestCase):
     """Verify that numpy arrays are actually dereferenced after release_params."""
 
