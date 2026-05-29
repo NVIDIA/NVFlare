@@ -255,6 +255,9 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         self._apply_positive_float_client_config_override(
             fl_ctx, EXTERNAL_PRE_INIT_TIMEOUT, "_external_pre_init_timeout"
         )
+        # peer_read_timeout is enforced on the CJ side, while submit_result_timeout is
+        # enforced by the subprocess. Keep both tunable from add_client_config() so
+        # operators can coordinate large-model transfer timeouts in one place.
         self._apply_positive_float_client_config_override(fl_ctx, PEER_READ_TIMEOUT, "peer_read_timeout")
         self._apply_positive_float_client_config_override(
             fl_ctx, ConfigKey.SUBMIT_RESULT_TIMEOUT, "_submit_result_timeout"
