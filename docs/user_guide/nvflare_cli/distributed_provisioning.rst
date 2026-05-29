@@ -254,18 +254,18 @@ Project Admin approves the request:
 
 .. code-block:: shell
 
-   nvflare cert approve hospital-a.request.zip --ca-dir ./ca --profile project_profile.yaml
+   nvflare cert approve hospital-a/hospital-a.request.zip --ca-dir ./ca --profile project_profile.yaml
 
-This creates ``hospital-a.signed.zip`` and prints
-``rootca_fingerprint_sha256``. The signed zip already includes ``rootCA.pem``;
-return the signed zip to the Site Admin and share only the fingerprint through
-a trusted out-of-band channel.
+This creates ``hospital-a/hospital-a.signed.zip`` (next to the request zip)
+and prints ``rootca_fingerprint_sha256``. The signed zip already includes
+``rootCA.pem``; return the signed zip to the Site Admin and share only the
+fingerprint through a trusted out-of-band channel.
 
 Site Admin packages the startup kit:
 
 .. code-block:: shell
 
-   nvflare package hospital-a.signed.zip --fingerprint <rootca_fingerprint_sha256>
+   nvflare package hospital-a/hospital-a.signed.zip --fingerprint <rootca_fingerprint_sha256>
 
 The output goes under:
 
@@ -313,13 +313,13 @@ Project Admin approves it:
 
 .. code-block:: shell
 
-   nvflare cert approve alice@hospital-alpha.org.request.zip --ca-dir ./ca --profile project_profile.yaml
+   nvflare cert approve alice@hospital-alpha.org/alice@hospital-alpha.org.request.zip --ca-dir ./ca --profile project_profile.yaml
 
 Requester packages the returned signed zip:
 
 .. code-block:: shell
 
-   nvflare package alice@hospital-alpha.org.signed.zip --fingerprint <rootca_fingerprint_sha256>
+   nvflare package alice@hospital-alpha.org/alice@hospital-alpha.org.signed.zip --fingerprint <rootca_fingerprint_sha256>
 
 The generated user startup kit contains ``startup/fl_admin.sh``.
 
@@ -368,8 +368,8 @@ Then use the same request, approval, and package workflow:
 .. code-block:: shell
 
    nvflare cert request --participant server.yaml
-   nvflare cert approve server1.hospital-central.org.request.zip --ca-dir ./ca --profile project_profile.yaml
-   nvflare package server1.hospital-central.org.signed.zip --fingerprint <rootca_fingerprint_sha256>
+   nvflare cert approve server1.hospital-central.org/server1.hospital-central.org.request.zip --ca-dir ./ca --profile project_profile.yaml
+   nvflare package server1.hospital-central.org/server1.hospital-central.org.signed.zip --fingerprint <rootca_fingerprint_sha256>
 
 The server participant name follows the same validation convention as
 centralized ``project.yaml`` server participants. A DNS name is recommended for
@@ -389,13 +389,15 @@ Requester machine:
 
    nvflare cert request --participant hospital-a.yaml
 
-Transfer this file to the Project Admin:
+Transfer this file to the Project Admin (for example, copy it into the
+Project Admin's working directory as ``hospital-a.request.zip``):
 
 .. code-block:: text
 
    hospital-a/hospital-a.request.zip
 
-Project Admin machine:
+Project Admin machine (file received as ``hospital-a.request.zip`` in the
+working directory):
 
 .. code-block:: shell
 
@@ -407,18 +409,15 @@ Transfer this file back to the requester:
 
    hospital-a.signed.zip
 
-Requester machine:
-
-.. code-block:: shell
-
-   nvflare package hospital-a.signed.zip --fingerprint <rootca_fingerprint_sha256>
-
-If the signed zip is not next to the local request folder and package cannot
-find the folder from local request state, specify it:
+Requester machine (signed zip placed in the working directory, separate from
+the original ``./hospital-a/`` request folder):
 
 .. code-block:: shell
 
    nvflare package hospital-a.signed.zip --request-dir ./hospital-a --fingerprint <rootca_fingerprint_sha256>
+
+``--request-dir`` is required here because the signed zip is no longer next to
+the local request folder.
 
 *****************************
 Root CA Fingerprint Check
@@ -439,8 +438,8 @@ fingerprint:
 
 .. code-block:: shell
 
-   nvflare package hospital-a.signed.zip --fingerprint <rootca_fingerprint_sha256>
-   nvflare package hospital-a.signed.zip \
+   nvflare package hospital-a/hospital-a.signed.zip --fingerprint <rootca_fingerprint_sha256>
+   nvflare package hospital-a/hospital-a.signed.zip \
        --fingerprint <rootca_fingerprint_sha256>
 
 Use ``--fingerprint <rootca_fingerprint_sha256>`` when you have the expected
@@ -449,7 +448,7 @@ verification, omit the fingerprint option:
 
 .. code-block:: shell
 
-   nvflare package hospital-a.signed.zip
+   nvflare package hospital-a/hospital-a.signed.zip
 
 Without either option, packaging still validates the signed zip, metadata,
 certificate chain, and local private-key match, but it does not prompt and does
@@ -582,14 +581,14 @@ Project Admin:
 
    # create project_profile.yaml
    nvflare cert init --profile project_profile.yaml -o ./ca --deploy-version 00
-   nvflare cert approve hospital-a.request.zip --ca-dir ./ca --profile project_profile.yaml
+   nvflare cert approve hospital-a/hospital-a.request.zip --ca-dir ./ca --profile project_profile.yaml
 
 Requester:
 
 .. code-block:: shell
 
    nvflare cert request --participant hospital-a.yaml
-   nvflare package hospital-a.signed.zip --fingerprint <rootca_fingerprint_sha256>
+   nvflare package hospital-a/hospital-a.signed.zip --fingerprint <rootca_fingerprint_sha256>
 
 With explicit locations:
 

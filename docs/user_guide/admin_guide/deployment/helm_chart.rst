@@ -174,11 +174,11 @@ at ``nvcr.io``. Use a tag that matches the NVFlare version used to provision and
 prepare the startup kits, and set that image in ``parent.docker_image`` in
 ``k8s.yaml``.
 
-Users can also build their own runtime image from this repository by modifying
-``docker/Dockerfile`` and pushing the result to a registry that all participating
-clusters can pull from. Keep the NVFlare ``K8S`` extra, or install the
-Kubernetes Python client explicitly, so the parent server or client can create
-job pods.
+Users can also build their own parent runtime image from this repository by
+modifying ``docker/Dockerfile.parent`` and pushing the result to a registry that
+all participating clusters can pull from. Keep the NVFlare ``K8S`` extra, or
+install the Kubernetes Python client explicitly, so the parent server or client
+can create job pods.
 
 The parent image comes from ``parent.docker_image`` in ``k8s.yaml`` and is
 rendered into ``helm_chart/values.yaml``. Submitted jobs must also specify a job
@@ -855,7 +855,10 @@ Supported ``launcher_spec[site][k8s]`` keys include:
   should be lower than the limit.
 * ``ephemeral_storage``: Kubernetes quantity string for the job workspace
   ``emptyDir.sizeLimit`` and the container ``ephemeral-storage`` request and
-  limit. If omitted, the launcher uses its configured default.
+  limit. Set this in ``launcher_spec.default.k8s`` or in a site-specific
+  ``launcher_spec[site].k8s`` block. If omitted, the built-in launcher default
+  is used. The current ``deploy prepare`` runtime config does not expose
+  ``job_launcher.ephemeral_storage`` as a ``k8s.yaml`` setting.
 
 Job pods are created with ``imagePullPolicy: Always``. Tag changes take effect
 immediately, but every submitted job pulls the image once per site. For private

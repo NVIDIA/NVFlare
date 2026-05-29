@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 
-from nvflare.fuel.common.excepts import ConfigError
+from nvflare.fuel.common.excepts import ComponentNotAuthorized, ConfigError
 from nvflare.fuel.utils.class_utils import get_class_path_from_config, instantiate_class
 from nvflare.security.logging import secure_format_exception
 
@@ -24,7 +24,7 @@ class ConfigType:
     DICT = "dict"
 
 
-class ComponentBuilder:
+class ComponentBuilder(ABC):
     @abstractmethod
     def get_module_scanner(self):
         """Provide the package module scanner.
@@ -56,6 +56,43 @@ class ComponentBuilder:
         else:
             return False
 
+    def is_authorizable_component_config(self, config_dict: dict, node=None) -> bool:
+        """Return whether this dict should be checked by a component-build authorizer.
+
+        ``config_type: dict`` means the normal nested builder should pass the dict through
+        without instantiating it.  Entries under a ``components`` list are different:
+        they are later built as top-level components, and those entries require an
+        ``id``.  Treat those explicit component-list entries as authorizable even when
+        they set ``config_type`` to ``dict`` so the allow-list cannot be bypassed before
+        the later build.
+        """
+        if not isinstance(config_dict, dict):
+            return False
+
+        if self._is_component_list_entry(config_dict, node):
+            return True
+
+        try:
+            return self.is_class_config(config_dict)
+        except ConfigError:
+            return False
+
+    @staticmethod
+    def _is_component_list_entry(config_dict: dict, node=None) -> bool:
+        if "id" not in config_dict or not (
+            "path" in config_dict or "class_path" in config_dict or "name" in config_dict
+        ):
+            return False
+
+        node_path = getattr(node, "paths", None)
+        if not node_path or len(node_path) < 2:
+            return False
+
+        return node_path[-2] == "components" and str(node_path[-1]).startswith("#")
+
+    def build_nested_component(self, config_dict, arg_name):
+        return self.build_component(config_dict)
+
     def build_component(self, config_dict):
         if not config_dict:
             return None
@@ -71,8 +108,10 @@ class ComponentBuilder:
             if isinstance(v, dict) and self.is_class_config(v):
                 # try to replace the arg with a component
                 try:
-                    t = self.build_component(v)
+                    t = self.build_nested_component(v, k)
                     class_args[k] = t
+                except ComponentNotAuthorized:
+                    raise
                 except Exception as e:
                     raise ValueError(f"failed to instantiate class: {secure_format_exception(e)} ")
 

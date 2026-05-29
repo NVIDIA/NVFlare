@@ -52,6 +52,11 @@ Release Highlights
   holding all client tensor updates in memory simultaneously, each update is written
   to a temporary safetensors file on disk and consumed lazily during aggregation.
   The benefit scales with model size and client count.
+- **Large-model streaming reliability**: large tensor broadcasts are more robust
+  when many clients retry after delayed EOF responses. Finished download refs are
+  handled idempotently, and subprocess Client API jobs now reject unbounded result
+  resends or missing download-completion waits that can turn one slow transfer into
+  repeated large-model retries.
 - **New examples and contributed research**: MedGemma, Qwen3-VL, Codon-FM,
   FedUMM, financial-services fraud detection, Docker job examples, distributed
   provisioning examples, Hello JAX, and Hello log streaming help teams start
@@ -258,6 +263,32 @@ These improvements help large-model FL jobs operate under tighter memory and
 runtime constraints, while the new examples give teams concrete starting points
 for multimodal and language-model workloads.
 
+Large-Model Streaming Reliability
+---------------------------------
+
+The streaming layer now treats late retries of normally finished download refs
+as idempotent terminal responses instead of fatal missing-ref errors. This
+addresses high-fanout large-model broadcasts where a client has completed a
+download but retries because the final EOF response was delayed by network or
+server-side contention.
+
+The fix applies at the ``DownloadService`` layer, so it benefits large payload
+transfers regardless of whether they come from FedAvg, Client API subprocess
+jobs, tensor disk offload, or another feature built on the same streaming
+path. Cleanup caused by transaction timeout or explicit deletion still returns
+an invalid-ref error; only normally finished transactions are tombstoned for
+late terminal retries.
+
+Subprocess Client API jobs also validate risky retry settings earlier. In
+particular, ``max_resends=None`` is now rejected for
+``ClientAPILauncherExecutor`` jobs because unlimited resends can create an
+unbounded sequence of large download transactions, and
+``download_complete_timeout=None`` is rejected because the subprocess must stay
+alive while the server finishes pulling tensors from it. Jobs with explicitly
+configured large streaming request timeouts now receive warnings when related
+pipe/download-completion timeouts are shorter than the configured streaming
+timeout.
+
 Server Memory: Tensor Disk Offload
 -----------------------------------
 
@@ -311,8 +342,8 @@ Docker, Kubernetes, and server-connected workflows.
 Notable improvements include more consistent job status publication, clearer
 errors for missing or running jobs, more reliable startup and log-streaming
 behavior, Docker and Kubernetes runtime fixes, better GPU visibility handling,
-cleaner client failure reporting, and refreshed integration-test and CI
-coverage.
+cleaner client failure reporting, corrected paired-duration monitoring metrics
+when an end event is skipped, and refreshed integration-test and CI coverage.
 
 New Examples and Research
 =========================
