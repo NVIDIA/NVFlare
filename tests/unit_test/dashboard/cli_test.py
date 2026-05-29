@@ -105,11 +105,12 @@ class TestDashboardCli:
         assert "model" not in run_kwargs["volumes"][str(dashboard_cli.os.getcwd())]
         assert "Dashboard container started" in capsys.readouterr().out
 
-    def test_start_reports_immediate_container_exit(self, capsys):
+    @pytest.mark.parametrize("status", ["exited", "removing"])
+    def test_start_reports_immediate_container_exit(self, capsys, status):
         args = _parse_dashboard_args(["--start", "-i", "nvflare-parent:test", "--cred", "admin@example.com:pw:org"])
         container = SimpleNamespace(
             id="container-1",
-            status="exited",
+            status=status,
             reload=Mock(),
             logs=Mock(return_value=b"python: can't open file '/app/nvflare/dashboard/wsgi.py'"),
         )
@@ -125,6 +126,6 @@ class TestDashboardCli:
 
         assert exc_info.value.code == 1
         output = capsys.readouterr().out
-        assert "Dashboard container exited immediately with status: exited" in output
+        assert f"Dashboard container exited immediately with status: {status}" in output
         assert "Container logs:" in output
         assert "can't open file" in output
