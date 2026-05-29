@@ -18,8 +18,8 @@ try:
 except ImportError:
     np = None
 
-from ..fuel.utils import fobs
-from .fl_constant import ReservedKey, ReturnCode, ServerCommandKey
+from nvflare.apis.fl_constant import ReservedKey, ReturnCode, ServerCommandKey
+from nvflare.fuel.utils import fobs
 
 _NO_COPY_VALUE_TYPES = (bytes, bytearray, memoryview)
 if np is not None:
