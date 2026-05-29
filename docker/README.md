@@ -22,6 +22,22 @@ Build from the repository root:
 docker build -f docker/Dockerfile.parent -t nvflare-parent:latest .
 ```
 
+The dashboard can use the same runtime image. If you want a dashboard-specific
+image name, tag the same build with both names:
+
+```bash
+docker build -f docker/Dockerfile.parent \
+  -t nvflare-parent:latest \
+  -t nvflare-dashboard:latest \
+  .
+```
+
+Then start the dashboard with the dashboard tag:
+
+```bash
+nvflare dashboard --start -i nvflare-dashboard:latest --port 8443
+```
+
 Use this image in `docker.yaml` or `k8s.yaml` as the parent image:
 
 ```yaml
@@ -69,6 +85,8 @@ containers include `/etc/pip/constraint.txt` to protect the tested package set.
 ## Choosing an Image
 
 - Use `Dockerfile.parent` for parent server/client processes.
+- Use `Dockerfile.parent` for the dashboard runtime; tag the same build as a
+  dashboard image if you want a dashboard-specific image name.
 - Use `Dockerfile.job` for submitted job containers.
 - Do not rely on a shell being available in the parent image; it is absent by
   design.
