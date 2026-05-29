@@ -296,7 +296,8 @@ def _handle_agent_inspect_cmd(args, handle_schema_flag, output_error_message, ou
 
 
 def _handle_agent_doctor_cmd(args, handle_schema_flag, output_error_message, output_ok) -> None:
-    from nvflare.tool.agent.doctor import doctor_environment
+    from nvflare.tool.agent.doctor import doctor_environment, format_doctor_human
+    from nvflare.tool.cli_output import is_json_mode, is_jsonl_mode, print_human
 
     handle_schema_flag(
         _agent_sub_cmd_parsers[CMD_AGENT_DOCTOR],
@@ -320,6 +321,10 @@ def _handle_agent_doctor_cmd(args, handle_schema_flag, output_error_message, out
             include_data=True,
             recovery_category="ENVIRONMENT_FAILURE",
         )
+        return
+
+    if not is_json_mode() and not is_jsonl_mode():
+        print_human(format_doctor_human(data))
         return
 
     output_ok(

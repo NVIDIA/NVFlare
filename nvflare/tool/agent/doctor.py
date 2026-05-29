@@ -260,6 +260,86 @@ def _online_error(code: str, status: str, message: str, startup_kit: dict) -> di
     }
 
 
+def format_doctor_human(data: dict) -> str:
+    """Render a concise human-readable doctor summary."""
+    lines = ["NVFLARE Agent Doctor", f"status: {data.get('status', 'unknown')}", ""]
+
+    nvflare_info = data.get("nvflare") or {}
+    nvflare_status = "import ok" if nvflare_info.get("import_ok") else "import failed"
+    lines.append(f"nvflare: {nvflare_info.get('version', 'unknown')} ({nvflare_status})")
+
+    commands = data.get("commands") or {}
+    lines.append(f"commands: {commands.get('status', 'unknown')} ({len(commands.get('commands', []))} registered)")
+
+    startup_kits = data.get("startup_kits") or {}
+    startup_entries = startup_kits.get("entries", [])
+    valid_startup_count = sum(1 for entry in startup_entries if entry.get("status") == "valid")
+    active_id = startup_kits.get("active_id") or "none"
+    lines.append(f"startup kits: {valid_startup_count}/{len(startup_entries)} valid (active: {active_id})")
+
+    skills = data.get("skills") or {}
+    source = skills.get("source")
+    if source:
+        lines.append(
+            f"skills: {skills.get('available_count', 0)} available "
+            f"({source.get('type', 'unknown')}: {source.get('root', 'unknown')})"
+        )
+    else:
+        lines.append(f"skills: {skills.get('status', 'unknown')}")
+
+    optional_dependencies = data.get("optional_dependencies", [])
+    available_deps = [dep["name"] for dep in optional_dependencies if dep.get("available")]
+    missing_deps = [dep["name"] for dep in optional_dependencies if not dep.get("available")]
+    lines.append(f"optional dependencies: available {_join_names(available_deps)}; missing {_join_names(missing_deps)}")
+
+    poc = data.get("poc") or {}
+    lines.append(f"poc: {poc.get('status', 'unknown')} (workspace: {poc.get('workspace', 'unknown')})")
+
+    online = data.get("online") or {}
+    if online.get("enabled"):
+        online_line = f"online: {online.get('status', 'unknown')}"
+        first_online_finding = _first_finding(online.get("findings", []))
+        if first_online_finding:
+            online_line += f" ({first_online_finding})"
+        lines.append(online_line)
+    else:
+        lines.append(f"online: {online.get('status', 'not_requested')}")
+
+    findings = data.get("findings", [])
+    if findings:
+        lines.append("")
+        lines.append(f"findings ({len(findings)}):")
+        for finding in findings:
+            lines.extend(_format_finding(finding))
+    else:
+        lines.append("")
+        lines.append("findings: none")
+
+    return "\n".join(lines)
+
+
+def _join_names(names: list[str]) -> str:
+    return ", ".join(names) if names else "none"
+
+
+def _first_finding(findings: list[dict]) -> str | None:
+    if not findings:
+        return None
+    finding = findings[0]
+    return f"{finding.get('severity', 'info')} {finding.get('code', 'UNKNOWN')}"
+
+
+def _format_finding(finding: dict) -> list[str]:
+    severity = finding.get("severity", "info")
+    code = finding.get("code", "UNKNOWN")
+    message = str(finding.get("message", "")).splitlines() or [""]
+    lines = [f"- {severity} {code}: {message[0]}"]
+    lines.extend(f"  {line}" for line in message[1:])
+    if finding.get("hint"):
+        lines.append(f"  hint: {finding['hint']}")
+    return lines
+
+
 def _online_read_only_preflight(startup_kit: dict) -> dict | None:
     """Skip online checks when the existing session API would create local directories."""
     kit_path = Path(startup_kit["path"])
