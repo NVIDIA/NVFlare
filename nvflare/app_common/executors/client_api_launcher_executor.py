@@ -132,6 +132,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             max_resends=max_resends,
         )
 
+        # Preserve the bounded retry default across FedJobConfig export/reload.
         self._always_serialize_args = {"max_resends"}
         self._server_expected_format = server_expected_format
         self._params_exchange_format = params_exchange_format
