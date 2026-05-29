@@ -555,7 +555,7 @@ following at job start:
 
 When ``tensor_streaming_per_request_timeout`` or
 ``np_streaming_per_request_timeout`` is explicitly configured, FLARE also warns
-if ``peer_read_timeout`` or ``download_complete_timeout`` is shorter than that
+if ``PEER_READ_TIMEOUT`` or ``download_complete_timeout`` is shorter than that
 streaming timeout. Set ``PEER_READ_TIMEOUT`` through ``add_client_config`` when
 the parent client job needs a larger pipe-read budget:
 
