@@ -194,6 +194,8 @@ def _run_exported_external_process_executor_startup(executor_config, config_dir,
 
     with (
         patch.object(LauncherExecutor, "initialize", lambda self, fl_ctx: None),
+        # Skip only advisory timeout relationship checks; prepare_config_for_launch()
+        # still exercises required startup validation before writing subprocess config.
         patch.object(ClientAPILauncherExecutor, "_validate_timeout_config", lambda self, fl_ctx: None),
         patch.object(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None),
         patch.object(ClientAPILauncherExecutor, "log_error", lambda self, fl_ctx, msg: None),
@@ -920,6 +922,44 @@ class TestFedAvgRecipeExternalProcessStartup:
         )
 
         assert client_api_config[ConfigKey.TASK_EXCHANGE][ConfigKey.MAX_RESENDS] == expected_max_resends
+
+    def test_old_rc4_exported_null_max_resends_still_rejects_at_startup(self, tmp_path):
+        """Old exported configs with executor max_resends: null must fail instead of running unbounded."""
+        train_script = tmp_path / "train.py"
+        train_script.write_text("# Dummy train script\n")
+        job_name = "test_external_process_null_max_resends"
+
+        recipe = FedAvgRecipe(
+            name=job_name,
+            model={"class_path": "model.SimpleNetwork", "args": {}},
+            train_script=str(train_script),
+            train_args="--epochs 1",
+            min_clients=2,
+            num_rounds=1,
+            launch_external_process=True,
+        )
+
+        export_dir = tmp_path / "exported_job"
+        recipe.export(job_dir=str(export_dir))
+
+        config_dir = export_dir / job_name / "app" / "config"
+        client_config_path = config_dir / "config_fed_client.json"
+        with open(client_config_path, "r") as f:
+            client_config = json.load(f)
+
+        train_executor = _get_train_executor_config(client_config)
+        train_executor["args"][ConfigKey.MAX_RESENDS] = None
+        client_config_path.write_text(json.dumps(client_config))
+        with open(client_config_path, "r") as f:
+            reloaded_client_config = json.load(f)
+        reloaded_train_executor = _get_train_executor_config(reloaded_client_config)
+
+        with pytest.raises(ValueError, match="max_resends is None"):
+            _run_exported_external_process_executor_startup(
+                reloaded_train_executor, config_dir=config_dir, job_id=job_name
+            )
+
+        assert not (config_dir / CLIENT_API_CONFIG).exists()
 
 
 class TestNumpyFedAvgRecipeInitialCkpt:

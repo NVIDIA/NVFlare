@@ -507,12 +507,13 @@ def test_client_config_overrides_apply_before_subprocess_config_write(monkeypatc
     assert executor._stop_task_wait_timeout == 2400.0
 
 
-def test_client_config_max_resends_override_rejects_negative(monkeypatch):
+@pytest.mark.parametrize("value", [-1, None])
+def test_client_config_max_resends_override_rejects_invalid_values(monkeypatch, value):
     """Invalid top-level max_resends overrides must fail before config generation."""
     from nvflare.client.config import ConfigKey
 
     errors = []
-    monkeypatch.setattr(_GCV_MODULE, _make_gcv_stub({ConfigKey.MAX_RESENDS: -1}))
+    monkeypatch.setattr(_GCV_MODULE, _make_gcv_stub({ConfigKey.MAX_RESENDS: value}))
     monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
     monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
     monkeypatch.setattr(ClientAPILauncherExecutor, "log_error", lambda self, fl_ctx, msg: errors.append(msg))
@@ -523,6 +524,28 @@ def test_client_config_max_resends_override_rejects_negative(monkeypatch):
         executor.initialize(_FakeFLContext(_FakeCell()))
 
     assert any("max_resends" in e for e in errors), errors
+
+
+def test_client_config_float_override_rejects_none(monkeypatch):
+    """Explicit null timeout overrides should fail loudly instead of silently using defaults."""
+    from nvflare.client.config import ConfigKey
+
+    errors = []
+    writes = []
+    monkeypatch.setattr(_GCV_MODULE, _make_gcv_stub({ConfigKey.DOWNLOAD_COMPLETE_TIMEOUT: None}))
+    monkeypatch.setattr(
+        "nvflare.app_common.executors.client_api_launcher_executor.write_config_to_file",
+        lambda config_data, config_file_path: writes.append(config_data),
+    )
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_error", lambda self, fl_ctx, msg: errors.append(msg))
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
+
+    with pytest.raises(ValueError, match="download_complete_timeout must be positive"):
+        executor.initialize(_FakeFLContext(_FakeCell()))
+
+    assert writes == []
+    assert any("download_complete_timeout" in e for e in errors), errors
 
 
 def test_client_config_get_max_resends_default():

@@ -231,18 +231,20 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             return
 
         if value is None:
-            max_resends = None
-        else:
-            try:
-                max_resends = int(value)
-            except (TypeError, ValueError) as e:
-                msg = f"{ConfigKey.MAX_RESENDS} must be a finite non-negative integer, got {value}"
-                self.log_error(fl_ctx, msg)
-                raise ValueError(msg) from e
-            if max_resends < 0:
-                msg = f"{ConfigKey.MAX_RESENDS} must be a finite non-negative integer, got {max_resends}"
-                self.log_error(fl_ctx, msg)
-                raise ValueError(msg)
+            msg = f"{ConfigKey.MAX_RESENDS} must be a finite non-negative integer, got None"
+            self.log_error(fl_ctx, msg)
+            raise ValueError(msg)
+
+        try:
+            max_resends = int(value)
+        except (TypeError, ValueError) as e:
+            msg = f"{ConfigKey.MAX_RESENDS} must be a finite non-negative integer, got {value}"
+            self.log_error(fl_ctx, msg)
+            raise ValueError(msg) from e
+        if max_resends < 0:
+            msg = f"{ConfigKey.MAX_RESENDS} must be a finite non-negative integer, got {max_resends}"
+            self.log_error(fl_ctx, msg)
+            raise ValueError(msg)
 
         self.log_info(fl_ctx, f"Overriding max_resends from config: {self.max_resends} -> {max_resends}")
         self.max_resends = max_resends
