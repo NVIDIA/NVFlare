@@ -17,6 +17,7 @@ import os
 import signal
 import subprocess
 import sys
+import time
 
 import docker
 import nvflare
@@ -113,12 +114,12 @@ def start(args):
     try:
         container_obj = client.containers.run(
             dashboard_image,
-            entrypoint=["/usr/local/bin/python3", "nvflare/dashboard/wsgi.py"],
+            entrypoint=["python", "-m", "nvflare.dashboard.wsgi"],
             detach=True,
             auto_remove=True,
             name="nvflare-dashboard",
             ports={8443: args.port},
-            volumes={folder: {"bind": "/var/tmp/nvflare/dashboard", "model": "rw"}},
+            volumes={folder: {"bind": "/var/tmp/nvflare/dashboard", "mode": "rw"}},
             environment=environment,
         )
     except docker.errors.APIError as e:
@@ -127,11 +128,37 @@ def start(args):
         print(e)
         exit(1)
     if container_obj:
+        _fail_if_container_exited(container_obj)
         print("Dashboard container started")
         print("Container name nvflare-dashboard")
         print(f"id is {container_obj.id}")
     else:
         print("Container failed to start")
+
+
+def _fail_if_container_exited(container_obj):
+    time.sleep(1)
+    try:
+        container_obj.reload()
+    except docker.errors.NotFound:
+        print("Dashboard container exited immediately and was removed.")
+        exit(1)
+
+    status = getattr(container_obj, "status", None)
+    if status not in {"dead", "exited"}:
+        return
+
+    print(f"Dashboard container exited immediately with status: {status}")
+    try:
+        logs = container_obj.logs(stdout=True, stderr=True, tail=50)
+    except docker.errors.APIError:
+        logs = None
+    if logs:
+        if isinstance(logs, bytes):
+            logs = logs.decode("utf-8", errors="replace")
+        print("Container logs:")
+        print(logs.rstrip())
+    exit(1)
 
 
 def start_local(env):
