@@ -134,6 +134,8 @@ def list_skills(*, agent: str, target_dir: Optional[Path | str] = None, source: 
     target = resolve_agent_target_dir(agent, target_dir=target_dir)
     installed = []
     conflicts = []
+    available = source.manifest.get("skills", [])
+    available_names = {skill["name"] for skill in available}
 
     if target.is_dir():
         for child in sorted(target.iterdir(), key=lambda p: p.name):
@@ -150,7 +152,7 @@ def list_skills(*, agent: str, target_dir: Optional[Path | str] = None, source: 
                         "source_type": install_manifest.get("source_type"),
                     }
                 )
-            else:
+            elif child.name in available_names:
                 conflicts.append(
                     {
                         "skill": child.name,
@@ -164,7 +166,7 @@ def list_skills(*, agent: str, target_dir: Optional[Path | str] = None, source: 
         "agent": agent,
         "target_path": str(target),
         "source": _source_summary(source),
-        "available": source.manifest.get("skills", []),
+        "available": available,
         "installed": installed,
         "conflicts": conflicts,
     }
