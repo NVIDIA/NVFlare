@@ -13,8 +13,17 @@
 # limitations under the License.
 import copy
 
+try:
+    import numpy as np
+except ImportError:
+    np = None
+
 from ..fuel.utils import fobs
 from .fl_constant import ReservedKey, ReturnCode, ServerCommandKey
+
+_NO_COPY_VALUE_TYPES = (bytes, bytearray, memoryview)
+if np is not None:
+    _NO_COPY_VALUE_TYPES = _NO_COPY_VALUE_TYPES + (np.ndarray,)
 
 
 class ReservedHeaderKey:
@@ -154,20 +163,67 @@ def make_reply(rc, headers=None) -> Shareable:
     return reply
 
 
-def make_copy(source: Shareable, exclude_headers: list = None) -> Shareable:
-    """
-    Make a copy from the source.
-    The content (non-headers) will be kept intact. Headers will be deep-copied into the new instance.
+def _collect_no_copy_values(value, no_copy_value_types: tuple, memo: dict, seen: set):
+    value_id = id(value)
+    if value_id in seen:
+        return
+
+    seen.add(value_id)
+    if isinstance(value, no_copy_value_types):
+        memo[value_id] = value
+        return
+
+    if isinstance(value, dict):
+        for k, v in value.items():
+            _collect_no_copy_values(k, no_copy_value_types, memo, seen)
+            _collect_no_copy_values(v, no_copy_value_types, memo, seen)
+    elif isinstance(value, (list, tuple, set, frozenset)):
+        for item in value:
+            _collect_no_copy_values(item, no_copy_value_types, memo, seen)
+    else:
+        attrs = getattr(value, "__dict__", None)
+        if attrs:
+            _collect_no_copy_values(attrs, no_copy_value_types, memo, seen)
+
+
+def _normalize_no_copy_types(no_copy_types) -> tuple:
+    if no_copy_types is None:
+        return _NO_COPY_VALUE_TYPES
+    if isinstance(no_copy_types, type):
+        no_copy_types = (no_copy_types,)
+    return _NO_COPY_VALUE_TYPES + tuple(no_copy_types)
+
+
+def _make_no_copy_memo(source: Shareable, no_copy_types) -> dict:
+    memo = {}
+    _collect_no_copy_values(source, _normalize_no_copy_types(no_copy_types), memo, set())
+    return memo
+
+
+def make_copy(source: Shareable, exclude_headers: list = None, no_copy_types=None) -> Shareable:
+    """Make a copy from the source.
+
+    The content and headers will be deep-copied into the new instance, but large binary/array values are reused.
+    Built-in no-copy values are bytes, bytearray, memoryview, and numpy.ndarray. Additional no-copy types can be
+    supplied with no_copy_types. For example, to reuse PyTorch tensors by identity:
+
+        import torch
+
+        copied = make_copy(source, no_copy_types=(torch.Tensor,))
+
+    Args:
+        source: Shareable to copy.
+        exclude_headers: Header keys to remove from the returned copy.
+        no_copy_types: Additional value types to reuse by identity during deepcopy.
     """
     assert isinstance(source, Shareable)
-    c = copy.copy(source)
-    headers = source.get(ReservedHeaderKey.HEADERS)
+    c = copy.deepcopy(source, memo=_make_no_copy_memo(source, no_copy_types))
+    headers = c.get(ReservedHeaderKey.HEADERS)
     if headers:
-        new_headers = copy.deepcopy(headers)
         if exclude_headers:
             for k in exclude_headers:
-                new_headers.pop(k, None)
+                headers.pop(k, None)
     else:
-        new_headers = {}
-    c[ReservedHeaderKey.HEADERS] = new_headers
+        headers = {}
+    c[ReservedHeaderKey.HEADERS] = headers
     return c
