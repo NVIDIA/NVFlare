@@ -16,6 +16,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.streaming.blob_streamer import BlobHandler, BlobTask
 from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError, StreamFuture
 
@@ -58,6 +59,49 @@ def test_read_stream_fails_on_size_mismatch_underrun():
     assert "Size mismatch" in str(error)
 
     with pytest.raises(StreamError, match="Size mismatch"):
+        future.result(timeout=0.1)
+
+
+def test_blob_task_rejects_declared_size_above_limit():
+    future = StreamFuture(stream_id=6)
+
+    with pytest.raises(StreamError, match="exceeds configured limit"):
+        BlobTask(future=future, stream=_FakeStream(declared_size=8, chunks=[]), max_size=4)
+
+
+def test_handle_blob_cb_stops_task_on_declared_size_above_limit(monkeypatch):
+    monkeypatch.setattr(CommConfigurator, "get_max_message_size", lambda self: 4)
+    handler = BlobHandler(lambda future: None)
+    future = StreamFuture(stream_id=7)
+    stopped = {}
+
+    def stop(err):
+        stopped["error"] = err
+        future.set_exception(err)
+
+    stream = _FakeStream(declared_size=8, chunks=[])
+    stream.task = SimpleNamespace(stop=stop)
+
+    assert handler.handle_blob_cb(future, stream, False) == 0
+
+    error = future.exception(timeout=0.1)
+    assert isinstance(error, StreamError)
+    assert "exceeds configured limit" in str(error)
+    assert stopped["error"] is error
+
+
+def test_read_stream_fails_when_unknown_size_exceeds_limit():
+    handler = BlobHandler(lambda future: None)
+    future = StreamFuture(stream_id=8)
+    blob_task = BlobTask(future=future, stream=_FakeStream(declared_size=0, chunks=[b"abcd", b"ef"]), max_size=4)
+
+    handler._read_stream(blob_task)
+
+    error = future.exception(timeout=0.1)
+    assert isinstance(error, StreamError)
+    assert "configured limit 4" in str(error)
+
+    with pytest.raises(StreamError, match="configured limit 4"):
         future.result(timeout=0.1)
 
 

@@ -68,10 +68,18 @@ class BlobStream(Stream):
 
 
 class BlobTask:
-    def __init__(self, future: StreamFuture, stream: Stream):
+    def __init__(self, future: StreamFuture, stream: Stream, max_size: int = 0):
         self.future = future
         self.stream = stream
         self.size = stream.get_size()
+        self.max_size = max_size
+
+        if self.size < 0:
+            raise StreamError(f"Declared blob size cannot be negative: {self.size}")
+
+        if self.max_size > 0 and self.size > self.max_size:
+            raise StreamError(f"Declared blob size {self.size} exceeds configured limit {self.max_size}")
+
         self.pre_allocated = self.size > 0
 
         if self.pre_allocated:
@@ -86,14 +94,23 @@ class BlobTask:
 class BlobHandler:
     def __init__(self, blob_cb: Callable):
         self.blob_cb = blob_cb
-        self.chunk_size = CommConfigurator().get_streaming_chunk_size(STREAM_CHUNK_SIZE)
+        config = CommConfigurator()
+        self.chunk_size = config.get_streaming_chunk_size(STREAM_CHUNK_SIZE)
+        self.max_blob_size = config.get_max_message_size()
 
     def handle_blob_cb(self, future: StreamFuture, stream: Stream, resume: bool, *args, **kwargs) -> int:
 
         if resume:
             log.warning("Resume is not supported, ignored")
 
-        blob_task = BlobTask(future, stream)
+        try:
+            blob_task = BlobTask(future, stream, self.max_blob_size)
+        except StreamError as ex:
+            if hasattr(stream, "task"):
+                stream.task.stop(ex)
+            else:
+                future.set_exception(ex)
+            return 0
 
         stream_thread_pool.submit(self._read_stream, blob_task)
         callback_thread_pool.submit(self._run_blob_cb, future, stream, args, kwargs)
@@ -146,6 +163,19 @@ class BlobHandler:
                         else:
                             blob_task.buffer[buf_size : buf_size + length] = buf
                     else:
+                        next_size = buf_size + length
+                        if blob_task.max_size > 0 and next_size > blob_task.max_size:
+                            log.error(
+                                f"{blob_task} Size limit exceeded: {thread_id=} {next_size=} "
+                                f"limit={blob_task.max_size}"
+                            )
+                            blob_task.future.set_exception(
+                                StreamError(
+                                    f"Blob received more data than configured limit {blob_task.max_size}: "
+                                    f"received at least {next_size} bytes"
+                                )
+                            )
+                            return
                         blob_task.buffer.append(buf)
                 except Exception as ex:
                     log.error(
