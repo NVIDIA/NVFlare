@@ -825,8 +825,9 @@ Decentralized federated learning without a central server.
    - ``pipe_type`` (default ``"cell_pipe"``): set to ``"file_pipe"`` when cell networking
      is unavailable or for third-party subprocess integrations.
    - ``submit_result_timeout``, ``download_complete_timeout``,
-     ``tensor_min_download_timeout``, ``PEER_READ_TIMEOUT``, and finite
-     ``max_resends``: set via ``recipe.add_client_config({...})`` — see
+     ``tensor_min_download_timeout``, and ``PEER_READ_TIMEOUT``: set via
+     ``recipe.add_client_config({...})``. ``max_resends`` defaults to finite
+     value ``3`` and can be overridden the same way — see
      :ref:`timeout_troubleshooting`.
 
 

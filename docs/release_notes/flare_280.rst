@@ -287,7 +287,10 @@ unbounded sequence of large download transactions, and
 alive while the server finishes pulling tensors from it. Jobs with explicitly
 configured large streaming request timeouts now receive warnings when related
 pipe/download-completion timeouts are shorter than the configured streaming
-timeout.
+timeout. Recipe-generated external-process jobs serialize the bounded
+``max_resends=3`` default in executor args, and top-level
+``recipe.add_client_config({"max_resends": N})`` overrides are applied before
+the subprocess Client API config is written.
 
 Server Memory: Tensor Disk Offload
 -----------------------------------
