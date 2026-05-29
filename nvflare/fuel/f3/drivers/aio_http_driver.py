@@ -33,7 +33,9 @@ from nvflare.security.logging import secure_format_exception
 log = logging.getLogger(__name__)
 
 WS_PATH = "f3"
-MAX_FRAME_SIZE = 2 * 1024 * 1024 * 1024  # Set it to 2GB
+# WebSocket/HTTP is not subject to the gRPC 2 GiB frame-size limit, so this stays at 2 GiB
+# rather than reusing net_utils.MAX_FRAME_SIZE (which is 2 GiB - 2 MiB for gRPC).
+MAX_FRAME_SIZE = 2 * 1024 * 1024 * 1024
 
 
 class WsConnection(Connection):
