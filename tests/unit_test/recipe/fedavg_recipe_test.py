@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from unittest.mock import patch
+import json
+from unittest.mock import MagicMock, patch
 
 import pytest
 import torch.nn as nn
@@ -23,9 +24,14 @@ from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
 from nvflare.app_common.app_constant import DefaultCheckpointFileName
+from nvflare.app_common.executors.client_api_launcher_executor import ClientAPILauncherExecutor
+from nvflare.app_common.executors.launcher_executor import LauncherExecutor
 from nvflare.app_common.np.recipes import NumpyFedAvgRecipe
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.client.config import ConfigKey
+from nvflare.client.constants import CLIENT_API_CONFIG
+from nvflare.fuel.utils.class_utils import instantiate_class
 
 
 class SimpleTestModel(nn.Module):
@@ -156,6 +162,47 @@ def get_server_component(recipe, component_id):
 def get_server_controller(recipe):
     server_app = recipe.job._deploy_map[SERVER_SITE_NAME]
     return server_app.app_config.workflows[0].controller
+
+
+def _get_train_executor_config(client_config):
+    for executor_entry in client_config.get("executors", []):
+        executor = executor_entry["executor"]
+        if "ClientAPILauncherExecutor" in executor.get("path", ""):
+            return executor_entry["executor"]
+    raise AssertionError("External-process Client API launcher executor not found in exported client config")
+
+
+def _make_exported_executor_fl_ctx(config_dir, job_id):
+    workspace = MagicMock()
+    workspace.get_app_config_dir.return_value = str(config_dir)
+    engine = MagicMock()
+    engine.get_workspace.return_value = workspace
+    engine.get_component.return_value = None
+    fl_ctx = MagicMock()
+    fl_ctx.get_engine.return_value = engine
+    fl_ctx.get_job_id.return_value = job_id
+    fl_ctx.get_identity_name.return_value = "site-1"
+    return fl_ctx
+
+
+def _run_exported_external_process_executor_startup(executor_config, config_dir, job_id):
+    executor = instantiate_class(executor_config["path"], executor_config.get("args", {}))
+    pipe = MagicMock()
+    pipe.export.return_value = ("nvflare.fuel.utils.pipe.cell_pipe.CellPipe", {})
+    executor.pipe = pipe
+    fl_ctx = _make_exported_executor_fl_ctx(config_dir=config_dir, job_id=job_id)
+
+    with (
+        patch.object(LauncherExecutor, "initialize", lambda self, fl_ctx: None),
+        patch.object(ClientAPILauncherExecutor, "_validate_timeout_config", lambda self, fl_ctx: None),
+        patch.object(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None),
+        patch.object(ClientAPILauncherExecutor, "log_error", lambda self, fl_ctx, msg: None),
+    ):
+        executor.initialize(fl_ctx)
+
+    client_api_config_path = config_dir / CLIENT_API_CONFIG
+    with open(client_api_config_path, "r") as f:
+        return json.load(f)
 
 
 class TestFedAvgRecipe:
@@ -826,6 +873,53 @@ class TestFedAvgRecipeDictConfigJobExport:
         # Verify export created the job directory
         assert os.path.exists(job_dir)
         assert os.path.exists(os.path.join(job_dir, "test_dict_ckpt_export"))
+
+
+class TestFedAvgRecipeExternalProcessStartup:
+    """Regression coverage for recipe-based external-process executor startup."""
+
+    @pytest.mark.parametrize("top_level_max_resends,expected_max_resends", [(None, 3), (5, 5)])
+    def test_exported_external_process_executor_startup_uses_bounded_max_resends(
+        self, tmp_path, top_level_max_resends, expected_max_resends
+    ):
+        """Simulate the rc4 failure path: export recipe config, reload executor args, then initialize."""
+        train_script = tmp_path / "train.py"
+        train_script.write_text("# Dummy train script\n")
+        job_name = f"test_external_process_max_resends_{expected_max_resends}"
+
+        recipe = FedAvgRecipe(
+            name=job_name,
+            model={"class_path": "model.SimpleNetwork", "args": {}},
+            train_script=str(train_script),
+            train_args="--epochs 1",
+            min_clients=2,
+            num_rounds=1,
+            launch_external_process=True,
+        )
+        if top_level_max_resends is not None:
+            recipe.add_client_config({ConfigKey.MAX_RESENDS: top_level_max_resends})
+
+        export_dir = tmp_path / "exported_job"
+        recipe.export(job_dir=str(export_dir))
+
+        config_dir = export_dir / job_name / "app" / "config"
+        client_config_path = config_dir / "config_fed_client.json"
+        with open(client_config_path, "r") as f:
+            client_config = json.load(f)
+
+        train_executor = _get_train_executor_config(client_config)
+        train_executor_args = train_executor.get("args", {})
+
+        assert "PTClientAPILauncherExecutor" in train_executor["path"]
+        assert train_executor_args[ConfigKey.MAX_RESENDS] == 3
+        if top_level_max_resends is not None:
+            assert client_config[ConfigKey.MAX_RESENDS] == top_level_max_resends
+
+        client_api_config = _run_exported_external_process_executor_startup(
+            train_executor, config_dir=config_dir, job_id=job_name
+        )
+
+        assert client_api_config[ConfigKey.TASK_EXCHANGE][ConfigKey.MAX_RESENDS] == expected_max_resends
 
 
 class TestNumpyFedAvgRecipeInitialCkpt:

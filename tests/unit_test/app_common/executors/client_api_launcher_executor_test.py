@@ -122,6 +122,12 @@ def test_launcher_converter_ids_warn_when_ignored(monkeypatch):
     assert executor._to_nvflare_converter is None
 
 
+def test_launcher_executor_forwards_max_resends_to_task_exchanger():
+    """LauncherExecutor must pass max_resends into its TaskExchanger base."""
+    executor = LauncherExecutor(pipe_id="test_pipe", max_resends=4)
+    assert executor.max_resends == 4
+
+
 # ---------------------------------------------------------------------------
 # Fix 3: submit_result_timeout wiring through executor
 # ---------------------------------------------------------------------------
@@ -351,26 +357,51 @@ def test_peer_read_timeout_and_external_pre_init_both_overridable(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Fix 10: max_resends wiring
+# max_resends wiring
 # ---------------------------------------------------------------------------
 
 
 def test_max_resends_default_stored():
     """Default max_resends (3) must be stored on the executor."""
     executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
-    assert executor._max_resends == 3
+    assert executor.max_resends == 3
+    assert "_max_resends" not in executor.__dict__
 
 
 def test_max_resends_custom_stored():
     """Custom max_resends must be stored exactly as given."""
     executor = ClientAPILauncherExecutor(pipe_id="test_pipe", max_resends=10)
-    assert executor._max_resends == 10
+    assert executor.max_resends == 10
+    assert "_max_resends" not in executor.__dict__
 
 
 def test_max_resends_none_stored():
     """max_resends=None (unlimited) must be stored as-is."""
     executor = ClientAPILauncherExecutor(pipe_id="test_pipe", max_resends=None)
-    assert executor._max_resends is None
+    assert executor.max_resends is None
+    assert "_max_resends" not in executor.__dict__
+
+
+def test_fed_job_config_serializes_default_max_resends(tmp_path):
+    """Regression: default max_resends must not serialize as null in executor args."""
+    from nvflare.client.config import ConfigKey
+    from nvflare.job_config.fed_job_config import FedJobConfig
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
+    args = FedJobConfig(job_name="job", min_clients=1)._get_args(executor, str(tmp_path))
+
+    assert args[ConfigKey.MAX_RESENDS] == 3
+
+
+def test_fed_job_config_serializes_custom_max_resends(tmp_path):
+    """Regression: custom max_resends must serialize from TaskExchanger state."""
+    from nvflare.client.config import ConfigKey
+    from nvflare.job_config.fed_job_config import FedJobConfig
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe", max_resends=7)
+    args = FedJobConfig(job_name="job", min_clients=1)._get_args(executor, str(tmp_path))
+
+    assert args[ConfigKey.MAX_RESENDS] == 7
 
 
 def test_prepare_config_includes_max_resends(monkeypatch):
@@ -419,6 +450,78 @@ def test_prepare_config_includes_max_resends(monkeypatch):
     task_exchange = captured.get(ConfigKey.TASK_EXCHANGE, {})
     assert ConfigKey.MAX_RESENDS in task_exchange
     assert task_exchange[ConfigKey.MAX_RESENDS] == 5
+
+
+def test_client_config_overrides_apply_before_subprocess_config_write(monkeypatch):
+    """add_client_config overrides must be reflected in the generated Client API config."""
+    from unittest.mock import MagicMock
+
+    from nvflare.client.config import ConfigKey
+
+    captured = {}
+    monkeypatch.setattr(
+        _GCV_MODULE,
+        _make_gcv_stub(
+            {
+                ConfigKey.SUBMIT_RESULT_TIMEOUT: 650.0,
+                ConfigKey.MAX_RESENDS: 8,
+                ConfigKey.DOWNLOAD_COMPLETE_TIMEOUT: 2400.0,
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "nvflare.app_common.executors.client_api_launcher_executor.write_config_to_file",
+        lambda config_data, config_file_path: captured.update(config_data),
+    )
+    monkeypatch.setattr(
+        "nvflare.app_common.executors.client_api_launcher_executor.update_export_props",
+        lambda config_data, fl_ctx: None,
+    )
+    monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "_validate_timeout_config", lambda self, fl_ctx: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None)
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
+    mock_pipe = MagicMock()
+    mock_pipe.export.return_value = ("nvflare.some.PipeClass", {})
+    executor.pipe = mock_pipe
+    executor.get_pipe_channel_name = lambda: "task"
+
+    fake_workspace = MagicMock()
+    fake_workspace.get_app_config_dir.return_value = "/tmp/fake_dir"
+    fake_engine = MagicMock()
+    fake_engine.get_workspace.return_value = fake_workspace
+    fl_ctx = MagicMock()
+    fl_ctx.get_engine.return_value = fake_engine
+    fl_ctx.get_job_id.return_value = "test_job"
+
+    executor.initialize(fl_ctx)
+
+    task_exchange = captured[ConfigKey.TASK_EXCHANGE]
+    assert task_exchange[ConfigKey.SUBMIT_RESULT_TIMEOUT] == 650.0
+    assert task_exchange[ConfigKey.MAX_RESENDS] == 8
+    assert task_exchange[ConfigKey.DOWNLOAD_COMPLETE_TIMEOUT] == 2400.0
+    assert executor._submit_result_timeout == 650.0
+    assert executor.max_resends == 8
+    assert executor._download_complete_timeout == 2400.0
+
+
+def test_client_config_max_resends_override_rejects_negative(monkeypatch):
+    """Invalid top-level max_resends overrides must fail before config generation."""
+    from nvflare.client.config import ConfigKey
+
+    errors = []
+    monkeypatch.setattr(_GCV_MODULE, _make_gcv_stub({ConfigKey.MAX_RESENDS: -1}))
+    monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
+    monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_error", lambda self, fl_ctx, msg: errors.append(msg))
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
+
+    with pytest.raises(ValueError, match="max_resends must be a finite non-negative integer"):
+        executor.initialize(_FakeFLContext(_FakeCell()))
+
+    assert any("max_resends" in e for e in errors), errors
 
 
 def test_client_config_get_max_resends_default():

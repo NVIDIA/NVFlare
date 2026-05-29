@@ -29,6 +29,8 @@ from nvflare.utils.configs import get_client_config_value
 
 logger = logging.getLogger(__name__)
 
+_CONFIG_VALUE_MISSING = object()
+
 
 class ClientAPILauncherExecutor(LauncherExecutor):
     def __init__(
@@ -58,7 +60,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
         submit_result_timeout: float = 300.0,
-        max_resends: int = 3,
+        max_resends: Optional[int] = 3,
         download_complete_timeout: float = 1800.0,
     ) -> None:
         """Initializes the ClientAPILauncherExecutor.
@@ -94,16 +96,17 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                 pipe message.  With reverse PASS_THROUGH enabled CJ ACKs immediately (LazyDownloadRef creation is
                 microseconds), so 300 s is a very generous allowance.  Without reverse PASS_THROUGH, CJ must
                 download the full result before ACKing; in that case this should be at least as large as the
-                expected transfer time.  Configurable via recipe.add_client_config({"submit_result_timeout": N}).
+                expected transfer time. Recipe-based jobs can override via
+                recipe.add_client_config({"submit_result_timeout": N}).
             max_resends (int): Maximum number of retries after the initial result send if CJ does not ACK within
                 submit_result_timeout. Defaults to 3. Set to a finite non-negative integer; 0 disables retries.
                 None means unlimited retries (unsafe for large models because each retry creates a new download
-                transaction) and is rejected at job initialization. Configurable via
-                recipe.add_client_config({"max_resends": N}).
+                transaction) and is rejected at job initialization. Recipe-based jobs serialize this default in
+                executor args; override per job via recipe.add_client_config({"max_resends": N}).
             download_complete_timeout (float): How long (seconds) the subprocess waits after send_to_peer() ACKs
                 for the server to finish downloading its tensors from the subprocess DownloadService.  Without
                 this gate, the subprocess may exit before the download completes and the server gets
-                "no ref found".  Defaults to 1800 s.  Configurable via
+                missing download refs. Defaults to 1800 s. Recipe-based jobs can override via
                 recipe.add_client_config({"download_complete_timeout": N}).
         """
         LauncherExecutor.__init__(
@@ -126,8 +129,10 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             submit_model_task_name=submit_model_task_name,
             from_nvflare_converter_id=from_nvflare_converter_id,
             to_nvflare_converter_id=to_nvflare_converter_id,
+            max_resends=max_resends,
         )
 
+        self._always_serialize_args = {"max_resends"}
         self._server_expected_format = server_expected_format
         self._params_exchange_format = params_exchange_format
         self._params_transfer_type = params_transfer_type
@@ -135,11 +140,10 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         self._memory_gc_rounds = memory_gc_rounds
         self._cuda_empty_cache = cuda_empty_cache
         self._submit_result_timeout = submit_result_timeout
-        self._max_resends = max_resends
         self._download_complete_timeout = download_complete_timeout
         self._cj_round_count = 0
 
-        # Allow the subprocess to exit naturally after Fix 16's download_done.wait()
+        # Allow the subprocess to exit naturally after its download-completion wait
         # before stop_task() sends SIGTERM.  Without this, _finalize_external_execution()
         # kills the subprocess immediately, tearing down its cell connection before the
         # server can download tensors from it ("no path" / deadlock).
@@ -159,6 +163,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         super().finalize(fl_ctx)
 
     def initialize(self, fl_ctx: FLContext) -> None:
+        self._apply_client_config_overrides(fl_ctx)
         self.prepare_config_for_launch(fl_ctx)
         super().initialize(fl_ctx)
 
@@ -194,38 +199,67 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                         f"Receiver-side PASS_THROUGH enabled on CJ cell for channel '{channel_name}'",
                     )
 
-        # Check for top-level config override for external_pre_init_timeout
-        # This allows jobs to configure timeout via add_client_config()
-        config_timeout = get_client_config_value(fl_ctx, EXTERNAL_PRE_INIT_TIMEOUT)
-        if config_timeout is not None:
-            timeout_value = float(config_timeout)
-            if timeout_value <= 0:
-                self.log_error(fl_ctx, f"Invalid EXTERNAL_PRE_INIT_TIMEOUT: {timeout_value}s (must be positive)")
-                raise ValueError(f"EXTERNAL_PRE_INIT_TIMEOUT must be positive, got {timeout_value}")
-            self.log_info(
-                fl_ctx,
-                f"Overriding external_pre_init_timeout from config: {self._external_pre_init_timeout}s -> {timeout_value}s",
-            )
-            self._external_pre_init_timeout = timeout_value
-
-        # Check for top-level config override for peer_read_timeout.
-        # peer_read_timeout (CJ side) and submit_result_timeout (subprocess side) must be
-        # configured together so the system behaves consistently under large-model transfers.
-        # Placing both overrides in config_fed_client.json (via add_client_config()) lets
-        # operators tune them in one place without touching executor component parameters.
-        config_peer_timeout = get_client_config_value(fl_ctx, PEER_READ_TIMEOUT)
-        if config_peer_timeout is not None:
-            peer_timeout_value = float(config_peer_timeout)
-            if peer_timeout_value <= 0:
-                self.log_error(fl_ctx, f"Invalid PEER_READ_TIMEOUT: {peer_timeout_value}s (must be positive)")
-                raise ValueError(f"PEER_READ_TIMEOUT must be positive, got {peer_timeout_value}")
-            self.log_info(
-                fl_ctx,
-                f"Overriding peer_read_timeout from config: {self.peer_read_timeout}s -> {peer_timeout_value}s",
-            )
-            self.peer_read_timeout = peer_timeout_value
-
         self._validate_timeout_config(fl_ctx)
+
+    def _get_client_config_override(self, fl_ctx: FLContext, key: str):
+        return get_client_config_value(fl_ctx, key, _CONFIG_VALUE_MISSING)
+
+    def _apply_positive_float_client_config_override(self, fl_ctx: FLContext, key: str, attr_name: str):
+        value = self._get_client_config_override(fl_ctx, key)
+        if value is _CONFIG_VALUE_MISSING:
+            return
+
+        try:
+            timeout_value = float(value)
+        except (TypeError, ValueError) as e:
+            msg = f"{key} must be positive, got {value}"
+            self.log_error(fl_ctx, msg)
+            raise ValueError(msg) from e
+
+        if timeout_value <= 0:
+            self.log_error(fl_ctx, f"Invalid {key}: {timeout_value}s (must be positive)")
+            raise ValueError(f"{key} must be positive, got {timeout_value}")
+
+        old_value = getattr(self, attr_name)
+        self.log_info(fl_ctx, f"Overriding {attr_name} from config: {old_value}s -> {timeout_value}s")
+        setattr(self, attr_name, timeout_value)
+
+    def _apply_max_resends_client_config_override(self, fl_ctx: FLContext):
+        value = self._get_client_config_override(fl_ctx, ConfigKey.MAX_RESENDS)
+        if value is _CONFIG_VALUE_MISSING:
+            return
+
+        if value is None:
+            max_resends = None
+        else:
+            try:
+                max_resends = int(value)
+            except (TypeError, ValueError) as e:
+                msg = f"{ConfigKey.MAX_RESENDS} must be a finite non-negative integer, got {value}"
+                self.log_error(fl_ctx, msg)
+                raise ValueError(msg) from e
+            if max_resends < 0:
+                msg = f"{ConfigKey.MAX_RESENDS} must be a finite non-negative integer, got {max_resends}"
+                self.log_error(fl_ctx, msg)
+                raise ValueError(msg)
+
+        self.log_info(fl_ctx, f"Overriding max_resends from config: {self.max_resends} -> {max_resends}")
+        self.max_resends = max_resends
+
+    def _apply_client_config_overrides(self, fl_ctx: FLContext):
+        # Apply top-level config_fed_client.json overrides before writing the
+        # subprocess Client API config so add_client_config() affects both sides.
+        self._apply_positive_float_client_config_override(
+            fl_ctx, EXTERNAL_PRE_INIT_TIMEOUT, "_external_pre_init_timeout"
+        )
+        self._apply_positive_float_client_config_override(fl_ctx, PEER_READ_TIMEOUT, "peer_read_timeout")
+        self._apply_positive_float_client_config_override(
+            fl_ctx, ConfigKey.SUBMIT_RESULT_TIMEOUT, "_submit_result_timeout"
+        )
+        self._apply_max_resends_client_config_override(fl_ctx)
+        self._apply_positive_float_client_config_override(
+            fl_ctx, ConfigKey.DOWNLOAD_COMPLETE_TIMEOUT, "_download_complete_timeout"
+        )
 
     def _decomposer_prefix(self) -> str:
         """Return the config-var prefix for the active decomposer type.
@@ -245,15 +279,16 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             msg = (
                 "download_complete_timeout is None. This timeout is required to keep the subprocess alive while "
                 "the server downloads large tensor results. Set download_complete_timeout to a positive value "
-                "in job config."
+                "in executor config or via recipe.add_client_config()."
             )
             self.log_error(fl_ctx, msg)
             raise ValueError(msg)
 
-        if self._max_resends is None:
+        if self.max_resends is None:
             msg = (
                 "max_resends is None (unbounded). This can turn one delayed large-model transfer into an "
-                "unlimited resend storm. Set max_resends to a finite non-negative integer (e.g. 3) in job config."
+                "unbounded resend loop. Set max_resends to a finite non-negative integer (e.g. 3) in executor "
+                "config or via recipe.add_client_config()."
             )
             self.log_error(fl_ctx, msg)
             raise ValueError(msg)
@@ -313,7 +348,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                 f"Timeout inconsistency: download_complete_timeout ({self._download_complete_timeout}s) < "
                 f"{prefix}streaming_per_request_timeout ({per_req}s). "
                 "The subprocess may stop before the server finishes downloading tensor results. "
-                f"Set download_complete_timeout >= {per_req}s in job config.",
+                f"Set download_complete_timeout >= {per_req}s in executor config or via recipe.add_client_config().",
             )
 
         if self._submit_result_timeout > min_dl:
@@ -391,7 +426,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             ConfigKey.MEMORY_GC_ROUNDS: self._memory_gc_rounds,
             ConfigKey.CUDA_EMPTY_CACHE: self._cuda_empty_cache,
             ConfigKey.SUBMIT_RESULT_TIMEOUT: self._submit_result_timeout,
-            ConfigKey.MAX_RESENDS: self._max_resends,
+            ConfigKey.MAX_RESENDS: self.max_resends,
             ConfigKey.DOWNLOAD_COMPLETE_TIMEOUT: self._download_complete_timeout,
             ConfigKey.LAUNCH_ONCE: self._resolve_launch_once(fl_ctx),
         }
