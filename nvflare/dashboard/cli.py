@@ -101,7 +101,7 @@ def start(args):
     try:
         container_obj = client.containers.run(
             dashboard_image,
-            entrypoint=["python", "-m", "nvflare.dashboard.wsgi"],
+            entrypoint=["python3", "-m", "nvflare.dashboard.wsgi"],
             detach=True,
             auto_remove=True,
             name="nvflare-dashboard",
