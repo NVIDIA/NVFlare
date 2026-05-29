@@ -142,12 +142,12 @@ clients, logs may also show repeated ``no ref found`` messages from
 ``DownloadService`` after delayed retries.
 
 **Cause**: ``submit_result_timeout`` is the time the training subprocess waits for
-the client job process to acknowledge its result. ``peer_read_timeout`` is the
-parent client job's corresponding wait for the subprocess to read a task. For
-large models (5 GB+) and many clients, either side can exceed short defaults if
-streaming request timeouts are configured higher than the pipe timeout. The
-subprocess also must remain alive long enough for the server to finish pulling
-tensors from its ``DownloadService`` after result ACK.
+the client job process to acknowledge its result. ``PEER_READ_TIMEOUT`` is the
+client config key for the parent client job's corresponding wait for the
+subprocess to read a task. For large models (5 GB+) and many clients, either side
+can exceed short defaults if streaming request timeouts are configured higher
+than the pipe timeout. The subprocess also must remain alive long enough for the
+server to finish pulling tensors from its ``DownloadService`` after result ACK.
 
 **Solution**:
 
