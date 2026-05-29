@@ -145,7 +145,7 @@ def _fail_if_container_exited(container_obj):
         exit(1)
 
     status = getattr(container_obj, "status", None)
-    if status not in {"dead", "exited"}:
+    if status not in {"dead", "exited", "removing"}:
         return
 
     print(f"Dashboard container exited immediately with status: {status}")
