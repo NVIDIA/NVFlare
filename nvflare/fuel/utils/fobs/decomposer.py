@@ -107,7 +107,7 @@ class Externalizer:
         Dict/list subclasses are reconstructed with no-arg constructors at every level. This matches the contract
         already required by DictDecomposer.recompose() for top-level dict subclasses, but also means nested container
         subclasses (both dict and list) must tolerate no-arg construction and may not preserve constructor state such
-        as a defaultdict's default_factory or a list subclass that requires a capacity/initializer argument.
+        as a defaultdict's default_factory or the capacity/initializer argument of a list subclass.
         """
         if not self.manager:
             return target
