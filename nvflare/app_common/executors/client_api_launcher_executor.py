@@ -25,6 +25,7 @@ from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType, write
 from nvflare.client.constants import CLIENT_API_CONFIG, EXTERNAL_PRE_INIT_TIMEOUT, PEER_READ_TIMEOUT
 from nvflare.fuel.utils.attributes_exportable import ExportMode
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import MIN_DOWNLOAD_TIMEOUT_DEFAULT
+from nvflare.fuel.utils.validation_utils import check_non_negative_int
 from nvflare.utils.configs import get_client_config_value
 
 logger = logging.getLogger(__name__)
@@ -230,24 +231,20 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         if value is _CONFIG_VALUE_MISSING:
             return
 
-        if value is None:
-            msg = f"{ConfigKey.MAX_RESENDS} must be a finite non-negative integer, got None"
-            self.log_error(fl_ctx, msg)
-            raise ValueError(msg)
-
+        # Validate strictly with the same helper the TaskExchanger constructor uses so the
+        # override path cannot silently truncate floats (e.g. 2.9 -> 2) or accept numeric
+        # strings ("3") via int() coercion. bool is an int subclass but is not a valid count.
         try:
-            max_resends = int(value)
+            if isinstance(value, bool):
+                raise TypeError(f"{ConfigKey.MAX_RESENDS} must be an int, but got {type(value)}.")
+            check_non_negative_int(ConfigKey.MAX_RESENDS, value)
         except (TypeError, ValueError) as e:
-            msg = f"{ConfigKey.MAX_RESENDS} must be a finite non-negative integer, got {value}"
+            msg = f"{ConfigKey.MAX_RESENDS} must be a finite non-negative integer, got {value!r}"
             self.log_error(fl_ctx, msg)
             raise ValueError(msg) from e
-        if max_resends < 0:
-            msg = f"{ConfigKey.MAX_RESENDS} must be a finite non-negative integer, got {max_resends}"
-            self.log_error(fl_ctx, msg)
-            raise ValueError(msg)
 
-        self.log_info(fl_ctx, f"Overriding max_resends from config: {self.max_resends} -> {max_resends}")
-        self.max_resends = max_resends
+        self.log_info(fl_ctx, f"Overriding max_resends from config: {self.max_resends} -> {value}")
+        self.max_resends = value
 
     def _apply_client_config_overrides(self, fl_ctx: FLContext):
         # Apply top-level config_fed_client.json overrides before writing the

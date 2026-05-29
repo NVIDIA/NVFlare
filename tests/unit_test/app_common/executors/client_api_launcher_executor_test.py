@@ -507,9 +507,12 @@ def test_client_config_overrides_apply_before_subprocess_config_write(monkeypatc
     assert executor._stop_task_wait_timeout == 2400.0
 
 
-@pytest.mark.parametrize("value", [-1, None])
+@pytest.mark.parametrize("value", [-1, None, 2.9, 3.0, "3", True])
 def test_client_config_max_resends_override_rejects_invalid_values(monkeypatch, value):
-    """Invalid top-level max_resends overrides must fail before config generation."""
+    """Invalid top-level max_resends overrides must fail before config generation.
+
+    Floats (even integer-valued like 3.0), numeric strings, bools, negatives, and None must be
+    rejected instead of silently coerced via int() (e.g. 2.9 -> 2)."""
     from nvflare.client.config import ConfigKey
 
     errors = []
