@@ -34,7 +34,10 @@ job initialization:
   series of replacement download transactions.
 
 If your 2.7.x job explicitly set either value to ``None``, update it before
-running on 2.8.0:
+running on 2.8.0. Recipe-based external-process jobs already serialize the
+default ``max_resends=3`` in executor args, so the following setting is only
+needed when overriding a previous explicit ``None`` or choosing a different
+retry budget:
 
 .. code-block:: python
 
