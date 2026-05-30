@@ -581,11 +581,12 @@ def test_do_submit_result_waits_for_result_upload_progress_until_completion():
     assert time.time() - start > agent._download_complete_timeout
 
 
-def test_simulated_many_clients_large_result_upload_progress_succeeds_end_to_end():
+def test_simulated_many_clients_large_result_upload_delayed_complete_cb_uses_progress_not_timeout():
     clients = [_start_result_upload_submit_client(index, idle_timeout=0.5) for index in range(16)]
     total_bytes = 5 * 1024 * 1024 * 1024
     chunks = 6
     bytes_per_chunk = total_bytes // chunks
+    start = time.time()
 
     for sequence in range(1, chunks + 1):
         for client in clients:
@@ -600,6 +601,9 @@ def test_simulated_many_clients_large_result_upload_progress_succeeds_end_to_end
                 timestamp=time.time(),
             )
         time.sleep(0.01)
+
+    assert time.time() - start > max(client["agent"]._download_complete_timeout for client in clients)
+    assert all(client["thread"].is_alive() for client in clients)
 
     for client in clients:
         client["callbacks"]["progress"](
@@ -618,12 +622,13 @@ def test_simulated_many_clients_large_result_upload_progress_succeeds_end_to_end
         client["thread"].join(timeout=2.0)
         assert not client["thread"].is_alive()
         assert client["result"]["ok"] is True
+        client["agent"].pipe_handler.send_to_peer.assert_called_once()
         assert any(
             "waiting for server tensor download" in call[0][0] for call in client["agent"].logger.info.call_args_list
         )
 
 
-def test_simulated_many_clients_large_result_upload_stalled_client_fails_end_to_end(monkeypatch):
+def test_simulated_many_clients_large_result_upload_delayed_complete_cb_stalled_client_fails(monkeypatch):
     deleted = []
     monkeypatch.setattr(
         "nvflare.client.flare_agent.DownloadService.delete_transaction", lambda tx_id: deleted.append(tx_id)
@@ -683,6 +688,7 @@ def test_simulated_many_clients_large_result_upload_stalled_client_fails_end_to_
     assert deleted == [stalled_client["tx_id"]]
     assert any("stalled" in call[0][0] for call in stalled_client["agent"].logger.warning.call_args_list)
     for index, client in enumerate(clients):
+        client["agent"].pipe_handler.send_to_peer.assert_called_once()
         if index != stalled_index:
             assert client["result"]["ok"] is True
 

@@ -1111,6 +1111,77 @@ def test_simulated_large_model_broadcast_many_clients_progress_suppresses_resend
     assert all(wait_results)
 
 
+def test_simulated_large_model_broadcast_many_clients_delayed_ack_uses_progress_not_retry(monkeypatch):
+    _patch_logs(monkeypatch)
+    now = [1000.0]
+    monkeypatch.setattr(task_exchanger_module.time, "time", lambda: now[0])
+
+    client_count = 16
+    timeout_windows = 6
+    total_bytes = 5 * 1024 * 1024 * 1024
+    bytes_per_window = total_bytes // timeout_windows
+    send_calls = []
+
+    for client_idx in range(client_count):
+        task_id = f"task-{client_idx}"
+        job_id = "large-model-job"
+        transfer_id = f"large-model-ref-{client_idx}"
+        executor = TaskExchanger(
+            pipe_id=f"pipe-{client_idx}",
+            peer_read_timeout=1.0,
+            streaming_idle_timeout=10.0,
+            result_poll_interval=0.01,
+        )
+        progress_pipe = _ProgressPipe(executor)
+
+        def send_cb(handler, msg, timeout, abort_signal):
+            send_calls.append((client_idx, msg.msg_id))
+
+            def _send_stream_progress(**kwargs):
+                progress_pipe.send(Message.new_request(Topic.STREAM_PROGRESS, kwargs))
+
+            cell_msg = CellMessage(
+                headers={
+                    MessageHeaderKey.MSG_ROOT_ID: msg.msg_id,
+                    MessageHeaderKey.REQ_ID: msg.msg_id,
+                    FLMetaKey.JOB_ID: job_id,
+                },
+                payload=None,
+            )
+            progress_cb = ViaDownloaderDecomposer._make_stream_progress_cb(
+                {
+                    fobs.FOBSContextKey.MESSAGE: cell_msg,
+                    fobs.FOBSContextKey.STREAM_PROGRESS_CB: _send_stream_progress,
+                },
+                transfer_id,
+            )
+
+            for sequence in range(1, timeout_windows + 1):
+                progress_cb(
+                    sequence=sequence,
+                    bytes_done=sequence * bytes_per_window,
+                    state="active",
+                )
+                now[0] += timeout + 0.1
+                assert msg._progress_wait_cb() is True
+
+            progress_cb(sequence=timeout_windows + 1, bytes_done=total_bytes, state="completed")
+            now[0] += timeout + 0.1
+            assert msg._progress_wait_cb() is True
+            handler.replies.append(_reply_for(msg))
+            return True
+
+        handler = _FakePipeHandler(send_cb)
+        executor.pipe_handler = handler
+
+        result = executor._do_execute("train", _make_task(task_id=task_id), _make_fl_ctx(job_id=job_id), _AbortSignal())
+
+        assert result.get_return_code() == ReturnCode.OK
+        assert handler.send_calls == 1
+
+    assert len(send_calls) == client_count
+
+
 def test_simulated_large_model_broadcast_many_clients_stalled_receiver_fails_wait(monkeypatch):
     _patch_logs(monkeypatch)
     now = [1000.0]
@@ -1189,3 +1260,38 @@ def test_simulated_large_model_broadcast_many_clients_stalled_receiver_fails_wai
 
     assert completed == client_count - 1
     assert stalled_wait_result is False
+
+
+def test_simulated_large_model_broadcast_many_clients_delayed_ack_without_progress_times_out(monkeypatch):
+    _patch_logs(monkeypatch)
+    now = [1000.0]
+    monkeypatch.setattr(task_exchanger_module.time, "time", lambda: now[0])
+
+    client_count = 16
+    failures = 0
+
+    for client_idx in range(client_count):
+        task_id = f"task-{client_idx}"
+        job_id = "large-model-job"
+        executor = TaskExchanger(
+            pipe_id=f"pipe-{client_idx}",
+            peer_read_timeout=1.0,
+            streaming_idle_timeout=10.0,
+            result_poll_interval=0.01,
+        )
+
+        def send_cb(handler, msg, timeout, abort_signal):
+            now[0] += 11.0
+            assert msg._progress_wait_cb() is False
+            return False
+
+        handler = _FakePipeHandler(send_cb)
+        executor.pipe_handler = handler
+
+        result = executor._do_execute("train", _make_task(task_id=task_id), _make_fl_ctx(job_id=job_id), _AbortSignal())
+
+        assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+        assert handler.send_calls == 1
+        failures += 1
+
+    assert failures == client_count
