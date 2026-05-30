@@ -1039,6 +1039,8 @@ def test_download_object_progress_flows_through_subprocess_pipe_to_task_exchange
 
 
 def test_swarm_task_payload_progress_from_peer_parent_suppresses_resend(monkeypatch):
+    # Focused unit coverage for the task-payload wait policy; test_swarm_progress_e2e.py
+    # covers the same behavior through SwarmClientController -> TaskExchanger -> CellPipe.
     _patch_logs(monkeypatch)
     executor = TaskExchanger(pipe_id="pipe", peer_read_timeout=0.01, streaming_idle_timeout=10.0)
     progress_pipe = _ProgressPipe(executor)
