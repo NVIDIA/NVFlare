@@ -18,6 +18,7 @@ from enum import Enum
 from typing import Dict, Optional
 
 from nvflare.apis.fl_constant import ConnPropKey, FLMetaKey
+from nvflare.fuel.f3.streaming.transfer_progress import DEFAULT_STREAMING_IDLE_TIMEOUT, STREAMING_IDLE_TIMEOUT
 from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
@@ -55,6 +56,7 @@ class ConfigKey:
     SUBMIT_RESULT_TIMEOUT = "submit_result_timeout"
     MAX_RESENDS = "max_resends"
     DOWNLOAD_COMPLETE_TIMEOUT = "download_complete_timeout"
+    STREAMING_IDLE_TIMEOUT = STREAMING_IDLE_TIMEOUT
     LAUNCH_ONCE = "launch_once"
 
 
@@ -206,6 +208,15 @@ class ClientConfig:
         recipe.add_client_config({"download_complete_timeout": N}).
         """
         return float(self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.DOWNLOAD_COMPLETE_TIMEOUT, 1800.0))
+
+    def get_streaming_idle_timeout(self) -> float:
+        """Return shared idle timeout for streamed task payloads and result uploads."""
+
+        return float(
+            self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(
+                ConfigKey.STREAMING_IDLE_TIMEOUT, DEFAULT_STREAMING_IDLE_TIMEOUT
+            )
+        )
 
     def get_submit_result_timeout(self) -> float:
         """Return the timeout (seconds) for the subprocess to wait for CJ to ACK a result message.

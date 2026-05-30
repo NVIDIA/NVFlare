@@ -19,6 +19,7 @@ from nvflare.apis.signal import Signal
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import ReturnCode
 from nvflare.fuel.f3.message import Message
+from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.waiter_utils import WaiterRC
 
 
@@ -39,6 +40,28 @@ def _make_cell():
     cell.decode_pass_through_channels = set()
     cell.get_fobs_context = MagicMock(return_value={})
     return cell
+
+
+def test_encode_message_can_stamp_receiver_ids_for_multi_receiver_download_refs(monkeypatch):
+    cell = _make_cell()
+    captured = {}
+    cell.get_fobs_context.side_effect = lambda props=None: props
+
+    def _capture_encode(_msg, _encoding_key, fobs_ctx):
+        captured.update(fobs_ctx)
+        return 0
+
+    monkeypatch.setattr(cell_module, "encode_payload", _capture_encode)
+
+    cell._encode_message(
+        Message(headers={}, payload=None),
+        abort_signal=Signal(),
+        num_receivers=2,
+        receiver_ids=["receiver-a", "receiver-b"],
+    )
+
+    assert captured[FOBSContextKey.NUM_RECEIVERS] == 2
+    assert captured[FOBSContextKey.RECEIVER_IDS] == ["receiver-a", "receiver-b"]
 
 
 def test_remote_processing_wait_continues_without_resend_while_progress_callback_is_true(monkeypatch):

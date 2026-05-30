@@ -233,7 +233,7 @@ class Cell(StreamCell):
         future_to_target = {}
 
         # encode the request now so each target thread won't need to do it again.
-        self._encode_message(request, abort_signal, num_receivers=len(targets))
+        self._encode_message(request, abort_signal, num_receivers=len(targets), receiver_ids=targets)
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(targets)) as executor:
             self.logger.debug(f"broadcast to {targets=}")
@@ -337,12 +337,14 @@ class Cell(StreamCell):
         else:
             return True
 
-    def _encode_message(self, msg: Message, abort_signal, num_receivers=1) -> int:
+    def _encode_message(self, msg: Message, abort_signal, num_receivers=1, receiver_ids=None) -> int:
         try:
             props = {
                 FOBSContextKey.ABORT_SIGNAL: abort_signal,
                 FOBSContextKey.NUM_RECEIVERS: num_receivers,
             }
+            if receiver_ids is not None:
+                props[FOBSContextKey.RECEIVER_IDS] = receiver_ids
             return encode_payload(msg, StreamHeaderKey.PAYLOAD_ENCODING, fobs_ctx=self.get_fobs_context(props))
         except BaseException as exc:
             self.logger.error(f"Can't encode {msg=} {exc=}")
@@ -359,6 +361,8 @@ class Cell(StreamCell):
         optional=False,
         abort_signal: Signal = None,
         progress_wait_cb=None,
+        num_receivers=1,
+        receiver_ids=None,
     ):
         """Stream one request to the target
 
@@ -375,7 +379,7 @@ class Cell(StreamCell):
         Returns: reply data
 
         """
-        self._encode_message(request, abort_signal)
+        self._encode_message(request, abort_signal, num_receivers=num_receivers, receiver_ids=receiver_ids)
         return self._send_one_request(
             channel, target, topic, request, timeout, secure, optional, abort_signal, progress_wait_cb
         )

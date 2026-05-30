@@ -22,6 +22,7 @@ from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
 from nvflare.fuel.f3.message import Message
+from nvflare.fuel.f3.streaming.transfer_progress import TransferProgressState
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception
 
@@ -181,6 +182,8 @@ class _Ref:
         self.num_receivers_done = 0
         self.receiver_statuses = {}
         self._downloaded_to_all_called = False
+        self._receiver_progress = {}
+        self._progress_lock = threading.Lock()
 
     def mark_active(self):
         self.tx.mark_active()
@@ -200,6 +203,87 @@ class _Ref:
             # this object is done for all receivers
             self._downloaded_to_all_called = True
             self.obj.downloaded_to_all()
+
+    def emit_progress(
+        self,
+        *,
+        receiver_id: Optional[str],
+        state: str = TransferProgressState.ACTIVE,
+        bytes_delta: int = 0,
+        items_delta: Optional[int] = None,
+        force: bool = False,
+    ):
+        if not self.tx.progress_cb:
+            return
+
+        now = time.time()
+        event = None
+        with self._progress_lock:
+            receiver_progress = self._receiver_progress.get(receiver_id)
+            if receiver_progress is None:
+                receiver_progress = _ReceiverProgress()
+                self._receiver_progress[receiver_id] = receiver_progress
+
+            if receiver_progress.terminal:
+                return
+
+            first_emit = not receiver_progress.started
+            if first_emit:
+                receiver_progress.started = True
+
+            if bytes_delta > 0:
+                receiver_progress.bytes_done += bytes_delta
+            if items_delta is not None and items_delta > 0:
+                receiver_progress.items_done = (receiver_progress.items_done or 0) + items_delta
+
+            counters_advanced = bytes_delta > 0 or (items_delta is not None and items_delta > 0)
+            terminal = state in TransferProgressState.TERMINAL_STATES
+            if (
+                not force
+                and not first_emit
+                and not terminal
+                and (not counters_advanced or now - receiver_progress.last_emit_time < self.tx.progress_interval)
+            ):
+                return
+
+            receiver_progress.sequence += 1
+            receiver_progress.last_emit_time = now
+            if terminal:
+                receiver_progress.terminal = True
+
+            event = {
+                "tx_id": self.tx.tid,
+                "ref_id": self.rid,
+                "receiver_id": receiver_id,
+                "sequence": receiver_progress.sequence,
+                "bytes_done": receiver_progress.bytes_done,
+                "items_done": receiver_progress.items_done,
+                "timestamp": now,
+                "state": state,
+            }
+
+        self.tx.emit_progress_event(event)
+
+    def emit_terminal_progress_for_started_receivers(self, state: str):
+        if not self.tx.progress_cb:
+            return
+
+        with self._progress_lock:
+            receiver_ids = list(self._receiver_progress)
+
+        for receiver_id in receiver_ids:
+            self.emit_progress(receiver_id=receiver_id, state=state, force=True)
+
+
+class _ReceiverProgress:
+
+    def __init__(self):
+        self.sequence = 0
+        self.bytes_done = 0
+        self.items_done = None
+        self.started = False
+        self.terminal = False
+        self.last_emit_time = 0.0
 
 
 class ProduceRC:
@@ -244,6 +328,8 @@ class _Transaction:
         tx_id=None,
         transaction_done_cb=None,
         cb_kwargs=None,
+        progress_cb: Optional[Callable] = None,
+        progress_interval: float = 30.0,
     ):
         """Constructor of the transaction object.
 
@@ -263,6 +349,10 @@ class _Transaction:
         self.total_bytes = 0
         self.transaction_done_cb = transaction_done_cb
         self.cb_kwargs = cb_kwargs
+        self.progress_cb = progress_cb
+        if progress_interval < 0:
+            raise ValueError(f"progress_interval must be non-negative, got {progress_interval}")
+        self.progress_interval = float(progress_interval)
         self.refs = []
         self.logger = get_obj_logger(self)
 
@@ -314,6 +404,11 @@ class _Transaction:
 
     def transaction_done(self, status: str):
         """Called when the transaction is finished."""
+        progress_state = self._progress_state_for_transaction_status(status)
+        if progress_state:
+            for ref in self.refs:
+                ref.emit_terminal_progress_for_started_receivers(progress_state)
+
         elapsed = time.time() - self.start_time
         size_mb = self.total_bytes / (1024 * 1024)
         self.logger.info(
@@ -341,6 +436,28 @@ class _Transaction:
         # large objects (e.g. numpy dicts) allowing GC to reclaim them.
         for ref in self.refs:
             ref.obj.release()
+
+    def emit_progress_event(self, event: dict):
+        if not self.progress_cb:
+            return
+
+        try:
+            self.progress_cb(**event)
+        except Exception as ex:
+            self.logger.warning(
+                f"download source progress callback failed for ref={event.get('ref_id')}: "
+                f"{secure_format_exception(ex)}"
+            )
+
+    @staticmethod
+    def _progress_state_for_transaction_status(status: str) -> Optional[str]:
+        if status == TransactionDoneStatus.TIMEOUT:
+            return TransferProgressState.FAILED
+        if status == TransactionDoneStatus.DELETED:
+            return TransferProgressState.ABORTED
+        if status == TransactionDoneStatus.FINISHED:
+            return TransferProgressState.COMPLETED
+        return None
 
 
 class TransactionInfo:
@@ -398,10 +515,20 @@ class DownloadService:
         num_receivers: int = 0,
         tx_id=None,
         transaction_done_cb=None,
+        progress_cb: Optional[Callable] = None,
+        progress_interval: float = 30.0,
         **cb_kwargs,
     ):
         cls._initialize(cell)
-        tx = _Transaction(timeout, num_receivers, tx_id, transaction_done_cb, cb_kwargs)
+        tx = _Transaction(
+            timeout,
+            num_receivers,
+            tx_id,
+            transaction_done_cb,
+            cb_kwargs,
+            progress_cb=progress_cb,
+            progress_interval=progress_interval,
+        )
         with cls._tx_lock:
             cls._tx_table[tx.tid] = tx
         return tx.tid
@@ -532,12 +659,14 @@ class DownloadService:
 
         assert isinstance(ref, _Ref)
         ref.mark_active()
+        ref.emit_progress(receiver_id=requester, state=TransferProgressState.ACTIVE)
         tx = ref.tx
         assert isinstance(tx, _Transaction)
 
         try:
             rc, data, new_state = ref.obj.produce(current_state, requester)
         except Exception as ex:
+            ref.emit_progress(receiver_id=requester, state=TransferProgressState.FAILED, force=True)
             cls._logger.error(
                 f"Object {type(ref.obj)} encountered exception when produce: {secure_format_exception(ex)}"
             )
@@ -548,13 +677,26 @@ class DownloadService:
             ref.obj_downloaded(
                 requester, status=DownloadStatus.SUCCESS if rc == ProduceRC.EOF else DownloadStatus.FAILED
             )
+            ref.emit_progress(
+                receiver_id=requester,
+                state=TransferProgressState.COMPLETED if rc == ProduceRC.EOF else TransferProgressState.FAILED,
+                force=True,
+            )
             return make_reply(ReturnCode.OK, body={_PropKey.STATUS: rc})
         else:
             # continue — accumulate bytes for timing summary in transaction_done()
             # CacheableObject returns a list of byte-chunks; FileDownloader returns raw bytes.
             # Sum chunk lengths for lists (len(list) counts items, not bytes).
             if data is not None:
-                tx.total_bytes += sum(len(c) for c in data) if isinstance(data, list) else len(data)
+                bytes_delta = sum(len(c) for c in data) if isinstance(data, list) else len(data)
+                items_delta = len(data) if isinstance(data, list) else None
+                tx.total_bytes += bytes_delta
+                ref.emit_progress(
+                    receiver_id=requester,
+                    state=TransferProgressState.ACTIVE,
+                    bytes_delta=bytes_delta,
+                    items_delta=items_delta,
+                )
             return make_reply(
                 ReturnCode.OK,
                 body={

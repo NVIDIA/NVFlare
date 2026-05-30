@@ -306,7 +306,8 @@ class ClientAPILauncherExecutor(LauncherExecutor):
 
         changes = []
         if idle_timeout_configured and self.streaming_idle_timeout != old_idle_timeout:
-            changes.append(f"streaming_idle_timeout {old_idle_timeout}s -> {self.streaming_idle_timeout}s")
+            old_idle_timeout_str = "disabled" if old_idle_timeout is None else f"{old_idle_timeout}s"
+            changes.append(f"streaming_idle_timeout {old_idle_timeout_str} -> {self.streaming_idle_timeout}s")
         if self.streaming_max_peer_silence != old_max_peer_silence:
             changes.append(f"streaming_max_peer_silence {old_max_peer_silence}s -> {self.streaming_max_peer_silence}s")
         if changes:
@@ -584,6 +585,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             ConfigKey.SUBMIT_RESULT_TIMEOUT: self._submit_result_timeout,
             ConfigKey.MAX_RESENDS: self.max_resends,
             ConfigKey.DOWNLOAD_COMPLETE_TIMEOUT: self._download_complete_timeout,
+            ConfigKey.STREAMING_IDLE_TIMEOUT: self.streaming_idle_timeout,
             ConfigKey.LAUNCH_ONCE: self._resolve_launch_once(fl_ctx),
         }
 

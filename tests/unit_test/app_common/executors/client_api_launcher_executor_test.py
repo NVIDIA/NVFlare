@@ -486,6 +486,22 @@ def test_streaming_idle_timeout_noop_override_does_not_log_resolved_config(monke
     assert resolved_logs == []
 
 
+def test_streaming_idle_timeout_enable_from_disabled_logs_disabled(monkeypatch):
+    from nvflare.fuel.f3.streaming.transfer_progress import STREAMING_IDLE_TIMEOUT
+
+    infos = []
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: infos.append(msg))
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(_GCV_MODULE, _make_gcv_stub({STREAMING_IDLE_TIMEOUT: 600}))
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
+    executor.streaming_idle_timeout = None
+    executor._apply_streaming_progress_client_config_overrides(_FakeFLContext(_FakeCell()))
+
+    resolved_logs = [msg for msg in infos if msg.startswith("Resolved streaming progress config")]
+    assert resolved_logs == ["Resolved streaming progress config: streaming_idle_timeout disabled -> 600.0s"]
+
+
 def test_streaming_max_peer_silence_derived_from_idle_timeout(monkeypatch):
     from nvflare.fuel.f3.streaming.transfer_progress import STREAMING_IDLE_TIMEOUT
 
@@ -651,6 +667,7 @@ def test_client_config_overrides_apply_before_subprocess_config_write(monkeypatc
                 ConfigKey.SUBMIT_RESULT_TIMEOUT: 650.0,
                 ConfigKey.MAX_RESENDS: 8,
                 ConfigKey.DOWNLOAD_COMPLETE_TIMEOUT: 2400.0,
+                ConfigKey.STREAMING_IDLE_TIMEOUT: 1200.0,
             }
         ),
     )
@@ -686,9 +703,11 @@ def test_client_config_overrides_apply_before_subprocess_config_write(monkeypatc
     assert task_exchange[ConfigKey.SUBMIT_RESULT_TIMEOUT] == 650.0
     assert task_exchange[ConfigKey.MAX_RESENDS] == 8
     assert task_exchange[ConfigKey.DOWNLOAD_COMPLETE_TIMEOUT] == 2400.0
+    assert task_exchange[ConfigKey.STREAMING_IDLE_TIMEOUT] == 1200.0
     assert executor._submit_result_timeout == 650.0
     assert executor.max_resends == 8
     assert executor._download_complete_timeout == 2400.0
+    assert executor.streaming_idle_timeout == 1200.0
     assert executor._stop_task_wait_timeout == 2400.0
 
 

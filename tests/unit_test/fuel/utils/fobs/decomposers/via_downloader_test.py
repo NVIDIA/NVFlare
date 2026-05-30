@@ -17,10 +17,20 @@ from types import SimpleNamespace
 import pytest
 
 from nvflare.apis.fl_constant import ConfigVarName
+from nvflare.fuel.f3.streaming.download_service import Downloadable, ProduceRC
 from nvflare.fuel.f3.streaming.transfer_progress import DEFAULT_STREAMING_IDLE_TIMEOUT, STREAMING_IDLE_TIMEOUT
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.decomposers import via_downloader as via_downloader_module
-from nvflare.fuel.utils.fobs.decomposers.via_downloader import EncKey, EncType, ViaDownloaderDecomposer
+from nvflare.fuel.utils.fobs.decomposers.via_downloader import (
+    RESULT_UPLOAD_PROGRESS_CTX_KEY,
+    RESULT_UPLOAD_RECEIVER_IDS_CTX_KEY,
+    EncKey,
+    EncType,
+    ResultUploadProgressContextKey,
+    ViaDownloaderDecomposer,
+    clear_download_initiated,
+    get_download_transactions,
+)
 
 
 class _DummyViaDownloader(ViaDownloaderDecomposer):
@@ -77,6 +87,32 @@ class _ItemsWithCallableLazyRef:
 
     def get(self, item_id):
         return f"get_{item_id}"
+
+
+class _FakeDownloadable(Downloadable):
+    def __init__(self, script):
+        super().__init__("base")
+        self.script = list(script)
+        self.set_transaction_calls = []
+
+    def set_transaction(self, tx_id: str, ref_id: str):
+        self.set_transaction_calls.append((tx_id, ref_id))
+
+    def produce(self, state: dict, requester: str):
+        return self.script.pop(0)
+
+
+class _FakeObjectDownloader:
+    instances = []
+
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+        self.tx_id = "tx-1"
+        self.added = []
+        _FakeObjectDownloader.instances.append(self)
+
+    def add_object(self, obj, ref_id=None):
+        self.added.append((ref_id, obj))
 
 
 class TestViaDownloaderRecomposeLazyRefGuard:
@@ -180,6 +216,111 @@ class TestViaDownloaderTimeoutPolicy:
         decomposer._create_downloader({fobs.FOBSContextKey.CELL: object()})
 
         assert observed["timeout"] == 1800.0
+
+
+class TestResultUploadProgressWiring:
+    def setup_method(self):
+        clear_download_initiated()
+        _FakeObjectDownloader.instances = []
+
+    def _finalize(self, monkeypatch, fobs_ctx):
+        monkeypatch.setattr(via_downloader_module, "ObjectDownloader", _FakeObjectDownloader)
+        decomposer = _DummyViaDownloader()
+        decomposer._finalize_download_tx(SimpleNamespace(fobs_ctx=fobs_ctx))
+        return _FakeObjectDownloader.instances[0]
+
+    def test_single_receiver_progress_installs_download_service_callback_and_captures_expected_pair(self, monkeypatch):
+        events = []
+        obj = _FakeDownloadable([])
+        fobs_ctx = {
+            fobs.FOBSContextKey.CELL: object(),
+            fobs.FOBSContextKey.NUM_RECEIVERS: 1,
+            fobs.FOBSContextKey.STREAM_PROGRESS_CB: lambda **kwargs: events.append(kwargs),
+            RESULT_UPLOAD_PROGRESS_CTX_KEY: {ResultUploadProgressContextKey.STREAMING_IDLE_TIMEOUT: 7.0},
+            via_downloader_module._CtxKey.MSG_ROOT_TTL: 1800.0,
+            via_downloader_module._CtxKey.OBJECTS: [("ref-1", obj)],
+        }
+
+        downloader = self._finalize(monkeypatch, fobs_ctx)
+        transactions = get_download_transactions()
+
+        assert len(transactions) == 1
+        assert transactions[0].tx_id == "tx-1"
+        assert transactions[0].expected_pairs == (("ref-1", None),)
+        assert downloader.kwargs["timeout"] == 7.0
+        ref_id, added_obj = downloader.added[0]
+        assert ref_id == "ref-1"
+        assert added_obj is obj
+
+        progress_cb = downloader.kwargs["progress_cb"]
+        progress_cb(
+            tx_id="tx-1",
+            ref_id="ref-1",
+            receiver_id="server",
+            sequence=1,
+            bytes_done=5,
+            items_done=2,
+            state="active",
+        )
+        progress_cb(
+            tx_id="tx-1",
+            ref_id="ref-1",
+            receiver_id="server",
+            sequence=2,
+            bytes_done=5,
+            items_done=2,
+            state="completed",
+        )
+
+        assert events[0]["direction"] == "result_upload"
+        assert events[0]["receiver_id"] is None
+        assert events[0]["transfer_id"] == "ref-1"
+        assert events[0]["bytes_done"] == 5
+        assert events[0]["items_done"] == 2
+        assert events[-1]["state"] == "completed"
+
+    def test_multi_receiver_progress_captures_ref_receiver_pairs(self, monkeypatch):
+        events = []
+        obj = _FakeDownloadable([])
+        fobs_ctx = {
+            fobs.FOBSContextKey.CELL: object(),
+            fobs.FOBSContextKey.NUM_RECEIVERS: 2,
+            fobs.FOBSContextKey.STREAM_PROGRESS_CB: lambda **kwargs: events.append(kwargs),
+            RESULT_UPLOAD_RECEIVER_IDS_CTX_KEY: ["server", "peer"],
+            via_downloader_module._CtxKey.OBJECTS: [("ref-1", obj)],
+        }
+
+        downloader = self._finalize(monkeypatch, fobs_ctx)
+
+        assert get_download_transactions()[0].expected_pairs == (("ref-1", "server"), ("ref-1", "peer"))
+        downloader.kwargs["progress_cb"](
+            tx_id="tx-1",
+            ref_id="ref-1",
+            receiver_id="server",
+            sequence=1,
+            bytes_done=3,
+            items_done=None,
+            state="active",
+        )
+
+        assert events[-1]["receiver_id"] == "server"
+
+    def test_unknown_multi_receiver_transaction_is_not_marked_progress_trackable(self, monkeypatch):
+        obj = _FakeDownloadable([(ProduceRC.OK, b"abc", {})])
+        fobs_ctx = {
+            fobs.FOBSContextKey.CELL: object(),
+            fobs.FOBSContextKey.NUM_RECEIVERS: 2,
+            fobs.FOBSContextKey.STREAM_PROGRESS_CB: lambda **kwargs: None,
+            RESULT_UPLOAD_PROGRESS_CTX_KEY: {ResultUploadProgressContextKey.STREAMING_IDLE_TIMEOUT: 7.0},
+            via_downloader_module._CtxKey.MSG_ROOT_TTL: 1800.0,
+            via_downloader_module._CtxKey.OBJECTS: [("ref-1", obj)],
+        }
+
+        downloader = self._finalize(monkeypatch, fobs_ctx)
+
+        assert get_download_transactions() == ()
+        assert downloader.added[0][1] is obj
+        assert downloader.kwargs["timeout"] == 1800.0
 
 
 class TestConcreteViaDownloaderProgressCallback:

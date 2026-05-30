@@ -389,15 +389,18 @@ class CellPipe(Pipe):
             msg._cached_cell_msg = _to_cell_message(msg)
         request = msg._cached_cell_msg
         request.set_header(MessageHeaderKey.MSG_ROOT_ID, msg.msg_id)
+        receiver_ids = getattr(msg, "_receiver_ids", None)
+        num_receivers = len(receiver_ids) if receiver_ids else 1
         # For REPLY messages (subprocess→CJ result direction), stamp MSG_ROOT_TTL so
         # via_downloader._create_downloader() keeps the subprocess's DownloadService
         # transaction alive long enough for the server to pull tensors directly from
         # the subprocess.
         #
         # When pass_through_on_send is active (reverse PASS_THROUGH path), use
-        # _dl_ttl stamped by FlareAgent._do_submit_result() — this is
-        # download_complete_timeout (default 1800s), the actual transfer budget.
-        # Mirrors the forward direction where the server uses task.timeout.
+        # _dl_ttl stamped by FlareAgent._do_submit_result().  This preserves the
+        # legacy download_complete_timeout for fallback paths; progress-trackable
+        # reverse uploads switch to streaming_idle_timeout inside ViaDownloader
+        # when the DownloadService transaction is created.
         #
         # Fall back to `timeout` (= submit_result_timeout, the CJ-ACK timeout)
         # for non-PASS_THROUGH REPLY messages where no tensor transfer occurs.
@@ -423,6 +426,8 @@ class CellPipe(Pipe):
             timeout=timeout,
             optional=optional,
             progress_wait_cb=getattr(msg, "_progress_wait_cb", None),
+            num_receivers=num_receivers,
+            receiver_ids=receiver_ids,
         )
         if reply:
             rc = reply.get_header(MessageHeaderKey.RETURN_CODE)

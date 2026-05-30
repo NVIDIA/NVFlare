@@ -20,6 +20,7 @@ from nvflare.fuel.utils.validation_utils import check_positive_number
 
 DIRECTION_TASK_PAYLOAD_DOWNLOAD = "task_payload_download"
 DIRECTION_RESULT_UPLOAD = "result_upload"
+VALID_TRANSFER_DIRECTIONS = {DIRECTION_TASK_PAYLOAD_DOWNLOAD, DIRECTION_RESULT_UPLOAD}
 
 STREAMING_IDLE_TIMEOUT = "streaming_idle_timeout"
 STREAMING_MAX_PEER_SILENCE = "streaming_max_peer_silence"
@@ -27,6 +28,7 @@ STREAMING_MAX_PEER_SILENCE = "streaming_max_peer_silence"
 DEFAULT_STREAMING_IDLE_TIMEOUT = 600.0
 DEFAULT_STREAMING_MAX_PEER_SILENCE = 900.0
 STREAMING_MAX_PEER_SILENCE_IDLE_MULTIPLIER = 1.5
+_RECEIVER_ID_UNSET = object()
 
 
 class TransferProgressState:
@@ -39,7 +41,7 @@ class TransferProgressState:
     VALID_STATES = {ACTIVE, COMPLETED, FAILED, ABORTED}
 
 
-TransferProgressKey = Tuple[str, str, str, str]
+TransferProgressKey = Tuple[str, str, str, str, Optional[str]]
 
 
 @dataclass(frozen=True)
@@ -54,6 +56,7 @@ class TransferProgressRecord:
     task_id: str
     transfer_id: str
     direction: str
+    receiver_id: Optional[str]
     sequence: int
     bytes_done: int
     items_done: Optional[int]
@@ -64,7 +67,7 @@ class TransferProgressRecord:
 
     @property
     def key(self) -> TransferProgressKey:
-        return self.job_id, self.task_id, self.transfer_id, self.direction
+        return self.job_id, self.task_id, self.transfer_id, self.direction, self.receiver_id
 
     @property
     def terminal(self) -> bool:
@@ -145,12 +148,21 @@ class TransferProgressTracker:
         items_done: Optional[int] = None,
         state: str = TransferProgressState.ACTIVE,
         transfer_id_kind: Optional[str] = None,
+        receiver_id: Optional[str] = None,
         timestamp: Optional[float] = None,
     ) -> TransferProgressUpdate:
+        self._validate_direction(direction)
         self._validate_update(sequence=sequence, bytes_done=bytes_done, items_done=items_done, state=state)
 
         now = self._clock() if timestamp is None else float(timestamp)
-        key = (job_id, task_id, transfer_id, direction)
+        receiver_id = self._normalize_receiver_id(direction, receiver_id)
+        key = self._make_key(
+            job_id=job_id,
+            task_id=task_id,
+            transfer_id=transfer_id,
+            direction=direction,
+            receiver_id=receiver_id,
+        )
         record = self._records.get(key)
 
         if record is None:
@@ -159,6 +171,7 @@ class TransferProgressTracker:
                 task_id=task_id,
                 transfer_id=transfer_id,
                 direction=direction,
+                receiver_id=receiver_id,
                 sequence=sequence,
                 bytes_done=bytes_done,
                 items_done=items_done,
@@ -199,9 +212,23 @@ class TransferProgressTracker:
         return TransferProgressUpdate(accepted=True, progressed=progressed, record=record)
 
     def get_record(
-        self, *, job_id: str, task_id: str, transfer_id: str, direction: str
+        self,
+        *,
+        job_id: str,
+        task_id: str,
+        transfer_id: str,
+        direction: str,
+        receiver_id: Optional[str] = None,
     ) -> Optional[TransferProgressRecord]:
-        return self._records.get((job_id, task_id, transfer_id, direction))
+        return self._records.get(
+            self._make_key(
+                job_id=job_id,
+                task_id=task_id,
+                transfer_id=transfer_id,
+                direction=direction,
+                receiver_id=receiver_id,
+            )
+        )
 
     def records(
         self,
@@ -209,13 +236,19 @@ class TransferProgressTracker:
         job_id: Optional[str] = None,
         task_id: Optional[str] = None,
         direction: Optional[str] = None,
+        receiver_id: object = _RECEIVER_ID_UNSET,
     ) -> Iterable[TransferProgressRecord]:
+        filter_receiver = receiver_id is not _RECEIVER_ID_UNSET
+        normalized_receiver_id = None
+        if filter_receiver:
+            normalized_receiver_id = self._normalize_receiver_id(direction, receiver_id) if direction else receiver_id
         return [
             record
             for record in self._records.values()
             if (job_id is None or record.job_id == job_id)
             and (task_id is None or record.task_id == task_id)
             and (direction is None or record.direction == direction)
+            and (not filter_receiver or record.receiver_id == normalized_receiver_id)
         ]
 
     def is_stalled(
@@ -225,16 +258,35 @@ class TransferProgressTracker:
         task_id: str,
         transfer_id: str,
         direction: str,
+        receiver_id: Optional[str] = None,
         now: Optional[float] = None,
     ) -> bool:
-        record = self.get_record(job_id=job_id, task_id=task_id, transfer_id=transfer_id, direction=direction)
+        record = self.get_record(
+            job_id=job_id,
+            task_id=task_id,
+            transfer_id=transfer_id,
+            direction=direction,
+            receiver_id=receiver_id,
+        )
         if record is None or record.terminal:
             return False
         return self._is_record_stalled(record, self._clock() if now is None else now)
 
-    def stalled_records(self, now: Optional[float] = None) -> Iterable[TransferProgressRecord]:
+    def stalled_records(
+        self,
+        now: Optional[float] = None,
+        *,
+        job_id: Optional[str] = None,
+        task_id: Optional[str] = None,
+        direction: Optional[str] = None,
+        receiver_id: object = _RECEIVER_ID_UNSET,
+    ) -> Iterable[TransferProgressRecord]:
         check_time = self._clock() if now is None else now
-        return [record for record in self._records.values() if self._is_record_stalled(record, check_time)]
+        return [
+            record
+            for record in self.records(job_id=job_id, task_id=task_id, direction=direction, receiver_id=receiver_id)
+            if self._is_record_stalled(record, check_time)
+        ]
 
     def mark_terminal(
         self,
@@ -245,12 +297,19 @@ class TransferProgressTracker:
         direction: str,
         state: str,
         sequence: Optional[int] = None,
+        receiver_id: Optional[str] = None,
         timestamp: Optional[float] = None,
     ) -> TransferProgressUpdate:
         if state not in TransferProgressState.TERMINAL_STATES:
             raise ValueError(f"terminal state must be one of {TransferProgressState.TERMINAL_STATES}, but got {state}")
 
-        record = self.get_record(job_id=job_id, task_id=task_id, transfer_id=transfer_id, direction=direction)
+        record = self.get_record(
+            job_id=job_id,
+            task_id=task_id,
+            transfer_id=transfer_id,
+            direction=direction,
+            receiver_id=receiver_id,
+        )
         if record is None:
             if sequence is None:
                 sequence = 0
@@ -259,6 +318,7 @@ class TransferProgressTracker:
                 task_id=task_id,
                 transfer_id=transfer_id,
                 direction=direction,
+                receiver_id=receiver_id,
                 sequence=sequence,
                 bytes_done=0,
                 items_done=None,
@@ -273,6 +333,7 @@ class TransferProgressTracker:
             task_id=task_id,
             transfer_id=transfer_id,
             direction=direction,
+            receiver_id=receiver_id,
             sequence=sequence,
             bytes_done=record.bytes_done,
             items_done=record.items_done,
@@ -299,8 +360,28 @@ class TransferProgressTracker:
             del self._records[key]
         return len(keys_to_remove)
 
-    def remove(self, *, job_id: str, task_id: str, transfer_id: str, direction: str) -> bool:
-        return self._records.pop((job_id, task_id, transfer_id, direction), None) is not None
+    def remove(
+        self,
+        *,
+        job_id: str,
+        task_id: str,
+        transfer_id: str,
+        direction: str,
+        receiver_id: Optional[str] = None,
+    ) -> bool:
+        return (
+            self._records.pop(
+                self._make_key(
+                    job_id=job_id,
+                    task_id=task_id,
+                    transfer_id=transfer_id,
+                    direction=direction,
+                    receiver_id=receiver_id,
+                ),
+                None,
+            )
+            is not None
+        )
 
     def clear(self):
         self._records.clear()
@@ -324,6 +405,11 @@ class TransferProgressTracker:
             raise ValueError(f"state must be one of {TransferProgressState.VALID_STATES}, but got {state}")
 
     @staticmethod
+    def _validate_direction(direction: str):
+        if direction not in VALID_TRANSFER_DIRECTIONS:
+            raise ValueError(f"direction must be one of {VALID_TRANSFER_DIRECTIONS}, but got {direction}")
+
+    @staticmethod
     def _next_items_done(current_items_done: Optional[int], update_items_done: Optional[int]) -> Optional[int]:
         if current_items_done is None:
             return update_items_done
@@ -338,6 +424,24 @@ class TransferProgressTracker:
         if current_items_done is None:
             return next_items_done > 0
         return next_items_done > current_items_done
+
+    @staticmethod
+    def _normalize_receiver_id(direction: Optional[str], receiver_id: Optional[str]) -> Optional[str]:
+        if direction != DIRECTION_RESULT_UPLOAD:
+            return None
+        return None if receiver_id is None else str(receiver_id)
+
+    @classmethod
+    def _make_key(
+        cls,
+        *,
+        job_id: str,
+        task_id: str,
+        transfer_id: str,
+        direction: str,
+        receiver_id: Optional[str] = None,
+    ) -> TransferProgressKey:
+        return job_id, task_id, transfer_id, direction, cls._normalize_receiver_id(direction, receiver_id)
 
     def _is_record_stalled(self, record: TransferProgressRecord, now: float) -> bool:
         return not record.terminal and now - record.last_progress_time >= self.idle_timeout

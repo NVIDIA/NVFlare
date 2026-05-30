@@ -17,6 +17,8 @@ import pytest
 from nvflare.fuel.f3.streaming.transfer_progress import (
     DEFAULT_STREAMING_IDLE_TIMEOUT,
     DEFAULT_STREAMING_MAX_PEER_SILENCE,
+    DIRECTION_RESULT_UPLOAD,
+    DIRECTION_TASK_PAYLOAD_DOWNLOAD,
     STREAMING_IDLE_TIMEOUT,
     STREAMING_MAX_PEER_SILENCE,
     TransferProgressState,
@@ -41,7 +43,7 @@ def _update(tracker, **kwargs):
         "job_id": "job-1",
         "task_id": "task-1",
         "transfer_id": "transfer-1",
-        "direction": "task_payload_download",
+        "direction": DIRECTION_TASK_PAYLOAD_DOWNLOAD,
         "sequence": 0,
         "bytes_done": 0,
     }
@@ -58,7 +60,8 @@ def test_tracker_records_first_progress_with_fake_clock():
     assert result.accepted is True
     assert result.progressed is True
     record = result.record
-    assert record.key == ("job-1", "task-1", "transfer-1", "task_payload_download")
+    assert record.key == ("job-1", "task-1", "transfer-1", DIRECTION_TASK_PAYLOAD_DOWNLOAD, None)
+    assert record.receiver_id is None
     assert record.sequence == 1
     assert record.bytes_done == 10
     assert record.items_done is None
@@ -67,12 +70,40 @@ def test_tracker_records_first_progress_with_fake_clock():
     assert record.terminal is False
 
 
+def test_tracker_rejects_unknown_direction():
+    tracker = TransferProgressTracker(idle_timeout=60.0, clock=FakeClock())
+
+    with pytest.raises(ValueError, match="direction"):
+        _update(tracker, direction="unexpected_direction")
+
+
 def test_tracker_records_transfer_id_kind():
     tracker = TransferProgressTracker(idle_timeout=60.0, clock=FakeClock())
 
     result = _update(tracker, sequence=1, bytes_done=10, transfer_id_kind="download_ref")
 
     assert result.record.transfer_id_kind == "download_ref"
+
+
+def test_forward_progress_ignores_receiver_id_for_backward_compatible_keying():
+    tracker = TransferProgressTracker(idle_timeout=60.0, clock=FakeClock())
+
+    first = _update(tracker, sequence=1, bytes_done=10, receiver_id="receiver-a")
+    second = _update(tracker, sequence=2, bytes_done=20, receiver_id="receiver-b")
+
+    assert first.record is second.record
+    assert second.record.receiver_id is None
+    assert len(list(tracker.records(direction=DIRECTION_TASK_PAYLOAD_DOWNLOAD))) == 1
+    assert (
+        tracker.get_record(
+            job_id="job-1",
+            task_id="task-1",
+            transfer_id="transfer-1",
+            direction=DIRECTION_TASK_PAYLOAD_DOWNLOAD,
+            receiver_id="ignored-receiver",
+        )
+        is second.record
+    )
 
 
 def test_stale_sequence_and_counter_regression_are_ignored():
@@ -164,6 +195,121 @@ def test_sibling_progress_does_not_mask_stalled_transfer():
         is True
     )
     assert [record.transfer_id for record in tracker.stalled_records()] == ["transfer-b"]
+
+
+def test_result_upload_progress_is_isolated_by_receiver_id():
+    clock = FakeClock()
+    tracker = TransferProgressTracker(idle_timeout=60.0, clock=clock)
+    _update(
+        tracker,
+        direction=DIRECTION_RESULT_UPLOAD,
+        receiver_id="receiver-a",
+        sequence=1,
+        bytes_done=100,
+    )
+    _update(
+        tracker,
+        direction=DIRECTION_RESULT_UPLOAD,
+        receiver_id="receiver-b",
+        sequence=1,
+        bytes_done=100,
+    )
+
+    clock.advance(30.0)
+    _update(
+        tracker,
+        direction=DIRECTION_RESULT_UPLOAD,
+        receiver_id="receiver-a",
+        sequence=2,
+        bytes_done=200,
+    )
+    clock.advance(31.0)
+
+    receiver_a = tracker.get_record(
+        job_id="job-1",
+        task_id="task-1",
+        transfer_id="transfer-1",
+        direction=DIRECTION_RESULT_UPLOAD,
+        receiver_id="receiver-a",
+    )
+    receiver_b = tracker.get_record(
+        job_id="job-1",
+        task_id="task-1",
+        transfer_id="transfer-1",
+        direction=DIRECTION_RESULT_UPLOAD,
+        receiver_id="receiver-b",
+    )
+
+    assert receiver_a.key == ("job-1", "task-1", "transfer-1", DIRECTION_RESULT_UPLOAD, "receiver-a")
+    assert receiver_b.key == ("job-1", "task-1", "transfer-1", DIRECTION_RESULT_UPLOAD, "receiver-b")
+    assert (
+        tracker.is_stalled(
+            job_id="job-1",
+            task_id="task-1",
+            transfer_id="transfer-1",
+            direction=DIRECTION_RESULT_UPLOAD,
+            receiver_id="receiver-a",
+        )
+        is False
+    )
+    assert (
+        tracker.is_stalled(
+            job_id="job-1",
+            task_id="task-1",
+            transfer_id="transfer-1",
+            direction=DIRECTION_RESULT_UPLOAD,
+            receiver_id="receiver-b",
+        )
+        is True
+    )
+    assert [record.receiver_id for record in tracker.stalled_records(direction=DIRECTION_RESULT_UPLOAD)] == [
+        "receiver-b"
+    ]
+
+
+def test_result_upload_receiver_sequences_and_counters_are_monotonic_per_receiver():
+    tracker = TransferProgressTracker(idle_timeout=60.0, clock=FakeClock())
+    _update(tracker, direction=DIRECTION_RESULT_UPLOAD, receiver_id="receiver-a", sequence=5, bytes_done=500)
+
+    receiver_b = _update(
+        tracker, direction=DIRECTION_RESULT_UPLOAD, receiver_id="receiver-b", sequence=1, bytes_done=10
+    )
+    stale_a = _update(tracker, direction=DIRECTION_RESULT_UPLOAD, receiver_id="receiver-a", sequence=4, bytes_done=600)
+
+    assert receiver_b.accepted is True
+    assert receiver_b.record.sequence == 1
+    assert receiver_b.record.bytes_done == 10
+    assert stale_a.accepted is False
+    assert stale_a.reason == "stale_sequence"
+    assert (
+        tracker.get_record(
+            job_id="job-1",
+            task_id="task-1",
+            transfer_id="transfer-1",
+            direction=DIRECTION_RESULT_UPLOAD,
+            receiver_id="receiver-a",
+        ).bytes_done
+        == 500
+    )
+
+
+def test_result_upload_single_receiver_uses_none_receiver_key():
+    tracker = TransferProgressTracker(idle_timeout=60.0, clock=FakeClock())
+
+    result = _update(tracker, direction=DIRECTION_RESULT_UPLOAD, sequence=1, bytes_done=10)
+
+    assert result.record.key == ("job-1", "task-1", "transfer-1", DIRECTION_RESULT_UPLOAD, None)
+    assert (
+        tracker.get_record(
+            job_id="job-1",
+            task_id="task-1",
+            transfer_id="transfer-1",
+            direction=DIRECTION_RESULT_UPLOAD,
+            receiver_id=None,
+        )
+        is result.record
+    )
+    assert len(list(tracker.records(direction=DIRECTION_RESULT_UPLOAD, receiver_id=None))) == 1
 
 
 @pytest.mark.parametrize(

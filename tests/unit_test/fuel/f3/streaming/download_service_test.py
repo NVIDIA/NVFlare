@@ -804,3 +804,107 @@ class TestDownloadService:
             )
 
         DownloadService.delete_transaction(tx_id)
+
+    def test_source_progress_callback_reports_per_receiver_bytes_items_and_completion(self):
+        """DownloadService source-side progress is scoped by ref and downstream requester."""
+        from nvflare.fuel.f3.streaming.download_service import _Transaction
+
+        service = _make_isolated_download_service()
+        events = []
+        tx = _Transaction(
+            timeout=10.0,
+            num_receivers=2,
+            progress_cb=lambda **kwargs: events.append(kwargs),
+            progress_interval=0.0,
+        )
+        obj = MockDownloadable([[b"aa", b"bbb"]])
+        ref = tx.add_object(obj, ref_id="ref-1")
+
+        with service._tx_lock:
+            service._tx_table[tx.tid] = tx
+            service._ref_table[ref.rid] = ref
+
+        try:
+            receiver_a_chunk = service._handle_download(_make_download_request(ref.rid, "receiver-a"))
+            receiver_a_eof = service._handle_download(
+                _make_download_request(ref.rid, "receiver-a", receiver_a_chunk.payload["state"])
+            )
+            receiver_b_chunk = service._handle_download(_make_download_request(ref.rid, "receiver-b"))
+
+            assert receiver_a_chunk.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+            assert receiver_a_eof.payload == {"status": ProduceRC.EOF}
+            assert receiver_b_chunk.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+        finally:
+            with service._tx_lock:
+                service._tx_table.pop(tx.tid, None)
+                service._ref_table.pop(ref.rid, None)
+
+        receiver_a_events = [event for event in events if event["receiver_id"] == "receiver-a"]
+        receiver_b_events = [event for event in events if event["receiver_id"] == "receiver-b"]
+
+        assert [event["state"] for event in receiver_a_events] == ["active", "active", "completed"]
+        assert [event["sequence"] for event in receiver_a_events] == [1, 2, 3]
+        assert [event["bytes_done"] for event in receiver_a_events] == [0, 5, 5]
+        assert [event["items_done"] for event in receiver_a_events] == [None, 2, 2]
+        assert [event["state"] for event in receiver_b_events] == ["active", "active"]
+        assert [event["sequence"] for event in receiver_b_events] == [1, 2]
+        assert [event["bytes_done"] for event in receiver_b_events] == [0, 5]
+        assert all(event["ref_id"] == "ref-1" for event in events)
+        assert all("timestamp" in event for event in events)
+
+    def test_source_progress_callback_reports_failed_produce_result(self):
+        from nvflare.fuel.f3.streaming.download_service import _Transaction
+
+        service = _make_isolated_download_service()
+        events = []
+        tx = _Transaction(
+            timeout=10.0,
+            num_receivers=1,
+            progress_cb=lambda **kwargs: events.append(kwargs),
+            progress_interval=0.0,
+        )
+        obj = MockDownloadable([b"chunk1"], fail_on_chunk=0)
+        ref = tx.add_object(obj, ref_id="ref-fail")
+
+        with service._tx_lock:
+            service._tx_table[tx.tid] = tx
+            service._ref_table[ref.rid] = ref
+
+        try:
+            reply = service._handle_download(_make_download_request(ref.rid, "receiver-a"))
+        finally:
+            with service._tx_lock:
+                service._tx_table.pop(tx.tid, None)
+                service._ref_table.pop(ref.rid, None)
+
+        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+        assert reply.payload == {"status": ProduceRC.ERROR}
+        assert [event["state"] for event in events] == ["active", "failed"]
+        assert [event["sequence"] for event in events] == [1, 2]
+        assert [event["bytes_done"] for event in events] == [0, 0]
+
+    def test_source_progress_callback_reports_aborted_transaction_for_started_receivers(self):
+        from nvflare.fuel.f3.streaming.download_service import _Transaction
+
+        service = _make_isolated_download_service()
+        events = []
+        tx = _Transaction(
+            timeout=10.0,
+            num_receivers=1,
+            progress_cb=lambda **kwargs: events.append(kwargs),
+            progress_interval=0.0,
+        )
+        obj = MockDownloadable([b"chunk1", b"chunk2"])
+        ref = tx.add_object(obj, ref_id="ref-abort")
+
+        with service._tx_lock:
+            service._tx_table[tx.tid] = tx
+            service._ref_table[ref.rid] = ref
+
+        service._handle_download(_make_download_request(ref.rid, "receiver-a"))
+        service.delete_transaction(tx.tid)
+
+        assert [event["state"] for event in events] == ["active", "active", "aborted"]
+        assert [event["sequence"] for event in events] == [1, 2, 3]
+        assert events[-1]["receiver_id"] == "receiver-a"
+        assert events[-1]["bytes_done"] == len(b"chunk1")

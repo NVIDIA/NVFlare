@@ -47,6 +47,7 @@ STREAM_PROGRESS_JOB_ID_KEYS = ("job_id",)
 STREAM_PROGRESS_TRANSFER_ID_KEYS = ("transfer_id", "ref_id", "stream_id")
 STREAM_PROGRESS_TRANSFER_ID_KIND_KEYS = ("transfer_id_kind", "stream_id_kind")
 STREAM_PROGRESS_DIRECTION_KEYS = ("direction",)
+STREAM_PROGRESS_RECEIVER_ID_KEYS = ("receiver_id", "requester_id", "requester_fqcn")
 STREAM_PROGRESS_SEQUENCE_KEYS = ("sequence", "seq")
 STREAM_PROGRESS_BYTES_KEYS = ("bytes_done", "progress", "bytes", "bytes_read", "bytes_received")
 STREAM_PROGRESS_ITEM_KEYS = ("items_done", "items", "item_count")
@@ -54,8 +55,9 @@ STREAM_PROGRESS_STATE_KEYS = ("state", "status", "event", "event_type")
 STREAM_PROGRESS_START_STATUSES = ("start", "started")
 _DEFAULT_STREAMING_IDLE_TIMEOUT_SECS = DEFAULT_STREAMING_IDLE_TIMEOUT
 STREAM_PROGRESS_COMPLETION_ACK_GRACE = 30.0
-_TERMINAL_RECORD_TTL_GRACE_MULTIPLIER = 60.0
-STREAM_PROGRESS_TERMINAL_RECORD_TTL = STREAM_PROGRESS_COMPLETION_ACK_GRACE * _TERMINAL_RECORD_TTL_GRACE_MULTIPLIER
+# Match DownloadService._FINISHED_REFS_TTL so late EOF/completion replies after
+# clean transfer completion can still find the progress record. Keep the values in sync.
+STREAM_PROGRESS_TERMINAL_RECORD_TTL = 1800.0
 
 STREAM_PROGRESS_STATE_ALIASES = {
     "active": "active",
@@ -296,6 +298,7 @@ class TaskExchanger(Executor):
 
         job_id = self._get_progress_event_value(data, STREAM_PROGRESS_JOB_ID_KEYS)
         direction = self._get_progress_event_value(data, STREAM_PROGRESS_DIRECTION_KEYS)
+        receiver_id = self._get_progress_event_value(data, STREAM_PROGRESS_RECEIVER_ID_KEYS)
         transfer_id_kind = self._get_progress_event_value(data, STREAM_PROGRESS_TRANSFER_ID_KIND_KEYS)
         status = self._normalize_progress_status(self._get_progress_event_value(data, STREAM_PROGRESS_STATE_KEYS))
         bytes_done = self._get_progress_event_value(data, STREAM_PROGRESS_BYTES_KEYS)
@@ -319,9 +322,12 @@ class TaskExchanger(Executor):
         transfer_id = str(transfer_id)
         transfer_id_kind = None if transfer_id_kind is None else str(transfer_id_kind)
         direction = DIRECTION_TASK_PAYLOAD_DOWNLOAD if direction is None else str(direction)
+        receiver_id = None if receiver_id is None else str(receiver_id)
         state = self._normalize_tracker_state(status)
 
         with self._stream_progress_lock:
+            # Forward task payload aggregation is task/transfer scoped. receiver_id is tolerated for schema
+            # compatibility but intentionally not part of the forward-path tracker key.
             record = self._stream_progress_tracker.get_record(
                 job_id=job_id,
                 task_id=task_id,
@@ -357,7 +363,7 @@ class TaskExchanger(Executor):
                 event_kind = "active"
             self.logger.info(
                 f"accepted stream progress {event_kind} for task={task_id} transfer={transfer_id} direction={direction} "
-                f"state={state} sequence={sequence_value} bytes_done={bytes_done_value} "
+                f"receiver_id={receiver_id} state={state} sequence={sequence_value} bytes_done={bytes_done_value} "
                 f"items_done={items_done_value} progressed={update.progressed}"
             )
         else:
@@ -401,10 +407,7 @@ class TaskExchanger(Executor):
         if len(completed_records) != len(records):
             return False
         latest_record = max(completed_records, key=lambda record: record.last_progress_time)
-        grace = min(
-            self.peer_read_timeout or STREAM_PROGRESS_COMPLETION_ACK_GRACE, STREAM_PROGRESS_COMPLETION_ACK_GRACE
-        )
-        if now - latest_record.last_progress_time > grace:
+        if now - latest_record.last_progress_time > STREAM_PROGRESS_COMPLETION_ACK_GRACE:
             return False
         self.log_info(
             fl_ctx,
@@ -429,8 +432,6 @@ class TaskExchanger(Executor):
         if not records:
             elapsed = now - send_start_time
             wait_budget = self.streaming_idle_timeout
-            if self.peer_read_timeout is not None:
-                wait_budget = max(wait_budget, self.peer_read_timeout)
             if elapsed < wait_budget:
                 self.log_info(
                     fl_ctx,
@@ -524,7 +525,7 @@ class TaskExchanger(Executor):
             return self.peer_read_timeout
         if self.pipe is not None and not isinstance(self.pipe, CellPipe):
             return self.peer_read_timeout
-        return min(self.peer_read_timeout, STREAM_PROGRESS_COMPLETION_ACK_GRACE)
+        return min(self.peer_read_timeout, self.streaming_idle_timeout, STREAM_PROGRESS_COMPLETION_ACK_GRACE)
 
     def _send_task_to_peer(self, req: Message, fl_ctx: FLContext, abort_signal: Signal) -> bool:
         job_id = None

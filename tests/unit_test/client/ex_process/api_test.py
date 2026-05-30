@@ -122,8 +122,16 @@ def test_get_submit_result_timeout_absent_section():
     assert config.get_submit_result_timeout() == 300.0
 
 
+def test_get_streaming_idle_timeout_default_and_explicit():
+    config = ClientConfig({})
+    assert config.get_streaming_idle_timeout() == 600.0
+
+    config = ClientConfig({ConfigKey.TASK_EXCHANGE: {ConfigKey.STREAMING_IDLE_TIMEOUT: 1200}})
+    assert config.get_streaming_idle_timeout() == 1200.0
+
+
 def test_ex_process_api_passes_submit_result_timeout_to_agent(monkeypatch):
-    """ExProcessClientAPI.init() must pass submit_result_timeout from config to FlareAgentWithFLModel."""
+    """ExProcessClientAPI.init() must pass task-exchange timeouts from config to FlareAgentWithFLModel."""
     from unittest.mock import MagicMock
 
     from nvflare.client.config import ConfigKey
@@ -139,6 +147,7 @@ def test_ex_process_api_passes_submit_result_timeout_to_agent(monkeypatch):
                 ConfigKey.SUBMIT_MODEL_TASK_NAME: "submit_model",
                 ConfigKey.HEARTBEAT_TIMEOUT: 60,
                 ConfigKey.SUBMIT_RESULT_TIMEOUT: 999.0,
+                ConfigKey.STREAMING_IDLE_TIMEOUT: 1200.0,
             }
         }
     )
@@ -180,6 +189,7 @@ def test_ex_process_api_passes_submit_result_timeout_to_agent(monkeypatch):
 
     assert "submit_result_timeout" in captured_kwargs, "submit_result_timeout was not passed to FlareAgentWithFLModel"
     assert captured_kwargs["submit_result_timeout"] == 999.0
+    assert captured_kwargs["streaming_idle_timeout"] == 1200.0
 
 
 def test_ex_process_receive_timeout_does_not_arm_send_under_congestion():

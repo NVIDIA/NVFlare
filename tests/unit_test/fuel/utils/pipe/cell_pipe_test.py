@@ -243,7 +243,7 @@ def test_stream_progress_does_not_update_peer_active_time():
 
     with patch("nvflare.fuel.utils.pipe.cell_pipe.time.time", return_value=456.0):
         pipe._update_peer_active_time(
-            _make_cell_message(topic=Topic.STREAM_PROGRESS),
+            _make_cell_message(topic=Topic.STREAM_PROGRESS, payload={"direction": "result_upload"}),
             ch_name="task",
             msg_type="req",
         )
@@ -272,6 +272,18 @@ def test_to_cell_message_carries_empty_shareable_job_id():
     cell_msg = _to_cell_message(_make_msg(data=shareable))
 
     assert cell_msg.get_header(FLMetaKey.JOB_ID) == ""
+
+
+def test_send_passes_result_receiver_ids_to_stream_encode():
+    pipe = _make_pipe()
+    msg = _make_msg()
+    msg._receiver_ids = ("server.job-1", "peer.job-1")
+
+    assert pipe.send(msg, timeout=1.0) is True
+
+    call_kwargs = pipe.cell.send_request.call_args.kwargs
+    assert call_kwargs["num_receivers"] == 2
+    assert call_kwargs["receiver_ids"] == ("server.job-1", "peer.job-1")
 
 
 # ---------------------------------------------------------------------------

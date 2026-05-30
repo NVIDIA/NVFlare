@@ -53,6 +53,7 @@ class FOBSContextKey:
     DOWNLOAD_REQ_TIMEOUT = "download_req_timeout"
     SEC_CREDS = "sec_creds"
     NUM_RECEIVERS = "num_receivers"
+    RECEIVER_IDS = "receiver_ids"
     # When True, ViaDownloaderDecomposer will NOT download tensors at this hop.
     # Instead it creates LazyDownloadRef placeholders that preserve the original
     # source FQCN/ref_id so the reference can be forwarded verbatim to the next

@@ -26,6 +26,7 @@ import numpy as np
 
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.app_common.ccwf.swarm_client_ctl import SwarmClientController
+from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
 
 
@@ -156,6 +157,28 @@ class TestDoLearnTaskGlobalModel(unittest.TestCase):
 
         self.assertEqual(resolve_calls, [])
         self.assertIs(model_input, task_data)
+
+
+class TestResultUploadReceiverStamp(unittest.TestCase):
+    def test_swarm_stamps_aggregation_client_fqcn_for_subprocess_result_upload(self):
+        ctl = _make_controller()
+        task_data = _make_shareable_with_real_arrays()
+        fl_ctx = MagicMock()
+        fl_ctx.get_job_id.return_value = "job-1"
+
+        ctl._stamp_result_upload_receiver_ids(task_data, "site-2", fl_ctx)
+
+        self.assertEqual(task_data.get_header(FOBSContextKey.RECEIVER_IDS), ["site-2.job-1"])
+
+    def test_swarm_stamps_site_name_when_job_id_is_unavailable(self):
+        ctl = _make_controller()
+        task_data = _make_shareable_with_real_arrays()
+        fl_ctx = MagicMock()
+        fl_ctx.get_job_id.return_value = None
+
+        ctl._stamp_result_upload_receiver_ids(task_data, "site-2", fl_ctx)
+
+        self.assertEqual(task_data.get_header(FOBSContextKey.RECEIVER_IDS), ["site-2"])
 
 
 class TestScatterLazyRefResolution(unittest.TestCase):

@@ -123,12 +123,14 @@ def _progress(
     job_id="job-1",
     items_done=None,
     transfer_id_kind=None,
+    receiver_id=None,
+    direction=DIRECTION_TASK_PAYLOAD_DOWNLOAD,
 ):
     data = {
         "job_id": job_id,
         "task_id": task_id,
         "transfer_id": transfer_id,
-        "direction": DIRECTION_TASK_PAYLOAD_DOWNLOAD,
+        "direction": direction,
         "sequence": sequence,
         "bytes_done": bytes_done,
         "state": state,
@@ -137,6 +139,8 @@ def _progress(
         data["items_done"] = items_done
     if transfer_id_kind is not None:
         data["transfer_id_kind"] = transfer_id_kind
+    if receiver_id is not None:
+        data["receiver_id"] = receiver_id
     return Message.new_request(
         Topic.STREAM_PROGRESS,
         data,
@@ -171,6 +175,34 @@ def test_task_send_no_progress_waits_beyond_peer_read_timeout_and_fails_at_strea
     assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
     assert handler.send_calls == 1
     assert any("no stream progress record exists yet" in msg for _, msg in logs)
+
+
+def test_task_send_no_progress_startup_budget_uses_streaming_idle_timeout(monkeypatch):
+    _patch_logs(monkeypatch)
+    now = [1000.0]
+    monkeypatch.setattr(task_exchanger_module.time, "time", lambda: now[0])
+    executor = TaskExchanger(
+        pipe_id="pipe",
+        peer_read_timeout=100.0,
+        streaming_idle_timeout=3.0,
+        result_poll_interval=0.01,
+    )
+
+    def send_cb(handler, msg, timeout, abort_signal):
+        assert timeout == 3.0
+        now[0] += 2.9
+        assert msg._progress_wait_cb() is True
+        now[0] += 0.2
+        assert msg._progress_wait_cb() is False
+        return False
+
+    handler = _FakePipeHandler(send_cb)
+    executor.pipe_handler = handler
+
+    result = executor._do_execute("train", _make_task(), _make_fl_ctx(), _AbortSignal())
+
+    assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+    assert handler.send_calls == 1
 
 
 def test_task_send_continues_after_peer_read_timeout_when_stream_progress_is_recent(monkeypatch):
@@ -241,7 +273,7 @@ def test_task_send_completed_progress_holds_wait_briefly_for_ack(monkeypatch):
             _progress(task_id=msg.msg_id, sequence=1, bytes_done=1024, state="completed")
         )
         assert msg._progress_wait_cb() is True
-        now[0] += 1.1
+        now[0] += task_exchanger_module.STREAM_PROGRESS_COMPLETION_ACK_GRACE + 0.1
         assert msg._progress_wait_cb() is False
         return False
 
@@ -482,6 +514,35 @@ def test_task_send_times_out_when_emitter_stops_after_progress(monkeypatch):
     assert handler.send_calls == 1
 
 
+def test_task_send_does_not_use_result_upload_progress_for_forward_wait(monkeypatch):
+    _patch_logs(monkeypatch)
+    now = [1000.0]
+    monkeypatch.setattr(task_exchanger_module.time, "time", lambda: now[0])
+    executor = TaskExchanger(pipe_id="pipe", peer_read_timeout=0.01, streaming_idle_timeout=10.0)
+    executor._handle_stream_progress_message(
+        _progress(
+            task_id="task-1",
+            transfer_id="result-ref",
+            sequence=1,
+            bytes_done=1024,
+            direction="result_upload",
+        )
+    )
+
+    def send_cb(handler, msg, timeout, abort_signal):
+        now[0] += 11.0
+        assert msg._progress_wait_cb() is False
+        return False
+
+    handler = _FakePipeHandler(send_cb)
+    executor.pipe_handler = handler
+
+    result = executor._do_execute("train", _make_task(task_id="task-1"), _make_fl_ctx(), _AbortSignal())
+
+    assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+    assert handler.send_calls == 1
+
+
 def test_explicit_low_peer_read_timeout_honors_fast_fail(monkeypatch):
     logs = _patch_logs(monkeypatch)
     executor = TaskExchanger(
@@ -660,6 +721,37 @@ def test_stream_progress_records_transfer_id_kind(monkeypatch):
     assert record.transfer_id_kind == "download_ref"
 
 
+def test_stream_progress_tolerates_receiver_id_without_forward_keying(monkeypatch):
+    _patch_logs(monkeypatch)
+    executor = TaskExchanger(pipe_id="pipe")
+
+    executor._handle_stream_progress_message(
+        _progress(
+            task_id="task-1",
+            transfer_id="ref-1",
+            sequence=1,
+            bytes_done=1024,
+            receiver_id="receiver-a",
+        )
+    )
+    executor._handle_stream_progress_message(
+        _progress(
+            task_id="task-1",
+            transfer_id="ref-1",
+            sequence=2,
+            bytes_done=2048,
+            receiver_id="receiver-b",
+        )
+    )
+
+    records, active_records = executor._get_active_task_payload_records(task_id="task-1", job_id="job-1")
+
+    assert len(records) == 1
+    assert len(active_records) == 1
+    assert records[0].transfer_id == "ref-1"
+    assert records[0].bytes_done == 2048
+
+
 def test_stream_progress_rejects_malformed_items_done(monkeypatch):
     _patch_logs(monkeypatch)
     executor = TaskExchanger(pipe_id="pipe")
@@ -796,3 +888,55 @@ def test_download_object_progress_flows_through_subprocess_pipe_to_task_exchange
     assert observed_wait == [True]
     assert any(payload.get("job_id") == "job-1" for payload in progress_pipe.sent_payloads)
     assert any(payload.get("task_id") == "task-1" for payload in progress_pipe.sent_payloads)
+
+
+def test_swarm_task_payload_progress_from_peer_parent_suppresses_resend(monkeypatch):
+    _patch_logs(monkeypatch)
+    executor = TaskExchanger(pipe_id="pipe", peer_read_timeout=0.01, streaming_idle_timeout=10.0)
+    progress_pipe = _ProgressPipe(executor)
+    req = Message.new_request("train", _make_task(), msg_id="task-1")
+    observed_wait = []
+
+    def _send_stream_progress(**kwargs):
+        progress_pipe.send(Message.new_request(Topic.STREAM_PROGRESS, kwargs))
+        if kwargs.get("state") == "active" and kwargs.get("bytes_done", 0) > 0:
+            observed_wait.append(req._progress_wait_cb())
+
+    cell_msg = CellMessage(
+        headers={
+            MessageHeaderKey.MSG_ROOT_ID: "task-1",
+            MessageHeaderKey.REQ_ID: "task-1",
+            FLMetaKey.JOB_ID: "job-1",
+        },
+        payload=None,
+    )
+    fobs_ctx = {
+        fobs.FOBSContextKey.MESSAGE: cell_msg,
+        fobs.FOBSContextKey.STREAM_PROGRESS_CB: _send_stream_progress,
+    }
+    progress_cb = ViaDownloaderDecomposer._make_stream_progress_cb(fobs_ctx, "ref-1")
+    assert progress_cb is not None
+
+    req._progress_wait_cb = lambda: executor._should_continue_task_send_waiting(
+        task_name=req.topic,
+        task_id=req.msg_id,
+        job_id="job-1",
+        send_start_time=0.0,
+        fl_ctx=_make_fl_ctx(),
+    )
+    consumer = _DownloadConsumer()
+    download_object(
+        from_fqcn="site-2.site-2_job-1_active",
+        ref_id="ref-1",
+        per_request_timeout=1.0,
+        cell=_ChunkCell(),
+        consumer=consumer,
+        progress_cb=progress_cb,
+        progress_interval=0.0,
+    )
+
+    assert consumer.completed is True
+    assert consumer.failed is None
+    assert observed_wait == [True]
+    assert progress_pipe.sent_payloads[0]["direction"] == DIRECTION_TASK_PAYLOAD_DOWNLOAD
+    assert any(payload.get("transfer_id") == "ref-1" for payload in progress_pipe.sent_payloads)
