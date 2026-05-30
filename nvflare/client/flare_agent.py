@@ -131,6 +131,8 @@ class _ReverseResultUploadProgressTracker:
             if callback_fired:
                 if _transaction_status_is_success(callback_status):
                     return _ReverseResultUploadDecision(done=True, success=True, reason="download_complete_cb")
+                if self._all_expected_terminal_success():
+                    return _ReverseResultUploadDecision(done=True, success=True, reason="all_completed")
                 return _ReverseResultUploadDecision(
                     done=True,
                     success=False,
@@ -146,10 +148,7 @@ class _ReverseResultUploadProgressTracker:
                         reason=f"result_upload transfer {record.transfer_id} ended with state={record.state}",
                     )
 
-            if self.expected and all(
-                self._get_record(key) is not None and self._is_terminal_success(self._get_record(key))
-                for key in self.expected
-            ):
+            if self._all_expected_terminal_success():
                 if self.all_success_since is None:
                     self.all_success_since = now
                     return _ReverseResultUploadDecision(done=False, success=False, reason="completion_grace")
@@ -222,6 +221,15 @@ class _ReverseResultUploadProgressTracker:
         if len(matches) == 1:
             return matches[0]
         return None
+
+    def _all_expected_terminal_success(self):
+        if not self.expected:
+            return False
+        for key in self.expected:
+            record = self._get_record(key)
+            if record is None or not self._is_terminal_success(record):
+                return False
+        return True
 
     def resolve_tx_id(self, tx_id: Optional[str], transfer_id: str, receiver_id: Optional[str]):
         transfer_id = str(transfer_id)

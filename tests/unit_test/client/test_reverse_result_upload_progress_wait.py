@@ -364,6 +364,36 @@ def test_result_upload_completion_grace_waits_for_callback_then_succeeds_without
     assert decision.success is True
 
 
+def test_result_upload_all_completed_wins_over_late_timeout_callback():
+    clock = FakeClock()
+    tracker = _make_tracker(clock=clock, idle_timeout=10.0)
+    _register(tracker, created_time=clock.now)
+    _progress(
+        tracker,
+        sequence=1,
+        bytes_done=100,
+        state=TransferProgressState.COMPLETED,
+        timestamp=clock.now,
+    )
+
+    decision = tracker.decide(callback_fired=True, callback_status=TransactionDoneStatus.TIMEOUT)
+
+    assert decision.done is True
+    assert decision.success is True
+    assert decision.reason == "all_completed"
+
+
+def test_result_upload_timeout_callback_fails_when_expected_pair_is_not_completed():
+    tracker = _make_tracker(idle_timeout=10.0)
+    _register(tracker)
+
+    decision = tracker.decide(callback_fired=True, callback_status=TransactionDoneStatus.TIMEOUT)
+
+    assert decision.done is True
+    assert decision.success is False
+    assert "timeout" in decision.reason
+
+
 def test_result_upload_terminal_failure_fails():
     clock = FakeClock()
     tracker = _make_tracker(clock=clock, idle_timeout=10.0)
