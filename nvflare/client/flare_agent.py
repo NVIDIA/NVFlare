@@ -99,14 +99,14 @@ class _ReverseResultUploadProgressTracker:
         state = self._normalize_state(state)
         transfer_id = str(transfer_id)
         receiver_id = None if receiver_id is None else str(receiver_id)
-        tx_id = self._normalize_tx_id(tx_id, transfer_id, receiver_id)
-        if tx_id is None:
-            return False, "unexpected_pair"
-
-        job_id = str(job_id) if job_id is not None else tx_id
-        task_id = "" if task_id is None else str(task_id)
-        key = (tx_id, transfer_id, receiver_id)
         with self.lock:
+            tx_id = self._normalize_tx_id(tx_id, transfer_id, receiver_id)
+            if tx_id is None:
+                return False, "unexpected_pair"
+
+            job_id = str(job_id) if job_id is not None else tx_id
+            task_id = "" if task_id is None else str(task_id)
+            key = (tx_id, transfer_id, receiver_id)
             result = self.progress_tracker.update(
                 job_id=job_id,
                 task_id=task_id,

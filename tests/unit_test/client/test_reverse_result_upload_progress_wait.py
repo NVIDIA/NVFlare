@@ -97,6 +97,39 @@ def test_result_upload_positive_waits_past_fixed_timeout_while_progress_is_recen
     assert decision.success is True
 
 
+def test_result_upload_update_normalizes_tx_id_under_expected_lock():
+    tracker = _make_tracker()
+    tracker.lock.acquire()
+    started = threading.Event()
+    result = {}
+
+    def _update():
+        started.set()
+        result["value"] = tracker.update(
+            tx_id=None,
+            transfer_id="ref-late",
+            receiver_id=None,
+            sequence=1,
+            bytes_done=1,
+            items_done=None,
+            state=TransferProgressState.ACTIVE,
+            timestamp=1000.0,
+        )
+
+    thread = threading.Thread(target=_update)
+    thread.start()
+    assert started.wait(timeout=1.0)
+    time.sleep(0.05)
+    assert "value" not in result
+
+    tracker.expected[("tx-late", "ref-late", None)] = 1000.0
+    tracker.lock.release()
+    thread.join(timeout=1.0)
+
+    assert not thread.is_alive()
+    assert result["value"] == (True, "")
+
+
 def test_result_upload_no_start_times_out():
     clock = FakeClock()
     tracker = _make_tracker(clock=clock, idle_timeout=10.0)
