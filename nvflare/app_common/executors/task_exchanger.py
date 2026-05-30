@@ -24,6 +24,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.fuel.f3.streaming.download_service import DownloadService
 from nvflare.fuel.f3.streaming.transfer_progress import (
     DEFAULT_STREAMING_IDLE_TIMEOUT,
     DIRECTION_TASK_PAYLOAD_DOWNLOAD,
@@ -55,9 +56,9 @@ STREAM_PROGRESS_STATE_KEYS = ("state", "status", "event", "event_type")
 STREAM_PROGRESS_START_STATUSES = ("start", "started")
 _DEFAULT_STREAMING_IDLE_TIMEOUT_SECS = DEFAULT_STREAMING_IDLE_TIMEOUT
 STREAM_PROGRESS_COMPLETION_ACK_GRACE = 30.0
-# Match DownloadService._FINISHED_REFS_TTL so late EOF/completion replies after
-# clean transfer completion can still find the progress record. Keep the values in sync.
-STREAM_PROGRESS_TERMINAL_RECORD_TTL = 1800.0
+# Match the DownloadService finished-ref tombstone window so late EOF/completion
+# replies after clean transfer completion can still find the progress record.
+STREAM_PROGRESS_TERMINAL_RECORD_TTL = DownloadService.FINISHED_REFS_TTL
 
 STREAM_PROGRESS_STATE_ALIASES = {
     "active": "active",
@@ -179,6 +180,7 @@ class TaskExchanger(Executor):
         self._stream_progress_lock = threading.Lock()
         self._stream_progress_tracker = self._make_stream_progress_tracker()
         self._explicit_peer_read_timeout_warned = False
+        self._task_send_startup_budget_info_logged = False
         self._explicit_peer_read_timeout_warning_lock = threading.Lock()
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
@@ -518,6 +520,29 @@ class TaskExchanger(Executor):
             "instead of extending the wait on stream progress",
         )
 
+    def _should_log_clamped_task_send_startup_budget(self):
+        return (
+            self.peer_read_timeout_explicit
+            and self.peer_read_timeout is not None
+            and self.streaming_idle_timeout is not None
+            and self.peer_read_timeout > self.streaming_idle_timeout
+            and (self.pipe is None or isinstance(self.pipe, CellPipe))
+        )
+
+    def _log_clamped_task_send_startup_budget_once(self, fl_ctx: FLContext):
+        if not self._should_log_clamped_task_send_startup_budget():
+            return
+        with self._explicit_peer_read_timeout_warning_lock:
+            if self._task_send_startup_budget_info_logged:
+                return
+            self._task_send_startup_budget_info_logged = True
+        self.log_info(
+            fl_ctx,
+            f"explicit peer_read_timeout ({self.peer_read_timeout}s) is higher than streaming_idle_timeout "
+            f"({self.streaming_idle_timeout}s); using streaming_idle_timeout as the no-progress task-send "
+            "startup budget",
+        )
+
     def _get_task_send_peer_read_timeout(self):
         if self.peer_read_timeout is None:
             return None
@@ -549,6 +574,7 @@ class TaskExchanger(Executor):
             )
 
         req._progress_wait_cb = _progress_wait_cb
+        self._log_clamped_task_send_startup_budget_once(fl_ctx)
         return self.pipe_handler.send_to_peer(
             req, timeout=self._get_task_send_peer_read_timeout(), abort_signal=abort_signal
         )

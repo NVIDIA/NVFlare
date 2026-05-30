@@ -760,7 +760,14 @@ class SwarmClientController(ClientSideController):
         """
 
         job_id = fl_ctx.get_job_id()
-        receiver_id = FQCN.join([aggr, job_id]) if isinstance(job_id, str) and job_id else aggr
+        if not isinstance(job_id, str) or not job_id:
+            self.log_warning(
+                fl_ctx,
+                "cannot stamp result_upload receiver id for swarm task because job_id is unavailable; "
+                "using single-receiver fallback progress tracking",
+            )
+            return
+        receiver_id = FQCN.join([aggr, job_id])
         task_data.set_header(FOBSContextKey.RECEIVER_IDS, [receiver_id])
 
     def _process_learn_result(self, request: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:

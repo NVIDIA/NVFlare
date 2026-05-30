@@ -18,11 +18,21 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from nvflare.client.flare_agent import FlareAgent, _ReverseResultUploadProgressTracker, _TaskContext
+from nvflare.client.flare_agent import (
+    STREAM_PROGRESS_COMPLETION_ACK_GRACE,
+    FlareAgent,
+    _ReverseResultUploadProgressTracker,
+    _TaskContext,
+)
 from nvflare.fuel.f3.streaming.download_service import TransactionDoneStatus
 from nvflare.fuel.f3.streaming.transfer_progress import DIRECTION_RESULT_UPLOAD, TransferProgressState
 from nvflare.fuel.utils import fobs
-from nvflare.fuel.utils.fobs.decomposers.via_downloader import DownloadTransactionInfo, _tls, clear_download_initiated
+from nvflare.fuel.utils.fobs.decomposers.via_downloader import (
+    RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY,
+    DownloadTransactionInfo,
+    _tls,
+    clear_download_initiated,
+)
 
 
 class FakeClock:
@@ -144,6 +154,26 @@ def test_result_upload_started_pair_stalls_independently():
     assert decision.done is True
     assert decision.success is False
     assert "stalled" in decision.reason
+
+
+def test_result_upload_zero_byte_active_event_resets_no_start_budget():
+    clock = FakeClock()
+    tracker = _make_tracker(clock=clock, idle_timeout=10.0)
+    _register(tracker, created_time=clock.now)
+
+    clock.advance(9.0)
+    _progress(tracker, sequence=1, bytes_done=0, timestamp=clock.now)
+
+    clock.advance(9.0)
+    decision = tracker.decide()
+    assert decision.done is False
+
+    clock.advance(1.0)
+    decision = tracker.decide()
+    assert decision.done is True
+    assert decision.success is False
+    assert "stalled" in decision.reason
+    assert "did not start" not in decision.reason
 
 
 def test_result_upload_multi_ref_completion_requires_all_refs():
@@ -319,6 +349,25 @@ def test_result_upload_terminal_failure_fails():
     assert decision.success is False
 
 
+def test_mark_abandoned_uses_tracker_clock_by_default():
+    clock = FakeClock()
+    tracker = _make_tracker(clock=clock, idle_timeout=10.0)
+    _register(tracker, created_time=clock.now)
+
+    clock.advance(123.0)
+    tracker.mark_abandoned()
+
+    record = tracker.progress_tracker.get_record(
+        job_id="tx-1",
+        task_id="",
+        transfer_id="ref-1",
+        direction=DIRECTION_RESULT_UPLOAD,
+        receiver_id=None,
+    )
+    assert record.state == TransferProgressState.ABORTED
+    assert record.last_progress_time == clock.now
+
+
 @pytest.fixture(autouse=True)
 def _no_os_exit(monkeypatch):
     monkeypatch.setattr("nvflare.client.flare_agent.os._exit", lambda code: None)
@@ -445,6 +494,107 @@ def test_do_submit_result_waits_for_result_upload_progress_until_completion():
     assert not thread.is_alive()
     assert result["ok"] is True
     assert time.time() - start > agent._download_complete_timeout
+
+
+def test_do_submit_result_accepts_progress_before_send_returns():
+    clear_download_initiated()
+    pipe = _make_cell_pipe()
+    agent = _make_agent(pipe, download_complete_timeout=0.001)
+    transaction = DownloadTransactionInfo("tx-early", (("ref-early", None),), time.time())
+
+    def _send(reply, timeout):
+        ctx = pipe.cell.update_fobs_context.call_args.args[0]
+        ctx[RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY](transaction)
+        ctx[fobs.FOBSContextKey.STREAM_PROGRESS_CB](
+            direction=DIRECTION_RESULT_UPLOAD,
+            tx_id="tx-early",
+            transfer_id="ref-early",
+            sequence=1,
+            bytes_done=1,
+            state=TransferProgressState.ACTIVE,
+            timestamp=time.time(),
+        )
+        _tls.download_initiated = True
+        _tls.download_transactions = [transaction]
+        ctx[fobs.FOBSContextKey.DOWNLOAD_COMPLETE_CB]("tx-early", TransactionDoneStatus.FINISHED, None)
+        return True
+
+    agent.pipe_handler.send_to_peer.side_effect = _send
+
+    result = agent._do_submit_result(_TaskContext("tid-1", "train", "msg-1"), None, "OK")
+
+    assert result is True
+    assert any("result_upload progress" in call[0][0] for call in agent.logger.info.call_args_list)
+    assert not any("unexpected_pair" in call[0][0] for call in agent.logger.warning.call_args_list)
+
+
+def test_result_upload_unexpected_pair_logs_warning():
+    clock = FakeClock()
+    tracker = _make_tracker(clock=clock, idle_timeout=10.0)
+    _register(tracker, tx_id="tx-1", pairs=(("ref-1", None),), created_time=clock.now)
+    _register(tracker, tx_id="tx-2", pairs=(("ref-1", None),), created_time=clock.now)
+    event = threading.Event()
+    agent = FlareAgent.__new__(FlareAgent)
+    agent.logger = MagicMock()
+
+    agent._update_reverse_result_upload_progress(
+        tracker,
+        event,
+        direction=DIRECTION_RESULT_UPLOAD,
+        tx_id="missing-tx",
+        transfer_id="ref-1",
+        receiver_id=None,
+        sequence=1,
+        bytes_done=100,
+        state=TransferProgressState.ACTIVE,
+        timestamp=clock.now,
+    )
+
+    assert event.is_set() is True
+    assert any("unexpected_pair" in call[0][0] for call in agent.logger.warning.call_args_list)
+
+
+def test_result_upload_completion_grace_wait_uses_remaining_grace():
+    clock = FakeClock()
+    tracker = _make_tracker(clock=clock, idle_timeout=10.0)
+    _register(tracker, created_time=clock.now)
+    _progress(
+        tracker,
+        sequence=1,
+        bytes_done=100,
+        state=TransferProgressState.COMPLETED,
+        timestamp=clock.now,
+    )
+    agent = FlareAgent.__new__(FlareAgent)
+    agent.logger = MagicMock()
+    agent.asked_to_stop = False
+    agent.pipe_handler = MagicMock()
+    agent.pipe_handler.asked_to_stop = False
+    agent.pipe = MagicMock()
+    agent.pipe.closed = False
+    agent._result_upload_poll_interval = 0.001
+    download_done = threading.Event()
+    progress_event = MagicMock()
+    wait_timeouts = []
+
+    def _wait(timeout):
+        wait_timeouts.append(timeout)
+        download_done.set()
+        return True
+
+    progress_event.wait.side_effect = _wait
+
+    result = agent._wait_for_reverse_result_upload(
+        tracker,
+        progress_event,
+        download_done,
+        [TransactionDoneStatus.FINISHED],
+        wait_start=clock.now,
+        transactions=[DownloadTransactionInfo("tx-1", (("ref-1", None),), clock.now)],
+    )
+
+    assert result is True
+    assert wait_timeouts == [STREAM_PROGRESS_COMPLETION_ACK_GRACE]
 
 
 def test_reverse_download_ttl_preserves_legacy_fallback_timeout():

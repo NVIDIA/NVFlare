@@ -24,6 +24,7 @@ from nvflare.fuel.utils.fobs.decomposers import via_downloader as via_downloader
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import (
     RESULT_UPLOAD_PROGRESS_CTX_KEY,
     RESULT_UPLOAD_RECEIVER_IDS_CTX_KEY,
+    RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY,
     EncKey,
     EncType,
     ResultUploadProgressContextKey,
@@ -281,11 +282,13 @@ class TestResultUploadProgressWiring:
 
     def test_multi_receiver_progress_captures_ref_receiver_pairs(self, monkeypatch):
         events = []
+        created = []
         obj = _FakeDownloadable([])
         fobs_ctx = {
             fobs.FOBSContextKey.CELL: object(),
             fobs.FOBSContextKey.NUM_RECEIVERS: 2,
             fobs.FOBSContextKey.STREAM_PROGRESS_CB: lambda **kwargs: events.append(kwargs),
+            RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY: lambda info: created.append(info),
             RESULT_UPLOAD_RECEIVER_IDS_CTX_KEY: ["server", "peer"],
             via_downloader_module._CtxKey.OBJECTS: [("ref-1", obj)],
         }
@@ -293,6 +296,9 @@ class TestResultUploadProgressWiring:
         downloader = self._finalize(monkeypatch, fobs_ctx)
 
         assert get_download_transactions()[0].expected_pairs == (("ref-1", "server"), ("ref-1", "peer"))
+        assert created[0].tx_id == "tx-1"
+        assert created[0].expected_pairs == (("ref-1", "server"), ("ref-1", "peer"))
+        assert downloader.added == [("ref-1", obj)]
         downloader.kwargs["progress_cb"](
             tx_id="tx-1",
             ref_id="ref-1",

@@ -170,7 +170,7 @@ class TestResultUploadReceiverStamp(unittest.TestCase):
 
         self.assertEqual(task_data.get_header(FOBSContextKey.RECEIVER_IDS), ["site-2.job-1"])
 
-    def test_swarm_stamps_site_name_when_job_id_is_unavailable(self):
+    def test_swarm_skips_receiver_stamp_when_job_id_is_unavailable(self):
         ctl = _make_controller()
         task_data = _make_shareable_with_real_arrays()
         fl_ctx = MagicMock()
@@ -178,7 +178,8 @@ class TestResultUploadReceiverStamp(unittest.TestCase):
 
         ctl._stamp_result_upload_receiver_ids(task_data, "site-2", fl_ctx)
 
-        self.assertEqual(task_data.get_header(FOBSContextKey.RECEIVER_IDS), ["site-2"])
+        self.assertIsNone(task_data.get_header(FOBSContextKey.RECEIVER_IDS))
+        self.assertTrue(ctl.log_warning.called)
 
 
 class TestScatterLazyRefResolution(unittest.TestCase):

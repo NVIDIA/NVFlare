@@ -47,6 +47,7 @@ _MIN_DOWNLOAD_TIMEOUT = MIN_DOWNLOAD_TIMEOUT_DEFAULT  # backward-compat alias
 _tls = threading.local()
 
 RESULT_UPLOAD_PROGRESS_CTX_KEY = "result_upload_progress_context"
+RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY = "result_upload_tx_created_cb"
 RESULT_UPLOAD_RECEIVER_IDS_CTX_KEY = fobs.FOBSContextKey.RECEIVER_IDS
 RESULT_UPLOAD_PROGRESS_INTERVAL = 30.0
 
@@ -99,6 +100,16 @@ def _append_download_transaction(info: DownloadTransactionInfo):
         transactions = []
         _tls.download_transactions = transactions
     transactions.append(info)
+
+
+def _notify_download_transaction_created(fobs_ctx: dict, info: DownloadTransactionInfo, logger):
+    tx_created_cb = fobs_ctx.get(RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY)
+    if not tx_created_cb:
+        return
+    try:
+        tx_created_cb(info)
+    except Exception as ex:
+        logger.warning(f"result_upload transaction-created callback failed for tx={info.tx_id}: {ex}")
 
 
 class LazyDownloadRef:
@@ -572,13 +583,13 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
                 for ref_id, _ in downloadable_objs:
                     for receiver_id in receiver_ids:
                         expected_pairs.append((ref_id, receiver_id))
-                _append_download_transaction(
-                    DownloadTransactionInfo(
-                        tx_id=downloader.tx_id,
-                        expected_pairs=tuple(expected_pairs),
-                        created_time=time.time(),
-                    )
+                transaction_info = DownloadTransactionInfo(
+                    tx_id=downloader.tx_id,
+                    expected_pairs=tuple(expected_pairs),
+                    created_time=time.time(),
                 )
+                _append_download_transaction(transaction_info)
+                _notify_download_transaction_created(fobs_ctx, transaction_info, self.logger)
 
             for ref_id, obj in downloadable_objs:
                 self.logger.debug(f"ViaDownloader: adding object to downloader: {ref_id=}")

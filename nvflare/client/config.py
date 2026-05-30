@@ -18,6 +18,7 @@ from enum import Enum
 from typing import Dict, Optional
 
 from nvflare.apis.fl_constant import ConnPropKey, FLMetaKey
+from nvflare.fuel.f3.streaming.download_service import DownloadService
 from nvflare.fuel.f3.streaming.transfer_progress import DEFAULT_STREAMING_IDLE_TIMEOUT, STREAMING_IDLE_TIMEOUT
 from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -203,11 +204,15 @@ class ClientConfig:
 
         After send_to_peer() ACKs, the server asynchronously downloads tensors from the subprocess
         DownloadService.  This timeout gates subprocess exit so the process does not disappear before
-        the download completes.  Defaults to 1800 s (30 min) for large-model transfers.
+        the download completes.  Defaults to the DownloadService finished-ref TTL for large-model transfers.
         Recipe-based external-process jobs can override it with
         recipe.add_client_config({"download_complete_timeout": N}).
         """
-        return float(self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.DOWNLOAD_COMPLETE_TIMEOUT, 1800.0))
+        return float(
+            self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(
+                ConfigKey.DOWNLOAD_COMPLETE_TIMEOUT, DownloadService.FINISHED_REFS_TTL
+            )
+        )
 
     def get_streaming_idle_timeout(self) -> float:
         """Return shared idle timeout for streamed task payloads and result uploads."""

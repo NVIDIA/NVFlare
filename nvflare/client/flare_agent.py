@@ -39,6 +39,7 @@ from nvflare.fuel.utils.constants import PipeChannelName
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import (
     RESULT_UPLOAD_PROGRESS_CTX_KEY,
+    RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY,
     ResultUploadProgressContextKey,
     clear_download_initiated,
     get_download_transactions,
@@ -183,6 +184,8 @@ class _ReverseResultUploadProgressTracker:
         return _ReverseResultUploadDecision(done=False, success=False)
 
     def mark_abandoned(self, timestamp: Optional[float] = None):
+        if timestamp is None:
+            timestamp = self.clock()
         with self.lock:
             for key in self.expected:
                 tx_id, ref_id, receiver_id = key
@@ -220,6 +223,12 @@ class _ReverseResultUploadProgressTracker:
             return matches[0]
         return None
 
+    def completion_grace_remaining(self) -> Optional[float]:
+        with self.lock:
+            if self.all_success_since is None:
+                return None
+            return max(0.0, STREAM_PROGRESS_COMPLETION_ACK_GRACE - (self.clock() - self.all_success_since))
+
     @staticmethod
     def _normalize_state(state: str):
         normalized = str(state).lower()
@@ -233,7 +242,12 @@ class _ReverseResultUploadProgressTracker:
 
     @staticmethod
     def _is_started(record) -> bool:
-        return record.bytes_done > 0 or (record.items_done is not None and record.items_done > 0) or record.terminal
+        # A zero-byte ACTIVE record is still a real downstream pull signal:
+        # DownloadService emits it when the receiver's first request arrives,
+        # before the first data chunk is served.  Treat any accepted record as
+        # started so the no-start budget is measured from the first pull, not
+        # from transaction encoding time.
+        return record.started_time is not None
 
     @staticmethod
     def _is_terminal_success(record) -> bool:
@@ -308,7 +322,7 @@ class FlareAgent:
         close_pipe: bool = True,
         close_metric_pipe: bool = True,
         decomposer_module: str = None,
-        download_complete_timeout: float = 1800.0,
+        download_complete_timeout: float = DownloadService.FINISHED_REFS_TTL,
         streaming_idle_timeout: float = DEFAULT_STREAMING_IDLE_TIMEOUT,
         launch_once: bool = False,
     ):
@@ -339,7 +353,7 @@ class FlareAgent:
             download_complete_timeout (float): how long to wait after send_to_peer() ACKs for the
                 server to finish downloading tensors from this subprocess's DownloadService.
                 Only active when pipe is a CellPipe with pass_through_on_send=True.
-                Defaults to 1800.0.
+                Defaults to DownloadService.FINISHED_REFS_TTL.
             streaming_idle_timeout (float): idle timeout for progress-aware reverse result_upload waiting.
                 Defaults to 600.0.
         """
@@ -616,8 +630,8 @@ class FlareAgent:
             idle_timeout=getattr(self, "_streaming_idle_timeout", DEFAULT_STREAMING_IDLE_TIMEOUT)
         )
 
-    def _register_download_transactions(self, tracker: _ReverseResultUploadProgressTracker):
-        transactions = get_download_transactions()
+    def _register_download_transactions(self, tracker: _ReverseResultUploadProgressTracker, transactions=None):
+        transactions = get_download_transactions() if transactions is None else transactions
         for transaction in transactions:
             tracker.register_transaction(
                 tx_id=transaction.tx_id,
@@ -627,6 +641,8 @@ class FlareAgent:
         return transactions
 
     def _wait_for_download_complete_fixed(self, download_done, download_status, wait_start):
+        # Legacy compatibility path: timeout warns but still returns success so
+        # progress-untrackable result uploads keep the pre-progress behavior.
         if download_done.wait(timeout=self._download_complete_timeout):
             download_elapsed = time.time() - wait_start
             ds = download_status[0]
@@ -644,7 +660,7 @@ class FlareAgent:
         return True
 
     def _fail_reverse_download_transactions(self, tracker, transactions):
-        tracker.mark_abandoned(timestamp=time.time())
+        tracker.mark_abandoned()
         for transaction in transactions or ():
             try:
                 DownloadService.delete_transaction(transaction.tx_id)
@@ -665,7 +681,7 @@ class FlareAgent:
 
             decision = tracker.decide(callback_fired=download_done.is_set(), callback_status=download_status[0])
             if decision.done:
-                elapsed = time.time() - wait_start
+                elapsed = tracker.clock() - wait_start
                 if decision.success:
                     self.logger.info(
                         f"[subprocess] server download complete: elapsed={elapsed:.2f}s reason={decision.reason}"
@@ -678,9 +694,12 @@ class FlareAgent:
                     self._fail_reverse_download_transactions(tracker, transactions)
                 return decision.success
 
-            progress_event.wait(
-                timeout=getattr(self, "_result_upload_poll_interval", _REVERSE_RESULT_UPLOAD_POLL_INTERVAL)
-            )
+            wait_timeout = getattr(self, "_result_upload_poll_interval", _REVERSE_RESULT_UPLOAD_POLL_INTERVAL)
+            if decision.reason == "completion_grace":
+                remaining_grace = tracker.completion_grace_remaining()
+                if remaining_grace is not None:
+                    wait_timeout = remaining_grace
+            progress_event.wait(timeout=wait_timeout)
             progress_event.clear()
 
     def _get_reverse_result_upload_abandon_reason(self):
@@ -726,10 +745,14 @@ class FlareAgent:
                 f"bytes_done={bytes_done} items_done={items_done}"
             )
         else:
-            self.logger.debug(
+            msg = (
                 f"[subprocess] ignored result_upload progress transfer={transfer_id} "
                 f"receiver={kwargs.get('receiver_id')}: {reason}"
             )
+            if reason == "unexpected_pair":
+                self.logger.warning(msg)
+            else:
+                self.logger.debug(msg)
         progress_event.set()
 
     def _do_submit_result(self, current_task: _TaskContext, result, rc):
@@ -753,6 +776,7 @@ class FlareAgent:
             progress_event = threading.Event()
             download_status = [None]
             result_upload_tracker = self._make_reverse_result_upload_tracker()
+            result_upload_transactions = []
 
             def _on_download_done(tid, status, objs):
                 download_status[0] = status
@@ -762,10 +786,19 @@ class FlareAgent:
             def _on_result_upload_progress(**kwargs):
                 self._update_reverse_result_upload_progress(result_upload_tracker, progress_event, **kwargs)
 
+            def _on_download_transaction_created(transaction):
+                result_upload_tracker.register_transaction(
+                    tx_id=transaction.tx_id,
+                    expected_pairs=transaction.expected_pairs,
+                    created_time=transaction.created_time,
+                )
+                result_upload_transactions.append(transaction)
+
             previous_stream_progress_cb = self._get_fobs_context_value(
                 self.pipe.cell, FOBSContextKey.STREAM_PROGRESS_CB
             )
             previous_receiver_ids = self._get_fobs_context_value(self.pipe.cell, FOBSContextKey.RECEIVER_IDS)
+            previous_tx_created_cb = self._get_fobs_context_value(self.pipe.cell, RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY)
             streaming_idle_timeout = getattr(self, "_streaming_idle_timeout", DEFAULT_STREAMING_IDLE_TIMEOUT)
             result_upload_progress_context = {
                 ResultUploadProgressContextKey.JOB_ID: result_shareable.get_header(FLMetaKey.JOB_ID) or "",
@@ -779,6 +812,7 @@ class FlareAgent:
                     FOBSContextKey.STREAM_PROGRESS_CB: _on_result_upload_progress,
                     FOBSContextKey.RECEIVER_IDS: result_receiver_ids,
                     RESULT_UPLOAD_PROGRESS_CTX_KEY: result_upload_progress_context,
+                    RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY: _on_download_transaction_created,
                 }
             )
             # Preserve the legacy message-root TTL for fallback paths where reverse
@@ -804,8 +838,11 @@ class FlareAgent:
                 # (i.e. the result contained large tensors requiring via-downloader transfer).
                 # False means validate result (metrics only) — skip the download wait and
                 # fall through to the launch_once shutdown block below.
-                if was_download_initiated():
-                    transactions = self._register_download_transactions(result_upload_tracker)
+                transactions = tuple(result_upload_transactions)
+                download_initiated = bool(transactions) or was_download_initiated()
+                if download_initiated:
+                    if not transactions:
+                        transactions = self._register_download_transactions(result_upload_tracker)
                     self.logger.info(
                         f"[subprocess] result ACK'd by CJ in {send_elapsed:.2f}s; " "waiting for server tensor download"
                     )
@@ -840,6 +877,7 @@ class FlareAgent:
                         FOBSContextKey.STREAM_PROGRESS_CB: previous_stream_progress_cb,
                         FOBSContextKey.RECEIVER_IDS: previous_receiver_ids,
                         RESULT_UPLOAD_PROGRESS_CTX_KEY: None,
+                        RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY: previous_tx_created_cb,
                     }
                 )
             if self._launch_once:
@@ -892,7 +930,7 @@ class FlareAgentWithCellPipe(FlareAgent):
         max_resends=None,
         submit_result_timeout=60.0,  # increased from 30.0 — gives CJ enough time to ACK under load
         has_metrics=False,
-        download_complete_timeout=1800.0,  # new — gate subprocess exit until server finishes tensor download
+        download_complete_timeout=DownloadService.FINISHED_REFS_TTL,
         streaming_idle_timeout=DEFAULT_STREAMING_IDLE_TIMEOUT,
         launch_once: bool = False,
     ):
@@ -915,7 +953,8 @@ class FlareAgentWithCellPipe(FlareAgent):
                 Defaults to 60.0.
             has_metrics (bool): has metric pipe or not.
             download_complete_timeout (float): how long to wait after send_to_peer() ACKs for the server to finish
-                downloading tensors from this subprocess's DownloadService. Defaults to 1800.0.
+                downloading tensors from this subprocess's DownloadService.
+                Defaults to DownloadService.FINISHED_REFS_TTL.
             streaming_idle_timeout (float): idle timeout for progress-aware reverse result_upload waiting.
         """
         pipe = CellPipe(
