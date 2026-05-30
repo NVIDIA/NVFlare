@@ -63,6 +63,11 @@ def _to_cell_message(msg: Message, extra=None) -> CellMessage:
         headers.update(extra)
     if msg.req_id:
         headers[_HEADER_REQ_ID] = msg.req_id
+    get_header = getattr(msg.data, "get_header", None)
+    if callable(get_header):
+        job_id = get_header(FLMetaKey.JOB_ID)
+        if job_id:
+            headers[FLMetaKey.JOB_ID] = job_id
 
     return CellMessage(headers=headers, payload=msg.data)
 
@@ -341,17 +346,19 @@ class CellPipe(Pipe):
         # Note: the following code must not be within the lock scope
         # Otherwise only one message can be sent at a time!
         optional = False
-        if msg.topic in [Topic.END, Topic.ABORT, Topic.HEARTBEAT]:
+        if msg.topic in [Topic.END, Topic.ABORT, Topic.HEARTBEAT, Topic.STREAM_PROGRESS]:
             optional = True
 
         if not timeout and msg.topic in [Topic.END, Topic.ABORT]:
             timeout = 5.0  # need to keep the connection for some time; otherwise the msg may not go out
 
-        if msg.topic == Topic.HEARTBEAT:
-            # Heartbeats are fire-and-forget; always create a fresh CellMessage so
+        if msg.topic in [Topic.HEARTBEAT, Topic.STREAM_PROGRESS]:
+            # Heartbeats and stream-progress events are fire-and-forget; always create a fresh CellMessage so
             # the timestamp header reflects the actual send time.
-            extra_headers = {_HEADER_HB_SEQ: self.hb_seq}
-            self.hb_seq += 1
+            extra_headers = None
+            if msg.topic == Topic.HEARTBEAT:
+                extra_headers = {_HEADER_HB_SEQ: self.hb_seq}
+                self.hb_seq += 1
 
             # don't need to wait for reply!
             self.cell.fire_and_forget(
@@ -405,7 +412,7 @@ class CellPipe(Pipe):
         # LazyDownloadRef placeholders rather than being downloaded inline.
         # Heartbeat messages do not carry model data and always skip this path
         # (they use fire_and_forget above).
-        if self.pass_through_on_send:
+        if self.pass_through_on_send and msg.topic != Topic.STREAM_PROGRESS:
             request.set_header(MessageHeaderKey.PASS_THROUGH, True)
         reply = self.cell.send_request(
             channel=self.channel,
@@ -414,6 +421,7 @@ class CellPipe(Pipe):
             request=request,
             timeout=timeout,
             optional=optional,
+            progress_wait_cb=getattr(msg, "_progress_wait_cb", None),
         )
         if reply:
             rc = reply.get_header(MessageHeaderKey.RETURN_CODE)

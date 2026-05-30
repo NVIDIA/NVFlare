@@ -69,3 +69,9 @@ class FOBSContextKey:
     # subprocess's DownloadService.  FlareAgent waits on a threading.Event
     # backed by this callback to gate subprocess exit on download completion.
     DOWNLOAD_COMPLETE_CB = "download_complete_cb"
+    # Optional callable used by streamed materialization paths to report
+    # monotonic transfer progress to a waiting peer.
+    STREAM_PROGRESS_CB = "stream_progress_cb"
+    # Optional job id propagated into per-message FOBS contexts for progress
+    # events emitted while materializing streamed payloads.
+    JOB_ID = "job_id"

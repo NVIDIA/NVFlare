@@ -358,6 +358,7 @@ class Cell(StreamCell):
         secure=False,
         optional=False,
         abort_signal: Signal = None,
+        progress_wait_cb=None,
     ):
         """Stream one request to the target
 
@@ -375,7 +376,9 @@ class Cell(StreamCell):
 
         """
         self._encode_message(request, abort_signal)
-        return self._send_one_request(channel, target, topic, request, timeout, secure, optional, abort_signal)
+        return self._send_one_request(
+            channel, target, topic, request, timeout, secure, optional, abort_signal, progress_wait_cb
+        )
 
     def _send_one_request(
         self,
@@ -387,6 +390,7 @@ class Cell(StreamCell):
         secure=False,
         optional=False,
         abort_signal=None,
+        progress_wait_cb=None,
     ):
         req_id = str(uuid.uuid4())
         request.add_headers({StreamHeaderKey.STREAM_REQ_ID: req_id})
@@ -417,8 +421,13 @@ class Cell(StreamCell):
             # waiting for receiving first byte
             self.logger.debug(f"{req_id=}: entering remote process wait {timeout=}")
 
-            waiter_rc = conditional_wait(waiter.in_receiving, timeout, abort_signal)
-            if waiter_rc != WaiterRC.IS_SET:
+            while True:
+                waiter_rc = conditional_wait(waiter.in_receiving, timeout, abort_signal)
+                if waiter_rc == WaiterRC.IS_SET:
+                    break
+                if waiter_rc == WaiterRC.TIMEOUT and progress_wait_cb and progress_wait_cb():
+                    self.logger.debug(f"{req_id=}: remote processing still has transfer progress; continue waiting")
+                    continue
                 self.logger.debug(f"{req_id=}: remote processing timeout {timeout=} {waiter_rc=}")
                 return self._get_result(req_id)
             self.logger.debug(f"{req_id=}: in receiving")

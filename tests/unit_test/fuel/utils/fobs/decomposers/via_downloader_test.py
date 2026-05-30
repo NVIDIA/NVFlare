@@ -16,6 +16,10 @@ from types import SimpleNamespace
 
 import pytest
 
+from nvflare.apis.fl_constant import ConfigVarName
+from nvflare.fuel.f3.streaming.transfer_progress import DEFAULT_STREAMING_IDLE_TIMEOUT, STREAMING_IDLE_TIMEOUT
+from nvflare.fuel.utils import fobs
+from nvflare.fuel.utils.fobs.decomposers import via_downloader as via_downloader_module
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import EncKey, EncType, ViaDownloaderDecomposer
 
 
@@ -38,6 +42,7 @@ class _DummyViaDownloader(ViaDownloaderDecomposer):
         secure=False,
         optional=False,
         abort_signal=None,
+        progress_cb=None,
     ) -> tuple[str, dict]:
         raise NotImplementedError
 
@@ -111,3 +116,159 @@ class TestViaDownloaderRecomposeLazyRefGuard:
 
         with pytest.raises(RuntimeError, match="item T0 is None"):
             decomposer.recompose({EncKey.TYPE: EncType.REF, EncKey.DATA: "T0"}, manager)
+
+
+class TestViaDownloaderTimeoutPolicy:
+    def test_create_downloader_uses_generic_default_when_no_timeouts_are_configured(self, monkeypatch):
+        observed = {}
+
+        def fake_get_positive_float_var(var_name, default):
+            return default
+
+        class FakeObjectDownloader:
+            def __init__(self, **kwargs):
+                observed.update(kwargs)
+
+        monkeypatch.setattr(via_downloader_module.acu, "get_positive_float_var", fake_get_positive_float_var)
+        monkeypatch.setattr(via_downloader_module, "ObjectDownloader", FakeObjectDownloader)
+
+        decomposer = _DummyViaDownloader()
+        decomposer._create_downloader({fobs.FOBSContextKey.CELL: object()})
+
+        assert observed["timeout"] == DEFAULT_STREAMING_IDLE_TIMEOUT
+
+    def test_create_downloader_uses_generic_streaming_idle_timeout_as_default_floor(self, monkeypatch):
+        observed = {}
+
+        def fake_get_positive_float_var(var_name, default):
+            if var_name == STREAMING_IDLE_TIMEOUT:
+                return 1200.0
+            if var_name == f"dummy_{ConfigVarName.MIN_DOWNLOAD_TIMEOUT}":
+                return default
+            return default
+
+        class FakeObjectDownloader:
+            def __init__(self, **kwargs):
+                observed.update(kwargs)
+
+        monkeypatch.setattr(via_downloader_module.acu, "get_positive_float_var", fake_get_positive_float_var)
+        monkeypatch.setattr(via_downloader_module, "ObjectDownloader", FakeObjectDownloader)
+
+        decomposer = _DummyViaDownloader()
+        decomposer._create_downloader({fobs.FOBSContextKey.CELL: object()})
+
+        assert observed["timeout"] == 1200.0
+
+    def test_create_downloader_honors_explicit_legacy_min_download_timeout(self, monkeypatch):
+        observed = {}
+
+        def fake_get_positive_float_var(var_name, default):
+            if var_name == STREAMING_IDLE_TIMEOUT:
+                return 1200.0
+            if var_name == f"dummy_{ConfigVarName.MIN_DOWNLOAD_TIMEOUT}":
+                return 1800.0
+            return default
+
+        class FakeObjectDownloader:
+            def __init__(self, **kwargs):
+                observed.update(kwargs)
+
+        monkeypatch.setattr(via_downloader_module.acu, "get_positive_float_var", fake_get_positive_float_var)
+        monkeypatch.setattr(via_downloader_module, "ObjectDownloader", FakeObjectDownloader)
+
+        decomposer = _DummyViaDownloader()
+        decomposer._create_downloader({fobs.FOBSContextKey.CELL: object()})
+
+        assert observed["timeout"] == 1800.0
+
+
+class TestConcreteViaDownloaderProgressCallback:
+    def test_numpy_decomposer_passes_progress_callback_to_download_object(self, monkeypatch):
+        from nvflare.app_common.decomposers.numpy_decomposers import NumpyArrayDecomposer
+        from nvflare.app_common.np import np_downloader
+
+        observed = {}
+        progress_cb = object()
+
+        def fake_download_object(**kwargs):
+            observed.update(kwargs)
+            kwargs["consumer"].download_completed(kwargs["ref_id"])
+
+        monkeypatch.setattr(np_downloader, "download_object", fake_download_object)
+
+        err, result = NumpyArrayDecomposer().download(
+            from_fqcn="server",
+            ref_id="ref-1",
+            per_request_timeout=1.0,
+            cell=object(),
+            progress_cb=progress_cb,
+        )
+
+        assert err is None
+        assert result is None
+        assert observed["progress_cb"] is progress_cb
+
+    def test_tensor_decomposer_passes_progress_callback_to_download_object(self, monkeypatch):
+        pytest.importorskip("torch")
+        from nvflare.app_opt.pt import tensor_downloader
+        from nvflare.app_opt.pt.decomposers import TensorDecomposer
+
+        observed = {}
+        progress_cb = object()
+
+        class FakeCell:
+            def get_fobs_context(self):
+                return {}
+
+        def fake_download_object(**kwargs):
+            observed.update(kwargs)
+            kwargs["consumer"].download_completed(kwargs["ref_id"])
+
+        monkeypatch.setattr(tensor_downloader, "download_object", fake_download_object)
+
+        err, result = TensorDecomposer().download(
+            from_fqcn="server",
+            ref_id="ref-1",
+            per_request_timeout=1.0,
+            cell=FakeCell(),
+            progress_cb=progress_cb,
+        )
+
+        assert err is None
+        assert result is None
+        assert observed["progress_cb"] is progress_cb
+
+    def test_tensor_disk_decomposer_passes_progress_callback_to_download_object(self, monkeypatch, tmp_path):
+        pytest.importorskip("torch")
+        from nvflare.app_opt.pt import tensor_downloader
+        from nvflare.app_opt.pt.decomposers import TensorDecomposer
+
+        observed = {}
+        progress_cb = object()
+
+        class FakeCell:
+            def get_fobs_context(self):
+                return {
+                    "enable_tensor_disk_offload": True,
+                    tensor_downloader._TENSOR_DISK_OFFLOAD_ROOT_DIR: str(tmp_path),
+                }
+
+        def fake_download_object(**kwargs):
+            observed.update(kwargs)
+            kwargs["consumer"].result = {}
+            kwargs["consumer"].download_completed(kwargs["ref_id"])
+
+        monkeypatch.setattr(tensor_downloader, "download_object", fake_download_object)
+
+        err, result = TensorDecomposer().download(
+            from_fqcn="server",
+            ref_id="ref-1",
+            per_request_timeout=1.0,
+            cell=FakeCell(),
+            progress_cb=progress_cb,
+        )
+
+        assert err is None
+        assert result is not None
+        assert observed["progress_cb"] is progress_cb
+        result.cleanup()

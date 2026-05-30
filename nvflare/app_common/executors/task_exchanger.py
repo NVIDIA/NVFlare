@@ -23,9 +23,15 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.fuel.f3.streaming.transfer_progress import (
+    DEFAULT_STREAMING_IDLE_TIMEOUT,
+    DIRECTION_TASK_PAYLOAD_DOWNLOAD,
+    TransferProgressState,
+    TransferProgressTracker,
+)
 from nvflare.fuel.utils.constants import PipeChannelName
-from nvflare.fuel.utils.pipe.pipe import Message, Pipe
-from nvflare.fuel.utils.pipe.pipe_handler import PipeHandler, Topic
+from nvflare.fuel.utils.pipe.pipe import Message, Pipe, Topic
+from nvflare.fuel.utils.pipe.pipe_handler import PipeHandler
 from nvflare.fuel.utils.validation_utils import (
     check_non_negative_int,
     check_non_negative_number,
@@ -33,6 +39,38 @@ from nvflare.fuel.utils.validation_utils import (
     check_str,
 )
 from nvflare.security.logging import secure_format_exception
+
+STREAM_PROGRESS_TASK_ID_KEYS = ("task_id", "req_id", "request_id", "msg_id")
+STREAM_PROGRESS_JOB_ID_KEYS = ("job_id",)
+STREAM_PROGRESS_TRANSFER_ID_KEYS = ("transfer_id", "ref_id", "stream_id")
+STREAM_PROGRESS_DIRECTION_KEYS = ("direction",)
+STREAM_PROGRESS_SEQUENCE_KEYS = ("sequence", "seq")
+STREAM_PROGRESS_BYTES_KEYS = ("bytes_done", "progress", "offset", "bytes", "bytes_read", "bytes_received", "current")
+STREAM_PROGRESS_ITEM_KEYS = ("items_done", "items", "item_count")
+STREAM_PROGRESS_STATE_KEYS = ("state", "status", "event", "event_type")
+STREAM_PROGRESS_START_STATUSES = ("start", "started")
+STREAMING_IDLE_TIMEOUT = DEFAULT_STREAMING_IDLE_TIMEOUT
+
+STREAM_PROGRESS_STATE_ALIASES = {
+    "active": "active",
+    "progress": "active",
+    "in_progress": "active",
+    "running": "active",
+    "start": "active",
+    "started": "active",
+    "completed": "completed",
+    "complete": "completed",
+    "done": "completed",
+    "success": "completed",
+    "failed": "failed",
+    "fail": "failed",
+    "failure": "failed",
+    "error": "failed",
+    "exception": "failed",
+    "aborted": "aborted",
+    "abort": "aborted",
+    "cancelled": "aborted",
+}
 
 
 class TaskExchanger(Executor):
@@ -45,6 +83,8 @@ class TaskExchanger(Executor):
         resend_interval: float = 2.0,
         max_resends: Optional[int] = None,
         peer_read_timeout: Optional[float] = 60.0,
+        peer_read_timeout_explicit: bool = False,
+        streaming_idle_timeout: Optional[float] = STREAMING_IDLE_TIMEOUT,
         task_wait_time: Optional[float] = None,
         result_poll_interval: float = 0.5,
         pipe_channel_name=PipeChannelName.TASK,
@@ -64,6 +104,10 @@ class TaskExchanger(Executor):
             max_resends (int, optional): max number of resend. None means no limit.
                 Defaults to None.
             peer_read_timeout (float, optional): time to wait for peer to accept sent message.
+            peer_read_timeout_explicit (bool): whether peer_read_timeout came from an explicit user override. When
+                lower than streaming_idle_timeout, this preserves fast-fail behavior instead of progress-extending.
+            streaming_idle_timeout (float, optional): when task-send peer-read times out, continue waiting only while
+                the exact transfer has made monotonic stream progress within this many seconds.
             task_wait_time (float, optional): how long to wait for a task to complete.
                 None means waiting forever. Defaults to None.
             result_poll_interval (float): how often to poll task result.
@@ -82,6 +126,8 @@ class TaskExchanger(Executor):
             check_non_negative_int("max_resends", max_resends)
         if peer_read_timeout is not None:
             check_positive_number("peer_read_timeout", peer_read_timeout)
+        if streaming_idle_timeout is not None:
+            check_positive_number("streaming_idle_timeout", streaming_idle_timeout)
         if task_wait_time is not None:
             check_positive_number("task_wait_time", task_wait_time)
         check_positive_number("result_poll_interval", result_poll_interval)
@@ -94,6 +140,8 @@ class TaskExchanger(Executor):
         self.resend_interval = resend_interval
         self.max_resends = max_resends
         self.peer_read_timeout = peer_read_timeout
+        self.peer_read_timeout_explicit = peer_read_timeout_explicit
+        self.streaming_idle_timeout = streaming_idle_timeout
         self.task_wait_time = task_wait_time
         self.result_poll_interval = result_poll_interval
         self.pipe_channel_name = pipe_channel_name
@@ -101,6 +149,9 @@ class TaskExchanger(Executor):
         self.pipe_handler = None
         self._executing = threading.Event()
         self._executing_lock = threading.Lock()
+        self._stream_progress_lock = threading.Lock()
+        self._stream_progress_tracker = self._make_stream_progress_tracker()
+        self._explicit_peer_read_timeout_warned = False
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
@@ -130,6 +181,7 @@ class TaskExchanger(Executor):
             self.pipe_handler.start()
         elif event_type == EventType.ABOUT_TO_END_RUN:
             self.log_debug(fl_ctx, "Stopping pipe handler")
+            self._mark_all_stream_progress_terminal(TransferProgressState.ABORTED)
             if self.pipe_handler:
                 self.pipe_handler.notify_end("end_of_job")
                 self.pipe_handler.stop(close_pipe=False)
@@ -157,11 +209,269 @@ class TaskExchanger(Executor):
                 self.logger.debug(f"Ignoring late {msg.topic} from a previous pipe handler")
                 return
             self.logger.info(f"pipe status changed to {msg.topic}: {msg.data}")
+            self._mark_all_stream_progress_terminal(TransferProgressState.ABORTED)
             _h.stop(close_pipe=False)
 
         handler.set_status_cb(_bound_status_cb)
+
+        def _bound_msg_cb(msg, _h=handler):
+            if self.pipe_handler is not _h:
+                self.logger.debug(f"Ignoring late {msg.topic} from a previous pipe handler")
+                return
+            if msg.topic == Topic.STREAM_PROGRESS:
+                self._handle_stream_progress_message(msg)
+            else:
+                with _h.lock:
+                    _h.messages.append(msg)
+
+        handler.set_message_cb(_bound_msg_cb)
         self.pipe_handler = handler
         return handler
+
+    def _make_stream_progress_tracker(self):
+        idle_timeout = self.streaming_idle_timeout or STREAMING_IDLE_TIMEOUT
+        return TransferProgressTracker(idle_timeout=idle_timeout)
+
+    @staticmethod
+    def _get_progress_event_value(data, keys):
+        for key in keys:
+            if isinstance(data, dict):
+                if key in data:
+                    return data.get(key)
+            elif hasattr(data, key):
+                return getattr(data, key)
+        return None
+
+    @staticmethod
+    def _normalize_progress_status(status) -> str:
+        if status is None:
+            return ""
+        return str(status).lower()
+
+    @staticmethod
+    def _normalize_tracker_state(status: str) -> str:
+        return STREAM_PROGRESS_STATE_ALIASES.get(status, TransferProgressState.ACTIVE)
+
+    def _handle_stream_progress_message(self, msg: Message):
+        data = msg.data
+        if not isinstance(data, dict):
+            self.logger.warning(f"ignored stream progress with invalid payload: {data}")
+            return
+
+        task_id = self._get_progress_event_value(data, STREAM_PROGRESS_TASK_ID_KEYS)
+        transfer_id = self._get_progress_event_value(data, STREAM_PROGRESS_TRANSFER_ID_KEYS)
+        if task_id is None and transfer_id is None:
+            self.logger.warning(f"ignored stream progress without task id or transfer id: {data}")
+            return
+        if task_id is None:
+            task_id = transfer_id
+        if transfer_id is None:
+            transfer_id = task_id
+
+        job_id = self._get_progress_event_value(data, STREAM_PROGRESS_JOB_ID_KEYS)
+        direction = self._get_progress_event_value(data, STREAM_PROGRESS_DIRECTION_KEYS)
+        status = self._normalize_progress_status(self._get_progress_event_value(data, STREAM_PROGRESS_STATE_KEYS))
+        bytes_done = self._get_progress_event_value(data, STREAM_PROGRESS_BYTES_KEYS)
+        items_done = self._get_progress_event_value(data, STREAM_PROGRESS_ITEM_KEYS)
+        sequence = self._get_progress_event_value(data, STREAM_PROGRESS_SEQUENCE_KEYS)
+
+        try:
+            bytes_done_value = int(bytes_done) if bytes_done is not None else 0
+        except (TypeError, ValueError):
+            self.logger.warning(f"ignored stream progress with invalid bytes_done value: {data}")
+            return
+
+        try:
+            items_done_value = int(items_done) if items_done is not None else None
+        except (TypeError, ValueError):
+            items_done_value = None
+
+        job_id = "" if job_id is None else str(job_id)
+        task_id = str(task_id)
+        transfer_id = str(transfer_id)
+        direction = DIRECTION_TASK_PAYLOAD_DOWNLOAD if direction is None else str(direction)
+        state = self._normalize_tracker_state(status)
+
+        with self._stream_progress_lock:
+            record = self._stream_progress_tracker.get_record(
+                job_id=job_id,
+                task_id=task_id,
+                transfer_id=transfer_id,
+                direction=direction,
+            )
+            try:
+                sequence_value = int(sequence) if sequence is not None else (record.sequence + 1 if record else 0)
+            except (TypeError, ValueError):
+                sequence_value = record.sequence + 1 if record else 0
+            update = self._stream_progress_tracker.update(
+                job_id=job_id,
+                task_id=task_id,
+                transfer_id=transfer_id,
+                direction=direction,
+                sequence=sequence_value,
+                bytes_done=bytes_done_value,
+                items_done=items_done_value,
+                state=state,
+            )
+
+        if update.accepted:
+            if status in STREAM_PROGRESS_START_STATUSES:
+                event_kind = "start"
+            elif state == TransferProgressState.COMPLETED:
+                event_kind = "completion"
+            elif state in (TransferProgressState.FAILED, TransferProgressState.ABORTED):
+                event_kind = "failure"
+            else:
+                event_kind = "active"
+            self.logger.info(
+                f"accepted stream progress {event_kind} for task={task_id} transfer={transfer_id} direction={direction} "
+                f"state={state} sequence={sequence_value} bytes_done={bytes_done_value} "
+                f"items_done={items_done_value} progressed={update.progressed}"
+            )
+        else:
+            self.logger.debug(
+                f"ignored stream progress for task={task_id} transfer={transfer_id} direction={direction}: "
+                f"{update.reason}"
+            )
+
+    def _get_active_task_payload_records(self, task_id: str, job_id: Optional[str] = None):
+        with self._stream_progress_lock:
+            records = list(
+                self._stream_progress_tracker.records(
+                    job_id=str(job_id) if job_id is not None else None,
+                    task_id=str(task_id),
+                    direction=DIRECTION_TASK_PAYLOAD_DOWNLOAD,
+                )
+            )
+        return records, [record for record in records if not record.terminal]
+
+    def _get_recent_task_payload_record(self, task_id: str, job_id: Optional[str] = None):
+        if not self.streaming_idle_timeout:
+            return None
+
+        now = time.time()
+        _, active_records = self._get_active_task_payload_records(task_id, job_id)
+        recent_records = [
+            record for record in active_records if now - record.last_progress_time < self.streaming_idle_timeout
+        ]
+        if not active_records or len(recent_records) != len(active_records):
+            return None
+        return max(recent_records, key=lambda record: record.last_progress_time)
+
+    def _should_continue_task_send_waiting(
+        self,
+        task_name: str,
+        task_id: str,
+        job_id: Optional[str],
+        send_start_time: float,
+        fl_ctx: FLContext,
+    ) -> bool:
+        if not self.streaming_idle_timeout:
+            return False
+
+        now = time.time()
+        records, active_records = self._get_active_task_payload_records(task_id, job_id)
+        if not records:
+            elapsed = now - send_start_time
+            if elapsed < self.streaming_idle_timeout:
+                self.log_info(
+                    fl_ctx,
+                    f"peer has not read task '{task_name}' after {elapsed} secs and no stream progress record "
+                    f"exists yet; continuing to wait until streaming_idle_timeout={self.streaming_idle_timeout}s",
+                )
+                return True
+            return False
+
+        if not active_records:
+            return False
+
+        recent_records = [
+            record for record in active_records if now - record.last_progress_time < self.streaming_idle_timeout
+        ]
+        if len(recent_records) != len(active_records):
+            return False
+
+        record = max(recent_records, key=lambda item: item.last_progress_time)
+        self.log_info(
+            fl_ctx,
+            f"peer has not read task '{task_name}' after {self.peer_read_timeout} secs, "
+            f"but stream transfer '{record.transfer_id}' is still progressing "
+            f"(bytes_done={record.bytes_done}, items_done={record.items_done}); continuing to wait",
+        )
+        return True
+
+    def _mark_task_stream_progress_terminal(self, task_id: str, state: str, job_id: Optional[str] = None):
+        if not task_id:
+            return
+
+        with self._stream_progress_lock:
+            records = list(
+                self._stream_progress_tracker.records(
+                    job_id=str(job_id) if job_id is not None else None,
+                    task_id=str(task_id),
+                    direction=DIRECTION_TASK_PAYLOAD_DOWNLOAD,
+                )
+            )
+            for record in records:
+                if not record.terminal:
+                    self._stream_progress_tracker.mark_terminal(
+                        job_id=record.job_id,
+                        task_id=record.task_id,
+                        transfer_id=record.transfer_id,
+                        direction=record.direction,
+                        state=state,
+                    )
+
+    def _mark_all_stream_progress_terminal(self, state: str):
+        with self._stream_progress_lock:
+            records = list(self._stream_progress_tracker.records(direction=DIRECTION_TASK_PAYLOAD_DOWNLOAD))
+            for record in records:
+                if not record.terminal:
+                    self._stream_progress_tracker.mark_terminal(
+                        job_id=record.job_id,
+                        task_id=record.task_id,
+                        transfer_id=record.transfer_id,
+                        direction=record.direction,
+                        state=state,
+                    )
+
+    def _should_honor_explicit_peer_read_timeout(self):
+        return (
+            self.peer_read_timeout_explicit
+            and self.peer_read_timeout is not None
+            and self.streaming_idle_timeout is not None
+            and self.peer_read_timeout < self.streaming_idle_timeout
+        )
+
+    def _send_task_to_peer(self, req: Message, fl_ctx: FLContext, abort_signal: Signal) -> bool:
+        job_id = None
+        get_header = getattr(req.data, "get_header", None)
+        if callable(get_header):
+            job_id = get_header(FLMetaKey.JOB_ID)
+        send_start_time = time.time()
+
+        def _progress_wait_cb():
+            if self._should_honor_explicit_peer_read_timeout():
+                if not self._explicit_peer_read_timeout_warned:
+                    self._explicit_peer_read_timeout_warned = True
+                    self.log_warning(
+                        fl_ctx,
+                        f"explicit peer_read_timeout ({self.peer_read_timeout}s) is lower than "
+                        f"streaming_idle_timeout ({self.streaming_idle_timeout}s); honoring fast-fail behavior "
+                        "instead of extending the wait on stream progress",
+                    )
+                return False
+
+            return self._should_continue_task_send_waiting(
+                task_name=req.topic,
+                task_id=req.msg_id,
+                job_id=job_id,
+                send_start_time=send_start_time,
+                fl_ctx=fl_ctx,
+            )
+
+        req._progress_wait_cb = _progress_wait_cb
+        return self.pipe_handler.send_to_peer(req, timeout=self.peer_read_timeout, abort_signal=abort_signal)
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         """
@@ -197,8 +507,9 @@ class TaskExchanger(Executor):
         self.log_info(fl_ctx, f"sending task to peer {self.peer_read_timeout=}")
         req = Message.new_request(topic=task_name, data=shareable, msg_id=task_id)
         start_time = time.time()
-        has_been_read = self.pipe_handler.send_to_peer(req, timeout=self.peer_read_timeout, abort_signal=abort_signal)
+        has_been_read = self._send_task_to_peer(req, fl_ctx, abort_signal)
         if self.peer_read_timeout and not has_been_read:
+            self._mark_task_stream_progress_terminal(task_id, TransferProgressState.ABORTED, job_id=fl_ctx.get_job_id())
             self.log_error(
                 fl_ctx,
                 f"peer does not accept task '{task_name}' in {time.time() - start_time} secs - aborting task!",
@@ -214,12 +525,18 @@ class TaskExchanger(Executor):
             if abort_signal.triggered:
                 # notify peer that the task is aborted
                 self.log_debug(fl_ctx, f"task '{task_name}' is aborted.")
+                self._mark_task_stream_progress_terminal(
+                    task_id, TransferProgressState.ABORTED, job_id=fl_ctx.get_job_id()
+                )
                 self.pipe_handler.notify_abort(task_id)
                 self.pipe_handler.stop()
                 return make_reply(ReturnCode.TASK_ABORTED)
 
             if self.pipe_handler.asked_to_stop:
                 self.log_info(fl_ctx, "task pipe stopped! aborting task.")
+                self._mark_task_stream_progress_terminal(
+                    task_id, TransferProgressState.ABORTED, job_id=fl_ctx.get_job_id()
+                )
                 self.pipe_handler.notify_abort(task_id)
                 abort_signal.trigger("task pipe stopped!")
                 return make_reply(ReturnCode.TASK_ABORTED)
@@ -230,6 +547,9 @@ class TaskExchanger(Executor):
                     # timed out
                     self.log_error(fl_ctx, f"task '{task_name}' timeout after {self.task_wait_time} secs")
                     # also tell peer to abort the task
+                    self._mark_task_stream_progress_terminal(
+                        task_id, TransferProgressState.ABORTED, job_id=fl_ctx.get_job_id()
+                    )
                     self.pipe_handler.notify_abort(task_id)
                     abort_signal.trigger(f"task '{task_name}' timeout after {self.task_wait_time} secs")
                     return make_reply(ReturnCode.EXECUTION_EXCEPTION)
@@ -254,6 +574,9 @@ class TaskExchanger(Executor):
                 try:
                     result = reply.data
                     if not isinstance(result, Shareable):
+                        self._mark_task_stream_progress_terminal(
+                            task_id, TransferProgressState.FAILED, job_id=fl_ctx.get_job_id()
+                        )
                         self.log_error(fl_ctx, f"bad task result from peer: expect Shareable but got {type(result)}")
                         return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
@@ -262,12 +585,21 @@ class TaskExchanger(Executor):
                         result.set_header(AppConstants.CURRENT_ROUND, current_round)
 
                     if not self.check_output_shareable(task_name, result, fl_ctx):
+                        self._mark_task_stream_progress_terminal(
+                            task_id, TransferProgressState.FAILED, job_id=fl_ctx.get_job_id()
+                        )
                         self.log_error(fl_ctx, "bad task result from peer")
                         return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
                     self.log_info(fl_ctx, f"received result of {task_name} from peer in {time.time() - start} secs")
+                    self._mark_task_stream_progress_terminal(
+                        task_id, TransferProgressState.COMPLETED, job_id=fl_ctx.get_job_id()
+                    )
                     return result
                 except Exception as ex:
+                    self._mark_task_stream_progress_terminal(
+                        task_id, TransferProgressState.FAILED, job_id=fl_ctx.get_job_id()
+                    )
                     self.log_error(fl_ctx, f"Failed to convert result: {secure_format_exception(ex)}")
                     return make_reply(ReturnCode.EXECUTION_EXCEPTION)
             time.sleep(self.result_poll_interval)

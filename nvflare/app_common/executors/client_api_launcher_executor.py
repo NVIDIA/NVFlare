@@ -23,8 +23,13 @@ from nvflare.app_common.executors.launcher_executor import LauncherExecutor
 from nvflare.app_common.utils.export_utils import update_export_props
 from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType, write_config_to_file
 from nvflare.client.constants import CLIENT_API_CONFIG, EXTERNAL_PRE_INIT_TIMEOUT, PEER_READ_TIMEOUT
+from nvflare.fuel.f3.streaming.transfer_progress import (
+    DEFAULT_STREAMING_IDLE_TIMEOUT,
+    STREAMING_IDLE_TIMEOUT,
+    STREAMING_MAX_PEER_SILENCE,
+    resolve_streaming_progress_config,
+)
 from nvflare.fuel.utils.attributes_exportable import ExportMode
-from nvflare.fuel.utils.fobs.decomposers.via_downloader import MIN_DOWNLOAD_TIMEOUT_DEFAULT
 from nvflare.fuel.utils.validation_utils import check_non_negative_int
 from nvflare.utils.configs import get_client_config_value
 
@@ -152,6 +157,8 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         self._stop_task_wait_timeout = download_complete_timeout
         self._cell_with_pass_through = None  # track cell so finalize() can clean up
         self._pass_through_channel = None  # channel name registered in decode_pass_through_channels
+        self.heartbeat_timeout_explicit = False
+        self.streaming_max_peer_silence = resolve_streaming_progress_config().streaming_max_peer_silence
 
     def finalize(self, fl_ctx: FLContext) -> None:
         if self._cell_with_pass_through is not None and self._pass_through_channel is not None:
@@ -226,6 +233,26 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         self.log_info(fl_ctx, f"Overriding {attr_name} from config: {old_value}s -> {timeout_value}s")
         setattr(self, attr_name, timeout_value)
 
+    def _apply_non_negative_float_client_config_override(self, fl_ctx: FLContext, key: str, attr_name: str):
+        value = self._get_client_config_override(fl_ctx, key)
+        if value is _CONFIG_VALUE_MISSING:
+            return
+
+        try:
+            timeout_value = float(value)
+        except (TypeError, ValueError) as e:
+            msg = f"{key} must be non-negative, got {value}"
+            self.log_error(fl_ctx, msg)
+            raise ValueError(msg) from e
+
+        if timeout_value < 0:
+            self.log_error(fl_ctx, f"Invalid {key}: {timeout_value}s (must be non-negative)")
+            raise ValueError(f"{key} must be non-negative, got {timeout_value}")
+
+        old_value = getattr(self, attr_name)
+        self.log_info(fl_ctx, f"Overriding {attr_name} from config: {old_value}s -> {timeout_value}s")
+        setattr(self, attr_name, timeout_value)
+
     def _apply_max_resends_client_config_override(self, fl_ctx: FLContext):
         value = self._get_client_config_override(fl_ctx, ConfigKey.MAX_RESENDS)
         if value is _CONFIG_VALUE_MISSING:
@@ -246,6 +273,62 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         self.log_info(fl_ctx, f"Overriding max_resends from config: {self.max_resends} -> {value}")
         self.max_resends = value
 
+    def _apply_streaming_progress_client_config_overrides(self, fl_ctx: FLContext):
+        config_values = {}
+        for key in (STREAMING_IDLE_TIMEOUT, STREAMING_MAX_PEER_SILENCE):
+            value = self._get_client_config_override(fl_ctx, key)
+            if value is not _CONFIG_VALUE_MISSING:
+                config_values[key] = value
+
+        try:
+            streaming_config = resolve_streaming_progress_config(config_values)
+        except (TypeError, ValueError) as e:
+            msg = f"Invalid streaming progress config: {e}"
+            self.log_error(fl_ctx, msg)
+            raise ValueError(msg) from e
+
+        old_idle_timeout = self.streaming_idle_timeout
+        old_max_peer_silence = self.streaming_max_peer_silence
+        self.streaming_idle_timeout = streaming_config.streaming_idle_timeout
+        self.streaming_max_peer_silence = streaming_config.streaming_max_peer_silence
+        self._stream_progress_tracker = self._make_stream_progress_tracker()
+
+        if config_values:
+            self.log_info(
+                fl_ctx,
+                "Resolved streaming progress config: "
+                f"streaming_idle_timeout {old_idle_timeout}s -> {self.streaming_idle_timeout}s, "
+                f"streaming_max_peer_silence {old_max_peer_silence}s -> {self.streaming_max_peer_silence}s",
+            )
+
+    def _apply_streaming_timeout_defaults(self, fl_ctx: FLContext):
+        if self.streaming_idle_timeout is None:
+            return
+
+        if (
+            not self.peer_read_timeout_explicit
+            and self.peer_read_timeout is not None
+            and self.peer_read_timeout < self.streaming_idle_timeout
+        ):
+            old_value = self.peer_read_timeout
+            self.peer_read_timeout = self.streaming_idle_timeout
+            self.log_info(
+                fl_ctx,
+                f"Using streaming_idle_timeout for peer_read_timeout: {old_value}s -> {self.peer_read_timeout}s",
+            )
+
+        if (
+            not self.heartbeat_timeout_explicit
+            and self.heartbeat_timeout is not None
+            and self.heartbeat_timeout < self.streaming_idle_timeout
+        ):
+            old_value = self.heartbeat_timeout
+            self.heartbeat_timeout = self.streaming_idle_timeout
+            self.log_info(
+                fl_ctx,
+                f"Using streaming_idle_timeout for heartbeat_timeout: {old_value}s -> {self.heartbeat_timeout}s",
+            )
+
     def _apply_client_config_overrides(self, fl_ctx: FLContext):
         # Apply top-level config_fed_client.json overrides before writing the
         # subprocess Client API config so add_client_config() affects both sides.
@@ -255,7 +338,12 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         # peer_read_timeout is enforced on the CJ side, while submit_result_timeout is
         # enforced by the subprocess. Keep both tunable from add_client_config() so
         # operators can coordinate large-model transfer timeouts in one place.
+        if self._get_client_config_override(fl_ctx, PEER_READ_TIMEOUT) is not _CONFIG_VALUE_MISSING:
+            self.peer_read_timeout_explicit = True
         self._apply_positive_float_client_config_override(fl_ctx, PEER_READ_TIMEOUT, "peer_read_timeout")
+        if self._get_client_config_override(fl_ctx, ConfigKey.HEARTBEAT_TIMEOUT) is not _CONFIG_VALUE_MISSING:
+            self.heartbeat_timeout_explicit = True
+        self._apply_non_negative_float_client_config_override(fl_ctx, ConfigKey.HEARTBEAT_TIMEOUT, "heartbeat_timeout")
         self._apply_positive_float_client_config_override(
             fl_ctx, ConfigKey.SUBMIT_RESULT_TIMEOUT, "_submit_result_timeout"
         )
@@ -263,6 +351,8 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         self._apply_positive_float_client_config_override(
             fl_ctx, ConfigKey.DOWNLOAD_COMPLETE_TIMEOUT, "_download_complete_timeout"
         )
+        self._apply_streaming_progress_client_config_overrides(fl_ctx)
+        self._apply_streaming_timeout_defaults(fl_ctx)
         self._stop_task_wait_timeout = self._download_complete_timeout
 
     def _decomposer_prefix(self) -> str:
@@ -317,8 +407,9 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         per_req_key = f"{prefix}{ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT}"
         configured_per_req = ConfigService.get_float_var(per_req_key, conf=SystemConfigs.APPLICATION_CONF, default=None)
         per_req = acu.get_positive_float_var(per_req_key, 600.0)
+        effective_streaming_idle_timeout = self.streaming_idle_timeout or DEFAULT_STREAMING_IDLE_TIMEOUT
         min_dl = acu.get_positive_float_var(
-            f"{prefix}{ConfigVarName.MIN_DOWNLOAD_TIMEOUT}", MIN_DOWNLOAD_TIMEOUT_DEFAULT
+            f"{prefix}{ConfigVarName.MIN_DOWNLOAD_TIMEOUT}", effective_streaming_idle_timeout
         )
 
         if min_dl < per_req:
@@ -328,6 +419,33 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                 f"{prefix}streaming_per_request_timeout ({per_req}s). "
                 f"Transactions may be killed mid-download. "
                 f"Set {prefix}min_download_timeout >= {per_req}s in job config.",
+            )
+
+        if (
+            self.peer_read_timeout_explicit
+            and self.peer_read_timeout is not None
+            and self.streaming_idle_timeout is not None
+            and self.peer_read_timeout < self.streaming_idle_timeout
+        ):
+            self._explicit_peer_read_timeout_warned = True
+            self.log_warning(
+                fl_ctx,
+                f"explicit peer_read_timeout ({self.peer_read_timeout}s) is lower than "
+                f"streaming_idle_timeout ({self.streaming_idle_timeout}s); NVFLARE will honor the explicit "
+                "fast-fail timeout instead of extending task-send waits on stream progress.",
+            )
+
+        if (
+            self.heartbeat_timeout_explicit
+            and self.heartbeat_timeout is not None
+            and self.streaming_idle_timeout is not None
+            and self.heartbeat_timeout < self.streaming_idle_timeout
+        ):
+            self.log_warning(
+                fl_ctx,
+                f"explicit heartbeat_timeout ({self.heartbeat_timeout}s) is lower than "
+                f"streaming_idle_timeout ({self.streaming_idle_timeout}s); NVFLARE will honor the explicit "
+                "heartbeat fast-fail timeout instead of extending peer liveness on stream progress.",
             )
 
         if configured_per_req is not None and self.peer_read_timeout is None:

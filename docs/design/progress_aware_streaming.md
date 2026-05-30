@@ -124,13 +124,13 @@ For result upload:
 
 The first implementation must cover `task_payload_download`, because that is the known 5GB x 16-client failure. The same event schema and tracker must be direction-neutral so `result_upload` can use the same mechanism rather than a separate timeout model.
 
-Preferred mechanism: pipe event, not shared memory or filesystem state.
+Preferred mechanism: pipe event, not shared memory or filesystem state. The public event concept is `STREAM_PROGRESS`; the internal `Pipe` topic uses the reserved sentinel `_STREAM_PROGRESS_` to match other internal pipe control topics such as `_HEARTBEAT_`, `_ABORT_`, and `_END_`.
 
 Example event:
 
 ```json
 {
-  "topic": "STREAM_PROGRESS",
+  "topic": "_STREAM_PROGRESS_",
   "job_id": "job-id",
   "task_id": "task-id",
   "transfer_id": "ref-id-or-stream-id",
@@ -150,6 +150,8 @@ Canonical byte-progress emitters:
 
 Higher layers such as `ViaDownloader` and `DownloadService` may attach transfer IDs, item counts, state transitions, and callbacks, but they should not independently emit competing byte counters for the same transfer. This avoids double-counting and conflicting `bytes_done` values.
 
+Phase 1 implementation note: the task-payload path uses `DownloadService.download_object` as the FOBS materialization progress emitter, with `ViaDownloader` attaching `job_id`, `task_id`, `transfer_id`, item counts, and pipe callbacks. `ByteReceiver` and `ByteStreamer` remain the lower-level canonical emitters for a later pass that covers raw byte-stream progress directly.
+
 Emit progress events:
 
 - on transfer start
@@ -159,7 +161,7 @@ Emit progress events:
 
 Do not emit per chunk.
 
-Progress events may travel on the same pipe as other control messages in the first implementation. This is acceptable only because the emit interval is much smaller than the default idle timeout (`30s << 600s`). If tests show progress events can be queued behind the large message they are meant to protect, move `STREAM_PROGRESS` to a priority channel before enabling heartbeat integration.
+Progress events may travel on the same pipe as other control messages in the first implementation. This is acceptable only because the emit interval is much smaller than the default idle timeout (`30s << 600s`). If tests show progress events can be queued behind the large message they are meant to protect, move `_STREAM_PROGRESS_` to a priority channel before enabling heartbeat integration.
 
 CJ-side receivers should log one INFO-level progress line for accepted start, periodic active, completion, and failure events. The event rate limit already keeps this to roughly one line per transfer every 30 seconds while active.
 
@@ -341,7 +343,7 @@ The real 12/16-client x 5GB K8s run should remain a nightly or release-validatio
 ## Decisions From Review
 
 1. Transfer ID: use `DownloadService` ref ID when available. It is already stable across materialization and known on both sides. If a stream has no ref ID, use stream ID as a fallback and record the ID kind.
-2. Progress event location: use a dedicated `STREAM_PROGRESS` pipe topic. Do not piggyback on heartbeat or task-control messages.
+2. Progress event location: use a dedicated `_STREAM_PROGRESS_` internal pipe topic. Do not piggyback on heartbeat or task-control messages.
 3. Heartbeat progress-awareness: guard for one release. The task-resend suppression can be enabled first; heartbeat integration is the riskier phase.
 4. Default `streaming_idle_timeout`: 600 seconds.
 5. `_MIN_DOWNLOAD_TIMEOUT=300`: fallback only when no generic idle timeout is configured, not an additional hard floor.

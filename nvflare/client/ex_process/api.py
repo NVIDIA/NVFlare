@@ -198,6 +198,28 @@ class ExProcessClientAPI(APISpec):
 
                     if isinstance(pipe, _CellPipe):
                         pipe.pass_through_on_send = True
+                        from nvflare.fuel.utils.fobs import FOBSContextKey
+                        from nvflare.fuel.utils.pipe.pipe import Message, Topic
+
+                        last_progress_warning_time = 0.0
+
+                        def _send_stream_progress(**kwargs):
+                            nonlocal last_progress_warning_time
+                            if not kwargs.get(FLMetaKey.JOB_ID):
+                                kwargs[FLMetaKey.JOB_ID] = client_config.config.get(FLMetaKey.JOB_ID, "")
+                            try:
+                                pipe.send(Message.new_request(Topic.STREAM_PROGRESS, kwargs))
+                            except Exception as ex:
+                                import time
+
+                                now = time.time()
+                                if now - last_progress_warning_time >= 60.0:
+                                    last_progress_warning_time = now
+                                    self.logger.warning(f"failed to send stream progress event: {ex}")
+                                else:
+                                    self.logger.debug(f"failed to send stream progress event: {ex}")
+
+                        pipe.cell.update_fobs_context({FOBSContextKey.STREAM_PROGRESS_CB: _send_stream_progress})
                         self.logger.info("PASS_THROUGH enabled on subprocess CellPipe (reverse path)")
                 metric_pipe, metric_channel_name = None, ""
                 if ConfigKey.METRICS_EXCHANGE in client_config.config:

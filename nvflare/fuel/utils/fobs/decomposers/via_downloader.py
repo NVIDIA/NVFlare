@@ -23,6 +23,11 @@ from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.streaming.download_service import Downloadable
 from nvflare.fuel.f3.streaming.file_downloader import ObjectDownloader
+from nvflare.fuel.f3.streaming.transfer_progress import (
+    DEFAULT_STREAMING_IDLE_TIMEOUT,
+    DIRECTION_TASK_PAYLOAD_DOWNLOAD,
+    STREAMING_IDLE_TIMEOUT,
+)
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.datum import Datum, DatumManager, DatumType
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -200,6 +205,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         secure=False,
         optional=False,
         abort_signal=None,
+        progress_cb=None,
     ) -> tuple[str, dict]:
         pass
 
@@ -330,12 +336,13 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         # receiver completing all chunk downloads — sufficient for all model sizes.
         msg_root_id, msg_root_ttl = self._determine_msg_root(fobs_ctx)
 
-        # Read min_download_timeout from job config so operators can tune
-        # it per-job (e.g. np_min_download_timeout: 600 for a 70B model).
-        # Falls back to the module-level constant (60s) when not set.
+        # The generic streaming idle timeout is the default lifetime floor for streamed
+        # materialization. The legacy per-type min_download_timeout remains an explicit
+        # override and a backward-compatible fallback when the generic key is absent.
+        streaming_idle_timeout = acu.get_positive_float_var(STREAMING_IDLE_TIMEOUT, DEFAULT_STREAMING_IDLE_TIMEOUT)
         min_timeout = acu.get_positive_float_var(
             self._config_var_name(ConfigVarName.MIN_DOWNLOAD_TIMEOUT),
-            _MIN_DOWNLOAD_TIMEOUT,
+            streaming_idle_timeout or _MIN_DOWNLOAD_TIMEOUT,
         )
 
         if msg_root_ttl:
@@ -600,6 +607,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         self.logger.debug(f"DOWNLOAD_REQ_TIMEOUT={req_timeout}")
 
         abort_signal = fobs_ctx.get(fobs.FOBSContextKey.ABORT_SIGNAL)
+        stream_progress_cb = self._make_stream_progress_cb(fobs_ctx, ref_id)
 
         self.logger.debug(f"trying to download: {ref_id=} {fqcn=}")
         err, items = self.download(
@@ -608,6 +616,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
             per_request_timeout=req_timeout,
             cell=cell,
             abort_signal=abort_signal,
+            progress_cb=stream_progress_cb,
         )
         if err:
             self.logger.error(f"failed to download from {fqcn} for source {ref}: {err}")
@@ -615,6 +624,31 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         else:
             self.logger.debug(f"downloaded {len(items)} items successfully")
         return items
+
+    @staticmethod
+    def _make_stream_progress_cb(fobs_ctx: dict, ref_id: str):
+        progress_cb = fobs_ctx.get(fobs.FOBSContextKey.STREAM_PROGRESS_CB)
+        if not progress_cb:
+            return None
+
+        msg = fobs_ctx.get(fobs.FOBSContextKey.MESSAGE)
+        task_id = None
+        job_id = fobs_ctx.get(fobs.FOBSContextKey.JOB_ID)
+        if msg:
+            task_id = msg.get_header(MessageHeaderKey.MSG_ROOT_ID) or msg.get_header(MessageHeaderKey.REQ_ID)
+            job_id = job_id or msg.get_header(fobs.FOBSContextKey.JOB_ID)
+
+        def _progress_cb(**kwargs):
+            progress_cb(
+                job_id=job_id,
+                task_id=task_id or ref_id,
+                transfer_id=ref_id,
+                transfer_id_kind="download_ref",
+                direction=DIRECTION_TASK_PAYLOAD_DOWNLOAD,
+                **kwargs,
+            )
+
+        return _progress_cb
 
 
 class LazyDownloadRefDecomposer(fobs.Decomposer):

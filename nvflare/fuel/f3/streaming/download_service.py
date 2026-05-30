@@ -15,7 +15,7 @@ import threading
 import time
 import uuid
 from abc import ABC, abstractmethod
-from typing import Any, Optional, Tuple
+from typing import Any, Callable, Optional, Tuple
 
 from nvflare.apis.signal import Signal
 from nvflare.fuel.f3.cellnet.cell import Cell
@@ -649,6 +649,8 @@ def download_object(
     optional=False,
     abort_signal: Signal = None,
     max_retries: int = 3,
+    progress_cb: Optional[Callable] = None,
+    progress_interval: float = 30.0,
 ):
     """Download a large object from the object owner.
 
@@ -676,10 +678,38 @@ def download_object(
         raise ValueError(f"max_retries must be non-negative, got {max_retries}")
     consecutive_timeouts = 0
     total_bytes = 0
+    total_items = None
+    progress_sequence = 0
+    last_progress_emit_time = 0.0
     download_start = time.time()
     # Track current download state (None = initial request).
     # On retry, resend the same state so producer re-generates the same chunk.
     current_state = None
+
+    def _emit_progress(state: str, force: bool = False):
+        nonlocal progress_sequence, last_progress_emit_time
+        if not progress_cb:
+            return
+
+        now = time.time()
+        if not force and now - last_progress_emit_time < progress_interval:
+            return
+
+        progress_sequence += 1
+        last_progress_emit_time = now
+        try:
+            progress_cb(
+                ref_id=ref_id,
+                sequence=progress_sequence,
+                bytes_done=total_bytes,
+                items_done=total_items,
+                timestamp=now,
+                state=state,
+            )
+        except Exception as ex:
+            logger.warning(f"download progress callback failed for ref={ref_id}: {secure_format_exception(ex)}")
+
+    _emit_progress("active", force=True)
 
     while True:
         # Build a fresh request each iteration (including retries)
@@ -704,6 +734,7 @@ def download_object(
 
         if abort_signal and abort_signal.triggered:
             consumer.download_failed(ref_id, f"download aborted after {duration} secs")
+            _emit_progress("aborted", force=True)
             return
 
         assert isinstance(reply, Message)
@@ -724,10 +755,12 @@ def download_object(
                     # Check abort signal before sleeping to minimise delay
                     if abort_signal and abort_signal.triggered:
                         consumer.download_failed(ref_id, f"download aborted after {duration} secs")
+                        _emit_progress("aborted", force=True)
                         return
                     time.sleep(backoff)
                     if abort_signal and abort_signal.triggered:
                         consumer.download_failed(ref_id, f"download aborted after {duration} secs")
+                        _emit_progress("aborted", force=True)
                         return
                     continue
                 else:
@@ -736,6 +769,7 @@ def download_object(
                         f"ref={ref_id}. Giving up."
                     )
             consumer.download_failed(ref_id, f"error requesting data from {from_fqcn} after {duration} secs: {rc}")
+            _emit_progress("failed", force=True)
             return
 
         # Log recovery if we were retrying
@@ -757,9 +791,11 @@ def download_object(
                 f"size={size_mb:.1f}MB ({total_bytes:,} bytes)"
             )
             consumer.download_completed(ref_id)
+            _emit_progress("completed", force=True)
             return
         elif status == ProduceRC.ERROR:
             consumer.download_failed(ref_id, f"producer error after {duration} secs")
+            _emit_progress("failed", force=True)
             return
 
         # continue
@@ -767,20 +803,27 @@ def download_object(
         data = payload.get(_PropKey.DATA)
         if data is not None:
             total_bytes += sum(len(c) for c in data) if isinstance(data, list) else len(data)
+            if isinstance(data, list):
+                total_items = (total_items or 0) + len(data)
         state = payload.get(_PropKey.STATE)
         try:
             new_state = consumer.consume(ref_id, state, data)
         except Exception as ex:
             consumer.download_failed(ref_id, f"exception when consuming data: {secure_format_exception(ex)}")
+            _emit_progress("failed", force=True)
             return
 
         if not isinstance(new_state, dict):
             consumer.download_failed(ref_id, f"consumer error: new_state should be dict but got {type(new_state)}")
+            _emit_progress("failed", force=True)
             return
 
         if abort_signal and abort_signal.triggered:
             consumer.download_failed(ref_id, "download aborted")
+            _emit_progress("aborted", force=True)
             return
+
+        _emit_progress("active")
 
         # Update state for next request
         current_state = new_state

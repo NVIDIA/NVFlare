@@ -44,6 +44,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.apis.fl_constant import FLMetaKey
+from nvflare.apis.shareable import Shareable
 from nvflare.fuel.f3.cellnet.cell import Message as CellMessage  # f3-layer message
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.utils.constants import Mode
@@ -223,6 +225,25 @@ class TestHeartbeatNotCached:
 
         pipe.cell.fire_and_forget.assert_called_once()
         pipe.cell.send_request.assert_not_called()
+
+
+def test_stream_progress_is_fire_and_forget():
+    pipe = _make_pipe()
+    msg = _make_msg(topic=Topic.STREAM_PROGRESS, data={"task_id": "task-1"})
+
+    assert pipe.send(msg) is True
+
+    pipe.cell.fire_and_forget.assert_called_once()
+    pipe.cell.send_request.assert_not_called()
+
+
+def test_to_cell_message_carries_shareable_job_id():
+    shareable = Shareable()
+    shareable.set_header(FLMetaKey.JOB_ID, "job-1")
+
+    cell_msg = _to_cell_message(_make_msg(data=shareable))
+
+    assert cell_msg.get_header(FLMetaKey.JOB_ID) == "job-1"
 
 
 # ---------------------------------------------------------------------------
