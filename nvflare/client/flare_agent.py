@@ -223,6 +223,12 @@ class _ReverseResultUploadProgressTracker:
             return matches[0]
         return None
 
+    def resolve_tx_id(self, tx_id: Optional[str], transfer_id: str, receiver_id: Optional[str]):
+        transfer_id = str(transfer_id)
+        receiver_id = None if receiver_id is None else str(receiver_id)
+        with self.lock:
+            return self._normalize_tx_id(tx_id, transfer_id, receiver_id)
+
     def completion_grace_remaining(self) -> Optional[float]:
         with self.lock:
             if self.all_success_since is None:
@@ -741,6 +747,9 @@ class FlareAgent:
             task_id=kwargs.get("task_id"),
         )
         if accepted:
+            if not tx_id:
+                receiver_id = None if kwargs.get("receiver_id") is None else str(kwargs.get("receiver_id"))
+                tx_log_id = tracker.resolve_tx_id(tx_id, transfer_id, receiver_id) or tx_log_id
             self.logger.info(
                 f"[subprocess] result_upload progress tx={tx_log_id} task={kwargs.get('task_id')} "
                 f"transfer={transfer_id} receiver={kwargs.get('receiver_id')} state={kwargs.get('state')} "

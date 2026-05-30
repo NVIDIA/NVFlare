@@ -482,8 +482,6 @@ class DownloadService:
     # transaction has been cleaned up without turning a completed transfer into a fatal missing-ref error.
     _finished_refs = {}
     FINISHED_REFS_TTL = 1800.0
-    # Backward-compat alias for callers that referenced the previous private constant.
-    _FINISHED_REFS_TTL = FINISHED_REFS_TTL
     _logger = None
     _tx_monitor = None
     _tx_lock = threading.Lock()

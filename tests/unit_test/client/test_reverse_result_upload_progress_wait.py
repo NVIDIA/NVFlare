@@ -633,7 +633,7 @@ def test_simulated_many_clients_large_result_upload_delayed_complete_cb_stalled_
     monkeypatch.setattr(
         "nvflare.client.flare_agent.DownloadService.delete_transaction", lambda tx_id: deleted.append(tx_id)
     )
-    clients = [_start_result_upload_submit_client(index, idle_timeout=1.0) for index in range(16)]
+    clients = [_start_result_upload_submit_client(index, idle_timeout=0.3) for index in range(16)]
     stalled_index = 11
     stalled_client = clients[stalled_index]
 
@@ -681,7 +681,9 @@ def test_simulated_many_clients_large_result_upload_delayed_complete_cb_stalled_
         client["callbacks"]["complete"](client["tx_id"], TransactionDoneStatus.FINISHED, None)
 
     for client in clients:
-        client["thread"].join(timeout=2.0)
+        # The stalled client uses a short idle timeout, but CI runners can still
+        # pause Python threads. Keep the join budget comfortably above it.
+        client["thread"].join(timeout=5.0)
         assert not client["thread"].is_alive()
 
     assert stalled_client["result"]["ok"] is False
@@ -754,7 +756,34 @@ def test_result_upload_unexpected_pair_logs_warning():
     )
 
 
-def test_result_upload_missing_tx_id_logs_unknown():
+def test_result_upload_unexpected_pair_without_tx_id_logs_unknown():
+    clock = FakeClock()
+    tracker = _make_tracker(clock=clock, idle_timeout=10.0)
+    _register(tracker, tx_id="tx-1", pairs=(("ref-1", None),), created_time=clock.now)
+    _register(tracker, tx_id="tx-2", pairs=(("ref-1", None),), created_time=clock.now)
+    event = threading.Event()
+    agent = FlareAgent.__new__(FlareAgent)
+    agent.logger = MagicMock()
+
+    agent._update_reverse_result_upload_progress(
+        tracker,
+        event,
+        direction=DIRECTION_RESULT_UPLOAD,
+        transfer_id="ref-1",
+        receiver_id=None,
+        sequence=1,
+        bytes_done=100,
+        state=TransferProgressState.ACTIVE,
+        timestamp=clock.now,
+    )
+
+    assert event.is_set() is True
+    assert any(
+        "tx=<unknown>" in call[0][0] and "unexpected_pair" in call[0][0] for call in agent.logger.warning.call_args_list
+    )
+
+
+def test_result_upload_missing_tx_id_logs_resolved_tx():
     clock = FakeClock()
     tracker = _make_tracker(clock=clock, idle_timeout=10.0)
     _register(tracker, tx_id="tx-1", pairs=(("ref-1", None),), created_time=clock.now)
@@ -775,7 +804,7 @@ def test_result_upload_missing_tx_id_logs_unknown():
     )
 
     assert event.is_set() is True
-    assert any("result_upload progress tx=<unknown>" in call[0][0] for call in agent.logger.info.call_args_list)
+    assert any("result_upload progress tx=tx-1" in call[0][0] for call in agent.logger.info.call_args_list)
 
 
 def test_do_submit_result_uses_tracker_clock_for_progress_wait_start():

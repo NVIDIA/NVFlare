@@ -1042,7 +1042,7 @@ def test_simulated_large_model_broadcast_many_clients_progress_suppresses_resend
 
     client_count = 16
     chunks_per_client = 6
-    chunk_size = 1024 * 1024
+    chunk_size = 4096
     wait_results = []
     completed = 0
 
@@ -1190,7 +1190,7 @@ def test_simulated_large_model_broadcast_many_clients_stalled_receiver_fails_wai
 
     client_count = 16
     chunks_per_client = 3
-    chunk_size = 1024 * 1024
+    chunk_size = 4096
     stalled_client = 7
     completed = 0
     stalled_wait_result = None
