@@ -100,12 +100,27 @@ Initialize the :class:`FedJob<nvflare.job_config.api.FedJob>` object with the fo
 * ``name`` (str): for job name.
 * ``min_clients`` (int): required for the job, will be set in the meta.json.
 * ``mandatory_clients`` (List[str]): to run the job, will be set in the meta.json.
+* ``fail_fast`` (bool, default ``False``): development-mode flag. When ``True``, sets
+  ``dead_client_grace_period`` to ``0`` in the server config so that a client already
+  reported dead is declared disconnected on the next monitor tick (~0.2 s) rather than
+  after the default 60-second grace period.  The job still aborts only when the normal
+  deployment policy is violated (alive clients drop below ``min_clients``, all clients
+  die, or a mandatory client is lost).  In the typical development scenario where
+  ``min_clients`` equals the total number of enrolled clients this means an immediate
+  abort on any client failure, making it much easier to spot crashes early.  When
+  ``False`` (the default), the standard grace-period behaviour applies.
 
 Example:
 
 .. code-block:: python
 
   job = FedJob(name="cifar10_fedavg", min_clients=2, mandatory_clients=["site-1", "site-2"])
+
+Development mode — abort immediately when any client dies:
+
+.. code-block:: python
+
+  job = FedJob(name="dev_job", min_clients=2, fail_fast=True)
 
 Assigning objects with :func:`to<nvflare.job_config.api.FedJob.to>`
 =====================================================================
