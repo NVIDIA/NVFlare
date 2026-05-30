@@ -265,6 +265,15 @@ def test_to_cell_message_carries_shareable_job_id():
     assert cell_msg.get_header(FLMetaKey.JOB_ID) == "job-1"
 
 
+def test_to_cell_message_carries_empty_shareable_job_id():
+    shareable = Shareable()
+    shareable.set_header(FLMetaKey.JOB_ID, "")
+
+    cell_msg = _to_cell_message(_make_msg(data=shareable))
+
+    assert cell_msg.get_header(FLMetaKey.JOB_ID) == ""
+
+
 # ---------------------------------------------------------------------------
 # Fix 2: release_send_cache() — explicit cache teardown
 # ---------------------------------------------------------------------------

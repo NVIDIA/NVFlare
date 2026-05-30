@@ -636,7 +636,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         job_id = None
         if msg:
             task_id = msg.get_header(MessageHeaderKey.MSG_ROOT_ID) or msg.get_header(MessageHeaderKey.REQ_ID)
-            job_id = job_id or msg.get_header(FLMetaKey.JOB_ID)
+            job_id = msg.get_header(FLMetaKey.JOB_ID)
 
         def _progress_cb(**kwargs):
             progress_cb(

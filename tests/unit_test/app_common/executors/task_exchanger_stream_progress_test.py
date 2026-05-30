@@ -85,9 +85,9 @@ class _DummyPipe(Pipe):
         return False
 
 
-def _make_fl_ctx():
+def _make_fl_ctx(job_id="job-1"):
     fl_ctx = MagicMock()
-    fl_ctx.get_job_id.return_value = "job-1"
+    fl_ctx.get_job_id.return_value = job_id
     fl_ctx.get_identity_name.return_value = "site-1"
     return fl_ctx
 
@@ -406,6 +406,42 @@ def test_unknown_job_id_does_not_match_other_job_progress_after_idle(monkeypatch
     )
 
 
+def test_integer_zero_job_id_matches_stream_progress(monkeypatch):
+    _patch_logs(monkeypatch)
+    now = [1000.0]
+    monkeypatch.setattr(task_exchanger_module.time, "time", lambda: now[0])
+    executor = TaskExchanger(pipe_id="pipe", peer_read_timeout=1.0, streaming_idle_timeout=10.0)
+    executor._handle_stream_progress_message(_progress(task_id="task-1", job_id=0))
+
+    assert (
+        executor._should_continue_task_send_waiting(
+            task_name="train",
+            task_id="task-1",
+            job_id=0,
+            send_start_time=0.0,
+            fl_ctx=_make_fl_ctx(),
+        )
+        is True
+    )
+
+
+def test_execute_stamps_integer_zero_job_id(monkeypatch):
+    _patch_logs(monkeypatch)
+    executor = TaskExchanger(pipe_id="pipe", peer_read_timeout=1.0, streaming_idle_timeout=10.0)
+
+    def send_cb(handler, msg, timeout, abort_signal):
+        assert msg.data.get_header(FLMetaKey.JOB_ID) == "0"
+        handler.replies.append(_reply_for(msg))
+        return True
+
+    handler = _FakePipeHandler(send_cb)
+    executor.pipe_handler = handler
+
+    result = executor._do_execute("train", _make_task(task_id="task-1"), _make_fl_ctx(job_id=0), _AbortSignal())
+
+    assert result.get_return_code() == ReturnCode.OK
+
+
 def test_task_send_times_out_when_activity_does_not_advance_counters(monkeypatch):
     _patch_logs(monkeypatch)
     now = [1000.0]
@@ -641,6 +677,28 @@ def test_stream_progress_rejects_malformed_items_done(monkeypatch):
         )
         is None
     )
+
+
+def test_stream_progress_ignores_generic_offset_and_current_fields(monkeypatch):
+    _patch_logs(monkeypatch)
+    executor = TaskExchanger(pipe_id="pipe")
+
+    msg = _progress(task_id="task-1", transfer_id="ref-1", sequence=1, bytes_done=1024)
+    msg.data.pop("bytes_done")
+    msg.data["bytes"] = 2048
+    msg.data["offset"] = "not-a-byte-count"
+    msg.data["current"] = "not-a-byte-count"
+
+    executor._handle_stream_progress_message(msg)
+
+    record = executor._stream_progress_tracker.get_record(
+        job_id="job-1",
+        task_id="task-1",
+        transfer_id="ref-1",
+        direction=DIRECTION_TASK_PAYLOAD_DOWNLOAD,
+    )
+    assert record is not None
+    assert record.bytes_done == 2048
 
 
 class _DownloadConsumer(Consumer):

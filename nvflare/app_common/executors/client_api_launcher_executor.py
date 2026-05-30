@@ -292,24 +292,29 @@ class ClientAPILauncherExecutor(LauncherExecutor):
 
         old_idle_timeout = self.streaming_idle_timeout
         old_max_peer_silence = self.streaming_max_peer_silence
-        self.streaming_idle_timeout = streaming_config.streaming_idle_timeout
-        self.streaming_max_peer_silence = streaming_config.streaming_max_peer_silence
-        if self._stream_progress_tracker.idle_timeout != self.streaming_idle_timeout:
+        idle_timeout_configured = STREAMING_IDLE_TIMEOUT in config_values
+        max_peer_silence_configured = STREAMING_MAX_PEER_SILENCE in config_values
+        if idle_timeout_configured:
+            self.streaming_idle_timeout = streaming_config.streaming_idle_timeout
+            self.streaming_max_peer_silence = streaming_config.streaming_max_peer_silence
+        elif max_peer_silence_configured:
+            self.streaming_max_peer_silence = streaming_config.streaming_max_peer_silence
+        if idle_timeout_configured and self._stream_progress_tracker.idle_timeout != self.streaming_idle_timeout:
             self._stream_progress_tracker = self._make_stream_progress_tracker()
 
-        if config_values:
-            self.log_info(
+        changes = []
+        if idle_timeout_configured and self.streaming_idle_timeout != old_idle_timeout:
+            changes.append(f"streaming_idle_timeout {old_idle_timeout}s -> {self.streaming_idle_timeout}s")
+        if self.streaming_max_peer_silence != old_max_peer_silence:
+            changes.append(f"streaming_max_peer_silence {old_max_peer_silence}s -> {self.streaming_max_peer_silence}s")
+        if changes:
+            self.log_info(fl_ctx, "Resolved streaming progress config: " + ", ".join(changes))
+        if max_peer_silence_configured:
+            self.log_debug(
                 fl_ctx,
-                "Resolved streaming progress config: "
-                f"streaming_idle_timeout {old_idle_timeout}s -> {self.streaming_idle_timeout}s, "
-                f"streaming_max_peer_silence {old_max_peer_silence}s -> {self.streaming_max_peer_silence}s",
+                "streaming_max_peer_silence is resolved for compatibility, but Phase 1 progress-aware "
+                "task-send waits do not use stream progress for heartbeat liveness.",
             )
-            if STREAMING_MAX_PEER_SILENCE in config_values:
-                self.log_info(
-                    fl_ctx,
-                    "streaming_max_peer_silence is resolved for compatibility, but Phase 1 progress-aware "
-                    "task-send waits do not use stream progress for heartbeat liveness.",
-                )
 
     def _apply_streaming_timeout_defaults(self, fl_ctx: FLContext):
         if self.streaming_idle_timeout is None:

@@ -412,6 +412,45 @@ def test_absent_streaming_progress_override_preserves_disabled_idle_timeout(monk
     assert executor.streaming_idle_timeout is None
 
 
+def test_streaming_max_peer_silence_override_preserves_disabled_idle_timeout(monkeypatch):
+    from nvflare.fuel.f3.streaming.transfer_progress import STREAMING_MAX_PEER_SILENCE
+
+    infos = []
+    monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
+    monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: infos.append(msg))
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(_GCV_MODULE, _make_gcv_stub({STREAMING_MAX_PEER_SILENCE: 1300}))
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
+    executor.streaming_idle_timeout = None
+
+    executor.initialize(_FakeFLContext(_FakeCell()))
+
+    assert executor.streaming_idle_timeout is None
+    assert executor.streaming_max_peer_silence == 1300.0
+    resolved_logs = [msg for msg in infos if msg.startswith("Resolved streaming progress config")]
+    assert resolved_logs == ["Resolved streaming progress config: streaming_max_peer_silence 900.0s -> 1300.0s"]
+
+
+def test_streaming_idle_timeout_noop_override_does_not_log_resolved_config(monkeypatch):
+    from nvflare.fuel.f3.streaming.transfer_progress import STREAMING_IDLE_TIMEOUT
+
+    infos = []
+    monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
+    monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: infos.append(msg))
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(_GCV_MODULE, _make_gcv_stub({STREAMING_IDLE_TIMEOUT: 600}))
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
+    executor.initialize(_FakeFLContext(_FakeCell()))
+
+    assert executor.streaming_idle_timeout == 600.0
+    resolved_logs = [msg for msg in infos if msg.startswith("Resolved streaming progress config")]
+    assert resolved_logs == []
+
+
 def test_streaming_max_peer_silence_derived_from_idle_timeout(monkeypatch):
     from nvflare.fuel.f3.streaming.transfer_progress import STREAMING_IDLE_TIMEOUT
 

@@ -66,7 +66,7 @@ def _to_cell_message(msg: Message, extra=None) -> CellMessage:
     get_header = getattr(msg.data, "get_header", None)
     if callable(get_header):
         job_id = get_header(FLMetaKey.JOB_ID)
-        if job_id:
+        if job_id is not None:
             headers[FLMetaKey.JOB_ID] = job_id
 
     return CellMessage(headers=headers, payload=msg.data)

@@ -48,13 +48,14 @@ STREAM_PROGRESS_TRANSFER_ID_KEYS = ("transfer_id", "ref_id", "stream_id")
 STREAM_PROGRESS_TRANSFER_ID_KIND_KEYS = ("transfer_id_kind", "stream_id_kind")
 STREAM_PROGRESS_DIRECTION_KEYS = ("direction",)
 STREAM_PROGRESS_SEQUENCE_KEYS = ("sequence", "seq")
-STREAM_PROGRESS_BYTES_KEYS = ("bytes_done", "progress", "offset", "bytes", "bytes_read", "bytes_received", "current")
+STREAM_PROGRESS_BYTES_KEYS = ("bytes_done", "progress", "bytes", "bytes_read", "bytes_received")
 STREAM_PROGRESS_ITEM_KEYS = ("items_done", "items", "item_count")
 STREAM_PROGRESS_STATE_KEYS = ("state", "status", "event", "event_type")
 STREAM_PROGRESS_START_STATUSES = ("start", "started")
 _DEFAULT_STREAMING_IDLE_TIMEOUT_SECS = DEFAULT_STREAMING_IDLE_TIMEOUT
 STREAM_PROGRESS_COMPLETION_ACK_GRACE = 30.0
-STREAM_PROGRESS_TERMINAL_RECORD_TTL = 1800.0
+_TERMINAL_RECORD_TTL_GRACE_MULTIPLIER = 60.0
+STREAM_PROGRESS_TERMINAL_RECORD_TTL = STREAM_PROGRESS_COMPLETION_ACK_GRACE * _TERMINAL_RECORD_TTL_GRACE_MULTIPLIER
 
 STREAM_PROGRESS_STATE_ALIASES = {
     "active": "active",
@@ -366,7 +367,7 @@ class TaskExchanger(Executor):
             )
 
     def _get_active_task_payload_records(self, task_id: str, job_id: Optional[str] = None):
-        normalized_job_id = "" if not job_id else str(job_id)
+        normalized_job_id = "" if job_id is None else str(job_id)
         with self._stream_progress_lock:
             records = [
                 _StreamProgressRecordSnapshot(
@@ -530,7 +531,7 @@ class TaskExchanger(Executor):
         get_header = getattr(req.data, "get_header", None)
         if callable(get_header):
             job_id = get_header(FLMetaKey.JOB_ID)
-        job_id = "" if not job_id else str(job_id)
+        job_id = "" if job_id is None else str(job_id)
         send_start_time = time.time()
 
         def _progress_wait_cb():
@@ -577,7 +578,8 @@ class TaskExchanger(Executor):
             self.log_error(fl_ctx, "bad input task shareable")
             return make_reply(ReturnCode.BAD_TASK_DATA)
 
-        job_id = fl_ctx.get_job_id() or ""
+        job_id = fl_ctx.get_job_id()
+        job_id = "" if job_id is None else str(job_id)
         shareable.set_header(FLMetaKey.JOB_ID, job_id)
         shareable.set_header(FLMetaKey.SITE_NAME, fl_ctx.get_identity_name())
         task_id = shareable.get_header(key=FLContextKey.TASK_ID)
