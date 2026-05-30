@@ -21,6 +21,7 @@ from nvflare.app_common.executors.task_exchanger import TaskExchanger
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.utils import make_reply
 from nvflare.fuel.f3.message import Message as CellMessage
+from nvflare.fuel.f3.streaming import download_service as download_service_module
 from nvflare.fuel.f3.streaming.download_service import Consumer, ProduceRC, _PropKey, download_object
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.constants import Mode
@@ -852,6 +853,26 @@ class _ChunkCell:
         return make_reply("ok", body={_PropKey.STATUS: ProduceRC.EOF})
 
 
+class _LargeModelChunkCell:
+    def __init__(self, chunk_count, chunk_size):
+        self.chunk_count = chunk_count
+        self.chunk = b"x" * chunk_size
+        self.calls = 0
+
+    def send_request(self, **kwargs):
+        if self.calls < self.chunk_count:
+            self.calls += 1
+            return make_reply(
+                "ok",
+                body={
+                    _PropKey.STATUS: ProduceRC.OK,
+                    _PropKey.STATE: {"index": self.calls},
+                    _PropKey.DATA: [self.chunk],
+                },
+            )
+        return make_reply("ok", body={_PropKey.STATUS: ProduceRC.EOF})
+
+
 class _ProgressPipe:
     def __init__(self, executor):
         self.executor = executor
@@ -1011,3 +1032,160 @@ def test_swarm_task_payload_progress_during_send_to_peer_suppresses_resend(monke
     assert progress_pipe.sent_payloads[0]["transfer_id"] == "peer-parent-ref"
     assert progress_pipe.sent_payloads[0]["receiver_id"] == "site-2.job-1"
     assert any("continuing to wait" in msg for _, msg in logs)
+
+
+def test_simulated_large_model_broadcast_many_clients_progress_suppresses_resend(monkeypatch):
+    _patch_logs(monkeypatch)
+    now = [1000.0]
+    monkeypatch.setattr(task_exchanger_module.time, "time", lambda: now[0])
+    monkeypatch.setattr(download_service_module.time, "time", lambda: now[0])
+
+    client_count = 16
+    chunks_per_client = 6
+    chunk_size = 1024 * 1024
+    wait_results = []
+    completed = 0
+
+    for client_idx in range(client_count):
+        task_id = f"task-{client_idx}"
+        job_id = "large-model-job"
+        transfer_id = f"large-model-ref-{client_idx}"
+        executor = TaskExchanger(
+            pipe_id=f"pipe-{client_idx}",
+            peer_read_timeout=1.0,
+            streaming_idle_timeout=10.0,
+            result_poll_interval=0.01,
+        )
+        progress_pipe = _ProgressPipe(executor)
+        req = Message.new_request("train", _make_task(task_id=task_id), msg_id=task_id)
+        send_start_time = now[0]
+
+        req._progress_wait_cb = lambda executor=executor, task_id=task_id: executor._should_continue_task_send_waiting(
+            task_name="train",
+            task_id=task_id,
+            job_id=job_id,
+            send_start_time=send_start_time,
+            fl_ctx=_make_fl_ctx(job_id=job_id),
+        )
+
+        def _send_stream_progress(**kwargs):
+            progress_pipe.send(Message.new_request(Topic.STREAM_PROGRESS, kwargs))
+            if kwargs.get("state") == "active" and kwargs.get("bytes_done", 0) > 0:
+                now[0] += 9.0
+                wait_results.append(req._progress_wait_cb())
+
+        cell_msg = CellMessage(
+            headers={
+                MessageHeaderKey.MSG_ROOT_ID: task_id,
+                MessageHeaderKey.REQ_ID: task_id,
+                FLMetaKey.JOB_ID: job_id,
+            },
+            payload=None,
+        )
+        progress_cb = ViaDownloaderDecomposer._make_stream_progress_cb(
+            {
+                fobs.FOBSContextKey.MESSAGE: cell_msg,
+                fobs.FOBSContextKey.STREAM_PROGRESS_CB: _send_stream_progress,
+            },
+            transfer_id,
+        )
+        assert progress_cb is not None
+
+        consumer = _DownloadConsumer()
+        download_object(
+            from_fqcn="server",
+            ref_id=transfer_id,
+            per_request_timeout=1.0,
+            cell=_LargeModelChunkCell(chunk_count=chunks_per_client, chunk_size=chunk_size),
+            consumer=consumer,
+            progress_cb=progress_cb,
+            progress_interval=0.0,
+        )
+
+        assert consumer.completed is True
+        assert consumer.failed is None
+        completed += 1
+
+    assert completed == client_count
+    assert len(wait_results) == client_count * chunks_per_client
+    assert all(wait_results)
+
+
+def test_simulated_large_model_broadcast_many_clients_stalled_receiver_fails_wait(monkeypatch):
+    _patch_logs(monkeypatch)
+    now = [1000.0]
+    monkeypatch.setattr(task_exchanger_module.time, "time", lambda: now[0])
+    monkeypatch.setattr(download_service_module.time, "time", lambda: now[0])
+
+    client_count = 16
+    chunks_per_client = 3
+    chunk_size = 1024 * 1024
+    stalled_client = 7
+    completed = 0
+    stalled_wait_result = None
+
+    for client_idx in range(client_count):
+        task_id = f"task-{client_idx}"
+        job_id = "large-model-job"
+        transfer_id = f"large-model-ref-{client_idx}"
+        executor = TaskExchanger(
+            pipe_id=f"pipe-{client_idx}",
+            peer_read_timeout=1.0,
+            streaming_idle_timeout=10.0,
+            result_poll_interval=0.01,
+        )
+        progress_pipe = _ProgressPipe(executor)
+        req = Message.new_request("train", _make_task(task_id=task_id), msg_id=task_id)
+        send_start_time = now[0]
+
+        req._progress_wait_cb = lambda executor=executor, task_id=task_id: executor._should_continue_task_send_waiting(
+            task_name="train",
+            task_id=task_id,
+            job_id=job_id,
+            send_start_time=send_start_time,
+            fl_ctx=_make_fl_ctx(job_id=job_id),
+        )
+
+        def _send_stream_progress(**kwargs):
+            progress_pipe.send(Message.new_request(Topic.STREAM_PROGRESS, kwargs))
+
+        cell_msg = CellMessage(
+            headers={
+                MessageHeaderKey.MSG_ROOT_ID: task_id,
+                MessageHeaderKey.REQ_ID: task_id,
+                FLMetaKey.JOB_ID: job_id,
+            },
+            payload=None,
+        )
+        progress_cb = ViaDownloaderDecomposer._make_stream_progress_cb(
+            {
+                fobs.FOBSContextKey.MESSAGE: cell_msg,
+                fobs.FOBSContextKey.STREAM_PROGRESS_CB: _send_stream_progress,
+            },
+            transfer_id,
+        )
+        assert progress_cb is not None
+
+        if client_idx == stalled_client:
+            progress_cb(sequence=1, bytes_done=0, state="active")
+            assert req._progress_wait_cb() is True
+            now[0] += 11.0
+            stalled_wait_result = req._progress_wait_cb()
+            continue
+
+        consumer = _DownloadConsumer()
+        download_object(
+            from_fqcn="server",
+            ref_id=transfer_id,
+            per_request_timeout=1.0,
+            cell=_LargeModelChunkCell(chunk_count=chunks_per_client, chunk_size=chunk_size),
+            consumer=consumer,
+            progress_cb=progress_cb,
+            progress_interval=0.0,
+        )
+        assert consumer.completed is True
+        assert consumer.failed is None
+        completed += 1
+
+    assert completed == client_count - 1
+    assert stalled_wait_result is False

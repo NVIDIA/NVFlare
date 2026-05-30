@@ -434,6 +434,58 @@ def _make_agent(pipe, download_complete_timeout=0.01):
     return agent
 
 
+def _start_result_upload_submit_client(index, idle_timeout=0.2, receiver_id="server"):
+    pipe = _make_cell_pipe()
+    agent = _make_agent(pipe, download_complete_timeout=0.001)
+    agent._streaming_idle_timeout = idle_timeout
+    agent._result_upload_poll_interval = 0.001
+    transaction = DownloadTransactionInfo(
+        f"tx-{index}",
+        ((f"ref-{index}", receiver_id),),
+        time.time(),
+    )
+    callbacks_ready = threading.Event()
+    callbacks = {}
+    result = {}
+
+    def _send(reply, timeout):
+        ctx = pipe.cell.update_fobs_context.call_args.args[0]
+        callbacks["progress"] = ctx[fobs.FOBSContextKey.STREAM_PROGRESS_CB]
+        callbacks["complete"] = ctx[fobs.FOBSContextKey.DOWNLOAD_COMPLETE_CB]
+        ctx[RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY](transaction)
+        _tls.download_initiated = True
+        _tls.download_transactions = [transaction]
+        callbacks_ready.set()
+        return True
+
+    agent.pipe_handler.send_to_peer.side_effect = _send
+
+    def _run_submit():
+        result["ok"] = agent._do_submit_result(
+            _TaskContext(
+                f"tid-{index}",
+                "train",
+                f"msg-{index}",
+                result_receiver_ids=(receiver_id,),
+            ),
+            None,
+            "OK",
+        )
+
+    thread = threading.Thread(target=_run_submit)
+    thread.start()
+    assert callbacks_ready.wait(timeout=1.0)
+    return {
+        "agent": agent,
+        "callbacks": callbacks,
+        "receiver_id": receiver_id,
+        "ref_id": f"ref-{index}",
+        "result": result,
+        "thread": thread,
+        "tx_id": f"tx-{index}",
+    }
+
+
 def test_no_large_result_proceeds_immediately_without_waiting():
     clear_download_initiated()
     pipe = _make_cell_pipe()
@@ -529,6 +581,112 @@ def test_do_submit_result_waits_for_result_upload_progress_until_completion():
     assert time.time() - start > agent._download_complete_timeout
 
 
+def test_simulated_many_clients_large_result_upload_progress_succeeds_end_to_end():
+    clients = [_start_result_upload_submit_client(index, idle_timeout=0.5) for index in range(16)]
+    total_bytes = 5 * 1024 * 1024 * 1024
+    chunks = 6
+    bytes_per_chunk = total_bytes // chunks
+
+    for sequence in range(1, chunks + 1):
+        for client in clients:
+            client["callbacks"]["progress"](
+                direction=DIRECTION_RESULT_UPLOAD,
+                tx_id=client["tx_id"],
+                transfer_id=client["ref_id"],
+                receiver_id=client["receiver_id"],
+                sequence=sequence,
+                bytes_done=sequence * bytes_per_chunk,
+                state=TransferProgressState.ACTIVE,
+                timestamp=time.time(),
+            )
+        time.sleep(0.01)
+
+    for client in clients:
+        client["callbacks"]["progress"](
+            direction=DIRECTION_RESULT_UPLOAD,
+            tx_id=client["tx_id"],
+            transfer_id=client["ref_id"],
+            receiver_id=client["receiver_id"],
+            sequence=chunks + 1,
+            bytes_done=total_bytes,
+            state=TransferProgressState.COMPLETED,
+            timestamp=time.time(),
+        )
+        client["callbacks"]["complete"](client["tx_id"], TransactionDoneStatus.FINISHED, None)
+
+    for client in clients:
+        client["thread"].join(timeout=2.0)
+        assert not client["thread"].is_alive()
+        assert client["result"]["ok"] is True
+        assert any(
+            "waiting for server tensor download" in call[0][0] for call in client["agent"].logger.info.call_args_list
+        )
+
+
+def test_simulated_many_clients_large_result_upload_stalled_client_fails_end_to_end(monkeypatch):
+    deleted = []
+    monkeypatch.setattr(
+        "nvflare.client.flare_agent.DownloadService.delete_transaction", lambda tx_id: deleted.append(tx_id)
+    )
+    clients = [_start_result_upload_submit_client(index, idle_timeout=1.0) for index in range(16)]
+    stalled_index = 11
+    stalled_client = clients[stalled_index]
+
+    for client in clients:
+        client["callbacks"]["progress"](
+            direction=DIRECTION_RESULT_UPLOAD,
+            tx_id=client["tx_id"],
+            transfer_id=client["ref_id"],
+            receiver_id=client["receiver_id"],
+            sequence=1,
+            bytes_done=0,
+            state=TransferProgressState.ACTIVE,
+            timestamp=time.time(),
+        )
+
+    for sequence in range(2, 5):
+        for index, client in enumerate(clients):
+            if index == stalled_index:
+                continue
+            client["callbacks"]["progress"](
+                direction=DIRECTION_RESULT_UPLOAD,
+                tx_id=client["tx_id"],
+                transfer_id=client["ref_id"],
+                receiver_id=client["receiver_id"],
+                sequence=sequence,
+                bytes_done=sequence * 1024 * 1024,
+                state=TransferProgressState.ACTIVE,
+                timestamp=time.time(),
+            )
+        time.sleep(0.01)
+
+    for index, client in enumerate(clients):
+        if index == stalled_index:
+            continue
+        client["callbacks"]["progress"](
+            direction=DIRECTION_RESULT_UPLOAD,
+            tx_id=client["tx_id"],
+            transfer_id=client["ref_id"],
+            receiver_id=client["receiver_id"],
+            sequence=5,
+            bytes_done=5 * 1024 * 1024,
+            state=TransferProgressState.COMPLETED,
+            timestamp=time.time(),
+        )
+        client["callbacks"]["complete"](client["tx_id"], TransactionDoneStatus.FINISHED, None)
+
+    for client in clients:
+        client["thread"].join(timeout=2.0)
+        assert not client["thread"].is_alive()
+
+    assert stalled_client["result"]["ok"] is False
+    assert deleted == [stalled_client["tx_id"]]
+    assert any("stalled" in call[0][0] for call in stalled_client["agent"].logger.warning.call_args_list)
+    for index, client in enumerate(clients):
+        if index != stalled_index:
+            assert client["result"]["ok"] is True
+
+
 def test_do_submit_result_accepts_progress_before_send_returns():
     clear_download_initiated()
     pipe = _make_cell_pipe()
@@ -590,6 +748,30 @@ def test_result_upload_unexpected_pair_logs_warning():
     )
 
 
+def test_result_upload_missing_tx_id_logs_unknown():
+    clock = FakeClock()
+    tracker = _make_tracker(clock=clock, idle_timeout=10.0)
+    _register(tracker, tx_id="tx-1", pairs=(("ref-1", None),), created_time=clock.now)
+    event = threading.Event()
+    agent = FlareAgent.__new__(FlareAgent)
+    agent.logger = MagicMock()
+
+    agent._update_reverse_result_upload_progress(
+        tracker,
+        event,
+        direction=DIRECTION_RESULT_UPLOAD,
+        transfer_id="ref-1",
+        receiver_id=None,
+        sequence=1,
+        bytes_done=100,
+        state=TransferProgressState.ACTIVE,
+        timestamp=clock.now,
+    )
+
+    assert event.is_set() is True
+    assert any("result_upload progress tx=<unknown>" in call[0][0] for call in agent.logger.info.call_args_list)
+
+
 def test_do_submit_result_uses_tracker_clock_for_progress_wait_start():
     clear_download_initiated()
     pipe = _make_cell_pipe()
@@ -613,6 +795,35 @@ def test_do_submit_result_uses_tracker_clock_for_progress_wait_start():
 
     assert result is True
     assert agent._wait_for_reverse_result_upload.call_args.args[4] == clock.now
+
+
+def test_wait_for_reverse_result_upload_elapsed_uses_tracker_clock():
+    clock = FakeClock()
+    tracker = _make_tracker(clock=clock, idle_timeout=10.0)
+    _register(tracker, created_time=clock.now)
+    download_done = threading.Event()
+    download_done.set()
+    agent = FlareAgent.__new__(FlareAgent)
+    agent.logger = MagicMock()
+    agent.asked_to_stop = False
+    agent.pipe_handler = MagicMock()
+    agent.pipe_handler.asked_to_stop = False
+    agent.pipe = MagicMock()
+    agent.pipe.closed = False
+
+    wait_start = clock.now
+    clock.advance(12.5)
+    result = agent._wait_for_reverse_result_upload(
+        tracker,
+        threading.Event(),
+        download_done,
+        [TransactionDoneStatus.FINISHED],
+        wait_start=wait_start,
+        transactions=[DownloadTransactionInfo("tx-1", (("ref-1", None),), wait_start)],
+    )
+
+    assert result is True
+    assert any("elapsed=12.50s" in call[0][0] for call in agent.logger.info.call_args_list)
 
 
 def test_result_upload_completion_grace_wait_uses_remaining_grace():
