@@ -263,13 +263,16 @@ def _make_gcv_stub(overrides: dict):
 
 
 class _RecordingLock:
-    def __init__(self):
+    def __init__(self, on_enter=None):
         self.entered = False
         self.active = False
+        self.on_enter = on_enter
 
     def __enter__(self):
         self.entered = True
         self.active = True
+        if self.on_enter:
+            self.on_enter()
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.active = False
@@ -434,11 +437,17 @@ def test_streaming_idle_timeout_override_replaces_tracker_under_lock(monkeypatch
     monkeypatch.setattr(_GCV_MODULE, _make_gcv_stub({STREAMING_IDLE_TIMEOUT: 1200}))
 
     executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
-    lock = _RecordingLock()
+    old_idle_timeout = executor.streaming_idle_timeout
+
+    def _assert_timeout_not_written_before_lock():
+        assert executor.streaming_idle_timeout == old_idle_timeout
+
+    lock = _RecordingLock(on_enter=_assert_timeout_not_written_before_lock)
     executor._stream_progress_lock = lock
 
     def _make_tracker():
         assert lock.active
+        assert executor.streaming_idle_timeout == 1200.0
         return TransferProgressTracker(idle_timeout=executor.streaming_idle_timeout)
 
     executor._make_stream_progress_tracker = _make_tracker

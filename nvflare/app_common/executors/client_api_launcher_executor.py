@@ -304,14 +304,13 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         idle_timeout_configured = STREAMING_IDLE_TIMEOUT in config_values
         max_peer_silence_configured = STREAMING_MAX_PEER_SILENCE in config_values
         if idle_timeout_configured:
-            self.streaming_idle_timeout = streaming_config.streaming_idle_timeout
-            self.streaming_max_peer_silence = streaming_config.streaming_max_peer_silence
-        elif max_peer_silence_configured:
-            self.streaming_max_peer_silence = streaming_config.streaming_max_peer_silence
-        if idle_timeout_configured:
             with self._stream_progress_lock:
+                self.streaming_idle_timeout = streaming_config.streaming_idle_timeout
+                self.streaming_max_peer_silence = streaming_config.streaming_max_peer_silence
                 if self._stream_progress_tracker.idle_timeout != self.streaming_idle_timeout:
                     self._stream_progress_tracker = self._make_stream_progress_tracker()
+        elif max_peer_silence_configured:
+            self.streaming_max_peer_silence = streaming_config.streaming_max_peer_silence
 
         changes = []
         if idle_timeout_configured and self.streaming_idle_timeout != old_idle_timeout:

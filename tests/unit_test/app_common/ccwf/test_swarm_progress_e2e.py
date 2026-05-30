@@ -215,7 +215,15 @@ def _progress_message(task_id, job_id, transfer_id, sequence, bytes_done, receiv
 
 
 def test_swarm_scatter_peer_parent_progress_reaches_cellpipe_task_send(monkeypatch):
-    """Swarm parent scatter drives peer CJ task send and progress-aware wait in one simulated path."""
+    """Swarm parent scatter drives peer CJ task send and progress-aware wait in one simulated path.
+
+    E2E counterpart to the unit-level
+    ``test_swarm_task_payload_progress_from_peer_parent_suppresses_resend`` in
+    ``task_exchanger_stream_progress_test.py``: that test pins the wait-policy
+    decision logic directly, while this one exercises the full
+    ``_scatter -> send_learn_task -> TaskExchanger._send_task_to_peer ->
+    Cell._send_one_request`` chain across the swarm controller boundary.
+    """
 
     _patch_task_exchanger_logs(monkeypatch)
     now = [1000.0]
