@@ -173,7 +173,10 @@ server to finish pulling tensors from its ``DownloadService`` after result ACK.
    In FLARE 2.8.0, ``ClientAPILauncherExecutor`` rejects
    ``download_complete_timeout=None`` and ``max_resends=None`` at job
    initialization. Use a positive ``download_complete_timeout`` and a finite
-   non-negative ``max_resends`` value.
+   non-negative ``max_resends`` value. Recipe-based external-process jobs
+   serialize the default ``max_resends=3`` in executor args; use
+   ``recipe.add_client_config({"max_resends": N})`` only to override that
+   default.
 
 Swarm Learning P2P Transfer Timeout
 ------------------------------------
@@ -249,7 +252,7 @@ Most Commonly Adjusted Timeouts
      - Keep subprocess alive while the server downloads large tensor results
    * - max_resends (subprocess mode only)
      - 3
-     - Persistent network failures; use a finite non-negative value
+     - Persistent network failures; keep finite; use 0 to disable retries
    * - round_timeout (Swarm Learning only)
      - 3600 s
      - 7B+ model P2P transfers between Swarm peers
@@ -347,6 +350,7 @@ Large Model Training (100M+ parameters)
        "download_complete_timeout": 1800,   # subprocess mode only
        "tensor_min_download_timeout": 300,  # subprocess mode only; use np_min_download_timeout for NumPy
        "PEER_READ_TIMEOUT": 600,            # subprocess mode only
+       "max_resends": 3,                    # subprocess mode only; finite default
    })
 
 
