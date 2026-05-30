@@ -69,8 +69,17 @@ def test_blob_task_rejects_declared_size_above_limit():
         BlobTask(future=future, stream=_FakeStream(declared_size=8, chunks=[]), max_size=4)
 
 
-def test_handle_blob_cb_stops_task_on_declared_size_above_limit(monkeypatch):
+def test_blob_handler_uses_dedicated_streaming_blob_limit(monkeypatch):
     monkeypatch.setattr(CommConfigurator, "get_max_message_size", lambda self: 4)
+    monkeypatch.setattr(CommConfigurator, "get_streaming_max_blob_size", lambda self: 8)
+
+    handler = BlobHandler(lambda future: None)
+
+    assert handler.max_blob_size == 8
+
+
+def test_handle_blob_cb_stops_task_on_declared_size_above_limit(monkeypatch):
+    monkeypatch.setattr(CommConfigurator, "get_streaming_max_blob_size", lambda self: 4)
     handler = BlobHandler(lambda future: None)
     future = StreamFuture(stream_id=7)
     stopped = {}

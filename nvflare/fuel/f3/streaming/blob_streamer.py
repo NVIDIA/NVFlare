@@ -96,7 +96,7 @@ class BlobHandler:
         self.blob_cb = blob_cb
         config = CommConfigurator()
         self.chunk_size = config.get_streaming_chunk_size(STREAM_CHUNK_SIZE)
-        self.max_blob_size = config.get_max_message_size()
+        self.max_blob_size = config.get_streaming_max_blob_size()
 
     def handle_blob_cb(self, future: StreamFuture, stream: Stream, resume: bool, *args, **kwargs) -> int:
 
@@ -164,6 +164,7 @@ class BlobHandler:
                             blob_task.buffer[buf_size : buf_size + length] = buf
                     else:
                         next_size = buf_size + length
+                        # read() already pulled this chunk, so rejection can overshoot by one chunk at most.
                         if blob_task.max_size > 0 and next_size > blob_task.max_size:
                             log.error(
                                 f"{blob_task} Size limit exceeded: {thread_id=} {next_size=} "
