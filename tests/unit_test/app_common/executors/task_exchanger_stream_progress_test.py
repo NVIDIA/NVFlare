@@ -965,3 +965,49 @@ def test_swarm_task_payload_progress_from_peer_parent_suppresses_resend(monkeypa
     assert observed_wait == [True]
     assert progress_pipe.sent_payloads[0]["direction"] == DIRECTION_TASK_PAYLOAD_DOWNLOAD
     assert any(payload.get("transfer_id") == "ref-1" for payload in progress_pipe.sent_payloads)
+
+
+def test_swarm_task_payload_progress_during_send_to_peer_suppresses_resend(monkeypatch):
+    logs = _patch_logs(monkeypatch)
+    executor = TaskExchanger(pipe_id="pipe", peer_read_timeout=0.01, streaming_idle_timeout=10.0)
+    progress_pipe = _ProgressPipe(executor)
+
+    def _send_stream_progress(**kwargs):
+        progress_pipe.send(Message.new_request(Topic.STREAM_PROGRESS, kwargs))
+
+    def send_cb(handler, msg, timeout, abort_signal):
+        cell_msg = CellMessage(
+            headers={
+                MessageHeaderKey.MSG_ROOT_ID: msg.msg_id,
+                MessageHeaderKey.REQ_ID: msg.msg_id,
+                FLMetaKey.JOB_ID: "job-1",
+            },
+            payload=None,
+        )
+        progress_cb = ViaDownloaderDecomposer._make_stream_progress_cb(
+            {
+                fobs.FOBSContextKey.MESSAGE: cell_msg,
+                fobs.FOBSContextKey.STREAM_PROGRESS_CB: _send_stream_progress,
+            },
+            "peer-parent-ref",
+        )
+        progress_cb(
+            sequence=1,
+            bytes_done=1024,
+            state="active",
+            receiver_id="site-2.job-1",
+        )
+        assert msg._progress_wait_cb() is True
+        handler.replies.append(_reply_for(msg))
+        return True
+
+    handler = _FakePipeHandler(send_cb)
+    executor.pipe_handler = handler
+
+    result = executor._do_execute("train", _make_task(task_id="task-1"), _make_fl_ctx(), _AbortSignal())
+
+    assert result.get_return_code() == ReturnCode.OK
+    assert handler.send_calls == 1
+    assert progress_pipe.sent_payloads[0]["transfer_id"] == "peer-parent-ref"
+    assert progress_pipe.sent_payloads[0]["receiver_id"] == "site-2.job-1"
+    assert any("continuing to wait" in msg for _, msg in logs)

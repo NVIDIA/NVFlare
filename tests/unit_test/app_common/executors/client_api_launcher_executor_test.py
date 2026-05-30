@@ -557,6 +557,34 @@ def test_explicit_low_heartbeat_timeout_warns_fast_fail(monkeypatch):
     assert any("explicit heartbeat_timeout" in w and "streaming_idle_timeout" in w for w in warnings), warnings
 
 
+def test_heartbeat_timeout_negative_override_raises(monkeypatch):
+    from nvflare.client.config import ConfigKey
+
+    monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
+    monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_error", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(_GCV_MODULE, _make_gcv_stub({ConfigKey.HEARTBEAT_TIMEOUT: -1}))
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe", heartbeat_timeout=300.0)
+
+    with pytest.raises(ValueError, match="HEARTBEAT_TIMEOUT must be non-negative"):
+        executor.initialize(_FakeFLContext(_FakeCell()))
+
+
+def test_heartbeat_timeout_non_finite_override_raises(monkeypatch):
+    from nvflare.client.config import ConfigKey
+
+    monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
+    monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_error", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(_GCV_MODULE, _make_gcv_stub({ConfigKey.HEARTBEAT_TIMEOUT: "nan"}))
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe", heartbeat_timeout=300.0)
+
+    with pytest.raises(ValueError, match="HEARTBEAT_TIMEOUT must be non-negative"):
+        executor.initialize(_FakeFLContext(_FakeCell()))
+
+
 # ---------------------------------------------------------------------------
 # max_resends wiring
 # ---------------------------------------------------------------------------
@@ -748,7 +776,7 @@ def test_client_config_float_override_rejects_none(monkeypatch):
 
     executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
 
-    with pytest.raises(ValueError, match="download_complete_timeout must be positive"):
+    with pytest.raises(ValueError, match="download_complete_timeout must be a positive number"):
         executor.initialize(_FakeFLContext(_FakeCell()))
 
     assert writes == []

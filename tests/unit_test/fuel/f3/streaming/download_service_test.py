@@ -670,7 +670,7 @@ class TestDownloadService:
             service._delete_tx(tx, tombstone_finished_refs=True)
             service._finished_refs[ref.rid].last_active_time = 100.0
 
-        with patch.object(download_service_module.time, "time", return_value=100.0 + service._FINISHED_REFS_TTL + 1.0):
+        with patch.object(download_service_module.time, "time", return_value=100.0 + service.FINISHED_REFS_TTL + 1.0):
             reply = service._handle_download(_make_download_request(ref.rid, "receiver1"))
 
         assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.INVALID_REQUEST
@@ -697,14 +697,14 @@ class TestDownloadService:
                 tx.transaction_done(TransactionDoneStatus.FINISHED)
                 service._delete_tx(tx, tombstone_finished_refs=True)
 
-        with patch.object(download_service_module.time, "time", return_value=100.0 + service._FINISHED_REFS_TTL - 1.0):
+        with patch.object(download_service_module.time, "time", return_value=100.0 + service.FINISHED_REFS_TTL - 1.0):
             retry_reply = service._handle_download(_make_download_request(ref.rid, "receiver1"))
 
         assert retry_reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
         assert retry_reply.payload == {"status": ProduceRC.EOF}
         assert service._finished_refs[ref.rid].last_active_time == 100.0
 
-        with patch.object(download_service_module.time, "time", return_value=100.0 + service._FINISHED_REFS_TTL + 1.0):
+        with patch.object(download_service_module.time, "time", return_value=100.0 + service.FINISHED_REFS_TTL + 1.0):
             expired_retry_reply = service._handle_download(_make_download_request(ref.rid, "receiver1"))
 
         assert expired_retry_reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.INVALID_REQUEST

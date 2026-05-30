@@ -714,6 +714,8 @@ class FlareAgent:
     def _update_reverse_result_upload_progress(self, tracker, progress_event, **kwargs):
         if kwargs.get("direction") != DIRECTION_RESULT_UPLOAD:
             return
+        tx_id = kwargs.get("tx_id")
+        tx_log_id = tx_id or "<unknown>"
 
         try:
             transfer_id = str(kwargs.get("transfer_id") or kwargs["ref_id"])
@@ -727,7 +729,7 @@ class FlareAgent:
             return
 
         accepted, reason = tracker.update(
-            tx_id=kwargs.get("tx_id"),
+            tx_id=tx_id,
             transfer_id=transfer_id,
             receiver_id=kwargs.get("receiver_id"),
             sequence=sequence,
@@ -740,14 +742,14 @@ class FlareAgent:
         )
         if accepted:
             self.logger.info(
-                f"[subprocess] result_upload progress task={kwargs.get('task_id')} transfer={transfer_id} "
-                f"receiver={kwargs.get('receiver_id')} state={kwargs.get('state')} sequence={sequence} "
-                f"bytes_done={bytes_done} items_done={items_done}"
+                f"[subprocess] result_upload progress tx={tx_log_id} task={kwargs.get('task_id')} "
+                f"transfer={transfer_id} receiver={kwargs.get('receiver_id')} state={kwargs.get('state')} "
+                f"sequence={sequence} bytes_done={bytes_done} items_done={items_done}"
             )
         else:
             msg = (
-                f"[subprocess] ignored result_upload progress transfer={transfer_id} "
-                f"receiver={kwargs.get('receiver_id')}: {reason}"
+                f"[subprocess] ignored result_upload progress tx={tx_log_id} "
+                f"transfer={transfer_id} receiver={kwargs.get('receiver_id')}: {reason}"
             )
             if reason == "unexpected_pair":
                 self.logger.warning(msg)
@@ -846,8 +848,8 @@ class FlareAgent:
                     self.logger.info(
                         f"[subprocess] result ACK'd by CJ in {send_elapsed:.2f}s; " "waiting for server tensor download"
                     )
-                    wait_start = time.time()
                     if transactions:
+                        wait_start = result_upload_tracker.clock()
                         result_ok = self._wait_for_reverse_result_upload(
                             result_upload_tracker,
                             progress_event,
@@ -861,6 +863,7 @@ class FlareAgent:
                             "[subprocess] result_upload progress tracking unavailable; "
                             f"falling back to download_complete_timeout={self._download_complete_timeout}s"
                         )
+                        wait_start = time.time()
                         result_ok = self._wait_for_download_complete_fixed(download_done, download_status, wait_start)
                     if not result_ok:
                         return False

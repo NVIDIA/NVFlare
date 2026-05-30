@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import logging
+import math
 import os
 from typing import Optional
 
@@ -221,11 +222,11 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         try:
             timeout_value = float(value)
         except (TypeError, ValueError) as e:
-            msg = f"{key} must be positive, got {value}"
+            msg = f"{key} must be a positive number, got {value}"
             self.log_error(fl_ctx, msg)
             raise ValueError(msg) from e
 
-        if timeout_value <= 0:
+        if not math.isfinite(timeout_value) or timeout_value <= 0:
             self.log_error(fl_ctx, f"Invalid {key}: {timeout_value}s (must be positive)")
             raise ValueError(f"{key} must be positive, got {timeout_value}")
 
@@ -241,11 +242,11 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         try:
             timeout_value = float(value)
         except (TypeError, ValueError) as e:
-            msg = f"{key} must be non-negative, got {value}"
+            msg = f"{key} must be a non-negative number, got {value}"
             self.log_error(fl_ctx, msg)
             raise ValueError(msg) from e
 
-        if timeout_value < 0:
+        if not math.isfinite(timeout_value) or timeout_value < 0:
             self.log_error(fl_ctx, f"Invalid {key}: {timeout_value}s (must be non-negative)")
             raise ValueError(f"{key} must be non-negative, got {timeout_value}")
 

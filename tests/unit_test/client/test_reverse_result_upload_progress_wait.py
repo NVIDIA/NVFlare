@@ -524,7 +524,7 @@ def test_do_submit_result_accepts_progress_before_send_returns():
     result = agent._do_submit_result(_TaskContext("tid-1", "train", "msg-1"), None, "OK")
 
     assert result is True
-    assert any("result_upload progress" in call[0][0] for call in agent.logger.info.call_args_list)
+    assert any("result_upload progress tx=tx-early" in call[0][0] for call in agent.logger.info.call_args_list)
     assert not any("unexpected_pair" in call[0][0] for call in agent.logger.warning.call_args_list)
 
 
@@ -551,7 +551,35 @@ def test_result_upload_unexpected_pair_logs_warning():
     )
 
     assert event.is_set() is True
-    assert any("unexpected_pair" in call[0][0] for call in agent.logger.warning.call_args_list)
+    assert any(
+        "tx=missing-tx" in call[0][0] and "unexpected_pair" in call[0][0]
+        for call in agent.logger.warning.call_args_list
+    )
+
+
+def test_do_submit_result_uses_tracker_clock_for_progress_wait_start():
+    clear_download_initiated()
+    pipe = _make_cell_pipe()
+    agent = _make_agent(pipe, download_complete_timeout=0.001)
+    clock = FakeClock(now=4321.0)
+    tracker = _make_tracker(clock=clock, idle_timeout=10.0)
+    transaction = DownloadTransactionInfo("tx-1", (("ref-1", None),), clock.now)
+    agent._make_reverse_result_upload_tracker = MagicMock(return_value=tracker)
+    agent._wait_for_reverse_result_upload = MagicMock(return_value=True)
+
+    def _send(reply, timeout):
+        ctx = pipe.cell.update_fobs_context.call_args.args[0]
+        ctx[RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY](transaction)
+        _tls.download_initiated = True
+        _tls.download_transactions = [transaction]
+        return True
+
+    agent.pipe_handler.send_to_peer.side_effect = _send
+
+    result = agent._do_submit_result(_TaskContext("tid-1", "train", "msg-1"), None, "OK")
+
+    assert result is True
+    assert agent._wait_for_reverse_result_upload.call_args.args[4] == clock.now
 
 
 def test_result_upload_completion_grace_wait_uses_remaining_grace():

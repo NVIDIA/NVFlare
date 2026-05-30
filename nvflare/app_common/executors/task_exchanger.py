@@ -181,7 +181,7 @@ class TaskExchanger(Executor):
         self._stream_progress_tracker = self._make_stream_progress_tracker()
         self._explicit_peer_read_timeout_warned = False
         self._task_send_startup_budget_info_logged = False
-        self._explicit_peer_read_timeout_warning_lock = threading.Lock()
+        self._peer_read_timeout_once_lock = threading.Lock()
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
@@ -509,7 +509,7 @@ class TaskExchanger(Executor):
         )
 
     def _log_explicit_peer_read_timeout_warning_once(self, fl_ctx: FLContext):
-        with self._explicit_peer_read_timeout_warning_lock:
+        with self._peer_read_timeout_once_lock:
             if self._explicit_peer_read_timeout_warned:
                 return
             self._explicit_peer_read_timeout_warned = True
@@ -532,7 +532,7 @@ class TaskExchanger(Executor):
     def _log_clamped_task_send_startup_budget_once(self, fl_ctx: FLContext):
         if not self._should_log_clamped_task_send_startup_budget():
             return
-        with self._explicit_peer_read_timeout_warning_lock:
+        with self._peer_read_timeout_once_lock:
             if self._task_send_startup_budget_info_logged:
                 return
             self._task_send_startup_budget_info_logged = True

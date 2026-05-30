@@ -597,7 +597,7 @@ class DownloadService:
             return
 
         expired_refs = [
-            rid for rid, finished_ref in cls._finished_refs.items() if finished_ref.expired(now, cls._FINISHED_REFS_TTL)
+            rid for rid, finished_ref in cls._finished_refs.items() if finished_ref.expired(now, cls.FINISHED_REFS_TTL)
         ]
         for rid in expired_refs:
             cls._finished_refs.pop(rid, None)
@@ -609,7 +609,7 @@ class DownloadService:
         if not finished_ref:
             return None
 
-        if finished_ref.expired(now, cls._FINISHED_REFS_TTL):
+        if finished_ref.expired(now, cls.FINISHED_REFS_TTL):
             cls._finished_refs.pop(rid, None)
             return None
 
