@@ -166,6 +166,8 @@ TODO for lower-level byte-stream progress integration: keep this single-authorit
 
 Phase 1 implementation note: the task-payload path uses the module-level `download_object()` helper in `nvflare/fuel/f3/streaming/download_service.py` as the FOBS materialization progress emitter, with `ViaDownloader` attaching `job_id`, `task_id`, `transfer_id`, item counts, and pipe callbacks. `ByteReceiver` and `ByteStreamer` remain the lower-level canonical emitters for a later pass that covers raw byte-stream progress directly.
 
+For `task_payload_download`, the CJ must reject unscoped or malformed progress events that omit `direction`, `job_id`, `task_id`, or `transfer_id`; it must not fall back from missing `task_id` to `transfer_id` or store records under an empty job. The CJ should also bound retained progress records and prune stale records so a bad or misbehaving subprocess cannot grow tracker state with arbitrary refs.
+
 Reverse-path implementation note: the result-upload path should use `DownloadService` on the subprocess side as the source-side progress emitter because that is where downstream receiver pull requests are observed. It should update a subprocess-local tracker through the same event schema with `direction: "result_upload"` and `receiver_id` set to the requester FQCN or equivalent identity when known.
 
 For `task_payload_download`, `receiver_id` is optional and identifies the subprocess materializing the payload when present; forward aggregation does not depend on it. For `result_upload`, missing `receiver_id` is treated as `receiver_id = null`, which is acceptable for a single downstream receiver. Multi-receiver reverse transfers require the source to populate `receiver_id` consistently for every expected `(ref_id, receiver_id)` pair.
@@ -270,7 +272,7 @@ Multi-ref aggregation rule:
 - transaction state is active while any expected `(ref_id, receiver_id)` pair is non-terminal;
 - transaction success requires every expected `(ref_id, receiver_id)` pair to reach terminal success;
 - any terminal failure, timeout, deletion, or abort for an expected `(ref_id, receiver_id)` pair makes the transaction failed for wait-policy purposes;
-- a `(ref_id, receiver_id)` pair is "started" once it reports any progress event with `bytes_done > 0`, `items_done > 0`, or a terminal state;
+- a `(ref_id, receiver_id)` pair is "started" once it reports any accepted progress event, including a zero-byte active event from the first pull; this keeps no-start detection aligned with `DownloadService` progress emission;
 - a progressing pair must not mask a started sibling ref or sibling receiver that has stopped advancing beyond `streaming_idle_timeout`;
 - an unstarted pair uses `streaming_idle_timeout` as its no-start budget;
 - an unstarted pair is allowed only until its no-start budget expires; once any expected pair remains unstarted beyond `streaming_idle_timeout`, the transaction is treated as stalled regardless of sibling progress;
@@ -408,6 +410,8 @@ effective_min_download_timeout = max(default_min_download_timeout, streaming_idl
 ```
 
 Explicit user-configured values should be honored to preserve fast-fail semantics. If a user explicitly sets `peer_read_timeout=120`, NVFLARE should not silently raise it to 600. Instead, log that the explicit fast-fail setting can still interrupt slow streamed transfers.
+
+`add_client_config()` overrides are explicit by construction. Constructor/job-config values that intentionally preserve a lower fast-fail timeout should set `peer_read_timeout_explicit=True` or `heartbeat_timeout_explicit=True`; otherwise constructor defaults may be raised to the streaming idle timeout as compatibility defaults.
 
 That warning should be a startup WARNING-level log when an explicit `peer_read_timeout` or `heartbeat_timeout` is lower than `streaming_idle_timeout`.
 

@@ -787,7 +787,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         def _progress_cb(**kwargs):
             progress_cb(
                 job_id=job_id,
-                task_id=task_id or ref_id,
+                task_id=task_id,
                 transfer_id=ref_id,
                 transfer_id_kind="download_ref",
                 direction=DIRECTION_TASK_PAYLOAD_DOWNLOAD,

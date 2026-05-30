@@ -721,6 +721,7 @@ class FlareAgent:
         if kwargs.get("direction") != DIRECTION_RESULT_UPLOAD:
             return
         tx_id = kwargs.get("tx_id")
+        receiver_id = None if kwargs.get("receiver_id") is None else str(kwargs.get("receiver_id"))
         tx_log_id = tx_id or "<unknown>"
 
         try:
@@ -737,7 +738,7 @@ class FlareAgent:
         accepted, reason = tracker.update(
             tx_id=tx_id,
             transfer_id=transfer_id,
-            receiver_id=kwargs.get("receiver_id"),
+            receiver_id=receiver_id,
             sequence=sequence,
             bytes_done=bytes_done,
             items_done=items_done,
@@ -748,17 +749,16 @@ class FlareAgent:
         )
         if accepted:
             if not tx_id:
-                receiver_id = None if kwargs.get("receiver_id") is None else str(kwargs.get("receiver_id"))
                 tx_log_id = tracker.resolve_tx_id(tx_id, transfer_id, receiver_id) or tx_log_id
             self.logger.info(
                 f"[subprocess] result_upload progress tx={tx_log_id} task={kwargs.get('task_id')} "
-                f"transfer={transfer_id} receiver={kwargs.get('receiver_id')} state={kwargs.get('state')} "
+                f"transfer={transfer_id} receiver={receiver_id} state={kwargs.get('state')} "
                 f"sequence={sequence} bytes_done={bytes_done} items_done={items_done}"
             )
         else:
             msg = (
                 f"[subprocess] ignored result_upload progress tx={tx_log_id} "
-                f"transfer={transfer_id} receiver={kwargs.get('receiver_id')}: {reason}"
+                f"transfer={transfer_id} receiver={receiver_id}: {reason}"
             )
             if reason == "unexpected_pair":
                 self.logger.warning(msg)

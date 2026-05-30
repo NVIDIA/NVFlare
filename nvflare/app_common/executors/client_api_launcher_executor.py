@@ -69,6 +69,8 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         submit_result_timeout: float = 300.0,
         max_resends: Optional[int] = 3,
         download_complete_timeout: float = 1800.0,
+        peer_read_timeout_explicit: bool = False,
+        heartbeat_timeout_explicit: bool = False,
     ) -> None:
         """Initializes the ClientAPILauncherExecutor.
 
@@ -115,6 +117,11 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                 this gate, the subprocess may exit before the download completes and the server gets
                 missing download refs. Defaults to 1800 s. Recipe-based jobs can override via
                 recipe.add_client_config({"download_complete_timeout": N}).
+            peer_read_timeout_explicit (bool): Whether the constructor-configured peer_read_timeout is an intentional
+                fast-fail override. When true, NVFLARE honors a value lower than streaming_idle_timeout instead of
+                raising it to the streaming idle timeout.
+            heartbeat_timeout_explicit (bool): Whether the constructor-configured heartbeat_timeout is an intentional
+                fast-fail override. When true, NVFLARE honors a value lower than streaming_idle_timeout.
         """
         LauncherExecutor.__init__(
             self,
@@ -137,6 +144,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             from_nvflare_converter_id=from_nvflare_converter_id,
             to_nvflare_converter_id=to_nvflare_converter_id,
             max_resends=max_resends,
+            peer_read_timeout_explicit=peer_read_timeout_explicit,
         )
 
         # Preserve the bounded retry default across FedJobConfig export/reload.
@@ -158,7 +166,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         self._stop_task_wait_timeout = download_complete_timeout
         self._cell_with_pass_through = None  # track cell so finalize() can clean up
         self._pass_through_channel = None  # channel name registered in decode_pass_through_channels
-        self.heartbeat_timeout_explicit = False
+        self.heartbeat_timeout_explicit = heartbeat_timeout_explicit
         self.streaming_max_peer_silence = resolve_streaming_progress_config().streaming_max_peer_silence
 
     def finalize(self, fl_ctx: FLContext) -> None:

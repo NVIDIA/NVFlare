@@ -332,6 +332,22 @@ def test_explicit_low_peer_read_timeout_warns_fast_fail(monkeypatch):
     assert any("honor the explicit fast-fail timeout" in w for w in warnings), warnings
 
 
+def test_constructor_explicit_low_peer_read_timeout_warns_fast_fail(monkeypatch):
+    warnings = []
+    monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
+    monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: warnings.append(msg))
+    monkeypatch.setattr(_GCV_MODULE, _make_gcv_stub({}))
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe", peer_read_timeout=120.0, peer_read_timeout_explicit=True)
+    executor.initialize(_FakeFLContext(_FakeCell()))
+
+    assert executor.peer_read_timeout == 120.0
+    assert executor.peer_read_timeout_explicit is True
+    assert any("honor the explicit fast-fail timeout" in w for w in warnings), warnings
+
+
 def test_peer_read_timeout_invalid_raises(monkeypatch):
     """A non-positive PEER_READ_TIMEOUT must raise ValueError."""
     from nvflare.client.constants import PEER_READ_TIMEOUT
@@ -550,6 +566,22 @@ def test_explicit_low_heartbeat_timeout_warns_fast_fail(monkeypatch):
     )
 
     executor = ClientAPILauncherExecutor(pipe_id="test_pipe", heartbeat_timeout=300.0)
+    executor.initialize(_FakeFLContext(_FakeCell()))
+
+    assert executor.heartbeat_timeout == 120.0
+    assert executor.heartbeat_timeout_explicit is True
+    assert any("explicit heartbeat_timeout" in w and "streaming_idle_timeout" in w for w in warnings), warnings
+
+
+def test_constructor_explicit_low_heartbeat_timeout_warns_fast_fail(monkeypatch):
+    warnings = []
+    monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
+    monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: warnings.append(msg))
+    monkeypatch.setattr(_GCV_MODULE, _make_gcv_stub({}))
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe", heartbeat_timeout=120.0, heartbeat_timeout_explicit=True)
     executor.initialize(_FakeFLContext(_FakeCell()))
 
     assert executor.heartbeat_timeout == 120.0

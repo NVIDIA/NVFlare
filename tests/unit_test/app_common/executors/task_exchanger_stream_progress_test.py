@@ -12,22 +12,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import threading
 from unittest.mock import MagicMock
 
 from nvflare.apis.fl_constant import FLContextKey, FLMetaKey
 from nvflare.apis.shareable import ReturnCode, Shareable
 from nvflare.app_common.executors import task_exchanger as task_exchanger_module
 from nvflare.app_common.executors.task_exchanger import TaskExchanger
+from nvflare.fuel.f3.cellnet import cell as cell_module
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.utils import make_reply
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.f3.streaming import download_service as download_service_module
+from nvflare.fuel.f3.streaming import transfer_progress as transfer_progress_module
 from nvflare.fuel.f3.streaming.download_service import Consumer, ProduceRC, _PropKey, download_object
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import ViaDownloaderDecomposer
 from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
 from nvflare.fuel.utils.pipe.pipe import Message, Pipe, Topic
+from nvflare.fuel.utils.waiter_utils import WaiterRC
 
 DIRECTION_TASK_PAYLOAD_DOWNLOAD = task_exchanger_module.DIRECTION_TASK_PAYLOAD_DOWNLOAD
 
@@ -84,6 +89,70 @@ class _DummyPipe(Pipe):
 
     def can_resend(self) -> bool:
         return False
+
+
+class _ReadyStreamFuture:
+    def __init__(self, headers=None, payload=None):
+        self.headers = headers or {}
+        self._payload = payload
+        self.error = False
+        self.waiter = threading.Event()
+        self.waiter.set()
+
+    def get_progress(self):
+        return 1
+
+    def result(self):
+        return self._payload
+
+
+class _CellStackFake:
+    """Fake only the transport boundary while reusing Cell._send_request/_send_one_request."""
+
+    def __init__(self):
+        self.requests_dict = {}
+        self.decode_pass_through_channels = set()
+        self.sent_blobs = []
+        self.logger = MagicMock()
+
+    def get_fobs_context(self, props=None):
+        ctx = {}
+        if props:
+            ctx.update(props)
+        return ctx
+
+    def send_blob(self, channel, topic, target, message, secure=False, optional=False):
+        self.sent_blobs.append((channel, topic, target, message))
+        return _ReadyStreamFuture()
+
+    def send_request(self, *args, **kwargs):
+        return cell_module.Cell._send_request(self, *args, **kwargs)
+
+    def _encode_message(self, *args, **kwargs):
+        return cell_module.Cell._encode_message(self, *args, **kwargs)
+
+    def _send_one_request(self, *args, **kwargs):
+        return cell_module.Cell._send_one_request(self, *args, **kwargs)
+
+    def _get_result(self, *args, **kwargs):
+        return cell_module.Cell._get_result(self, *args, **kwargs)
+
+    def _future_wait(self, future, timeout, abort_signal):
+        return True
+
+
+def _make_cell_stack_pipe(cell):
+    pipe = CellPipe.__new__(CellPipe)
+    Pipe.__init__(pipe, Mode.ACTIVE)
+    pipe.cell = cell
+    pipe.channel = "cell_pipe.task"
+    pipe.peer_fqcn = "site-1.site-1_job_active"
+    pipe.hb_seq = 1
+    pipe.pass_through_on_send = False
+    pipe.logger = MagicMock()
+    pipe.pipe_lock = threading.Lock()
+    pipe.closed = False
+    return pipe
 
 
 def _make_fl_ctx(job_id="job-1"):
@@ -797,6 +866,39 @@ def test_stream_progress_rejects_malformed_items_done(monkeypatch):
     )
 
 
+def test_task_payload_stream_progress_requires_scoped_event(monkeypatch):
+    _patch_logs(monkeypatch)
+    executor = TaskExchanger(pipe_id="pipe")
+
+    missing_job_id = _progress(task_id="task-1", transfer_id="ref-missing-job")
+    missing_job_id.data.pop("job_id")
+    executor._handle_stream_progress_message(missing_job_id)
+
+    missing_task_id = _progress(task_id="task-1", transfer_id="ref-missing-task")
+    missing_task_id.data.pop("task_id")
+    executor._handle_stream_progress_message(missing_task_id)
+
+    missing_direction = _progress(task_id="task-1", transfer_id="ref-missing-direction")
+    missing_direction.data.pop("direction")
+    executor._handle_stream_progress_message(missing_direction)
+
+    assert executor._stream_progress_tracker.records(direction=DIRECTION_TASK_PAYLOAD_DOWNLOAD) == []
+
+
+def test_task_payload_stream_progress_capacity_bounds_new_records(monkeypatch):
+    _patch_logs(monkeypatch)
+    monkeypatch.setattr(task_exchanger_module, "STREAM_PROGRESS_MAX_TRACKED_RECORDS", 2)
+    executor = TaskExchanger(pipe_id="pipe", streaming_idle_timeout=10.0)
+
+    executor._handle_stream_progress_message(_progress(task_id="task-1", transfer_id="ref-1"))
+    executor._handle_stream_progress_message(_progress(task_id="task-1", transfer_id="ref-2"))
+    executor._handle_stream_progress_message(_progress(task_id="task-1", transfer_id="ref-3"))
+
+    records = executor._stream_progress_tracker.records(direction=DIRECTION_TASK_PAYLOAD_DOWNLOAD)
+    assert len(records) == 2
+    assert {record.transfer_id for record in records} == {"ref-1", "ref-2"}
+
+
 def test_stream_progress_ignores_generic_offset_and_current_fields(monkeypatch):
     _patch_logs(monkeypatch)
     executor = TaskExchanger(pipe_id="pipe")
@@ -1295,3 +1397,117 @@ def test_simulated_large_model_broadcast_many_clients_delayed_ack_without_progre
         failures += 1
 
     assert failures == client_count
+
+
+def test_cellpipe_stack_delayed_ack_continues_on_progress_without_resend(monkeypatch):
+    logs = _patch_logs(monkeypatch)
+    now = [1000.0]
+    monkeypatch.setattr(task_exchanger_module.time, "time", lambda: now[0])
+    monkeypatch.setattr(transfer_progress_module.time, "time", lambda: now[0])
+
+    executor = TaskExchanger(
+        pipe_id="pipe",
+        peer_read_timeout=1.0,
+        streaming_idle_timeout=10.0,
+        resend_interval=0.01,
+        max_resends=0,
+    )
+    cell = _CellStackFake()
+    executor.pipe = _make_cell_stack_pipe(cell)
+    handler = executor._create_pipe_handler()
+    decisions = []
+    original_should_continue = executor._should_continue_task_send_waiting
+
+    def _record_should_continue(*args, **kwargs):
+        decision = original_should_continue(*args, **kwargs)
+        decisions.append(decision)
+        return decision
+
+    monkeypatch.setattr(executor, "_should_continue_task_send_waiting", _record_should_continue)
+    task_id = "task-stack"
+    job_id = "large-model-job"
+    transfer_id = "large-model-ref"
+    wait_calls = []
+
+    def _conditional_wait(event, timeout, abort_signal, **kwargs):
+        wait_calls.append(timeout)
+        if len(wait_calls) <= 2:
+            now[0] += timeout + 0.1
+            handler.msg_cb(
+                _progress(
+                    task_id=task_id,
+                    job_id=job_id,
+                    transfer_id=transfer_id,
+                    sequence=len(wait_calls),
+                    bytes_done=len(wait_calls) * 1024 * 1024,
+                )
+            )
+            return WaiterRC.TIMEOUT
+
+        waiter = next(iter(cell.requests_dict.values()))
+        waiter.receiving_future = _ReadyStreamFuture(
+            headers={MessageHeaderKey.RETURN_CODE: CellReturnCode.OK},
+            payload=None,
+        )
+        waiter.in_receiving.set()
+        return WaiterRC.IS_SET
+
+    monkeypatch.setattr(cell_module, "conditional_wait", _conditional_wait)
+
+    shareable = _make_task(task_id=task_id)
+    shareable.set_header(FLMetaKey.JOB_ID, job_id)
+    req = Message.new_request("train", shareable, msg_id=task_id)
+    sent = executor._send_task_to_peer(req, _make_fl_ctx(job_id), _AbortSignal())
+
+    assert sent is True
+    assert len(cell.sent_blobs) == 1
+    assert decisions == [True, True]
+    assert any("continuing to wait" in msg for _, msg in logs)
+    assert not hasattr(req, "_cached_cell_msg")
+
+
+def test_cellpipe_stack_delayed_ack_without_progress_times_out_without_resend(monkeypatch):
+    _patch_logs(monkeypatch)
+    now = [1000.0]
+    monkeypatch.setattr(task_exchanger_module.time, "time", lambda: now[0])
+    monkeypatch.setattr(transfer_progress_module.time, "time", lambda: now[0])
+
+    executor = TaskExchanger(
+        pipe_id="pipe",
+        peer_read_timeout=1.0,
+        streaming_idle_timeout=3.0,
+        resend_interval=0.01,
+        max_resends=0,
+    )
+    cell = _CellStackFake()
+    executor.pipe = _make_cell_stack_pipe(cell)
+    executor._create_pipe_handler()
+    decisions = []
+    original_should_continue = executor._should_continue_task_send_waiting
+
+    def _record_should_continue(*args, **kwargs):
+        decision = original_should_continue(*args, **kwargs)
+        decisions.append(decision)
+        return decision
+
+    monkeypatch.setattr(executor, "_should_continue_task_send_waiting", _record_should_continue)
+    wait_calls = []
+
+    def _conditional_wait(event, timeout, abort_signal, **kwargs):
+        wait_calls.append(timeout)
+        now[0] += timeout + 0.1
+        return WaiterRC.TIMEOUT
+
+    monkeypatch.setattr(cell_module, "conditional_wait", _conditional_wait)
+
+    task_id = "task-stack"
+    job_id = "large-model-job"
+    shareable = _make_task(task_id=task_id)
+    shareable.set_header(FLMetaKey.JOB_ID, job_id)
+    req = Message.new_request("train", shareable, msg_id=task_id)
+    sent = executor._send_task_to_peer(req, _make_fl_ctx(job_id), _AbortSignal())
+
+    assert sent is False
+    assert len(cell.sent_blobs) == 1
+    assert decisions == [True, True, False]
+    assert not hasattr(req, "_cached_cell_msg")

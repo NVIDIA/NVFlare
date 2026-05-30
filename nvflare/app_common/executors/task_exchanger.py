@@ -56,6 +56,7 @@ STREAM_PROGRESS_STATE_KEYS = ("state", "status", "event", "event_type")
 STREAM_PROGRESS_START_STATUSES = ("start", "started")
 _DEFAULT_STREAMING_IDLE_TIMEOUT_SECS = DEFAULT_STREAMING_IDLE_TIMEOUT
 STREAM_PROGRESS_COMPLETION_ACK_GRACE = 30.0
+STREAM_PROGRESS_MAX_TRACKED_RECORDS = 4096
 # Match the DownloadService finished-ref tombstone window so late EOF/completion
 # replies after clean transfer completion can still find the progress record.
 STREAM_PROGRESS_TERMINAL_RECORD_TTL = DownloadService.FINISHED_REFS_TTL
@@ -290,16 +291,19 @@ class TaskExchanger(Executor):
 
         task_id = self._get_progress_event_value(data, STREAM_PROGRESS_TASK_ID_KEYS)
         transfer_id = self._get_progress_event_value(data, STREAM_PROGRESS_TRANSFER_ID_KEYS)
-        if task_id is None and transfer_id is None:
-            self.logger.warning(f"ignored stream progress without task id or transfer id: {data}")
-            return
-        if task_id is None:
-            task_id = transfer_id
-        if transfer_id is None:
-            transfer_id = task_id
-
         job_id = self._get_progress_event_value(data, STREAM_PROGRESS_JOB_ID_KEYS)
         direction = self._get_progress_event_value(data, STREAM_PROGRESS_DIRECTION_KEYS)
+        if direction is None:
+            self.logger.warning(f"ignored stream progress without direction: {data}")
+            return
+        direction = str(direction)
+        if direction != DIRECTION_TASK_PAYLOAD_DOWNLOAD:
+            self.logger.debug(f"ignored stream progress for unsupported direction {direction}: {data}")
+            return
+        if job_id is None or task_id is None or transfer_id is None:
+            self.logger.warning(f"ignored unscoped task_payload_download stream progress: {data}")
+            return
+
         receiver_id = self._get_progress_event_value(data, STREAM_PROGRESS_RECEIVER_ID_KEYS)
         transfer_id_kind = self._get_progress_event_value(data, STREAM_PROGRESS_TRANSFER_ID_KIND_KEYS)
         status = self._normalize_progress_status(self._get_progress_event_value(data, STREAM_PROGRESS_STATE_KEYS))
@@ -319,11 +323,13 @@ class TaskExchanger(Executor):
             self.logger.warning(f"ignored stream progress with invalid items_done value: {data}")
             return
 
-        job_id = "" if job_id is None else str(job_id)
+        job_id = str(job_id)
         task_id = str(task_id)
         transfer_id = str(transfer_id)
+        if not job_id or not task_id or not transfer_id:
+            self.logger.warning(f"ignored unscoped task_payload_download stream progress: {data}")
+            return
         transfer_id_kind = None if transfer_id_kind is None else str(transfer_id_kind)
-        direction = DIRECTION_TASK_PAYLOAD_DOWNLOAD if direction is None else str(direction)
         receiver_id = None if receiver_id is None else str(receiver_id)
         state = self._normalize_tracker_state(status)
 
@@ -336,6 +342,12 @@ class TaskExchanger(Executor):
                 transfer_id=transfer_id,
                 direction=direction,
             )
+            if record is None and not self._stream_progress_tracker_has_capacity_locked(direction):
+                self.logger.warning(
+                    f"ignored stream progress for task={task_id} transfer={transfer_id} direction={direction}: "
+                    "progress tracker is at capacity"
+                )
+                return
             try:
                 sequence_value = int(sequence) if sequence is not None else (record.sequence + 1 if record else 0)
             except (TypeError, ValueError):
@@ -401,6 +413,19 @@ class TaskExchanger(Executor):
 
     def _prune_terminal_stream_progress_records_locked(self):
         self._stream_progress_tracker.prune(before_time=time.time() - STREAM_PROGRESS_TERMINAL_RECORD_TTL)
+
+    def _stream_progress_tracker_has_capacity_locked(self, direction: str) -> bool:
+        max_records = STREAM_PROGRESS_MAX_TRACKED_RECORDS
+        if max_records <= 0:
+            return True
+
+        if len(self._stream_progress_tracker.records(direction=direction)) < max_records:
+            return True
+
+        self._prune_terminal_stream_progress_records_locked()
+        idle_timeout = self.streaming_idle_timeout or _DEFAULT_STREAMING_IDLE_TIMEOUT_SECS
+        self._stream_progress_tracker.prune(before_time=time.time() - idle_timeout, include_active=True)
+        return len(self._stream_progress_tracker.records(direction=direction)) < max_records
 
     def _recent_completed_records_hold_wait(self, records, now: float, fl_ctx: FLContext, task_name: str) -> bool:
         if not records:

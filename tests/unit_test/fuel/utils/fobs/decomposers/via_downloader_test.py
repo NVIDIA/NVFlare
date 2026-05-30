@@ -329,6 +329,22 @@ class TestResultUploadProgressWiring:
         assert downloader.kwargs["timeout"] == 1800.0
 
 
+class TestForwardProgressCallback:
+    def test_missing_message_metadata_is_not_replaced_with_ref_id(self):
+        events = []
+        progress_cb = ViaDownloaderDecomposer._make_stream_progress_cb(
+            {fobs.FOBSContextKey.STREAM_PROGRESS_CB: lambda **kwargs: events.append(kwargs)},
+            "ref-1",
+        )
+
+        progress_cb(sequence=1, bytes_done=0, state="active")
+
+        assert events[0]["job_id"] is None
+        assert events[0]["task_id"] is None
+        assert events[0]["transfer_id"] == "ref-1"
+        assert events[0]["direction"] == "task_payload_download"
+
+
 class TestConcreteViaDownloaderProgressCallback:
     def test_numpy_decomposer_passes_progress_callback_to_download_object(self, monkeypatch):
         from nvflare.app_common.decomposers.numpy_decomposers import NumpyArrayDecomposer
