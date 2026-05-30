@@ -299,8 +299,10 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             self.streaming_max_peer_silence = streaming_config.streaming_max_peer_silence
         elif max_peer_silence_configured:
             self.streaming_max_peer_silence = streaming_config.streaming_max_peer_silence
-        if idle_timeout_configured and self._stream_progress_tracker.idle_timeout != self.streaming_idle_timeout:
-            self._stream_progress_tracker = self._make_stream_progress_tracker()
+        if idle_timeout_configured:
+            with self._stream_progress_lock:
+                if self._stream_progress_tracker.idle_timeout != self.streaming_idle_timeout:
+                    self._stream_progress_tracker = self._make_stream_progress_tracker()
 
         changes = []
         if idle_timeout_configured and self.streaming_idle_timeout != old_idle_timeout:

@@ -262,6 +262,19 @@ def _make_gcv_stub(overrides: dict):
     return _gcv
 
 
+class _RecordingLock:
+    def __init__(self):
+        self.entered = False
+        self.active = False
+
+    def __enter__(self):
+        self.entered = True
+        self.active = True
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.active = False
+
+
 def test_peer_read_timeout_not_overridden_when_absent(monkeypatch):
     """When PEER_READ_TIMEOUT is absent from config, peer_read_timeout follows the generic streaming idle default."""
     monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
@@ -395,6 +408,28 @@ def test_streaming_idle_timeout_overridden_from_config(monkeypatch):
     assert executor._stream_progress_tracker.idle_timeout == 1200.0
     assert executor.peer_read_timeout == 1200.0
     assert executor.heartbeat_timeout == 1200.0
+
+
+def test_streaming_idle_timeout_override_replaces_tracker_under_lock(monkeypatch):
+    from nvflare.fuel.f3.streaming.transfer_progress import STREAMING_IDLE_TIMEOUT, TransferProgressTracker
+
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(_GCV_MODULE, _make_gcv_stub({STREAMING_IDLE_TIMEOUT: 1200}))
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
+    lock = _RecordingLock()
+    executor._stream_progress_lock = lock
+
+    def _make_tracker():
+        assert lock.active
+        return TransferProgressTracker(idle_timeout=executor.streaming_idle_timeout)
+
+    executor._make_stream_progress_tracker = _make_tracker
+    executor._apply_streaming_progress_client_config_overrides(_FakeFLContext(_FakeCell()))
+
+    assert lock.entered
+    assert executor._stream_progress_tracker.idle_timeout == 1200.0
 
 
 def test_absent_streaming_progress_override_preserves_disabled_idle_timeout(monkeypatch):
