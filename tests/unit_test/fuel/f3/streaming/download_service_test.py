@@ -908,3 +908,29 @@ class TestDownloadService:
         assert [event["sequence"] for event in events] == [1, 2, 3]
         assert events[-1]["receiver_id"] == "receiver-a"
         assert events[-1]["bytes_done"] == len(b"chunk1")
+
+    def test_source_progress_terminal_state_applies_to_late_receiver(self):
+        from nvflare.fuel.f3.streaming.download_service import _Transaction
+        from nvflare.fuel.f3.streaming.transfer_progress import TransferProgressState
+
+        events = []
+        tx = _Transaction(
+            timeout=10.0,
+            num_receivers=1,
+            progress_cb=lambda **kwargs: events.append(kwargs),
+            progress_interval=0.0,
+        )
+        obj = MockDownloadable([b"chunk1", b"chunk2"])
+        ref = tx.add_object(obj, ref_id="ref-complete")
+
+        ref.emit_progress(receiver_id="receiver-a", state=TransferProgressState.ACTIVE, bytes_delta=10)
+        ref.emit_terminal_progress_for_started_receivers(TransferProgressState.COMPLETED)
+        ref.emit_progress(receiver_id="receiver-b", state=TransferProgressState.ACTIVE, bytes_delta=5)
+
+        assert [event["receiver_id"] for event in events] == ["receiver-a", "receiver-a", "receiver-b"]
+        assert [event["state"] for event in events] == [
+            TransferProgressState.ACTIVE,
+            TransferProgressState.COMPLETED,
+            TransferProgressState.COMPLETED,
+        ]
+        assert events[-1]["bytes_done"] == 0

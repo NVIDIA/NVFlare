@@ -250,7 +250,10 @@ class TaskExchanger(Executor):
                 self.logger.debug(f"Ignoring late {msg.topic} from a previous pipe handler")
                 return
             if msg.topic == Topic.STREAM_PROGRESS:
-                self._handle_stream_progress_message(msg)
+                try:
+                    self._handle_stream_progress_message(msg)
+                except Exception as ex:
+                    self.logger.warning(f"ignored stream progress after handler error: {secure_format_exception(ex)}")
             else:
                 with _h.lock:
                     _h.messages.append(msg)

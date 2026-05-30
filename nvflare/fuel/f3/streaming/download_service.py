@@ -183,6 +183,7 @@ class _Ref:
         self.receiver_statuses = {}
         self._downloaded_to_all_called = False
         self._receiver_progress = {}
+        self._terminal_progress_state = None
         self._progress_lock = threading.Lock()
 
     def mark_active(self):
@@ -217,50 +218,17 @@ class _Ref:
             return
 
         now = time.time()
-        event = None
         with self._progress_lock:
-            receiver_progress = self._receiver_progress.get(receiver_id)
-            if receiver_progress is None:
-                receiver_progress = _ReceiverProgress()
-                self._receiver_progress[receiver_id] = receiver_progress
-
-            if receiver_progress.terminal:
-                return
-
-            first_emit = not receiver_progress.started
-            if first_emit:
-                receiver_progress.started = True
-
-            if bytes_delta > 0:
-                receiver_progress.bytes_done += bytes_delta
-            if items_delta is not None and items_delta > 0:
-                receiver_progress.items_done = (receiver_progress.items_done or 0) + items_delta
-
-            counters_advanced = bytes_delta > 0 or (items_delta is not None and items_delta > 0)
-            terminal = state in TransferProgressState.TERMINAL_STATES
-            if (
-                not force
-                and not first_emit
-                and not terminal
-                and (not counters_advanced or now - receiver_progress.last_emit_time < self.tx.progress_interval)
-            ):
-                return
-
-            receiver_progress.sequence += 1
-            receiver_progress.last_emit_time = now
-            if terminal:
-                receiver_progress.terminal = True
-
-            event = {
-                "tx_id": self.tx.tid,
-                "ref_id": self.rid,
-                "receiver_id": receiver_id,
-                "sequence": receiver_progress.sequence,
-                "bytes_done": receiver_progress.bytes_done,
-                "items_done": receiver_progress.items_done,
-                "timestamp": now,
-                "state": state,
-            }
+            event = self._make_progress_event_locked(
+                receiver_id=receiver_id,
+                state=state,
+                bytes_delta=bytes_delta,
+                items_delta=items_delta,
+                force=force,
+                timestamp=now,
+            )
+        if not event:
+            return
 
         self.tx.emit_progress_event(event)
 
@@ -268,11 +236,82 @@ class _Ref:
         if not self.tx.progress_cb:
             return
 
+        now = time.time()
         with self._progress_lock:
+            self._terminal_progress_state = state
             receiver_ids = list(self._receiver_progress)
+            events = [
+                self._make_progress_event_locked(
+                    receiver_id=receiver_id,
+                    state=state,
+                    force=True,
+                    timestamp=now,
+                )
+                for receiver_id in receiver_ids
+            ]
 
-        for receiver_id in receiver_ids:
-            self.emit_progress(receiver_id=receiver_id, state=state, force=True)
+        for event in events:
+            if event:
+                self.tx.emit_progress_event(event)
+
+    def _make_progress_event_locked(
+        self,
+        *,
+        receiver_id: Optional[str],
+        state: str,
+        timestamp: float,
+        bytes_delta: int = 0,
+        items_delta: Optional[int] = None,
+        force: bool = False,
+    ):
+        if self._terminal_progress_state and state not in TransferProgressState.TERMINAL_STATES:
+            state = self._terminal_progress_state
+            force = True
+            bytes_delta = 0
+            items_delta = None
+
+        receiver_progress = self._receiver_progress.get(receiver_id)
+        if receiver_progress is None:
+            receiver_progress = _ReceiverProgress()
+            self._receiver_progress[receiver_id] = receiver_progress
+
+        if receiver_progress.terminal:
+            return None
+
+        first_emit = not receiver_progress.started
+        if first_emit:
+            receiver_progress.started = True
+
+        if bytes_delta > 0:
+            receiver_progress.bytes_done += bytes_delta
+        if items_delta is not None and items_delta > 0:
+            receiver_progress.items_done = (receiver_progress.items_done or 0) + items_delta
+
+        counters_advanced = bytes_delta > 0 or (items_delta is not None and items_delta > 0)
+        terminal = state in TransferProgressState.TERMINAL_STATES
+        if (
+            not force
+            and not first_emit
+            and not terminal
+            and (not counters_advanced or timestamp - receiver_progress.last_emit_time < self.tx.progress_interval)
+        ):
+            return None
+
+        receiver_progress.sequence += 1
+        receiver_progress.last_emit_time = timestamp
+        if terminal:
+            receiver_progress.terminal = True
+
+        return {
+            "tx_id": self.tx.tid,
+            "ref_id": self.rid,
+            "receiver_id": receiver_id,
+            "sequence": receiver_progress.sequence,
+            "bytes_done": receiver_progress.bytes_done,
+            "items_done": receiver_progress.items_done,
+            "timestamp": timestamp,
+            "state": state,
+        }
 
 
 class _ReceiverProgress:

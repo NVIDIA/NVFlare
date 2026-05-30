@@ -1468,6 +1468,24 @@ def test_cellpipe_stack_delayed_ack_continues_on_progress_without_resend(monkeyp
     assert not hasattr(req, "_cached_cell_msg")
 
 
+def test_stream_progress_callback_error_does_not_escape_pipe_reader(monkeypatch):
+    executor = TaskExchanger(pipe_id="pipe", peer_read_timeout=1.0, streaming_idle_timeout=10.0)
+    executor.pipe = _DummyPipe()
+    executor.logger = MagicMock()
+    handler = executor._create_pipe_handler()
+
+    def _raise(_msg):
+        raise RuntimeError("bad progress")
+
+    monkeypatch.setattr(executor, "_handle_stream_progress_message", _raise)
+
+    handler.msg_cb(Message.new_request(Topic.STREAM_PROGRESS, {"task_id": "task-1"}))
+
+    assert list(handler.messages) == []
+    executor.logger.warning.assert_called_once()
+    assert "ignored stream progress after handler error" in executor.logger.warning.call_args.args[0]
+
+
 def test_cellpipe_stack_delayed_ack_without_progress_times_out_without_resend(monkeypatch):
     _patch_logs(monkeypatch)
     now = [1000.0]
