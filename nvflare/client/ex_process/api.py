@@ -14,6 +14,7 @@
 
 import importlib
 import os
+import threading
 from typing import Any, Dict, Optional, Tuple
 
 from nvflare.apis.analytix import AnalyticsDataType
@@ -202,9 +203,12 @@ class ExProcessClientAPI(APISpec):
                         from nvflare.fuel.utils.pipe.pipe import Message, Topic
 
                         last_progress_warning_time = 0.0
+                        progress_warning_lock = threading.Lock()
 
                         def _send_stream_progress(**kwargs):
                             nonlocal last_progress_warning_time
+                            if getattr(pipe, "closed", False):
+                                return
                             if not kwargs.get(FLMetaKey.JOB_ID):
                                 kwargs[FLMetaKey.JOB_ID] = client_config.config.get(FLMetaKey.JOB_ID, "")
                             try:
@@ -212,9 +216,12 @@ class ExProcessClientAPI(APISpec):
                             except Exception as ex:
                                 import time
 
-                                now = time.time()
-                                if now - last_progress_warning_time >= 60.0:
-                                    last_progress_warning_time = now
+                                with progress_warning_lock:
+                                    now = time.time()
+                                    should_warn = now - last_progress_warning_time >= 60.0
+                                    if should_warn:
+                                        last_progress_warning_time = now
+                                if should_warn:
                                     self.logger.warning(f"failed to send stream progress event: {ex}")
                                 else:
                                     self.logger.debug(f"failed to send stream progress event: {ex}")

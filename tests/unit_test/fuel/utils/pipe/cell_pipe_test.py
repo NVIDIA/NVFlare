@@ -237,6 +237,25 @@ def test_stream_progress_is_fire_and_forget():
     pipe.cell.send_request.assert_not_called()
 
 
+def test_stream_progress_does_not_update_peer_active_time():
+    pipe = _make_pipe()
+    pipe.last_peer_active_time = 123.0
+
+    with patch("nvflare.fuel.utils.pipe.cell_pipe.time.time", return_value=456.0):
+        pipe._update_peer_active_time(
+            _make_cell_message(topic=Topic.STREAM_PROGRESS),
+            ch_name="task",
+            msg_type="req",
+        )
+
+    assert pipe.last_peer_active_time == 123.0
+
+    with patch("nvflare.fuel.utils.pipe.cell_pipe.time.time", return_value=456.0):
+        pipe._update_peer_active_time(_make_cell_message(topic="train"), ch_name="task", msg_type="req")
+
+    assert pipe.last_peer_active_time == 456.0
+
+
 def test_to_cell_message_carries_shareable_job_id():
     shareable = Shareable()
     shareable.set_header(FLMetaKey.JOB_ID, "job-1")

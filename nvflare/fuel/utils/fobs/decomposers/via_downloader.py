@@ -18,7 +18,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 import nvflare.fuel.utils.app_config_utils as acu
-from nvflare.apis.fl_constant import ConfigVarName
+from nvflare.apis.fl_constant import ConfigVarName, FLMetaKey
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.streaming.download_service import Downloadable
@@ -633,10 +633,10 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
 
         msg = fobs_ctx.get(fobs.FOBSContextKey.MESSAGE)
         task_id = None
-        job_id = fobs_ctx.get(fobs.FOBSContextKey.JOB_ID)
+        job_id = None
         if msg:
             task_id = msg.get_header(MessageHeaderKey.MSG_ROOT_ID) or msg.get_header(MessageHeaderKey.REQ_ID)
-            job_id = job_id or msg.get_header(fobs.FOBSContextKey.JOB_ID)
+            job_id = job_id or msg.get_header(FLMetaKey.JOB_ID)
 
         def _progress_cb(**kwargs):
             progress_cb(

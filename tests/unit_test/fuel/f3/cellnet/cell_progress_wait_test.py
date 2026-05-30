@@ -123,3 +123,46 @@ def test_remote_processing_wait_returns_timeout_when_progress_callback_is_false(
     assert cell.send_blob.call_count == 1
     assert progress_wait_cb.call_count == 1
     assert cell.requests_dict == {}
+
+
+def test_remote_processing_wait_treats_progress_callback_exception_as_no_progress(monkeypatch):
+    cell = _make_cell()
+    monkeypatch.setattr(cell_module, "conditional_wait", lambda _event, _timeout, _abort_signal: WaiterRC.TIMEOUT)
+
+    def progress_wait_cb():
+        raise RuntimeError("callback failed")
+
+    result = cell._send_one_request(
+        channel="task",
+        target="site-1",
+        topic="train",
+        request=Message(headers={}, payload=None),
+        timeout=1.0,
+        abort_signal=Signal(),
+        progress_wait_cb=progress_wait_cb,
+    )
+
+    assert result.get_header(cell_module.MessageHeaderKey.RETURN_CODE) == ReturnCode.TIMEOUT
+    assert cell.send_blob.call_count == 1
+    assert cell.requests_dict == {}
+    assert cell.logger.warning.called
+
+
+def test_remote_processing_wait_aborted_does_not_call_progress_callback(monkeypatch):
+    cell = _make_cell()
+    monkeypatch.setattr(cell_module, "conditional_wait", lambda _event, _timeout, _abort_signal: WaiterRC.ABORTED)
+    progress_wait_cb = MagicMock(return_value=True)
+
+    result = cell._send_one_request(
+        channel="task",
+        target="site-1",
+        topic="train",
+        request=Message(headers={}, payload=None),
+        timeout=1.0,
+        abort_signal=Signal(),
+        progress_wait_cb=progress_wait_cb,
+    )
+
+    assert result.get_header(cell_module.MessageHeaderKey.RETURN_CODE) == ReturnCode.TIMEOUT
+    assert progress_wait_cb.call_count == 0
+    assert cell.requests_dict == {}

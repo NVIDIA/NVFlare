@@ -360,10 +360,11 @@ class PipeHandler(object):
             now = time.time()
 
             if msg:
-                self._last_heartbeat_received_time = now
-                # if receive any messages even if Topic is END or ABORT or PEER_GONE
-                #    we still set peer_is_up_or_dead, as we no longer need to wait
-                self.peer_is_up_or_dead.set()
+                if msg.topic != Topic.STREAM_PROGRESS:
+                    self._last_heartbeat_received_time = now
+                    # if receive any non-progress messages even if Topic is END or ABORT or PEER_GONE
+                    #    we still set peer_is_up_or_dead, as we no longer need to wait
+                    self.peer_is_up_or_dead.set()
                 if msg.topic != Topic.HEARTBEAT and not self.asked_to_stop:
                     self._add_message(msg)
                 if msg.topic in [Topic.END, Topic.ABORT]:

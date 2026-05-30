@@ -421,13 +421,24 @@ class Cell(StreamCell):
             # waiting for receiving first byte
             self.logger.debug(f"{req_id=}: entering remote process wait {timeout=}")
 
+            # With progress-aware waits, timeout is the remote-process idle polling interval.
+            # The progress callback owns the total idle budget and decides whether to keep waiting.
             while True:
                 waiter_rc = conditional_wait(waiter.in_receiving, timeout, abort_signal)
                 if waiter_rc == WaiterRC.IS_SET:
                     break
-                if waiter_rc == WaiterRC.TIMEOUT and progress_wait_cb and progress_wait_cb():
-                    self.logger.debug(f"{req_id=}: remote processing still has transfer progress; continue waiting")
-                    continue
+                if waiter_rc == WaiterRC.TIMEOUT and progress_wait_cb:
+                    try:
+                        if progress_wait_cb():
+                            self.logger.debug(
+                                f"{req_id=}: remote processing still has transfer progress; continue waiting"
+                            )
+                            continue
+                    except Exception as ex:
+                        self.logger.warning(
+                            f"{req_id=}: progress_wait_cb raised, treating as no-progress: "
+                            f"{secure_format_exception(ex)}"
+                        )
                 self.logger.debug(f"{req_id=}: remote processing timeout {timeout=} {waiter_rc=}")
                 return self._get_result(req_id)
             self.logger.debug(f"{req_id=}: in receiving")

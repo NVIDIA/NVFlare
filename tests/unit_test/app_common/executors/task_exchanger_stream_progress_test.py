@@ -25,6 +25,7 @@ from nvflare.fuel.f3.streaming.download_service import Consumer, ProduceRC, _Pro
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import ViaDownloaderDecomposer
+from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
 from nvflare.fuel.utils.pipe.pipe import Message, Pipe, Topic
 
 DIRECTION_TASK_PAYLOAD_DOWNLOAD = task_exchanger_module.DIRECTION_TASK_PAYLOAD_DOWNLOAD
@@ -113,18 +114,32 @@ def _reply_for(req):
     return Message.new_reply(topic=req.topic, data=result, req_msg_id=req.msg_id)
 
 
-def _progress(task_id, transfer_id="transfer-1", sequence=1, bytes_done=1024, state="active", job_id="job-1"):
+def _progress(
+    task_id,
+    transfer_id="transfer-1",
+    sequence=1,
+    bytes_done=1024,
+    state="active",
+    job_id="job-1",
+    items_done=None,
+    transfer_id_kind=None,
+):
+    data = {
+        "job_id": job_id,
+        "task_id": task_id,
+        "transfer_id": transfer_id,
+        "direction": DIRECTION_TASK_PAYLOAD_DOWNLOAD,
+        "sequence": sequence,
+        "bytes_done": bytes_done,
+        "state": state,
+    }
+    if items_done is not None:
+        data["items_done"] = items_done
+    if transfer_id_kind is not None:
+        data["transfer_id_kind"] = transfer_id_kind
     return Message.new_request(
         Topic.STREAM_PROGRESS,
-        {
-            "job_id": job_id,
-            "task_id": task_id,
-            "transfer_id": transfer_id,
-            "direction": DIRECTION_TASK_PAYLOAD_DOWNLOAD,
-            "sequence": sequence,
-            "bytes_done": bytes_done,
-            "state": state,
-        },
+        data,
     )
 
 
@@ -208,6 +223,72 @@ def test_task_send_progress_after_peer_read_timeout_intervals_suppresses_resend_
     assert result.get_return_code() == ReturnCode.OK
     assert handler.send_calls == 1
     assert any("stream transfer" in msg for _, msg in logs)
+
+
+def test_task_send_completed_progress_holds_wait_briefly_for_ack(monkeypatch):
+    logs = _patch_logs(monkeypatch)
+    now = [1000.0]
+    monkeypatch.setattr(task_exchanger_module.time, "time", lambda: now[0])
+    executor = TaskExchanger(
+        pipe_id="pipe",
+        peer_read_timeout=1.0,
+        streaming_idle_timeout=10.0,
+        result_poll_interval=0.01,
+    )
+
+    def send_cb(handler, msg, timeout, abort_signal):
+        executor._handle_stream_progress_message(
+            _progress(task_id=msg.msg_id, sequence=1, bytes_done=1024, state="completed")
+        )
+        assert msg._progress_wait_cb() is True
+        now[0] += 1.1
+        assert msg._progress_wait_cb() is False
+        return False
+
+    handler = _FakePipeHandler(send_cb)
+    executor.pipe_handler = handler
+
+    result = executor._do_execute("train", _make_task(), _make_fl_ctx(), _AbortSignal())
+
+    assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+    assert any("completed recently" in msg for _, msg in logs)
+
+
+def test_task_send_completion_grace_uses_bounded_poll_interval(monkeypatch):
+    _patch_logs(monkeypatch)
+    now = [1000.0]
+    monkeypatch.setattr(task_exchanger_module.time, "time", lambda: now[0])
+    executor = TaskExchanger(
+        pipe_id="pipe",
+        peer_read_timeout=600.0,
+        streaming_idle_timeout=600.0,
+        result_poll_interval=0.01,
+    )
+    executor.pipe = object.__new__(CellPipe)
+
+    def send_cb(handler, msg, timeout, abort_signal):
+        assert timeout == task_exchanger_module.STREAM_PROGRESS_COMPLETION_ACK_GRACE
+        executor._handle_stream_progress_message(
+            _progress(task_id=msg.msg_id, sequence=1, bytes_done=1024, state="completed")
+        )
+        assert msg._progress_wait_cb() is True
+        now[0] += timeout + 0.1
+        assert msg._progress_wait_cb() is False
+        return False
+
+    handler = _FakePipeHandler(send_cb)
+    executor.pipe_handler = handler
+
+    result = executor._do_execute("train", _make_task(), _make_fl_ctx(), _AbortSignal())
+
+    assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+
+
+def test_non_cell_pipe_keeps_peer_read_timeout_for_task_send():
+    executor = TaskExchanger(pipe_id="pipe", peer_read_timeout=600.0, streaming_idle_timeout=600.0)
+    executor.pipe = _DummyPipe()
+
+    assert executor._get_task_send_peer_read_timeout() == 600.0
 
 
 def test_task_send_many_active_transfers_progress_past_fixed_timeout_without_resend(monkeypatch):
@@ -306,6 +387,25 @@ def test_task_send_does_not_use_progress_from_another_job(monkeypatch):
     assert handler.send_calls == 1
 
 
+def test_unknown_job_id_does_not_match_other_job_progress_after_idle(monkeypatch):
+    _patch_logs(monkeypatch)
+    now = [1000.0]
+    monkeypatch.setattr(task_exchanger_module.time, "time", lambda: now[0])
+    executor = TaskExchanger(pipe_id="pipe", peer_read_timeout=1.0, streaming_idle_timeout=10.0)
+    executor._handle_stream_progress_message(_progress(task_id="task-1", job_id="job-2"))
+
+    assert (
+        executor._should_continue_task_send_waiting(
+            task_name="train",
+            task_id="task-1",
+            job_id=None,
+            send_start_time=0.0,
+            fl_ctx=_make_fl_ctx(),
+        )
+        is False
+    )
+
+
 def test_task_send_times_out_when_activity_does_not_advance_counters(monkeypatch):
     _patch_logs(monkeypatch)
     now = [1000.0]
@@ -316,6 +416,28 @@ def test_task_send_times_out_when_activity_does_not_advance_counters(monkeypatch
     executor._handle_stream_progress_message(_progress(task_id="task-1", sequence=2, bytes_done=1024))
 
     handler = _FakePipeHandler(lambda handler, msg, timeout, abort_signal: False)
+    executor.pipe_handler = handler
+
+    result = executor._do_execute("train", _make_task(task_id="task-1"), _make_fl_ctx(), _AbortSignal())
+
+    assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+    assert handler.send_calls == 1
+
+
+def test_task_send_times_out_when_emitter_stops_after_progress(monkeypatch):
+    _patch_logs(monkeypatch)
+    now = [1000.0]
+    monkeypatch.setattr(task_exchanger_module.time, "time", lambda: now[0])
+    executor = TaskExchanger(pipe_id="pipe", peer_read_timeout=0.01, streaming_idle_timeout=10.0)
+
+    def send_cb(handler, msg, timeout, abort_signal):
+        executor._handle_stream_progress_message(_progress(task_id=msg.msg_id, sequence=1, bytes_done=1024))
+        assert msg._progress_wait_cb() is True
+        now[0] += 11.0
+        assert msg._progress_wait_cb() is False
+        return False
+
+    handler = _FakePipeHandler(send_cb)
     executor.pipe_handler = handler
 
     result = executor._do_execute("train", _make_task(task_id="task-1"), _make_fl_ctx(), _AbortSignal())
@@ -392,6 +514,55 @@ def test_pipe_status_callback_marks_active_stream_progress_terminal(monkeypatch)
     assert record.state == task_exchanger_module.TransferProgressState.ABORTED
 
 
+def test_old_terminal_stream_progress_records_are_pruned(monkeypatch):
+    _patch_logs(monkeypatch)
+    now = [1000.0]
+    monkeypatch.setattr(task_exchanger_module.time, "time", lambda: now[0])
+    executor = TaskExchanger(pipe_id="pipe", peer_read_timeout=0.01, streaming_idle_timeout=10.0)
+    executor._handle_stream_progress_message(
+        _progress(task_id="old-task", transfer_id="old-ref", sequence=1, bytes_done=1024, state="completed")
+    )
+
+    now[0] += task_exchanger_module.STREAM_PROGRESS_TERMINAL_RECORD_TTL + 1.0
+    executor._handle_stream_progress_message(
+        _progress(task_id="new-task", transfer_id="new-ref", sequence=1, bytes_done=1024, state="completed")
+    )
+
+    assert (
+        executor._stream_progress_tracker.get_record(
+            job_id="job-1",
+            task_id="old-task",
+            transfer_id="old-ref",
+            direction=DIRECTION_TASK_PAYLOAD_DOWNLOAD,
+        )
+        is None
+    )
+    assert executor._stream_progress_tracker.get_record(
+        job_id="job-1",
+        task_id="new-task",
+        transfer_id="new-ref",
+        direction=DIRECTION_TASK_PAYLOAD_DOWNLOAD,
+    )
+
+
+def test_stream_progress_wait_uses_record_snapshots(monkeypatch):
+    _patch_logs(monkeypatch)
+    executor = TaskExchanger(pipe_id="pipe")
+    executor._handle_stream_progress_message(_progress(task_id="task-1", transfer_id="ref-1"))
+
+    records, active_records = executor._get_active_task_payload_records(task_id="task-1", job_id="job-1")
+    live_record = executor._stream_progress_tracker.get_record(
+        job_id="job-1",
+        task_id="task-1",
+        transfer_id="ref-1",
+        direction=DIRECTION_TASK_PAYLOAD_DOWNLOAD,
+    )
+    live_record.state = task_exchanger_module.TransferProgressState.COMPLETED
+
+    assert records[0].state == task_exchanger_module.TransferProgressState.ACTIVE
+    assert active_records[0].state == task_exchanger_module.TransferProgressState.ACTIVE
+
+
 def test_stream_progress_events_are_tracked_by_transfer_id_and_status(monkeypatch, caplog):
     _patch_logs(monkeypatch)
     executor = TaskExchanger(pipe_id="pipe")
@@ -428,6 +599,48 @@ def test_stream_progress_events_are_tracked_by_transfer_id_and_status(monkeypatc
     assert "accepted stream progress active" in caplog.text
     assert "accepted stream progress completion" in caplog.text
     assert "accepted stream progress failure" in caplog.text
+
+
+def test_stream_progress_records_transfer_id_kind(monkeypatch):
+    _patch_logs(monkeypatch)
+    executor = TaskExchanger(pipe_id="pipe")
+
+    executor._handle_stream_progress_message(
+        _progress(
+            task_id="task-1",
+            transfer_id="ref-1",
+            sequence=1,
+            bytes_done=1024,
+            transfer_id_kind="download_ref",
+        )
+    )
+
+    record = executor._stream_progress_tracker.get_record(
+        job_id="job-1",
+        task_id="task-1",
+        transfer_id="ref-1",
+        direction=DIRECTION_TASK_PAYLOAD_DOWNLOAD,
+    )
+    assert record.transfer_id_kind == "download_ref"
+
+
+def test_stream_progress_rejects_malformed_items_done(monkeypatch):
+    _patch_logs(monkeypatch)
+    executor = TaskExchanger(pipe_id="pipe")
+
+    msg = _progress(task_id="task-1", transfer_id="ref-1", sequence=1, bytes_done=1024)
+    msg.data["items_done"] = "bad"
+    executor._handle_stream_progress_message(msg)
+
+    assert (
+        executor._stream_progress_tracker.get_record(
+            job_id="job-1",
+            task_id="task-1",
+            transfer_id="ref-1",
+            direction=DIRECTION_TASK_PAYLOAD_DOWNLOAD,
+        )
+        is None
+    )
 
 
 class _DownloadConsumer(Consumer):
@@ -502,7 +715,13 @@ def test_download_object_progress_flows_through_subprocess_pipe_to_task_exchange
     progress_cb = ViaDownloaderDecomposer._make_stream_progress_cb(fobs_ctx, "ref-1")
     assert progress_cb is not None
 
-    req._progress_wait_cb = lambda: executor._get_recent_task_payload_record(req.msg_id) is not None
+    req._progress_wait_cb = lambda: executor._should_continue_task_send_waiting(
+        task_name=req.topic,
+        task_id=req.msg_id,
+        job_id="job-1",
+        send_start_time=0.0,
+        fl_ctx=_make_fl_ctx(),
+    )
     consumer = _DownloadConsumer()
     download_object(
         from_fqcn="server",

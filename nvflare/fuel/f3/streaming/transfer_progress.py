@@ -18,8 +18,6 @@ from typing import Callable, Dict, Iterable, Mapping, Optional, Tuple
 
 from nvflare.fuel.utils.validation_utils import check_positive_number
 
-STREAM_PROGRESS_TOPIC = "_STREAM_PROGRESS_"
-
 DIRECTION_TASK_PAYLOAD_DOWNLOAD = "task_payload_download"
 DIRECTION_RESULT_UPLOAD = "result_upload"
 
@@ -62,6 +60,7 @@ class TransferProgressRecord:
     started_time: float
     last_progress_time: float
     state: str = TransferProgressState.ACTIVE
+    transfer_id_kind: Optional[str] = None
 
     @property
     def key(self) -> TransferProgressKey:
@@ -145,6 +144,7 @@ class TransferProgressTracker:
         bytes_done: int,
         items_done: Optional[int] = None,
         state: str = TransferProgressState.ACTIVE,
+        transfer_id_kind: Optional[str] = None,
         timestamp: Optional[float] = None,
     ) -> TransferProgressUpdate:
         self._validate_update(sequence=sequence, bytes_done=bytes_done, items_done=items_done, state=state)
@@ -165,6 +165,7 @@ class TransferProgressTracker:
                 started_time=now,
                 last_progress_time=now,
                 state=state,
+                transfer_id_kind=transfer_id_kind,
             )
             self._records[key] = new_record
             return TransferProgressUpdate(accepted=True, progressed=True, record=new_record)
@@ -190,6 +191,8 @@ class TransferProgressTracker:
         record.bytes_done = max(record.bytes_done, bytes_done)
         record.items_done = next_items_done
         record.state = state
+        if transfer_id_kind and not record.transfer_id_kind:
+            record.transfer_id_kind = transfer_id_kind
         if progressed:
             record.last_progress_time = max(record.last_progress_time, now)
 
@@ -274,6 +277,7 @@ class TransferProgressTracker:
             bytes_done=record.bytes_done,
             items_done=record.items_done,
             state=state,
+            transfer_id_kind=record.transfer_id_kind,
             timestamp=timestamp,
         )
 

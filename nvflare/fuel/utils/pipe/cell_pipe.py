@@ -308,7 +308,8 @@ class CellPipe(Pipe):
 
     def _update_peer_active_time(self, msg: CellMessage, ch_name: str, msg_type: str):
         origin = msg.get_header(MessageHeaderKey.ORIGIN)
-        if origin == self.peer_fqcn:
+        topic = msg.get_header(MessageHeaderKey.TOPIC)
+        if origin == self.peer_fqcn and topic != Topic.STREAM_PROGRESS:
             self.logger.debug(f"{time.time()}: _update_peer_active_time: {ch_name=} {msg_type=} {msg.headers}")
             self.last_peer_active_time = time.time()
 
@@ -412,7 +413,7 @@ class CellPipe(Pipe):
         # LazyDownloadRef placeholders rather than being downloaded inline.
         # Heartbeat messages do not carry model data and always skip this path
         # (they use fire_and_forget above).
-        if self.pass_through_on_send and msg.topic != Topic.STREAM_PROGRESS:
+        if self.pass_through_on_send:
             request.set_header(MessageHeaderKey.PASS_THROUGH, True)
         reply = self.cell.send_request(
             channel=self.channel,

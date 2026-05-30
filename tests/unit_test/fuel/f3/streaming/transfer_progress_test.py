@@ -67,6 +67,14 @@ def test_tracker_records_first_progress_with_fake_clock():
     assert record.terminal is False
 
 
+def test_tracker_records_transfer_id_kind():
+    tracker = TransferProgressTracker(idle_timeout=60.0, clock=FakeClock())
+
+    result = _update(tracker, sequence=1, bytes_done=10, transfer_id_kind="download_ref")
+
+    assert result.record.transfer_id_kind == "download_ref"
+
+
 def test_stale_sequence_and_counter_regression_are_ignored():
     clock = FakeClock()
     tracker = TransferProgressTracker(idle_timeout=60.0, clock=clock)

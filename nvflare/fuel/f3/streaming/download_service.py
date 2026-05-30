@@ -709,7 +709,7 @@ def download_object(
         except Exception as ex:
             logger.warning(f"download progress callback failed for ref={ref_id}: {secure_format_exception(ex)}")
 
-    _emit_progress("active", force=True)
+    _emit_progress("start", force=True)
 
     while True:
         # Build a fresh request each iteration (including retries)

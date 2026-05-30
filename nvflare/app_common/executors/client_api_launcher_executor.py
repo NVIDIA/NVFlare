@@ -280,6 +280,9 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             if value is not _CONFIG_VALUE_MISSING:
                 config_values[key] = value
 
+        if not config_values:
+            return
+
         try:
             streaming_config = resolve_streaming_progress_config(config_values)
         except (TypeError, ValueError) as e:
@@ -291,7 +294,8 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         old_max_peer_silence = self.streaming_max_peer_silence
         self.streaming_idle_timeout = streaming_config.streaming_idle_timeout
         self.streaming_max_peer_silence = streaming_config.streaming_max_peer_silence
-        self._stream_progress_tracker = self._make_stream_progress_tracker()
+        if self._stream_progress_tracker.idle_timeout != self.streaming_idle_timeout:
+            self._stream_progress_tracker = self._make_stream_progress_tracker()
 
         if config_values:
             self.log_info(
@@ -300,6 +304,12 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                 f"streaming_idle_timeout {old_idle_timeout}s -> {self.streaming_idle_timeout}s, "
                 f"streaming_max_peer_silence {old_max_peer_silence}s -> {self.streaming_max_peer_silence}s",
             )
+            if STREAMING_MAX_PEER_SILENCE in config_values:
+                self.log_info(
+                    fl_ctx,
+                    "streaming_max_peer_silence is resolved for compatibility, but Phase 1 progress-aware "
+                    "task-send waits do not use stream progress for heartbeat liveness.",
+                )
 
     def _apply_streaming_timeout_defaults(self, fl_ctx: FLContext):
         if self.streaming_idle_timeout is None:

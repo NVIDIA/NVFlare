@@ -133,7 +133,7 @@ class TestDownloadObject:
             progress_interval=0.0,
         )
 
-        assert [event["state"] for event in events] == ["active", "active", "active", "completed"]
+        assert [event["state"] for event in events] == ["start", "active", "active", "completed"]
         assert [event["sequence"] for event in events] == [1, 2, 3, 4]
         assert [event["bytes_done"] for event in events] == [0, 4, 6, 6]
         assert [event["items_done"] for event in events] == [None, 2, 3, 3]
@@ -156,7 +156,7 @@ class TestDownloadObject:
         )
 
         assert consumer.failed
-        assert [event["state"] for event in events] == ["active", "failed"]
+        assert [event["state"] for event in events] == ["start", "failed"]
 
     def test_immediate_eof(self, cell, consumer):
         """Test producer has nothing to send — EOF on first request."""
