@@ -350,6 +350,8 @@ def test_task_send_progress_after_peer_read_timeout_intervals_suppresses_resend_
     assert result.get_return_code() == ReturnCode.OK
     assert handler.send_calls == 1
     assert any("stream transfer" in msg for _, msg in logs)
+    assert any("after 3.00 secs" in msg for _, msg in logs)
+    assert not any("after 1.0 secs, but stream transfer" in msg for _, msg in logs)
 
 
 def test_task_send_completed_progress_holds_wait_briefly_for_ack(monkeypatch):

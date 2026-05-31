@@ -454,14 +454,17 @@ class TaskExchanger(Executor):
         send_start_time: float,
         fl_ctx: FLContext,
     ) -> bool:
-        if not self.streaming_idle_timeout:
+        with self._stream_progress_lock:
+            streaming_idle_timeout = self.streaming_idle_timeout
+
+        if not streaming_idle_timeout:
             return False
 
         now = time.time()
         records, active_records = self._get_active_task_payload_records(task_id, job_id)
         if not records:
             elapsed = now - send_start_time
-            wait_budget = self.streaming_idle_timeout
+            wait_budget = streaming_idle_timeout
             if elapsed < wait_budget:
                 self.log_info(
                     fl_ctx,
@@ -477,15 +480,16 @@ class TaskExchanger(Executor):
             return False
 
         recent_records = [
-            record for record in active_records if now - record.last_progress_time < self.streaming_idle_timeout
+            record for record in active_records if now - record.last_progress_time < streaming_idle_timeout
         ]
         if len(recent_records) != len(active_records):
             return False
 
+        elapsed = now - send_start_time
         record = max(recent_records, key=lambda item: item.last_progress_time)
         self.log_info(
             fl_ctx,
-            f"peer has not read task '{task_name}' after {self.peer_read_timeout} secs, "
+            f"peer has not read task '{task_name}' after {elapsed:.2f} secs, "
             f"but stream transfer '{record.transfer_id}' is still progressing "
             f"(bytes_done={record.bytes_done}, items_done={record.items_done}); continuing to wait",
         )
