@@ -131,8 +131,8 @@ class _ReverseResultUploadProgressTracker:
             return result.accepted, result.reason
 
     def decide(self, callback_fired: bool = False, callback_status: Optional[str] = None):
-        now = self.clock()
         with self.lock:
+            now = self.clock()
             if callback_fired:
                 if _transaction_status_is_success(callback_status):
                     return _ReverseResultUploadDecision(done=True, success=True, reason="download_complete_cb")

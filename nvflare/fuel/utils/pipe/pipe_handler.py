@@ -363,6 +363,8 @@ class PipeHandler(object):
             now = time.time()
 
             if msg:
+                # Stream progress feeds transfer wait decisions only. Do not use it as peer liveness
+                # until heartbeat progress-awareness is intentionally enabled.
                 if msg.topic != Topic.STREAM_PROGRESS:
                     self._last_heartbeat_received_time = now
                     # if receive any non-progress messages even if Topic is END or ABORT or PEER_GONE
