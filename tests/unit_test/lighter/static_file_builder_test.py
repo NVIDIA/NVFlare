@@ -57,8 +57,11 @@ def _repo_root():
 
 
 def _extract_class_allow_list(resource_template):
-    import re
+    """Extract the class_allow_list JSON array verbatim.
 
+    Parses the embedded JSON array so trailing-dot package prefixes (which
+    the previous regex-based extractor silently dropped) are included.
+    """
     list_pos = resource_template.index('"class_allow_list"')
     start = resource_template.index("[", list_pos)
     depth = 0
@@ -71,10 +74,7 @@ def _extract_class_allow_list(resource_template):
             if depth == 0:
                 end = i
                 break
-    return re.findall(
-        r'"([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+)"',
-        resource_template[start : end + 1],
-    )
+    return json.loads(resource_template[start : end + 1])
 
 
 class TestStaticFileBuilder:
@@ -195,6 +195,12 @@ class TestStaticFileBuilder:
         expected_paths = [
             "nvflare.app_common.aggregators.collect_and_assemble_model_aggregator.CollectAndAssembleModelAggregator",
             "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",
+            "nvflare.app_common.ccwf.CrossSiteEvalClientController",
+            "nvflare.app_common.ccwf.CrossSiteEvalServerController",
+            "nvflare.app_common.ccwf.CyclicClientController",
+            "nvflare.app_common.ccwf.CyclicServerController",
+            "nvflare.app_common.ccwf.SwarmClientController",
+            "nvflare.app_common.ccwf.SwarmServerController",
             "nvflare.app_common.ccwf.comps.simple_model_shareable_generator.SimpleModelShareableGenerator",
             "nvflare.app_common.ccwf.cse_client_ctl.CrossSiteEvalClientController",
             "nvflare.app_common.ccwf.cse_server_ctl.CrossSiteEvalServerController",
@@ -208,6 +214,7 @@ class TestStaticFileBuilder:
             "nvflare.app_common.logging.job_log_streamer.JobLogStreamer",
             "nvflare.app_common.np.np_model_locator.NPModelLocator",
             "nvflare.app_common.np.np_model_persistor.NPModelPersistor",
+            "nvflare.app_common.np.np_trainer.NPTrainer",
             "nvflare.app_common.np.np_validator.NPValidator",
             "nvflare.app_common.psi.dh_psi.dh_psi_controller.DhPSIController",
             "nvflare.app_common.psi.file_psi_writer.FilePSIWriter",
@@ -253,7 +260,67 @@ class TestStaticFileBuilder:
             "nvflare.app_opt.xgboost.tree_based.executor.FedXGBTreeExecutor",
             "nvflare.app_opt.xgboost.tree_based.model_persistor.XGBModelPersistor",
             "nvflare.app_opt.xgboost.tree_based.shareable_generator.XGBModelShareableGenerator",
+            "nvflare.edge.aggregators.model_update_dxo_factory.ModelUpdateDXOAggrFactory",
+            "nvflare.edge.assessors.buff_device_manager.BuffDeviceManager",
+            "nvflare.edge.assessors.buff_model_manager.BuffModelManager",
+            "nvflare.edge.assessors.model_update.ModelUpdateAssessor",
+            "nvflare.edge.controllers.sage.ScatterAndGatherForEdge",
+            "nvflare.edge.executors.edge_model_executor.EdgeModelExecutor",
+            "nvflare.edge.executors.et_edge_model_executor.ETEdgeModelExecutor",
+            "nvflare.edge.simulation.devices.num.NumProcessor",
+            "nvflare.edge.simulation.devices.tp.TPDeviceFactory",
+            "nvflare.edge.simulation.devices.tp.TPODeviceFactory",
+            "nvflare.edge.simulation.devices.tp.TaskProcessingDevice",
+            "nvflare.edge.updaters.emd.AggregatorFactory",
+            "nvflare.edge.widgets.api_service.ApiService",
+            "nvflare.edge.widgets.etd.EdgeTaskDispatcher",
+            "nvflare.edge.widgets.etr.EdgeTaskReceiver",
+            "nvflare.edge.widgets.evaluator.GlobalEvaluator",
+            "nvflare.edge.widgets.tp_runner.TPRunner",
+            "nvflare.edge.widgets.tpo_runner.TPORunner",
         ]
         for resource_key in ("local_client_resources", "local_server_resources"):
             resource_template = template[resource_key]
             assert _extract_class_allow_list(resource_template) == expected_paths
+
+    def test_master_template_allows_regression_components(self):
+        """Pin the specific paths that regressed in 2.8.0rc4 (PR #4701 fallout).
+
+        Non-BYOC jobs that loaded these built-in classes worked on 2.8.0rc3
+        and broke on rc4 because they were missing from the provisioned
+        class_allow_list. This test guards against future re-regression.
+        """
+        import os
+
+        import yaml
+
+        from nvflare.app_common.widgets.component_path_authorizer import ComponentPathAuthorizer
+
+        template_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
+            "nvflare",
+            "lighter",
+            "templates",
+            "master_template.yml",
+        )
+        with open(template_path, "r") as f:
+            template = yaml.safe_load(f)
+
+        regression_paths = [
+            # PR #4701 regression: NPTrainer was omitted from the curated list.
+            "nvflare.app_common.np.np_trainer.NPTrainer",
+            # PR #4701 regression: edge components were entirely absent.
+            "nvflare.edge.executors.edge_model_executor.EdgeModelExecutor",
+            # PR #4701 regression: ccwf re-export short paths were not matched
+            # because the list only stored the full module path. Configs in
+            # the wild reference the package-level alias.
+            "nvflare.app_common.ccwf.CyclicServerController",
+            "nvflare.app_common.ccwf.SwarmClientController",
+            "nvflare.app_common.ccwf.CrossSiteEvalServerController",
+        ]
+        for resource_key in ("local_client_resources", "local_server_resources"):
+            allow_list = _extract_class_allow_list(template[resource_key])
+            for path in regression_paths:
+                assert any(
+                    ComponentPathAuthorizer._path_matches_prefix(path, prefix) for prefix in allow_list
+                ), f"{path!r} would be rejected by ComponentPathAuthorizer against {resource_key}"
