@@ -393,6 +393,9 @@ Compatibility and Migration Notes
 - The deprecated FLAdminAPI surface has been removed. Use the FLARE API,
   Recipe environments, and ``nvflare`` CLI workflows for new automation.
 - HA/Overseer code has been removed from the 2.8 branch.
+- ``JsonStatsFileWriter`` now requires custom ``json_encoder_path`` values to
+  run as BYOC jobs. Built-in ``ObjectEncoder`` configurations continue to work
+  for non-BYOC jobs.
 
 See the :ref:`migration_guide` for additional API and configuration migration
 notes.
