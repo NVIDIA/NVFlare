@@ -69,6 +69,22 @@ def test_blob_task_rejects_declared_size_above_limit():
         BlobTask(future=future, stream=_FakeStream(declared_size=8, chunks=[]), max_size=4)
 
 
+def test_blob_task_rejects_negative_declared_size():
+    future = StreamFuture(stream_id=10)
+
+    with pytest.raises(StreamError, match="cannot be negative"):
+        BlobTask(future=future, stream=_FakeStream(declared_size=-1, chunks=[]), max_size=4)
+
+
+def test_blob_task_allows_declared_size_at_exact_limit():
+    future = StreamFuture(stream_id=11)
+
+    blob_task = BlobTask(future=future, stream=_FakeStream(declared_size=4, chunks=[]), max_size=4)
+
+    assert blob_task.pre_allocated is True
+    assert len(blob_task.buffer) == 4
+
+
 def test_blob_handler_uses_dedicated_streaming_blob_limit(monkeypatch):
     monkeypatch.setattr(CommConfigurator, "get_max_message_size", lambda self: 4)
     monkeypatch.setattr(CommConfigurator, "get_streaming_max_blob_size", lambda self: 8)
@@ -99,6 +115,33 @@ def test_handle_blob_cb_stops_task_on_declared_size_above_limit(monkeypatch):
     assert stopped["error"] is error
 
 
+def test_handle_blob_cb_stops_task_on_memory_error(monkeypatch):
+    import nvflare.fuel.f3.streaming.blob_streamer as blob_streamer_module
+
+    class RaisingBlobTask:
+        def __init__(self, future, stream, max_size=0):
+            raise MemoryError("out of memory")
+
+    monkeypatch.setattr(blob_streamer_module, "BlobTask", RaisingBlobTask)
+    handler = BlobHandler(lambda future: None)
+    future = StreamFuture(stream_id=12)
+    stopped = {}
+
+    def stop(err):
+        stopped["error"] = err
+        future.set_exception(err)
+
+    stream = _FakeStream(declared_size=8, chunks=[])
+    stream.task = SimpleNamespace(stop=stop)
+
+    assert handler.handle_blob_cb(future, stream, False) == 0
+
+    error = future.exception(timeout=0.1)
+    assert isinstance(error, StreamError)
+    assert "Unable to allocate buffer" in str(error)
+    assert stopped["error"] is error
+
+
 def test_read_stream_fails_when_unknown_size_exceeds_limit():
     handler = BlobHandler(lambda future: None)
     future = StreamFuture(stream_id=8)
@@ -112,6 +155,16 @@ def test_read_stream_fails_when_unknown_size_exceeds_limit():
 
     with pytest.raises(StreamError, match="configured limit 4"):
         future.result(timeout=0.1)
+
+
+def test_read_stream_allows_unknown_size_at_exact_limit():
+    handler = BlobHandler(lambda future: None)
+    future = StreamFuture(stream_id=13)
+    blob_task = BlobTask(future=future, stream=_FakeStream(declared_size=0, chunks=[b"ab", b"cd"]), max_size=4)
+
+    handler._read_stream(blob_task)
+
+    assert future.result(timeout=0.1) == b"abcd"
 
 
 def test_read_stream_stops_task_when_unknown_size_exceeds_limit():
@@ -132,6 +185,27 @@ def test_read_stream_stops_task_when_unknown_size_exceeds_limit():
     error = future.exception(timeout=0.1)
     assert isinstance(error, StreamError)
     assert "configured limit 4" in str(error)
+    assert stopped["error"] is error
+
+
+def test_read_stream_stops_task_on_buffer_overrun():
+    handler = BlobHandler(lambda future: None)
+    future = StreamFuture(stream_id=14)
+    stopped = {}
+
+    def stop(err):
+        stopped["error"] = err
+        future.set_exception(err)
+
+    stream = _FakeStream(declared_size=4, chunks=[b"abcdef"])
+    stream.task = SimpleNamespace(stop=stop)
+    blob_task = BlobTask(future=future, stream=stream)
+
+    handler._read_stream(blob_task)
+
+    error = future.exception(timeout=0.1)
+    assert isinstance(error, StreamError)
+    assert "Buffer overrun" in str(error)
     assert stopped["error"] is error
 
 

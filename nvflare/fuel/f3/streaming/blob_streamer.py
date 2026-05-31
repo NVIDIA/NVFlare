@@ -98,6 +98,13 @@ class BlobHandler:
         self.chunk_size = config.get_streaming_chunk_size(STREAM_CHUNK_SIZE)
         self.max_blob_size = config.get_streaming_max_blob_size()
 
+    @staticmethod
+    def _fail(stream: Stream, future: StreamFuture, error: StreamError):
+        if hasattr(stream, "task"):
+            stream.task.stop(error)
+        else:
+            future.set_exception(error)
+
     def handle_blob_cb(self, future: StreamFuture, stream: Stream, resume: bool, *args, **kwargs) -> int:
 
         if resume:
@@ -106,10 +113,12 @@ class BlobHandler:
         try:
             blob_task = BlobTask(future, stream, self.max_blob_size)
         except StreamError as ex:
-            if hasattr(stream, "task"):
-                stream.task.stop(ex)
-            else:
-                future.set_exception(ex)
+            self._fail(stream, future, ex)
+            return 0
+        except MemoryError as ex:
+            error = StreamError(f"Unable to allocate buffer for declared blob size {stream.get_size()}")
+            error.__cause__ = ex
+            self._fail(stream, future, error)
             return 0
 
         stream_thread_pool.submit(self._read_stream, blob_task)
@@ -154,10 +163,12 @@ class BlobHandler:
                         remaining = len(blob_task.buffer) - buf_size
                         if length > remaining:
                             log.error(f"{blob_task} Buffer overrun: {thread_id=} {remaining=} {length=} {buf_size=}")
-                            blob_task.future.set_exception(
+                            self._fail(
+                                blob_task.stream,
+                                blob_task.future,
                                 StreamError(
                                     f"Buffer overrun: stream produced more data than declared size {blob_task.size}"
-                                )
+                                ),
                             )
                             return
                         else:
@@ -174,10 +185,7 @@ class BlobHandler:
                                 f"Blob received more data than configured limit {blob_task.max_size}: "
                                 f"received at least {next_size} bytes"
                             )
-                            if hasattr(blob_task.stream, "task"):
-                                blob_task.stream.task.stop(error)
-                            else:
-                                blob_task.future.set_exception(error)
+                            self._fail(blob_task.stream, blob_task.future, error)
                             return
                         blob_task.buffer.append(buf)
                 except Exception as ex:
