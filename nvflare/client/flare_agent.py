@@ -706,17 +706,17 @@ class FlareAgent:
                     self._fail_reverse_download_transactions(tracker, transactions)
                 return decision.success
 
-            abandon_reason = self._get_reverse_result_upload_abandon_reason()
-            if abandon_reason:
-                self.logger.warning(f"[subprocess] abandoning result_upload wait: {abandon_reason}")
-                self._fail_reverse_download_transactions(tracker, transactions)
-                return False
-
             wait_timeout = getattr(self, "_result_upload_poll_interval", _REVERSE_RESULT_UPLOAD_POLL_INTERVAL)
             if decision.reason == "completion_grace":
                 remaining_grace = tracker.completion_grace_remaining()
                 if remaining_grace is not None:
                     wait_timeout = remaining_grace
+            else:
+                abandon_reason = self._get_reverse_result_upload_abandon_reason()
+                if abandon_reason:
+                    self.logger.warning(f"[subprocess] abandoning result_upload wait: {abandon_reason}")
+                    self._fail_reverse_download_transactions(tracker, transactions)
+                    return False
             progress_event.wait(timeout=wait_timeout)
 
     def _get_reverse_result_upload_abandon_reason(self):

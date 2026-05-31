@@ -1153,6 +1153,53 @@ def test_reverse_result_upload_completion_wins_over_concurrent_stop(monkeypatch)
     assert any("download_complete_cb" in call[0][0] for call in agent.logger.info.call_args_list)
 
 
+def test_reverse_result_upload_completion_grace_wins_over_concurrent_stop(monkeypatch):
+    clock = FakeClock()
+    tracker = _make_tracker(clock=clock, idle_timeout=10.0)
+    _register(tracker, created_time=clock.now)
+    _progress(
+        tracker,
+        sequence=1,
+        bytes_done=100,
+        state=TransferProgressState.COMPLETED,
+        timestamp=clock.now,
+    )
+    agent = FlareAgent.__new__(FlareAgent)
+    agent.logger = MagicMock()
+    agent.asked_to_stop = True
+    agent.pipe_handler = MagicMock()
+    agent.pipe_handler.asked_to_stop = True
+    agent.pipe = MagicMock()
+    agent.pipe.closed = True
+    agent._result_upload_poll_interval = 0.001
+    progress_event = MagicMock()
+    deleted = []
+    monkeypatch.setattr(
+        "nvflare.client.flare_agent.DownloadService.delete_transaction", lambda tx_id: deleted.append(tx_id)
+    )
+
+    def _wait(timeout):
+        assert timeout == STREAM_PROGRESS_COMPLETION_ACK_GRACE
+        clock.advance(timeout)
+        return False
+
+    progress_event.wait.side_effect = _wait
+
+    result = agent._wait_for_reverse_result_upload(
+        tracker,
+        progress_event,
+        threading.Event(),
+        [None],
+        wait_start=clock.now,
+        transactions=[DownloadTransactionInfo("tx-1", (("ref-1", None),), clock.now)],
+    )
+
+    assert result is True
+    assert deleted == []
+    assert not any("abandoning result_upload wait" in call[0][0] for call in agent.logger.warning.call_args_list)
+    assert any("all_completed" in call[0][0] for call in agent.logger.info.call_args_list)
+
+
 def test_flare_agent_progress_callback_uses_result_upload_direction_only():
     clock = FakeClock()
     tracker = _make_tracker(clock=clock, idle_timeout=10.0)
