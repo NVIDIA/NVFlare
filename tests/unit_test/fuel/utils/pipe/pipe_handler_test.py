@@ -195,10 +195,27 @@ def test_result_upload_stream_progress_does_not_refresh_heartbeat_liveness(monke
 
     handler._try_read()
 
-    msg = handler.get_next()
     peer_gone = handler.get_next()
+    msg = handler.get_next()
 
-    assert msg.topic == Topic.STREAM_PROGRESS
+    assert msg is None
     assert not handler.peer_is_up_or_dead.is_set()
     assert peer_gone.topic == Topic.PEER_GONE
     assert pipe.receive_calls == 2
+
+
+def test_stream_progress_routes_to_message_callback_without_queueing():
+    received = []
+    msg = Message.new_request(Topic.STREAM_PROGRESS, {"task_id": "task-1", "direction": "result_upload"})
+    handler = PipeHandler(
+        pipe=_ScriptedPipe([]),
+        read_interval=1.0,
+        heartbeat_interval=1.0,
+        heartbeat_timeout=1.5,
+    )
+    handler.set_message_cb(lambda message: received.append(message))
+
+    handler._add_message(msg)
+
+    assert received == [msg]
+    assert handler.get_next() is None

@@ -162,10 +162,7 @@ class _ReverseResultUploadProgressTracker:
                     if record.terminal:
                         continue
                     if self._is_started(record):
-                        if (
-                            record.last_progress_time is not None
-                            and now - record.last_progress_time >= self.idle_timeout
-                        ):
+                        if now - record.last_progress_time >= self.idle_timeout:
                             return _ReverseResultUploadDecision(
                                 done=True,
                                 success=False,

@@ -318,6 +318,9 @@ class PipeHandler(object):
             if self.msg_cb is not None:
                 self.msg_cb(msg, *self.msg_cb_args, **self.msg_cb_kwargs)
                 return
+            if msg.topic == Topic.STREAM_PROGRESS:
+                self.logger.debug("dropping stream progress message without message callback")
+                return
 
         with self.lock:
             self.messages.append(msg)
