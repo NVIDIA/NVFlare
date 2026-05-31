@@ -130,6 +130,42 @@ def test_result_upload_update_normalizes_tx_id_under_expected_lock():
     assert result["value"] == (True, "")
 
 
+def test_result_upload_uses_first_record_key_when_event_metadata_changes():
+    tracker = _make_tracker()
+    _register(tracker)
+
+    accepted, reason = tracker.update(
+        tx_id="tx-1",
+        transfer_id="ref-1",
+        receiver_id=None,
+        sequence=1,
+        bytes_done=100,
+        items_done=None,
+        state=TransferProgressState.ACTIVE,
+    )
+    assert accepted, reason
+
+    accepted, reason = tracker.update(
+        tx_id="tx-1",
+        transfer_id="ref-1",
+        receiver_id=None,
+        sequence=2,
+        bytes_done=200,
+        items_done=None,
+        state=TransferProgressState.ACTIVE,
+        job_id="job-1",
+        task_id="task-1",
+    )
+
+    assert accepted, reason
+    assert tracker.record_keys[("tx-1", "ref-1", None)] == ("tx-1", "")
+    records = list(tracker.progress_tracker.records(direction=DIRECTION_RESULT_UPLOAD))
+    assert len(records) == 1
+    assert records[0].job_id == "tx-1"
+    assert records[0].task_id == ""
+    assert records[0].bytes_done == 200
+
+
 def test_result_upload_no_start_times_out():
     clock = FakeClock()
     tracker = _make_tracker(clock=clock, idle_timeout=10.0)

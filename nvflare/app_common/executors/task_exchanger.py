@@ -446,6 +446,10 @@ class TaskExchanger(Executor):
         )
         return True
 
+    @staticmethod
+    def _get_task_send_no_progress_budget(streaming_idle_timeout: float) -> float:
+        return min(streaming_idle_timeout, STREAM_PROGRESS_COMPLETION_ACK_GRACE)
+
     def _should_continue_task_send_waiting(
         self,
         task_name: str,
@@ -464,7 +468,7 @@ class TaskExchanger(Executor):
         records, active_records = self._get_active_task_payload_records(task_id, job_id)
         if not records:
             elapsed = now - send_start_time
-            wait_budget = streaming_idle_timeout
+            wait_budget = self._get_task_send_no_progress_budget(streaming_idle_timeout)
             if elapsed < wait_budget:
                 self.log_info(
                     fl_ctx,

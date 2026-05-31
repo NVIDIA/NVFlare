@@ -107,9 +107,14 @@ class _ReverseResultUploadProgressTracker:
             job_id = str(job_id) if job_id is not None else tx_id
             task_id = "" if task_id is None else str(task_id)
             key = (tx_id, transfer_id, receiver_id)
+            record_key = self.record_keys.get(key)
+            if record_key is None:
+                record_job_id, record_task_id = job_id, task_id
+            else:
+                record_job_id, record_task_id = record_key
             result = self.progress_tracker.update(
-                job_id=job_id,
-                task_id=task_id,
+                job_id=record_job_id,
+                task_id=record_task_id,
                 transfer_id=transfer_id,
                 direction=DIRECTION_RESULT_UPLOAD,
                 receiver_id=receiver_id,
@@ -121,7 +126,7 @@ class _ReverseResultUploadProgressTracker:
                 timestamp=timestamp,
             )
             if result.accepted:
-                self.record_keys[key] = (job_id, task_id)
+                self.record_keys[key] = (record_job_id, record_task_id)
                 self.all_success_since = None
             return result.accepted, result.reason
 
