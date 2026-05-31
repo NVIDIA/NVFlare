@@ -661,7 +661,7 @@ class FlareAgent:
             download_elapsed = time.time() - wait_start
             ds = download_status[0]
             if _transaction_status_is_success(ds):
-                self.logger.info(f"[subprocess] server download complete: elapsed={download_elapsed:.2f}s")
+                self.logger.info(f"[subprocess] result_upload download complete: elapsed={download_elapsed:.2f}s")
             else:
                 self.logger.warning(
                     f"[subprocess] download transaction ended with status={ds} after {download_elapsed:.2f}s"
@@ -669,7 +669,7 @@ class FlareAgent:
         else:
             self.logger.warning(
                 f"[subprocess] download not signalled within {self._download_complete_timeout}s; "
-                "proceeding (server may still be downloading from this process)"
+                "proceeding (downstream receiver may still be downloading from this process)"
             )
         return True
 
@@ -680,7 +680,7 @@ class FlareAgent:
                 DownloadService.delete_transaction(transaction.tx_id)
             except Exception as ex:
                 self.logger.warning(
-                    f"[subprocess] failed to delete abandoned result_upload transaction " f"{transaction.tx_id}: {ex}"
+                    f"[subprocess] failed to delete abandoned result_upload transaction {transaction.tx_id}: {ex}"
                 )
 
     def _wait_for_reverse_result_upload(
@@ -698,7 +698,8 @@ class FlareAgent:
                 elapsed = tracker.clock() - wait_start
                 if decision.success:
                     self.logger.info(
-                        f"[subprocess] server download complete: elapsed={elapsed:.2f}s reason={decision.reason}"
+                        f"[subprocess] result_upload download complete: elapsed={elapsed:.2f}s "
+                        f"reason={decision.reason}"
                     )
                 else:
                     self.logger.warning(

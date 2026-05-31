@@ -15,6 +15,7 @@
 import importlib
 import os
 import threading
+import time
 from typing import Any, Dict, Optional, Tuple
 
 from nvflare.apis.analytix import AnalyticsDataType
@@ -214,8 +215,6 @@ class ExProcessClientAPI(APISpec):
                             try:
                                 pipe.send(Message.new_request(Topic.STREAM_PROGRESS, kwargs))
                             except Exception as ex:
-                                import time
-
                                 with progress_warning_lock:
                                     now = time.time()
                                     should_warn = now - last_progress_warning_time >= 60.0
