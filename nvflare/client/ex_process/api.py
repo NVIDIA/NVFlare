@@ -210,8 +210,6 @@ class ExProcessClientAPI(APISpec):
                             nonlocal last_progress_warning_time
                             if getattr(pipe, "closed", False):
                                 return
-                            if not kwargs.get(FLMetaKey.JOB_ID):
-                                kwargs[FLMetaKey.JOB_ID] = client_config.config.get(FLMetaKey.JOB_ID, "")
                             try:
                                 pipe.send(Message.new_request(Topic.STREAM_PROGRESS, kwargs))
                             except Exception as ex:
