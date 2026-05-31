@@ -69,6 +69,12 @@ local_client_resources: |
     "class_allow_list": [
       "nvflare.app_common.aggregators.collect_and_assemble_model_aggregator.CollectAndAssembleModelAggregator",
       "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",
+      "nvflare.app_common.ccwf.CrossSiteEvalClientController",
+      "nvflare.app_common.ccwf.CrossSiteEvalServerController",
+      "nvflare.app_common.ccwf.CyclicClientController",
+      "nvflare.app_common.ccwf.CyclicServerController",
+      "nvflare.app_common.ccwf.SwarmClientController",
+      "nvflare.app_common.ccwf.SwarmServerController",
       "nvflare.app_common.ccwf.comps.simple_model_shareable_generator.SimpleModelShareableGenerator",
       "nvflare.app_common.ccwf.cse_client_ctl.CrossSiteEvalClientController",
       "nvflare.app_common.ccwf.cse_server_ctl.CrossSiteEvalServerController",
@@ -82,6 +88,7 @@ local_client_resources: |
       "nvflare.app_common.logging.job_log_streamer.JobLogStreamer",
       "nvflare.app_common.np.np_model_locator.NPModelLocator",
       "nvflare.app_common.np.np_model_persistor.NPModelPersistor",
+      "nvflare.app_common.np.np_trainer.NPTrainer",
       "nvflare.app_common.np.np_validator.NPValidator",
       "nvflare.app_common.psi.dh_psi.dh_psi_controller.DhPSIController",
       "nvflare.app_common.psi.file_psi_writer.FilePSIWriter",
@@ -126,7 +133,8 @@ local_client_resources: |
       "nvflare.app_opt.xgboost.tree_based.bagging_aggregator.XGBBaggingAggregator",
       "nvflare.app_opt.xgboost.tree_based.executor.FedXGBTreeExecutor",
       "nvflare.app_opt.xgboost.tree_based.model_persistor.XGBModelPersistor",
-      "nvflare.app_opt.xgboost.tree_based.shareable_generator.XGBModelShareableGenerator"
+      "nvflare.app_opt.xgboost.tree_based.shareable_generator.XGBModelShareableGenerator",
+      "nvflare.edge."
     ],
     "allow_log_streaming": {~~allow_log_streaming~~},
     "client": {
@@ -250,6 +258,12 @@ local_server_resources: |
       "class_allow_list": [
           "nvflare.app_common.aggregators.collect_and_assemble_model_aggregator.CollectAndAssembleModelAggregator",
           "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",
+          "nvflare.app_common.ccwf.CrossSiteEvalClientController",
+          "nvflare.app_common.ccwf.CrossSiteEvalServerController",
+          "nvflare.app_common.ccwf.CyclicClientController",
+          "nvflare.app_common.ccwf.CyclicServerController",
+          "nvflare.app_common.ccwf.SwarmClientController",
+          "nvflare.app_common.ccwf.SwarmServerController",
           "nvflare.app_common.ccwf.comps.simple_model_shareable_generator.SimpleModelShareableGenerator",
           "nvflare.app_common.ccwf.cse_client_ctl.CrossSiteEvalClientController",
           "nvflare.app_common.ccwf.cse_server_ctl.CrossSiteEvalServerController",
@@ -263,6 +277,7 @@ local_server_resources: |
           "nvflare.app_common.logging.job_log_streamer.JobLogStreamer",
           "nvflare.app_common.np.np_model_locator.NPModelLocator",
           "nvflare.app_common.np.np_model_persistor.NPModelPersistor",
+          "nvflare.app_common.np.np_trainer.NPTrainer",
           "nvflare.app_common.np.np_validator.NPValidator",
           "nvflare.app_common.psi.dh_psi.dh_psi_controller.DhPSIController",
           "nvflare.app_common.psi.file_psi_writer.FilePSIWriter",
@@ -307,7 +322,8 @@ local_server_resources: |
           "nvflare.app_opt.xgboost.tree_based.bagging_aggregator.XGBBaggingAggregator",
           "nvflare.app_opt.xgboost.tree_based.executor.FedXGBTreeExecutor",
           "nvflare.app_opt.xgboost.tree_based.model_persistor.XGBModelPersistor",
-          "nvflare.app_opt.xgboost.tree_based.shareable_generator.XGBModelShareableGenerator"
+          "nvflare.app_opt.xgboost.tree_based.shareable_generator.XGBModelShareableGenerator",
+          "nvflare.edge."
       ],
       "servers": [
           {
