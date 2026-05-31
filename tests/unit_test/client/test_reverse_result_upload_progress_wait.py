@@ -612,7 +612,10 @@ def test_do_submit_result_waits_for_result_upload_progress_until_completion():
 
 
 def test_simulated_many_clients_large_result_upload_delayed_complete_cb_uses_progress_not_timeout():
-    clients = [_start_result_upload_submit_client(index, idle_timeout=0.5) for index in range(16)]
+    # The fixed download_complete_timeout is intentionally tiny in _make_agent().
+    # Keep the progress idle budget comfortably above CI thread scheduling jitter
+    # so this test exercises progress extension instead of startup timing.
+    clients = [_start_result_upload_submit_client(index, idle_timeout=5.0) for index in range(16)]
     total_bytes = 5 * 1024 * 1024 * 1024
     chunks = 6
     bytes_per_chunk = total_bytes // chunks
