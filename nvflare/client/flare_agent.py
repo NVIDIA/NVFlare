@@ -777,6 +777,12 @@ class FlareAgent:
                 self.logger.debug(msg)
         progress_event.set()
 
+    def _register_launch_once_exit(self):
+        if not getattr(self, "_launch_once", False) or getattr(self, "_atexit_registered", False):
+            return
+        atexit.register(os._exit, 0)
+        self._atexit_registered = True
+
     def _do_submit_result(self, current_task: _TaskContext, result, rc):
         result_shareable = self.task_result_to_shareable(result, rc)
         reply = Message.new_reply(topic=current_task.task_name, req_msg_id=current_task.msg_id, data=result_shareable)
@@ -794,6 +800,7 @@ class FlareAgent:
         # was_download_initiated() (thread-local set by _finalize_download_tx()) and return
         # immediately without waiting — fixing the 1800s hang on CSE round 2+ (RC12 Bug 3).
         if isinstance(self.pipe, CellPipe) and self.pipe.pass_through_on_send:
+            self._register_launch_once_exit()
             download_done = threading.Event()
             progress_event = threading.Event()
             download_status = [None]
@@ -905,11 +912,6 @@ class FlareAgent:
                 )
             if self._launch_once:
                 # launch_once=True: subprocess handles multiple rounds; do NOT exit here.
-                # Register atexit once so os._exit(0) is called when main() finally returns,
-                # bypassing Python's thread-join wait on non-daemon CoreCell threads.
-                if not getattr(self, "_atexit_registered", False):
-                    atexit.register(os._exit, 0)
-                    self._atexit_registered = True
                 return True
             else:
                 # launch_once=False: subprocess handles exactly one round; exit now so the

@@ -18,6 +18,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from nvflare.client import flare_agent as flare_agent_module
 from nvflare.client.flare_agent import (
     STREAM_PROGRESS_COMPLETION_ACK_GRACE,
     FlareAgent,
@@ -899,6 +900,33 @@ def test_do_submit_result_uses_tracker_clock_for_progress_wait_start():
 
     assert result is True
     assert agent._wait_for_reverse_result_upload.call_args.args[4] == clock.now
+
+
+def test_launch_once_registers_exit_before_result_upload_failure(monkeypatch):
+    clear_download_initiated()
+    pipe = _make_cell_pipe()
+    agent = _make_agent(pipe, download_complete_timeout=0.001)
+    agent._launch_once = True
+    agent._wait_for_reverse_result_upload = MagicMock(return_value=False)
+    transaction = DownloadTransactionInfo("tx-1", (("ref-1", None),), time.time())
+    registrations = []
+    monkeypatch.setattr(flare_agent_module.atexit, "register", lambda *args: registrations.append(args))
+
+    def _send(reply, timeout):
+        ctx = pipe.cell.update_fobs_context.call_args.args[0]
+        ctx[RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY](transaction)
+        _tls.download_initiated = True
+        _tls.download_transactions = [transaction]
+        return True
+
+    agent.pipe_handler.send_to_peer.side_effect = _send
+
+    result = agent._do_submit_result(_TaskContext("tid-1", "train", "msg-1"), None, "OK")
+
+    assert result is False
+    assert agent._atexit_registered is True
+    assert registrations == [(flare_agent_module.os._exit, 0)]
+    agent._wait_for_reverse_result_upload.assert_called_once()
 
 
 def test_wait_for_reverse_result_upload_elapsed_uses_tracker_clock():
