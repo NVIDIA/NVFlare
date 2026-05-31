@@ -329,7 +329,9 @@ class TaskExchanger(Executor):
         job_id = str(job_id)
         task_id = str(task_id)
         transfer_id = str(transfer_id)
-        if not job_id or not task_id or not transfer_id:
+        # execute() normalizes a missing FLContext job id to an empty string and stamps the same
+        # value into the task header. Treat that empty string as a valid progress scope here.
+        if not task_id or not transfer_id:
             self.logger.warning(f"ignored unscoped task_payload_download stream progress: {data}")
             return
         transfer_id_kind = None if transfer_id_kind is None else str(transfer_id_kind)

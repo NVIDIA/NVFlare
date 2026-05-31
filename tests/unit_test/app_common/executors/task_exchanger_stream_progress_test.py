@@ -598,6 +598,30 @@ def test_execute_stamps_integer_zero_job_id(monkeypatch):
     assert result.get_return_code() == ReturnCode.OK
 
 
+def test_execute_empty_job_id_uses_progress_to_extend_task_send_wait(monkeypatch):
+    _patch_logs(monkeypatch)
+    now = [1000.0]
+    monkeypatch.setattr(task_exchanger_module.time, "time", lambda: now[0])
+    monkeypatch.setattr(transfer_progress_module.time, "time", lambda: now[0])
+    executor = TaskExchanger(pipe_id="pipe", peer_read_timeout=1.0, streaming_idle_timeout=10.0)
+
+    def send_cb(handler, msg, timeout, abort_signal):
+        assert msg.data.get_header(FLMetaKey.JOB_ID) == ""
+        now[0] += 20.0
+        executor._handle_stream_progress_message(_progress(task_id=msg.msg_id, job_id="", sequence=1, bytes_done=1024))
+        assert msg._progress_wait_cb() is True
+        handler.replies.append(_reply_for(msg))
+        return True
+
+    handler = _FakePipeHandler(send_cb)
+    executor.pipe_handler = handler
+
+    result = executor._do_execute("train", _make_task(task_id="task-1"), _make_fl_ctx(job_id=None), _AbortSignal())
+
+    assert result.get_return_code() == ReturnCode.OK
+    assert handler.send_calls == 1
+
+
 def test_task_send_times_out_when_activity_does_not_advance_counters(monkeypatch):
     _patch_logs(monkeypatch)
     now = [1000.0]
