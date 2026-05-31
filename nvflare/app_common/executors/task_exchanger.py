@@ -28,6 +28,7 @@ from nvflare.fuel.f3.streaming.download_service import DownloadService
 from nvflare.fuel.f3.streaming.transfer_progress import (
     DEFAULT_STREAMING_IDLE_TIMEOUT,
     DIRECTION_TASK_PAYLOAD_DOWNLOAD,
+    STREAM_PROGRESS_COMPLETION_ACK_GRACE,
     TransferProgressState,
     TransferProgressTracker,
 )
@@ -55,7 +56,6 @@ STREAM_PROGRESS_ITEM_KEYS = ("items_done", "items", "item_count")
 STREAM_PROGRESS_STATE_KEYS = ("state", "status", "event", "event_type")
 STREAM_PROGRESS_START_STATUSES = ("start", "started")
 _DEFAULT_STREAMING_IDLE_TIMEOUT_SECS = DEFAULT_STREAMING_IDLE_TIMEOUT
-STREAM_PROGRESS_COMPLETION_ACK_GRACE = 30.0
 STREAM_PROGRESS_MAX_TRACKED_RECORDS = 4096
 # Match the DownloadService finished-ref tombstone window so late EOF/completion
 # replies after clean transfer completion can still find the progress record.

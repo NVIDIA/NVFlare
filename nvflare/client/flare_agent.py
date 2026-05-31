@@ -32,6 +32,7 @@ from nvflare.fuel.f3.streaming.download_service import DownloadService, Transact
 from nvflare.fuel.f3.streaming.transfer_progress import (
     DEFAULT_STREAMING_IDLE_TIMEOUT,
     DIRECTION_RESULT_UPLOAD,
+    STREAM_PROGRESS_COMPLETION_ACK_GRACE,
     TransferProgressState,
     TransferProgressTracker,
 )
@@ -51,7 +52,6 @@ from nvflare.fuel.utils.pipe.pipe import Message, Mode, Pipe
 from nvflare.fuel.utils.pipe.pipe_handler import PipeHandler
 from nvflare.private.fed.utils.fed_utils import register_ext_decomposers
 
-STREAM_PROGRESS_COMPLETION_ACK_GRACE = 30.0
 _REVERSE_RESULT_UPLOAD_POLL_INTERVAL = 0.5
 
 
