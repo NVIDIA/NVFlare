@@ -149,8 +149,6 @@ local_client_resources: |
       "nvflare.edge.widgets.api_service.ApiService",
       "nvflare.edge.widgets.etd.EdgeTaskDispatcher",
       "nvflare.edge.widgets.etr.EdgeTaskReceiver",
-      "nvflare.edge.widgets.evaluator.GlobalEvaluator",
-      "nvflare.edge.widgets.tp_runner.TPRunner",
       "nvflare.edge.widgets.tpo_runner.TPORunner"
     ],
     "allow_log_streaming": {~~allow_log_streaming~~},
@@ -355,8 +353,6 @@ local_server_resources: |
           "nvflare.edge.widgets.api_service.ApiService",
           "nvflare.edge.widgets.etd.EdgeTaskDispatcher",
           "nvflare.edge.widgets.etr.EdgeTaskReceiver",
-          "nvflare.edge.widgets.evaluator.GlobalEvaluator",
-          "nvflare.edge.widgets.tp_runner.TPRunner",
           "nvflare.edge.widgets.tpo_runner.TPORunner"
       ],
       "servers": [

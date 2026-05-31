@@ -275,13 +275,47 @@ class TestStaticFileBuilder:
             "nvflare.edge.widgets.api_service.ApiService",
             "nvflare.edge.widgets.etd.EdgeTaskDispatcher",
             "nvflare.edge.widgets.etr.EdgeTaskReceiver",
-            "nvflare.edge.widgets.evaluator.GlobalEvaluator",
-            "nvflare.edge.widgets.tp_runner.TPRunner",
             "nvflare.edge.widgets.tpo_runner.TPORunner",
         ]
         for resource_key in ("local_client_resources", "local_server_resources"):
             resource_template = template[resource_key]
             assert _extract_class_allow_list(resource_template) == expected_paths
+
+    def test_master_template_class_allow_list_has_no_package_prefixes(self):
+        """Package prefixes (entries ending in '.') broaden authorization to every class under that package.
+
+        Future maintainers who add a broad prefix must enumerate the specific classes instead, or
+        explicitly review-and-approve the prefix here. This guard prevents the previously-removed
+        ``nvflare.edge.`` style entry from silently coming back via an expected_paths update.
+        """
+        import os
+
+        import yaml
+
+        template_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
+            "nvflare",
+            "lighter",
+            "templates",
+            "master_template.yml",
+        )
+        with open(template_path, "r") as f:
+            template = yaml.safe_load(f)
+
+        # If a future PR genuinely needs a broad package prefix, add it here with an explanation.
+        explicitly_reviewed_package_prefixes: set = set()
+
+        for resource_key in ("local_client_resources", "local_server_resources"):
+            extracted = _extract_class_allow_list(template[resource_key])
+            package_prefixes = {p for p in extracted if p.endswith(".")}
+            unreviewed = package_prefixes - explicitly_reviewed_package_prefixes
+            assert not unreviewed, (
+                f"unreviewed package prefixes in {resource_key}: {sorted(unreviewed)}. "
+                "Package prefixes authorize every class (current and future) under the package, "
+                "which broadens the security posture of the allow_list. Either enumerate the "
+                "specific classes needed, or add the prefix to "
+                "explicitly_reviewed_package_prefixes with an in-test explanation."
+            )
 
     def test_master_template_allows_regression_components(self):
         """Pin the specific paths that regressed in 2.8.0rc4 (PR #4701 fallout).
