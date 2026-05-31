@@ -272,8 +272,6 @@ class TestStaticFileBuilder:
             "nvflare.edge.simulation.devices.tp.TPODeviceFactory",
             "nvflare.edge.simulation.devices.tp.TaskProcessingDevice",
             "nvflare.edge.updaters.emd.AggregatorFactory",
-            "nvflare.edge.widgets.api_service.ApiService",
-            "nvflare.edge.widgets.etd.EdgeTaskDispatcher",
             "nvflare.edge.widgets.etr.EdgeTaskReceiver",
             "nvflare.edge.widgets.tpo_runner.TPORunner",
         ]
