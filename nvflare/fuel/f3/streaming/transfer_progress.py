@@ -348,14 +348,19 @@ class TransferProgressTracker:
         *,
         before_time: Optional[float] = None,
         include_active: bool = False,
+        direction: Optional[str] = None,
     ) -> int:
         if before_time is None:
             before_time = self._clock()
+        if direction is not None:
+            self._validate_direction(direction)
 
         keys_to_remove = [
             key
             for key, record in self._records.items()
-            if (include_active or record.terminal) and record.last_progress_time <= before_time
+            if (direction is None or record.direction == direction)
+            and (include_active or record.terminal)
+            and record.last_progress_time <= before_time
         ]
         for key in keys_to_remove:
             del self._records[key]

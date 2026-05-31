@@ -343,6 +343,38 @@ def test_terminal_states_are_retained_and_ignore_later_updates_until_pruned(stat
     )
 
 
+def test_prune_can_be_limited_to_one_direction():
+    clock = FakeClock()
+    tracker = TransferProgressTracker(idle_timeout=60.0, clock=clock)
+    _update(tracker, sequence=1, bytes_done=100)
+    _update(
+        tracker,
+        task_id="task-2",
+        transfer_id="result-1",
+        direction=DIRECTION_RESULT_UPLOAD,
+        receiver_id="server",
+        sequence=1,
+        bytes_done=100,
+    )
+
+    clock.advance(1.0)
+    _update(tracker, sequence=2, bytes_done=100, state=TransferProgressState.COMPLETED)
+    _update(
+        tracker,
+        task_id="task-2",
+        transfer_id="result-1",
+        direction=DIRECTION_RESULT_UPLOAD,
+        receiver_id="server",
+        sequence=2,
+        bytes_done=100,
+        state=TransferProgressState.COMPLETED,
+    )
+
+    assert tracker.prune(before_time=clock.now, direction=DIRECTION_TASK_PAYLOAD_DOWNLOAD) == 1
+    assert len(list(tracker.records(direction=DIRECTION_TASK_PAYLOAD_DOWNLOAD))) == 0
+    assert len(list(tracker.records(direction=DIRECTION_RESULT_UPLOAD))) == 1
+
+
 def test_mark_terminal_can_create_abort_record_for_unknown_transfer():
     tracker = TransferProgressTracker(idle_timeout=60.0, clock=FakeClock())
 

@@ -422,13 +422,25 @@ class TaskExchanger(Executor):
         if max_records <= 0:
             return True
 
-        if len(self._stream_progress_tracker.records(direction=direction)) < max_records:
+        record_count = len(self._stream_progress_tracker.records(direction=direction))
+        if record_count < max_records:
             return True
 
-        self._prune_terminal_stream_progress_records_locked()
+        removed_count = self._stream_progress_tracker.prune(
+            before_time=time.time() - STREAM_PROGRESS_TERMINAL_RECORD_TTL,
+            direction=direction,
+        )
+        record_count -= removed_count
+        if record_count < max_records:
+            return True
+
         idle_timeout = self.streaming_idle_timeout or _DEFAULT_STREAMING_IDLE_TIMEOUT_SECS
-        self._stream_progress_tracker.prune(before_time=time.time() - idle_timeout, include_active=True)
-        return len(self._stream_progress_tracker.records(direction=direction)) < max_records
+        removed_count = self._stream_progress_tracker.prune(
+            before_time=time.time() - idle_timeout,
+            include_active=True,
+            direction=direction,
+        )
+        return record_count - removed_count < max_records
 
     def _recent_completed_records_hold_wait(self, records, now: float, fl_ctx: FLContext, task_name: str) -> bool:
         if not records:
@@ -469,14 +481,14 @@ class TaskExchanger(Executor):
         if not records:
             elapsed = now - send_start_time
             wait_budget = self._get_task_send_no_progress_budget(streaming_idle_timeout)
-            if elapsed < wait_budget:
-                self.log_info(
-                    fl_ctx,
-                    f"peer has not read task '{task_name}' after {elapsed} secs and no stream progress record "
-                    f"exists yet; continuing to wait until task_send_wait_budget={wait_budget}s",
-                )
-                return True
-            return False
+            if elapsed >= wait_budget:
+                return False
+            self.log_info(
+                fl_ctx,
+                f"peer has not read task '{task_name}' after {elapsed} secs and no stream progress record "
+                f"exists yet; continuing to wait until task_send_wait_budget={wait_budget}s",
+            )
+            return True
 
         if not active_records:
             if self._recent_completed_records_hold_wait(records, now, fl_ctx, task_name):

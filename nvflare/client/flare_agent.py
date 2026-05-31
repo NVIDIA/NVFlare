@@ -689,6 +689,7 @@ class FlareAgent:
         self, tracker, progress_event, download_done, download_status, wait_start, transactions=()
     ):
         while True:
+            progress_event.clear()
             abandon_reason = self._get_reverse_result_upload_abandon_reason()
             if abandon_reason:
                 self.logger.warning(f"[subprocess] abandoning result_upload wait: {abandon_reason}")
@@ -717,7 +718,6 @@ class FlareAgent:
                 if remaining_grace is not None:
                     wait_timeout = remaining_grace
             progress_event.wait(timeout=wait_timeout)
-            progress_event.clear()
 
     def _get_reverse_result_upload_abandon_reason(self):
         if self.asked_to_stop:

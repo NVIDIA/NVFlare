@@ -1001,6 +1001,46 @@ def test_result_upload_completion_grace_wait_uses_remaining_grace():
     assert wait_timeouts == [STREAM_PROGRESS_COMPLETION_ACK_GRACE]
 
 
+def test_reverse_result_upload_clears_event_before_waiting():
+    clock = FakeClock()
+    tracker = _make_tracker(clock=clock, idle_timeout=10.0)
+    _register(tracker, created_time=clock.now)
+    agent = FlareAgent.__new__(FlareAgent)
+    agent.logger = MagicMock()
+    agent.asked_to_stop = False
+    agent.pipe_handler = MagicMock()
+    agent.pipe_handler.asked_to_stop = False
+    agent.pipe = MagicMock()
+    agent.pipe.closed = False
+    agent._result_upload_poll_interval = 0.001
+    download_done = threading.Event()
+    progress_event = MagicMock()
+    calls = []
+
+    def _clear():
+        calls.append("clear")
+
+    def _wait(timeout):
+        calls.append("wait")
+        download_done.set()
+        return True
+
+    progress_event.clear.side_effect = _clear
+    progress_event.wait.side_effect = _wait
+
+    result = agent._wait_for_reverse_result_upload(
+        tracker,
+        progress_event,
+        download_done,
+        [TransactionDoneStatus.FINISHED],
+        wait_start=clock.now,
+        transactions=[DownloadTransactionInfo("tx-1", (("ref-1", None),), clock.now)],
+    )
+
+    assert result is True
+    assert calls == ["clear", "wait", "clear"]
+
+
 def test_reverse_download_ttl_preserves_legacy_fallback_timeout():
     clear_download_initiated()
     pipe = _make_cell_pipe()
