@@ -16,7 +16,7 @@ import threading
 import time
 import uuid
 from abc import ABC, abstractmethod
-from typing import Any, Optional
+from typing import Any
 
 import nvflare.fuel.utils.app_config_utils as acu
 from nvflare.apis.fl_constant import ConfigVarName, FLMetaKey
@@ -61,7 +61,7 @@ class ResultUploadProgressContextKey:
 class DownloadTransactionInfo:
     __slots__ = ("created_time", "expected_pairs", "tx_id")
 
-    def __init__(self, tx_id: str, expected_pairs: tuple[tuple[str, Optional[str]], ...], created_time: float):
+    def __init__(self, tx_id: str, expected_pairs: tuple[tuple[str, str | None], ...], created_time: float):
         self.tx_id = tx_id
         self.expected_pairs = expected_pairs
         self.created_time = created_time
@@ -455,7 +455,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         return normalized
 
     @staticmethod
-    def _make_result_upload_progress_cb(fobs_ctx: dict, receiver_ids: tuple[Optional[str], ...]):
+    def _make_result_upload_progress_cb(fobs_ctx: dict, receiver_ids: tuple[str | None, ...]):
         progress_cb = fobs_ctx.get(fobs.FOBSContextKey.STREAM_PROGRESS_CB)
         if not progress_cb:
             return None
