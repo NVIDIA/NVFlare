@@ -219,3 +219,16 @@ class TestTBAnalyticsReceiver:
 
         with pytest.raises(ValueError, match="must (be relative|stay inside)"):
             receiver.initialize(fl_ctx)
+
+    @pytest.mark.parametrize("record_origin", ["../outside_peer", "/tmp/outside_peer"])
+    def test_save_rejects_escaping_record_origin(self, tmp_path, record_origin):
+        receiver = TBAnalyticsReceiver(tb_folder="tb_events")
+        fl_ctx = _make_fl_ctx(tmp_path / "run")
+        receiver.initialize(fl_ctx)
+
+        shareable = create_analytic_dxo(
+            tag="loss", value=0.5, data_type=AnalyticsDataType.SCALAR, global_step=0
+        ).to_shareable()
+
+        with pytest.raises(ValueError, match="must (be relative|stay inside)"):
+            receiver.save(fl_ctx, shareable, record_origin)
