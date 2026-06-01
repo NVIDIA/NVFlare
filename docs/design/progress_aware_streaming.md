@@ -414,20 +414,19 @@ transfers, not as a blanket replacement for task-send startup/crash detection:
 
 ```text
 active_stream_idle_timeout = streaming_idle_timeout
-no_progress_task_send_budget = min(streaming_idle_timeout, max(peer_read_timeout or 30, 30))
-effective_heartbeat_timeout = max(default_heartbeat_timeout, streaming_idle_timeout)
+no_progress_task_send_budget = (
+    None if peer_read_timeout is None
+    else min(streaming_idle_timeout, max(peer_read_timeout, STREAM_PROGRESS_COMPLETION_ACK_GRACE))
+)
+effective_heartbeat_timeout = heartbeat_timeout   # preserved, never silently elevated
 effective_min_download_timeout = max(default_min_download_timeout, streaming_idle_timeout)
 ```
 
-`peer_read_timeout` should remain the no-progress startup budget for task sends. Once a
-`task_payload_download` progress record exists, the wait policy switches to
-`streaming_idle_timeout` as the idle budget for the active transfer. This avoids stretching
-non-tensor task crash detection to the full streaming idle timeout while still allowing
-large streamed payloads to continue as long as monotonic progress is observed.
+`peer_read_timeout` should remain the no-progress startup budget for task sends when it is set. A `peer_read_timeout=None` deliberately signals "wait without a startup cap" — the progress-aware loop polls indefinitely until either a progress record arrives or the abort signal fires. Once a `task_payload_download` progress record exists, the wait policy switches to `streaming_idle_timeout` as the idle budget for the active transfer. This avoids stretching non-tensor task crash detection to the full streaming idle timeout while still allowing large streamed payloads to continue as long as monotonic progress is observed.
 
 Explicit user-configured values should be honored to preserve fast-fail semantics. If a user explicitly sets `peer_read_timeout=120`, NVFLARE should not silently raise it to 600. Instead, log that the explicit fast-fail setting can still interrupt slow streamed transfers.
 
-`add_client_config()` overrides are explicit by construction. Constructor/job-config values that intentionally preserve a lower heartbeat fast-fail timeout should set `heartbeat_timeout_explicit=True`; otherwise constructor heartbeat defaults may be raised to the streaming idle timeout as compatibility defaults. `peer_read_timeout` does not need to be raised for the progress-aware CellPipe path because the progress callback controls continued waiting after transfer progress starts.
+`heartbeat_timeout` is **never** silently elevated by `streaming_idle_timeout`. Heartbeat exists to detect a dead peer; coupling it to `streaming_idle_timeout` would delay crash detection across all tasks regardless of whether streaming is in use. If the user configures `heartbeat_timeout` below `streaming_idle_timeout`, a startup WARNING is emitted but the configured value stays in effect. `peer_read_timeout` is similarly not raised because the progress callback controls continued waiting after transfer progress starts.
 
 That warning should be a startup WARNING-level log when an explicit `peer_read_timeout` or `heartbeat_timeout` is lower than `streaming_idle_timeout`.
 

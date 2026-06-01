@@ -329,25 +329,9 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             )
 
     def _apply_streaming_timeout_defaults(self, fl_ctx: FLContext):
-        log_messages = []
-        with self._stream_progress_lock:
-            streaming_idle_timeout = self.streaming_idle_timeout
-            if streaming_idle_timeout is None:
-                return
-
-            if (
-                not self.heartbeat_timeout_explicit
-                and self.heartbeat_timeout is not None
-                and self.heartbeat_timeout < streaming_idle_timeout
-            ):
-                old_value = self.heartbeat_timeout
-                self.heartbeat_timeout = streaming_idle_timeout
-                log_messages.append(
-                    f"Using streaming_idle_timeout for heartbeat_timeout: {old_value}s -> {self.heartbeat_timeout}s"
-                )
-
-        for msg in log_messages:
-            self.log_info(fl_ctx, msg)
+        # Streaming idle timeout controls progress-aware waits only; preserve
+        # explicitly configured peer/heartbeat failure-detection semantics.
+        return
 
     def _apply_client_config_overrides(self, fl_ctx: FLContext):
         # Apply top-level config_fed_client.json overrides before writing the

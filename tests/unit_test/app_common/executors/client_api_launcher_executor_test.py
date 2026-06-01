@@ -427,7 +427,7 @@ def test_streaming_idle_timeout_overridden_from_config(monkeypatch):
     assert executor.streaming_idle_timeout == 1200.0
     assert executor._stream_progress_tracker.idle_timeout == 1200.0
     assert executor.peer_read_timeout == 300.0
-    assert executor.heartbeat_timeout == 1200.0
+    assert executor.heartbeat_timeout == 300.0
 
 
 def test_streaming_idle_timeout_override_mutates_tracker_under_lock(monkeypatch):
@@ -460,24 +460,16 @@ def test_streaming_idle_timeout_override_mutates_tracker_under_lock(monkeypatch)
     assert executor._stream_progress_tracker.idle_timeout == 1200.0
 
 
-def test_streaming_timeout_defaults_mutate_heartbeat_under_lock_and_preserve_peer_read(monkeypatch):
+def test_streaming_timeout_defaults_preserve_peer_read_and_heartbeat(monkeypatch):
     monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None)
 
     executor = ClientAPILauncherExecutor(pipe_id="test_pipe", peer_read_timeout=300.0, heartbeat_timeout=300.0)
     executor.streaming_idle_timeout = 600.0
 
-    def _assert_timeouts_not_written_before_lock():
-        assert executor.peer_read_timeout == 300.0
-        assert executor.heartbeat_timeout == 300.0
-
-    lock = _RecordingLock(on_enter=_assert_timeouts_not_written_before_lock)
-    executor._stream_progress_lock = lock
-
     executor._apply_streaming_timeout_defaults(_FakeFLContext(_FakeCell()))
 
-    assert lock.entered
     assert executor.peer_read_timeout == 300.0
-    assert executor.heartbeat_timeout == 600.0
+    assert executor.heartbeat_timeout == 300.0
 
 
 def test_absent_streaming_progress_override_preserves_disabled_idle_timeout(monkeypatch):
@@ -1310,8 +1302,8 @@ def test_non_explicit_peer_read_less_than_per_req_preserves_startup_budget(monke
     assert not any("peer_read_timeout" in w and "streaming_per_request_timeout" in w for w in warnings), warnings
 
 
-def test_non_explicit_heartbeat_less_than_per_req_uses_streaming_idle(monkeypatch):
-    """Non-explicit heartbeat_timeout follows streaming_idle_timeout before legacy per-request checks."""
+def test_non_explicit_heartbeat_less_than_per_req_warns_without_mutation(monkeypatch):
+    """Non-explicit heartbeat_timeout keeps crash detection semantics and warns on per-request mismatch."""
     import nvflare.fuel.utils.app_config_utils as acu
     from nvflare.apis.fl_constant import ConfigVarName
     from nvflare.fuel.utils.config_service import ConfigService
@@ -1335,12 +1327,12 @@ def test_non_explicit_heartbeat_less_than_per_req_uses_streaming_idle(monkeypatc
     )
     executor.initialize(fl_ctx)
 
-    assert executor.heartbeat_timeout == 600.0
-    assert not any("heartbeat_timeout" in w and "streaming_per_request_timeout" in w for w in warnings), warnings
+    assert executor.heartbeat_timeout == 300.0
+    assert any("heartbeat_timeout" in w and "streaming_per_request_timeout" in w for w in warnings), warnings
 
 
 def test_peer_read_none_does_not_warn_when_streaming_timeout_is_enabled(monkeypatch):
-    """Progress-aware task-send handles unset peer_read_timeout with a bounded startup grace."""
+    """Progress-aware task-send handles unset peer_read_timeout with polling and no startup cap."""
     import nvflare.fuel.utils.app_config_utils as acu
     from nvflare.apis.fl_constant import ConfigVarName
     from nvflare.fuel.utils.config_service import ConfigService

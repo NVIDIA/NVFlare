@@ -478,8 +478,10 @@ class TaskExchanger(Executor):
     def _get_task_send_startup_budget(
         streaming_idle_timeout: float,
         peer_read_timeout: Optional[float] = None,
-    ) -> float:
-        peer_read_budget = streaming_idle_timeout if peer_read_timeout is None else peer_read_timeout
+    ) -> Optional[float]:
+        if peer_read_timeout is None:
+            return None
+        peer_read_budget = peer_read_timeout
         return min(streaming_idle_timeout, max(peer_read_budget, STREAM_PROGRESS_COMPLETION_ACK_GRACE))
 
     @staticmethod
@@ -525,12 +527,13 @@ class TaskExchanger(Executor):
         if not records:
             elapsed = now - send_start_time
             wait_budget = self._get_task_send_startup_budget(streaming_idle_timeout, peer_read_timeout)
-            if elapsed >= wait_budget:
+            if wait_budget is not None and elapsed >= wait_budget:
                 return False
+            wait_budget_text = "unbounded" if wait_budget is None else f"{wait_budget}s"
             self.log_info(
                 fl_ctx,
                 f"peer has not read task '{task_name}' after {elapsed} secs and no stream progress record "
-                f"exists yet; continuing to wait until task_send_wait_budget={wait_budget}s",
+                f"exists yet; continuing to wait until task_send_wait_budget={wait_budget_text}",
             )
             return True
 
