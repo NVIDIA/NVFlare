@@ -982,11 +982,12 @@ parent image with the NVFlare ``K8S`` extra or ``pip install kubernetes``.
 If the logs show ``SSLCertVerificationError`` with
 ``CA cert does not include key usage extension``, the parent Kubernetes client
 is rejecting the cluster API-server CA. This is known to affect some MicroK8s
-CA certificates that omit the X.509 ``keyUsage`` extension. Regenerate or
-replace the cluster CA with an RFC 5280-compliant CA. As a temporary
-compatibility workaround for development clusters, use a custom parent image
-based on Python 3.12 or earlier. Do not disable Kubernetes API TLS verification
-in production.
+CA certificates that omit the X.509 ``keyUsage`` extension; see
+`canonical/microk8s#4864 <https://github.com/canonical/microk8s/issues/4864>`__.
+Regenerate or replace the cluster CA with an RFC 5280-compliant CA. As a
+temporary compatibility workaround for development clusters, use a custom
+parent image based on Python 3.12 or earlier. Do not disable Kubernetes API TLS
+verification in production.
 
 Job pod stays ``Pending`` or ``Unknown``
 ----------------------------------------
