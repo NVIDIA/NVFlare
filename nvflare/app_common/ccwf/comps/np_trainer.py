@@ -28,6 +28,7 @@ from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.model import ModelLearnable
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.np.constants import NPConstants
+from nvflare.app_common.utils.file_utils import resolve_path_under_root
 from nvflare.security.logging import secure_format_exception
 
 
@@ -221,9 +222,9 @@ class NPTrainer(Executor):
         engine = fl_ctx.get_engine()
         job_id = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
         run_dir = engine.get_workspace().get_run_dir(job_id)
-        model_path = os.path.join(run_dir, self._model_dir)
-
-        model_load_path = os.path.join(model_path, self._model_name)
+        model_load_path = resolve_path_under_root(
+            run_dir, os.path.join(self._model_dir, self._model_name), "model path"
+        )
         try:
             np_data = np.load(model_load_path, allow_pickle=False)
         except Exception as e:
@@ -240,10 +241,12 @@ class NPTrainer(Executor):
         engine = fl_ctx.get_engine()
         job_id = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
         run_dir = engine.get_workspace().get_run_dir(job_id)
-        model_path = os.path.join(run_dir, self._model_dir)
+        model_save_path = resolve_path_under_root(
+            run_dir, os.path.join(self._model_dir, self._model_name), "model path"
+        )
+        model_path = os.path.dirname(model_save_path)
         if not os.path.exists(model_path):
             os.makedirs(model_path)
 
-        model_save_path = os.path.join(model_path, self._model_name)
         np.save(model_save_path, model[NPConstants.NUMPY_KEY])
         self.log_info(fl_ctx, f"Saved numpy model to: {model_save_path}")
