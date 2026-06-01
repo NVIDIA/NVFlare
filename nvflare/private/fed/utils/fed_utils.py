@@ -361,6 +361,12 @@ def custom_fobs_initialize(workspace: Workspace = None, job_id: Optional[str] = 
 def _job_allows_byoc(workspace: Workspace, job_id: str) -> bool:
     try:
         job_meta = get_job_meta_from_workspace(workspace, job_id)
+        if not isinstance(job_meta, dict):
+            logging.getLogger(__name__).warning(
+                f"job meta for job '{job_id}' is not a dict (got {type(job_meta)}); treating as non-BYOC"
+            )
+            return False
+        return bool(job_meta.get(AppValidationKey.BYOC, False))
     except Exception as e:
         # fail safe: deny job decomposers, but log so a corrupted/misconfigured deployment
         # can be told apart from a legitimate non-BYOC job
@@ -368,7 +374,6 @@ def _job_allows_byoc(workspace: Workspace, job_id: str) -> bool:
             f"could not read job meta for job '{job_id}'; treating as non-BYOC: {secure_format_exception(e)}"
         )
         return False
-    return bool(job_meta.get(AppValidationKey.BYOC, False))
 
 
 def nvflare_fobs_initialize():
