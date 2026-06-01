@@ -23,6 +23,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
+from nvflare.app_common.utils.file_utils import resolve_path_under_root
 from nvflare.widgets.widget import Widget
 
 
@@ -99,10 +100,11 @@ class ValidationJsonGenerator(Widget):
                 self.log_error(fl_ctx, "Validation result not found.", fire_event=False)
         elif event_type == EventType.END_RUN:
             run_dir = fl_ctx.get_engine().get_workspace().get_run_dir(fl_ctx.get_job_id())
-            cross_val_res_dir = os.path.join(run_dir, self._results_dir)
+            res_file_path = resolve_path_under_root(
+                run_dir, os.path.join(self._results_dir, self._json_file_name), "results path"
+            )
+            cross_val_res_dir = os.path.dirname(res_file_path)
             if not os.path.exists(cross_val_res_dir):
                 os.makedirs(cross_val_res_dir)
-
-            res_file_path = os.path.join(cross_val_res_dir, self._json_file_name)
             with open(res_file_path, "w") as f:
                 json.dump(self._val_results, f, default=to_serializable)
