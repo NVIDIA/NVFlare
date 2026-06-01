@@ -423,6 +423,10 @@ class FlareAgent:
         self._launch_once = launch_once
         self._atexit_registered = False
         self._atexit_lock = threading.Lock()
+        self._launch_once_unhandled_exception = False
+        self._launch_once_excepthook_installed = False
+        self._launch_once_excepthook = None
+        self._launch_once_previous_excepthook = None
 
     def start(self):
         """Start the agent.
@@ -680,8 +684,7 @@ class FlareAgent:
             )
         return True
 
-    def _fail_reverse_download_transactions(self, tracker, transactions):
-        tracker.mark_abandoned()
+    def _delete_reverse_download_transactions(self, transactions):
         for transaction in transactions or ():
             try:
                 DownloadService.delete_transaction(transaction.tx_id)
@@ -689,6 +692,11 @@ class FlareAgent:
                 self.logger.warning(
                     f"[subprocess] failed to delete abandoned result_upload transaction {transaction.tx_id}: {ex}"
                 )
+
+    def _fail_reverse_download_transactions(self, tracker, transactions):
+        if tracker is not None:
+            tracker.mark_abandoned()
+        self._delete_reverse_download_transactions(transactions)
 
     def _finish_reverse_result_upload_wait(self, decision, tracker, transactions, wait_start):
         """Log the final reverse result-upload decision and fail open transactions on explicit failure."""
@@ -808,8 +816,38 @@ class FlareAgent:
         with self._atexit_lock:
             if not getattr(self, "_launch_once", False) or getattr(self, "_atexit_registered", False):
                 return
-            atexit.register(os._exit, 0)
+            self._install_launch_once_excepthook()
+            atexit.register(self._launch_once_exit_if_clean)
             self._atexit_registered = True
+
+    def _install_launch_once_excepthook(self):
+        if getattr(self, "_launch_once_excepthook_installed", False):
+            return
+        previous_excepthook = sys.excepthook
+
+        def _mark_unhandled_exception(exc_type, exc, tb):
+            self._launch_once_unhandled_exception = True
+            previous_excepthook(exc_type, exc, tb)
+
+        self._launch_once_previous_excepthook = previous_excepthook
+        self._launch_once_excepthook = _mark_unhandled_exception
+        sys.excepthook = _mark_unhandled_exception
+        self._launch_once_excepthook_installed = True
+
+    def _restore_launch_once_excepthook(self):
+        if (
+            getattr(self, "_launch_once_excepthook", None) is not None
+            and sys.excepthook is self._launch_once_excepthook
+        ):
+            sys.excepthook = self._launch_once_previous_excepthook or sys.__excepthook__
+
+    def _launch_once_exit_if_clean(self):
+        self._restore_launch_once_excepthook()
+        if getattr(self, "_launch_once_unhandled_exception", False):
+            return
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(0)
 
     def _do_submit_result(self, current_task: _TaskContext, result, rc):
         result_shareable = self.task_result_to_shareable(result, rc)
@@ -894,6 +932,13 @@ class FlareAgent:
                     self.logger.warning(
                         f"[subprocess] send_to_peer failed: task_ph.asked_to_stop={self.pipe_handler.asked_to_stop}"
                     )
+                    transactions = tuple(result_upload_transactions)
+                    if not transactions and was_download_initiated():
+                        transactions = tuple(get_download_transactions())
+                        if progress_tracking_enabled:
+                            self._register_download_transactions(result_upload_tracker, transactions)
+                    if transactions:
+                        self._fail_reverse_download_transactions(result_upload_tracker, transactions)
                     return False
                 send_elapsed = time.time() - send_start
 

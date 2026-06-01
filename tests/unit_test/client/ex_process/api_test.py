@@ -239,6 +239,32 @@ def test_ex_process_receive_timeout_then_later_task_allows_send():
     fake_agent.submit_result.assert_called_once()
 
 
+def test_ex_process_send_failure_raises_and_preserves_params():
+    from unittest.mock import MagicMock
+
+    from nvflare.client.config import ClientConfig
+    from nvflare.client.ex_process.api import ExProcessClientAPI
+    from nvflare.client.flare_agent import Task
+    from nvflare.client.model_registry import ModelRegistry
+
+    received_model = FLModel(params={"x": 1})
+    sent_model = FLModel(params={"x": 2})
+    fake_agent = MagicMock()
+    fake_agent.get_task.return_value = Task(task_name="train", task_id="task-1", data=received_model)
+    fake_agent.submit_result.return_value = False
+    registry = ModelRegistry(ClientConfig({}), rank="0", flare_agent=fake_agent)
+    api = ExProcessClientAPI(config_file="fake_config.json")
+    api.model_registry = registry
+
+    assert api.receive(timeout=0.1) is received_model
+    with pytest.raises(RuntimeError, match="failed to submit model result"):
+        api.send(sent_model, clear_cache=True)
+
+    assert sent_model.params == {"x": 2}
+    assert received_model.params == {"x": 1}
+    assert api.receive_called is True
+
+
 # ── _downgrade_rotating_handlers tests ────────────────────────────────────────
 
 _ROTATING_CONFIG = {

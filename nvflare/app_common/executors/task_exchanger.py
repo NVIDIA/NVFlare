@@ -700,7 +700,7 @@ class TaskExchanger(Executor):
         req = Message.new_request(topic=task_name, data=shareable, msg_id=task_id)
         start_time = time.time()
         has_been_read = self._send_task_to_peer(req, fl_ctx, abort_signal)
-        if self.peer_read_timeout and not has_been_read:
+        if not has_been_read:
             self._mark_task_stream_progress_terminal(task_id, TransferProgressState.ABORTED, job_id=job_id)
             self.log_error(
                 fl_ctx,
