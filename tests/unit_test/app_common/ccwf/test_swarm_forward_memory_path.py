@@ -165,6 +165,9 @@ class TestResultUploadReceiverStamp(unittest.TestCase):
         task_data = _make_shareable_with_real_arrays()
         fl_ctx = MagicMock()
         fl_ctx.get_job_id.return_value = "job-1"
+        aggr_client = MagicMock()
+        aggr_client.get_fqcn.return_value = "site-2"
+        fl_ctx.get_engine.return_value.get_client_from_name.return_value = aggr_client
 
         ctl._stamp_result_upload_receiver_ids(task_data, "site-2", fl_ctx)
 
