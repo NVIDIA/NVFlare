@@ -419,6 +419,8 @@ class FlareAgent:
         self._streaming_idle_timeout = streaming_idle_timeout
         self._result_upload_poll_interval = _REVERSE_RESULT_UPLOAD_POLL_INTERVAL
         self._launch_once = launch_once
+        self._atexit_registered = False
+        self._atexit_lock = threading.Lock()
 
     def start(self):
         """Start the agent.
@@ -708,16 +710,15 @@ class FlareAgent:
                 return decision.success
 
             wait_timeout = getattr(self, "_result_upload_poll_interval", _REVERSE_RESULT_UPLOAD_POLL_INTERVAL)
+            abandon_reason = self._get_reverse_result_upload_abandon_reason()
+            if abandon_reason:
+                self.logger.warning(f"[subprocess] abandoning result_upload wait: {abandon_reason}")
+                self._fail_reverse_download_transactions(tracker, transactions)
+                return False
             if decision.reason == "completion_grace":
                 remaining_grace = tracker.completion_grace_remaining()
                 if remaining_grace is not None:
                     wait_timeout = remaining_grace
-            else:
-                abandon_reason = self._get_reverse_result_upload_abandon_reason()
-                if abandon_reason:
-                    self.logger.warning(f"[subprocess] abandoning result_upload wait: {abandon_reason}")
-                    self._fail_reverse_download_transactions(tracker, transactions)
-                    return False
             progress_event.wait(timeout=wait_timeout)
 
     def _get_reverse_result_upload_abandon_reason(self):
@@ -779,14 +780,20 @@ class FlareAgent:
         progress_event.set()
 
     def _register_launch_once_exit(self):
-        if not getattr(self, "_launch_once", False) or getattr(self, "_atexit_registered", False):
-            return
-        atexit.register(os._exit, 0)
-        self._atexit_registered = True
+        lock = getattr(self, "_atexit_lock", None)
+        if lock is None:
+            lock = threading.Lock()
+            self._atexit_lock = lock
+        with lock:
+            if not getattr(self, "_launch_once", False) or getattr(self, "_atexit_registered", False):
+                return
+            atexit.register(os._exit, 0)
+            self._atexit_registered = True
 
     def _do_submit_result(self, current_task: _TaskContext, result, rc):
         result_shareable = self.task_result_to_shareable(result, rc)
         reply = Message.new_reply(topic=current_task.task_name, req_msg_id=current_task.msg_id, data=result_shareable)
+        self._register_launch_once_exit()
 
         # Gate subprocess exit on reverse result_upload progress for the PASS_THROUGH path
         # (subprocess → CJ → server).  CJ ACKs send_to_peer() immediately after creating
@@ -801,7 +808,6 @@ class FlareAgent:
         # was_download_initiated() (thread-local set by _finalize_download_tx()) and return
         # immediately without waiting — fixing the 1800s hang on CSE round 2+ (RC12 Bug 3).
         if isinstance(self.pipe, CellPipe) and self.pipe.pass_through_on_send:
-            self._register_launch_once_exit()
             download_done = threading.Event()
             progress_event = threading.Event()
             download_status = [None]

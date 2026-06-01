@@ -306,6 +306,13 @@ def test_task_send_no_progress_startup_budget_uses_peer_read_timeout_floor(monke
     assert any("task_send_wait_budget=60.0s" in msg for _, msg in logs)
 
 
+def test_task_send_no_progress_budget_uses_idle_timeout_when_peer_read_timeout_disabled():
+    executor = TaskExchanger(pipe_id="pipe", peer_read_timeout=None, streaming_idle_timeout=600.0)
+
+    assert TaskExchanger._get_task_send_no_progress_budget(600.0, None) == 600.0
+    assert executor._get_task_send_peer_read_timeout() == task_exchanger_module.STREAM_PROGRESS_COMPLETION_ACK_GRACE
+
+
 def test_explicit_high_peer_read_timeout_logs_startup_budget_clamp(monkeypatch):
     logs = _patch_logs(monkeypatch)
     now = [1000.0]
@@ -942,7 +949,7 @@ def test_task_payload_stream_progress_requires_scoped_event(monkeypatch):
     assert executor._stream_progress_tracker.records(direction=DIRECTION_TASK_PAYLOAD_DOWNLOAD) == []
 
 
-def test_task_payload_stream_progress_capacity_bounds_new_records(monkeypatch):
+def test_task_payload_stream_progress_capacity_bounds_new_records(monkeypatch, caplog):
     _patch_logs(monkeypatch)
     monkeypatch.setattr(task_exchanger_module, "STREAM_PROGRESS_MAX_TRACKED_RECORDS", 2)
     executor = TaskExchanger(pipe_id="pipe", streaming_idle_timeout=10.0)
@@ -954,6 +961,7 @@ def test_task_payload_stream_progress_capacity_bounds_new_records(monkeypatch):
     records = executor._stream_progress_tracker.records(direction=DIRECTION_TASK_PAYLOAD_DOWNLOAD)
     assert len(records) == 2
     assert {record.transfer_id for record in records} == {"ref-1", "ref-2"}
+    assert "records=2 max=2" in caplog.text
 
 
 def test_stream_progress_ignores_generic_offset_and_current_fields(monkeypatch):

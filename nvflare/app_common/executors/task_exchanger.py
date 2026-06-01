@@ -348,9 +348,10 @@ class TaskExchanger(Executor):
                 direction=direction,
             )
             if record is None and not self._stream_progress_tracker_has_capacity_locked(direction):
+                record_count = len(self._stream_progress_tracker.records(direction=direction))
                 self.logger.warning(
                     f"ignored stream progress for task={task_id} transfer={transfer_id} direction={direction}: "
-                    "progress tracker is at capacity"
+                    f"progress tracker is at capacity records={record_count} max={STREAM_PROGRESS_MAX_TRACKED_RECORDS}"
                 )
                 return
             try:
@@ -465,7 +466,7 @@ class TaskExchanger(Executor):
         streaming_idle_timeout: float,
         peer_read_timeout: Optional[float] = None,
     ) -> float:
-        peer_read_budget = STREAM_PROGRESS_COMPLETION_ACK_GRACE if peer_read_timeout is None else peer_read_timeout
+        peer_read_budget = streaming_idle_timeout if peer_read_timeout is None else peer_read_timeout
         return min(streaming_idle_timeout, max(peer_read_budget, STREAM_PROGRESS_COMPLETION_ACK_GRACE))
 
     def _should_continue_task_send_waiting(
@@ -478,6 +479,7 @@ class TaskExchanger(Executor):
     ) -> bool:
         with self._stream_progress_lock:
             streaming_idle_timeout = self.streaming_idle_timeout
+            peer_read_timeout = self.peer_read_timeout
 
         if not streaming_idle_timeout:
             return False
@@ -486,7 +488,7 @@ class TaskExchanger(Executor):
         records, active_records = self._get_active_task_payload_records(task_id, job_id)
         if not records:
             elapsed = now - send_start_time
-            wait_budget = self._get_task_send_no_progress_budget(streaming_idle_timeout, self.peer_read_timeout)
+            wait_budget = self._get_task_send_no_progress_budget(streaming_idle_timeout, peer_read_timeout)
             if elapsed >= wait_budget:
                 return False
             self.log_info(
@@ -599,6 +601,8 @@ class TaskExchanger(Executor):
 
     def _get_task_send_peer_read_timeout(self):
         if self.peer_read_timeout is None:
+            if self.streaming_idle_timeout:
+                return min(self.streaming_idle_timeout, STREAM_PROGRESS_COMPLETION_ACK_GRACE)
             return None
         if not self.streaming_idle_timeout or self._should_honor_explicit_peer_read_timeout():
             return self.peer_read_timeout
