@@ -49,6 +49,25 @@ class DictClass(dict):
     pass
 
 
+class RequiredArgDict(dict):
+    """Dict subclass whose __init__ requires positional args, like the edge SelectionRequest model."""
+
+    def __init__(self, a, b, **kwargs):
+        super().__init__()
+        self["a"] = a
+        self["b"] = b
+        if kwargs:
+            self.update(kwargs)
+
+
+class RequiredArgList(list):
+    """List subclass whose __init__ requires a positional arg."""
+
+    def __init__(self, capacity):
+        super().__init__()
+        self.capacity = capacity
+
+
 class TestDecomposers:
     def test_generic_dict_class(self):
         fobs.register(DictDecomposer(DictClass))
@@ -129,6 +148,34 @@ class TestDecomposers:
         assert restored["data"]["blob"] == blob
         assert restored["data"]["items"][0] == list_blob
         assert restored["data"]["items"][1]["nested"] == nested_list_blob
+
+    def test_externalize_dict_subclass_with_required_constructor_args(self):
+        # Regression: Externalizer rebuilt containers via type(target)(), which raises TypeError for
+        # dict subclasses whose __init__ has required positional args (e.g. edge SelectionRequest).
+        nested = RequiredArgDict("n1", "n2")
+        source = Shareable({"selection": RequiredArgDict("v1", "v2", nested=nested, blob=b"x" * 2048)})
+
+        externalized = Externalizer(DatumManager(1024)).externalize(source)
+
+        selection = externalized["selection"]
+        assert isinstance(selection, RequiredArgDict)
+        assert selection["a"] == "v1" and selection["b"] == "v2"
+        assert isinstance(selection["nested"], RequiredArgDict)
+        assert selection["nested"]["a"] == "n1" and selection["nested"]["b"] == "n2"
+        # large payload was replaced with a DatumRef in the returned tree only
+        assert isinstance(selection["blob"], DatumRef)
+        assert source["selection"]["blob"] == b"x" * 2048
+
+    def test_externalize_list_subclass_with_required_constructor_args(self):
+        # Regression: same no-arg reconstruction failure for list subclasses.
+        items = RequiredArgList(10)
+        items.extend(["a", "b"])
+        source = Shareable({"items": items})
+
+        externalized = Externalizer(DatumManager(1024)).externalize(source)
+
+        assert isinstance(externalized["items"], RequiredArgList)
+        assert list(externalized["items"]) == ["a", "b"]
 
     @staticmethod
     def _check_decomposer(data, clear_decomposers=True):

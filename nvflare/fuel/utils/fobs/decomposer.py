@@ -101,25 +101,42 @@ class Externalizer:
     def __init__(self, manager: DatumManager):
         self.manager = manager
 
+    @staticmethod
+    def _new_container(target):
+        """Create an empty container of the same type as ``target`` to hold externalized values.
+
+        The subclass type is preserved (rather than falling back to a plain dict/list) so that
+        ``strict_types`` packing routes the value back through its decomposer instead of losing the
+        type. Most subclasses accept a no-arg constructor, but some (e.g. dict-based edge models like
+        ``SelectionRequest``, whose ``__init__`` has required positional arguments) do not. For those,
+        ``__init__`` is bypassed via ``__new__`` since externalize only needs an empty container to
+        repopulate. Constructor state such as a defaultdict's default_factory is not preserved either way.
+        """
+        cls = type(target)
+        try:
+            return cls()
+        except TypeError:
+            # subclass __init__ requires arguments - bypass it and build an empty instance
+            return cls.__new__(cls)
+
     def externalize(self, target: Any):
         """Recursively externalize leaf nodes without mutating the source containers.
 
-        Dict/list subclasses are reconstructed with no-arg constructors at every level. This matches the contract
-        already required by DictDecomposer.recompose() for top-level dict subclasses, but also means nested container
-        subclasses (both dict and list) must tolerate no-arg construction and may not preserve constructor state such
-        as a defaultdict's default_factory or the capacity/initializer argument of a list subclass.
+        Dict/list subclasses are reconstructed at every level (see ``_new_container``), so nested
+        container subclasses (both dict and list) may not preserve constructor state such as a
+        defaultdict's default_factory or the capacity/initializer argument of a list subclass.
         """
         if not self.manager:
             return target
 
         if isinstance(target, dict):
-            new_target = type(target)()
+            new_target = self._new_container(target)
             for k, v in target.items():
                 new_target[k] = self.externalize(v)
             return new_target
         elif isinstance(target, list):
             # Note: tuple is not supported since it is immutable.
-            new_target = type(target)()
+            new_target = self._new_container(target)
             for v in target:
                 new_target.append(self.externalize(v))
             return new_target
