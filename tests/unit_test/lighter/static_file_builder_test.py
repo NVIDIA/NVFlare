@@ -56,9 +56,8 @@ def _repo_root():
     return Path(__file__).resolve().parents[3]
 
 
-def _extract_class_allow_list(resource_template):
-    import re
-
+def _find_class_allow_list_array_bounds(resource_template):
+    """Return (start, end) indices of the class_allow_list JSON array in resource_template."""
     list_pos = resource_template.index('"class_allow_list"')
     start = resource_template.index("[", list_pos)
     depth = 0
@@ -71,6 +70,13 @@ def _extract_class_allow_list(resource_template):
             if depth == 0:
                 end = i
                 break
+    return start, end
+
+
+def _extract_class_allow_list(resource_template):
+    import re
+
+    start, end = _find_class_allow_list_array_bounds(resource_template)
     return re.findall(
         r'"([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+)"',
         resource_template[start : end + 1],
@@ -83,18 +89,7 @@ def _extract_class_allow_list_json(resource_template):
     Unlike the regex-based extractor above, this preserves trailing-dot package prefixes,
     so a guard can detect a broad prefix that would authorize a forbidden class.
     """
-    list_pos = resource_template.index('"class_allow_list"')
-    start = resource_template.index("[", list_pos)
-    depth = 0
-    end = None
-    for i in range(start, len(resource_template)):
-        if resource_template[i] == "[":
-            depth += 1
-        elif resource_template[i] == "]":
-            depth -= 1
-            if depth == 0:
-                end = i
-                break
+    start, end = _find_class_allow_list_array_bounds(resource_template)
     return json.loads(resource_template[start : end + 1])
 
 
@@ -290,8 +285,6 @@ class TestStaticFileBuilder:
         intentionally OMITTED -- the corresponding ``*_locator`` components are listed instead.
         Do not add these classes (or a package prefix covering them) to ``class_allow_list``.
         """
-        import os
-
         import yaml
 
         from nvflare.app_common.widgets.component_path_authorizer import ComponentPathAuthorizer
@@ -307,19 +300,15 @@ class TestStaticFileBuilder:
             "nvflare.edge.simulation.config.ConfigParser",
         ]
 
-        template_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
-            "nvflare",
-            "lighter",
-            "templates",
-            "master_template.yml",
-        )
+        template_path = _repo_root() / "nvflare" / "lighter" / "templates" / "master_template.yml"
         with open(template_path, "r") as f:
             template = yaml.safe_load(f)
 
         for resource_key in ("local_client_resources", "local_server_resources"):
             allow_list = _extract_class_allow_list_json(template[resource_key])
             for forbidden in forbidden_paths:
+                # Use the authorizer's own prefix matcher so the guard mirrors production
+                # authorization semantics exactly (the private method is used intentionally).
                 authorized_by = [
                     entry for entry in allow_list if ComponentPathAuthorizer._path_matches_prefix(forbidden, entry)
                 ]
