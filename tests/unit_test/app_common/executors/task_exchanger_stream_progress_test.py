@@ -341,14 +341,42 @@ def test_non_tensor_task_without_progress_fails_at_peer_read_budget_not_streamin
     assert any("task_send_wait_budget=60.0s" in msg for _, msg in logs)
 
 
-def test_task_send_no_progress_budget_uses_startup_grace_when_peer_read_timeout_disabled():
+def test_task_send_no_progress_budget_uses_idle_timeout_when_peer_read_timeout_disabled():
     executor = TaskExchanger(pipe_id="pipe", peer_read_timeout=None, streaming_idle_timeout=600.0)
 
-    assert (
-        TaskExchanger._get_task_send_startup_budget(600.0, None)
-        == task_exchanger_module.STREAM_PROGRESS_COMPLETION_ACK_GRACE
-    )
+    assert TaskExchanger._get_task_send_startup_budget(600.0, None) == 600.0
     assert executor._get_task_send_peer_read_timeout() == task_exchanger_module.STREAM_PROGRESS_COMPLETION_ACK_GRACE
+
+
+def test_task_send_peer_read_timeout_disabled_polls_until_idle_budget(monkeypatch):
+    logs = _patch_logs(monkeypatch)
+    now = [1000.0]
+    monkeypatch.setattr(task_exchanger_module.time, "time", lambda: now[0])
+    executor = TaskExchanger(
+        pipe_id="pipe",
+        peer_read_timeout=None,
+        streaming_idle_timeout=600.0,
+        result_poll_interval=0.01,
+    )
+
+    def send_cb(handler, msg, timeout, abort_signal):
+        assert timeout == task_exchanger_module.STREAM_PROGRESS_COMPLETION_ACK_GRACE
+        now[0] += timeout
+        assert msg._progress_wait_cb() is True
+        now[0] += 569.9
+        assert msg._progress_wait_cb() is True
+        now[0] += 0.2
+        assert msg._progress_wait_cb() is False
+        return False
+
+    handler = _FakePipeHandler(send_cb)
+    executor.pipe_handler = handler
+
+    result = executor._do_execute("train", _make_task(), _make_fl_ctx(), _AbortSignal())
+
+    assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+    assert handler.send_calls == 1
+    assert any("task_send_wait_budget=600.0s" in msg for _, msg in logs)
 
 
 def test_task_send_peer_read_timeout_disabled_still_aborts_failed_effective_send(monkeypatch):
