@@ -29,6 +29,7 @@ from nvflare.fuel.f3.streaming.download_service import TransactionDoneStatus
 from nvflare.fuel.f3.streaming.transfer_progress import DIRECTION_RESULT_UPLOAD, TransferProgressState
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import (
+    RESULT_UPLOAD_PROGRESS_CTX_KEY,
     RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY,
     DownloadTransactionInfo,
     _tls,
@@ -585,6 +586,35 @@ def test_tracking_unavailable_falls_back_to_download_complete_timeout():
     agent._wait_for_download_complete_fixed.assert_called_once()
     agent._wait_for_reverse_result_upload.assert_not_called()
     assert any("falling back" in call[0][0] for call in agent.logger.info.call_args_list)
+
+
+def test_disabled_streaming_idle_timeout_falls_back_to_download_complete_timeout():
+    clear_download_initiated()
+    pipe = _make_cell_pipe()
+    agent = _make_agent(pipe, download_complete_timeout=0.01)
+    agent._streaming_idle_timeout = None
+    agent._wait_for_download_complete_fixed = MagicMock(return_value=True)
+    agent._wait_for_reverse_result_upload = MagicMock(return_value=True)
+
+    def _send(reply, timeout):
+        ctx = pipe.cell.update_fobs_context.call_args.args[0]
+        assert ctx[fobs.FOBSContextKey.STREAM_PROGRESS_CB] is None
+        assert ctx[RESULT_UPLOAD_PROGRESS_CTX_KEY] is None
+        assert ctx[RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY] is None
+        _tls.download_initiated = True
+        _tls.download_transactions = [
+            DownloadTransactionInfo("tx-disabled", (("ref-disabled", None),), time.time()),
+        ]
+        return True
+
+    agent.pipe_handler.send_to_peer.side_effect = _send
+
+    result = agent._do_submit_result(_TaskContext("tid-1", "train", "msg-1"), None, "OK")
+
+    assert result is True
+    agent._wait_for_download_complete_fixed.assert_called_once()
+    agent._wait_for_reverse_result_upload.assert_not_called()
+    assert any("progress tracking disabled" in call[0][0] for call in agent.logger.info.call_args_list)
 
 
 def test_do_submit_result_waits_for_result_upload_progress_until_completion():

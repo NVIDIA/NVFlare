@@ -129,6 +129,9 @@ def test_get_streaming_idle_timeout_default_and_explicit():
     config = ClientConfig({ConfigKey.TASK_EXCHANGE: {ConfigKey.STREAMING_IDLE_TIMEOUT: 1200}})
     assert config.get_streaming_idle_timeout() == 1200.0
 
+    config = ClientConfig({ConfigKey.TASK_EXCHANGE: {ConfigKey.STREAMING_IDLE_TIMEOUT: None}})
+    assert config.get_streaming_idle_timeout() is None
+
 
 def test_ex_process_api_passes_submit_result_timeout_to_agent(monkeypatch):
     """ExProcessClientAPI.init() must pass task-exchange timeouts from config to FlareAgentWithFLModel."""

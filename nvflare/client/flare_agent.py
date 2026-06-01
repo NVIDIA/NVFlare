@@ -339,7 +339,7 @@ class FlareAgent:
         close_metric_pipe: bool = True,
         decomposer_module: str = None,
         download_complete_timeout: float = DownloadService.FINISHED_REFS_TTL,
-        streaming_idle_timeout: float = DEFAULT_STREAMING_IDLE_TIMEOUT,
+        streaming_idle_timeout: Optional[float] = DEFAULT_STREAMING_IDLE_TIMEOUT,
         launch_once: bool = False,
     ):
         """Constructor of Flare Agent.
@@ -642,9 +642,10 @@ class FlareAgent:
         return ctx.get(key)
 
     def _make_reverse_result_upload_tracker(self):
-        return _ReverseResultUploadProgressTracker(
-            idle_timeout=getattr(self, "_streaming_idle_timeout", DEFAULT_STREAMING_IDLE_TIMEOUT)
-        )
+        idle_timeout = getattr(self, "_streaming_idle_timeout", DEFAULT_STREAMING_IDLE_TIMEOUT)
+        if idle_timeout is None:
+            return None
+        return _ReverseResultUploadProgressTracker(idle_timeout=idle_timeout)
 
     def _register_download_transactions(self, tracker: _ReverseResultUploadProgressTracker, transactions=None):
         transactions = get_download_transactions() if transactions is None else transactions
@@ -805,6 +806,7 @@ class FlareAgent:
             progress_event = threading.Event()
             download_status = [None]
             result_upload_tracker = self._make_reverse_result_upload_tracker()
+            progress_tracking_enabled = result_upload_tracker is not None
             result_upload_transactions = []
 
             def _on_download_done(tid, status, objs):
@@ -829,19 +831,25 @@ class FlareAgent:
             previous_receiver_ids = self._get_fobs_context_value(self.pipe.cell, FOBSContextKey.RECEIVER_IDS)
             previous_tx_created_cb = self._get_fobs_context_value(self.pipe.cell, RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY)
             streaming_idle_timeout = getattr(self, "_streaming_idle_timeout", DEFAULT_STREAMING_IDLE_TIMEOUT)
-            result_upload_progress_context = {
-                ResultUploadProgressContextKey.JOB_ID: result_shareable.get_header(FLMetaKey.JOB_ID) or "",
-                ResultUploadProgressContextKey.TASK_ID: current_task.task_id or current_task.msg_id,
-                ResultUploadProgressContextKey.STREAMING_IDLE_TIMEOUT: streaming_idle_timeout,
-            }
+            result_upload_progress_context = None
+            if progress_tracking_enabled:
+                result_upload_progress_context = {
+                    ResultUploadProgressContextKey.JOB_ID: result_shareable.get_header(FLMetaKey.JOB_ID) or "",
+                    ResultUploadProgressContextKey.TASK_ID: current_task.task_id or current_task.msg_id,
+                    ResultUploadProgressContextKey.STREAMING_IDLE_TIMEOUT: streaming_idle_timeout,
+                }
             result_receiver_ids = getattr(current_task, "result_receiver_ids", None)
             self.pipe.cell.update_fobs_context(
                 {
                     FOBSContextKey.DOWNLOAD_COMPLETE_CB: _on_download_done,
-                    FOBSContextKey.STREAM_PROGRESS_CB: _on_result_upload_progress,
+                    FOBSContextKey.STREAM_PROGRESS_CB: (
+                        _on_result_upload_progress if progress_tracking_enabled else None
+                    ),
                     FOBSContextKey.RECEIVER_IDS: result_receiver_ids,
                     RESULT_UPLOAD_PROGRESS_CTX_KEY: result_upload_progress_context,
-                    RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY: _on_download_transaction_created,
+                    RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY: (
+                        _on_download_transaction_created if progress_tracking_enabled else None
+                    ),
                 }
             )
             # Preserve the legacy message-root TTL for fallback paths where reverse
@@ -870,12 +878,12 @@ class FlareAgent:
                 transactions = tuple(result_upload_transactions)
                 download_initiated = bool(transactions) or was_download_initiated()
                 if download_initiated:
-                    if not transactions:
+                    if progress_tracking_enabled and not transactions:
                         transactions = self._register_download_transactions(result_upload_tracker)
                     self.logger.info(
                         f"[subprocess] result ACK'd by CJ in {send_elapsed:.2f}s; " "waiting for server tensor download"
                     )
-                    if transactions:
+                    if progress_tracking_enabled and transactions:
                         wait_start = result_upload_tracker.clock()
                         result_ok = self._wait_for_reverse_result_upload(
                             result_upload_tracker,
@@ -886,8 +894,9 @@ class FlareAgent:
                             transactions=transactions,
                         )
                     else:
+                        reason = "disabled" if not progress_tracking_enabled else "unavailable"
                         self.logger.info(
-                            "[subprocess] result_upload progress tracking unavailable; "
+                            f"[subprocess] result_upload progress tracking {reason}; "
                             f"falling back to download_complete_timeout={self._download_complete_timeout}s"
                         )
                         wait_start = time.time()
@@ -956,7 +965,7 @@ class FlareAgentWithCellPipe(FlareAgent):
         submit_result_timeout=60.0,  # increased from 30.0 — gives CJ enough time to ACK under load
         has_metrics=False,
         download_complete_timeout=DownloadService.FINISHED_REFS_TTL,
-        streaming_idle_timeout=DEFAULT_STREAMING_IDLE_TIMEOUT,
+        streaming_idle_timeout: Optional[float] = DEFAULT_STREAMING_IDLE_TIMEOUT,
         launch_once: bool = False,
     ):
         """Constructor of Flare Agent with Cell Pipe. This is a convenient class.

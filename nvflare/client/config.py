@@ -214,14 +214,19 @@ class ClientConfig:
             )
         )
 
-    def get_streaming_idle_timeout(self) -> float:
-        """Return shared idle timeout for streamed task payloads and result uploads."""
+    def get_streaming_idle_timeout(self) -> Optional[float]:
+        """Return shared idle timeout for streamed task payloads and result uploads.
 
-        return float(
-            self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(
-                ConfigKey.STREAMING_IDLE_TIMEOUT, DEFAULT_STREAMING_IDLE_TIMEOUT
-            )
+        ``None`` is an explicit disabled state written by parent executors that
+        opt out of progress-aware waits.
+        """
+
+        value = self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(
+            ConfigKey.STREAMING_IDLE_TIMEOUT, DEFAULT_STREAMING_IDLE_TIMEOUT
         )
+        if value is None:
+            return None
+        return float(value)
 
     def get_submit_result_timeout(self) -> float:
         """Return the timeout (seconds) for the subprocess to wait for CJ to ACK a result message.

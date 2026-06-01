@@ -472,6 +472,43 @@ def test_absent_streaming_progress_override_preserves_disabled_idle_timeout(monk
     assert executor.streaming_idle_timeout is None
 
 
+def test_prepare_config_exports_disabled_streaming_idle_timeout(monkeypatch):
+    from unittest.mock import MagicMock
+
+    from nvflare.client.config import ClientConfig, ConfigKey
+
+    captured = {}
+    monkeypatch.setattr(
+        "nvflare.app_common.executors.client_api_launcher_executor.write_config_to_file",
+        lambda config_data, config_file_path: captured.update(config_data),
+    )
+    monkeypatch.setattr(
+        "nvflare.app_common.executors.client_api_launcher_executor.update_export_props",
+        lambda config_data, fl_ctx: None,
+    )
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
+    executor.streaming_idle_timeout = None
+    mock_pipe = MagicMock()
+    mock_pipe.export.return_value = ("nvflare.some.PipeClass", {})
+    executor.pipe = mock_pipe
+    executor.get_pipe_channel_name = lambda: "task"
+
+    fake_workspace = MagicMock()
+    fake_workspace.get_app_config_dir.return_value = "/tmp/fake_dir"
+    fake_engine = MagicMock()
+    fake_engine.get_workspace.return_value = fake_workspace
+    fl_ctx = MagicMock()
+    fl_ctx.get_engine.return_value = fake_engine
+    fl_ctx.get_job_id.return_value = "test_job"
+
+    executor.prepare_config_for_launch(fl_ctx)
+
+    task_exchange = captured[ConfigKey.TASK_EXCHANGE]
+    assert task_exchange[ConfigKey.STREAMING_IDLE_TIMEOUT] is None
+    assert ClientConfig(config=captured).get_streaming_idle_timeout() is None
+
+
 def test_streaming_max_peer_silence_override_preserves_disabled_idle_timeout(monkeypatch):
     from nvflare.fuel.f3.streaming.transfer_progress import STREAMING_MAX_PEER_SILENCE
 
