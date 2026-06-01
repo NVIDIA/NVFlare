@@ -345,7 +345,7 @@ def test_task_send_no_progress_budget_uses_startup_grace_when_peer_read_timeout_
     executor = TaskExchanger(pipe_id="pipe", peer_read_timeout=None, streaming_idle_timeout=600.0)
 
     assert (
-        TaskExchanger._get_task_send_no_progress_budget(600.0, None)
+        TaskExchanger._get_task_send_startup_budget(600.0, None)
         == task_exchanger_module.STREAM_PROGRESS_COMPLETION_ACK_GRACE
     )
     assert executor._get_task_send_peer_read_timeout() == task_exchanger_module.STREAM_PROGRESS_COMPLETION_ACK_GRACE
@@ -822,6 +822,33 @@ def test_explicit_low_peer_read_timeout_honors_fast_fail(monkeypatch):
     result = executor._do_execute("train", _make_task(task_id="task-1"), _make_fl_ctx(), _AbortSignal())
 
     assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+    assert any("honoring fast-fail behavior" in msg for _, msg in logs)
+
+
+def test_explicit_low_peer_read_timeout_non_tensor_task_fast_fails(monkeypatch):
+    logs = _patch_logs(monkeypatch)
+    now = [1000.0]
+    monkeypatch.setattr(task_exchanger_module.time, "time", lambda: now[0])
+    executor = TaskExchanger(
+        pipe_id="pipe",
+        peer_read_timeout=1.0,
+        peer_read_timeout_explicit=True,
+        streaming_idle_timeout=600.0,
+    )
+
+    def send_cb(handler, msg, timeout, abort_signal):
+        assert timeout == 1.0
+        now[0] += timeout
+        assert msg._progress_wait_cb() is False
+        return False
+
+    handler = _FakePipeHandler(send_cb)
+    executor.pipe_handler = handler
+
+    result = executor._do_execute("train", _make_task(task_id="non-tensor-task"), _make_fl_ctx(), _AbortSignal())
+
+    assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+    assert handler.send_calls == 1
     assert any("honoring fast-fail behavior" in msg for _, msg in logs)
 
 

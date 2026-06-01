@@ -475,7 +475,15 @@ class TaskExchanger(Executor):
         return True
 
     @staticmethod
-    def _get_task_send_no_progress_budget(
+    def _get_task_send_startup_budget(
+        streaming_idle_timeout: float,
+        peer_read_timeout: Optional[float] = None,
+    ) -> float:
+        peer_read_budget = STREAM_PROGRESS_COMPLETION_ACK_GRACE if peer_read_timeout is None else peer_read_timeout
+        return min(streaming_idle_timeout, max(peer_read_budget, STREAM_PROGRESS_COMPLETION_ACK_GRACE))
+
+    @staticmethod
+    def _get_task_send_completed_ack_budget(
         streaming_idle_timeout: float,
         peer_read_timeout: Optional[float] = None,
     ) -> float:
@@ -516,7 +524,7 @@ class TaskExchanger(Executor):
         records, active_records = self._get_active_task_payload_records(task_id, job_id)
         if not records:
             elapsed = now - send_start_time
-            wait_budget = self._get_task_send_no_progress_budget(streaming_idle_timeout, peer_read_timeout)
+            wait_budget = self._get_task_send_startup_budget(streaming_idle_timeout, peer_read_timeout)
             if elapsed >= wait_budget:
                 return False
             self.log_info(
@@ -527,7 +535,7 @@ class TaskExchanger(Executor):
             return True
 
         if not active_records:
-            completed_ack_budget = self._get_task_send_no_progress_budget(streaming_idle_timeout, peer_read_timeout)
+            completed_ack_budget = self._get_task_send_completed_ack_budget(streaming_idle_timeout, peer_read_timeout)
             if self._recent_completed_records_hold_wait(records, now, fl_ctx, task_name, completed_ack_budget):
                 return True
             return False
