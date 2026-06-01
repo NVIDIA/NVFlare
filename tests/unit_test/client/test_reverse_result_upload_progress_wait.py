@@ -957,7 +957,7 @@ def test_do_submit_result_uses_tracker_clock_for_progress_wait_start():
     assert agent._wait_for_reverse_result_upload.call_args.args[4] == clock.now
 
 
-def test_launch_once_registers_exit_before_result_upload_failure(monkeypatch):
+def test_launch_once_registers_cleanup_before_result_upload_failure(monkeypatch):
     clear_download_initiated()
     pipe = _make_cell_pipe()
     agent = _make_agent(pipe, download_complete_timeout=0.001)
@@ -968,7 +968,6 @@ def test_launch_once_registers_exit_before_result_upload_failure(monkeypatch):
     exit_codes = []
     monkeypatch.setattr(flare_agent_module.atexit, "register", lambda *args: registrations.append(args))
     monkeypatch.setattr(flare_agent_module.os, "_exit", lambda code: exit_codes.append(code))
-    monkeypatch.setattr(flare_agent_module.sys, "excepthook", lambda *args: None)
 
     def _send(reply, timeout):
         ctx = pipe.cell.update_fobs_context.call_args.args[0]
@@ -986,11 +985,12 @@ def test_launch_once_registers_exit_before_result_upload_failure(monkeypatch):
     assert len(registrations) == 1
     assert registrations[0][1:] == ()
     registrations[0][0]()
-    assert exit_codes == [0]
+    assert exit_codes == []
+    agent.pipe_handler.stop.assert_called_with(True)
     agent._wait_for_reverse_result_upload.assert_called_once()
 
 
-def test_launch_once_registers_exit_for_non_pass_through_result(monkeypatch):
+def test_launch_once_registers_cleanup_for_non_pass_through_result(monkeypatch):
     pipe = MagicMock()
     agent = _make_agent(pipe)
     agent._launch_once = True
@@ -998,7 +998,6 @@ def test_launch_once_registers_exit_for_non_pass_through_result(monkeypatch):
     exit_codes = []
     monkeypatch.setattr(flare_agent_module.atexit, "register", lambda *args: registrations.append(args))
     monkeypatch.setattr(flare_agent_module.os, "_exit", lambda code: exit_codes.append(code))
-    monkeypatch.setattr(flare_agent_module.sys, "excepthook", lambda *args: None)
 
     result = agent._do_submit_result(_TaskContext("tid-1", "validate", "msg-1"), None, "OK")
 
@@ -1007,26 +1006,44 @@ def test_launch_once_registers_exit_for_non_pass_through_result(monkeypatch):
     assert len(registrations) == 1
     assert registrations[0][1:] == ()
     registrations[0][0]()
-    assert exit_codes == [0]
+    assert exit_codes == []
+    agent.pipe_handler.stop.assert_called_with(True)
     agent.pipe_handler.send_to_peer.assert_called_once()
 
 
-def test_launch_once_atexit_does_not_force_zero_after_unhandled_exception(monkeypatch):
+def test_launch_once_atexit_cleanup_does_not_force_zero_after_system_exit(monkeypatch):
     agent = FlareAgent.__new__(FlareAgent)
+    agent.logger = MagicMock()
     agent._launch_once = True
     agent._atexit_registered = False
     agent._atexit_lock = threading.Lock()
+    agent.pipe_handler = None
+    agent.metric_pipe_handler = None
     registrations = []
     exit_codes = []
     monkeypatch.setattr(flare_agent_module.atexit, "register", lambda *args: registrations.append(args))
     monkeypatch.setattr(flare_agent_module.os, "_exit", lambda code: exit_codes.append(code))
-    monkeypatch.setattr(flare_agent_module.sys, "excepthook", lambda *args: None)
 
     agent._register_launch_once_exit()
-    flare_agent_module.sys.excepthook(RuntimeError, RuntimeError("boom"), None)
-    registrations[0][0]()
+    try:
+        raise SystemExit(7)
+    except SystemExit:
+        registrations[0][0]()
 
     assert exit_codes == []
+
+
+def test_submit_result_exception_logs_task_and_clears_current_task():
+    agent = _make_agent(MagicMock())
+    agent.task_lock = threading.Lock()
+    agent.current_task = _TaskContext("tid-1", "train", "msg-1")
+    agent._do_submit_result = MagicMock(side_effect=RuntimeError("boom"))
+
+    result = agent.submit_result(None)
+
+    assert result is False
+    assert agent.current_task is None
+    assert any("task 'train' id=tid-1" in call[0][0] for call in agent.logger.error.call_args_list)
 
 
 def test_wait_for_reverse_result_upload_elapsed_uses_tracker_clock():

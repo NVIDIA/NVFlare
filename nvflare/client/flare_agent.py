@@ -423,10 +423,6 @@ class FlareAgent:
         self._launch_once = launch_once
         self._atexit_registered = False
         self._atexit_lock = threading.Lock()
-        self._launch_once_unhandled_exception = False
-        self._launch_once_excepthook_installed = False
-        self._launch_once_excepthook = None
-        self._launch_once_previous_excepthook = None
 
     def start(self):
         """Start the agent.
@@ -604,14 +600,18 @@ class FlareAgent:
                 return False
 
         try:
-            result = self._do_submit_result(current_task, result, rc)
-        except Exception as ex:
-            self.logger.error(f"exception submitting result to {current_task.sender}: {ex}")
-            traceback.print_exc()
-            result = False
-
-        with self.task_lock:
-            self.current_task = None
+            try:
+                result = self._do_submit_result(current_task, result, rc)
+            except Exception as ex:
+                self.logger.error(
+                    f"exception submitting result for task '{current_task.task_name}' "
+                    f"id={current_task.task_id}: {ex}"
+                )
+                traceback.print_exc()
+                result = False
+        finally:
+            with self.task_lock:
+                self.current_task = None
 
         return result
 
@@ -816,38 +816,23 @@ class FlareAgent:
         with self._atexit_lock:
             if not getattr(self, "_launch_once", False) or getattr(self, "_atexit_registered", False):
                 return
-            self._install_launch_once_excepthook()
-            atexit.register(self._launch_once_exit_if_clean)
+            atexit.register(self._launch_once_cleanup)
             self._atexit_registered = True
 
-    def _install_launch_once_excepthook(self):
-        if getattr(self, "_launch_once_excepthook_installed", False):
-            return
-        previous_excepthook = sys.excepthook
-
-        def _mark_unhandled_exception(exc_type, exc, tb):
-            self._launch_once_unhandled_exception = True
-            previous_excepthook(exc_type, exc, tb)
-
-        self._launch_once_previous_excepthook = previous_excepthook
-        self._launch_once_excepthook = _mark_unhandled_exception
-        sys.excepthook = _mark_unhandled_exception
-        self._launch_once_excepthook_installed = True
-
-    def _restore_launch_once_excepthook(self):
-        if (
-            getattr(self, "_launch_once_excepthook", None) is not None
-            and sys.excepthook is self._launch_once_excepthook
-        ):
-            sys.excepthook = self._launch_once_previous_excepthook or sys.__excepthook__
-
-    def _launch_once_exit_if_clean(self):
-        self._restore_launch_once_excepthook()
-        if getattr(self, "_launch_once_unhandled_exception", False):
-            return
+    def _launch_once_cleanup(self):
+        close_pipe = getattr(self, "_close_pipe", True)
+        close_metric_pipe = getattr(self, "_close_metric_pipe", True)
+        pipe_handler = getattr(self, "pipe_handler", None)
+        metric_pipe_handler = getattr(self, "metric_pipe_handler", None)
+        try:
+            if pipe_handler:
+                pipe_handler.stop(close_pipe)
+            if metric_pipe_handler:
+                metric_pipe_handler.stop(close_metric_pipe)
+        except Exception as ex:
+            self.logger.warning(f"[subprocess] launch_once cleanup failed: {ex}")
         sys.stdout.flush()
         sys.stderr.flush()
-        os._exit(0)
 
     def _do_submit_result(self, current_task: _TaskContext, result, rc):
         result_shareable = self.task_result_to_shareable(result, rc)
