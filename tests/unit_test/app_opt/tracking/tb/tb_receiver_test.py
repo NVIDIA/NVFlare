@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -200,3 +201,21 @@ class TestTBAnalyticsReceiver:
         assert len(recall_events) == 1
         assert recall_events[0].step == 5
         assert recall_events[0].value == pytest.approx(0.7)
+
+    def test_initialize_accepts_relative_tb_folder(self, tmp_path):
+        receiver = TBAnalyticsReceiver(tb_folder="tb_events")
+        fl_ctx = _make_fl_ctx(tmp_path / "run")
+
+        receiver.initialize(fl_ctx)
+
+        expected = os.path.realpath(str(tmp_path / "run" / "tb_events"))
+        assert receiver.root_log_dir == expected
+        assert os.path.isdir(expected)
+
+    @pytest.mark.parametrize("tb_folder", ["/tmp/outside_tb_events", "../outside_tb_events"])
+    def test_initialize_rejects_escaping_tb_folder(self, tmp_path, tb_folder):
+        receiver = TBAnalyticsReceiver(tb_folder=tb_folder)
+        fl_ctx = _make_fl_ctx(tmp_path / "run")
+
+        with pytest.raises(ValueError, match="must (be relative|stay inside)"):
+            receiver.initialize(fl_ctx)

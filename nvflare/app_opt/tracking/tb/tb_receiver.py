@@ -19,6 +19,7 @@ from nvflare.apis.analytix import AnalyticsData, AnalyticsDataType
 from nvflare.apis.dxo import from_shareable
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
+from nvflare.app_common.utils.file_utils import resolve_path_under_root
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.app_opt.tracking.tb.tb_event_writer import TensorBoardEventWriter
 
@@ -74,7 +75,7 @@ class TBAnalyticsReceiver(AnalyticsReceiver):
     def initialize(self, fl_ctx: FLContext):
         workspace = fl_ctx.get_engine().get_workspace()
         run_dir = workspace.get_run_dir(fl_ctx.get_job_id())
-        root_log_dir = os.path.join(run_dir, self.tb_folder)
+        root_log_dir = resolve_path_under_root(run_dir, self.tb_folder, "tb_folder")
         os.makedirs(root_log_dir, exist_ok=True)
         self.root_log_dir = root_log_dir
         self.log_info(
