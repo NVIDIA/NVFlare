@@ -449,19 +449,28 @@ class TaskExchanger(Executor):
         record_count -= removed_count
         return record_count < max_records, record_count
 
-    def _recent_completed_records_hold_wait(self, records, now: float, fl_ctx: FLContext, task_name: str) -> bool:
+    def _recent_completed_records_hold_wait(
+        self,
+        records,
+        now: float,
+        fl_ctx: FLContext,
+        task_name: str,
+        completed_ack_budget: float,
+    ) -> bool:
         if not records:
             return False
         completed_records = [record for record in records if record.state == TransferProgressState.COMPLETED]
         if len(completed_records) != len(records):
             return False
         latest_record = max(completed_records, key=lambda record: record.last_progress_time)
-        if now - latest_record.last_progress_time > STREAM_PROGRESS_COMPLETION_ACK_GRACE:
+        elapsed = now - latest_record.last_progress_time
+        if elapsed >= completed_ack_budget:
             return False
         self.log_info(
             fl_ctx,
             f"peer has not ACKed task '{task_name}' yet, but stream transfer "
-            f"'{latest_record.transfer_id}' completed recently; continuing to wait for ACK",
+            f"'{latest_record.transfer_id}' completed {elapsed:.2f} secs ago; continuing to wait "
+            f"until task_send_completed_ack_budget={completed_ack_budget}s",
         )
         return True
 
@@ -518,7 +527,8 @@ class TaskExchanger(Executor):
             return True
 
         if not active_records:
-            if self._recent_completed_records_hold_wait(records, now, fl_ctx, task_name):
+            completed_ack_budget = self._get_task_send_no_progress_budget(streaming_idle_timeout, peer_read_timeout)
+            if self._recent_completed_records_hold_wait(records, now, fl_ctx, task_name, completed_ack_budget):
                 return True
             return False
 

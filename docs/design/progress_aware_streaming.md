@@ -196,11 +196,19 @@ if peer has ACKed/read the task:
     success
 elif task payload transfer has monotonic progress within streaming_idle_timeout:
     continue waiting; do not resend
+elif every observed task payload transfer is completed:
+    continue waiting for ACK until the bounded task-send ACK budget expires
 elif no progress for streaming_idle_timeout:
     fail or retry according to existing resend policy
 ```
 
 This prevents duplicate resend while the previous payload is still materializing.
+Before the first progress record exists, the task-send startup budget preserves the configured `peer_read_timeout`
+where possible, capped by `streaming_idle_timeout`, so non-streaming or non-tensor tasks do not inherit the
+long streaming idle window. After all observed task-payload transfers reach `completed`, CJ keeps polling at the
+short bounded interval but uses the same task-send ACK budget rather than a fixed 30-second grace window. This
+avoids resending after a clean large-payload download when the subprocess still needs time to materialize the
+payload and send the task ACK.
 
 ### 6. Make Reverse Result Upload Progress-Aware
 
@@ -296,7 +304,7 @@ if any unstarted ref/receiver pair has exceeded streaming_idle_timeout since tra
 return continue_waiting
 ```
 
-If `state: "completed"` is observed for every expected `(ref_id, receiver_id)` pair before `DOWNLOAD_COMPLETE_CB` fires, wait for the same post-completion grace used by the forward path (`STREAM_PROGRESS_COMPLETION_ACK_GRACE`, 30 seconds) rather than returning immediately. If the callback does not arrive within that grace window, return success based on the observed all-terminal-success state. This covers callback ordering races while keeping completion bounded.
+If `state: "completed"` is observed for every expected `(ref_id, receiver_id)` pair before `DOWNLOAD_COMPLETE_CB` fires, wait for the reverse-path post-completion grace (`STREAM_PROGRESS_COMPLETION_ACK_GRACE`, 30 seconds) rather than returning immediately. If the callback does not arrive within that grace window, return success based on the observed all-terminal-success state. This covers callback ordering races while keeping completion bounded.
 
 Reverse progress events must use the shared schema:
 
@@ -580,7 +588,9 @@ Each implementation PR should land with the matching deterministic tests from th
 
 4. Add forward task-send wait policy and backpressure:
    - suppress resend while per-transfer monotonic progress remains recent.
-   - fail or retry clearly after `streaming_idle_timeout` when there is no progress.
+   - preserve the configured `peer_read_timeout`, capped by `streaming_idle_timeout`, before the first progress event.
+   - after every observed task-payload transfer is completed, keep polling at the short bounded interval but wait up to the task-send ACK budget before failing.
+   - fail or retry clearly after `streaming_idle_timeout` when an active transfer stops progressing.
    - clear or mark active-transfer state on abort, peer-gone, job kill, or pipe close.
    - honor explicit fast-fail overrides and log the startup WARNING when they can interrupt slow streamed transfers.
 

@@ -478,16 +478,16 @@ def test_task_send_completed_progress_holds_wait_briefly_for_ack(monkeypatch):
     result = executor._do_execute("train", _make_task(), _make_fl_ctx(), _AbortSignal())
 
     assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
-    assert any("completed recently" in msg for _, msg in logs)
+    assert any("task_send_completed_ack_budget" in msg for _, msg in logs)
 
 
-def test_task_send_completion_grace_uses_bounded_poll_interval(monkeypatch):
+def test_task_send_completed_progress_uses_no_progress_budget_not_poll_interval(monkeypatch):
     _patch_logs(monkeypatch)
     now = [1000.0]
     monkeypatch.setattr(task_exchanger_module.time, "time", lambda: now[0])
     executor = TaskExchanger(
         pipe_id="pipe",
-        peer_read_timeout=600.0,
+        peer_read_timeout=60.0,
         streaming_idle_timeout=600.0,
         result_poll_interval=0.01,
     )
@@ -500,6 +500,8 @@ def test_task_send_completion_grace_uses_bounded_poll_interval(monkeypatch):
         )
         assert msg._progress_wait_cb() is True
         now[0] += timeout + 0.1
+        assert msg._progress_wait_cb() is True
+        now[0] += 30.0
         assert msg._progress_wait_cb() is False
         return False
 
@@ -509,6 +511,37 @@ def test_task_send_completion_grace_uses_bounded_poll_interval(monkeypatch):
     result = executor._do_execute("train", _make_task(), _make_fl_ctx(), _AbortSignal())
 
     assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+
+
+def test_task_send_completed_progress_allows_ack_after_first_post_completion_poll(monkeypatch):
+    _patch_logs(monkeypatch)
+    now = [1000.0]
+    monkeypatch.setattr(task_exchanger_module.time, "time", lambda: now[0])
+    executor = TaskExchanger(
+        pipe_id="pipe",
+        peer_read_timeout=60.0,
+        streaming_idle_timeout=600.0,
+        result_poll_interval=0.01,
+    )
+    executor.pipe = object.__new__(CellPipe)
+
+    def send_cb(handler, msg, timeout, abort_signal):
+        assert timeout == task_exchanger_module.STREAM_PROGRESS_COMPLETION_ACK_GRACE
+        executor._handle_stream_progress_message(
+            _progress(task_id=msg.msg_id, sequence=1, bytes_done=1024, state="completed")
+        )
+        now[0] += timeout + 0.1
+        assert msg._progress_wait_cb() is True
+        handler.replies.append(_reply_for(msg))
+        return True
+
+    handler = _FakePipeHandler(send_cb)
+    executor.pipe_handler = handler
+
+    result = executor._do_execute("train", _make_task(), _make_fl_ctx(), _AbortSignal())
+
+    assert result.get_return_code() == ReturnCode.OK
+    assert handler.send_calls == 1
 
 
 def test_non_cell_pipe_keeps_peer_read_timeout_for_task_send():
