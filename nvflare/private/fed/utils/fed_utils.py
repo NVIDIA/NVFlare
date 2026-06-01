@@ -22,7 +22,7 @@ import sys
 import warnings
 from typing import List, Optional, Union
 
-from nvflare.apis.app_validation import AppValidator
+from nvflare.apis.app_validation import AppValidationKey, AppValidator
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLContext
@@ -341,16 +341,28 @@ def fobs_initialize(workspace: Workspace = None, job_id: Optional[str] = None):
 
 def custom_fobs_initialize(workspace: Workspace = None, job_id: Optional[str] = None):
     if workspace:
+        # site-level decomposers are installed by the site admin and always loaded
         site_custom_dir = workspace.get_client_custom_dir()
         decomposer_dir = os.path.join(site_custom_dir, ConfigVarName.DECOMPOSER_MODULE)
         if os.path.exists(decomposer_dir):
             register_custom_folder(decomposer_dir)
 
         if job_id:
-            app_custom_dir = workspace.get_app_config_dir(job_id)
+            # decomposers shipped with the job are custom code: load them only from the job's
+            # custom dir (the BYOC-detected location) and only for BYOC-enabled jobs. Decomposers
+            # placed under the job config dir are intentionally ignored.
+            app_custom_dir = workspace.get_app_custom_dir(job_id)
             decomposer_dir = os.path.join(app_custom_dir, ConfigVarName.DECOMPOSER_MODULE)
-            if os.path.exists(decomposer_dir):
+            if os.path.exists(decomposer_dir) and _job_allows_byoc(workspace, job_id):
                 register_custom_folder(decomposer_dir)
+
+
+def _job_allows_byoc(workspace: Workspace, job_id: str) -> bool:
+    try:
+        job_meta = get_job_meta_from_workspace(workspace, job_id)
+    except Exception:
+        return False
+    return bool(job_meta.get(AppValidationKey.BYOC, False))
 
 
 def nvflare_fobs_initialize():
