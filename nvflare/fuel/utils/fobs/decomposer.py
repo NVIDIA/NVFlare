@@ -12,8 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import inspect
 from abc import ABC, abstractmethod
 from enum import Enum
+from functools import lru_cache
 from typing import Any, List, Optional, Type, TypeVar
 
 # Generic type supported by the decomposer.
@@ -23,6 +25,41 @@ T = TypeVar("T")
 
 DICT_CONTENT = "dict"
 DATA_CONTENT = "data"
+
+
+@lru_cache(maxsize=None)
+def _requires_init_args(cls: type) -> bool:
+    """Return True if ``cls`` cannot be instantiated without arguments.
+
+    Builtin containers like ``dict``/``list`` expose no introspectable signature but do accept
+    no-arg construction, so they return False. The result is cached per class since it is purely a
+    function of the class definition. Note this inspects the call signature only; it deliberately
+    does not run ``__init__``, so a constructor that accepts no args but raises internally is still
+    reported as no-arg-constructible (its error is allowed to surface at call time, not swallowed).
+    """
+    try:
+        signature = inspect.signature(cls)
+    except (ValueError, TypeError):
+        return False
+    try:
+        signature.bind()
+    except TypeError:
+        return True
+    return False
+
+
+def new_empty_container(cls: type):
+    """Create an empty instance of ``cls`` to be repopulated during (de)serialization.
+
+    The exact (sub)class type is preserved so ``strict_types`` packing routes the value back through
+    its decomposer instead of losing the type. When ``cls.__init__`` requires positional arguments
+    (e.g. dict-based edge models like ``SelectionRequest(device_info, job_id)``), ``__init__`` is
+    bypassed via ``__new__`` since only an empty container is needed. Constructor state such as a
+    defaultdict's default_factory is not preserved in that case.
+    """
+    if _requires_init_args(cls):
+        return cls.__new__(cls)
+    return cls()
 
 
 class Decomposer(ABC):
@@ -101,28 +138,10 @@ class Externalizer:
     def __init__(self, manager: DatumManager):
         self.manager = manager
 
-    @staticmethod
-    def _new_container(target):
-        """Create an empty container of the same type as ``target`` to hold externalized values.
-
-        The subclass type is preserved (rather than falling back to a plain dict/list) so that
-        ``strict_types`` packing routes the value back through its decomposer instead of losing the
-        type. Most subclasses accept a no-arg constructor, but some (e.g. dict-based edge models like
-        ``SelectionRequest``, whose ``__init__`` has required positional arguments) do not. For those,
-        ``__init__`` is bypassed via ``__new__`` since externalize only needs an empty container to
-        repopulate. Constructor state such as a defaultdict's default_factory is not preserved either way.
-        """
-        cls = type(target)
-        try:
-            return cls()
-        except TypeError:
-            # subclass __init__ requires arguments - bypass it and build an empty instance
-            return cls.__new__(cls)
-
     def externalize(self, target: Any):
         """Recursively externalize leaf nodes without mutating the source containers.
 
-        Dict/list subclasses are reconstructed at every level (see ``_new_container``), so nested
+        Dict/list subclasses are reconstructed at every level (see ``new_empty_container``), so nested
         container subclasses (both dict and list) may not preserve constructor state such as a
         defaultdict's default_factory or the capacity/initializer argument of a list subclass.
         """
@@ -130,13 +149,13 @@ class Externalizer:
             return target
 
         if isinstance(target, dict):
-            new_target = self._new_container(target)
+            new_target = new_empty_container(type(target))
             for k, v in target.items():
                 new_target[k] = self.externalize(v)
             return new_target
         elif isinstance(target, list):
             # Note: tuple is not supported since it is immutable.
-            new_target = self._new_container(target)
+            new_target = new_empty_container(type(target))
             for v in target:
                 new_target.append(self.externalize(v))
             return new_target
@@ -189,7 +208,9 @@ class DictDecomposer(Decomposer):
     def recompose(self, data: dict, manager: DatumManager = None) -> dict:
         internalizer = Internalizer(manager)
         data = internalizer.internalize(data)
-        obj = self.dict_type()
+        # Mirror the encode side (Externalizer): bypass __init__ for dict subclasses whose
+        # constructor requires arguments, so decode does not raise the same TypeError.
+        obj = new_empty_container(self.dict_type)
         for k, v in data.items():
             obj[k] = v
         return obj
