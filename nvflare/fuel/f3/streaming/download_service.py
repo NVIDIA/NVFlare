@@ -710,6 +710,10 @@ class DownloadService:
         tx = ref.tx
         assert isinstance(tx, _Transaction)
 
+        # Keep produce() outside the global transaction lock so slow chunk generation
+        # does not block unrelated downloads. Timeout/delete cleanup can release the
+        # source concurrently; if that happens, the produce exception is reported as
+        # a download failure for this requester.
         try:
             rc, data, new_state = ref.obj.produce(current_state, requester)
         except Exception as ex:

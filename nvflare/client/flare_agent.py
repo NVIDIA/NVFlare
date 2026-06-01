@@ -818,18 +818,49 @@ class FlareAgent:
             with FlareAgent._atexit_init_lock:
                 if getattr(self, "_atexit_lock", None) is None:
                     self._atexit_lock = threading.Lock()
+        if getattr(self, "_launch_once_cleanup_lock", None) is None:
+            self._launch_once_cleanup_lock = threading.Lock()
         with self._atexit_lock:
             if not getattr(self, "_launch_once", False) or getattr(self, "_atexit_registered", False):
                 return
+            self._start_launch_once_cleanup_watcher()
             atexit.register(self._launch_once_cleanup)
             self._atexit_registered = True
 
+    def _start_launch_once_cleanup_watcher(self):
+        if getattr(self, "_launch_once_cleanup_watcher", None):
+            return
+        watcher = threading.Thread(
+            target=self._launch_once_cleanup_after_main_thread,
+            name="nvflare_launch_once_cleanup",
+            daemon=True,
+        )
+        self._launch_once_cleanup_watcher = watcher
+        watcher.start()
+
+    def _launch_once_cleanup_after_main_thread(self):
+        threading.main_thread().join()
+        self._launch_once_cleanup()
+
     def _launch_once_cleanup(self):
+        cleanup_lock = getattr(self, "_launch_once_cleanup_lock", None)
+        if cleanup_lock is None:
+            cleanup_lock = threading.Lock()
+            self._launch_once_cleanup_lock = cleanup_lock
+        with cleanup_lock:
+            if getattr(self, "_launch_once_cleanup_done", False):
+                return
+            self._launch_once_cleanup_done = True
+
         close_pipe = getattr(self, "_close_pipe", True)
         close_metric_pipe = getattr(self, "_close_metric_pipe", True)
         pipe_handler = getattr(self, "pipe_handler", None)
         metric_pipe_handler = getattr(self, "metric_pipe_handler", None)
         try:
+            # The daemon watcher calls this after the user main thread returns, before
+            # Python waits forever on F3 non-daemon threads. The atexit registration is
+            # only an idempotent backup. Do not call os._exit(0): that masks later user
+            # sys.exit(nonzero) and unhandled script failures.
             if pipe_handler:
                 pipe_handler.stop(close_pipe)
             if metric_pipe_handler:

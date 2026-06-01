@@ -15,6 +15,7 @@
 import copy
 import threading
 import time as _real_time
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -450,10 +451,12 @@ def test_streaming_idle_timeout_override_mutates_tracker_under_lock(monkeypatch)
         raise AssertionError("streaming idle override must not replace the in-flight progress tracker")
 
     executor._make_stream_progress_tracker = _make_tracker
+    old_tracker.set_idle_timeout = MagicMock(wraps=old_tracker.set_idle_timeout)
     executor._apply_streaming_progress_client_config_overrides(_FakeFLContext(_FakeCell()))
 
     assert lock.entered
     assert executor._stream_progress_tracker is old_tracker
+    old_tracker.set_idle_timeout.assert_called_once_with(1200.0)
     assert executor._stream_progress_tracker.idle_timeout == 1200.0
 
 

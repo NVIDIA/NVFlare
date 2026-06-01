@@ -436,3 +436,13 @@ def test_resolve_streaming_progress_config_rejects_non_finite_values(key, value)
 def test_transfer_progress_tracker_rejects_non_finite_idle_timeout(value):
     with pytest.raises(ValueError, match="finite"):
         TransferProgressTracker(idle_timeout=value)
+
+
+def test_transfer_progress_tracker_set_idle_timeout_validates_and_coerces():
+    tracker = TransferProgressTracker(idle_timeout=60.0)
+
+    tracker.set_idle_timeout(120)
+
+    assert tracker.idle_timeout == 120.0
+    with pytest.raises(ValueError, match="finite"):
+        tracker.set_idle_timeout(float("inf"))

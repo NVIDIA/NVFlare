@@ -380,7 +380,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         self.logger.debug(f"ViaDownloader: created ref for target {target_id}: {item_id}")
         return {EncKey.TYPE: EncType.REF, EncKey.DATA: item_id}
 
-    def _create_downloader(self, fobs_ctx: dict, progress_cb=None, timeout_override=None):
+    def _create_downloader(self, fobs_ctx: dict, progress_cb=None, timeout_override=None, num_receivers_override=None):
         # Transaction lifecycle is managed solely by _monitor_tx() (download_service.py).
         # We deliberately do NOT subscribe to msg_root deletion here.  The msg_root is
         # deleted as soon as all blobs are delivered, but blob_cb fires asynchronously —
@@ -425,7 +425,11 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         downloader = None
         cell = fobs_ctx.get(fobs.FOBSContextKey.CELL)
         if cell:
-            num = fobs_ctx.get(fobs.FOBSContextKey.NUM_RECEIVERS)
+            num = (
+                num_receivers_override
+                if num_receivers_override is not None
+                else fobs_ctx.get(fobs.FOBSContextKey.NUM_RECEIVERS)
+            )
             num_receivers = num if num else 1
 
             # Optional lifecycle callback set by FlareAgent._do_submit_result()
@@ -469,6 +473,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
                 f"using {len(deduped)} unique receiver(s)"
             )
             normalized = deduped
+            num_receivers = len(normalized)
         if num_receivers > 0 and len(normalized) != num_receivers:
             self.logger.warning(
                 f"{RESULT_UPLOAD_RECEIVER_IDS_CTX_KEY} has {len(normalized)} receivers, "
@@ -582,6 +587,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         if downloadable_objs:
             num_receivers = fobs_ctx.get(fobs.FOBSContextKey.NUM_RECEIVERS) or 1
             receiver_ids = self._get_result_upload_receiver_ids(fobs_ctx, num_receivers)
+            download_num_receivers = len(receiver_ids) if receiver_ids else num_receivers
             progress_requested = bool(fobs_ctx.get(fobs.FOBSContextKey.STREAM_PROGRESS_CB))
             progress_cb = self._make_result_upload_progress_cb(fobs_ctx, receiver_ids) if receiver_ids else None
             progress_trackable = bool(progress_cb and receiver_ids)
@@ -599,6 +605,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
                 fobs_ctx,
                 progress_cb=progress_cb if progress_trackable else None,
                 timeout_override=timeout_override,
+                num_receivers_override=download_num_receivers,
             )
             if downloader is None:
                 self.logger.warning("download transaction was not created because FOBS context has no cell")

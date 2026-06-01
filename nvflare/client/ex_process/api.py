@@ -288,6 +288,11 @@ class ExProcessClientAPI(APISpec):
         return model_registry.get_model(timeout)
 
     def send(self, model: FLModel, clear_cache: bool = True) -> None:
+        """Submit a model result to FLARE.
+
+        Raises:
+            RuntimeError: If no model has been received yet or if FLARE rejects/does not accept the submission.
+        """
         model_registry = self.get_model_registry()
         if not self.receive_called:
             raise RuntimeError('"receive" needs to be called before sending model!')

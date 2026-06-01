@@ -1064,6 +1064,56 @@ def test_launch_once_atexit_cleanup_does_not_force_zero_after_system_exit(monkey
     assert exit_codes == []
 
 
+def test_launch_once_cleanup_stops_task_and_metric_handlers_without_force_exit(monkeypatch):
+    agent = FlareAgent.__new__(FlareAgent)
+    agent.logger = MagicMock()
+    agent._close_pipe = True
+    agent._close_metric_pipe = True
+    agent.pipe_handler = MagicMock()
+    agent.metric_pipe_handler = MagicMock()
+    exit_codes = []
+    monkeypatch.setattr(flare_agent_module.os, "_exit", lambda code: exit_codes.append(code))
+
+    agent._launch_once_cleanup()
+
+    agent.pipe_handler.stop.assert_called_once_with(True)
+    agent.metric_pipe_handler.stop.assert_called_once_with(True)
+    assert exit_codes == []
+
+
+def test_launch_once_cleanup_watcher_runs_after_main_thread_finishes(monkeypatch):
+    agent = FlareAgent.__new__(FlareAgent)
+    agent.logger = MagicMock()
+    agent._close_pipe = True
+    agent._close_metric_pipe = True
+    agent.pipe_handler = MagicMock()
+    agent.metric_pipe_handler = None
+    joined = []
+
+    class FakeMainThread:
+        def join(self):
+            joined.append(True)
+
+    class FakeThread:
+        def __init__(self, target, name=None, daemon=False):
+            self.target = target
+            self.name = name
+            self.daemon = daemon
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(flare_agent_module.threading, "main_thread", lambda: FakeMainThread())
+    monkeypatch.setattr(flare_agent_module.threading, "Thread", FakeThread)
+
+    agent._start_launch_once_cleanup_watcher()
+
+    assert joined == [True]
+    assert agent._launch_once_cleanup_watcher.name == "nvflare_launch_once_cleanup"
+    assert agent._launch_once_cleanup_watcher.daemon is True
+    agent.pipe_handler.stop.assert_called_once_with(True)
+
+
 def test_submit_result_exception_logs_task_and_clears_current_task():
     agent = _make_agent(MagicMock())
     agent.task_lock = threading.Lock()

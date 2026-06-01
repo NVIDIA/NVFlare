@@ -142,9 +142,12 @@ class TransferProgressTracker:
         idle_timeout: float = DEFAULT_STREAMING_IDLE_TIMEOUT,
         clock: Optional[Callable[[], float]] = None,
     ):
-        self.idle_timeout = check_positive_finite_number("idle_timeout", idle_timeout)
+        self.set_idle_timeout(idle_timeout)
         self._clock = clock or time.time
         self._records: Dict[TransferProgressKey, TransferProgressRecord] = {}
+
+    def set_idle_timeout(self, idle_timeout: float):
+        self.idle_timeout = check_positive_finite_number("idle_timeout", idle_timeout)
 
     def update(
         self,

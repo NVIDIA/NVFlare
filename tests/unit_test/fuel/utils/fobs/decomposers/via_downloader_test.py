@@ -331,12 +331,13 @@ class TestResultUploadProgressWiring:
 
         assert events[-1]["receiver_id"] == "server"
 
-    def test_duplicate_receiver_ids_disable_progress_tracking(self, monkeypatch):
+    def test_duplicate_receiver_ids_dedupe_expected_pairs_and_download_receiver_count(self, monkeypatch):
         obj = _FakeDownloadable([(ProduceRC.OK, b"abc", {})])
+        events = []
         fobs_ctx = {
             fobs.FOBSContextKey.CELL: object(),
             fobs.FOBSContextKey.NUM_RECEIVERS: 2,
-            fobs.FOBSContextKey.STREAM_PROGRESS_CB: lambda **kwargs: None,
+            fobs.FOBSContextKey.STREAM_PROGRESS_CB: lambda **kwargs: events.append(kwargs),
             RESULT_UPLOAD_RECEIVER_IDS_CTX_KEY: ["server", "server"],
             via_downloader_module._CtxKey.MSG_ROOT_TTL: 1800.0,
             via_downloader_module._CtxKey.OBJECTS: [("ref-1", obj)],
@@ -344,8 +345,9 @@ class TestResultUploadProgressWiring:
 
         downloader = self._finalize(monkeypatch, fobs_ctx)
 
-        assert get_download_transactions() == ()
-        assert downloader.kwargs["progress_cb"] is None
+        assert get_download_transactions()[0].expected_pairs == (("ref-1", "server"),)
+        assert downloader.kwargs["num_receivers"] == 1
+        assert downloader.kwargs["progress_cb"] is not None
         assert downloader.added == [("ref-1", obj)]
 
     def test_unknown_multi_receiver_transaction_is_not_marked_progress_trackable(self, monkeypatch):
