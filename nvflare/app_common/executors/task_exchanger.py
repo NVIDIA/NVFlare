@@ -168,6 +168,8 @@ class TaskExchanger(Executor):
         self.heartbeat_timeout = heartbeat_timeout
         self.resend_interval = resend_interval
         self.max_resends = max_resends
+        # Timeout values are immutable after construction. Send-loop readers use snapshots to keep related
+        # values consistent and to make future runtime reconfiguration explicit.
         self.peer_read_timeout = peer_read_timeout
         self.peer_read_timeout_explicit = peer_read_timeout_explicit
         self.streaming_idle_timeout = streaming_idle_timeout
@@ -496,9 +498,7 @@ class TaskExchanger(Executor):
         send_start_time: float,
         fl_ctx: FLContext,
     ) -> bool:
-        with self._stream_progress_lock:
-            streaming_idle_timeout = self.streaming_idle_timeout
-            peer_read_timeout = self.peer_read_timeout
+        _, peer_read_timeout, streaming_idle_timeout = self._get_streaming_timeout_snapshot()
 
         if not streaming_idle_timeout:
             return False
@@ -617,6 +617,12 @@ class TaskExchanger(Executor):
         )
 
     def _get_task_send_peer_read_timeout(self):
+        """Return the per-send wait timeout used by PipeHandler.
+
+        CellPipe can extend bounded waits through progress callbacks. Other pipe types do not honor
+        those callbacks, so an explicitly disabled peer timeout stays `None` and defers to
+        PipeHandler.default_request_timeout.
+        """
         peer_read_timeout_explicit, peer_read_timeout, streaming_idle_timeout = self._get_streaming_timeout_snapshot()
         if peer_read_timeout is None:
             if streaming_idle_timeout and (self.pipe is None or isinstance(self.pipe, CellPipe)):

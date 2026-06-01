@@ -691,6 +691,7 @@ class FlareAgent:
                 )
 
     def _finish_reverse_result_upload_wait(self, decision, tracker, transactions, wait_start):
+        """Log the final reverse result-upload decision and fail open transactions on explicit failure."""
         elapsed = tracker.clock() - wait_start
         if decision.success:
             self.logger.info(
@@ -706,6 +707,12 @@ class FlareAgent:
     def _wait_for_reverse_result_upload(
         self, tracker, progress_event, download_done, download_status, wait_start, transactions=()
     ):
+        """Wait for pass-through result refs to be pulled by downstream receivers.
+
+        The wait can end through the normal tracker decision, a DOWNLOAD_COMPLETE_CB callback that races
+        with shutdown, or completion-grace recovery when every expected ref already reached terminal
+        success but the callback has not arrived yet.
+        """
         while True:
             progress_event.clear()
             decision = tracker.decide(callback_fired=download_done.is_set(), callback_status=download_status[0])
