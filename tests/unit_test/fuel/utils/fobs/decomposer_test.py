@@ -20,7 +20,7 @@ import pytest
 from nvflare.apis.shareable import Shareable, make_copy
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.datum import DatumManager, DatumRef
-from nvflare.fuel.utils.fobs.decomposer import DictDecomposer, Externalizer
+from nvflare.fuel.utils.fobs.decomposer import DictDecomposer, Externalizer, new_empty_container
 
 
 class DataClass:
@@ -47,6 +47,32 @@ class IntEnumClass(IntEnum):
 
 class DictClass(dict):
     pass
+
+
+class RequiredArgDict(dict):
+    """Dict subclass whose __init__ requires positional args, like the edge SelectionRequest model."""
+
+    def __init__(self, a, b, **kwargs):
+        super().__init__()
+        self["a"] = a
+        self["b"] = b
+        if kwargs:
+            self.update(kwargs)
+
+
+class RequiredArgList(list):
+    """List subclass whose __init__ requires a positional arg."""
+
+    def __init__(self, capacity):
+        super().__init__()
+        self.capacity = capacity
+
+
+class NoArgTypeErrorDict(dict):
+    """Dict subclass whose no-arg constructor raises TypeError internally."""
+
+    def __init__(self):
+        raise TypeError("internal constructor bug")
 
 
 class TestDecomposers:
@@ -129,6 +155,52 @@ class TestDecomposers:
         assert restored["data"]["blob"] == blob
         assert restored["data"]["items"][0] == list_blob
         assert restored["data"]["items"][1]["nested"] == nested_list_blob
+
+    def test_externalize_dict_subclass_with_required_constructor_args(self):
+        # Regression: Externalizer rebuilt containers via type(target)(), which raises TypeError for
+        # dict subclasses whose __init__ has required positional args (e.g. edge SelectionRequest).
+        nested = RequiredArgDict("n1", "n2")
+        source = Shareable({"selection": RequiredArgDict("v1", "v2", nested=nested, blob=b"x" * 2048)})
+
+        externalized = Externalizer(DatumManager(1024)).externalize(source)
+
+        selection = externalized["selection"]
+        assert isinstance(selection, RequiredArgDict)
+        assert selection["a"] == "v1" and selection["b"] == "v2"
+        assert isinstance(selection["nested"], RequiredArgDict)
+        assert selection["nested"]["a"] == "n1" and selection["nested"]["b"] == "n2"
+        # large payload was replaced with a DatumRef in the returned tree only
+        assert isinstance(selection["blob"], DatumRef)
+        assert source["selection"]["blob"] == b"x" * 2048
+
+    def test_externalize_list_subclass_with_required_constructor_args(self):
+        # Regression: same no-arg reconstruction failure for list subclasses.
+        items = RequiredArgList(10)
+        items.extend(["a", "b"])
+        source = Shareable({"items": items})
+
+        externalized = Externalizer(DatumManager(1024)).externalize(source)
+
+        assert isinstance(externalized["items"], RequiredArgList)
+        assert list(externalized["items"]) == ["a", "b"]
+
+    def test_fobs_round_trip_list_subclass_with_required_constructor_args(self):
+        # Regression: preserving the list subclass type must not drop its list contents
+        # when FOBS routes the value through DataClassDecomposer.
+        items = RequiredArgList(10)
+        items.extend(["a", "b"])
+        source = Shareable({"items": items})
+
+        restored = fobs.loads(fobs.dumps(source))
+
+        assert isinstance(restored["items"], RequiredArgList)
+        assert list(restored["items"]) == ["a", "b"]
+
+    def test_new_empty_container_does_not_mask_no_arg_constructor_type_error(self):
+        # The fallback to __new__ is only for signatures that require init args. TypeErrors raised
+        # inside a no-arg constructor should still surface instead of being silently bypassed.
+        with pytest.raises(TypeError, match="internal constructor bug"):
+            new_empty_container(NoArgTypeErrorDict)
 
     @staticmethod
     def _check_decomposer(data, clear_decomposers=True):
