@@ -587,6 +587,8 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         if downloadable_objs:
             num_receivers = fobs_ctx.get(fobs.FOBSContextKey.NUM_RECEIVERS) or 1
             receiver_ids = self._get_result_upload_receiver_ids(fobs_ctx, num_receivers)
+            # Use the deduped receiver tuple length so DownloadService's completion
+            # accounting matches the distinct downstream receivers that can report done.
             download_num_receivers = len(receiver_ids) if receiver_ids else num_receivers
             progress_requested = bool(fobs_ctx.get(fobs.FOBSContextKey.STREAM_PROGRESS_CB))
             progress_cb = self._make_result_upload_progress_cb(fobs_ctx, receiver_ids) if receiver_ids else None

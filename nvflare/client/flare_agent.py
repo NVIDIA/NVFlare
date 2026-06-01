@@ -428,6 +428,8 @@ class FlareAgent:
         self._launch_once = launch_once
         self._atexit_registered = False
         self._atexit_lock = threading.Lock()
+        self._launch_once_cleanup_lock = threading.Lock()
+        self._launch_once_cleanup_done = False
 
     def start(self):
         """Start the agent.
@@ -818,14 +820,23 @@ class FlareAgent:
             with FlareAgent._atexit_init_lock:
                 if getattr(self, "_atexit_lock", None) is None:
                     self._atexit_lock = threading.Lock()
-        if getattr(self, "_launch_once_cleanup_lock", None) is None:
-            self._launch_once_cleanup_lock = threading.Lock()
+        self._get_launch_once_cleanup_lock()
         with self._atexit_lock:
             if not getattr(self, "_launch_once", False) or getattr(self, "_atexit_registered", False):
                 return
             self._start_launch_once_cleanup_watcher()
             atexit.register(self._launch_once_cleanup)
             self._atexit_registered = True
+
+    def _get_launch_once_cleanup_lock(self):
+        cleanup_lock = getattr(self, "_launch_once_cleanup_lock", None)
+        if cleanup_lock is None:
+            with FlareAgent._atexit_init_lock:
+                cleanup_lock = getattr(self, "_launch_once_cleanup_lock", None)
+                if cleanup_lock is None:
+                    cleanup_lock = threading.Lock()
+                    self._launch_once_cleanup_lock = cleanup_lock
+        return cleanup_lock
 
     def _start_launch_once_cleanup_watcher(self):
         if getattr(self, "_launch_once_cleanup_watcher", None):
@@ -843,32 +854,39 @@ class FlareAgent:
         self._launch_once_cleanup()
 
     def _launch_once_cleanup(self):
-        cleanup_lock = getattr(self, "_launch_once_cleanup_lock", None)
-        if cleanup_lock is None:
-            cleanup_lock = threading.Lock()
-            self._launch_once_cleanup_lock = cleanup_lock
+        cleanup_lock = self._get_launch_once_cleanup_lock()
         with cleanup_lock:
             if getattr(self, "_launch_once_cleanup_done", False):
                 return
-            self._launch_once_cleanup_done = True
 
-        close_pipe = getattr(self, "_close_pipe", True)
-        close_metric_pipe = getattr(self, "_close_metric_pipe", True)
-        pipe_handler = getattr(self, "pipe_handler", None)
-        metric_pipe_handler = getattr(self, "metric_pipe_handler", None)
-        try:
             # The daemon watcher calls this after the user main thread returns, before
             # Python waits forever on F3 non-daemon threads. The atexit registration is
-            # only an idempotent backup. Do not call os._exit(0): that masks later user
-            # sys.exit(nonzero) and unhandled script failures.
-            if pipe_handler:
-                pipe_handler.stop(close_pipe)
-            if metric_pipe_handler:
-                metric_pipe_handler.stop(close_metric_pipe)
-        except Exception as ex:
-            self.logger.warning(f"[subprocess] launch_once cleanup failed: {ex}")
-        sys.stdout.flush()
-        sys.stderr.flush()
+            # only an idempotent backup. PipeHandler.stop() must synchronously close and
+            # join the F3 threads; keep this lock held through those calls so a
+            # concurrent atexit invocation waits for the watcher rather than returning
+            # before cleanup finishes.
+            close_pipe = getattr(self, "_close_pipe", True)
+            close_metric_pipe = getattr(self, "_close_metric_pipe", True)
+            pipe_handler = getattr(self, "pipe_handler", None)
+            metric_pipe_handler = getattr(self, "metric_pipe_handler", None)
+            cleanup_errors = []
+            for handler_name, handler, close_handler_pipe in (
+                ("task", pipe_handler, close_pipe),
+                ("metric", metric_pipe_handler, close_metric_pipe),
+            ):
+                if not handler:
+                    continue
+                try:
+                    handler.stop(close_handler_pipe)
+                except Exception as ex:
+                    cleanup_errors.append((handler_name, ex))
+            self._launch_once_cleanup_done = True
+            for handler_name, ex in cleanup_errors:
+                self.logger.warning(f"[subprocess] launch_once {handler_name} cleanup failed: {ex}")
+            # Do not call os._exit(0): that masks later user sys.exit(nonzero) and
+            # unhandled script failures.
+            sys.stdout.flush()
+            sys.stderr.flush()
 
     def _do_submit_result(self, current_task: _TaskContext, result, rc):
         result_shareable = self.task_result_to_shareable(result, rc)

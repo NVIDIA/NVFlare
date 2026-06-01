@@ -619,6 +619,8 @@ class DownloadService:
             cls._finished_refs.clear()
 
         with cls._init_lock:
+            # Shutdown resets callback-registration state even when a cell is still
+            # strongly held, so a later isolated service setup registers callbacks again.
             cls._initialized_cells.clear()
 
         for tx in tx_list:

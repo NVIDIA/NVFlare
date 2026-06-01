@@ -1081,6 +1081,66 @@ def test_launch_once_cleanup_stops_task_and_metric_handlers_without_force_exit(m
     assert exit_codes == []
 
 
+def test_launch_once_cleanup_stops_metric_handler_if_task_handler_fails():
+    agent = FlareAgent.__new__(FlareAgent)
+    agent.logger = MagicMock()
+    agent._close_pipe = True
+    agent._close_metric_pipe = True
+    agent.pipe_handler = MagicMock()
+    agent.pipe_handler.stop.side_effect = RuntimeError("task stop failed")
+    agent.metric_pipe_handler = MagicMock()
+
+    agent._launch_once_cleanup()
+
+    agent.pipe_handler.stop.assert_called_once_with(True)
+    agent.metric_pipe_handler.stop.assert_called_once_with(True)
+    agent.logger.warning.assert_called_once()
+    assert agent._launch_once_cleanup_done is True
+
+
+def test_launch_once_cleanup_serializes_concurrent_callers_until_stop_finishes():
+    agent = FlareAgent.__new__(FlareAgent)
+    agent.logger = MagicMock()
+    agent._close_pipe = True
+    agent._close_metric_pipe = True
+    agent.metric_pipe_handler = None
+    started = threading.Event()
+    release = threading.Event()
+
+    def _stop(_close_pipe):
+        started.set()
+        assert release.wait(timeout=1.0)
+
+    agent.pipe_handler = MagicMock()
+    agent.pipe_handler.stop.side_effect = _stop
+
+    first = threading.Thread(target=agent._launch_once_cleanup)
+    first.start()
+    assert started.wait(timeout=1.0)
+
+    second_started = threading.Event()
+    second_finished = threading.Event()
+
+    def _second_cleanup():
+        second_started.set()
+        agent._launch_once_cleanup()
+        second_finished.set()
+
+    second = threading.Thread(target=_second_cleanup)
+    second.start()
+    assert second_started.wait(timeout=1.0)
+    assert not second_finished.is_set()
+
+    release.set()
+    first.join(timeout=1.0)
+    second.join(timeout=1.0)
+
+    assert not first.is_alive()
+    assert not second.is_alive()
+    agent.pipe_handler.stop.assert_called_once_with(True)
+    assert second_finished.is_set()
+
+
 def test_launch_once_cleanup_watcher_runs_after_main_thread_finishes(monkeypatch):
     agent = FlareAgent.__new__(FlareAgent)
     agent.logger = MagicMock()
