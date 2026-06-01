@@ -401,17 +401,25 @@ In `main`, they should become advanced overrides, not the normal solution.
 
 `streaming_idle_timeout` is the shared idle-timeout knob for both `task_payload_download` and `result_upload`. V1 should not introduce separate forward/reverse idle settings unless operational evidence shows the two directions need different policies.
 
-Where fixed values are not explicitly configured by the user, derive effective defaults from the generic idle policy:
+Where fixed values are not explicitly configured by the user, use the generic idle policy for active stream
+transfers, not as a blanket replacement for task-send startup/crash detection:
 
 ```text
-effective_peer_read_timeout = max(default_peer_read_timeout, streaming_idle_timeout)
+active_stream_idle_timeout = streaming_idle_timeout
+no_progress_task_send_budget = min(streaming_idle_timeout, max(peer_read_timeout or 30, 30))
 effective_heartbeat_timeout = max(default_heartbeat_timeout, streaming_idle_timeout)
 effective_min_download_timeout = max(default_min_download_timeout, streaming_idle_timeout)
 ```
 
+`peer_read_timeout` should remain the no-progress startup budget for task sends. Once a
+`task_payload_download` progress record exists, the wait policy switches to
+`streaming_idle_timeout` as the idle budget for the active transfer. This avoids stretching
+non-tensor task crash detection to the full streaming idle timeout while still allowing
+large streamed payloads to continue as long as monotonic progress is observed.
+
 Explicit user-configured values should be honored to preserve fast-fail semantics. If a user explicitly sets `peer_read_timeout=120`, NVFLARE should not silently raise it to 600. Instead, log that the explicit fast-fail setting can still interrupt slow streamed transfers.
 
-`add_client_config()` overrides are explicit by construction. Constructor/job-config values that intentionally preserve a lower fast-fail timeout should set `peer_read_timeout_explicit=True` or `heartbeat_timeout_explicit=True`; otherwise constructor defaults may be raised to the streaming idle timeout as compatibility defaults.
+`add_client_config()` overrides are explicit by construction. Constructor/job-config values that intentionally preserve a lower heartbeat fast-fail timeout should set `heartbeat_timeout_explicit=True`; otherwise constructor heartbeat defaults may be raised to the streaming idle timeout as compatibility defaults. `peer_read_timeout` does not need to be raised for the progress-aware CellPipe path because the progress callback controls continued waiting after transfer progress starts.
 
 That warning should be a startup WARNING-level log when an explicit `peer_read_timeout` or `heartbeat_timeout` is lower than `streaming_idle_timeout`.
 

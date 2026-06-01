@@ -336,17 +336,6 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                 return
 
             if (
-                not self.peer_read_timeout_explicit
-                and self.peer_read_timeout is not None
-                and self.peer_read_timeout < streaming_idle_timeout
-            ):
-                old_value = self.peer_read_timeout
-                self.peer_read_timeout = streaming_idle_timeout
-                log_messages.append(
-                    f"Using streaming_idle_timeout for peer_read_timeout: {old_value}s -> {self.peer_read_timeout}s"
-                )
-
-            if (
                 not self.heartbeat_timeout_explicit
                 and self.heartbeat_timeout is not None
                 and self.heartbeat_timeout < streaming_idle_timeout
@@ -479,21 +468,22 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                 "heartbeat fast-fail timeout instead of extending peer liveness on stream progress.",
             )
 
-        if configured_per_req is not None and self.peer_read_timeout is None:
-            self.log_warning(
-                fl_ctx,
-                "Timeout inconsistency: peer_read_timeout is not set after applying job-config overrides. "
-                "Large task payloads may fall back to a shorter pipe default and resend while the subprocess is "
-                f"still downloading. Set peer_read_timeout >= {per_req}s in job config.",
-            )
-        elif configured_per_req is not None and self.peer_read_timeout < per_req:
-            self.log_warning(
-                fl_ctx,
-                f"Timeout inconsistency: peer_read_timeout ({self.peer_read_timeout}s, after job-config overrides) < "
-                f"{prefix}streaming_per_request_timeout ({per_req}s). "
-                "The CJ may resend the task while the subprocess is still downloading large payloads. "
-                f"Set peer_read_timeout >= {per_req}s in job config.",
-            )
+        if configured_per_req is not None and self.streaming_idle_timeout is None:
+            if self.peer_read_timeout is None:
+                self.log_warning(
+                    fl_ctx,
+                    "Timeout inconsistency: peer_read_timeout is not set after applying job-config overrides. "
+                    "Large task payloads may fall back to a shorter pipe default and resend while the subprocess is "
+                    f"still downloading. Set peer_read_timeout >= {per_req}s in job config.",
+                )
+            elif self.peer_read_timeout < per_req:
+                self.log_warning(
+                    fl_ctx,
+                    f"Timeout inconsistency: peer_read_timeout ({self.peer_read_timeout}s, after job-config "
+                    f"overrides) < {prefix}streaming_per_request_timeout ({per_req}s). "
+                    "The CJ may resend the task while the subprocess is still downloading large payloads. "
+                    f"Set peer_read_timeout >= {per_req}s in job config.",
+                )
 
         if configured_per_req is not None and self.heartbeat_timeout is None:
             self.heartbeat_timeout = per_req

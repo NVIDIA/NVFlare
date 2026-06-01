@@ -280,7 +280,7 @@ class _RecordingLock:
 
 
 def test_peer_read_timeout_not_overridden_when_absent(monkeypatch):
-    """When PEER_READ_TIMEOUT is absent from config, peer_read_timeout follows the generic streaming idle default."""
+    """When PEER_READ_TIMEOUT is absent from config, preserve the no-progress startup budget."""
     monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
     monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
     monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None)
@@ -293,7 +293,7 @@ def test_peer_read_timeout_not_overridden_when_absent(monkeypatch):
 
     executor.initialize(fl_ctx)
 
-    assert executor.peer_read_timeout == 600.0
+    assert executor.peer_read_timeout == 300.0
     assert executor.peer_read_timeout_explicit is False
 
 
@@ -426,7 +426,7 @@ def test_streaming_idle_timeout_overridden_from_config(monkeypatch):
 
     assert executor.streaming_idle_timeout == 1200.0
     assert executor._stream_progress_tracker.idle_timeout == 1200.0
-    assert executor.peer_read_timeout == 1200.0
+    assert executor.peer_read_timeout == 300.0
     assert executor.heartbeat_timeout == 1200.0
 
 
@@ -460,7 +460,7 @@ def test_streaming_idle_timeout_override_mutates_tracker_under_lock(monkeypatch)
     assert executor._stream_progress_tracker.idle_timeout == 1200.0
 
 
-def test_streaming_timeout_defaults_mutate_peer_timeouts_under_lock(monkeypatch):
+def test_streaming_timeout_defaults_mutate_heartbeat_under_lock_and_preserve_peer_read(monkeypatch):
     monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None)
 
     executor = ClientAPILauncherExecutor(pipe_id="test_pipe", peer_read_timeout=300.0, heartbeat_timeout=300.0)
@@ -476,7 +476,7 @@ def test_streaming_timeout_defaults_mutate_peer_timeouts_under_lock(monkeypatch)
     executor._apply_streaming_timeout_defaults(_FakeFLContext(_FakeCell()))
 
     assert lock.entered
-    assert executor.peer_read_timeout == 600.0
+    assert executor.peer_read_timeout == 300.0
     assert executor.heartbeat_timeout == 600.0
 
 
@@ -1281,8 +1281,8 @@ def test_no_warning_when_all_timeouts_consistent(monkeypatch):
     assert warnings == [], warnings
 
 
-def test_non_explicit_peer_read_less_than_per_req_uses_streaming_idle(monkeypatch):
-    """Non-explicit peer_read_timeout follows streaming_idle_timeout before legacy per-request checks."""
+def test_non_explicit_peer_read_less_than_per_req_preserves_startup_budget(monkeypatch):
+    """Non-explicit peer_read_timeout remains the no-progress startup budget when streaming is enabled."""
     import nvflare.fuel.utils.app_config_utils as acu
     from nvflare.apis.fl_constant import ConfigVarName
     from nvflare.fuel.utils.config_service import ConfigService
@@ -1306,7 +1306,7 @@ def test_non_explicit_peer_read_less_than_per_req_uses_streaming_idle(monkeypatc
     )
     executor.initialize(fl_ctx)
 
-    assert executor.peer_read_timeout == 600.0
+    assert executor.peer_read_timeout == 300.0
     assert not any("peer_read_timeout" in w and "streaming_per_request_timeout" in w for w in warnings), warnings
 
 
@@ -1339,8 +1339,8 @@ def test_non_explicit_heartbeat_less_than_per_req_uses_streaming_idle(monkeypatc
     assert not any("heartbeat_timeout" in w and "streaming_per_request_timeout" in w for w in warnings), warnings
 
 
-def test_timeout_warning_peer_read_none_when_per_req_is_configured(monkeypatch):
-    """A warning must fire when peer_read_timeout is unset and streaming timeout is configured."""
+def test_peer_read_none_does_not_warn_when_streaming_timeout_is_enabled(monkeypatch):
+    """Progress-aware task-send handles unset peer_read_timeout with a bounded startup grace."""
     import nvflare.fuel.utils.app_config_utils as acu
     from nvflare.apis.fl_constant import ConfigVarName
     from nvflare.fuel.utils.config_service import ConfigService
@@ -1364,7 +1364,7 @@ def test_timeout_warning_peer_read_none_when_per_req_is_configured(monkeypatch):
     )
     executor.initialize(fl_ctx)
 
-    assert any("peer_read_timeout is not set" in w for w in warnings), warnings
+    assert not any("peer_read_timeout is not set" in w for w in warnings), warnings
 
 
 def test_heartbeat_timeout_none_is_corrected_when_per_req_is_configured(monkeypatch):

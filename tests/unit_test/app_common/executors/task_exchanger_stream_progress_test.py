@@ -306,10 +306,13 @@ def test_task_send_no_progress_startup_budget_uses_peer_read_timeout_floor(monke
     assert any("task_send_wait_budget=60.0s" in msg for _, msg in logs)
 
 
-def test_task_send_no_progress_budget_uses_idle_timeout_when_peer_read_timeout_disabled():
+def test_task_send_no_progress_budget_uses_startup_grace_when_peer_read_timeout_disabled():
     executor = TaskExchanger(pipe_id="pipe", peer_read_timeout=None, streaming_idle_timeout=600.0)
 
-    assert TaskExchanger._get_task_send_no_progress_budget(600.0, None) == 600.0
+    assert (
+        TaskExchanger._get_task_send_no_progress_budget(600.0, None)
+        == task_exchanger_module.STREAM_PROGRESS_COMPLETION_ACK_GRACE
+    )
     assert executor._get_task_send_peer_read_timeout() == task_exchanger_module.STREAM_PROGRESS_COMPLETION_ACK_GRACE
 
 

@@ -470,7 +470,7 @@ class TaskExchanger(Executor):
         streaming_idle_timeout: float,
         peer_read_timeout: Optional[float] = None,
     ) -> float:
-        peer_read_budget = streaming_idle_timeout if peer_read_timeout is None else peer_read_timeout
+        peer_read_budget = STREAM_PROGRESS_COMPLETION_ACK_GRACE if peer_read_timeout is None else peer_read_timeout
         return min(streaming_idle_timeout, max(peer_read_budget, STREAM_PROGRESS_COMPLETION_ACK_GRACE))
 
     @staticmethod
