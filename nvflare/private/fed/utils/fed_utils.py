@@ -353,14 +353,20 @@ def custom_fobs_initialize(workspace: Workspace = None, job_id: Optional[str] = 
             # placed under the job config dir are intentionally ignored.
             app_custom_dir = workspace.get_app_custom_dir(job_id)
             decomposer_dir = os.path.join(app_custom_dir, ConfigVarName.DECOMPOSER_MODULE)
-            if os.path.exists(decomposer_dir) and _job_allows_byoc(workspace, job_id):
+            # confirm BYOC before probing the job-controlled path (no filesystem touch otherwise)
+            if _job_allows_byoc(workspace, job_id) and os.path.exists(decomposer_dir):
                 register_custom_folder(decomposer_dir)
 
 
 def _job_allows_byoc(workspace: Workspace, job_id: str) -> bool:
     try:
         job_meta = get_job_meta_from_workspace(workspace, job_id)
-    except Exception:
+    except Exception as e:
+        # fail safe: deny job decomposers, but log so a corrupted/misconfigured deployment
+        # can be told apart from a legitimate non-BYOC job
+        logging.getLogger(__name__).warning(
+            f"could not read job meta for job '{job_id}'; treating as non-BYOC: {secure_format_exception(e)}"
+        )
         return False
     return bool(job_meta.get(AppValidationKey.BYOC, False))
 
