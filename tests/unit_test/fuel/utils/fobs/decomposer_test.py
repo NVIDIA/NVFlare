@@ -20,7 +20,7 @@ import pytest
 from nvflare.apis.shareable import Shareable, make_copy
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.datum import DatumManager, DatumRef
-from nvflare.fuel.utils.fobs.decomposer import DictDecomposer, Externalizer
+from nvflare.fuel.utils.fobs.decomposer import DictDecomposer, Externalizer, new_empty_container
 
 
 class DataClass:
@@ -66,6 +66,13 @@ class RequiredArgList(list):
     def __init__(self, capacity):
         super().__init__()
         self.capacity = capacity
+
+
+class NoArgTypeErrorDict(dict):
+    """Dict subclass whose no-arg constructor raises TypeError internally."""
+
+    def __init__(self):
+        raise TypeError("internal constructor bug")
 
 
 class TestDecomposers:
@@ -176,6 +183,12 @@ class TestDecomposers:
 
         assert isinstance(externalized["items"], RequiredArgList)
         assert list(externalized["items"]) == ["a", "b"]
+
+    def test_new_empty_container_does_not_mask_no_arg_constructor_type_error(self):
+        # The fallback to __new__ is only for signatures that require init args. TypeErrors raised
+        # inside a no-arg constructor should still surface instead of being silently bypassed.
+        with pytest.raises(TypeError, match="internal constructor bug"):
+            new_empty_container(NoArgTypeErrorDict)
 
     @staticmethod
     def _check_decomposer(data, clear_decomposers=True):
