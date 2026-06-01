@@ -28,7 +28,9 @@ DATA_CONTENT = "data"
 LIST_CONTENT = "list"
 
 
-@lru_cache(maxsize=None)
+# Bounded so the cache cannot grow without limit if dynamically-generated classes are serialized;
+# FOBS-handled types are effectively a small, fixed set so this is never a practical constraint.
+@lru_cache(maxsize=1024)
 def _requires_init_args(cls: type) -> bool:
     """Return True if ``cls`` cannot be instantiated without arguments.
 
@@ -37,6 +39,9 @@ def _requires_init_args(cls: type) -> bool:
     function of the class definition. Note this inspects the call signature only; it deliberately
     does not run ``__init__``, so a constructor that accepts no args but raises internally is still
     reported as no-arg-constructible (its error is allowed to surface at call time, not swallowed).
+    This reflects ``__new__`` when ``__init__`` is inherited; a class that requires args in
+    ``__new__`` is out of scope (it violates DataClassDecomposer requirement #2 and cannot be rebuilt
+    via ``cls.__new__(cls)`` anyway).
     """
     try:
         signature = inspect.signature(cls)
@@ -227,6 +232,9 @@ class DataClassDecomposer(Decomposer):
        object. The side effects include creating files, initializing loggers, modifying
        global variables.
 
+    Instance ``__dict__`` attributes are always captured; ``dict`` and ``list`` subclass contents are
+    additionally captured so the elements survive the round-trip (the instance is rebuilt via
+    ``__new__``, so ``__init__`` is never invoked to repopulate them).
     """
 
     def __init__(self, data_type: Type[T]):
