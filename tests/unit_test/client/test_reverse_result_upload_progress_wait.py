@@ -1010,9 +1010,10 @@ def test_launch_once_registers_cleanup_before_result_upload_failure(monkeypatch)
     assert agent._atexit_registered is True
     assert len(registrations) == 1
     assert registrations[0][1:] == ()
+    agent.pipe_handler.stop.assert_called_once_with(True)
     registrations[0][0]()
     assert exit_codes == []
-    agent.pipe_handler.stop.assert_called_with(True)
+    agent.pipe_handler.stop.assert_called_once_with(True)
     agent._wait_for_reverse_result_upload.assert_called_once()
 
 
@@ -1491,6 +1492,52 @@ def test_reverse_result_upload_download_done_race_wins_over_abandon(monkeypatch)
     )
 
     assert result is True
+    assert deleted == []
+    progress_event.wait.assert_not_called()
+    assert not any("abandoning result_upload wait" in call[0][0] for call in agent.logger.warning.call_args_list)
+    assert any("download_complete_cb" in call[0][0] for call in agent.logger.info.call_args_list)
+
+
+def test_reverse_result_upload_late_download_done_race_wins_over_abandon(monkeypatch):
+    tracker = _make_tracker(idle_timeout=10.0)
+    _register(tracker)
+    agent = FlareAgent.__new__(FlareAgent)
+    agent.logger = MagicMock()
+    agent._result_upload_poll_interval = 0.001
+    progress_event = MagicMock()
+    deleted = []
+    monkeypatch.setattr(
+        "nvflare.client.flare_agent.DownloadService.delete_transaction", lambda tx_id: deleted.append(tx_id)
+    )
+
+    class LateDownloadDone:
+        wait_calls = 0
+
+        def __init__(self):
+            self._done = False
+
+        def is_set(self):
+            return self._done
+
+        def wait(self, timeout=None):
+            self.wait_calls += 1
+            self._done = True
+            return True
+
+    download_done = LateDownloadDone()
+    agent._get_reverse_result_upload_abandon_reason = MagicMock(return_value="task pipe handler is stopping")
+
+    result = agent._wait_for_reverse_result_upload(
+        tracker,
+        progress_event,
+        download_done,
+        [TransactionDoneStatus.FINISHED],
+        wait_start=1000.0,
+        transactions=[DownloadTransactionInfo("tx-1", (("ref-1", None),), 1000.0)],
+    )
+
+    assert result is True
+    assert download_done.wait_calls == 1
     assert deleted == []
     progress_event.wait.assert_not_called()
     assert not any("abandoning result_upload wait" in call[0][0] for call in agent.logger.warning.call_args_list)

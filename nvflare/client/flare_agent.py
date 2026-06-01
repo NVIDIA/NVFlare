@@ -719,6 +719,16 @@ class FlareAgent:
             self._fail_reverse_download_transactions(tracker, transactions)
         return decision.success
 
+    def _finish_reverse_result_upload_if_download_done(
+        self, tracker, download_done, download_status, transactions, wait_start
+    ):
+        if not download_done.is_set():
+            return None
+        decision = tracker.decide(callback_fired=True, callback_status=download_status[0])
+        if decision.done:
+            return self._finish_reverse_result_upload_wait(decision, tracker, transactions, wait_start)
+        return None
+
     def _wait_for_reverse_result_upload(
         self, tracker, progress_event, download_done, download_status, wait_start, transactions=()
     ):
@@ -737,10 +747,11 @@ class FlareAgent:
             wait_timeout = getattr(self, "_result_upload_poll_interval", _REVERSE_RESULT_UPLOAD_POLL_INTERVAL)
             abandon_reason = self._get_reverse_result_upload_abandon_reason()
             if abandon_reason:
-                if download_done.is_set():
-                    decision = tracker.decide(callback_fired=True, callback_status=download_status[0])
-                    if decision.done:
-                        return self._finish_reverse_result_upload_wait(decision, tracker, transactions, wait_start)
+                done_result = self._finish_reverse_result_upload_if_download_done(
+                    tracker, download_done, download_status, transactions, wait_start
+                )
+                if done_result is not None:
+                    return done_result
                 if decision.reason == "completion_grace":
                     elapsed = tracker.clock() - wait_start
                     self.logger.info(
@@ -748,6 +759,17 @@ class FlareAgent:
                         f"already reached terminal success after {elapsed:.2f}s; returning success: {abandon_reason}"
                     )
                     return True
+                abandon_grace_timeout = (
+                    _REVERSE_RESULT_UPLOAD_POLL_INTERVAL
+                    if wait_timeout is None
+                    else min(wait_timeout, _REVERSE_RESULT_UPLOAD_POLL_INTERVAL)
+                )
+                if abandon_grace_timeout and download_done.wait(timeout=abandon_grace_timeout):
+                    done_result = self._finish_reverse_result_upload_if_download_done(
+                        tracker, download_done, download_status, transactions, wait_start
+                    )
+                    if done_result is not None:
+                        return done_result
                 self.logger.warning(f"[subprocess] abandoning result_upload wait: {abandon_reason}")
                 self._fail_reverse_download_transactions(tracker, transactions)
                 return False
@@ -871,6 +893,7 @@ class FlareAgent:
             pipe_handler = getattr(self, "pipe_handler", None)
             metric_pipe_handler = getattr(self, "metric_pipe_handler", None)
             cleanup_errors = []
+            self.asked_to_stop = True
             for handler_name, handler, close_handler_pipe in (
                 ("task", pipe_handler, close_pipe),
                 ("metric", metric_pipe_handler, close_metric_pipe),
@@ -890,6 +913,12 @@ class FlareAgent:
         # unhandled script failures.
         sys.stdout.flush()
         sys.stderr.flush()
+
+    def _cleanup_launch_once_submit_failure(self):
+        if not getattr(self, "_launch_once", False):
+            return
+        self.logger.warning("[subprocess] launch_once submit_result failed; stopping communication pipes")
+        self._launch_once_cleanup()
 
     def _do_submit_result(self, current_task: _TaskContext, result, rc):
         result_shareable = self.task_result_to_shareable(result, rc)
@@ -967,6 +996,7 @@ class FlareAgent:
             # Reset thread-local so a stale True from a previous training round does not
             # carry over to the current validate round (no tensors → False expected).
             clear_download_initiated()
+            submit_failed = False
             try:
                 send_start = time.time()
                 sent = self.pipe_handler.send_to_peer(reply, self.submit_result_timeout)
@@ -981,6 +1011,7 @@ class FlareAgent:
                             self._register_download_transactions(result_upload_tracker, transactions)
                     if transactions:
                         self._fail_reverse_download_transactions(result_upload_tracker, transactions)
+                    submit_failed = True
                     return False
                 send_elapsed = time.time() - send_start
 
@@ -1016,6 +1047,7 @@ class FlareAgent:
                         wait_start = time.time()
                         result_ok = self._wait_for_download_complete_fixed(download_done, download_status, wait_start)
                     if not result_ok:
+                        submit_failed = True
                         return False
                 else:
                     self.logger.info(
@@ -1033,6 +1065,8 @@ class FlareAgent:
                         RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY: previous_tx_created_cb,
                     }
                 )
+                if submit_failed:
+                    self._cleanup_launch_once_submit_failure()
             if self._launch_once:
                 # launch_once=True: subprocess handles multiple rounds; do NOT exit here.
                 return True
@@ -1045,7 +1079,10 @@ class FlareAgent:
                 os._exit(0)
                 return True
 
-        return self.pipe_handler.send_to_peer(reply, self.submit_result_timeout)
+        sent = self.pipe_handler.send_to_peer(reply, self.submit_result_timeout)
+        if not sent:
+            self._cleanup_launch_once_submit_failure()
+        return sent
 
     def log(self, record: DXO) -> bool:
         """Logs a metric record.
