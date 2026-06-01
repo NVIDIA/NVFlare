@@ -851,7 +851,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         data = return_data.payload
         clients = data.get(ServerCommandKey.CLIENTS, None)
         if clients is None:
-            self.logger.error(f"parent failed to return clients info for job {job_id}")
+            self.logger.debug(f"parent failed to return clients info for job {job_id}")
         return clients
 
     def update_job_run_status(self):
