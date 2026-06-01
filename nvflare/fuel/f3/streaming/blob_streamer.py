@@ -105,6 +105,46 @@ class BlobHandler:
         else:
             future.set_exception(error)
 
+    def _store_chunk(self, blob_task: BlobTask, buf: BytesAlike, buf_size: int, thread_id: int) -> bool:
+        length = len(buf)
+        if blob_task.pre_allocated:
+            return self._store_pre_allocated_chunk(blob_task, buf, buf_size, length, thread_id)
+
+        return self._append_dynamic_chunk(blob_task, buf, buf_size, length, thread_id)
+
+    def _store_pre_allocated_chunk(
+        self, blob_task: BlobTask, buf: BytesAlike, buf_size: int, length: int, thread_id: int
+    ) -> bool:
+        remaining = len(blob_task.buffer) - buf_size
+        if length > remaining:
+            log.error(f"{blob_task} Buffer overrun: {thread_id=} {remaining=} {length=} {buf_size=}")
+            self._fail(
+                blob_task.stream,
+                blob_task.future,
+                StreamError(f"Buffer overrun: stream produced more data than declared size {blob_task.size}"),
+            )
+            return False
+
+        blob_task.buffer[buf_size : buf_size + length] = buf
+        return True
+
+    def _append_dynamic_chunk(
+        self, blob_task: BlobTask, buf: BytesAlike, buf_size: int, length: int, thread_id: int
+    ) -> bool:
+        next_size = buf_size + length
+        # read() already pulled this chunk, so rejection can overshoot by one chunk at most.
+        if blob_task.max_size > 0 and next_size > blob_task.max_size:
+            log.error(f"{blob_task} Size limit exceeded: {thread_id=} {next_size=} limit={blob_task.max_size}")
+            error = StreamError(
+                f"Blob received more data than configured limit {blob_task.max_size}: "
+                f"received at least {next_size} bytes"
+            )
+            self._fail(blob_task.stream, blob_task.future, error)
+            return False
+
+        blob_task.buffer.append(buf)
+        return True
+
     def handle_blob_cb(self, future: StreamFuture, stream: Stream, resume: bool, *args, **kwargs) -> int:
 
         if resume:
@@ -157,45 +197,18 @@ class BlobHandler:
                 if not buf:
                     break
 
-                length = len(buf)
                 try:
-                    if blob_task.pre_allocated:
-                        remaining = len(blob_task.buffer) - buf_size
-                        if length > remaining:
-                            log.error(f"{blob_task} Buffer overrun: {thread_id=} {remaining=} {length=} {buf_size=}")
-                            self._fail(
-                                blob_task.stream,
-                                blob_task.future,
-                                StreamError(
-                                    f"Buffer overrun: stream produced more data than declared size {blob_task.size}"
-                                ),
-                            )
-                            return
-                        else:
-                            blob_task.buffer[buf_size : buf_size + length] = buf
-                    else:
-                        next_size = buf_size + length
-                        # read() already pulled this chunk, so rejection can overshoot by one chunk at most.
-                        if blob_task.max_size > 0 and next_size > blob_task.max_size:
-                            log.error(
-                                f"{blob_task} Size limit exceeded: {thread_id=} {next_size=} "
-                                f"limit={blob_task.max_size}"
-                            )
-                            error = StreamError(
-                                f"Blob received more data than configured limit {blob_task.max_size}: "
-                                f"received at least {next_size} bytes"
-                            )
-                            self._fail(blob_task.stream, blob_task.future, error)
-                            return
-                        blob_task.buffer.append(buf)
+                    if not self._store_chunk(blob_task, buf, buf_size, thread_id):
+                        return
                 except Exception as ex:
+                    length = len(buf)
                     log.error(
                         f"{blob_task} memoryview error: {ex} Debug info: "
                         f"{thread_id=} {length=} {buf_size=} {type(buf)=}"
                     )
                     raise ex
 
-                buf_size += length
+                buf_size += len(buf)
 
             if blob_task.size and blob_task.size != buf_size:
                 blob_task.future.set_exception(
