@@ -460,18 +460,6 @@ def test_streaming_idle_timeout_override_mutates_tracker_under_lock(monkeypatch)
     assert executor._stream_progress_tracker.idle_timeout == 1200.0
 
 
-def test_streaming_timeout_defaults_preserve_peer_read_and_heartbeat(monkeypatch):
-    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None)
-
-    executor = ClientAPILauncherExecutor(pipe_id="test_pipe", peer_read_timeout=300.0, heartbeat_timeout=300.0)
-    executor.streaming_idle_timeout = 600.0
-
-    executor._apply_streaming_timeout_defaults(_FakeFLContext(_FakeCell()))
-
-    assert executor.peer_read_timeout == 300.0
-    assert executor.heartbeat_timeout == 300.0
-
-
 def test_absent_streaming_progress_override_preserves_disabled_idle_timeout(monkeypatch):
     monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
     monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)

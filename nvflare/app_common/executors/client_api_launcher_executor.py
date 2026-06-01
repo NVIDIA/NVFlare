@@ -328,11 +328,6 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                 "task-send waits do not use stream progress for heartbeat liveness.",
             )
 
-    def _apply_streaming_timeout_defaults(self, fl_ctx: FLContext):
-        # Streaming idle timeout controls progress-aware waits only; preserve
-        # explicitly configured peer/heartbeat failure-detection semantics.
-        return
-
     def _apply_client_config_overrides(self, fl_ctx: FLContext):
         # Apply top-level config_fed_client.json overrides before writing the
         # subprocess Client API config so add_client_config() affects both sides.
@@ -356,7 +351,6 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             fl_ctx, ConfigKey.DOWNLOAD_COMPLETE_TIMEOUT, "_download_complete_timeout"
         )
         self._apply_streaming_progress_client_config_overrides(fl_ctx)
-        self._apply_streaming_timeout_defaults(fl_ctx)
         self._stop_task_wait_timeout = self._download_complete_timeout
 
     def _decomposer_prefix(self) -> str:
