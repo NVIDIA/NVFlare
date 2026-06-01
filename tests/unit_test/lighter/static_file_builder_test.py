@@ -274,20 +274,6 @@ class TestStaticFileBuilder:
             "nvflare.app_opt.xgboost.tree_based.executor.FedXGBTreeExecutor",
             "nvflare.app_opt.xgboost.tree_based.model_persistor.XGBModelPersistor",
             "nvflare.app_opt.xgboost.tree_based.shareable_generator.XGBModelShareableGenerator",
-            "nvflare.edge.aggregators.model_update_dxo_factory.ModelUpdateDXOAggrFactory",
-            "nvflare.edge.assessors.buff_device_manager.BuffDeviceManager",
-            "nvflare.edge.assessors.buff_model_manager.BuffModelManager",
-            "nvflare.edge.assessors.model_update.ModelUpdateAssessor",
-            "nvflare.edge.controllers.sage.ScatterAndGatherForEdge",
-            "nvflare.edge.executors.edge_model_executor.EdgeModelExecutor",
-            "nvflare.edge.executors.et_edge_model_executor.ETEdgeModelExecutor",
-            "nvflare.edge.simulation.devices.num.NumProcessor",
-            "nvflare.edge.simulation.devices.tp.TPDeviceFactory",
-            "nvflare.edge.simulation.devices.tp.TPODeviceFactory",
-            "nvflare.edge.simulation.devices.tp.TaskProcessingDevice",
-            "nvflare.edge.updaters.emd.AggregatorFactory",
-            "nvflare.edge.widgets.etr.EdgeTaskReceiver",
-            "nvflare.edge.widgets.tpo_runner.TPORunner",
         ]
         for resource_key in ("local_client_resources", "local_server_resources"):
             resource_template = template[resource_key]
@@ -329,12 +315,56 @@ class TestStaticFileBuilder:
                 "explicitly_reviewed_package_prefixes with an in-test explanation."
             )
 
-    def test_master_template_allows_regression_components(self):
+    def test_master_template_class_allow_list_excludes_edge_components(self):
+        """Provisioned non-BYOC resources must not authorize edge components."""
+        import os
+
+        import yaml
+
+        template_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
+            "nvflare",
+            "lighter",
+            "templates",
+            "master_template.yml",
+        )
+        with open(template_path, "r") as f:
+            template = yaml.safe_load(f)
+
+        for resource_key in ("local_client_resources", "local_server_resources"):
+            extracted = _extract_class_allow_list(template[resource_key])
+            edge_paths = [p for p in extracted if p.startswith("nvflare.edge.")]
+            assert not edge_paths, f"edge classes should not be in {resource_key}: {edge_paths}"
+
+    def test_master_template_default_authz_grants_submission_byoc_to_lead_and_project_admin(self):
+        """Default authorization grants broad project_admin permissions and lead BYOC submission permission."""
+        import os
+
+        import yaml
+
+        template_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
+            "nvflare",
+            "lighter",
+            "templates",
+            "master_template.yml",
+        )
+        with open(template_path, "r") as f:
+            template = yaml.safe_load(f)
+
+        default_authz = yaml.safe_load(template["default_authz"])
+        permissions = default_authz["permissions"]
+
+        assert permissions["project_admin"] == "any"
+        assert permissions["lead"]["byoc"] == "any"
+
+    def test_master_template_allows_non_edge_regression_components(self):
         """Pin the specific paths that regressed in 2.8.0rc4 (PR #4701 fallout).
 
         Non-BYOC jobs that loaded these built-in classes worked on 2.8.0rc3
         and broke on rc4 because they were missing from the provisioned
-        class_allow_list. This test guards against future re-regression.
+        class_allow_list. Edge components are intentionally outside this
+        non-BYOC regression set.
         """
         import os
 
@@ -355,8 +385,6 @@ class TestStaticFileBuilder:
         regression_paths = [
             # PR #4701 regression: NPTrainer was omitted from the curated list.
             "nvflare.app_common.np.np_trainer.NPTrainer",
-            # PR #4701 regression: edge components were entirely absent.
-            "nvflare.edge.executors.edge_model_executor.EdgeModelExecutor",
             # PR #4701 regression: ccwf re-export short paths were not matched
             # because the list only stored the full module path. Configs in
             # the wild reference the package-level alias.
