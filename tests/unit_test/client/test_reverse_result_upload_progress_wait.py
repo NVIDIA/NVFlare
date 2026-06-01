@@ -704,6 +704,66 @@ def test_do_submit_result_waits_for_result_upload_progress_until_completion():
     assert time.time() - start > agent._download_complete_timeout
 
 
+def test_do_submit_result_non_swarm_without_receiver_ids_stalls_at_streaming_idle_timeout(monkeypatch):
+    clear_download_initiated()
+    deleted = []
+    monkeypatch.setattr(
+        "nvflare.client.flare_agent.DownloadService.delete_transaction", lambda tx_id: deleted.append(tx_id)
+    )
+    pipe = _make_cell_pipe()
+    agent = _make_agent(pipe, download_complete_timeout=5.0)
+    agent._streaming_idle_timeout = 0.05
+    agent._result_upload_poll_interval = 0.001
+    transaction = DownloadTransactionInfo("tx-non-swarm", (("ref-non-swarm", None),), time.time())
+    callbacks_ready = threading.Event()
+    callbacks = {}
+    result = {}
+
+    def _send(reply, timeout):
+        ctx = pipe.cell.update_fobs_context.call_args.args[0]
+        assert ctx[fobs.FOBSContextKey.RECEIVER_IDS] is None
+        callbacks["progress"] = ctx[fobs.FOBSContextKey.STREAM_PROGRESS_CB]
+        callbacks["complete"] = ctx[fobs.FOBSContextKey.DOWNLOAD_COMPLETE_CB]
+        ctx[RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY](transaction)
+        _tls.download_initiated = True
+        _tls.download_transactions = [transaction]
+        callbacks_ready.set()
+        return True
+
+    agent.pipe_handler.send_to_peer.side_effect = _send
+
+    def _run_submit():
+        result["ok"] = agent._do_submit_result(_TaskContext("tid-1", "train", "msg-1"), None, "OK")
+
+    thread = threading.Thread(target=_run_submit)
+    start = time.time()
+    thread.start()
+    assert callbacks_ready.wait(timeout=1.0)
+
+    callbacks["progress"](
+        direction=DIRECTION_RESULT_UPLOAD,
+        tx_id="tx-non-swarm",
+        transfer_id="ref-non-swarm",
+        sequence=1,
+        bytes_done=0,
+        state=TransferProgressState.ACTIVE,
+        timestamp=time.time(),
+    )
+
+    thread.join(timeout=1.0)
+    if thread.is_alive():
+        callbacks["complete"]("tx-non-swarm", TransactionDoneStatus.FINISHED, None)
+        thread.join(timeout=1.0)
+        pytest.fail("non-swarm result_upload without receiver ids did not fail at streaming_idle_timeout")
+
+    assert result["ok"] is False
+    assert time.time() - start < agent._download_complete_timeout
+    assert deleted == ["tx-non-swarm"]
+    warnings = [call[0][0] for call in agent.logger.warning.call_args_list]
+    assert any("stalled" in warning for warning in warnings)
+    assert not any("did not start" in warning for warning in warnings)
+
+
 def test_simulated_many_clients_large_result_upload_delayed_complete_cb_uses_progress_not_timeout():
     # The fixed download_complete_timeout is intentionally tiny in _make_agent().
     # Keep the progress idle budget comfortably above CI thread scheduling jitter

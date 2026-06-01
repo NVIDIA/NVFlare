@@ -329,32 +329,36 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             )
 
     def _apply_streaming_timeout_defaults(self, fl_ctx: FLContext):
-        if self.streaming_idle_timeout is None:
-            return
+        log_messages = []
+        with self._stream_progress_lock:
+            streaming_idle_timeout = self.streaming_idle_timeout
+            if streaming_idle_timeout is None:
+                return
 
-        if (
-            not self.peer_read_timeout_explicit
-            and self.peer_read_timeout is not None
-            and self.peer_read_timeout < self.streaming_idle_timeout
-        ):
-            old_value = self.peer_read_timeout
-            self.peer_read_timeout = self.streaming_idle_timeout
-            self.log_info(
-                fl_ctx,
-                f"Using streaming_idle_timeout for peer_read_timeout: {old_value}s -> {self.peer_read_timeout}s",
-            )
+            if (
+                not self.peer_read_timeout_explicit
+                and self.peer_read_timeout is not None
+                and self.peer_read_timeout < streaming_idle_timeout
+            ):
+                old_value = self.peer_read_timeout
+                self.peer_read_timeout = streaming_idle_timeout
+                log_messages.append(
+                    f"Using streaming_idle_timeout for peer_read_timeout: {old_value}s -> {self.peer_read_timeout}s"
+                )
 
-        if (
-            not self.heartbeat_timeout_explicit
-            and self.heartbeat_timeout is not None
-            and self.heartbeat_timeout < self.streaming_idle_timeout
-        ):
-            old_value = self.heartbeat_timeout
-            self.heartbeat_timeout = self.streaming_idle_timeout
-            self.log_info(
-                fl_ctx,
-                f"Using streaming_idle_timeout for heartbeat_timeout: {old_value}s -> {self.heartbeat_timeout}s",
-            )
+            if (
+                not self.heartbeat_timeout_explicit
+                and self.heartbeat_timeout is not None
+                and self.heartbeat_timeout < streaming_idle_timeout
+            ):
+                old_value = self.heartbeat_timeout
+                self.heartbeat_timeout = streaming_idle_timeout
+                log_messages.append(
+                    f"Using streaming_idle_timeout for heartbeat_timeout: {old_value}s -> {self.heartbeat_timeout}s"
+                )
+
+        for msg in log_messages:
+            self.log_info(fl_ctx, msg)
 
     def _apply_client_config_overrides(self, fl_ctx: FLContext):
         # Apply top-level config_fed_client.json overrides before writing the
