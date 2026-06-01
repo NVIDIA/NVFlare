@@ -751,12 +751,29 @@ class SwarmClientController(ClientSideController):
         decode_ctx = cell.get_fobs_context(props={fobs.FOBSContextKey.PASS_THROUGH: False})
         return fobs.loads(encoded, fobs_ctx=decode_ctx)
 
+    def _get_aggregation_client_fqcn(self, aggr: str, fl_ctx: FLContext):
+        engine = getattr(self, "engine", None) or fl_ctx.get_engine()
+        get_client_from_name = getattr(engine, "get_client_from_name", None)
+        if not callable(get_client_from_name):
+            return None
+
+        client = get_client_from_name(aggr)
+        get_fqcn = getattr(client, "get_fqcn", None)
+        if not callable(get_fqcn):
+            return None
+
+        client_fqcn = get_fqcn()
+        if not isinstance(client_fqcn, str) or not client_fqcn:
+            return None
+        return client_fqcn
+
     def _stamp_result_upload_receiver_ids(self, task_data: Shareable, aggr: str, fl_ctx: FLContext):
         """Tell the external subprocess which downstream parent will pull result refs.
 
         The Client API subprocess creates the DownloadService transaction before the
-        CJ forwards the result.  For swarm, the CJ already knows the aggregation
-        client, so stamp the receiver FQCN on the task going to the subprocess.
+        CJ forwards the result.  For swarm, stamp the same job-scoped FQCN that aux
+        routing will use for the aggregation client so result_upload progress matches
+        the DownloadService requester's identity in relay/hierarchical topologies.
         """
 
         job_id = fl_ctx.get_job_id()
@@ -767,7 +784,17 @@ class SwarmClientController(ClientSideController):
                 "using single-receiver fallback progress tracking",
             )
             return
-        receiver_id = FQCN.join([aggr, job_id])
+
+        aggr_fqcn = self._get_aggregation_client_fqcn(aggr, fl_ctx)
+        if not aggr_fqcn:
+            self.log_warning(
+                fl_ctx,
+                f"cannot resolve exact result_upload receiver FQCN for swarm aggregation client {aggr}; "
+                "using single-receiver fallback progress tracking",
+            )
+            return
+
+        receiver_id = FQCN.join([aggr_fqcn, job_id])
         task_data.set_header(FOBSContextKey.RECEIVER_IDS, [receiver_id])
 
     def _process_learn_result(self, request: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:

@@ -175,7 +175,9 @@ def _make_fl_ctx(job_id="job-1", site_name="site-1"):
     fl_ctx.get_job_id.return_value = job_id
     fl_ctx.get_identity_name.return_value = site_name
     fl_ctx.get_prop.return_value = MagicMock()
-    fl_ctx.get_engine.return_value = MagicMock()
+    engine = MagicMock()
+    engine.get_client_from_name.return_value = None
+    fl_ctx.get_engine.return_value = engine
     return fl_ctx
 
 
@@ -348,6 +350,9 @@ def test_swarm_do_learn_task_stamps_receiver_and_result_upload_tracks_peer_recei
     clear_download_initiated()
     trainer_ctl = _make_swarm_controller(me="site-2", trainers=["site-1", "site-2"], aggrs=["site-1"])
     trainer_fl_ctx = _make_fl_ctx(job_id="job-1", site_name="site-2")
+    aggr_client = MagicMock()
+    aggr_client.get_fqcn.return_value = "relay.site-1"
+    trainer_fl_ctx.get_engine.return_value.get_client_from_name.return_value = aggr_client
     permission_reply = make_reply(ReturnCode.OK)
     trainer_fl_ctx.get_engine.return_value.send_aux_request.return_value = {"site-1": permission_reply}
     trainer_ctl.broadcast_and_wait = MagicMock(return_value={"site-1": make_reply(ReturnCode.OK)})
@@ -355,10 +360,10 @@ def test_swarm_do_learn_task_stamps_receiver_and_result_upload_tracks_peer_recei
 
     def _execute_learn_task(task_data, fl_ctx, abort_signal):
         receiver_ids = task_data.get_header(fobs.FOBSContextKey.RECEIVER_IDS)
-        assert receiver_ids == ["site-1.job-1"]
+        assert receiver_ids == ["relay.site-1.job-1"]
 
         agent = _make_agent_for_result_upload()
-        transaction = DownloadTransactionInfo("tx-swarm", (("ref-swarm", "site-1.job-1"),), time.time())
+        transaction = DownloadTransactionInfo("tx-swarm", (("ref-swarm", "relay.site-1.job-1"),), time.time())
         callbacks = {}
 
         def _send(reply, timeout):
@@ -374,16 +379,16 @@ def test_swarm_do_learn_task_stamps_receiver_and_result_upload_tracks_peer_recei
             callbacks["progress"](
                 tx_id="tx-swarm",
                 transfer_id="ref-swarm",
-                receiver_id="site-1.job-1",
+                receiver_id="relay.site-1.job-1",
                 sequence=1,
                 bytes_done=1024,
                 state="active",
             )
-            progress_receivers.append("site-1.job-1")
+            progress_receivers.append("relay.site-1.job-1")
             callbacks["progress"](
                 tx_id="tx-swarm",
                 transfer_id="ref-swarm",
-                receiver_id="site-1.job-1",
+                receiver_id="relay.site-1.job-1",
                 sequence=2,
                 bytes_done=2048,
                 state="completed",
@@ -415,7 +420,18 @@ def test_swarm_do_learn_task_stamps_receiver_and_result_upload_tracks_peer_recei
 
     trainer_ctl.do_learn_task("swarm_learn", task_data, trainer_fl_ctx, _AbortSignal())
 
-    assert progress_receivers == ["site-1.job-1"]
+    assert progress_receivers == ["relay.site-1.job-1"]
     trainer_fl_ctx.get_engine.return_value.send_aux_request.assert_called_once()
     trainer_ctl.broadcast_and_wait.assert_called_once()
     assert trainer_ctl.update_status.call_args.kwargs["action"] == "finished_learn_task"
+
+
+def test_swarm_result_upload_receiver_id_falls_back_when_client_fqcn_unknown():
+    trainer_ctl = _make_swarm_controller(me="site-2", trainers=["site-1", "site-2"], aggrs=["site-1"])
+    trainer_fl_ctx = _make_fl_ctx(job_id="job-1", site_name="site-2")
+    task_data = Shareable()
+
+    trainer_ctl._stamp_result_upload_receiver_ids(task_data, "site-1", trainer_fl_ctx)
+
+    assert task_data.get_header(fobs.FOBSContextKey.RECEIVER_IDS) is None
+    trainer_ctl.log_warning.assert_called_once()
