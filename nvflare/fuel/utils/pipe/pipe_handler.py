@@ -114,6 +114,7 @@ class PipeHandler(object):
         self._pause = False
         self._last_heartbeat_received_time = None
         self._check_interval = 0.01
+        self._stream_progress_drop_logged = False
         self.heartbeat_sender = threading.Thread(target=self._heartbeat)
         self.heartbeat_sender.daemon = True
 
@@ -319,7 +320,11 @@ class PipeHandler(object):
                 self.msg_cb(msg, *self.msg_cb_args, **self.msg_cb_kwargs)
                 return
             if msg.topic == Topic.STREAM_PROGRESS:
-                self.logger.debug("dropping stream progress message without message callback")
+                if not self._stream_progress_drop_logged:
+                    self.logger.info("dropping stream progress message without message callback")
+                    self._stream_progress_drop_logged = True
+                else:
+                    self.logger.debug("dropping stream progress message without message callback")
                 return
 
         with self.lock:

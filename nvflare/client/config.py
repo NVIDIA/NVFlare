@@ -226,7 +226,10 @@ class ClientConfig:
         )
         if value is None:
             return None
-        return float(value)
+        try:
+            return float(value)
+        except (TypeError, ValueError) as e:
+            raise ValueError(f"invalid {ConfigKey.STREAMING_IDLE_TIMEOUT}: {value!r}") from e
 
     def get_submit_result_timeout(self) -> float:
         """Return the timeout (seconds) for the subprocess to wait for CJ to ACK a result message.

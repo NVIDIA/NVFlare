@@ -311,6 +311,23 @@ class TestResultUploadProgressWiring:
 
         assert events[-1]["receiver_id"] == "server"
 
+    def test_duplicate_receiver_ids_disable_progress_tracking(self, monkeypatch):
+        obj = _FakeDownloadable([(ProduceRC.OK, b"abc", {})])
+        fobs_ctx = {
+            fobs.FOBSContextKey.CELL: object(),
+            fobs.FOBSContextKey.NUM_RECEIVERS: 2,
+            fobs.FOBSContextKey.STREAM_PROGRESS_CB: lambda **kwargs: None,
+            RESULT_UPLOAD_RECEIVER_IDS_CTX_KEY: ["server", "server"],
+            via_downloader_module._CtxKey.MSG_ROOT_TTL: 1800.0,
+            via_downloader_module._CtxKey.OBJECTS: [("ref-1", obj)],
+        }
+
+        downloader = self._finalize(monkeypatch, fobs_ctx)
+
+        assert get_download_transactions() == ()
+        assert downloader.kwargs["progress_cb"] is None
+        assert downloader.added == [("ref-1", obj)]
+
     def test_unknown_multi_receiver_transaction_is_not_marked_progress_trackable(self, monkeypatch):
         obj = _FakeDownloadable([(ProduceRC.OK, b"abc", {})])
         fobs_ctx = {
@@ -327,6 +344,18 @@ class TestResultUploadProgressWiring:
         assert get_download_transactions() == ()
         assert downloader.added[0][1] is obj
         assert downloader.kwargs["timeout"] == 1800.0
+
+    def test_finalize_download_tx_without_cell_returns_without_dereferencing_downloader(self):
+        obj = _FakeDownloadable([(ProduceRC.OK, b"abc", {})])
+        fobs_ctx = {
+            via_downloader_module._CtxKey.OBJECTS: [("ref-1", obj)],
+        }
+
+        decomposer = _DummyViaDownloader()
+        decomposer._finalize_download_tx(SimpleNamespace(fobs_ctx=fobs_ctx))
+
+        assert get_download_transactions() == ()
+        assert not getattr(via_downloader_module._tls, "download_initiated", False)
 
 
 class TestForwardProgressCallback:

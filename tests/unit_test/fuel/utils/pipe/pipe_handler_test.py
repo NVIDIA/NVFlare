@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import time
+from unittest.mock import MagicMock
 
 from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.pipe.pipe import STREAM_PROGRESS_TOPIC, Message, Pipe, Topic
@@ -218,4 +219,22 @@ def test_stream_progress_routes_to_message_callback_without_queueing():
     handler._add_message(msg)
 
     assert received == [msg]
+    assert handler.get_next() is None
+
+
+def test_stream_progress_without_message_callback_logs_first_drop_only():
+    msg = Message.new_request(Topic.STREAM_PROGRESS, {"task_id": "task-1", "direction": "result_upload"})
+    handler = PipeHandler(
+        pipe=_ScriptedPipe([]),
+        read_interval=1.0,
+        heartbeat_interval=1.0,
+        heartbeat_timeout=1.5,
+    )
+    handler.logger = MagicMock()
+
+    handler._add_message(msg)
+    handler._add_message(msg)
+
+    handler.logger.info.assert_called_once()
+    handler.logger.debug.assert_called_once()
     assert handler.get_next() is None

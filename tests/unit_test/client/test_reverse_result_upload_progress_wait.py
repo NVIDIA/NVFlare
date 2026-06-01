@@ -132,6 +132,31 @@ def test_result_upload_update_normalizes_tx_id_under_expected_lock():
     assert result["value"] == (True, "")
 
 
+def test_result_upload_ambiguous_tx_id_logs_warning():
+    logger = MagicMock()
+    tracker = _ReverseResultUploadProgressTracker(idle_timeout=10.0, clock=FakeClock(), logger=logger)
+    _register(tracker, tx_id="tx-1")
+    _register(tracker, tx_id="tx-2")
+
+    accepted, reason = tracker.update(
+        tx_id=None,
+        transfer_id="ref-1",
+        receiver_id=None,
+        sequence=1,
+        bytes_done=1,
+        items_done=None,
+        state=TransferProgressState.ACTIVE,
+        timestamp=1000.0,
+    )
+
+    assert accepted is False
+    assert reason == "unexpected_pair"
+    logger.warning.assert_called_once()
+    message = logger.warning.call_args[0][0]
+    assert "tx-1" in message
+    assert "tx-2" in message
+
+
 def test_result_upload_uses_first_record_key_when_event_metadata_changes():
     tracker = _make_tracker()
     _register(tracker)

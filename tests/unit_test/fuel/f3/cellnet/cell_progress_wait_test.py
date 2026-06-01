@@ -127,6 +127,63 @@ def test_remote_processing_wait_handles_many_progress_timeouts_without_resend(mo
     assert len(waits) == 17
 
 
+def test_receiving_wait_continues_without_resend_while_progress_callback_is_true(monkeypatch):
+    cell = _make_cell()
+
+    def _conditional_wait(_event, _timeout, _abort_signal):
+        waiter = next(iter(cell.requests_dict.values()))
+        waiter.receiving_future = _ReplyFuture()
+        return WaiterRC.IS_SET
+
+    monkeypatch.setattr(cell_module, "conditional_wait", _conditional_wait)
+    cell._future_wait.side_effect = [True, False, True]
+    progress_wait_cb = MagicMock(return_value=True)
+
+    result = cell._send_one_request(
+        channel="task",
+        target="site-1",
+        topic="train",
+        request=Message(headers={}, payload=None),
+        timeout=1.0,
+        abort_signal=Signal(),
+        progress_wait_cb=progress_wait_cb,
+    )
+
+    assert isinstance(result, Message)
+    assert cell.send_blob.call_count == 1
+    assert cell._future_wait.call_count == 3
+    assert progress_wait_cb.call_count == 1
+
+
+def test_receiving_wait_does_not_extend_stream_future_error(monkeypatch):
+    cell = _make_cell()
+
+    class _ErrorReplyFuture(_ReplyFuture):
+        error = RuntimeError("stream failed")
+
+    def _conditional_wait(_event, _timeout, _abort_signal):
+        waiter = next(iter(cell.requests_dict.values()))
+        waiter.receiving_future = _ErrorReplyFuture()
+        return WaiterRC.IS_SET
+
+    monkeypatch.setattr(cell_module, "conditional_wait", _conditional_wait)
+    cell._future_wait.side_effect = [True, False]
+    progress_wait_cb = MagicMock(return_value=True)
+
+    result = cell._send_one_request(
+        channel="task",
+        target="site-1",
+        topic="train",
+        request=Message(headers={}, payload=None),
+        timeout=1.0,
+        abort_signal=Signal(),
+        progress_wait_cb=progress_wait_cb,
+    )
+
+    assert result.get_header(cell_module.MessageHeaderKey.RETURN_CODE) == ReturnCode.TIMEOUT
+    progress_wait_cb.assert_not_called()
+
+
 def test_remote_processing_wait_returns_timeout_when_progress_callback_is_false(monkeypatch):
     cell = _make_cell()
     monkeypatch.setattr(cell_module, "conditional_wait", lambda _event, _timeout, _abort_signal: WaiterRC.TIMEOUT)

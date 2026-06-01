@@ -14,6 +14,7 @@
 import threading
 import time
 import uuid
+import weakref
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Optional, Tuple
 
@@ -387,7 +388,7 @@ class _Transaction:
         self.start_time = time.time()
         self.total_bytes = 0
         self.transaction_done_cb = transaction_done_cb
-        self.cb_kwargs = cb_kwargs
+        self.cb_kwargs = cb_kwargs or {}
         self.progress_cb = progress_cb
         if progress_interval < 0:
             raise ValueError(f"progress_interval must be non-negative, got {progress_interval}")
@@ -524,7 +525,7 @@ class DownloadService:
     _logger = None
     _tx_monitor = None
     _tx_lock = threading.Lock()
-    _initialized_cells = {}
+    _initialized_cells = weakref.WeakKeyDictionary()
 
     @classmethod
     def _initialize(cls, cell: Cell):
@@ -536,7 +537,7 @@ class DownloadService:
                 cls._tx_monitor = threading.Thread(target=cls._monitor_tx, daemon=True)
                 cls._tx_monitor.start()
 
-            initialized = cls._initialized_cells.get(id(cell))
+            initialized = cls._initialized_cells.get(cell)
             if not initialized:
                 # register CBs
                 cell.register_request_cb(
@@ -544,7 +545,7 @@ class DownloadService:
                     topic=OBJ_DOWNLOADER_TOPIC,
                     cb=cls._handle_download,
                 )
-                cls._initialized_cells[id(cell)] = True
+                cls._initialized_cells[cell] = True
 
     @classmethod
     def new_transaction(
@@ -582,24 +583,27 @@ class DownloadService:
         if not isinstance(obj, Downloadable):
             raise ValueError(f"obj must be of type {Downloadable} but got {type(obj)}")
 
-        tx = cls._tx_table.get(transaction_id)
-        if not tx:
-            raise ValueError(f"no such transaction {transaction_id}")
-
-        assert isinstance(tx, _Transaction)
-        ref = tx.add_object(obj, ref_id)
         with cls._tx_lock:
+            tx = cls._tx_table.get(transaction_id)
+            if not tx:
+                raise ValueError(f"no such transaction {transaction_id}")
+
+            assert isinstance(tx, _Transaction)
+            ref = tx.add_object(obj, ref_id)
             cls._ref_table[ref.rid] = ref
             cls._finished_refs.pop(ref.rid, None)
         return ref.rid
 
     @classmethod
     def delete_transaction(cls, transaction_id: str):
+        tx = None
         with cls._tx_lock:
             tx = cls._tx_table.get(transaction_id)
             if tx:
                 cls._delete_tx(tx)
-                tx.transaction_done(TransactionDoneStatus.DELETED)
+
+        if tx:
+            tx.transaction_done(TransactionDoneStatus.DELETED)
 
     @classmethod
     def shutdown(cls):
@@ -610,11 +614,15 @@ class DownloadService:
         """
         with cls._tx_lock:
             tx_list = list(cls._tx_table.values())
-            if tx_list:
-                for tx in tx_list:
-                    cls._delete_tx(tx)
-                    tx.transaction_done(TransactionDoneStatus.DELETED)
+            for tx in tx_list:
+                cls._delete_tx(tx)
             cls._finished_refs.clear()
+
+        with cls._init_lock:
+            cls._initialized_cells.clear()
+
+        for tx in tx_list:
+            tx.transaction_done(TransactionDoneStatus.DELETED)
 
     @classmethod
     def _delete_tx(cls, tx: _Transaction, tombstone_finished_refs: bool = False):
@@ -729,7 +737,8 @@ class DownloadService:
             if data is not None:
                 bytes_delta = sum(len(c) for c in data) if isinstance(data, list) else len(data)
                 items_delta = len(data) if isinstance(data, list) else None
-                tx.total_bytes += bytes_delta
+                with cls._tx_lock:
+                    tx.total_bytes += bytes_delta
                 ref.emit_progress(
                     receiver_id=requester,
                     state=TransferProgressState.ACTIVE,
@@ -763,14 +772,18 @@ class DownloadService:
 
                 for tx in expired_tx:
                     assert isinstance(tx, _Transaction)
-                    tx.transaction_done(TransactionDoneStatus.TIMEOUT)
                     cls._delete_tx(tx)
 
                 for tx in finished_tx:
-                    tx.transaction_done(TransactionDoneStatus.FINISHED)
                     cls._delete_tx(tx, tombstone_finished_refs=True)
 
                 cls._expire_finished_refs(now)
+
+            for tx in expired_tx:
+                tx.transaction_done(TransactionDoneStatus.TIMEOUT)
+
+            for tx in finished_tx:
+                tx.transaction_done(TransactionDoneStatus.FINISHED)
 
             time.sleep(5.0)
 

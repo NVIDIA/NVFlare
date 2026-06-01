@@ -63,11 +63,12 @@ class _ReverseResultUploadDecision:
 
 
 class _ReverseResultUploadProgressTracker:
-    def __init__(self, *, idle_timeout: float, clock=None):
+    def __init__(self, *, idle_timeout: float, clock=None, logger=None):
         if idle_timeout <= 0:
             raise ValueError(f"idle_timeout must be > 0, but got {idle_timeout}")
         self.idle_timeout = float(idle_timeout)
         self.clock = clock or time.time
+        self.logger = logger
         self.progress_tracker = TransferProgressTracker(idle_timeout=self.idle_timeout, clock=self.clock)
         self.expected = {}
         self.record_keys = {}
@@ -222,6 +223,11 @@ class _ReverseResultUploadProgressTracker:
         ]
         if len(matches) == 1:
             return matches[0]
+        if len(matches) > 1 and self.logger:
+            self.logger.warning(
+                f"ambiguous result_upload progress for ref={transfer_id} receiver={receiver_id}: "
+                f"matching tx ids={matches}"
+            )
         return None
 
     def _all_expected_terminal_success(self):
@@ -332,7 +338,7 @@ class FlareAgent:
         heartbeat_interval=5.0,
         heartbeat_timeout=60.0,
         resend_interval=2.0,
-        max_resends=None,
+        max_resends=3,
         submit_result_timeout=60.0,
         metric_pipe: Optional[Pipe] = None,
         task_channel_name: str = PipeChannelName.TASK,
@@ -357,7 +363,7 @@ class FlareAgent:
                 0 means DO NOT check for heartbeat. Defaults to 30.0.
             resend_interval (float): how often to resend a message if failing to send. None means no resend.
                 Note that if the pipe does not support resending, then no resend. Defaults to 2.0.
-            max_resends (int, optional): max number of resend. None means no limit. Defaults to None.
+            max_resends (int, optional): max number of resend. Defaults to 3. None means no limit.
             submit_result_timeout (float): when submitting task result,
                 how long to wait for response from the CJ. Defaults to 30.0.
             metric_pipe (Pipe, optional): pipe for metric communication. Defaults to None.
@@ -653,7 +659,7 @@ class FlareAgent:
         idle_timeout = getattr(self, "_streaming_idle_timeout", DEFAULT_STREAMING_IDLE_TIMEOUT)
         if idle_timeout is None:
             return None
-        return _ReverseResultUploadProgressTracker(idle_timeout=idle_timeout)
+        return _ReverseResultUploadProgressTracker(idle_timeout=idle_timeout, logger=self.logger)
 
     def _register_download_transactions(self, tracker: _ReverseResultUploadProgressTracker, transactions=None):
         transactions = get_download_transactions() if transactions is None else transactions
@@ -1018,7 +1024,7 @@ class FlareAgentWithCellPipe(FlareAgent):
         heartbeat_interval=5.0,
         heartbeat_timeout=60.0,  # increased from 30.0 — 30s too tight under large-model GC/relay
         resend_interval=2.0,
-        max_resends=None,
+        max_resends=3,
         submit_result_timeout=60.0,  # increased from 30.0 — gives CJ enough time to ACK under load
         has_metrics=False,
         download_complete_timeout=DownloadService.FINISHED_REFS_TTL,
@@ -1039,7 +1045,7 @@ class FlareAgentWithCellPipe(FlareAgent):
                 0 means DO NOT check for heartbeat. Defaults to 60.0.
             resend_interval (float): how often to resend a message if failing to send. None means no resend.
                 Note that if the pipe does not support resending, then no resend.
-            max_resends (int, optional): max number of resend. None means no limit.
+            max_resends (int, optional): max number of resend. Defaults to 3. None means no limit.
             submit_result_timeout (float): when submitting task result, how long to wait for response from the CJ.
                 Defaults to 60.0.
             has_metrics (bool): has metric pipe or not.

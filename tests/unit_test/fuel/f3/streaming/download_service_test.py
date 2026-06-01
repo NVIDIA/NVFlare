@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import threading
+import weakref
 from typing import Any, Tuple
 from unittest.mock import Mock, patch
 
@@ -109,6 +110,7 @@ def _make_isolated_download_service():
         _finished_refs = {}
         _logger = Mock()
         _tx_lock = threading.Lock()
+        _initialized_cells = weakref.WeakKeyDictionary()
 
     return IsolatedDownloadService
 
@@ -369,6 +371,132 @@ class TestDownloadService:
         transaction_id, status = obj.transaction_done_calls[0]
         assert transaction_id == tx_id
         assert status == TransactionDoneStatus.FINISHED
+
+    def test_delete_transaction_invokes_done_callback_after_releasing_tx_lock(self):
+        """transaction_done callbacks may re-enter DownloadService APIs without deadlocking the tx lock."""
+        from nvflare.fuel.f3.streaming.download_service import _Transaction
+
+        service = _make_isolated_download_service()
+        callback_lock_available = []
+
+        def _callback(*_args, **_kwargs):
+            acquired = service._tx_lock.acquire(blocking=False)
+            callback_lock_available.append(acquired)
+            if acquired:
+                service._tx_lock.release()
+
+        tx = _Transaction(timeout=10.0, num_receivers=1, transaction_done_cb=_callback)
+        obj = MockDownloadable([b"chunk1"])
+        ref = tx.add_object(obj)
+
+        with service._tx_lock:
+            service._tx_table[tx.tid] = tx
+            service._ref_table[ref.rid] = ref
+
+        service.delete_transaction(tx.tid)
+
+        assert callback_lock_available == [True]
+        assert obj.transaction_done_calls == [(tx.tid, TransactionDoneStatus.DELETED)]
+
+    def test_monitor_invokes_done_callback_after_releasing_tx_lock(self):
+        """Monitor cleanup must delete table state under lock and run callbacks after lock release."""
+        from nvflare.fuel.f3.streaming.download_service import _Transaction
+
+        service = _make_isolated_download_service()
+        callback_lock_available = []
+        fake_start_time = 1_000_000_000_000.0
+
+        def _callback(*_args, **_kwargs):
+            acquired = service._tx_lock.acquire(blocking=False)
+            callback_lock_available.append(acquired)
+            if acquired:
+                service._tx_lock.release()
+
+        tx = _Transaction(timeout=10.0, num_receivers=1, transaction_done_cb=_callback)
+        tx.last_active_time = fake_start_time
+        tx.start_time = fake_start_time
+        obj = MockDownloadable([b"chunk1"])
+        ref = tx.add_object(obj)
+
+        with service._tx_lock:
+            service._tx_table[tx.tid] = tx
+            service._ref_table[ref.rid] = ref
+            ref.obj_downloaded(to_receiver="receiver1", status=DownloadStatus.SUCCESS)
+
+        _run_monitor_once(service, fake_start_time + 1.0)
+
+        assert callback_lock_available == [True]
+        assert tx.tid not in service._tx_table
+        assert ref.rid not in service._ref_table
+        assert ref.rid in service._finished_refs
+
+    def test_add_object_cannot_orphan_ref_when_transaction_is_deleted_mid_add(self):
+        """add_object keeps tx.refs and _ref_table updates atomic with transaction deletion."""
+        from nvflare.fuel.f3.streaming.download_service import _Transaction
+
+        class BlockingSetTransactionDownloadable(MockDownloadable):
+            def __init__(self):
+                super().__init__([b"chunk1"])
+                self.entered = threading.Event()
+                self.proceed = threading.Event()
+
+            def set_transaction(self, tx_id: str, ref_id: str):
+                self.tx_id = tx_id
+                self.ref_id = ref_id
+                self.entered.set()
+                assert self.proceed.wait(timeout=2.0)
+
+        service = _make_isolated_download_service()
+        tx = _Transaction(timeout=10.0, num_receivers=1)
+        obj = BlockingSetTransactionDownloadable()
+        result = {}
+
+        with service._tx_lock:
+            service._tx_table[tx.tid] = tx
+
+        def _add_object():
+            try:
+                result["ref_id"] = service.add_object(tx.tid, obj)
+            except Exception as ex:
+                result["error"] = ex
+
+        add_thread = threading.Thread(target=_add_object)
+        add_thread.start()
+        assert obj.entered.wait(timeout=1.0)
+
+        delete_thread = threading.Thread(target=lambda: service.delete_transaction(tx.tid))
+        delete_thread.start()
+        obj.proceed.set()
+
+        add_thread.join(timeout=2.0)
+        delete_thread.join(timeout=2.0)
+
+        assert not add_thread.is_alive()
+        assert not delete_thread.is_alive()
+        assert "error" not in result
+        assert tx.tid not in service._tx_table
+        assert result["ref_id"] not in service._ref_table
+        assert obj.transaction_done_calls == [(tx.tid, TransactionDoneStatus.DELETED)]
+
+    def test_shutdown_clears_initialized_cells(self):
+        """A new cell allocated after shutdown must register callbacks even if an old cell was initialized."""
+        service = _make_isolated_download_service()
+        service._tx_monitor = object()
+
+        class FakeCell:
+            def __init__(self):
+                self.registered = []
+
+            def register_request_cb(self, **kwargs):
+                self.registered.append(kwargs)
+
+        cell = FakeCell()
+        service._initialize(cell)
+        assert list(service._initialized_cells.keys()) == [cell]
+
+        service.shutdown()
+
+        assert list(service._initialized_cells.keys()) == []
 
     def test_get_transaction_id_from_ref_id(self, cell):
         """Test retrieving transaction ID from reference ID."""

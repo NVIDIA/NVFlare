@@ -429,8 +429,8 @@ def test_streaming_idle_timeout_overridden_from_config(monkeypatch):
     assert executor.heartbeat_timeout == 1200.0
 
 
-def test_streaming_idle_timeout_override_replaces_tracker_under_lock(monkeypatch):
-    from nvflare.fuel.f3.streaming.transfer_progress import STREAMING_IDLE_TIMEOUT, TransferProgressTracker
+def test_streaming_idle_timeout_override_mutates_tracker_under_lock(monkeypatch):
+    from nvflare.fuel.f3.streaming.transfer_progress import STREAMING_IDLE_TIMEOUT
 
     monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None)
     monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: None)
@@ -444,16 +444,16 @@ def test_streaming_idle_timeout_override_replaces_tracker_under_lock(monkeypatch
 
     lock = _RecordingLock(on_enter=_assert_timeout_not_written_before_lock)
     executor._stream_progress_lock = lock
+    old_tracker = executor._stream_progress_tracker
 
     def _make_tracker():
-        assert lock.active
-        assert executor.streaming_idle_timeout == 1200.0
-        return TransferProgressTracker(idle_timeout=executor.streaming_idle_timeout)
+        raise AssertionError("streaming idle override must not replace the in-flight progress tracker")
 
     executor._make_stream_progress_tracker = _make_tracker
     executor._apply_streaming_progress_client_config_overrides(_FakeFLContext(_FakeCell()))
 
     assert lock.entered
+    assert executor._stream_progress_tracker is old_tracker
     assert executor._stream_progress_tracker.idle_timeout == 1200.0
 
 

@@ -385,6 +385,9 @@ class CellPipe(Pipe):
         # header.  On every subsequent call with the same CellMessage object,
         # encode_payload() sees the header is already set and skips re-serialization,
         # so no new ArrayDownloadable is created.
+        #
+        # The cached CellMessage also snapshots headers derived by _to_cell_message()
+        # such as JOB_ID. Callers must set those headers before the first send.
         if not hasattr(msg, "_cached_cell_msg"):
             msg._cached_cell_msg = _to_cell_message(msg)
         request = msg._cached_cell_msg

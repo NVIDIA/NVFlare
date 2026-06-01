@@ -335,6 +335,14 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
                 # items have been serialised.
                 fobs_ctx[lazy_batch_key] = {"fqcn": target.fqcn, "ref_id": target.ref_id}
                 manager.register_post_cb(self._finalize_lazy_batch)
+            else:
+                lazy_batch = fobs_ctx[lazy_batch_key]
+                if lazy_batch["fqcn"] != target.fqcn or lazy_batch["ref_id"] != target.ref_id:
+                    raise RuntimeError(
+                        "LazyDownloadRef payload mixes download batches: "
+                        f"existing fqcn={lazy_batch['fqcn']} ref_id={lazy_batch['ref_id']}, "
+                        f"new fqcn={target.fqcn} ref_id={target.ref_id}"
+                    )
 
             self.logger.debug(
                 f"ViaDownloader: re-emitting LazyDownloadRef {target.item_id=} " f"{target.fqcn=} {target.ref_id=}"
@@ -446,6 +454,13 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
 
         if not normalized:
             return None
+        deduped = tuple(dict.fromkeys(normalized))
+        if len(deduped) != len(normalized):
+            self.logger.warning(
+                f"{RESULT_UPLOAD_RECEIVER_IDS_CTX_KEY} contains duplicate receiver ids; "
+                f"using {len(deduped)} unique receiver(s)"
+            )
+            normalized = deduped
         if num_receivers > 0 and len(normalized) != num_receivers:
             self.logger.warning(
                 f"{RESULT_UPLOAD_RECEIVER_IDS_CTX_KEY} has {len(normalized)} receivers, "
@@ -577,6 +592,9 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
                 progress_cb=progress_cb if progress_trackable else None,
                 timeout_override=timeout_override,
             )
+            if downloader is None:
+                self.logger.warning("download transaction was not created because FOBS context has no cell")
+                return
 
             expected_pairs = []
             if progress_trackable:
@@ -611,6 +629,9 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         lazy_batch_key = f"{self.prefix}{_LAZY_BATCH_CTX_SUFFIX}"
         lazy_batch = fobs_ctx.get(lazy_batch_key)
         if not lazy_batch:
+            return
+        get_error = getattr(mgr, "get_error", None)
+        if callable(get_error) and get_error():
             return
         ref = {_RefKey.FQCN: lazy_batch["fqcn"], _RefKey.REF_ID: lazy_batch["ref_id"]}
         datum = Datum(datum_type=DatumType.TEXT, value=json.dumps(ref), dot=self.get_download_dot())

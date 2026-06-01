@@ -450,8 +450,26 @@ class Cell(StreamCell):
             # receiving with progress timeout
             r_future = waiter.receiving_future
             self.logger.debug(f"{req_id=}: entering receiving wait {timeout=}")
-            receiving_complete = self._future_wait(r_future, timeout, abort_signal)
-            if not receiving_complete:
+            while True:
+                receiving_complete = self._future_wait(r_future, timeout, abort_signal)
+                if receiving_complete:
+                    break
+                if abort_signal and abort_signal.triggered:
+                    self.logger.info(f"{req_id=}: receiving aborted {timeout=}")
+                    return self._get_result(req_id)
+                if getattr(r_future, "error", None):
+                    self.logger.info(f"{req_id=}: receiving failed with stream error")
+                    return self._get_result(req_id)
+                if progress_wait_cb:
+                    try:
+                        if progress_wait_cb():
+                            self.logger.debug(f"{req_id=}: receiving still has transfer progress; continue waiting")
+                            continue
+                    except Exception as ex:
+                        self.logger.warning(
+                            f"{req_id=}: progress_wait_cb raised during receiving, treating as no-progress: "
+                            f"{secure_format_exception(ex)}"
+                        )
                 self.logger.info(f"{req_id=}: receiving timeout {timeout=}")
                 return self._get_result(req_id)
             self.logger.debug(f"{req_id=}: receiving complete")
