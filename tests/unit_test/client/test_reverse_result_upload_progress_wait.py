@@ -1093,6 +1093,20 @@ def test_launch_once_cleanup_stops_metric_handler_if_task_handler_fails():
     assert agent._launch_once_cleanup_done is True
 
 
+def test_launch_once_cleanup_tolerates_missing_logger_on_partial_agent():
+    agent = FlareAgent.__new__(FlareAgent)
+    agent._close_pipe = True
+    agent._close_metric_pipe = True
+    agent.pipe_handler = MagicMock()
+    agent.pipe_handler.stop.side_effect = RuntimeError("task stop failed")
+    agent.metric_pipe_handler = None
+
+    agent._launch_once_cleanup()
+
+    agent.pipe_handler.stop.assert_called_once_with(True)
+    assert agent._launch_once_cleanup_done is True
+
+
 def test_launch_once_cleanup_serializes_concurrent_callers_until_stop_finishes():
     agent = FlareAgent.__new__(FlareAgent)
     agent.logger = MagicMock()
@@ -1101,17 +1115,18 @@ def test_launch_once_cleanup_serializes_concurrent_callers_until_stop_finishes()
     agent.metric_pipe_handler = None
     started = threading.Event()
     release = threading.Event()
+    thread_timeout = 5.0
 
     def _stop(_close_pipe):
         started.set()
-        assert release.wait(timeout=1.0)
+        assert release.wait(timeout=thread_timeout)
 
     agent.pipe_handler = MagicMock()
     agent.pipe_handler.stop.side_effect = _stop
 
     first = threading.Thread(target=agent._launch_once_cleanup)
     first.start()
-    assert started.wait(timeout=1.0)
+    assert started.wait(timeout=thread_timeout)
 
     second_started = threading.Event()
     second_finished = threading.Event()
@@ -1123,12 +1138,12 @@ def test_launch_once_cleanup_serializes_concurrent_callers_until_stop_finishes()
 
     second = threading.Thread(target=_second_cleanup)
     second.start()
-    assert second_started.wait(timeout=1.0)
+    assert second_started.wait(timeout=thread_timeout)
     assert not second_finished.is_set()
 
     release.set()
-    first.join(timeout=1.0)
-    second.join(timeout=1.0)
+    first.join(timeout=thread_timeout)
+    second.join(timeout=thread_timeout)
 
     assert not first.is_alive()
     assert not second.is_alive()

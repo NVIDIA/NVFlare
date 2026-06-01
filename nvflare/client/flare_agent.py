@@ -861,8 +861,9 @@ class FlareAgent:
 
             # The daemon watcher calls this after the user main thread returns, before
             # Python waits forever on F3 non-daemon threads. The atexit registration is
-            # only an idempotent backup. PipeHandler.stop() must synchronously close and
-            # join the F3 threads; keep this lock held through those calls so a
+            # only an idempotent backup. PipeHandler.stop() closes the pipe; when this
+            # closes the last CellPipe for a cell, CellPipe.close() synchronously joins
+            # the F3 helper threads. Keep this lock held through those stop calls so a
             # concurrent atexit invocation waits for the watcher rather than returning
             # before cleanup finishes.
             close_pipe = getattr(self, "_close_pipe", True)
@@ -881,12 +882,14 @@ class FlareAgent:
                 except Exception as ex:
                     cleanup_errors.append((handler_name, ex))
             self._launch_once_cleanup_done = True
-            for handler_name, ex in cleanup_errors:
-                self.logger.warning(f"[subprocess] launch_once {handler_name} cleanup failed: {ex}")
-            # Do not call os._exit(0): that masks later user sys.exit(nonzero) and
-            # unhandled script failures.
-            sys.stdout.flush()
-            sys.stderr.flush()
+        logger = getattr(self, "logger", None)
+        for handler_name, ex in cleanup_errors:
+            if logger:
+                logger.warning(f"[subprocess] launch_once {handler_name} cleanup failed: {ex}")
+        # Do not call os._exit(0): that masks later user sys.exit(nonzero) and
+        # unhandled script failures.
+        sys.stdout.flush()
+        sys.stderr.flush()
 
     def _do_submit_result(self, current_task: _TaskContext, result, rc):
         result_shareable = self.task_result_to_shareable(result, rc)
