@@ -56,6 +56,15 @@ def _repo_root():
     return Path(__file__).resolve().parents[3]
 
 
+def _load_master_template():
+    import yaml
+
+    template_path = _repo_root() / "nvflare" / "lighter" / "templates" / "master_template.yml"
+    assert template_path.exists()
+    with open(template_path, "r") as f:
+        return yaml.safe_load(f)
+
+
 def _extract_class_allow_list(resource_template):
     """Extract the class_allow_list JSON array verbatim.
 
@@ -134,20 +143,7 @@ class TestStaticFileBuilder:
 
     def test_master_template_moves_user_config_runtime_workspace(self):
         """CC startup kits live in plaintext /user_config, so runtime artifacts must not default there."""
-        import os
-
-        import yaml
-
-        template_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
-            "nvflare",
-            "lighter",
-            "templates",
-            "master_template.yml",
-        )
-
-        with open(template_path, "r") as f:
-            template = yaml.safe_load(f)
+        template = _load_master_template()
 
         sub_start = template["sub_start_sh"]
         stop_fl = template["stop_fl_sh"]
@@ -176,21 +172,7 @@ class TestStaticFileBuilder:
 
     def test_master_template_class_allow_list_is_exact(self):
         """The provisioned allow list must match the curated component list exactly."""
-        import os
-
-        import yaml
-
-        template_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
-            "nvflare",
-            "lighter",
-            "templates",
-            "master_template.yml",
-        )
-        assert os.path.exists(template_path)
-
-        with open(template_path, "r") as f:
-            template = yaml.safe_load(f)
+        template = _load_master_template()
 
         expected_paths = [
             "nvflare.app_common.aggregators.collect_and_assemble_model_aggregator.CollectAndAssembleModelAggregator",
@@ -286,19 +268,7 @@ class TestStaticFileBuilder:
         explicitly review-and-approve the prefix here. This guard prevents the previously-removed
         ``nvflare.edge.`` style entry from silently coming back via an expected_paths update.
         """
-        import os
-
-        import yaml
-
-        template_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
-            "nvflare",
-            "lighter",
-            "templates",
-            "master_template.yml",
-        )
-        with open(template_path, "r") as f:
-            template = yaml.safe_load(f)
+        template = _load_master_template()
 
         # If a future PR genuinely needs a broad package prefix, add it here with an explanation.
         explicitly_reviewed_package_prefixes: set = set()
@@ -317,19 +287,7 @@ class TestStaticFileBuilder:
 
     def test_master_template_class_allow_list_excludes_edge_components(self):
         """Provisioned non-BYOC resources must not authorize edge components."""
-        import os
-
-        import yaml
-
-        template_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
-            "nvflare",
-            "lighter",
-            "templates",
-            "master_template.yml",
-        )
-        with open(template_path, "r") as f:
-            template = yaml.safe_load(f)
+        template = _load_master_template()
 
         for resource_key in ("local_client_resources", "local_server_resources"):
             extracted = _extract_class_allow_list(template[resource_key])
@@ -338,19 +296,9 @@ class TestStaticFileBuilder:
 
     def test_master_template_default_authz_grants_submission_byoc_to_lead_and_project_admin(self):
         """Default authorization grants broad project_admin permissions and lead BYOC submission permission."""
-        import os
-
         import yaml
 
-        template_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
-            "nvflare",
-            "lighter",
-            "templates",
-            "master_template.yml",
-        )
-        with open(template_path, "r") as f:
-            template = yaml.safe_load(f)
+        template = _load_master_template()
 
         default_authz = yaml.safe_load(template["default_authz"])
         permissions = default_authz["permissions"]
@@ -366,21 +314,9 @@ class TestStaticFileBuilder:
         class_allow_list. Edge components are intentionally outside this
         non-BYOC regression set.
         """
-        import os
-
-        import yaml
-
         from nvflare.app_common.widgets.component_path_authorizer import ComponentPathAuthorizer
 
-        template_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
-            "nvflare",
-            "lighter",
-            "templates",
-            "master_template.yml",
-        )
-        with open(template_path, "r") as f:
-            template = yaml.safe_load(f)
+        template = _load_master_template()
 
         regression_paths = [
             # PR #4701 regression: NPTrainer was omitted from the curated list.

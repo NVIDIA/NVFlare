@@ -50,6 +50,7 @@ def _iter_component_configs(value):
     if isinstance(value, dict):
         if "path" in value or "class_path" in value:
             yield value
+            return
         for child in value.values():
             yield from _iter_component_configs(child)
     elif isinstance(value, list):
@@ -99,6 +100,19 @@ class _AuthorizingExportEnv(ExecEnv):
 
     def get_job_result(self, job_id: str, timeout: float = 0.0):
         return str(self.job_root / job_id)
+
+
+def test_iter_component_configs_does_not_recurse_into_component_args():
+    component = {
+        "id": "edge_executor",
+        "path": "nvflare.edge.executors.edge_model_executor.EdgeModelExecutor",
+        "args": {
+            "path": "/tmp/local/data",
+            "nested": {"class_path": "not.a.component"},
+        },
+    }
+
+    assert list(_iter_component_configs({"components": [component]})) == [component]
 
 
 class TestEdgeFedBuffRecipe:
