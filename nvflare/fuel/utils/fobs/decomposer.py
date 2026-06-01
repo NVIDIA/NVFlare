@@ -25,6 +25,7 @@ T = TypeVar("T")
 
 DICT_CONTENT = "dict"
 DATA_CONTENT = "data"
+LIST_CONTENT = "list"
 
 
 @lru_cache(maxsize=None)
@@ -243,18 +244,25 @@ class DataClassDecomposer(Decomposer):
         if isinstance(target, dict):
             data[DICT_CONTENT] = dict(target)
 
+        if isinstance(target, list):
+            data[LIST_CONTENT] = list(target)
+
         return data
 
     def recompose(self, data: dict, manager: DatumManager = None) -> T:
         instance = self.data_type.__new__(self.data_type)
 
         data_content = data.get(DATA_CONTENT, None)
-        if data_content:
+        if data_content is not None:
             instance.__dict__.update(data_content)
 
         dict_content = data.get(DICT_CONTENT, None)
-        if dict_content:
+        if dict_content is not None:
             instance.update(dict_content)
+
+        list_content = data.get(LIST_CONTENT, None)
+        if list_content is not None:
+            instance.extend(list_content)
 
         return instance
 

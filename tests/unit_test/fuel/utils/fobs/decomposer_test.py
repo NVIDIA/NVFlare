@@ -184,6 +184,18 @@ class TestDecomposers:
         assert isinstance(externalized["items"], RequiredArgList)
         assert list(externalized["items"]) == ["a", "b"]
 
+    def test_fobs_round_trip_list_subclass_with_required_constructor_args(self):
+        # Regression: preserving the list subclass type must not drop its list contents
+        # when FOBS routes the value through DataClassDecomposer.
+        items = RequiredArgList(10)
+        items.extend(["a", "b"])
+        source = Shareable({"items": items})
+
+        restored = fobs.loads(fobs.dumps(source))
+
+        assert isinstance(restored["items"], RequiredArgList)
+        assert list(restored["items"]) == ["a", "b"]
+
     def test_new_empty_container_does_not_mask_no_arg_constructor_type_error(self):
         # The fallback to __new__ is only for signatures that require init args. TypeErrors raised
         # inside a no-arg constructor should still surface instead of being silently bypassed.
