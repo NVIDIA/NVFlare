@@ -15,9 +15,12 @@
 """Tests for Edge FedBuff recipes."""
 
 import importlib.util
+import json
 from unittest.mock import patch
 
 import pytest
+
+from nvflare.recipe.spec import ExecEnv
 
 torch = pytest.importorskip("torch")
 
@@ -41,6 +44,61 @@ def simple_pt_model():
     import torch.nn as nn
 
     return nn.Linear(10, 2)
+
+
+def _iter_component_configs(value):
+    if isinstance(value, dict):
+        if "path" in value or "class_path" in value:
+            yield value
+        for child in value.values():
+            yield from _iter_component_configs(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _iter_component_configs(child)
+
+
+class _AuthorizingExportEnv(ExecEnv):
+    def __init__(self, job_root):
+        super().__init__()
+        self.job_root = job_root
+        self.authorized_paths = []
+        self.meta = {}
+
+    def deploy(self, job):
+        from nvflare.apis.app_validation import AppValidationKey
+        from nvflare.apis.fl_constant import FLContextKey
+        from nvflare.apis.fl_context import FLContext
+        from nvflare.app_common.widgets.component_path_authorizer import ComponentPathAuthorizer
+        from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
+        from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
+
+        job.export_job(str(self.job_root))
+        job_dir = self.job_root / job.name
+        job_data = zip_directory_to_bytes("", str(job_dir))
+        valid, error, meta = JobMetaValidator().validate(job.name, job_data)
+        assert valid, error
+        assert meta.get(AppValidationKey.BYOC) is True
+        self.meta = meta
+
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(FLContextKey.JOB_META, meta, private=True, sticky=False)
+        authorizer = ComponentPathAuthorizer()
+        for config_path in sorted(job_dir.glob("*/config/config_fed_*.json")):
+            config = json.loads(config_path.read_text())
+            for component_config in _iter_component_configs(config):
+                authorizer.authorize_component_config(component_config, fl_ctx=fl_ctx)
+                self.authorized_paths.append(component_config.get("path") or component_config.get("class_path"))
+
+        return job.name
+
+    def get_job_status(self, job_id: str):
+        return None
+
+    def abort_job(self, job_id: str) -> None:
+        pass
+
+    def get_job_result(self, job_id: str, timeout: float = 0.0):
+        return str(self.job_root / job_id)
 
 
 class TestEdgeFedBuffRecipe:
@@ -131,6 +189,25 @@ class TestEdgeFedBuffRecipe:
         # Verify model is stored as dict
         assert isinstance(recipe.model, dict)
         assert recipe.model["path"] == "torch.nn.Linear"
+
+    def test_run_validates_edge_job_byoc_before_component_authorization(
+        self, tmp_path, model_manager_config, device_manager_config
+    ):
+        """JobMetaValidator must mark exported edge jobs BYOC before ComponentPathAuthorizer sees the configs."""
+        from nvflare.edge.tools.edge_fed_buff_recipe import EdgeFedBuffRecipe
+
+        recipe = EdgeFedBuffRecipe(
+            job_name="test_edge_authorizer_smoke",
+            model={"class_path": "torch.nn.Linear", "args": {"in_features": 10, "out_features": 2}},
+            model_manager_config=model_manager_config,
+            device_manager_config=device_manager_config,
+        )
+        env = _AuthorizingExportEnv(tmp_path)
+
+        run = recipe.run(env)
+
+        assert run.get_job_id() == "test_edge_authorizer_smoke"
+        assert any(path.startswith("nvflare.edge.") for path in env.authorized_paths)
 
     def test_relative_path_accepted_if_exists(
         self, mock_file_system, simple_pt_model, model_manager_config, device_manager_config

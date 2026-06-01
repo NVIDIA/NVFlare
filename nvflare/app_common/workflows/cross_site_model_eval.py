@@ -30,6 +30,7 @@ from nvflare.app_common.abstract.formatter import Formatter
 from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.app_constant import AppConstants, ModelName
 from nvflare.app_common.app_event_type import AppEventType
+from nvflare.app_common.utils.file_utils import resolve_path_under_root
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
@@ -132,7 +133,7 @@ class CrossSiteModelEval(Controller):
         # Create shareable dirs for models and results
         workspace: Workspace = self._engine.get_workspace()
         run_dir = workspace.get_run_dir(fl_ctx.get_job_id())
-        cross_val_path = os.path.join(run_dir, self._cross_val_dir)
+        cross_val_path = resolve_path_under_root(run_dir, self._cross_val_dir, "cross_val_dir")
         self._cross_val_models_dir = os.path.join(cross_val_path, AppConstants.CROSS_VAL_MODEL_DIR_NAME)
         self._cross_val_results_dir = os.path.join(cross_val_path, AppConstants.CROSS_VAL_RESULTS_DIR_NAME)
 
