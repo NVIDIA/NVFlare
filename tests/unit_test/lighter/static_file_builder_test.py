@@ -77,6 +77,27 @@ def _extract_class_allow_list(resource_template):
     )
 
 
+def _extract_class_allow_list_json(resource_template):
+    """Parse the class_allow_list JSON array verbatim.
+
+    Unlike the regex-based extractor above, this preserves trailing-dot package prefixes,
+    so a guard can detect a broad prefix that would authorize a forbidden class.
+    """
+    list_pos = resource_template.index('"class_allow_list"')
+    start = resource_template.index("[", list_pos)
+    depth = 0
+    end = None
+    for i in range(start, len(resource_template)):
+        if resource_template[i] == "[":
+            depth += 1
+        elif resource_template[i] == "]":
+            depth -= 1
+            if depth == 0:
+                end = i
+                break
+    return json.loads(resource_template[start : end + 1])
+
+
 class TestStaticFileBuilder:
     @pytest.mark.parametrize(
         "scheme",
@@ -257,3 +278,54 @@ class TestStaticFileBuilder:
         for resource_key in ("local_client_resources", "local_server_resources"):
             resource_template = template[resource_key]
             assert _extract_class_allow_list(resource_template) == expected_paths
+
+    def test_master_template_class_allow_list_excludes_code_exec_sinks(self):
+        """Classes that deserialize or execute file content must never be allow-listed.
+
+        The non-BYOC allow-list only restricts which component classes can be instantiated; it
+        does not restrict the files a job ships to a site (a job's ``config/`` folder is deployed
+        to the server and every client without BYOC). So any allow-listed class that loads a
+        config-controlled file through an unsafe loader (pickle / ``torch.load`` / keras
+        ``load_model`` / ``importlib``) is a remote-code-execution sink. The sinks below are
+        intentionally OMITTED -- the corresponding ``*_locator`` components are listed instead.
+        Do not add these classes (or a package prefix covering them) to ``class_allow_list``.
+        """
+        import os
+
+        import yaml
+
+        from nvflare.app_common.widgets.component_path_authorizer import ComponentPathAuthorizer
+
+        forbidden_paths = [
+            # tf.keras.models.load_model executes code embedded in .keras/.h5/SavedModel files
+            # (Lambda layers / custom objects); there is no safe-load flag.
+            "nvflare.app_opt.tf.model_persistor.TFModelPersistor",
+            # torch.load is pickle-based and runs arbitrary code when load_weights_only=False.
+            "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor",
+            # ConfigParser importlib-imports a class path read from a config file (plus
+            # sys.path.append) -> arbitrary code import.
+            "nvflare.edge.simulation.config.ConfigParser",
+        ]
+
+        template_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
+            "nvflare",
+            "lighter",
+            "templates",
+            "master_template.yml",
+        )
+        with open(template_path, "r") as f:
+            template = yaml.safe_load(f)
+
+        for resource_key in ("local_client_resources", "local_server_resources"):
+            allow_list = _extract_class_allow_list_json(template[resource_key])
+            for forbidden in forbidden_paths:
+                authorized_by = [
+                    entry for entry in allow_list if ComponentPathAuthorizer._path_matches_prefix(forbidden, entry)
+                ]
+                assert not authorized_by, (
+                    f"{forbidden!r} is a file-deserialization / code-execution sink and must not be "
+                    f"authorized by {resource_key} (matched by {authorized_by}). Do not add this class, or a "
+                    "package prefix covering it, to class_allow_list; list the corresponding *_locator "
+                    "component instead."
+                )
