@@ -19,12 +19,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from nvflare.client import flare_agent as flare_agent_module
-from nvflare.client.flare_agent import (
-    STREAM_PROGRESS_COMPLETION_ACK_GRACE,
-    FlareAgent,
-    _ReverseResultUploadProgressTracker,
-    _TaskContext,
-)
+from nvflare.client.flare_agent import FlareAgent, _ReverseResultUploadProgressTracker, _TaskContext
 from nvflare.fuel.f3.streaming.download_service import TransactionDoneStatus
 from nvflare.fuel.f3.streaming.transfer_progress import DIRECTION_RESULT_UPLOAD, TransferProgressState
 from nvflare.fuel.utils import fobs
@@ -1216,7 +1211,7 @@ def test_wait_for_reverse_result_upload_elapsed_uses_tracker_clock():
     assert any("elapsed=12.50s" in call[0][0] for call in agent.logger.info.call_args_list)
 
 
-def test_result_upload_completion_grace_wait_uses_remaining_grace():
+def test_result_upload_completion_grace_wait_is_capped_by_poll_interval():
     clock = FakeClock()
     tracker = _make_tracker(clock=clock, idle_timeout=10.0)
     _register(tracker, created_time=clock.now)
@@ -1256,7 +1251,7 @@ def test_result_upload_completion_grace_wait_uses_remaining_grace():
     )
 
     assert result is True
-    assert wait_timeouts == [STREAM_PROGRESS_COMPLETION_ACK_GRACE]
+    assert wait_timeouts == [agent._result_upload_poll_interval]
 
 
 def test_reverse_result_upload_clears_event_before_waiting():

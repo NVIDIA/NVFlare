@@ -754,7 +754,7 @@ class FlareAgent:
             if decision.reason == "completion_grace":
                 remaining_grace = tracker.completion_grace_remaining()
                 if remaining_grace is not None:
-                    wait_timeout = remaining_grace
+                    wait_timeout = min(wait_timeout, remaining_grace)
             progress_event.wait(timeout=wait_timeout)
 
     def _get_reverse_result_upload_abandon_reason(self):
