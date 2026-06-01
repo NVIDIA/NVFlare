@@ -423,3 +423,16 @@ def test_resolve_streaming_progress_config_keeps_default_max_peer_silence_when_i
 def test_resolve_streaming_progress_config_rejects_non_positive_values(key):
     with pytest.raises(ValueError):
         resolve_streaming_progress_config({key: 0.0})
+
+
+@pytest.mark.parametrize("key", [STREAMING_IDLE_TIMEOUT, STREAMING_MAX_PEER_SILENCE])
+@pytest.mark.parametrize("value", [float("nan"), float("inf")])
+def test_resolve_streaming_progress_config_rejects_non_finite_values(key, value):
+    with pytest.raises(ValueError, match="finite"):
+        resolve_streaming_progress_config({key: value})
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf")])
+def test_transfer_progress_tracker_rejects_non_finite_idle_timeout(value):
+    with pytest.raises(ValueError, match="finite"):
+        TransferProgressTracker(idle_timeout=value)

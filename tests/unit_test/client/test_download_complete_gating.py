@@ -396,6 +396,15 @@ class TestClientConfigStreamingIdleTimeout:
         with pytest.raises(ValueError, match=ConfigKey.STREAMING_IDLE_TIMEOUT):
             cfg.get_streaming_idle_timeout()
 
+    @pytest.mark.parametrize("value", [float("nan"), float("inf"), "nan", "inf"])
+    def test_non_finite_streaming_idle_timeout_names_config_key(self, value):
+        from nvflare.client.config import ClientConfig, ConfigKey
+
+        cfg = ClientConfig(config={ConfigKey.TASK_EXCHANGE: {ConfigKey.STREAMING_IDLE_TIMEOUT: value}})
+
+        with pytest.raises(ValueError, match=ConfigKey.STREAMING_IDLE_TIMEOUT):
+            cfg.get_streaming_idle_timeout()
+
 
 # ---------------------------------------------------------------------------
 # M-new: ClientConfig.get_max_resends() — negative value clamping

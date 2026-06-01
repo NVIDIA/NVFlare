@@ -19,7 +19,11 @@ from typing import Dict, Optional
 
 from nvflare.apis.fl_constant import ConnPropKey, FLMetaKey
 from nvflare.fuel.f3.streaming.download_service import DownloadService
-from nvflare.fuel.f3.streaming.transfer_progress import DEFAULT_STREAMING_IDLE_TIMEOUT, STREAMING_IDLE_TIMEOUT
+from nvflare.fuel.f3.streaming.transfer_progress import (
+    DEFAULT_STREAMING_IDLE_TIMEOUT,
+    STREAMING_IDLE_TIMEOUT,
+    check_positive_finite_number,
+)
 from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
@@ -227,8 +231,12 @@ class ClientConfig:
         if value is None:
             return None
         try:
-            return float(value)
+            timeout = float(value)
         except (TypeError, ValueError) as e:
+            raise ValueError(f"invalid {ConfigKey.STREAMING_IDLE_TIMEOUT}: {value!r}") from e
+        try:
+            return check_positive_finite_number(ConfigKey.STREAMING_IDLE_TIMEOUT, timeout)
+        except ValueError as e:
             raise ValueError(f"invalid {ConfigKey.STREAMING_IDLE_TIMEOUT}: {value!r}") from e
 
     def get_submit_result_timeout(self) -> float:

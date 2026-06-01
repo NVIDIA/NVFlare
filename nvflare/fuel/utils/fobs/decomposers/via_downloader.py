@@ -29,6 +29,7 @@ from nvflare.fuel.f3.streaming.transfer_progress import (
     DIRECTION_RESULT_UPLOAD,
     DIRECTION_TASK_PAYLOAD_DOWNLOAD,
     STREAMING_IDLE_TIMEOUT,
+    check_positive_finite_number,
 )
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.datum import Datum, DatumManager, DatumType
@@ -395,15 +396,21 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         # materialization. The legacy per-type min_download_timeout remains an explicit
         # override and a backward-compatible fallback when the generic key is absent.
         streaming_idle_timeout = acu.get_positive_float_var(STREAMING_IDLE_TIMEOUT, DEFAULT_STREAMING_IDLE_TIMEOUT)
+        streaming_idle_timeout = check_positive_finite_number(STREAMING_IDLE_TIMEOUT, streaming_idle_timeout)
         min_timeout = acu.get_positive_float_var(
             self._config_var_name(ConfigVarName.MIN_DOWNLOAD_TIMEOUT),
             streaming_idle_timeout or _MIN_DOWNLOAD_TIMEOUT,
         )
+        min_timeout = check_positive_finite_number(
+            self._config_var_name(ConfigVarName.MIN_DOWNLOAD_TIMEOUT), min_timeout
+        )
 
         if timeout_override is not None:
-            timeout = float(timeout_override)
-            if timeout <= 0:
-                raise ValueError(f"{STREAMING_IDLE_TIMEOUT} must be positive, got {timeout_override}")
+            try:
+                timeout = float(timeout_override)
+            except (TypeError, ValueError) as e:
+                raise ValueError(f"{STREAMING_IDLE_TIMEOUT} must be positive finite, got {timeout_override}") from e
+            timeout = check_positive_finite_number(STREAMING_IDLE_TIMEOUT, timeout)
         elif msg_root_ttl:
             timeout = msg_root_ttl
         else:
@@ -411,6 +418,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
 
         if timeout_override is None and timeout < min_timeout:
             timeout = min_timeout
+        timeout = check_positive_finite_number("download timeout", timeout)
 
         self.logger.debug(f"ViaDownloader: {msg_root_id=} {timeout=}")
 

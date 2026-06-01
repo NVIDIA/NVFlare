@@ -81,6 +81,12 @@ def _progress(
     assert accepted, reason
 
 
+@pytest.mark.parametrize("value", [float("nan"), float("inf")])
+def test_result_upload_tracker_rejects_non_finite_idle_timeout(value):
+    with pytest.raises(ValueError, match="finite"):
+        _ReverseResultUploadProgressTracker(idle_timeout=value)
+
+
 def test_result_upload_positive_waits_past_fixed_timeout_while_progress_is_recent():
     clock = FakeClock()
     tracker = _make_tracker(clock=clock, idle_timeout=10.0)

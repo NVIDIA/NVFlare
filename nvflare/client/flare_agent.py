@@ -35,6 +35,7 @@ from nvflare.fuel.f3.streaming.transfer_progress import (
     STREAM_PROGRESS_COMPLETION_ACK_GRACE,
     TransferProgressState,
     TransferProgressTracker,
+    check_positive_finite_number,
 )
 from nvflare.fuel.utils.constants import PipeChannelName
 from nvflare.fuel.utils.fobs import FOBSContextKey
@@ -64,9 +65,7 @@ class _ReverseResultUploadDecision:
 
 class _ReverseResultUploadProgressTracker:
     def __init__(self, *, idle_timeout: float, clock=None, logger=None):
-        if idle_timeout <= 0:
-            raise ValueError(f"idle_timeout must be > 0, but got {idle_timeout}")
-        self.idle_timeout = float(idle_timeout)
+        self.idle_timeout = check_positive_finite_number("idle_timeout", idle_timeout)
         self.clock = clock or time.time
         self.logger = logger
         self.progress_tracker = TransferProgressTracker(idle_timeout=self.idle_timeout, clock=self.clock)

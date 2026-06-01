@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
 import time
 from dataclasses import dataclass
 from typing import Callable, Dict, Iterable, Mapping, Optional, Tuple
@@ -30,6 +31,14 @@ DEFAULT_STREAMING_MAX_PEER_SILENCE = 900.0
 STREAMING_MAX_PEER_SILENCE_IDLE_MULTIPLIER = 1.5
 STREAM_PROGRESS_COMPLETION_ACK_GRACE = 30.0
 _RECEIVER_ID_UNSET = object()
+
+
+def check_positive_finite_number(name: str, value) -> float:
+    check_positive_number(name, value)
+    value = float(value)
+    if not math.isfinite(value):
+        raise ValueError(f"{name} must be finite, but got {value}")
+    return value
 
 
 class TransferProgressState:
@@ -103,8 +112,7 @@ def resolve_streaming_progress_config(
     if streaming_max_peer_silence is None:
         streaming_max_peer_silence = config.get(STREAMING_MAX_PEER_SILENCE)
 
-    check_positive_number(STREAMING_IDLE_TIMEOUT, streaming_idle_timeout)
-    streaming_idle_timeout = float(streaming_idle_timeout)
+    streaming_idle_timeout = check_positive_finite_number(STREAMING_IDLE_TIMEOUT, streaming_idle_timeout)
 
     if streaming_max_peer_silence is None:
         if idle_explicit and streaming_idle_timeout > DEFAULT_STREAMING_IDLE_TIMEOUT:
@@ -115,11 +123,13 @@ def resolve_streaming_progress_config(
         else:
             streaming_max_peer_silence = DEFAULT_STREAMING_MAX_PEER_SILENCE
     else:
-        check_positive_number(STREAMING_MAX_PEER_SILENCE, streaming_max_peer_silence)
+        streaming_max_peer_silence = check_positive_finite_number(
+            STREAMING_MAX_PEER_SILENCE, streaming_max_peer_silence
+        )
 
     return StreamingProgressConfig(
         streaming_idle_timeout=streaming_idle_timeout,
-        streaming_max_peer_silence=float(streaming_max_peer_silence),
+        streaming_max_peer_silence=streaming_max_peer_silence,
     )
 
 
@@ -132,8 +142,7 @@ class TransferProgressTracker:
         idle_timeout: float = DEFAULT_STREAMING_IDLE_TIMEOUT,
         clock: Optional[Callable[[], float]] = None,
     ):
-        check_positive_number("idle_timeout", idle_timeout)
-        self.idle_timeout = float(idle_timeout)
+        self.idle_timeout = check_positive_finite_number("idle_timeout", idle_timeout)
         self._clock = clock or time.time
         self._records: Dict[TransferProgressKey, TransferProgressRecord] = {}
 

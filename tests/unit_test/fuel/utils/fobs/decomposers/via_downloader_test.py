@@ -196,6 +196,26 @@ class TestViaDownloaderTimeoutPolicy:
 
         assert observed["timeout"] == 1200.0
 
+    @pytest.mark.parametrize("value", [float("nan"), float("inf")])
+    def test_create_downloader_rejects_non_finite_generic_streaming_idle_timeout(self, monkeypatch, value):
+        def fake_get_positive_float_var(var_name, default):
+            if var_name == STREAMING_IDLE_TIMEOUT:
+                return value
+            return default
+
+        monkeypatch.setattr(via_downloader_module.acu, "get_positive_float_var", fake_get_positive_float_var)
+
+        decomposer = _DummyViaDownloader()
+        with pytest.raises(ValueError, match="finite"):
+            decomposer._create_downloader({fobs.FOBSContextKey.CELL: object()})
+
+    @pytest.mark.parametrize("value", [float("nan"), float("inf")])
+    def test_create_downloader_rejects_non_finite_timeout_override(self, value):
+        decomposer = _DummyViaDownloader()
+
+        with pytest.raises(ValueError, match="finite"):
+            decomposer._create_downloader({fobs.FOBSContextKey.CELL: object()}, timeout_override=value)
+
     def test_create_downloader_honors_explicit_legacy_min_download_timeout(self, monkeypatch):
         observed = {}
 
