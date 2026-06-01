@@ -21,6 +21,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.utils.file_utils import resolve_path_under_root
 
 
 class XGBModelPersistor(ModelPersistor):
@@ -33,7 +34,7 @@ class XGBModelPersistor(ModelPersistor):
         # get save path from FLContext
         app_root = fl_ctx.get_prop(FLContextKey.APP_ROOT)
         self.log_dir = app_root
-        self.save_path = os.path.join(self.log_dir, self.save_name)
+        self.save_path = resolve_path_under_root(self.log_dir, self.save_name, "save_name")
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
         fl_ctx.sync_sticky()

@@ -335,6 +335,16 @@ validation, stricter private-key file permissions, safer deserialization and
 subprocess handling, confidential-computing attestation hardening, dashboard/API
 hardening, and clearer error behavior for admin and job operations.
 
+Built-in statistics, PSI, NumPy model, and XGBoost model artifact writers now
+require configured output paths to be relative paths that remain inside the
+job-owned output directory. Jobs that previously used absolute paths or parent
+directory traversal for these writer outputs should move those artifacts after
+the job completes instead of writing outside the job workspace directly.
+
+Custom ``JsonStatsFileWriter`` ``json_encoder_path`` values are now loaded only
+for BYOC jobs. The built-in ``ObjectEncoder`` path remains compatible for
+non-BYOC jobs.
+
 Reliability and Bug Fixes
 =========================
 
@@ -393,6 +403,9 @@ Compatibility and Migration Notes
 - The deprecated FLAdminAPI surface has been removed. Use the FLARE API,
   Recipe environments, and ``nvflare`` CLI workflows for new automation.
 - HA/Overseer code has been removed from the 2.8 branch.
+- ``JsonStatsFileWriter`` now requires custom ``json_encoder_path`` values to
+  run as BYOC jobs. Built-in ``ObjectEncoder`` configurations continue to work
+  for non-BYOC jobs.
 
 See the :ref:`migration_guide` for additional API and configuration migration
 notes.
