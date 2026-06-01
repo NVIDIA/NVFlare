@@ -12,11 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from unittest.mock import Mock
 
 import pytest
 
 from nvflare.apis.fl_context import FLContext
+from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
 
 
@@ -40,3 +42,15 @@ class TestCrossSiteModelEvalPaths:
 
         with pytest.raises(ValueError, match="must (be relative|stay inside)"):
             controller.start_controller(fl_ctx)
+
+    def test_start_controller_accepts_relative_cross_val_dir(self, tmp_path):
+        engine, fl_ctx = _make_engine_and_ctx(tmp_path / "run")
+        controller = CrossSiteModelEval(participating_clients=["site-1"])
+        controller._engine = engine
+        controller.fire_event = Mock()  # event plumbing is not under test
+
+        controller.start_controller(fl_ctx)
+
+        run_dir = os.path.realpath(str(tmp_path / "run"))
+        assert os.path.isdir(os.path.join(run_dir, AppConstants.CROSS_VAL_DIR, AppConstants.CROSS_VAL_MODEL_DIR_NAME))
+        assert os.path.isdir(os.path.join(run_dir, AppConstants.CROSS_VAL_DIR, AppConstants.CROSS_VAL_RESULTS_DIR_NAME))

@@ -112,7 +112,7 @@ class TBAnalyticsReceiver(AnalyticsReceiver):
 
         writer = self.writers_table.get(record_origin)
         if writer is None:
-            peer_log_dir = os.path.join(self.root_log_dir, record_origin)
+            peer_log_dir = resolve_path_under_root(self.root_log_dir, record_origin, "record_origin")
             writer = TensorBoardEventWriter(log_dir=peer_log_dir)
             self.writers_table[record_origin] = writer
 
