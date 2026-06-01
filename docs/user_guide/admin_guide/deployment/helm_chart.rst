@@ -40,6 +40,9 @@ Before you start, make sure you have:
 * NVIDIA GPU Operator or NVIDIA device plugin installed on clusters that will
   run jobs with ``resource_spec[site].num_of_gpus``. See
   `Cloud GPU Setup References`_.
+* For Kubernetes job launching, a Kubernetes API-server CA chain that passes
+  Python 3.13+ strict X.509 validation. CA certificates must include required
+  RFC 5280 extensions such as ``keyUsage`` with certificate signing allowed.
 
 The generated charts do not install a Kubernetes cluster, storage class, GPU
 device plugin, ingress controller, or registry credentials.
@@ -975,6 +978,15 @@ Check the parent logs for Kubernetes import or authorization failures:
 
 If the logs show that the ``kubernetes`` Python package is missing, rebuild the
 parent image with the NVFlare ``K8S`` extra or ``pip install kubernetes``.
+
+If the logs show ``SSLCertVerificationError`` with
+``CA cert does not include key usage extension``, the parent Kubernetes client
+is rejecting the cluster API-server CA. This is known to affect some MicroK8s
+CA certificates that omit the X.509 ``keyUsage`` extension. Regenerate or
+replace the cluster CA with an RFC 5280-compliant CA. As a temporary
+compatibility workaround for development clusters, use a custom parent image
+based on Python 3.12 or earlier. Do not disable Kubernetes API TLS verification
+in production.
 
 Job pod stays ``Pending`` or ``Unknown``
 ----------------------------------------
