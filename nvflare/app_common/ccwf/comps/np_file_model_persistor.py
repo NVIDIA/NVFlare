@@ -25,6 +25,7 @@ from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.model_desc import ModelDescriptor
 from nvflare.app_common.np.constants import NPConstants
 from nvflare.app_common.np.utils import load_numpy_model
+from nvflare.app_common.utils.file_utils import resolve_path_under_root
 from nvflare.security.logging import secure_format_exception
 
 
@@ -70,7 +71,7 @@ class NPFileModelPersistor(ModelPersistor):
 
     def load_model(self, fl_ctx: FLContext) -> ModelLearnable:
         run_dir = _get_run_dir(fl_ctx)
-        model_path = os.path.join(run_dir, self.model_dir, self.model_file_name)
+        model_path = resolve_path_under_root(run_dir, os.path.join(self.model_dir, self.model_file_name), "model path")
 
         data = load_numpy_model(
             fl_ctx=fl_ctx,
@@ -89,11 +90,11 @@ class NPFileModelPersistor(ModelPersistor):
 
     def _save(self, fl_ctx: FLContext, model_learnable: ModelLearnable, file_name: str):
         run_dir = _get_run_dir(fl_ctx)
-        model_root_dir = os.path.join(run_dir, self.model_dir)
+        model_path = resolve_path_under_root(run_dir, os.path.join(self.model_dir, file_name), "model path")
+        model_root_dir = os.path.dirname(model_path)
         if not os.path.exists(model_root_dir):
             os.makedirs(model_root_dir)
 
-        model_path = os.path.join(model_root_dir, file_name)
         np.save(model_path, model_learnable[ModelLearnableKey.WEIGHTS][NPConstants.NUMPY_KEY])
         self.log_info(fl_ctx, f"Saved numpy model to: {model_path}")
         self.log_info(fl_ctx, f"Model: {model_learnable}")
@@ -106,8 +107,7 @@ class NPFileModelPersistor(ModelPersistor):
 
     def _model_file_path(self, fl_ctx: FLContext, file_name):
         run_dir = _get_run_dir(fl_ctx)
-        model_root_dir = os.path.join(run_dir, self.model_dir)
-        return os.path.join(model_root_dir, file_name)
+        return resolve_path_under_root(run_dir, os.path.join(self.model_dir, file_name), "model path")
 
     def _add_to_inventory(self, inventory: dict, fl_ctx: FLContext, file_name: str):
         location = self._model_file_path(fl_ctx, file_name)
