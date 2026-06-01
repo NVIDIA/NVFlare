@@ -347,13 +347,14 @@ class TaskExchanger(Executor):
                 transfer_id=transfer_id,
                 direction=direction,
             )
-            if record is None and not self._stream_progress_tracker_has_capacity_locked(direction):
-                record_count = len(self._stream_progress_tracker.records(direction=direction))
-                self.logger.warning(
-                    f"ignored stream progress for task={task_id} transfer={transfer_id} direction={direction}: "
-                    f"progress tracker is at capacity records={record_count} max={STREAM_PROGRESS_MAX_TRACKED_RECORDS}"
-                )
-                return
+            if record is None:
+                has_capacity, record_count = self._stream_progress_tracker_capacity_locked(direction)
+                if not has_capacity:
+                    self.logger.warning(
+                        f"ignored stream progress for task={task_id} transfer={transfer_id} direction={direction}: "
+                        f"progress tracker is at capacity records={record_count} max={STREAM_PROGRESS_MAX_TRACKED_RECORDS}"
+                    )
+                    return
             try:
                 sequence_value = int(sequence) if sequence is not None else (record.sequence + 1 if record else 0)
             except (TypeError, ValueError):
@@ -420,14 +421,14 @@ class TaskExchanger(Executor):
     def _prune_terminal_stream_progress_records_locked(self):
         self._stream_progress_tracker.prune(before_time=time.time() - STREAM_PROGRESS_TERMINAL_RECORD_TTL)
 
-    def _stream_progress_tracker_has_capacity_locked(self, direction: str) -> bool:
+    def _stream_progress_tracker_capacity_locked(self, direction: str) -> tuple[bool, int]:
         max_records = STREAM_PROGRESS_MAX_TRACKED_RECORDS
         if max_records <= 0:
-            return True
+            return True, 0
 
         record_count = len(self._stream_progress_tracker.records(direction=direction))
         if record_count < max_records:
-            return True
+            return True, record_count
 
         removed_count = self._stream_progress_tracker.prune(
             before_time=time.time() - STREAM_PROGRESS_TERMINAL_RECORD_TTL,
@@ -435,7 +436,7 @@ class TaskExchanger(Executor):
         )
         record_count -= removed_count
         if record_count < max_records:
-            return True
+            return True, record_count
 
         idle_timeout = self.streaming_idle_timeout or _DEFAULT_STREAMING_IDLE_TIMEOUT_SECS
         removed_count = self._stream_progress_tracker.prune(
@@ -443,7 +444,8 @@ class TaskExchanger(Executor):
             include_active=True,
             direction=direction,
         )
-        return record_count - removed_count < max_records
+        record_count -= removed_count
+        return record_count < max_records, record_count
 
     def _recent_completed_records_hold_wait(self, records, now: float, fl_ctx: FLContext, task_name: str) -> bool:
         if not records:
@@ -468,6 +470,23 @@ class TaskExchanger(Executor):
     ) -> float:
         peer_read_budget = streaming_idle_timeout if peer_read_timeout is None else peer_read_timeout
         return min(streaming_idle_timeout, max(peer_read_budget, STREAM_PROGRESS_COMPLETION_ACK_GRACE))
+
+    @staticmethod
+    def _is_explicit_peer_read_timeout_fast_fail(
+        peer_read_timeout_explicit: bool,
+        peer_read_timeout: Optional[float],
+        streaming_idle_timeout: Optional[float],
+    ) -> bool:
+        return (
+            peer_read_timeout_explicit
+            and peer_read_timeout is not None
+            and streaming_idle_timeout is not None
+            and peer_read_timeout < streaming_idle_timeout
+        )
+
+    def _get_streaming_timeout_snapshot(self):
+        with self._stream_progress_lock:
+            return self.peer_read_timeout_explicit, self.peer_read_timeout, self.streaming_idle_timeout
 
     def _should_continue_task_send_waiting(
         self,
@@ -557,58 +576,59 @@ class TaskExchanger(Executor):
             self._prune_terminal_stream_progress_records_locked()
 
     def _should_honor_explicit_peer_read_timeout(self):
-        return (
-            self.peer_read_timeout_explicit
-            and self.peer_read_timeout is not None
-            and self.streaming_idle_timeout is not None
-            and self.peer_read_timeout < self.streaming_idle_timeout
-        )
+        return self._is_explicit_peer_read_timeout_fast_fail(*self._get_streaming_timeout_snapshot())
 
     def _log_explicit_peer_read_timeout_warning_once(self, fl_ctx: FLContext):
+        _, peer_read_timeout, streaming_idle_timeout = self._get_streaming_timeout_snapshot()
         with self._peer_read_timeout_once_lock:
             if self._explicit_peer_read_timeout_warned:
                 return
             self._explicit_peer_read_timeout_warned = True
         self.log_warning(
             fl_ctx,
-            f"explicit peer_read_timeout ({self.peer_read_timeout}s) is lower than "
-            f"streaming_idle_timeout ({self.streaming_idle_timeout}s); honoring fast-fail behavior "
+            f"explicit peer_read_timeout ({peer_read_timeout}s) is lower than "
+            f"streaming_idle_timeout ({streaming_idle_timeout}s); honoring fast-fail behavior "
             "instead of extending the wait on stream progress",
         )
 
     def _should_log_clamped_task_send_startup_budget(self):
+        peer_read_timeout_explicit, peer_read_timeout, streaming_idle_timeout = self._get_streaming_timeout_snapshot()
         return (
-            self.peer_read_timeout_explicit
-            and self.peer_read_timeout is not None
-            and self.streaming_idle_timeout is not None
-            and self.peer_read_timeout > self.streaming_idle_timeout
+            peer_read_timeout_explicit
+            and peer_read_timeout is not None
+            and streaming_idle_timeout is not None
+            and peer_read_timeout > streaming_idle_timeout
             and (self.pipe is None or isinstance(self.pipe, CellPipe))
         )
 
     def _log_clamped_task_send_startup_budget_once(self, fl_ctx: FLContext):
         if not self._should_log_clamped_task_send_startup_budget():
             return
+        _, peer_read_timeout, streaming_idle_timeout = self._get_streaming_timeout_snapshot()
         with self._peer_read_timeout_once_lock:
             if self._task_send_startup_budget_info_logged:
                 return
             self._task_send_startup_budget_info_logged = True
         self.log_info(
             fl_ctx,
-            f"explicit peer_read_timeout ({self.peer_read_timeout}s) is higher than streaming_idle_timeout "
-            f"({self.streaming_idle_timeout}s); using streaming_idle_timeout as the no-progress task-send "
+            f"explicit peer_read_timeout ({peer_read_timeout}s) is higher than streaming_idle_timeout "
+            f"({streaming_idle_timeout}s); using streaming_idle_timeout as the no-progress task-send "
             "startup budget",
         )
 
     def _get_task_send_peer_read_timeout(self):
-        if self.peer_read_timeout is None:
-            if self.streaming_idle_timeout:
-                return min(self.streaming_idle_timeout, STREAM_PROGRESS_COMPLETION_ACK_GRACE)
+        peer_read_timeout_explicit, peer_read_timeout, streaming_idle_timeout = self._get_streaming_timeout_snapshot()
+        if peer_read_timeout is None:
+            if streaming_idle_timeout and (self.pipe is None or isinstance(self.pipe, CellPipe)):
+                return min(streaming_idle_timeout, STREAM_PROGRESS_COMPLETION_ACK_GRACE)
             return None
-        if not self.streaming_idle_timeout or self._should_honor_explicit_peer_read_timeout():
-            return self.peer_read_timeout
+        if not streaming_idle_timeout or self._is_explicit_peer_read_timeout_fast_fail(
+            peer_read_timeout_explicit, peer_read_timeout, streaming_idle_timeout
+        ):
+            return peer_read_timeout
         if self.pipe is not None and not isinstance(self.pipe, CellPipe):
-            return self.peer_read_timeout
-        return min(self.peer_read_timeout, self.streaming_idle_timeout, STREAM_PROGRESS_COMPLETION_ACK_GRACE)
+            return peer_read_timeout
+        return min(peer_read_timeout, streaming_idle_timeout, STREAM_PROGRESS_COMPLETION_ACK_GRACE)
 
     def _send_task_to_peer(self, req: Message, fl_ctx: FLContext, abort_signal: Signal) -> bool:
         job_id = None

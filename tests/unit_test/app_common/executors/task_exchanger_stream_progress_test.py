@@ -458,6 +458,13 @@ def test_non_cell_pipe_keeps_peer_read_timeout_for_task_send():
     assert executor._get_task_send_peer_read_timeout() == 600.0
 
 
+def test_non_cell_pipe_keeps_disabled_peer_read_timeout_for_task_send():
+    executor = TaskExchanger(pipe_id="pipe", peer_read_timeout=None, streaming_idle_timeout=600.0)
+    executor.pipe = _DummyPipe()
+
+    assert executor._get_task_send_peer_read_timeout() is None
+
+
 def test_task_send_many_active_transfers_progress_past_fixed_timeout_without_resend(monkeypatch):
     """Synthetic congestion: many streamed refs advance across repeated old timeout windows."""
     _patch_logs(monkeypatch)

@@ -323,6 +323,8 @@ class _TaskContext:
 
 
 class FlareAgent:
+    _atexit_init_lock = threading.Lock()
+
     def __init__(
         self,
         pipe: Optional[Pipe] = None,
@@ -688,6 +690,19 @@ class FlareAgent:
                     f"[subprocess] failed to delete abandoned result_upload transaction {transaction.tx_id}: {ex}"
                 )
 
+    def _finish_reverse_result_upload_wait(self, decision, tracker, transactions, wait_start):
+        elapsed = tracker.clock() - wait_start
+        if decision.success:
+            self.logger.info(
+                f"[subprocess] result_upload download complete: elapsed={elapsed:.2f}s reason={decision.reason}"
+            )
+        else:
+            self.logger.warning(
+                f"[subprocess] result_upload progress-aware wait failed after {elapsed:.2f}s: {decision.reason}"
+            )
+            self._fail_reverse_download_transactions(tracker, transactions)
+        return decision.success
+
     def _wait_for_reverse_result_upload(
         self, tracker, progress_event, download_done, download_status, wait_start, transactions=()
     ):
@@ -695,23 +710,22 @@ class FlareAgent:
             progress_event.clear()
             decision = tracker.decide(callback_fired=download_done.is_set(), callback_status=download_status[0])
             if decision.done:
-                elapsed = tracker.clock() - wait_start
-                if decision.success:
-                    self.logger.info(
-                        f"[subprocess] result_upload download complete: elapsed={elapsed:.2f}s "
-                        f"reason={decision.reason}"
-                    )
-                else:
-                    self.logger.warning(
-                        f"[subprocess] result_upload progress-aware wait failed after {elapsed:.2f}s: "
-                        f"{decision.reason}"
-                    )
-                    self._fail_reverse_download_transactions(tracker, transactions)
-                return decision.success
+                return self._finish_reverse_result_upload_wait(decision, tracker, transactions, wait_start)
 
             wait_timeout = getattr(self, "_result_upload_poll_interval", _REVERSE_RESULT_UPLOAD_POLL_INTERVAL)
             abandon_reason = self._get_reverse_result_upload_abandon_reason()
             if abandon_reason:
+                if download_done.is_set():
+                    decision = tracker.decide(callback_fired=True, callback_status=download_status[0])
+                    if decision.done:
+                        return self._finish_reverse_result_upload_wait(decision, tracker, transactions, wait_start)
+                if decision.reason == "completion_grace":
+                    elapsed = tracker.clock() - wait_start
+                    self.logger.info(
+                        "[subprocess] abandon signaled during completion_grace, but all result_upload transactions "
+                        f"already reached terminal success after {elapsed:.2f}s; returning success: {abandon_reason}"
+                    )
+                    return True
                 self.logger.warning(f"[subprocess] abandoning result_upload wait: {abandon_reason}")
                 self._fail_reverse_download_transactions(tracker, transactions)
                 return False
@@ -780,11 +794,11 @@ class FlareAgent:
         progress_event.set()
 
     def _register_launch_once_exit(self):
-        lock = getattr(self, "_atexit_lock", None)
-        if lock is None:
-            lock = threading.Lock()
-            self._atexit_lock = lock
-        with lock:
+        if getattr(self, "_atexit_lock", None) is None:
+            with FlareAgent._atexit_init_lock:
+                if getattr(self, "_atexit_lock", None) is None:
+                    self._atexit_lock = threading.Lock()
+        with self._atexit_lock:
             if not getattr(self, "_launch_once", False) or getattr(self, "_atexit_registered", False):
                 return
             atexit.register(os._exit, 0)
