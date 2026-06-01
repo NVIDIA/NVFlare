@@ -306,6 +306,41 @@ def test_task_send_no_progress_startup_budget_uses_peer_read_timeout_floor(monke
     assert any("task_send_wait_budget=60.0s" in msg for _, msg in logs)
 
 
+def test_non_tensor_task_without_progress_fails_at_peer_read_budget_not_streaming_idle(monkeypatch):
+    logs = _patch_logs(monkeypatch)
+    now = [1000.0]
+    monkeypatch.setattr(task_exchanger_module.time, "time", lambda: now[0])
+    executor = TaskExchanger(
+        pipe_id="pipe",
+        peer_read_timeout=60.0,
+        streaming_idle_timeout=600.0,
+        result_poll_interval=0.01,
+    )
+
+    def send_cb(handler, msg, timeout, abort_signal):
+        assert timeout == task_exchanger_module.STREAM_PROGRESS_COMPLETION_ACK_GRACE
+        now[0] += 59.9
+        assert msg._progress_wait_cb() is True
+        now[0] += 0.2
+        assert msg._progress_wait_cb() is False
+        return False
+
+    handler = _FakePipeHandler(send_cb)
+    executor.pipe_handler = handler
+
+    result = executor._do_execute(
+        "train",
+        _make_task(task_id="non-tensor-task"),
+        _make_fl_ctx(job_id="non-tensor-job"),
+        _AbortSignal(),
+    )
+
+    assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+    assert handler.send_calls == 1
+    assert now[0] - 1000.0 < executor.streaming_idle_timeout
+    assert any("task_send_wait_budget=60.0s" in msg for _, msg in logs)
+
+
 def test_task_send_no_progress_budget_uses_startup_grace_when_peer_read_timeout_disabled():
     executor = TaskExchanger(pipe_id="pipe", peer_read_timeout=None, streaming_idle_timeout=600.0)
 
