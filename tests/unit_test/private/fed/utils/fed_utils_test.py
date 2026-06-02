@@ -100,7 +100,7 @@ class TestFedUtils:
 
     @patch("nvflare.private.fed.utils.fed_utils.register_custom_folder")
     @patch("nvflare.private.fed.utils.fed_utils.get_job_meta_from_workspace")
-    @patch("os.path.exists", return_value=True)
+    @patch("nvflare.private.fed.utils.fed_utils.os.path.exists", return_value=True)
     def test_job_config_decomposers_are_ignored(self, mock_exists, mock_get_meta, mock_register):
         # even for a BYOC job, decomposers are only loaded from the job custom dir, never from config
         mock_get_meta.return_value = {AppValidationKey.BYOC: True}
@@ -119,7 +119,7 @@ class TestFedUtils:
 
     @patch("nvflare.private.fed.utils.fed_utils.register_custom_folder")
     @patch("nvflare.private.fed.utils.fed_utils.get_job_meta_from_workspace")
-    @patch("os.path.exists", return_value=True)
+    @patch("nvflare.private.fed.utils.fed_utils.os.path.exists", return_value=True)
     def test_job_custom_decomposers_ignored_when_not_byoc(self, mock_exists, mock_get_meta, mock_register):
         # job meta without the BYOC flag => job is not allowed to bring custom code
         mock_get_meta.return_value = {}
@@ -138,7 +138,7 @@ class TestFedUtils:
 
     @patch("nvflare.private.fed.utils.fed_utils.register_custom_folder")
     @patch("nvflare.private.fed.utils.fed_utils.get_job_meta_from_workspace")
-    @patch("os.path.exists", return_value=True)
+    @patch("nvflare.private.fed.utils.fed_utils.os.path.exists", return_value=True)
     def test_job_decomposers_ignored_when_meta_unavailable(self, mock_exists, mock_get_meta, mock_register):
         # if the job meta cannot be read, default to not loading the job decomposers
         mock_get_meta.side_effect = FileNotFoundError("missing job meta")
