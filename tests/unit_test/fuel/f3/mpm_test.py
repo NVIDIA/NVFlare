@@ -51,12 +51,12 @@ class TestMainProcessMonitorReturnCode:
         # still alive at shutdown is what forces the rc-file write + SIGKILL path
         lingering = _fake_thread("cellnet-worker", daemon=False)
 
-        with patch("nvflare.fuel.f3.mpm.threading.current_thread", return_value=main_thread), patch(
-            "nvflare.fuel.f3.mpm.threading.enumerate", return_value=[main_thread, lingering]
-        ), patch.object(MainProcessMonitor, "_start_shutdown"), patch(
-            "nvflare.fuel.f3.mpm.AioContext.close_global_context"
-        ), patch(
-            "nvflare.fuel.f3.mpm.os.kill"
+        with (
+            patch("nvflare.fuel.f3.mpm.threading.current_thread", return_value=main_thread),
+            patch("nvflare.fuel.f3.mpm.threading.enumerate", return_value=[main_thread, lingering]),
+            patch.object(MainProcessMonitor, "_start_shutdown"),
+            patch("nvflare.fuel.f3.mpm.AioContext.close_global_context"),
+            patch("nvflare.fuel.f3.mpm.os.kill"),
         ):
             MainProcessMonitor.run(main_func, run_dir=str(run_dir))
 
