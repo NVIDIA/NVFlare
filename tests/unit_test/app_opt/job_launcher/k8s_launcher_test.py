@@ -1252,6 +1252,7 @@ class TestK8sJobLauncherLaunchJob:
         ephemeral_storage=None,
         workspace_mount_path=None,
         image_pull_secrets=None,
+        config_file_path="/fake/kube/config",
     ):
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
@@ -1270,7 +1271,7 @@ class TestK8sJobLauncherLaunchJob:
         mock_transfer.add_job.return_value = "transfer-token"
         self.mock_transfer = mock_transfer
         launcher_kwargs = {
-            "config_file_path": "/fake/kube/config",
+            "config_file_path": config_file_path,
             "study_data_pvc_file_path": "/fake/study_data.yaml",
             "namespace": namespace,
             "default_python_path": default_python_path,
@@ -1300,6 +1301,51 @@ class TestK8sJobLauncherLaunchJob:
         try:
             handle = launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
             assert isinstance(handle, K8sJobHandle)
+        finally:
+            _exit_patches(patches)
+
+    def test_incluster_config_is_loaded_when_config_file_path_is_none(self):
+        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
+
+        captured = {}
+
+        class FakeConfiguration:
+            def get_default_copy(self):
+                return self
+
+            @staticmethod
+            def set_default(configuration):
+                captured["configuration"] = configuration
+
+        patches = _make_k8s_launcher_patches()
+        patches.extend(
+            [
+                patch.object(_k8s_config, "load_incluster_config", create=True),
+                patch.object(_k8s_client, "Configuration", FakeConfiguration),
+            ]
+        )
+        _mock_open, mock_yaml, mock_core_cls, mock_transfer_cls, mock_load_incluster_config, *_ = _enter_patches(
+            patches
+        )
+        try:
+            mock_yaml.safe_load.return_value = {"study-a": {"training": {"source": "data-pvc", "mode": "ro"}}}
+            mock_api = MagicMock()
+            mock_core_cls.return_value = mock_api
+            mock_transfer = MagicMock()
+            mock_transfer_cls.get_or_create.return_value = mock_transfer
+            mock_transfer.owner_fqcn = "site-1.parent"
+            mock_transfer.add_job.return_value = "transfer-token"
+            self._prime_running(mock_api)
+
+            launcher = ClientK8sJobLauncher(
+                config_file_path=None,
+                study_data_pvc_file_path="/fake/study_data.yaml",
+                namespace="test-ns",
+            )
+            launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
+
+            mock_load_incluster_config.assert_called_once()
+            assert isinstance(captured["configuration"], FakeConfiguration)
         finally:
             _exit_patches(patches)
 
