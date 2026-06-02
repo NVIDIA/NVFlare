@@ -15,6 +15,7 @@ import json
 import os.path
 from typing import Optional
 
+from nvflare.apis.app_validation import AppValidationKey
 from nvflare.edge.assessor import Assessor
 from nvflare.edge.controllers.sage import ScatterAndGatherForEdge
 from nvflare.edge.executors.edge_model_executor import EdgeModelExecutor
@@ -45,7 +46,12 @@ class EdgeJob(FedJob):
         """
         check_str("edge_method", edge_method)
 
-        FedJob.__init__(self, name=name, min_clients=min_clients, meta_props={"edge_method": edge_method})
+        FedJob.__init__(
+            self,
+            name=name,
+            min_clients=min_clients,
+            meta_props={"edge_method": edge_method, AppValidationKey.BYOC: True},
+        )
 
         self.server_config_added = False
         self.client_config_added = False
