@@ -34,6 +34,15 @@ class TestMainProcessMonitorReturnCode:
     successful job as RC=1. The value written must always be an int the parent can parse.
     """
 
+    def setup_method(self):
+        # run() mutates MainProcessMonitor's class-level state (e.g. sets _stopping=True)
+        # and never resets it; restore defaults before each test so state can't leak
+        # into other tests sharing this pytest session.
+        MainProcessMonitor._stopping = False
+        MainProcessMonitor._cleanup_cbs = []
+        MainProcessMonitor._logger = None
+        MainProcessMonitor._aio_ctx = None
+
     def _run_and_read_rc(self, run_dir, main_func):
         rc_file = os.path.join(str(run_dir), FLMetaKey.PROCESS_RC_FILE)
 
