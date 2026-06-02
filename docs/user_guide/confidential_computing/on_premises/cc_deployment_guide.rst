@@ -166,6 +166,20 @@ The CC image builder supports any generic workload. For NVFlare, create a Docker
 .. note::
 
    For CC jobs, custom code at runtime is not allowed. All application code must be included in the Docker image.
+   NVFlare checks the component allow-list before loading any components. If your job uses components that are
+   included in the CVM image but are not yet allowed, update ``local/resources.json`` on each site after confirming
+   that those components are safe.
+
+   For example:
+
+   .. code-block:: json
+
+      {
+        "class_allow_list": [
+          "hello_cyclic.app.custom.tf2_model_persistor.TF2ModelPersistor",
+          "hello_cyclic.app.custom.trainer.SimpleTrainer"
+        ]
+      }
 
 **Build and save the image:**
 
