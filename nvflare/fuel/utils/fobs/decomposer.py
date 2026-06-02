@@ -148,25 +148,34 @@ class Externalizer:
         """Recursively externalize leaf nodes without mutating the source containers.
 
         Dict/list subclasses are reconstructed at every level (see ``new_empty_container``), so nested
-        container subclasses (both dict and list) may not preserve constructor state such as a
-        defaultdict's default_factory or the capacity/initializer argument of a list subclass.
+        container subclasses (both dict and list) preserve their instance attributes but may not preserve
+        constructor-only state such as a defaultdict's default_factory.
         """
         if not self.manager:
             return target
 
         if isinstance(target, dict):
             new_target = new_empty_container(type(target))
+            self._copy_instance_attrs(target, new_target)
             for k, v in target.items():
                 new_target[k] = self.externalize(v)
             return new_target
         elif isinstance(target, list):
             # Note: tuple is not supported since it is immutable.
             new_target = new_empty_container(type(target))
+            self._copy_instance_attrs(target, new_target)
             for v in target:
                 new_target.append(self.externalize(v))
             return new_target
         else:
             return self.manager.externalize(target)
+
+    def _copy_instance_attrs(self, source: Any, target: Any):
+        if not hasattr(source, "__dict__") or not hasattr(target, "__dict__"):
+            return
+
+        for name, value in vars(source).items():
+            setattr(target, name, self.externalize(value))
 
 
 class Internalizer:

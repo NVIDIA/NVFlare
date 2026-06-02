@@ -173,6 +173,22 @@ class TestDecomposers:
         assert isinstance(selection["blob"], DatumRef)
         assert source["selection"]["blob"] == b"x" * 2048
 
+    def test_fobs_round_trip_dict_subclass_with_required_constructor_args(self):
+        # Regression: DictDecomposer.recompose must rebuild dict subclasses whose constructors
+        # require args without losing the subclass type or its dict contents.
+        fobs.register(DictDecomposer(RequiredArgDict))
+        source = RequiredArgDict("v1", "v2", nested=RequiredArgDict("n1", "n2"))
+
+        try:
+            restored = fobs.loads(fobs.dumps(source))
+        finally:
+            fobs.reset()
+
+        assert isinstance(restored, RequiredArgDict)
+        assert restored["a"] == "v1" and restored["b"] == "v2"
+        assert isinstance(restored["nested"], RequiredArgDict)
+        assert restored["nested"]["a"] == "n1" and restored["nested"]["b"] == "n2"
+
     def test_externalize_list_subclass_with_required_constructor_args(self):
         # Regression: same no-arg reconstruction failure for list subclasses.
         items = RequiredArgList(10)
@@ -182,6 +198,7 @@ class TestDecomposers:
         externalized = Externalizer(DatumManager(1024)).externalize(source)
 
         assert isinstance(externalized["items"], RequiredArgList)
+        assert externalized["items"].capacity == 10
         assert list(externalized["items"]) == ["a", "b"]
 
     def test_fobs_round_trip_list_subclass_with_required_constructor_args(self):
@@ -194,6 +211,7 @@ class TestDecomposers:
         restored = fobs.loads(fobs.dumps(source))
 
         assert isinstance(restored["items"], RequiredArgList)
+        assert restored["items"].capacity == 10
         assert list(restored["items"]) == ["a", "b"]
 
     def test_new_empty_container_does_not_mask_no_arg_constructor_type_error(self):
