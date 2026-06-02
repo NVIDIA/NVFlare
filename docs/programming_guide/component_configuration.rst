@@ -57,14 +57,14 @@ used. Below is the server side configuration for :ref:`hello_pt_job_api`.
         "workflows": [
             {
                 "id": "pre_train",
-                "name": "InitializeGlobalWeights",
+                "path": "nvflare.app_common.workflows.initialize_global_weights.InitializeGlobalWeights",
                 "args": {
                     "task_name": "get_weights"
                 }
             },
             {
                 "id": "scatter_and_gather",
-                "name": "ScatterAndGather",
+                "path": "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather",
                 "args": {
                     "min_clients": 2,
                     "num_rounds": 2,
@@ -79,7 +79,7 @@ used. Below is the server side configuration for :ref:`hello_pt_job_api`.
             },
             {
                 "id": "cross_site_validate",
-                "name": "CrossSiteModelEval",
+                "path": "nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval",
                 "args": {
                     "model_locator_id": "model_locator"
                 }
@@ -105,7 +105,7 @@ A FLARE job configuration defines a list of components. Here, we skip many other
 
 The component configuration consists of three parts:
     - component id: for example ``"id": "aggregator"``
-    - component path: the fully qualified class path, specified as ``"path"`` or ``"class_path"`` (for consistency with recipe/model config). Example: ``"path": "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator"``
+    - component path: the fully qualified class path, specified as ``"path"``. Example: ``"path": "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator"``
     - Component arguments, for example: ``"args": {"expected_data_kind": "WEIGHTS"}``
 
 If we look at this class definition, we will find that this configuration is actually mapped to the class constructor:
@@ -144,7 +144,7 @@ For example:
             "device": "cpu",
             "source_model": "model",
             "optimizer_args": {
-                "class_path": "torch.optim.SGD",
+                "path": "torch.optim.SGD",
                 "args": {
                     "lr": 1.0,
                     "momentum": 0.6
@@ -152,11 +152,12 @@ For example:
                 "config_type": "dict"
             },
             "lr_scheduler_args": {
-                "class_path": "torch.optim.lr_scheduler.CosineAnnealingLR",
+                "path": "torch.optim.lr_scheduler.CosineAnnealingLR",
                 "args": {
                     "T_max": "{num_rounds}",
                     "eta_min": 0.9
-                }
+                },
+                "config_type": "dict"
             }
         }
     },
@@ -166,7 +167,7 @@ Notice the config:
 .. code-block:: json
 
     "optimizer_args": {
-        "class_path": "torch.optim.SGD",
+        "path": "torch.optim.SGD",
         "args": {
             "lr": 1.0,
             "momentum": 0.6
@@ -185,24 +186,20 @@ By default ``config_type`` is "Component" if not specified.
 
 Name, Path, and class_path
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
-The class path can be quite long, so NVFLARE allows users to only specify the class name, and NVFLARE will search the specified Python path
-to find the corresponding class path. In the configuration, you can use ``"name"`` to do this. You may also use ``"class_path"`` instead of ``"path"`` for consistency with recipe and model configuration; when both are present, ``"path"`` takes precedence.
+The standard job configuration parser runs built-in component path authorization. In protected job configs, specify components
+with ``"path"`` or ``"class_path"``. ``"class_path"`` is an alias for ``"path"``. If both are present, ``"path"`` takes
+precedence and is validated as written. Component configs that use ``"name"`` are rejected by this policy. The lower-level
+component builder can still resolve ``"name"`` in contexts outside the protected job configuration flow, but job configuration
+examples should use ``"path"`` or ``"class_path"``.
 
 The configuration::
 
     "path": "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator"
 
-can be changed to::
-
-    "name" : "InTimeAccumulateWeightedAggregator"
-
-or (equivalent to ``path``)::
-
-    "class_path": "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator"
-
 .. note::
 
-    The class name must be in the $PYTHON_PATH in order for NVFLARE to find it. NVFlare built-in classes are all in the $PYTHON_PATH by default.
+    Recipe APIs may still accept ``class_path`` and normalize it when exporting job configuration. Runtime job configuration
+    can use ``path`` or its ``class_path`` alias for component configs.
 
 Looking up the component
 ^^^^^^^^^^^^^^^^^^^^^^^^
@@ -233,8 +230,8 @@ Workflows define a list of workflows. In the example above, three workflows are 
     - ScatterAndGather for training with scatter_and_gatter 
     - CrossSiteModelEval for validation with cross_site_validate
 
-Each workflow corresponds to a special type of FLComponent (known as a :ref:`Controller <controllers>`), which has the same component structure with an "id",
-"name", "path", or "class_path", and arguments that match the class definitions.
+Each workflow corresponds to a special type of FLComponent (known as a :ref:`Controller <controllers>`), which has the same
+component structure with an ``id``, ``path``, and arguments that match the class definitions.
 
 The controller arguments can be primitive types (int, str, etc.), or another component id.
 
@@ -330,7 +327,7 @@ Here is one concrete example of such a mechanism. In many of NVFLARE examples, y
 
     {
         "id": "model_selector",
-        "name": "IntimeModelSelector",
+        "path": "nvflare.app_common.widgets.intime_model_selector.IntimeModelSelector",
         "args": {}
     }
 

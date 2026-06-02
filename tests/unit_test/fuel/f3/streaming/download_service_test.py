@@ -19,6 +19,8 @@ from unittest.mock import Mock, patch
 import pytest
 
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.streaming.download_service import (
     Consumer,
     Downloadable,
@@ -40,6 +42,7 @@ class MockDownloadable(Downloadable):
         self.current_chunk = 0
         self.downloaded_to_one_calls = []
         self.downloaded_to_all_called = False
+        self.downloaded_to_all_call_count = 0
         self.transaction_done_calls = []
         self.tx_id = None
         self.ref_id = None
@@ -67,6 +70,7 @@ class MockDownloadable(Downloadable):
 
     def downloaded_to_all(self):
         self.downloaded_to_all_called = True
+        self.downloaded_to_all_call_count += 1
 
     def transaction_done(self, transaction_id: str, status: str):
         self.transaction_done_calls.append((transaction_id, status))
@@ -102,9 +106,18 @@ def _make_isolated_download_service():
     class IsolatedDownloadService(DownloadService):
         _tx_table = {}
         _ref_table = {}
+        _finished_refs = {}
+        _logger = Mock()
         _tx_lock = threading.Lock()
 
     return IsolatedDownloadService
+
+
+def _make_download_request(ref_id: str, requester: str, state: dict = None):
+    payload = {"ref_id": ref_id}
+    if state is not None:
+        payload["state"] = state
+    return new_cell_message(headers={MessageHeaderKey.ORIGIN: requester}, payload=payload)
 
 
 def _run_monitor_once(service_cls, now):
@@ -426,6 +439,276 @@ class TestDownloadService:
 
         # Clean up
         DownloadService.delete_transaction(tx_id)
+
+    def test_duplicate_receiver_completion_is_idempotent(self):
+        """Duplicate EOF/error notifications from one requester must not count twice."""
+        from nvflare.fuel.f3.streaming.download_service import _Transaction
+
+        num_receivers = 2
+        tx = _Transaction(timeout=10.0, num_receivers=num_receivers)
+        obj = MockDownloadable([b"chunk1"])
+        ref = tx.add_object(obj)
+
+        ref.obj_downloaded(to_receiver="receiver1", status=DownloadStatus.SUCCESS)
+        ref.obj_downloaded(to_receiver="receiver1", status=DownloadStatus.SUCCESS)
+
+        assert ref.num_receivers_done == 1
+        assert obj.downloaded_to_one_calls == [("receiver1", DownloadStatus.SUCCESS)]
+        assert not obj.downloaded_to_all_called
+        assert obj.downloaded_to_all_call_count == 0
+        assert not tx.is_finished()
+
+        ref.obj_downloaded(to_receiver="receiver2", status=DownloadStatus.SUCCESS)
+
+        assert ref.num_receivers_done == num_receivers
+        assert obj.downloaded_to_one_calls == [
+            ("receiver1", DownloadStatus.SUCCESS),
+            ("receiver2", DownloadStatus.SUCCESS),
+        ]
+        assert obj.downloaded_to_all_called
+        assert obj.downloaded_to_all_call_count == 1
+        assert tx.is_finished()
+
+    def test_finished_ref_tombstone_returns_eof_for_completed_requester(self):
+        """A retry after FINISHED cleanup should receive EOF for the same completed requester."""
+        from nvflare.fuel.f3.streaming.download_service import _Transaction
+
+        service = _make_isolated_download_service()
+        tx = _Transaction(timeout=10.0, num_receivers=1)
+        obj = MockDownloadable([b"chunk1"])
+        ref = tx.add_object(obj)
+
+        with service._tx_lock:
+            service._tx_table[tx.tid] = tx
+            service._ref_table[ref.rid] = ref
+            ref.obj_downloaded(to_receiver="receiver1", status=DownloadStatus.SUCCESS)
+            tx.transaction_done(TransactionDoneStatus.FINISHED)
+            service._delete_tx(tx, tombstone_finished_refs=True)
+
+        reply = service._handle_download(_make_download_request(ref.rid, "receiver1"))
+
+        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+        assert reply.payload == {"status": ProduceRC.EOF}
+
+    def test_monitor_tombstones_finished_transaction_refs(self):
+        """The monitor should tombstone refs only after normal FINISHED cleanup."""
+        from nvflare.fuel.f3.streaming.download_service import _Transaction
+
+        service = _make_isolated_download_service()
+        fake_start_time = 1_000_000_000_000.0
+        tx = _Transaction(timeout=10.0, num_receivers=1)
+        tx.last_active_time = fake_start_time
+        tx.start_time = fake_start_time
+        obj = MockDownloadable([b"chunk1"])
+        ref = tx.add_object(obj)
+
+        with service._tx_lock:
+            service._tx_table[tx.tid] = tx
+            service._ref_table[ref.rid] = ref
+            ref.obj_downloaded(to_receiver="receiver1", status=DownloadStatus.SUCCESS)
+
+        _run_monitor_once(service, fake_start_time + 1.0)
+
+        assert tx.tid not in service._tx_table
+        assert ref.rid not in service._ref_table
+        assert ref.rid in service._finished_refs
+
+        reply = service._handle_download(_make_download_request(ref.rid, "receiver1"))
+
+        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+        assert reply.payload == {"status": ProduceRC.EOF}
+
+    def test_large_fanout_retries_after_finished_cleanup_return_eof(self):
+        """Simulate a saturated large-model fanout where EOF replies are delayed.
+
+        The real failure happens with many clients downloading many large tensor refs:
+        the transaction finishes, the monitor removes the refs, and delayed parent
+        resends make receivers ask for the same refs again. Those retries must see
+        EOF from the finished-ref tombstone, not INVALID_REQUEST / "no ref found".
+        """
+        from nvflare.fuel.f3.streaming.download_service import _Transaction
+
+        service = _make_isolated_download_service()
+        fake_start_time = 1_000_000_000_000.0
+        num_receivers = 16
+        num_refs = 24
+        tx = _Transaction(timeout=10.0, num_receivers=num_receivers)
+        tx.last_active_time = fake_start_time
+        tx.start_time = fake_start_time
+        refs = []
+
+        with service._tx_lock:
+            service._tx_table[tx.tid] = tx
+            for ref_index in range(num_refs):
+                ref = tx.add_object(MockDownloadable([f"tensor-{ref_index}".encode()]))
+                service._ref_table[ref.rid] = ref
+                refs.append(ref)
+
+        for ref in refs:
+            for receiver_index in range(num_receivers):
+                requester = f"site-{receiver_index}.site-{receiver_index}_job_active"
+                chunk_reply = service._handle_download(_make_download_request(ref.rid, requester))
+                assert chunk_reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+                assert chunk_reply.payload["status"] == ProduceRC.OK
+
+                eof_reply = service._handle_download(
+                    _make_download_request(ref.rid, requester, chunk_reply.payload["state"])
+                )
+                assert eof_reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+                assert eof_reply.payload == {"status": ProduceRC.EOF}
+
+                if receiver_index == 0:
+                    duplicate_eof = service._handle_download(
+                        _make_download_request(ref.rid, requester, chunk_reply.payload["state"])
+                    )
+                    assert duplicate_eof.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+                    assert duplicate_eof.payload == {"status": ProduceRC.EOF}
+                    assert ref.num_receivers_done == 1
+                    assert len(ref.obj.downloaded_to_one_calls) == 1
+                    assert ref.obj.downloaded_to_all_call_count == 0
+
+        assert tx.is_finished()
+        assert all(ref.num_receivers_done == num_receivers for ref in refs)
+        assert all(len(ref.obj.downloaded_to_one_calls) == num_receivers for ref in refs)
+        assert all(ref.obj.downloaded_to_all_call_count == 1 for ref in refs)
+
+        _run_monitor_once(service, fake_start_time + 1.0)
+
+        assert tx.tid not in service._tx_table
+        assert all(ref.rid not in service._ref_table for ref in refs)
+        assert all(ref.rid in service._finished_refs for ref in refs)
+
+        service._logger.error.reset_mock()
+        for ref in refs:
+            for receiver_index in range(num_receivers):
+                requester = f"site-{receiver_index}.site-{receiver_index}_job_active"
+                retry_reply = service._handle_download(_make_download_request(ref.rid, requester))
+                assert retry_reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+                assert retry_reply.payload == {"status": ProduceRC.EOF}
+
+        service._logger.error.assert_not_called()
+
+    def test_finished_ref_tombstone_is_requester_scoped(self):
+        """A tombstone must not convert an unknown requester's stale ref to EOF."""
+        from nvflare.fuel.f3.streaming.download_service import _Transaction
+
+        service = _make_isolated_download_service()
+        service._logger.reset_mock()
+        tx = _Transaction(timeout=10.0, num_receivers=1)
+        obj = MockDownloadable([b"chunk1"])
+        ref = tx.add_object(obj)
+
+        with service._tx_lock:
+            service._tx_table[tx.tid] = tx
+            service._ref_table[ref.rid] = ref
+            ref.obj_downloaded(to_receiver="receiver1", status=DownloadStatus.SUCCESS)
+            tx.transaction_done(TransactionDoneStatus.FINISHED)
+            service._delete_tx(tx, tombstone_finished_refs=True)
+
+        reply = service._handle_download(_make_download_request(ref.rid, "receiver2"))
+
+        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.INVALID_REQUEST
+        service._logger.error.assert_called_once()
+
+    def test_timeout_cleanup_does_not_create_finished_ref_tombstone(self):
+        """Only FINISHED cleanup may tombstone refs; TIMEOUT/DELETED refs stay fatal."""
+        from nvflare.fuel.f3.streaming.download_service import _Transaction
+
+        service = _make_isolated_download_service()
+        service._logger.reset_mock()
+        tx = _Transaction(timeout=10.0, num_receivers=1)
+        obj = MockDownloadable([b"chunk1"])
+        ref = tx.add_object(obj)
+
+        with service._tx_lock:
+            service._tx_table[tx.tid] = tx
+            service._ref_table[ref.rid] = ref
+            service._delete_tx(tx)
+
+        reply = service._handle_download(_make_download_request(ref.rid, "receiver1"))
+
+        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.INVALID_REQUEST
+        assert ref.rid not in service._finished_refs
+
+    def test_failed_finished_ref_retry_returns_error_not_eof(self):
+        """A failed terminal requester must not be converted to EOF by a tombstone."""
+        from nvflare.fuel.f3.streaming.download_service import _Transaction
+
+        service = _make_isolated_download_service()
+        tx = _Transaction(timeout=10.0, num_receivers=1)
+        obj = MockDownloadable([b"chunk1"])
+        ref = tx.add_object(obj)
+
+        with service._tx_lock:
+            service._tx_table[tx.tid] = tx
+            service._ref_table[ref.rid] = ref
+            ref.obj_downloaded(to_receiver="receiver1", status=DownloadStatus.FAILED)
+            tx.transaction_done(TransactionDoneStatus.FINISHED)
+            service._delete_tx(tx, tombstone_finished_refs=True)
+
+        reply = service._handle_download(_make_download_request(ref.rid, "receiver1"))
+
+        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+        assert reply.payload == {"status": ProduceRC.ERROR}
+
+    def test_expired_finished_ref_tombstone_returns_invalid_request(self):
+        """Finished-ref tombstones are temporary and expire back to normal missing-ref behavior."""
+        from nvflare.fuel.f3.streaming import download_service as download_service_module
+        from nvflare.fuel.f3.streaming.download_service import _Transaction
+
+        service = _make_isolated_download_service()
+        service._logger.reset_mock()
+        tx = _Transaction(timeout=10.0, num_receivers=1)
+        obj = MockDownloadable([b"chunk1"])
+        ref = tx.add_object(obj)
+
+        with service._tx_lock:
+            service._tx_table[tx.tid] = tx
+            service._ref_table[ref.rid] = ref
+            ref.obj_downloaded(to_receiver="receiver1", status=DownloadStatus.SUCCESS)
+            tx.transaction_done(TransactionDoneStatus.FINISHED)
+            service._delete_tx(tx, tombstone_finished_refs=True)
+            service._finished_refs[ref.rid].last_active_time = 100.0
+
+        with patch.object(download_service_module.time, "time", return_value=100.0 + service._FINISHED_REFS_TTL + 1.0):
+            reply = service._handle_download(_make_download_request(ref.rid, "receiver1"))
+
+        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.INVALID_REQUEST
+        assert ref.rid not in service._finished_refs
+
+    def test_finished_ref_retry_does_not_extend_tombstone_ttl(self):
+        """Repeated valid retries must not keep a finished-ref tombstone alive indefinitely."""
+        from nvflare.fuel.f3.streaming import download_service as download_service_module
+        from nvflare.fuel.f3.streaming.download_service import _Transaction
+
+        service = _make_isolated_download_service()
+        service._logger.reset_mock()
+        tx = _Transaction(timeout=10.0, num_receivers=1)
+        obj = MockDownloadable([b"chunk1"])
+        ref = tx.add_object(obj)
+
+        with service._tx_lock:
+            service._tx_table[tx.tid] = tx
+            service._ref_table[ref.rid] = ref
+            ref.obj_downloaded(to_receiver="receiver1", status=DownloadStatus.SUCCESS)
+
+        with patch.object(download_service_module.time, "time", return_value=100.0):
+            with service._tx_lock:
+                tx.transaction_done(TransactionDoneStatus.FINISHED)
+                service._delete_tx(tx, tombstone_finished_refs=True)
+
+        with patch.object(download_service_module.time, "time", return_value=100.0 + service._FINISHED_REFS_TTL - 1.0):
+            retry_reply = service._handle_download(_make_download_request(ref.rid, "receiver1"))
+
+        assert retry_reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+        assert retry_reply.payload == {"status": ProduceRC.EOF}
+        assert service._finished_refs[ref.rid].last_active_time == 100.0
+
+        with patch.object(download_service_module.time, "time", return_value=100.0 + service._FINISHED_REFS_TTL + 1.0):
+            expired_retry_reply = service._handle_download(_make_download_request(ref.rid, "receiver1"))
+
+        assert expired_retry_reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.INVALID_REQUEST
+        assert ref.rid not in service._finished_refs
 
     def test_custom_ref_id(self, cell):
         """Test adding object with custom ref_id."""

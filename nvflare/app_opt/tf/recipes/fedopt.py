@@ -82,10 +82,10 @@ class FedOptRecipe(Recipe):
         params_transfer_type: How to transfer the parameters between server and client.
             FULL means the whole model parameters are sent. DIFF means that only the difference is sent.
             Defaults to TransferType.FULL.
-        optimizer_args: Dictionary of server-side optimizer arguments with keys 'class_path' (or 'path') and 'args'.
+        optimizer_args: Dictionary of server-side optimizer arguments with keys 'path' (or 'class_path') and 'args'.
             Defaults to SGD with learning_rate=1.0 and momentum=0.6.
         lr_scheduler_args: Dictionary of server-side learning rate scheduler arguments with keys
-            'class_path' (or 'path') and 'args'. Defaults to CosineDecay with initial_learning_rate=1.0 and alpha=0.9.
+            'path' (or 'class_path') and 'args'. Defaults to CosineDecay with initial_learning_rate=1.0 and alpha=0.9.
         server_memory_gc_rounds: Run memory cleanup (gc.collect + malloc_trim) every N rounds on server.
             Set to 0 to disable. Defaults to 0.
 

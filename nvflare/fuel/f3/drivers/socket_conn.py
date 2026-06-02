@@ -148,6 +148,9 @@ class SocketConnection(Connection):
         if prefix.length == PREFIX_LEN:
             return prefix_buf
 
+        if prefix.length < PREFIX_LEN:
+            raise CommError(CommError.BAD_DATA, f"Frame length below prefix size ({prefix.length} < {PREFIX_LEN})")
+
         if prefix.length > MAX_FRAME_SIZE:
             raise CommError(CommError.BAD_DATA, f"Frame exceeds limit ({prefix.length} > {MAX_FRAME_SIZE}")
 

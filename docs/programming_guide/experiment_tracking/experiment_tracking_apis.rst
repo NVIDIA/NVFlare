@@ -74,7 +74,7 @@ Add this component to config_fed_client.json:
 
     {
         "id": "event_to_fed",
-        "name": "ConvertToFedEvent",
+        "path": "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent",
         "args": {"events_to_convert": ["analytix_log_stats"], "fed_event_prefix": "fed."}
     }
 
@@ -184,7 +184,7 @@ For example, in the TensorBoard configuration, add this component to ``config_fe
 
   {
     "id": "tb_analytics_receiver",
-    "name": "TBAnalyticsReceiver",
+    "path": "nvflare.app_opt.tracking.tb.tb_receiver.TBAnalyticsReceiver",
     "args": {"events": ["analytix_log_stats"]}
   }
 

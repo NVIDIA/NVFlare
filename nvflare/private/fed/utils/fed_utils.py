@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import copy
 import importlib
 import json
 import logging
@@ -32,6 +33,7 @@ from nvflare.apis.job_launcher_spec import JobLauncherSpec
 from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.decomposers import common_decomposers
+from nvflare.app_common.widgets.component_path_authorizer import ComponentPathAuthorizer
 from nvflare.fuel.f3.stats_pool import CsvRecordHandler, StatsPoolManager
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.authz import AuthorizationService
@@ -54,6 +56,9 @@ from .app_authz import AppAuthzService
 # to the server's rootCA.pem.  require_signed_jobs() only controls whether unsigned job
 # folders are accepted.  _warn_once suppresses repeated log noise for the same condition.
 _SIGNED_JOB_WARNINGS_EMITTED = set()
+_DEFAULT_COMPONENT_PATH_AUTHORIZER = ComponentPathAuthorizer()
+_AUTHORIZATION_JOB_META_CACHE = "__authorization_job_meta_cache__"
+_JOB_META_CACHE_MISSING = object()
 
 
 def _warn_once(logger: logging.Logger, cache_key: str, message: str, *args) -> None:
@@ -273,6 +278,19 @@ def get_job_meta_from_workspace(workspace: Workspace, job_id: str) -> dict:
         return json.load(file)
 
 
+def _get_job_meta_for_component_authorization(fl_ctx: FLContext, workspace: Workspace, job_id: str):
+    cached_meta = fl_ctx.get_prop(_AUTHORIZATION_JOB_META_CACHE, _JOB_META_CACHE_MISSING)
+    if cached_meta is not _JOB_META_CACHE_MISSING:
+        return copy.deepcopy(cached_meta)
+
+    meta = fl_ctx.get_prop(FLContextKey.JOB_META, _JOB_META_CACHE_MISSING)
+    if meta is _JOB_META_CACHE_MISSING:
+        meta = get_job_meta_from_workspace(workspace, job_id)
+
+    fl_ctx.set_prop(_AUTHORIZATION_JOB_META_CACHE, copy.deepcopy(meta), sticky=False, private=True)
+    return copy.deepcopy(meta)
+
+
 def create_job_processing_context_properties(workspace: Workspace, job_id: str) -> dict:
     job_meta = get_job_meta_from_workspace(workspace, job_id)
     if not isinstance(job_meta, dict):
@@ -428,13 +446,21 @@ def authorize_build_component(config_dict, config_ctx, node, fl_ctx: FLContext, 
     job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
     if not job_id:
         raise RuntimeError("missing job id in fl_ctx")
-    meta = get_job_meta_from_workspace(workspace, job_id)
+    meta = _get_job_meta_for_component_authorization(fl_ctx, workspace, job_id)
     fl_ctx.set_prop(FLContextKey.JOB_META, meta, sticky=False, private=True)
     fl_ctx.set_prop(FLContextKey.COMPONENT_CONFIG, config_dict, sticky=False, private=True)
     fl_ctx.set_prop(FLContextKey.CONFIG_CTX, config_ctx, sticky=False, private=True)
     fl_ctx.set_prop(FLContextKey.COMPONENT_NODE, node, sticky=False, private=True)
 
-    fire_event(EventType.BEFORE_BUILD_COMPONENT, event_handlers, fl_ctx)
+    try:
+        _DEFAULT_COMPONENT_PATH_AUTHORIZER.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
+    except UnsafeComponentError as ex:
+        err = str(ex)
+        if not err:
+            err = "Unsafe component detected by built-in component path authorizer"
+        return err
+
+    fire_event(EventType.BEFORE_BUILD_COMPONENT, event_handlers or [], fl_ctx)
 
     err = fl_ctx.get_prop(FLContextKey.COMPONENT_BUILD_ERROR)
     if err:

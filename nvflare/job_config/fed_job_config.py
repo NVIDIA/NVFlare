@@ -415,6 +415,7 @@ class FedJobConfig:
         if hasattr(component, "__dict__"):
             parameters = get_component_init_parameters(component)
             attrs = component.__dict__
+            always_serialize_args = set(getattr(component, "_always_serialize_args", ()))
 
             for param in parameters:
                 attr_key = param if param in attrs.keys() else "_" + param
@@ -422,7 +423,9 @@ class FedJobConfig:
                 if attr_key in ["args", "kwargs"]:
                     continue
 
-                if attr_key in attrs.keys() and self._values_differ(parameters[param].default, attrs[attr_key]):
+                if attr_key in attrs.keys() and (
+                    param in always_serialize_args or self._values_differ(parameters[param].default, attrs[attr_key])
+                ):
                     if attrs[attr_key] is None or type(attrs[attr_key]).__name__ in dir(builtins):
                         args[param] = attrs[attr_key]
                     elif issubclass(attrs[attr_key].__class__, Enum):

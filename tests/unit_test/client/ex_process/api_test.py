@@ -15,6 +15,9 @@
 import copy
 from unittest.mock import patch
 
+import pytest
+
+from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.abstract.params_converter import ParamsConverter
 from nvflare.client.config import ClientConfig, ConfigKey, ExchangeFormat
 from nvflare.client.converter_utils import create_default_params_converters
@@ -177,6 +180,50 @@ def test_ex_process_api_passes_submit_result_timeout_to_agent(monkeypatch):
 
     assert "submit_result_timeout" in captured_kwargs, "submit_result_timeout was not passed to FlareAgentWithFLModel"
     assert captured_kwargs["submit_result_timeout"] == 999.0
+
+
+def test_ex_process_receive_timeout_does_not_arm_send_under_congestion():
+    from unittest.mock import MagicMock
+
+    from nvflare.client.config import ClientConfig
+    from nvflare.client.ex_process.api import ExProcessClientAPI
+    from nvflare.client.model_registry import ModelRegistry
+
+    fake_agent = MagicMock()
+    fake_agent.get_task.return_value = None
+    registry = ModelRegistry(ClientConfig({}), rank="0", flare_agent=fake_agent)
+    api = ExProcessClientAPI(config_file="fake_config.json")
+    api.model_registry = registry
+
+    assert api.receive(timeout=12.5) is None
+    fake_agent.get_task.assert_called_once_with(12.5)
+    assert api.receive_called is False
+    with pytest.raises(RuntimeError, match='"receive" needs to be called'):
+        api.send(FLModel(params={"x": 1}))
+
+
+def test_ex_process_receive_timeout_then_later_task_allows_send():
+    from unittest.mock import MagicMock
+
+    from nvflare.client.config import ClientConfig
+    from nvflare.client.ex_process.api import ExProcessClientAPI
+    from nvflare.client.flare_agent import Task
+    from nvflare.client.model_registry import ModelRegistry
+
+    received_model = FLModel(params={"x": 1})
+    fake_agent = MagicMock()
+    fake_agent.get_task.side_effect = [None, Task(task_name="train", task_id="task-1", data=received_model)]
+    registry = ModelRegistry(ClientConfig({}), rank="0", flare_agent=fake_agent)
+    api = ExProcessClientAPI(config_file="fake_config.json")
+    api.model_registry = registry
+
+    assert api.receive(timeout=0.1) is None
+    assert api.receive_called is False
+
+    assert api.receive(timeout=0.1) is received_model
+    assert api.receive_called is True
+    api.send(FLModel(params={"x": 2}), clear_cache=False)
+    fake_agent.submit_result.assert_called_once()
 
 
 # ── _downgrade_rotating_handlers tests ────────────────────────────────────────

@@ -44,8 +44,8 @@ class FedOpt(FedAvg):
         in this case, SGD with momentum & CosineDecay.
 
         Args:
-            optimizer_args: dictionary of optimizer arguments, with keys of 'optimizer_path' and 'args.
-            lr_scheduler_args: dictionary of server-side learning rate scheduler arguments, with keys of 'lr_scheduler_path' and 'args.
+            optimizer_args: dictionary of optimizer arguments, with keys of 'path' and 'args'.
+            lr_scheduler_args: dictionary of server-side learning rate scheduler arguments, with keys of 'path' and 'args'.
 
         Raises:
             TypeError: when any of input arguments does not have correct type
