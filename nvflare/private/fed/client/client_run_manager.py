@@ -209,6 +209,9 @@ class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
     def build_component(self, config_dict):
         if not self.conf:
             raise RuntimeError("No configurator set up.")
+        has_authorizer = getattr(self.conf, "has_component_build_authorizer", None)
+        if not callable(has_authorizer) or not has_authorizer():
+            raise RuntimeError("No component build authorizer set up.")
         return self.conf.build_component(config_dict)
 
     def get_cell(self):

@@ -27,6 +27,7 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.tracking.log_writer import LogWriter
+from nvflare.app_common.utils.file_utils import resolve_path_under_root
 from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
 from nvflare.app_opt.xgboost.histogram_based.constants import XGB_TRAIN_TASK, XGBShareableHeader
 from nvflare.app_opt.xgboost.metrics_cb import MetricsCallback
@@ -110,6 +111,9 @@ class FedXGBHistogramExecutor(Executor):
 
         self._metrics_writer_id = metrics_writer_id
         self._metrics_writer = None
+
+    def _get_model_path(self, run_dir: str) -> str:
+        return resolve_path_under_root(run_dir, self.model_file_name, "model_file_name")
 
     def initialize(self, fl_ctx):
         self.client_id = fl_ctx.get_identity_name()
@@ -283,7 +287,7 @@ class FedXGBHistogramExecutor(Executor):
                 workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
                 run_number = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
                 run_dir = workspace.get_run_dir(run_number)
-                bst.save_model(os.path.join(run_dir, self.model_file_name))
+                bst.save_model(self._get_model_path(run_dir))
                 xgb.collective.communicator_print("Finished training\n")
         except Exception as e:
             secure_log_traceback()

@@ -179,19 +179,26 @@ class _Ref:
         self.tx = tx
         self.obj = obj
         self.num_receivers_done = 0
+        self.receiver_statuses = {}
+        self._downloaded_to_all_called = False
 
     def mark_active(self):
         self.tx.mark_active()
 
     def obj_downloaded(self, to_receiver: str, status: str):
-        self.num_receivers_done += 1
+        if to_receiver in self.receiver_statuses:
+            return
+
+        self.receiver_statuses[to_receiver] = status
+        self.num_receivers_done = len(self.receiver_statuses)
 
         assert isinstance(self.obj, Downloadable)
         self.obj.downloaded_to_one(to_receiver, status)
 
         assert isinstance(self.tx, _Transaction)
-        if 0 < self.tx.num_receivers <= self.num_receivers_done:
+        if 0 < self.tx.num_receivers <= self.num_receivers_done and not self._downloaded_to_all_called:
             # this object is done for all receivers
+            self._downloaded_to_all_called = True
             self.obj.downloaded_to_all()
 
 
@@ -216,6 +223,16 @@ class TransactionDoneStatus:
     FINISHED = "finished"
     TIMEOUT = "timeout"
     DELETED = "deleted"
+
+
+class _FinishedRef:
+
+    def __init__(self, receiver_statuses: dict[str, str], timestamp: float):
+        self.receiver_statuses = receiver_statuses
+        self.last_active_time = timestamp
+
+    def expired(self, now: float, ttl: float) -> bool:
+        return now - self.last_active_time > ttl
 
 
 class _Transaction:
@@ -344,6 +361,10 @@ class DownloadService:
     _init_lock = threading.Lock()
     _tx_table = {}
     _ref_table = {}
+    # Ref tombstones let a client retry a lost/delayed EOF reply after the source
+    # transaction has been cleaned up without turning a completed transfer into a fatal missing-ref error.
+    _finished_refs = {}
+    _FINISHED_REFS_TTL = 1800.0
     _logger = None
     _tx_monitor = None
     _tx_lock = threading.Lock()
@@ -403,6 +424,7 @@ class DownloadService:
         ref = tx.add_object(obj, ref_id)
         with cls._tx_lock:
             cls._ref_table[ref.rid] = ref
+            cls._finished_refs.pop(ref.rid, None)
         return ref.rid
 
     @classmethod
@@ -426,14 +448,45 @@ class DownloadService:
                 for tx in tx_list:
                     cls._delete_tx(tx)
                     tx.transaction_done(TransactionDoneStatus.DELETED)
+            cls._finished_refs.clear()
 
     @classmethod
-    def _delete_tx(cls, tx: _Transaction):
+    def _delete_tx(cls, tx: _Transaction, tombstone_finished_refs: bool = False):
         cls._tx_table.pop(tx.tid, None)
 
         # remove all refs
+        now = time.time() if tombstone_finished_refs else None
         for r in tx.refs:
             cls._ref_table.pop(r.rid, None)
+            if tombstone_finished_refs:
+                cls._finished_refs[r.rid] = _FinishedRef(dict(r.receiver_statuses), now)
+            else:
+                cls._finished_refs.pop(r.rid, None)
+
+    @classmethod
+    def _expire_finished_refs(cls, now: float):
+        if not cls._finished_refs:
+            return
+
+        expired_refs = [
+            rid for rid, finished_ref in cls._finished_refs.items() if finished_ref.expired(now, cls._FINISHED_REFS_TTL)
+        ]
+        for rid in expired_refs:
+            cls._finished_refs.pop(rid, None)
+
+    @classmethod
+    def _get_finished_ref_status(cls, rid: str, requester: str) -> Optional[str]:
+        now = time.time()
+        finished_ref = cls._finished_refs.get(rid)
+        if not finished_ref:
+            return None
+
+        if finished_ref.expired(now, cls._FINISHED_REFS_TTL):
+            cls._finished_refs.pop(rid, None)
+            return None
+
+        status = finished_ref.receiver_statuses.get(requester)
+        return status
 
     @classmethod
     def get_transaction_info(cls, transaction_id: str) -> Optional[TransactionInfo]:
@@ -466,6 +519,14 @@ class DownloadService:
         with cls._tx_lock:
             ref = cls._ref_table.get(rid)
             if not ref:
+                finished_status = cls._get_finished_ref_status(rid, requester)
+                if finished_status == DownloadStatus.SUCCESS:
+                    cls._logger.debug(f"finished ref {rid} from {requester} retried - returning EOF")
+                    return make_reply(ReturnCode.OK, body={_PropKey.STATUS: ProduceRC.EOF})
+                elif finished_status == DownloadStatus.FAILED:
+                    cls._logger.debug(f"finished ref {rid} from {requester} retried - returning ERROR")
+                    return make_reply(ReturnCode.OK, body={_PropKey.STATUS: ProduceRC.ERROR})
+
                 cls._logger.error(f"no ref found for {rid} from {requester}")
                 return make_reply(ReturnCode.INVALID_REQUEST)
 
@@ -526,7 +587,9 @@ class DownloadService:
 
                 for tx in finished_tx:
                     tx.transaction_done(TransactionDoneStatus.FINISHED)
-                    cls._delete_tx(tx)
+                    cls._delete_tx(tx, tombstone_finished_refs=True)
+
+                cls._expire_finished_refs(now)
 
             time.sleep(5.0)
 

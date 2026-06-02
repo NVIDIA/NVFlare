@@ -538,6 +538,11 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         self.conf = conf
 
     def build_component(self, config_dict):
+        if not self.conf:
+            raise RuntimeError("No configurator set up.")
+        has_authorizer = getattr(self.conf, "has_component_build_authorizer", None)
+        if not callable(has_authorizer) or not has_authorizer():
+            raise RuntimeError("No component build authorizer set up.")
         return self.conf.build_component(config_dict)
 
     def new_context(self) -> FLContext:
@@ -846,7 +851,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         data = return_data.payload
         clients = data.get(ServerCommandKey.CLIENTS, None)
         if clients is None:
-            self.logger.error(f"parent failed to return clients info for job {job_id}")
+            self.logger.debug(f"parent failed to return clients info for job {job_id}")
         return clients
 
     def update_job_run_status(self):

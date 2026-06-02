@@ -48,7 +48,7 @@ class TaskRegistry:
         """Whether this is the rank 0 process."""
         return self.rank is None or self.rank == "0"
 
-    def _receive(self, timeout: Optional[float] = None) -> Task:
+    def _receive(self, timeout: Optional[float] = None) -> Optional[Task]:
         """Receives a task using flare agent.
 
         This is only called on rank0.
@@ -59,7 +59,7 @@ class TaskRegistry:
         task = self.flare_agent.get_task(timeout)
 
         if task is None:
-            raise RuntimeError(f"no received task within timeout: {timeout}")
+            return None
 
         if task.data is None:
             raise RuntimeError("no received task.data")
@@ -83,7 +83,8 @@ class TaskRegistry:
         """
         if self.is_rank0 and not self.cache_loaded:
             task = self._receive(timeout)
-            self._set_task(task)
+            if task is not None:
+                self._set_task(task)
         return self.received_task
 
     def get_sys_info(self) -> Dict:

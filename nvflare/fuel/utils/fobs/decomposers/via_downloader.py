@@ -547,6 +547,10 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
             )
             return lazy
 
+        if items is None:
+            self.logger.error(f"cannot find item {item_id} because no downloaded data is loaded")
+            raise RuntimeError(f"FOBS download data is missing for item {item_id}")
+
         self.logger.debug(f"trying to get item for {item_id=} from {type(items)=}")
 
         make_lazy_ref_fn = getattr(items, "make_lazy_ref", None)
@@ -555,10 +559,20 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
             self.logger.debug(f"{tid=} created lazy ref for {item_id}")
             return item
 
+        get_item_fn = getattr(items, "get", None)
+        if not callable(get_item_fn):
+            self.logger.error(f"downloaded data for {item_id} does not support get(): {type(items)}")
+            raise RuntimeError(f"FOBS download data has invalid type for item {item_id}")
+
+        if hasattr(items, "__contains__") and item_id not in items:
+            self.logger.error(f"cannot find item {item_id} from loaded data")
+            raise RuntimeError(f"FOBS download data is incomplete: item {item_id} is missing")
+
         item = items.get(item_id)
         self.logger.debug(f"{tid=} found item {item_id}: {type(item)}")
         if item is None:
-            self.logger.error(f"cannot find item {item_id} from loaded data")
+            self.logger.error(f"downloaded item {item_id} is None")
+            raise RuntimeError(f"FOBS download data is incomplete: item {item_id} is None")
         return item
 
     def _download_from_remote_cell(self, fobs_ctx: dict, ref: dict):
