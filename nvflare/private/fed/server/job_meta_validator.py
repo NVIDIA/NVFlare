@@ -175,8 +175,11 @@ class JobMetaValidator(JobMetaValidatorSpec):
             if self._entry_exists(zip_file, custom_folder):
                 has_byoc = True
 
+        # BYOC is derived from the submitted app contents, not trusted from user-provided meta.
         if has_byoc:
             meta[AppValidationKey.BYOC] = True
+        else:
+            meta.pop(AppValidationKey.BYOC, None)
 
     @staticmethod
     def _convert_value_to_int(v) -> int:
