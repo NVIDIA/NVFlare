@@ -34,6 +34,7 @@ class VarName:
     HEARTBEAT_INTERVAL = "heartbeat_interval"
     USE_AIO_GRPC_VAR_NAME = "use_aio_grpc"
     STREAMING_CHUNK_SIZE = "streaming_chunk_size"
+    STREAMING_MAX_BLOB_SIZE = "streaming_max_blob_size"
     STREAMING_ACK_WAIT = "streaming_ack_wait"
     STREAMING_WINDOW_SIZE = "streaming_window_size"
     STREAMING_ACK_INTERVAL = "streaming_ack_interval"
@@ -104,6 +105,9 @@ class CommConfigurator:
 
     def get_streaming_chunk_size(self, default):
         return ConfigService.get_int_var(VarName.STREAMING_CHUNK_SIZE, self.config, default=default)
+
+    def get_streaming_max_blob_size(self):
+        return ConfigService.get_int_var(VarName.STREAMING_MAX_BLOB_SIZE, self.config, default=DEFAULT_MAX_MSG_SIZE)
 
     def get_streaming_ack_wait(self, default):
         return ConfigService.get_int_var(VarName.STREAMING_ACK_WAIT, self.config, default=default)
