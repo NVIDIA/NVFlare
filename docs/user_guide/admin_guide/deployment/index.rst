@@ -13,7 +13,7 @@ Deployment Guide
    operation
    containerized_deployment
    helm_chart
-   openshift/index
+   openshift
    brev_scripted_deployment
    brev_deployment
    cloud_deployment

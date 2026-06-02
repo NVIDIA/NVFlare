@@ -27,10 +27,10 @@ Common environment:
   DELETE_WORK_DIR=false
 
 Examples:
-  bash docs/user_guide/admin_guide/deployment/openshift/scripts/cleanup_openshift_cluster.sh
+  bash examples/devops/openshift/scripts/cleanup_openshift_cluster.sh
 
   DELETE_NAMESPACE=true \
-    bash docs/user_guide/admin_guide/deployment/openshift/scripts/cleanup_openshift_cluster.sh
+    bash examples/devops/openshift/scripts/cleanup_openshift_cluster.sh
 EOF
 }
 

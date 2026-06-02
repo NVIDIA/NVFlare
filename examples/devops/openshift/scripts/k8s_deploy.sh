@@ -31,7 +31,7 @@ Common optional environment:
 
 Example:
   IMAGE=registry.example.com/nvflare-parent:dev \
-    bash docs/user_guide/admin_guide/deployment/openshift/scripts/k8s_deploy.sh
+    bash examples/devops/openshift/scripts/k8s_deploy.sh
 EOF
 }
 

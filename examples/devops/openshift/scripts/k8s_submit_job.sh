@@ -35,7 +35,7 @@ Common optional environment:
 Example:
   IMAGE=registry.example.com/nvflare-parent:dev \
   JOB_IMAGE=registry.example.com/nvflare-job:dev \
-    bash docs/user_guide/admin_guide/deployment/openshift/scripts/k8s_submit_job.sh
+    bash examples/devops/openshift/scripts/k8s_submit_job.sh
 EOF
 }
 

@@ -18,8 +18,8 @@ Common optional environment:
   WORK_DIR=/tmp/nvflare/openshift-e2e
 
 Examples:
-  bash docs/user_guide/admin_guide/deployment/openshift/scripts/k8s_watch.sh
-  bash docs/user_guide/admin_guide/deployment/openshift/scripts/k8s_watch.sh --once
+  bash examples/devops/openshift/scripts/k8s_watch.sh
+  bash examples/devops/openshift/scripts/k8s_watch.sh --once
 EOF
 }
 

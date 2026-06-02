@@ -2,7 +2,7 @@
 
 This directory contains the OpenShift-specific NVFlare deployment guide and helper scripts.
 
-- `index.rst` is the user guide page for OpenShift deployment.
+- [index.md](index.md) is the detailed OpenShift deployment guide.
 - Repository `docker/Dockerfile.parent` builds the parent image used by server/client and admin pods.
 - Repository `docker/Dockerfile.job` builds the workload image used by job pods.
 - `scripts/create_openshift_cluster.sh` configures Red Hat OpenShift Local (CRC) and optionally starts it.
@@ -40,7 +40,7 @@ behavior, runs `crc setup`, and starts the cluster by delegating to
 export PULL_SECRET_FILE="$HOME/Downloads/pull-secret.txt"
 export NAMESPACE=nvflare-e2e
 
-bash docs/user_guide/admin_guide/deployment/openshift/scripts/create_openshift_cluster.sh
+bash examples/devops/openshift/scripts/create_openshift_cluster.sh
 ```
 
 Use `scripts/start_openshift_cluster.sh` after CRC has already been configured,
@@ -51,7 +51,7 @@ and available StorageClasses.
 
 ```bash
 PULL_SECRET_FILE="$HOME/Downloads/pull-secret.txt" \
-bash docs/user_guide/admin_guide/deployment/openshift/scripts/start_openshift_cluster.sh
+bash examples/devops/openshift/scripts/start_openshift_cluster.sh
 ```
 
 Run scripts from the repository root. Build the maintained images from `docker/Dockerfile.parent` and `docker/Dockerfile.job`, push them to a registry the cluster can pull from, then set `IMAGE` to the parent image and `JOB_IMAGE` to the workload image. `ADMIN_IMAGE` defaults to `IMAGE`, so the parent image can also be used for the temporary admin pod. The parent image needs NVFlare with the `K8S` extra/Kubernetes Python client. A custom `COPY_IMAGE` needs `sh`, `sleep`, and `tar`; `JOB_IMAGE` only needs `tar` when the job workload itself needs it.
@@ -61,7 +61,7 @@ export IMAGE=registry.example.com/nvflare-parent:dev
 export JOB_IMAGE=registry.example.com/nvflare-job:dev
 export NAMESPACE=nvflare-e2e
 
-bash docs/user_guide/admin_guide/deployment/openshift/scripts/k8s_e2e.sh
+bash examples/devops/openshift/scripts/k8s_e2e.sh
 ```
 
 The watch tool requires the Python `rich` package:
@@ -73,5 +73,5 @@ python3 -m pip install rich
 Clean up generated resources and stop OpenShift Local:
 
 ```bash
-bash docs/user_guide/admin_guide/deployment/openshift/scripts/cleanup_openshift_cluster.sh
+bash examples/devops/openshift/scripts/cleanup_openshift_cluster.sh
 ```

@@ -44,13 +44,13 @@ Common optional environment:
 Examples:
   IMAGE=registry.example.com/nvflare-parent:dev \
   JOB_IMAGE=registry.example.com/nvflare-job:dev \
-    bash docs/user_guide/admin_guide/deployment/openshift/scripts/k8s_e2e.sh
+    bash examples/devops/openshift/scripts/k8s_e2e.sh
 
   IMAGE=registry.example.com/nvflare-parent:dev \
   JOB_IMAGE=registry.example.com/nvflare-job:dev \
   PARENT_CPU=500m \
   PARENT_MEMORY=1Gi \
-    bash docs/user_guide/admin_guide/deployment/openshift/scripts/k8s_e2e.sh
+    bash examples/devops/openshift/scripts/k8s_e2e.sh
 EOF
 }
 

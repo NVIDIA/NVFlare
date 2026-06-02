@@ -26,7 +26,7 @@ Common optional environment:
   CLEAN_WORK_DIR=true
 
 Example:
-  bash docs/user_guide/admin_guide/deployment/openshift/scripts/k8s_provision.sh
+  bash examples/devops/openshift/scripts/k8s_provision.sh
 EOF
 }
 

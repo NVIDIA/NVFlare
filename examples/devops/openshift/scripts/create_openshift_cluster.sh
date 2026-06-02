@@ -42,14 +42,14 @@ Environment passed to start_openshift_cluster.sh:
 
 Examples:
   PULL_SECRET_FILE=$HOME/Downloads/pull-secret.txt \
-    bash docs/user_guide/admin_guide/deployment/openshift/scripts/create_openshift_cluster.sh
+    bash examples/devops/openshift/scripts/create_openshift_cluster.sh
 
   CRC_CPUS=8 CRC_MEMORY=32768 CRC_DISK_SIZE=160 \
   PULL_SECRET_FILE=$HOME/Downloads/pull-secret.txt \
-    bash docs/user_guide/admin_guide/deployment/openshift/scripts/create_openshift_cluster.sh
+    bash examples/devops/openshift/scripts/create_openshift_cluster.sh
 
   START_AFTER_CREATE=false \
-    bash docs/user_guide/admin_guide/deployment/openshift/scripts/create_openshift_cluster.sh
+    bash examples/devops/openshift/scripts/create_openshift_cluster.sh
 EOF
 }
 

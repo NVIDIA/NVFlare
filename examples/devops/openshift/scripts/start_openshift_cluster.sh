@@ -38,13 +38,13 @@ OpenShift login and project environment:
 
 Examples:
   PULL_SECRET_FILE=$HOME/Downloads/pull-secret.txt \
-    bash docs/user_guide/admin_guide/deployment/openshift/scripts/start_openshift_cluster.sh
+    bash examples/devops/openshift/scripts/start_openshift_cluster.sh
 
   OPENSHIFT_USER=kubeadmin OPENSHIFT_PASSWORD=<password> \
-    bash docs/user_guide/admin_guide/deployment/openshift/scripts/start_openshift_cluster.sh
+    bash examples/devops/openshift/scripts/start_openshift_cluster.sh
 
   LOGIN_OPENSHIFT=false \
-    bash docs/user_guide/admin_guide/deployment/openshift/scripts/start_openshift_cluster.sh
+    bash examples/devops/openshift/scripts/start_openshift_cluster.sh
 EOF
 }
 
