@@ -1,4 +1,18 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Rich live pod table for the NVFlare OpenShift deployment scripts."""
 
 from __future__ import annotations
@@ -117,12 +131,12 @@ def pod_status(pod: dict[str, Any]) -> str:
 
     statuses = (status.get("initContainerStatuses") or []) + (status.get("containerStatuses") or [])
     for container_status in statuses:
-        waiting = ((container_status.get("state") or {}).get("waiting") or {})
+        waiting = (container_status.get("state") or {}).get("waiting") or {}
         if waiting.get("reason"):
             return waiting["reason"]
 
     for container_status in status.get("containerStatuses") or []:
-        terminated = ((container_status.get("state") or {}).get("terminated") or {})
+        terminated = (container_status.get("state") or {}).get("terminated") or {}
         reason = terminated.get("reason")
         if reason and reason != "Completed":
             return reason
