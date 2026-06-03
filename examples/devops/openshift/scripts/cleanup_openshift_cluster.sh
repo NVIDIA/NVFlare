@@ -198,6 +198,14 @@ delete_generated_resources() {
             ;;
         esac
       done
+  "${KUBE_CMD}" -n "${NAMESPACE}" get configmaps -o name 2>/dev/null \
+    | while IFS= read -r configmap; do
+        case "${configmap}" in
+          configmap/nvflare-local-*)
+            "${KUBE_CMD}" -n "${NAMESPACE}" delete "${configmap}" --ignore-not-found=true >/dev/null 2>&1 || true
+            ;;
+        esac
+      done
 }
 
 delete_work_dir() {

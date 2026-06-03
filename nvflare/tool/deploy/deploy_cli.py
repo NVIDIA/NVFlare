@@ -37,6 +37,7 @@ _DEPLOY_K8_STAGE_EXAMPLES = [
     "nvflare deploy k8 stage ./server-k8s --namespace nvflare --local-configmap server-local",
     "nvflare deploy k8 stage ./site-1-k8s --startup-secret site-1-startup",
 ]
+_DEPLOY_K8_STAGE_KUBECTL_CHOICES = ("kubectl", "oc")
 
 
 def def_deploy_cli_parser(sub_cmd) -> dict:
@@ -99,7 +100,8 @@ def def_deploy_cli_parser(sub_cmd) -> dict:
     )
     stage_parser.add_argument(
         "--kubectl",
-        help="Kubernetes CLI executable used for apply. Defaults to the KUBECTL environment variable or kubectl.",
+        choices=_DEPLOY_K8_STAGE_KUBECTL_CHOICES,
+        help="Kubernetes CLI command used for apply. Defaults to the KUBECTL environment variable or kubectl.",
     )
     stage_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _deploy_k8_stage_parser = stage_parser

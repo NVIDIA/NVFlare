@@ -803,6 +803,32 @@ def test_stage_k8_reports_kubectl_failure(tmp_path, capsys, monkeypatch):
     assert "boom" in err
 
 
+def test_stage_k8_reports_kubectl_launch_os_error(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    def fake_run(_cmd, **_kwargs):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr("nvflare.tool.deploy.deploy_commands.subprocess.run", fake_run)
+
+    with pytest.raises(SystemExit):
+        stage_k8_deployment(_stage_k8_args(output, namespace="nvflare"))
+
+    err = capsys.readouterr().err
+    assert "KUBECTL_NOT_FOUND" in err
+    assert "Kubernetes CLI executable could not be started: kubectl" in err
+
+
 def test_stage_k8_rejects_non_k8s_prepared_folder(tmp_path, capsys, monkeypatch):
     kit = _make_client_kit(tmp_path)
     output = tmp_path / "site-1-docker"
@@ -854,7 +880,15 @@ def test_stage_k8_rejects_invalid_stage_argument_values(tmp_path, capsys, monkey
 
     err = capsys.readouterr().err
     assert "INVALID_ARGS" in err
-    assert "Kubernetes CLI executable must be one of" in err
+    assert "Kubernetes CLI command must be one of" in err
+    assert calls == []
+
+    with pytest.raises(SystemExit):
+        stage_k8_deployment(_stage_k8_args(output, namespace="nvflare", kubectl="/usr/bin/kubectl"))
+
+    err = capsys.readouterr().err
+    assert "INVALID_ARGS" in err
+    assert "Kubernetes CLI command must be one of" in err
     assert calls == []
 
 

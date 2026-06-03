@@ -384,16 +384,15 @@ def _default_k8_stage_resource_names(kit: Path, values: dict[str, Any]) -> tuple
 def _resolve_kubectl(args) -> str:
     kubectl = getattr(args, "kubectl", None) or os.environ.get(KUBECTL_ENV_VAR) or "kubectl"
     if not isinstance(kubectl, str) or not kubectl.strip():
-        _fail("INVALID_ARGS", "Kubernetes CLI executable must be a non-empty string.", "Set --kubectl or KUBECTL.")
+        _fail("INVALID_ARGS", "Kubernetes CLI command must be a non-empty string.", "Set --kubectl or KUBECTL.")
     kubectl = kubectl.strip()
-    executable_name = Path(kubectl).name
-    if executable_name not in K8_STAGE_ALLOWED_KUBECTL_NAMES:
+    if kubectl not in K8_STAGE_ALLOWED_KUBECTL_NAMES:
         _fail(
             "INVALID_ARGS",
-            f"Kubernetes CLI executable must be one of {sorted(K8_STAGE_ALLOWED_KUBECTL_NAMES)}: {kubectl!r}",
+            f"Kubernetes CLI command must be one of {sorted(K8_STAGE_ALLOWED_KUBECTL_NAMES)}: {kubectl!r}",
             "Set --kubectl or KUBECTL to kubectl or oc.",
         )
-    return executable_name
+    return kubectl
 
 
 def _k8_stage_helm_command(kit: Path, namespace: str) -> str:
@@ -1313,10 +1312,10 @@ def _kubectl(cmd: list[str], input_text: str | None = None) -> subprocess.Comple
             text=True,
             check=False,
         )
-    except FileNotFoundError:
+    except OSError:
         _fail(
             "KUBECTL_NOT_FOUND",
-            f"Kubernetes CLI executable was not found: {cmd[0]}",
+            f"Kubernetes CLI executable could not be started: {cmd[0]}",
             "Install kubectl or set --kubectl/KUBECTL to a compatible command such as oc.",
         )
 
