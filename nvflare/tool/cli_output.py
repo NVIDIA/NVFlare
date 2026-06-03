@@ -184,26 +184,26 @@ def _sanitize_for_cli_output(value: Any, key: Any = None) -> Any:
 
 
 def _render_table(data: Any) -> None:
-    data = _sanitize_for_cli_output(data)
-    if isinstance(data, dict):
-        for k, v in data.items():
-            print(f"{k}: {v}")
-    elif isinstance(data, list):
-        if not data:
+    safe_table_data = _sanitize_for_cli_output(data)
+    if isinstance(safe_table_data, dict):
+        for table_key, safe_table_value in safe_table_data.items():
+            print(f"{table_key}: {safe_table_value}")
+    elif isinstance(safe_table_data, list):
+        if not safe_table_data:
             return
-        if isinstance(data[0], dict):
-            keys = list(data[0].keys())
-            widths = [max(len(k), max(len(str(r.get(k, ""))) for r in data)) for k in keys]
+        if isinstance(safe_table_data[0], dict):
+            keys = list(safe_table_data[0].keys())
+            widths = [max(len(k), max(len(str(r.get(k, ""))) for r in safe_table_data)) for k in keys]
             header = "  ".join(k.ljust(w) for k, w in zip(keys, widths))
             print(header)
             print("-" * len(header))
-            for row in data:
+            for row in safe_table_data:
                 print("  ".join(str(row.get(k, "")).ljust(w) for k, w in zip(keys, widths)))
         else:
-            for item in data:
+            for item in safe_table_data:
                 print(item)
     else:
-        print(str(data))
+        print(str(safe_table_data))
 
 
 def output(data: Any, fmt: Optional[str]) -> None:
