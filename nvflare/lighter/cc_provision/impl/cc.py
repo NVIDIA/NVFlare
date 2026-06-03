@@ -12,12 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import os
 from typing import Any, Dict, Optional, Type
 
 from nvflare.app_opt.confidential_computing.cc_manager import CC_ISSUER_ID, TOKEN_EXPIRATION
 from nvflare.lighter import utils
-from nvflare.lighter.constants import PropKey, TemplateSectionKey
+from nvflare.lighter.constants import PropKey, ProvFileName, TemplateSectionKey
 from nvflare.lighter.ctx import ProvisionContext
 from nvflare.lighter.entity import Participant, Project
 from nvflare.lighter.spec import Builder
@@ -68,6 +69,8 @@ class CCBuilder(Builder):
 
     def _load_and_validate_cc_config(self, config_path):
         """Load CC configuration from YAML file."""
+        if not isinstance(config_path, str):
+            raise TypeError(f"cc_config must be a YAML file path but got {type(config_path)}")
         if not os.path.exists(config_path):
             raise FileNotFoundError(f"CC config file not found: {config_path}")
         cc_config = utils.load_yaml(config_path)
@@ -134,7 +137,7 @@ class CCBuilder(Builder):
         if cc_config == {}:
             return
 
-        cc_issuers = participant.get_prop(PropKey.CC_ISSUERS)
+        cc_issuers = participant.get_prop(PropKey.CC_ISSUERS, [])
         for issuer in cc_issuers:
             cc_mgr_args[CCManagerArgs.CC_ISSUERS_CONF].append(
                 {
@@ -170,11 +173,54 @@ class CCBuilder(Builder):
         resources_file = os.path.join(dest_dir, f"{self._cc_mgr_id}__p_resources.json")
         utils.add_component_to_resources(resources_file, component)
 
+    def _extend_class_allow_list(self, participant: Participant, ctx: ProvisionContext):
+        cc_config = participant.get_prop(PropKey.CC_CONFIG_DICT, {})
+        class_allow_list = cc_config.get(CCConfigKey.CLASS_ALLOW_LIST)
+        if not class_allow_list:
+            return
+
+        if not isinstance(class_allow_list, list):
+            raise ValueError(
+                f"{CCConfigKey.CLASS_ALLOW_LIST} in cc_config for {participant.name} must be list "
+                f"but got {type(class_allow_list)}"
+            )
+
+        for class_path in class_allow_list:
+            if not isinstance(class_path, str) or not class_path:
+                raise ValueError(
+                    f"{CCConfigKey.CLASS_ALLOW_LIST} in cc_config for {participant.name} "
+                    "must contain non-empty strings"
+                )
+
+        resources_file = os.path.join(ctx.get_local_dir(participant), ProvFileName.RESOURCES_JSON_DEFAULT)
+        if not os.path.exists(resources_file):
+            raise RuntimeError(
+                "CCBuilder requires StaticFileBuilder to run before it so "
+                f"{resources_file} exists before class_allow_list is extended."
+            )
+
+        with open(resources_file, "r") as f:
+            resources = json.load(f)
+
+        configured_allow_list = resources.get(CCConfigKey.CLASS_ALLOW_LIST, [])
+        if not isinstance(configured_allow_list, list):
+            raise RuntimeError(f"{resources_file} contains non-list {CCConfigKey.CLASS_ALLOW_LIST}")
+
+        for class_path in class_allow_list:
+            if class_path not in configured_allow_list:
+                configured_allow_list.append(class_path)
+
+        resources[CCConfigKey.CLASS_ALLOW_LIST] = configured_allow_list
+        utils.write(resources_file, json.dumps(resources, indent=2), "t")
+
     def build(self, project: Project, ctx: ProvisionContext):
         """Build CC configuration for all participants."""
         # Build CC implementation for each participant
         for builder in self._cc_builders.values():
             builder.build(project, ctx)
+
+        for participant in self._cc_enabled_sites:
+            self._extend_class_allow_list(participant, ctx)
 
         # Build CCManager for each participant
         server = project.get_server()
