@@ -168,56 +168,41 @@ The CC image builder supports any generic workload. For NVFlare, create a Docker
    For CC jobs, custom code at runtime is not allowed. All application code must be included in the Docker image.
    NVFlare checks the component allow-list before loading any components. If your job uses classes that are
    included in the CVM image but are not yet allowed, add those class paths to ``class_allow_list`` in the site's
-   local resources file. In on-prem CVM deployments, the NVFlare startup kit is mounted under
-   ``/user_config/nvflare``. The ``user_config.qcow2`` drive is not encrypted and can be modified before launch.
+   ``cc_config``. The provisioner extends the generated ``local/resources.json.default`` for that participant before
+   the startup kit is signed and packaged.
 
-   There are two ways to update the site resources:
-
-   * Prefer a provisioning-time template overlay when the allow-list should be part of the generated startup kit.
-   * For a packaged CVM bundle, mount ``user_config.qcow2`` before launching the CVM and edit the startup kit resources
-     under ``nvflare/local/``.
-
-   To customize the allow-list, create a template overlay such as
-   ``/shared/cc-config/my_resources_template.yml``. Copy the full ``local_server_resources`` and
-   ``local_client_resources`` entries from the installed ``master_template.yml`` into the overlay, then extend each
-   ``class_allow_list``. The template overlay replaces top-level keys rather than deep-merging them, so a partial
-   overlay can remove the default ``nvflare.*`` entries.
-
-   The overlay file is YAML, but the resource entries must keep the same JSON block-scalar format used by
-   ``master_template.yml``. Do not convert these entries to nested YAML mappings. The following shortened example
-   shows the required shape; in your overlay, keep the complete copied JSON values and add the custom paths to each
-   ``class_allow_list``:
+   You can put the list directly in the referenced CC config file:
 
    .. code-block:: yaml
 
-      local_server_resources: |
-        {
-          "format_version": 2,
-          "class_allow_list": [
-            "nvflare.app_common.aggregators.collect_and_assemble_model_aggregator.CollectAndAssembleModelAggregator",
-            "hello_cyclic.app.custom.trainer.SimpleTrainer",
-            "hello_cyclic."
-          ]
-        }
+      compute_env: onprem_cvm
+      cc_cpu_mechanism: amd_sev_snp
+      role: client
 
-      local_client_resources: |
-        {
-          "format_version": 2,
-          "class_allow_list": [
-            "nvflare.app_common.aggregators.collect_and_assemble_model_aggregator.CollectAndAssembleModelAggregator",
-            "hello_cyclic.app.custom.trainer.SimpleTrainer",
-            "hello_cyclic."
-          ]
-        }
+      class_allow_list:
+        - hello_cyclic.app.custom.trainer.SimpleTrainer
+        - hello_cyclic.
+
+   Or keep the CC config file unchanged and add the list inline under the participant's ``cc_config`` entry in
+   ``project.yml``:
+
+   .. code-block:: yaml
+
+      participants:
+        - name: site-1
+          type: client
+          org: nvidia
+          cc_config:
+            file: cc_site-1.yml
+            class_allow_list:
+              - hello_cyclic.app.custom.trainer.SimpleTrainer
+              - hello_cyclic.
 
    Use exact class paths or package prefixes ending with ``.``. For example,
    ``hello_cyclic.app.custom.trainer.SimpleTrainer`` allows one class, and ``hello_cyclic.`` allows classes under
    that package prefix.
 
-   Then add the overlay to ``WorkspaceBuilder`` with an absolute path and reprovision from a clean output directory
-   so the generated CVM resources include the updated allow-list.
-
-   If you need to update a packaged CVM bundle instead, extract the site ``.tgz`` package, mount
+   If you need to update a packaged CVM bundle after provisioning, extract the site ``.tgz`` package, mount
    ``user_config.qcow2`` with the ``image_mount.sh`` utility that comes with the CVM builder, and update the resources
    inside the mounted image before running ``launch_vm.sh``:
 
@@ -549,6 +534,9 @@ CC Configuration Parameters
    * - ``cc_issuers``
      - List of authorizers
      - CC attestation token issuers
+   * - ``class_allow_list``
+     - List of class paths
+     - Additional component classes or package prefixes allowed for non-BYOC CC jobs
    * - ``token_expiration``
      - ``100`` (seconds)
      - Token validity duration (must be < ``check_frequency``)
@@ -576,7 +564,11 @@ Complete Configuration Examples
      - name: site-1
        type: client
        org: nvidia
-       cc_config: cc_site-1.yml
+       cc_config:
+         file: cc_site-1.yml
+         class_allow_list:
+           - hello_cyclic.app.custom.trainer.SimpleTrainer
+           - hello_cyclic.
      - name: admin@nvidia.com
        type: admin
        org: nvidia
@@ -584,10 +576,6 @@ Complete Configuration Examples
 
    builders:
      - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
-       args:
-         template_file:
-           - master_template.yml
-           - /shared/cc-config/my_resources_template.yml
      - path: nvflare.lighter.impl.static_file.StaticFileBuilder
        args:
          config_folder: config
@@ -599,11 +587,6 @@ Complete Configuration Examples
      path: nvflare.lighter.cc_provision.impl.onprem_packager.OnPremPackager
      args:
        build_image_cmd: ~/nvflare-github/nvflare/lighter/cc/image_builder/cvm_build.sh
-
-The ``template_file`` order is important: list ``master_template.yml`` first, then the absolute overlay path.
-``WorkspaceBuilder`` loads templates in order with a shallow top-level update, so the overlay must load after the
-default template. Keeping ``master_template.yml`` in this list also prevents later builders from reloading the default
-template and overwriting the overlay values.
 
 **Server Configuration (cc_server1.yml)**
 
@@ -652,6 +635,10 @@ template and overwriting the overlay values.
    compute_env: onprem_cvm
    cc_cpu_mechanism: amd_sev_snp
    role: client
+
+   class_allow_list:
+     - hello_cyclic.app.custom.trainer.SimpleTrainer
+     - hello_cyclic.
 
    # All drive sizes are in GB
    root_drive_size: 45
