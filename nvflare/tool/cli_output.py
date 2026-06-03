@@ -37,12 +37,51 @@ Exceptions (plain text, outside the JSON contract):
 
 import json
 import logging
+import re
 import sys
 from typing import Any, Optional
 
 from nvflare.tool.cli_contract import SCHEMA_VERSION
 
 logger = logging.getLogger(__name__)
+
+_REDACTED = "<redacted>"
+_SENSITIVE_KEY_PARTS = {
+    "password",
+    "passwd",
+    "passphrase",
+}
+_SENSITIVE_KEY_NAMES = {
+    "access_key",
+    "access_token",
+    "api_key",
+    "apikey",
+    "auth_token",
+    "bearer_token",
+    "client_secret",
+    "credential",
+    "credentials",
+    "id_token",
+    "private_key",
+    "privatekey",
+    "refresh_token",
+    "secret_key",
+    "session_token",
+}
+_SENSITIVE_ASSIGNMENT_PATTERN = re.compile(
+    r"(?i)\b("
+    r"password|passwd|passphrase|credential|credentials|"
+    r"access[-_ ]?token|refresh[-_ ]?token|id[-_ ]?token|session[-_ ]?token|auth[-_ ]?token|"
+    r"api[-_ ]?key|private[-_ ]?key|secret[-_ ]?key|client[-_ ]?secret"
+    r")(\s*[:=]\s*)([\"']?)([^\"'\s,;]+)([\"']?)"
+)
+_BEARER_TOKEN_PATTERN = re.compile(r"(?i)\b(authorization\s*:\s*bearer\s+)([A-Za-z0-9._~+/=-]+)")
+_AUTH_VALUE_PATTERN = re.compile(r"(?i)\b(authorization\s*[:=]\s*)(?!bearer\s+)([\"']?)([^\"'\s,;]+)([\"']?)")
+_PEM_PRIVATE_KEY_PATTERN = re.compile(
+    r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----",
+    re.DOTALL,
+)
+_URL_PASSWORD_PATTERN = re.compile(r"\b([a-zA-Z][a-zA-Z0-9+.-]*://[^/\s:@]+:)([^@\s/]+)(@)")
 
 # Module-level CLI state. This process is single-command/single-process, so a pair of globals is
 # sufficient here, but they are intentionally process-global and not thread-safe.
@@ -74,7 +113,7 @@ def set_connect_timeout(value: float) -> None:
     try:
         _connect_timeout = float(value)
     except (TypeError, ValueError):
-        logger.warning("invalid CLI connection timeout %r; using default 5.0 seconds", value)
+        logger.warning("invalid CLI connection timeout; using default 5.0 seconds")
         _connect_timeout = 5.0
 
 
@@ -108,7 +147,44 @@ def _human_stream():
     return sys.stderr if _is_machine_mode() else sys.stdout
 
 
+def _normalize_key(key: Any) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", str(key).lower()).strip("_")
+
+
+def _is_sensitive_key(key: Any) -> bool:
+    normalized = _normalize_key(key)
+    if normalized in _SENSITIVE_KEY_NAMES:
+        return True
+
+    key_parts = set(normalized.split("_"))
+    return bool(key_parts & _SENSITIVE_KEY_PARTS)
+
+
+def _redact_sensitive_text(text: str) -> str:
+    redacted = _PEM_PRIVATE_KEY_PATTERN.sub(_REDACTED, text)
+    redacted = _BEARER_TOKEN_PATTERN.sub(r"\1" + _REDACTED, redacted)
+    redacted = _AUTH_VALUE_PATTERN.sub(r"\1\2" + _REDACTED + r"\4", redacted)
+    redacted = _URL_PASSWORD_PATTERN.sub(r"\1" + _REDACTED + r"\3", redacted)
+    return _SENSITIVE_ASSIGNMENT_PATTERN.sub(r"\1\2\3" + _REDACTED + r"\5", redacted)
+
+
+def _sanitize_for_cli_output(value: Any, key: Any = None) -> Any:
+    if key is not None and _is_sensitive_key(key):
+        return _REDACTED
+
+    if isinstance(value, dict):
+        return {k: _sanitize_for_cli_output(v, k) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_for_cli_output(v) for v in value]
+    if isinstance(value, tuple):
+        return tuple(_sanitize_for_cli_output(v) for v in value)
+    if isinstance(value, str):
+        return _redact_sensitive_text(value)
+    return value
+
+
 def _render_table(data: Any) -> None:
+    data = _sanitize_for_cli_output(data)
     if isinstance(data, dict):
         for k, v in data.items():
             print(f"{k}: {v}")
@@ -132,6 +208,7 @@ def _render_table(data: Any) -> None:
 
 def output(data: Any, fmt: Optional[str]) -> None:
     """Legacy output helper used by older cert/package command paths."""
+    data = _sanitize_for_cli_output(data)
     if fmt is None and _is_json_mode():
         fmt = "json"
     if fmt == "json":
@@ -149,6 +226,7 @@ def output(data: Any, fmt: Optional[str]) -> None:
 
 def output_ok(data: Any, exit_code: int = 0) -> None:
     """Print command success output."""
+    data = _sanitize_for_cli_output(data)
     if _is_jsonl_mode():
         output_jsonl_event(
             {"event": "terminal", "status": "ok", "exit_code": exit_code, "data": data, "terminal": True}
@@ -176,11 +254,14 @@ def output_error(
     try:
         message = entry["message"].format_map(kwargs) if kwargs else entry["message"]
     except KeyError:
-        logger.warning("Missing format key for error %s: %s", error_code, entry["message"])
+        logger.warning("Missing format key for error %s", error_code)
         message = entry["message"]
     if detail:
         message = f"{message} \u2014 {detail}"
     resolved_hint = hint if hint is not None else entry["hint"]
+    message = _sanitize_for_cli_output(message)
+    resolved_hint = _sanitize_for_cli_output(resolved_hint)
+    data = _sanitize_for_cli_output(data)
     if _is_machine_mode():
         payload = {
             "schema_version": SCHEMA_VERSION,
@@ -212,6 +293,7 @@ def output_jsonl_event(event: Any) -> None:
     """Print one JSONL event for streaming command output."""
     if not isinstance(event, dict):
         event = {"event": event}
+    event = _sanitize_for_cli_output(event)
     payload = {"schema_version": SCHEMA_VERSION}
     payload.update(event)
     print(json.dumps(payload), flush=True)
@@ -229,6 +311,8 @@ def output_error_message(
     resolved_hint = hint or ""
     if detail:
         message = f"{message} \u2014 {detail}"
+    message = _sanitize_for_cli_output(message)
+    resolved_hint = _sanitize_for_cli_output(resolved_hint)
     jsonl_mode = fmt == "jsonl" or (fmt is None and _is_jsonl_mode())
     if fmt in {"json", "jsonl"} or (fmt is None and _is_machine_mode()):
         payload = {
@@ -276,6 +360,7 @@ def print_human(*args, **kwargs):
     Usage: print_human("Starting shutdown of NVFLARE")
     """
     kwargs.setdefault("file", _human_stream())
+    args = tuple(_sanitize_for_cli_output(arg) for arg in args)
     print(*args, **kwargs)
 
 
@@ -297,7 +382,7 @@ def prompt_yn(question: str, default_no: bool = True) -> bool:
     """
     suffix = " [y/N] " if default_no else " [Y/n] "
     stream = _human_stream()
-    stream.write(question + suffix)
+    stream.write(_sanitize_for_cli_output(question) + suffix)
     stream.flush()
     answer = sys.stdin.readline().strip().upper()
     return answer == "Y"
