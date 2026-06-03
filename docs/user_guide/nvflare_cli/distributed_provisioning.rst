@@ -144,6 +144,29 @@ Client site example:
        type: client
        org: hospital_alpha
 
+If the participant's certificate common name (CN) intentionally differs from
+the FLARE site name, include ``auth_identity`` in the participant definition
+before creating the certificate request. For example, a site named
+``hospital-a`` that authenticates with certificate CN
+``hospital-a.example.com`` should request:
+
+.. code-block:: yaml
+
+   name: hospital_federation
+   description: Site A - Hospital Alpha
+
+   participants:
+     - name: hospital-a
+       type: client
+       org: hospital_alpha
+       auth_identity: hospital-a.example.com
+
+This lets the generated startup kit map the endpoint/FQCN to the expected mTLS
+certificate identity. Do not edit the generated ``startup/fed_client.json`` or
+``startup/fed_server.json`` after packaging if the startup kit contains
+``startup/signature.json``; regenerate the request, approval, and package so
+the signature covers the final configuration.
+
 User example:
 
 .. code-block:: yaml
@@ -628,6 +651,9 @@ Notes
   NVFlare runtime.
 - Standard distributed provisioning does not generate ``signature.json``.
   Trust is anchored in the signed participant certificate and ``rootCA.pem``.
+  If a custom builder or alternate provisioning mode does generate
+  ``startup/signature.json``, do not modify startup JSON files after packaging;
+  regenerate the kit instead.
 - Custom builders are not part of the approval chain. Any ``builders:`` block
   in the local participant definition is applied at package time on the
   requester's machine. Features requiring coordinated builder configuration
