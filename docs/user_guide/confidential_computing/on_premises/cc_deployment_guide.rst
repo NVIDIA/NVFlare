@@ -177,12 +177,36 @@ The CC image builder supports any generic workload. For NVFlare, create a Docker
    ``class_allow_list``. The template overlay replaces top-level keys rather than deep-merging them, so a partial
    overlay can remove the default ``nvflare.*`` entries.
 
-   Use exact class paths or package prefixes ending with ``.``:
+   The overlay file is YAML, but the resource entries must keep the same JSON block-scalar format used by
+   ``master_template.yml``. Do not convert these entries to nested YAML mappings. The following shortened example
+   shows the required shape; in your overlay, keep the complete copied JSON values and add the custom paths to each
+   ``class_allow_list``:
 
-   .. code-block:: text
+   .. code-block:: yaml
 
-      hello_cyclic.app.custom.trainer.SimpleTrainer
-      hello_cyclic.
+      local_server_resources: |
+        {
+          "format_version": 2,
+          "class_allow_list": [
+            "nvflare.app_common.aggregators.collect_and_assemble_model_aggregator.CollectAndAssembleModelAggregator",
+            "hello_cyclic.app.custom.trainer.SimpleTrainer",
+            "hello_cyclic."
+          ]
+        }
+
+      local_client_resources: |
+        {
+          "format_version": 2,
+          "class_allow_list": [
+            "nvflare.app_common.aggregators.collect_and_assemble_model_aggregator.CollectAndAssembleModelAggregator",
+            "hello_cyclic.app.custom.trainer.SimpleTrainer",
+            "hello_cyclic."
+          ]
+        }
+
+   Use exact class paths or package prefixes ending with ``.``. For example,
+   ``hello_cyclic.app.custom.trainer.SimpleTrainer`` allows one class, and ``hello_cyclic.`` allows classes under
+   that package prefix.
 
    Then add the overlay to ``WorkspaceBuilder`` with an absolute path and reprovision from a clean output directory
    so the generated CVM resources include the updated allow-list.
@@ -556,6 +580,11 @@ Complete Configuration Examples
      path: nvflare.lighter.cc_provision.impl.onprem_packager.OnPremPackager
      args:
        build_image_cmd: ~/nvflare-github/nvflare/lighter/cc/image_builder/cvm_build.sh
+
+The ``template_file`` order is important: list ``master_template.yml`` first, then the absolute overlay path.
+``WorkspaceBuilder`` loads templates in order with a shallow top-level update, so the overlay must load after the
+default template. Keeping ``master_template.yml`` in this list also prevents later builders from reloading the default
+template and overwriting the overlay values.
 
 **Server Configuration (cc_server1.yml)**
 
