@@ -9,7 +9,11 @@ This directory contains the OpenShift-specific NVFlare deployment guide and help
 - `scripts/start_openshift_cluster.sh` starts CRC, logs in with `oc`, and prepares the target project.
 - `scripts/cleanup_openshift_cluster.sh` deletes scripted deployment resources and stops CRC.
 - `scripts/k8s_provision.sh` runs `nvflare provision` for the sample server, `site-1`, `site-2`, and admin.
-- `scripts/k8s_deploy.sh` prepares K8s startup kits, stages PVC workspaces, installs Helm charts, and verifies parent pods can import the Kubernetes Python client.
+- `scripts/k8s_deploy.sh` prepares K8s startup kits, stages `startup/` and
+  `local/` into PVC workspaces, installs Helm charts, and verifies parent pods
+  can import the Kubernetes Python client. This is the manual PVC-copy staging
+  path; `nvflare deploy k8s stage` can be used instead to stage `local/` as a
+  ConfigMap and `startup/` as a Secret before running Helm.
 - `scripts/k8s_submit_job.sh` submits `hello-numpy` from an in-cluster admin pod and waits for successful completion.
 - `scripts/k8s_watch.sh` shows an in-place live Rich pod table for the created pods.
 - `scripts/k8s_watch.py` implements the Rich table used by the shell wrapper.

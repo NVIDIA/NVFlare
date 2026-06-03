@@ -189,16 +189,42 @@ Top-level keys:
 - ``job_pod_security_context``: security context passed to dynamically
   launched job pods.
 
-Prepare and install:
+Prepare the parent server or client kit first:
 
 .. code-block:: shell
 
    nvflare deploy prepare ./site-1 --config k8s.yaml --output ./site-1-k8s
+
+Then choose one of the following two staging methods before starting the parent
+pod with Helm.
+
+**Method 1: copy ``startup/`` and ``local/`` into the workspace PVC.**
+
+Copy the prepared kit's ``startup/`` and ``local/`` directories into the root of
+the configured workspace PVC. The chart mounts that PVC at
+``workspace_mount_path``. The OpenShift helper
+:github_nvflare_link:`examples/devops/openshift/scripts/k8s_deploy.sh <examples/devops/openshift/scripts/k8s_deploy.sh>`
+is a complete scripted example of this PVC-copy method.
+
+After the copy is complete, install or upgrade the chart:
+
+.. code-block:: shell
+
    helm upgrade --install site-1 ./site-1-k8s/helm_chart --namespace nvflare
 
-Before installing the chart, copy the prepared kit's ``startup/`` and
-``local/`` directories into the root of the configured workspace PVC. The chart
-mounts that PVC at ``workspace_mount_path``.
+**Method 2: stage ``local/`` as a ConfigMap and ``startup/`` as a Secret.**
+
+Use ``nvflare deploy k8s stage`` to create the Kubernetes resources and patch
+the generated Helm values. ``nvflare deploy k8 stage`` is accepted as an alias.
+
+.. code-block:: shell
+
+   nvflare deploy k8s stage ./site-1-k8s --namespace nvflare
+   helm upgrade --install site-1 ./site-1-k8s/helm_chart --namespace nvflare
+
+This keeps the workspace PVC mounted at ``workspace_mount_path`` for writable
+runtime state, but the parent pod reads ``local/`` from the generated ConfigMap
+and ``startup/`` from the generated Secret.
 
 ``nvflare deploy prepare`` also patches the prepared kit's internal
 communication settings so dynamically launched job pods connect to the generated
@@ -212,6 +238,40 @@ The command writes:
 - patched ``local/resources.json.default`` with ``K8sJobLauncher``
 - patched ``local/comm_config.json``
 - ``local/study_data.yaml`` template when missing
+
+************
+K8s Staging
+************
+
+``nvflare deploy k8s stage`` creates Kubernetes resources from a prepared K8s
+kit and patches the generated Helm chart values to mount them:
+
+.. code-block:: none
+
+   nvflare deploy k8s stage <prepared-kit-dir> [--namespace <namespace>]
+
+The command requires Kubernetes CLI access to the target cluster. It uses
+``kubectl`` by default; set ``--kubectl oc`` or ``KUBECTL=oc`` when staging into
+OpenShift with ``oc``. It:
+
+- creates or updates a ConfigMap containing every file under prepared ``local/``
+- creates or updates a Secret containing every file under prepared ``startup/``
+- patches ``helm_chart/values.yaml`` so the parent pod mounts the ConfigMap at
+  ``workspace_mount_path/local`` and the Secret at
+  ``workspace_mount_path/startup``
+
+The resource names default to ``nvflare-local-<site>`` and
+``nvflare-startup-<site>``. Override them with ``--local-configmap`` and
+``--startup-secret``. The namespace defaults to the namespace written into the
+prepared kit's ``K8sJobLauncher`` config, or ``default`` when unavailable.
+
+After this staging command succeeds, run the printed ``helm_command`` or the
+equivalent ``helm upgrade --install`` command for the prepared chart to start
+the parent server or client pod.
+
+The generated Helm chart still mounts the configured workspace PVC at the
+workspace root. The ConfigMap and Secret only replace the ``local/`` and
+``startup/`` subdirectories.
 
 **********
 Job Images
