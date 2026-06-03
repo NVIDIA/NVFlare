@@ -191,19 +191,6 @@ The CC image builder supports any generic workload. For NVFlare, create a Docker
    ``hello_cyclic.app.custom.trainer.SimpleTrainer`` allows one class, and ``hello_cyclic.`` allows classes under
    that package prefix.
 
-   If you need to update a packaged CVM bundle after provisioning, extract the site ``.tgz`` package, mount
-   ``user_config.qcow2`` with the ``image_mount.sh`` utility that comes with the CVM builder, and update the resources
-   inside the mounted image before running ``launch_vm.sh``:
-
-   .. code-block:: bash
-
-      /path/to/image_builder/scripts/image_mount.sh user_config.qcow2 /mnt/user_config
-      sudo vi /mnt/user_config/nvflare/local/resources.json.default
-      /path/to/image_builder/scripts/image_unmount.sh /mnt/user_config
-
-   If you create a ``nvflare/local/resources.json`` override instead, keep its top-level ``class_allow_list`` consistent
-   with the provisioned default.
-
 **Build and save the image:**
 
 .. code-block:: bash
@@ -652,53 +639,6 @@ Complete Configuration Examples
 
 Troubleshooting
 ===============
-
-Inspecting QCOW2 Disk Images
------------------------------
-
-To inspect the contents of a QCOW2 disk image (e.g., ``user_config.qcow2``):
-
-**1. Load the NBD kernel module:**
-
-.. code-block:: bash
-
-   sudo modprobe nbd max_part=8
-
-**2. Connect the QCOW2 image:**
-
-.. code-block:: bash
-
-   sudo qemu-nbd --connect=/dev/nbd0 user_config.qcow2
-
-**3. Mount the image:**
-
-.. code-block:: bash
-
-   sudo mount /dev/nbd0 /mnt/user_config
-
-**4. Inspect the contents:**
-
-.. code-block:: bash
-
-   ls /mnt/user_config
-
-For NVFlare startup kits:
-
-.. code-block:: bash
-
-   ls /mnt/user_config/nvflare/
-
-**5. Unmount:**
-
-.. code-block:: bash
-
-   sudo umount /mnt/user_config
-
-**6. Disconnect:**
-
-.. code-block:: bash
-
-   sudo qemu-nbd --disconnect /dev/nbd0
 
 Common Issues
 -------------
