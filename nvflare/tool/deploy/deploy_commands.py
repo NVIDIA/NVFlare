@@ -393,14 +393,7 @@ def _resolve_kubectl(args) -> str:
             f"Kubernetes CLI executable must be one of {sorted(K8_STAGE_ALLOWED_KUBECTL_NAMES)}: {kubectl!r}",
             "Set --kubectl or KUBECTL to kubectl or oc.",
         )
-    if executable_name == kubectl:
-        return shutil.which(kubectl) or kubectl
-    kubectl_path = Path(kubectl).expanduser().resolve()
-    if not kubectl_path.is_file():
-        _fail(
-            "INVALID_ARGS", f"Kubernetes CLI executable does not exist: {kubectl}", "Install kubectl/oc and try again."
-        )
-    return str(kubectl_path)
+    return executable_name
 
 
 def _k8_stage_helm_command(kit: Path, namespace: str) -> str:
@@ -1305,7 +1298,9 @@ def _warn_if_large_k8_object(kind: str, name: str, encoded_size: int) -> None:
 
 def _kubectl_apply(manifest: dict[str, Any], kubectl: str) -> subprocess.CompletedProcess:
     payload = yaml.safe_dump(manifest, default_flow_style=False, sort_keys=False)
-    return _kubectl([kubectl, "apply", "-f", "-"], input_text=payload)
+    if kubectl == "oc":
+        return _kubectl(["oc", "apply", "-f", "-"], input_text=payload)
+    return _kubectl(["kubectl", "apply", "-f", "-"], input_text=payload)
 
 
 def _kubectl(cmd: list[str], input_text: str | None = None) -> subprocess.CompletedProcess:
