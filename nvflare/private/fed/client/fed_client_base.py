@@ -164,6 +164,16 @@ class FederatedClientBase:
 
         cp_conn_props = get_scope_property(self.client_name, ConnPropKey.CP_CONN_PROPS)
         cp_fqcn = cp_conn_props.get(ConnPropKey.FQCN)
+        auth_identity_map = {cp_fqcn: self.client_name}
+        relay_identity = relay_conn_props.get(ConnPropKey.IDENTITY)
+        if relay_fqcn and relay_identity:
+            auth_identity_map[relay_fqcn] = relay_identity
+
+        root_conn_props = get_scope_property(self.client_name, ConnPropKey.ROOT_CONN_PROPS, {})
+        root_identity = root_conn_props.get(ConnPropKey.IDENTITY)
+        if root_identity:
+            auth_identity_map[FQCN.ROOT_SERVER] = root_identity
+
         parent_resources = None
         if self.args.job_id:
             # I am CJ
@@ -210,6 +220,8 @@ class FederatedClientBase:
             create_internal_listener=create_internal_listener,
             parent_url=parent_url,
             parent_resources=parent_resources,
+            auth_identity=self.client_name,
+            auth_identity_map=auth_identity_map,
         )
         self.cell.start()
         self.communicator.set_cell(self.cell)
