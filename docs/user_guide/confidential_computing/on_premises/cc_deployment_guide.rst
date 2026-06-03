@@ -166,20 +166,26 @@ The CC image builder supports any generic workload. For NVFlare, create a Docker
 .. note::
 
    For CC jobs, custom code at runtime is not allowed. All application code must be included in the Docker image.
-   NVFlare checks the component allow-list before loading any components. If your job uses components that are
-   included in the CVM image but are not yet allowed, update ``local/resources.json`` on each site after confirming
-   that those components are safe.
+   NVFlare checks the component allow-list before loading any components. If your job uses classes that are
+   included in the CVM image but are not yet allowed, add those class paths to ``class_allow_list`` during
+   provisioning. In CC mode, the provisioned resources file is placed inside the CVM encrypted drive, so it is not
+   available for site admins to edit after provisioning.
 
-   For example:
+   To customize the allow-list, create a template overlay such as
+   ``/shared/cc-config/my_resources_template.yml``. Copy the full ``local_server_resources`` and
+   ``local_client_resources`` entries from the installed ``master_template.yml`` into the overlay, then extend each
+   ``class_allow_list``. The template overlay replaces top-level keys rather than deep-merging them, so a partial
+   overlay can remove the default ``nvflare.*`` entries.
 
-   .. code-block:: json
+   Use exact class paths or package prefixes ending with ``.``:
 
-      {
-        "class_allow_list": [
-          "hello_cyclic.app.custom.tf2_model_persistor.TF2ModelPersistor",
-          "hello_cyclic.app.custom.trainer.SimpleTrainer"
-        ]
-      }
+   .. code-block:: text
+
+      hello_cyclic.app.custom.trainer.SimpleTrainer
+      hello_cyclic.
+
+   Then add the overlay to ``WorkspaceBuilder`` with an absolute path and reprovision from a clean output directory
+   so the generated CVM resources include the updated allow-list.
 
 **Build and save the image:**
 
@@ -535,6 +541,10 @@ Complete Configuration Examples
 
    builders:
      - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
+       args:
+         template_file:
+           - master_template.yml
+           - /shared/cc-config/my_resources_template.yml
      - path: nvflare.lighter.impl.static_file.StaticFileBuilder
        args:
          config_folder: config
