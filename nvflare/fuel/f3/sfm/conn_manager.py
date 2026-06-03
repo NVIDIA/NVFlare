@@ -20,6 +20,7 @@ from typing import Dict, List, Optional
 
 import msgpack
 
+from nvflare.fuel.f3.cellnet.identity import CellIdentityResolver, get_param, is_mtls_connection
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.connection import BytesAlike, Connection, ConnState, FrameReceiver
 from nvflare.fuel.f3.drivers.connector_info import ConnectorInfo, Mode
@@ -63,8 +64,9 @@ class ConnManager(ConnMonitor):
     The class is responsible for maintaining state of SFM connections and pumping data through them
     """
 
-    def __init__(self, local_endpoint: Endpoint):
+    def __init__(self, local_endpoint: Endpoint, identity_resolver: CellIdentityResolver = None):
         self.local_endpoint = local_endpoint
+        self.identity_resolver = identity_resolver if identity_resolver else CellIdentityResolver(local_endpoint.name)
 
         # Active connectors
         self.connectors: Dict[str, ConnectorInfo] = {}
@@ -404,9 +406,17 @@ class ConnManager(ConnMonitor):
                 CommError.BAD_DATA, f"Duplicate endpoint name {endpoint_name} for connection {sfm_conn.get_name()}"
             )
 
+        conn_props = sfm_conn.conn.get_conn_properties()
+        if is_mtls_connection(sfm_conn.conn.connector.params):
+            peer_cn = get_param(conn_props, DriverParams.PEER_CN)
+            try:
+                self.identity_resolver.require_match(endpoint_name, peer_cn, f"connection {sfm_conn.get_name()}")
+            except ValueError as ex:
+                sfm_conn.conn.close()
+                raise CommError(CommError.BAD_DATA, str(ex))
+
         endpoint = Endpoint(endpoint_name, data)
         endpoint.state = EndpointState.READY
-        conn_props = sfm_conn.conn.get_conn_properties()
         if conn_props:
             endpoint.conn_props.update(conn_props)
 
