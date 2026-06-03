@@ -302,11 +302,15 @@ Dockerfile, install the dependency in the image:
 
 .. code-block:: dockerfile
 
-   RUN pip install kubernetes
+   RUN pip install "kubernetes!=36.0.0"
 
 The repository ``docker/Dockerfile.parent`` already installs the NVFlare
 ``K8S`` extra, which includes this dependency. Keep that install line, or add
-the explicit ``pip install kubernetes`` line above before building your image.
+the explicit ``pip install kubernetes!=36.0.0`` line above before building your image.
+
+The prepared Brev launcher uses in-cluster Kubernetes config
+(``job_launcher.config_file_path: null``), so the parent pod authenticates with
+its ServiceAccount token.
 
 .. code-block:: shell
 
@@ -576,7 +580,9 @@ in that namespace.
 Copy the prepared server ``startup/`` and ``local/`` directories into the
 ``nvflws`` PVC. The chart starts the server with
 ``-m /var/tmp/nvflare/workspace``, so the PVC root must contain ``startup/``
-and ``local/`` directly.
+and ``local/`` directly. The temporary copy pod image must contain ``tar``
+because ``kubectl cp`` requires it in the target container; ``busybox:1.36``
+includes ``tar``.
 
 .. code-block:: shell
 
@@ -701,7 +707,9 @@ same launcher settings from ``/tmp/nvflare-k8s.yaml``. Keep the Helm namespace
 consistent with the ``namespace`` value used by ``nvflare deploy prepare``.
 
 Copy the prepared ``site-1`` ``startup/`` and ``local/`` directories into the
-client ``nvflws`` PVC:
+client ``nvflws`` PVC. The temporary copy pod image must contain ``tar``
+because ``kubectl cp`` requires it in the target container; ``busybox:1.36``
+includes ``tar``:
 
 .. code-block:: shell
 
