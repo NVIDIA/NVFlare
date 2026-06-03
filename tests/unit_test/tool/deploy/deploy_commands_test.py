@@ -15,6 +15,7 @@
 import argparse
 import base64
 import json
+import shutil
 import subprocess
 from datetime import datetime, timedelta
 
@@ -823,6 +824,65 @@ def test_stage_k8_rejects_non_k8s_prepared_folder(tmp_path, capsys, monkeypatch)
     assert "INVALID_KIT" in err
     assert "not generated for the Kubernetes runtime" in err
     assert "nvflare deploy prepare with runtime: k8s" in err
+    assert calls == []
+
+
+def test_stage_k8_rejects_invalid_stage_argument_values(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+    calls = _capture_kubectl(monkeypatch)
+
+    with pytest.raises(SystemExit):
+        stage_k8_deployment(_stage_k8_args(output, namespace="Bad_Namespace"))
+
+    err = capsys.readouterr().err
+    assert "INVALID_ARGS" in err
+    assert "valid Kubernetes namespace" in err
+    assert calls == []
+
+    with pytest.raises(SystemExit):
+        stage_k8_deployment(_stage_k8_args(output, namespace="nvflare", kubectl="python"))
+
+    err = capsys.readouterr().err
+    assert "INVALID_ARGS" in err
+    assert "Kubernetes CLI executable must be one of" in err
+    assert calls == []
+
+
+def test_stage_k8_rejects_symlinked_stage_folder(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+    calls = _capture_kubectl(monkeypatch)
+    external_local = tmp_path / "external-local"
+    external_local.mkdir()
+    (external_local / "resources.json.default").write_text("{}")
+    shutil.rmtree(output / "local")
+    (output / "local").symlink_to(external_local, target_is_directory=True)
+
+    with pytest.raises(SystemExit):
+        stage_k8_deployment(_stage_k8_args(output, namespace="nvflare"))
+
+    err = capsys.readouterr().err
+    assert "INVALID_KIT" in err
+    assert "must not be a symlink" in err
     assert calls == []
 
 

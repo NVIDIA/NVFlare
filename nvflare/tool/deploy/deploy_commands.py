@@ -119,14 +119,13 @@ K8S_SERVICE_NAME_MAX_LENGTH = 63
 K8S_SECRET_NAME_MAX_LENGTH = 253
 HELM_RELEASE_NAME_MAX_LENGTH = 53
 DEFAULT_K8S_SERVER_SERVICE_NAME = "nvflare-server"
-K8_STAGE_LOCAL_VOLUME_NAME = "workspace-local"
-K8_STAGE_STARTUP_VOLUME_NAME = "workspace-startup"
 K8_STAGE_VALUES_KEY = "workspaceConfig"
 K8_STAGE_LOCAL_KEY = "local"
 K8_STAGE_STARTUP_KEY = "startup"
 K8_STAGE_OBJECT_NAME_MAX_LENGTH = 253
 K8_STAGE_OBJECT_SIZE_WARN_BYTES = 900 * 1024
 KUBECTL_ENV_VAR = "KUBECTL"
+K8_STAGE_ALLOWED_KUBECTL_NAMES = {"kubectl", "oc"}
 
 
 @dataclass
@@ -292,6 +291,12 @@ def _validate_k8_stage_inputs(kit: Path, namespace: str, local_configmap: str, s
                 f"Missing prepared kit folder: {path}",
                 "Run nvflare deploy prepare with runtime: k8s before staging.",
             )
+        if path.is_symlink():
+            _fail(
+                "INVALID_KIT",
+                f"Prepared kit folder must not be a symlink: {path}",
+                "Use a prepared K8s kit whose local/ and startup/ folders are regular directories.",
+            )
     if not _find_k8s_launcher(kit):
         _fail(
             "INVALID_KIT",
@@ -305,9 +310,25 @@ def _validate_k8_stage_inputs(kit: Path, namespace: str, local_configmap: str, s
             f"Missing Helm values file: {kit / HELM_CHART_DIR / 'values.yaml'}",
             "Run nvflare deploy prepare with runtime: k8s before staging.",
         )
-    _validate_k8s_namespace({"namespace": namespace}, "namespace", "deploy k8 stage")
-    _validate_k8s_secret_name(local_configmap, "local ConfigMap name")
-    _validate_k8s_secret_name(startup_secret, "startup Secret name")
+    _validate_k8s_namespace(
+        {"namespace": namespace},
+        "namespace",
+        "deploy k8 stage",
+        error_code="INVALID_ARGS",
+        hint="Use a valid --namespace value.",
+    )
+    _validate_k8s_secret_name(
+        local_configmap,
+        "local ConfigMap name",
+        error_code="INVALID_ARGS",
+        hint="Use a valid --local-configmap value.",
+    )
+    _validate_k8s_secret_name(
+        startup_secret,
+        "startup Secret name",
+        error_code="INVALID_ARGS",
+        hint="Use a valid --startup-secret value.",
+    )
 
 
 def _load_k8_stage_values(kit: Path) -> dict[str, Any]:
@@ -362,9 +383,24 @@ def _default_k8_stage_resource_names(kit: Path, values: dict[str, Any]) -> tuple
 
 def _resolve_kubectl(args) -> str:
     kubectl = getattr(args, "kubectl", None) or os.environ.get(KUBECTL_ENV_VAR) or "kubectl"
-    if not isinstance(kubectl, str) or not kubectl:
+    if not isinstance(kubectl, str) or not kubectl.strip():
         _fail("INVALID_ARGS", "Kubernetes CLI executable must be a non-empty string.", "Set --kubectl or KUBECTL.")
-    return kubectl
+    kubectl = kubectl.strip()
+    executable_name = Path(kubectl).name
+    if executable_name not in K8_STAGE_ALLOWED_KUBECTL_NAMES:
+        _fail(
+            "INVALID_ARGS",
+            f"Kubernetes CLI executable must be one of {sorted(K8_STAGE_ALLOWED_KUBECTL_NAMES)}: {kubectl!r}",
+            "Set --kubectl or KUBECTL to kubectl or oc.",
+        )
+    if executable_name == kubectl:
+        return shutil.which(kubectl) or kubectl
+    kubectl_path = Path(kubectl).expanduser().resolve()
+    if not kubectl_path.is_file():
+        _fail(
+            "INVALID_ARGS", f"Kubernetes CLI executable does not exist: {kubectl}", "Install kubectl/oc and try again."
+        )
+    return str(kubectl_path)
 
 
 def _k8_stage_helm_command(kit: Path, namespace: str) -> str:
@@ -1177,6 +1213,7 @@ def _build_volume_bundle(root: Path) -> dict[str, Any]:
     data = {}
     items = []
     encoded_size = 0
+    root_resolved = root.resolve()
     files = sorted(path for path in root.rglob("*") if path.is_file() or path.is_symlink())
     if not files:
         _fail("INVALID_KIT", f"No files found in prepared kit folder: {root}", "Stage a non-empty prepared folder.")
@@ -1188,10 +1225,17 @@ def _build_volume_bundle(root: Path) -> dict[str, Any]:
                 f"Symlinks cannot be staged into Kubernetes volumes: {path}",
                 "Replace it with a file.",
             )
+        source_path = path.resolve()
+        if not _is_path_relative_to(source_path, root_resolved):
+            _fail(
+                "INVALID_KIT",
+                f"Staged file resolves outside the prepared kit folder: {path}",
+                "Use files contained under local/ or startup/.",
+            )
         rel_path = path.relative_to(root).as_posix()
         _validate_k8_volume_item_path(rel_path, path)
         key = _k8_stage_file_key(index, rel_path)
-        encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+        encoded = base64.b64encode(source_path.read_bytes()).decode("ascii")
         data[key] = encoded
         encoded_size += len(encoded)
         items.append({"key": key, "path": rel_path})
@@ -1323,14 +1367,20 @@ def _required_str(data: dict[str, Any], key: str, where: str) -> None:
         _fail("INVALID_CONFIG", f"{where}.{key} must be a non-empty string.", "Fix the runtime config.")
 
 
-def _validate_k8s_namespace(data: dict[str, Any], key: str, where: str) -> None:
+def _validate_k8s_namespace(
+    data: dict[str, Any],
+    key: str,
+    where: str,
+    error_code: str = "INVALID_CONFIG",
+    hint: str = "Fix the runtime config.",
+) -> None:
     namespace = data.get(key)
     if not isinstance(namespace, str) or not namespace:
-        _fail("INVALID_CONFIG", f"{where}.{key} must be a non-empty string.", "Fix the runtime config.")
+        _fail(error_code, f"{where}.{key} must be a non-empty string.", hint)
         return
     if len(namespace) > K8S_NAMESPACE_MAX_LENGTH or not K8S_NAMESPACE_PATTERN.fullmatch(namespace):
         _fail(
-            "INVALID_CONFIG",
+            error_code,
             f"{where}.{key} must be a valid Kubernetes namespace (DNS-1123 label): {namespace!r}.",
             "Use lower case alphanumeric characters or '-', start and end with an alphanumeric character, "
             f"and keep length <= {K8S_NAMESPACE_MAX_LENGTH}.",
@@ -1350,7 +1400,9 @@ def _validate_k8s_service_name(data: dict[str, Any], key: str, where: str) -> No
         )
 
 
-def _validate_k8s_secret_name(name: str, label: str) -> None:
+def _validate_k8s_secret_name(
+    name: str, label: str, error_code: str = "INVALID_CONFIG", hint: str = "Fix the runtime config."
+) -> None:
     if (
         not isinstance(name, str)
         or not name
@@ -1358,10 +1410,10 @@ def _validate_k8s_secret_name(name: str, label: str) -> None:
         or not K8S_SECRET_NAME_PATTERN.fullmatch(name)
     ):
         _fail(
-            "INVALID_CONFIG",
+            error_code,
             f"{label} must contain valid Kubernetes object names.",
             "Use lower case alphanumeric characters, '-', or '.', start and end with an alphanumeric character, "
-            "and keep length <= 253.",
+            f"and keep length <= 253. {hint}",
         )
 
 
