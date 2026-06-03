@@ -130,6 +130,15 @@ class StaticFileBuilder(Builder):
 
         return client.name
 
+    @staticmethod
+    def _resolve_default_auth_identity(fqcn: str, local_fqcn: str = None):
+        parts = fqcn.split(".")
+        if local_fqcn and fqcn.startswith(local_fqcn + "."):
+            child_parts = fqcn[len(local_fqcn) + 1 :].split(".")
+            return child_parts[0] if child_parts else None
+
+        return parts[0] if parts else None
+
     def _build_auth_identity_map(self, project: Project, ctx: ProvisionContext, local_relay: Participant = None):
         result = {}
         local_prefix = local_relay.get_prop(PropKey.FQCN) if local_relay else None
@@ -137,12 +146,16 @@ class StaticFileBuilder(Builder):
         for relay in project.get_relays():
             fqcn = relay.get_prop(PropKey.FQCN)
             if fqcn and (not local_prefix or fqcn.startswith(local_prefix + ".")):
-                result[fqcn] = self._get_auth_identity(relay)
+                auth_identity = self._get_auth_identity(relay)
+                if auth_identity != self._resolve_default_auth_identity(fqcn, local_prefix):
+                    result[fqcn] = auth_identity
 
         for client in project.get_clients():
             fqcn = self._get_client_cell_fqcn(client, ctx)
             if fqcn and (not local_prefix or fqcn.startswith(local_prefix + ".")):
-                result[fqcn] = self._get_auth_identity(client)
+                auth_identity = self._get_auth_identity(client)
+                if auth_identity != self._resolve_default_auth_identity(fqcn, local_prefix):
+                    result[fqcn] = auth_identity
 
         return result
 
