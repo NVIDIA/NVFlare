@@ -167,9 +167,15 @@ The CC image builder supports any generic workload. For NVFlare, create a Docker
 
    For CC jobs, custom code at runtime is not allowed. All application code must be included in the Docker image.
    NVFlare checks the component allow-list before loading any components. If your job uses classes that are
-   included in the CVM image but are not yet allowed, add those class paths to ``class_allow_list`` during
-   provisioning. In CC mode, the provisioned resources file is placed inside the CVM encrypted drive, so it is not
-   available for site admins to edit after provisioning.
+   included in the CVM image but are not yet allowed, add those class paths to ``class_allow_list`` in the site's
+   local resources file. In on-prem CVM deployments, the NVFlare startup kit is mounted under
+   ``/user_config/nvflare``. The ``user_config.qcow2`` drive is not encrypted and can be modified before launch.
+
+   There are two ways to update the site resources:
+
+   * Prefer a provisioning-time template overlay when the allow-list should be part of the generated startup kit.
+   * For a packaged CVM bundle, mount ``user_config.qcow2`` before launching the CVM and edit the startup kit resources
+     under ``nvflare/local/``.
 
    To customize the allow-list, create a template overlay such as
    ``/shared/cc-config/my_resources_template.yml``. Copy the full ``local_server_resources`` and
@@ -210,6 +216,19 @@ The CC image builder supports any generic workload. For NVFlare, create a Docker
 
    Then add the overlay to ``WorkspaceBuilder`` with an absolute path and reprovision from a clean output directory
    so the generated CVM resources include the updated allow-list.
+
+   If you need to update a packaged CVM bundle instead, extract the site ``.tgz`` package, mount
+   ``user_config.qcow2`` with the ``image_mount.sh`` utility that comes with the CVM builder, and update the resources
+   inside the mounted image before running ``launch_vm.sh``:
+
+   .. code-block:: bash
+
+      /path/to/image_builder/scripts/image_mount.sh user_config.qcow2 /mnt/user_config
+      sudo vi /mnt/user_config/nvflare/local/resources.json.default
+      /path/to/image_builder/scripts/image_unmount.sh /mnt/user_config
+
+   If you create a ``nvflare/local/resources.json`` override instead, keep its top-level ``class_allow_list`` consistent
+   with the provisioned default.
 
 **Build and save the image:**
 
