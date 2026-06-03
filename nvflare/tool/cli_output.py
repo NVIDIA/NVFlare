@@ -197,11 +197,11 @@ def _render_table(data: Any) -> None:
             header = "  ".join(k.ljust(w) for k, w in zip(keys, widths))
             print(header)
             print("-" * len(header))
-            for row in safe_table_data:
-                print("  ".join(str(row.get(k, "")).ljust(w) for k, w in zip(keys, widths)))
+            for safe_table_row in safe_table_data:
+                print("  ".join(str(safe_table_row.get(k, "")).ljust(w) for k, w in zip(keys, widths)))
         else:
-            for item in safe_table_data:
-                print(item)
+            for safe_table_item in safe_table_data:
+                print(safe_table_item)
     else:
         print(str(safe_table_data))
 
@@ -212,12 +212,20 @@ def output(data: Any, fmt: Optional[str]) -> None:
     if fmt is None and _is_json_mode():
         fmt = "json"
     if fmt == "json":
-        print(json.dumps({"schema_version": SCHEMA_VERSION, "status": "ok", "exit_code": 0, "data": safe_output_data}))
+        safe_output_payload = {
+            "schema_version": SCHEMA_VERSION,
+            "status": "ok",
+            "exit_code": 0,
+            "data": safe_output_data,
+        }
+        print(json.dumps(safe_output_payload))
     elif fmt == "quiet":
         if isinstance(safe_output_data, dict):
-            print(next(iter(safe_output_data.values()), ""))
+            safe_quiet_value = next(iter(safe_output_data.values()), "")
+            print(safe_quiet_value)
         elif isinstance(safe_output_data, list):
-            print(safe_output_data[0] if safe_output_data else "")
+            safe_quiet_value = safe_output_data[0] if safe_output_data else ""
+            print(safe_quiet_value)
         else:
             print(str(safe_output_data))
     else:
@@ -274,32 +282,32 @@ def output_error(
     if detail:
         message = f"{message} \u2014 {detail}"
     resolved_hint = hint if hint is not None else entry["hint"]
-    message = _sanitize_for_cli_output(message)
-    resolved_hint = _sanitize_for_cli_output(resolved_hint)
-    data = _sanitize_for_cli_output(data)
+    safe_error_message = _sanitize_for_cli_output(message)
+    safe_error_hint = _sanitize_for_cli_output(resolved_hint)
+    safe_error_data = _sanitize_for_cli_output(data)
     if _is_machine_mode():
-        payload = {
+        safe_error_payload = {
             "schema_version": SCHEMA_VERSION,
             "status": "error",
             "exit_code": exit_code,
             "error_code": error_code,
-            "message": message,
-            "hint": resolved_hint,
+            "message": safe_error_message,
+            "hint": safe_error_hint,
         }
-        if data is not None:
-            payload["data"] = data
+        if safe_error_data is not None:
+            safe_error_payload["data"] = safe_error_data
         if _is_jsonl_mode():
-            payload["event"] = "terminal"
-            payload["terminal"] = True
-            print(json.dumps(payload), flush=True)
+            safe_error_payload["event"] = "terminal"
+            safe_error_payload["terminal"] = True
+            print(json.dumps(safe_error_payload), flush=True)
         else:
-            print(json.dumps(payload))
+            print(json.dumps(safe_error_payload))
     else:
-        if data is not None:
-            _render_table(data)
-        print(message, file=sys.stderr)
-        if resolved_hint:
-            print(f"Hint: {resolved_hint}", file=sys.stderr)
+        if safe_error_data is not None:
+            _render_table(safe_error_data)
+        print(safe_error_message, file=sys.stderr)
+        if safe_error_hint:
+            print(f"Hint: {safe_error_hint}", file=sys.stderr)
         print(f"Code: {error_code} (exit {exit_code})", file=sys.stderr)
     sys.exit(exit_code)
 
@@ -308,10 +316,10 @@ def output_jsonl_event(event: Any) -> None:
     """Print one JSONL event for streaming command output."""
     if not isinstance(event, dict):
         event = {"event": event}
-    event = _sanitize_for_cli_output(event)
-    payload = {"schema_version": SCHEMA_VERSION}
-    payload.update(event)
-    print(json.dumps(payload), flush=True)
+    safe_event = _sanitize_for_cli_output(event)
+    safe_jsonl_payload = {"schema_version": SCHEMA_VERSION}
+    safe_jsonl_payload.update(safe_event)
+    print(json.dumps(safe_jsonl_payload), flush=True)
 
 
 def output_error_message(
@@ -326,28 +334,28 @@ def output_error_message(
     resolved_hint = hint or ""
     if detail:
         message = f"{message} \u2014 {detail}"
-    message = _sanitize_for_cli_output(message)
-    resolved_hint = _sanitize_for_cli_output(resolved_hint)
+    safe_error_message = _sanitize_for_cli_output(message)
+    safe_error_hint = _sanitize_for_cli_output(resolved_hint)
     jsonl_mode = fmt == "jsonl" or (fmt is None and _is_jsonl_mode())
     if fmt in {"json", "jsonl"} or (fmt is None and _is_machine_mode()):
-        payload = {
+        safe_error_payload = {
             "schema_version": SCHEMA_VERSION,
             "status": "error",
             "exit_code": exit_code,
             "error_code": error_code,
-            "message": message,
-            "hint": resolved_hint,
+            "message": safe_error_message,
+            "hint": safe_error_hint,
         }
         if jsonl_mode:
-            payload["event"] = "terminal"
-            payload["terminal"] = True
-            print(json.dumps(payload), flush=True)
+            safe_error_payload["event"] = "terminal"
+            safe_error_payload["terminal"] = True
+            print(json.dumps(safe_error_payload), flush=True)
         else:
-            print(json.dumps(payload))
+            print(json.dumps(safe_error_payload))
     else:
-        print(message, file=sys.stderr)
-        if resolved_hint:
-            print(f"Hint: {resolved_hint}", file=sys.stderr)
+        print(safe_error_message, file=sys.stderr)
+        if safe_error_hint:
+            print(f"Hint: {safe_error_hint}", file=sys.stderr)
         print(f"Code: {error_code} (exit {exit_code})", file=sys.stderr)
     sys.exit(exit_code)
 
@@ -375,8 +383,8 @@ def print_human(*args, **kwargs):
     Usage: print_human("Starting shutdown of NVFLARE")
     """
     kwargs.setdefault("file", _human_stream())
-    args = tuple(_sanitize_for_cli_output(arg) for arg in args)
-    print(*args, **kwargs)
+    safe_args = tuple(_sanitize_for_cli_output(arg) for arg in args)
+    print(*safe_args, **kwargs)
 
 
 def prompt_yn(question: str, default_no: bool = True) -> bool:
@@ -397,7 +405,8 @@ def prompt_yn(question: str, default_no: bool = True) -> bool:
     """
     suffix = " [y/N] " if default_no else " [Y/n] "
     stream = _human_stream()
-    stream.write(_sanitize_for_cli_output(question) + suffix)
+    safe_question = _sanitize_for_cli_output(question)
+    stream.write(safe_question + suffix)
     stream.flush()
     answer = sys.stdin.readline().strip().upper()
     return answer == "Y"
