@@ -22,7 +22,6 @@ from pathlib import Path
 
 import yaml
 
-from nvflare.lighter.cc_provision.cc_config import get_cc_config_file
 from nvflare.lighter.constants import ProvFileName
 from nvflare.lighter.ctx import ProvisionContext
 from nvflare.lighter.entity import Participant, Project
@@ -142,20 +141,12 @@ class OnPremPackager(Packager):
 
     def _package_for_participant(self, participant: Participant, ctx: ProvisionContext):
         """Package the startup kit for the participant."""
-        cc_config_ref = participant.get_prop(self.cc_config_key)
-        if not cc_config_ref:
+        if not participant.get_prop(self.cc_config_key):
             return
 
         dest_dir = Path(ctx.get_result_location())
 
-        cc_config_yaml = get_cc_config_file(cc_config_ref)
-        if not cc_config_yaml:
-            raise RuntimeError(
-                f"OnPremPackager requires {self.cc_config_key} to be a file path or a mapping with "
-                "one of: file, path, config_file"
-            )
-
-        cc_config_yaml = os.path.abspath(cc_config_yaml)
+        cc_config_yaml = os.path.abspath(participant.get_prop(self.cc_config_key))
         if not os.path.exists(cc_config_yaml):
             raise RuntimeError(f"{cc_config_yaml=} does not exist")
 

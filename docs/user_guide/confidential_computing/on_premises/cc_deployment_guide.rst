@@ -187,21 +187,6 @@ The CC image builder supports any generic workload. For NVFlare, create a Docker
         - hello_cyclic.app.custom.trainer.SimpleTrainer
         - hello_cyclic.
 
-   Or keep the CC config file unchanged and add the list inline under the participant's ``cc_config`` entry in
-   ``project.yml``:
-
-   .. code-block:: yaml
-
-      participants:
-        - name: site-1
-          type: client
-          org: nvidia
-          cc_config:
-            file: cc_site-1.yml
-            class_allow_list:
-              - hello_cyclic.app.custom.trainer.SimpleTrainer
-              - hello_cyclic.
-
    Use exact class paths or package prefixes ending with ``.``. For example,
    ``hello_cyclic.app.custom.trainer.SimpleTrainer`` allows one class, and ``hello_cyclic.`` allows classes under
    that package prefix.
@@ -568,11 +553,7 @@ Complete Configuration Examples
      - name: site-1
        type: client
        org: nvidia
-       cc_config:
-         file: cc_site-1.yml
-         class_allow_list:
-           - hello_cyclic.app.custom.trainer.SimpleTrainer
-           - hello_cyclic.
+       cc_config: cc_site-1.yml
      - name: admin@nvidia.com
        type: admin
        org: nvidia
