@@ -39,17 +39,19 @@ def _write_resources(ctx, participant, resources):
     return resources_file
 
 
-def test_cc_builder_accepts_inline_project_cc_config_with_file(tmp_path):
+def test_cc_builder_loads_class_allow_list_from_cc_config_file(tmp_path):
     cc_config_file = tmp_path / "cc_server.yml"
-    cc_config_file.write_text(f"{CCConfigKey.COMPUTE_ENV}: {CCConfigValue.MOCK}\n")
-    project = _project_with_server(
-        {
-            PropKey.CC_CONFIG: {
-                "file": str(cc_config_file),
-                CCConfigKey.CLASS_ALLOW_LIST: ["hello_cyclic."],
-            }
-        }
+    cc_config_file.write_text(
+        "\n".join(
+            [
+                f"{CCConfigKey.COMPUTE_ENV}: {CCConfigValue.MOCK}",
+                f"{CCConfigKey.CLASS_ALLOW_LIST}:",
+                "  - hello_cyclic.",
+                "",
+            ]
+        )
     )
+    project = _project_with_server({PropKey.CC_CONFIG: str(cc_config_file)})
     ctx = ProvisionContext(str(tmp_path), project)
     builder = CCBuilder()
 
@@ -57,7 +59,6 @@ def test_cc_builder_accepts_inline_project_cc_config_with_file(tmp_path):
 
     server = project.get_server()
     assert server.get_prop(PropKey.CC_ENABLED) is True
-    assert server.get_prop(PropKey.CC_CONFIG) == str(cc_config_file)
     assert server.get_prop(PropKey.CC_CONFIG_DICT)[CCConfigKey.CLASS_ALLOW_LIST] == ["hello_cyclic."]
 
 

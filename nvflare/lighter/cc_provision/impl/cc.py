@@ -23,7 +23,6 @@ from nvflare.lighter.ctx import ProvisionContext
 from nvflare.lighter.entity import Participant, Project
 from nvflare.lighter.spec import Builder
 
-from ..cc_config import get_cc_config_file, load_cc_config
 from ..cc_constants import CC_AUTHORIZERS_KEY, CCConfigKey, CCConfigValue, CCIssuerConfig, CCManagerArgs
 from .azure import AzureSimpleBuilder
 from .onprem_cvm import OnPremCVMBuilder
@@ -68,12 +67,13 @@ class CCBuilder(Builder):
         # Map of compute environment to its builder class
         self._cc_builders: Dict[str, Type[Builder]] = {}
 
-    def _load_and_validate_cc_config(self, config_ref):
-        """Load CC configuration from a YAML file or inline project.yml mapping."""
-        config_path = get_cc_config_file(config_ref)
-        if config_path and not os.path.exists(config_path):
+    def _load_and_validate_cc_config(self, config_path):
+        """Load CC configuration from YAML file."""
+        if not isinstance(config_path, str):
+            raise TypeError(f"cc_config must be a YAML file path but got {type(config_path)}")
+        if not os.path.exists(config_path):
             raise FileNotFoundError(f"CC config file not found: {config_path}")
-        cc_config = load_cc_config(config_ref)
+        cc_config = utils.load_yaml(config_path)
         compute_env = cc_config.get(CCConfigKey.COMPUTE_ENV)
 
         if compute_env not in VALID_COMPUTE_ENVS:
@@ -113,13 +113,10 @@ class CCBuilder(Builder):
         self.project_name = project.name
         self.project = project
         for participant in project.get_all_participants():
-            config_ref = participant.get_prop(PropKey.CC_CONFIG)
-            if config_ref:
+            config_path = participant.get_prop(PropKey.CC_CONFIG)
+            if config_path:
                 try:
-                    cc_config = self._load_and_validate_cc_config(config_ref)
-                    config_file = get_cc_config_file(config_ref)
-                    if config_file:
-                        participant.set_prop(PropKey.CC_CONFIG, config_file)
+                    cc_config = self._load_and_validate_cc_config(config_path)
                     self._enable_participant_for_cc(participant, cc_config, ctx)
                     self._create_builder_for_env(cc_config)
                 except Exception as e:
