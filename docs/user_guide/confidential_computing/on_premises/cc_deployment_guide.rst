@@ -171,6 +171,10 @@ The CC image builder supports any generic workload. For NVFlare, create a Docker
    ``cc_config``. The provisioner extends the generated ``local/resources.json.default`` for that participant before
    the startup kit is signed and packaged.
 
+   The ``cc_config.class_allow_list`` value is additive: list only the extra classes or package prefixes needed by
+   your CC image. The provisioner keeps the built-in NVFlare allow-list entries from ``resources.json.default`` and
+   appends the CC config entries that are not already present.
+
    You can put the list directly in the referenced CC config file:
 
    .. code-block:: yaml
@@ -536,7 +540,7 @@ CC Configuration Parameters
      - CC attestation token issuers
    * - ``class_allow_list``
      - List of class paths
-     - Additional component classes or package prefixes allowed for non-BYOC CC jobs
+     - Additive list of extra component classes or package prefixes allowed for non-BYOC CC jobs
    * - ``token_expiration``
      - ``100`` (seconds)
      - Token validity duration (must be < ``check_frequency``)
