@@ -21,6 +21,7 @@ from zipfile import ZipFile
 
 import pytest
 
+from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import (
     SUBMIT_TOKEN_JOB_DELETED_STATUS,
@@ -1121,6 +1122,35 @@ def test_clone_job_preserves_source_study(monkeypatch):
 
     assert conn.errors == []
     assert engine.job_def_manager.cloned_meta[JobMetaKey.STUDY.value] == "cancer-research"
+
+
+def test_clone_job_preserves_byoc_flag(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", object)
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+
+    source_job = _FakeListedJob(
+        {
+            JobMetaKey.JOB_ID.value: "source-job",
+            JobMetaKey.JOB_NAME.value: "source",
+            AppValidationKey.BYOC: True,
+        }
+    )
+    engine = _FakeEngine()
+    conn = _MockConnection(
+        app_ctx=engine,
+        props={
+            JobCommandModule.JOB: source_job,
+            JobCommandModule.JOB_ID: "source-job",
+            ConnProps.USER_NAME: "submitter",
+            ConnProps.USER_ORG: "org",
+            ConnProps.USER_ROLE: "role",
+        },
+    )
+
+    JobCommandModule().clone_job(conn, ["clone_job", "source-job"])
+
+    assert conn.errors == []
+    assert engine.job_def_manager.cloned_meta[AppValidationKey.BYOC] is True
 
 
 def test_list_jobs_filters_legacy_jobs_into_default_study(monkeypatch):
