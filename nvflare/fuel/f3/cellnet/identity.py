@@ -131,6 +131,9 @@ class CellIdentityResolver:
 
     def require_match(self, fqcn: str, peer_cn: str, peer_desc: str):
         expected_cn = self.resolve(fqcn)
+        if not expected_cn:
+            raise ValueError(f"{peer_desc} claimed endpoint '{fqcn}' does not resolve to an expected identity")
+
         if not peer_cn or peer_cn == "N/A":
             raise ValueError(f"{peer_desc} does not have an authenticated mTLS peer common name")
 

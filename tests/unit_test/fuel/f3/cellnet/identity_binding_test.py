@@ -36,11 +36,11 @@ from nvflare.fuel.utils.constants import Mode
 
 
 class _FakeConnection:
-    def __init__(self, peer_cn, conn_security=ConnectionSecurity.MTLS):
+    def __init__(self, peer_cn, conn_security=ConnectionSecurity.MTLS, mode=Mode.PASSIVE):
         self.name = "CN-test"
         self.closed = False
         self.connector = SimpleNamespace(
-            mode=Mode.ACTIVE,
+            mode=mode,
             params={
                 DriverParams.SECURE: True,
                 DriverParams.CONNECTION_SECURITY: conn_security,
@@ -91,6 +91,13 @@ def test_identity_resolver_maps_relay_child_to_child_identity_without_configured
     assert resolver.resolve("relay-1.site-1") == "site-1"
 
 
+def test_identity_resolver_rejects_unresolvable_endpoint_identity():
+    resolver = CellIdentityResolver(local_fqcn="server")
+
+    with pytest.raises(ValueError, match="does not resolve"):
+        resolver.require_match(".", "site-1", "connection test")
+
+
 def test_mtls_handshake_accepts_job_cell_with_parent_cert_identity():
     manager = _conn_manager(identity_map={"site-1": "site-1"})
     conn = _FakeConnection(peer_cn="site-1")
@@ -137,6 +144,22 @@ def test_tls_handshake_does_not_enforce_peer_identity():
     assert not conn.closed
 
 
+@pytest.mark.parametrize("peer_cn", [None, "N/A"])
+def test_mtls_active_connection_without_peer_cn_is_accepted(peer_cn):
+    # On the active (connecting) side, some drivers (e.g. gRPC) do not expose the
+    # peer CN (it is None or "N/A"). Enforcement must be skipped there so the
+    # connecting peer can register the endpoint it dialed out to; otherwise the
+    # default gRPC mTLS client->server handshake would always be rejected.
+    manager = _conn_manager(local_fqcn="site-1", identity_map={"server": "server"})
+    conn = _FakeConnection(peer_cn=peer_cn, mode=Mode.ACTIVE)
+    sfm_conn = SfmConnection(conn, Endpoint("site-1"))
+
+    manager.update_endpoint(sfm_conn, {HandshakeKeys.ENDPOINT_NAME: "server"})
+
+    assert "server" in manager.sfm_endpoints
+    assert not conn.closed
+
+
 def test_mtls_certificate_cache_rejects_cert_identity_mismatch():
     resolver = CellIdentityResolver(local_fqcn="server", prefix_identity_map={"site-1": "site-1"})
     manager = CredentialManager(Endpoint("server"), identity_resolver=resolver, enforce_identity=True)
@@ -175,3 +198,24 @@ def test_mtls_certificate_cache_accepts_configured_auth_identity_for_site_cert_c
 
     assert manager.process_response(message) == cert
     assert manager.cert_cache["site-1.job-123"] == cert
+
+
+def test_certificate_cache_access_uses_lock():
+    class _TrackingLock:
+        def __init__(self):
+            self.enter_count = 0
+
+        def __enter__(self):
+            self.enter_count += 1
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            pass
+
+    manager = CredentialManager(Endpoint("server"))
+    manager.cell_cipher = object()
+    manager.lock = _TrackingLock()
+    cert = _cert_pem("site-1")
+
+    manager._cache_cert("site-1", cert)
+    assert manager.get_certificate("site-1") == cert
+    assert manager.lock.enter_count == 2

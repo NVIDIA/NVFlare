@@ -97,7 +97,8 @@ class CredentialManager:
     def get_certificate(self, fqcn: str) -> bytes:
         if not self.cell_cipher:
             raise RuntimeError("This cell doesn't support certificate exchange, not running in secure mode")
-        return self.cert_cache.get(fqcn)
+        with self.lock:
+            return self.cert_cache.get(fqcn)
 
     def create_request(self) -> dict:
         req = {
@@ -118,7 +119,8 @@ class CredentialManager:
             except ValueError as ex:
                 raise RuntimeError(str(ex))
 
-        self.cert_cache[fqcn] = cert
+        with self.lock:
+            self.cert_cache[fqcn] = cert
 
     def process_request(self, request: Message) -> dict:
         origin = request.get_header(MessageHeaderKey.ORIGIN)

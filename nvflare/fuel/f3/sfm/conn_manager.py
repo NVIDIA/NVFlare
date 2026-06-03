@@ -407,7 +407,12 @@ class ConnManager(ConnMonitor):
             )
 
         conn_props = sfm_conn.conn.get_conn_properties()
-        if is_mtls_connection(sfm_conn.conn.connector.params):
+        # Only enforce on incoming (passive) connections: the authenticated peer CN is
+        # the connecting peer's identity, which is what could spoof a victim's endpoint_name.
+        # The active side that dials out to a known URL has no authenticated peer CN to bind
+        # against for some drivers (e.g. gRPC sets PEER_CN to "N/A"/None on the client side),
+        # and server impersonation there is already covered by TLS CA validation.
+        if sfm_conn.conn.connector.mode == Mode.PASSIVE and is_mtls_connection(sfm_conn.conn.connector.params):
             peer_cn = get_param(conn_props, DriverParams.PEER_CN)
             try:
                 self.identity_resolver.require_match(endpoint_name, peer_cn, f"connection {sfm_conn.get_name()}")
