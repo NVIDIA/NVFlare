@@ -164,15 +164,20 @@ class FederatedClientBase:
 
         cp_conn_props = get_scope_property(self.client_name, ConnPropKey.CP_CONN_PROPS)
         cp_fqcn = cp_conn_props.get(ConnPropKey.FQCN)
-        auth_identity_map = {cp_fqcn: self.client_name}
-        relay_identity = relay_conn_props.get(ConnPropKey.IDENTITY)
+        client_auth_identity = cp_conn_props.get(ConnPropKey.AUTH_IDENTITY, self.client_name)
+        auth_identity_map = {cp_fqcn: client_auth_identity}
+        relay_identity = relay_conn_props.get(ConnPropKey.AUTH_IDENTITY, relay_conn_props.get(ConnPropKey.IDENTITY))
         if relay_fqcn and relay_identity:
             auth_identity_map[relay_fqcn] = relay_identity
 
         root_conn_props = get_scope_property(self.client_name, ConnPropKey.ROOT_CONN_PROPS, {})
-        root_identity = root_conn_props.get(ConnPropKey.IDENTITY)
+        root_identity = root_conn_props.get(ConnPropKey.AUTH_IDENTITY, root_conn_props.get(ConnPropKey.IDENTITY))
         if root_identity:
             auth_identity_map[FQCN.ROOT_SERVER] = root_identity
+
+        configured_identity_map = self.client_args.get(ConnPropKey.AUTH_IDENTITY_MAP)
+        if configured_identity_map:
+            auth_identity_map.update(configured_identity_map)
 
         parent_resources = None
         if self.args.job_id:
@@ -220,7 +225,7 @@ class FederatedClientBase:
             create_internal_listener=create_internal_listener,
             parent_url=parent_url,
             parent_resources=parent_resources,
-            auth_identity=self.client_name,
+            auth_identity=client_auth_identity,
             auth_identity_map=auth_identity_map,
         )
         self.cell.start()

@@ -41,15 +41,22 @@ class ListeningHost:
 
 
 class ConnectTo:
-    def __init__(self, name, host, port, conn_sec):
+    def __init__(self, name, host, port, conn_sec, auth_identity=None):
         self.name = name
         self.host = host
         self.port = port
         self.conn_sec = conn_sec
+        self.auth_identity = auth_identity
 
     def __str__(self):
-        name, host, port, conn_sec = self.name, self.host, self.port, self.conn_sec
-        return f"ConnectTo[{name=} {host=} {port=} {conn_sec=}]"
+        name, host, port, conn_sec, auth_identity = (
+            self.name,
+            self.host,
+            self.port,
+            self.conn_sec,
+            self.auth_identity,
+        )
+        return f"ConnectTo[{name=} {host=} {port=} {conn_sec=} {auth_identity=}]"
 
 
 def _check_host_name(scope: str, prop_key: str, value):
@@ -93,7 +100,8 @@ def parse_connect_to(value, scope=None, prop_key=None) -> ConnectTo:
         host = value.get(PropKey.HOST)
         port = value.get(PropKey.PORT)
         conn_sec = value.get(PropKey.CONN_SECURITY)
-        return ConnectTo(name, host, port, conn_sec)
+        auth_identity = value.get(PropKey.AUTH_IDENTITY)
+        return ConnectTo(name, host, port, conn_sec, auth_identity)
     else:
         raise ValueError(
             f"bad value for {prop_key} '{value}' in {scope}: invalid type {type(value)}; must be str or dict"

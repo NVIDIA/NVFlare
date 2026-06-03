@@ -102,6 +102,17 @@ def test_mtls_handshake_accepts_job_cell_with_parent_cert_identity():
     assert not conn.closed
 
 
+def test_mtls_handshake_accepts_configured_auth_identity_for_site_cert_cn_mismatch():
+    manager = _conn_manager(identity_map={"site-1": "custom-site-cn"})
+    conn = _FakeConnection(peer_cn="custom-site-cn")
+    sfm_conn = SfmConnection(conn, Endpoint("server"))
+
+    manager.update_endpoint(sfm_conn, {HandshakeKeys.ENDPOINT_NAME: "site-1.job-123"})
+
+    assert "site-1.job-123" in manager.sfm_endpoints
+    assert not conn.closed
+
+
 def test_mtls_handshake_rejects_spoofed_endpoint_identity():
     manager = _conn_manager(identity_map={"site-1": "site-1"})
     conn = _FakeConnection(peer_cn="attacker")
@@ -144,6 +155,19 @@ def test_mtls_certificate_cache_accepts_job_cell_parent_cert_identity():
     resolver = CellIdentityResolver(local_fqcn="server", prefix_identity_map={"site-1": "site-1"})
     manager = CredentialManager(Endpoint("server"), identity_resolver=resolver, enforce_identity=True)
     cert = _cert_pem("site-1")
+    message = Message(
+        headers={MessageHeaderKey.ORIGIN: "site-1.job-123"},
+        payload={CERT_CONTENT: cert},
+    )
+
+    assert manager.process_response(message) == cert
+    assert manager.cert_cache["site-1.job-123"] == cert
+
+
+def test_mtls_certificate_cache_accepts_configured_auth_identity_for_site_cert_cn_mismatch():
+    resolver = CellIdentityResolver(local_fqcn="server", prefix_identity_map={"site-1": "custom-site-cn"})
+    manager = CredentialManager(Endpoint("server"), identity_resolver=resolver, enforce_identity=True)
+    cert = _cert_pem("custom-site-cn")
     message = Message(
         headers={MessageHeaderKey.ORIGIN: "site-1.job-123"},
         payload={CERT_CONTENT: cert},

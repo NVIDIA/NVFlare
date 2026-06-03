@@ -300,6 +300,7 @@ class FLClientStarterConfiger(JsonConfigurator):
             if relay_config:
                 relay_fqcn = relay_config.get(ConnPropKey.FQCN)
                 relay_identity = relay_config.get(ConnPropKey.IDENTITY)
+                relay_auth_identity = relay_config.get(ConnPropKey.AUTH_IDENTITY, relay_identity)
                 scheme = relay_config.get(ConnPropKey.SCHEME)
                 addr = relay_config.get(ConnPropKey.ADDRESS)
                 relay_conn_security = relay_config.get(ConnPropKey.CONNECTION_SECURITY)
@@ -321,14 +322,18 @@ class FLClientStarterConfiger(JsonConfigurator):
             relay_conn_props = {
                 ConnPropKey.FQCN: relay_fqcn,
                 ConnPropKey.IDENTITY: relay_identity,
+                ConnPropKey.AUTH_IDENTITY: relay_auth_identity,
                 ConnPropKey.URL: relay_url,
                 ConnPropKey.CONNECTION_SECURITY: relay_conn_security,
             }
             set_scope_property(client_name, ConnPropKey.RELAY_CONN_PROPS, relay_conn_props)
 
         client = self.config_data["client"]
+        client_auth_identity = client.get(ConnPropKey.AUTH_IDENTITY, client.get(ConnPropKey.IDENTITY, client_name))
         servers = self.config_data.get("servers", [])
-        server_identity = servers[0].get(ConnPropKey.IDENTITY) if servers else None
+        server_identity = (
+            servers[0].get(ConnPropKey.AUTH_IDENTITY, servers[0].get(ConnPropKey.IDENTITY)) if servers else None
+        )
 
         if hasattr(self.args, "job_id") and self.args.job_id:
             # this is CJ
@@ -338,6 +343,7 @@ class FLClientStarterConfiger(JsonConfigurator):
             root_conn_props = {
                 ConnPropKey.FQCN: FQCN.ROOT_SERVER,
                 ConnPropKey.IDENTITY: server_identity,
+                ConnPropKey.AUTH_IDENTITY: server_identity,
                 ConnPropKey.URL: root_url,
                 ConnPropKey.CONNECTION_SECURITY: client.get(ConnPropKey.CONNECTION_SECURITY),
             }
@@ -346,6 +352,7 @@ class FLClientStarterConfiger(JsonConfigurator):
             cp_conn_props = {
                 ConnPropKey.FQCN: cp_fqcn,
                 ConnPropKey.IDENTITY: client_name,
+                ConnPropKey.AUTH_IDENTITY: client_auth_identity,
                 ConnPropKey.URL: self.args.parent_url,
                 ConnPropKey.CONNECTION_SECURITY: self.args.parent_conn_sec,
             }
@@ -354,6 +361,7 @@ class FLClientStarterConfiger(JsonConfigurator):
             cp_conn_props = {
                 ConnPropKey.FQCN: cp_fqcn,
                 ConnPropKey.IDENTITY: client_name,
+                ConnPropKey.AUTH_IDENTITY: client_auth_identity,
             }
         set_scope_property(client_name, ConnPropKey.CP_CONN_PROPS, cp_conn_props)
 

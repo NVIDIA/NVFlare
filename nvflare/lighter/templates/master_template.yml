@@ -203,7 +203,9 @@ fed_client: |
       "ssl_root_cert": "rootCA.pem",
       "fqsn": "{~~fqsn~~}",
       "is_leaf": {~~is_leaf~~},
-      "connection_security": "{~~conn_sec~~}"
+      "connection_security": "{~~conn_sec~~}",
+      "auth_identity": "{~~auth_identity~~}",
+      "auth_identity_map": {~~auth_identity_map~~}
     }
   }
 
@@ -435,7 +437,9 @@ fed_server: |
             "ssl_private_key": "server.key",
             "ssl_cert": "server.crt",
             "ssl_root_cert": "rootCA.pem",
-            "connection_security": "{~~conn_sec~~}"
+            "connection_security": "{~~conn_sec~~}",
+            "auth_identity": "{~~auth_identity~~}",
+            "auth_identity_map": {~~auth_identity_map~~}
         }
     ]
   }
@@ -1241,6 +1245,7 @@ relay_resources_json: |
     "relay_config": {
       "scheme": "{~~scheme~~}",
       "identity": "{~~identity~~}",
+      "auth_identity": "{~~auth_identity~~}",
       "address": "{~~address~~}",
       "fqcn": "{~~fqcn~~}",
       "connection_security": "{~~conn_sec~~}"
@@ -1252,10 +1257,13 @@ fed_relay: |
     "format_version": 2,
     "project_name": "{~~project_name~~}",
     "identity": "{~~identity~~}",
+    "auth_identity": "{~~auth_identity~~}",
+    "auth_identity_map": {~~auth_identity_map~~},
     "server_identity": "{~~server_identity~~}",
     "connect_to": {
       "scheme": "{~~scheme~~}",
       "identity": "{~~parent_identity~~}",
+      "auth_identity": "{~~parent_auth_identity~~}",
       "address": "{~~address~~}",
       "fqcn": "{~~fqcn~~}",
       "connection_security": "{~~conn_sec~~}"

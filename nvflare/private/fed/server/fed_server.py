@@ -181,6 +181,8 @@ class BaseServer(ABC):
             root_url.append(f"{scheme}://0:{admin_port}")
 
         my_fqcn = FQCN.ROOT_SERVER
+        auth_identity = grpc_args.get(ConnPropKey.AUTH_IDENTITY)
+        auth_identity_map = grpc_args.get(ConnPropKey.AUTH_IDENTITY_MAP)
         self.cell = Cell(
             fqcn=my_fqcn,
             root_url=root_url,
@@ -188,6 +190,8 @@ class BaseServer(ABC):
             credentials=credentials,
             create_internal_listener=True,
             parent_url=parent_url,
+            auth_identity=auth_identity,
+            auth_identity_map=auth_identity_map,
         )
 
         self.cell.start()
@@ -556,6 +560,8 @@ class FederatedServer(BaseServer):
         else:
             credentials = {}
 
+        auth_identity = server_config.get(ConnPropKey.AUTH_IDENTITY)
+        auth_identity_map = server_config.get(ConnPropKey.AUTH_IDENTITY_MAP)
         cell = Cell(
             fqcn=my_fqcn,
             root_url=root_url,
@@ -563,6 +569,8 @@ class FederatedServer(BaseServer):
             credentials=credentials,
             create_internal_listener=False,
             parent_url=parent_url,
+            auth_identity=auth_identity,
+            auth_identity_map=auth_identity_map,
         )
 
         cell.start()
