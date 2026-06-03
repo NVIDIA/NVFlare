@@ -208,33 +208,48 @@ def _render_table(data: Any) -> None:
 
 def output(data: Any, fmt: Optional[str]) -> None:
     """Legacy output helper used by older cert/package command paths."""
-    data = _sanitize_for_cli_output(data)
+    safe_output_data = _sanitize_for_cli_output(data)
     if fmt is None and _is_json_mode():
         fmt = "json"
     if fmt == "json":
-        print(json.dumps({"schema_version": SCHEMA_VERSION, "status": "ok", "exit_code": 0, "data": data}))
+        print(json.dumps({"schema_version": SCHEMA_VERSION, "status": "ok", "exit_code": 0, "data": safe_output_data}))
     elif fmt == "quiet":
-        if isinstance(data, dict):
-            print(next(iter(data.values()), ""))
-        elif isinstance(data, list):
-            print(data[0] if data else "")
+        if isinstance(safe_output_data, dict):
+            print(next(iter(safe_output_data.values()), ""))
+        elif isinstance(safe_output_data, list):
+            print(safe_output_data[0] if safe_output_data else "")
         else:
-            print(str(data))
+            print(str(safe_output_data))
     else:
-        _render_table(data)
+        _render_table(safe_output_data)
 
 
 def output_ok(data: Any, exit_code: int = 0) -> None:
     """Print command success output."""
-    data = _sanitize_for_cli_output(data)
+    safe_output_data = _sanitize_for_cli_output(data)
     if _is_jsonl_mode():
         output_jsonl_event(
-            {"event": "terminal", "status": "ok", "exit_code": exit_code, "data": data, "terminal": True}
+            {
+                "event": "terminal",
+                "status": "ok",
+                "exit_code": exit_code,
+                "data": safe_output_data,
+                "terminal": True,
+            }
         )
     elif _is_json_mode():
-        print(json.dumps({"schema_version": SCHEMA_VERSION, "status": "ok", "exit_code": exit_code, "data": data}))
+        print(
+            json.dumps(
+                {
+                    "schema_version": SCHEMA_VERSION,
+                    "status": "ok",
+                    "exit_code": exit_code,
+                    "data": safe_output_data,
+                }
+            )
+        )
     else:
-        _render_table(data)
+        _render_table(safe_output_data)
     if exit_code != 0:
         sys.exit(exit_code)
 
