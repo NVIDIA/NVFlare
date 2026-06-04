@@ -301,6 +301,14 @@ all client tensor updates in memory simultaneously, each update is written to a
 temporary safetensors file on disk and consumed lazily. The benefit scales with
 model size and client count.
 
+A 5 GB model measurement shows that tensor disk offload keeps server peak
+memory nearly flat as the number of clients increases, while the in-memory
+aggregation path grows with the number of client updates.
+
+.. image:: ../resources/server_peak_memory_disk_offload.png
+   :alt: Server peak memory with tensor disk offload enabled and disabled
+   :width: 80%
+
 To enable, set ``enable_tensor_disk_offload=True`` on ``FedAvgRecipe`` or the
 ``FedAvg`` controller. This feature applies to PyTorch FedAvg workflows only.
 
