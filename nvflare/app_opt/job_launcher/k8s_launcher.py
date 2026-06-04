@@ -515,6 +515,8 @@ class K8sJobHandle(JobHandleSpec):
                 return True
             return False
 
+        if pod_phase is None:
+            return False
         self._stuck_count = 0
         self._pending_since = None
         return False

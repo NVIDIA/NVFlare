@@ -1150,6 +1150,26 @@ class TestK8sJobHandle:
         assert api.read_namespaced_pod.call_count == 3
         api.delete_namespaced_pod.assert_not_called()
 
+    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
+    def test_enter_states_preserves_pending_timeout_clock_across_api_errors(self, mock_time):
+        mock_time.time.side_effect = [0.0, 0.0, 1.0, 2.0]
+        mock_time.sleep = Mock()
+        api = _make_api_instance()
+        pending_resp = _make_resource_pending_pod()
+        api.read_namespaced_pod.side_effect = [
+            pending_resp,
+            _FakeApiException(status=500, reason="Internal"),
+            pending_resp,
+        ]
+        handle = _make_handle(api=api, timeout=None, pending_timeout=2)
+
+        assert handle.enter_states([JobState.RUNNING]) is False
+
+        assert api.read_namespaced_pod.call_count == 3
+        api.delete_namespaced_pod.assert_called_once()
+        assert handle.terminal_state == JobState.TERMINATED
+        assert handle.poll() == JobReturnCode.EXCEPTION
+
     def test_enter_states_raises_on_invalid_state(self):
         handle = _make_handle()
         with pytest.raises(ValueError, match="expect job_states_to_enter"):
