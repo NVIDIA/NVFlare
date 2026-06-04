@@ -180,8 +180,13 @@ class MainProcessMonitor:
         logger.info(f"{cls.name}: Good Bye!")
         if num_active_threads > 0:
             try:
+                # main_func may return None when it completes without an explicit return
+                # statement; coerce any non-int value to 0 so the parent's int() parse of
+                # _process_rc.txt doesn't fail with ValueError and mislog a successful job
+                # as RC=1.
+                rc_to_write = rc if isinstance(rc, int) else 0
                 with open(rc_file, "w") as outfile:
-                    outfile.write(f"{rc}")
+                    outfile.write(f"{rc_to_write}")
 
                 os.kill(os.getpid(), signal.SIGKILL)
             except Exception as ex:

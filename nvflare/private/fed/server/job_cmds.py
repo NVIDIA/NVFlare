@@ -24,6 +24,7 @@ from typing import Dict, List, Optional, Set
 from zipfile import BadZipFile, ZipFile
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
+from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import (
     SUBMIT_TOKEN_CONFLICT_STATUS,
@@ -97,6 +98,7 @@ CLONED_META_KEYS = {
     JobMetaKey.MANDATORY_CLIENTS.value,
     JobMetaKey.DATA_STORAGE_FORMAT.value,
     JobMetaKey.STUDY.value,
+    AppValidationKey.BYOC,
 }
 
 JSON_LOG_FILE_NAME = "log.json"
