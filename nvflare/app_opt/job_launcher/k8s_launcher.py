@@ -96,6 +96,8 @@ DEFAULT_CONTAINER_ARGS_MODULE_ARGS_DICT = {
 DEFAULT_NAMESPACE = "default"
 DEFAULT_PENDING_TIMEOUT = 120
 DEFAULT_PYTHON_PATH = "/usr/local/bin/python"
+POLL_INTERVAL = 1
+SCHEDULED_EVENT_FAILURE_MAX_AGE = 2 * POLL_INTERVAL
 
 
 WORKSPACE_MOUNT_PATH = "/var/tmp/nvflare/workspace"
@@ -194,7 +196,19 @@ def _event_timestamp(event):
         seconds = _timestamp_to_seconds(value)
         if seconds is not None:
             return seconds
-    return 0
+    return None
+
+
+def _event_sort_key(event):
+    event_time = _event_timestamp(event)
+    return event_time if event_time is not None else 0
+
+
+def _is_recent_event(event, now, max_age) -> bool:
+    event_time = _event_timestamp(event)
+    if event_time is None:
+        return False
+    return now - event_time <= max_age
 
 
 def uuid4_to_rfc1123(uuid_str: str) -> str:
@@ -372,7 +386,7 @@ class K8sJobHandle(JobHandleSpec):
             elif self.timeout is not None and now - starting_time >= self.timeout:
                 self._terminate_for_timeout(f"timed out waiting for pod to enter {job_states_to_enter}")
                 return False
-            time.sleep(1)
+            time.sleep(POLL_INTERVAL)
 
     def _remove_workspace_job(self) -> None:
         if self.workspace_transfer and self.workspace_job_id:
@@ -491,7 +505,7 @@ class K8sJobHandle(JobHandleSpec):
         return False
 
     def _handle_starting_pod(self, pod, pod_phase, now=None) -> bool:
-        action, detail = self._classify_starting_pod(pod, pod_phase)
+        action, detail = self._classify_starting_pod(pod, pod_phase, now=now)
         if action == PendingPodAction.FAIL:
             self._terminate_for_exception(f"pod startup failure: {detail}")
             return True
@@ -505,7 +519,7 @@ class K8sJobHandle(JobHandleSpec):
         self._pending_since = None
         return False
 
-    def _classify_starting_pod(self, pod, pod_phase):
+    def _classify_starting_pod(self, pod, pod_phase, now=None):
         if pod_phase == PodPhase.UNKNOWN.value:
             return PendingPodAction.FAIL, "pod phase is Unknown"
         if pod_phase != PodPhase.PENDING.value:
@@ -516,7 +530,7 @@ class K8sJobHandle(JobHandleSpec):
             failure = self._get_container_waiting_failure(status)
             if failure:
                 return PendingPodAction.FAIL, failure
-            failure = self._get_event_failure(ignore_failed_scheduling=True)
+            failure = self._get_event_failure(ignore_failed_scheduling=True, now=now)
             if failure:
                 return PendingPodAction.FAIL, failure
             return PendingPodAction.WAIT, "pod is scheduled and still starting"
@@ -557,7 +571,7 @@ class K8sJobHandle(JobHandleSpec):
         return PendingPodAction.WAIT, ""
 
     def _classify_unscheduled_events(self):
-        for event in sorted(self._query_pod_events(), key=_event_timestamp, reverse=True):
+        for event in sorted(self._query_pod_events(), key=_event_sort_key, reverse=True):
             reason = getattr(event, "reason", None)
             message = getattr(event, "message", None)
             event_type = getattr(event, "type", None)
@@ -584,13 +598,16 @@ class K8sJobHandle(JobHandleSpec):
                 return detail
         return ""
 
-    def _get_event_failure(self, ignore_failed_scheduling=False):
-        for event in self._query_pod_events():
+    def _get_event_failure(self, ignore_failed_scheduling=False, now=None):
+        now = time.time() if now is None else now
+        for event in sorted(self._query_pod_events(), key=_event_sort_key, reverse=True):
             reason = getattr(event, "reason", None)
             if ignore_failed_scheduling and reason == "FailedScheduling":
                 continue
             event_type = getattr(event, "type", None)
             if event_type != "Warning" or reason not in _PENDING_FAILURE_EVENT_REASONS:
+                continue
+            if not _is_recent_event(event, now, SCHEDULED_EVENT_FAILURE_MAX_AGE):
                 continue
             message = getattr(event, "message", None)
             return _obj_text(reason, message) or "pod event reported startup issue"
@@ -640,7 +657,7 @@ class K8sJobHandle(JobHandleSpec):
                 self.terminal_state = job_state  # persist so poll() stays accurate
                 self._remove_workspace_job()
                 return
-            time.sleep(1)
+            time.sleep(POLL_INTERVAL)
 
 
 class K8sJobLauncher(JobLauncherSpec):

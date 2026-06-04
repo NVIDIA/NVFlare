@@ -1042,6 +1042,41 @@ class TestK8sJobHandle:
         api.delete_namespaced_pod.assert_not_called()
 
     @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
+    def test_enter_states_terminates_on_recent_scheduled_warning_event(self, mock_time):
+        mock_time.time.side_effect = [10.0, 10.0]
+        mock_time.sleep = Mock()
+        api = _make_api_instance()
+        api.read_namespaced_pod.return_value = _make_container_creating_pod()
+        _set_pod_events(
+            api,
+            [_make_event("FailedMount", "Unable to attach or mount volumes", last_timestamp=9.0)],
+        )
+        handle = _make_handle(api=api, timeout=None, pending_timeout=120)
+
+        assert handle.enter_states([JobState.RUNNING]) is False
+
+        api.delete_namespaced_pod.assert_called_once()
+        assert handle.poll() == JobReturnCode.EXCEPTION
+
+    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
+    def test_enter_states_ignores_stale_scheduled_warning_event(self, mock_time):
+        mock_time.time.side_effect = [10.0, 10.0, 11.0]
+        mock_time.sleep = Mock()
+        api = _make_api_instance()
+        running_resp = Mock()
+        running_resp.status.phase = PodPhase.RUNNING.value
+        api.read_namespaced_pod.side_effect = [_make_container_creating_pod(), running_resp]
+        _set_pod_events(
+            api,
+            [_make_event("FailedMount", "Unable to attach or mount volumes", last_timestamp=1.0)],
+        )
+        handle = _make_handle(api=api, timeout=20, pending_timeout=0)
+
+        assert handle.enter_states([JobState.RUNNING]) is True
+
+        api.delete_namespaced_pod.assert_not_called()
+
+    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
     def test_enter_states_ignores_event_api_failure_for_normal_startup_delay(self, mock_time):
         mock_time.time.side_effect = [0.0, 0.0, 1.0]
         mock_time.sleep = Mock()
