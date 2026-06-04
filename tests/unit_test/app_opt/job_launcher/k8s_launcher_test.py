@@ -159,11 +159,12 @@ def _make_container_creating_pod():
     )
 
 
-def _make_event(reason, message=None, event_type="Warning"):
+def _make_event(reason, message=None, event_type="Warning", last_timestamp=None):
     event = Mock()
     event.reason = reason
     event.message = message
     event.type = event_type
+    event.last_timestamp = last_timestamp
     return event
 
 
@@ -303,18 +304,18 @@ class TestK8sJobHandle:
     def test_pending_timeout_is_independent_from_launch_timeout(self):
         cfg = _make_job_config()
         handle = K8sJobHandle("job-1", _make_api_instance(), cfg, timeout=30)
-        assert handle._max_stuck_count == 120
+        assert handle._pending_timeout_secs == 120
         assert handle.pending_timeout == 120
 
-    def test_max_stuck_count_uses_pending_timeout_when_no_timeout(self):
+    def test_pending_timeout_secs_uses_pending_timeout_when_no_timeout(self):
         cfg = _make_job_config()
         handle = K8sJobHandle("job-1", _make_api_instance(), cfg, timeout=None)
-        assert handle._max_stuck_count == 120
+        assert handle._pending_timeout_secs == 120
 
-    def test_max_stuck_count_uses_custom_pending_timeout(self):
+    def test_pending_timeout_secs_uses_custom_pending_timeout(self):
         cfg = _make_job_config()
         handle = K8sJobHandle("job-1", _make_api_instance(), cfg, timeout=None, pending_timeout=60)
-        assert handle._max_stuck_count == 60
+        assert handle._pending_timeout_secs == 60
 
     # -- manifest -------------------------------------------------------------
     def test_manifest_metadata_name(self):
@@ -695,10 +696,10 @@ class TestK8sJobHandle:
         assert handle._stuck_in_pending(PodPhase.PENDING.value) is False
 
     def test_stuck_in_pending_never_fires_when_pending_timeout_none(self):
-        # pending_timeout=None with timeout=None → _max_stuck_count=None → stuck detection disabled
+        # pending_timeout=None with timeout=None disables resource-shortage stuck detection.
         api = _make_api_instance()
         handle = K8sJobHandle("job-1", api, _make_job_config(), timeout=None, pending_timeout=None)
-        assert handle._max_stuck_count is None
+        assert handle._pending_timeout_secs is None
         # Drive _stuck_count very high — must not raise and must return False
         handle._stuck_count = 10_000
         assert handle._stuck_in_pending(PodPhase.PENDING.value) is False
@@ -974,6 +975,71 @@ class TestK8sJobHandle:
 
         api.delete_namespaced_pod.assert_called_once()
         assert handle.poll() == JobReturnCode.EXCEPTION
+
+    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
+    def test_enter_states_uses_latest_scheduling_event(self, mock_time):
+        mock_time.time.side_effect = [0.0, 0.0]
+        mock_time.sleep = Mock()
+        api = _make_api_instance()
+        api.read_namespaced_pod.return_value = _make_pod_response()
+        _set_pod_events(
+            api,
+            [
+                _make_event(
+                    "FailedScheduling",
+                    "0/1 nodes are available: 1 Insufficient cpu.",
+                    last_timestamp="2026-01-01T00:00:00Z",
+                ),
+                _make_event(
+                    "FailedScheduling",
+                    "0/1 nodes are available: pod did not match node affinity.",
+                    last_timestamp="2026-01-01T00:01:00Z",
+                ),
+            ],
+        )
+        handle = _make_handle(api=api, timeout=None, pending_timeout=None)
+
+        assert handle.enter_states([JobState.RUNNING]) is False
+
+        api.delete_namespaced_pod.assert_called_once()
+        assert handle.poll() == JobReturnCode.EXCEPTION
+
+    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
+    def test_enter_states_ignores_non_warning_failed_scheduling_event(self, mock_time):
+        mock_time.time.side_effect = [0.0, 0.0, 1.0]
+        mock_time.sleep = Mock()
+        api = _make_api_instance()
+        running_resp = Mock()
+        running_resp.status.phase = PodPhase.RUNNING.value
+        api.read_namespaced_pod.side_effect = [_make_pod_response(), running_resp]
+        _set_pod_events(
+            api,
+            [_make_event("FailedScheduling", "non-warning scheduling event", event_type="Normal")],
+        )
+        handle = _make_handle(api=api, timeout=10, pending_timeout=0)
+
+        assert handle.enter_states([JobState.RUNNING]) is True
+
+        api.delete_namespaced_pod.assert_not_called()
+
+    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
+    def test_enter_states_waits_on_unrecognized_container_waiting_reason(self, mock_time):
+        mock_time.time.side_effect = [0.0, 0.0, 1.0]
+        mock_time.sleep = Mock()
+        api = _make_api_instance()
+        unknown_waiting = _make_pod_response(
+            node_name="node-1",
+            conditions=[_make_condition("PodScheduled", "True")],
+            container_statuses=[_make_waiting_container_status("ContainerStatusUnknown")],
+        )
+        running_resp = Mock()
+        running_resp.status.phase = PodPhase.RUNNING.value
+        api.read_namespaced_pod.side_effect = [unknown_waiting, running_resp]
+        handle = _make_handle(api=api, timeout=10, pending_timeout=0)
+
+        assert handle.enter_states([JobState.RUNNING]) is True
+
+        api.delete_namespaced_pod.assert_not_called()
 
     @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
     def test_enter_states_ignores_event_api_failure_for_normal_startup_delay(self, mock_time):

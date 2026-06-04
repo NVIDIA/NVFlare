@@ -21,6 +21,7 @@ import os
 import re
 import time
 from abc import abstractmethod
+from datetime import datetime
 from enum import Enum
 
 from nvflare.apis.event_type import EventType
@@ -122,11 +123,6 @@ _PENDING_FAILURE_EVENT_REASONS = {
     "InvalidImageName",
     "NetworkNotReady",
 }
-_PENDING_NORMAL_WAITING_REASONS = {
-    "ContainerCreating",
-    "PodInitializing",
-}
-
 # Files actually read from startup/ by the job pod at runtime. Others in
 # startup/ are dropped to shrink the Secret. local/ is bundled whole with each
 # job workspace so job resource files and local custom code keep working.
@@ -170,6 +166,35 @@ def _is_cpu_memory_gpu_shortage(message: str) -> bool:
         if resource_name in {"cpu", "memory"} or "gpu" in resource_name:
             return True
     return False
+
+
+def _timestamp_to_seconds(value):
+    if isinstance(value, datetime):
+        return value.timestamp()
+    if isinstance(value, (int, float)):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.strip().replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            return None
+    return None
+
+
+def _event_timestamp(event):
+    series = getattr(event, "series", None)
+    metadata = getattr(event, "metadata", None)
+    for value in (
+        getattr(event, "event_time", None),
+        getattr(series, "last_observed_time", None),
+        getattr(event, "last_timestamp", None),
+        getattr(event, "first_timestamp", None),
+        getattr(metadata, "creation_timestamp", None),
+    ):
+        seconds = _timestamp_to_seconds(value)
+        if seconds is not None:
+            return seconds
+    return 0
 
 
 def uuid4_to_rfc1123(uuid_str: str) -> str:
@@ -267,8 +292,8 @@ class K8sJobHandle(JobHandleSpec):
         self._make_manifest(job_config)
         self._stuck_count = 0
         self._pending_since = None
-        # Backward-compatible diagnostic name; value is now seconds, not poll count.
-        self._max_stuck_count = self.pending_timeout
+        # Kept for diagnostics only; unit is seconds, not poll iterations like _stuck_count.
+        self._pending_timeout_secs = self.pending_timeout
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def _make_manifest(self, job_config):
@@ -483,7 +508,7 @@ class K8sJobHandle(JobHandleSpec):
     def _classify_starting_pod(self, pod, pod_phase):
         if pod_phase == PodPhase.UNKNOWN.value:
             return PendingPodAction.FAIL, "pod phase is Unknown"
-        if pod_phase != PodPhase.PENDING.value or pod is None:
+        if pod_phase != PodPhase.PENDING.value:
             return PendingPodAction.WAIT, ""
 
         status = getattr(pod, "status", None)
@@ -532,16 +557,18 @@ class K8sJobHandle(JobHandleSpec):
         return PendingPodAction.WAIT, ""
 
     def _classify_unscheduled_events(self):
-        for event in self._query_pod_events():
+        for event in sorted(self._query_pod_events(), key=_event_timestamp, reverse=True):
             reason = getattr(event, "reason", None)
             message = getattr(event, "message", None)
             event_type = getattr(event, "type", None)
+            if event_type != "Warning":
+                continue
             detail = _obj_text(reason, message) or "pod event reported startup issue"
             if _is_cpu_memory_gpu_shortage(detail):
                 return PendingPodAction.WAIT_FOR_RESOURCES, detail
             if reason == "FailedScheduling":
                 return PendingPodAction.FAIL, detail
-            if event_type == "Warning" and reason in _PENDING_FAILURE_EVENT_REASONS:
+            if reason in _PENDING_FAILURE_EVENT_REASONS:
                 return PendingPodAction.FAIL, detail
         return PendingPodAction.WAIT, ""
 
@@ -554,8 +581,6 @@ class K8sJobHandle(JobHandleSpec):
             message = getattr(waiting, "message", None)
             detail = _obj_text(reason, message) or "container is waiting"
             if reason in _PENDING_FAILURE_WAITING_REASONS:
-                return detail
-            if reason and reason not in _PENDING_NORMAL_WAITING_REASONS:
                 return detail
         return ""
 
