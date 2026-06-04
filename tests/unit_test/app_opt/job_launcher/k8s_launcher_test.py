@@ -1220,6 +1220,20 @@ class TestK8sJobHandle:
         assert api.read_namespaced_pod.call_count == 5
         api.delete_namespaced_pod.assert_not_called()
 
+    def test_scheduled_pod_event_api_failure_resets_resource_pending_timer(self):
+        api = _make_api_instance()
+        api.list_namespaced_event.side_effect = _FakeApiException(status=500, reason="Internal")
+        handle = _make_handle(api=api, timeout=None, pending_timeout=10)
+
+        assert handle._handle_starting_pod(_make_resource_pending_pod(), PodPhase.PENDING.value, now=0) is False
+        assert handle._pending_since == 0
+
+        assert handle._handle_starting_pod(_make_container_creating_pod(), PodPhase.PENDING.value, now=5) is False
+
+        assert handle._pending_since is None
+        assert handle._pending_timer_paused_at is None
+        api.delete_namespaced_pod.assert_not_called()
+
     @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
     def test_enter_states_expires_event_resource_pending_after_event_api_recovery(self, mock_time):
         mock_time.time.side_effect = [0.0, 0.0, 1.0, 5.0, 10.0, 11.0]

@@ -524,8 +524,9 @@ class K8sJobHandle(JobHandleSpec):
             self._pause_pending_timer(now)
             return False
         if pod_phase == PodPhase.PENDING.value and self._pending_since is not None and self._last_event_query_failed:
-            self._pause_pending_timer(now)
-            return False
+            if not self._pod_is_scheduled(getattr(pod, "status", None)):
+                self._pause_pending_timer(now)
+                return False
         self._reset_pending_timer()
         return False
 
