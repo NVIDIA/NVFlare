@@ -211,7 +211,9 @@ class CCBuilder(Builder):
                 configured_allow_list.append(class_path)
 
         resources[CCConfigKey.CLASS_ALLOW_LIST] = configured_allow_list
-        utils.write(resources_file, json.dumps(resources, indent=2), "t")
+        tmp_file = f"{resources_file}.{os.getpid()}.tmp"
+        utils.write(tmp_file, json.dumps(resources, indent=2) + "\n", "t")
+        os.replace(tmp_file, resources_file)
 
     def build(self, project: Project, ctx: ProvisionContext):
         """Build CC configuration for all participants."""

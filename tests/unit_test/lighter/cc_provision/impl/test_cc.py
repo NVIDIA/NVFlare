@@ -91,6 +91,9 @@ def test_cc_builder_extends_generated_class_allow_list(tmp_path):
     with open(resources_file, "r") as f:
         resources = json.load(f)
     assert resources["class_allow_list"] == ["nvflare.", "hello_cyclic."]
+    with open(resources_file, "rb") as f:
+        assert f.read().endswith(b"\n")
+    assert not os.path.exists(f"{resources_file}.{os.getpid()}.tmp")
 
 
 def test_cc_builder_rejects_invalid_class_allow_list(tmp_path):
