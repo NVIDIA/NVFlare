@@ -301,16 +301,23 @@ all client tensor updates in memory simultaneously, each update is written to a
 temporary safetensors file on disk and consumed lazily. The benefit scales with
 model size and client count.
 
+A 5 GB model measurement shows that tensor disk offload keeps server peak
+memory nearly flat as the number of clients increases, while the in-memory
+aggregation path grows with the number of client updates.
+
+.. image:: ../resources/server_peak_memory_disk_offload.png
+   :alt: Server peak memory with tensor disk offload enabled and disabled
+   :width: 80%
+
 To enable, set ``enable_tensor_disk_offload=True`` on ``FedAvgRecipe`` or the
-``FedAvg`` controller. This feature applies to PyTorch FedAvg workflows only.
+``FedAvg`` controller. In FLARE 2.8.0, this disk-backed tensor path is available
+for streamed PyTorch tensors in FedAvg workflows.
 
-.. warning::
-
-   Temporary files use the server process temp directory (``TMPDIR`` or the OS
-   default such as ``/tmp``). In containers or Kubernetes, ``/tmp`` is often
-   RAM-backed (``tmpfs``), which eliminates the memory-saving benefit. The server
-   admin must point ``TMPDIR`` to a disk-backed mount before starting the server.
-   See :ref:`notes_on_large_models` for deployment guidance.
+Deployment note: temporary files use the server process temp directory
+(``TMPDIR`` or the OS default such as ``/tmp``). In containers or Kubernetes,
+``/tmp`` is often RAM-backed (``tmpfs``), which eliminates the memory-saving
+benefit; point ``TMPDIR`` to a disk-backed mount before starting the server.
+See :ref:`notes_on_large_models` for deployment guidance.
 
 For configuration details, see :doc:`/programming_guide/tensor_downloader` and
 :doc:`/programming_guide/memory_management`.
