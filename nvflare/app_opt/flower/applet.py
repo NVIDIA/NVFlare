@@ -381,6 +381,7 @@ class FlowerServerApplet(Applet):
 
         cmd_desc = CommandDescriptor(
             cmd=superlink_cmd,
+            cwd=ws.get_run_dir(fl_ctx.get_job_id()),
             env=env,
             log_file_name="superlink_log.txt",
             stdout_msg_prefix="FLWR-SL",
