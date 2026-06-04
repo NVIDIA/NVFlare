@@ -17,7 +17,10 @@ This directory contains the OpenShift-specific NVFlare deployment guide and help
 - `scripts/k8s_submit_job.sh` submits `hello-numpy` from an in-cluster admin pod and waits for successful completion.
 - `scripts/k8s_watch.sh` shows an in-place live Rich pod table for the created pods.
 - `scripts/k8s_watch.py` implements the Rich table used by the shell wrapper.
-- `scripts/k8s_e2e.sh` runs provision, deploy, and submit in order.
+- `scripts/k8s_e2e.sh` runs provision, deploy, and submit in order. Set
+  `WORKSPACE_STAGING_MODE=pvc` for the manual PVC-copy path, or
+  `WORKSPACE_STAGING_MODE=configmap-secret` for the `nvflare deploy k8s stage`
+  ConfigMap/Secret path.
 
 ## Create a Local OpenShift Cluster
 
@@ -66,6 +69,13 @@ export JOB_IMAGE=registry.example.com/nvflare-job:dev
 export NAMESPACE=nvflare-e2e
 
 bash examples/devops/openshift/scripts/k8s_e2e.sh
+```
+
+The e2e script defaults to the manual PVC-copy staging path. To verify the
+ConfigMap/Secret staging path instead, run the same command with:
+
+```bash
+export WORKSPACE_STAGING_MODE=configmap-secret
 ```
 
 The watch tool requires the Python `rich` package:
