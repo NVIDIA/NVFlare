@@ -97,7 +97,7 @@ DEFAULT_NAMESPACE = "default"
 DEFAULT_PENDING_TIMEOUT = 120
 DEFAULT_PYTHON_PATH = "/usr/local/bin/python"
 POLL_INTERVAL = 1
-SCHEDULED_EVENT_FAILURE_MAX_AGE = 2 * POLL_INTERVAL
+SCHEDULED_EVENT_FAILURE_MAX_AGE = 60
 
 
 WORKSPACE_MOUNT_PATH = "/var/tmp/nvflare/workspace"
@@ -308,6 +308,7 @@ class K8sJobHandle(JobHandleSpec):
         self._pending_since = None
         # Kept for diagnostics only; unit is seconds, not poll iterations like _stuck_count.
         self._pending_timeout_secs = self.pending_timeout
+        self._last_event_query_failed = False
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def _make_manifest(self, job_config):
@@ -505,6 +506,7 @@ class K8sJobHandle(JobHandleSpec):
         return False
 
     def _handle_starting_pod(self, pod, pod_phase, now=None) -> bool:
+        self._last_event_query_failed = False
         action, detail = self._classify_starting_pod(pod, pod_phase, now=now)
         if action == PendingPodAction.FAIL:
             self._terminate_for_exception(f"pod startup failure: {detail}")
@@ -515,7 +517,9 @@ class K8sJobHandle(JobHandleSpec):
                 return True
             return False
 
-        if pod_phase is None:
+        if pod_phase is None or (
+            pod_phase == PodPhase.PENDING.value and self._pending_since is not None and self._last_event_query_failed
+        ):
             return False
         self._stuck_count = 0
         self._pending_since = None
@@ -618,15 +622,18 @@ class K8sJobHandle(JobHandleSpec):
     def _query_pod_events(self):
         from kubernetes.client.rest import ApiException
 
+        self._last_event_query_failed = False
         try:
             resp = self.api_instance.list_namespaced_event(
                 namespace=self.namespace,
                 field_selector=f"involvedObject.name={self.pod_name}",
             )
         except ApiException as e:
+            self._last_event_query_failed = True
             self.logger.warning(f"failed to query events for job {self.job_id} pod {self.pod_name}: {e}")
             return []
         except Exception as e:
+            self._last_event_query_failed = True
             self.logger.warning(f"unexpected error querying events for job {self.job_id} pod {self.pod_name}: {e}")
             return []
         items = getattr(resp, "items", None)
