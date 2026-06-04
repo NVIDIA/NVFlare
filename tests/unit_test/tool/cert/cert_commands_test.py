@@ -900,11 +900,12 @@ class TestCertInit:
 
         assert exc_info.value.code == 0
         help_text = capsys.readouterr().out
+        normalized_help_text = " ".join(help_text.split())
         assert "--deploy-version" in help_text
-        assert "differs from the existing CA deploy version" in help_text
-        assert "matches the existing" in help_text
-        assert "ca.json is absent" in help_text
-        assert "existing CA deploy version" in help_text
+        assert "differs from the existing CA deploy version" in normalized_help_text
+        assert "matches the existing" in normalized_help_text
+        assert "ca.json is absent" in normalized_help_text
+        assert "existing CA deploy version" in normalized_help_text
 
     def test_missing_required_args_show_help_and_missing_flags(self, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
