@@ -351,7 +351,7 @@ class FlowerServerApplet(Applet):
         db_arg = ""
         if self.database:
             db_path = self.database
-            if not os.path.isabs(db_path) and db_path != ":memory:":
+            if not os.path.isabs(db_path) and db_path not in (":memory:", ":flwr-in-memory:"):
                 db_path = os.path.abspath(db_path)
             db_arg = f"--database {db_path}"
 
