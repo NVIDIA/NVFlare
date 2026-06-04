@@ -309,6 +309,7 @@ class K8sJobHandle(JobHandleSpec):
         # Kept for diagnostics only; unit is seconds, not poll iterations like _stuck_count.
         self._pending_timeout_secs = self.pending_timeout
         self._last_event_query_failed = False
+        self._pending_timer_paused_at = None
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def _make_manifest(self, job_config):
@@ -496,13 +497,15 @@ class K8sJobHandle(JobHandleSpec):
             current_time = time.time() if now is None else now
             if self._pending_since is None:
                 self._pending_since = current_time
+                self._pending_timer_paused_at = None
+            else:
+                self._resume_pending_timer(current_time)
             if self.pending_timeout == 0:
                 return True
             if current_time - self._pending_since >= self.pending_timeout:
                 return True
         else:
-            self._stuck_count = 0
-            self._pending_since = None
+            self._reset_pending_timer()
         return False
 
     def _handle_starting_pod(self, pod, pod_phase, now=None) -> bool:
@@ -517,13 +520,32 @@ class K8sJobHandle(JobHandleSpec):
                 return True
             return False
 
-        if pod_phase is None or (
-            pod_phase == PodPhase.PENDING.value and self._pending_since is not None and self._last_event_query_failed
-        ):
+        if pod_phase is None:
+            self._pause_pending_timer(now)
             return False
+        if pod_phase == PodPhase.PENDING.value and self._pending_since is not None and self._last_event_query_failed:
+            self._pause_pending_timer(now)
+            return False
+        self._reset_pending_timer()
+        return False
+
+    def _pause_pending_timer(self, now=None):
+        if self._pending_since is None or self._pending_timer_paused_at is not None:
+            return
+        self._pending_timer_paused_at = time.time() if now is None else now
+
+    def _resume_pending_timer(self, now=None):
+        if self._pending_timer_paused_at is None:
+            return
+        current_time = time.time() if now is None else now
+        paused_duration = max(0, current_time - self._pending_timer_paused_at)
+        self._pending_since += paused_duration
+        self._pending_timer_paused_at = None
+
+    def _reset_pending_timer(self):
         self._stuck_count = 0
         self._pending_since = None
-        return False
+        self._pending_timer_paused_at = None
 
     def _classify_starting_pod(self, pod, pod_phase, now=None):
         if pod_phase == PodPhase.UNKNOWN.value:

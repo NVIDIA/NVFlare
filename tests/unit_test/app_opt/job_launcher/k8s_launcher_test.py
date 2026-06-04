@@ -1173,8 +1173,8 @@ class TestK8sJobHandle:
         api.delete_namespaced_pod.assert_not_called()
 
     @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
-    def test_enter_states_preserves_pending_timeout_clock_across_api_errors(self, mock_time):
-        mock_time.time.side_effect = [0.0, 0.0, 1.0, 2.0]
+    def test_enter_states_pauses_pending_timeout_clock_across_api_errors(self, mock_time):
+        mock_time.time.side_effect = [0.0, 0.0, 1.0, 2.0, 3.0]
         mock_time.sleep = Mock()
         api = _make_api_instance()
         pending_resp = _make_resource_pending_pod()
@@ -1182,32 +1182,62 @@ class TestK8sJobHandle:
             pending_resp,
             _FakeApiException(status=500, reason="Internal"),
             pending_resp,
+            pending_resp,
         ]
         handle = _make_handle(api=api, timeout=None, pending_timeout=2)
 
         assert handle.enter_states([JobState.RUNNING]) is False
 
-        assert api.read_namespaced_pod.call_count == 3
+        assert api.read_namespaced_pod.call_count == 4
         api.delete_namespaced_pod.assert_called_once()
         assert handle.terminal_state == JobState.TERMINATED
         assert handle.poll() == JobReturnCode.EXCEPTION
 
     @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
-    def test_enter_states_preserves_event_resource_pending_clock_across_event_api_errors(self, mock_time):
-        mock_time.time.side_effect = [0.0, 0.0, 1.0, 2.0]
+    def test_enter_states_pauses_event_resource_pending_clock_across_event_api_errors(self, mock_time):
+        mock_time.time.side_effect = [0.0, 0.0, 1.0, 5.0, 10.0, 11.0]
+        mock_time.sleep = Mock()
+        api = _make_api_instance()
+        running_resp = Mock()
+        running_resp.status.phase = PodPhase.RUNNING.value
+        api.read_namespaced_pod.side_effect = [
+            _make_pod_response(),
+            _make_pod_response(),
+            _make_pod_response(),
+            _make_pod_response(),
+            running_resp,
+        ]
+        api.list_namespaced_event.side_effect = [
+            _make_event_list([_make_event("FailedScheduling", "0/1 nodes are available: 1 Insufficient cpu.")]),
+            _FakeApiException(status=500, reason="Internal"),
+            _FakeApiException(status=500, reason="Internal"),
+            _make_event_list([_make_event("FailedScheduling", "0/1 nodes are available: 1 Insufficient cpu.")]),
+        ]
+        handle = _make_handle(api=api, timeout=None, pending_timeout=2)
+
+        assert handle.enter_states([JobState.RUNNING]) is True
+
+        assert api.read_namespaced_pod.call_count == 5
+        api.delete_namespaced_pod.assert_not_called()
+
+    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
+    def test_enter_states_expires_event_resource_pending_after_event_api_recovery(self, mock_time):
+        mock_time.time.side_effect = [0.0, 0.0, 1.0, 5.0, 10.0, 11.0]
         mock_time.sleep = Mock()
         api = _make_api_instance()
         api.read_namespaced_pod.return_value = _make_pod_response()
         api.list_namespaced_event.side_effect = [
             _make_event_list([_make_event("FailedScheduling", "0/1 nodes are available: 1 Insufficient cpu.")]),
             _FakeApiException(status=500, reason="Internal"),
+            _FakeApiException(status=500, reason="Internal"),
+            _make_event_list([_make_event("FailedScheduling", "0/1 nodes are available: 1 Insufficient cpu.")]),
             _make_event_list([_make_event("FailedScheduling", "0/1 nodes are available: 1 Insufficient cpu.")]),
         ]
         handle = _make_handle(api=api, timeout=None, pending_timeout=2)
 
         assert handle.enter_states([JobState.RUNNING]) is False
 
-        assert api.read_namespaced_pod.call_count == 3
+        assert api.read_namespaced_pod.call_count == 5
         api.delete_namespaced_pod.assert_called_once()
         assert handle.terminal_state == JobState.TERMINATED
         assert handle.poll() == JobReturnCode.EXCEPTION
