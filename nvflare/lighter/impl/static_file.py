@@ -119,6 +119,38 @@ class StaticFileBuilder(Builder):
         return participant.get_prop(PropKey.AUTH_IDENTITY, participant.name)
 
     @staticmethod
+    def _build_optional_json_fields(fields: list, indent: int):
+        lines = []
+        line_prefix = " " * indent
+        for key, value in fields:
+            if not value:
+                continue
+
+            value_text = json.dumps(value, indent=2).replace("\n", "\n" + line_prefix)
+            lines.append(f'{line_prefix}"{key}": {value_text}')
+
+        if not lines:
+            return ""
+
+        return ",\n" + ",\n".join(lines)
+
+    def _build_auth_identity_config(
+        self,
+        auth_identity: str,
+        default_identity: str,
+        auth_identity_map: dict = None,
+        indent: int = 6,
+    ):
+        fields = []
+        if auth_identity and auth_identity != default_identity:
+            fields.append((PropKey.AUTH_IDENTITY, auth_identity))
+
+        if auth_identity_map:
+            fields.append(("auth_identity_map", auth_identity_map))
+
+        return self._build_optional_json_fields(fields, indent)
+
+    @staticmethod
     def _get_client_cell_fqcn(client: Participant, ctx: ProvisionContext):
         ct = client.get_connect_to()
         if ct and ct.name:
@@ -167,6 +199,7 @@ class StaticFileBuilder(Builder):
         fed_learn_port = ctx.get(CtxKey.FED_LEARN_PORT)
         target = f"{server.name}:{fed_learn_port}"
         conn_sec = self._build_conn_properties(server, ctx)
+        server_auth_identity = self._get_auth_identity(server)
 
         ctx.build_from_template(
             dest_dir,
@@ -179,8 +212,12 @@ class StaticFileBuilder(Builder):
                 "admin_port": admin_port,
                 "scheme": self._determine_scheme(server),
                 "conn_sec": conn_sec,
-                "auth_identity": self._get_auth_identity(server),
-                "auth_identity_map": json.dumps(self._build_auth_identity_map(project, ctx), indent=16),
+                "auth_identity_config": self._build_auth_identity_config(
+                    auth_identity=server_auth_identity,
+                    default_identity=server.name,
+                    auth_identity_map=self._build_auth_identity_map(project, ctx),
+                    indent=12,
+                ),
             },
         )
 
@@ -303,6 +340,7 @@ class StaticFileBuilder(Builder):
         if conn_port:
             fl_port = conn_port
         target = f"{conn_host}:{fl_port}"
+        client_auth_identity = self._get_auth_identity(client)
 
         ctx.build_from_template(
             dest_dir,
@@ -316,8 +354,12 @@ class StaticFileBuilder(Builder):
                 "fqsn": client.get_prop(PropKey.FQSN),
                 "is_leaf": is_leaf,
                 "conn_sec": self._build_conn_properties(client, ctx),
-                "auth_identity": self._get_auth_identity(client),
-                "auth_identity_map": json.dumps(self._build_auth_identity_map(project, ctx), indent=8),
+                "auth_identity_config": self._build_auth_identity_config(
+                    auth_identity=client_auth_identity,
+                    default_identity=client.name,
+                    auth_identity_map=self._build_auth_identity_map(project, ctx),
+                    indent=6,
+                ),
             },
         )
 
@@ -450,7 +492,11 @@ class StaticFileBuilder(Builder):
             replacement_dict = {
                 "scheme": scheme,
                 "identity": relay.name,
-                "auth_identity": self._get_auth_identity(relay),
+                "auth_identity_config": self._build_auth_identity_config(
+                    auth_identity=self._get_auth_identity(relay),
+                    default_identity=relay.name,
+                    indent=6,
+                ),
                 "address": addr,
                 "fqcn": fqcn,
                 "conn_sec": conn_sec,
@@ -710,18 +756,27 @@ class StaticFileBuilder(Builder):
                     ctx.warning(f"the connect_to.host '{ct.host}' in relay {relay.name} may be invalid: {err}")
 
         parent_addr = f"{parent_host}:{parent_port}"
+        relay_auth_identity = self._get_auth_identity(relay)
         replacement_dict = {
             "project_name": project.name,
             "identity": relay.name,
-            "auth_identity": self._get_auth_identity(relay),
+            "auth_identity_config": self._build_auth_identity_config(
+                auth_identity=relay_auth_identity,
+                default_identity=relay.name,
+                auth_identity_map=self._build_auth_identity_map(project, ctx, relay),
+                indent=4,
+            ),
             "server_identity": self._get_auth_identity(server),
             "scheme": parent_scheme,
             "parent_identity": parent_identity,
-            "parent_auth_identity": parent_auth_identity,
+            "parent_auth_identity_config": self._build_auth_identity_config(
+                auth_identity=parent_auth_identity,
+                default_identity=parent_identity,
+                indent=6,
+            ),
             "address": parent_addr,
             "fqcn": parent_fqcn,
             "conn_sec": parent_conn_sec,
-            "auth_identity_map": json.dumps(self._build_auth_identity_map(project, ctx, relay), indent=8),
         }
 
         dest_dir = ctx.get_kit_dir(relay)

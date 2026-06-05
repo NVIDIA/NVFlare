@@ -197,6 +197,19 @@ def test_mtls_active_connection_without_peer_cn_is_accepted(peer_cn):
     assert not conn.closed
 
 
+def test_mtls_active_connection_with_peer_cn_enforces_endpoint_identity():
+    manager = _conn_manager(local_fqcn="site-1", identity_map={"server": "server"})
+    conn = _FakeConnection(peer_cn="attacker", mode=Mode.ACTIVE)
+    sfm_conn = SfmConnection(conn, Endpoint("site-1"))
+
+    with pytest.raises(CommError) as ex:
+        manager.update_endpoint(sfm_conn, {HandshakeKeys.ENDPOINT_NAME: "server"})
+
+    assert ex.value.code == CommError.BAD_DATA
+    assert "server" not in manager.sfm_endpoints
+    assert conn.closed
+
+
 def test_mtls_certificate_cache_rejects_cert_identity_mismatch():
     resolver = CellIdentityResolver(local_fqcn="server", prefix_identity_map={"site-1": "site-1"})
     manager = CredentialManager(Endpoint("server"), identity_resolver=resolver, enforce_identity=True)

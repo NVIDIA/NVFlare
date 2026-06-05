@@ -407,18 +407,17 @@ class ConnManager(ConnMonitor):
             )
 
         conn_props = sfm_conn.conn.get_conn_properties()
-        # Only enforce on incoming (passive) connections: the authenticated peer CN is
-        # the connecting peer's identity, which is what could spoof a victim's endpoint_name.
-        # The active side that dials out to a known URL has no authenticated peer CN to bind
-        # against for some drivers (e.g. gRPC sets PEER_CN to "N/A"/None on the client side),
-        # and server impersonation there is already covered by TLS CA validation.
-        if sfm_conn.conn.connector.mode == Mode.PASSIVE and is_mtls_connection(sfm_conn.conn.connector.params):
+        # Passive mTLS connections must always present the connecting peer's CN.
+        # Active mTLS connections enforce the same binding when the driver exposes
+        # a real peer CN; gRPC active-side connections may report "N/A"/None.
+        if is_mtls_connection(sfm_conn.conn.connector.params):
             peer_cn = get_param(conn_props, DriverParams.PEER_CN)
-            try:
-                self.identity_resolver.require_match(endpoint_name, peer_cn, f"connection {sfm_conn.get_name()}")
-            except ValueError as ex:
-                sfm_conn.conn.close()
-                raise CommError(CommError.BAD_DATA, str(ex))
+            if sfm_conn.conn.connector.mode == Mode.PASSIVE or (peer_cn and peer_cn != "N/A"):
+                try:
+                    self.identity_resolver.require_match(endpoint_name, peer_cn, f"connection {sfm_conn.get_name()}")
+                except ValueError as ex:
+                    sfm_conn.conn.close()
+                    raise CommError(CommError.BAD_DATA, str(ex))
 
         endpoint = Endpoint(endpoint_name, data)
         endpoint.state = EndpointState.READY
