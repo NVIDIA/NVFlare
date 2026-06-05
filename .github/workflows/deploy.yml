@@ -35,7 +35,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: '22.12'
           cache: npm
           cache-dependency-path: "${{ env.site_path }}/package-lock.json"
 
