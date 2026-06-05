@@ -119,6 +119,22 @@ def test_identity_resolver_rejects_unresolvable_endpoint_identity():
         resolver.require_match(".", "site-1", "connection test")
 
 
+def test_identity_resolver_accepts_authenticated_admin_client_identity():
+    resolver = CellIdentityResolver(local_fqcn="server")
+
+    resolver.require_match("_admin_9af49fef-235f-41bd-9296-12fd09eacb2a", "admin@nvidia.com", "connection admin")
+
+
+def test_identity_resolver_rejects_admin_like_endpoint_without_authenticated_identity():
+    resolver = CellIdentityResolver(local_fqcn="server")
+
+    with pytest.raises(ValueError, match="authenticated mTLS peer common name"):
+        resolver.require_match("_admin_9af49fef-235f-41bd-9296-12fd09eacb2a", None, "connection admin")
+
+    with pytest.raises(ValueError, match="requires identity"):
+        resolver.require_match("_admin_not-a-uuid", "admin@nvidia.com", "connection admin")
+
+
 def test_mtls_handshake_accepts_job_cell_with_parent_cert_identity():
     manager = _conn_manager(identity_map={"site-1": "site-1"})
     conn = _FakeConnection(peer_cn="site-1")

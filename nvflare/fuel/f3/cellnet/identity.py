@@ -21,6 +21,7 @@ from nvflare.apis.fl_constant import ConnectionSecurity
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.drivers.net_utils import SECURE_SCHEMES
+from nvflare.fuel.utils.admin_name_utils import is_valid_admin_client_name
 from nvflare.fuel.utils.argument_utils import str2bool
 
 
@@ -146,6 +147,10 @@ class CellIdentityResolver:
 
         if not peer_cn or peer_cn == "N/A":
             raise ValueError(f"{peer_desc} does not have an authenticated mTLS peer common name")
+
+        # Admin client cell names are per-session random IDs; the authenticated user is the cert CN.
+        if is_valid_admin_client_name(fqcn):
+            return
 
         if peer_cn != expected_cn:
             raise ValueError(
