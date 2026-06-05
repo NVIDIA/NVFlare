@@ -72,9 +72,6 @@ def make_financial_phrase_dataset(
         format_prompt_completion,
     )
 
-    if fp8:
-        _add_pad_token(tokenizer)
-
     dataset = load_dataset("json", data_files=data_file, split="train")
     if limit_dataset_samples is not None:
         sample_count = min(limit_dataset_samples, len(dataset))
@@ -84,7 +81,14 @@ def make_financial_phrase_dataset(
             dataset = dataset.select(range(sample_count))
 
     eos_token_id = getattr(tokenizer, "eos_token_id", 0)
-    pad_token_id = _add_pad_token(tokenizer) or eos_token_id
+    pad_token_id = getattr(tokenizer, "pad_token_id", None)
+    if fp8 or pad_token_id is None:
+        added_pad_token_id = _add_pad_token(tokenizer)
+        pad_token_id = (
+            added_pad_token_id if added_pad_token_id is not None else getattr(tokenizer, "pad_token_id", None)
+        )
+    if pad_token_id is None:
+        pad_token_id = eos_token_id
 
     def formatting_func(example):
         prompt = _build_prompt(example["sentence"])

@@ -19,7 +19,7 @@ import os
 import shlex
 import sys
 from contextlib import contextmanager
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -254,6 +254,31 @@ def test_nemo_peft_automodel_config_uses_helper_files(tmp_path):
     assert "peft_config" not in config["model"]
 
 
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to import the AutoModel client helper")
+def test_nemo_peft_automodel_env_preserves_existing_pythonpath(monkeypatch):
+    client_module = _load_client_module()
+    parent_paths = ["/parent/path-one", "/parent/path-two"]
+    monkeypatch.setenv("PYTHONPATH", os.pathsep.join(parent_paths))
+
+    env = client_module._build_subprocess_env()
+
+    assert env["PYTHONPATH"].split(os.pathsep) == [_example_dir()] + parent_paths
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to import the AutoModel client helper")
+def test_nemo_peft_latest_adapter_dir_prefers_numeric_step_when_mtime_ties(tmp_path):
+    client_module = _load_client_module()
+    checkpoint_dir = tmp_path / "checkpoints"
+    step_1 = checkpoint_dir / "step_1"
+    step_10 = checkpoint_dir / "step_10"
+    for adapter_dir in (step_1, step_10):
+        adapter_dir.mkdir(parents=True)
+        (adapter_dir / "adapter_model.safetensors").write_text("")
+        os.utime(adapter_dir, (1000, 1000))
+
+    assert client_module._latest_adapter_dir(str(checkpoint_dir)) == str(step_10)
+
+
 def test_nemo_peft_dataset_prompt_matches_notebook_inference():
     example_dir = _example_dir()
     spec = importlib.util.spec_from_file_location(
@@ -268,6 +293,58 @@ def test_nemo_peft_dataset_prompt_matches_notebook_inference():
     )
     assert module._clean_label(" Positive ") == " positive"
     assert inspect.signature(module.make_financial_phrase_dataset).parameters["use_chat_template"].default is False
+
+
+def test_nemo_peft_dataset_adds_pad_token_once_for_fp8(monkeypatch):
+    example_dir = _example_dir()
+    spec = importlib.util.spec_from_file_location(
+        "nemo_peft_dataset", os.path.join(example_dir, "automodel_financial_phrase_dataset.py")
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+
+    class FakeDataset(list):
+        @property
+        def column_names(self):
+            return ["sentence", "label"]
+
+        def select(self, indices):
+            return FakeDataset([self[index] for index in indices])
+
+        def map(self, fn, batched=False, remove_columns=None):
+            return [fn(example) for example in self]
+
+    dataset_module = ModuleType("datasets")
+    dataset_module.load_dataset = lambda *args, **kwargs: FakeDataset(
+        [{"sentence": "The agreement is valid for four years .", "label": " neutral"}]
+    )
+    formatting_module = ModuleType("formatting_utils")
+    pad_calls = []
+
+    def _add_pad_token(tokenizer):
+        pad_calls.append(True)
+        tokenizer.pad_token_id = 123
+        return 123
+
+    formatting_module._add_pad_token = _add_pad_token
+    formatting_module.format_chat_template = lambda **kwargs: kwargs
+    formatting_module.format_prompt_completion = lambda **kwargs: kwargs
+    monkeypatch.setitem(sys.modules, "datasets", dataset_module)
+    monkeypatch.setitem(sys.modules, "nemo_automodel", ModuleType("nemo_automodel"))
+    monkeypatch.setitem(sys.modules, "nemo_automodel.components", ModuleType("components"))
+    monkeypatch.setitem(sys.modules, "nemo_automodel.components.datasets", ModuleType("datasets"))
+    monkeypatch.setitem(sys.modules, "nemo_automodel.components.datasets.llm", ModuleType("llm"))
+    monkeypatch.setitem(
+        sys.modules,
+        "nemo_automodel.components.datasets.llm.formatting_utils",
+        formatting_module,
+    )
+
+    result = module.make_financial_phrase_dataset(SimpleNamespace(eos_token_id=2), "train.jsonl", fp8=True)
+
+    assert len(pad_calls) == 1
+    assert result[0]["pad_token_id"] == 123
 
 
 def test_nemo_peft_dataset_balances_limited_training_window():

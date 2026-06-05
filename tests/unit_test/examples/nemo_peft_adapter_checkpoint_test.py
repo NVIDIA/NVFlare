@@ -107,7 +107,6 @@ def test_client_builds_full_adapter_update():
     automodel_peft_client = _load_example_module("automodel_peft_client")
 
     params_type, params = automodel_peft_client._build_param_update(
-        {"model.layer.lora_A.weight": torch.full((2, 2), 0.2)},
         {"model.layer.lora_A.weight": torch.full((2, 2), 0.5)},
         torch.device("cpu"),
     )

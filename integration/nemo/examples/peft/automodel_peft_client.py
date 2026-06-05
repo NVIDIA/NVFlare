@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shlex
 import signal
 import subprocess
@@ -278,8 +279,22 @@ def _latest_adapter_dir(checkpoint_dir: str) -> str | None:
             candidates.append(root)
     if not candidates:
         return None
-    candidates.sort(key=lambda path: os.path.getmtime(path), reverse=True)
+    candidates.sort(key=_adapter_dir_sort_key, reverse=True)
     return candidates[0]
+
+
+def _adapter_dir_sort_key(path: str) -> tuple[int, float, str]:
+    match = re.search(r"(\d+)$", os.path.basename(path))
+    step = int(match.group(1)) if match else -1
+    return step, os.path.getmtime(path), path
+
+
+def _build_subprocess_env() -> dict[str, str]:
+    env = os.environ.copy()
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    existing_pythonpath = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = f"{script_dir}{os.pathsep}{existing_pythonpath}" if existing_pythonpath else script_dir
+    return env
 
 
 def _run_automodel_round(args, round_dir: str, incoming_state: Mapping[str, torch.Tensor]) -> tuple[dict, dict, int]:
@@ -306,9 +321,7 @@ def _run_automodel_round(args, round_dir: str, incoming_state: Mapping[str, torc
         )
         command.extend(shlex.split(extra_args))
 
-    env = os.environ.copy()
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    env["PYTHONPATH"] = script_dir
+    env = _build_subprocess_env()
 
     print(f"Running NeMo AutoModel: {shlex.join(command)}")
     subprocess.run(command, cwd=round_dir, check=True, env=env)
@@ -352,7 +365,7 @@ def _move_tensor_params(params: Mapping[str, Any], device: torch.device) -> Orde
 
 
 def _build_param_update(
-    input_params: Mapping[str, Any], updated_params: Mapping[str, Any], device: torch.device
+    updated_params: Mapping[str, Any], device: torch.device
 ) -> tuple[flare.ParamsType, OrderedDict]:
     return flare.ParamsType.FULL, _move_tensor_params(updated_params, device)
 
@@ -388,7 +401,7 @@ def main():
         if not updated_state:
             raise RuntimeError("No common adapter keys between the received and updated adapter states.")
         updated_params = adapter_checkpoint.add_model_prefix(updated_state)
-        params_type, params = _build_param_update(input_model.params or {}, updated_params, server_tensor_device)
+        params_type, params = _build_param_update(updated_params, server_tensor_device)
         meta = {FLMetaKey.NUM_STEPS_CURRENT_ROUND: steps}
         flare.send(flare.FLModel(params_type=params_type, params=params, metrics=metrics, meta=meta))
         print(
