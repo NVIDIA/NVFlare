@@ -208,11 +208,15 @@ class JobLogReceiver(Widget):
             return
 
         file_path = stream_ctx.get(_KEY_RECV_PATH)
+        log_type = self._sanitize_path_component(
+            LogStreamer.get_file_name(stream_ctx) or WorkspaceConstants.LOG_FILE_NAME
+        )
         if not file_path:
+            if log_type == WorkspaceConstants.ERROR_LOG_FILE_NAME:
+                return
             self.log_warning(fl_ctx, f"No log data received from {client} for job {job_id}")
             return
 
-        log_type = LogStreamer.get_file_name(stream_ctx)
         engine = fl_ctx.get_engine()
         job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
         if job_manager is None:
