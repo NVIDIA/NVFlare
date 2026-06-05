@@ -15,6 +15,7 @@ import collections
 import copy
 import json
 import os
+import sys
 
 import pytest
 import yaml
@@ -102,6 +103,12 @@ class TestPOCCommands:
         assert my_env["CUDA_VISIBLE_DEVICES"] == "0"
         assert "GPU2USE" not in my_env
         assert "SVR_NAME" not in my_env
+
+    def test_prepare_env_prefers_cli_python_dir(self, monkeypatch):
+        monkeypatch.setenv("PATH", "/usr/bin")
+        my_env = prepare_env("site-1", [], {})
+
+        assert my_env["PATH"].split(os.pathsep)[0] == os.path.dirname(sys.executable)
 
     def test_get_package_command(self):
         cmd = get_service_command(SC.CMD_START, "/tmp/nvflare/poc", SC.FLARE_SERVER, {})

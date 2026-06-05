@@ -2050,14 +2050,21 @@ def _build_commands(
     return _sort_service_cmds(cmd_type, service_commands, service_config)
 
 
+def _env_with_cli_python_path() -> Dict[str, str]:
+    my_env = os.environ.copy()
+    python_dir = os.path.dirname(sys.executable)
+    if python_dir:
+        path = my_env.get("PATH", "")
+        my_env["PATH"] = os.pathsep.join([python_dir, path]) if path else python_dir
+    return my_env
+
+
 def prepare_env(service_name, gpu_ids: Optional[List[int]], service_config: Dict):
-    my_env = None
+    my_env = _env_with_cli_python_path()
     if gpu_ids:
-        my_env = os.environ.copy()
         my_env["CUDA_VISIBLE_DEVICES"] = ",".join([str(gid) for gid in gpu_ids])
 
     if service_config.get(SC.IS_DOCKER_RUN):
-        my_env = os.environ.copy() if my_env is None else my_env
         if gpu_ids:
             my_env["GPU2USE"] = f'--gpus="device={my_env["CUDA_VISIBLE_DEVICES"]}"'
 
@@ -2106,7 +2113,7 @@ def async_process(service_name, cmd_path, gpu_ids: Optional[List[int]], service_
 
 
 def sync_process(service_name, cmd_path):
-    my_env = os.environ.copy()
+    my_env = _env_with_cli_python_path()
     subprocess.run(cmd_path.split(" "), env=my_env)
 
 
