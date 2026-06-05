@@ -80,7 +80,7 @@ def define_parser():
     parser.add_argument(
         "--server_tensor_device",
         default="cpu",
-        help="Outgoing adapter DIFF tensor device for the Client API script: auto, cpu, cuda:0, etc.",
+        help="Outgoing adapter tensor device for the Client API script: auto, cpu, cuda:0, etc.",
     )
     parser.add_argument("--mock_delta", type=float, default=0.01)
     return parser.parse_args()
@@ -223,7 +223,7 @@ def create_recipe(args):
         launch_external_process=True,
         command="python3 -u",
         server_expected_format=ExchangeFormat.PYTORCH,
-        params_transfer_type=TransferType.DIFF,
+        params_transfer_type=TransferType.FULL,
         key_metric="",
         launch_once=False,
         client_memory_gc_rounds=1,

@@ -185,15 +185,29 @@ python job.py \
 
 Use `--backend=mock` for a CPU/static smoke of NVFlare adapter exchange only. This does not run NeMo AutoModel.
 
-## Reproducing the H100 30B Result
+## Adapter Continuity Across Rounds
 
-The default 4B Edge path keeps the example approachable. For a full single-H100 run with the larger
-`nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16` model, use a one-client, one-round run so memory is not multiplied across
-concurrent clients. The verified run used:
+This example uses multi-round FedAvg for the federated setting. The external AutoModel process may restart on each
+client task to release GPU memory, but the fine-tuning state does not restart from the initial adapter:
+
+1. The server sends the current global LoRA adapter at the start of every round.
+2. The client saves that adapter as `incoming_adapter`.
+3. AutoModel builds the base model, injects LoRA modules, and warm-starts those modules from `incoming_adapter`.
+4. The client sends the full updated adapter.
+5. FedAvg averages the adapter tensors and replaces the global adapter with the aggregate.
+
+Use `--backend=mock` for a CPU/static continuity check of the same Recipe, Client API, and full-adapter path before
+running GPU training.
+
+## Reproducing the H100 30B Smoke Result
+
+The default 4B Edge path keeps the example approachable and uses a true federated setting above. The larger
+`nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16` result below was a single-client, one-round H100 smoke of the model,
+adapter, prediction, and exact-evaluation path. It is not a federated benchmark. The verified smoke run used:
 
 - Model: `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16`.
 - GPU: one H100, with GPU memory around 64-68 GiB during training/evaluation.
-- Federated setup: `n_clients=1`, `num_rounds=1`, `num_threads=1`.
+- Setup: `n_clients=1`, `num_rounds=1`, `num_threads=1`.
 - Data: original shuffled Financial PhraseBank training split, not label-balanced.
 - Train rows: 3100 total, with 1852 neutral, 866 positive, and 382 negative examples.
 - PEFT: LoRA rank 8, alpha 16, dropout 0.05, target modules `all-linear`.
@@ -232,7 +246,7 @@ python prepare_initial_adapter.py \
   --device_map auto
 ```
 
-Run the full H100 training:
+Run the single-client H100 smoke:
 
 ```bash
 python job.py \
@@ -257,6 +271,10 @@ python job.py \
   --initial_adapter_ckpt=models/nemotron3_nano_30b_lora_init_rank8.pt \
   --model_name_or_path "${H100_MODEL_NAME_OR_PATH}"
 ```
+
+For a federated 30B run, keep clients sequential but use multiple clients and rounds, for example
+`--n_clients=3 --num_rounds=3 --num_threads=1`, with a three-client train split. This preserves the federated FedAvg
+setting without multiplying GPU memory across simultaneous client processes.
 
 Convert the final server adapter and run the notebook prediction prompts:
 
@@ -290,7 +308,7 @@ python evaluate_sentiment.py \
   --batch_size 8
 ```
 
-The June 5, 2026 H100 run produced the following exact-label results:
+The June 5, 2026 H100 smoke run produced the following exact-label results:
 
 | Model / scoring | Val accuracy | Val Macro-F1 | Test accuracy | Test Macro-F1 | Test prediction counts |
 | --- | ---: | ---: | ---: | ---: | --- |

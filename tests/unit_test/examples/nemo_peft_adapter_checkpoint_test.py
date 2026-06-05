@@ -101,18 +101,18 @@ def test_adapter_checkpoint_metadata_is_weights_only_safe(tmp_path):
 
 
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for PEFT adapter checkpoint tests")
-def test_client_builds_explicit_adapter_diff_update():
+def test_client_builds_full_adapter_update():
     import torch
 
     automodel_peft_client = _load_example_module("automodel_peft_client")
 
     params_type, params = automodel_peft_client._build_param_update(
-        {"model.layer.lora_A.weight": torch.zeros((2, 2))},
+        {"model.layer.lora_A.weight": torch.full((2, 2), 0.2)},
         {"model.layer.lora_A.weight": torch.full((2, 2), 0.5)},
         torch.device("cpu"),
     )
 
-    assert params_type == automodel_peft_client.flare.ParamsType.DIFF
+    assert params_type == automodel_peft_client.flare.ParamsType.FULL
     assert params["model.layer.lora_A.weight"].device.type == "cpu"
     assert torch.equal(params["model.layer.lora_A.weight"], torch.full((2, 2), 0.5))
 

@@ -145,7 +145,7 @@ def test_nemo_peft_recipe_exports_modern_fedavg_config(tmp_path):
     assert recipe.launch_external_process is True
     assert recipe.launch_once is False
     assert recipe.server_expected_format == "pytorch"
-    assert recipe.params_transfer_type == "DIFF"
+    assert recipe.params_transfer_type == "FULL"
 
     job_dir = tmp_path / "exported" / "nemotron3-nano-peft"
     with open(job_dir / "app_site-1" / "config" / "config_fed_client.json") as f:
@@ -173,6 +173,38 @@ def test_nemo_peft_recipe_exports_modern_fedavg_config(tmp_path):
         if c["path"] == "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor"
     )
     assert persistor["args"]["load_device"] == "cpu"
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for multi-round adapter aggregation checks")
+def test_nemo_peft_full_adapter_fedavg_is_cumulative_across_rounds():
+    import torch
+
+    from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
+    from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+    from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+
+    model = FLModel(
+        params_type=ParamsType.FULL,
+        params={
+            "model.layer.lora_A.weight": torch.zeros((2, 2)),
+            "model.layer.lora_B.weight": torch.ones((2, 2)),
+        },
+    )
+
+    for round_idx in range(3):
+        helper = WeightedAggregationHelper()
+        for site_name in ("site-1", "site-2"):
+            helper.add(
+                data={key: value + 0.5 for key, value in model.params.items()},
+                weight=1.0,
+                contributor_name=site_name,
+                contribution_round=round_idx,
+            )
+        model_update = FLModel(params_type=ParamsType.FULL, params=helper.get_result())
+        model = FLModelUtils.update_model(model, model_update)
+
+    assert torch.equal(model.params["model.layer.lora_A.weight"], torch.full((2, 2), 1.5))
+    assert torch.equal(model.params["model.layer.lora_B.weight"], torch.full((2, 2), 2.5))
 
 
 def test_nemo_peft_sim_env_is_sequential_by_default(tmp_path):

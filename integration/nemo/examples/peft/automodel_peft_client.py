@@ -92,7 +92,7 @@ def define_parser():
         "--server_tensor_device",
         default="cpu",
         help=(
-            "Device for outgoing adapter DIFF tensors. The default keeps simulator server aggregation on CPU. "
+            "Device for outgoing adapter tensors. The default keeps simulator server aggregation on CPU. "
             "Use 'auto' to match CUDA visibility, or set cuda:0 explicitly if the server should receive GPU tensors."
         ),
     )
@@ -354,21 +354,7 @@ def _move_tensor_params(params: Mapping[str, Any], device: torch.device) -> Orde
 def _build_param_update(
     input_params: Mapping[str, Any], updated_params: Mapping[str, Any], device: torch.device
 ) -> tuple[flare.ParamsType, OrderedDict]:
-    if not input_params:
-        return flare.ParamsType.FULL, _move_tensor_params(updated_params, device)
-
-    diff_params = OrderedDict()
-    for key, original_value in input_params.items():
-        if key not in updated_params:
-            continue
-        updated_value = updated_params[key]
-        if isinstance(original_value, torch.Tensor) and isinstance(updated_value, torch.Tensor):
-            diff_params[key] = (updated_value.to(original_value.device) - original_value).detach().to(device)
-        else:
-            diff_params[key] = updated_value - original_value
-    if not diff_params:
-        raise RuntimeError("No common adapter keys between received and updated parameters.")
-    return flare.ParamsType.DIFF, diff_params
+    return flare.ParamsType.FULL, _move_tensor_params(updated_params, device)
 
 
 def main():
