@@ -124,7 +124,7 @@ python job.py \
   --initial_adapter_ckpt=models/nemotron3_nano_lora_init.pt
 ```
 
-To reproduce the H100 result below, run three rounds with 200 local steps per client:
+To reproduce the H100 result below, run three rounds with 900 local steps per client and a lower learning rate:
 
 ```bash
 python job.py \
@@ -132,9 +132,10 @@ python job.py \
   --num_rounds=3 \
   --num_threads=1 \
   --gpu="[0]" \
-  --max_steps=200 \
+  --max_steps=900 \
   --seq_length=512 \
   --limit_validation_samples=256 \
+  --learning_rate=5e-5 \
   --no-use_chat_template \
   --initial_adapter_ckpt=models/nemotron3_nano_lora_init.pt
 ```
@@ -204,15 +205,15 @@ running GPU training.
 The June 5, 2026 H100 validation used the default 4B Edge model and the real three-client, three-round federated
 workflow:
 
-- Code: PR branch `codex/nemo-peft-nemotron3` at commit `ebb3c4118f`.
+- Code: PR branch `codex/nemo-peft-nemotron3` at commit `8cc180097`.
 - Container: `nvcr.io/nvidia/nemo-automodel:26.04` with NeMo AutoModel `0.4.0+9687b04c`.
 - Model: `nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16`.
 - Setup: `n_clients=3`, `num_rounds=3`, `num_threads=1`, `--gpu="[0]"`.
 - Transfer: full LoRA adapter tensors with `TransferType.FULL`.
 - Data: Financial PhraseBank split into three `alpha=10.0` client files.
-- Local training: 200 steps per client per round, label-balanced capped training window, validation capped at 256 rows.
+- Local training: 900 steps per client per round, label-balanced capped training window, validation capped at 256 rows.
 - PEFT: LoRA rank 8, alpha 16, dropout 0.05, target modules `all-linear`.
-- Optimizer settings: learning rate `2e-4`, micro/global batch size 1, gradient accumulation 1.
+- Optimizer settings: learning rate `5e-5`, micro/global batch size 1, gradient accumulation 1.
 - Prompt format: raw prompt-completion text, `"{sentence} sentiment:"`, no chat template.
 - Exact evaluation: batch size 8, label choices `neutral`, `positive`, and `negative`.
 
@@ -226,10 +227,10 @@ Before and after exact-label scoring:
 | Model / scoring | Val accuracy | Val Macro-F1 | Test accuracy | Test Macro-F1 | Test prediction counts |
 | --- | ---: | ---: | ---: | ---: | --- |
 | 4B BF16 base, no adapter | 0.2745 | 0.2187 | 0.2753 | 0.2198 | positive 808, negative 145, neutral 17 |
-| 4B BF16 + 3-round FL LoRA | 0.7101 | 0.6082 | 0.7000 | 0.6057 | neutral 759, negative 99, positive 112 |
-| 4B BF16 + 3-round FL LoRA, validation-selected label bias | 0.7320 | 0.6658 | 0.7237 | 0.6562 | neutral 672, positive 168, negative 130 |
+| 4B BF16 + 3-round FL LoRA | 0.7423 | 0.6695 | 0.7361 | 0.6605 | neutral 721, negative 83, positive 166 |
+| 4B BF16 + 3-round FL LoRA, validation-selected label bias | 0.7513 | 0.7242 | 0.7258 | 0.6998 | neutral 538, positive 304, negative 128 |
 
-The validation-selected bias adds `+2.9` to the positive label score and `+3.8` to the negative label score after model
+The validation-selected bias adds `+4.7` to the positive label score and `+5.3` to the negative label score after model
 scoring. It is post-hoc calibration only; it does not change the trained adapter.
 
 The same run reproduced the notebook-style prediction prompts with all expected labels:
