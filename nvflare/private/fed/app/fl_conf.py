@@ -331,23 +331,29 @@ class FLClientStarterConfiger(JsonConfigurator):
         client = self.config_data["client"]
         client_auth_identity = client.get(ConnPropKey.AUTH_IDENTITY, client.get(ConnPropKey.IDENTITY, client_name))
         servers = self.config_data.get("servers", [])
-        server_identity = (
-            servers[0].get(ConnPropKey.AUTH_IDENTITY, servers[0].get(ConnPropKey.IDENTITY)) if servers else None
-        )
+        server = servers[0] if servers else {}
+        server_identity = server.get(ConnPropKey.AUTH_IDENTITY, server.get(ConnPropKey.IDENTITY))
+        service = server.get("service", {})
+        root_conn_security = client.get(ConnPropKey.CONNECTION_SECURITY)
+        root_conn_props = {
+            ConnPropKey.FQCN: FQCN.ROOT_SERVER,
+            ConnPropKey.IDENTITY: server_identity,
+            ConnPropKey.AUTH_IDENTITY: server_identity,
+            ConnPropKey.CONNECTION_SECURITY: root_conn_security,
+        }
+        root_scheme = service.get(ConnPropKey.SCHEME)
+        root_target = service.get("target")
+        if root_scheme and root_target:
+            root_conn_props[ConnPropKey.URL] = make_url(
+                root_scheme, root_target, root_conn_security != ConnectionSecurity.CLEAR
+            )
 
         if hasattr(self.args, "job_id") and self.args.job_id:
             # this is CJ
             sp_scheme = self.args.sp_scheme
             sp_target = self.args.sp_target
             root_url = f"{sp_scheme}://{sp_target}"
-            root_conn_props = {
-                ConnPropKey.FQCN: FQCN.ROOT_SERVER,
-                ConnPropKey.IDENTITY: server_identity,
-                ConnPropKey.AUTH_IDENTITY: server_identity,
-                ConnPropKey.URL: root_url,
-                ConnPropKey.CONNECTION_SECURITY: client.get(ConnPropKey.CONNECTION_SECURITY),
-            }
-            set_scope_property(client_name, ConnPropKey.ROOT_CONN_PROPS, root_conn_props)
+            root_conn_props[ConnPropKey.URL] = root_url
 
             cp_conn_props = {
                 ConnPropKey.FQCN: cp_fqcn,
@@ -363,6 +369,7 @@ class FLClientStarterConfiger(JsonConfigurator):
                 ConnPropKey.IDENTITY: client_name,
                 ConnPropKey.AUTH_IDENTITY: client_auth_identity,
             }
+        set_scope_property(client_name, ConnPropKey.ROOT_CONN_PROPS, root_conn_props)
         set_scope_property(client_name, ConnPropKey.CP_CONN_PROPS, cp_conn_props)
 
     def start_config(self, config_ctx: ConfigContext):

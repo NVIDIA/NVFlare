@@ -97,6 +97,13 @@ class CellIdentityResolver:
     def _is_descendant(fqcn: str, prefix: str) -> bool:
         return fqcn.startswith(prefix + ".")
 
+    def _is_local_descendant_with_ancestor_prefix(self, fqcn: str, prefix: str) -> bool:
+        return (
+            self.local_fqcn
+            and self._is_descendant(fqcn, self.local_fqcn)
+            and self._is_descendant(self.local_fqcn, prefix)
+        )
+
     def _resolve_local_child_identity(self, fqcn: str) -> Optional[str]:
         if not self.local_fqcn or not self._is_descendant(fqcn, self.local_fqcn):
             return None
@@ -119,6 +126,9 @@ class CellIdentityResolver:
         parts = FQCN.split(fqcn)
         for i in range(len(parts), 0, -1):
             prefix = FQCN.join(parts[:i])
+            if self._is_local_descendant_with_ancestor_prefix(fqcn, prefix):
+                continue
+
             identity = self.prefix_identity_map.get(prefix)
             if identity:
                 return identity

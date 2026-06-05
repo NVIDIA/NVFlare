@@ -91,6 +91,27 @@ def test_identity_resolver_maps_relay_child_to_child_identity_without_configured
     assert resolver.resolve("relay-1.site-1") == "site-1"
 
 
+def test_identity_resolver_maps_nested_relay_child_to_child_identity_despite_parent_prefix():
+    resolver = CellIdentityResolver(local_fqcn="relay-1.relay-2", prefix_identity_map={"relay-1": "relay-1"})
+
+    assert resolver.resolve("relay-1.relay-2.relay-3") == "relay-3"
+    resolver.require_match("relay-1.relay-2.relay-3", "relay-3", "connection relay-3")
+    with pytest.raises(ValueError, match="relay-1"):
+        resolver.require_match("relay-1.relay-2.relay-3", "relay-1", "connection relay-3")
+
+
+def test_identity_resolver_uses_configured_identity_for_nested_relay_child():
+    resolver = CellIdentityResolver(
+        local_fqcn="relay-1.relay-2",
+        prefix_identity_map={
+            "relay-1": "relay-1",
+            "relay-1.relay-2.relay-3": "custom-relay-3",
+        },
+    )
+
+    assert resolver.resolve("relay-1.relay-2.relay-3") == "custom-relay-3"
+
+
 def test_identity_resolver_rejects_unresolvable_endpoint_identity():
     resolver = CellIdentityResolver(local_fqcn="server")
 
