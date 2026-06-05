@@ -124,7 +124,17 @@ python job.py \
   --initial_adapter_ckpt=models/nemotron3_nano_lora_init.pt
 ```
 
-To reproduce the H100 result below, run three rounds with 900 local steps per client and a lower learning rate:
+To reproduce the 30B H100 result below, prepare the initial adapter from the 30B model, then run three rounds with
+300 local steps per client and a lower learning rate:
+
+```bash
+python prepare_initial_adapter.py \
+  --model_name_or_path nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16 \
+  --output models/nemotron3_nano_30b_lora_init.pt \
+  --lora_rank 8 \
+  --lora_alpha 16 \
+  --device_map auto
+```
 
 ```bash
 python job.py \
@@ -132,12 +142,13 @@ python job.py \
   --num_rounds=3 \
   --num_threads=1 \
   --gpu="[0]" \
-  --max_steps=900 \
+  --model_name_or_path nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16 \
+  --max_steps=300 \
   --seq_length=512 \
   --limit_validation_samples=256 \
   --learning_rate=5e-5 \
   --no-use_chat_template \
-  --initial_adapter_ckpt=models/nemotron3_nano_lora_init.pt
+  --initial_adapter_ckpt=models/nemotron3_nano_30b_lora_init.pt
 ```
 
 Use `--no-balance_train_labels` if you want the capped training subset to preserve the original site-file order.
@@ -160,7 +171,8 @@ Diluted EPS rose to EUR3 .68 from EUR0 .50 . sentiment: positive
 Profit before taxes decreased by 9 % to EUR 187.8 mn in the first nine months of 2008 , compared to EUR 207.1 mn a year earlier . sentiment: negative
 ```
 
-For split-level accuracy and Macro-F1, score the validation and test files by exact label log probability:
+For split-level accuracy and Macro-F1, score the validation and test files by exact label log probability. Use the
+same `--model_name_or_path` that was used to create and train the adapter; the command below shows the default 4B path:
 
 ```bash
 python evaluate_sentiment.py \
@@ -202,36 +214,36 @@ running GPU training.
 
 ## Reproducing the H100 Three-Round FL Result
 
-The June 5, 2026 H100 validation used the default 4B Edge model and the real three-client, three-round federated
-workflow:
+The June 5, 2026 H100 validation used the 30B-A3B model and the real three-client, three-round federated workflow:
 
-- Code: PR branch `codex/nemo-peft-nemotron3` at commit `8cc180097`.
+- Code: PR branch `codex/nemo-peft-nemotron3` at commit `ddd548cec`.
 - Container: `nvcr.io/nvidia/nemo-automodel:26.04` with NeMo AutoModel `0.4.0+9687b04c`.
-- Model: `nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16`.
+- Model: `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16`; the H100 validation used a local cached copy at
+  `/base_out/combined_30b_with_4b_tokenizer_20260605` inside the container.
 - Setup: `n_clients=3`, `num_rounds=3`, `num_threads=1`, `--gpu="[0]"`.
 - Transfer: full LoRA adapter tensors with `TransferType.FULL`.
 - Data: Financial PhraseBank split into three `alpha=10.0` client files.
-- Local training: 900 steps per client per round, label-balanced capped training window, validation capped at 256 rows.
+- Local training: 300 steps per client per round, label-balanced capped training window, validation capped at 256 rows.
 - PEFT: LoRA rank 8, alpha 16, dropout 0.05, target modules `all-linear`.
 - Optimizer settings: learning rate `5e-5`, micro/global batch size 1, gradient accumulation 1.
 - Prompt format: raw prompt-completion text, `"{sentence} sentiment:"`, no chat template.
 - Exact evaluation: batch size 8, label choices `neutral`, `positive`, and `negative`.
 
-FedAvg ran all three rounds and each client loaded 184/184 incoming adapter tensors at the start of each local segment,
-including rounds 1 and 2. The AutoModel subprocess restarts between tasks to free GPU memory, but the adapter state is
-the current global adapter, not the initial adapter. LoRA training reported about 8 GiB GPU memory during local steps on
-the H100.
+FedAvg ran all three rounds and clients loaded 12,008/12,008 incoming adapter tensors in later rounds, including
+round 2. The AutoModel subprocess restarts between tasks to free GPU memory, but the adapter state is the current global
+adapter, not the initial adapter. LoRA training reported about 64 GiB GPU memory during local steps on the H100.
 
 Before and after exact-label scoring:
 
 | Model / scoring | Val accuracy | Val Macro-F1 | Test accuracy | Test Macro-F1 | Test prediction counts |
 | --- | ---: | ---: | ---: | ---: | --- |
-| 4B BF16 base, no adapter | 0.2745 | 0.2187 | 0.2753 | 0.2198 | positive 808, negative 145, neutral 17 |
-| 4B BF16 + 3-round FL LoRA | 0.7423 | 0.6695 | 0.7361 | 0.6605 | neutral 721, negative 83, positive 166 |
-| 4B BF16 + 3-round FL LoRA, validation-selected label bias | 0.7513 | 0.7242 | 0.7258 | 0.6998 | neutral 538, positive 304, negative 128 |
+| 30B BF16 base, no adapter | 0.3943 | 0.4410 | 0.4031 | 0.4449 | positive 834, negative 87, neutral 49 |
+| 30B BF16 + 3-round FL LoRA | 0.8570 | 0.8475 | 0.8454 | 0.8391 | neutral 528, positive 281, negative 161 |
+| 30B BF16 + 3-round FL LoRA, validation-selected label bias | 0.8595 | 0.8518 | 0.8423 | 0.8395 | neutral 498, positive 312, negative 160 |
 
-The validation-selected bias adds `+4.7` to the positive label score and `+5.3` to the negative label score after model
-scoring. It is post-hoc calibration only; it does not change the trained adapter.
+The validation-selected bias adds `+1.5` to the positive label score and `+0.0` to the negative label score after model
+scoring. It is post-hoc calibration only; it does not change the trained adapter. The raw adapter result is the main
+before/after number because it does not require post-hoc calibration.
 
 The same run reproduced the notebook-style prediction prompts with all expected labels:
 
@@ -242,10 +254,11 @@ Diluted EPS rose to EUR3 .68 from EUR0 .50 . sentiment: positive
 Profit before taxes decreased by 9 % to EUR 187.8 mn in the first nine months of 2008 , compared to EUR 207.1 mn a year earlier . sentiment: negative
 ```
 
-For 30B-A3B experiments, keep the same Recipe, Client API, and sequential multi-client pattern, but set
-`--model_name_or_path nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16` and prepare the initial adapter from that model. The
-30B BF16 path needs much more GPU memory than the 4B Edge path; use the NVFP4 30B-A3B checkpoint for lower-memory local
-deployment after training.
+For lower-memory experimentation, keep the default 4B Edge model and the same Recipe, Client API, sequential
+multi-client pattern, and full-adapter transfer. The matching 4B H100 reference used 900 local steps per client per
+round and reached validation Macro-F1 0.6695 raw / 0.7242 calibrated and test Macro-F1 0.6605 raw / 0.6998 calibrated.
+For lower-memory local deployment of the 30B-A3B family, use the NVFP4 30B-A3B checkpoint or a merged, quantized tuned
+checkpoint after training.
 
 ## Advanced Path
 
