@@ -49,6 +49,7 @@ from nvflare.fuel.f3.cellnet.core_cell import make_reply as make_cellnet_reply
 from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey, MessageType
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN, FqcnInfo
+from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
@@ -176,9 +177,10 @@ class BaseServer(ABC):
         # get admin port
         admin_port = int(grpc_args.get("admin_port", fl_port))
 
-        root_url = [f"{scheme}://0:{fl_port}"]
+        admin_url = f"{scheme}://0:{admin_port}?{ADMIN_LISTENER_KEY}=true"
+        root_url = [admin_url if admin_port == fl_port else f"{scheme}://0:{fl_port}"]
         if admin_port != fl_port:
-            root_url.append(f"{scheme}://0:{admin_port}")
+            root_url.append(admin_url)
 
         my_fqcn = FQCN.ROOT_SERVER
         auth_identity = grpc_args.get(ConnPropKey.AUTH_IDENTITY)

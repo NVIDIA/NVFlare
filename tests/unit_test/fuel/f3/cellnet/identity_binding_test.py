@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import datetime
+import logging
 from types import SimpleNamespace
 
 import pytest
@@ -22,9 +23,11 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
 from nvflare.apis.fl_constant import ConnectionSecurity
+from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.credential_manager import CERT_CONTENT, CredentialManager
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
-from nvflare.fuel.f3.cellnet.identity import CellIdentityResolver
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessageType, ReturnCode
+from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY, CellIdentityResolver
+from nvflare.fuel.f3.cellnet.utils import make_reply
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.endpoint import Endpoint
@@ -36,7 +39,7 @@ from nvflare.fuel.utils.constants import Mode
 
 
 class _FakeConnection:
-    def __init__(self, peer_cn, conn_security=ConnectionSecurity.MTLS, mode=Mode.PASSIVE):
+    def __init__(self, peer_cn, conn_security=ConnectionSecurity.MTLS, mode=Mode.PASSIVE, admin_listener=False):
         self.name = "CN-test"
         self.closed = False
         self.connector = SimpleNamespace(
@@ -46,6 +49,8 @@ class _FakeConnection:
                 DriverParams.CONNECTION_SECURITY: conn_security,
             },
         )
+        if admin_listener:
+            self.connector.params[ADMIN_LISTENER_KEY] = "true"
         self.conn_props = {}
         if peer_cn is not None:
             self.conn_props[DriverParams.PEER_CN.value] = peer_cn
@@ -77,6 +82,36 @@ def _cert_pem(common_name: str):
 def _conn_manager(local_fqcn="server", identity_map=None):
     resolver = CellIdentityResolver(local_fqcn=local_fqcn, prefix_identity_map=identity_map)
     return ConnManager(Endpoint(local_fqcn), identity_resolver=resolver)
+
+
+class _NoOpStats:
+    def increment(self, *args, **kwargs):
+        pass
+
+    def record_value(self, *args, **kwargs):
+        pass
+
+
+class _EmptyRegistry:
+    def find(self, *args, **kwargs):
+        return None
+
+
+def _receive_test_core_cell(reply):
+    cell = CoreCell.__new__(CoreCell)
+    cell.my_info = SimpleNamespace(fqcn="server")
+    cell.logger = logging.getLogger(__name__)
+    cell.received_msg_counter_pool = _NoOpStats()
+    cell.sent_msg_counter_pool = _NoOpStats()
+    cell.received_msg_size_pool = _NoOpStats()
+    cell.msg_travel_stats_pool = _NoOpStats()
+    cell.in_filter_reg = _EmptyRegistry()
+    cell.out_reply_filter_reg = _EmptyRegistry()
+    cell.message_interceptor = None
+    cell.sent_reply = None
+    cell._process_request = lambda origin, message: reply
+    cell._send_reply = lambda reply, endpoint: setattr(cell, "sent_reply", reply)
+    return cell
 
 
 def test_identity_resolver_maps_job_cell_to_configured_parent_identity():
@@ -170,6 +205,43 @@ def test_mtls_handshake_rejects_spoofed_endpoint_identity():
     assert conn.closed
 
 
+def test_mtls_handshake_rejects_invalid_endpoint_fqcn():
+    manager = _conn_manager(identity_map={"server": "server"})
+    conn = _FakeConnection(peer_cn="server")
+    sfm_conn = SfmConnection(conn, Endpoint("server"))
+
+    with pytest.raises(CommError) as ex:
+        manager.update_endpoint(sfm_conn, {HandshakeKeys.ENDPOINT_NAME: "server."})
+
+    assert ex.value.code == CommError.BAD_DATA
+    assert "server." not in manager.sfm_endpoints
+    assert conn.closed
+
+
+def test_mtls_handshake_rejects_admin_endpoint_on_non_admin_listener():
+    manager = _conn_manager()
+    conn = _FakeConnection(peer_cn="admin@nvidia.com")
+    sfm_conn = SfmConnection(conn, Endpoint("server"))
+
+    with pytest.raises(CommError) as ex:
+        manager.update_endpoint(sfm_conn, {HandshakeKeys.ENDPOINT_NAME: "_admin_9af49fef-235f-41bd-9296-12fd09eacb2a"})
+
+    assert ex.value.code == CommError.BAD_DATA
+    assert "_admin_9af49fef-235f-41bd-9296-12fd09eacb2a" not in manager.sfm_endpoints
+    assert conn.closed
+
+
+def test_mtls_handshake_accepts_admin_endpoint_on_admin_listener():
+    manager = _conn_manager()
+    conn = _FakeConnection(peer_cn="admin@nvidia.com", admin_listener=True)
+    sfm_conn = SfmConnection(conn, Endpoint("server"))
+
+    manager.update_endpoint(sfm_conn, {HandshakeKeys.ENDPOINT_NAME: "_admin_9af49fef-235f-41bd-9296-12fd09eacb2a"})
+
+    assert "_admin_9af49fef-235f-41bd-9296-12fd09eacb2a" in manager.sfm_endpoints
+    assert not conn.closed
+
+
 def test_tls_handshake_does_not_enforce_peer_identity():
     manager = _conn_manager(identity_map={"site-1": "site-1"})
     conn = _FakeConnection(peer_cn=None, conn_security=ConnectionSecurity.TLS)
@@ -224,6 +296,25 @@ def test_mtls_certificate_cache_rejects_cert_identity_mismatch():
     assert "site-1.job-123" not in manager.cert_cache
 
 
+def test_mtls_certificate_request_rejects_spoofed_origin_identity():
+    resolver = CellIdentityResolver(local_fqcn="server", prefix_identity_map={"site-1": "site-1"})
+    manager = CredentialManager(Endpoint("server"), identity_resolver=resolver, enforce_identity=True)
+    manager.local_cert = _cert_pem("server")
+    manager.ca_cert = manager.local_cert
+    message = Message(
+        headers={
+            MessageHeaderKey.ORIGIN: "site-1.job-123",
+            MessageHeaderKey.DESTINATION: "server",
+        },
+        payload={CERT_CONTENT: _cert_pem("attacker")},
+    )
+
+    with pytest.raises(RuntimeError, match="attacker"):
+        manager.process_request(message)
+
+    assert "site-1.job-123" not in manager.cert_cache
+
+
 def test_mtls_certificate_cache_accepts_job_cell_parent_cert_identity():
     resolver = CellIdentityResolver(local_fqcn="server", prefix_identity_map={"site-1": "site-1"})
     manager = CredentialManager(Endpoint("server"), identity_resolver=resolver, enforce_identity=True)
@@ -269,3 +360,26 @@ def test_certificate_cache_access_uses_lock():
     manager._cache_cert("site-1", cert)
     assert manager.get_certificate("site-1") == cert
     assert manager.lock.enter_count == 2
+
+
+def test_failed_certificate_exchange_request_closes_connection_after_reply():
+    cell = _receive_test_core_cell(make_reply(ReturnCode.PROCESS_EXCEPTION))
+    conn = _FakeConnection(peer_cn="site-1")
+    message = Message(
+        headers={
+            MessageHeaderKey.MSG_TYPE: MessageType.REQ,
+            MessageHeaderKey.ORIGIN: "site-1",
+            MessageHeaderKey.DESTINATION: "server",
+            MessageHeaderKey.FROM_CELL: "site-1",
+            MessageHeaderKey.TO_CELL: "server",
+            MessageHeaderKey.CHANNEL: "credential_manager",
+            MessageHeaderKey.TOPIC: "key_exchange",
+            MessageHeaderKey.REPLY_EXPECTED: True,
+            MessageHeaderKey.REQ_ID: "req-1",
+        }
+    )
+
+    CoreCell._process_received_msg(cell, Endpoint("site-1"), conn, message)
+
+    assert cell.sent_reply is not None
+    assert conn.closed

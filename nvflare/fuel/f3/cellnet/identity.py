@@ -24,6 +24,8 @@ from nvflare.fuel.f3.drivers.net_utils import SECURE_SCHEMES
 from nvflare.fuel.utils.admin_name_utils import is_valid_admin_client_name
 from nvflare.fuel.utils.argument_utils import str2bool
 
+ADMIN_LISTENER_KEY = "admin_listener"
+
 
 def get_param(params: dict, key: DriverParams, default=None):
     if not params:
@@ -54,6 +56,13 @@ def is_mtls_config(credentials: dict, secure: bool) -> bool:
 
     conn_security = get_param(credentials, DriverParams.CONNECTION_SECURITY, ConnectionSecurity.MTLS)
     return conn_security == ConnectionSecurity.MTLS
+
+
+def is_admin_listener(params: dict) -> bool:
+    if not params:
+        return False
+
+    return str2bool(params.get(ADMIN_LISTENER_KEY, False))
 
 
 def get_cert_common_name(cert: x509.Certificate) -> Optional[str]:

@@ -220,6 +220,17 @@ def _validate_url(url: str) -> bool:
     return True
 
 
+def _is_failed_cert_exchange(channel: str, topic: str, reply: Message) -> bool:
+    if not reply:
+        return False
+
+    return (
+        channel == _SM_CHANNEL
+        and topic == _SM_TOPIC
+        and reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.PROCESS_EXCEPTION
+    )
+
+
 class _CounterName:
 
     LATE = "late"
@@ -2021,6 +2032,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             channel = message.get_header(MessageHeaderKey.CHANNEL, "")
             topic = message.get_header(MessageHeaderKey.TOPIC, "")
             reply = self._process_request(origin, message)
+            should_close_connection = _is_failed_cert_exchange(channel, topic, reply)
 
             if not reply:
                 self.received_msg_counter_pool.increment(
@@ -2037,6 +2049,8 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 self.received_msg_counter_pool.increment(
                     category=self._stats_category(message), counter_name=_CounterName.REPLY_NOT_EXPECTED
                 )
+                if should_close_connection and connection:
+                    connection.close()
                 return
 
             # send the reply back
@@ -2074,6 +2088,8 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                         reply = r
                         break
             self._send_reply(reply, endpoint)
+            if should_close_connection and connection:
+                connection.close()
         else:
             # the message is either a reply or a return for a previous request: handle replies
             self._process_reply(origin, message, msg_type)
