@@ -1645,7 +1645,7 @@ def start_poc(cmd_args):
         output_error_message(
             "SERVICE_FAILED",
             message="POC service failed to start.",
-            hint=("If this was an admin console, start the POC server and clients first with 'nvflare poc start'."),
+            hint="Start the POC server and clients first with 'nvflare poc start'.",
             exit_code=2,
             detail=str(e),
         )
@@ -1898,10 +1898,7 @@ def _ensure_server_running_for_admin_console(project_config: Dict, service_confi
     fed_learn_port, _ = _get_poc_server_ports(project_config, service_config)
     port_available, _ = _is_local_port_available(fed_learn_port)
     if port_available:
-        raise PocServiceStartError(
-            f"server is not running at {POC_LOCAL_HOST}:{fed_learn_port}; "
-            "start server and client services first with 'nvflare poc start'"
-        )
+        raise PocServiceStartError(f"server is not running at {POC_LOCAL_HOST}:{fed_learn_port}")
 
 
 def setup_service_config(poc_workspace) -> Tuple:
