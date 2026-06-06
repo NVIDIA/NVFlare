@@ -765,6 +765,36 @@ class TestFedAvgRecipeInitialCkpt:
         assert recipe.model["path"] == "my_module.models.SimpleNet"
         assert recipe.model["args"] == {"input_size": 10, "output_size": 5}
 
+    def test_dict_model_config_class_path_takes_precedence(self, mock_file_system, base_recipe_params):
+        """Test that class_path is used when both class_path and path are provided."""
+        model_config = {
+            "class_path": "my_module.models.ClassPathNet",
+            "path": "my_module.models.PathNet",
+            "args": {"input_size": 10},
+        }
+        recipe = FedAvgRecipe(
+            name="test_dict_config_class_path_precedence",
+            model=model_config,
+            **base_recipe_params,
+        )
+
+        assert recipe.model["path"] == "my_module.models.ClassPathNet"
+        assert recipe.model["args"] == {"input_size": 10}
+
+    def test_dict_model_config_explicit_none_class_path_raises(self, mock_file_system, base_recipe_params):
+        """Test that explicit class_path=None does not fall through to path alias."""
+        model_config = {
+            "class_path": None,
+            "path": "my_module.models.PathNet",
+            "args": {"input_size": 10},
+        }
+        with pytest.raises(ValueError, match="'class_path' must be a string"):
+            FedAvgRecipe(
+                name="test_dict_config_none_class_path",
+                model=model_config,
+                **base_recipe_params,
+            )
+
     def test_dict_model_config_with_initial_ckpt(self, mock_file_system, base_recipe_params):
         """Test that dict model config (class_path) with initial_ckpt is accepted."""
         model_config = {

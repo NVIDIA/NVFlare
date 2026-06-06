@@ -550,6 +550,23 @@ def setup_custom_persistor(*, job, model_persistor=None) -> str:
     return extract_persistor_id(job.to_server(model_persistor, id="persistor"))
 
 
+def _resolve_recipe_model_class_path(recipe_model: Dict[str, Any]) -> str:
+    if "class_path" in recipe_model:
+        key = "class_path"
+    elif "path" in recipe_model:
+        key = "path"
+    else:
+        raise ValueError(
+            "Dict model config must have 'class_path' or 'path' key with fully qualified class path. "
+            f"Got: {recipe_model}"
+        )
+
+    class_path = recipe_model[key]
+    if not isinstance(class_path, str):
+        raise ValueError(f"Dict model config '{key}' must be a string, got: {type(class_path)}")
+    return class_path
+
+
 def validate_dict_model_config(model: Any) -> None:
     """Validate recipe dict model config structure.
 
@@ -563,25 +580,7 @@ def validate_dict_model_config(model: Any) -> None:
         ValueError: If dict config is missing 'class_path'/'path' or value is not a string.
     """
     if isinstance(model, dict):
-        class_path = model.get("class_path")
-        key = "class_path"
-        if class_path is None:
-            class_path = model.get("path")
-            key = "path"
-        if class_path is None:
-            raise ValueError(
-                "Dict model config must have 'class_path' or 'path' key with fully qualified class path. "
-                f"Got: {model}"
-            )
-        if not isinstance(class_path, str):
-            raise ValueError(f"Dict model config '{key}' must be a string, got: {type(class_path)}")
-
-
-def _recipe_model_class_path(recipe_model: Dict[str, Any]) -> str:
-    class_path = recipe_model.get("class_path")
-    if class_path is None:
-        class_path = recipe_model.get("path")
-    return class_path
+        _resolve_recipe_model_class_path(model)
 
 
 def recipe_model_to_job_model(recipe_model: Dict[str, Any]) -> Dict[str, Any]:
@@ -598,5 +597,4 @@ def recipe_model_to_job_model(recipe_model: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Dict with 'path' and 'args' for use by PTModel, persistors, etc.
     """
-    validate_dict_model_config(recipe_model)
-    return {"path": _recipe_model_class_path(recipe_model), "args": recipe_model.get("args", {})}
+    return {"path": _resolve_recipe_model_class_path(recipe_model), "args": recipe_model.get("args", {})}
