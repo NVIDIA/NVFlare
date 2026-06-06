@@ -679,12 +679,12 @@ class TestFedAvgRecipeValidation:
         assert server_app is not None
         assert server_app.app_config.components.get(locator_id) is locator
 
-    def test_dict_config_missing_path_raises_error(self, mock_file_system, base_recipe_params):
-        """Test that dict config without 'class_path' key raises error."""
-        with pytest.raises(ValueError, match="must have 'class_path' key"):
+    def test_dict_config_missing_class_path_or_path_raises_error(self, mock_file_system, base_recipe_params):
+        """Test that dict config without 'class_path' or 'path' key raises error."""
+        with pytest.raises(ValueError, match="must have 'class_path' or 'path' key"):
             FedAvgRecipe(
                 name="test_invalid_dict",
-                model={"args": {"input_size": 10}},  # Missing 'class_path'
+                model={"args": {"input_size": 10}},  # Missing 'class_path'/'path'
                 **base_recipe_params,
             )
 
@@ -743,6 +743,21 @@ class TestFedAvgRecipeInitialCkpt:
         }
         recipe = FedAvgRecipe(
             name="test_dict_config",
+            model=model_config,
+            **base_recipe_params,
+        )
+
+        assert recipe.model["path"] == "my_module.models.SimpleNet"
+        assert recipe.model["args"] == {"input_size": 10, "output_size": 5}
+
+    def test_dict_model_config_path_alias_accepted(self, mock_file_system, base_recipe_params):
+        """Test that dict model config accepts path as an alias for class_path."""
+        model_config = {
+            "path": "my_module.models.SimpleNet",
+            "args": {"input_size": 10, "output_size": 5},
+        }
+        recipe = FedAvgRecipe(
+            name="test_dict_config_path_alias",
             model=model_config,
             **base_recipe_params,
         )

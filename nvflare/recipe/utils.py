@@ -553,37 +553,50 @@ def setup_custom_persistor(*, job, model_persistor=None) -> str:
 def validate_dict_model_config(model: Any) -> None:
     """Validate recipe dict model config structure.
 
-    Recipes accept model config with ``class_path`` (fully qualified class name).
-    The job/config layer uses ``path``; recipes use ``class_path`` only.
+    Recipes accept model config with ``class_path`` or the ``path`` alias.
+    The job/config layer uses ``path``.
 
     Args:
         model: Model input to validate.
 
     Raises:
-        ValueError: If dict config is missing 'class_path' or value is not a string.
+        ValueError: If dict config is missing 'class_path'/'path' or value is not a string.
     """
     if isinstance(model, dict):
-        if "class_path" not in model:
+        class_path = model.get("class_path")
+        key = "class_path"
+        if class_path is None:
+            class_path = model.get("path")
+            key = "path"
+        if class_path is None:
             raise ValueError(
-                "Dict model config must have 'class_path' key with fully qualified class path. " f"Got: {model}"
+                "Dict model config must have 'class_path' or 'path' key with fully qualified class path. "
+                f"Got: {model}"
             )
-        class_path = model["class_path"]
         if not isinstance(class_path, str):
-            raise ValueError(f"Dict model config 'class_path' must be a string, got: {type(class_path)}")
+            raise ValueError(f"Dict model config '{key}' must be a string, got: {type(class_path)}")
+
+
+def _recipe_model_class_path(recipe_model: Dict[str, Any]) -> str:
+    class_path = recipe_model.get("class_path")
+    if class_path is None:
+        class_path = recipe_model.get("path")
+    return class_path
 
 
 def recipe_model_to_job_model(recipe_model: Dict[str, Any]) -> Dict[str, Any]:
-    """Validate and convert recipe model dict (class_path) to job/config format (path).
+    """Validate and convert recipe model dict to job/config format (path).
 
     Calls :func:`validate_dict_model_config` internally so callers do not need to
-    validate separately. Recipes accept {"class_path": "module.Class", "args": {...}} only.
+    validate separately. Recipes accept {"class_path": "module.Class", "args": {...}}
+    or {"path": "module.Class", "args": {...}}.
     The Job API and config parsing expect {"path": "module.Class", "args": {...}}.
 
     Args:
-        recipe_model: Dict with 'class_path' and optional 'args'.
+        recipe_model: Dict with 'class_path' or 'path' and optional 'args'.
 
     Returns:
         Dict with 'path' and 'args' for use by PTModel, persistors, etc.
     """
     validate_dict_model_config(recipe_model)
-    return {"path": recipe_model["class_path"], "args": recipe_model.get("args", {})}
+    return {"path": _recipe_model_class_path(recipe_model), "args": recipe_model.get("args", {})}
