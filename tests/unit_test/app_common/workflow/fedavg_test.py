@@ -14,6 +14,8 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 import nvflare.app_common.workflows.fedavg as fedavg_module
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, Task
@@ -662,6 +664,62 @@ class TestFedAvgAggregation:
         assert aggr_result.metrics is not None
         assert aggr_result.metrics["loss"] == 0.6
 
+    def test_aggregate_fl_model_metrics_empty_metrics_keep_round_enabled(self):
+        """Test the shared metric helper treats empty metrics as present."""
+        from nvflare.app_common.workflows.base_fedavg import _aggregate_fl_model_metrics
+
+        result1 = FLModel(
+            params={"w": 1.0},
+            params_type=ParamsType.FULL,
+            metrics={},
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 4},
+        )
+        result2 = FLModel(
+            params={"w": 3.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.6},
+            meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 6},
+        )
+        result1.current_round = 0
+        result2.current_round = 0
+
+        aggr_metrics = _aggregate_fl_model_metrics([result1, result2])
+
+        assert aggr_metrics == {"loss": pytest.approx(0.6)}
+
+    def test_aggregate_fl_model_metrics_uses_per_key_denominators(self):
+        """Test missing metric keys do not dilute keys contributed by other clients."""
+        from nvflare.app_common.workflows.base_fedavg import _aggregate_fl_model_metrics
+
+        result1 = FLModel(
+            params={"w": 1.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.2},
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 2},
+        )
+        result2 = FLModel(
+            params={"w": 3.0},
+            params_type=ParamsType.FULL,
+            metrics={"accuracy": 0.9},
+            meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 6},
+        )
+        result3 = FLModel(
+            params={"w": 5.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.6, "accuracy": 0.3},
+            meta={"client_name": "site-3", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 2},
+        )
+        result1.current_round = 0
+        result2.current_round = 0
+        result3.current_round = 0
+
+        aggr_metrics = _aggregate_fl_model_metrics([result1, result2, result3])
+
+        assert aggr_metrics == {
+            "loss": pytest.approx(0.4),
+            "accuracy": pytest.approx(0.75),
+        }
+
     def test_base_fedavg_aggregate_fn_returns_none_when_all_metrics_filtered(self):
         """Test BaseFedAvg.aggregate_fn returns None when all metrics are non-aggregatable."""
         result1 = FLModel(
@@ -1009,6 +1067,22 @@ class TestFedAvgWorkflowEvents:
 class TestScaffoldAggregation:
     """Test Scaffold aggregation behavior."""
 
+    @staticmethod
+    def _scaffold_result(client_name, params, ctrl_diff, metrics, num_steps):
+        from nvflare.app_common.app_constant import AlgorithmConstants
+
+        return FLModel(
+            params=params,
+            params_type=ParamsType.FULL,
+            metrics=metrics,
+            current_round=0,
+            meta={
+                "client_name": client_name,
+                FLMetaKey.NUM_STEPS_CURRENT_ROUND: num_steps,
+                AlgorithmConstants.SCAFFOLD_CTRL_DIFF: ctrl_diff,
+            },
+        )
+
     def test_missing_scaffold_ctrl_diff_raises_clear_error(self):
         """Test missing scaffold control diff raises a clear, framework-neutral error."""
         import re
@@ -1066,6 +1140,85 @@ class TestScaffoldAggregation:
         assert aggr_result.meta[AlgorithmConstants.SCAFFOLD_CTRL_DIFF]["w"] == 3.0
         assert aggr_result.meta["nr_aggregated"] == 2
         assert aggr_result.meta["current_round"] == 0
+
+    def test_scaffold_aggregate_fn_aggregates_generic_numeric_metrics_with_step_weights(self):
+        """Test Scaffold aggregates metric keys generically with client local-step weights."""
+        from nvflare.app_common.app_constant import AlgorithmConstants
+        from nvflare.app_common.workflows.scaffold import scaffold_aggregate_fn
+
+        result1 = self._scaffold_result(
+            client_name="site-1",
+            params={"w": 1.0},
+            ctrl_diff={"w": 2.0},
+            metrics={"loss": 0.2, "accuracy": 0.8},
+            num_steps=2,
+        )
+        result2 = self._scaffold_result(
+            client_name="site-2",
+            params={"w": 5.0},
+            ctrl_diff={"w": 6.0},
+            metrics={"loss": 0.8, "accuracy": 0.2},
+            num_steps=6,
+        )
+
+        aggr_result = scaffold_aggregate_fn([result1, result2])
+
+        assert aggr_result.params["w"] == pytest.approx(4.0)
+        assert aggr_result.meta[AlgorithmConstants.SCAFFOLD_CTRL_DIFF]["w"] == pytest.approx(5.0)
+        assert aggr_result.metrics == {
+            "loss": pytest.approx(0.65),
+            "accuracy": pytest.approx(0.35),
+        }
+
+    def test_scaffold_aggregate_fn_filters_non_aggregatable_metrics(self):
+        """Test Scaffold skips unsupported metric values while preserving numeric metrics."""
+        from nvflare.app_common.workflows.scaffold import scaffold_aggregate_fn
+
+        result1 = self._scaffold_result(
+            client_name="site-1",
+            params={"w": 1.0},
+            ctrl_diff={"w": 2.0},
+            metrics={"loss": 0.2, "meta": {"site": "site-1"}, "tags": ["a"], "run_name": "r1"},
+            num_steps=1,
+        )
+        result2 = self._scaffold_result(
+            client_name="site-2",
+            params={"w": 3.0},
+            ctrl_diff={"w": 4.0},
+            metrics={"loss": 0.6, "meta": {"site": "site-2"}, "tags": ["b"], "run_name": "r2"},
+            num_steps=1,
+        )
+
+        aggr_result = scaffold_aggregate_fn([result1, result2])
+
+        assert aggr_result.metrics is not None
+        assert aggr_result.metrics["loss"] == pytest.approx(0.4)
+        assert "meta" not in aggr_result.metrics
+        assert "tags" not in aggr_result.metrics
+        assert "run_name" not in aggr_result.metrics
+
+    def test_scaffold_aggregate_fn_none_metrics_disable_round_metrics(self):
+        """Test Scaffold matches BaseFedAvg when any client returns metrics=None."""
+        from nvflare.app_common.workflows.scaffold import scaffold_aggregate_fn
+
+        result1 = self._scaffold_result(
+            client_name="site-1",
+            params={"w": 1.0},
+            ctrl_diff={"w": 2.0},
+            metrics=None,
+            num_steps=1,
+        )
+        result2 = self._scaffold_result(
+            client_name="site-2",
+            params={"w": 3.0},
+            ctrl_diff={"w": 4.0},
+            metrics={"loss": 0.6},
+            num_steps=1,
+        )
+
+        aggr_result = scaffold_aggregate_fn([result1, result2])
+
+        assert aggr_result.metrics is None
 
 
 class TestFedAvgAggregationWeights:

@@ -171,5 +171,6 @@ class FedOpt(FedAvg):
 
         global_model.params = weights
         global_model.meta = aggr_result.meta
+        global_model.metrics = aggr_result.metrics
 
         return global_model
