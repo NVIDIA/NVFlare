@@ -183,6 +183,29 @@ delete_generated_resources() {
     safe="$(safe_name "${participant}")"
     "${KUBE_CMD}" -n "${NAMESPACE}" delete pvc "nvflare-ws-${safe}" --ignore-not-found=true >/dev/null 2>&1 || true
   done
+
+  info "Deleting generated ConfigMaps and Secrets"
+  for participant in ${SERVER_NAME} ${CLIENTS}; do
+    safe="$(safe_name "${participant}")"
+    "${KUBE_CMD}" -n "${NAMESPACE}" delete configmap "nvflare-local-${safe}" --ignore-not-found=true >/dev/null 2>&1 || true
+    "${KUBE_CMD}" -n "${NAMESPACE}" delete secret "nvflare-startup-${safe}" --ignore-not-found=true >/dev/null 2>&1 || true
+  done
+  "${KUBE_CMD}" -n "${NAMESPACE}" get secrets -o name 2>/dev/null \
+    | while IFS= read -r secret; do
+        case "${secret}" in
+          secret/nvflare-startup-*)
+            "${KUBE_CMD}" -n "${NAMESPACE}" delete "${secret}" --ignore-not-found=true >/dev/null 2>&1 || true
+            ;;
+        esac
+      done
+  "${KUBE_CMD}" -n "${NAMESPACE}" get configmaps -o name 2>/dev/null \
+    | while IFS= read -r configmap; do
+        case "${configmap}" in
+          configmap/nvflare-local-*)
+            "${KUBE_CMD}" -n "${NAMESPACE}" delete "${configmap}" --ignore-not-found=true >/dev/null 2>&1 || true
+            ;;
+        esac
+      done
 }
 
 delete_work_dir() {

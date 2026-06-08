@@ -263,7 +263,8 @@ The phase scripts share these common variables:
 | `ADMIN_USER`                                             | Admin participant name. Default: `admin@nvidia.com`.                                                                                                                                                                                             |
 | `WORK_DIR`                                               | Local working directory for generated project files, startup kits, prepared kits, job files, and the last job ID. Default: `/tmp/nvflare/openshift-e2e`.                                                                                         |
 | `IMAGE`                                                  | Required by the deployment phase. Cluster-pullable parent image with NVFlare, the `K8S` extra, and the Python executable named by `PARENT_PYTHON_PATH`.                                                                                          |
-| `COPY_IMAGE`                                             | Image for temporary PVC copy pods. Default: `busybox:1.36`. Set this to an internal image if your cluster cannot pull from Docker Hub. The image must contain `sh`, `sleep`, and `tar` because the scripts use `oc cp` to stage files into PVCs. |
+| `WORKSPACE_STAGING_MODE`                                 | Parent pod staging mode. Use `pvc` to copy `startup/` and `local/` into workspace PVCs, or `configmap-secret` to run `nvflare deploy k8s stage` for each prepared kit. Default: `pvc`.                                                            |
+| `COPY_IMAGE`                                             | Image for temporary PVC copy pods when `WORKSPACE_STAGING_MODE=pvc`. Default: `busybox:1.36`. Set this to an internal image if your cluster cannot pull from Docker Hub. It must contain `sh`, `sleep`, and `tar` for `oc cp`.                   |
 | `STORAGE_CLASS`                                          | Optional StorageClass for generated workspace PVCs. Leave unset to use the cluster default.                                                                                                                                                      |
 | `WORKSPACE_STORAGE`                                      | Per-participant workspace PVC request. Default: `2Gi`.                                                                                                                                                                                           |
 | `PARENT_CPU` and `PARENT_MEMORY`                         | Optional resource requests for long-running parent pods, for example `500m` and `1Gi`.                                                                                                                                                           |
@@ -308,6 +309,16 @@ The script prints the generated participant folder names. It does not contact Op
 
 ### Deploy Parent Pods
 
+There are two supported ways to stage the prepared `startup/` and `local/`
+folders before launching the long-lived parent server/client pods:
+
+  - copy `startup/` and `local/` into each participant's workspace PVC;
+  - run `nvflare deploy k8s stage` for each prepared K8s kit to create a
+    ConfigMap for `local/` and a Secret for `startup/`.
+
+After either staging method, run `helm upgrade --install` for the generated
+chart. The helper script below uses the PVC-copy method.
+
 Run:
 
 ``` bash
@@ -325,7 +336,9 @@ Prerequisites:
   - `IMAGE` is set to a parent image that the cluster can pull and run under the restricted SCC.
   - The namespace has registry pull Secrets if the image is private.
   - The cluster has a default StorageClass, or `STORAGE_CLASS` is set.
-  - `COPY_IMAGE` is pullable by the cluster and contains `sh`, `sleep`, and `tar`. `oc cp` requires `tar` in the target container when staging prepared startup files into workspace PVCs.
+  - If `WORKSPACE_STAGING_MODE=pvc`, `COPY_IMAGE` is pullable by the cluster
+    and contains `sh`, `sleep`, and `tar`. `oc cp` requires `tar` in the target
+    container when staging prepared startup files into workspace PVCs.
 
 What it does:
 
@@ -333,8 +346,10 @@ What it does:
   - verifies that server and client prepared kits contain the Kubernetes job launcher components configured for in-cluster ServiceAccount auth;
   - creates `NAMESPACE` if it does not already exist;
   - creates one workspace PVC per server/client participant;
-  - creates temporary copy pods, waits for PVC binding, and copies each prepared kit's `startup/` and `local/` directories into its PVC;
-  - installs or upgrades the generated Helm chart for each participant;
+  - stages each participant's `startup/` and `local/` by either creating
+    temporary PVC copy pods or by running `nvflare deploy k8s stage`, depending
+    on `WORKSPACE_STAGING_MODE`;
+  - installs or upgrades the generated Helm chart for each participant after staging;
   - restarts existing Deployments after an upgrade so repeated runs pick up new startup-kit content from the PVC;
   - waits for all parent Deployments to roll out;
   - verifies that each parent pod can import the Kubernetes Python client needed by the launcher.
@@ -525,7 +540,18 @@ oc -n nvflare apply -f workspace-pvc.yaml
 oc -n nvflare get pvc
 ```
 
-The Helm chart mounts the workspace PVC, but it does not upload the prepared startup kit. Copy the prepared `startup/` and `local/` directories into the PVC root before installing the chart. One common method is a temporary copy pod. The copy pod image must contain `tar` because `oc cp` requires it in the target container:
+The Helm chart mounts the workspace PVC, but it does not upload the prepared
+startup kit by itself. Choose one of the two staging methods below before
+installing the chart.
+
+#### Method 1: Copy into the Workspace PVC
+
+Copy the prepared `startup/` and `local/` directories into the PVC root. One
+common method is a temporary copy pod. The copy pod image must contain `tar`
+because `oc cp` requires it in the target container. The scripted deployment
+sample, [`scripts/k8s_deploy.sh`](scripts/k8s_deploy.sh), uses this method via
+the `stage_workspace_pvc` helper in
+[`scripts/k8s_common.sh`](scripts/k8s_common.sh).
 
 ``` bash
 export NAMESPACE=nvflare
@@ -561,9 +587,32 @@ oc -n "$NAMESPACE" delete pod nvflare-pvc-copy
 
 Repeat for every participant, using that participant's prepared kit and workspace PVC.
 
+#### Method 2: Use ConfigMap and Secret Staging
+
+Alternatively, run `nvflare deploy k8s stage` for each prepared K8s kit. This
+creates or updates a ConfigMap for `local/`, creates or updates a Secret for
+`startup/`, and patches the generated `helm_chart/values.yaml` so the parent pod
+mounts those resources at the expected workspace paths:
+
+``` bash
+export NAMESPACE=nvflare
+export PREPARED_KIT=/tmp/nvflare-prepared/nvflare-server
+
+nvflare deploy k8s stage "$PREPARED_KIT" --namespace "$NAMESPACE"
+```
+
+Use `--kubectl oc` when staging into OpenShift with `oc` instead of `kubectl`:
+
+``` bash
+nvflare deploy k8s stage "$PREPARED_KIT" --namespace "$NAMESPACE" --kubectl oc
+```
+
+`nvflare deploy k8 stage` is accepted as an alias. After this command succeeds,
+run the printed `helm_command` or the equivalent Helm install command below.
+
 ### Install Helm Charts
 
-Install the generated chart for each participant:
+After either staging method, install the generated chart for each participant:
 
 ``` bash
 helm upgrade --install nvflare-server \
@@ -687,7 +736,9 @@ oc -n nvflare get events --sort-by=.lastTimestamp
 
 ### Job shows `FINISHED:EXECUTION_EXCEPTION`
 
-The K8s launcher deletes a job pod if it remains `Pending` or `Unknown` longer than `job_launcher.pending_timeout`. Inspect the job pod events and the parent pod logs:
+The K8s launcher applies `job_launcher.pending_timeout` only when the scheduler reports insufficient CPU, memory, or GPU resources for a job pod.
+Use `pending_timeout: 0` to fail fast, a positive value to wait that many seconds for those resources, or `null` to wait indefinitely unless a broader launcher timeout is configured. A job can override the site default with `launcher_spec.<site>.k8s.pending_timeout`. Image pull, volume, container config, non-resource scheduling, and `Unknown` phase problems fail immediately with `FINISHED:EXECUTION_EXCEPTION`.
+Inspect the job pod events and the parent pod logs:
 
 ``` bash
 oc -n nvflare get pods
