@@ -18,7 +18,7 @@ import os
 import shlex
 import sys
 from contextlib import contextmanager
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -139,6 +139,42 @@ def test_sft_model_checkpoint_loads_nested_automodel_consolidated_dir(tmp_path):
     assert torch.equal(loaded["model.weight"], torch.ones(2, 2))
 
 
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to import the checkpoint helper")
+def test_sft_model_checkpoint_state_files_are_deduplicated(tmp_path):
+    model_checkpoint = _load_example_module("model_checkpoint")
+    checkpoint_dir = tmp_path / "checkpoint"
+    checkpoint_dir.mkdir()
+    for name in (
+        "model.safetensors",
+        "model-00001-of-00002.safetensors",
+        "model-00002-of-00002.safetensors",
+        "pytorch_model.bin",
+        "pytorch_model-00001-of-00002.bin",
+    ):
+        (checkpoint_dir / name).write_text("")
+
+    files = model_checkpoint._state_files_in_dir(str(checkpoint_dir))
+
+    assert len(files) == len(set(files))
+    assert files.count(str(checkpoint_dir / "model.safetensors")) == 1
+    assert files.count(str(checkpoint_dir / "model-00001-of-00002.safetensors")) == 1
+    assert files.count(str(checkpoint_dir / "pytorch_model.bin")) == 1
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to import the AutoModel client helper")
+def test_sft_latest_model_dir_prefers_step_over_epoch(tmp_path):
+    client_module = _load_example_module("automodel_sft_client")
+    checkpoint_dir = tmp_path / "checkpoints"
+    step_1 = checkpoint_dir / "epoch_0_step_1"
+    step_20 = checkpoint_dir / "epoch_0_step_20"
+    for model_dir in (step_1, step_20):
+        model_dir.mkdir(parents=True)
+        (model_dir / "model.safetensors").write_text("")
+        os.utime(model_dir, (1000, 1000))
+
+    assert client_module._latest_model_dir(str(checkpoint_dir)) == str(step_20)
+
+
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to create a PT model checkpoint")
 def test_sft_recipe_exports_modern_full_transfer_config(tmp_path):
     import torch
@@ -255,6 +291,44 @@ def test_sft_dataset_prompt_format():
 
     assert dataset_module.build_prompt("Explain FL.") == "### Instruction:\nExplain FL.\n\n### Response:\n"
     assert dataset_module.clean_response("  A short answer.  ") == "A short answer."
+
+
+def test_sft_dataset_uses_local_pad_token_fallback(monkeypatch):
+    dataset_module = _load_example_module("automodel_sft_dataset")
+
+    class FakeDataset(list):
+        @property
+        def column_names(self):
+            return ["input", "output"]
+
+        def select(self, indices):
+            return FakeDataset([self[index] for index in indices])
+
+        def map(self, fn, batched=False, remove_columns=None):
+            return [fn(example) for example in self]
+
+    datasets_module = ModuleType("datasets")
+    datasets_module.load_dataset = lambda *args, **kwargs: FakeDataset([{"input": "Explain FL.", "output": "Done."}])
+    formatting_module = ModuleType("formatting_utils")
+    formatting_module.format_chat_template = lambda **kwargs: kwargs
+    formatting_module.format_prompt_completion = lambda **kwargs: kwargs
+    monkeypatch.setitem(sys.modules, "datasets", datasets_module)
+    monkeypatch.setitem(sys.modules, "nemo_automodel", ModuleType("nemo_automodel"))
+    monkeypatch.setitem(sys.modules, "nemo_automodel.components", ModuleType("components"))
+    monkeypatch.setitem(sys.modules, "nemo_automodel.components.datasets", ModuleType("datasets"))
+    monkeypatch.setitem(sys.modules, "nemo_automodel.components.datasets.llm", ModuleType("llm"))
+    monkeypatch.setitem(
+        sys.modules,
+        "nemo_automodel.components.datasets.llm.formatting_utils",
+        formatting_module,
+    )
+
+    tokenizer = SimpleNamespace(eos_token="<eos>", eos_token_id=2, pad_token=None, pad_token_id=None)
+
+    result = dataset_module.make_instruction_dataset(tokenizer, "train.jsonl", fp8=True)
+
+    assert tokenizer.pad_token == "<eos>"
+    assert result[0]["pad_token_id"] == 2
 
 
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for prediction helper tests")

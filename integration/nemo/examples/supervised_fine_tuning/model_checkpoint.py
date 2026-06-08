@@ -49,9 +49,16 @@ def _state_files_in_dir(path: str) -> list[str]:
         os.path.join(path, "model.pt"),
         os.path.join(path, "FL_global_model.pt"),
     ]
-    for pattern in ("*.safetensors", "model-*.safetensors", "pytorch_model*.bin"):
+    for pattern in ("*.safetensors", "pytorch_model*.bin"):
         candidates.extend(sorted(glob.glob(os.path.join(path, pattern))))
-    return [candidate for candidate in candidates if os.path.isfile(candidate)]
+
+    result = []
+    seen = set()
+    for candidate in candidates:
+        if os.path.isfile(candidate) and candidate not in seen:
+            seen.add(candidate)
+            result.append(candidate)
+    return result
 
 
 def _candidate_state_files(path: str) -> list[str]:

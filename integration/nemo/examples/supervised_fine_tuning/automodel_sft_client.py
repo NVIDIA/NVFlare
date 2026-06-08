@@ -232,17 +232,23 @@ def _latest_model_dir(checkpoint_dir: str) -> str | None:
 
 def _has_model_state_file(files: list[str]) -> bool:
     for name in files:
-        if name.endswith(".safetensors") and not name.endswith(".index.json"):
+        if name.endswith(".safetensors"):
             return True
-        if name in ("model.pt", "pytorch_model.bin", "FL_global_model.pt"):
+        if name in ("model.pt", "FL_global_model.pt"):
+            return True
+        if name.startswith("pytorch_model") and name.endswith(".bin"):
             return True
     return False
 
 
 def _model_dir_sort_key(path: str) -> tuple[int, int, float, str]:
     preferred = 2 if os.path.basename(path) == "consolidated" else 1 if os.path.basename(path) == "model" else 0
-    match = re.search(r"(?:epoch|step)_(\d+)|(\d+)$", path)
-    step = int(next(group for group in match.groups() if group is not None)) if match else -1
+    step_matches = re.findall(r"step_(\d+)", path)
+    if step_matches:
+        step = int(step_matches[-1])
+    else:
+        match = re.search(r"(\d+)$", path)
+        step = int(match.group(1)) if match else -1
     return step, preferred, os.path.getmtime(path), path
 
 

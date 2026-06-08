@@ -26,6 +26,28 @@ def clean_response(response: str) -> str:
     return response.strip()
 
 
+def _ensure_pad_token_id(tokenizer) -> int:
+    pad_token_id = getattr(tokenizer, "pad_token_id", None)
+    if pad_token_id is not None:
+        return pad_token_id
+
+    eos_token = getattr(tokenizer, "eos_token", None)
+    if getattr(tokenizer, "pad_token", None) is None and eos_token is not None:
+        tokenizer.pad_token = eos_token
+        pad_token_id = getattr(tokenizer, "pad_token_id", None)
+        if pad_token_id is not None:
+            return pad_token_id
+
+    add_special_tokens = getattr(tokenizer, "add_special_tokens", None)
+    if callable(add_special_tokens):
+        add_special_tokens({"pad_token": "<pad>"})
+        pad_token_id = getattr(tokenizer, "pad_token_id", None)
+        if pad_token_id is not None:
+            return pad_token_id
+
+    return getattr(tokenizer, "eos_token_id", 0)
+
+
 def make_instruction_dataset(
     tokenizer,
     data_file: str,
@@ -42,11 +64,7 @@ def make_instruction_dataset(
     in this directory and the synthetic data generator used by the quickstart.
     """
     from datasets import load_dataset
-    from nemo_automodel.components.datasets.llm.formatting_utils import (
-        _add_pad_token,
-        format_chat_template,
-        format_prompt_completion,
-    )
+    from nemo_automodel.components.datasets.llm.formatting_utils import format_chat_template, format_prompt_completion
 
     dataset = load_dataset("json", data_files=data_file, split="train")
     if limit_dataset_samples is not None:
@@ -57,12 +75,7 @@ def make_instruction_dataset(
     eos_token_id = getattr(tokenizer, "eos_token_id", 0)
     pad_token_id = getattr(tokenizer, "pad_token_id", None)
     if fp8 or pad_token_id is None:
-        added_pad_token_id = _add_pad_token(tokenizer)
-        pad_token_id = (
-            added_pad_token_id if added_pad_token_id is not None else getattr(tokenizer, "pad_token_id", None)
-        )
-    if pad_token_id is None:
-        pad_token_id = eos_token_id
+        pad_token_id = _ensure_pad_token_id(tokenizer)
 
     def formatting_func(example):
         prompt = build_prompt(example["input"])
