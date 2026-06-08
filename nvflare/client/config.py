@@ -174,8 +174,9 @@ class ClientConfig:
         """Return the maximum number of pipe send retries for submitting task results.
 
         None means unlimited; the default of 3 bounds the retry window and prevents
-        unbounded ArrayDownloadable accumulation (Root Cause 6).
-        Set via recipe.add_client_config({"max_resends": N}).
+        unbounded large-result resend transactions. In recipe-based external-process
+        jobs, the parent executor writes this value into the Client API config and
+        applies recipe.add_client_config({"max_resends": N}) as a per-job override.
         """
         value = self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.MAX_RESENDS, 3)
         if value is None:
@@ -201,6 +202,8 @@ class ClientConfig:
         After send_to_peer() ACKs, the server asynchronously downloads tensors from the subprocess
         DownloadService.  This timeout gates subprocess exit so the process does not disappear before
         the download completes.  Defaults to 1800 s (30 min) for large-model transfers.
+        Recipe-based external-process jobs can override it with
+        recipe.add_client_config({"download_complete_timeout": N}).
         """
         return float(self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.DOWNLOAD_COMPLETE_TIMEOUT, 1800.0))
 
@@ -212,8 +215,8 @@ class ClientConfig:
         300 s is returned — large enough for a single-chunk ACK with reverse PASS_THROUGH, and
         a reasonable upper bound for direct (non-PASS_THROUGH) transfers at typical throughputs.
 
-        Changing this value via recipe.add_client_config() sets it for a specific job without
-        touching any process-level defaults.
+        Recipe-based external-process jobs can override it with
+        recipe.add_client_config({"submit_result_timeout": N}) without touching process-level defaults.
         """
         return float(self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.SUBMIT_RESULT_TIMEOUT, 300.0))
 

@@ -132,7 +132,7 @@ You can get an example app from [nvflare/edge/device](../../../nvflare/edge/devi
 
 It can be installed on your device and started.
 
-You need to configure the server PORT to be the PORT shown in lcp_map.json (for example: 9003).
+You need to configure the server PORT to be the PORT of the routing proxy (4321 by default, as started by `start_rp.sh`). The ports in `lcp_map.json` (e.g. 9003) are the internal leaf-client ports used by the proxy itself and are not directly reachable by mobile devices.
 
 And you can find out the IP address of your machine and fill it there.
 

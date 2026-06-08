@@ -78,8 +78,8 @@ def dump_to_stream(obj: Any, stream: BinaryIO, max_value_size=None, fobs_ctx: Op
     - the 1st section is the main body (serialized with fobs/msgpack) of the object
     - if the object contains large binary data, they will be converted to datums, and each datum has one section
 
-    During serialization, the object may be altered (replace large value with datums). After serialization, the object
-    is restored to its original state.
+    During serialization, large values are represented by datum references in the serialized main body. The input
+    object is not modified.
 
     Args:
         obj: the object to be serialized.
@@ -100,14 +100,6 @@ def dump_to_stream(obj: Any, stream: BinaryIO, max_value_size=None, fobs_ctx: Op
 
     datums = mgr.get_datums()
     for datum_id, datum in datums.items():
-        if datum.restore_func is not None:
-            # restore original object state
-            restore_func = datum.restore_func
-            func_data = datum.restore_func_data
-            datum.restore_func_data = None
-            datum.restore_func = None
-            restore_func(mgr, datum, func_data)
-
         if datum.datum_type == DatumType.TEXT:
             # text representation is platform specific.
             # we convert it to utf-8 based bytes, which is platform independent.

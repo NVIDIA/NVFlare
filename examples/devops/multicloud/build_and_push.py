@@ -27,7 +27,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 DEVOPS_ROOT = SCRIPT_DIR.parent
 REPO_ROOT = DEVOPS_ROOT.parent.parent
 DEFAULT_CONFIG = SCRIPT_DIR / "all-clouds.yaml"
-DEFAULT_DOCKERFILE = REPO_ROOT / "docker" / "Dockerfile"
+DEFAULT_DOCKERFILE = REPO_ROOT / "docker" / "Dockerfile.parent"
 
 
 def parse_args() -> argparse.Namespace:

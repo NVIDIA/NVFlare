@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import copy
 import importlib
 import json
 import logging
@@ -21,7 +22,7 @@ import sys
 import warnings
 from typing import List, Optional, Union
 
-from nvflare.apis.app_validation import AppValidator
+from nvflare.apis.app_validation import AppValidationKey, AppValidator
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLContext
@@ -32,6 +33,7 @@ from nvflare.apis.job_launcher_spec import JobLauncherSpec
 from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.decomposers import common_decomposers
+from nvflare.app_common.widgets.component_path_authorizer import ComponentPathAuthorizer
 from nvflare.fuel.f3.stats_pool import CsvRecordHandler, StatsPoolManager
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.authz import AuthorizationService
@@ -54,6 +56,9 @@ from .app_authz import AppAuthzService
 # to the server's rootCA.pem.  require_signed_jobs() only controls whether unsigned job
 # folders are accepted.  _warn_once suppresses repeated log noise for the same condition.
 _SIGNED_JOB_WARNINGS_EMITTED = set()
+_DEFAULT_COMPONENT_PATH_AUTHORIZER = ComponentPathAuthorizer()
+_AUTHORIZATION_JOB_META_CACHE = "__authorization_job_meta_cache__"
+_JOB_META_CACHE_MISSING = object()
 
 
 def _warn_once(logger: logging.Logger, cache_key: str, message: str, *args) -> None:
@@ -273,6 +278,19 @@ def get_job_meta_from_workspace(workspace: Workspace, job_id: str) -> dict:
         return json.load(file)
 
 
+def _get_job_meta_for_component_authorization(fl_ctx: FLContext, workspace: Workspace, job_id: str):
+    cached_meta = fl_ctx.get_prop(_AUTHORIZATION_JOB_META_CACHE, _JOB_META_CACHE_MISSING)
+    if cached_meta is not _JOB_META_CACHE_MISSING:
+        return copy.deepcopy(cached_meta)
+
+    meta = fl_ctx.get_prop(FLContextKey.JOB_META, _JOB_META_CACHE_MISSING)
+    if meta is _JOB_META_CACHE_MISSING:
+        meta = get_job_meta_from_workspace(workspace, job_id)
+
+    fl_ctx.set_prop(_AUTHORIZATION_JOB_META_CACHE, copy.deepcopy(meta), sticky=False, private=True)
+    return copy.deepcopy(meta)
+
+
 def create_job_processing_context_properties(workspace: Workspace, job_id: str) -> dict:
     job_meta = get_job_meta_from_workspace(workspace, job_id)
     if not isinstance(job_meta, dict):
@@ -323,16 +341,39 @@ def fobs_initialize(workspace: Workspace = None, job_id: Optional[str] = None):
 
 def custom_fobs_initialize(workspace: Workspace = None, job_id: Optional[str] = None):
     if workspace:
+        # site-level decomposers are installed by the site admin and always loaded
         site_custom_dir = workspace.get_client_custom_dir()
         decomposer_dir = os.path.join(site_custom_dir, ConfigVarName.DECOMPOSER_MODULE)
         if os.path.exists(decomposer_dir):
             register_custom_folder(decomposer_dir)
 
         if job_id:
-            app_custom_dir = workspace.get_app_config_dir(job_id)
+            # decomposers shipped with the job are custom code: load them only from the job's
+            # custom dir (the BYOC-detected location) and only for BYOC-enabled jobs. Decomposers
+            # placed under the job config dir are intentionally ignored.
+            app_custom_dir = workspace.get_app_custom_dir(job_id)
             decomposer_dir = os.path.join(app_custom_dir, ConfigVarName.DECOMPOSER_MODULE)
-            if os.path.exists(decomposer_dir):
+            # confirm BYOC before probing the job-controlled path (no filesystem touch otherwise)
+            if _job_allows_byoc(workspace, job_id) and os.path.exists(decomposer_dir):
                 register_custom_folder(decomposer_dir)
+
+
+def _job_allows_byoc(workspace: Workspace, job_id: str) -> bool:
+    try:
+        job_meta = get_job_meta_from_workspace(workspace, job_id)
+        if not isinstance(job_meta, dict):
+            logging.getLogger(__name__).warning(
+                f"job meta for job '{job_id}' is not a dict (got {type(job_meta)}); treating as non-BYOC"
+            )
+            return False
+        return bool(job_meta.get(AppValidationKey.BYOC, False))
+    except Exception as e:
+        # fail safe: deny job decomposers, but log so a corrupted/misconfigured deployment
+        # can be told apart from a legitimate non-BYOC job
+        logging.getLogger(__name__).warning(
+            f"could not read job meta for job '{job_id}'; treating as non-BYOC: {secure_format_exception(e)}"
+        )
+        return False
 
 
 def nvflare_fobs_initialize():
@@ -428,13 +469,21 @@ def authorize_build_component(config_dict, config_ctx, node, fl_ctx: FLContext, 
     job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
     if not job_id:
         raise RuntimeError("missing job id in fl_ctx")
-    meta = get_job_meta_from_workspace(workspace, job_id)
+    meta = _get_job_meta_for_component_authorization(fl_ctx, workspace, job_id)
     fl_ctx.set_prop(FLContextKey.JOB_META, meta, sticky=False, private=True)
     fl_ctx.set_prop(FLContextKey.COMPONENT_CONFIG, config_dict, sticky=False, private=True)
     fl_ctx.set_prop(FLContextKey.CONFIG_CTX, config_ctx, sticky=False, private=True)
     fl_ctx.set_prop(FLContextKey.COMPONENT_NODE, node, sticky=False, private=True)
 
-    fire_event(EventType.BEFORE_BUILD_COMPONENT, event_handlers, fl_ctx)
+    try:
+        _DEFAULT_COMPONENT_PATH_AUTHORIZER.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
+    except UnsafeComponentError as ex:
+        err = str(ex)
+        if not err:
+            err = "Unsafe component detected by built-in component path authorizer"
+        return err
+
+    fire_event(EventType.BEFORE_BUILD_COMPONENT, event_handlers or [], fl_ctx)
 
     err = fl_ctx.get_prop(FLContextKey.COMPONENT_BUILD_ERROR)
     if err:

@@ -274,10 +274,14 @@ class ETTrainer(
         val initialParameters: Map<String, Tensor> = model.namedParameters("forward")
         val oldParams = toTensorDictionary(initialParameters)
         Log.d(TAG, "Captured initial parameters with ${oldParams.size} tensors")
-        
+
         // Save initial parameters
         artifactManager.saveModelParameters(initialParameters, "initial_parameters.json", "Initial Model Parameters")
-        
+
+        // Create optimizer once to preserve momentum state across batches.
+        // Recreating it every batch resets the velocity buffer and negates any momentum benefit.
+        val sgd = SGD.create(initialParameters, learningRate.toDouble(), momentum.toDouble(), SGD_WEIGHT_DECAY, 0.0, SGD_NESTEROV)
+
         var totalLoss = 0.0f
         var totalSteps = 0
         
@@ -321,8 +325,6 @@ class ETTrainer(
                 epochSteps++
                 totalSteps++
                 
-                val parameters: Map<String, Tensor> = model.namedParameters("forward")
-                val sgd = SGD.create(parameters, learningRate.toDouble(), momentum.toDouble(), SGD_WEIGHT_DECAY, SGD_WEIGHT_DECAY, SGD_NESTEROV)
                 val gradients: Map<String, Tensor> = model.namedGradients("forward")
                 sgd.step(gradients)
                 

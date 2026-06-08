@@ -315,6 +315,7 @@ def test_recipe_show_returns_queryable_metadata(monkeypatch, capsys):
             min_clients: int,
             num_rounds: int = 2,
             train_script: str = "client.py",
+            per_site_config: dict = None,
             secure: bool = False,
         ):
             pass
@@ -352,6 +353,7 @@ def test_recipe_show_returns_queryable_metadata(monkeypatch, capsys):
     assert data["template_references"] == ["nvflare/agent/templates/fake"]
     assert data["client_requirements"]["min_clients"] == {"required": True, "default": None}
     assert data["client_requirements"]["requires_training_script"] is True
+    assert data["client_requirements"]["requires_per_site_config"] is False
     assert {p["name"]: p for p in data["parameters"]}["num_rounds"]["default"] == 2
 
 

@@ -28,8 +28,8 @@ from nvflare.fuel.f3.message import Message, MessageReceiver
 log = logging.getLogger(__name__)
 
 APP_ID = 123
-NODE_A = "Communicator A"
-NODE_B = "Communicator B"
+NODE_A = "communicator-a"
+NODE_B = "communicator-b"
 MESSAGE_FROM_A = "Test message from a"
 MESSAGE_FROM_B = "Test message from b"
 

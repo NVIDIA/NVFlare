@@ -2380,7 +2380,7 @@ def _load_project_profile(profile_path: str, request_project: str = None) -> dic
             "Invalid arguments.",
             _USAGE_HINT,
             exit_code=4,
-            detail="project profile server must be a mapping with host, fed_learn_port, and admin_port",
+            detail="project profile server must be a mapping with host and fed_learn_port",
         )
         return None
     server_host = server.get("host")
@@ -2405,7 +2405,10 @@ def _load_project_profile(profile_path: str, request_project: str = None) -> dic
         return None
     if not _validate_port(server.get("fed_learn_port"), "project profile server.fed_learn_port"):
         return None
-    if not _validate_port(server.get("admin_port"), "project profile server.admin_port"):
+    admin_port = server.get("admin_port")
+    if admin_port is None:
+        admin_port = server["fed_learn_port"]
+    elif not _validate_port(admin_port, "project profile server.admin_port"):
         return None
     return {
         "name": profile_project,
@@ -2414,7 +2417,7 @@ def _load_project_profile(profile_path: str, request_project: str = None) -> dic
         "server": {
             "host": server_host.strip(),
             "fed_learn_port": server["fed_learn_port"],
-            "admin_port": server["admin_port"],
+            "admin_port": admin_port,
         },
     }
 

@@ -1,42 +1,278 @@
-## Parameter-Efficient Fine-Tuning (PEFT) with NeMo
+## Federated PEFT with NeMo AutoModel and Nemotron 3 Nano
 
-In this example, we utilize NeMo's [PEFT](https://docs.nvidia.com/deeplearning/nemo/user-guide/docs/en/v1.22.0/nlp/nemo_megatron/peft/landing_page.html)
-methods to showcase how to adapt a large language model (LLM) to 
-a downstream task, such as financial sentiment predictions. 
+This example fine-tunes a Nemotron 3 language model with LoRA adapters in an NVFlare simulation. It uses the modern
+NVFlare API surface:
 
-With one line configuration change, you can try different PEFT techniques such as [p-tuning](https://arxiv.org/abs/2103.10385), [adapters](https://proceedings.mlr.press/v97/houlsby19a.html), or [LoRA](https://arxiv.org/abs/2106.09685), which add a small number of trainable parameters to the LLM
-that condition the model to produce the desired output for the downstream task.
+- `job.py` builds a `FedAvgRecipe` and runs it with `SimEnv`.
+- `automodel_peft_client.py` uses explicit NVFlare Client API calls: `flare.init()`, `flare.receive()`, and
+  `flare.send()`.
+- The server uses `PTFileModelPersistor` with an adapter-only PyTorch checkpoint, so it does not instantiate the
+  base language model.
 
-For more details, see the [PEFT script](https://github.com/NVIDIA/NeMo/blob/v1.22.0/examples/nlp/language_modeling/tuning/megatron_gpt_peft_tuning.py) in NeMo, which we adapt using NVFlare's Lightning Client API to run in a federated scenario.
+The default fine-tuning target is `nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16`, the small local "Edge" Nano variant. This
+keeps the example practical on a single high-memory GPU while staying in the Nemotron 3 family. For larger Nano 30B-A3B
+deployment, use `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4` for base-model inference, or merge/quantize the tuned
+LoRA adapter after training. The NVFP4 checkpoint minimizes inference memory; the PEFT training path still needs enough
+GPU memory to fine-tune the selected Nano model.
+
+Smaller NVIDIA models such as Llama-Nemotron 8B are useful, but they are not Nemotron 3 family models and are not the
+target of this example.
 
 ## Dependencies
-The example was tested with the [NeMo 23.10 container](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/nemo).
-In the following, we assume this example folder of the container is mounted to `/workspace` and all downloading, etc. operations are based on this root path.
 
-> Note in the following, mount both the [current directory](./) and the [job_templates](../../../../job_templates) 
-> directory to locations inside the docker container. Please make sure you have cloned the full NVFlare repo. 
+Use a current NeMo AutoModel environment with the `automodel` CLI available. The NVIDIA NeMo AutoModel docs recommend
+either `pip install nemo-automodel` or the `nvcr.io/nvidia/nemo-automodel` container. From the NVFlare repository root:
 
-Start the Docker container from **this directory** using
-```
-# cd NVFlare/integration/nemo/examples/peft
-DOCKER_IMAGE="nvcr.io/nvidia/nemo:23.10"
-docker run --runtime=nvidia -it --rm --shm-size=16g -p 8888:8888 -p 6006:6006 --ulimit memlock=-1 --ulimit stack=67108864 \
--v ${PWD}/../../../../job_templates:/job_templates -v ${PWD}:/workspace -w /workspace ${DOCKER_IMAGE}
+```bash
+DOCKER_IMAGE="nvcr.io/nvidia/nemo-automodel:26.04"
+docker run --gpus all -it --rm --shm-size=16g --ulimit memlock=-1 --ulimit stack=67108864 \
+  -v "${PWD}:/nvflare" \
+  -w /nvflare/integration/nemo/examples/peft \
+  "${DOCKER_IMAGE}"
 ```
 
-Next, install NVFlare.
-```
-pip install "nvflare>2.6"
+Inside the container, install NVFlare from this repository. The `main` branch may depend on unreleased NVFlare features,
+so use the local checkout until the matching package is published:
+
+```bash
+pip install -e /nvflare
 ```
 
-## Examples
-### 1. Federated PEFT using a 345 million parameter GPT model
-We use [JupyterLab](https://jupyterlab.readthedocs.io) for this example.
-To start JupyterLab, run
-```
-jupyter lab .
-```
-and open [peft.ipynb](./peft.ipynb).
+You also need access to the gated Hugging Face model. Log in before preparing the adapter or running the simulation:
 
-#### Hardware requirement
-This example requires a GPU with at least 24GB memory to run three clients in parallel on the same GPU.
+```bash
+huggingface-cli login
+```
+
+## Data
+
+This example keeps the Financial PhraseBank task from the original PEFT notebook. Download `FinancialPhraseBank-v1.0`
+from the dataset provider, then run the NeMo preprocessing script referenced in the legacy notebook so the following
+files exist:
+
+```text
+data/FinancialPhraseBank-v1.0/financial_phrase_bank_train.jsonl
+data/FinancialPhraseBank-v1.0/financial_phrase_bank_val.jsonl
+data/FinancialPhraseBank-v1.0/financial_phrase_bank_test.jsonl
+```
+
+Split the training data into federated site files:
+
+```bash
+python data/split_financial_phrase_data.py \
+  --alpha=10.0 \
+  --data_path=data/FinancialPhraseBank-v1.0/financial_phrase_bank_train.jsonl \
+  --num_clients=3 \
+  --out_dir=data/FinancialPhraseBank-v1.0_split
+```
+
+## Initial Adapter
+
+Create an adapter-only checkpoint for the server. This is the only model artifact the NVFlare server persists and
+aggregates.
+
+```bash
+python prepare_initial_adapter.py \
+  --model_name_or_path nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16 \
+  --output models/nemotron3_nano_lora_init.pt \
+  --lora_rank 8 \
+  --lora_alpha 16 \
+  --device_map auto
+```
+
+Add `--load_in_4bit` if your environment has bitsandbytes and you want to reduce memory while materializing the initial
+adapter shapes.
+
+If you already have a Hugging Face PEFT adapter directory, convert it without loading the base model:
+
+```bash
+python prepare_initial_adapter.py \
+  --from_adapter_dir /path/to/adapter \
+  --output models/nemotron3_nano_lora_init.pt
+```
+
+## Run
+
+Start with a one-client, one-round tiny smoke on GPU:
+
+```bash
+python job.py \
+  --n_clients=1 \
+  --num_rounds=1 \
+  --num_threads=1 \
+  --gpu="[0]" \
+  --max_steps=1 \
+  --seq_length=512 \
+  --no-use_chat_template \
+  --initial_adapter_ckpt=models/nemotron3_nano_lora_init.pt
+```
+
+Then run the default three-client sequential simulation. Keeping `--num_threads=1` avoids multiplying GPU memory by
+running all clients at the same time. When the local training sample window is capped, the client uses deterministic
+label-balanced sampling by default so short demo runs see neutral, positive, and negative examples instead of only the
+first rows from each site split. The default dataset format is raw prompt-completion text, matching the prediction
+prompts below; pass `--use_chat_template` only if you also plan to evaluate with chat-formatted prompts.
+
+```bash
+python job.py \
+  --n_clients=3 \
+  --num_rounds=3 \
+  --num_threads=1 \
+  --gpu="[0]" \
+  --seq_length=512 \
+  --no-use_chat_template \
+  --initial_adapter_ckpt=models/nemotron3_nano_lora_init.pt
+```
+
+To reproduce the 30B H100 result below, prepare the initial adapter from the 30B model, then run three rounds with
+300 local steps per client and a lower learning rate:
+
+```bash
+python prepare_initial_adapter.py \
+  --model_name_or_path nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16 \
+  --output models/nemotron3_nano_30b_lora_init.pt \
+  --lora_rank 8 \
+  --lora_alpha 16 \
+  --device_map auto
+```
+
+```bash
+python job.py \
+  --n_clients=3 \
+  --num_rounds=3 \
+  --num_threads=1 \
+  --gpu="[0]" \
+  --model_name_or_path nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16 \
+  --max_steps=300 \
+  --seq_length=512 \
+  --limit_validation_samples=256 \
+  --learning_rate=5e-5 \
+  --no-use_chat_template \
+  --initial_adapter_ckpt=models/nemotron3_nano_30b_lora_init.pt
+```
+
+Use `--no-balance_train_labels` if you want the capped training subset to preserve the original site-file order.
+
+Check the notebook sentiment prompts against the final global adapter:
+
+```bash
+python predict_sentiment.py \
+  --server_model /tmp/nvflare/nemotron3_nano_peft/nemotron3-nano-peft/server/simulate_job/app_server/FL_global_model.pt \
+  --output_dir models/nemotron3_nano_lora_final \
+  --output_json models/nemotron3_nano_prediction_summary.json
+```
+
+The expected classifications are:
+
+```text
+The products have a low salt and fat content . sentiment: neutral
+The agreement is valid for four years . sentiment: neutral
+Diluted EPS rose to EUR3 .68 from EUR0 .50 . sentiment: positive
+Profit before taxes decreased by 9 % to EUR 187.8 mn in the first nine months of 2008 , compared to EUR 207.1 mn a year earlier . sentiment: negative
+```
+
+For split-level accuracy and Macro-F1, score the validation and test files by exact label log probability. Use the
+same `--model_name_or_path` that was used to create and train the adapter; the command below shows the default 4B path:
+
+```bash
+python evaluate_sentiment.py \
+  --model_name_or_path nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16 \
+  --adapter_dir models/nemotron3_nano_lora_final \
+  --validation_file data/FinancialPhraseBank-v1.0/financial_phrase_bank_val.jsonl \
+  --test_file data/FinancialPhraseBank-v1.0/financial_phrase_bank_test.jsonl \
+  --output_dir models/nemotron3_nano_exact_eval \
+  --batch_size 8
+```
+
+The client stages each received global adapter in a Hugging Face PEFT-style directory named `incoming_adapter`. The
+default AutoModel config uses `automodel_adapter_loader.py` to build the base model, inject LoRA modules, and warm-start
+those modules from `incoming_adapter` before every local training segment. If you need to customize the AutoModel YAML,
+pass a template with `--automodel_config_template`; placeholders such as `${incoming_adapter_dir}` are available for
+custom adapter-loading flows:
+
+```bash
+python job.py \
+  --automodel_config_template=/path/to/custom_automodel_config.yaml \
+  --initial_adapter_ckpt=models/nemotron3_nano_lora_init.pt
+```
+
+Use `--backend=mock` for a CPU/static smoke of NVFlare adapter exchange only. This does not run NeMo AutoModel.
+
+## Adapter Continuity Across Rounds
+
+This example uses multi-round FedAvg for the federated setting. The external AutoModel process may restart on each
+client task to release GPU memory, but the fine-tuning state does not restart from the initial adapter:
+
+1. The server sends the current global LoRA adapter at the start of every round.
+2. The client saves that adapter as `incoming_adapter`.
+3. AutoModel builds the base model, injects LoRA modules, and warm-starts those modules from `incoming_adapter`.
+4. The client sends the full updated adapter.
+5. FedAvg averages the adapter tensors and replaces the global adapter with the aggregate.
+
+Use `--backend=mock` for a CPU/static continuity check of the same Recipe, Client API, and full-adapter path before
+running GPU training.
+
+## Reproducing the H100 Three-Round FL Result
+
+The June 5, 2026 H100 validation used the 30B-A3B model and the real three-client, three-round federated workflow:
+
+- Code: PR branch `codex/nemo-peft-nemotron3` at commit `ddd548cec`.
+- Container: `nvcr.io/nvidia/nemo-automodel:26.04` with NeMo AutoModel `0.4.0+9687b04c`.
+- Model: `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16`; the H100 validation used a local cached copy at
+  `/base_out/combined_30b_with_4b_tokenizer_20260605` inside the container.
+- Setup: `n_clients=3`, `num_rounds=3`, `num_threads=1`, `--gpu="[0]"`.
+- Transfer: full LoRA adapter tensors with `TransferType.FULL`.
+- Data: Financial PhraseBank split into three `alpha=10.0` client files.
+- Local training: 300 steps per client per round, label-balanced capped training window, validation capped at 256 rows.
+- PEFT: LoRA rank 8, alpha 16, dropout 0.05, target modules `all-linear`.
+- Optimizer settings: learning rate `5e-5`, micro/global batch size 1, gradient accumulation 1.
+- Prompt format: raw prompt-completion text, `"{sentence} sentiment:"`, no chat template.
+- Exact evaluation: batch size 8, label choices `neutral`, `positive`, and `negative`.
+
+FedAvg ran all three rounds and clients loaded 12,008/12,008 incoming adapter tensors in later rounds, including
+round 2. The AutoModel subprocess restarts between tasks to free GPU memory, but the adapter state is the current global
+adapter, not the initial adapter. LoRA training reported about 64 GiB GPU memory during local steps on the H100.
+
+Before and after exact-label scoring:
+
+| Model / scoring | Val accuracy | Val Macro-F1 | Test accuracy | Test Macro-F1 | Test prediction counts |
+| --- | ---: | ---: | ---: | ---: | --- |
+| 30B BF16 base, no adapter | 0.3943 | 0.4410 | 0.4031 | 0.4449 | positive 834, negative 87, neutral 49 |
+| 30B BF16 + 3-round FL LoRA | 0.8570 | 0.8475 | 0.8454 | 0.8391 | neutral 528, positive 281, negative 161 |
+| 30B BF16 + 3-round FL LoRA, validation-selected label bias | 0.8595 | 0.8518 | 0.8423 | 0.8395 | neutral 498, positive 312, negative 160 |
+
+The validation-selected bias adds `+1.5` to the positive label score and `+0.0` to the negative label score after model
+scoring. It is post-hoc calibration only; it does not change the trained adapter. The raw adapter result is the main
+before/after number because it does not require post-hoc calibration.
+
+The same run reproduced the notebook-style prediction prompts with all expected labels:
+
+```text
+The products have a low salt and fat content . sentiment: neutral
+The agreement is valid for four years . sentiment: neutral
+Diluted EPS rose to EUR3 .68 from EUR0 .50 . sentiment: positive
+Profit before taxes decreased by 9 % to EUR 187.8 mn in the first nine months of 2008 , compared to EUR 207.1 mn a year earlier . sentiment: negative
+```
+
+For lower-memory experimentation, keep the default 4B Edge model and the same Recipe, Client API, sequential
+multi-client pattern, and full-adapter transfer. The matching 4B H100 reference used 900 local steps per client per
+round and reached validation Macro-F1 0.6695 raw / 0.7242 calibrated and test Macro-F1 0.6605 raw / 0.6998 calibrated.
+For lower-memory local deployment of the 30B-A3B family, use the NVFP4 30B-A3B checkpoint or a merged, quantized tuned
+checkpoint after training.
+
+## Advanced Path
+
+Megatron Bridge remains the right backend for larger 8+ GPU training runs that need Megatron-scale parallelism. For this
+example, NeMo AutoModel PEFT is the default because NVIDIA documents it for Hugging Face base models, JSONL datasets,
+LoRA/QLoRA, and small GPU-count experiments.
+
+## References
+
+- [Nemotron 3 family](https://research.nvidia.com/labs/nemotron/Nemotron-3/)
+- [Nemotron 3 Nano 4B BF16 model card](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16)
+- [Nemotron 3 Nano 30B-A3B BF16 model card](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16)
+- [Nemotron 3 Nano in Megatron Bridge](https://docs.nvidia.com/nemo/megatron-bridge/latest/models/llm/nemotron3.html)
+- [Choose a PEFT Backend](https://docs.nvidia.com/nemotron/nightly/train-models/how-to/choose-peft-backend.html)
+- [NeMo AutoModel PEFT guide](https://docs.nvidia.com/nemo/automodel/latest/guides/llm/finetune.html)
+- [Nemotron QAD / NVFP4 note](https://research.nvidia.com/labs/nemotron/nemotron-qad/)
+- [NVFP4 model card](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4)

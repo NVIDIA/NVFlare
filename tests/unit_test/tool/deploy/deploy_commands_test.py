@@ -13,7 +13,10 @@
 # limitations under the License.
 
 import argparse
+import base64
 import json
+import shutil
+import subprocess
 from datetime import datetime, timedelta
 
 import pytest
@@ -31,6 +34,7 @@ from nvflare.tool.deploy.deploy_commands import (
     PROCESS_CLIENT_LAUNCHER,
     _k8s_release_name,
     prepare_deployment,
+    stage_k8_deployment,
 )
 
 
@@ -177,6 +181,32 @@ def _run_prepare(kit, output, config):
     config_path = output.parent / f"{output.name}.yaml"
     config_path.write_text(yaml.safe_dump(config, sort_keys=False))
     prepare_deployment(argparse.Namespace(kit=str(kit), output=str(output), config=str(config_path)))
+
+
+def _stage_k8_args(kit, **overrides):
+    args = {
+        "kit": str(kit),
+        "kit_flag": None,
+        "namespace": None,
+        "local_configmap": None,
+        "startup_secret": None,
+        "kubectl": None,
+    }
+    args.update(overrides)
+    return argparse.Namespace(**args)
+
+
+def _capture_kubectl(monkeypatch, returncode=0, fail_on=None):
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+        if fail_on and fail_on(cmd):
+            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="boom")
+        return subprocess.CompletedProcess(cmd, returncode, stdout="ok", stderr="")
+
+    monkeypatch.setattr("nvflare.tool.deploy.deploy_commands.subprocess.run", fake_run)
+    return calls
 
 
 def _component(resources, component_id):
@@ -625,6 +655,7 @@ def test_prepare_k8s_client_writes_chart_and_launcher_config(tmp_path, capsys):
     assert not (output / "local" / "resources.json").exists()
     launcher = _component(resources, "k8s_launcher")
     assert launcher["path"] == "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher"
+    assert launcher["args"]["config_file_path"] is None
     assert launcher["args"]["namespace"] == "flare"
     assert launcher["args"]["study_data_pvc_file_path"] == "/workspace/local/study_data.yaml"
     assert launcher["args"]["workspace_mount_path"] == "/workspace"
@@ -653,11 +684,321 @@ def test_prepare_k8s_client_writes_chart_and_launcher_config(tmp_path, capsys):
     assert values["persistence"]["workspace"]["claimName"] == "nvflws.team.example.com"
     assert values["persistence"]["workspace"]["volumeName"] == "workspace"
     assert values["persistence"]["workspace"]["mountPath"] == "/workspace"
+    assert values["workspaceConfig"] == {
+        "local": {"configMapName": None, "items": []},
+        "startup": {"secretName": None, "items": []},
+    }
     assert values["port"] == 9102
     assert values["command"] == [K8S_PARENT_PYTHON_PATH]
     assert values["securityContext"] == {"runAsUser": 1000}
     assert values["resources"] == {"requests": {"cpu": "1", "memory": "2Gi"}}
-    assert (output / "helm_chart" / "templates" / "client-deployment.yaml").exists()
+    deployment = (output / "helm_chart" / "templates" / "client-deployment.yaml").read_text()
+    assert "workspace-local" in deployment
+    assert "workspace-startup" in deployment
+
+
+def test_stage_k8_creates_configmap_secret_and_patches_chart(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    custom_dir = kit / "local" / "custom"
+    custom_dir.mkdir()
+    (custom_dir / "helper.py").write_text("VALUE = 1\n")
+    output = tmp_path / "site-1-k8s"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "namespace": "flare",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+    calls = _capture_kubectl(monkeypatch)
+
+    stage_k8_deployment(_stage_k8_args(output))
+    out = capsys.readouterr().out
+
+    assert [cmd for cmd, _kwargs in calls] == [["kubectl", "apply", "-f", "-"], ["kubectl", "apply", "-f", "-"]]
+    manifests = [yaml.safe_load(kwargs["input"]) for _cmd, kwargs in calls]
+    configmap, secret = manifests
+
+    assert configmap["kind"] == "ConfigMap"
+    assert configmap["metadata"] == {"name": "nvflare-local-site-1", "namespace": "flare"}
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    local_items = {item["path"]: item["key"] for item in values["workspaceConfig"]["local"]["items"]}
+    assert "resources.json.default" in local_items
+    assert "comm_config.json" in local_items
+    assert "study_data.yaml" in local_items
+    assert "custom/helper.py" in local_items
+    helper_key = local_items["custom/helper.py"]
+    assert base64.b64decode(configmap["binaryData"][helper_key]).decode() == "VALUE = 1\n"
+
+    assert secret["kind"] == "Secret"
+    assert secret["type"] == "Opaque"
+    assert secret["metadata"] == {"name": "nvflare-startup-site-1", "namespace": "flare"}
+
+    assert values["workspaceConfig"]["local"]["configMapName"] == "nvflare-local-site-1"
+    assert values["workspaceConfig"]["startup"]["secretName"] == "nvflare-startup-site-1"
+    startup_paths = {item["path"] for item in values["workspaceConfig"]["startup"]["items"]}
+    assert {"fed_client.json", "client.crt", "client.key", "rootCA.pem"} <= startup_paths
+    assert "next_step: Start the server/client parent pod with the helm_command." in out
+    assert f"helm_command: helm upgrade --install site-1 {output / 'helm_chart'} --namespace flare" in out
+
+
+def test_stage_k8_uses_explicit_resource_names_and_namespace(tmp_path, capsys, monkeypatch):
+    kit = _make_server_kit(tmp_path)
+    output = tmp_path / "server-k8s"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "namespace": "prepared-ns",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+    calls = _capture_kubectl(monkeypatch)
+
+    stage_k8_deployment(
+        _stage_k8_args(
+            output,
+            namespace="runtime-ns",
+            local_configmap="manual-local",
+            startup_secret="manual-startup",
+            kubectl="oc",
+        )
+    )
+    capsys.readouterr()
+
+    assert [cmd for cmd, _kwargs in calls] == [["oc", "apply", "-f", "-"], ["oc", "apply", "-f", "-"]]
+    manifests = [yaml.safe_load(kwargs["input"]) for _cmd, kwargs in calls]
+    assert manifests[0]["metadata"] == {"name": "manual-local", "namespace": "runtime-ns"}
+    assert manifests[1]["metadata"] == {"name": "manual-startup", "namespace": "runtime-ns"}
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    assert values["workspaceConfig"]["local"]["configMapName"] == "manual-local"
+    assert values["workspaceConfig"]["startup"]["secretName"] == "manual-startup"
+
+
+def test_stage_k8_reports_kubectl_failure(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+    _capture_kubectl(monkeypatch, fail_on=lambda _cmd: True)
+
+    with pytest.raises(SystemExit):
+        stage_k8_deployment(_stage_k8_args(output, namespace="nvflare"))
+
+    err = capsys.readouterr().err
+    assert "KUBECTL_FAILED" in err
+    assert "kubectl apply" in err
+    assert "boom" in err
+
+
+def test_stage_k8_reports_kubectl_launch_os_error(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    def fake_run(_cmd, **_kwargs):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr("nvflare.tool.deploy.deploy_commands.subprocess.run", fake_run)
+
+    with pytest.raises(SystemExit):
+        stage_k8_deployment(_stage_k8_args(output, namespace="nvflare"))
+
+    err = capsys.readouterr().err
+    assert "KUBECTL_NOT_FOUND" in err
+    assert "Kubernetes CLI executable could not be started: kubectl" in err
+
+
+def test_stage_k8_rejects_non_k8s_prepared_folder(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-docker"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "docker",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+    calls = _capture_kubectl(monkeypatch)
+
+    with pytest.raises(SystemExit):
+        stage_k8_deployment(_stage_k8_args(output, namespace="nvflare"))
+
+    err = capsys.readouterr().err
+    assert "INVALID_KIT" in err
+    assert "not generated for the Kubernetes runtime" in err
+    assert "nvflare deploy prepare with runtime: k8s" in err
+    assert calls == []
+
+
+def test_stage_k8_rejects_invalid_stage_argument_values(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+    calls = _capture_kubectl(monkeypatch)
+
+    with pytest.raises(SystemExit):
+        stage_k8_deployment(_stage_k8_args(output, namespace="Bad_Namespace"))
+
+    err = capsys.readouterr().err
+    assert "INVALID_ARGS" in err
+    assert "valid Kubernetes namespace" in err
+    assert calls == []
+
+    with pytest.raises(SystemExit):
+        stage_k8_deployment(_stage_k8_args(output, namespace="nvflare", kubectl="python"))
+
+    err = capsys.readouterr().err
+    assert "INVALID_ARGS" in err
+    assert "Kubernetes CLI command must be one of" in err
+    assert calls == []
+
+    with pytest.raises(SystemExit):
+        stage_k8_deployment(_stage_k8_args(output, namespace="nvflare", kubectl="/usr/bin/kubectl"))
+
+    err = capsys.readouterr().err
+    assert "INVALID_ARGS" in err
+    assert "Kubernetes CLI command must be one of" in err
+    assert calls == []
+
+
+def test_stage_k8_rejects_symlinked_stage_folder(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+    calls = _capture_kubectl(monkeypatch)
+    external_local = tmp_path / "external-local"
+    external_local.mkdir()
+    (external_local / "resources.json.default").write_text("{}")
+    shutil.rmtree(output / "local")
+    (output / "local").symlink_to(external_local, target_is_directory=True)
+
+    with pytest.raises(SystemExit):
+        stage_k8_deployment(_stage_k8_args(output, namespace="nvflare"))
+
+    err = capsys.readouterr().err
+    assert "INVALID_KIT" in err
+    assert "must not be a symlink" in err
+    assert calls == []
+
+
+def test_prepare_k8s_preserves_zero_pending_timeout(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+            "job_launcher": {"pending_timeout": 0},
+        },
+    )
+    capsys.readouterr()
+
+    resources = json.loads((output / "local" / "resources.json.default").read_text())
+    launcher = _component(resources, "k8s_launcher")
+    assert launcher["args"]["pending_timeout"] == 0
+
+
+def test_prepare_k8s_preserves_null_pending_timeout(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+            "job_launcher": {"pending_timeout": None},
+        },
+    )
+    capsys.readouterr()
+
+    resources = json.loads((output / "local" / "resources.json.default").read_text())
+    launcher = _component(resources, "k8s_launcher")
+    assert launcher["args"]["pending_timeout"] is None
+
+
+@pytest.mark.parametrize("pending_timeout", [-1, True])
+def test_prepare_k8s_rejects_invalid_pending_timeout(tmp_path, capsys, pending_timeout):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+
+    with pytest.raises(SystemExit):
+        _run_prepare(
+            kit,
+            output,
+            {
+                "runtime": "k8s",
+                "parent": {"docker_image": "repo/nvflare:dev"},
+                "job_launcher": {"pending_timeout": pending_timeout},
+            },
+        )
+
+    err = capsys.readouterr().err
+    assert "INVALID_CONFIG" in err
+    assert "job_launcher.pending_timeout" in err
+    assert not output.exists()
+
+
+def test_prepare_k8s_launcher_defaults_to_incluster_config(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+
+    resources = json.loads((output / "local" / "resources.json.default").read_text())
+    launcher = _component(resources, "k8s_launcher")
+    assert launcher["args"]["config_file_path"] is None
 
 
 @pytest.mark.parametrize(

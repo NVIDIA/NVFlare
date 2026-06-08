@@ -900,11 +900,12 @@ class TestCertInit:
 
         assert exc_info.value.code == 0
         help_text = capsys.readouterr().out
+        normalized_help_text = " ".join(help_text.split())
         assert "--deploy-version" in help_text
-        assert "differs from the existing CA deploy version" in help_text
-        assert "matches the existing" in help_text
-        assert "ca.json is absent" in help_text
-        assert "existing CA deploy version" in help_text
+        assert "differs from the existing CA deploy version" in normalized_help_text
+        assert "matches the existing" in normalized_help_text
+        assert "ca.json is absent" in normalized_help_text
+        assert "existing CA deploy version" in normalized_help_text
 
     def test_missing_required_args_show_help_and_missing_flags(self, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
@@ -2693,6 +2694,38 @@ class TestDistributedCertParticipantWorkflow:
         assert profile is None
         output_error.assert_called_once()
         assert "server.host is invalid" in output_error.call_args.kwargs["detail"]
+
+    def test_load_project_profile_defaults_admin_port_to_fed_learn_port_when_omitted(self, tmp_path):
+        profile_path = tmp_path / "project_profile.yaml"
+        _write_participant_definition(
+            profile_path,
+            {
+                "name": "example_project",
+                "scheme": "grpc",
+                "connection_security": "tls",
+                "server": {
+                    "host": "fl-server",
+                    "fed_learn_port": 8002,
+                },
+            },
+        )
+
+        profile = _load_project_profile(str(profile_path))
+
+        assert profile is not None
+        assert profile["server"]["fed_learn_port"] == 8002
+        assert profile["server"]["admin_port"] == 8002
+
+    def test_load_project_profile_rejects_invalid_admin_port_when_present(self, tmp_path):
+        profile_path = tmp_path / "project_profile.yaml"
+        _write_project_profile(profile_path, admin_port=-1)
+
+        with patch("nvflare.tool.cert.cert_commands.output_error_message") as output_error:
+            profile = _load_project_profile(str(profile_path))
+
+        assert profile is None
+        output_error.assert_called_once()
+        assert "server.admin_port" in output_error.call_args.kwargs["detail"]
 
     def test_request_from_client_participant_definition_derives_identity_and_sanitizes_zip(
         self, tmp_path, capsys, monkeypatch

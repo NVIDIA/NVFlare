@@ -280,7 +280,7 @@ PyTorch FedOpt
         num_rounds=5,
         model=MyModel(),
         train_script="client.py",
-        optimizer_args={"class_path": "torch.optim.SGD", "args": {"lr": 1.0, "momentum": 0.6}},
+        optimizer_args={"path": "torch.optim.SGD", "args": {"lr": 1.0, "momentum": 0.6}},
     )
     env = SimEnv(num_clients=2)
     run = recipe.execute(env)
@@ -303,7 +303,7 @@ TensorFlow FedOpt
         num_rounds=5,
         model=MyTFModel(),
         train_script="client.py",
-        optimizer_args={"class_path": "tensorflow.keras.optimizers.SGD", "args": {"learning_rate": 1.0}},
+        optimizer_args={"path": "tensorflow.keras.optimizers.SGD", "args": {"learning_rate": 1.0}},
     )
     env = SimEnv(num_clients=2)
     run = recipe.execute(env)
@@ -824,8 +824,11 @@ Decentralized federated learning without a central server.
      Increase for 7B+ models where P2P tensor streaming can take several minutes.
    - ``pipe_type`` (default ``"cell_pipe"``): set to ``"file_pipe"`` when cell networking
      is unavailable or for third-party subprocess integrations.
-   - ``submit_result_timeout`` and ``tensor_min_download_timeout``: set via
-     ``recipe.add_client_config({...})`` — see :ref:`timeout_troubleshooting`.
+   - ``submit_result_timeout``, ``download_complete_timeout``,
+     ``tensor_min_download_timeout``, and ``PEER_READ_TIMEOUT``: set via
+     ``recipe.add_client_config({...})``. ``max_resends`` defaults to finite
+     value ``3`` and can be overridden the same way — see
+     :ref:`timeout_troubleshooting`.
 
 
 Edge Recipes
