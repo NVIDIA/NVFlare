@@ -13,8 +13,8 @@ kits and then preparing each server or client kit for the Kubernetes runtime.
 The prepared kit contains a participant-specific Helm chart plus the
 ``startup/`` and ``local/`` folders that must be staged into Kubernetes storage.
 
-For example scripts that automate temporary Kubernetes and managed cloud cluster
-testing flows, see
+For example scripts that automate temporary Kubernetes, OpenShift, and managed
+cloud cluster testing flows, see
 :github_nvflare_link:`examples/devops <examples/devops>`. These scripts are
 for development, smoke testing, demos, and learning only; they are not
 production deployment guidance.
@@ -28,6 +28,9 @@ Before you start, make sure you have:
   ``nvflare deploy prepare``.
 * ``kubectl`` configured for the target cluster. Use a ``kubectl`` version that
   is compatible with the Kubernetes API server.
+* ``tar`` installed locally and in any temporary pod image used with
+  ``kubectl cp``. The staging examples below use ``busybox:1.36``, which
+  includes ``tar``.
 * Helm 3.
 * A Kubernetes cluster with standard ``apps/v1`` Deployment,
   ``rbac.authorization.k8s.io/v1`` Role/RoleBinding, Service, Secret, and PVC
@@ -93,6 +96,9 @@ Kubernetes deployment has two runtime layers:
 The generated Helm chart does not run submitted jobs directly. It installs the
 parent participant process, its Kubernetes Service, its ServiceAccount, and the
 Role/RoleBinding that allow the launcher to create job pods.
+
+When ``job_launcher.config_file_path`` is omitted or set to ``null``, the
+launcher uses Kubernetes in-cluster config from the parent pod's ServiceAccount.
 
 The parent Service is the stable in-cluster address for dynamically launched job
 pods. ``nvflare deploy prepare`` patches the prepared kit's internal
@@ -315,7 +321,9 @@ mounts ``parent.workspace_pvc`` at ``parent.workspace_mount_path``, but it does
 not upload files to the PVC. Copy the prepared kit's ``startup/`` and
 ``local/`` directories into the root of that workspace PVC before installing the
 chart. For server kits, also create or copy ``transfer/`` at the workspace root
-for admin file-transfer storage.
+for admin file-transfer storage. If you use ``kubectl cp`` as shown below, the
+temporary copy pod image must contain ``tar`` because ``kubectl cp`` requires it
+in the target container.
 
 Example ``workspace-pvc.yaml``:
 
@@ -977,7 +985,8 @@ Check the parent logs for Kubernetes import or authorization failures:
        --as=system:serviceaccount:"$NAMESPACE":server
 
 If the logs show that the ``kubernetes`` Python package is missing, rebuild the
-parent image with the NVFlare ``K8S`` extra or ``pip install kubernetes``.
+parent image with the NVFlare ``K8S`` extra or
+``pip install "kubernetes!=36.0.0"``.
 
 If the logs show ``SSLCertVerificationError`` with
 ``CA cert does not include key usage extension``, the parent Kubernetes client

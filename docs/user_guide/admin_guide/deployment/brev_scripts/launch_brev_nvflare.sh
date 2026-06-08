@@ -94,6 +94,11 @@ if prepared_namespace != namespace:
         f"Prepared launcher namespace is {prepared_namespace!r}, but launch NAMESPACE is {namespace!r}. "
         "Use the same NAMESPACE for prepare and launch."
     )
+config_file_path = args.get("config_file_path")
+if config_file_path not in (None, ""):
+    raise SystemExit(
+        f"Prepared launcher config_file_path is {config_file_path!r}; expected null/empty for in-cluster config."
+    )
 if not args.get("workspace_mount_path"):
     raise SystemExit("k8s_launcher args missing workspace_mount_path")
 
@@ -197,6 +202,7 @@ spec:
   restartPolicy: Never
   containers:
     - name: copy
+      # kubectl cp requires tar in the target container; busybox includes it.
       image: busybox:1.36
       command:
         - sh
@@ -298,6 +304,14 @@ install_chart() {
   helm "${helm_args[@]}"
 }
 
+verify_parent_kubernetes_client() {
+  kubectl -n "${NAMESPACE}" exec "deploy/${PARTICIPANT}" -- "${PARENT_PYTHON_PATH}" -c '
+import kubernetes
+
+print(f"kubernetes-python-client={kubernetes.__version__}")
+'
+}
+
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   usage
   exit 0
@@ -318,6 +332,7 @@ ARCHIVE="${ARCHIVE:-${HOME}/nvflare-${PARTICIPANT}.tgz}"
 COPY_POD="${COPY_POD:-nvflare-pvc-copy}"
 ROLLOUT_TIMEOUT="${ROLLOUT_TIMEOUT:-300s}"
 LOG_TAIL="${LOG_TAIL:-100}"
+PARENT_PYTHON_PATH="${PARENT_PYTHON_PATH:-/usr/local/bin/python3}"
 
 require_cmd kubectl helm tar python3
 [[ -f "${ARCHIVE}" ]] || fail "Archive not found: ${ARCHIVE}"
@@ -361,6 +376,7 @@ fi
 install_chart
 
 kubectl -n "${NAMESPACE}" rollout status "deployment/${PARTICIPANT}" --timeout="${ROLLOUT_TIMEOUT}"
+verify_parent_kubernetes_client
 kubectl -n "${NAMESPACE}" get pods
 kubectl -n "${NAMESPACE}" logs "deploy/${PARTICIPANT}" --tail="${LOG_TAIL}" || true
 

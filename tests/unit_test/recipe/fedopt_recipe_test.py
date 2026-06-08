@@ -201,14 +201,14 @@ class TestPTFedOptRecipe:
                 **base_recipe_params,
             )
 
-    def test_dict_config_missing_path_raises_error(self, mock_file_system, base_recipe_params):
-        """Test that dict config without 'class_path' key raises error."""
+    def test_dict_config_missing_class_path_or_path_raises_error(self, mock_file_system, base_recipe_params):
+        """Test that dict config without 'class_path' or 'path' key raises error."""
         from nvflare.app_opt.pt.recipes.fedopt import FedOptRecipe
 
-        with pytest.raises(ValueError, match="must have 'class_path' key"):
+        with pytest.raises(ValueError, match="must have 'class_path' or 'path' key"):
             FedOptRecipe(
                 name="test_invalid_dict",
-                model={"args": {"input_size": 10}},  # Missing 'class_path'
+                model={"args": {"input_size": 10}},  # Missing 'class_path'/'path'
                 **base_recipe_params,
             )
 
