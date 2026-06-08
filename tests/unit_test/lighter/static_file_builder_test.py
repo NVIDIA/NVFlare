@@ -334,3 +334,44 @@ class TestStaticFileBuilder:
                 assert any(
                     ComponentPathAuthorizer._path_matches_prefix(path, prefix) for prefix in allow_list
                 ), f"{path!r} would be rejected by ComponentPathAuthorizer against {resource_key}"
+
+    def test_master_template_class_allow_list_excludes_code_exec_sinks(self):
+        """Classes that deserialize or execute file content must never be allow-listed.
+
+        The non-BYOC allow-list only restricts which component classes can be instantiated; it
+        does not restrict the files a job ships to a site (a job's ``config/`` folder is deployed
+        to the server and every client without BYOC). So any allow-listed class that loads a
+        config-controlled file through an unsafe loader (pickle / ``torch.load`` / keras
+        ``load_model`` / ``importlib``) is a remote-code-execution sink. The sinks below are
+        intentionally OMITTED -- the corresponding ``*_locator`` components are listed instead.
+        Do not add these classes (or a package prefix covering them) to ``class_allow_list``.
+        """
+        from nvflare.app_common.widgets.component_path_authorizer import ComponentPathAuthorizer
+
+        template = _load_master_template()
+
+        forbidden_paths = [
+            # tf.keras.models.load_model executes code embedded in .keras/.h5/SavedModel files
+            # (Lambda layers / custom objects); there is no safe-load flag.
+            "nvflare.app_opt.tf.model_persistor.TFModelPersistor",
+            # torch.load is pickle-based and runs arbitrary code when load_weights_only=False.
+            "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor",
+            # ConfigParser importlib-imports a class path read from a config file (plus
+            # sys.path.append) -> arbitrary code import.
+            "nvflare.edge.simulation.config.ConfigParser",
+        ]
+
+        for resource_key in ("local_client_resources", "local_server_resources"):
+            allow_list = _extract_class_allow_list(template[resource_key])
+            for forbidden in forbidden_paths:
+                # Use the authorizer's own prefix matcher so the guard mirrors production
+                # authorization semantics exactly (the private method is used intentionally).
+                authorized_by = [
+                    entry for entry in allow_list if ComponentPathAuthorizer._path_matches_prefix(forbidden, entry)
+                ]
+                assert not authorized_by, (
+                    f"{forbidden!r} is a file-deserialization / code-execution sink and must not be "
+                    f"authorized by {resource_key} (matched by {authorized_by}). Do not add this class, or a "
+                    "package prefix covering it, to class_allow_list; list the corresponding *_locator "
+                    "component instead."
+                )
