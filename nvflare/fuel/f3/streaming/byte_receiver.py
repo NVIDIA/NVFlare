@@ -54,9 +54,10 @@ class RxTask:
     rx_task_map: Dict[Tuple[str, int], "RxTask"] = {}
     map_lock = threading.Lock()
 
-    def __init__(self, sid: int, origin: str, cell: CoreCell):
+    def __init__(self, sid: int, origin: str, cell: CoreCell, reliable: bool = False):
         self.sid = sid
         self.origin = origin
+        self.reliable = reliable
         self.cell = cell
 
         self.channel = None
@@ -74,10 +75,11 @@ class RxTask:
         self.next_seq = 0
         self.offset = 0
         self.offset_ack = 0
+        self.seq = -1
+        self.seq_ack = -1
         self.waiter = threading.Event()
         self.lock = threading.Lock()
         self.eos = False
-        self.last_chunk_received = False
 
         self.timeout = CommConfigurator().get_streaming_read_timeout(READ_TIMEOUT)
         self.ack_interval = CommConfigurator().get_streaming_ack_interval(ACK_INTERVAL)
@@ -91,6 +93,7 @@ class RxTask:
 
         sid = message.get_header(StreamHeaderKey.STREAM_ID)
         origin = message.get_header(MessageHeaderKey.ORIGIN)
+        reliable = message.get_header(StreamHeaderKey.RELIABLE, False)
         error = message.get_header(StreamHeaderKey.ERROR_MSG, None)
         task_to_stop = None
 
@@ -101,7 +104,7 @@ class RxTask:
                     log.warning(f"Received error for non-existing stream: SID {sid} from {origin}")
                     return None
 
-                task = RxTask(sid, origin, cell)
+                task = RxTask(sid, origin, cell, reliable)
                 cls.rx_task_map[(origin, sid)] = task
             else:
                 if error:
@@ -143,6 +146,8 @@ class RxTask:
             if seq == 0:
                 if self.stream_future:
                     log.warning(f"{self} Received duplicate chunk 0, ignored")
+                    if self.reliable:
+                        self._send_ack(self.offset, seq)
                     return new_stream
 
                 self._handle_new_stream(message)
@@ -165,20 +170,20 @@ class RxTask:
         data_type = message.get_header(StreamHeaderKey.DATA_TYPE)
 
         last_chunk = data_type == StreamDataType.FINAL
-        if last_chunk:
-            self.last_chunk_received = True
 
         if seq < self.next_seq:
-            log.warning(f"{self} Duplicate chunk ignored {seq=}")
+            log.debug(f"{self} Duplicate chunk ignored {seq=}")
+            if self.reliable:
+                self._send_ack(self.offset, seq)
             return
 
         if seq == self.next_seq:
-            self._append((last_chunk, message.payload))
+            self._append(seq, (last_chunk, message.payload))
 
             # Try to reassemble out-of-seq chunks
             while self.next_seq in self.out_seq_chunks:
                 chunk = self.out_seq_chunks.pop(self.next_seq)
-                self._append(chunk)
+                self._append(self.next_seq, chunk)
         else:
             # Save out-of-seq chunks
             if len(self.out_seq_chunks) >= self.max_out_seq:
@@ -202,6 +207,8 @@ class RxTask:
             RxTask.rx_task_map.pop((self.origin, self.sid), None)
 
         if not error:
+            if self.seq != self.seq_ack:
+                self._send_ack(self.offset, self.seq)
             return
 
         if self.headers:
@@ -264,35 +271,50 @@ class RxTask:
 
             self.offset += len(result)
 
-            if not self.last_chunk_received and (self.offset - self.offset_ack > self.ack_interval):
-                # Send ACK
-                message = Message()
-                message.add_headers(
-                    {
-                        StreamHeaderKey.STREAM_ID: self.sid,
-                        StreamHeaderKey.DATA_TYPE: StreamDataType.ACK,
-                        StreamHeaderKey.OFFSET: self.offset,
-                    }
-                )
-                self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_ACK_TOPIC, self.origin, message)
-                self.offset_ack = self.offset
+            if self.offset - self.offset_ack >= self.ack_interval or last_chunk:
+                self._send_ack(self.offset, self.seq)
 
             if self.stream_future:
                 self.stream_future.set_progress(self.offset)
 
             return RESULT_DATA, result
 
-    def _append(self, buf: Tuple[bool, BytesAlike]):
+    def _append(self, seq: int, buf: Tuple[bool, BytesAlike]):
         if self.eos:
             log.error(f"{self} Data after EOS is ignored")
             return
 
         self.chunks.append(buf)
+        if seq <= self.seq:
+            log.error(f"Sequence error: {seq} <= {self.seq}")
+        self.seq = seq
         self.next_seq += 1
 
         # Wake up blocking read()
         if not self.waiter.is_set():
             self.waiter.set()
+
+    def _send_ack(self, offset, seq):
+        message = Message()
+        message.add_headers(
+            {
+                StreamHeaderKey.STREAM_ID: self.sid,
+                StreamHeaderKey.DATA_TYPE: StreamDataType.ACK,
+                StreamHeaderKey.OFFSET: offset,
+                StreamHeaderKey.SEQUENCE: seq,
+            }
+        )
+        try:
+            errors = self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_ACK_TOPIC, self.origin, message)
+        except Exception as ex:
+            log.error(f"{self} failed to ack seq {seq} to {self.origin}: {ex}")
+        else:
+            error = errors.get(self.origin)
+            if error:
+                log.error(f"{self} failed to ack seq {seq} to {self.origin}: {error}")
+
+        self.offset_ack = offset
+        self.seq_ack = seq
 
 
 class RxStream(Stream):

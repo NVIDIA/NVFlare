@@ -36,7 +36,7 @@ class StreamCell:
         return self.byte_streamer.get_chunk_size()
 
     def send_stream(
-        self, channel: str, topic: str, target: str, message: Message, secure=False, optional=False
+        self, channel: str, topic: str, target: str, message: Message, secure=False, optional=False, reliable=True
     ) -> StreamFuture:
         """Sends a byte-stream over a channel/topic asynchronously. The streaming is performed in a different thread.
 
@@ -49,6 +49,7 @@ class StreamCell:
             message: The payload is the stream to send
             secure: Send the message with end-end encryption if True
             optional: Optional message, error maybe suppressed
+            reliable: whether failed or unacknowledged chunks should be retried
 
         Returns:
             A StreamFuture that can be used to check status/progress, or register callbacks.
@@ -60,7 +61,15 @@ class StreamCell:
             raise StreamError(f"Message payload is not a stream: {type(message.payload)}")
 
         return self.byte_streamer.send(
-            channel, topic, target, message.headers, message.payload, STREAM_TYPE_BYTE, secure, optional
+            channel,
+            topic,
+            target,
+            message.headers,
+            message.payload,
+            STREAM_TYPE_BYTE,
+            secure=secure,
+            optional=optional,
+            reliable=reliable,
         )
 
     def register_stream_cb(self, channel: str, topic: str, stream_cb: Callable, *args, **kwargs):
@@ -89,7 +98,7 @@ class StreamCell:
         self.byte_receiver.register_callback(channel, topic, stream_cb, *args, **kwargs)
 
     def send_blob(
-        self, channel: str, topic: str, target: str, message: Message, secure=False, optional=False
+        self, channel: str, topic: str, target: str, message: Message, secure=False, optional=False, reliable=True
     ) -> StreamFuture:
         """Sends a BLOB (Binary Large Object) to the target.
 
@@ -103,6 +112,7 @@ class StreamCell:
             message: the headers and the blob as payload
             secure: Send the message with end-end encryption if True
             optional: Optional message, error maybe suppressed
+            reliable: whether failed or unacknowledged chunks should be retried
 
         Returns:
             StreamFuture that can be used to check status/progress and get result
@@ -116,7 +126,7 @@ class StreamCell:
         if not isinstance(message.payload, (bytes, bytearray, memoryview, list)):
             raise StreamError(f"Message payload is not a byte array: {type(message.payload)}")
 
-        return self.blob_streamer.send(channel, topic, target, message, secure, optional)
+        return self.blob_streamer.send(channel, topic, target, message, secure, optional, reliable)
 
     def register_blob_cb(self, channel: str, topic: str, blob_cb, *args, **kwargs):
         """Registers a callback for receiving the blob.

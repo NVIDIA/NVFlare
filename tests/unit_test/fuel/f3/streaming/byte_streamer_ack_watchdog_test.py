@@ -15,11 +15,14 @@
 import time
 from unittest.mock import MagicMock
 
+import pytest
+
+import nvflare.fuel.f3.streaming.byte_streamer as byte_streamer_module
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.byte_streamer import TxTask
-from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
+from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamHeaderKey
 from nvflare.fuel.f3.streaming.stream_types import Stream
 
 
@@ -69,6 +72,7 @@ class TestByteStreamerAckWatchdog:
             target="peer",
             headers={},
             stream=stream,
+            reliable=False,
             secure=False,
             optional=False,
         )
@@ -210,3 +214,122 @@ class TestByteStreamerAckWatchdog:
         assert err is not None
         assert "ack made no progress" in str(err).lower()
         assert elapsed < 0.2
+
+
+class TestReliableByteStreamer:
+    @pytest.fixture
+    def no_retry_worker(self, monkeypatch):
+        submitted = []
+
+        def fake_submit(fn, *args, **kwargs):
+            submitted.append((fn, args, kwargs))
+            return MagicMock()
+
+        monkeypatch.setattr(byte_streamer_module.stream_thread_pool, "submit", fake_submit)
+        return submitted
+
+    def _make_reliable_task(self, monkeypatch, no_retry_worker):
+        monkeypatch.setattr(CommConfigurator, "get_streaming_window_size", lambda self, default: 1024)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_ack_wait", lambda self, default: 1.0)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_ack_progress_timeout", lambda self, default: 10.0)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_ack_progress_check_interval", lambda self, default: 1.0)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_retry_wait", lambda self, default: 0.01)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_retry_timeout", lambda self, default: 1.0)
+
+        cell = MagicMock()
+        cell.fire_and_forget.return_value = {}
+        task = TxTask(
+            cell=cell,
+            chunk_size=4,
+            channel="ch",
+            topic="tp",
+            target="peer",
+            headers={},
+            stream=DummyStream([b""]),
+            reliable=True,
+            secure=False,
+            optional=False,
+        )
+        assert no_retry_worker[0][0] == task.retry_task
+        return task, cell
+
+    def test_reliable_stream_waits_for_sequence_ack_before_completion(self, monkeypatch, no_retry_worker):
+        task, cell = self._make_reliable_task(monkeypatch, no_retry_worker)
+        cell.fire_and_forget.return_value = {"peer": "temporary failure"}
+
+        task.buffer[0:1] = b"x"
+        task.buffer_size = 1
+        task.send_pending_buffer(final=True)
+
+        assert task.pending_messages
+        assert task.offset == 1
+        assert not task.stopped
+
+        task.stop()
+
+        assert task.stopping is True
+        assert not task.stream_future.done()
+
+        ack = Message(
+            {
+                MessageHeaderKey.ORIGIN: "peer",
+                StreamHeaderKey.OFFSET: 1,
+                StreamHeaderKey.SEQUENCE: 0,
+            },
+            None,
+        )
+        task.handle_ack(ack)
+
+        assert task.stopped is True
+        assert task.pending_messages == {}
+        assert task.stream_future.result(timeout=0.1) == 1
+
+    def test_reliable_stream_snapshots_retry_payload(self, monkeypatch, no_retry_worker):
+        task, _ = self._make_reliable_task(monkeypatch, no_retry_worker)
+
+        task.buffer[0:4] = b"abcd"
+        task.buffer_size = 4
+        task.send_pending_buffer()
+
+        _start, _last_retry, message = task.pending_messages[0]
+        task.buffer[0:4] = b"wxyz"
+
+        assert message.payload == b"abcd"
+
+    def test_reliable_stream_rejects_ack_without_sequence(self, monkeypatch, no_retry_worker):
+        task, _ = self._make_reliable_task(monkeypatch, no_retry_worker)
+        task.pending_messages[0] = (time.monotonic(), time.monotonic(), Message(None, b"x"))
+
+        ack = Message({MessageHeaderKey.ORIGIN: "peer", StreamHeaderKey.OFFSET: 1}, None)
+        task.handle_ack(ack)
+
+        err = task.stream_future.exception(timeout=0.1)
+        assert err is not None
+        assert "doesn't support reliable streaming" in str(err)
+
+    def test_retry_task_resends_due_pending_message(self, monkeypatch, no_retry_worker):
+        task, cell = self._make_reliable_task(monkeypatch, no_retry_worker)
+        message = Message(
+            {
+                StreamHeaderKey.STREAM_ID: task.sid,
+                StreamHeaderKey.SEQUENCE: 0,
+            },
+            b"x",
+        )
+        task.pending_messages[0] = (0.0, 0.0, message)
+        task.retry_wait = 0.01
+        task.retry_timeout = 10.0
+
+        monkeypatch.setattr(byte_streamer_module.time, "monotonic", lambda: 1.0)
+        monkeypatch.setattr(byte_streamer_module.time, "sleep", lambda _seconds: setattr(task, "stopped", True))
+
+        task.retry_task()
+
+        cell.fire_and_forget.assert_called_with(
+            STREAM_CHANNEL,
+            STREAM_DATA_TOPIC,
+            "peer",
+            message,
+            secure=False,
+            optional=False,
+        )

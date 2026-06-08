@@ -14,13 +14,14 @@
 
 import threading
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.byte_receiver import RxStream, RxTask
-from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
+from nvflare.fuel.f3.streaming.stream_const import STREAM_ACK_TOPIC, STREAM_CHANNEL, StreamDataType, StreamHeaderKey
 from nvflare.fuel.f3.streaming.stream_types import StreamError
 
 
@@ -42,6 +43,23 @@ def _make_message(origin: str, sid: int, error: str = None) -> Message:
     if error is not None:
         headers[StreamHeaderKey.ERROR_MSG] = error
     message.add_headers(headers)
+    return message
+
+
+def _make_chunk(origin: str, sid: int, seq: int, data_type: int, payload: bytes = b"x", reliable: bool = True):
+    message = Message(None, payload)
+    message.add_headers(
+        {
+            MessageHeaderKey.ORIGIN: origin,
+            StreamHeaderKey.STREAM_ID: sid,
+            StreamHeaderKey.SEQUENCE: seq,
+            StreamHeaderKey.DATA_TYPE: data_type,
+            StreamHeaderKey.CHANNEL: "ch",
+            StreamHeaderKey.TOPIC: "tp",
+            StreamHeaderKey.SIZE: len(payload),
+            StreamHeaderKey.RELIABLE: reliable,
+        }
+    )
     return message
 
 
@@ -166,3 +184,41 @@ def test_rxstream_close_ignores_missing_stream_future():
     stream.close()
 
     assert stream.closed is True
+
+
+def test_find_or_create_task_records_reliable_header():
+    cell = SimpleNamespace()
+    message = _make_chunk("site-1", sid=501, seq=0, data_type=StreamDataType.CHUNK, reliable=True)
+
+    task = RxTask.find_or_create_task(message, cell)
+
+    assert task.reliable is True
+
+
+def test_reliable_duplicate_initial_chunk_sends_sequence_ack():
+    cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={}))
+    message = _make_chunk("site-1", sid=502, seq=0, data_type=StreamDataType.CHUNK, reliable=True)
+    task = RxTask.find_or_create_task(message, cell)
+
+    assert task.process_chunk(message) is True
+    assert task.process_chunk(message) is False
+
+    cell.fire_and_forget.assert_called_with(
+        STREAM_CHANNEL, STREAM_ACK_TOPIC, "site-1", cell.fire_and_forget.call_args.args[3]
+    )
+    ack = cell.fire_and_forget.call_args.args[3]
+    assert ack.get_header(StreamHeaderKey.SEQUENCE) == 0
+    assert ack.get_header(StreamHeaderKey.OFFSET) == 0
+
+
+def test_reliable_final_chunk_sends_sequence_ack():
+    cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={}))
+    message = _make_chunk("site-1", sid=503, seq=0, data_type=StreamDataType.FINAL, payload=b"", reliable=True)
+    task = RxTask.find_or_create_task(message, cell)
+
+    assert task.process_chunk(message) is True
+
+    ack = cell.fire_and_forget.call_args.args[3]
+    assert cell.fire_and_forget.call_args.args[:3] == (STREAM_CHANNEL, STREAM_ACK_TOPIC, "site-1")
+    assert ack.get_header(StreamHeaderKey.SEQUENCE) == 0
+    assert ack.get_header(StreamHeaderKey.OFFSET) == 0

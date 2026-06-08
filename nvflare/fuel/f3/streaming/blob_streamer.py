@@ -234,7 +234,14 @@ class BlobStreamer:
         self.byte_receiver = byte_receiver
 
     def send(
-        self, channel: str, topic: str, target: str, message: Message, secure: bool, optional: bool
+        self,
+        channel: str,
+        topic: str,
+        target: str,
+        message: Message,
+        secure: bool,
+        optional: bool,
+        reliable: bool = True,
     ) -> StreamFuture:
         if message.payload is None:
             message.payload = bytes(0)
@@ -244,7 +251,15 @@ class BlobStreamer:
 
         blob_stream = BlobStream(message.payload, message.headers)
         return self.byte_streamer.send(
-            channel, topic, target, message.headers, blob_stream, STREAM_TYPE_BLOB, secure, optional
+            channel,
+            topic,
+            target,
+            message.headers,
+            blob_stream,
+            STREAM_TYPE_BLOB,
+            secure=secure,
+            optional=optional,
+            reliable=reliable,
         )
 
     def register_blob_callback(self, channel, topic, blob_cb: Callable, *args, **kwargs):
