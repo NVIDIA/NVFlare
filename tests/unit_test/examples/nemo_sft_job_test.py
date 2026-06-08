@@ -23,6 +23,7 @@ from types import SimpleNamespace
 import pytest
 
 HAS_TORCH = importlib.util.find_spec("torch") is not None
+HAS_SAFETENSORS = importlib.util.find_spec("safetensors") is not None
 
 
 def _example_dir():
@@ -114,6 +115,28 @@ def test_sft_model_checkpoint_round_trip(tmp_path):
     assert loaded.keys() == state.keys()
     for key, value in state.items():
         assert torch.equal(loaded[key], value.cpu())
+
+
+@pytest.mark.skipif(not (HAS_TORCH and HAS_SAFETENSORS), reason="PyTorch and safetensors are required")
+def test_sft_model_checkpoint_loads_nested_automodel_consolidated_dir(tmp_path):
+    import torch
+    from safetensors.torch import save_file
+
+    client_module = _load_example_module("automodel_sft_client")
+    model_checkpoint = _load_example_module("model_checkpoint")
+    checkpoint_dir = tmp_path / "checkpoints"
+    epoch_dir = checkpoint_dir / "epoch_0_step_0"
+    model_dir = epoch_dir / "model"
+    consolidated_dir = model_dir / "consolidated"
+    model_dir.mkdir(parents=True)
+    consolidated_dir.mkdir(parents=True)
+    torch.save({"not_model": torch.zeros(1)}, epoch_dir / "step_scheduler.pt")
+    save_file({"model.weight": torch.ones(2, 2)}, consolidated_dir / "model-00001-of-00001.safetensors")
+
+    assert client_module._latest_model_dir(str(checkpoint_dir)) == str(consolidated_dir)
+    loaded = model_checkpoint.load_model_state(str(epoch_dir))
+
+    assert torch.equal(loaded["model.weight"], torch.ones(2, 2))
 
 
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to create a PT model checkpoint")

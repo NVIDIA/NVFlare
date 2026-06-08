@@ -42,21 +42,40 @@ def _load_safetensors(path: str) -> dict[str, torch.Tensor]:
     return load_file(path, device="cpu")
 
 
-def _candidate_state_files(path: str) -> list[str]:
-    if os.path.isfile(path):
-        return [path]
-    if not os.path.isdir(path):
-        raise FileNotFoundError(f"Model checkpoint path does not exist: {path}")
-
+def _state_files_in_dir(path: str) -> list[str]:
     candidates = [
         os.path.join(path, "model.safetensors"),
         os.path.join(path, "pytorch_model.bin"),
         os.path.join(path, "model.pt"),
         os.path.join(path, "FL_global_model.pt"),
     ]
-    for pattern in ("*.safetensors", "*.pt", "*.pth", "*.bin"):
+    for pattern in ("*.safetensors", "model-*.safetensors", "pytorch_model*.bin"):
         candidates.extend(sorted(glob.glob(os.path.join(path, pattern))))
     return [candidate for candidate in candidates if os.path.isfile(candidate)]
+
+
+def _candidate_state_files(path: str) -> list[str]:
+    if os.path.isfile(path):
+        return [path]
+    if not os.path.isdir(path):
+        raise FileNotFoundError(f"Model checkpoint path does not exist: {path}")
+
+    preferred_dirs = [
+        path,
+        os.path.join(path, "model", "consolidated"),
+        os.path.join(path, "model"),
+    ]
+    for directory in preferred_dirs:
+        if os.path.isdir(directory):
+            candidates = _state_files_in_dir(directory)
+            if candidates:
+                return candidates
+
+    candidates = []
+    for root, _dirs, files in os.walk(path):
+        if any(name.endswith(".safetensors") for name in files):
+            candidates.extend(_state_files_in_dir(root))
+    return candidates
 
 
 def _unwrap_state_dict(data: Any) -> Mapping[str, torch.Tensor]:

@@ -222,7 +222,7 @@ def _latest_model_dir(checkpoint_dir: str) -> str | None:
         return None
     candidates = []
     for root, _dirs, files in os.walk(checkpoint_dir):
-        if any(name.endswith((".safetensors", ".pt", ".pth", ".bin")) for name in files):
+        if _has_model_state_file(files):
             candidates.append(root)
     if not candidates:
         return None
@@ -230,10 +230,20 @@ def _latest_model_dir(checkpoint_dir: str) -> str | None:
     return candidates[0]
 
 
-def _model_dir_sort_key(path: str) -> tuple[int, float, str]:
-    match = re.search(r"(\d+)$", os.path.basename(path))
-    step = int(match.group(1)) if match else -1
-    return step, os.path.getmtime(path), path
+def _has_model_state_file(files: list[str]) -> bool:
+    for name in files:
+        if name.endswith(".safetensors") and not name.endswith(".index.json"):
+            return True
+        if name in ("model.pt", "pytorch_model.bin", "FL_global_model.pt"):
+            return True
+    return False
+
+
+def _model_dir_sort_key(path: str) -> tuple[int, int, float, str]:
+    preferred = 2 if os.path.basename(path) == "consolidated" else 1 if os.path.basename(path) == "model" else 0
+    match = re.search(r"(?:epoch|step)_(\d+)|(\d+)$", path)
+    step = int(next(group for group in match.groups() if group is not None)) if match else -1
+    return step, preferred, os.path.getmtime(path), path
 
 
 def _build_subprocess_env() -> dict[str, str]:
