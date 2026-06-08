@@ -23,7 +23,8 @@ Common optional environment:
   PARENT_PYTHON_PATH=python
   STORAGE_CLASS=<cluster storage class>
   WORKSPACE_STORAGE=2Gi
-  COPY_IMAGE=busybox:1.36  # must contain sh, sleep, and tar for oc cp
+  WORKSPACE_STAGING_MODE=pvc  # pvc or configmap-secret
+  COPY_IMAGE=busybox:1.36  # pvc mode only; must contain sh, sleep, and tar for oc cp
   PARENT_CPU=<optional parent pod CPU request, for example 500m>
   PARENT_MEMORY=<optional parent pod memory request, for example 1Gi>
   PARENT_IMAGE_PULL_SECRETS="registry-secret another-secret"
@@ -31,6 +32,10 @@ Common optional environment:
 
 Example:
   IMAGE=registry.example.com/nvflare-parent:dev \
+    bash examples/devops/openshift/scripts/k8s_deploy.sh
+
+  IMAGE=registry.example.com/nvflare-parent:dev \
+  WORKSPACE_STAGING_MODE=configmap-secret \
     bash examples/devops/openshift/scripts/k8s_deploy.sh
 EOF
 }

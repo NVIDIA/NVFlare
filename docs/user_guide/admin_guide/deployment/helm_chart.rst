@@ -318,12 +318,22 @@ Workspace PVC
 
 The workspace PVC is for the parent server or client pod. The generated chart
 mounts ``parent.workspace_pvc`` at ``parent.workspace_mount_path``, but it does
-not upload files to the PVC. Copy the prepared kit's ``startup/`` and
-``local/`` directories into the root of that workspace PVC before installing the
-chart. For server kits, also create or copy ``transfer/`` at the workspace root
-for admin file-transfer storage. If you use ``kubectl cp`` as shown below, the
-temporary copy pod image must contain ``tar`` because ``kubectl cp`` requires it
-in the target container.
+not upload files to the PVC. Before installing the chart, choose one of two
+supported staging methods for the parent pod's ``startup/`` and ``local/``
+folders:
+
+- Copy the prepared kit's ``startup/`` and ``local/`` directories into the
+  workspace PVC root.
+- Run ``nvflare deploy k8s stage`` to create a ConfigMap for ``local/`` and a
+  Secret for ``startup/`` and patch the generated chart values.
+
+For server kits using the PVC-copy method, also create or copy ``transfer/`` at
+the workspace root for admin file-transfer storage. If you use ``kubectl cp`` as
+shown below, the temporary copy pod image must contain ``tar`` because
+``kubectl cp`` requires it in the target container.
+
+After either staging method, run ``helm upgrade --install`` for the generated
+chart to start the long-lived parent server or client pod.
 
 Example ``workspace-pvc.yaml``:
 
@@ -346,8 +356,11 @@ Use a larger size if the server's job history, snapshots, or logs need more
 space. Use a distinct workspace claim per participant when multiple
 participants run in the same namespace.
 
+Method 1: copy into the workspace PVC
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
 For example, with a prepared folder named ``server-k8s`` and a workspace PVC
-named ``nvflws``:
+named ``nvflws``, copy ``startup/`` and ``local/`` directly into the PVC root:
 
 .. code-block:: bash
 
@@ -390,6 +403,13 @@ named ``nvflws``:
    kubectl -n "$NAMESPACE" exec nvflare-pvc-copy -- ls -la /mnt/nvflws
    kubectl -n "$NAMESPACE" delete pod nvflare-pvc-copy
 
+The OpenShift helper
+:github_nvflare_link:`examples/devops/openshift/scripts/k8s_deploy.sh <examples/devops/openshift/scripts/k8s_deploy.sh>`
+shows this PVC-copy method end to end. Its ``stage_workspace_pvc`` helper in
+:github_nvflare_link:`examples/devops/openshift/scripts/k8s_common.sh <examples/devops/openshift/scripts/k8s_common.sh>`
+creates a temporary copy pod, copies ``startup/`` and ``local/`` into the PVC,
+and then the script runs Helm for each participant.
+
 The PVC root must contain ``startup/`` and ``local/`` directly. At runtime,
 those folders appear under the configured workspace mount path
 (``parent.workspace_mount_path``, rendered as
@@ -398,6 +418,27 @@ expects ``/var/tmp/nvflare/workspace/startup`` and
 ``/var/tmp/nvflare/workspace/local``. If the PVC root contains a nested
 ``server-k8s/`` or ``site-1-k8s/`` folder instead, the parent pod will not find
 those folders under the configured mount path.
+
+Method 2: stage ConfigMap and Secret
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+As an alternative to copying ``startup/`` and ``local/`` into the PVC, run
+``nvflare deploy k8s stage`` to create read-only Kubernetes resources for those
+folders. ``nvflare deploy k8 stage`` is accepted as an alias.
+
+.. code-block:: bash
+
+   nvflare deploy k8s stage "$PREPARED_KIT" --namespace "$NAMESPACE"
+
+Use ``--kubectl oc`` when staging into OpenShift with ``oc`` instead of
+``kubectl``. This creates a ConfigMap for ``local/`` and a Secret for
+``startup/``, then patches ``helm_chart/values.yaml`` so the parent pod mounts them at
+``/var/tmp/nvflare/workspace/local`` and
+``/var/tmp/nvflare/workspace/startup``. The workspace PVC is still mounted at
+the workspace root for writable runtime state such as jobs, snapshots, logs, and
+``transfer/``. After this staging command succeeds, run the printed
+``helm_command`` or the equivalent ``helm upgrade --install`` command for the
+prepared chart.
 
 The dynamically launched job pod does **not** mount this workspace PVC. Each job
 pod receives its own writable ``emptyDir`` mounted at the configured workspace
@@ -466,7 +507,8 @@ Install the Charts
 ==================
 
 Prepare, stage, and install each server or client kit in the Kubernetes cluster
-or namespace where that participant runs.
+or namespace where that participant runs. After either staging method described
+above, install the generated Helm chart to start the long-lived parent pod.
 
 Install the server chart:
 

@@ -141,6 +141,34 @@ class TestStaticFileBuilder:
         registry_path = tmp_path / server.name / "local" / "study_registry.json"
         assert not registry_path.exists()
 
+    def test_auth_identity_config_omits_default_identity_fields(self):
+        builder = StaticFileBuilder()
+
+        assert builder._build_auth_identity_config(auth_identity="site-1", default_identity="site-1") == ""
+
+    def test_auth_identity_config_emits_custom_identity_fields_as_valid_json(self):
+        builder = StaticFileBuilder()
+
+        fragment = builder._build_auth_identity_config(
+            auth_identity="custom-site-cn",
+            default_identity="site-1",
+            auth_identity_map={"site-2": "custom-site-2-cn"},
+            indent=6,
+        )
+        config_text = "\n".join(
+            [
+                "{",
+                '  "client": {',
+                '      "connection_security": "mtls"' + fragment,
+                "  }",
+                "}",
+            ]
+        )
+        config = json.loads(config_text)
+
+        assert config["client"]["auth_identity"] == "custom-site-cn"
+        assert config["client"]["auth_identity_map"] == {"site-2": "custom-site-2-cn"}
+
     def test_master_template_moves_user_config_runtime_workspace(self):
         """CC startup kits live in plaintext /user_config, so runtime artifacts must not default there."""
         template = _load_master_template()
