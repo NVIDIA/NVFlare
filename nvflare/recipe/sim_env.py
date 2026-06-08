@@ -94,7 +94,7 @@ class SimEnv(ExecEnv):
         self.log_config = v.log_config
         self.clients = v.clients
         self.workspace_root = v.workspace_root
-        self.last_run_status = None
+        self.last_run_failed = False
 
     def deploy(self, job: FedJob):
         # Validate scripts exist locally for simulation
@@ -106,7 +106,7 @@ class SimEnv(ExecEnv):
             )
 
         job_id = job.name
-        self.last_run_status = job.simulator_run(
+        run_status = job.simulator_run(
             workspace=os.path.join(self.workspace_root, job.name),
             n_clients=self.num_clients if self.clients is None else None,
             clients=self.clients,
@@ -114,9 +114,10 @@ class SimEnv(ExecEnv):
             gpu=self.gpu_config,
             log_config=self.log_config,
         )
-        if self.last_run_status:
+        self.last_run_failed = run_status not in (None, 0)
+        if self.last_run_failed:
             raise RuntimeError(
-                f"Simulation failed with return code {self.last_run_status}. "
+                f"Simulation failed with return code {run_status}. "
                 f"Logs are in per-site subdirectories under {os.path.join(self.workspace_root, job_id)}, "
                 f"e.g. server/simulate_job/log.txt"
             )
