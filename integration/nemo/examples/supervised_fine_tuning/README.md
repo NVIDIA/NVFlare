@@ -120,7 +120,39 @@ aggregation.
 
 ## H100 Validation
 
-The H100 validation command and observed results are recorded after running the end-to-end smoke for this branch.
+This workflow was validated end-to-end on an H100 NVL GPU with
+`nvcr.io/nvidia/nemo-automodel:26.04` at code commit `dc7146ee1d63c5f8acaa1351887978068f31d7fd`.
+The run used the commands above with `--max_steps=1`, `--seq_length=512`, `--limit_train_samples=1`,
+`--limit_validation_samples=1`, `--no-use_chat_template`, `--num_threads=1`, and `--gpu="[0]"`.
+
+Observed checkpoint and transfer characteristics:
+
+- Initial, smoke, and final federated checkpoints each contained 263 tensors, about 7,578.96 MiB of tensor data, and a
+  7.40 GiB checkpoint file.
+- Each full-model server-to-client transfer moved about 7,579.0 MB and took about 45-52 seconds in the sequential
+  simulation. The one-client smoke client-to-server upload took about 60 seconds.
+- AutoModel reported about 37.22 GiB of H100 memory used for the tiny one-step SFT segment.
+
+The one-client smoke completed one training step with train loss `9.5058` and validation loss `7.9239`. The 3-client,
+2-round sequential FL run completed with the following per-client metrics:
+
+| Round | Client | Train loss | Validation loss | Grad norm |
+| ----- | ------ | ---------- | --------------- | --------- |
+| 0 | site-1 | 9.5058 | 7.9172 | 316.5775 |
+| 0 | site-2 | 7.9290 | 8.2153 | 286.6590 |
+| 0 | site-3 | 8.4218 | 7.7936 | 233.2223 |
+| 1 | site-1 | 8.2070 | 6.7992 | 178.1896 |
+| 1 | site-2 | 7.4430 | 7.7996 | 248.9507 |
+| 1 | site-3 | 7.1335 | 7.5682 | 207.3232 |
+
+The logs show `Aggregated 3/3 results`, then `Round 1 started`, and every client round logged
+`Loaded 263/263 incoming global model tensors`. That confirms the client process may restart to release GPU memory, but
+each round warm-starts from the current global model instead of retraining from the original checkpoint.
+
+Prediction was also exercised from the final global checkpoint. With this intentionally tiny synthetic run, generation is
+not meaningful: the one-client smoke produced repeated `which was ...` text for one prompt and an empty answer for the
+other, while the 3-client/2-round checkpoint produced empty answers for the two smoke prompts. Use these settings to
+validate the full-model FL workflow; increase data, steps, and validation coverage for quality evaluation.
 
 ## Legacy Megatron Path
 
