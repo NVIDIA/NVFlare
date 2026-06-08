@@ -920,6 +920,68 @@ def test_stage_k8_rejects_symlinked_stage_folder(tmp_path, capsys, monkeypatch):
     assert calls == []
 
 
+def test_prepare_k8s_preserves_zero_pending_timeout(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+            "job_launcher": {"pending_timeout": 0},
+        },
+    )
+    capsys.readouterr()
+
+    resources = json.loads((output / "local" / "resources.json.default").read_text())
+    launcher = _component(resources, "k8s_launcher")
+    assert launcher["args"]["pending_timeout"] == 0
+
+
+def test_prepare_k8s_preserves_null_pending_timeout(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+            "job_launcher": {"pending_timeout": None},
+        },
+    )
+    capsys.readouterr()
+
+    resources = json.loads((output / "local" / "resources.json.default").read_text())
+    launcher = _component(resources, "k8s_launcher")
+    assert launcher["args"]["pending_timeout"] is None
+
+
+@pytest.mark.parametrize("pending_timeout", [-1, True])
+def test_prepare_k8s_rejects_invalid_pending_timeout(tmp_path, capsys, pending_timeout):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+
+    with pytest.raises(SystemExit):
+        _run_prepare(
+            kit,
+            output,
+            {
+                "runtime": "k8s",
+                "parent": {"docker_image": "repo/nvflare:dev"},
+                "job_launcher": {"pending_timeout": pending_timeout},
+            },
+        )
+
+    err = capsys.readouterr().err
+    assert "INVALID_CONFIG" in err
+    assert "job_launcher.pending_timeout" in err
+    assert not output.exists()
+
+
 def test_prepare_k8s_launcher_defaults_to_incluster_config(tmp_path, capsys):
     kit = _make_client_kit(tmp_path)
     output = tmp_path / "site-1-k8s"

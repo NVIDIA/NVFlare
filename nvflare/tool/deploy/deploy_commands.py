@@ -477,7 +477,7 @@ def _prepare_k8s(kit_info: KitInfo, final_output: Path, config: dict[str, Any]) 
         "default_python_path": job_launcher.get("default_python_path", K8S_PARENT_PYTHON_PATH),
         "workspace_mount_path": workspace_mount_path,
     }
-    if job_launcher.get("pending_timeout") is not None:
+    if "pending_timeout" in job_launcher:
         launcher_args["pending_timeout"] = job_launcher["pending_timeout"]
     if job_launcher.get("job_pod_security_context"):
         launcher_args["security_context"] = job_launcher["job_pod_security_context"]
@@ -594,7 +594,7 @@ def _validate_runtime_config(runtime: str, config: dict[str, Any]) -> None:
         _optional_k8s_secret_name_list(parent, "image_pull_secrets", "parent image pull references")
         _optional_str(job_launcher, "config_file_path", "job_launcher")
         _optional_str(job_launcher, "default_python_path", "job_launcher")
-        _optional_int(job_launcher, "pending_timeout", "job_launcher")
+        _optional_non_negative_int(job_launcher, "pending_timeout", "job_launcher")
         _optional_mapping(job_launcher, "job_pod_security_context", "job_launcher")
         _optional_k8s_secret_name_list(job_launcher, "image_pull_secrets", "job launcher image pull references")
 
@@ -1444,6 +1444,15 @@ def _optional_int(data: dict[str, Any], key: str, where: str) -> int | None:
     if not isinstance(data[key], int):
         _fail("INVALID_CONFIG", f"{where}.{key} must be an integer.", "Fix the runtime config.")
     return data[key]
+
+
+def _optional_non_negative_int(data: dict[str, Any], key: str, where: str) -> int | None:
+    value = _optional_int(data, key, where)
+    if isinstance(value, bool):
+        _fail("INVALID_CONFIG", f"{where}.{key} must be an integer.", "Fix the runtime config.")
+    if value is not None and value < 0:
+        _fail("INVALID_CONFIG", f"{where}.{key} must be a non-negative integer.", "Fix the runtime config.")
+    return value
 
 
 def _load_json_file(path: Path, label: str) -> dict[str, Any]:

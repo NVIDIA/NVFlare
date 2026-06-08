@@ -44,6 +44,7 @@ class PTFileModelPersistor(ModelPersistor):
         filter_id: Optional[str] = None,
         load_weights_only: bool = True,
         allow_numpy_conversion: bool = True,
+        load_device: Optional[str] = None,
     ):
         """Persist pytorch-based model to/from file system.
 
@@ -105,6 +106,8 @@ class PTFileModelPersistor(ModelPersistor):
             allow_numpy_conversion (bool): If set to True, enables conversion between PyTorch tensors and NumPy arrays.
                 PyTorch tensors will be converted to NumPy arrays during 'load_model',
                 and NumPy arrays will be converted to PyTorch tensors during 'save_model'. Defaults to True.
+            load_device: Optional torch device for loading the initial checkpoint. Defaults to None, which loads on
+                cuda:0 when CUDA is available, otherwise cpu.
         Raises:
             ValueError: when source_ckpt_file_full_name does not exist
         """
@@ -123,6 +126,7 @@ class PTFileModelPersistor(ModelPersistor):
         self.source_ckpt_file_full_name = source_ckpt_file_full_name
         self.load_weights_only = load_weights_only
         self._allow_numpy_conversion = allow_numpy_conversion
+        self.load_device = load_device
 
         self.default_train_conf = None
 
@@ -251,7 +255,7 @@ class PTFileModelPersistor(ModelPersistor):
 
         if src_file_name:
             try:
-                device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+                device = torch.device(self.load_device or ("cuda:0" if torch.cuda.is_available() else "cpu"))
                 self.log_info(fl_ctx, f"Loading checkpoint from {src_file_name} on device {device}")
                 data = torch.load(src_file_name, map_location=device, weights_only=self.load_weights_only)
                 # "checkpoint may contain 'model', 'optimizer', 'lr_scheduler', etc. or only contain model dict directly."

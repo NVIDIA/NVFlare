@@ -21,6 +21,7 @@ from zipfile import ZipFile
 
 import pytest
 
+from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.fl_constant import JobConstants
 from nvflare.app_opt.flower.defs import Constant as FlowerConstant
 from nvflare.fuel.utils.zip_utils import get_all_file_paths, normpath_for_zip, split_path
@@ -234,6 +235,23 @@ class TestJobMetaValidator:
         assert valid
         assert error == ""
         assert FlowerConstant.FLOWER_PREDEPLOYED not in meta
+
+    def test_ignores_user_byoc_true_without_custom_folder(self):
+        meta = """
+        {
+            "byoc": true,
+            "name": "sag",
+            "resource_spec": {},
+            "deploy_map": {"sag": ["server", "site-1", "site-2"]}
+        }
+        """
+        data = _zip_job_with_meta("valid_job", meta)
+
+        valid, error, validated_meta = self.validator.validate("valid_job", data)
+
+        assert valid
+        assert error == ""
+        assert AppValidationKey.BYOC not in validated_meta
 
     def _assert_valid(self, job_name: str):
         data = _zip_job_with_meta(job_name, "")

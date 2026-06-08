@@ -25,7 +25,7 @@ from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedA
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.np.constants import NPConstants
 from nvflare.app_common.np.np_model_persistor import NPModelPersistor
-from nvflare.app_common.workflows.base_fedavg import BaseFedAvg
+from nvflare.app_common.workflows.base_fedavg import BaseFedAvg, _aggregate_fl_model_metrics
 from nvflare.app_common.workflows.lr.np_persistor import LRModelPersistor
 
 
@@ -176,6 +176,7 @@ class FedAvgLR(BaseFedAvg):
         aggr_result = FLModel(
             params={"newton_raphson_updates": newton_raphson_updates},
             params_type=results[0].params_type,
+            metrics=_aggregate_fl_model_metrics(results),
             meta={
                 "nr_aggregated": len(results),
                 AppConstants.CURRENT_ROUND: results[0].current_round,
