@@ -12,7 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import io
 import json
+import logging
+import sys
 from unittest.mock import patch
 
 import pytest
@@ -49,6 +52,33 @@ def test_log_modes_preserve_concise_and_add_msg_only():
         "%(asctime)s - %(levelname)s - %(message)s"
     )
     assert logmode_config_dict[LogMode.MSG_ONLY]["formatters"]["consoleFormatter"]["fmt"] == "%(message)s"
+
+
+def test_color_formatter_omits_ansi_when_stdout_is_not_tty(monkeypatch):
+    from nvflare.fuel.utils.log_utils import ColorFormatter
+
+    monkeypatch.setattr(sys, "stdout", io.StringIO())
+    formatter = ColorFormatter("%(message)s")
+    record = logging.LogRecord("nvflare.test", logging.INFO, __file__, 1, "hello", (), None)
+
+    assert formatter.format(record) == "hello"
+
+
+def test_color_formatter_emits_ansi_when_stdout_is_tty(monkeypatch):
+    from nvflare.fuel.utils.log_utils import ColorFormatter
+
+    class TTYStringIO(io.StringIO):
+        def isatty(self):
+            return True
+
+    monkeypatch.setattr(sys, "stdout", TTYStringIO())
+    formatter = ColorFormatter("%(message)s")
+    record = logging.LogRecord("nvflare.test", logging.INFO, __file__, 1, "hello", (), None)
+
+    formatted = formatter.format(record)
+    assert formatted.startswith("\x1b[")
+    assert formatted.endswith("\x1b[0m")
+    assert "hello" in formatted
 
 
 def test_validate_site_log_config_accepts_levels_and_modes():

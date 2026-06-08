@@ -624,6 +624,9 @@ class RunnerTask:
 
 class ConnPropKey:
     FQCN = "fqcn"
+    IDENTITY = "identity"
+    AUTH_IDENTITY = "auth_identity"
+    AUTH_IDENTITY_MAP = "auth_identity_map"
     URL = "url"
     SCHEME = "scheme"
     ADDRESS = "address"
