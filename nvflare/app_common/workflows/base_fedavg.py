@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List
+from typing import Any, Dict, List, Optional
 
 from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.app_common.abstract.fl_model import FLModel
@@ -29,6 +29,30 @@ from nvflare.fuel.utils.validation_utils import check_non_negative_int
 from nvflare.security.logging import secure_format_exception
 
 from .model_controller import ModelController
+
+
+def _aggregate_fl_model_metrics(results: List[FLModel]) -> Optional[Dict[str, Any]]:
+    """Aggregate FLModel metrics across results with FedAvg-compatible semantics.
+
+    Metrics are weighted averages of client metric values. For non-linear metrics
+    such as AUROC, this is not the same as computing the metric from pooled
+    predictions across all clients.
+    """
+    aggr_metrics_helper = WeightedAggregationHelper()
+    for _result in results:
+        if _result.metrics is None:
+            return None
+        aggregatable = filter_aggregatable_metrics(_result.metrics)
+        if aggregatable:
+            aggr_metrics_helper.add(
+                data=aggregatable,
+                weight=_result.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, 1.0),
+                contributor_name=_result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN),
+                contribution_round=_result.current_round,
+            )
+
+    aggr_metrics = aggr_metrics_helper.get_result()
+    return aggr_metrics or None
 
 
 class BaseFedAvg(ModelController):
@@ -109,8 +133,6 @@ class BaseFedAvg(ModelController):
             raise ValueError("received empty results for aggregation.")
 
         aggr_helper = WeightedAggregationHelper()
-        aggr_metrics_helper = WeightedAggregationHelper()
-        all_metrics = True
         for _result in results:
             aggr_helper.add(
                 data=_result.params,
@@ -118,21 +140,9 @@ class BaseFedAvg(ModelController):
                 contributor_name=_result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN),
                 contribution_round=_result.current_round,
             )
-            if _result.metrics is None:
-                all_metrics = False
-            if all_metrics:
-                aggregatable = filter_aggregatable_metrics(_result.metrics)
-                if aggregatable:
-                    aggr_metrics_helper.add(
-                        data=aggregatable,
-                        weight=_result.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, 1.0),
-                        contributor_name=_result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN),
-                        contribution_round=_result.current_round,
-                    )
 
         aggr_params = aggr_helper.get_result()
-        aggr_metrics = aggr_metrics_helper.get_result() if all_metrics else None
-        aggr_metrics = aggr_metrics or None
+        aggr_metrics = _aggregate_fl_model_metrics(results)
 
         aggr_result = FLModel(
             params=aggr_params,
