@@ -117,7 +117,8 @@ class SimEnv(ExecEnv):
         if self.last_run_status:
             raise RuntimeError(
                 f"Simulation failed with return code {self.last_run_status}. "
-                f"The simulation logs can be found at {os.path.join(self.workspace_root, job_id)}"
+                f"Logs are in per-site subdirectories under {os.path.join(self.workspace_root, job_id)}, "
+                f"e.g. server/simulate_job/log.txt"
             )
         return job_id
 
