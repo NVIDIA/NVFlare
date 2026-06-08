@@ -65,6 +65,23 @@ configuration, including peer identity mappings needed by the server and by job
 cells. A job cell such as ``site-1.<job_id>`` still authenticates with the
 parent site's configured certificate identity.
 
+.. important::
+
+   Endpoint-to-CN binding is enforced when an mTLS transport exposes the
+   authenticated peer CN. Some active-side gRPC connections do not expose the
+   peer CN to the Python driver, so NVFlare accepts those active connections and
+   relies on passive-side endpoint validation plus the normal application-layer
+   authentication checks.
+
+   Admin console cells use per-session endpoint names and authenticate the admin
+   user by certificate/user identity on the admin listener. Keep admin
+   application-layer authentication configured and protected.
+
+   ``auth_identity`` is loaded when a FLARE process starts. After rotating site
+   certificates or changing certificate CNs, regenerate the startup kits as
+   needed and restart the affected FLARE processes so the in-memory identity
+   resolver uses the new certificate identity.
+
 .. warning::
 
    Do not edit ``startup/fed_client.json`` or ``startup/fed_server.json`` by

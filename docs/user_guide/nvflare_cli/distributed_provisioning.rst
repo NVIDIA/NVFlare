@@ -167,6 +167,23 @@ certificate identity. Do not edit the generated ``startup/fed_client.json`` or
 ``startup/signature.json``; regenerate the request, approval, and package so
 the signature covers the final configuration.
 
+.. important::
+
+   Endpoint-to-CN binding is enforced when an mTLS transport exposes the
+   authenticated peer CN. Some active-side gRPC connections do not expose the
+   peer CN to the Python driver, so NVFlare accepts those active connections and
+   relies on passive-side endpoint validation plus the normal application-layer
+   authentication checks.
+
+   Admin console cells use per-session endpoint names and authenticate the admin
+   user by certificate/user identity on the admin listener. Keep admin
+   application-layer authentication configured and protected.
+
+   ``auth_identity`` is loaded when a FLARE process starts. After rotating site
+   certificates or changing certificate CNs, regenerate the startup kits as
+   needed and restart the affected FLARE processes so the in-memory identity
+   resolver uses the new certificate identity.
+
 User example:
 
 .. code-block:: yaml
