@@ -339,7 +339,7 @@ ports under ``data.port_preflight.conflicts`` with ``data.port_conflict`` set to
 ``true``. The preflight is loopback-scoped and is intended as an early warning;
 startup can still fail if another local bind address conflicts.
 
-Use :ref:`kit_command` to inspect generated POC startup kit registrations or
+Use :ref:`config_command` to inspect generated POC startup kit registrations or
 switch between POC-generated user startup kits.
 
 *********************

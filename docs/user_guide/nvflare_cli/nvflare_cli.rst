@@ -53,7 +53,6 @@ workflows unless you are maintaining an older setup.
    fl_simulator
    poc_command
    config_command
-   kit_command
    provision_command
    distributed_provisioning
    deploy_command

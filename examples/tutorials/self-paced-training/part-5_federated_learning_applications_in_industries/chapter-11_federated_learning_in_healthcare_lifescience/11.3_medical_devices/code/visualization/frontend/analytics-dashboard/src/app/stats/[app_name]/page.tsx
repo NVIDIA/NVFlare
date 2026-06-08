@@ -28,12 +28,14 @@ import { StatisticsTable } from './components/StatisticsTable';
 import { Select, SelectItem, SelectOption } from "@kui-react/select";
 import { GlobalMetrics, RootData, DataTree, TreeNode } from './types';
 import { extractHierarchy, formatDate, formatDateString } from './utils';
+import { useParams } from "next/navigation";
 
 type GenericObject = {
   [key: string]: unknown;
 };
 
-const StatsPage = ({ params }: { params: { app_name: string } }) => {
+const StatsPage = () => {
+  const { app_name: appName } = useParams<{ app_name: string }>();
   const [renderCurrentLevcelStatistics, setRenderCurrentLevcelStatistics] = useState<boolean>(false);
   const [globalData, setGlobalData] = useState<GlobalMetrics | null>(null);
   const [localData, setLocalData] = useState<RootData | null>(null)
@@ -190,14 +192,14 @@ const StatsPage = ({ params }: { params: { app_name: string } }) => {
     (async () => {
       try {
         const authorizationHeader = `Bearer ${process.env.NEXT_PUBLIC_AUTHORIZATION_HEADER}`;
-        let request_uri = `${process.env.NEXT_PUBLIC_ROOT_URI}/get_stats/${params.app_name}`;
+        let request_uri = `${process.env.NEXT_PUBLIC_ROOT_URI}/get_stats/${appName}`;
         if(date && typeof(date) === 'string') {
           request_uri = `${request_uri}/?timestamp=${date}`;
         } else if (date && (date as DateRange)?.to && (date as DateRange)?.from) {
           const fr = (date as DateRange)?.from;
           const to = (date as DateRange)?.to;
           if (fr && to) {
-            request_uri = `${process.env.NEXT_PUBLIC_ROOT_URI}/get_range_stats/${params.app_name}/${formatDate(fr)}/${formatDate(to)}/`;
+            request_uri = `${process.env.NEXT_PUBLIC_ROOT_URI}/get_range_stats/${appName}/${formatDate(fr)}/${formatDate(to)}/`;
           }
         }
         const res = await fetch(request_uri, {
@@ -232,7 +234,7 @@ const StatsPage = ({ params }: { params: { app_name: string } }) => {
         }
       }
     })();
-  }, [params.app_name]);
+  }, [appName]);
 
   useEffect(() => {
     fetchStats();
@@ -243,7 +245,7 @@ const StatsPage = ({ params }: { params: { app_name: string } }) => {
       (async () => {
         try {
           const authorizationHeader = `Bearer ${process.env.NEXT_PUBLIC_AUTHORIZATION_HEADER}`;
-          const res = await fetch(`${process.env.NEXT_PUBLIC_ROOT_URI}/get_stats_list/${params.app_name}`, {
+          const res = await fetch(`${process.env.NEXT_PUBLIC_ROOT_URI}/get_stats_list/${appName}`, {
               method: 'GET',
               headers: {
                   'Authorization': `${authorizationHeader}`,
@@ -265,7 +267,7 @@ const StatsPage = ({ params }: { params: { app_name: string } }) => {
           }
         }
       })();
-    }, [params.app_name, selectedDate]);
+    }, [appName, selectedDate]);
 
   useEffect(() => {
       fetchStatsList();
@@ -279,7 +281,7 @@ const StatsPage = ({ params }: { params: { app_name: string } }) => {
         {!globalData && !error && <p>Loading...</p>}
         {globalData && (
           <div style={{width: '100%', textAlign: 'center'}}>
-            <Text variant="h1">{AppNames.get(params.app_name)}</Text>
+            <Text variant="h1">{AppNames.get(appName)}</Text>
             <Controls
               selectedStatsType={selectedStatsType}
               onStatsTypeChange={handleStatsTypeChange}

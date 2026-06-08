@@ -14,6 +14,8 @@
 
 from types import SimpleNamespace
 
+import pytest
+
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import EncKey, EncType, ViaDownloaderDecomposer
 
 
@@ -88,3 +90,24 @@ class TestViaDownloaderRecomposeLazyRefGuard:
 
         result = decomposer.recompose({EncKey.TYPE: EncType.REF, EncKey.DATA: "T0"}, manager)
         assert result == "lazy_T0"
+
+    def test_missing_downloaded_items_raises(self):
+        decomposer = _DummyViaDownloader()
+        manager = SimpleNamespace(fobs_ctx={})
+
+        with pytest.raises(RuntimeError, match="FOBS download data is missing"):
+            decomposer.recompose({EncKey.TYPE: EncType.REF, EncKey.DATA: "T0"}, manager)
+
+    def test_missing_downloaded_item_raises(self):
+        decomposer = _DummyViaDownloader()
+        manager = SimpleNamespace(fobs_ctx={decomposer.items_key: {}})
+
+        with pytest.raises(RuntimeError, match="FOBS download data is incomplete"):
+            decomposer.recompose({EncKey.TYPE: EncType.REF, EncKey.DATA: "T0"}, manager)
+
+    def test_none_downloaded_item_raises(self):
+        decomposer = _DummyViaDownloader()
+        manager = SimpleNamespace(fobs_ctx={decomposer.items_key: {"T0": None}})
+
+        with pytest.raises(RuntimeError, match="item T0 is None"):
+            decomposer.recompose({EncKey.TYPE: EncType.REF, EncKey.DATA: "T0"}, manager)

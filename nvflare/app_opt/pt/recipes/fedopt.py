@@ -80,11 +80,11 @@ class FedOptRecipe(Recipe):
         server_expected_format (str): What format to exchange the parameters between server and client.
         source_model (str): ID of the source model component. Defaults to "model".
         optimizer_args (dict): Configuration for server-side optimizer with keys:
-            - class_path: Fully qualified optimizer class (e.g., "torch.optim.SGD"). "path" is also accepted.
+            - path: Fully qualified optimizer class (e.g., "torch.optim.SGD"). "class_path" is also accepted.
             - args: Dictionary of optimizer arguments (e.g., {"lr": 1.0, "momentum": 0.6})
             - config_type: Optional; if omitted, set to "dict" so the config is not instantiated at load time.
         lr_scheduler_args (dict): Optional configuration for learning rate scheduler with keys:
-            - class_path: Fully qualified scheduler class (e.g., "torch.optim.lr_scheduler.CosineAnnealingLR"). "path" is also accepted.
+            - path: Fully qualified scheduler class (e.g., "torch.optim.lr_scheduler.CosineAnnealingLR"). "class_path" is also accepted.
             - args: Dictionary of scheduler arguments (e.g., {"T_max": 100, "eta_min": 0.9})
             - config_type: Optional; if omitted, set to "dict" so the config is not instantiated at load time.
         device (str): Device to use for server-side optimization, e.g. "cpu" or "cuda:0".
@@ -104,12 +104,12 @@ class FedOptRecipe(Recipe):
             device="cpu",
             source_model="model",
             optimizer_args={
-                "class_path": "torch.optim.SGD",
+                "path": "torch.optim.SGD",
                 "args": {"lr": 1.0, "momentum": 0.6},
                 "config_type": "dict"
             },
             lr_scheduler_args={
-                "class_path": "torch.optim.lr_scheduler.CosineAnnealingLR",
+                "path": "torch.optim.lr_scheduler.CosineAnnealingLR",
                 "args": {"T_max": "{num_rounds}", "eta_min": 0.9},
                 "config_type": "dict"
             }

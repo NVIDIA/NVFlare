@@ -21,7 +21,9 @@ from zipfile import ZipFile
 
 import pytest
 
+from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.fl_constant import JobConstants
+from nvflare.app_opt.flower.defs import Constant as FlowerConstant
 from nvflare.fuel.utils.zip_utils import get_all_file_paths, normpath_for_zip, split_path
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 
@@ -53,6 +55,22 @@ def _zip_job_with_meta(folder_name: str, meta: str) -> bytes:
     _zip_directory_with_meta(job_path, folder_name, meta, bio)
     zip_data = bio.getvalue()
     return zip_data
+
+
+def _zip_minimal_job(folder_name: str, meta: dict, server_config: dict) -> bytes:
+    bio = io.BytesIO()
+    with ZipFile(bio, "w", compression=zipfile.ZIP_DEFLATED) as z:
+        z.writestr(f"{folder_name}/app/config/", "")
+        z.writestr(f"{folder_name}/{JobConstants.META_FILE}", json.dumps(meta))
+        z.writestr(
+            f"{folder_name}/app/config/{JobConstants.SERVER_JOB_CONFIG}",
+            json.dumps(server_config),
+        )
+        z.writestr(
+            f"{folder_name}/app/config/{JobConstants.CLIENT_JOB_CONFIG}",
+            json.dumps({"format_version": 2, "executors": []}),
+        )
+    return bio.getvalue()
 
 
 META_WITH_VALID_DEPLOY_MAP = [
@@ -169,6 +187,71 @@ class TestJobMetaValidator:
         }}
         """
         self._assert_invalid("valid_job", meta)
+
+    def test_flower_predeployed_flag_is_derived_from_server_config(self):
+        job_name = "flower_job"
+        data = _zip_minimal_job(
+            folder_name=job_name,
+            meta={"deploy_map": {"app": ["server", "site-1"]}},
+            server_config={
+                "format_version": 2,
+                "workflows": [
+                    {
+                        "id": "controller",
+                        "path": "nvflare.app_opt.flower.controller.FlowerController",
+                        "args": {"flower_app_path": "local/custom/preapproved/app"},
+                    }
+                ],
+            },
+        )
+
+        valid, error, meta = self.validator.validate(job_name, data)
+
+        assert valid
+        assert error == ""
+        assert meta[FlowerConstant.FLOWER_PREDEPLOYED] is True
+
+    def test_user_supplied_flower_predeployed_flag_is_removed_without_server_config_path(self):
+        job_name = "non_flower_job"
+        data = _zip_minimal_job(
+            folder_name=job_name,
+            meta={
+                "deploy_map": {"app": ["server", "site-1"]},
+                FlowerConstant.FLOWER_PREDEPLOYED: True,
+            },
+            server_config={
+                "format_version": 2,
+                "workflows": [
+                    {
+                        "id": "controller",
+                        "path": "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather",
+                    }
+                ],
+            },
+        )
+
+        valid, error, meta = self.validator.validate(job_name, data)
+
+        assert valid
+        assert error == ""
+        assert FlowerConstant.FLOWER_PREDEPLOYED not in meta
+
+    def test_ignores_user_byoc_true_without_custom_folder(self):
+        meta = """
+        {
+            "byoc": true,
+            "name": "sag",
+            "resource_spec": {},
+            "deploy_map": {"sag": ["server", "site-1", "site-2"]}
+        }
+        """
+        data = _zip_job_with_meta("valid_job", meta)
+
+        valid, error, validated_meta = self.validator.validate("valid_job", data)
+
+        assert valid
+        assert error == ""
+        assert AppValidationKey.BYOC not in validated_meta
 
     def _assert_valid(self, job_name: str):
         data = _zip_job_with_meta(job_name, "")

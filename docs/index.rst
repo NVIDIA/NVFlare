@@ -11,7 +11,7 @@ NVIDIA FLARE
 
    welcome
    roadmap
-   release_notes/flare_272
+   release_notes/flare_280
    industry_use_cases
 
 .. toctree::
@@ -84,6 +84,7 @@ NVIDIA FLARE
    Deploy Prepare <user_guide/nvflare_cli/deploy_command>
    Running FLARE in Docker <user_guide/admin_guide/deployment/containerized_deployment>
    Running FLARE in Kubernetes <user_guide/admin_guide/deployment/helm_chart>
+   Deploying FLARE on OpenShift <user_guide/admin_guide/deployment/openshift>
    Brev Scripted Deployment Quickstart <user_guide/admin_guide/deployment/brev_scripted_deployment>
    Brev Kubernetes Helm Deployment <user_guide/admin_guide/deployment/brev_deployment>
    Preflight Check <user_guide/nvflare_cli/preflight_check>

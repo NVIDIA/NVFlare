@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import pathlib
 from typing import Optional
 
@@ -36,3 +37,18 @@ def get_file_ext(input_path: str) -> Optional[str]:
         return ext[1:]
     else:
         return ext
+
+
+def resolve_path_under_root(root_dir: str, relative_path: str, path_name: str = "path") -> str:
+    if not isinstance(root_dir, str):
+        raise TypeError(f"root_dir must be str but got {type(root_dir)}")
+    if not isinstance(relative_path, str):
+        raise TypeError(f"{path_name} must be str but got {type(relative_path)}")
+    if os.path.isabs(relative_path):
+        raise ValueError(f"{path_name} {relative_path} must be relative to {root_dir}.")
+
+    root_real = os.path.realpath(root_dir)
+    full_path = os.path.realpath(os.path.join(root_real, relative_path))
+    if os.path.commonpath([root_real, full_path]) != root_real:
+        raise ValueError(f"{path_name} {relative_path} must stay inside {root_real}.")
+    return full_path

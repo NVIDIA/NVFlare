@@ -21,6 +21,7 @@ from zipfile import ZipFile
 
 import pytest
 
+from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import (
     SUBMIT_TOKEN_JOB_DELETED_STATUS,
@@ -361,6 +362,26 @@ class _FakeListJobDefManager:
 class _FakeListEngine:
     def __init__(self, jobs):
         self.job_def_manager = _FakeListJobDefManager(jobs)
+
+    def new_context(self):
+        from nvflare.apis.fl_context import FLContext
+
+        return FLContext()
+
+
+class _FakeListComponentsJobDefManager:
+    def __init__(self, components):
+        self.components = components
+        self.jid = None
+
+    def list_components(self, jid, fl_ctx):
+        self.jid = jid
+        return self.components
+
+
+class _FakeListComponentsEngine:
+    def __init__(self, components):
+        self.job_def_manager = _FakeListComponentsJobDefManager(components)
 
     def new_context(self):
         from nvflare.apis.fl_context import FLContext
@@ -1056,6 +1077,23 @@ def test_list_jobs_by_submit_token_returns_deleted_status(monkeypatch):
     assert conn.tables == []
 
 
+def test_list_job_components_returns_empty_list_for_system_components(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListComponentsEngine(["data", "meta", "workspace"])
+    conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1"})
+
+    JobCommandModule().list_job_components(conn, ["list_job_components", "job-1"])
+
+    assert conn.errors == []
+    assert conn.strings == []
+    assert len(conn.successes) == 1
+    msg, meta = conn.successes[0]
+    assert msg == ""
+    assert meta[MetaKey.STATUS] == MetaStatusValue.OK
+    assert meta[MetaKey.JOB_COMPONENTS] == []
+    assert engine.job_def_manager.jid == "job-1"
+
+
 def test_clone_job_preserves_source_study(monkeypatch):
     monkeypatch.setattr(job_cmds_module, "ServerEngine", object)
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
@@ -1084,6 +1122,35 @@ def test_clone_job_preserves_source_study(monkeypatch):
 
     assert conn.errors == []
     assert engine.job_def_manager.cloned_meta[JobMetaKey.STUDY.value] == "cancer-research"
+
+
+def test_clone_job_preserves_byoc_flag(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", object)
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+
+    source_job = _FakeListedJob(
+        {
+            JobMetaKey.JOB_ID.value: "source-job",
+            JobMetaKey.JOB_NAME.value: "source",
+            AppValidationKey.BYOC: True,
+        }
+    )
+    engine = _FakeEngine()
+    conn = _MockConnection(
+        app_ctx=engine,
+        props={
+            JobCommandModule.JOB: source_job,
+            JobCommandModule.JOB_ID: "source-job",
+            ConnProps.USER_NAME: "submitter",
+            ConnProps.USER_ORG: "org",
+            ConnProps.USER_ROLE: "role",
+        },
+    )
+
+    JobCommandModule().clone_job(conn, ["clone_job", "source-job"])
+
+    assert conn.errors == []
+    assert engine.job_def_manager.cloned_meta[AppValidationKey.BYOC] is True
 
 
 def test_list_jobs_filters_legacy_jobs_into_default_study(monkeypatch):

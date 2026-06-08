@@ -355,11 +355,17 @@ Pod phase mapping:
 | `Unknown` | `UNKNOWN` | `UNKNOWN` |
 
 Manual termination still maps to `ABORTED`. Startup timeout paths are different:
-when a pod stays `Pending` or `Unknown` past `pending_timeout`, or misses the
-wall-clock `timeout`, `K8sJobHandle` deletes the pod but makes subsequent
-`poll()` calls return `EXCEPTION`. This lets the server mark `list_jobs` as
-`FINISHED:EXECUTION_EXCEPTION` for cluster resource or startup failures instead
-of reporting a user abort.
+when Kubernetes reports that a `Pending` pod is unschedulable due to insufficient
+CPU, memory, or GPU resources, `pending_timeout` controls how long to wait before
+deleting the pod. Other startup failures detected from pod status or events,
+such as image pull errors, volume binding/mount failures, container config
+errors, non-resource scheduling failures, or `Unknown` pod phase, fail
+immediately with `EXCEPTION`. Missing the wall-clock `timeout` also deletes the
+pod and preserves `EXCEPTION`, so the server marks `list_jobs` as
+`FINISHED:EXECUTION_EXCEPTION` instead of reporting a user abort.
+`pending_timeout=0` fails fast on the first CPU/memory/GPU shortage observation.
+`pending_timeout=None` disables resource-shortage timeout unless the broader
+launch `timeout` is set.
 
 #### K8sJobLauncher
 
@@ -370,9 +376,9 @@ Constructor parameters:
 | `config_file_path` | required | Path to kubeconfig. Loaded lazily on first `launch_job`. |
 | `workspace_pvc` | required | PVC claim name for workspace volume. |
 | `study_data_pvc_file_path` | required | YAML file mapping study/dataset names to PVC claim names. Validated lazily; missing study entries skip data PVC mounts and log a warning. |
-| `timeout` | `None` | Wall-clock seconds for `enter_states([RUNNING])`; also `_max_stuck_count`. |
+| `timeout` | `None` | Wall-clock seconds for `enter_states([RUNNING])`. |
 | `namespace` | `"default"` | Kubernetes namespace. |
-| `pending_timeout` | `120` | Stuck-detection threshold, in poll iterations, for pods that remain `Pending` or `Unknown` when `timeout` is `None`. Hitting it reports `EXCEPTION`. |
+| `pending_timeout` | `120` | Seconds to wait while the scheduler reports insufficient CPU, memory, or GPU resources. Use `0` to fail fast or `None` to wait indefinitely unless `timeout` is set. Job meta can override with `launcher_spec[site][k8s].pending_timeout`. |
 | `default_python_path` | `"/usr/local/bin/python3"` | Default Python executable in the pod command. Job meta can override with `launcher_spec[site][k8s].python_path`. |
 | `workspace_mount_path` | `"/var/tmp/nvflare/workspace"` | In-container path where job pods mount the transferred job workspace and startup kit. `nvflare deploy prepare` sets this from `parent.workspace_mount_path`. |
 | `ephemeral_storage` | `"1Gi"` | Default job pod workspace `emptyDir` size and `ephemeral-storage` request/limit. Job meta can override with `launcher_spec[site][k8s].ephemeral_storage`. |
@@ -384,9 +390,9 @@ Launch sequence:
 | 0 | Lazy init: load kubeconfig and create `CoreV1Api`. |
 | 1 | Sanitize job ID via `uuid4_to_rfc1123`. Extract `site_name`, `job_image` from `get_job_launcher_spec(job_meta, site_name, "k8s")`. Raise if `WORKSPACE_OBJECT` missing. |
 | 2 | Read `JOB_PROCESS_ARGS`; raise if absent or `EXE_MODULE` missing. Resolve dataset PVC mounts from `study_data_pvc_file_path` when the YAML file contains entries for the job study. |
-| 3 | Build `job_config`: name, image, args from `get_module_args()`. Use `launcher_spec[site][k8s].python_path` for the pod command when present, falling back to `default_python_path`. Mount the job workspace at `workspace_mount_path`, mount the startup-kit Secret at `<workspace_mount_path>/startup`, and set custom-code `PYTHONPATH` under `workspace_mount_path`. Add the workspace `emptyDir.sizeLimit` and `resources.requests/limits["ephemeral-storage"]` from `launcher_spec[site][k8s].ephemeral_storage` when present, falling back to the launcher default. Add K8s CPU and memory limits from `launcher_spec`; add GPU limits from the flat `resource_spec[site].num_of_gpus` GPU resource requirement. Missing study entries skip data PVC mounts and log a warning. |
+| 3 | Build `job_config`: name, image, args from `get_module_args()`. Use `launcher_spec[site][k8s].python_path` for the pod command when present, falling back to `default_python_path`. Mount the job workspace at `workspace_mount_path`, mount the startup-kit Secret at `<workspace_mount_path>/startup`, and set custom-code `PYTHONPATH` under `workspace_mount_path`. Add the workspace `emptyDir.sizeLimit` and `resources.requests/limits["ephemeral-storage"]` from `launcher_spec[site][k8s].ephemeral_storage` when present, falling back to the launcher default. Add K8s CPU and memory limits from `launcher_spec`; add GPU limits from the flat `resource_spec[site].num_of_gpus` GPU resource requirement. Apply `launcher_spec[site][k8s].pending_timeout` when present. Missing study entries skip data PVC mounts and log a warning. |
 | 4 | Create `K8sJobHandle`. |
-| 5 | `core_v1.create_namespaced_pod()`. On any exception: set `terminal_state = TERMINATED`, return handle. |
+| 5 | `core_v1.create_namespaced_pod()`. On any exception: set `terminal_state = TERMINATED`, preserve `EXCEPTION` as the return code, and return handle. |
 | 6 | `job_handle.enter_states([RUNNING])`. On any `BaseException`: `terminate()` then re-raise. |
 | 7 | Return handle. |
 

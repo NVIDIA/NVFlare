@@ -94,7 +94,7 @@ class MetaStatusValue(object):
     JOB_NOT_RUNNING = "job_not_running"
     CLIENTS_RUNNING = "clients_running"
     NO_JOBS = "no_jobs"
-    NO_JOB_COMPONENTS = "no_job_compoents"
+    NO_JOB_COMPONENTS = "no_job_components"
     NO_REPLY = "no_reply"
     NO_CLIENTS = "no_clients"
 

@@ -20,6 +20,7 @@ from unittest.mock import patch
 import pytest
 
 from nvflare.app_opt.flower.applet import FlowerServerApplet
+from nvflare.app_opt.flower.defs import Constant as FlowerConstant
 
 
 def _make_server_applet(run_config=None):
@@ -87,6 +88,11 @@ def test_flower_stop_command_does_not_include_run_config(_validate_executable):
         "--format",
         "json",
     ]
+
+
+def test_flower_predeployed_constant_value():
+    """FLOWER_PREDEPLOYED constant has correct value."""
+    assert FlowerConstant.FLOWER_PREDEPLOYED == "flower_predeployed"
 
 
 @patch("nvflare.app_opt.flower.applet._validate_flower_executable")

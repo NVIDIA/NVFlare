@@ -25,6 +25,7 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.model import ModelLearnable
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.utils.file_utils import resolve_path_under_root
 from nvflare.security.logging import secure_format_exception
 
 from .constants import NPConstants
@@ -55,6 +56,13 @@ class NPTrainer(Executor):
         self._train_task_name = train_task_name
         self._submit_model_task_name = submit_model_task_name
 
+    @staticmethod
+    def _model_summary(np_data):
+        weights = np_data.get(NPConstants.NUMPY_KEY) if isinstance(np_data, dict) else None
+        if weights is None:
+            return f"{NPConstants.NUMPY_KEY}=missing"
+        return f"shape={getattr(weights, 'shape', None)}, dtype={getattr(weights, 'dtype', None)}"
+
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         # if event_type == EventType.START_RUN:
         #     Create all major components here. This is a simple app that doesn't need any components.
@@ -84,9 +92,9 @@ class NPTrainer(Executor):
 
         # Display properties.
         self.log_info(fl_ctx, f"Incoming data kind: {incoming_dxo.data_kind}")
-        self.log_info(fl_ctx, f"Model: \n{np_data}")
-        self.log_info(fl_ctx, f"Current Round: {current_round}")
-        self.log_info(fl_ctx, f"Total Rounds: {total_rounds}")
+        self.log_info(
+            fl_ctx, f"Model received for round {current_round}/{total_rounds}: {self._model_summary(np_data)}"
+        )
         self.log_info(fl_ctx, f"Client identity: {fl_ctx.get_identity_name()}")
 
         # Check abort signal
@@ -116,7 +124,8 @@ class NPTrainer(Executor):
 
         self.log_info(
             fl_ctx,
-            f"Model after training: {np_data}",
+            f"Completed mock training for round {current_round}/{total_rounds}: "
+            f"added delta={self._delta} to {NPConstants.NUMPY_KEY}; {self._model_summary(np_data)}",
         )
 
         # Checking abort signal again.
@@ -188,9 +197,9 @@ class NPTrainer(Executor):
         engine = fl_ctx.get_engine()
         job_id = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
         run_dir = engine.get_workspace().get_run_dir(job_id)
-        model_path = os.path.join(run_dir, self._model_dir)
-
-        model_load_path = os.path.join(model_path, self._model_name)
+        model_load_path = resolve_path_under_root(
+            run_dir, os.path.join(self._model_dir, self._model_name), "model path"
+        )
         try:
             np_data = np.load(model_load_path, allow_pickle=False)
         except Exception as e:
@@ -207,10 +216,12 @@ class NPTrainer(Executor):
         engine = fl_ctx.get_engine()
         job_id = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
         data_dir = engine.get_workspace().get_result_root(job_id)
-        model_path = os.path.join(data_dir, self._model_dir)
+        model_save_path = resolve_path_under_root(
+            data_dir, os.path.join(self._model_dir, self._model_name), "model path"
+        )
+        model_path = os.path.dirname(model_save_path)
         if not os.path.exists(model_path):
             os.makedirs(model_path)
 
-        model_save_path = os.path.join(model_path, self._model_name)
         np.save(model_save_path, model[NPConstants.NUMPY_KEY])
         self.log_info(fl_ctx, f"Saved numpy model to: {model_save_path}")

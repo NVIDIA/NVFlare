@@ -89,7 +89,7 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 | [Intro to the FL Simulator](./tutorials/flare_simulator.ipynb)                                                                         | Shows how to use the FLARE Simulator to run a local simulation.                                                                                                 |
 | [Hello FLARE API](./tutorials/flare_api.ipynb)                                                                                         | Goes through the different commands of the FLARE API.                                                                                                           |
 | [NVFLARE in POC Mode](./tutorials/setup_poc.ipynb)                                                                                     | Shows how to use POC mode.                                                                                                                                |
-| [Job CLI](./tutorials/job_cli.ipynb)                                                                                                   | Walks through the different commands of the Job CLI.                                                                                                   |
+| [NVFlare CLI](./tutorials/nvflare_cli.ipynb)                                                                                           | Walks through the current `nvflare` command groups for local setup, recipes, jobs, systems, studies, provisioning, and deployment.                     |
 | [Job Recipe](./tutorials/job_recipe.ipynb)                                                                                              | Introduces Job Recipes to simplify federated learning job creation and execution with a high-level API.                                                 |
 | [Logging Tutorial](./tutorials/logging.ipynb)                                                                                 | Shows how to use the logging configuration for different modules.                                                                                           |
 
@@ -181,9 +181,11 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 |-------------------------------------------------------|-----------|--------------------------------------------------------------------------------------------------------------------------|
 | [Flare Edge](./advanced/edge/README.md) | NA        | This example demonstrates FLARE mobile training jobs |
 
-## 14. System Monitoring & Misc.
+## 14. Deployment, Monitoring & Misc.
 
 | Example                                                     | Framework | Summary                                                                                                                  |
 |-------------------------------------------------------------|-----------|--------------------------------------------------------------------------------------------------------------------------|
-| [Docker](./advanced/docker/README.md)                       | NA        | The notebook in this directory walks through the creation and launch of Docker containers for NVIDIA FLARE. |
+| [Docker Job Launcher](./docker/README.md)                   | NA        | End-to-end Docker runtime example using `nvflare deploy prepare` and per-job Docker containers. |
+| [OpenShift Deployment](./devops/openshift/README.md)        | NA        | OpenShift-specific deployment guide and helper scripts using the Kubernetes runtime support. |
+| [DevOps Deployment Examples](./devops/README.md)            | NA        | Test-only helper scripts for trying NVFlare deployment flows on Kubernetes and managed cloud clusters; not production deployment guidance. |
 | [Monitoring](./advanced/monitoring/README.md)               | NA        | FLARE Monitoring provides an initial solution for tracking system metrics of your federated learning jobs. |

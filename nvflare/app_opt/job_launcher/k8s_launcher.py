@@ -21,6 +21,7 @@ import os
 import re
 import time
 from abc import abstractmethod
+from datetime import datetime
 from enum import Enum
 
 from nvflare.apis.event_type import EventType
@@ -57,6 +58,12 @@ class PodPhase(Enum):
     UNKNOWN = "Unknown"
 
 
+class PendingPodAction(Enum):
+    WAIT = "wait"
+    WAIT_FOR_RESOURCES = "wait_for_resources"
+    FAIL = "fail"
+
+
 POD_STATE_MAPPING = {
     PodPhase.PENDING.value: JobState.STARTING,
     PodPhase.RUNNING.value: JobState.RUNNING,
@@ -89,11 +96,35 @@ DEFAULT_CONTAINER_ARGS_MODULE_ARGS_DICT = {
 DEFAULT_NAMESPACE = "default"
 DEFAULT_PENDING_TIMEOUT = 120
 DEFAULT_PYTHON_PATH = "/usr/local/bin/python"
+POLL_INTERVAL = 1
+SCHEDULED_EVENT_FAILURE_MAX_AGE = 60
 
 
 WORKSPACE_MOUNT_PATH = "/var/tmp/nvflare/workspace"
 DEFAULT_EPHEMERAL_STORAGE = "1Gi"
 
+_PENDING_FAILURE_WAITING_REASONS = {
+    "CreateContainerConfigError",
+    "CreateContainerError",
+    "ErrImagePull",
+    "ErrImageNeverPull",
+    "ImagePullBackOff",
+    "InvalidImageName",
+    "RunContainerError",
+    "CrashLoopBackOff",
+}
+_PENDING_FAILURE_EVENT_REASONS = {
+    "BackOff",
+    "Failed",
+    "FailedAttachVolume",
+    "FailedCreatePodSandBox",
+    "FailedMount",
+    "FailedScheduling",
+    "FailedSync",
+    "InspectFailed",
+    "InvalidImageName",
+    "NetworkNotReady",
+}
 # Files actually read from startup/ by the job pod at runtime. Others in
 # startup/ are dropped to shrink the Secret. local/ is bundled whole with each
 # job workspace so job resource files and local custom code keep working.
@@ -102,6 +133,82 @@ _STARTUP_KEEP_SUFFIXES = (".crt", ".key", ".pem", ".json")
 
 def _keep_startup_file(fname: str) -> bool:
     return fname.endswith(_STARTUP_KEEP_SUFFIXES)
+
+
+def _normalize_image_pull_secrets(image_pull_secrets) -> list[str]:
+    if image_pull_secrets is None:
+        return []
+    if not isinstance(image_pull_secrets, list):
+        raise ValueError("image_pull_secrets must be a list of Kubernetes Secret names")
+    for name in image_pull_secrets:
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("image_pull_secrets entries must be non-empty strings")
+    return list(image_pull_secrets)
+
+
+def _normalize_pending_timeout(pending_timeout, field_name="pending_timeout"):
+    if pending_timeout is None:
+        return None
+    if isinstance(pending_timeout, bool) or not isinstance(pending_timeout, (int, float)):
+        raise ValueError(f"{field_name} must be a non-negative number of seconds or None")
+    if pending_timeout < 0:
+        raise ValueError(f"{field_name} must be a non-negative number of seconds or None")
+    return pending_timeout
+
+
+def _obj_text(*values) -> str:
+    return " ".join(str(v) for v in values if v)
+
+
+def _is_cpu_memory_gpu_shortage(message: str) -> bool:
+    if not message:
+        return False
+    for resource_name in re.findall(r"\binsufficient\s+([a-z0-9./_-]+)", message, flags=re.IGNORECASE):
+        resource_name = resource_name.lower().rstrip(".,;:")
+        if resource_name in {"cpu", "memory"} or "gpu" in resource_name:
+            return True
+    return False
+
+
+def _timestamp_to_seconds(value):
+    if isinstance(value, datetime):
+        return value.timestamp()
+    if isinstance(value, (int, float)):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.strip().replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            return None
+    return None
+
+
+def _event_timestamp(event):
+    series = getattr(event, "series", None)
+    metadata = getattr(event, "metadata", None)
+    for value in (
+        getattr(event, "event_time", None),
+        getattr(series, "last_observed_time", None),
+        getattr(event, "last_timestamp", None),
+        getattr(event, "first_timestamp", None),
+        getattr(metadata, "creation_timestamp", None),
+    ):
+        seconds = _timestamp_to_seconds(value)
+        if seconds is not None:
+            return seconds
+    return None
+
+
+def _event_sort_key(event):
+    event_time = _event_timestamp(event)
+    return event_time if event_time is not None else 0
+
+
+def _is_recent_event(event, now, max_age) -> bool:
+    event_time = _event_timestamp(event)
+    if event_time is None:
+        return False
+    return now - event_time <= max_age
 
 
 def uuid4_to_rfc1123(uuid_str: str) -> str:
@@ -168,6 +275,7 @@ class K8sJobHandle(JobHandleSpec):
         self.workspace_job_id = workspace_job_id
         self.api_instance = api_instance
         self.namespace = namespace
+        self.pending_timeout = _normalize_pending_timeout(pending_timeout)
         self.pod_manifest = {
             "apiVersion": "v1",
             "kind": "Pod",
@@ -197,7 +305,11 @@ class K8sJobHandle(JobHandleSpec):
         self.container_volume_mount_list = []
         self._make_manifest(job_config)
         self._stuck_count = 0
-        self._max_stuck_count = self.timeout if self.timeout is not None else pending_timeout
+        self._pending_since = None
+        # Kept for diagnostics only; unit is seconds, not poll iterations like _stuck_count.
+        self._pending_timeout_secs = self.pending_timeout
+        self._last_event_query_failed = False
+        self._pending_timer_paused_at = None
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def _make_manifest(self, job_config):
@@ -221,6 +333,9 @@ class K8sJobHandle(JobHandleSpec):
         self.pod_manifest["metadata"]["name"] = job_config.get("name")
         self.pod_manifest["spec"]["containers"] = self.container_list
         self.pod_manifest["spec"]["volumes"] = self.volume_list
+        image_pull_secrets = _normalize_image_pull_secrets(job_config.get("image_pull_secrets"))
+        if image_pull_secrets:
+            self.pod_manifest["spec"]["imagePullSecrets"] = [{"name": name} for name in image_pull_secrets]
         security_context = job_config.get("security_context")
         if security_context:
             self.pod_manifest["spec"]["securityContext"] = security_context
@@ -256,11 +371,12 @@ class K8sJobHandle(JobHandleSpec):
         while True:
             if self.terminal_state is not None:
                 return False
-            pod_phase = self._query_phase()
+            pod = self._query_pod()
             if self.terminal_state is not None:
                 return False
-            if self._stuck_in_pending(pod_phase):
-                self._terminate_for_timeout("timed out waiting for pod to leave Pending/Unknown phase")
+            pod_phase = self._get_pod_phase(pod)
+            now = time.time()
+            if self._handle_starting_pod(pod, pod_phase, now=now):
                 return False
             job_state = POD_STATE_MAPPING.get(pod_phase, JobState.UNKNOWN)
             if job_state in job_states_to_enter:
@@ -269,10 +385,10 @@ class K8sJobHandle(JobHandleSpec):
                 self.terminal_state = POD_STATE_MAPPING.get(pod_phase, JobState.UNKNOWN)
                 self._remove_workspace_job()
                 return False
-            elif self.timeout is not None and time.time() - starting_time > self.timeout:
+            elif self.timeout is not None and now - starting_time >= self.timeout:
                 self._terminate_for_timeout(f"timed out waiting for pod to enter {job_states_to_enter}")
                 return False
-            time.sleep(1)
+            time.sleep(POLL_INTERVAL)
 
     def _remove_workspace_job(self) -> None:
         if self.workspace_transfer and self.workspace_job_id:
@@ -306,6 +422,9 @@ class K8sJobHandle(JobHandleSpec):
         return None
 
     def _terminate_for_timeout(self, reason: str):
+        self._terminate_for_exception(reason)
+
+    def _terminate_for_exception(self, reason: str):
         self.logger.warning(f"job {self.job_id} pod {self.pod_name}: {reason}")
         self.terminate()
         self.terminal_return_code = JobReturnCode.EXCEPTION
@@ -318,19 +437,23 @@ class K8sJobHandle(JobHandleSpec):
     def poll(self):
         if self.terminal_state is not None:
             return self._get_return_code(self.terminal_state)
-        job_state = self._query_state()
+        pod = self._query_pod()
         if self.terminal_state is not None:
             return self._get_return_code(self.terminal_state)
+        pod_phase = self._get_pod_phase(pod)
+        if self._handle_starting_pod(pod, pod_phase):
+            return self._get_return_code(self.terminal_state)
+        job_state = POD_STATE_MAPPING.get(pod_phase, JobState.UNKNOWN)
         if job_state in (JobState.SUCCEEDED, JobState.TERMINATED):
             self.terminal_state = job_state
             self._remove_workspace_job()
         return self._get_return_code(job_state)
 
-    def _query_phase(self):
+    def _query_pod(self):
         from kubernetes.client.rest import ApiException
 
         try:
-            resp = self.api_instance.read_namespaced_pod(name=self.pod_name, namespace=self.namespace)
+            return self.api_instance.read_namespaced_pod(name=self.pod_name, namespace=self.namespace)
         except ApiException as e:
             if getattr(e, "status", None) == 404:
                 self.logger.info(
@@ -338,42 +461,235 @@ class K8sJobHandle(JobHandleSpec):
                 )
                 self.terminal_state = JobState.TERMINATED
                 self._remove_workspace_job()
-                return PodPhase.UNKNOWN.value
             else:
-                self.logger.warning(f"failed to query pod phase for job {self.job_id} pod {self.pod_name}: {e}")
-            return None  # no pod phase was observed
+                self.logger.warning(f"failed to query pod for job {self.job_id} pod {self.pod_name}: {e}")
+            return None
         except Exception as e:
-            self.logger.warning(f"unexpected error querying pod phase for job {self.job_id} pod {self.pod_name}: {e}")
-            return None  # no pod phase was observed
-        return resp.status.phase
+            self.logger.warning(f"unexpected error querying pod for job {self.job_id} pod {self.pod_name}: {e}")
+            return None
+
+    def _query_phase(self):
+        pod = self._query_pod()
+        if pod is None and self.terminal_state is not None:
+            return PodPhase.UNKNOWN.value
+        return self._get_pod_phase(pod)
+
+    def _get_pod_phase(self, pod):
+        if pod is None:
+            return None
+        phase = getattr(getattr(pod, "status", None), "phase", None)
+        if not phase:
+            self.logger.warning(f"pod phase is missing for job {self.job_id} pod {self.pod_name}")
+            return None
+        return phase
 
     def _query_state(self):
         pod_phase = self._query_phase()
         return POD_STATE_MAPPING.get(pod_phase, JobState.UNKNOWN)
 
-    def _stuck_in_pending(self, current_phase):
+    def _stuck_in_pending(self, current_phase, now=None):
         if current_phase is None:
             return False
-        if current_phase in (PodPhase.PENDING.value, PodPhase.UNKNOWN.value):
+        if current_phase == PodPhase.PENDING.value:
             self._stuck_count += 1
-            if self._max_stuck_count is not None and self._stuck_count >= self._max_stuck_count:
+            if self.pending_timeout is None:
+                return False
+            current_time = time.time() if now is None else now
+            if self._pending_since is None:
+                self._pending_since = current_time
+                self._pending_timer_paused_at = None
+            else:
+                self._resume_pending_timer(current_time)
+            if self.pending_timeout == 0:
+                return True
+            if current_time - self._pending_since >= self.pending_timeout:
                 return True
         else:
-            self._stuck_count = 0
+            self._reset_pending_timer()
         return False
+
+    def _handle_starting_pod(self, pod, pod_phase, now=None) -> bool:
+        self._last_event_query_failed = False
+        action, detail = self._classify_starting_pod(pod, pod_phase, now=now)
+        if action == PendingPodAction.FAIL:
+            self._terminate_for_exception(f"pod startup failure: {detail}")
+            return True
+        if action == PendingPodAction.WAIT_FOR_RESOURCES:
+            if self._stuck_in_pending(pod_phase, now=now):
+                self._terminate_for_timeout(f"timed out waiting for CPU/memory/GPU resources: {detail}")
+                return True
+            return False
+
+        if pod_phase is None:
+            self._pause_pending_timer(now)
+            return False
+        if pod_phase == PodPhase.PENDING.value and self._pending_since is not None and self._last_event_query_failed:
+            if not self._pod_is_scheduled(getattr(pod, "status", None)):
+                self._pause_pending_timer(now)
+                return False
+        self._reset_pending_timer()
+        return False
+
+    def _pause_pending_timer(self, now=None):
+        if self._pending_since is None or self._pending_timer_paused_at is not None:
+            return
+        self._pending_timer_paused_at = time.time() if now is None else now
+
+    def _resume_pending_timer(self, now=None):
+        if self._pending_timer_paused_at is None:
+            return
+        current_time = time.time() if now is None else now
+        paused_duration = max(0, current_time - self._pending_timer_paused_at)
+        self._pending_since += paused_duration
+        self._pending_timer_paused_at = None
+
+    def _reset_pending_timer(self):
+        self._stuck_count = 0
+        self._pending_since = None
+        self._pending_timer_paused_at = None
+
+    def _classify_starting_pod(self, pod, pod_phase, now=None):
+        if pod_phase == PodPhase.UNKNOWN.value:
+            return PendingPodAction.FAIL, "pod phase is Unknown"
+        if pod_phase != PodPhase.PENDING.value:
+            return PendingPodAction.WAIT, ""
+
+        status = getattr(pod, "status", None)
+        if self._pod_is_scheduled(status):
+            failure = self._get_container_waiting_failure(status)
+            if failure:
+                return PendingPodAction.FAIL, failure
+            failure = self._get_event_failure(ignore_failed_scheduling=True, now=now)
+            if failure:
+                return PendingPodAction.FAIL, failure
+            return PendingPodAction.WAIT, "pod is scheduled and still starting"
+
+        action, detail = self._classify_unscheduled_pod(status)
+        if action != PendingPodAction.WAIT:
+            return action, detail
+
+        event_action, event_detail = self._classify_unscheduled_events()
+        if event_action != PendingPodAction.WAIT:
+            return event_action, event_detail
+
+        return PendingPodAction.WAIT, "pod is pending without a scheduler failure"
+
+    def _pod_is_scheduled(self, status) -> bool:
+        node_name = getattr(status, "node_name", None)
+        if isinstance(node_name, str) and node_name:
+            return True
+        for condition in self._get_pod_conditions(status):
+            if getattr(condition, "type", None) == "PodScheduled" and getattr(condition, "status", None) == "True":
+                return True
+        return False
+
+    def _classify_unscheduled_pod(self, status):
+        for condition in self._get_pod_conditions(status):
+            if getattr(condition, "type", None) != "PodScheduled":
+                continue
+            condition_status = getattr(condition, "status", None)
+            if condition_status != "False":
+                continue
+            reason = getattr(condition, "reason", None)
+            message = getattr(condition, "message", None)
+            detail = _obj_text(reason, message) or "pod is not scheduled"
+            if _is_cpu_memory_gpu_shortage(detail):
+                return PendingPodAction.WAIT_FOR_RESOURCES, detail
+            if reason == "Unschedulable":
+                return PendingPodAction.FAIL, detail
+        return PendingPodAction.WAIT, ""
+
+    def _classify_unscheduled_events(self):
+        for event in sorted(self._query_pod_events(), key=_event_sort_key, reverse=True):
+            reason = getattr(event, "reason", None)
+            message = getattr(event, "message", None)
+            event_type = getattr(event, "type", None)
+            if event_type != "Warning":
+                continue
+            detail = _obj_text(reason, message) or "pod event reported startup issue"
+            if _is_cpu_memory_gpu_shortage(detail):
+                return PendingPodAction.WAIT_FOR_RESOURCES, detail
+            if reason == "FailedScheduling":
+                return PendingPodAction.FAIL, detail
+            if reason in _PENDING_FAILURE_EVENT_REASONS:
+                return PendingPodAction.FAIL, detail
+        return PendingPodAction.WAIT, ""
+
+    def _get_container_waiting_failure(self, status):
+        for container_status in self._get_all_container_statuses(status):
+            waiting = getattr(getattr(container_status, "state", None), "waiting", None)
+            if not waiting:
+                continue
+            reason = getattr(waiting, "reason", None)
+            message = getattr(waiting, "message", None)
+            detail = _obj_text(reason, message) or "container is waiting"
+            if reason in _PENDING_FAILURE_WAITING_REASONS:
+                return detail
+        return ""
+
+    def _get_event_failure(self, ignore_failed_scheduling=False, now=None):
+        now = time.time() if now is None else now
+        for event in sorted(self._query_pod_events(), key=_event_sort_key, reverse=True):
+            reason = getattr(event, "reason", None)
+            if ignore_failed_scheduling and reason == "FailedScheduling":
+                continue
+            event_type = getattr(event, "type", None)
+            if event_type != "Warning" or reason not in _PENDING_FAILURE_EVENT_REASONS:
+                continue
+            if not _is_recent_event(event, now, SCHEDULED_EVENT_FAILURE_MAX_AGE):
+                continue
+            message = getattr(event, "message", None)
+            return _obj_text(reason, message) or "pod event reported startup issue"
+        return ""
+
+    def _query_pod_events(self):
+        from kubernetes.client.rest import ApiException
+
+        self._last_event_query_failed = False
+        try:
+            resp = self.api_instance.list_namespaced_event(
+                namespace=self.namespace,
+                field_selector=f"involvedObject.name={self.pod_name}",
+            )
+        except ApiException as e:
+            self._last_event_query_failed = True
+            self.logger.warning(f"failed to query events for job {self.job_id} pod {self.pod_name}: {e}")
+            return []
+        except Exception as e:
+            self._last_event_query_failed = True
+            self.logger.warning(f"unexpected error querying events for job {self.job_id} pod {self.pod_name}: {e}")
+            return []
+        items = getattr(resp, "items", None)
+        return items if isinstance(items, (list, tuple)) else []
+
+    def _get_pod_conditions(self, status):
+        conditions = getattr(status, "conditions", None)
+        return conditions if isinstance(conditions, (list, tuple)) else []
+
+    def _get_all_container_statuses(self, status):
+        result = []
+        for attr_name in ("init_container_statuses", "container_statuses"):
+            statuses = getattr(status, attr_name, None)
+            if isinstance(statuses, (list, tuple)):
+                result.extend(statuses)
+        return result
 
     def wait(self):
         while True:
             if self.terminal_state is not None:
                 return
-            job_state = self._query_state()
+            pod = self._query_pod()
             if self.terminal_state is not None:
                 return
+            pod_phase = self._get_pod_phase(pod)
+            if self._handle_starting_pod(pod, pod_phase):
+                return
+            job_state = POD_STATE_MAPPING.get(pod_phase, JobState.UNKNOWN)
             if job_state in (JobState.SUCCEEDED, JobState.TERMINATED):
                 self.terminal_state = job_state  # persist so poll() stays accurate
                 self._remove_workspace_job()
                 return
-            time.sleep(1)
+            time.sleep(POLL_INTERVAL)
 
 
 class K8sJobLauncher(JobLauncherSpec):
@@ -389,6 +705,7 @@ class K8sJobLauncher(JobLauncherSpec):
         ephemeral_storage: str = DEFAULT_EPHEMERAL_STORAGE,
         default_python_path: str = None,
         workspace_mount_path: str = WORKSPACE_MOUNT_PATH,
+        image_pull_secrets: list[str] = None,
     ):
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -396,7 +713,7 @@ class K8sJobLauncher(JobLauncherSpec):
         self.study_data_pvc_file_path = study_data_pvc_file_path
         self.timeout = timeout
         self.namespace = namespace
-        self.pending_timeout = pending_timeout
+        self.pending_timeout = _normalize_pending_timeout(pending_timeout)
         self.default_python_path = default_python_path if default_python_path is not None else python_path
         if self.default_python_path is None:
             self.default_python_path = DEFAULT_PYTHON_PATH
@@ -409,6 +726,7 @@ class K8sJobLauncher(JobLauncherSpec):
         if not isinstance(workspace_mount_path, str) or not workspace_mount_path:
             raise ValueError("workspace_mount_path must be a non-empty string")
         self.workspace_mount_path = workspace_mount_path
+        self.image_pull_secrets = _normalize_image_pull_secrets(image_pull_secrets)
         self.study_data_pvc_dict = None
         self.core_v1 = None
 
@@ -479,6 +797,13 @@ class K8sJobLauncher(JobLauncherSpec):
         if args is None:
             raise RuntimeError(f"missing {FLContextKey.ARGS} in FLContext")
         k8s_spec = get_job_launcher_spec(job_meta, site_name, "k8s")
+        job_pending_timeout = k8s_spec["pending_timeout"] if "pending_timeout" in k8s_spec else self.pending_timeout
+        try:
+            job_pending_timeout = _normalize_pending_timeout(
+                job_pending_timeout, f"launcher_spec['{site_name}']['k8s']['pending_timeout']"
+            )
+        except ValueError as e:
+            raise RuntimeError(str(e)) from e
         job_image = k8s_spec.get("image")
         job_ephemeral_storage = k8s_spec.get("ephemeral_storage")
         if job_ephemeral_storage is None:
@@ -575,6 +900,8 @@ class K8sJobLauncher(JobLauncherSpec):
                 "module_args": self.get_module_args(job_id, fl_ctx),
                 "env": env,
             }
+            if self.image_pull_secrets:
+                job_config["image_pull_secrets"] = self.image_pull_secrets
             if args is not None and getattr(args, "set", None) is not None:
                 job_config.update({"set_list": args.set})
             resources = {
@@ -606,7 +933,7 @@ class K8sJobLauncher(JobLauncherSpec):
                 job_config,
                 namespace=self.namespace,
                 timeout=self.timeout,
-                pending_timeout=self.pending_timeout,
+                pending_timeout=job_pending_timeout,
                 python_path=python_path,
                 workspace_transfer=workspace_transfer,
                 workspace_job_id=raw_job_id,
@@ -625,6 +952,7 @@ class K8sJobLauncher(JobLauncherSpec):
             if "job_handle" in locals():
                 self.logger.error(f"failed to launch job {job_id}: {e}")
                 job_handle.terminal_state = JobState.TERMINATED
+                job_handle.terminal_return_code = JobReturnCode.EXCEPTION
                 return job_handle
             raise
         try:

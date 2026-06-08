@@ -1009,6 +1009,10 @@ class _PocDynamicProvisionLogger:
         pass
 
 
+class PocServiceStartError(RuntimeError):
+    """Raised when a foreground POC service exits with a failure status."""
+
+
 def _dynamic_poc_project_config(project_config: Dict, participant: Dict) -> Dict:
     dynamic_config = copy.deepcopy(project_config)
     participants = project_config.get("participants", [])
@@ -1637,6 +1641,15 @@ def start_poc(cmd_args):
     try:
         with _quiet_cli_streams(json_mode):
             _start_poc(poc_workspace, gpu_ids, excluded, services_list, study=study)
+    except PocServiceStartError as e:
+        output_error_message(
+            "SERVICE_FAILED",
+            message="POC service failed to start.",
+            hint="Start the POC server and clients first with 'nvflare poc start'.",
+            exit_code=2,
+            detail=str(e),
+        )
+        raise SystemExit(2)
     except CLIException as e:
         error_data = _build_poc_port_diagnostics(port_preflight) if json_mode else None
         output_error("INVALID_ARGS", exit_code=4, detail=str(e), data=error_data)
@@ -1844,6 +1857,7 @@ def _start_poc(poc_workspace: str, gpu_ids: List[int], excluded=None, services_l
 
     validate_services(project_config, services_list, excluded)
     validate_poc_workspace(poc_workspace, service_config, project_config)
+    _ensure_server_running_for_admin_console(project_config, service_config, services_list)
     _run_poc(
         SC.CMD_START,
         poc_workspace,
@@ -1866,6 +1880,25 @@ def validate_participants(participant_names, list_participants):
     for p in list_participants:
         if p not in participant_names:
             raise CLIException(f"participant '{p}' is not defined, expecting one of: {participant_names}")
+
+
+def _is_poc_admin_service(service_name: str, service_config: Dict) -> bool:
+    return service_name == service_config.get(SC.FLARE_PROJ_ADMIN) or service_name in service_config.get(
+        SC.FLARE_OTHER_ADMINS, []
+    )
+
+
+def _ensure_server_running_for_admin_console(project_config: Dict, service_config: Dict, services_list: List[str]):
+    if not services_list or not any(_is_poc_admin_service(service, service_config) for service in services_list):
+        return
+
+    if service_config.get(SC.FLARE_SERVER) in services_list:
+        return
+
+    fed_learn_port, _ = _get_poc_server_ports(project_config, service_config)
+    port_available, _ = _is_local_port_available(fed_learn_port)
+    if port_available:
+        raise PocServiceStartError(f"server is not running at {POC_LOCAL_HOST}:{fed_learn_port}")
 
 
 def setup_service_config(poc_workspace) -> Tuple:
@@ -2050,14 +2083,21 @@ def _build_commands(
     return _sort_service_cmds(cmd_type, service_commands, service_config)
 
 
+def _env_with_cli_python_path() -> Dict[str, str]:
+    my_env = os.environ.copy()
+    python_dir = os.path.dirname(sys.executable)
+    if python_dir:
+        path = my_env.get("PATH", "")
+        my_env["PATH"] = os.pathsep.join([python_dir, path]) if path else python_dir
+    return my_env
+
+
 def prepare_env(service_name, gpu_ids: Optional[List[int]], service_config: Dict):
-    my_env = None
+    my_env = _env_with_cli_python_path()
     if gpu_ids:
-        my_env = os.environ.copy()
         my_env["CUDA_VISIBLE_DEVICES"] = ",".join([str(gid) for gid in gpu_ids])
 
     if service_config.get(SC.IS_DOCKER_RUN):
-        my_env = os.environ.copy() if my_env is None else my_env
         if gpu_ids:
             my_env["GPU2USE"] = f'--gpus="device={my_env["CUDA_VISIBLE_DEVICES"]}"'
 
@@ -2106,8 +2146,10 @@ def async_process(service_name, cmd_path, gpu_ids: Optional[List[int]], service_
 
 
 def sync_process(service_name, cmd_path):
-    my_env = os.environ.copy()
-    subprocess.run(cmd_path.split(" "), env=my_env)
+    my_env = _env_with_cli_python_path()
+    completed = subprocess.run(cmd_path.split(" "), env=my_env)
+    if completed.returncode != 0:
+        raise PocServiceStartError(f"service '{service_name}' exited with code {completed.returncode}: {cmd_path}")
 
 
 def _run_poc(

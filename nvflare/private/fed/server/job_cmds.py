@@ -24,6 +24,7 @@ from typing import Dict, List, Optional, Set
 from zipfile import BadZipFile, ZipFile
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
+from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import (
     SUBMIT_TOKEN_CONFLICT_STATUS,
@@ -97,6 +98,7 @@ CLONED_META_KEYS = {
     JobMetaKey.MANDATORY_CLIENTS.value,
     JobMetaKey.DATA_STORAGE_FORMAT.value,
     JobMetaKey.STUDY.value,
+    AppValidationKey.BYOC,
 }
 
 JSON_LOG_FILE_NAME = "log.json"
@@ -1018,14 +1020,9 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 if filtered_data:
                     data_str = ", ".join(filtered_data)
                     conn.append_string(data_str)
-                    conn.append_success(
-                        "", meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOB_COMPONENTS: filtered_data})
-                    )
-                else:
-                    conn.append_error(
-                        "No additional job components found.",
-                        meta=make_meta(MetaStatusValue.NO_JOB_COMPONENTS, "No additional job components found."),
-                    )
+                conn.append_success(
+                    "", meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOB_COMPONENTS: filtered_data})
+                )
             else:
                 _append_no_such_job_error(conn, job_id)
 

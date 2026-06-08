@@ -16,26 +16,50 @@ Running ``nvflare dashboard -h`` shows all available options.
 .. code-block:: shell
 
     (nvflare_venv) ~/workspace/repos/flare$ nvflare dashboard -h
-    usage: nvflare dashboard [-h] [--start] [--stop] [-p PORT] [-f FOLDER] [-i DASHBOARD_IMAGE] [--passphrase PASSPHRASE] [-e ENV]
+    usage: nvflare dashboard [-h] [--cloud CLOUD] [--start] [--stop] [-p PORT]
+                              [-f FOLDER] [--passphrase PASSPHRASE] [-e ENV]
+                              [--cred CRED] [-i IMAGE] [--local]
+                              [--vpc-id VPC_ID] [--subnet-id SUBNET_ID]
 
     options:
     -h, --help            show this help message and exit
-    --cloud CLOUD         launch dashboard on cloud service provider (ex: --cloud azure or --cloud aws)
+    --cloud CLOUD         launch dashboard on cloud service provider (ex:
+                          --cloud azure or --cloud aws)
     --start               start dashboard
     --stop                stop dashboard
     -p PORT, --port PORT  port to listen
     -f FOLDER, --folder FOLDER
-                            folder containing necessary info (default: current working directory)
+                          folder containing necessary info (default: current
+                          working directory)
     --passphrase PASSPHRASE
-                            Passphrase to encrypt/decrypt root CA private key. !!! Do not share it with others. !!!
+                          Passphrase to encrypt/decrypt root CA private key. !!!
+                          Do not share it with others. !!!
     -e ENV, --env ENV     additional environment variables: var1=value1
-    --cred CRED           set credential directly in the form of USER_EMAIL:PASSWORD
+    --cred CRED           set credential directly in the form of
+                          USER_EMAIL:PASSWORD
     -i IMAGE, --image IMAGE
-                            set the container image name
+                          set the container image name (required for --start
+                          and --cloud)
     --local               start dashboard locally without docker image
+    --vpc-id VPC_ID       VPC id for AWS EC2 instance. Applicable to AWS only.
+                          Ignored if subnet-id is not specified.
+    --subnet-id SUBNET_ID
+                          Subnet id for AWS EC2 instance. Applicable to AWS
+                          only. Ignored if vpc-id is not specified.
 
+.. note::
 
-To start Dashboard, run ``nvflare dashboard --start``.
+    The ``-i``/``--image`` option is required when starting Dashboard with Docker or launching Dashboard
+    on cloud. It is not required for ``--stop`` or ``--local``.
+
+    For AWS cloud launches, specify ``--vpc-id`` and ``--subnet-id`` together.
+    If only one of these options is provided, Dashboard ignores it.
+
+To start Dashboard, run ``nvflare dashboard --start -i nvflare/nvflare:2.7.2``.
+The image is a standard container image reference and can come from any registry that the runtime can pull from,
+for example ``nvflare/nvflare:2.7.2``, ``nvcr.io/nvidia/nvflare:2.7.2``, or
+``registry.example.com/nvflare/nvflare:2.7.2``. Different deployments can use image names from different
+registries as long as each Docker host or cloud VM has pull access.
 
 The Dashboard Docker will detect if the database is initialized.  If not, it will ask for the project_admin email address and will generate a random password:
 
@@ -53,13 +77,13 @@ Note that for the first time, it may take a while to download the nvflare image 
 
 .. code-block::
 
-    Pulling nvflare/nvflare, may take some time to finish.
+    Pulling nvflare/nvflare:2.7.2, may take some time to finish.
 
 After pulling the image, you should see output similar to the following:
 
 .. code-block::
 
-    Launching nvflare/nvflare
+    Launching nvflare/nvflare:2.7.2
     Dashboard will listen to port 443
     /path_to_folder_for_db on host mounted to /var/tmp/nvflare/dashboard in container
     No additional environment variables set to the launched container.

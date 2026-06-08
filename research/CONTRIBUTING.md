@@ -1,70 +1,90 @@
 # Research Directory
-This research directory is the place to host various research work from the community on Federated learning
-leveraging NVIDIA FLARE. **The code will not be maintained by NVIDIA FLARE team**, but will require Pull Request
-approval process. 
+
+The `research` directory hosts community research work that uses NVIDIA FLARE.
+Research projects are reviewed through the pull request process, but the code is
+not maintained by the NVIDIA FLARE team after it is contributed.
 
 ## License
-By providing the code in NVFLARE repository, you will grant the research project in NVIDIA repo to be released under Apache v2 License or equivalent open source license.
+
+By contributing code to this repository, you agree that the contribution can be
+released under the Apache v2 License or another compatible open source license.
+Call out any third-party code, models, datasets, or assets that have separate
+license terms.
+
+## Project Directory
+
+Each research project should create a subdirectory under `research/`.
+
+- Prefer a lowercase, ASCII, kebab-case directory name no longer than 35
+  characters for new projects.
+- Existing research folders may preserve their published or historical names.
+- Keep project-specific code, configs, notebooks, scripts, figures, and docs
+  inside the project directory unless the code is intentionally shared by
+  multiple research projects.
+
+## README Expectations
+
+Every project should include a `README.md`. Start from the
+[sample research template](./sample-research/README.md) and adapt it to the
+project. A good research README includes:
+
+- Title and abstract.
+- Links to published papers, preprints, project pages, and upstream code when
+  available.
+- Objective and method summary.
+- Repository layout.
+- Setup instructions.
+- Data download, generation, or preparation instructions.
+- Steps to run the code.
+- Expected results, metrics, figures, or checkpoints.
+- License notes.
+- Requirements and the NVFlare version used.
+- Citation or BibTeX entry when applicable.
+
+The section names do not need to be identical to the template, but the README
+should give readers enough information to understand and reproduce the work.
+
+## Implementation Layout
+
+Use the layout that best fits the research contribution. For example, a project
+may use one or more of the following:
+
+- `job.py` for a Recipe-based experiment.
+- `jobs/` for exported NVFlare job configurations and custom code.
+- `src/` for project-specific Python modules.
+- `scripts/` for setup, preprocessing, launch, or plotting commands.
+- `notebooks/` for exploratory or tutorial workflows.
+- `figs/` or `assets/` for result images.
+- Links to external reference implementations when the full code is maintained
+  elsewhere.
+
+The project does not need all of these paths. Whichever layout you choose, keep
+the code runnable, document the launch command, and explain where logs, metrics,
+workspaces, checkpoints, and generated artifacts are written.
 
 ## Requirements
-Each research project should create a subdirectory with the following requirements.
 
-* Subdirectory name must be in ASCII string, all in lower, kebab-case, and no longer than 35 characters long
-* Each project should include
-  * README.md -- document must include
-    * Objective 
-    * Background
-    * Description
-    * Setup
-    * Steps to run the code 
-    * Data download and preparation (if applicable)
-    * Expected results
-  * Jobs-folder including configurations and optional custom code
-  * All code should be in runnable condition, i.e., no broken code
-  * License file
-  * Requirements file listing all dependencies, including the NVFLARE version used
+List dependencies in the project file that best matches the implementation, such
+as `requirements.txt`, `pyproject.toml`, a conda environment file, or
+task-specific requirements files. Include the NVFlare version used.
 
-## Example
-```
-sample_research$ 
-.
-├── jobs
-    └── job1
-           ├── app_server
-                   ├── config
-                           └── config_fed_server.json
-                   └── custom
-                        └── sample_controller.py
-           └── app_client
-                   ├── config
-                           └── config_fed_client.json
-                   └── custom
-                        └── sample_executor.py
-           └── meta.json
-└── README.md
-└── LICENSE
-└── requirements.txt
-```
+On the `main` branch, a research project may depend on an upcoming NVFlare
+version when it uses unreleased features. In that case, keep the intended version
+pin and document that users should install NVFlare from this repository until the
+package is published.
 
 ## Setup
-To run the research code, we recommend using a virtual environment.
 
-### Set up a virtual environment
-```
+To run a research project, we recommend using a virtual environment unless the
+project README specifies another environment.
+
+```bash
 python3 -m pip install --user --upgrade pip
-python3 -m pip install --user virtualenv
-```
-(If needed) make all shell scripts executable using
-```
-find . -name ".sh" -exec chmod +x {} \;
-```
-Initialize the virtual environment.
-```
 python3 -m venv venv
 source venv/bin/activate
-```
-Within each research folder, install the required packages for training.
-```
 pip install --upgrade pip
-pip install -r requirements.txt
 ```
+
+Then follow the setup instructions in the project README, such as installing
+`requirements.txt`, installing from `pyproject.toml`, creating a conda
+environment, or preparing task-specific dependencies.

@@ -3,5 +3,4 @@ torch
 torchvision
 tensorboard
 lifelines
-scikit-survival
 matplotlib

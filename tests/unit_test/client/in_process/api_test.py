@@ -262,4 +262,52 @@ class TestInProcessClientAPI(unittest.TestCase):
         self.assertIsNone(output_model.params)
         self.assertEqual(output_model.metrics, {"loss": 0.42})
 
+    def test_receive_timeout_does_not_arm_send_under_congestion(self):
+        """A missing next-round model should time out cleanly and not permit send()."""
+        client_api = InProcessClientAPI(self.task_metadata, result_check_interval=0.001)
+        client_api.init()
+
+        self.assertIsNone(client_api.receive(timeout=0.01))
+        self.assertFalse(client_api.receive_called)
+        with self.assertRaisesRegex(RuntimeError, '"receive" needs to be called'):
+            client_api.send(FLModel(params={"w": 1}))
+
+    def test_receive_timeout_then_later_model_allows_send(self):
+        """A timeout must not poison the next successful receive/send cycle."""
+        import numpy as np
+
+        client_api = InProcessClientAPI(self.task_metadata, result_check_interval=0.001)
+        client_api.init()
+
+        self.assertIsNone(client_api.receive(timeout=0.01))
+        self.assertFalse(client_api.receive_called)
+
+        self._fire_global_model(client_api, {"w": np.ones((10,))})
+        input_model = client_api.receive(timeout=0.01)
+        self.assertIsNotNone(input_model)
+        self.assertIsNotNone(input_model.params)
+        self.assertTrue(client_api.receive_called)
+
+        client_api.send(FLModel(params={"w": np.zeros((10,))}), clear_cache=False)
+        self.assertTrue(client_api.receive_called)
+
+    def test_clear_resets_receive_guard_between_rounds(self):
+        """A prior successful round must not arm send() after a later receive timeout."""
+        import numpy as np
+
+        client_api = InProcessClientAPI(self.task_metadata, result_check_interval=0.001)
+        client_api.init()
+
+        self._fire_global_model(client_api, {"w": np.ones((10,))})
+        self.assertIsNotNone(client_api.receive(timeout=0.01))
+        self.assertTrue(client_api.receive_called)
+
+        client_api.send(FLModel(params={"w": np.zeros((10,))}), clear_cache=True)
+        self.assertFalse(client_api.receive_called)
+
+        self.assertIsNone(client_api.receive(timeout=0.01))
+        self.assertFalse(client_api.receive_called)
+        with self.assertRaisesRegex(RuntimeError, '"receive" needs to be called'):
+            client_api.send(FLModel(params={"w": np.zeros((10,))}))
+
     # Add more test methods for other functionalities in the class

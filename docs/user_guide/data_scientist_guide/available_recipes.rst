@@ -304,7 +304,7 @@ PyTorch FedOpt
         num_rounds=5,
         model=MyModel(),
         train_script="client.py",
-        optimizer_args={"class_path": "torch.optim.SGD", "args": {"lr": 1.0, "momentum": 0.6}},
+        optimizer_args={"path": "torch.optim.SGD", "args": {"lr": 1.0, "momentum": 0.6}},
     )
     env = SimEnv(num_clients=2)
     run = recipe.execute(env)
@@ -327,7 +327,7 @@ TensorFlow FedOpt
         num_rounds=5,
         model=MyTFModel(),
         train_script="client.py",
-        optimizer_args={"class_path": "tensorflow.keras.optimizers.SGD", "args": {"learning_rate": 1.0}},
+        optimizer_args={"path": "tensorflow.keras.optimizers.SGD", "args": {"learning_rate": 1.0}},
     )
     env = SimEnv(num_clients=2)
     run = recipe.execute(env)
@@ -759,6 +759,65 @@ Run Flower-based federated learning jobs.
 
 - `examples/hello-world/hello-flower <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-flower>`_
 
+Server-Predeployed Flower App Mode
+----------------------------------
+
+For production deployments where BYOC (Bring Your Own Code) is restricted, you can use 
+server-predeployed Flower apps. In this mode, the Flower application code is **admin-controlled 
+and pre-installed on the server** at a known path, and NVFlare distributes it to clients via 
+Flower's FAB (Flower Application Bundle) mechanism. This eliminates the need for BYOC authorization.
+
+**Important**: ``flower_app_path`` must reference apps that are **pre-approved and managed by 
+server administrators**, not user-provided paths. The path must be within the workspace's 
+``local/custom/`` directory to ensure the app is pre-deployed and controlled by the server 
+admin, not arbitrarily chosen by users at job submission time.
+
+.. code-block:: python
+
+    from nvflare.app_opt.flower.recipe import FlowerRecipe
+    from nvflare.recipe import ProdEnv
+
+    recipe = FlowerRecipe(
+        name="flower-job",
+        min_clients=2,
+        flower_app_path="local/custom/preapproved_apps/my_app",  # Admin-predeployed on server
+        run_config={"num-server-rounds": 5},
+    )
+    env = ProdEnv(startup_kit_location="/path/to/startup_kit")
+    run = recipe.execute(env)
+
+**Key Differences:**
+
+- ``flower_content``: Packages Flower app in job ZIP (requires BYOC authorization)
+- ``flower_app_path``: References **admin-predeployed** app on server (no BYOC needed)
+
+**Security Model**: When using ``flower_app_path`` with ``BYOC disabled`` and 
+``flower_predeployed=true``:
+
+- **No user-provided NVFlare custom code** is deployed through the job
+- Flower app code is distributed only from **server-admin-controlled/pre-approved app locations**
+- ``flower_app_path`` must start with ``local/custom/`` to enforce admin control
+- Arbitrary user-chosen paths are **not allowed**; only pre-approved apps in designated directories
+
+**Authorization Requirements:**
+
+Sites using ``flower_app_path`` must have the ``server-predeployed-flwr`` permission 
+granted in their ``authorization.json``. By default, this permission is set to ``"none"`` 
+(denied) for all roles. To enable:
+
+.. code-block:: json
+
+    {
+      "format_version": "1.0",
+      "permissions": {
+        "lead": {
+          "server-predeployed-flwr": "any"
+        }
+      }
+    }
+
+See :ref:`site_policy_management` for details on site authorization policies.
+
 
 Swarm Learning
 ==============
@@ -789,8 +848,11 @@ Decentralized federated learning without a central server.
      Increase for 7B+ models where P2P tensor streaming can take several minutes.
    - ``pipe_type`` (default ``"cell_pipe"``): set to ``"file_pipe"`` when cell networking
      is unavailable or for third-party subprocess integrations.
-   - ``submit_result_timeout`` and ``tensor_min_download_timeout``: set via
-     ``recipe.add_client_config({...})`` — see :ref:`timeout_troubleshooting`.
+   - ``submit_result_timeout``, ``download_complete_timeout``,
+     ``tensor_min_download_timeout``, and ``PEER_READ_TIMEOUT``: set via
+     ``recipe.add_client_config({...})``. ``max_resends`` defaults to finite
+     value ``3`` and can be overridden the same way — see
+     :ref:`timeout_troubleshooting`.
 
 
 Edge Recipes

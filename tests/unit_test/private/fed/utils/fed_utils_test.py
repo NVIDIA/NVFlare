@@ -17,11 +17,17 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.apis.app_validation import AppValidationKey
+from nvflare.apis.fl_constant import ConfigVarName
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs import Decomposer
 from nvflare.fuel.utils.fobs.datum import DatumManager
 from nvflare.fuel.utils.fobs.fobs import register_custom_folder
-from nvflare.private.fed.utils.fed_utils import create_job_processing_context_properties, extract_participants
+from nvflare.private.fed.utils.fed_utils import (
+    create_job_processing_context_properties,
+    custom_fobs_initialize,
+    extract_participants,
+)
 
 
 class ExampleTestClass:
@@ -83,3 +89,64 @@ class TestFedUtils:
         with patch("nvflare.private.fed.utils.fed_utils.get_job_meta_from_workspace", return_value=[]):
             with pytest.raises(RuntimeError, match="job_meta must be dict"):
                 create_job_processing_context_properties(workspace, "job-1")
+
+    @staticmethod
+    def _make_workspace():
+        workspace = MagicMock()
+        workspace.get_client_custom_dir.return_value = os.path.join("site", "custom")
+        workspace.get_app_custom_dir.return_value = os.path.join("job", "custom")
+        workspace.get_app_config_dir.return_value = os.path.join("job", "config")
+        return workspace
+
+    @patch("nvflare.private.fed.utils.fed_utils.register_custom_folder")
+    @patch("nvflare.private.fed.utils.fed_utils.get_job_meta_from_workspace")
+    @patch("nvflare.private.fed.utils.fed_utils.os.path.exists", return_value=True)
+    def test_job_config_decomposers_are_ignored(self, mock_exists, mock_get_meta, mock_register):
+        # even for a BYOC job, decomposers are only loaded from the job custom dir, never from config
+        mock_get_meta.return_value = {AppValidationKey.BYOC: True}
+        workspace = self._make_workspace()
+
+        custom_fobs_initialize(workspace, job_id="job-1")
+
+        registered_dirs = [call.args[0] for call in mock_register.call_args_list]
+        config_decomposer_dir = os.path.join("job", "config", ConfigVarName.DECOMPOSER_MODULE)
+        custom_decomposer_dir = os.path.join("job", "custom", ConfigVarName.DECOMPOSER_MODULE)
+
+        # config-shipped decomposers must never be loaded (FLARE-2977)
+        assert config_decomposer_dir not in registered_dirs
+        # decomposers shipped under the job custom dir are loaded for a BYOC job
+        assert custom_decomposer_dir in registered_dirs
+
+    @patch("nvflare.private.fed.utils.fed_utils.register_custom_folder")
+    @patch("nvflare.private.fed.utils.fed_utils.get_job_meta_from_workspace")
+    @patch("nvflare.private.fed.utils.fed_utils.os.path.exists", return_value=True)
+    def test_job_custom_decomposers_ignored_when_not_byoc(self, mock_exists, mock_get_meta, mock_register):
+        # job meta without the BYOC flag => job is not allowed to bring custom code
+        mock_get_meta.return_value = {}
+        workspace = self._make_workspace()
+
+        custom_fobs_initialize(workspace, job_id="job-1")
+
+        registered_dirs = [call.args[0] for call in mock_register.call_args_list]
+        custom_decomposer_dir = os.path.join("job", "custom", ConfigVarName.DECOMPOSER_MODULE)
+        site_decomposer_dir = os.path.join("site", "custom", ConfigVarName.DECOMPOSER_MODULE)
+
+        # the job's custom/nvflare_decomposers must be ignored for a non-BYOC job
+        assert custom_decomposer_dir not in registered_dirs
+        # site decomposers are installed by the admin and must still be loaded
+        assert site_decomposer_dir in registered_dirs
+
+    @patch("nvflare.private.fed.utils.fed_utils.register_custom_folder")
+    @patch("nvflare.private.fed.utils.fed_utils.get_job_meta_from_workspace")
+    @patch("nvflare.private.fed.utils.fed_utils.os.path.exists", return_value=True)
+    def test_job_decomposers_ignored_when_meta_unavailable(self, mock_exists, mock_get_meta, mock_register):
+        # if the job meta cannot be read, default to not loading the job decomposers
+        mock_get_meta.side_effect = FileNotFoundError("missing job meta")
+        workspace = self._make_workspace()
+
+        custom_fobs_initialize(workspace, job_id="job-1")
+
+        registered_dirs = [call.args[0] for call in mock_register.call_args_list]
+        custom_decomposer_dir = os.path.join("job", "custom", ConfigVarName.DECOMPOSER_MODULE)
+
+        assert custom_decomposer_dir not in registered_dirs

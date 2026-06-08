@@ -81,7 +81,7 @@ Customize the provision configuration
 For advanced users, you can customize your provision with additional behavior through additional builders:
 
     - **Zip**: To create password protected zip archives for the startup kits, see :ref:`distribution_builder`
-    - **Docker-compose** *(deprecated)*: Previously used for launching NVIDIA FLARE via docker containers. See :ref:`containerized_deployment` for the current approach.
+    - **Docker Compose** *(deprecated)*: Previously used for launching NVIDIA FLARE via docker containers. See :ref:`containerized_deployment` for the current approach.
     - **Docker and Kubernetes runtime preparation**: Prepare existing server or client startup kits with :ref:`deploy_prepare_command`. For runtime-specific deployment steps, see :ref:`containerized_deployment` and :ref:`helm_chart`.
     - **CUSTOM**: you can build custom builders specific to your needs like in :ref:`distribution_builder`.
 
@@ -108,7 +108,10 @@ administrator to deploy a website to gather information about the sites and dist
 
 Introduction to NVFLARE Dashboard
 ---------------------------------
-You can install and run :ref:`nvflare_dashboard_ui` using the dashboard CLI command, ``nvflare dashboard –start`` (stop with ``nvflare dashboard –stop``).
+You can install and run :ref:`nvflare_dashboard_ui` using the dashboard CLI command,
+``nvflare dashboard --start -i nvflare/nvflare:2.7.2`` (stop with ``nvflare dashboard --stop``).
+The image name can point to any registry that the runtime can pull from, such as
+``registry.example.com/nvflare/nvflare:2.7.2``.
 
 For details on how to start Dashboard can be found :ref:`here <dashboard_api>`. The usage information for the Dashboard UI can be found :ref:`here <nvflare_dashboard_ui>`.
 

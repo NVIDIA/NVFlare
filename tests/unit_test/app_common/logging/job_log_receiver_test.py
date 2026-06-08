@@ -152,6 +152,35 @@ def test_job_log_receiver_does_not_warn_when_site_allows(tmp_path):
     log_error.assert_not_called()
 
 
+def test_job_log_receiver_does_not_warn_for_empty_error_log_stream(tmp_path):
+    receiver = JobLogReceiver(dest_dir=str(tmp_path))
+    fl_ctx = _make_recv_fl_ctx()
+    stream_ctx = {
+        KEY_FILE_NAME: WorkspaceConstants.ERROR_LOG_FILE_NAME,
+        StreamContextKey.RC: ReturnCode.OK,
+    }
+
+    with patch.object(receiver, "log_warning") as log_warning:
+        receiver._on_stream_done(stream_ctx, fl_ctx)
+
+    log_warning.assert_not_called()
+
+
+def test_job_log_receiver_warns_for_empty_regular_log_stream(tmp_path):
+    receiver = JobLogReceiver(dest_dir=str(tmp_path))
+    fl_ctx = _make_recv_fl_ctx()
+    stream_ctx = {
+        KEY_FILE_NAME: WorkspaceConstants.LOG_FILE_NAME,
+        StreamContextKey.RC: ReturnCode.OK,
+    }
+
+    with patch.object(receiver, "log_warning") as log_warning:
+        receiver._on_stream_done(stream_ctx, fl_ctx)
+
+    log_warning.assert_called_once()
+    assert "No log data received from trusted_client for job trusted_job" in log_warning.call_args.args[1]
+
+
 @pytest.mark.parametrize(
     "event_type",
     [EventType.SYSTEM_START, EventType.ABOUT_TO_START_RUN, EventType.START_RUN],
