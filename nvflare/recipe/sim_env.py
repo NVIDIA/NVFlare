@@ -94,6 +94,7 @@ class SimEnv(ExecEnv):
         self.log_config = v.log_config
         self.clients = v.clients
         self.workspace_root = v.workspace_root
+        self.last_run_status = None
 
     def deploy(self, job: FedJob):
         # Validate scripts exist locally for simulation
@@ -104,7 +105,8 @@ class SimEnv(ExecEnv):
                 f"For SimEnv, all scripts must be present on the local machine."
             )
 
-        job.simulator_run(
+        job_id = job.name
+        self.last_run_status = job.simulator_run(
             workspace=os.path.join(self.workspace_root, job.name),
             n_clients=self.num_clients if self.clients is None else None,
             clients=self.clients,
@@ -112,7 +114,12 @@ class SimEnv(ExecEnv):
             gpu=self.gpu_config,
             log_config=self.log_config,
         )
-        return job.name
+        if self.last_run_status:
+            raise RuntimeError(
+                f"Simulation failed with return code {self.last_run_status}. "
+                f"The simulation logs can be found at {os.path.join(self.workspace_root, job_id)}"
+            )
+        return job_id
 
     def get_job_status(self, job_id: str) -> Optional[str]:
         """Get job status - not supported in simulation environment."""
