@@ -120,39 +120,52 @@ aggregation.
 
 ## H100 Validation
 
-This workflow was validated end-to-end on an H100 NVL GPU with
-`nvcr.io/nvidia/nemo-automodel:26.04` at code commit `dc7146ee1d63c5f8acaa1351887978068f31d7fd`.
-The run used the commands above with `--max_steps=1`, `--seq_length=512`, `--limit_train_samples=1`,
-`--limit_validation_samples=1`, `--no-use_chat_template`, `--num_threads=1`, and `--gpu="[0]"`.
+This workflow was validated end-to-end on an H100 NVL GPU with `nvcr.io/nvidia/nemo-automodel:26.04`.
+The longer learning validation was run on PR branch commit `4bfb2f3346d4d05010db9f0250a3cd88aa595994`
+with 3 clients, 3 rounds, sequential clients, `TransferType.FULL`, `--max_steps=20`, `--seq_length=160`,
+`--learning_rate=2e-5`, `--num_threads=1`, and `--gpu="[0]"`.
 
 Observed checkpoint and transfer characteristics:
 
-- Initial, smoke, and final federated checkpoints each contained 263 tensors, about 7,578.96 MiB of tensor data, and a
-  7.40 GiB checkpoint file.
-- Each full-model server-to-client transfer moved about 7,579.0 MB and took about 45-52 seconds in the sequential
-  simulation. The one-client smoke client-to-server upload took about 60 seconds.
-- AutoModel reported about 37.22 GiB of H100 memory used for the tiny one-step SFT segment.
+- Initial and final global checkpoints each contained 263 tensors, about 7,578.96 MiB of tensor data, and a 7.40 GiB
+  checkpoint file.
+- Each full-model server-to-client transfer moved about 7,579.0 MB. Sequential transfers took about 45-59 seconds in the
+  H100 simulation.
+- AutoModel reported about 37.22 GiB of H100 memory used for the short full-model SFT segments.
 
-The one-client smoke completed one training step with train loss `9.5058` and validation loss `7.9239`. The 3-client,
-2-round sequential FL run completed with the following per-client metrics:
+The validation used a controlled marker-learning JSONL split with 56 examples per site, 6 validation examples, and 6
+test examples. The same response-token loss evaluator was run before training from the initial global checkpoint and
+after training from the final aggregated global checkpoint:
 
-| Round | Client | Train loss | Validation loss | Grad norm |
-| ----- | ------ | ---------- | --------------- | --------- |
-| 0 | site-1 | 9.5058 | 7.9172 | 316.5775 |
-| 0 | site-2 | 7.9290 | 8.2153 | 286.6590 |
-| 0 | site-3 | 8.4218 | 7.7936 | 233.2223 |
-| 1 | site-1 | 8.2070 | 6.7992 | 178.1896 |
-| 1 | site-2 | 7.4430 | 7.7996 | 248.9507 |
-| 1 | site-3 | 7.1335 | 7.5682 | 207.3232 |
+| Checkpoint | Test weighted loss | Test perplexity |
+| ---------- | ------------------ | --------------- |
+| Initial global model | 9.0775 | 8,756.18 |
+| Final 3-round FL model | 1.3464 | 3.84 |
 
-The logs show `Aggregated 3/3 results`, then `Round 1 started`, and every client round logged
-`Loaded 263/263 incoming global model tensors`. That confirms the client process may restart to release GPU memory, but
-each round warm-starts from the current global model instead of retraining from the original checkpoint.
+The per-client logs show that local learning happened and that later rounds started from the updated global model:
 
-Prediction was also exercised from the final global checkpoint. With this intentionally tiny synthetic run, generation is
-not meaningful: the one-client smoke produced repeated `which was ...` text for one prompt and an empty answer for the
-other, while the 3-client/2-round checkpoint produced empty answers for the two smoke prompts. Use these settings to
-validate the full-model FL workflow; increase data, steps, and validation coverage for quality evaluation.
+| Round | Client | Step 0 loss | Step 19 loss | Validation loss |
+| ----- | ------ | ----------- | ------------ | --------------- |
+| 0 | site-1 | 9.1933 | 0.0168 | 5.9788 |
+| 0 | site-2 | 8.8817 | 0.0087 | 5.5019 |
+| 0 | site-3 | 8.9645 | 0.8074 | 5.4478 |
+| 1 | site-1 | 0.3944 | 0.0008 | 5.4580 |
+| 1 | site-2 | 1.0661 | 0.0046 | 5.1973 |
+| 1 | site-3 | 0.9624 | 0.1208 | 5.9185 |
+| 2 | site-1 | 0.5325 | 0.0005 | 5.2707 |
+| 2 | site-2 | 0.2479 | 0.3776 | 5.0033 |
+| 2 | site-3 | 0.6087 | 0.0067 | 5.5872 |
+
+The logs recorded `Round 0 started`, `Round 1 started`, and `Round 2 started`; each of the 9 client tasks logged
+`Loaded 263/263 incoming global model tensors`; and all 3 rounds logged `Aggregated 3/3 results`. This confirms the
+external AutoModel process may restart to release GPU memory, but every client task warm-starts from the current global
+model instead of retraining from the original checkpoint.
+
+Greedy prediction was run before and after the FL job. Before training, marker prompts produced punctuation or empty
+responses. After training, the final checkpoint produced a learned marker-response form
+(`The site two learning marker is ALIE.`) for the smoke prompts. The teacher-forced response-token loss above is the
+more reliable correctness signal for this small non-IID synthetic validation; use a larger dataset and evaluation suite
+for model-quality claims.
 
 ## Legacy Megatron Path
 
