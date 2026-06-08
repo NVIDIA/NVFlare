@@ -380,7 +380,11 @@ Supported `job_launcher` keys:
 - `pending_timeout`
   - Required: no
   - Default: launcher default
-  - Description: timeout for pending job pods.
+  - Description: seconds to wait while the scheduler reports insufficient CPU,
+    memory, or GPU resources for a job pod. Use `0` to fail fast on the first
+    resource-shortage observation, a positive value to wait that many seconds,
+    or `null` to wait indefinitely unless the launcher's broader `timeout` is
+    set.
 
 - `default_python_path`
   - Required: no
@@ -544,6 +548,7 @@ limits through job metadata:
 - `launcher_spec[<site>][k8s].ephemeral_storage`
 - `launcher_spec[<site>][k8s].cpu`
 - `launcher_spec[<site>][k8s].memory`
+- `launcher_spec[<site>][k8s].pending_timeout`
 - `resource_spec[<site>].num_of_gpus`
 
 `K8sJobLauncher` maps `resource_spec[<site>].num_of_gpus` to the pod container
@@ -553,6 +558,12 @@ limit `nvidia.com/gpu`.
 `launcher_spec[<site>][k8s].python_path` overrides
 `job_launcher.default_python_path` for jobs whose image uses a different Python
 location.
+`launcher_spec[<site>][k8s].pending_timeout` overrides the site launcher
+default for one job. Set it to `0` for resource-heavy jobs that should fail
+fast when the scheduler cannot place the pod, or to a positive number of
+seconds to wait for CPU, memory, or GPU resources to become available. Other
+detected startup failures, such as image pull, volume, container config, or
+non-resource scheduling problems, fail immediately with `EXCEPTION`.
 
 `nvflare deploy prepare` does not need to invent a separate top-level GPU
 setting for job containers. If the parent server/client container or pod itself

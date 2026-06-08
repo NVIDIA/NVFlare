@@ -687,7 +687,9 @@ oc -n nvflare get events --sort-by=.lastTimestamp
 
 ### Job shows `FINISHED:EXECUTION_EXCEPTION`
 
-The K8s launcher deletes a job pod if it remains `Pending` or `Unknown` longer than `job_launcher.pending_timeout`. Inspect the job pod events and the parent pod logs:
+The K8s launcher applies `job_launcher.pending_timeout` only when the scheduler reports insufficient CPU, memory, or GPU resources for a job pod.
+Use `pending_timeout: 0` to fail fast, a positive value to wait that many seconds for those resources, or `null` to wait indefinitely unless a broader launcher timeout is configured. A job can override the site default with `launcher_spec.<site>.k8s.pending_timeout`. Image pull, volume, container config, non-resource scheduling, and `Unknown` phase problems fail immediately with `FINISHED:EXECUTION_EXCEPTION`.
+Inspect the job pod events and the parent pod logs:
 
 ``` bash
 oc -n nvflare get pods
