@@ -299,6 +299,8 @@ class FLClientStarterConfiger(JsonConfigurator):
         if relay_config:
             if relay_config:
                 relay_fqcn = relay_config.get(ConnPropKey.FQCN)
+                relay_identity = relay_config.get(ConnPropKey.IDENTITY)
+                relay_auth_identity = relay_config.get(ConnPropKey.AUTH_IDENTITY, relay_identity)
                 scheme = relay_config.get(ConnPropKey.SCHEME)
                 addr = relay_config.get(ConnPropKey.ADDRESS)
                 relay_conn_security = relay_config.get(ConnPropKey.CONNECTION_SECURITY)
@@ -319,27 +321,44 @@ class FLClientStarterConfiger(JsonConfigurator):
         if relay_fqcn:
             relay_conn_props = {
                 ConnPropKey.FQCN: relay_fqcn,
+                ConnPropKey.IDENTITY: relay_identity,
+                ConnPropKey.AUTH_IDENTITY: relay_auth_identity,
                 ConnPropKey.URL: relay_url,
                 ConnPropKey.CONNECTION_SECURITY: relay_conn_security,
             }
             set_scope_property(client_name, ConnPropKey.RELAY_CONN_PROPS, relay_conn_props)
 
         client = self.config_data["client"]
+        client_auth_identity = client.get(ConnPropKey.AUTH_IDENTITY, client.get(ConnPropKey.IDENTITY, client_name))
+        servers = self.config_data.get("servers", [])
+        server = servers[0] if servers else {}
+        server_identity = server.get(ConnPropKey.AUTH_IDENTITY, server.get(ConnPropKey.IDENTITY))
+        service = server.get("service", {})
+        root_conn_security = client.get(ConnPropKey.CONNECTION_SECURITY)
+        root_conn_props = {
+            ConnPropKey.FQCN: FQCN.ROOT_SERVER,
+            ConnPropKey.IDENTITY: server_identity,
+            ConnPropKey.AUTH_IDENTITY: server_identity,
+            ConnPropKey.CONNECTION_SECURITY: root_conn_security,
+        }
+        root_scheme = service.get(ConnPropKey.SCHEME)
+        root_target = service.get("target")
+        if root_scheme and root_target:
+            root_conn_props[ConnPropKey.URL] = make_url(
+                root_scheme, root_target, root_conn_security != ConnectionSecurity.CLEAR
+            )
 
         if hasattr(self.args, "job_id") and self.args.job_id:
             # this is CJ
             sp_scheme = self.args.sp_scheme
             sp_target = self.args.sp_target
             root_url = f"{sp_scheme}://{sp_target}"
-            root_conn_props = {
-                ConnPropKey.FQCN: FQCN.ROOT_SERVER,
-                ConnPropKey.URL: root_url,
-                ConnPropKey.CONNECTION_SECURITY: client.get(ConnPropKey.CONNECTION_SECURITY),
-            }
-            set_scope_property(client_name, ConnPropKey.ROOT_CONN_PROPS, root_conn_props)
+            root_conn_props[ConnPropKey.URL] = root_url
 
             cp_conn_props = {
                 ConnPropKey.FQCN: cp_fqcn,
+                ConnPropKey.IDENTITY: client_name,
+                ConnPropKey.AUTH_IDENTITY: client_auth_identity,
                 ConnPropKey.URL: self.args.parent_url,
                 ConnPropKey.CONNECTION_SECURITY: self.args.parent_conn_sec,
             }
@@ -347,7 +366,10 @@ class FLClientStarterConfiger(JsonConfigurator):
             # this is CP
             cp_conn_props = {
                 ConnPropKey.FQCN: cp_fqcn,
+                ConnPropKey.IDENTITY: client_name,
+                ConnPropKey.AUTH_IDENTITY: client_auth_identity,
             }
+        set_scope_property(client_name, ConnPropKey.ROOT_CONN_PROPS, root_conn_props)
         set_scope_property(client_name, ConnPropKey.CP_CONN_PROPS, cp_conn_props)
 
     def start_config(self, config_ctx: ConfigContext):

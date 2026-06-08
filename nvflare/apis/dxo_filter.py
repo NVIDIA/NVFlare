@@ -44,7 +44,7 @@ class DXOFilter(Filter, ABC):
 
         if supported_data_kinds and data_kinds_to_filter:
             if not all(dk in supported_data_kinds for dk in data_kinds_to_filter):
-                raise ValueError(f"invalid data kinds: {data_kinds_to_filter}. Only support {data_kinds_to_filter}")
+                raise ValueError(f"invalid data kinds: {data_kinds_to_filter}. Only support {supported_data_kinds}")
 
         if not data_kinds_to_filter:
             data_kinds_to_filter = supported_data_kinds

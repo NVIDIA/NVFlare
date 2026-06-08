@@ -1101,6 +1101,46 @@ class TestPocOutput:
         assert data["exit_code"] == 2
         assert "--no-wait" in data["hint"]
 
+    def test_start_poc_service_failure_exits_service_failed(self, capsys, tmp_path):
+        from nvflare.tool.poc.poc_commands import PocServiceStartError, start_poc
+        from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
+
+        args = MagicMock()
+        args.service = "admin@nvidia.com"
+        args.exclude = ""
+        args.gpu = None
+        args.study = None
+        args.no_wait = False
+
+        project_config = {"participants": [{"name": "server", "type": "server"}, {"name": "site-1", "type": "client"}]}
+        service_config = {
+            SC.FLARE_SERVER: "server",
+            SC.FLARE_PROJ_ADMIN: "admin@nvidia.com",
+            SC.FLARE_CLIENTS: ["site-1"],
+        }
+
+        with (
+            patch("nvflare.tool.poc.poc_commands.get_poc_workspace", return_value=str(tmp_path)),
+            patch("nvflare.tool.poc.poc_commands.get_service_list", return_value=["admin@nvidia.com"]),
+            patch("nvflare.tool.poc.poc_commands.get_excluded", return_value=[]),
+            patch("nvflare.tool.poc.poc_commands.get_gpis", return_value=[]),
+            patch(
+                "nvflare.tool.poc.poc_commands._start_poc",
+                side_effect=PocServiceStartError("service 'admin@nvidia.com' exited with code 1"),
+            ),
+            patch("nvflare.tool.poc.poc_commands.setup_service_config", return_value=(project_config, service_config)),
+            patch("nvflare.tool.poc.poc_commands._is_local_port_available", return_value=(True, None)),
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                start_poc(args)
+
+        assert exc_info.value.code == 2
+        data = json.loads(capsys.readouterr().out)
+        assert data["error_code"] == "SERVICE_FAILED"
+        assert data["exit_code"] == 2
+        assert "nvflare poc start" in data["hint"]
+        assert "admin@nvidia.com" in data["message"]
+
     def test_wait_for_poc_system_ready_wraps_unexpected_wait_errors(self, tmp_path):
         from nvflare.tool.api_utils import SystemStartTimeout
         from nvflare.tool.poc.poc_commands import _wait_for_poc_system_ready
