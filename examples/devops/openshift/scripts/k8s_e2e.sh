@@ -33,7 +33,8 @@ Common optional environment:
   ADMIN_PYTHON_PATH=python
   STORAGE_CLASS=<cluster storage class>
   WORKSPACE_STORAGE=2Gi
-  COPY_IMAGE=busybox:1.36  # must contain sh, sleep, and tar for oc cp
+  WORKSPACE_STAGING_MODE=pvc  # pvc or configmap-secret
+  COPY_IMAGE=busybox:1.36  # pvc mode only; must contain sh, sleep, and tar for oc cp
   PARENT_CPU=<optional parent pod CPU request, for example 500m>
   PARENT_MEMORY=<optional parent pod memory request, for example 1Gi>
   ADMIN_IMAGE=$IMAGE
@@ -50,6 +51,11 @@ Examples:
   JOB_IMAGE=registry.example.com/nvflare-job:dev \
   PARENT_CPU=500m \
   PARENT_MEMORY=1Gi \
+    bash examples/devops/openshift/scripts/k8s_e2e.sh
+
+  IMAGE=registry.example.com/nvflare-parent:dev \
+  JOB_IMAGE=registry.example.com/nvflare-job:dev \
+  WORKSPACE_STAGING_MODE=configmap-secret \
     bash examples/devops/openshift/scripts/k8s_e2e.sh
 EOF
 }

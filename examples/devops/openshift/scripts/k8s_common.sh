@@ -101,7 +101,7 @@ init_k8s_env() {
   local require_image=${1:-false}
 
   SCRIPT_DIR="${SCRIPT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
-  REPO_ROOT="${REPO_ROOT:-$(cd "${SCRIPT_DIR}/../../../../../.." && pwd)}"
+  REPO_ROOT="${REPO_ROOT:-$(cd "${SCRIPT_DIR}/../../../.." && pwd)}"
 
   KUBE_CMD="${KUBE_CMD:-oc}"
   PROJECT_NAME="${PROJECT_NAME:-openshift_nvflare_e2e}"
@@ -124,6 +124,7 @@ init_k8s_env() {
   JOB_PYTHON_PATH="${JOB_PYTHON_PATH:-/usr/local/bin/python3}"
   JOB_PENDING_TIMEOUT="${JOB_PENDING_TIMEOUT:-300}"
   WORKSPACE_STORAGE="${WORKSPACE_STORAGE:-2Gi}"
+  WORKSPACE_STAGING_MODE="${WORKSPACE_STAGING_MODE:-pvc}"
   STORAGE_CLASS="${STORAGE_CLASS:-}"
   WORK_DIR="${WORK_DIR:-/tmp/nvflare/openshift-e2e}"
   CLEAN_WORK_DIR="${CLEAN_WORK_DIR:-false}"
@@ -150,6 +151,14 @@ init_k8s_env() {
   fi
   JOB_IMAGE="${JOB_IMAGE:-${IMAGE:-}}"
   ADMIN_IMAGE="${ADMIN_IMAGE:-${IMAGE:-}}"
+
+  case "${WORKSPACE_STAGING_MODE}" in
+    pvc|configmap-secret)
+      ;;
+    *)
+      fail "WORKSPACE_STAGING_MODE must be 'pvc' or 'configmap-secret', got: ${WORKSPACE_STAGING_MODE}"
+      ;;
+  esac
 
   read -r -a CLIENT_ARRAY <<<"${CLIENTS}"
   CLIENT_COUNT="${#CLIENT_ARRAY[@]}"
@@ -497,6 +506,13 @@ stage_workspace_pvc() {
   "${KUBE_CMD}" -n "${NAMESPACE}" delete pod "${pod}" --ignore-not-found=true >/dev/null
 }
 
+stage_workspace_configmap_secret() {
+  local participant=$1
+  local kit="${PREPARED_DIR}/${participant}"
+
+  nvflare deploy k8s stage "${kit}" --namespace "${NAMESPACE}" --kubectl "${KUBE_CMD}"
+}
+
 install_chart() {
   local participant=$1
   local deployment_existed=false
@@ -727,13 +743,19 @@ submit_and_wait_for_job() {
 }
 
 report_missing_pieces() {
+  local copy_image_note=""
+
+  if [[ "${WORKSPACE_STAGING_MODE}" == "pvc" ]]; then
+    copy_image_note="  - A pullable COPY_IMAGE with sh, sleep, and tar installed. The deploy phase
+    uses ${KUBE_CMD} cp to stage prepared startup files into workspace PVCs."
+  fi
+
   cat <<EOF
 
 Missing pieces these scripts cannot create for the cluster:
   - A pullable parent IMAGE with NVFlare, its K8S extra/Kubernetes Python
     client, and the Python executable named by PARENT_PYTHON_PATH installed.
-  - A pullable COPY_IMAGE with sh, sleep, and tar installed. The deploy phase
-    uses oc cp to stage prepared startup files into workspace PVCs.
+${copy_image_note}
   - A pullable ADMIN_IMAGE with NVFlare and the Python executable named by
     ADMIN_PYTHON_PATH installed. The submit phase can use the parent IMAGE as
     ADMIN_IMAGE.
@@ -784,7 +806,10 @@ run_deploy_phase() {
   local cfg
   local pvc_file
 
-  require_cmd "${KUBE_CMD}" helm nvflare python3 tar
+  require_cmd "${KUBE_CMD}" helm nvflare python3
+  if [[ "${WORKSPACE_STAGING_MODE}" == "pvc" ]]; then
+    require_cmd tar
+  fi
   require_provisioned_workspace
   ensure_work_dirs
 
@@ -800,7 +825,7 @@ run_deploy_phase() {
     verify_prepared_launcher "${participant}" client
   done
 
-  info "Creating namespace and staging workspace PVCs"
+  info "Creating namespace and staging workspaces with mode ${WORKSPACE_STAGING_MODE}"
   create_namespace
   "${KUBE_CMD}" -n "${NAMESPACE}" get serviceaccount default >/dev/null
   for participant in "${RUNTIME_PARTICIPANTS[@]}"; do
@@ -808,7 +833,11 @@ run_deploy_phase() {
     pvc_file="${WORK_DIR}/pvc-${participant}.yaml"
     write_pvc_manifest "${pvc_file}" "${pvc}"
     "${KUBE_CMD}" -n "${NAMESPACE}" apply -f "${pvc_file}"
-    stage_workspace_pvc "${participant}" "${pvc}"
+    if [[ "${WORKSPACE_STAGING_MODE}" == "pvc" ]]; then
+      stage_workspace_pvc "${participant}" "${pvc}"
+    else
+      stage_workspace_configmap_secret "${participant}"
+    fi
   done
 
   info "Installing generated Helm charts"

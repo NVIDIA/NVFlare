@@ -35,6 +35,30 @@ spec:
         - name: {{ .Values.persistence.workspace.volumeName }}
           persistentVolumeClaim:
             claimName: {{ .Values.persistence.workspace.claimName }}
+        {{- with .Values.workspaceConfig }}
+        {{- with .local }}
+        {{- if .configMapName }}
+        - name: workspace-local
+          configMap:
+            name: {{ .configMapName }}
+            {{- with .items }}
+            items:
+              {{- toYaml . | nindent 14 }}
+            {{- end }}
+        {{- end }}
+        {{- end }}
+        {{- with .startup }}
+        {{- if .secretName }}
+        - name: workspace-startup
+          secret:
+            secretName: {{ .secretName }}
+            {{- with .items }}
+            items:
+              {{- toYaml . | nindent 14 }}
+            {{- end }}
+        {{- end }}
+        {{- end }}
+        {{- end }}
       containers:
         - name: {{ include "nvflare-server.name" . }}
           image: {{ include "nvflare-server.image" . }}
@@ -42,6 +66,22 @@ spec:
           volumeMounts:
             - name: {{ .Values.persistence.workspace.volumeName }}
               mountPath: {{ .Values.persistence.workspace.mountPath }}
+            {{- with .Values.workspaceConfig }}
+            {{- with .local }}
+            {{- if .configMapName }}
+            - name: workspace-local
+              mountPath: {{ $.Values.persistence.workspace.mountPath }}/local
+              readOnly: true
+            {{- end }}
+            {{- end }}
+            {{- with .startup }}
+            {{- if .secretName }}
+            - name: workspace-startup
+              mountPath: {{ $.Values.persistence.workspace.mountPath }}/startup
+              readOnly: true
+            {{- end }}
+            {{- end }}
+            {{- end }}
           {{- with .Values.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
