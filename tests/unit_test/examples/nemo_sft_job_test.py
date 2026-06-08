@@ -257,6 +257,29 @@ def test_sft_dataset_prompt_format():
     assert dataset_module.clean_response("  A short answer.  ") == "A short answer."
 
 
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for prediction helper tests")
+def test_sft_predict_uses_no_cache_greedy_loop():
+    import torch
+
+    predict_module = _load_example_module("predict")
+
+    class FakeModel:
+        def __init__(self):
+            self.calls = []
+
+        def __call__(self, input_ids, attention_mask, use_cache):
+            self.calls.append({"input_ids": input_ids.clone(), "use_cache": use_cache})
+            logits = torch.zeros(input_ids.shape[0], input_ids.shape[1], 4)
+            logits[:, -1, 2] = 1.0
+            return SimpleNamespace(logits=logits)
+
+    model = FakeModel()
+    generated = predict_module._greedy_generate_no_cache(model, torch.tensor([[0, 1]]), max_new_tokens=2)
+
+    assert generated.tolist() == [[0, 1, 2, 2]]
+    assert [call["use_cache"] for call in model.calls] == [False, False]
+
+
 def test_sft_synthetic_data_generator_writes_site_and_validation_files(tmp_path):
     data_module = _load_example_module("data/create_synthetic_sft_data")
     out_dir = tmp_path / "synthetic"

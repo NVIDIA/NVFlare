@@ -50,6 +50,18 @@ def _compatible_state(model_state, checkpoint_state):
     return compatible
 
 
+def _greedy_generate_no_cache(model, input_ids, max_new_tokens: int, eos_token_id: int | None = None):
+    generated = input_ids
+    for _ in range(max_new_tokens):
+        attention_mask = torch.ones_like(generated)
+        outputs = model(input_ids=generated, attention_mask=attention_mask, use_cache=False)
+        next_token = torch.argmax(outputs.logits[:, -1, :], dim=-1, keepdim=True)
+        generated = torch.cat([generated, next_token], dim=-1)
+        if eos_token_id is not None and bool(torch.all(next_token == eos_token_id)):
+            break
+    return generated
+
+
 def main():
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -76,11 +88,11 @@ def main():
         formatted_prompt = build_prompt(prompt)
         inputs = tokenizer(formatted_prompt, return_tensors="pt").to(model.device)
         with torch.no_grad():
-            output_ids = model.generate(
-                **inputs,
+            output_ids = _greedy_generate_no_cache(
+                model,
+                input_ids=inputs["input_ids"],
                 max_new_tokens=args.max_new_tokens,
-                do_sample=False,
-                pad_token_id=tokenizer.eos_token_id,
+                eos_token_id=tokenizer.eos_token_id,
             )
         generated = tokenizer.decode(output_ids[0][inputs["input_ids"].shape[-1] :], skip_special_tokens=True).strip()
         results.append({"prompt": prompt, "generated": generated})
