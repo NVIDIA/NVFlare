@@ -166,8 +166,3 @@ responses. After training, the final checkpoint produced a learned marker-respon
 (`The site two learning marker is ALIE.`) for the smoke prompts. The teacher-forced response-token loss above is the
 more reliable correctness signal for this small non-IID synthetic validation; use a larger dataset and evaluation suite
 for model-quality claims.
-
-## Legacy Megatron Path
-
-The legacy `nemo_nvflare/`, `jobs/templates/`, and `utils/create_configs.py` files are kept for reference to the older
-Megatron/Lightning workflow. The modern path for this example is `job.py` plus the NVFlare Recipe and Client APIs.
