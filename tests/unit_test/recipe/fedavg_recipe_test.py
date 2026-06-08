@@ -679,12 +679,12 @@ class TestFedAvgRecipeValidation:
         assert server_app is not None
         assert server_app.app_config.components.get(locator_id) is locator
 
-    def test_dict_config_missing_path_raises_error(self, mock_file_system, base_recipe_params):
-        """Test that dict config without 'class_path' key raises error."""
-        with pytest.raises(ValueError, match="must have 'class_path' key"):
+    def test_dict_config_missing_class_path_or_path_raises_error(self, mock_file_system, base_recipe_params):
+        """Test that dict config without 'class_path' or 'path' key raises error."""
+        with pytest.raises(ValueError, match="must have 'class_path' or 'path' key"):
             FedAvgRecipe(
                 name="test_invalid_dict",
-                model={"args": {"input_size": 10}},  # Missing 'class_path'
+                model={"args": {"input_size": 10}},  # Missing 'class_path'/'path'
                 **base_recipe_params,
             )
 
@@ -749,6 +749,51 @@ class TestFedAvgRecipeInitialCkpt:
 
         assert recipe.model["path"] == "my_module.models.SimpleNet"
         assert recipe.model["args"] == {"input_size": 10, "output_size": 5}
+
+    def test_dict_model_config_path_alias_accepted(self, mock_file_system, base_recipe_params):
+        """Test that dict model config accepts path as an alias for class_path."""
+        model_config = {
+            "path": "my_module.models.SimpleNet",
+            "args": {"input_size": 10, "output_size": 5},
+        }
+        recipe = FedAvgRecipe(
+            name="test_dict_config_path_alias",
+            model=model_config,
+            **base_recipe_params,
+        )
+
+        assert recipe.model["path"] == "my_module.models.SimpleNet"
+        assert recipe.model["args"] == {"input_size": 10, "output_size": 5}
+
+    def test_dict_model_config_class_path_takes_precedence(self, mock_file_system, base_recipe_params):
+        """Test that class_path is used when both class_path and path are provided."""
+        model_config = {
+            "class_path": "my_module.models.ClassPathNet",
+            "path": "my_module.models.PathNet",
+            "args": {"input_size": 10},
+        }
+        recipe = FedAvgRecipe(
+            name="test_dict_config_class_path_precedence",
+            model=model_config,
+            **base_recipe_params,
+        )
+
+        assert recipe.model["path"] == "my_module.models.ClassPathNet"
+        assert recipe.model["args"] == {"input_size": 10}
+
+    def test_dict_model_config_explicit_none_class_path_raises(self, mock_file_system, base_recipe_params):
+        """Test that explicit class_path=None does not fall through to path alias."""
+        model_config = {
+            "class_path": None,
+            "path": "my_module.models.PathNet",
+            "args": {"input_size": 10},
+        }
+        with pytest.raises(ValueError, match="'class_path' must be a string"):
+            FedAvgRecipe(
+                name="test_dict_config_none_class_path",
+                model=model_config,
+                **base_recipe_params,
+            )
 
     def test_dict_model_config_with_initial_ckpt(self, mock_file_system, base_recipe_params):
         """Test that dict model config (class_path) with initial_ckpt is accepted."""
