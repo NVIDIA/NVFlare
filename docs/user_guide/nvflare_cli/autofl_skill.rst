@@ -15,6 +15,12 @@ Instead, NVFlare provides the deterministic import, reviewable
 and reproducibility evidence.  The agent plans candidate edits and runs them
 through existing NVFlare surfaces.
 
+``autofl.yaml`` is the human-reviewable campaign configuration, not a replacement
+for ``job.py`` or for exported NVFlare job folders.  It exposes the editable
+Auto-FL settings, fixed-budget constraints, allowed edit paths, objective,
+candidate budget, provenance, and unresolved fields.  The original ``job.py``
+remains the experiment entry point the skill and agent use to run candidates.
+
 Typical Prompt
 ==============
 
@@ -38,8 +44,8 @@ The skill first imports the job without executing user code:
        --output autofl.yaml
 
 The importer parses supported Recipe and FedJob patterns with Python AST
-inspection.  It extracts known fields into ``autofl.yaml`` and marks unknown or
-dynamic fields as unresolved instead of guessing.
+inspection.  It extracts campaign-relevant settings into ``autofl.yaml`` and
+marks unknown or dynamic fields as unresolved instead of guessing.
 
 Trust Contract
 ==============
@@ -47,16 +53,16 @@ Trust Contract
 Before editing or running candidates, the skill should show the user three
 things from ``autofl.yaml``:
 
-- **Extracted**: recipe or FedJob surface, train script, metric, environment,
-  fixed budget, tunables, artifact locations, source hash, and importer version.
+- **Editable**: metric, environment, candidate budget, tunables, artifact
+  locations, source hash, and importer version.
 - **Unresolved**: dynamic defaults, unsupported Python semantics, missing metric
   sources, unknown data paths, or low-confidence fields.
 - **Allowed**: files the agent may edit, fixed-budget fields it must preserve,
   and environment or policy boundaries.
 
 This makes the workflow feel native and reproducible: NVFlare owns the truth of
-what was imported and executed; the agent owns exploration within explicit
-constraints.
+the campaign settings and execution surfaces; the agent owns exploration within
+explicit constraints.
 
 Execution
 =========
