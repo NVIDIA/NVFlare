@@ -40,6 +40,7 @@ MAX_OUT_SEQ_CHUNKS = 16
 # 1/4 of the window size
 ACK_INTERVAL = 1024 * 1024 * 4
 READ_TIMEOUT = 300
+COMPLETED_TASK_TTL = 60.0
 COUNTER_NAME_RECEIVED = "received"
 
 # Read result status
@@ -80,10 +81,13 @@ class RxTask:
         self.waiter = threading.Event()
         self.lock = threading.Lock()
         self.eos = False
+        self.completed = False
+        self.cleanup_timer = None
 
         self.timeout = CommConfigurator().get_streaming_read_timeout(READ_TIMEOUT)
         self.ack_interval = CommConfigurator().get_streaming_ack_interval(ACK_INTERVAL)
         self.max_out_seq = CommConfigurator().get_streaming_max_out_seq_chunks(MAX_OUT_SEQ_CHUNKS)
+        self.completed_task_ttl = CommConfigurator().get_streaming_retry_timeout(COMPLETED_TASK_TTL)
 
     def __str__(self):
         return f"Rx[SID:{self.sid} from {self.origin} for {self.channel}/{self.topic} Size: {self.size}]"
@@ -203,13 +207,17 @@ class RxTask:
 
     def stop(self, error: StreamError = None, notify=True):
 
-        with RxTask.map_lock:
-            RxTask.rx_task_map.pop((self.origin, self.sid), None)
-
         if not error:
             if self.seq != self.seq_ack:
                 self._send_ack(self.offset, self.seq)
+            if self.reliable:
+                self.completed = True
+                self._schedule_remove_task()
+            else:
+                self._remove_task()
             return
+
+        self._remove_task()
 
         if self.headers:
             optional = self.headers.get(StreamHeaderKey.OPTIONAL, False)
@@ -236,6 +244,24 @@ class RxTask:
                 }
             )
             self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_ACK_TOPIC, self.origin, message)
+
+    def _remove_task(self):
+        if self.cleanup_timer:
+            self.cleanup_timer.cancel()
+            self.cleanup_timer = None
+
+        with RxTask.map_lock:
+            task = RxTask.rx_task_map.get((self.origin, self.sid))
+            if task is self:
+                RxTask.rx_task_map.pop((self.origin, self.sid), None)
+
+    def _schedule_remove_task(self):
+        if self.cleanup_timer:
+            return
+
+        self.cleanup_timer = threading.Timer(self.completed_task_ttl, self._remove_task)
+        self.cleanup_timer.daemon = True
+        self.cleanup_timer.start()
 
     def _try_to_read(self, size: int) -> Tuple[int, Optional[BytesAlike]]:
 
@@ -308,13 +334,17 @@ class RxTask:
             errors = self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_ACK_TOPIC, self.origin, message)
         except Exception as ex:
             log.error(f"{self} failed to ack seq {seq} to {self.origin}: {ex}")
+            return False
         else:
+            errors = errors or {}
             error = errors.get(self.origin)
             if error:
                 log.error(f"{self} failed to ack seq {seq} to {self.origin}: {error}")
+                return False
 
         self.offset_ack = offset
         self.seq_ack = seq
+        return True
 
 
 class RxStream(Stream):

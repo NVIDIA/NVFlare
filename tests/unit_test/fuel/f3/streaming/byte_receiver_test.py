@@ -28,10 +28,18 @@ from nvflare.fuel.f3.streaming.stream_types import StreamError
 @pytest.fixture(autouse=True)
 def clean_rx_task_map():
     with RxTask.map_lock:
+        tasks = list(RxTask.rx_task_map.values())
         RxTask.rx_task_map.clear()
+    for task in tasks:
+        if task.cleanup_timer:
+            task.cleanup_timer.cancel()
     yield
     with RxTask.map_lock:
+        tasks = list(RxTask.rx_task_map.values())
         RxTask.rx_task_map.clear()
+    for task in tasks:
+        if task.cleanup_timer:
+            task.cleanup_timer.cancel()
 
 
 def _make_message(origin: str, sid: int, error: str = None) -> Message:
@@ -222,3 +230,39 @@ def test_reliable_final_chunk_sends_sequence_ack():
     assert cell.fire_and_forget.call_args.args[:3] == (STREAM_CHANNEL, STREAM_ACK_TOPIC, "site-1")
     assert ack.get_header(StreamHeaderKey.SEQUENCE) == 0
     assert ack.get_header(StreamHeaderKey.OFFSET) == 0
+
+
+def test_send_ack_updates_ack_state_only_on_success():
+    cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={"site-1": "send failed"}))
+    task = RxTask(sid=504, origin="site-1", cell=cell, reliable=True)
+
+    assert task._send_ack(offset=10, seq=2) is False
+    assert task.offset_ack == 0
+    assert task.seq_ack == -1
+
+    cell.fire_and_forget.return_value = {}
+
+    assert task._send_ack(offset=10, seq=2) is True
+    assert task.offset_ack == 10
+    assert task.seq_ack == 2
+
+
+def test_reliable_completed_task_reacks_duplicate_final_chunk():
+    cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={}))
+    message = _make_chunk("site-1", sid=505, seq=0, data_type=StreamDataType.FINAL, payload=b"", reliable=True)
+    task = RxTask.find_or_create_task(message, cell)
+    task.completed_task_ttl = 60.0
+
+    assert task.process_chunk(message) is True
+
+    with RxTask.map_lock:
+        assert RxTask.rx_task_map[("site-1", 505)] is task
+    assert task.completed is True
+    assert cell.fire_and_forget.call_count == 1
+
+    assert task.process_chunk(message) is False
+
+    assert cell.fire_and_forget.call_count == 2
+    duplicate_ack = cell.fire_and_forget.call_args.args[3]
+    assert duplicate_ack.get_header(StreamHeaderKey.SEQUENCE) == 0
+    assert duplicate_ack.get_header(StreamHeaderKey.OFFSET) == 0

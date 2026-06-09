@@ -23,7 +23,7 @@ from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.byte_streamer import TxTask
 from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamHeaderKey
-from nvflare.fuel.f3.streaming.stream_types import Stream
+from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError
 
 
 class DummyStream(Stream):
@@ -361,6 +361,32 @@ class TestReliableByteStreamer:
         assert err is not None
         assert "doesn't support reliable streaming" in str(err)
 
+    def test_retry_pending_byte_limit_stops_stream(self, monkeypatch, no_retry_worker):
+        self._patch_common_config(monkeypatch)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_retry_max_pending_bytes", lambda self, default: 1)
+
+        task = self._make_task_with_reliable(True, monkeypatch)
+        task.buffer[0:4] = b"abcd"
+        task.buffer_size = 4
+
+        assert task.send_pending_buffer() is False
+
+        err = task.stream_future.exception(timeout=0.1)
+        assert err is not None
+        assert "too many retry messages" in str(err)
+        assert task.pending_messages == {}
+        assert task.stopped is True
+
+    def test_stop_cancels_retry_task_future_and_wakes_retry_worker(self, monkeypatch, no_retry_worker):
+        task, _ = self._make_reliable_task(monkeypatch, no_retry_worker)
+        task.retry_task_future = MagicMock()
+        task.retry_wakeup = MagicMock()
+
+        task.stop(StreamError("failed"))
+
+        task.retry_task_future.cancel.assert_called_once()
+        task.retry_wakeup.set.assert_called_once()
+
     def test_retry_task_resends_due_pending_message(self, monkeypatch, no_retry_worker):
         task, cell = self._make_reliable_task(monkeypatch, no_retry_worker)
         message = Message(
@@ -375,7 +401,8 @@ class TestReliableByteStreamer:
         task.retry_timeout = 10.0
 
         monkeypatch.setattr(byte_streamer_module.time, "monotonic", lambda: 1.0)
-        monkeypatch.setattr(byte_streamer_module.time, "sleep", lambda _seconds: setattr(task, "stopped", True))
+        task.retry_wakeup = MagicMock()
+        task.retry_wakeup.wait.side_effect = lambda _timeout: setattr(task, "stopped", True) or True
 
         task.retry_task()
 

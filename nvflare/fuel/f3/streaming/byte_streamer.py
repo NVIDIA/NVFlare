@@ -127,10 +127,12 @@ class TxTask(StreamTaskSpec):
         if self.reliable:
             self.pending_messages = {}
             self.retry_lock = threading.RLock()
+            self.retry_wakeup = threading.Event()
             self.retry_task_future = stream_thread_pool.submit(self.retry_task)
         else:
             self.pending_messages = None
             self.retry_lock = None
+            self.retry_wakeup = None
             self.retry_task_future = None
 
     def __str__(self):
@@ -143,7 +145,8 @@ class TxTask(StreamTaskSpec):
             buf = self.stream.read(self.chunk_size)
             if not buf:
                 # End of Stream
-                self.send_pending_buffer(final=True)
+                if not self.send_pending_buffer(final=True):
+                    return
                 self.stop()
                 return
 
@@ -177,7 +180,8 @@ class TxTask(StreamTaskSpec):
             # Don't push out chunk when it's equal, wait till next round to detect EOS
             # For example, if the stream size is chunk size (1M), this avoids sending two chunks.
             if size + self.buffer_size > self.chunk_size:
-                self.send_pending_buffer()
+                if not self.send_pending_buffer():
+                    return
 
             if size == self.chunk_size:
                 self.direct_buf = buf
@@ -225,7 +229,11 @@ class TxTask(StreamTaskSpec):
                 self.pending_messages[self.seq] = curr_time, curr_time, message
                 pending_size = sum(_payload_size(msg.payload) for _, _, msg in self.pending_messages.values())
                 if self.retry_max_pending_bytes > 0 and pending_size > self.retry_max_pending_bytes:
-                    log.error(f"{self} has too many retry messages ({pending_size} > {self.retry_max_pending_bytes})")
+                    self.pending_messages.pop(self.seq, None)
+                    msg = f"{self} has too many retry messages ({pending_size} > {self.retry_max_pending_bytes})"
+                    log.error(msg)
+                    self.stop(StreamError(msg))
+                    return False
 
         errors = self.cell.fire_and_forget(
             STREAM_CHANNEL, STREAM_DATA_TOPIC, self.target, message, secure=self.secure, optional=self.optional
@@ -237,7 +245,7 @@ class TxTask(StreamTaskSpec):
                 log.error(f"{msg}, will retry in {self.retry_wait} seconds")
             else:
                 self.stop(StreamError(msg))
-                return
+                return False
 
         # Update state
         self.seq += 1
@@ -247,17 +255,32 @@ class TxTask(StreamTaskSpec):
 
         # Update future
         self.stream_future.set_progress(self.offset)
+        return True
 
     def stop(self, error: Optional[StreamError] = None, notify=True):
 
-        if self.stopped:
-            return
+        if self.reliable:
+            with self.retry_lock:
+                if self.stopped:
+                    return
 
-        if not error and self.pending_messages:
-            self.stopping = True
-            return
+                if not error and self.pending_messages:
+                    self.stopping = True
+                    self.retry_wakeup.set()
+                    if not self.ack_waiter.is_set():
+                        self.ack_waiter.set()
+                    return
 
-        self.stopped = True
+                self.stopped = True
+                self.stopping = False
+                if error:
+                    self.pending_messages.clear()
+                self.retry_wakeup.set()
+        else:
+            if self.stopped:
+                return
+            self.stopped = True
+
         self.remove_task()
         if not self.ack_waiter.is_set():
             self.ack_waiter.set()
@@ -265,15 +288,14 @@ class TxTask(StreamTaskSpec):
         if self.task_future:
             self.task_future.cancel()
 
+        if self.retry_task_future:
+            self.retry_task_future.cancel()
+
         if not error:
             # Result is the number of bytes streamed
             if self.stream_future:
                 self.stream_future.set_result(self.offset)
             return
-
-        if self.reliable:
-            with self.retry_lock:
-                self.pending_messages.clear()
 
         # Error handling
         log.debug(f"{self} Stream error: {error}")
@@ -318,13 +340,16 @@ class TxTask(StreamTaskSpec):
             self.last_ack_progress_ts = time.monotonic()
 
         if self.reliable:
+            should_stop = False
             with self.retry_lock:
                 if self.pending_messages and ack_seq is not None:
                     for seq in list(self.pending_messages):
                         if seq <= ack_seq:
                             del self.pending_messages[seq]
 
-            if self.stopping and not self.pending_messages:
+                should_stop = self.stopping and not self.pending_messages
+
+            if should_stop:
                 self.stop()
 
         if not self.ack_waiter.is_set():
@@ -339,11 +364,10 @@ class TxTask(StreamTaskSpec):
     def retry_task(self):
         try:
             while not self.stopped:
+                should_stop = False
                 with self.retry_lock:
                     if not self.pending_messages:
-                        if self.stopping:
-                            self.stop()
-                            return
+                        should_stop = self.stopping
                         messages_to_retry = []
                     else:
                         curr_time = time.monotonic()
@@ -361,6 +385,10 @@ class TxTask(StreamTaskSpec):
                                 messages_to_retry.append((seq, start_time, message))
                                 self.pending_messages[seq] = start_time, curr_time, message
 
+                if should_stop:
+                    self.stop()
+                    return
+
                 for seq, _start_time, message in messages_to_retry:
                     errors = self.cell.fire_and_forget(
                         STREAM_CHANNEL,
@@ -377,7 +405,8 @@ class TxTask(StreamTaskSpec):
                             f"{error}, will retry again in {self.retry_wait} seconds"
                         )
 
-                time.sleep(self.retry_wait)
+                self.retry_wakeup.wait(self.retry_wait)
+                self.retry_wakeup.clear()
 
         except Exception as ex:
             log.error(f"{self} retry thread ended due to error: {ex}")
