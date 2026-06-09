@@ -435,7 +435,9 @@ class MetricsArtifactWriter(Widget):
             summary["metric_source"] = self._metric_source
         if self._metric_split:
             summary["metric_split"] = self._metric_split
-        if self._key_metric:
+        if self._best_selection and self._best_selection.get("key_metric"):
+            summary["key_metric"] = self._best_selection["key_metric"]
+        elif self._key_metric:
             summary["key_metric"] = self._key_metric
         if self._best_selection:
             for field in (
@@ -553,8 +555,9 @@ class MetricsArtifactWriter(Widget):
         return None
 
     def _get_site_name(self, model, fl_ctx):
+        meta = model.meta or {}
         for key in (FLMetaKey.SITE_NAME, "client_name", "site_name"):
-            value = model.meta.get(key)
+            value = meta.get(key)
             if isinstance(value, str) and value:
                 return value
         peer_ctx = fl_ctx.get_peer_context()

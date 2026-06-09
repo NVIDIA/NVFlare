@@ -330,6 +330,57 @@ class TestMetricsArtifactWriterAggregationEvents:
         assert summary["best_metric_source"] == "IntimeModelSelector"
         assert summary["best_metric_detail_source"] == "initial_metrics"
 
+    def test_summary_key_metric_prefers_best_selection_metadata(self, tmp_path):
+        writer = MetricsArtifactWriter()
+        run_dir = tmp_path / "run"
+        fl_ctx = _make_fl_ctx(run_dir)
+
+        writer.handle_event(EventType.START_RUN, fl_ctx)
+        selection_key_metric = {"name": "accuracy", "mode": "max", "mode_source": "selector"}
+        aggregation_key_metric = {"name": "loss", "mode": "min", "mode_source": "stop_condition"}
+        _record_best_selection(
+            writer,
+            fl_ctx,
+            {
+                "source": "IntimeModelSelector",
+                "key_metric": selection_key_metric,
+                "best_round": 0,
+                "best_metrics": {"accuracy": 0.9},
+            },
+        )
+        _record_round(writer, fl_ctx, 1, {"loss": 0.4, "accuracy": 0.8}, key_metric=aggregation_key_metric)
+        _finish_run(writer, fl_ctx)
+
+        summary = _read_summary(run_dir)
+        assert summary["key_metric"] == selection_key_metric
+        assert summary["best_round"] == 0
+        assert _metrics_to_dict(summary["best_metrics"]) == {"accuracy": 0.9}
+
+        rounds = _read_rounds(run_dir)
+        assert rounds[0]["key_metric"] == aggregation_key_metric
+
+    def test_contribution_with_none_meta_does_not_crash(self, tmp_path, monkeypatch):
+        writer = MetricsArtifactWriter()
+        run_dir = tmp_path / "run"
+        fl_ctx = _make_fl_ctx(run_dir)
+
+        monkeypatch.setattr(
+            FLModelUtils,
+            "from_shareable",
+            lambda _: FLModel(metrics={"loss": 0.3}, current_round=1, meta=None),
+        )
+
+        writer.handle_event(EventType.START_RUN, fl_ctx)
+        fl_ctx.set_prop(AppConstants.TRAINING_RESULT, object(), private=True, sticky=False)
+        writer.handle_event(AppEventType.AFTER_CONTRIBUTION_ACCEPT, fl_ctx)
+        fl_ctx.set_prop(AppConstants.TRAINING_RESULT, None, private=True, sticky=False)
+        _record_round(writer, fl_ctx, 1, {"loss": 0.3})
+        _finish_run(writer, fl_ctx)
+
+        rounds = _read_rounds(run_dir)
+        assert rounds[0]["sites"][0]["name"] == AppConstants.CLIENT_UNKNOWN
+        assert _metrics_to_dict(rounds[0]["sites"][0]["metrics"]) == {"loss": 0.3}
+
     def test_bool_site_metrics_are_recorded_without_synthetic_aggregation(self, tmp_path):
         writer = MetricsArtifactWriter()
         run_dir = tmp_path / "run"
