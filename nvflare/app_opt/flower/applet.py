@@ -353,7 +353,7 @@ class FlowerServerApplet(Applet):
             db_path = self.database
             if not os.path.isabs(db_path) and db_path not in (":memory:", ":flwr-in-memory:"):
                 db_path = os.path.abspath(db_path)
-            db_arg = f"--database {db_path}"
+            db_arg = f"--database {shlex.quote(db_path)}"
 
         # Get the full path to flower-superlink from the current Python environment
         python_bin_dir = os.path.dirname(sys.executable)
@@ -373,7 +373,7 @@ class FlowerServerApplet(Applet):
         --control-api-address 127.0.0.1:9093
         """
         superlink_cmd = (
-            f"{flower_superlink_path} --insecure --fleet-api-type grpc-adapter {db_arg} "
+            f"{shlex.quote(flower_superlink_path)} --insecure --fleet-api-type grpc-adapter {db_arg} "
             f"--serverappio-api-address {serverapp_api_addr} "
             f"--fleet-api-address {fleet_api_addr} "
             f"--control-api-address {exec_api_addr} "
