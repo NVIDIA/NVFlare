@@ -214,7 +214,8 @@ class MetricsArtifactWriter(Widget):
             "name": self._sanitize_name(site_name),
             "metrics": metrics,
         }
-        weight = self._safe_weight(model.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND))
+        meta = model.meta or {}
+        weight = self._safe_weight(meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND))
         if weight is not None:
             site["weight"] = weight
             site["weight_key"] = FLMetaKey.NUM_STEPS_CURRENT_ROUND
