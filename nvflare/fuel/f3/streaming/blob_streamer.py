@@ -241,7 +241,7 @@ class BlobStreamer:
         message: Message,
         secure: bool,
         optional: bool,
-        reliable: bool = True,
+        reliable: Optional[bool] = None,
     ) -> StreamFuture:
         if message.payload is None:
             message.payload = bytes(0)

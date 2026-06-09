@@ -82,7 +82,7 @@ class TxTask(StreamTaskSpec):
         target: str,
         headers: dict,
         stream: Stream,
-        reliable: bool,
+        reliable: Optional[bool],
         secure: bool,
         optional: bool,
     ):
@@ -104,7 +104,6 @@ class TxTask(StreamTaskSpec):
         self.seq = 0
         self.offset = 0
         self.offset_ack = 0
-        self.reliable = reliable
         self.secure = secure
         self.optional = optional
         self.stopped = False
@@ -114,6 +113,7 @@ class TxTask(StreamTaskSpec):
         self.stream_future.set_size(stream.get_size())
 
         config = CommConfigurator()
+        self.reliable = config.get_streaming_reliable(True) if reliable is None else reliable
         self.window_size = config.get_streaming_window_size(STREAM_WINDOW_SIZE)
         self.ack_wait = config.get_streaming_ack_wait(STREAM_ACK_WAIT)
         self.ack_progress_timeout = config.get_streaming_ack_progress_timeout(60.0)
@@ -122,6 +122,7 @@ class TxTask(StreamTaskSpec):
         self.last_ack_progress_ts = time.monotonic()
         self.retry_wait = max(0.01, config.get_streaming_retry_wait(STREAM_RETRY_WAIT))
         self.retry_timeout = config.get_streaming_retry_timeout(STREAM_RETRY_TIMEOUT)
+        self.retry_max_pending_bytes = config.get_streaming_retry_max_pending_bytes(2 * self.window_size)
 
         if self.reliable:
             self.pending_messages = {}
@@ -223,8 +224,8 @@ class TxTask(StreamTaskSpec):
             with self.retry_lock:
                 self.pending_messages[self.seq] = curr_time, curr_time, message
                 pending_size = sum(_payload_size(msg.payload) for _, _, msg in self.pending_messages.values())
-                if pending_size > 2 * self.window_size:
-                    log.error(f"{self} has too many retry messages ({pending_size} > {2 * self.window_size})")
+                if self.retry_max_pending_bytes > 0 and pending_size > self.retry_max_pending_bytes:
+                    log.error(f"{self} has too many retry messages ({pending_size} > {self.retry_max_pending_bytes})")
 
         errors = self.cell.fire_and_forget(
             STREAM_CHANNEL, STREAM_DATA_TOPIC, self.target, message, secure=self.secure, optional=self.optional
@@ -418,7 +419,7 @@ class ByteStreamer:
         stream_type=STREAM_TYPE_BYTE,
         secure=False,
         optional=False,
-        reliable=True,
+        reliable: Optional[bool] = None,
     ) -> StreamFuture:
         tx_task = TxTask(
             self.cell, self.chunk_size, channel, topic, target, headers, stream, reliable, secure, optional

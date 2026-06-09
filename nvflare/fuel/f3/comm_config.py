@@ -43,8 +43,10 @@ class VarName:
     STREAMING_SEND_TIMEOUT = "streaming_send_timeout"
     STREAMING_ACK_PROGRESS_TIMEOUT = "streaming_ack_progress_timeout"
     STREAMING_ACK_PROGRESS_CHECK_INTERVAL = "streaming_ack_progress_check_interval"
+    STREAMING_RELIABLE = "streaming_reliable"
     STREAMING_RETRY_WAIT = "streaming_retry_wait"
     STREAMING_RETRY_TIMEOUT = "streaming_retry_timeout"
+    STREAMING_RETRY_MAX_PENDING_BYTES = "streaming_retry_max_pending_bytes"
     SFM_SEND_STALL_TIMEOUT = "sfm_send_stall_timeout"
     SFM_CLOSE_STALLED_CONNECTION = "sfm_close_stalled_connection"
     SFM_SEND_STALL_CONSECUTIVE_CHECKS = "sfm_send_stall_consecutive_checks"
@@ -135,11 +137,17 @@ class CommConfigurator:
     def get_streaming_ack_progress_check_interval(self, default):
         return ConfigService.get_float_var(VarName.STREAMING_ACK_PROGRESS_CHECK_INTERVAL, self.config, default=default)
 
+    def get_streaming_reliable(self, default):
+        return ConfigService.get_bool_var(VarName.STREAMING_RELIABLE, self.config, default=default)
+
     def get_streaming_retry_wait(self, default):
         return ConfigService.get_float_var(VarName.STREAMING_RETRY_WAIT, self.config, default=default)
 
     def get_streaming_retry_timeout(self, default):
         return ConfigService.get_float_var(VarName.STREAMING_RETRY_TIMEOUT, self.config, default=default)
+
+    def get_streaming_retry_max_pending_bytes(self, default):
+        return ConfigService.get_int_var(VarName.STREAMING_RETRY_MAX_PENDING_BYTES, self.config, default=default)
 
     def get_sfm_send_stall_timeout(self, default):
         return ConfigService.get_float_var(VarName.SFM_SEND_STALL_TIMEOUT, self.config, default=default)

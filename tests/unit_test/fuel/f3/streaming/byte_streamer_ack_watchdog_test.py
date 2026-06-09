@@ -235,6 +235,7 @@ class TestReliableByteStreamer:
         monkeypatch.setattr(CommConfigurator, "get_streaming_ack_progress_check_interval", lambda self, default: 1.0)
         monkeypatch.setattr(CommConfigurator, "get_streaming_retry_wait", lambda self, default: 0.01)
         monkeypatch.setattr(CommConfigurator, "get_streaming_retry_timeout", lambda self, default: 1.0)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_retry_max_pending_bytes", lambda self, default: default)
 
         cell = MagicMock()
         cell.fire_and_forget.return_value = {}
@@ -252,6 +253,59 @@ class TestReliableByteStreamer:
         )
         assert no_retry_worker[0][0] == task.retry_task
         return task, cell
+
+    def _patch_common_config(self, monkeypatch):
+        monkeypatch.setattr(CommConfigurator, "get_streaming_window_size", lambda self, default: 1024)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_ack_wait", lambda self, default: 1.0)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_ack_progress_timeout", lambda self, default: 10.0)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_ack_progress_check_interval", lambda self, default: 1.0)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_retry_wait", lambda self, default: 0.01)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_retry_timeout", lambda self, default: 1.0)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_retry_max_pending_bytes", lambda self, default: default)
+
+    def _make_task_with_reliable(self, reliable, monkeypatch):
+        cell = MagicMock()
+        cell.fire_and_forget.return_value = {}
+        return TxTask(
+            cell=cell,
+            chunk_size=4,
+            channel="ch",
+            topic="tp",
+            target="peer",
+            headers={},
+            stream=DummyStream([b""]),
+            reliable=reliable,
+            secure=False,
+            optional=False,
+        )
+
+    def test_reliable_default_comes_from_config(self, monkeypatch, no_retry_worker):
+        self._patch_common_config(monkeypatch)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_reliable", lambda self, default: False)
+
+        task = self._make_task_with_reliable(None, monkeypatch)
+
+        assert task.reliable is False
+        assert task.pending_messages is None
+        assert no_retry_worker == []
+
+    def test_explicit_reliable_overrides_config(self, monkeypatch, no_retry_worker):
+        self._patch_common_config(monkeypatch)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_reliable", lambda self, default: False)
+
+        task = self._make_task_with_reliable(True, monkeypatch)
+
+        assert task.reliable is True
+        assert task.pending_messages == {}
+        assert no_retry_worker[0][0] == task.retry_task
+
+    def test_retry_pending_byte_limit_comes_from_config(self, monkeypatch, no_retry_worker):
+        self._patch_common_config(monkeypatch)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_retry_max_pending_bytes", lambda self, default: 7)
+
+        task = self._make_task_with_reliable(True, monkeypatch)
+
+        assert task.retry_max_pending_bytes == 7
 
     def test_reliable_stream_waits_for_sequence_ack_before_completion(self, monkeypatch, no_retry_worker):
         task, cell = self._make_reliable_task(monkeypatch, no_retry_worker)

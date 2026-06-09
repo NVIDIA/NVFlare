@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Callable
+from typing import Callable, Optional
 
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.message import Message
@@ -36,7 +36,14 @@ class StreamCell:
         return self.byte_streamer.get_chunk_size()
 
     def send_stream(
-        self, channel: str, topic: str, target: str, message: Message, secure=False, optional=False, reliable=True
+        self,
+        channel: str,
+        topic: str,
+        target: str,
+        message: Message,
+        secure=False,
+        optional=False,
+        reliable: Optional[bool] = None,
     ) -> StreamFuture:
         """Sends a byte-stream over a channel/topic asynchronously. The streaming is performed in a different thread.
 
@@ -49,7 +56,8 @@ class StreamCell:
             message: The payload is the stream to send
             secure: Send the message with end-end encryption if True
             optional: Optional message, error maybe suppressed
-            reliable: whether failed or unacknowledged chunks should be retried
+            reliable: whether failed or unacknowledged chunks should be retried.
+                If not specified, this is read from comm_config.json.
 
         Returns:
             A StreamFuture that can be used to check status/progress, or register callbacks.
@@ -98,7 +106,14 @@ class StreamCell:
         self.byte_receiver.register_callback(channel, topic, stream_cb, *args, **kwargs)
 
     def send_blob(
-        self, channel: str, topic: str, target: str, message: Message, secure=False, optional=False, reliable=True
+        self,
+        channel: str,
+        topic: str,
+        target: str,
+        message: Message,
+        secure=False,
+        optional=False,
+        reliable: Optional[bool] = None,
     ) -> StreamFuture:
         """Sends a BLOB (Binary Large Object) to the target.
 
@@ -112,7 +127,8 @@ class StreamCell:
             message: the headers and the blob as payload
             secure: Send the message with end-end encryption if True
             optional: Optional message, error maybe suppressed
-            reliable: whether failed or unacknowledged chunks should be retried
+            reliable: whether failed or unacknowledged chunks should be retried.
+                If not specified, this is read from comm_config.json.
 
         Returns:
             StreamFuture that can be used to check status/progress and get result
