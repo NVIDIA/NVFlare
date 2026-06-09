@@ -22,7 +22,7 @@ from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.app_constant import AlgorithmConstants, AppConstants
 
-from .base_fedavg import BaseFedAvg, _aggregate_fl_model_metrics
+from .base_fedavg import BaseFedAvg, _aggregate_fl_model_metrics, make_fedavg_metrics_aggregation_info
 
 
 class Scaffold(BaseFedAvg):
@@ -128,6 +128,7 @@ def scaffold_aggregate_fn(results: List[FLModel]) -> FLModel:
             AlgorithmConstants.SCAFFOLD_CTRL_DIFF: crtl_aggregation_helper.get_result(),
             "nr_aggregated": len(results),
             "current_round": results[0].current_round,
+            AppConstants.METRICS_AGGREGATION_INFO: make_fedavg_metrics_aggregation_info(),
         },
     )
 

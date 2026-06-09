@@ -65,6 +65,11 @@ class MockModelAggregator(ModelAggregator):
         self.reset_count += 1
 
 
+class _TestBaseFedAvg(BaseFedAvg):
+    def run(self):
+        pass
+
+
 class _FakeTempRef:
     def __init__(self):
         self.cleaned = False
@@ -149,6 +154,41 @@ class TestFedAvgInit:
         assert controller.save_filename == "best_model.pt"
         assert controller.exclude_vars == "bn.*"
         assert controller.aggregation_weights == {"site-1": 2.0, "site-2": 1.0}
+
+
+class TestBaseFedAvgMetricsAggregationInfo:
+    def test_aggregate_adds_key_metric_info_from_existing_stop_condition(self):
+        controller = _TestBaseFedAvg()
+        controller.fl_ctx = FLContext()
+        controller.event = lambda _: None
+        controller.fire_event_with_data = lambda *args, **kwargs: None
+        controller.current_round = 1
+        controller.stop_cond = "score <= 0.2"
+        controller.stop_condition = ("score", 0.2, None)
+
+        aggr_result = controller.aggregate(
+            [
+                FLModel(
+                    params={"w": 1.0},
+                    current_round=1,
+                    metrics={"score": 0.1},
+                    meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+                ),
+                FLModel(
+                    params={"w": 3.0},
+                    current_round=1,
+                    metrics={"score": 0.3},
+                    meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+                ),
+            ]
+        )
+
+        metrics_info = aggr_result.meta[AppConstants.METRICS_AGGREGATION_INFO]
+        assert metrics_info["key_metric"] == {
+            "name": "score",
+            "mode": "min",
+            "mode_source": "derived_from_stop_condition",
+        }
 
     def test_stop_condition_parsing(self):
         """Test that stop condition is correctly parsed."""
@@ -1140,6 +1180,9 @@ class TestScaffoldAggregation:
         assert aggr_result.meta[AlgorithmConstants.SCAFFOLD_CTRL_DIFF]["w"] == 3.0
         assert aggr_result.meta["nr_aggregated"] == 2
         assert aggr_result.meta["current_round"] == 0
+        metrics_info = aggr_result.meta[AppConstants.METRICS_AGGREGATION_INFO]
+        assert metrics_info["metric_source"] == "client_reported_flmodel_metrics"
+        assert metrics_info["aggregation"]["method"] == "weighted_average"
 
     def test_scaffold_aggregate_fn_aggregates_generic_numeric_metrics_with_step_weights(self):
         """Test Scaffold aggregates metric keys generically with client local-step weights."""

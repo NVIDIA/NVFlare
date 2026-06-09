@@ -31,6 +31,56 @@ from nvflare.security.logging import secure_format_exception
 from .model_controller import ModelController
 
 
+def make_fedavg_metrics_aggregation_info(
+    key_metric: Optional[str] = None,
+    key_metric_mode: Optional[str] = None,
+    key_metric_mode_source: Optional[str] = None,
+    weight_key: str = FLMetaKey.NUM_STEPS_CURRENT_ROUND,
+    weight_formula: Optional[str] = None,
+    site_weights: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    aggregation = {
+        "method": "weighted_average",
+        "weight_key": weight_key,
+        "metric_policy": "finite_numeric_metrics_only_per_key_denominator",
+    }
+    if weight_formula:
+        aggregation["weight_formula"] = weight_formula
+
+    info = {
+        "metric_source": "client_reported_flmodel_metrics",
+        "aggregation": aggregation,
+    }
+    if key_metric and key_metric_mode in ("max", "min"):
+        key_metric_info = {"name": key_metric, "mode": key_metric_mode}
+        if key_metric_mode_source:
+            key_metric_info["mode_source"] = key_metric_mode_source
+        info["key_metric"] = key_metric_info
+    if site_weights:
+        info["site_weights"] = site_weights
+    return info
+
+
+def make_key_metric_info_from_stop_condition(stop_cond, stop_condition) -> Optional[Dict[str, Any]]:
+    if not stop_cond or not stop_condition:
+        return None
+    tokens = stop_cond.split(" ")
+    if len(tokens) != 3:
+        return None
+    op = tokens[1]
+    if op in (">", ">="):
+        mode = "max"
+    elif op in ("<", "<="):
+        mode = "min"
+    else:
+        return None
+    return {
+        "name": stop_condition[0],
+        "mode": mode,
+        "mode_source": "derived_from_stop_condition",
+    }
+
+
 def _aggregate_fl_model_metrics(results: List[FLModel]) -> Optional[Dict[str, Any]]:
     """Aggregate FLModel metrics across results with FedAvg-compatible semantics.
 
@@ -148,7 +198,11 @@ class BaseFedAvg(ModelController):
             params=aggr_params,
             params_type=results[0].params_type,
             metrics=aggr_metrics,
-            meta={"nr_aggregated": len(results), "current_round": results[0].current_round},
+            meta={
+                "nr_aggregated": len(results),
+                "current_round": results[0].current_round,
+                AppConstants.METRICS_AGGREGATION_INFO: make_fedavg_metrics_aggregation_info(),
+            },
         )
         return aggr_result
 
@@ -178,6 +232,7 @@ class BaseFedAvg(ModelController):
             self.panic(error_msg)
             return FLModel()
         self._results = []
+        self._set_metrics_aggregation_info(aggr_result)
 
         self.fire_event_with_data(
             AppEventType.AFTER_AGGREGATION, self.fl_ctx, AppConstants.AGGREGATION_RESULT, aggr_result
@@ -186,6 +241,22 @@ class BaseFedAvg(ModelController):
         self.debug("End aggregation.")
 
         return aggr_result
+
+    def _set_metrics_aggregation_info(self, aggr_result: FLModel):
+        if not isinstance(aggr_result, FLModel):
+            return
+        aggr_result.meta = aggr_result.meta or {}
+        info = aggr_result.meta.get(AppConstants.METRICS_AGGREGATION_INFO)
+        if isinstance(info, dict):
+            info = dict(info)
+        else:
+            info = make_fedavg_metrics_aggregation_info()
+        key_metric_info = make_key_metric_info_from_stop_condition(
+            getattr(self, "stop_cond", None), getattr(self, "stop_condition", None)
+        )
+        if key_metric_info and "key_metric" not in info:
+            info["key_metric"] = key_metric_info
+        aggr_result.meta[AppConstants.METRICS_AGGREGATION_INFO] = info
 
     def update_model(self, model, aggr_result):
         """Called by the `run` routine to update the current global model (self.model) given the aggregated result.
