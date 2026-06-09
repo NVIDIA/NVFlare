@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
 from typing import Any, Dict, List, Optional
 
 from nvflare.apis.fl_constant import FLMetaKey
@@ -81,6 +82,26 @@ def make_key_metric_info_from_stop_condition(stop_cond, stop_condition) -> Optio
     }
 
 
+def _get_client_name(result: FLModel) -> str:
+    meta = result.meta or {}
+    value = meta.get("client_name", AppConstants.CLIENT_UNKNOWN)
+    return value if isinstance(value, str) and value else AppConstants.CLIENT_UNKNOWN
+
+
+def _get_num_steps_weight(result: FLModel) -> float:
+    meta = result.meta or {}
+    value = meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND)
+    if value is None or isinstance(value, bool):
+        return 1.0
+    try:
+        weight = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return 1.0
+    if not math.isfinite(weight) or weight <= 0:
+        return 1.0
+    return weight
+
+
 def _aggregate_fl_model_metrics(results: List[FLModel]) -> Optional[Dict[str, Any]]:
     """Aggregate FLModel metrics across results with FedAvg-compatible semantics.
 
@@ -96,8 +117,8 @@ def _aggregate_fl_model_metrics(results: List[FLModel]) -> Optional[Dict[str, An
         if aggregatable:
             aggr_metrics_helper.add(
                 data=aggregatable,
-                weight=_result.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, 1.0),
-                contributor_name=_result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN),
+                weight=_get_num_steps_weight(_result),
+                contributor_name=_get_client_name(_result),
                 contribution_round=_result.current_round,
             )
 
@@ -165,7 +186,7 @@ class BaseFedAvg(ModelController):
         empty_clients = []
         for _result in results:
             if not _result.params:
-                empty_clients.append(_result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN))
+                empty_clients.append(_get_client_name(_result))
 
         if len(empty_clients) > 0:
             raise ValueError(f"Result from client(s) {empty_clients} is empty!")
@@ -186,8 +207,8 @@ class BaseFedAvg(ModelController):
         for _result in results:
             aggr_helper.add(
                 data=_result.params,
-                weight=_result.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, 1.0),
-                contributor_name=_result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN),
+                weight=_get_num_steps_weight(_result),
+                contributor_name=_get_client_name(_result),
                 contribution_round=_result.current_round,
             )
 

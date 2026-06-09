@@ -760,6 +760,52 @@ class TestFedAvgAggregation:
             "accuracy": pytest.approx(0.75),
         }
 
+    def test_aggregate_fl_model_metrics_sanitizes_invalid_num_steps(self):
+        """Test invalid client step counts do not become negative or non-finite metric weights."""
+        from nvflare.app_common.workflows.base_fedavg import _aggregate_fl_model_metrics
+
+        result1 = FLModel(
+            params={"w": 1.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.2},
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: -100},
+        )
+        result2 = FLModel(
+            params={"w": 3.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.6},
+            meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: float("inf")},
+        )
+        result3 = FLModel(
+            params={"w": 5.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 1.0},
+            meta={"client_name": "site-3", FLMetaKey.NUM_STEPS_CURRENT_ROUND: "bad"},
+        )
+        result1.current_round = 0
+        result2.current_round = 0
+        result3.current_round = 0
+
+        aggr_metrics = _aggregate_fl_model_metrics([result1, result2, result3])
+
+        assert aggr_metrics == {"loss": pytest.approx(0.6)}
+
+    def test_aggregate_fl_model_metrics_handles_none_meta(self):
+        """Test metrics aggregation falls back safely when client result meta is absent."""
+        from nvflare.app_common.workflows.base_fedavg import _aggregate_fl_model_metrics
+
+        result = FLModel(
+            params={"w": 1.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.2},
+            meta=None,
+        )
+        result.current_round = 0
+
+        aggr_metrics = _aggregate_fl_model_metrics([result])
+
+        assert aggr_metrics == {"loss": pytest.approx(0.2)}
+
     def test_base_fedavg_aggregate_fn_returns_none_when_all_metrics_filtered(self):
         """Test BaseFedAvg.aggregate_fn returns None when all metrics are non-aggregatable."""
         result1 = FLModel(
@@ -1377,6 +1423,46 @@ class TestFedAvgAggregationWeights:
         aggr_result = controller._get_aggregated_result()
         # Weighted average: (2.0*100 + 6.0*300) / (100 + 300) = (200 + 1800) / 400 = 2000/400 = 5.0
         assert aggr_result.params["w"] == 5.0
+
+    def test_streaming_aggregation_sanitizes_invalid_num_steps(self):
+        """Test invalid client step counts cannot become negative streaming aggregation weights."""
+        controller = FedAvg(num_clients=2)
+
+        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+
+        controller._aggr_helper = WeightedAggregationHelper()
+        controller._aggr_metrics_helper = WeightedAggregationHelper()
+        controller._all_metrics = True
+        controller._received_count = 0
+        controller._expected_count = 2
+        controller._params_type = None
+        controller._site_metric_weights = {}
+        controller.current_round = 0
+
+        result1 = FLModel(
+            params={"w": 2.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.2},
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: -100},
+        )
+        result2 = FLModel(
+            params={"w": 6.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.6},
+            meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 3},
+        )
+
+        controller._aggregate_one_result(result1)
+        controller._aggregate_one_result(result2)
+
+        aggr_result = controller._get_aggregated_result()
+        assert aggr_result.params["w"] == pytest.approx(5.0)
+        assert aggr_result.metrics == {"loss": pytest.approx(0.5)}
+        site_weights = aggr_result.meta[AppConstants.METRICS_AGGREGATION_INFO]["site_weights"]
+        assert site_weights == [
+            {"name": "site-1", "weight": 1.0, "weight_key": "effective_fedavg_metric_weight"},
+            {"name": "site-2", "weight": 3.0, "weight_key": "effective_fedavg_metric_weight"},
+        ]
 
     def test_aggregation_with_multi_value_state_dict(self):
         """Test aggregation with state dict containing multiple parameters."""

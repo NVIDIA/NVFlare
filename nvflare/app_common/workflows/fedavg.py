@@ -35,7 +35,13 @@ from nvflare.app_common.utils.tensor_disk_offload_context import (
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.log_utils import center_message
 
-from .base_fedavg import BaseFedAvg, make_fedavg_metrics_aggregation_info, make_key_metric_info_from_stop_condition
+from .base_fedavg import (
+    BaseFedAvg,
+    _get_client_name,
+    _get_num_steps_weight,
+    make_fedavg_metrics_aggregation_info,
+    make_key_metric_info_from_stop_condition,
+)
 
 
 class FedAvg(BaseFedAvg):
@@ -269,7 +275,7 @@ class FedAvg(BaseFedAvg):
     def _aggregate_one_result(self, result: FLModel) -> None:
         """Callback: aggregate ONE client result immediately (InTime aggregation)."""
         if not result.params:
-            client_name = result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN)
+            client_name = _get_client_name(result)
             self.warning(f"Empty result from client {client_name}, skipping.")
             return
 
@@ -277,7 +283,7 @@ class FedAvg(BaseFedAvg):
         if self._params_type is None:
             self._params_type = result.params_type
 
-        client_name = result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN)
+        client_name = _get_client_name(result)
         if self.aggregator:
             # Use custom aggregator
             self.aggregator.accept_model(result)
@@ -290,11 +296,7 @@ class FedAvg(BaseFedAvg):
             else:
                 aggregation_weight = 1.0
 
-            n_iter = result.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, None)
-            # Handle None case (e.g., first round of some algorithms like K-Means)
-            if n_iter is None:
-                n_iter = 1.0
-            weight = aggregation_weight * float(n_iter)
+            weight = aggregation_weight * _get_num_steps_weight(result)
             self._site_metric_weights[client_name] = {
                 "name": client_name,
                 "weight": weight,

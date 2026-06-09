@@ -59,7 +59,6 @@ Example:
      "status": "metrics_reported",
      "job_name": "ames_fedavg",
      "metric_source": "client_reported_flmodel_metrics",
-     "metric_split": "validation",
      "key_metric": {
        "name": "auroc",
        "mode": "max",
