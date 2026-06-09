@@ -187,11 +187,12 @@ values. Unsupported objects, tensors, arrays, nested containers, oversized
 values, ``NaN``, and ``Infinity`` are skipped and reported in
 ``skipped_metrics`` with a bounded reason record.
 
-Finding Artifacts
------------------
+Downloaded Artifacts
+--------------------
 
-For automation, use the job download JSON output instead of constructing paths
-from the workspace layout:
+Metrics files are part of the normal downloaded job result when they exist. For
+automation, use the job download JSON output to find the downloaded local paths
+instead of constructing paths from the workspace layout:
 
 .. code-block:: shell
 
@@ -215,7 +216,6 @@ Example response excerpt:
      }
    }
 
-``round_metrics`` is optional because older jobs and jobs without aggregation
-metrics do not create a per-round metrics file. A future server-side run/result
-API could expose the same artifact metadata before download, but benchmark
-tooling can consume the downloaded artifacts through this JSON map today.
+``metrics_summary`` and ``round_metrics`` are reported only when those files
+exist in the downloaded result. ``round_metrics`` is optional because older jobs
+and jobs without aggregation metrics do not create a per-round metrics file.

@@ -363,7 +363,7 @@ exists, the command fails unless ``--force`` is specified. Use ``--force`` only
 when replacing the existing local download is intended.
 
 Human output remains concise and prints only the final download location. Use
-``--format json`` when agents or scripts need artifact discovery fields. The
+``--format json`` when agents or scripts need paths to downloaded artifacts. The
 JSON success response reports local paths on the machine running the CLI:
 
 .. code-block:: json
@@ -392,8 +392,8 @@ JSON success response reports local paths on the machine running the CLI:
 ``download_path`` is the final local directory returned by the download API.
 ``path`` is a backward-compatible alias for ``download_path`` when present.
 
-``artifacts`` contains local paths discovered under ``download_path``. Agents
-and scripts should use ``data.artifacts.*`` as the source of truth for
+``artifacts`` contains local paths for files found under ``download_path``.
+Agents and scripts should use ``data.artifacts.*`` as the source of truth for
 consumable files instead of assuming a server workspace layout or constructing
 paths from ``download_path``. ``missing_artifacts`` lists expected categories,
 such as model, metrics, or client logs, that were not found locally. Missing
@@ -404,8 +404,8 @@ When ``artifact_discovery`` is ``skipped``, the CLI did not have a local
 directory to inspect, so ``artifacts`` and ``missing_artifacts`` are ``null``
 instead of claiming that expected artifacts were verified absent.
 
-The server download protocol is unchanged; artifact discovery is a local CLI
-post-processing step after the result has been downloaded.
+The server download protocol is unchanged; these artifact paths are computed
+locally by the CLI after the result has been downloaded.
 
 Clone an existing job:
 

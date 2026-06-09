@@ -209,9 +209,9 @@ The `metrics` arrays preserve client-reported metric names and values after safe
 
 The writer should be one common server-side component, for example `MetricsArtifactWriter`, installed by aggregation recipe setup paths where practical. Its responsibility is artifact recording: final metrics, official best metrics, per-round client metrics, provenance, and skipped values. Existing aggregators and best-model selectors remain responsible for computing aggregates and deciding which model is best.
 
-`Widget` is a reasonable implementation base because it is already an event-driven `FLComponent` pattern used by components such as `ValidationJsonGenerator`. The public contract should be "server-side metrics artifact component" rather than "user must register a widget." If `Widget` later proves too narrow, the implementation can use `FLComponent` directly without changing the schema or event contract.
+`Widget` is a reasonable implementation base because it is already an event-driven `FLComponent` pattern used by components such as `ValidationJsonGenerator`. The public contract is "server-side metrics artifact component" rather than "user must register a widget."
 
-To avoid recipe-specific parsing, workflows should expose consistent events:
+To avoid recipe-specific parsing, the writer consumes these consistent events:
 
 1. Per-client contribution accepted
 
@@ -262,22 +262,18 @@ To avoid recipe-specific parsing, workflows should expose consistent events:
 
    The writer records this metadata without comparing metric values.
 
-Built-in aggregation workflows should publish the same event contract when they have official round-level aggregated metrics. This includes FedAvg-derived workflows and non-FedAvg aggregation workflows that already return an `FLModel` or `Shareable` aggregation result. The writer may normalize both payload shapes, but it must not synthesize aggregate metrics from analytics logs or per-site records.
+Built-in aggregation workflows publish the same event contract when they have official round-level aggregated metrics. This includes FedAvg-derived workflows and non-FedAvg aggregation workflows that return an `FLModel` or `Shareable` aggregation result. The writer normalizes both payload shapes, but it does not synthesize aggregate metrics from analytics logs or per-site records.
 
-For custom aggregators, the recommended contract is event-based rather than a new mandatory aggregator base interface. Controllers should fire the standard aggregation event with the `FLModel` returned by the aggregator. The easy user path is: custom aggregators return `FLModel(metrics=...)` as they do today. If they have custom metric weights or provenance, they may optionally attach bounded metadata to `FLModel.meta`, for example under a new key such as `metrics_aggregation_info`. Built-in controllers can then pass that through the same event. Lower-level custom workflows can use a helper such as `fire_metrics_aggregation_event(fl_ctx, aggr_result, contributions=None)` instead of hand-building event payloads.
+For custom aggregators, the contract is event-based rather than a new mandatory aggregator base interface. Controllers fire the standard aggregation event with the `FLModel` returned by the aggregator. The easy user path is: custom aggregators return `FLModel(metrics=...)` as they do today. If they have custom metric weights or provenance, they can attach bounded metadata to `FLModel.meta`, for example under `metrics_aggregation_info`.
 
-## Cross-Recipe Behavior
+## Recipe Coverage
 
-The feature should apply to aggregation and training recipes that expose round-level aggregated metrics:
+This PR installs the writer in these recipe setup paths:
 
-- FedAvg recipes for PyTorch, TensorFlow, NumPy, and sklearn
-- FedOpt recipes
-- Scaffold recipes
-- FedAvg with HE
+- `BaseFedJob`, covering recipe paths built on the shared BaseFedJob configuration such as FedAvg, FedOpt, Scaffold, FedAvg with HE, and PyTorch, TensorFlow, NumPy, and sklearn variants
 - LR FedAvg
-- XGBoost recipes
-- Swarm and cyclic recipes where aggregation metrics are available
-- Flower recipes when metrics are bridged through NVFlare analytics or normalized workflow events
+- standalone XGBoost recipes
+- Edge SAGE setup
 
 Recipes that do not perform aggregation or do not produce aggregation metrics should remain valid and should not be forced to create metrics artifacts.
 
@@ -354,7 +350,7 @@ Metric value normalization:
 - convert numeric and bool values to plain Python JSON scalars
 - reject non-finite numbers
 - record only finite numeric values and bool values for official aggregated metrics
-- skip dicts, lists, sets, tuples, objects, tensors, arrays, bytes, and oversized strings unless future support is explicitly designed and bounded
+- skip dicts, lists, sets, tuples, objects, tensors, arrays, bytes, and oversized strings
 
 ## Failure Behavior
 
@@ -409,20 +405,11 @@ Current PR scope:
 - Add the writer to standalone aggregation recipe setup paths that do not use `BaseFedJob` and have a standard aggregation workflow.
 - Standardize built-in aggregation workflows on `AFTER_AGGREGATION` with `AGGREGATION_RESULT` for official round metrics, accepting both `FLModel` and compatible `Shareable` payloads.
 - Document the artifact contract as part of the user-facing recipe documentation.
-- Expose discovered metrics artifacts through the existing `nvflare job download --format json` `artifacts` map.
+- Include metrics artifacts in normal job result downloads when they exist, and report their local paths through the existing `nvflare job download --format json` `artifacts` map.
 
-Medium term:
+## Test Coverage
 
-- If standalone recipe builders continue to duplicate writer setup, factor that internal wiring into a shared NVFlare-internal helper used by recipe implementations. Users should not need to call this helper.
-- Bridge additional built-in workflows that currently report metrics only through analytics/event streams once they expose official aggregated metric payloads.
-
-Long term:
-
-- Expose artifact discovery through server-side run/result APIs if benchmark tooling needs to find result artifacts before or without downloading the run directory.
-
-## Tests
-
-Unit tests should cover:
+Unit tests cover:
 
 - summary file with final metrics
 - official best-selection metadata passthrough
@@ -439,13 +426,6 @@ Unit tests should cover:
 - metric names such as `__proto__`, `constructor`, paths, and control characters
 - output path containment using `resolve_path_under_root`
 - file size and per-round limit enforcement
-
-Integration tests should cover:
-
-- FedAvg recipe
-- one FedOpt or Scaffold recipe
-- one LR or XGBoost recipe if its workflow exposes metrics
-- a PSI or cross-site validation recipe to verify no metrics artifact is produced
 
 ## Resolved Design Choices
 
