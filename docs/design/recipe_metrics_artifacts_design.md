@@ -262,7 +262,7 @@ To avoid recipe-specific parsing, workflows should expose consistent events:
 
    The writer records this metadata without comparing metric values.
 
-The existing non-streaming `BaseFedAvg` path already fires `AFTER_AGGREGATION` with `AGGREGATION_RESULT`. The InTime FedAvg path should be aligned so that the same writer can consume the same event.
+Built-in aggregation workflows should publish the same event contract when they have official round-level aggregated metrics. This includes FedAvg-derived workflows and non-FedAvg aggregation workflows that already return an `FLModel` or `Shareable` aggregation result. The writer may normalize both payload shapes, but it must not synthesize aggregate metrics from analytics logs or per-site records.
 
 For custom aggregators, the recommended contract is event-based rather than a new mandatory aggregator base interface. Controllers should fire the standard aggregation event with the `FLModel` returned by the aggregator. The easy user path is: custom aggregators return `FLModel(metrics=...)` as they do today. If they have custom metric weights or provenance, they may optionally attach bounded metadata to `FLModel.meta`, for example under a new key such as `metrics_aggregation_info`. Built-in controllers can then pass that through the same event. Lower-level custom workflows can use a helper such as `fire_metrics_aggregation_event(fl_ctx, aggr_result, contributions=None)` instead of hand-building event payloads.
 
@@ -403,22 +403,22 @@ The writer should stream `round_metrics.jsonl` as rounds complete rather than ke
 
 ## Recipe Integration
 
-Short term:
+Current PR scope:
 
 - Add the writer to `BaseFedJob` so the recipes already using this path get the artifact.
-- Add the writer to standalone aggregation recipe setup paths that do not use `BaseFedJob`.
-- Align InTime FedAvg to fire `AFTER_AGGREGATION` with `AGGREGATION_RESULT`.
+- Add the writer to standalone aggregation recipe setup paths that do not use `BaseFedJob` and have a standard aggregation workflow.
+- Standardize built-in aggregation workflows on `AFTER_AGGREGATION` with `AGGREGATION_RESULT` for official round metrics, accepting both `FLModel` and compatible `Shareable` payloads.
+- Document the artifact contract as part of the user-facing recipe documentation.
+- Expose discovered metrics artifacts through the existing `nvflare job download --format json` `artifacts` map.
 
 Medium term:
 
-- If standalone recipe builders continue to duplicate writer setup, factor that internal wiring into a shared helper used by NVFlare recipe implementations. Users should not need to call this helper.
-- Standardize event payloads for non-FedAvg workflows.
-- Add recipe parameters to disable or configure the writer when needed.
+- If standalone recipe builders continue to duplicate writer setup, factor that internal wiring into a shared NVFlare-internal helper used by recipe implementations. Users should not need to call this helper.
+- Bridge additional built-in workflows that currently report metrics only through analytics/event streams once they expose official aggregated metric payloads.
 
 Long term:
 
-- Document the artifact contract as part of the recipe API.
-- Expose artifact discovery through run/result APIs if useful for benchmark tooling.
+- Expose artifact discovery through server-side run/result APIs if benchmark tooling needs to find result artifacts before or without downloading the run directory.
 
 ## Tests
 

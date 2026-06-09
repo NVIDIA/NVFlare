@@ -379,7 +379,8 @@ JSON success response reports local paths on the machine running the CLI:
        "artifact_discovery": "completed",
        "artifacts": {
          "global_model": "/abs/path/downloads/abc123/workspace/FL_global_model.pt",
-         "metrics_summary": "/abs/path/downloads/abc123/workspace/metrics_summary.json",
+         "metrics_summary": "/abs/path/downloads/abc123/workspace/metrics/metrics_summary.json",
+         "round_metrics": "/abs/path/downloads/abc123/workspace/metrics/round_metrics.jsonl",
          "client_logs": {
            "site-1": "/abs/path/downloads/abc123/workspace/site-1/log.txt"
          }
@@ -397,6 +398,8 @@ consumable files instead of assuming a server workspace layout or constructing
 paths from ``download_path``. ``missing_artifacts`` lists expected categories,
 such as model, metrics, or client logs, that were not found locally. Missing
 artifacts do not make the command fail when the download itself succeeds.
+``round_metrics`` is reported when the per-round JSONL artifact exists; it is
+optional because older jobs and jobs without aggregation metrics do not create it.
 When ``artifact_discovery`` is ``skipped``, the CLI did not have a local
 directory to inspect, so ``artifacts`` and ``missing_artifacts`` are ``null``
 instead of claiming that expected artifacts were verified absent.

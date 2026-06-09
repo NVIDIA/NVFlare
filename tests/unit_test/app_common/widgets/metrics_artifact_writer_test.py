@@ -20,6 +20,7 @@ from unittest.mock import Mock
 import numpy as np
 import pytest
 
+from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.apis.fl_context import FLContext
@@ -126,6 +127,16 @@ def _record_round(
     )
     try:
         fl_ctx.set_prop(AppConstants.AGGREGATION_RESULT, aggr_result, private=True, sticky=False)
+        writer.handle_event(AppEventType.AFTER_AGGREGATION, fl_ctx)
+    finally:
+        fl_ctx.set_prop(AppConstants.AGGREGATION_RESULT, None, private=True, sticky=False)
+
+
+def _record_shareable_round(writer, fl_ctx, round_num, metrics):
+    shareable = DXO(data_kind=DataKind.METRICS, data=metrics).to_shareable()
+    shareable.set_header(AppConstants.CURRENT_ROUND, round_num)
+    try:
+        fl_ctx.set_prop(AppConstants.AGGREGATION_RESULT, shareable, private=True, sticky=False)
         writer.handle_event(AppEventType.AFTER_AGGREGATION, fl_ctx)
     finally:
         fl_ctx.set_prop(AppConstants.AGGREGATION_RESULT, None, private=True, sticky=False)
@@ -270,6 +281,23 @@ class TestMetricsArtifactWriterAggregationEvents:
         assert "best_round" not in summary
         assert "best_metrics" not in summary
         assert "best_aggregated_metrics" not in summary
+
+    def test_records_shareable_aggregation_result_metrics(self, tmp_path):
+        writer = MetricsArtifactWriter()
+        run_dir = tmp_path / "run"
+        fl_ctx = _make_fl_ctx(run_dir)
+
+        writer.handle_event(EventType.START_RUN, fl_ctx)
+        _record_shareable_round(writer, fl_ctx, 0, {"accuracy": 0.81, "loss": 0.35})
+        _finish_run(writer, fl_ctx)
+
+        summary = _read_summary(run_dir)
+        assert summary["final_round"] == 0
+        assert _metrics_to_dict(summary["final_aggregated_metrics"]) == {"accuracy": 0.81, "loss": 0.35}
+
+        rounds = _read_rounds(run_dir)
+        assert rounds[0]["round"] == 0
+        assert _metrics_to_dict(rounds[0]["aggregated_metrics"]) == {"accuracy": 0.81, "loss": 0.35}
 
     def test_records_official_best_selection_metadata(self, tmp_path):
         writer = MetricsArtifactWriter()

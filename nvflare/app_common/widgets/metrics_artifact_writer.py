@@ -22,6 +22,7 @@ import numpy as np
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, FLMetaKey
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
@@ -94,7 +95,8 @@ class MetricsArtifactWriter(Widget):
 
     def _handle_after_aggregation(self, fl_ctx: FLContext):
         aggr_result = fl_ctx.get_prop(AppConstants.AGGREGATION_RESULT, None)
-        if not isinstance(aggr_result, FLModel):
+        aggr_result = self._to_fl_model(aggr_result)
+        if aggr_result is None:
             return
 
         meta = aggr_result.meta or {}
@@ -143,6 +145,17 @@ class MetricsArtifactWriter(Widget):
         self._aggregation = aggregation if aggregation else self._aggregation
         if key_metric:
             self._key_metric = key_metric
+
+    @staticmethod
+    def _to_fl_model(value):
+        if isinstance(value, FLModel):
+            return value
+        if isinstance(value, Shareable):
+            try:
+                return FLModelUtils.from_shareable(value)
+            except Exception:
+                return None
+        return None
 
     def _handle_global_best_model_available(self, fl_ctx: FLContext):
         selection = self._normalize_selection_info(fl_ctx.get_prop(AppConstants.METRICS_SELECTION_INFO, None))
