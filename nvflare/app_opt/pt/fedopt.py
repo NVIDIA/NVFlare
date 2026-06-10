@@ -240,8 +240,10 @@ class PTFedOptModelShareableGenerator(FullModelShareableGenerator):
         n_fedavg = 0
         for key, value in model_diff.items():
             if key not in updated_params:
+                # base_model_weights can be empty on the first round when the workflow
+                # allows empty initial global weights; fall back to the server model state.
+                base_value = base_model_weights[key] if key in base_model_weights else weights[key]
                 if preserve_torch_weights:
-                    base_value = base_model_weights[key]
                     if isinstance(base_value, torch.Tensor):
                         base_value = base_value.detach().cpu()
                     else:
@@ -250,9 +252,7 @@ class PTFedOptModelShareableGenerator(FullModelShareableGenerator):
                         value = value.detach().cpu()
                     else:
                         value = torch.as_tensor(value)
-                    weights[key] = base_value + value
-                else:
-                    weights[key] = base_model_weights[key] + value
+                weights[key] = base_value + value
                 n_fedavg += 1
 
         self.log_info(

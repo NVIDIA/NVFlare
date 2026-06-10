@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import numpy as np
 import pytest
 
 torch = pytest.importorskip("torch")
@@ -63,3 +64,55 @@ def test_fedopt_shareable_generator_preserves_torch_weights_when_base_model_uses
         assert value.device.type == "cpu"
         assert value.data_ptr() != model_state[name].data_ptr()
         assert torch.allclose(value, base_weights[name] + model_diff[name])
+
+
+def _make_generator(model):
+    generator = PTFedOptModelShareableGenerator(
+        optimizer_args={"path": "torch.optim.SGD", "args": {"lr": 1.0}},
+        device="cpu",
+    )
+    generator.model = model
+    generator.device = torch.device("cpu")
+    generator.optimizer = torch.optim.SGD(model.parameters(), lr=1.0)
+    generator.optimizer_name = "torch.optim.SGD"
+    return generator
+
+
+def _empty_global_model_fl_ctx():
+    fl_ctx = FLContext()
+    fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, make_model_learnable({}, {}), private=True, sticky=True)
+    fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 0, private=True, sticky=False)
+    return fl_ctx
+
+
+@pytest.mark.filterwarnings("ignore:To copy construct from a tensor:UserWarning")
+def test_fedopt_buffer_update_falls_back_to_model_state_when_base_weights_empty():
+    model = SimpleModel()
+    generator = _make_generator(model)
+    fl_ctx = _empty_global_model_fl_ctx()
+
+    model_state = {name: value.detach().clone() for name, value in model.state_dict().items()}
+    model_diff = {name: torch.ones_like(value) for name, value in model_state.items()}
+    shareable = DXO(data_kind=DataKind.WEIGHT_DIFF, data=model_diff).to_shareable()
+
+    learnable = generator.shareable_to_learnable(shareable, fl_ctx)
+    weights = learnable[ModelLearnableKey.WEIGHTS]
+
+    assert isinstance(weights["offset"], torch.Tensor)
+    assert torch.allclose(weights["offset"], model_state["offset"] + model_diff["offset"])
+
+
+def test_fedopt_numpy_buffer_update_falls_back_to_model_state_when_base_weights_empty():
+    model = SimpleModel()
+    generator = _make_generator(model)
+    fl_ctx = _empty_global_model_fl_ctx()
+
+    model_state = {name: value.detach().clone() for name, value in model.state_dict().items()}
+    model_diff = {name: np.ones_like(value.numpy()) for name, value in model_state.items()}
+    shareable = DXO(data_kind=DataKind.WEIGHT_DIFF, data=model_diff).to_shareable()
+
+    learnable = generator.shareable_to_learnable(shareable, fl_ctx)
+    weights = learnable[ModelLearnableKey.WEIGHTS]
+
+    assert isinstance(weights["offset"], np.ndarray)
+    assert np.allclose(weights["offset"], model_state["offset"].numpy() + model_diff["offset"])
