@@ -476,6 +476,7 @@ class TestReliableByteStreamer:
 
     def test_retry_task_resends_due_pending_message(self, monkeypatch, retry_scheduler):
         task, cell = self._make_reliable_task(monkeypatch, retry_scheduler)
+        cell.fire_and_forget.return_value = None
         message = Message(
             {
                 StreamHeaderKey.STREAM_ID: task.sid,

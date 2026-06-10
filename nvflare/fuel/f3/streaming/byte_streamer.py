@@ -345,6 +345,7 @@ class TxTask(StreamTaskSpec):
             errors = self.cell.fire_and_forget(
                 STREAM_CHANNEL, STREAM_DATA_TOPIC, self.target, message, secure=self.secure, optional=self.optional
             )
+        errors = errors or {}
         error = errors.get(self.target)
         if error:
             msg = f"{self} Message sending error to target {self.target}: {error}"
@@ -452,21 +453,21 @@ class TxTask(StreamTaskSpec):
             self.stop(StreamError(f"{self} receiving end at {origin} doesn't support reliable streaming"), notify=True)
             return
 
-        ack_progressed = False
-        if offset is not None and offset > self.offset_ack:
-            self.offset_ack = offset
-            ack_progressed = True
-
-        if self.reliable and ack_seq is not None and ack_seq > self.seq_ack:
-            self.seq_ack = ack_seq
-            ack_progressed = True
-
-        if ack_progressed:
-            self.last_ack_progress_ts = time.monotonic()
-
         if self.reliable:
             should_stop = False
+            ack_progressed = False
             with self.retry_lock:
+                if offset is not None and offset > self.offset_ack:
+                    self.offset_ack = offset
+                    ack_progressed = True
+
+                if ack_seq is not None and ack_seq > self.seq_ack:
+                    self.seq_ack = ack_seq
+                    ack_progressed = True
+
+                if ack_progressed:
+                    self.last_ack_progress_ts = time.monotonic()
+
                 if self.pending_messages and ack_seq is not None:
                     for seq in list(self.pending_messages):
                         if seq <= ack_seq:
@@ -477,6 +478,9 @@ class TxTask(StreamTaskSpec):
 
             if should_stop:
                 self.stop()
+        elif offset is not None and offset > self.offset_ack:
+            self.offset_ack = offset
+            self.last_ack_progress_ts = time.monotonic()
 
         if not self.ack_waiter.is_set():
             self.ack_waiter.set()
@@ -544,6 +548,7 @@ class TxTask(StreamTaskSpec):
                 secure=self.secure,
                 optional=self.optional,
             )
+            errors = errors or {}
             error = errors.get(self.target)
             if error:
                 log.error(
