@@ -15,7 +15,7 @@
 import shutil
 import tempfile
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 
 _ENABLE_TENSOR_DISK_OFFLOAD = "enable_tensor_disk_offload"
 _TENSOR_DISK_OFFLOAD_ROOT_DIR = "tensor_disk_offload_root_dir"
@@ -24,8 +24,8 @@ _TENSOR_DISK_OFFLOAD_ROOT_DIR = "tensor_disk_offload_root_dir"
 @dataclass
 class TensorDiskOffloadContext:
     previous_value: Any = None
-    previous_root_dir: str = None
-    root_dir: str = None
+    previous_root_dir: Optional[str] = None
+    root_dir: Optional[str] = None
     applied: bool = False
 
 
