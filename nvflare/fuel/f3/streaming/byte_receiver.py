@@ -173,7 +173,7 @@ class RxTask:
         retry_timeout = message.get_header(StreamHeaderKey.RETRY_TIMEOUT, None)
         retry_wait = message.get_header(StreamHeaderKey.RETRY_WAIT, None)
         if retry_timeout is not None and retry_wait is not None:
-            self.completed_task_ttl = float(retry_timeout) + float(retry_wait)
+            self.completed_task_ttl = max(self.completed_task_ttl, float(retry_timeout) + float(retry_wait))
 
         self.stream_future = StreamFuture(self.sid, self.headers)
         self.stream_future.set_size(self.size)

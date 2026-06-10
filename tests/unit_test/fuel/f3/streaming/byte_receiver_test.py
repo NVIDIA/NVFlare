@@ -354,3 +354,24 @@ def test_completed_task_ttl_uses_sender_retry_window(monkeypatch):
     task.process_chunk(message)
 
     assert task.completed_task_ttl == 24.0
+
+
+def test_completed_task_ttl_keeps_longer_local_retry_window(monkeypatch):
+    monkeypatch.setattr(CommConfigurator, "get_streaming_retry_timeout", lambda self, default: 30.0)
+    monkeypatch.setattr(CommConfigurator, "get_streaming_retry_wait", lambda self, default: 5.0)
+    cell = SimpleNamespace()
+    message = _make_chunk(
+        "site-1",
+        sid=511,
+        seq=0,
+        data_type=StreamDataType.CHUNK,
+        payload=b"x",
+        reliable=True,
+        retry_wait=4.0,
+        retry_timeout=20.0,
+    )
+    task = RxTask.find_or_create_task(message, cell)
+
+    task.process_chunk(message)
+
+    assert task.completed_task_ttl == 35.0
