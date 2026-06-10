@@ -374,6 +374,14 @@ class TestReliableByteStreamer:
         assert message.get_header(StreamHeaderKey.RETRY_WAIT) == task.retry_wait
         assert message.get_header(StreamHeaderKey.RETRY_TIMEOUT) == task.retry_timeout
 
+        task.buffer[0:1] = b"e"
+        task.buffer_size = 1
+        task.send_pending_buffer()
+
+        _start, _last_retry, next_message = task.pending_messages[1]
+        assert next_message.get_header(StreamHeaderKey.RETRY_WAIT) is None
+        assert next_message.get_header(StreamHeaderKey.RETRY_TIMEOUT) is None
+
     def test_reliable_stream_rejects_ack_without_sequence(self, monkeypatch, retry_scheduler):
         task, _ = self._make_reliable_task(monkeypatch, retry_scheduler)
         task.pending_messages[0] = (time.monotonic(), time.monotonic(), Message(None, b"x"))
@@ -455,3 +463,31 @@ class TestReliableByteStreamer:
         err = task.stream_future.exception(timeout=0.1)
         assert err is not None
         assert "retry thread ended due to error: boom" in str(err)
+
+    def test_retry_timeout_stops_stream_after_releasing_retry_lock(self, monkeypatch, retry_scheduler):
+        task, _ = self._make_reliable_task(monkeypatch, retry_scheduler)
+        message = Message(
+            {
+                StreamHeaderKey.STREAM_ID: task.sid,
+                StreamHeaderKey.SEQUENCE: 0,
+            },
+            b"x",
+        )
+        task.pending_messages[0] = (0.0, 0.0, message)
+        task.retry_timeout = 0.5
+
+        monkeypatch.setattr(byte_streamer_module.time, "monotonic", lambda: 1.0)
+
+        original_stop = task.stop
+
+        def checked_stop(*args, **kwargs):
+            assert not task.retry_lock._is_owned()
+            return original_stop(*args, **kwargs)
+
+        monkeypatch.setattr(task, "stop", checked_stop)
+
+        task.retry_task()
+
+        err = task.stream_future.exception(timeout=0.1)
+        assert err is not None
+        assert "retry failed" in str(err)

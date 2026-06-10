@@ -285,23 +285,24 @@ class TxTask(StreamTaskSpec):
         if self.headers:
             message.add_headers(self.headers)
 
-        message.add_headers(
-            {
-                StreamHeaderKey.CHANNEL: self.channel,
-                StreamHeaderKey.TOPIC: self.topic,
-                StreamHeaderKey.SIZE: self.stream.get_size(),
-                StreamHeaderKey.STREAM_ID: self.sid,
-                StreamHeaderKey.DATA_TYPE: StreamDataType.FINAL if final else StreamDataType.CHUNK,
-                StreamHeaderKey.SEQUENCE: self.seq,
-                StreamHeaderKey.OFFSET: self.offset,
-                StreamHeaderKey.RELIABLE: self.reliable,
-                StreamHeaderKey.RETRY_WAIT: self.retry_wait,
-                StreamHeaderKey.RETRY_TIMEOUT: self.retry_timeout,
-                StreamHeaderKey.OPTIONAL: self.optional,
-            }
-        )
+        stream_headers = {
+            StreamHeaderKey.CHANNEL: self.channel,
+            StreamHeaderKey.TOPIC: self.topic,
+            StreamHeaderKey.SIZE: self.stream.get_size(),
+            StreamHeaderKey.STREAM_ID: self.sid,
+            StreamHeaderKey.DATA_TYPE: StreamDataType.FINAL if final else StreamDataType.CHUNK,
+            StreamHeaderKey.SEQUENCE: self.seq,
+            StreamHeaderKey.OFFSET: self.offset,
+            StreamHeaderKey.RELIABLE: self.reliable,
+            StreamHeaderKey.OPTIONAL: self.optional,
+        }
+        if self.reliable and self.seq == 0:
+            stream_headers[StreamHeaderKey.RETRY_WAIT] = self.retry_wait
+            stream_headers[StreamHeaderKey.RETRY_TIMEOUT] = self.retry_timeout
+        message.add_headers(stream_headers)
 
         if self.reliable:
+            over_limit_error = None
             curr_time = time.monotonic()
             with self.retry_lock:
                 self.pending_messages[self.seq] = curr_time, curr_time, message
@@ -309,9 +310,12 @@ class TxTask(StreamTaskSpec):
                 if self.retry_max_pending_bytes > 0 and pending_size > self.retry_max_pending_bytes:
                     self.pending_messages.pop(self.seq, None)
                     msg = f"{self} has too many retry messages ({pending_size} > {self.retry_max_pending_bytes})"
-                    log.error(msg)
-                    self.stop(StreamError(msg))
-                    return False
+                    over_limit_error = StreamError(msg)
+
+            if over_limit_error:
+                log.error(str(over_limit_error))
+                self.stop(over_limit_error)
+                return False
             reliable_retry_scheduler.wakeup()
 
         errors = self.cell.fire_and_forget(
@@ -451,6 +455,7 @@ class TxTask(StreamTaskSpec):
         should_stop = False
         next_wait = None
         messages_to_retry = []
+        retry_error = None
 
         with self.retry_lock:
             if self.stopped:
@@ -466,8 +471,8 @@ class TxTask(StreamTaskSpec):
                     if retry_time > self.retry_timeout:
                         msg = f"{self} seq {seq} retry failed after {retry_time:.2f} seconds"
                         log.error(msg)
-                        self.stop(error=StreamError(msg))
-                        return None
+                        retry_error = StreamError(msg)
+                        break
 
                     wait_time = self.retry_wait - (curr_time - last_retry)
                     if wait_time <= 0:
@@ -475,6 +480,10 @@ class TxTask(StreamTaskSpec):
                         self.pending_messages[seq] = start_time, curr_time, message
                     else:
                         next_wait = wait_time if next_wait is None else min(next_wait, wait_time)
+
+        if retry_error:
+            self.stop(error=retry_error)
+            return None
 
         if should_stop:
             self.stop()
