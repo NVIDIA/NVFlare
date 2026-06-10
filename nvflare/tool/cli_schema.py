@@ -52,10 +52,12 @@ def parser_to_schema(
     mutating: Optional[bool] = None,
     idempotent: Optional[bool] = None,
     retry_token: Optional[dict] = None,
+    schema_required: Optional[set[str]] = None,
 ) -> dict:
     """Serialize an argparse parser to a JSON-compatible schema dict."""
     # argparse exposes parser structure via the private _actions list; this is the standard
     # introspection hook available for building a schema from parser definitions.
+    schema_required = schema_required or set()
     args = []
     for action in parser._actions:
         if isinstance(action, (argparse._HelpAction, argparse._SubParsersAction)):
@@ -69,7 +71,11 @@ def parser_to_schema(
             required = action.nargs not in (argparse.OPTIONAL, argparse.ZERO_OR_MORE)
         else:
             name = max(action.option_strings, key=len)
-            required = bool(getattr(action, "required", False) or getattr(action, "schema_required", False))
+            required = bool(
+                getattr(action, "required", False)
+                or action.dest in schema_required
+                or getattr(action, "schema_required", False)
+            )
 
         entry = {
             "name": name,
@@ -129,6 +135,7 @@ def handle_schema_flag(
     mutating: Optional[bool] = None,
     idempotent: Optional[bool] = None,
     retry_token: Optional[dict] = None,
+    schema_required: Optional[set[str]] = None,
 ) -> None:
     """Handle the pre-parse --schema fast path.
 
@@ -168,6 +175,7 @@ def handle_schema_flag(
                 mutating=mutating,
                 idempotent=idempotent,
                 retry_token=retry_token,
+                schema_required=schema_required,
             )
         # --schema intentionally bypasses the normal command-output envelope so agent/tool callers
         # always get the raw schema document.
