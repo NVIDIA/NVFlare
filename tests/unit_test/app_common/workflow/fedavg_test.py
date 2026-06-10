@@ -30,8 +30,8 @@ from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.app_common.utils.tensor_disk_offload_context import (
     _TENSOR_DISK_OFFLOAD_ROOT_DIR,
-    apply_enable_tensor_disk_offload,
-    restore_enable_tensor_disk_offload,
+    cleanup_tensor_disk_offload,
+    setup_tensor_disk_offload,
 )
 from nvflare.app_common.workflows.base_fedavg import BaseFedAvg
 from nvflare.app_common.workflows.fedavg import FedAvg
@@ -906,23 +906,30 @@ class TestFedAvgLazyCompatibility:
 
 
 class TestFedAvgDownloadToDiskContext:
-    def test_set_enable_tensor_disk_offload(self):
+    def test_set_enable_tensor_disk_offload(self, tmp_path, monkeypatch):
         cell = _MockCell(enable_tensor_disk_offload=False)
-        root_dir = "/tmp/nvflare_tensor_offload_test"
-        previous, applied = apply_enable_tensor_disk_offload(engine=_MockEngine(cell), enabled=True, root_dir=root_dir)
-        assert previous is False
-        assert applied is True
-        assert cell.ctx["enable_tensor_disk_offload"] is True
-        assert cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR] == root_dir
+        root_dir = tmp_path / "nvflare_tensor_offload_root"
 
-        restore_enable_tensor_disk_offload(_MockEngine(cell), previous, root_dir=root_dir)
+        def fake_mkdtemp(prefix):
+            root_dir.mkdir()
+            return str(root_dir)
+
+        monkeypatch.setattr(tensor_disk_offload_context_module.tempfile, "mkdtemp", fake_mkdtemp)
+
+        context = setup_tensor_disk_offload(engine=_MockEngine(cell), enabled=True, job_id="job")
+        assert context.applied is True
+        assert cell.ctx["enable_tensor_disk_offload"] is True
+        assert cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR] == str(root_dir)
+
+        cleanup_tensor_disk_offload(engine=_MockEngine(cell), context=context)
         assert cell.ctx["enable_tensor_disk_offload"] is False
         assert cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR] is None
+        assert not root_dir.exists()
 
     def test_set_enable_tensor_disk_offload_without_cell(self):
-        previous, applied = apply_enable_tensor_disk_offload(engine=_MockEngine(cell=None), enabled=True)
-        assert previous is None
-        assert applied is False
+        context = setup_tensor_disk_offload(engine=_MockEngine(cell=None), enabled=True)
+        assert context.applied is False
+        assert context.root_dir is None
 
     def test_run_restores_enable_tensor_disk_offload(self):
         controller = FedAvg(num_clients=1, num_rounds=1, model={"w": 1.0}, enable_tensor_disk_offload=True)
