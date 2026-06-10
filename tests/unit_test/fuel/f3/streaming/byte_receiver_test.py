@@ -320,17 +320,25 @@ def test_reliable_success_stop_is_idempotent():
     assert task.cleanup_timer is cleanup_timer
 
 
-def test_reliable_error_after_successful_receive_still_fails_future():
+def test_reliable_late_error_after_completion_keeps_reack_window():
     cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={}))
     message = _make_chunk("site-1", sid=513, seq=0, data_type=StreamDataType.FINAL, payload=b"", reliable=True)
     task = RxTask.find_or_create_task(message, cell)
 
     assert task.process_chunk(message) is True
+    assert cell.fire_and_forget.call_count == 1
+
     task.stop(StreamError("late failure"), notify=False)
 
-    err = task.stream_future.exception(timeout=0.1)
-    assert err is not None
-    assert "late failure" in str(err)
+    assert task.completed is True
+    assert task.failed is False
+    assert cell.fire_and_forget.call_count == 1
+
+    assert task.process_chunk(message) is False
+
+    assert cell.fire_and_forget.call_count == 2
+    ack = cell.fire_and_forget.call_args.args[3]
+    assert ack.get_header(StreamHeaderKey.DATA_TYPE) == StreamDataType.ACK
 
 
 def test_reliable_failed_task_rejects_retried_initial_chunk():

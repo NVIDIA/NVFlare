@@ -283,7 +283,7 @@ class RxTask:
         schedule_remove = False
         remove_now = False
         with self.stop_lock:
-            if self.failed:
+            if self.completed or self.failed:
                 return
 
             self.failed = True
