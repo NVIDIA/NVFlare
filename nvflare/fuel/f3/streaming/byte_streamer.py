@@ -14,6 +14,7 @@
 import logging
 import threading
 import time
+from concurrent.futures import TimeoutError, as_completed
 from typing import Callable, Optional
 
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
@@ -45,6 +46,7 @@ STREAM_ACK_WAIT = 300
 STREAM_RETRY_WAIT = 5.0
 STREAM_RETRY_TIMEOUT = 60.0
 STREAM_RETRY_WORKERS = 32
+STREAM_RETRY_RESULT_TIMEOUT = 1.0
 
 STREAM_TYPE_BYTE = "byte"
 STREAM_TYPE_BLOB = "blob"
@@ -83,6 +85,7 @@ class ReliableRetryScheduler:
         self.stopped = False
         self.generation = 0
         self.retry_task_pool = CheckedExecutor(STREAM_RETRY_WORKERS, "stm_retry")
+        self.inflight_tasks = set()
 
     def register(self, task):
         with self.cv:
@@ -101,6 +104,7 @@ class ReliableRetryScheduler:
             registered = self.tasks.get(task.sid)
             if registered is task:
                 self.tasks.pop(task.sid, None)
+                self.inflight_tasks.discard(task)
                 self.generation += 1
                 self.cv.notify()
 
@@ -120,24 +124,46 @@ class ReliableRetryScheduler:
             thread.join(timeout=1.0)
         self.retry_task_pool.shutdown(wait=True)
 
+    def _finish_inflight(self, task):
+        with self.cv:
+            self.inflight_tasks.discard(task)
+            self.cv.notify()
+
     def _run(self):
         while True:
             with self.cv:
                 if self.stopped:
                     return
 
-                tasks = list(self.tasks.values())
+                tasks = [task for task in self.tasks.values() if task not in self.inflight_tasks]
+                self.inflight_tasks.update(tasks)
                 generation = self.generation
 
             next_wait = None
-            futures = [self.retry_task_pool.submit(task.retry_task) for task in tasks]
-            for future in futures:
+            futures = {}
+            for task in tasks:
+                future = self.retry_task_pool.submit(task.retry_task)
                 if future is None:
+                    self._finish_inflight(task)
                     continue
 
-                wait_time = future.result()
-                if wait_time is not None:
-                    next_wait = wait_time if next_wait is None else min(next_wait, wait_time)
+                futures[future] = task
+
+            try:
+                for future in as_completed(futures, timeout=STREAM_RETRY_RESULT_TIMEOUT):
+                    task = futures[future]
+                    self._finish_inflight(task)
+                    wait_time = future.result()
+                    if wait_time is not None:
+                        next_wait = wait_time if next_wait is None else min(next_wait, wait_time)
+            except TimeoutError:
+                next_wait = (
+                    STREAM_RETRY_RESULT_TIMEOUT if next_wait is None else min(next_wait, STREAM_RETRY_RESULT_TIMEOUT)
+                )
+
+            for future, task in futures.items():
+                if not future.done():
+                    future.add_done_callback(lambda _future, retry_task=task: self._finish_inflight(retry_task))
 
             with self.cv:
                 if self.stopped:
