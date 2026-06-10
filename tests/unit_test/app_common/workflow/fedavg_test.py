@@ -1012,6 +1012,50 @@ class TestScatterAndGatherDownloadToDiskContext:
         assert not root_dir.exists()
 
 
+class TestScaffoldDownloadToDiskContext:
+    def test_run_restores_context_and_cleans_root_dir(self, tmp_path, monkeypatch):
+        from nvflare.app_common.app_constant import AlgorithmConstants
+        from nvflare.app_common.workflows.scaffold import Scaffold
+
+        controller = Scaffold(num_clients=1, num_rounds=1, enable_tensor_disk_offload=True)
+        cell = _MockCell(enable_tensor_disk_offload=False)
+        controller.engine = _MockEngine(cell)
+        controller.fl_ctx = FLContext()
+        controller.model = FLModel(params={"w": 1.0})
+        controller._global_ctrl_weights = {"w": 0.0}
+        controller.sample_clients = lambda _: ["site-1"]
+        root_dir = tmp_path / "nvflare_tensor_offload_root"
+        observed = {}
+
+        def fake_mkdtemp(prefix):
+            root_dir.mkdir()
+            return str(root_dir)
+
+        def fake_send_model_and_wait(targets, data):
+            observed["enable_tensor_disk_offload"] = cell.ctx["enable_tensor_disk_offload"]
+            observed["root_dir"] = cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR]
+            return []
+
+        monkeypatch.setattr(tensor_disk_offload_context_module.tempfile, "mkdtemp", fake_mkdtemp)
+        controller.send_model_and_wait = fake_send_model_and_wait
+        controller.aggregate = lambda results, aggregate_fn=None: FLModel(
+            params={"w": 1.0},
+            params_type=ParamsType.FULL,
+            meta={AlgorithmConstants.SCAFFOLD_CTRL_DIFF: {"w": 1.0}},
+        )
+        controller.update_model = lambda model, aggr_result: model
+        controller.save_model = lambda model: None
+
+        controller.run()
+
+        assert observed["enable_tensor_disk_offload"] is True
+        assert observed["root_dir"] == str(root_dir)
+        assert controller._global_ctrl_weights == {"w": 1.0}
+        assert cell.ctx["enable_tensor_disk_offload"] is False
+        assert cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR] is None
+        assert not root_dir.exists()
+
+
 class TestFedAvgWorkflowEvents:
     def test_run_fires_round_started_and_before_aggregation_once_per_round(self):
         controller = FedAvg(num_clients=1, num_rounds=2, model={"w": 1.0})

@@ -20,6 +20,7 @@ import numpy as np
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.app_constant import AlgorithmConstants, AppConstants
+from nvflare.app_common.utils.tensor_disk_offload_context import cleanup_tensor_disk_offload, setup_tensor_disk_offload
 
 from .base_fedavg import (
     BaseFedAvg,
@@ -52,7 +53,14 @@ class Scaffold(BaseFedAvg):
             Defaults to False.
         memory_gc_rounds (int, optional): Run memory cleanup (gc.collect + malloc_trim) every N rounds.
             Set to 0 to disable. Defaults to 0 (inherited from BaseFedAvg).
+        enable_tensor_disk_offload (bool, optional): Download tensors to disk during FOBS streaming
+            instead of holding them in memory, reducing server memory pressure for large models.
+            Only applies to streamed PyTorch tensor payloads. Defaults to False.
     """
+
+    def __init__(self, *args, enable_tensor_disk_offload: bool = False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.enable_tensor_disk_offload = enable_tensor_disk_offload
 
     def initialize(self, fl_ctx):
         super().initialize(fl_ctx)
@@ -66,35 +74,50 @@ class Scaffold(BaseFedAvg):
             self._global_ctrl_weights[k] = np.zeros_like(self._global_ctrl_weights[k])
 
     def run(self) -> None:
-        self.info("Start FedAvg.")
+        disk_offload_context = None
+        try:
+            disk_offload_context = setup_tensor_disk_offload(
+                engine=getattr(self, "engine", None),
+                enabled=self.enable_tensor_disk_offload,
+                job_id=self.fl_ctx.get_job_id("job"),
+            )
+            if self.enable_tensor_disk_offload and not disk_offload_context.applied:
+                self.warning(
+                    "enable_tensor_disk_offload=True but no active cell is available; "
+                    "falling back to in-memory tensor download"
+                )
 
-        for self.current_round in range(self.start_round, self.start_round + self.num_rounds):
-            self.info(f"Round {self.current_round} started.")
-            self.model.current_round = self.current_round
+            self.info("Start FedAvg.")
 
-            clients = self.sample_clients(self.num_clients)
+            for self.current_round in range(self.start_round, self.start_round + self.num_rounds):
+                self.info(f"Round {self.current_round} started.")
+                self.model.current_round = self.current_round
 
-            # Add SCAFFOLD global control terms to global model meta
-            global_model = self.model
-            global_model.meta[AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL] = self._global_ctrl_weights
+                clients = self.sample_clients(self.num_clients)
 
-            results = self.send_model_and_wait(targets=clients, data=global_model)
+                # Add SCAFFOLD global control terms to global model meta
+                global_model = self.model
+                global_model.meta[AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL] = self._global_ctrl_weights
 
-            aggregate_results = self.aggregate(results, aggregate_fn=scaffold_aggregate_fn)
+                results = self.send_model_and_wait(targets=clients, data=global_model)
 
-            self.model = self.update_model(self.model, aggregate_results)
+                aggregate_results = self.aggregate(results, aggregate_fn=scaffold_aggregate_fn)
 
-            # update SCAFFOLD global controls
-            ctr_diff = aggregate_results.meta[AlgorithmConstants.SCAFFOLD_CTRL_DIFF]
-            for v_name, v_value in ctr_diff.items():
-                self._global_ctrl_weights[v_name] += v_value
+                self.model = self.update_model(self.model, aggregate_results)
 
-            self.save_model(self.model)
+                # update SCAFFOLD global controls
+                ctr_diff = aggregate_results.meta[AlgorithmConstants.SCAFFOLD_CTRL_DIFF]
+                for v_name, v_value in ctr_diff.items():
+                    self._global_ctrl_weights[v_name] += v_value
 
-            # Memory cleanup at end of round (if configured)
-            self._maybe_cleanup_memory()
+                self.save_model(self.model)
 
-        self.info("Finished FedAvg.")
+                # Memory cleanup at end of round (if configured)
+                self._maybe_cleanup_memory()
+
+            self.info("Finished FedAvg.")
+        finally:
+            cleanup_tensor_disk_offload(engine=getattr(self, "engine", None), context=disk_offload_context)
 
 
 def scaffold_aggregate_fn(results: List[FLModel]) -> FLModel:
