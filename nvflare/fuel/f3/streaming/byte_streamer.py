@@ -181,6 +181,7 @@ class TxTask(StreamTaskSpec):
         self.task_future = None
         self.ack_waiter = threading.Event()
         self.seq = 0
+        self.seq_ack = -1
         self.offset = 0
         self.offset_ack = 0
         self.secure = secure
@@ -410,9 +411,12 @@ class TxTask(StreamTaskSpec):
                     StreamHeaderKey.ERROR_MSG: str(error),
                 }
             )
-            self.cell.fire_and_forget(
-                STREAM_CHANNEL, STREAM_DATA_TOPIC, self.target, message, secure=self.secure, optional=True
-            )
+            try:
+                self.cell.fire_and_forget(
+                    STREAM_CHANNEL, STREAM_DATA_TOPIC, self.target, message, secure=self.secure, optional=True
+                )
+            except Exception as ex:
+                log.error(f"{self} failed to notify stream error to target {self.target}: {ex}")
 
     def _prepare_reliable_stop(self, error: Optional[StreamError]) -> bool:
         with self.retry_lock:
@@ -448,8 +452,16 @@ class TxTask(StreamTaskSpec):
             self.stop(StreamError(f"{self} receiving end at {origin} doesn't support reliable streaming"), notify=True)
             return
 
+        ack_progressed = False
         if offset is not None and offset > self.offset_ack:
             self.offset_ack = offset
+            ack_progressed = True
+
+        if self.reliable and ack_seq is not None and ack_seq > self.seq_ack:
+            self.seq_ack = ack_seq
+            ack_progressed = True
+
+        if ack_progressed:
             self.last_ack_progress_ts = time.monotonic()
 
         if self.reliable:
@@ -482,7 +494,7 @@ class TxTask(StreamTaskSpec):
         except Exception as ex:
             msg = f"{self} retry thread ended due to error: {ex}"
             log.error(msg)
-            self.stop(StreamError(msg), notify=False)
+            self.stop(StreamError(msg), notify=True)
             return None
 
     def _retry_task(self) -> Optional[float]:

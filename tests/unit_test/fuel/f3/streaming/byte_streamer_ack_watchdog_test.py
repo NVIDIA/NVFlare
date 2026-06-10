@@ -23,7 +23,7 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.byte_streamer import TxTask
-from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamHeaderKey
+from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamDataType, StreamHeaderKey
 from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError
 
 
@@ -449,6 +449,31 @@ class TestReliableByteStreamer:
 
         assert retry_scheduler["unregistered"] == [task]
 
+    def test_reliable_sequence_ack_counts_as_watchdog_progress(self, monkeypatch, retry_scheduler):
+        task, _ = self._make_reliable_task(monkeypatch, retry_scheduler)
+        task.pending_messages[0] = (0.0, 0.0, Message(None, b"x"))
+        task.pending_messages[1] = (0.0, 0.0, Message(None, b"y"))
+        task.pending_message_bytes = 2
+        task.last_ack_progress_ts = 1.0
+
+        monkeypatch.setattr(byte_streamer_module.time, "monotonic", lambda: 2.0)
+
+        ack = Message(
+            {
+                MessageHeaderKey.ORIGIN: "peer",
+                StreamHeaderKey.OFFSET: 0,
+                StreamHeaderKey.SEQUENCE: 1,
+            },
+            None,
+        )
+        task.handle_ack(ack)
+
+        assert task.offset_ack == 0
+        assert task.seq_ack == 1
+        assert task.last_ack_progress_ts == 2.0
+        assert task.pending_messages == {}
+        assert task.pending_message_bytes == 0
+
     def test_retry_task_resends_due_pending_message(self, monkeypatch, retry_scheduler):
         task, cell = self._make_reliable_task(monkeypatch, retry_scheduler)
         message = Message(
@@ -496,6 +521,23 @@ class TestReliableByteStreamer:
         err = task.stream_future.exception(timeout=0.1)
         assert err is not None
         assert "retry thread ended due to error: boom" in str(err)
+
+    def test_retry_task_exception_notifies_receiver(self, monkeypatch, retry_scheduler):
+        task, cell = self._make_reliable_task(monkeypatch, retry_scheduler)
+        monkeypatch.setattr(task, "_retry_task", MagicMock(side_effect=RuntimeError("boom")))
+
+        task.retry_task()
+
+        err = task.stream_future.exception(timeout=0.1)
+        assert err is not None
+        assert "retry thread ended due to error: boom" in str(err)
+        cell.fire_and_forget.assert_called_once()
+        args = cell.fire_and_forget.call_args.args
+        kwargs = cell.fire_and_forget.call_args.kwargs
+        assert args[:3] == (STREAM_CHANNEL, STREAM_DATA_TOPIC, "peer")
+        assert args[3].get_header(StreamHeaderKey.DATA_TYPE) == StreamDataType.ERROR
+        assert "retry thread ended due to error: boom" in args[3].get_header(StreamHeaderKey.ERROR_MSG)
+        assert kwargs["optional"] is True
 
     def test_retry_timeout_stops_stream_after_releasing_retry_lock(self, monkeypatch, retry_scheduler):
         task, _ = self._make_reliable_task(monkeypatch, retry_scheduler)
