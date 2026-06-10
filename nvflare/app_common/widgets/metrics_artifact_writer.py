@@ -590,7 +590,7 @@ class MetricsArtifactWriter(Widget):
 
     def _safe_weight(self, value):
         weight = self._safe_number(value)
-        if weight is None or weight < 0:
+        if weight is None or weight <= 0:
             return None
         return weight
 

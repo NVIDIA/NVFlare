@@ -424,6 +424,22 @@ class TestMetricsArtifactWriterAggregationEvents:
         assert "weight" not in rounds[0]["sites"][0]
         assert rounds[0]["sites"][1]["weight"] == 1
 
+    def test_zero_weights_are_ignored_without_affecting_official_aggregation(self, tmp_path):
+        writer = MetricsArtifactWriter()
+        run_dir = tmp_path / "run"
+        fl_ctx = _make_fl_ctx(run_dir)
+
+        writer.handle_event(EventType.START_RUN, fl_ctx)
+        _record_contribution(writer, fl_ctx, 1, "site-1", {"score": 0.0}, weight=0)
+        _record_contribution(writer, fl_ctx, 1, "site-2", {"score": 1.0}, weight=1)
+        _record_round(writer, fl_ctx, 1, metrics={"score": 0.5})
+        _finish_run(writer, fl_ctx)
+
+        rounds = _read_rounds(run_dir)
+        assert _metrics_to_dict(rounds[0]["aggregated_metrics"]) == {"score": 0.5}
+        assert "weight" not in rounds[0]["sites"][0]
+        assert rounds[0]["sites"][1]["weight"] == 1
+
     def test_numpy_scalar_metrics_are_normalized_to_json_scalars(self, tmp_path):
         writer = MetricsArtifactWriter()
         run_dir = tmp_path / "run"

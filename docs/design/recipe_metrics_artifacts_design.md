@@ -276,6 +276,11 @@ This PR installs the writer in these recipe setup paths:
 
 Recipes that do not perform aggregation or do not produce aggregation metrics should remain valid and should not be forced to create metrics artifacts.
 
+Supported built-in training aggregation recipes install the writer automatically.
+Users do not need to opt in to get the artifact, and this PR does not add a
+recipe-level disable flag. Custom jobs that should not write these artifacts can
+omit the metrics artifact writer from their server configuration.
+
 ## Best Metric Selection
 
 Best metric selection is not a writer responsibility. It belongs to existing model selectors, controllers, or workflows that already own comparison policy and model persistence.

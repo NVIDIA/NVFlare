@@ -21,6 +21,18 @@ to create these files. This includes PSI, stats-only jobs, and standalone
 cross-site validation. Cross-site validation continues to use its existing
 ``cross_site_val/cross_val_results.json`` output.
 
+Recipe Behavior
+---------------
+
+Users do not need to select this writer for supported built-in training
+aggregation recipes. The recipe setup installs it as part of the server
+configuration, and it writes files only when the workflow reports aggregation
+metrics.
+
+This release does not expose a recipe argument to disable metrics artifacts. For
+custom jobs that should not write these artifacts, omit the metrics artifact
+writer from the server configuration.
+
 Recorder Semantics
 ------------------
 
