@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import threading
 import time
 from unittest.mock import MagicMock
 
@@ -381,6 +382,33 @@ class TestReliableByteStreamer:
         _start, _last_retry, next_message = task.pending_messages[1]
         assert next_message.get_header(StreamHeaderKey.RETRY_WAIT) is None
         assert next_message.get_header(StreamHeaderKey.RETRY_TIMEOUT) is None
+
+    def test_reliable_send_blocks_concurrent_error_stop_until_send_returns(self, monkeypatch, retry_scheduler):
+        task, cell = self._make_reliable_task(monkeypatch, retry_scheduler)
+        task.buffer[0:1] = b"x"
+        task.buffer_size = 1
+        stop_finished = threading.Event()
+        stop_threads = []
+
+        def stop_task():
+            task.stop(StreamError("failed"), notify=False)
+            stop_finished.set()
+
+        def slow_send(*args, **kwargs):
+            stop_thread = threading.Thread(target=stop_task)
+            stop_threads.append(stop_thread)
+            stop_thread.start()
+            assert not stop_finished.wait(0.05)
+            return {}
+
+        cell.fire_and_forget.side_effect = slow_send
+
+        assert task.send_pending_buffer() is True
+        assert stop_finished.wait(1.0)
+        for stop_thread in stop_threads:
+            stop_thread.join(timeout=1.0)
+            assert not stop_thread.is_alive()
+        assert task.stopped is True
 
     def test_reliable_stream_rejects_ack_without_sequence(self, monkeypatch, retry_scheduler):
         task, _ = self._make_reliable_task(monkeypatch, retry_scheduler)

@@ -82,6 +82,7 @@ class RxTask:
         self.seq_ack = -1
         self.waiter = threading.Event()
         self.lock = threading.Lock()
+        self.ack_lock = threading.Lock()
         self.eos = False
         self.completed = False
         self.failed = False
@@ -249,7 +250,9 @@ class RxTask:
                 if self.completed or self.failed:
                     return
 
-                if self.seq != self.seq_ack:
+                with self.ack_lock:
+                    needs_ack = self.seq != self.seq_ack
+                if needs_ack:
                     ack_to_send = (self.received_offset, self.seq)
                 if self.reliable:
                     self.completed = True
@@ -354,8 +357,10 @@ class RxTask:
 
             self.offset += len(result)
 
-            final_ack_needed = final_chunk_consumed and (self.offset > self.offset_ack or self.seq > self.seq_ack)
-            if self.offset - self.offset_ack >= self.ack_interval or final_ack_needed:
+            with self.ack_lock:
+                ack_lag = self.offset - self.offset_ack
+                final_ack_needed = final_chunk_consumed and (self.offset > self.offset_ack or self.seq > self.seq_ack)
+            if ack_lag >= self.ack_interval or final_ack_needed:
                 ack_to_send = (self.offset, self.seq)
 
             if self.stream_future:
@@ -408,7 +413,7 @@ class RxTask:
                 log.error(f"{self} failed to ack seq {seq} to {self.origin}: {error}")
                 return False
 
-        with self.lock:
+        with self.ack_lock:
             self.offset_ack = max(self.offset_ack, offset)
             self.seq_ack = max(self.seq_ack, seq)
         return True

@@ -187,6 +187,7 @@ class TxTask(StreamTaskSpec):
         self.optional = optional
         self.stopped = False
         self.stopping = False
+        self.send_lock = threading.RLock()
 
         self.stream_future = StreamFuture(self.sid, task_handle=self)
         self.stream_future.set_size(stream.get_size())
@@ -302,25 +303,40 @@ class TxTask(StreamTaskSpec):
         message.add_headers(stream_headers)
 
         if self.reliable:
+            errors = None
             over_limit_error = None
-            curr_time = time.monotonic()
-            with self.retry_lock:
-                self.pending_messages[self.seq] = curr_time, curr_time, message
-                pending_size = sum(_payload_size(msg.payload) for _, _, msg in self.pending_messages.values())
-                if self.retry_max_pending_bytes > 0 and pending_size > self.retry_max_pending_bytes:
-                    self.pending_messages.pop(self.seq, None)
-                    msg = f"{self} has too many retry messages ({pending_size} > {self.retry_max_pending_bytes})"
-                    over_limit_error = StreamError(msg)
+            with self.send_lock:
+                curr_time = time.monotonic()
+                with self.retry_lock:
+                    if self.stopped:
+                        return False
+
+                    self.pending_messages[self.seq] = curr_time, curr_time, message
+                    pending_size = sum(_payload_size(msg.payload) for _, _, msg in self.pending_messages.values())
+                    if self.retry_max_pending_bytes > 0 and pending_size > self.retry_max_pending_bytes:
+                        self.pending_messages.pop(self.seq, None)
+                        msg = f"{self} has too many retry messages ({pending_size} > {self.retry_max_pending_bytes})"
+                        over_limit_error = StreamError(msg)
+
+                if not over_limit_error:
+                    reliable_retry_scheduler.wakeup()
+                    errors = self.cell.fire_and_forget(
+                        STREAM_CHANNEL,
+                        STREAM_DATA_TOPIC,
+                        self.target,
+                        message,
+                        secure=self.secure,
+                        optional=self.optional,
+                    )
 
             if over_limit_error:
                 log.error(str(over_limit_error))
                 self.stop(over_limit_error)
                 return False
-            reliable_retry_scheduler.wakeup()
-
-        errors = self.cell.fire_and_forget(
-            STREAM_CHANNEL, STREAM_DATA_TOPIC, self.target, message, secure=self.secure, optional=self.optional
-        )
+        else:
+            errors = self.cell.fire_and_forget(
+                STREAM_CHANNEL, STREAM_DATA_TOPIC, self.target, message, secure=self.secure, optional=self.optional
+            )
         error = errors.get(self.target)
         if error:
             msg = f"{self} Message sending error to target {self.target}: {error}"
@@ -343,21 +359,12 @@ class TxTask(StreamTaskSpec):
     def stop(self, error: Optional[StreamError] = None, notify=True):
 
         if self.reliable:
-            with self.retry_lock:
-                if self.stopped:
-                    return
-
-                if not error and self.pending_messages:
-                    self.stopping = True
-                    reliable_retry_scheduler.wakeup()
-                    if not self.ack_waiter.is_set():
-                        self.ack_waiter.set()
-                    return
-
-                self.stopped = True
-                self.stopping = False
-                if error:
-                    self.pending_messages.clear()
+            if error:
+                with self.send_lock:
+                    if not self._prepare_reliable_stop(error):
+                        return
+            elif not self._prepare_reliable_stop(error):
+                return
             reliable_retry_scheduler.unregister(self)
         else:
             if self.stopped:
@@ -399,6 +406,24 @@ class TxTask(StreamTaskSpec):
             self.cell.fire_and_forget(
                 STREAM_CHANNEL, STREAM_DATA_TOPIC, self.target, message, secure=self.secure, optional=True
             )
+
+    def _prepare_reliable_stop(self, error: Optional[StreamError]) -> bool:
+        with self.retry_lock:
+            if self.stopped:
+                return False
+
+            if not error and self.pending_messages:
+                self.stopping = True
+                reliable_retry_scheduler.wakeup()
+                if not self.ack_waiter.is_set():
+                    self.ack_waiter.set()
+                return False
+
+            self.stopped = True
+            self.stopping = False
+            if error:
+                self.pending_messages.clear()
+            return True
 
     def handle_ack(self, message: Message):
 
