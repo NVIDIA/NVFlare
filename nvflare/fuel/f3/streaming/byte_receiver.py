@@ -289,9 +289,11 @@ class RxTask:
             if self.completed or self.failed:
                 return
 
-            self.failed = True
+            # failed must be set last: _try_to_read reads it without stop_lock and
+            # expects error/error_msg to be populated once failed is observed
             self.error = error
             self.error_msg = str(error)
+            self.failed = True
             if self.reliable:
                 schedule_remove = True
             else:
@@ -375,6 +377,11 @@ class RxTask:
 
             if not self.chunks:
                 self.waiter.clear()
+                # stop(error) may have set failed and the waiter after the check at the top;
+                # re-check after the clear so the wakeup is not lost until the read timeout.
+                # stop_lock is not used here as it must not be acquired while holding self.lock.
+                if self.failed:
+                    raise self.error or StreamError(self.error_msg)
                 return RESULT_NO_DATA, None
 
             # Get the left most chunk

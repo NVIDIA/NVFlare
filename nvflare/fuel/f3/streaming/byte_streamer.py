@@ -85,7 +85,9 @@ class ReliableRetryScheduler:
         self.stopped = False
         self.generation = 0
         self.retry_task_pool = CheckedExecutor(STREAM_RETRY_WORKERS, "stm_retry")
-        self.inflight_tasks = set()
+        # task -> dispatch timestamp, used to detect retry dispatches stuck in transport sends
+        self.inflight_tasks = {}
+        self.stalled_tasks = set()
 
     def register(self, task):
         with self.cv:
@@ -104,7 +106,8 @@ class ReliableRetryScheduler:
             registered = self.tasks.get(task.sid)
             if registered is task:
                 self.tasks.pop(task.sid, None)
-                self.inflight_tasks.discard(task)
+                self.inflight_tasks.pop(task, None)
+                self.stalled_tasks.discard(task)
                 self.generation += 1
                 self.cv.notify()
 
@@ -126,7 +129,8 @@ class ReliableRetryScheduler:
 
     def _finish_inflight(self, task):
         with self.cv:
-            self.inflight_tasks.discard(task)
+            self.inflight_tasks.pop(task, None)
+            self.stalled_tasks.discard(task)
             self.cv.notify()
 
     def _run(self):
@@ -135,9 +139,20 @@ class ReliableRetryScheduler:
                 if self.stopped:
                     return
 
+                now = time.monotonic()
                 tasks = [task for task in self.tasks.values() if task not in self.inflight_tasks]
-                self.inflight_tasks.update(tasks)
+                for task in tasks:
+                    self.inflight_tasks[task] = now
+                stalled = [
+                    (task, now - start)
+                    for task, start in self.inflight_tasks.items()
+                    if task not in self.stalled_tasks and now - start > task.retry_timeout
+                ]
+                self.stalled_tasks.update(task for task, _elapsed in stalled)
                 generation = self.generation
+
+            for task, elapsed in stalled:
+                log.error(f"{task} retry dispatch has not returned after {elapsed:.1f} seconds, retries are stalled")
 
             next_wait = None
             futures = {}
@@ -577,24 +592,31 @@ class TxTask(StreamTaskSpec):
             self.stop()
             return None
 
-        for seq, message in messages_to_retry:
-            errors = self.cell.fire_and_forget(
-                STREAM_CHANNEL,
-                STREAM_DATA_TOPIC,
-                self.target,
-                message,
-                secure=self.secure,
-                optional=self.optional,
-            )
-            errors = errors or {}
-            error = errors.get(self.target)
-            if error:
-                log.error(
-                    f"{self} message retry error for target {self.target} seq {seq}: "
-                    f"{error}, will retry again in {self.retry_wait} seconds"
-                )
-
         if messages_to_retry:
+            # Hold send_lock so stop(error) cannot clear pending state and notify the receiver
+            # while a retry send is still in flight, which would deliver a ghost chunk.
+            with self.send_lock:
+                with self.retry_lock:
+                    if self.stopped:
+                        return None
+
+                for seq, message in messages_to_retry:
+                    errors = self.cell.fire_and_forget(
+                        STREAM_CHANNEL,
+                        STREAM_DATA_TOPIC,
+                        self.target,
+                        message,
+                        secure=self.secure,
+                        optional=self.optional,
+                    )
+                    errors = errors or {}
+                    error = errors.get(self.target)
+                    if error:
+                        log.error(
+                            f"{self} message retry error for target {self.target} seq {seq}: "
+                            f"{error}, will retry again in {self.retry_wait} seconds"
+                        )
+
             next_wait = retry_next_wait if next_wait is None else min(next_wait, retry_next_wait)
 
         return next_wait
