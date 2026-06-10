@@ -20,9 +20,7 @@ import json
 import os
 import re
 import shlex
-import signal
 import subprocess
-import sys
 from collections import OrderedDict
 from string import Template
 from typing import Any, Mapping
@@ -34,7 +32,6 @@ import nvflare.client as flare
 from nvflare.apis.fl_constant import FLMetaKey
 
 DEFAULT_MODEL_NAME_OR_PATH = "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16"
-_ACTIVE_AUTOMODEL_PROC: subprocess.Popen | None = None
 
 
 def define_parser():
@@ -261,59 +258,6 @@ def _build_subprocess_env() -> dict[str, str]:
     return env
 
 
-def _terminate_process(proc: subprocess.Popen, timeout: float = 30.0) -> None:
-    if proc.poll() is not None:
-        return
-
-    try:
-        if os.name == "posix":
-            os.killpg(proc.pid, signal.SIGTERM)
-        else:
-            proc.terminate()
-        proc.wait(timeout=timeout)
-    except ProcessLookupError:
-        return
-    except subprocess.TimeoutExpired:
-        if os.name == "posix":
-            os.killpg(proc.pid, signal.SIGKILL)
-        else:
-            proc.kill()
-        proc.wait()
-
-
-def _terminate_active_subprocess() -> None:
-    global _ACTIVE_AUTOMODEL_PROC
-
-    proc = _ACTIVE_AUTOMODEL_PROC
-    if proc is not None:
-        _terminate_process(proc)
-        _ACTIVE_AUTOMODEL_PROC = None
-
-
-def _handle_sigterm(_signum, _frame) -> None:
-    _terminate_active_subprocess()
-    sys.exit(0)
-
-
-def _run_subprocess(command: list[str], cwd: str) -> None:
-    global _ACTIVE_AUTOMODEL_PROC
-
-    proc = subprocess.Popen(
-        command,
-        cwd=cwd,
-        env=_build_subprocess_env(),
-        start_new_session=os.name == "posix",
-    )
-    _ACTIVE_AUTOMODEL_PROC = proc
-    try:
-        return_code = proc.wait()
-    finally:
-        if _ACTIVE_AUTOMODEL_PROC is proc:
-            _ACTIVE_AUTOMODEL_PROC = None
-    if return_code:
-        raise subprocess.CalledProcessError(return_code, command)
-
-
 def _run_automodel_round(args, round_dir: str, incoming_state: Mapping[str, torch.Tensor]) -> tuple[dict, dict, int]:
     incoming_model_ckpt = os.path.join(round_dir, "incoming_global_model.pt")
     model_checkpoint.save_nvflare_model_checkpoint(incoming_state, incoming_model_ckpt)
@@ -331,7 +275,7 @@ def _run_automodel_round(args, round_dir: str, incoming_state: Mapping[str, torc
         command.extend(shlex.split(extra_args))
 
     print(f"Running NeMo AutoModel: {shlex.join(command)}")
-    _run_subprocess(command, cwd=round_dir)
+    subprocess.run(command, cwd=round_dir, check=True, env=_build_subprocess_env())
 
     checkpoint_dir = os.path.join(round_dir, "checkpoints")
     model_dir = _latest_model_dir(checkpoint_dir)
@@ -371,7 +315,6 @@ def _move_tensor_params(params: Mapping[str, Any], device: torch.device) -> Orde
 
 def main():
     args = define_parser()
-    signal.signal(signal.SIGTERM, _handle_sigterm)
     os.makedirs(args.work_dir, exist_ok=True)
     server_tensor_device = _resolve_server_tensor_device(args.server_tensor_device)
 
