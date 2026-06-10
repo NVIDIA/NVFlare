@@ -275,6 +275,36 @@ def test_reliable_final_ack_uses_received_offset_before_read():
     assert ack.get_header(StreamHeaderKey.OFFSET) == 3
 
 
+def test_reliable_final_ack_sent_outside_receive_locks():
+    cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={}))
+    message = _make_chunk("site-1", sid=514, seq=0, data_type=StreamDataType.FINAL, payload=b"abc", reliable=True)
+    task = RxTask.find_or_create_task(message, cell)
+
+    def assert_unlocked(*args, **kwargs):
+        assert not task.lock.locked()
+        assert not task.stop_lock._is_owned()
+        return {}
+
+    cell.fire_and_forget.side_effect = assert_unlocked
+
+    assert task.process_chunk(message) is True
+
+
+def test_reliable_final_partial_reads_do_not_resend_current_ack():
+    cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={}))
+    message = _make_chunk("site-1", sid=515, seq=0, data_type=StreamDataType.FINAL, payload=b"abcd", reliable=True)
+    task = RxTask.find_or_create_task(message, cell)
+
+    assert task.process_chunk(message) is True
+    assert cell.fire_and_forget.call_count == 1
+
+    assert task.read(2) == b"ab"
+    assert cell.fire_and_forget.call_count == 1
+
+    assert task.read(2) == b"cd"
+    assert cell.fire_and_forget.call_count == 1
+
+
 def test_reliable_success_stop_is_idempotent():
     cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={}))
     message = _make_chunk("site-1", sid=512, seq=0, data_type=StreamDataType.FINAL, payload=b"", reliable=True)

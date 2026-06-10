@@ -152,20 +152,34 @@ class RxTask:
         """Returns True if a new stream is created"""
 
         new_stream = False
+        ack_to_send = None
+        stop_error = None
+        should_stop = False
+        duplicate_start = False
         with self.lock:
             seq = message.get_header(StreamHeaderKey.SEQUENCE)
             if seq == 0:
                 if self.stream_future:
                     log.warning(f"{self} Received duplicate chunk 0, ignored")
                     if self.reliable:
-                        self._send_ack(self._get_ack_offset(), self.seq)
-                    return new_stream
+                        ack_to_send = (self._get_ack_offset(), self.seq)
+                    duplicate_start = True
+                else:
+                    self._handle_new_stream(message)
+                    new_stream = True
 
-                self._handle_new_stream(message)
-                new_stream = True
+            if not duplicate_start:
+                should_stop, ack_to_send, stop_error = self._handle_incoming_data(seq, message)
 
-            self._handle_incoming_data(seq, message)
-            return new_stream
+        if ack_to_send:
+            self._send_ack(*ack_to_send)
+
+        if stop_error:
+            self.stop(stop_error)
+        elif should_stop:
+            self.stop()
+
+        return new_stream
 
     def _handle_new_stream(self, message: Message):
         self.channel = message.get_header(StreamHeaderKey.CHANNEL)
@@ -180,7 +194,9 @@ class RxTask:
         self.stream_future = StreamFuture(self.sid, self.headers)
         self.stream_future.set_size(self.size)
 
-    def _handle_incoming_data(self, seq: int, message: Message):
+    def _handle_incoming_data(
+        self, seq: int, message: Message
+    ) -> Tuple[bool, Optional[Tuple[int, int]], Optional[StreamError]]:
 
         data_type = message.get_header(StreamHeaderKey.DATA_TYPE)
 
@@ -188,9 +204,10 @@ class RxTask:
 
         if seq < self.next_seq:
             log.debug(f"{self} Duplicate chunk ignored {seq=}")
+            ack_to_send = None
             if self.reliable:
-                self._send_ack(self._get_ack_offset(), self.seq)
-            return
+                ack_to_send = (self._get_ack_offset(), self.seq)
+            return False, ack_to_send, None
 
         if seq == self.next_seq:
             self._append(seq, (last_chunk, message.payload))
@@ -202,8 +219,11 @@ class RxTask:
         else:
             # Save out-of-seq chunks
             if len(self.out_seq_chunks) >= self.max_out_seq:
-                self.stop(StreamError(f"{self} Too many out-of-sequence chunks: {len(self.out_seq_chunks)}"))
-                return
+                return (
+                    False,
+                    None,
+                    StreamError(f"{self} Too many out-of-sequence chunks: {len(self.out_seq_chunks)}"),
+                )
             else:
                 if seq not in self.out_seq_chunks:
                     self.out_seq_chunks[seq] = last_chunk, message.payload
@@ -211,25 +231,38 @@ class RxTask:
                     log.warning(f"{self} Duplicate out-of-seq chunk ignored {seq=}")
 
         # If all chunks are lined up and last chunk received, the task can be deleted
+        should_stop = False
         if not self.out_seq_chunks and self.chunks:
             last_chunk, _ = self.chunks[-1]
             if last_chunk:
-                self.stop()
+                should_stop = True
+
+        return should_stop, None, None
 
     def stop(self, error: StreamError = None, notify=True):
 
         if not error:
+            ack_to_send = None
+            schedule_remove = False
+            remove_now = False
             with self.stop_lock:
                 if self.completed or self.failed:
                     return
 
                 if self.seq != self.seq_ack:
-                    self._send_ack(self.received_offset, self.seq)
+                    ack_to_send = (self.received_offset, self.seq)
                 if self.reliable:
                     self.completed = True
-                    self._schedule_remove_task()
+                    schedule_remove = True
                 else:
-                    self._remove_task()
+                    remove_now = True
+
+            if ack_to_send:
+                self._send_ack(*ack_to_send)
+            if schedule_remove:
+                self._schedule_remove_task()
+            elif remove_now:
+                self._remove_task()
             return
 
         with self.stop_lock:
@@ -286,6 +319,7 @@ class RxTask:
 
     def _try_to_read(self, size: int) -> Tuple[int, Optional[BytesAlike]]:
 
+        ack_to_send = None
         with self.lock:
             if self.eos:
                 return RESULT_EOS, None
@@ -303,6 +337,7 @@ class RxTask:
                 # Partial read
                 result = buf[self.chunk_offset : end_offset]
                 self.chunk_offset = end_offset
+                final_chunk_consumed = False
             else:
                 # Whole chunk is consumed
                 if self.chunk_offset:
@@ -315,16 +350,21 @@ class RxTask:
 
                 if last_chunk:
                     self.eos = True
+                final_chunk_consumed = last_chunk
 
             self.offset += len(result)
 
-            if self.offset - self.offset_ack >= self.ack_interval or last_chunk:
-                self._send_ack(self.offset, self.seq)
+            final_ack_needed = final_chunk_consumed and (self.offset > self.offset_ack or self.seq > self.seq_ack)
+            if self.offset - self.offset_ack >= self.ack_interval or final_ack_needed:
+                ack_to_send = (self.offset, self.seq)
 
             if self.stream_future:
                 self.stream_future.set_progress(self.offset)
 
-            return RESULT_DATA, result
+        if ack_to_send:
+            self._send_ack(*ack_to_send)
+
+        return RESULT_DATA, result
 
     def _append(self, seq: int, buf: Tuple[bool, BytesAlike]):
         if self.eos:
@@ -368,8 +408,9 @@ class RxTask:
                 log.error(f"{self} failed to ack seq {seq} to {self.origin}: {error}")
                 return False
 
-        self.offset_ack = offset
-        self.seq_ack = seq
+        with self.lock:
+            self.offset_ack = max(self.offset_ack, offset)
+            self.seq_ack = max(self.seq_ack, seq)
         return True
 
 
