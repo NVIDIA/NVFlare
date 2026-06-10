@@ -30,6 +30,7 @@ from typing import Iterable
 from ..agents.registry import DEFAULT_BENCHMARK_AGENT, load_agent_adapter
 from ..common import load_json, write_json
 from ..modes import PAIR_RUNS, mode_spec
+from ..reports import benchmark_insights, metrics_report
 from ..scenarios import (
     ScenarioCompilation,
     ScenarioValidationError,
@@ -85,6 +86,7 @@ STALE_RESULT_DIRS = (
     "with_skills_eval_off",
     "with_skills_eval_on",
 )
+BENCHMARK_METRICS_TITLE = "Agent Skills Benchmark Metrics"
 
 
 @dataclass(frozen=True)
@@ -736,11 +738,67 @@ def replay_result_root(result_root: Path, *, logs: Iterable[Path] = ()) -> dict[
     return write_scenario_summaries(result_root, statuses)
 
 
-def write_host_report_status(result_root: Path) -> None:
+def write_report_generator_status(result_root: Path, statuses: dict[str, int]) -> None:
+    write_json(
+        result_root / "report_generator_status.json",
+        {
+            "status": "ok" if all(status == 0 for status in statuses.values()) else "failed",
+            "exit_codes": statuses,
+        },
+    )
+
+
+def write_benchmark_reports(result_root: Path, *, logs: Iterable[Path] = ()) -> dict[str, int]:
+    statuses: dict[str, int] = {}
+    try:
+        metrics_report.write_reports(result_root, BENCHMARK_METRICS_TITLE)
+    except Exception as exc:
+        write_host_error(result_root / "metrics_report_error.json", exc)
+        emit(f"Metrics report failed: {type(exc).__name__}: {exc}", logs=logs, stderr=True)
+        statuses["metrics_report"] = 1
+    else:
+        statuses["metrics_report"] = 0
+
+    try:
+        runs = benchmark_insights.collect_benchmark_runs(result_root)
+        (result_root / "benchmark_insights.md").write_text(
+            benchmark_insights.benchmark_report(result_root, runs),
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        write_host_error(result_root / "benchmark_insights_error.json", exc)
+        emit(f"Benchmark insights report failed: {type(exc).__name__}: {exc}", logs=logs, stderr=True)
+        statuses["benchmark_insights"] = 1
+    else:
+        statuses["benchmark_insights"] = 0
+
+    write_report_generator_status(result_root, statuses)
+    return statuses
+
+
+def emit_benchmark_report_paths(result_root: Path, *, logs: Iterable[Path] = ()) -> None:
+    emit(f"Benchmark insights: {result_root / 'benchmark_insights.md'}", logs=logs)
+    emit(f"Metrics report: {result_root / 'metrics_report.md'}", logs=logs)
+    emit(f"Metrics HTML: {result_root / 'metrics_report.html'}", logs=logs)
+
+
+def write_host_report_status(result_root: Path, report_generator_statuses: dict[str, int] | None = None) -> None:
+    report_generator_statuses = report_generator_statuses or {}
     scenario_report = result_root / "reports" / "scenario_report.md"
+    benchmark_report = result_root / "benchmark_insights.md"
+    metrics_report_path = result_root / "metrics_report.md"
+    benchmark_reports_expected = bool(report_generator_statuses)
+    all_reports_ok = (
+        scenario_report.is_file()
+        and all(status == 0 for status in report_generator_statuses.values())
+        and (not benchmark_reports_expected or (benchmark_report.is_file() and metrics_report_path.is_file()))
+    )
     payload = {
-        "status": "ok" if scenario_report.is_file() else "missing_report",
+        "status": "ok" if all_reports_ok else "missing_report",
         "scenario_report": str(scenario_report),
+        "benchmark_insights": str(benchmark_report),
+        "metrics_report": str(metrics_report_path),
+        "report_generators": report_generator_statuses,
     }
     write_json(
         result_root / "host_report_status.json",
@@ -796,11 +854,14 @@ def run_pair(argv: list[str]) -> int:
 
     emit(f"Scenario summary: {result_root / 'scenario_summary.json'}", logs=logs)
     emit(f"Scenario report: {result_root / 'reports' / 'scenario_report.md'}", logs=logs)
-    write_host_report_status(result_root)
+    report_statuses = write_benchmark_reports(result_root, logs=logs)
+    emit_benchmark_report_paths(result_root, logs=logs)
+    write_host_report_status(result_root, report_statuses)
     return (
         1
         if any(status != 0 for status in run_statuses.values())
         or scenario_summary.get("status") in {"degraded", "failed"}
+        or any(status != 0 for status in report_statuses.values())
         else 0
     )
 
@@ -851,10 +912,16 @@ def run_replay(argv: list[str]) -> int:
     summary = replay_result_root(options.result_root, logs=logs)
     emit(f"Scenario summary: {options.result_root / 'scenario_summary.json'}", logs=logs)
     emit(f"Scenario report: {options.result_root / 'reports' / 'scenario_report.md'}", logs=logs)
-    write_host_report_status(options.result_root)
+    report_statuses = write_benchmark_reports(options.result_root, logs=logs)
+    emit_benchmark_report_paths(options.result_root, logs=logs)
+    write_host_report_status(options.result_root, report_statuses)
     # Replay regenerates artifacts from an existing result tree; it preserves
     # degraded benchmark status instead of re-asserting pass/fail.
-    return 0 if summary.get("status") in {"passed", "degraded"} else 1
+    return (
+        0
+        if summary.get("status") in {"passed", "degraded"} and all(status == 0 for status in report_statuses.values())
+        else 1
+    )
 
 
 def run_interactive(argv: list[str]) -> int:
