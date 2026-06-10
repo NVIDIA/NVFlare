@@ -86,6 +86,7 @@ class RxTask:
         self.eos = False
         self.completed = False
         self.failed = False
+        self.error = None
         self.error_msg = None
         self.stop_lock = threading.RLock()
         self.cleanup_timer = None
@@ -211,10 +212,10 @@ class RxTask:
         data_type = message.get_header(StreamHeaderKey.DATA_TYPE)
 
         last_chunk = data_type == StreamDataType.FINAL
+        ack_to_send = None
 
         if seq < self.next_seq:
             log.debug(f"{self} Duplicate chunk ignored {seq=}")
-            ack_to_send = None
             if self.reliable:
                 ack_to_send = (self._get_ack_offset(), self.seq)
             return False, ack_to_send, None
@@ -239,6 +240,8 @@ class RxTask:
                     self.out_seq_chunks[seq] = last_chunk, message.payload
                 else:
                     log.warning(f"{self} Duplicate out-of-seq chunk ignored {seq=}")
+                    if self.reliable:
+                        ack_to_send = (self._get_ack_offset(), self.seq)
 
         # If all chunks are lined up and last chunk received, the task can be deleted
         should_stop = False
@@ -247,7 +250,7 @@ class RxTask:
             if last_chunk:
                 should_stop = True
 
-        return should_stop, None, None
+        return should_stop, ack_to_send, None
 
     def stop(self, error: StreamError = None, notify=True):
 
@@ -287,6 +290,7 @@ class RxTask:
                 return
 
             self.failed = True
+            self.error = error
             self.error_msg = str(error)
             if self.reliable:
                 schedule_remove = True
@@ -306,6 +310,9 @@ class RxTask:
 
         if self.stream_future:
             self.stream_future.set_exception(error)
+
+        if not self.waiter.is_set():
+            self.waiter.set()
 
         if notify:
             self._send_error(str(error))
@@ -350,6 +357,10 @@ class RxTask:
     def _try_to_read(self, size: int) -> Tuple[int, Optional[BytesAlike]]:
 
         ack_to_send = None
+        with self.stop_lock:
+            if self.failed:
+                raise self.error or StreamError(self.error_msg)
+
         with self.lock:
             if self.eos:
                 return RESULT_EOS, None

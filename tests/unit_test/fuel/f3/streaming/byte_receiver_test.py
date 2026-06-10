@@ -248,6 +248,24 @@ def test_reliable_duplicate_chunk_sends_latest_sequence_ack():
     assert ack.get_header(StreamHeaderKey.OFFSET) == 0
 
 
+def test_reliable_duplicate_out_of_sequence_chunk_reacks_latest_contiguous_sequence():
+    cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={}))
+    chunk_0 = _make_chunk("site-1", sid=517, seq=0, data_type=StreamDataType.CHUNK, payload=b"a", reliable=True)
+    chunk_2 = _make_chunk("site-1", sid=517, seq=2, data_type=StreamDataType.CHUNK, payload=b"c", reliable=True)
+    task = RxTask.find_or_create_task(chunk_0, cell)
+
+    assert task.process_chunk(chunk_0) is True
+    assert task.process_chunk(chunk_2) is False
+    assert cell.fire_and_forget.call_count == 0
+
+    assert task.process_chunk(chunk_2) is False
+
+    assert cell.fire_and_forget.call_count == 1
+    ack = cell.fire_and_forget.call_args.args[3]
+    assert ack.get_header(StreamHeaderKey.SEQUENCE) == 0
+    assert ack.get_header(StreamHeaderKey.OFFSET) == 0
+
+
 def test_reliable_final_chunk_sends_sequence_ack():
     cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={}))
     message = _make_chunk("site-1", sid=503, seq=0, data_type=StreamDataType.FINAL, payload=b"", reliable=True)
@@ -361,6 +379,29 @@ def test_reliable_failed_task_rejects_retried_initial_chunk():
     error_msg = cell.fire_and_forget.call_args.args[3]
     assert error_msg.get_header(StreamHeaderKey.DATA_TYPE) == StreamDataType.ERROR
     assert "failed before callback" in error_msg.get_header(StreamHeaderKey.ERROR_MSG)
+
+
+def test_stop_error_wakes_blocked_reader():
+    task = RxTask(sid=518, origin="site-1", cell=SimpleNamespace(fire_and_forget=MagicMock(return_value={})))
+    task.timeout = 60.0
+    result = {}
+
+    def read_task():
+        try:
+            task.read(1)
+        except StreamError as ex:
+            result["error"] = ex
+
+    thread = threading.Thread(target=read_task)
+    thread.start()
+    threading.Event().wait(0.05)
+    assert thread.is_alive()
+
+    task.stop(StreamError("stream failed"), notify=False)
+
+    thread.join(timeout=1.0)
+    assert not thread.is_alive()
+    assert "stream failed" in str(result["error"])
 
 
 def test_send_ack_updates_ack_state_only_on_success():
