@@ -115,6 +115,18 @@ def test_setup_disabled_does_not_touch_cell():
     assert cell.update_calls == 0
 
 
+def test_setup_enabled_without_cell_does_not_create_temp_dir(monkeypatch):
+    def fail_mkdtemp(prefix):
+        raise AssertionError("mkdtemp should not be called without an active cell")
+
+    monkeypatch.setattr("nvflare.app_common.utils.tensor_disk_offload_context.tempfile.mkdtemp", fail_mkdtemp)
+
+    context = setup_tensor_disk_offload(engine=_MockEngine(cell=None), enabled=True)
+
+    assert context.applied is False
+    assert context.root_dir is None
+
+
 def test_setup_cleanup_restores_previous_root_dir(tmp_path, monkeypatch):
     cell = _MockCell(enable_tensor_disk_offload=True, root_dir="/tmp/owner")
     root_dir = tmp_path / "nvflare_tensor_offload_root"

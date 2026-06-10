@@ -218,8 +218,9 @@ class PTFedOptModelShareableGenerator(FullModelShareableGenerator):
             return base_model
 
         base_model_weights = base_model[ModelLearnableKey.WEIGHTS]
-        preserve_torch_weights = any(isinstance(value, torch.Tensor) for value in base_model_weights.values())
-        if not base_model_weights:
+        if base_model_weights:
+            preserve_torch_weights = any(isinstance(value, torch.Tensor) for value in base_model_weights.values())
+        else:
             preserve_torch_weights = any(isinstance(value, torch.Tensor) for value in model_diff.values())
 
         start = time.time()

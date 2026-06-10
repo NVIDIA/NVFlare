@@ -102,10 +102,13 @@ def setup_tensor_disk_offload(engine, enabled: bool, job_id: str = "job") -> Ten
     if not enabled:
         return TensorDiskOffloadContext()
 
+    cell = _get_cell(engine)
+    if not cell:
+        return TensorDiskOffloadContext()
+
     root_dir = tempfile.mkdtemp(prefix=f"nvflare_tensor_offload_{job_id}_")
     try:
-        cell = _get_cell(engine)
-        previous_root_dir = cell.get_fobs_context().get(_TENSOR_DISK_OFFLOAD_ROOT_DIR) if cell else None
+        previous_root_dir = cell.get_fobs_context().get(_TENSOR_DISK_OFFLOAD_ROOT_DIR)
         previous_value, applied = apply_enable_tensor_disk_offload(
             engine=engine,
             enabled=enabled,
