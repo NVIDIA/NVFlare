@@ -141,6 +141,7 @@ class ReliableRetryScheduler:
 
             next_wait = None
             futures = {}
+            completed_futures = set()
             for task in tasks:
                 future = self.retry_task_pool.submit(task.retry_task)
                 if future is None:
@@ -151,6 +152,7 @@ class ReliableRetryScheduler:
 
             try:
                 for future in as_completed(futures, timeout=STREAM_RETRY_RESULT_TIMEOUT):
+                    completed_futures.add(future)
                     task = futures[future]
                     self._finish_inflight(task)
                     wait_time = future.result()
@@ -162,7 +164,7 @@ class ReliableRetryScheduler:
                 )
 
             for future, task in futures.items():
-                if not future.done():
+                if future not in completed_futures:
                     future.add_done_callback(lambda _future, retry_task=task: self._finish_inflight(retry_task))
 
             with self.cv:
