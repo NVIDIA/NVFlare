@@ -16,6 +16,8 @@ import importlib.util
 import json
 import os
 import shlex
+import signal
+import subprocess
 import sys
 from contextlib import contextmanager
 from types import ModuleType, SimpleNamespace
@@ -252,6 +254,85 @@ def test_sft_automodel_config_uses_full_model_helpers(tmp_path):
     assert config["model"]["_target_"].endswith(f"{expected_model_suffix}:from_pretrained_with_global_state")
     assert config["model"]["incoming_model_ckpt"] == incoming_model_ckpt
     assert "peft" not in config
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to import the AutoModel client helper")
+def test_sft_run_subprocess_tracks_and_clears_active_process(monkeypatch, tmp_path):
+    client_module = _load_example_module("automodel_sft_client")
+    popen_calls = []
+
+    class FakeProc:
+        pid = 1234
+
+        def __init__(self, command, cwd=None, env=None, start_new_session=False):
+            popen_calls.append(
+                {
+                    "command": command,
+                    "cwd": cwd,
+                    "env": env,
+                    "start_new_session": start_new_session,
+                }
+            )
+
+        def wait(self):
+            assert client_module._ACTIVE_AUTOMODEL_PROC is self
+            return 0
+
+    monkeypatch.setattr(client_module.subprocess, "Popen", FakeProc)
+
+    client_module._run_subprocess(["automodel", "config.yaml"], cwd=str(tmp_path))
+
+    assert client_module._ACTIVE_AUTOMODEL_PROC is None
+    assert popen_calls[0]["command"] == ["automodel", "config.yaml"]
+    assert popen_calls[0]["cwd"] == str(tmp_path)
+    assert popen_calls[0]["start_new_session"] is (os.name == "posix")
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to import the AutoModel client helper")
+def test_sft_sigterm_handler_terminates_active_subprocess_group(monkeypatch):
+    client_module = _load_example_module("automodel_sft_client")
+    wait_timeouts = []
+    killpg_calls = []
+
+    class FakeProc:
+        pid = 1234
+
+        def poll(self):
+            return None
+
+        def wait(self, timeout=None):
+            wait_timeouts.append(timeout)
+            return 0
+
+    monkeypatch.setattr(client_module.os, "name", "posix")
+    monkeypatch.setattr(client_module.os, "killpg", lambda pid, sig: killpg_calls.append((pid, sig)))
+    client_module._ACTIVE_AUTOMODEL_PROC = FakeProc()
+
+    with pytest.raises(SystemExit) as e:
+        client_module._handle_sigterm(signal.SIGTERM, None)
+
+    assert e.value.code == 0
+    assert client_module._ACTIVE_AUTOMODEL_PROC is None
+    assert killpg_calls == [(1234, signal.SIGTERM)]
+    assert wait_timeouts == [30.0]
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to import the AutoModel client helper")
+def test_sft_run_subprocess_raises_on_nonzero_exit(monkeypatch, tmp_path):
+    client_module = _load_example_module("automodel_sft_client")
+
+    class FakeProc:
+        pid = 1234
+
+        def wait(self):
+            return 2
+
+    monkeypatch.setattr(client_module.subprocess, "Popen", lambda *args, **kwargs: FakeProc())
+
+    with pytest.raises(subprocess.CalledProcessError):
+        client_module._run_subprocess(["automodel", "config.yaml"], cwd=str(tmp_path))
+
+    assert client_module._ACTIVE_AUTOMODEL_PROC is None
 
 
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for multi-round aggregation checks")
