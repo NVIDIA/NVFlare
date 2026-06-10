@@ -195,6 +195,7 @@ class FedJobConfig:
                 process = subprocess.Popen(shlex.split(command, True), shell=False, preexec_fn=os.setsid, env=new_env)
 
                 process.wait()
+                return process.returncode
 
             except KeyboardInterrupt:
                 self.logger.info("KeyboardInterrupt, terminate all the child processes.")

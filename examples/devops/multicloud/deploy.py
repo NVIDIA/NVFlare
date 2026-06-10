@@ -56,6 +56,7 @@ STARTUP_STABILITY_SECONDS = 20
 MONITORING_STACK_NAMESPACE = "nvflare-monitoring"
 MONITORING_NAMESPACE_PREFIX = "nvflare-"
 MONITORING_NAMESPACE_SUFFIX = "-monitoring"
+K8S_STAGE_OBJECT_NAME_MAX_LENGTH = 253
 STATSD_SERVICE_NAME = "statsd-exporter"
 STATSD_PORT = 9125
 MONITORING_COMPONENT_IDS = {
@@ -405,11 +406,33 @@ def _mask(text: str) -> str:
     return text.replace(str(REPO_ROOT), "<repo>")
 
 
+def _display_cmd(cmd: list[str]) -> str:
+    sensitive_options = {"--startup-secret"}
+    sensitive_resource_kinds = {"secret", "secrets"}
+    display_cmd = []
+    redact_next = False
+    for arg in cmd:
+        if redact_next:
+            display_cmd.append("<redacted>")
+            redact_next = False
+            continue
+
+        option, sep, _ = arg.partition("=")
+        if sep and option in sensitive_options:
+            display_cmd.append(f"{option}=<redacted>")
+            continue
+
+        display_cmd.append(_mask(arg))
+        redact_next = arg in sensitive_options or arg.lower() in sensitive_resource_kinds
+
+    return shlex.join(display_cmd)
+
+
 def _print_cmd(cmd: list[str], tag: str = "$"):
     if DRY_RUN:
-        print(f"  {tag} {_mask(shlex.join(cmd))}")
+        print(f"  {tag} {_display_cmd(cmd)}")
     else:
-        print(f"  {tag} {' '.join(cmd[:6])}{'...' if len(cmd) > 6 else ''}")
+        print(f"  {tag} <command omitted>")
 
 
 def run(cmd: list[str], check=True, capture=False, **kwargs) -> subprocess.CompletedProcess:
@@ -419,6 +442,19 @@ def run(cmd: list[str], check=True, capture=False, **kwargs) -> subprocess.Compl
         if stdin:
             for line in stdin.splitlines():
                 print(f"    | {_mask(line)}")
+        return FakeProc(0, stdout=_dry_run_stdout(cmd))
+    return subprocess.run(cmd, check=check, capture_output=capture, text=True, **kwargs)
+
+
+def run_redacted(
+    cmd: list[str],
+    display_cmd: list[str],
+    check=True,
+    capture=False,
+    **kwargs,
+) -> subprocess.CompletedProcess:
+    _print_cmd(display_cmd)
+    if DRY_RUN:
         return FakeProc(0, stdout=_dry_run_stdout(cmd))
     return subprocess.run(cmd, check=check, capture_output=capture, text=True, **kwargs)
 
@@ -480,7 +516,15 @@ def _safe_resource_name(name: str) -> str:
     return f"{full[:54].rstrip('-')}-{digest}"
 
 
+def _staged_workspace_resource_names(participant_name: str) -> tuple[str, str]:
+    return (
+        _safe_k8s_name(f"nvflare-local-{participant_name}", max_len=K8S_STAGE_OBJECT_NAME_MAX_LENGTH),
+        _safe_k8s_name(f"nvflare-startup-{participant_name}", max_len=K8S_STAGE_OBJECT_NAME_MAX_LENGTH),
+    )
+
+
 def _participant_state(p: Participant) -> dict:
+    local_configmap, startup_secret = _staged_workspace_resource_names(p.name)
     return {
         "kubeconfig": p.kubeconfig,
         "namespace": p.namespace,
@@ -490,6 +534,8 @@ def _participant_state(p: Participant) -> dict:
         "delete_namespace": p.delete_namespace,
         "pvc_names": list(p.pvc_config),
         "cleanup_pvc_names": _participant_cleanup_pvc_names(p),
+        "local_configmap": local_configmap,
+        "startup_secret": startup_secret,
     }
 
 
@@ -812,6 +858,44 @@ def verify_deployment_stable(p: Participant, seconds: int = STARTUP_STABILITY_SE
 # ---------------------------------------------------------------------------
 # Deploy one participant
 # ---------------------------------------------------------------------------
+def stage_workspace_configmap_secret(p: Participant, kit_dir: Path) -> None:
+    print("  Staging kit files as ConfigMap/Secret ...")
+    local_configmap, startup_secret = _staged_workspace_resource_names(p.name)
+    env = os.environ.copy()
+    env["KUBECONFIG"] = p.kubeconfig
+    if DRY_RUN:
+        print(f"  KUBECONFIG={_mask(p.kubeconfig)}")
+    run_redacted(
+        [
+            nvflare_cmd(),
+            "deploy",
+            "k8s",
+            "stage",
+            str(kit_dir),
+            "--namespace",
+            p.namespace,
+            "--local-configmap",
+            local_configmap,
+            "--startup-secret",
+            startup_secret,
+        ],
+        [
+            nvflare_cmd(),
+            "deploy",
+            "k8s",
+            "stage",
+            str(kit_dir),
+            "--namespace",
+            p.namespace,
+            "--local-configmap",
+            local_configmap,
+            "--startup-secret",
+            "<redacted>",
+        ],
+        env=env,
+    )
+
+
 def deploy_participant(
     p: Participant,
     kit_dir: Path,
@@ -862,55 +946,7 @@ def deploy_participant(
         helm(p.kubeconfig, "uninstall", p.name, "-n", p.namespace, "--wait", "--timeout=600s")
 
     # 4. Stage kit files
-    print("  Staging kit files via temp pod ...")
-    pod_name = f"kit-copy-{p.name}"
-
-    parent_prepare = p.prepare.get("parent") or {}
-    sec_ctx = {}
-    security_context = parent_prepare.get("pod_security_context")
-    if security_context:
-        sec_ctx = {"securityContext": security_context}
-    workspace_pvc = parent_prepare.get("workspace_pvc", "nvflws")
-
-    copy_image = "busybox:1.36"
-    pod_spec = {
-        "spec": {
-            **sec_ctx,
-            "volumes": [{"name": "ws", "persistentVolumeClaim": {"claimName": workspace_pvc}}],
-            "containers": [
-                {
-                    "name": "copy",
-                    "image": copy_image,
-                    "command": ["sleep", "600"],
-                    "volumeMounts": [{"name": "ws", "mountPath": "/ws"}],
-                    "resources": {
-                        "requests": {"cpu": "10m", "memory": "64Mi"},
-                        "limits": {"cpu": "100m", "memory": "128Mi"},
-                    },
-                }
-            ],
-        }
-    }
-
-    kubectl(p.kubeconfig, "-n", p.namespace, "delete", "pod", pod_name, "--ignore-not-found", "--timeout=60s")
-    kubectl(
-        p.kubeconfig,
-        "-n",
-        p.namespace,
-        "run",
-        pod_name,
-        f"--image={copy_image}",
-        "--restart=Never",
-        f"--overrides={json.dumps(pod_spec)}",
-    )
-
-    print("  Waiting for staging pod ...")
-    kubectl(p.kubeconfig, "-n", p.namespace, "wait", "--for=condition=Ready", f"pod/{pod_name}", "--timeout=600s")
-
-    kubectl(p.kubeconfig, "-n", p.namespace, "exec", pod_name, "--", "rm", "-rf", "/ws/startup", "/ws/local")
-    kubectl(p.kubeconfig, "-n", p.namespace, "cp", str(kit_dir / "startup"), f"{pod_name}:/ws/startup")
-    kubectl(p.kubeconfig, "-n", p.namespace, "cp", str(kit_dir / "local"), f"{pod_name}:/ws/local")
-    kubectl(p.kubeconfig, "-n", p.namespace, "delete", "pod", pod_name, "--timeout=60s")
+    stage_workspace_configmap_secret(p, kit_dir)
 
     # 5. Helm install
     print(f"  Helm installing {p.name} ...")
@@ -1091,6 +1127,53 @@ def delete_pods_using_pvcs(kubeconfig: str, ns: str, pvc_names: list[str]):
         )
 
 
+def delete_staged_workspace_resources(kubeconfig: str, ns: str, info: dict):
+    """Delete staged kit objects when teardown keeps the namespace."""
+    local_configmap = info.get("local_configmap")
+    startup_secret = info.get("startup_secret")
+    if local_configmap:
+        run(
+            [
+                "kubectl",
+                "--kubeconfig",
+                kubeconfig,
+                "-n",
+                ns,
+                "delete",
+                "configmap",
+                local_configmap,
+                "--ignore-not-found",
+            ],
+            check=False,
+        )
+    if startup_secret:
+        run_redacted(
+            [
+                "kubectl",
+                "--kubeconfig",
+                kubeconfig,
+                "-n",
+                ns,
+                "delete",
+                "secret",
+                startup_secret,
+                "--ignore-not-found",
+            ],
+            [
+                "kubectl",
+                "--kubeconfig",
+                kubeconfig,
+                "-n",
+                ns,
+                "delete",
+                "secret",
+                "<redacted>",
+                "--ignore-not-found",
+            ],
+            check=False,
+        )
+
+
 def teardown_participant(name: str, info: dict) -> bool:
     kc, ns = info["kubeconfig"], info["namespace"]
     provider_name = info.get("provider") or info.get("cloud", "")
@@ -1101,11 +1184,13 @@ def teardown_participant(name: str, info: dict) -> bool:
         print(f"  Auth failed for {kc} — skipping")
         return False
 
-    run(["helm", "--kubeconfig", kc, "uninstall", name, "-n", ns], check=False)
+    run(["helm", "--kubeconfig", kc, "uninstall", name, "-n", ns, "--wait", "--timeout=600s"], check=False)
     if not info.get("delete_namespace", True):
         # In shared namespaces, delete only this participant's Helm release,
-        # transient pods using its PVCs, and its workspace PVCs. Study-data PVCs
-        # can appear in cleanup_pvc_names to unblock pods, but are not deleted.
+        # staged workspace objects, transient pods using its PVCs, and its
+        # workspace PVCs. Study-data PVCs can appear in cleanup_pvc_names to
+        # unblock pods, but are not deleted.
+        delete_staged_workspace_resources(kc, ns, info)
         delete_pods_using_pvcs(kc, ns, info.get("cleanup_pvc_names") or info.get("pvc_names") or [])
         for pvc_name in info.get("pvc_names") or []:
             run(
