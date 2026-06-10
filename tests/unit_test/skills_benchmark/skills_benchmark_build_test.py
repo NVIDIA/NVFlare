@@ -61,13 +61,7 @@ def test_prepare_build_context_stages_assist_tools_for_docker_copy(tmp_path, mon
         assert (context / "assist_tools" / "skills_benchmark" / "__init__.py").is_file()
         assert (context / "assist_tools" / "skills_benchmark" / "config" / "agents" / "codex.yaml").is_file()
         assert (
-            context
-            / "assist_tools"
-            / "skills_benchmark"
-            / "skills"
-            / "harness"
-            / "container"
-            / "sdk_skills_setup.py"
+            context / "assist_tools" / "skills_benchmark" / "skills" / "harness" / "container" / "agent_run.py"
         ).is_file()
         dockerignore = (context / ".dockerignore").read_text(encoding="utf-8")
         assert "!assist_tools/" in dockerignore
