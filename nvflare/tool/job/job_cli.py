@@ -1185,6 +1185,9 @@ def _discover_job_download_artifacts(download_path: str) -> Tuple[dict, List[str
         elif file_name == "metrics_summary.json" and "metrics_summary" not in artifacts:
             artifacts["metrics_summary"] = file_path
             continue
+        elif file_name == "round_metrics.jsonl" and "round_metrics" not in artifacts:
+            artifacts["round_metrics"] = file_path
+            continue
         elif file_name != "log.txt":
             continue
 

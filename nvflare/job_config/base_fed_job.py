@@ -17,6 +17,7 @@ from typing import List, Optional
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.apis.fl_component import FLComponent
 from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
+from nvflare.app_common.widgets.metrics_artifact_writer import MetricsArtifactWriter
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
 from nvflare.job_config.api import FedJob, validate_object_for_job
@@ -43,6 +44,7 @@ class BaseFedJob(FedJob):
         model_selector: Optional[FLComponent] = None,
         convert_to_fed_event: Optional[ConvertToFedEvent] = None,
         analytics_receiver: Optional[AnalyticsReceiver] = None,
+        metrics_artifact_writer: Optional[MetricsArtifactWriter] = None,
     ):
         """Unified BaseFedJob for PyTorch, TensorFlow, and Scikit-learn.
 
@@ -73,6 +75,8 @@ class BaseFedJob(FedJob):
                 If not provided, a ConvertToFedEvent object will be created.
             analytics_receiver: Receive analytics. If not provided, framework-specific
                 child classes may provide defaults (e.g., TBAnalyticsReceiver for PT/TF).
+            metrics_artifact_writer: Component for writing server-side metrics artifacts.
+                If not provided, a MetricsArtifactWriter will be configured.
         """
         super().__init__(
             name=name,
@@ -98,6 +102,13 @@ class BaseFedJob(FedJob):
             from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 
             self.to_server(id="model_selector", obj=IntimeModelSelector(key_metric=key_metric))
+
+        # Metrics artifact writer
+        if metrics_artifact_writer is not None:
+            validate_object_for_job("metrics_artifact_writer", metrics_artifact_writer, FLComponent)
+        else:
+            metrics_artifact_writer = MetricsArtifactWriter()
+        self.to_server(id="metrics_artifact_writer", obj=metrics_artifact_writer)
 
         # Convert to fed event
         if convert_to_fed_event:

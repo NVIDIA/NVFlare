@@ -16,6 +16,7 @@ import os.path
 from typing import Optional
 
 from nvflare.apis.app_validation import AppValidationKey
+from nvflare.app_common.widgets.metrics_artifact_writer import MetricsArtifactWriter
 from nvflare.edge.assessor import Assessor
 from nvflare.edge.controllers.sage import ScatterAndGatherForEdge
 from nvflare.edge.executors.edge_model_executor import EdgeModelExecutor
@@ -85,6 +86,7 @@ class EdgeJob(FedJob):
         check_str("task_name", task_name)
 
         assessor_id = self.to_server(assessor, id="wf_assessor")
+        self.to_server(MetricsArtifactWriter(), id="metrics_artifact_writer")
 
         controller = ScatterAndGatherForEdge(
             assessor_id=assessor_id,

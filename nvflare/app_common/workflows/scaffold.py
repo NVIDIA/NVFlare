@@ -17,12 +17,17 @@ from typing import List
 
 import numpy as np
 
-from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.app_constant import AlgorithmConstants, AppConstants
 
-from .base_fedavg import BaseFedAvg, _aggregate_fl_model_metrics
+from .base_fedavg import (
+    BaseFedAvg,
+    _aggregate_fl_model_metrics,
+    _get_client_name,
+    _get_num_steps_weight,
+    make_fedavg_metrics_aggregation_info,
+)
 
 
 class Scaffold(BaseFedAvg):
@@ -98,8 +103,8 @@ def scaffold_aggregate_fn(results: List[FLModel]) -> FLModel:
     aggregation_helper = WeightedAggregationHelper()
     crtl_aggregation_helper = WeightedAggregationHelper()
     for _result in results:
-        weight = _result.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, 1.0)
-        contributor_name = _result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN)
+        weight = _get_num_steps_weight(_result)
+        contributor_name = _get_client_name(_result)
         aggregation_helper.add(
             data=_result.params,
             weight=weight,
@@ -128,6 +133,7 @@ def scaffold_aggregate_fn(results: List[FLModel]) -> FLModel:
             AlgorithmConstants.SCAFFOLD_CTRL_DIFF: crtl_aggregation_helper.get_result(),
             "nr_aggregated": len(results),
             "current_round": results[0].current_round,
+            AppConstants.METRICS_AGGREGATION_INFO: make_fedavg_metrics_aggregation_info(),
         },
     )
 
