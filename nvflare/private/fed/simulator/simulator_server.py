@@ -75,7 +75,7 @@ class SimulatorServerEngine(ServerEngine):
 
 class SimulatorRunManager(RunManager):
     def create_job_processing_context_properties(self, workspace, job_id):
-        return {}
+        return super().create_job_processing_context_properties(workspace, job_id)
 
 
 class SimulatorIdentityAsserter(IdentityAsserter):

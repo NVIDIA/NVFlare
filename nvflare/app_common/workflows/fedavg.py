@@ -30,7 +30,13 @@ from nvflare.app_common.utils.tensor_disk_offload_context import cleanup_tensor_
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.log_utils import center_message
 
-from .base_fedavg import BaseFedAvg
+from .base_fedavg import (
+    BaseFedAvg,
+    _get_client_name,
+    _get_num_steps_weight,
+    make_fedavg_metrics_aggregation_info,
+    make_key_metric_info_from_stop_condition,
+)
 
 
 class FedAvg(BaseFedAvg):
@@ -133,6 +139,7 @@ class FedAvg(BaseFedAvg):
         self._received_count: int = 0
         self._expected_count: int = 0
         self._params_type = None  # Only store params_type, not full result
+        self._site_metric_weights: Dict[str, Dict[str, Any]] = {}
 
     def run(self) -> None:
         disk_offload_context = None
@@ -193,6 +200,7 @@ class FedAvg(BaseFedAvg):
                 self._received_count = 0
                 self._expected_count = len(clients)
                 self._params_type = None
+                self._site_metric_weights = {}
 
                 # Non-blocking send with callback for streaming aggregation
                 self.send_model(
@@ -213,6 +221,9 @@ class FedAvg(BaseFedAvg):
 
                 # Get final aggregated result
                 aggregate_results = self._get_aggregated_result()
+                self.fire_event_with_data(
+                    AppEventType.AFTER_AGGREGATION, self.fl_ctx, AppConstants.AGGREGATION_RESULT, aggregate_results
+                )
 
                 model = self.update_model(model, aggregate_results)
 
@@ -247,7 +258,7 @@ class FedAvg(BaseFedAvg):
     def _aggregate_one_result(self, result: FLModel) -> None:
         """Callback: aggregate ONE client result immediately (InTime aggregation)."""
         if not result.params:
-            client_name = result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN)
+            client_name = _get_client_name(result)
             self.warning(f"Empty result from client {client_name}, skipping.")
             return
 
@@ -255,7 +266,7 @@ class FedAvg(BaseFedAvg):
         if self._params_type is None:
             self._params_type = result.params_type
 
-        client_name = result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN)
+        client_name = _get_client_name(result)
         if self.aggregator:
             # Use custom aggregator
             self.aggregator.accept_model(result)
@@ -268,11 +279,12 @@ class FedAvg(BaseFedAvg):
             else:
                 aggregation_weight = 1.0
 
-            n_iter = result.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, None)
-            # Handle None case (e.g., first round of some algorithms like K-Means)
-            if n_iter is None:
-                n_iter = 1.0
-            weight = aggregation_weight * float(n_iter)
+            weight = aggregation_weight * _get_num_steps_weight(result)
+            self._site_metric_weights[client_name] = {
+                "name": client_name,
+                "weight": weight,
+                "weight_key": "effective_fedavg_metric_weight",
+            }
 
             self._aggr_helper.add(
                 data=result.params,
@@ -314,6 +326,9 @@ class FedAvg(BaseFedAvg):
             result.meta = result.meta or {}
             result.meta["nr_aggregated"] = self._received_count
             result.meta["current_round"] = self.current_round
+            if result.current_round is None:
+                result.current_round = self.current_round
+            self._set_metrics_aggregation_info(result)
             return result
         else:
             # Use built-in InTime aggregation
@@ -325,8 +340,47 @@ class FedAvg(BaseFedAvg):
                 params=aggr_params,
                 params_type=self._params_type,
                 metrics=aggr_metrics,
-                meta={"nr_aggregated": self._received_count, "current_round": self.current_round},
+                current_round=self.current_round,
+                meta={
+                    "nr_aggregated": self._received_count,
+                    "current_round": self.current_round,
+                    AppConstants.METRICS_AGGREGATION_INFO: self._make_metrics_aggregation_info(),
+                },
             )
+
+    def _make_metrics_aggregation_info(self) -> Dict[str, Any]:
+        key_metric_info = self._make_key_metric_info()
+        site_weights = list(self._site_metric_weights.values()) if self._site_metric_weights else None
+        weight_formula = None
+        if site_weights:
+            weight_formula = "aggregation_weight * NUM_STEPS_CURRENT_ROUND"
+        info = make_fedavg_metrics_aggregation_info(
+            weight_key="effective_fedavg_metric_weight" if site_weights else FLMetaKey.NUM_STEPS_CURRENT_ROUND,
+            weight_formula=weight_formula,
+            site_weights=site_weights,
+        )
+        if key_metric_info:
+            info["key_metric"] = key_metric_info
+        return info
+
+    def _make_key_metric_info(self) -> Optional[Dict[str, Any]]:
+        return make_key_metric_info_from_stop_condition(self.stop_cond, self.stop_condition)
+
+    def _set_metrics_aggregation_info(self, result: FLModel):
+        key_metric_info = self._make_key_metric_info()
+        existing_info = result.meta.get(AppConstants.METRICS_AGGREGATION_INFO)
+        if isinstance(existing_info, dict):
+            merged_info = dict(existing_info)
+            if "key_metric" not in merged_info and key_metric_info:
+                merged_info["key_metric"] = key_metric_info
+            if "sites" not in merged_info and "use_contribution_sites" not in merged_info:
+                merged_info["use_contribution_sites"] = False
+            result.meta[AppConstants.METRICS_AGGREGATION_INFO] = merged_info
+        else:
+            metrics_info = {"metric_source": "custom_aggregator_flmodel_metrics", "use_contribution_sites": False}
+            if key_metric_info:
+                metrics_info["key_metric"] = key_metric_info
+            result.meta[AppConstants.METRICS_AGGREGATION_INFO] = metrics_info
 
     def should_stop(self, metrics: Optional[Dict] = None) -> bool:
         """Checks whether the current FL experiment should stop.
