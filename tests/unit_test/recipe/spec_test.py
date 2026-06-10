@@ -22,9 +22,10 @@ import tempfile
 
 import pytest
 
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.job_config.api import FedApp, FedJob
 from nvflare.job_config.fed_app_config import ClientAppConfig
-from nvflare.recipe.utils import collect_non_local_scripts
+from nvflare.recipe.utils import collect_non_local_scripts, set_recipe_meta
 
 
 class TestCollectNonLocalScriptsUtility:
@@ -404,6 +405,171 @@ class TestRecipeConfigMethods:
         assert captured["server_kwargs"] == {"id": "decomposer_reg"}
         assert captured["client_kwargs"] == {"id": "decomposer_reg"}
         assert captured["server_obj"] is not captured["client_obj"]
+
+
+class TestRecipeMetaHelper:
+    """Test generic helper-provided recipe metadata."""
+
+    def test_set_recipe_meta_sets_recognized_top_level_meta_props(self, tmp_path):
+        from nvflare.recipe.spec import Recipe
+
+        class BasicRecipe(Recipe):
+            def __init__(self):
+                job = FedJob(name="test_recipe_meta", min_clients=1, meta_props={"owner": "alice"})
+                job.to_server({"server_arg": True})
+                super().__init__(job)
+
+        recipe = BasicRecipe()
+        resource_spec = {
+            "site-1": {"num_of_gpus": 1, "mem_per_gpu_in_GiB": 4},
+            "site-2": {"num_of_gpus": 1, "mem_per_gpu_in_GiB": 2},
+        }
+        launcher_spec = {
+            "site-1": {"docker": {"image": "nvflare-site1:latest"}},
+            "site-2": {"docker": {"image": "nvflare-site2:latest"}},
+        }
+        mandatory_clients = ["site-1", "site-2"]
+
+        set_recipe_meta(recipe, JobMetaKey.STUDY, "default")
+        set_recipe_meta(recipe, JobMetaKey.RESOURCE_SPEC, resource_spec)
+        set_recipe_meta(recipe, JobMetaKey.JOB_LAUNCHER_SPEC, launcher_spec)
+        set_recipe_meta(recipe, JobMetaKey.MANDATORY_CLIENTS, mandatory_clients)
+        set_recipe_meta(recipe, JobMetaKey.SCOPE, "private")
+        set_recipe_meta(recipe, JobMetaKey.CUSTOM_PROPS, {"team": "research"})
+
+        job_config = recipe.job.job
+        assert job_config.min_clients == 1
+        assert job_config.mandatory_clients is None
+        assert job_config.resource_specs == {}
+        assert job_config.meta_props == {
+            "owner": "alice",
+            "study": "default",
+            "resource_spec": resource_spec,
+            "launcher_spec": launcher_spec,
+            "mandatory_clients": mandatory_clients,
+            "scope": "private",
+            "custom_props": {"team": "research"},
+        }
+
+        recipe.job.export_job(str(tmp_path))
+        with open(tmp_path / "test_recipe_meta" / "meta.json") as f:
+            exported_meta = json.load(f)
+
+        assert exported_meta["min_clients"] == 1
+        assert exported_meta["mandatory_clients"] == mandatory_clients
+        assert exported_meta["resource_spec"] == resource_spec
+        assert exported_meta["launcher_spec"] == launcher_spec
+        assert exported_meta["scope"] == "private"
+        assert exported_meta["study"] == "default"
+        assert exported_meta["custom_props"] == {"team": "research"}
+        assert exported_meta["owner"] == "alice"
+
+    def test_set_recipe_meta_stores_values_that_differ_from_fed_job_config(self, tmp_path):
+        from nvflare.recipe.spec import Recipe
+
+        class BasicRecipe(Recipe):
+            def __init__(self):
+                job = FedJob(name="test_recipe_meta_conflict", min_clients=2)
+                job.job.resource_specs = {"base-site": {"num_of_gpus": 0}}
+                job.to_server({"server_arg": True})
+                super().__init__(job)
+
+        recipe = BasicRecipe()
+        resource_spec = {"site-1": {"num_of_gpus": 1}}
+
+        set_recipe_meta(recipe, JobMetaKey.MIN_CLIENTS, 3)
+        set_recipe_meta(recipe, JobMetaKey.RESOURCE_SPEC, resource_spec)
+
+        job_config = recipe.job.job
+        assert job_config.min_clients == 2
+        assert job_config.resource_specs == {"base-site": {"num_of_gpus": 0}}
+        assert job_config.meta_props["min_clients"] == 3
+        assert job_config.meta_props["resource_spec"] == resource_spec
+
+        recipe.job.export_job(str(tmp_path))
+        with open(tmp_path / "test_recipe_meta_conflict" / "meta.json") as f:
+            exported_meta = json.load(f)
+
+        assert exported_meta["min_clients"] == 3
+        assert exported_meta["resource_spec"] == resource_spec
+
+    def test_set_recipe_meta_replaces_different_value_from_existing_meta_props(self):
+        from nvflare.recipe.spec import Recipe
+
+        class BasicRecipe(Recipe):
+            def __init__(self):
+                super().__init__(
+                    FedJob(name="test_recipe_meta_props_conflict", min_clients=1, meta_props={"study": "a"})
+                )
+
+        recipe = BasicRecipe()
+        set_recipe_meta(recipe, JobMetaKey.STUDY, "b")
+
+        assert recipe.job.job.meta_props["study"] == "b"
+
+    def test_set_recipe_meta_allows_existing_meta_props_that_differ_from_generated_values(self):
+        from nvflare.recipe.spec import Recipe
+
+        class BasicRecipe(Recipe):
+            def __init__(self):
+                job = FedJob(name="test_recipe_meta_generated_conflict", min_clients=2, meta_props={"min_clients": 5})
+                super().__init__(job)
+
+        recipe = BasicRecipe()
+        set_recipe_meta(recipe, JobMetaKey.STUDY, "default")
+
+        assert recipe.job.job.meta_props["min_clients"] == 5
+        assert recipe.job.job.meta_props["study"] == "default"
+
+    def test_set_recipe_meta_rejects_generated_deploy_map_key(self):
+        from nvflare.recipe.spec import Recipe
+
+        class BasicRecipe(Recipe):
+            def __init__(self):
+                job = FedJob(name="test_recipe_meta_deploy_map", min_clients=1)
+                job.to_server({"server_arg": True})
+                super().__init__(job)
+
+        with pytest.raises(ValueError, match="deploy_map.*cannot be set through set_recipe_meta"):
+            set_recipe_meta(BasicRecipe(), JobMetaKey.DEPLOY_MAP, {"app": ["server"]})
+
+    def test_set_recipe_meta_deep_copies_user_values(self):
+        from nvflare.recipe.spec import Recipe
+
+        class BasicRecipe(Recipe):
+            def __init__(self):
+                super().__init__(FedJob(name="test_recipe_meta_copy", min_clients=1))
+
+        recipe = BasicRecipe()
+        launcher_spec = {"site-1": {"docker": {"image": "nvflare:latest"}}}
+        mandatory_clients = ["site-1"]
+
+        set_recipe_meta(recipe, JobMetaKey.JOB_LAUNCHER_SPEC, launcher_spec)
+        set_recipe_meta(recipe, JobMetaKey.MANDATORY_CLIENTS, mandatory_clients)
+        launcher_spec["site-1"]["docker"]["image"] = "changed"
+        mandatory_clients.append("site-2")
+
+        assert recipe.job.job.meta_props["launcher_spec"] == {"site-1": {"docker": {"image": "nvflare:latest"}}}
+        assert recipe.job.job.meta_props["mandatory_clients"] == ["site-1"]
+
+    @pytest.mark.parametrize(
+        "key, value, error_type, match",
+        [
+            (1, "value", TypeError, "key must be a JobMetaKey"),
+            ("study", "default", TypeError, "key must be a JobMetaKey"),
+            (JobMetaKey.STUDY, True, TypeError, "must be a number, str, dict, or list"),
+            (JobMetaKey.STUDY, None, TypeError, "must be a number, str, dict, or list"),
+        ],
+    )
+    def test_set_recipe_meta_validates_key_and_supported_value_types(self, key, value, error_type, match):
+        from nvflare.recipe.spec import Recipe
+
+        class BasicRecipe(Recipe):
+            def __init__(self):
+                super().__init__(FedJob(name="test_recipe_meta_validation", min_clients=1))
+
+        with pytest.raises(error_type, match=match):
+            set_recipe_meta(BasicRecipe(), key, value)
 
 
 class _DummyExecEnv:

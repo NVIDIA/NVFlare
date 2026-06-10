@@ -15,9 +15,11 @@
 import copy
 import importlib
 import os
+from numbers import Number
 from typing import Any, Dict, List, Optional
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import Recipe
@@ -57,6 +59,50 @@ MODEL_LOCATOR_REGISTRY = {
         "persistor_param": "tf_persistor_id",
     },
 }
+
+_RECIPE_META_UNSUPPORTED_KEYS = {
+    JobMetaKey.DEPLOY_MAP,
+}
+
+
+def _normalize_recipe_meta_key(key: Any) -> str:
+    if not isinstance(key, JobMetaKey):
+        raise TypeError(f"recipe meta key must be a JobMetaKey, got {type(key).__name__}")
+    if key in _RECIPE_META_UNSUPPORTED_KEYS:
+        raise ValueError(
+            f"recipe meta key {key.value!r} is generated from the recipe deployment map and "
+            "cannot be set through set_recipe_meta"
+        )
+    return key.value
+
+
+def _validate_recipe_meta_value(key: str, value: Any) -> None:
+    if isinstance(value, bool) or not isinstance(value, (Number, str, dict, list)):
+        allowed_types = "number, str, dict, or list"
+        raise TypeError(f"recipe meta value for key {key!r} must be a {allowed_types}; got {type(value).__name__}")
+
+
+def _get_recipe_job_config(recipe: Recipe):
+    job = getattr(recipe, "job", None)
+    job_config = getattr(job, "job", None)
+    if job_config is None:
+        raise TypeError("recipe must provide a FedJob through recipe.job")
+    return job_config
+
+
+def set_recipe_meta(recipe: Recipe, key: JobMetaKey, value: Any) -> None:
+    """Set one generated job metadata value through ``meta_props``.
+
+    The key must be a ``JobMetaKey`` enum member. The value is stored in
+    ``meta_props`` and replaces any existing ``meta_props`` value for that key.
+    """
+    key = _normalize_recipe_meta_key(key)
+    _validate_recipe_meta_value(key, value)
+    job_config = _get_recipe_job_config(recipe)
+
+    meta_props = copy.deepcopy(job_config.meta_props) or {}
+    meta_props[key] = copy.deepcopy(value)
+    job_config.meta_props = meta_props
 
 
 def _has_cross_site_eval_workflow(job: FedJob) -> bool:
