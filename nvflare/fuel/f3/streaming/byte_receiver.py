@@ -84,6 +84,8 @@ class RxTask:
         self.lock = threading.Lock()
         self.eos = False
         self.completed = False
+        self.failed = False
+        self.stop_lock = threading.RLock()
         self.cleanup_timer = None
 
         config = CommConfigurator()
@@ -217,16 +219,25 @@ class RxTask:
     def stop(self, error: StreamError = None, notify=True):
 
         if not error:
-            if self.seq != self.seq_ack:
-                self._send_ack(self.received_offset, self.seq)
-            if self.reliable:
-                self.completed = True
-                self._schedule_remove_task()
-            else:
-                self._remove_task()
+            with self.stop_lock:
+                if self.completed or self.failed:
+                    return
+
+                if self.seq != self.seq_ack:
+                    self._send_ack(self.received_offset, self.seq)
+                if self.reliable:
+                    self.completed = True
+                    self._schedule_remove_task()
+                else:
+                    self._remove_task()
             return
 
-        self._remove_task()
+        with self.stop_lock:
+            if self.failed:
+                return
+
+            self.failed = True
+            self._remove_task()
 
         if self.headers:
             optional = self.headers.get(StreamHeaderKey.OPTIONAL, False)
@@ -265,12 +276,13 @@ class RxTask:
                 RxTask.rx_task_map.pop((self.origin, self.sid), None)
 
     def _schedule_remove_task(self):
-        if self.cleanup_timer:
-            return
+        with self.stop_lock:
+            if self.cleanup_timer:
+                return
 
-        self.cleanup_timer = threading.Timer(self.completed_task_ttl, self._remove_task)
-        self.cleanup_timer.daemon = True
-        self.cleanup_timer.start()
+            self.cleanup_timer = threading.Timer(self.completed_task_ttl, self._remove_task)
+            self.cleanup_timer.daemon = True
+            self.cleanup_timer.start()
 
     def _try_to_read(self, size: int) -> Tuple[int, Optional[BytesAlike]]:
 

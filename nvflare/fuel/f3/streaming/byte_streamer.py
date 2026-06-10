@@ -32,6 +32,7 @@ from nvflare.fuel.f3.streaming.stream_const import (
 from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError, StreamFuture, StreamTaskSpec
 from nvflare.fuel.f3.streaming.stream_utils import (
     ONE_MB,
+    CheckedExecutor,
     gen_stream_id,
     stream_stats_category,
     stream_thread_pool,
@@ -43,6 +44,7 @@ STREAM_WINDOW_SIZE = 16 * STREAM_CHUNK_SIZE
 STREAM_ACK_WAIT = 300
 STREAM_RETRY_WAIT = 5.0
 STREAM_RETRY_TIMEOUT = 60.0
+STREAM_RETRY_WORKERS = 32
 
 STREAM_TYPE_BYTE = "byte"
 STREAM_TYPE_BLOB = "blob"
@@ -80,6 +82,7 @@ class ReliableRetryScheduler:
         self.thread = None
         self.stopped = False
         self.generation = 0
+        self.retry_task_pool = CheckedExecutor(STREAM_RETRY_WORKERS, "stm_retry")
 
     def register(self, task):
         with self.cv:
@@ -115,6 +118,7 @@ class ReliableRetryScheduler:
         thread = self.thread
         if thread and thread.is_alive() and thread is not threading.current_thread():
             thread.join(timeout=1.0)
+        self.retry_task_pool.shutdown(wait=True)
 
     def _run(self):
         while True:
@@ -126,8 +130,12 @@ class ReliableRetryScheduler:
                 generation = self.generation
 
             next_wait = None
-            for task in tasks:
-                wait_time = task.retry_task()
+            futures = [self.retry_task_pool.submit(task.retry_task) for task in tasks]
+            for future in futures:
+                if future is None:
+                    continue
+
+                wait_time = future.result()
                 if wait_time is not None:
                     next_wait = wait_time if next_wait is None else min(next_wait, wait_time)
 
