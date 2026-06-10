@@ -20,6 +20,7 @@ from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.message import Message
+from nvflare.fuel.f3.mpm import MainProcessMonitor
 from nvflare.fuel.f3.stats_pool import StatsPoolManager
 from nvflare.fuel.f3.streaming.stream_const import (
     STREAM_ACK_TOPIC,
@@ -72,6 +73,76 @@ def _snapshot_payload(payload):
     return bytes(payload)
 
 
+class ReliableRetryScheduler:
+    def __init__(self):
+        self.tasks = {}
+        self.cv = threading.Condition()
+        self.thread = None
+        self.stopped = False
+        self.generation = 0
+
+    def register(self, task):
+        with self.cv:
+            if self.stopped:
+                return
+
+            self.tasks[task.sid] = task
+            self.generation += 1
+            if not self.thread or not self.thread.is_alive():
+                self.thread = threading.Thread(target=self._run, name="stm_retry", daemon=True)
+                self.thread.start()
+            self.cv.notify()
+
+    def unregister(self, task):
+        with self.cv:
+            registered = self.tasks.get(task.sid)
+            if registered is task:
+                self.tasks.pop(task.sid, None)
+                self.generation += 1
+                self.cv.notify()
+
+    def wakeup(self):
+        with self.cv:
+            self.generation += 1
+            self.cv.notify()
+
+    def shutdown(self):
+        with self.cv:
+            self.stopped = True
+            self.generation += 1
+            self.cv.notify()
+
+        thread = self.thread
+        if thread and thread.is_alive() and thread is not threading.current_thread():
+            thread.join(timeout=1.0)
+
+    def _run(self):
+        while True:
+            with self.cv:
+                if self.stopped:
+                    return
+
+                tasks = list(self.tasks.values())
+                generation = self.generation
+
+            next_wait = None
+            for task in tasks:
+                wait_time = task.retry_task()
+                if wait_time is not None:
+                    next_wait = wait_time if next_wait is None else min(next_wait, wait_time)
+
+            with self.cv:
+                if self.stopped:
+                    return
+
+                if self.generation == generation:
+                    self.cv.wait(timeout=next_wait)
+
+
+reliable_retry_scheduler = ReliableRetryScheduler()
+MainProcessMonitor.add_cleanup_cb(reliable_retry_scheduler.shutdown)
+
+
 class TxTask(StreamTaskSpec):
     def __init__(
         self,
@@ -113,7 +184,7 @@ class TxTask(StreamTaskSpec):
         self.stream_future.set_size(stream.get_size())
 
         config = CommConfigurator()
-        self.reliable = config.get_streaming_reliable(True) if reliable is None else reliable
+        self.reliable = config.get_streaming_reliable(False) if reliable is None else reliable
         self.window_size = config.get_streaming_window_size(STREAM_WINDOW_SIZE)
         self.ack_wait = config.get_streaming_ack_wait(STREAM_ACK_WAIT)
         self.ack_progress_timeout = config.get_streaming_ack_progress_timeout(60.0)
@@ -127,13 +198,10 @@ class TxTask(StreamTaskSpec):
         if self.reliable:
             self.pending_messages = {}
             self.retry_lock = threading.RLock()
-            self.retry_wakeup = threading.Event()
-            self.retry_task_future = stream_thread_pool.submit(self.retry_task)
+            reliable_retry_scheduler.register(self)
         else:
             self.pending_messages = None
             self.retry_lock = None
-            self.retry_wakeup = None
-            self.retry_task_future = None
 
     def __str__(self):
         return f"Tx[SID:{self.sid} to {self.target} for {self.channel}/{self.topic}]"
@@ -234,6 +302,7 @@ class TxTask(StreamTaskSpec):
                     log.error(msg)
                     self.stop(StreamError(msg))
                     return False
+            reliable_retry_scheduler.wakeup()
 
         errors = self.cell.fire_and_forget(
             STREAM_CHANNEL, STREAM_DATA_TOPIC, self.target, message, secure=self.secure, optional=self.optional
@@ -266,7 +335,7 @@ class TxTask(StreamTaskSpec):
 
                 if not error and self.pending_messages:
                     self.stopping = True
-                    self.retry_wakeup.set()
+                    reliable_retry_scheduler.wakeup()
                     if not self.ack_waiter.is_set():
                         self.ack_waiter.set()
                     return
@@ -275,7 +344,7 @@ class TxTask(StreamTaskSpec):
                 self.stopping = False
                 if error:
                     self.pending_messages.clear()
-                self.retry_wakeup.set()
+            reliable_retry_scheduler.unregister(self)
         else:
             if self.stopped:
                 return
@@ -287,9 +356,6 @@ class TxTask(StreamTaskSpec):
 
         if self.task_future:
             self.task_future.cancel()
-
-        if self.retry_task_future:
-            self.retry_task_future.cancel()
 
         if not error:
             # Result is the number of bytes streamed
@@ -361,55 +427,69 @@ class TxTask(StreamTaskSpec):
     def cancel(self):
         self.stop(error=StreamError("cancelled"))
 
-    def retry_task(self):
+    def retry_task(self) -> Optional[float]:
         try:
-            while not self.stopped:
-                should_stop = False
-                with self.retry_lock:
-                    if not self.pending_messages:
-                        should_stop = self.stopping
-                        messages_to_retry = []
-                    else:
-                        curr_time = time.monotonic()
-                        messages_to_retry = []
-                        for seq, value in list(self.pending_messages.items()):
-                            start_time, last_retry, message = value
-                            retry_time = curr_time - start_time
-                            if retry_time > self.retry_timeout:
-                                msg = f"{self} seq {seq} retry failed after {retry_time:.2f} seconds"
-                                log.error(msg)
-                                self.stop(error=StreamError(msg))
-                                return
-
-                            if curr_time - last_retry >= self.retry_wait:
-                                messages_to_retry.append((seq, start_time, message))
-                                self.pending_messages[seq] = start_time, curr_time, message
-
-                if should_stop:
-                    self.stop()
-                    return
-
-                for seq, _start_time, message in messages_to_retry:
-                    errors = self.cell.fire_and_forget(
-                        STREAM_CHANNEL,
-                        STREAM_DATA_TOPIC,
-                        self.target,
-                        message,
-                        secure=self.secure,
-                        optional=self.optional,
-                    )
-                    error = errors.get(self.target)
-                    if error:
-                        log.error(
-                            f"{self} message retry error for target {self.target} seq {seq}: "
-                            f"{error}, will retry again in {self.retry_wait} seconds"
-                        )
-
-                self.retry_wakeup.wait(self.retry_wait)
-                self.retry_wakeup.clear()
+            return self._retry_task()
 
         except Exception as ex:
-            log.error(f"{self} retry thread ended due to error: {ex}")
+            msg = f"{self} retry thread ended due to error: {ex}"
+            log.error(msg)
+            self.stop(StreamError(msg), notify=False)
+            return None
+
+    def _retry_task(self) -> Optional[float]:
+        should_stop = False
+        next_wait = None
+        messages_to_retry = []
+
+        with self.retry_lock:
+            if self.stopped:
+                return None
+
+            if not self.pending_messages:
+                should_stop = self.stopping
+            else:
+                curr_time = time.monotonic()
+                for seq, value in list(self.pending_messages.items()):
+                    start_time, last_retry, message = value
+                    retry_time = curr_time - start_time
+                    if retry_time > self.retry_timeout:
+                        msg = f"{self} seq {seq} retry failed after {retry_time:.2f} seconds"
+                        log.error(msg)
+                        self.stop(error=StreamError(msg))
+                        return None
+
+                    wait_time = self.retry_wait - (curr_time - last_retry)
+                    if wait_time <= 0:
+                        messages_to_retry.append((seq, message))
+                        self.pending_messages[seq] = start_time, curr_time, message
+                    else:
+                        next_wait = wait_time if next_wait is None else min(next_wait, wait_time)
+
+        if should_stop:
+            self.stop()
+            return None
+
+        for seq, message in messages_to_retry:
+            errors = self.cell.fire_and_forget(
+                STREAM_CHANNEL,
+                STREAM_DATA_TOPIC,
+                self.target,
+                message,
+                secure=self.secure,
+                optional=self.optional,
+            )
+            error = errors.get(self.target)
+            if error:
+                log.error(
+                    f"{self} message retry error for target {self.target} seq {seq}: "
+                    f"{error}, will retry again in {self.retry_wait} seconds"
+                )
+
+        if messages_to_retry:
+            next_wait = self.retry_wait if next_wait is None else min(next_wait, self.retry_wait)
+
+        return next_wait
 
     def remove_task(self):
         with ByteStreamer.map_lock:

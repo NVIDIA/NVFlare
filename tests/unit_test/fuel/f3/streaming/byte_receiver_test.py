@@ -19,6 +19,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.byte_receiver import RxStream, RxTask
 from nvflare.fuel.f3.streaming.stream_const import STREAM_ACK_TOPIC, STREAM_CHANNEL, StreamDataType, StreamHeaderKey
@@ -219,6 +220,22 @@ def test_reliable_duplicate_initial_chunk_sends_sequence_ack():
     assert ack.get_header(StreamHeaderKey.OFFSET) == 0
 
 
+def test_reliable_duplicate_chunk_sends_latest_sequence_ack():
+    cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={}))
+    chunk_0 = _make_chunk("site-1", sid=506, seq=0, data_type=StreamDataType.CHUNK, payload=b"a", reliable=True)
+    chunk_1 = _make_chunk("site-1", sid=506, seq=1, data_type=StreamDataType.CHUNK, payload=b"b", reliable=True)
+    task = RxTask.find_or_create_task(chunk_0, cell)
+
+    assert task.process_chunk(chunk_0) is True
+    assert task.process_chunk(chunk_1) is False
+    assert task.seq == 1
+    assert task.process_chunk(chunk_0) is False
+
+    ack = cell.fire_and_forget.call_args.args[3]
+    assert ack.get_header(StreamHeaderKey.SEQUENCE) == 1
+    assert ack.get_header(StreamHeaderKey.OFFSET) == 0
+
+
 def test_reliable_final_chunk_sends_sequence_ack():
     cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={}))
     message = _make_chunk("site-1", sid=503, seq=0, data_type=StreamDataType.FINAL, payload=b"", reliable=True)
@@ -266,3 +283,12 @@ def test_reliable_completed_task_reacks_duplicate_final_chunk():
     duplicate_ack = cell.fire_and_forget.call_args.args[3]
     assert duplicate_ack.get_header(StreamHeaderKey.SEQUENCE) == 0
     assert duplicate_ack.get_header(StreamHeaderKey.OFFSET) == 0
+
+
+def test_completed_task_ttl_has_retry_wait_headroom(monkeypatch):
+    monkeypatch.setattr(CommConfigurator, "get_streaming_retry_timeout", lambda self, default: 12.0)
+    monkeypatch.setattr(CommConfigurator, "get_streaming_retry_wait", lambda self, default: 3.0)
+
+    task = RxTask(sid=507, origin="site-1", cell=SimpleNamespace(), reliable=True)
+
+    assert task.completed_task_ttl == 15.0

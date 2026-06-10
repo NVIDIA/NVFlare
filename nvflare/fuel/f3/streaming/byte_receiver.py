@@ -41,6 +41,7 @@ MAX_OUT_SEQ_CHUNKS = 16
 ACK_INTERVAL = 1024 * 1024 * 4
 READ_TIMEOUT = 300
 COMPLETED_TASK_TTL = 60.0
+RETRY_WAIT = 5.0
 COUNTER_NAME_RECEIVED = "received"
 
 # Read result status
@@ -84,10 +85,13 @@ class RxTask:
         self.completed = False
         self.cleanup_timer = None
 
-        self.timeout = CommConfigurator().get_streaming_read_timeout(READ_TIMEOUT)
-        self.ack_interval = CommConfigurator().get_streaming_ack_interval(ACK_INTERVAL)
-        self.max_out_seq = CommConfigurator().get_streaming_max_out_seq_chunks(MAX_OUT_SEQ_CHUNKS)
-        self.completed_task_ttl = CommConfigurator().get_streaming_retry_timeout(COMPLETED_TASK_TTL)
+        config = CommConfigurator()
+        self.timeout = config.get_streaming_read_timeout(READ_TIMEOUT)
+        self.ack_interval = config.get_streaming_ack_interval(ACK_INTERVAL)
+        self.max_out_seq = config.get_streaming_max_out_seq_chunks(MAX_OUT_SEQ_CHUNKS)
+        self.completed_task_ttl = config.get_streaming_retry_timeout(
+            COMPLETED_TASK_TTL
+        ) + config.get_streaming_retry_wait(RETRY_WAIT)
 
     def __str__(self):
         return f"Rx[SID:{self.sid} from {self.origin} for {self.channel}/{self.topic} Size: {self.size}]"
@@ -151,7 +155,7 @@ class RxTask:
                 if self.stream_future:
                     log.warning(f"{self} Received duplicate chunk 0, ignored")
                     if self.reliable:
-                        self._send_ack(self.offset, seq)
+                        self._send_ack(self.offset, self.seq)
                     return new_stream
 
                 self._handle_new_stream(message)
@@ -178,7 +182,7 @@ class RxTask:
         if seq < self.next_seq:
             log.debug(f"{self} Duplicate chunk ignored {seq=}")
             if self.reliable:
-                self._send_ack(self.offset, seq)
+                self._send_ack(self.offset, self.seq)
             return
 
         if seq == self.next_seq:

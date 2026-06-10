@@ -218,17 +218,24 @@ class TestByteStreamerAckWatchdog:
 
 class TestReliableByteStreamer:
     @pytest.fixture
-    def no_retry_worker(self, monkeypatch):
-        submitted = []
+    def retry_scheduler(self, monkeypatch):
+        calls = {"registered": [], "unregistered": [], "wakeups": 0}
 
-        def fake_submit(fn, *args, **kwargs):
-            submitted.append((fn, args, kwargs))
-            return MagicMock()
+        def fake_register(task):
+            calls["registered"].append(task)
 
-        monkeypatch.setattr(byte_streamer_module.stream_thread_pool, "submit", fake_submit)
-        return submitted
+        def fake_unregister(task):
+            calls["unregistered"].append(task)
 
-    def _make_reliable_task(self, monkeypatch, no_retry_worker):
+        def fake_wakeup():
+            calls["wakeups"] += 1
+
+        monkeypatch.setattr(byte_streamer_module.reliable_retry_scheduler, "register", fake_register)
+        monkeypatch.setattr(byte_streamer_module.reliable_retry_scheduler, "unregister", fake_unregister)
+        monkeypatch.setattr(byte_streamer_module.reliable_retry_scheduler, "wakeup", fake_wakeup)
+        return calls
+
+    def _make_reliable_task(self, monkeypatch, retry_scheduler):
         monkeypatch.setattr(CommConfigurator, "get_streaming_window_size", lambda self, default: 1024)
         monkeypatch.setattr(CommConfigurator, "get_streaming_ack_wait", lambda self, default: 1.0)
         monkeypatch.setattr(CommConfigurator, "get_streaming_ack_progress_timeout", lambda self, default: 10.0)
@@ -251,7 +258,7 @@ class TestReliableByteStreamer:
             secure=False,
             optional=False,
         )
-        assert no_retry_worker[0][0] == task.retry_task
+        assert retry_scheduler["registered"] == [task]
         return task, cell
 
     def _patch_common_config(self, monkeypatch):
@@ -279,7 +286,7 @@ class TestReliableByteStreamer:
             optional=False,
         )
 
-    def test_reliable_default_comes_from_config(self, monkeypatch, no_retry_worker):
+    def test_reliable_default_comes_from_config(self, monkeypatch, retry_scheduler):
         self._patch_common_config(monkeypatch)
         monkeypatch.setattr(CommConfigurator, "get_streaming_reliable", lambda self, default: False)
 
@@ -287,9 +294,24 @@ class TestReliableByteStreamer:
 
         assert task.reliable is False
         assert task.pending_messages is None
-        assert no_retry_worker == []
+        assert retry_scheduler["registered"] == []
 
-    def test_explicit_reliable_overrides_config(self, monkeypatch, no_retry_worker):
+    def test_reliable_default_is_opt_in_when_config_omitted(self, monkeypatch, retry_scheduler):
+        self._patch_common_config(monkeypatch)
+
+        def get_streaming_reliable(_self, default):
+            assert default is False
+            return default
+
+        monkeypatch.setattr(CommConfigurator, "get_streaming_reliable", get_streaming_reliable)
+
+        task = self._make_task_with_reliable(None, monkeypatch)
+
+        assert task.reliable is False
+        assert task.pending_messages is None
+        assert retry_scheduler["registered"] == []
+
+    def test_explicit_reliable_overrides_config(self, monkeypatch, retry_scheduler):
         self._patch_common_config(monkeypatch)
         monkeypatch.setattr(CommConfigurator, "get_streaming_reliable", lambda self, default: False)
 
@@ -297,9 +319,9 @@ class TestReliableByteStreamer:
 
         assert task.reliable is True
         assert task.pending_messages == {}
-        assert no_retry_worker[0][0] == task.retry_task
+        assert retry_scheduler["registered"] == [task]
 
-    def test_retry_pending_byte_limit_comes_from_config(self, monkeypatch, no_retry_worker):
+    def test_retry_pending_byte_limit_comes_from_config(self, monkeypatch, retry_scheduler):
         self._patch_common_config(monkeypatch)
         monkeypatch.setattr(CommConfigurator, "get_streaming_retry_max_pending_bytes", lambda self, default: 7)
 
@@ -307,8 +329,8 @@ class TestReliableByteStreamer:
 
         assert task.retry_max_pending_bytes == 7
 
-    def test_reliable_stream_waits_for_sequence_ack_before_completion(self, monkeypatch, no_retry_worker):
-        task, cell = self._make_reliable_task(monkeypatch, no_retry_worker)
+    def test_reliable_stream_waits_for_sequence_ack_before_completion(self, monkeypatch, retry_scheduler):
+        task, cell = self._make_reliable_task(monkeypatch, retry_scheduler)
         cell.fire_and_forget.return_value = {"peer": "temporary failure"}
 
         task.buffer[0:1] = b"x"
@@ -338,8 +360,8 @@ class TestReliableByteStreamer:
         assert task.pending_messages == {}
         assert task.stream_future.result(timeout=0.1) == 1
 
-    def test_reliable_stream_snapshots_retry_payload(self, monkeypatch, no_retry_worker):
-        task, _ = self._make_reliable_task(monkeypatch, no_retry_worker)
+    def test_reliable_stream_snapshots_retry_payload(self, monkeypatch, retry_scheduler):
+        task, _ = self._make_reliable_task(monkeypatch, retry_scheduler)
 
         task.buffer[0:4] = b"abcd"
         task.buffer_size = 4
@@ -350,8 +372,8 @@ class TestReliableByteStreamer:
 
         assert message.payload == b"abcd"
 
-    def test_reliable_stream_rejects_ack_without_sequence(self, monkeypatch, no_retry_worker):
-        task, _ = self._make_reliable_task(monkeypatch, no_retry_worker)
+    def test_reliable_stream_rejects_ack_without_sequence(self, monkeypatch, retry_scheduler):
+        task, _ = self._make_reliable_task(monkeypatch, retry_scheduler)
         task.pending_messages[0] = (time.monotonic(), time.monotonic(), Message(None, b"x"))
 
         ack = Message({MessageHeaderKey.ORIGIN: "peer", StreamHeaderKey.OFFSET: 1}, None)
@@ -361,7 +383,7 @@ class TestReliableByteStreamer:
         assert err is not None
         assert "doesn't support reliable streaming" in str(err)
 
-    def test_retry_pending_byte_limit_stops_stream(self, monkeypatch, no_retry_worker):
+    def test_retry_pending_byte_limit_stops_stream(self, monkeypatch, retry_scheduler):
         self._patch_common_config(monkeypatch)
         monkeypatch.setattr(CommConfigurator, "get_streaming_retry_max_pending_bytes", lambda self, default: 1)
 
@@ -377,18 +399,15 @@ class TestReliableByteStreamer:
         assert task.pending_messages == {}
         assert task.stopped is True
 
-    def test_stop_cancels_retry_task_future_and_wakes_retry_worker(self, monkeypatch, no_retry_worker):
-        task, _ = self._make_reliable_task(monkeypatch, no_retry_worker)
-        task.retry_task_future = MagicMock()
-        task.retry_wakeup = MagicMock()
+    def test_stop_unregisters_retry_task(self, monkeypatch, retry_scheduler):
+        task, _ = self._make_reliable_task(monkeypatch, retry_scheduler)
 
         task.stop(StreamError("failed"))
 
-        task.retry_task_future.cancel.assert_called_once()
-        task.retry_wakeup.set.assert_called_once()
+        assert retry_scheduler["unregistered"] == [task]
 
-    def test_retry_task_resends_due_pending_message(self, monkeypatch, no_retry_worker):
-        task, cell = self._make_reliable_task(monkeypatch, no_retry_worker)
+    def test_retry_task_resends_due_pending_message(self, monkeypatch, retry_scheduler):
+        task, cell = self._make_reliable_task(monkeypatch, retry_scheduler)
         message = Message(
             {
                 StreamHeaderKey.STREAM_ID: task.sid,
@@ -401,10 +420,8 @@ class TestReliableByteStreamer:
         task.retry_timeout = 10.0
 
         monkeypatch.setattr(byte_streamer_module.time, "monotonic", lambda: 1.0)
-        task.retry_wakeup = MagicMock()
-        task.retry_wakeup.wait.side_effect = lambda _timeout: setattr(task, "stopped", True) or True
 
-        task.retry_task()
+        assert task.retry_task() == task.retry_wait
 
         cell.fire_and_forget.assert_called_with(
             STREAM_CHANNEL,
@@ -414,3 +431,25 @@ class TestReliableByteStreamer:
             secure=False,
             optional=False,
         )
+
+    def test_retry_task_failure_fails_stream_future(self, monkeypatch, retry_scheduler):
+        task, cell = self._make_reliable_task(monkeypatch, retry_scheduler)
+        message = Message(
+            {
+                StreamHeaderKey.STREAM_ID: task.sid,
+                StreamHeaderKey.SEQUENCE: 0,
+            },
+            b"x",
+        )
+        task.pending_messages[0] = (0.0, 0.0, message)
+        task.retry_wait = 0.01
+        task.retry_timeout = 10.0
+
+        monkeypatch.setattr(byte_streamer_module.time, "monotonic", lambda: 1.0)
+        cell.fire_and_forget.side_effect = RuntimeError("boom")
+
+        task.retry_task()
+
+        err = task.stream_future.exception(timeout=0.1)
+        assert err is not None
+        assert "retry thread ended due to error: boom" in str(err)
