@@ -371,6 +371,8 @@ class TestReliableByteStreamer:
         task.buffer[0:4] = b"wxyz"
 
         assert message.payload == b"abcd"
+        assert message.get_header(StreamHeaderKey.RETRY_WAIT) == task.retry_wait
+        assert message.get_header(StreamHeaderKey.RETRY_TIMEOUT) == task.retry_timeout
 
     def test_reliable_stream_rejects_ack_without_sequence(self, monkeypatch, retry_scheduler):
         task, _ = self._make_reliable_task(monkeypatch, retry_scheduler)

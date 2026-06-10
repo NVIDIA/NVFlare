@@ -55,20 +55,32 @@ def _make_message(origin: str, sid: int, error: str = None) -> Message:
     return message
 
 
-def _make_chunk(origin: str, sid: int, seq: int, data_type: int, payload: bytes = b"x", reliable: bool = True):
+def _make_chunk(
+    origin: str,
+    sid: int,
+    seq: int,
+    data_type: int,
+    payload: bytes = b"x",
+    reliable: bool = True,
+    retry_wait: float = None,
+    retry_timeout: float = None,
+):
     message = Message(None, payload)
-    message.add_headers(
-        {
-            MessageHeaderKey.ORIGIN: origin,
-            StreamHeaderKey.STREAM_ID: sid,
-            StreamHeaderKey.SEQUENCE: seq,
-            StreamHeaderKey.DATA_TYPE: data_type,
-            StreamHeaderKey.CHANNEL: "ch",
-            StreamHeaderKey.TOPIC: "tp",
-            StreamHeaderKey.SIZE: len(payload),
-            StreamHeaderKey.RELIABLE: reliable,
-        }
-    )
+    headers = {
+        MessageHeaderKey.ORIGIN: origin,
+        StreamHeaderKey.STREAM_ID: sid,
+        StreamHeaderKey.SEQUENCE: seq,
+        StreamHeaderKey.DATA_TYPE: data_type,
+        StreamHeaderKey.CHANNEL: "ch",
+        StreamHeaderKey.TOPIC: "tp",
+        StreamHeaderKey.SIZE: len(payload),
+        StreamHeaderKey.RELIABLE: reliable,
+    }
+    if retry_wait is not None:
+        headers[StreamHeaderKey.RETRY_WAIT] = retry_wait
+    if retry_timeout is not None:
+        headers[StreamHeaderKey.RETRY_TIMEOUT] = retry_timeout
+    message.add_headers(headers)
     return message
 
 
@@ -249,6 +261,20 @@ def test_reliable_final_chunk_sends_sequence_ack():
     assert ack.get_header(StreamHeaderKey.OFFSET) == 0
 
 
+def test_reliable_final_ack_uses_received_offset_before_read():
+    cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={}))
+    message = _make_chunk("site-1", sid=508, seq=0, data_type=StreamDataType.FINAL, payload=b"abc", reliable=True)
+    task = RxTask.find_or_create_task(message, cell)
+
+    assert task.process_chunk(message) is True
+
+    ack = cell.fire_and_forget.call_args.args[3]
+    assert task.offset == 0
+    assert task.received_offset == 3
+    assert ack.get_header(StreamHeaderKey.SEQUENCE) == 0
+    assert ack.get_header(StreamHeaderKey.OFFSET) == 3
+
+
 def test_send_ack_updates_ack_state_only_on_success():
     cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={"site-1": "send failed"}))
     task = RxTask(sid=504, origin="site-1", cell=cell, reliable=True)
@@ -285,6 +311,19 @@ def test_reliable_completed_task_reacks_duplicate_final_chunk():
     assert duplicate_ack.get_header(StreamHeaderKey.OFFSET) == 0
 
 
+def test_reliable_completed_task_reacks_with_received_offset():
+    cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={}))
+    message = _make_chunk("site-1", sid=509, seq=0, data_type=StreamDataType.FINAL, payload=b"abc", reliable=True)
+    task = RxTask.find_or_create_task(message, cell)
+
+    assert task.process_chunk(message) is True
+    assert task.process_chunk(message) is False
+
+    duplicate_ack = cell.fire_and_forget.call_args.args[3]
+    assert duplicate_ack.get_header(StreamHeaderKey.SEQUENCE) == 0
+    assert duplicate_ack.get_header(StreamHeaderKey.OFFSET) == 3
+
+
 def test_completed_task_ttl_has_retry_wait_headroom(monkeypatch):
     monkeypatch.setattr(CommConfigurator, "get_streaming_retry_timeout", lambda self, default: 12.0)
     monkeypatch.setattr(CommConfigurator, "get_streaming_retry_wait", lambda self, default: 3.0)
@@ -292,3 +331,26 @@ def test_completed_task_ttl_has_retry_wait_headroom(monkeypatch):
     task = RxTask(sid=507, origin="site-1", cell=SimpleNamespace(), reliable=True)
 
     assert task.completed_task_ttl == 15.0
+
+
+def test_completed_task_ttl_uses_sender_retry_window(monkeypatch):
+    monkeypatch.setattr(CommConfigurator, "get_streaming_retry_timeout", lambda self, default: 1.0)
+    monkeypatch.setattr(CommConfigurator, "get_streaming_retry_wait", lambda self, default: 1.0)
+    cell = SimpleNamespace()
+    message = _make_chunk(
+        "site-1",
+        sid=510,
+        seq=0,
+        data_type=StreamDataType.CHUNK,
+        payload=b"x",
+        reliable=True,
+        retry_wait=4.0,
+        retry_timeout=20.0,
+    )
+    task = RxTask.find_or_create_task(message, cell)
+
+    assert task.completed_task_ttl == 2.0
+
+    task.process_chunk(message)
+
+    assert task.completed_task_ttl == 24.0

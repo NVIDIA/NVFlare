@@ -76,6 +76,7 @@ class RxTask:
         self.stream_future = None
         self.next_seq = 0
         self.offset = 0
+        self.received_offset = 0
         self.offset_ack = 0
         self.seq = -1
         self.seq_ack = -1
@@ -155,7 +156,7 @@ class RxTask:
                 if self.stream_future:
                     log.warning(f"{self} Received duplicate chunk 0, ignored")
                     if self.reliable:
-                        self._send_ack(self.offset, self.seq)
+                        self._send_ack(self._get_ack_offset(), self.seq)
                     return new_stream
 
                 self._handle_new_stream(message)
@@ -169,6 +170,10 @@ class RxTask:
         self.topic = message.get_header(StreamHeaderKey.TOPIC)
         self.headers = message.headers
         self.size = message.get_header(StreamHeaderKey.SIZE, 0)
+        retry_timeout = message.get_header(StreamHeaderKey.RETRY_TIMEOUT, None)
+        retry_wait = message.get_header(StreamHeaderKey.RETRY_WAIT, None)
+        if retry_timeout is not None and retry_wait is not None:
+            self.completed_task_ttl = float(retry_timeout) + float(retry_wait)
 
         self.stream_future = StreamFuture(self.sid, self.headers)
         self.stream_future.set_size(self.size)
@@ -182,7 +187,7 @@ class RxTask:
         if seq < self.next_seq:
             log.debug(f"{self} Duplicate chunk ignored {seq=}")
             if self.reliable:
-                self._send_ack(self.offset, self.seq)
+                self._send_ack(self._get_ack_offset(), self.seq)
             return
 
         if seq == self.next_seq:
@@ -213,7 +218,7 @@ class RxTask:
 
         if not error:
             if self.seq != self.seq_ack:
-                self._send_ack(self.offset, self.seq)
+                self._send_ack(self.received_offset, self.seq)
             if self.reliable:
                 self.completed = True
                 self._schedule_remove_task()
@@ -315,6 +320,8 @@ class RxTask:
             return
 
         self.chunks.append(buf)
+        _last_chunk, payload = buf
+        self.received_offset += len(payload) if payload else 0
         if seq <= self.seq:
             log.error(f"Sequence error: {seq} <= {self.seq}")
         self.seq = seq
@@ -323,6 +330,9 @@ class RxTask:
         # Wake up blocking read()
         if not self.waiter.is_set():
             self.waiter.set()
+
+    def _get_ack_offset(self):
+        return self.received_offset if self.completed else self.offset
 
     def _send_ack(self, offset, seq):
         message = Message()

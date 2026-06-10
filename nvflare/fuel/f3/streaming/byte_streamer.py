@@ -287,6 +287,8 @@ class TxTask(StreamTaskSpec):
                 StreamHeaderKey.SEQUENCE: self.seq,
                 StreamHeaderKey.OFFSET: self.offset,
                 StreamHeaderKey.RELIABLE: self.reliable,
+                StreamHeaderKey.RETRY_WAIT: self.retry_wait,
+                StreamHeaderKey.RETRY_TIMEOUT: self.retry_timeout,
                 StreamHeaderKey.OPTIONAL: self.optional,
             }
         )
