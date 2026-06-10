@@ -343,6 +343,10 @@ class OidcAdminAuthProvider:
                 # Accept either form so an OP whose canonical iss ends in '/' still matches.
                 issuer=[issuer, issuer + "/"],
                 options={
+                    # verify_aud is disabled so PyJWT does not require a pre-supplied audience
+                    # string. Audience is verified below by _token_bound_to_client, which
+                    # additionally validates the azp claim when the token has multiple
+                    # audiences. Do not remove that call assuming audience is unchecked here.
                     "verify_aud": False,
                     "require": list(REQUIRED_ID_TOKEN_CLAIMS),
                 },

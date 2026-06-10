@@ -263,6 +263,12 @@ does not target the receiving site. This is not configurable: the server fails
 a deploy with a clear error when it has no identity material to sign with,
 rather than shipping a deploy every client would reject.
 
+**Upgrade ordering.** Because a pre-OIDC server does not attach the manifest and
+clients require it, the **server must be upgraded before the FL clients**.
+Upgrading a client ahead of the server makes that client reject every deploy
+("missing server job authorization") until the server is upgraded too. Upgrade
+the server first, then roll out client upgrades.
+
 Manifest timestamps are checked with a 5-minute clock-skew allowance and a
 1-hour default TTL, so deployments require client clocks within roughly 5
 minutes of the server clock; verification errors report the computed skew, and

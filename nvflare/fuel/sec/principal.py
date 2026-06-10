@@ -145,7 +145,9 @@ class Principal:
 
     def to_submitter_dict(self) -> dict:
         data = self.to_dict()
-        submitter_keys = ("subject", "username", "email", "org", "effective_role", "auth_method", "issuer")
+        # token_id (the OIDC jti) is the per-token audit trail recorded in the signed job
+        # authorization manifest, linking a deployed job back to a specific ID token.
+        submitter_keys = ("subject", "username", "email", "org", "effective_role", "auth_method", "issuer", "token_id")
         return {k: data[k] for k in submitter_keys if k in data}
 
     def policy_name(self) -> str:

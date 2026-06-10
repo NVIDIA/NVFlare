@@ -179,7 +179,11 @@ class DeployProcessor(RequestProcessor):
                     return error_reply(f"app {app_name} does not pass server authorization verification: {ex}")
             else:
                 # Server-signed job authorization is required for every directly deployed job
-                # (see docs/design/federated_admin_auth.md); only hub jobs are exempt.
+                # (see docs/design/federated_admin_auth.md); only hub jobs are exempt. This is
+                # intentionally not configurable. A pre-OIDC server does not attach the manifest,
+                # so the SERVER must be upgraded before the FL clients during a rolling upgrade;
+                # upgrading a client ahead of the server will reject deploys until the server is
+                # upgraded too.
                 return error_reply(f"app {app_name} is missing server job authorization")
 
             sig_file = os.path.join(app_path, NVFLARE_SIG_FILE)

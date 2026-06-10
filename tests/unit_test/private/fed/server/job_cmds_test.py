@@ -1230,8 +1230,9 @@ def test_clone_job_uses_sanitized_submitter_principal(monkeypatch):
     assert submitter == principal.to_submitter_dict()
     assert "raw_roles" not in submitter
     assert "groups" not in submitter
-    assert "token_id" not in submitter
     assert "token_exp" not in submitter
+    # token_id (jti) is intentionally retained as the per-token audit trail
+    assert submitter["token_id"] == "token-id"
 
 
 def test_list_jobs_filters_legacy_jobs_into_default_study(monkeypatch):

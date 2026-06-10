@@ -54,7 +54,7 @@ def test_principal_round_trip_preserves_oidc_metadata():
     assert restored.token_exp == 456.0
 
 
-def test_submitter_dict_excludes_raw_idp_claims_and_token_metadata():
+def test_submitter_dict_keeps_token_id_but_excludes_raw_idp_claims():
     principal = Principal(
         subject="keycloak-subject",
         username="admin@nvidia.com",
@@ -72,6 +72,8 @@ def test_submitter_dict_excludes_raw_idp_claims_and_token_metadata():
 
     data = principal.to_submitter_dict()
 
+    # token_id (jti) is kept as the per-token audit trail in the signed manifest;
+    # raw IdP claims (raw_roles, groups) and transient token timing are excluded.
     assert data == {
         "subject": "keycloak-subject",
         "username": "admin@nvidia.com",
@@ -80,6 +82,7 @@ def test_submitter_dict_excludes_raw_idp_claims_and_token_metadata():
         "effective_role": "project_admin",
         "auth_method": "oidc",
         "issuer": "https://keycloak.example.com/realms/nvflare",
+        "token_id": "token-id",
     }
 
 
