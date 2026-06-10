@@ -332,7 +332,15 @@ class RxTask:
                 StreamHeaderKey.ERROR_MSG: error_msg,
             }
         )
-        self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_ACK_TOPIC, self.origin, message)
+        try:
+            errors = self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_ACK_TOPIC, self.origin, message)
+        except Exception as ex:
+            log.error(f"{self} failed to send error to {self.origin}: {ex}")
+        else:
+            errors = errors or {}
+            error = errors.get(self.origin)
+            if error:
+                log.error(f"{self} failed to send error to {self.origin}: {error}")
 
     def _remove_task(self):
         with self.stop_lock:
