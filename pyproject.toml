@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel", "versioneer"]
+requires = ["setuptools>=61.0", "wheel", "versioneer", "PyYAML>=6.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.isort]
@@ -8,7 +8,14 @@ profile = "black"
 multi_line_output = 3
 line_length = 120
 skip = [".git", ".eggs", "venv", ".venv", "versioneer.py", "_version.py", "conf.py", "nvflare/__init__.py"]
-skip_glob = [ "*.pyi", "**/*_pb2*" ]
+skip_glob = [
+    "*.pyi",
+    "**/*_pb2*",
+    "tests/agent_benchmark/results/*",
+    "tests/agent_benchmark/results/**",
+    "assist_tools/skills_benchmark/results/*",
+    "assist_tools/skills_benchmark/results/**",
+]
 
 [tool.black]
 line-length = 120
@@ -29,6 +36,8 @@ exclude = '''
     | buck-out
     | build
     | dist
+    | tests/agent_benchmark/results
+    | assist_tools/skills_benchmark/results
   )/
   | .pb2.
   | _version.py
