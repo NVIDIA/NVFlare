@@ -65,6 +65,9 @@ class FedTaskRecipe(Recipe):
     lifecycle, such as embedding extraction, preprocessing, feature generation, local
     evaluation, or other client-side jobs coordinated by the server.
 
+    Users are responsible for ensuring that ``task_script`` accepts the supplied
+    ``task_args`` and any ``task_data`` or ``task_meta`` payloads it consumes.
+
     Args:
         name: Name of the federated job. Defaults to "fed_task".
         task_name: Name of the task sent to clients. Defaults to "task".
