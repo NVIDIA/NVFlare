@@ -15,13 +15,17 @@
 from nvflare.app_common.utils.tensor_disk_offload_context import (
     _TENSOR_DISK_OFFLOAD_ROOT_DIR,
     apply_enable_tensor_disk_offload,
+    cleanup_tensor_disk_offload,
     restore_enable_tensor_disk_offload,
+    setup_tensor_disk_offload,
 )
 
 
 class _MockCell:
-    def __init__(self, enable_tensor_disk_offload: bool):
+    def __init__(self, enable_tensor_disk_offload: bool, root_dir=None):
         self.ctx = {"enable_tensor_disk_offload": enable_tensor_disk_offload}
+        if root_dir is not None:
+            self.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR] = root_dir
         self.update_calls = 0
 
     def get_fobs_context(self):
@@ -98,6 +102,39 @@ def test_restore_sets_previous_value():
 
     restore_enable_tensor_disk_offload(_MockEngine(cell), previous, root_dir=root_dir)
     assert cell.ctx["enable_tensor_disk_offload"] is False
+
+
+def test_setup_disabled_does_not_touch_cell():
+    cell = _MockCell(enable_tensor_disk_offload=True, root_dir="/tmp/owner")
+
+    context = setup_tensor_disk_offload(engine=_MockEngine(cell), enabled=False)
+
+    assert context.applied is False
+    assert cell.ctx["enable_tensor_disk_offload"] is True
+    assert cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR] == "/tmp/owner"
+    assert cell.update_calls == 0
+
+
+def test_setup_cleanup_restores_previous_root_dir(tmp_path, monkeypatch):
+    cell = _MockCell(enable_tensor_disk_offload=True, root_dir="/tmp/owner")
+    root_dir = tmp_path / "nvflare_tensor_offload_root"
+
+    def fake_mkdtemp(prefix):
+        root_dir.mkdir()
+        return str(root_dir)
+
+    monkeypatch.setattr("nvflare.app_common.utils.tensor_disk_offload_context.tempfile.mkdtemp", fake_mkdtemp)
+
+    context = setup_tensor_disk_offload(engine=_MockEngine(cell), enabled=True, job_id="job")
+    assert context.applied is True
+    assert cell.ctx["enable_tensor_disk_offload"] is True
+    assert cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR] == str(root_dir)
+
+    cleanup_tensor_disk_offload(engine=_MockEngine(cell), context=context)
+
+    assert cell.ctx["enable_tensor_disk_offload"] is True
+    assert cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR] == "/tmp/owner"
+    assert not root_dir.exists()
 
 
 def test_apply_and_restore_noop_when_unavailable():

@@ -185,6 +185,8 @@ FedProx
 
 FedProx is FedAvg with a proximal term added to the client loss function to handle data heterogeneity.
 It uses the standard FedAvgRecipe with the FedProx loss helper on the client side.
+Because PyTorch FedProx uses ``FedAvgRecipe``, it also supports ``enable_tensor_disk_offload=True`` for
+streamed PyTorch tensor updates, with the same behavior and constraints as PyTorch FedAvg.
 
 PyTorch FedProx
 ---------------
@@ -284,6 +286,12 @@ PyTorch FedOpt
     )
     env = SimEnv(num_clients=2)
     run = recipe.execute(env)
+
+.. note::
+   PyTorch FedOpt supports ``enable_tensor_disk_offload=True`` for streamed PyTorch tensor updates.
+   Import ``ExchangeFormat`` from ``nvflare.client.config`` and configure
+   ``server_expected_format=ExchangeFormat.PYTORCH`` so the server path preserves tensors instead of converting
+   updates to NumPy before aggregation.
 
 **Examples:**
 

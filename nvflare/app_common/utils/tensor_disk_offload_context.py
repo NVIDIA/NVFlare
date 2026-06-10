@@ -12,10 +12,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import shutil
+import tempfile
+from dataclasses import dataclass
 from typing import Any, Tuple
 
 _ENABLE_TENSOR_DISK_OFFLOAD = "enable_tensor_disk_offload"
 _TENSOR_DISK_OFFLOAD_ROOT_DIR = "tensor_disk_offload_root_dir"
+
+
+@dataclass
+class TensorDiskOffloadContext:
+    previous_value: Any = None
+    previous_root_dir: str = None
+    root_dir: str = None
+    applied: bool = False
+
+
+def _get_cell(engine):
+    if not engine:
+        return None
+
+    run_manager = getattr(engine, "run_manager", None)
+    if run_manager and run_manager.cell:
+        return run_manager.cell
+    return engine.get_cell()
 
 
 def apply_enable_tensor_disk_offload(
@@ -28,14 +49,7 @@ def apply_enable_tensor_disk_offload(
     Returns:
       (previous value, applied flag).
     """
-    if not engine:
-        return None, False
-
-    run_manager = getattr(engine, "run_manager", None)
-    if run_manager and run_manager.cell:
-        cell = run_manager.cell
-    else:
-        cell = engine.get_cell()
+    cell = _get_cell(engine)
     if not cell:
         return None, False
 
@@ -49,25 +63,78 @@ def apply_enable_tensor_disk_offload(
     return previous, True
 
 
-def restore_enable_tensor_disk_offload(engine, previous_value: Any, root_dir: str = None) -> None:
+def restore_enable_tensor_disk_offload(
+    engine,
+    previous_value: Any,
+    root_dir: str = None,
+    previous_root_dir: str = None,
+) -> None:
     """Restore prior enable_tensor_disk_offload value on a cell."""
     # previous_value is None only when apply was not executed because no
     # engine/cell was available; False is a valid prior value and must restore.
-    if not engine or previous_value is None:
+    if previous_value is None:
         return
 
-    run_manager = getattr(engine, "run_manager", None)
-    if run_manager and run_manager.cell:
-        cell = run_manager.cell
-    else:
-        cell = engine.get_cell()
+    cell = _get_cell(engine)
     if not cell:
         return
 
     if root_dir:
-        cell.update_fobs_context({_ENABLE_TENSOR_DISK_OFFLOAD: previous_value, _TENSOR_DISK_OFFLOAD_ROOT_DIR: None})
+        cell.update_fobs_context(
+            {
+                _ENABLE_TENSOR_DISK_OFFLOAD: previous_value,
+                _TENSOR_DISK_OFFLOAD_ROOT_DIR: previous_root_dir,
+            }
+        )
         return
 
     current = cell.get_fobs_context().get(_ENABLE_TENSOR_DISK_OFFLOAD, False)
     if current != previous_value:
         cell.update_fobs_context({_ENABLE_TENSOR_DISK_OFFLOAD: previous_value})
+
+
+def setup_tensor_disk_offload(engine, enabled: bool, job_id: str = "job") -> TensorDiskOffloadContext:
+    """Apply tensor disk offload to the active cell FOBS context.
+
+    Returns:
+      Context needed to restore the prior setting and cleanup temporary files.
+    """
+    if not enabled:
+        return TensorDiskOffloadContext()
+
+    root_dir = tempfile.mkdtemp(prefix=f"nvflare_tensor_offload_{job_id}_")
+    try:
+        cell = _get_cell(engine)
+        previous_root_dir = cell.get_fobs_context().get(_TENSOR_DISK_OFFLOAD_ROOT_DIR) if cell else None
+        previous_value, applied = apply_enable_tensor_disk_offload(
+            engine=engine,
+            enabled=enabled,
+            root_dir=root_dir,
+        )
+    except Exception:
+        if root_dir:
+            shutil.rmtree(root_dir, ignore_errors=True)
+        raise
+    return TensorDiskOffloadContext(
+        previous_value=previous_value,
+        previous_root_dir=previous_root_dir,
+        root_dir=root_dir,
+        applied=applied,
+    )
+
+
+def cleanup_tensor_disk_offload(engine, context: TensorDiskOffloadContext) -> None:
+    """Restore tensor disk offload context and remove any temporary offload root."""
+    if not context:
+        return
+
+    try:
+        restore_enable_tensor_disk_offload(
+            engine=engine,
+            previous_value=context.previous_value,
+            root_dir=context.root_dir,
+            previous_root_dir=context.previous_root_dir,
+        )
+    finally:
+        if context.root_dir:
+            shutil.rmtree(context.root_dir, ignore_errors=True)

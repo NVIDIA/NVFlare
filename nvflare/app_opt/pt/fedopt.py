@@ -212,29 +212,46 @@ class PTFedOptModelShareableGenerator(FullModelShareableGenerator):
             return Learnable()
 
         model_diff = dxo.data
-
-        start = time.time()
-        weights, updated_params = self.server_update(model_diff)
-        secs = time.time() - start
-
-        # convert to numpy dict of weights
-        start = time.time()
-        for key in weights:
-            weights[key] = weights[key].detach().cpu().numpy()
-        secs_detach = time.time() - start
-
-        # update unnamed parameters such as batch norm layers if there are any using the averaged update
         base_model = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
         if not base_model:
             self.system_panic(reason="No global base model!", fl_ctx=fl_ctx)
             return base_model
 
         base_model_weights = base_model[ModelLearnableKey.WEIGHTS]
+        preserve_torch_weights = any(isinstance(value, torch.Tensor) for value in base_model_weights.values())
+        if not base_model_weights:
+            preserve_torch_weights = any(isinstance(value, torch.Tensor) for value in model_diff.values())
 
+        start = time.time()
+        weights, updated_params = self.server_update(model_diff)
+        secs = time.time() - start
+
+        # Keep the updated model in the same representation as the current global model.
+        start = time.time()
+        for key in weights:
+            if preserve_torch_weights:
+                weights[key] = weights[key].detach().cpu().clone()
+            else:
+                weights[key] = weights[key].detach().cpu().numpy()
+        secs_detach = time.time() - start
+
+        # update unnamed parameters such as batch norm layers if there are any using the averaged update
         n_fedavg = 0
         for key, value in model_diff.items():
             if key not in updated_params:
-                weights[key] = base_model_weights[key] + value
+                if preserve_torch_weights:
+                    base_value = base_model_weights[key]
+                    if isinstance(base_value, torch.Tensor):
+                        base_value = base_value.detach().cpu()
+                    else:
+                        base_value = torch.as_tensor(base_value)
+                    if isinstance(value, torch.Tensor):
+                        value = value.detach().cpu()
+                    else:
+                        value = torch.as_tensor(value)
+                    weights[key] = base_value + value
+                else:
+                    weights[key] = base_model_weights[key] + value
                 n_fedavg += 1
 
         self.log_info(

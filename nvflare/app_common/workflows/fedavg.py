@@ -13,8 +13,6 @@
 # limitations under the License.
 
 import os
-import shutil
-import tempfile
 import time
 from typing import Any, Dict, Optional, Set, Union
 
@@ -28,10 +26,7 @@ from nvflare.app_common.aggregators.weighted_aggregation_helper import (
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.math_utils import parse_compare_criteria
-from nvflare.app_common.utils.tensor_disk_offload_context import (
-    apply_enable_tensor_disk_offload,
-    restore_enable_tensor_disk_offload,
-)
+from nvflare.app_common.utils.tensor_disk_offload_context import cleanup_tensor_disk_offload, setup_tensor_disk_offload
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.log_utils import center_message
 
@@ -140,20 +135,14 @@ class FedAvg(BaseFedAvg):
         self._params_type = None  # Only store params_type, not full result
 
     def run(self) -> None:
-        disk_offload_root_dir = None
-        previous_disk_offload = None
+        disk_offload_context = None
         try:
-            disk_offload_root_dir = (
-                tempfile.mkdtemp(prefix=f"nvflare_tensor_offload_{self.fl_ctx.get_job_id('job')}_")
-                if self.enable_tensor_disk_offload
-                else None
-            )
-            previous_disk_offload, disk_offload_applied = apply_enable_tensor_disk_offload(
+            disk_offload_context = setup_tensor_disk_offload(
                 engine=getattr(self, "engine", None),
                 enabled=self.enable_tensor_disk_offload,
-                root_dir=disk_offload_root_dir,
+                job_id=self.fl_ctx.get_job_id("job"),
             )
-            if self.enable_tensor_disk_offload and not disk_offload_applied:
+            if self.enable_tensor_disk_offload and not disk_offload_context.applied:
                 self.warning(
                     "enable_tensor_disk_offload=True but no active cell is available; "
                     "falling back to in-memory tensor download"
@@ -253,13 +242,7 @@ class FedAvg(BaseFedAvg):
 
             self.info(center_message("Finished FedAvg."))
         finally:
-            restore_enable_tensor_disk_offload(
-                engine=getattr(self, "engine", None),
-                previous_value=previous_disk_offload,
-                root_dir=disk_offload_root_dir,
-            )
-            if disk_offload_root_dir:
-                shutil.rmtree(disk_offload_root_dir, ignore_errors=True)
+            cleanup_tensor_disk_offload(engine=getattr(self, "engine", None), context=disk_offload_context)
 
     def _aggregate_one_result(self, result: FLModel) -> None:
         """Callback: aggregate ONE client result immediately (InTime aggregation)."""

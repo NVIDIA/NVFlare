@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import warnings
 from typing import Any, Optional, Union
 
 from pydantic import BaseModel
@@ -49,6 +50,7 @@ class _FedOptValidator(BaseModel):
     server_memory_gc_rounds: int = 1
     client_memory_gc_rounds: int = 0
     cuda_empty_cache: bool = False
+    enable_tensor_disk_offload: bool = False
 
 
 class FedOptRecipe(Recipe):
@@ -91,6 +93,8 @@ class FedOptRecipe(Recipe):
             Defaults to None; will default to cuda if available and no device is specified.
         server_memory_gc_rounds: Run memory cleanup (gc.collect + malloc_trim) every N rounds on server.
             Set to 0 to disable. Defaults to 1 (every round).
+        enable_tensor_disk_offload (bool): Download streamed PyTorch tensors to disk on the server during
+            FOBS deserialization instead of keeping all incoming client tensors in memory. Defaults to False.
 
     Example:
         ```python
@@ -139,6 +143,7 @@ class FedOptRecipe(Recipe):
         server_memory_gc_rounds: int = 1,
         client_memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
+        enable_tensor_disk_offload: bool = False,
     ):
         # Validate inputs internally
         v = _FedOptValidator(
@@ -157,6 +162,7 @@ class FedOptRecipe(Recipe):
             server_memory_gc_rounds=server_memory_gc_rounds,
             client_memory_gc_rounds=client_memory_gc_rounds,
             cuda_empty_cache=cuda_empty_cache,
+            enable_tensor_disk_offload=enable_tensor_disk_offload,
         )
 
         self.name = v.name
@@ -187,6 +193,15 @@ class FedOptRecipe(Recipe):
         self.server_memory_gc_rounds = v.server_memory_gc_rounds
         self.client_memory_gc_rounds = v.client_memory_gc_rounds
         self.cuda_empty_cache = v.cuda_empty_cache
+        self.enable_tensor_disk_offload = v.enable_tensor_disk_offload
+        if self.enable_tensor_disk_offload and self.server_expected_format != ExchangeFormat.PYTORCH:
+            warnings.warn(
+                "enable_tensor_disk_offload=True only applies to streamed PyTorch tensors. "
+                "Set server_expected_format=ExchangeFormat.PYTORCH to enable tensor disk offload; "
+                f"current server_expected_format={self.server_expected_format!r} will not offload NumPy payloads.",
+                UserWarning,
+                stacklevel=2,
+            )
 
         # Replace {num_rounds} placeholder if present in lr_scheduler_args
         processed_lr_scheduler_args = None
@@ -238,6 +253,7 @@ class FedOptRecipe(Recipe):
         persistor = PTFileModelPersistor(
             model=self.source_model,
             source_ckpt_file_full_name=ckpt_path,
+            allow_numpy_conversion=self.server_expected_format != ExchangeFormat.PYTORCH,
         )
         persistor_id = job.to_server(persistor, id="persistor")
 
@@ -271,6 +287,7 @@ class FedOptRecipe(Recipe):
             persistor_id="persistor",
             shareable_generator_id=shareable_generator_id,
             memory_gc_rounds=self.server_memory_gc_rounds,
+            enable_tensor_disk_offload=self.enable_tensor_disk_offload,
         )
         # Send the controller to the server
         job.to_server(controller)

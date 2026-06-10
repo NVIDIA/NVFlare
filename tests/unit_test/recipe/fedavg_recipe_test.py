@@ -219,6 +219,18 @@ class TestFedAvgRecipe:
         # When no aggregator is passed, built-in weighted averaging is used
         assert recipe.aggregator is None
 
+    def test_tensor_disk_offload_warns_when_server_format_is_not_pytorch(
+        self, mock_file_system, base_recipe_params, simple_model
+    ):
+        """Tensor disk offload only applies to PyTorch tensor payloads."""
+        with pytest.warns(UserWarning, match="only applies to streamed PyTorch tensors"):
+            FedAvgRecipe(
+                name="test_fedavg_offload_numpy_warning",
+                model=simple_model,
+                enable_tensor_disk_offload=True,
+                **base_recipe_params,
+            )
+
     def test_key_metric_passthrough_pt(self, mock_file_system, base_recipe_params, simple_model):
         key_metric = "val_auc"
         recipe = FedAvgRecipe(
