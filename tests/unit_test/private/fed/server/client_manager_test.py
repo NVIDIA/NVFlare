@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -23,7 +24,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey
 from nvflare.private.defs import CellMessageHeaderKeys, ClientRegSession, ClientType, InternalFLContextKey
-from nvflare.private.fed.server.client_manager import ClientManager
+from nvflare.private.fed.server.client_manager import ADMIN_CLIENT_FQCN_TTL, ClientManager, _is_oidc_admin_auth_enabled
 
 
 def _make_request(client_name: str) -> MagicMock:
@@ -38,6 +39,13 @@ def _make_request(client_name: str) -> MagicMock:
         MessageHeaderKey.ORIGIN: f"{client_name}@site",
     }
     request.get_header.side_effect = lambda key: headers.get(key)
+    return request
+
+
+def _make_certless_request(client_name: str) -> MagicMock:
+    request = _make_request(client_name)
+    request.payload.pop(IdentityChallengeKey.CERT, None)
+    request.payload.pop(IdentityChallengeKey.SIGNATURE, None)
     return request
 
 
@@ -85,6 +93,68 @@ def test_authenticated_client_sets_empty_org_when_secure_mode_is_disabled():
 
     assert client is not None
     assert client.get_prop(ClientPropKey.ORG, "") == ""
+
+
+def test_secure_admin_without_cert_is_rejected_when_oidc_admin_auth_is_disabled():
+    manager = ClientManager(project_name="project", min_num_clients=1, max_num_clients=10)
+    request = _make_certless_request("admin-client-1")
+    fl_ctx = _make_fl_ctx(secure_mode=True, client_name="admin-client-1")
+
+    with patch("nvflare.private.fed.server.client_manager._is_oidc_admin_auth_enabled", return_value=False):
+        client = manager.authenticated_client(request, fl_ctx, ClientType.ADMIN)
+
+    assert client is None
+
+
+def test_secure_admin_without_cert_is_allowed_only_for_oidc_admin_auth():
+    manager = ClientManager(project_name="project", min_num_clients=1, max_num_clients=10)
+    request = _make_certless_request("admin-client-1")
+    fl_ctx = _make_fl_ctx(secure_mode=True, client_name="admin-client-1")
+
+    with (
+        patch("nvflare.private.fed.server.client_manager._is_oidc_admin_auth_enabled", return_value=True),
+        patch.object(manager, "_set_client_props"),
+    ):
+        client = manager.authenticated_client(request, fl_ctx, ClientType.ADMIN)
+
+    assert client is not None
+    assert client.get_prop(ClientPropKey.ORG, "") == ""
+
+
+@pytest.mark.parametrize(
+    "startup_conf,expected",
+    [
+        ({"auth": {"admin": {"type": "oidc"}}}, True),
+        ({"auth": {"type": "oidc"}}, True),
+        ({"auth": {"admin": {"type": "cert"}}}, False),
+        ({}, False),
+        (None, False),
+        # Malformed configs fail closed: the OIDC exemption stays disabled so certs remain required.
+        ({"auth": "oidc"}, False),
+        ({"auth": {"admin": "oidc"}}, False),
+        ({"auth": {"admin": {"type": "bogus"}}}, False),
+    ],
+)
+def test_is_oidc_admin_auth_enabled(startup_conf, expected):
+    with patch(
+        "nvflare.private.fed.server.client_manager.ConfigService.get_section",
+        return_value=startup_conf,
+    ):
+        assert _is_oidc_admin_auth_enabled() is expected
+
+
+def test_secure_admin_without_cert_is_rejected_when_auth_config_is_malformed():
+    manager = ClientManager(project_name="project", min_num_clients=1, max_num_clients=10)
+    request = _make_certless_request("admin-client-1")
+    fl_ctx = _make_fl_ctx(secure_mode=True, client_name="admin-client-1")
+
+    with patch(
+        "nvflare.private.fed.server.client_manager.ConfigService.get_section",
+        return_value={"auth": {"admin": "oidc"}},
+    ):
+        client = manager.authenticated_client(request, fl_ctx, ClientType.ADMIN)
+
+    assert client is None
 
 
 def test_disable_client_persists_and_removes_active_client(tmp_path):
@@ -236,6 +306,107 @@ def test_disabled_client_heartbeat_does_not_reactivate():
     assert reactivated is False
     assert "token-a" not in manager.clients
     fl_ctx.set_prop.assert_called_with(FLContextKey.UNAUTHENTICATED, "Client 'site-a' is disabled", sticky=False)
+
+
+def _make_authenticate_request(client_name: str, client_type: str, origin: str) -> MagicMock:
+    request = _make_request(client_name)
+    headers = {
+        CellMessageHeaderKeys.CLIENT_NAME: client_name,
+        CellMessageHeaderKeys.CLIENT_TYPE: client_type,
+        CellMessageHeaderKeys.PROJECT_NAME: "project",
+        CellMessageHeaderKeys.CLIENT_IP: "1.2.3.4",
+        MessageHeaderKey.ORIGIN: origin,
+    }
+    request.get_header.side_effect = lambda key: headers.get(key)
+    return request
+
+
+def test_authenticate_records_admin_origin_binding():
+    manager = ClientManager(project_name="project", min_num_clients=1, max_num_clients=10)
+    request = _make_authenticate_request("admin@nvidia.com", ClientType.ADMIN, "admin_abc123")
+    fl_ctx = _make_fl_ctx(secure_mode=False, client_name="admin@nvidia.com")
+
+    client = manager.authenticate(request, fl_ctx)
+
+    assert client is not None
+    # admin clients are still kept out of the regular clients map
+    assert client.token not in manager.clients
+    record = manager.admin_clients[client.token]
+    assert record.name == "admin@nvidia.com"
+    assert record.fqcn == "admin_abc123"
+    assert manager.resolve_admin_client_fqcn("admin@nvidia.com", client.token) == "admin_abc123"
+
+
+def test_authenticate_regular_client_does_not_touch_admin_map():
+    manager = ClientManager(project_name="project", min_num_clients=1, max_num_clients=10)
+    request = _make_authenticate_request("site-a", ClientType.REGULAR, "site-a")
+    fl_ctx = _make_fl_ctx(secure_mode=False, client_name="site-a")
+
+    client = manager.authenticate(request, fl_ctx)
+
+    assert client is not None
+    assert manager.clients[client.token] is client
+    assert manager.admin_clients == {}
+    assert manager.resolve_admin_client_fqcn("site-a", client.token) is None
+
+
+def test_resolve_admin_client_fqcn_requires_matching_name_and_token():
+    manager = ClientManager(project_name="project", min_num_clients=1, max_num_clients=10)
+    request = _make_authenticate_request("admin@nvidia.com", ClientType.ADMIN, "admin_abc123")
+    fl_ctx = _make_fl_ctx(secure_mode=False, client_name="admin@nvidia.com")
+    client = manager.authenticate(request, fl_ctx)
+
+    # a known token with a mismatched claimed name fails CLOSED (empty binding never matches)
+    assert manager.resolve_admin_client_fqcn("someone-else", client.token) == ""
+    # an unknown token is simply not an admin registration
+    assert manager.resolve_admin_client_fqcn("admin@nvidia.com", "unknown-token") is None
+
+
+def test_resolve_admin_client_fqcn_refreshes_last_used():
+    manager = ClientManager(project_name="project", min_num_clients=1, max_num_clients=10)
+    request = _make_authenticate_request("admin@nvidia.com", ClientType.ADMIN, "admin_abc123")
+    fl_ctx = _make_fl_ctx(secure_mode=False, client_name="admin@nvidia.com")
+    client = manager.authenticate(request, fl_ctx)
+
+    record = manager.admin_clients[client.token]
+    record.last_used -= ADMIN_CLIENT_FQCN_TTL - 10  # old, but not yet stale
+
+    assert manager.resolve_admin_client_fqcn("admin@nvidia.com", client.token) == "admin_abc123"
+    assert record.last_used == pytest.approx(time.time(), abs=5)
+
+
+def test_stale_admin_origin_binding_is_rejected_on_resolve():
+    manager = ClientManager(project_name="project", min_num_clients=1, max_num_clients=10)
+    fl_ctx = _make_fl_ctx(secure_mode=False, client_name="admin@nvidia.com")
+    request = _make_authenticate_request("admin@nvidia.com", ClientType.ADMIN, "admin_old")
+    old_client = manager.authenticate(request, fl_ctx)
+    record = manager.admin_clients[old_client.token]
+    record.last_used -= ADMIN_CLIENT_FQCN_TTL + 1
+    stale_time = record.last_used
+
+    # an expired binding fails CLOSED: the empty binding can never match a message
+    # origin, so the origin check rejects instead of being skipped (None would skip it)
+    assert manager.resolve_admin_client_fqcn("admin@nvidia.com", old_client.token) == ""
+    assert old_client.token in manager.admin_clients
+    # a rejected resolve must not refresh last_used (that would resurrect the binding)
+    assert record.last_used == stale_time
+
+
+def test_stale_admin_origin_bindings_are_kept_fail_closed():
+    # Stale bindings are deliberately NOT pruned: dropping the record would make the
+    # token "unknown" and skip origin validation entirely (fail open).
+    manager = ClientManager(project_name="project", min_num_clients=1, max_num_clients=10)
+    fl_ctx = _make_fl_ctx(secure_mode=False, client_name="admin@nvidia.com")
+
+    request = _make_authenticate_request("admin@nvidia.com", ClientType.ADMIN, "admin_stale")
+    stale_client = manager.authenticate(request, fl_ctx)
+    manager.admin_clients[stale_client.token].last_used -= ADMIN_CLIENT_FQCN_TTL + 1
+    request = _make_authenticate_request("admin@nvidia.com", ClientType.ADMIN, "admin_new")
+    new_client = manager.authenticate(request, fl_ctx)
+
+    assert set(manager.admin_clients) == {stale_client.token, new_client.token}
+    assert manager.resolve_admin_client_fqcn("admin@nvidia.com", stale_client.token) == ""
+    assert manager.resolve_admin_client_fqcn("admin@nvidia.com", new_client.token) == "admin_new"
 
 
 def test_set_client_props_sets_site_config():

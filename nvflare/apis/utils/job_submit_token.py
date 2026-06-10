@@ -14,13 +14,13 @@
 
 import hashlib
 import io
-import json
 import os
 import posixpath
 import re
 import zipfile
 from typing import Iterable, Optional, Tuple, Union
 
+from nvflare.fuel.utils.json_utils import canonical_json
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE, NVFLARE_SUBMITTER_CRT_FILE
 
 _VOLATILE_SUBMIT_ARTIFACTS = {NVFLARE_SIG_FILE, NVFLARE_SUBMITTER_CRT_FILE}
@@ -30,8 +30,7 @@ SUBMIT_TOKEN_ERROR = "submit_token must be non-empty, at most 128 characters, an
 
 
 def canonical_json_hash(value) -> str:
-    canonical = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
 
 
 def submitter_to_dict(submitter) -> dict:

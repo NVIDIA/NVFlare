@@ -22,16 +22,50 @@ from contextlib import suppress
 from typing import Optional
 
 from nvflare.apis.client import Client, ClientPropKey
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey
+from nvflare.fuel.sec.authn import ADMIN_AUTH_TYPE_OIDC, AuthError, get_admin_auth_type
 from nvflare.fuel.utils.admin_name_utils import is_valid_admin_client_name
-from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.fuel.utils.log_utils import get_module_logger, get_obj_logger
 from nvflare.private.defs import CellMessageHeaderKeys, ClientRegSession, ClientType, InternalFLContextKey
 from nvflare.private.fed.server.cred_keeper import CredKeeper
 from nvflare.private.fed.utils.identity_utils import get_org_from_cert, load_crt_bytes
 from nvflare.security.logging import secure_format_exception
+
+_module_logger = get_module_logger()
+
+# How long an admin client's token->origin binding stays usable without being used, in seconds.
+# 24h comfortably exceeds the 8h max admin session lifetime. Expired entries are NOT removed:
+# resolve_admin_client_fqcn returns a fail-closed binding for them, because dropping the entry
+# would make the token "unknown" and skip origin validation entirely (fail open). Records are
+# tiny, one per admin registration, and the map is cleared on server restart.
+ADMIN_CLIENT_FQCN_TTL = 24 * 60 * 60
+
+
+class _AdminClientRecord:
+    """Origin binding for a registered admin client token (see resolve_admin_client_fqcn)."""
+
+    def __init__(self, name: str, fqcn: str):
+        self.name = name
+        self.fqcn = fqcn
+        self.last_used = time.time()
+
+
+def _is_oidc_admin_auth_enabled() -> bool:
+    """Check whether admin auth type is configured as OIDC, using the shared fail-closed parser.
+
+    A malformed auth config disables the OIDC exemption (cert verification stays required),
+    so a misconfiguration can never widen the cert-less registration path.
+    """
+    startup_config = ConfigService.get_section(SystemConfigs.STARTUP_CONF) or {}
+    try:
+        return get_admin_auth_type(startup_config) == ADMIN_AUTH_TYPE_OIDC
+    except AuthError as ex:
+        _module_logger.error(f"invalid admin auth config; disabling OIDC admin auth exemption: {ex}")
+        return False
 
 
 class ClientManager:
@@ -49,6 +83,8 @@ class ClientManager:
         self.max_num_clients = max_num_clients
         self.clients = dict()  # token => Client
         self.name_to_clients = dict()  # name => Client
+        self.admin_clients = dict()  # token => _AdminClientRecord (admin cellnet origin bindings)
+        self.admin_client_fqcn_ttl = ADMIN_CLIENT_FQCN_TTL
         self.disabled_clients = set()
         self.disabled_clients_file = None
         self.cred_keeper = CredKeeper()
@@ -179,6 +215,10 @@ class ClientManager:
             else:
                 # do not update self.clients for non-regular clients
                 client_kind = client_type
+                if client_type == ClientType.ADMIN:
+                    # Bind the admin token to the cell ORIGIN it registered from, so that
+                    # validate_auth_headers can reject admin messages with a spoofed ORIGIN.
+                    self.admin_clients[client.token] = _AdminClientRecord(client.name, client.get_fqcn())
 
             self.logger.info(
                 "Client: New {} {} joined. Sent token: {}.  Total clients: {}".format(
@@ -206,6 +246,30 @@ class ClientManager:
             else:
                 self.logger.warning("remove_client: unknown token %s", token)
             return client
+
+    def resolve_admin_client_fqcn(self, client_name: str, token: str) -> Optional[str]:
+        """Resolve a registered admin client token to the cell origin FQCN it registered from.
+
+        Args:
+            client_name: client name claimed by the message
+            token: auth token of the message
+
+        Returns:
+            None if the token is not a known admin registration; an empty string when the
+            registration is known but must not be trusted (claimed name mismatch, no recorded
+            origin, or unused beyond the TTL) — the empty string can never match a message
+            origin, so validation fails CLOSED rather than skipping the origin check;
+            otherwise the FQCN recorded at registration.
+        """
+        now = time.time()
+        with self.lock:
+            record = self.admin_clients.get(token)
+            if record is None:
+                return None
+            if record.name != client_name or record.last_used < now - self.admin_client_fqcn_ttl:
+                return ""
+            record.last_used = now
+            return record.fqcn or ""
 
     def login_client(self, client_login, fl_ctx: FLContext, client_type):
         proj_name = client_login.get_header(CellMessageHeaderKeys.PROJECT_NAME)
@@ -251,6 +315,52 @@ class ClientManager:
     def _get_id_verifier(self, fl_ctx: FLContext):
         return self.cred_keeper.get_id_verifier(fl_ctx)
 
+    def _verify_client_identity(self, client_name: str, shareable: Shareable, fl_ctx: FLContext) -> Optional[str]:
+        """Verify the client's certificate-based identity assertion.
+
+        Args:
+            client_name: name claimed by the registering client
+            shareable: registration payload carrying the cert assertion and signature
+            fl_ctx: FLContext
+
+        Returns:
+            The org extracted from the verified client cert, or None if verification failed.
+        """
+        asserter_cert_data = shareable.get(IdentityChallengeKey.CERT)
+        if not asserter_cert_data:
+            self.logger.error("missing client cert in register request")
+            return None
+
+        signature = shareable.get(IdentityChallengeKey.SIGNATURE)
+        if not signature:
+            self.logger.error("missing signature in register request")
+            return None
+
+        asserter_cert = load_crt_bytes(asserter_cert_data)
+        id_verifier = self._get_id_verifier(fl_ctx)
+        reg = fl_ctx.get_prop(InternalFLContextKey.CLIENT_REG_SESSION)
+        if not reg:
+            self.logger.error(f"missing {InternalFLContextKey.CLIENT_REG_SESSION} in FLContext!")
+            return None
+
+        if not isinstance(reg, ClientRegSession):
+            self.logger.error(f"reg should be ClientRegSession but got {type(reg)}")
+            return None
+
+        try:
+            id_verifier.verify_common_name(
+                asserted_cn=client_name,
+                asserter_cert=asserter_cert,
+                signature=signature,
+                nonce=reg.nonce,
+            )
+        except Exception as ex:
+            self.logger.error(f"failed to verify client identity: {secure_format_exception(ex)}")
+            return None
+
+        self.logger.debug(f"identity verified for client '{client_name}'")
+        return get_org_from_cert(asserter_cert)
+
     def authenticated_client(self, request, fl_ctx: FLContext, client_type) -> Optional[Client]:
         """Use SSL certificate for authenticate the client.
 
@@ -276,41 +386,18 @@ class ClientManager:
         secure_mode = fl_ctx.get_prop(FLContextKey.SECURE_MODE, False)
         client_org = ""
         asserter_cert_data = shareable.get(IdentityChallengeKey.CERT)
-        if secure_mode:
-            # verify client identity
-            if not asserter_cert_data:
-                self.logger.error("missing client cert in register request")
+        if secure_mode and not asserter_cert_data and client_type == ClientType.ADMIN and _is_oidc_admin_auth_enabled():
+            # Cert-less OIDC admin exemption: OIDC admin kits are provisioned without client
+            # certs/private keys, so an admin client cannot present a PKI identity assertion here.
+            # Admin authority is still established later by the OIDC HCI login; the token issued
+            # from this registration is a cellnet transport credential only and grants no admin
+            # privileges by itself. Log at INFO so cert-less registrations remain auditable.
+            self.logger.info(f"admin client '{client_name}' registered without client cert assertion (OIDC admin auth)")
+        elif secure_mode:
+            # Regular clients (and cert-based admins) must prove their identity with PKI.
+            client_org = self._verify_client_identity(client_name, shareable, fl_ctx)
+            if client_org is None:
                 return None
-
-            signature = shareable.get(IdentityChallengeKey.SIGNATURE)
-            if not signature:
-                self.logger.error("missing signature in register request")
-                return None
-
-            asserter_cert = load_crt_bytes(asserter_cert_data)
-            id_verifier = self._get_id_verifier(fl_ctx)
-            reg = fl_ctx.get_prop(InternalFLContextKey.CLIENT_REG_SESSION)
-            if not reg:
-                self.logger.error(f"missing {InternalFLContextKey.CLIENT_REG_SESSION} in FLContext!")
-                return None
-
-            if not isinstance(reg, ClientRegSession):
-                self.logger.error(f"reg should be ClientRegSession but got {type(reg)}")
-                return None
-
-            try:
-                id_verifier.verify_common_name(
-                    asserted_cn=client_name,
-                    asserter_cert=asserter_cert,
-                    signature=signature,
-                    nonce=reg.nonce,
-                )
-            except Exception as ex:
-                self.logger.error(f"failed to verify client identity: {secure_format_exception(ex)}")
-                return None
-
-            self.logger.debug(f"identity verified for client '{client_name}'")
-            client_org = get_org_from_cert(asserter_cert)
         elif asserter_cert_data:
             try:
                 asserter_cert = load_crt_bytes(asserter_cert_data)

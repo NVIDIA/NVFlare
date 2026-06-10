@@ -12,10 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import io
 import os
 import shutil
+import tempfile
 import threading
 import time
+import zipfile
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
@@ -37,7 +40,14 @@ from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.job_scheduler_spec import DispatchInfo
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.exit_codes import ProcessExitCode
+from nvflare.fuel.sec.job_trust import (
+    JOB_SUBMITTER_PRINCIPAL_META_KEY,
+    attach_job_authorization,
+    issue_job_authorization,
+)
+from nvflare.fuel.sec.principal import AUTH_METHOD_OIDC
 from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.fuel.utils.zip_utils import unzip_all_from_bytes
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
 from nvflare.lighter.utils import verify_folder_signature
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
@@ -45,7 +55,13 @@ from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import check_client_replies
 from nvflare.private.fed.server.server_state import HotState
 from nvflare.private.fed.utils.app_deployer import AppDeployer
-from nvflare.private.fed.utils.fed_utils import extract_participants, require_signed_jobs, set_message_security_data
+from nvflare.private.fed.utils.fed_utils import (
+    SIGNED_JOBS_OFF,
+    SIGNED_JOBS_STRICT,
+    extract_participants,
+    set_message_security_data,
+    signed_jobs_policy,
+)
 from nvflare.security.logging import secure_format_exception
 
 
@@ -91,6 +107,13 @@ def _get_active_job_participants(connected_clients: Dict[str, Client], participa
     return client_sites_names
 
 
+def _allow_unsigned_job_from_submitter(job: Job) -> bool:
+    """OIDC-authenticated admins do not have a FLARE private key for job signing."""
+
+    principal = job.meta.get(JOB_SUBMITTER_PRINCIPAL_META_KEY)
+    return isinstance(principal, dict) and principal.get("auth_method") == AUTH_METHOD_OIDC
+
+
 class JobRunner(FLComponent):
     def __init__(self, workspace_root: str) -> None:
         super().__init__()
@@ -122,6 +145,60 @@ class JobRunner(FLComponent):
         set_message_security_data(message, job, fl_ctx)
         return message
 
+    def _attach_server_job_authorization(self, job: Job, app_name: str, app_data: bytes, target_sites, fl_ctx):
+        engine = fl_ctx.get_engine()
+        admin_server = getattr(getattr(engine, "server", None), "admin_server", None)
+        id_asserter = admin_server.get_id_asserter() if admin_server else None
+        if not id_asserter:
+            # Clients require a server-signed job authorization for every directly deployed
+            # job, so fail the deploy here with a clear error instead of shipping a deploy
+            # that every client will reject.
+            raise RuntimeError(
+                "server job authorization failed: server identity (ssl cert/key) is unavailable; "
+                "directly deployed jobs require a server-signed job authorization manifest"
+            )
+
+        try:
+            authorization = issue_job_authorization(
+                job_meta=job.meta,
+                app_name=app_name,
+                app_data=app_data,
+                target_sites=target_sites,
+                id_asserter=id_asserter,
+            )
+        except Exception as ex:
+            raise RuntimeError(f"server job authorization failed: {secure_format_exception(ex)}") from ex
+        attach_job_authorization(job_meta=job.meta, app_name=app_name, authorization=authorization)
+
+    def _verify_submitted_app_signature(self, job: Job, app_name: str, app_data: bytes, workspace: Workspace, fl_ctx):
+        if job.meta.get(JobMetaKey.FROM_HUB_SITE.value):
+            return
+
+        root_ca_path = os.path.join(workspace.get_startup_kit_dir(), "rootCA.pem")
+        with zipfile.ZipFile(io.BytesIO(app_data)) as zf:
+            has_sig_file = NVFLARE_SIG_FILE in zf.namelist()
+        if has_sig_file:
+            with tempfile.TemporaryDirectory() as app_dir:
+                unzip_all_from_bytes(app_data, app_dir)
+                if not verify_folder_signature(app_dir, root_ca_path):
+                    raise RuntimeError(f"Failed to verify app '{app_name}': job signature verification failed")
+        else:
+            policy = signed_jobs_policy(workspace)
+            if policy == SIGNED_JOBS_OFF:
+                return
+            # "strict" policy: the OIDC exemption is disabled — unsigned jobs are rejected for everyone.
+            if policy != SIGNED_JOBS_STRICT and _allow_unsigned_job_from_submitter(job):
+                self.log_info(
+                    fl_ctx,
+                    "Unsigned job accepted because submitter authenticated with OIDC; "
+                    "server authorization will be attached for client validation.",
+                    fire_event=False,
+                )
+            else:
+                raise RuntimeError(
+                    f"UNSIGNED_JOB_REJECTED: unsigned app '{app_name}' rejected - require_signed_jobs is enabled"
+                )
+
     def _deploy_job(self, job: Job, sites: dict, fl_ctx: FLContext) -> Tuple[str, list]:
         """Deploy the application to the list of participants
 
@@ -149,6 +226,7 @@ class JobRunner(FLComponent):
         for app_name, participants in job.get_deployment().items():
             app_data = job.get_application(app_name, fl_ctx)
             participants = extract_participants(participants)
+            self._verify_submitted_app_signature(job, app_name, app_data, workspace, fl_ctx)
 
             if len(participants) == 1 and participants[0].upper() == ALL_SITES:
                 participants = [SiteType.SERVER]
@@ -171,21 +249,6 @@ class JobRunner(FLComponent):
                         deploy_detail.append(f"server: {err}")
                         raise RuntimeError(f"Failed to deploy app '{app_name}': {err}")
 
-                    from_hub_site = job.meta.get(JobMetaKey.FROM_HUB_SITE.value)
-                    if not from_hub_site:
-                        app_path = workspace.get_app_dir(job.job_id)
-                        root_ca_path = os.path.join(workspace.get_startup_kit_dir(), "rootCA.pem")
-                        sig_file = os.path.join(app_path, NVFLARE_SIG_FILE)
-                        if os.path.exists(sig_file):
-                            if not verify_folder_signature(app_path, root_ca_path):
-                                err = "job signature verification failed"
-                                deploy_detail.append(f"server: {err}")
-                                raise RuntimeError(f"Failed to verify app '{app_name}': {err}")
-                        elif require_signed_jobs(workspace):
-                            err = "unsigned job rejected — require_signed_jobs is enabled"
-                            deploy_detail.append(f"server: {err}")
-                            raise RuntimeError(f"UNSIGNED_JOB_REJECTED: {err}")
-
                     self.log_info(
                         fl_ctx, f"Application {app_name} deployed to the server for job: {run_number}", fire_event=False
                     )
@@ -196,6 +259,7 @@ class JobRunner(FLComponent):
 
             if client_sites:
                 self.fire_event(EventType.DEPLOY_JOB_TO_CLIENT, fl_ctx)
+                self._attach_server_job_authorization(job, app_name, app_data, client_sites, fl_ctx)
                 message = self._make_deploy_message(job, app_data, app_name, fl_ctx)
                 clients, invalid_inputs = engine.validate_targets(client_sites)
 

@@ -16,9 +16,14 @@ import json
 import os
 from typing import List
 
+from nvflare.apis.fl_constant import FLContextKey, SystemConfigs
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.workspace import Workspace
+from nvflare.fuel.data_event.utils import get_scope_property
 from nvflare.fuel.hci.proto import MetaStatusValue, make_meta
+from nvflare.fuel.sec.job_trust import JOB_AUTHORIZATION_CLOCK_SKEW, get_job_authorization, verify_job_authorization
+from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.fuel.utils.log_utils import get_module_logger
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
 from nvflare.lighter.utils import verify_folder_signature
 from nvflare.private.admin_defs import Message, error_reply, ok_reply
@@ -26,6 +31,55 @@ from nvflare.private.defs import RequestHeader, ScopeInfoKey, TrainingTopic
 from nvflare.private.fed.client.admin import RequestProcessor
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
 from nvflare.private.fed.utils.fed_utils import get_scope_info
+
+logger = get_module_logger()
+
+
+def _expected_server_identity(client_name: str) -> str:
+    startup_config = ConfigService.get_section(SystemConfigs.STARTUP_CONF) or {}
+    servers = startup_config.get("servers") if isinstance(startup_config, dict) else None
+    if isinstance(servers, list) and servers:
+        server = servers[0]
+        if isinstance(server, dict):
+            identity = str(server.get("identity") or "")
+            if identity:
+                return identity
+
+    # The provision was done with an old version that has no server "identity" in the config.
+    # To be backward compatible, we expect the identity to be the server host we connected to,
+    # the same way client registration does (see communicator.py).
+    expected_host = get_scope_property(scope_name=client_name, key=FLContextKey.SERVER_HOST_NAME)
+    if expected_host:
+        return str(expected_host)
+
+    raise RuntimeError("expected server identity is not configured")
+
+
+def _startup_config() -> dict:
+    config = ConfigService.get_section(SystemConfigs.STARTUP_CONF)
+    return config if isinstance(config, dict) else {}
+
+
+def _job_authorization_clock_skew() -> float:
+    """Clock skew (seconds) allowed when verifying server job authorization.
+
+    Optional "job_authorization_clock_skew" in fed_client.json; must be a positive number.
+    Invalid or non-positive values fall back to the default with a warning.
+    """
+    value = _startup_config().get("job_authorization_clock_skew")
+    if value is None:
+        return JOB_AUTHORIZATION_CLOCK_SKEW
+    try:
+        skew = float(value)
+    except (TypeError, ValueError):
+        skew = -1.0
+    if skew <= 0:
+        logger.warning(
+            f"invalid job_authorization_clock_skew '{value}' in fed_client.json - must be a positive "
+            f"number of seconds; using default {JOB_AUTHORIZATION_CLOCK_SKEW}"
+        )
+        return JOB_AUTHORIZATION_CLOCK_SKEW
+    return skew
 
 
 class AbortAppProcessor(RequestProcessor):
@@ -108,6 +162,26 @@ class DeployProcessor(RequestProcessor):
             workspace = Workspace(root_dir=engine.args.workspace, site_name=client_name)
             app_path = workspace.get_app_dir(job_id)
             root_ca_path = os.path.join(workspace.get_startup_kit_dir(), "rootCA.pem")
+            authorization = get_job_authorization(job_meta, app_name)
+            if authorization:
+                try:
+                    verify_job_authorization(
+                        authorization=authorization,
+                        app_data=req.body,
+                        root_ca_path=root_ca_path,
+                        site_name=client_name,
+                        expected_job_id=job_id,
+                        expected_app_name=app_name,
+                        expected_server_identity=_expected_server_identity(client_name),
+                        clock_skew=_job_authorization_clock_skew(),
+                    )
+                except Exception as ex:
+                    return error_reply(f"app {app_name} does not pass server authorization verification: {ex}")
+            else:
+                # Server-signed job authorization is required for every directly deployed job
+                # (see docs/design/federated_admin_auth.md); only hub jobs are exempt.
+                return error_reply(f"app {app_name} is missing server job authorization")
+
             sig_file = os.path.join(app_path, NVFLARE_SIG_FILE)
             if os.path.exists(sig_file):
                 if not verify_folder_signature(app_path, root_ca_path):

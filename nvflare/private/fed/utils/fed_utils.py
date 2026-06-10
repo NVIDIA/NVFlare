@@ -56,6 +56,11 @@ from .app_authz import AppAuthzService
 # to the server's rootCA.pem.  require_signed_jobs() only controls whether unsigned job
 # folders are accepted.  _warn_once suppresses repeated log noise for the same condition.
 _SIGNED_JOB_WARNINGS_EMITTED = set()
+
+# signed-jobs policy values returned by signed_jobs_policy()
+SIGNED_JOBS_OFF = "off"  # unsigned jobs are accepted
+SIGNED_JOBS_REQUIRED = "required"  # unsigned jobs rejected, except OIDC submitters (no signing key)
+SIGNED_JOBS_STRICT = "strict"  # unsigned jobs rejected for everyone, including OIDC submitters
 _DEFAULT_COMPONENT_PATH_AUTHORIZER = ComponentPathAuthorizer()
 _AUTHORIZATION_JOB_META_CACHE = "__authorization_job_meta_cache__"
 _JOB_META_CACHE_MISSING = object()
@@ -72,12 +77,27 @@ def _warn_once(logger: logging.Logger, cache_key: str, message: str, *args) -> N
 def require_signed_jobs(workspace: Workspace) -> bool:
     """Return True if the server requires all submitted jobs to carry __nvfl_sig.json.
 
+    True for both the "required" and "strict" policies; see signed_jobs_policy() for the
+    distinction between them.
+    """
+    return signed_jobs_policy(workspace) != SIGNED_JOBS_OFF
+
+
+def signed_jobs_policy(workspace: Workspace) -> str:
+    """Return the server's signed-jobs policy: "off", "required", or "strict".
+
     Centralized and distributed provisioning use the same verification model: the job
     carries the submitter certificate, and that certificate must chain to the server's
-    rootCA.pem.  Operators can set ``require_signed_jobs: false`` in fed_server.json to
-    allow unsigned job folders without restarting the server (hot-reload).
+    rootCA.pem.  Operators can set ``require_signed_jobs`` in fed_server.json to
+    change the policy without restarting the server (hot-reload):
 
-    Default: True when rootCA.pem is present (any PKI deployment); False otherwise.
+    - false: unsigned job folders are accepted ("off")
+    - true: unsigned job folders are rejected, except for OIDC-authenticated submitters
+      who have no FLARE signing key ("required")
+    - "strict": unsigned job folders are rejected for everyone, including OIDC
+      submitters ("strict")
+
+    Default: "required" when rootCA.pem is present (any PKI deployment); "off" otherwise.
     Explicit "require_signed_jobs" key in fed_server.json overrides the inferred default.
     """
     import stat as _stat
@@ -108,9 +128,13 @@ def require_signed_jobs(workspace: Workspace) -> bool:
                     os.close(fd)
                 raise
             if "require_signed_jobs" in cfg:
-                value = bool(cfg["require_signed_jobs"])
-                logger.debug("require_signed_jobs=%s (explicit config)", value)
-                return value
+                raw = cfg["require_signed_jobs"]
+                if isinstance(raw, str) and raw.strip().lower() == SIGNED_JOBS_STRICT:
+                    policy = SIGNED_JOBS_STRICT
+                else:
+                    policy = SIGNED_JOBS_REQUIRED if bool(raw) else SIGNED_JOBS_OFF
+                logger.debug("require_signed_jobs policy=%s (explicit config)", policy)
+                return policy
         except FileNotFoundError:
             pass
         except Exception as e:
@@ -120,12 +144,12 @@ def require_signed_jobs(workspace: Workspace) -> bool:
                 "failed to parse fed_server.json for require_signed_jobs: %s — failing closed",
                 e,
             )
-            return True
+            return SIGNED_JOBS_REQUIRED
 
     root_ca_path = os.path.join(workspace.get_startup_kit_dir(), "rootCA.pem")
-    value = os.path.exists(root_ca_path)
-    logger.debug("require_signed_jobs=%s (inferred from rootCA.pem presence)", value)
-    return value
+    policy = SIGNED_JOBS_REQUIRED if os.path.exists(root_ca_path) else SIGNED_JOBS_OFF
+    logger.debug("require_signed_jobs policy=%s (inferred from rootCA.pem presence)", policy)
+    return policy
 
 
 def _check_secure_content(site_type: str) -> List[str]:

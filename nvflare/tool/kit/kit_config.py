@@ -25,6 +25,8 @@ from typing import Dict, Optional, Set, Tuple
 from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree, HOCONConverter
 
+from nvflare.fuel.hci.client.api_spec import AdminConfigKey, get_admin_auth_type
+from nvflare.fuel.sec.authn import ADMIN_AUTH_TYPE_OIDC
 from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.tool.job.job_client_const import CONFIG_CONF
 
@@ -46,6 +48,10 @@ NVFLARE_STARTUP_KIT_DIR = "NVFLARE_STARTUP_KIT_DIR"
 ADMIN_STARTUP_KIT_REQUIRED_FILES = (
     os.path.join("startup", "fed_admin.json"),
     os.path.join("startup", "client.crt"),
+    os.path.join("startup", "rootCA.pem"),
+)
+OIDC_ADMIN_STARTUP_KIT_REQUIRED_FILES = (
+    os.path.join("startup", "fed_admin.json"),
     os.path.join("startup", "rootCA.pem"),
 )
 SITE_STARTUP_KIT_REQUIRED_FILES = (os.path.join("startup", "fed_client.json"),)
@@ -236,13 +242,33 @@ def _has_required_files(startup_kit_dir: Path, required_files) -> bool:
     return all((startup_kit_dir / rel_path).is_file() for rel_path in required_files)
 
 
+def _is_oidc_admin_startup_kit(startup_kit_dir: Path) -> bool:
+    if not _has_required_files(startup_kit_dir, OIDC_ADMIN_STARTUP_KIT_REQUIRED_FILES):
+        return False
+
+    startup_dir = startup_kit_dir / "startup"
+    try:
+        fed_admin_config = ConfigFactory.load_config("fed_admin.json", [str(startup_dir)])
+    except Exception:
+        return False
+    if not fed_admin_config:
+        return False
+
+    admin_config = fed_admin_config.to_dict().get(AdminConfigKey.ADMIN, {})
+    return get_admin_auth_type(admin_config) == ADMIN_AUTH_TYPE_OIDC
+
+
 def classify_startup_kit(path: str) -> Tuple[str, str]:
     """Return (kind, normalized participant dir) for a generated startup kit."""
     startup_path = _as_existing_dir(path)
     startup_kit_dir = startup_path.parent if startup_path.name == "startup" else startup_path
 
+    if _has_required_files(startup_kit_dir, ADMIN_STARTUP_KIT_REQUIRED_FILES) or _is_oidc_admin_startup_kit(
+        startup_kit_dir
+    ):
+        return STARTUP_KIT_KIND_ADMIN, str(startup_kit_dir.resolve())
+
     for kind, required_files in (
-        (STARTUP_KIT_KIND_ADMIN, ADMIN_STARTUP_KIT_REQUIRED_FILES),
         (STARTUP_KIT_KIND_SITE, SITE_STARTUP_KIT_REQUIRED_FILES),
         (STARTUP_KIT_KIND_SERVER, SERVER_STARTUP_KIT_REQUIRED_FILES),
     ):
@@ -412,22 +438,16 @@ def _first_cert_issuer_value(cert, oid) -> Optional[str]:
     return attrs[0].value if attrs else None
 
 
-def _cert_not_valid_after(cert):
-    expires_at = getattr(cert, "not_valid_after_utc", None)
-    if expires_at is None:
-        expires_at = cert.not_valid_after.replace(tzinfo=timezone.utc)
-    elif expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-    return expires_at.astimezone(timezone.utc)
-
-
 def _format_utc_timestamp(value: datetime) -> str:
     return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _certificate_expiration_metadata(cert, cert_path: str) -> Tuple[Dict, list]:
+    # imported lazily: lighter.utils requires cryptography, which is optional for this module
+    from nvflare.lighter.utils import cert_not_valid_after_utc
+
     findings = []
-    expires_at = _cert_not_valid_after(cert)
+    expires_at = cert_not_valid_after_utc(cert)
     now = datetime.now(timezone.utc)
     seconds_remaining = (expires_at - now).total_seconds()
     days_remaining = int(seconds_remaining // 86400)

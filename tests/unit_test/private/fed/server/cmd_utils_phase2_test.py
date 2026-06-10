@@ -15,6 +15,7 @@
 from nvflare.apis.job_def import DEFAULT_STUDY
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
+from nvflare.fuel.sec.principal import Principal
 from nvflare.private.fed.server import cmd_utils as cmd_utils_module
 from nvflare.private.fed.server.cmd_utils import CommandUtil
 
@@ -101,6 +102,24 @@ def test_command_authz_required_keeps_cert_role_for_named_study(monkeypatch):
 
     assert result == PreAuthzReturnCode.REQUIRE_AUTHZ
     assert conn.get_prop(ConnProps.USER_ROLE) == "project_admin"
+
+
+def test_must_be_project_admin_prefers_principal_effective_role():
+    conn = _FakeConnection(
+        props={
+            ConnProps.USER_ROLE: "member",
+            ConnProps.USER_PRINCIPAL: Principal.from_legacy_admin(
+                username="admin@nvidia.com",
+                org="nvidia",
+                role="project_admin",
+            ),
+        }
+    )
+
+    result = CommandUtil().must_be_project_admin(conn, ["shutdown"])
+
+    assert result == PreAuthzReturnCode.OK
+    assert conn.errors == []
 
 
 def test_authorize_client_operation_keeps_cert_role_for_named_study(monkeypatch):

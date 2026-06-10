@@ -65,11 +65,15 @@ class AuthzFilter(CommandFilter):
             return False
 
         # authz required - the command name is the name of the right to be checked!
-        user = Person(
-            name=conn.get_prop(ConnProps.USER_NAME, ""),
-            org=conn.get_prop(ConnProps.USER_ORG, ""),
-            role=conn.get_prop(ConnProps.USER_ROLE, ""),
-        )
+        principal = conn.get_prop(ConnProps.USER_PRINCIPAL, None)
+        if principal:
+            user = Person.from_principal(principal)
+        else:
+            user = Person(
+                name=conn.get_prop(ConnProps.USER_NAME, ""),
+                org=conn.get_prop(ConnProps.USER_ORG, ""),
+                role=conn.get_prop(ConnProps.USER_ROLE, ""),
+            )
 
         submitter = Person(
             name=conn.get_prop(ConnProps.SUBMITTER_NAME, ""),

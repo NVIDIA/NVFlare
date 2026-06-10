@@ -18,7 +18,9 @@ and the min_sites / required_sites abort logic.
 The test infrastructure stubs out all engine/fl_ctx interaction so that only
 _deploy_job()'s own logic is exercised."""
 
+from io import BytesIO
 from unittest.mock import MagicMock, patch
+from zipfile import ZipFile
 
 import pytest
 
@@ -31,6 +33,14 @@ from nvflare.private.fed.server.job_runner import JobRunner
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _zip_bytes(files):
+    data = BytesIO()
+    with ZipFile(data, "w") as zf:
+        for name, content in files.items():
+            zf.writestr(name, content)
+    return data.getvalue()
 
 
 def _ok_reply():
@@ -103,7 +113,7 @@ def _build_fl_ctx(token_to_reply: dict, job_id="job-1", min_sites=None, required
     # Simulate a single app deployment to all client sites
     deployment = {"app": list(sites.keys())}
     job.get_deployment.return_value = deployment
-    job.get_application.return_value = b"app_data"
+    job.get_application.return_value = _zip_bytes({"config/config_fed_client.json": "{}"})
 
     return runner, fl_ctx, engine, job, sites
 
@@ -290,7 +300,7 @@ class TestDeployAndStartIntegration:
         job.min_sites = 1
         job.required_sites = []
         job.get_deployment.return_value = {"app": ["site-1", "site-2"]}
-        job.get_application.return_value = b"app_data"
+        job.get_application.return_value = _zip_bytes({"config/config_fed_client.json": "{}"})
 
         client_sites = {"site-1": MagicMock(), "site-2": MagicMock()}
 

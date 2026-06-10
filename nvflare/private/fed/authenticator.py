@@ -75,6 +75,7 @@ class Authenticator:
         retry_interval: float,
         timeout=None,
         site_config=None,
+        assert_client_identity: Optional[bool] = None,
     ):
         """Authenticator is to be used to register a client to the Server.
 
@@ -92,6 +93,9 @@ class Authenticator:
             retry_interval: interval between tries
             timeout: overall timeout for the authentication.
             site_config: optional validated site config to report to the server during registration.
+            assert_client_identity: whether to prove client identity with client cert/private key. Defaults to
+                secure_mode for backward compatibility. OIDC admin clients can still verify the server while
+                skipping client private-key assertion.
         """
         self.cell = cell
         self.project_name = project_name
@@ -104,6 +108,7 @@ class Authenticator:
         self.msg_timeout = msg_timeout
         self.retry_interval = retry_interval
         self.secure_mode = secure_mode
+        self.assert_client_identity = secure_mode if assert_client_identity is None else assert_client_identity
         self.timeout = timeout
         self.site_config = site_config
         self.logger = get_obj_logger(self)
@@ -200,6 +205,7 @@ class Authenticator:
         shareable.set_peer_context(shared_fl_ctx)
 
         token_verifier = None
+        server_nonce = None
         if self.secure_mode:
             # explicitly authenticate with the Server
             start_time = time.time()
@@ -220,6 +226,9 @@ class Authenticator:
                 else:
                     break
 
+        if self.assert_client_identity:
+            if not self.private_key_file or not self.cert_file:
+                raise FLCommunicationError("client identity assertion requires client cert and private key")
             id_asserter = IdentityAsserter(private_key_file=self.private_key_file, cert_file=self.cert_file)
             cn_signature = id_asserter.sign_common_name(nonce=server_nonce)
             shareable[IdentityChallengeKey.CERT] = id_asserter.cert_data

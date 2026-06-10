@@ -16,6 +16,8 @@ import time
 from abc import ABC, abstractmethod
 from enum import Enum
 
+from nvflare.fuel.sec.principal import Principal
+
 _KEY_PERMISSIONS = "permissions"
 _KEY_FORMAT_VERSION = "format_version"
 _TARGET_SITE = "site"
@@ -42,6 +44,16 @@ class Person(object):
         self.name = _normalize_str(name, FieldNames.USER_NAME)
         self.org = _normalize_str(org, FieldNames.USER_ORG)
         self.role = _normalize_str(role, FieldNames.USER_ROLE)
+
+    @classmethod
+    def from_principal(cls, principal):
+        if not isinstance(principal, Principal):
+            raise TypeError(f"principal must be Principal but got {type(principal)}")
+        return cls(
+            name=principal.policy_name(),
+            org=principal.policy_org(),
+            role=principal.policy_role(),
+        )
 
     def __str__(self):
         name = self.name if self.name else "None"

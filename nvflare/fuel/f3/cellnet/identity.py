@@ -25,6 +25,7 @@ from nvflare.fuel.utils.admin_name_utils import is_valid_admin_client_name
 from nvflare.fuel.utils.argument_utils import str2bool
 
 ADMIN_LISTENER_KEY = "admin_listener"
+ADMIN_ONLY_LISTENER_KEY = "admin_only"
 
 
 def get_param(params: dict, key: DriverParams, default=None):
@@ -63,6 +64,19 @@ def is_admin_listener(params: dict) -> bool:
         return False
 
     return str2bool(params.get(ADMIN_LISTENER_KEY, False))
+
+
+def is_admin_only_listener(params: dict) -> bool:
+    """A listener that accepts only admin client endpoints.
+
+    Used for a dedicated admin listener whose connection security is relaxed (e.g. one-way
+    TLS for OIDC admin consoles), so non-admin endpoints cannot use it to bypass the mTLS
+    requirements of the regular listeners.
+    """
+    if not params:
+        return False
+
+    return str2bool(params.get(ADMIN_ONLY_LISTENER_KEY, False))
 
 
 def get_cert_common_name(cert: x509.Certificate) -> Optional[str]:

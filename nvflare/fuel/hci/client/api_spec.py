@@ -19,6 +19,7 @@ from abc import ABC, abstractmethod
 
 from nvflare.fuel.common.ctx import SimpleContext
 from nvflare.fuel.hci.table import Table
+from nvflare.fuel.sec.authn import ADMIN_AUTH_TYPE_CERT, ADMIN_AUTH_TYPE_OIDC
 
 
 class CommandCtxKey(object):
@@ -233,12 +234,25 @@ class AdminConfigKey:
     USERNAME = "username"
     FILE_DOWNLOAD_PROGRESS_TIMEOUT = "file_download_progress_timeout"
     AUTHENTICATE_MSG_TIMEOUT = "authenticate_msg_timeout"
+    AUTH_TYPE = "auth_type"
+    OIDC = "oidc"
 
 
 class UidSource:
     USER_INPUT = "user_input"  # user must provide
     CERT = "cert"  # CN of the identity certificate
     GUEST = "guest"  # anonymous - for testing purpose
+
+
+def get_admin_auth_type(admin_config: dict) -> str:
+    auth_type = str(admin_config.get(AdminConfigKey.AUTH_TYPE) or "").strip().lower()
+    return auth_type or ADMIN_AUTH_TYPE_CERT
+
+
+def get_admin_oidc_config(admin_config: dict) -> dict:
+    if get_admin_auth_type(admin_config) != ADMIN_AUTH_TYPE_OIDC:
+        return {}
+    return dict(admin_config.get(AdminConfigKey.OIDC) or {})
 
 
 class HCIRequester(ABC):

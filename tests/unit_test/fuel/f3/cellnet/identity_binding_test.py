@@ -26,7 +26,7 @@ from nvflare.apis.fl_constant import ConnectionSecurity
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.credential_manager import CERT_CONTENT, CredentialManager
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessageType, ReturnCode
-from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY, CellIdentityResolver
+from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY, ADMIN_ONLY_LISTENER_KEY, CellIdentityResolver
 from nvflare.fuel.f3.cellnet.utils import make_reply
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
@@ -39,7 +39,14 @@ from nvflare.fuel.utils.constants import Mode
 
 
 class _FakeConnection:
-    def __init__(self, peer_cn, conn_security=ConnectionSecurity.MTLS, mode=Mode.PASSIVE, admin_listener=False):
+    def __init__(
+        self,
+        peer_cn,
+        conn_security=ConnectionSecurity.MTLS,
+        mode=Mode.PASSIVE,
+        admin_listener=False,
+        admin_only=False,
+    ):
         self.name = "CN-test"
         self.closed = False
         self.connector = SimpleNamespace(
@@ -51,6 +58,8 @@ class _FakeConnection:
         )
         if admin_listener:
             self.connector.params[ADMIN_LISTENER_KEY] = "true"
+        if admin_only:
+            self.connector.params[ADMIN_ONLY_LISTENER_KEY] = "true"
         self.conn_props = {}
         if peer_cn is not None:
             self.conn_props[DriverParams.PEER_CN.value] = peer_cn
@@ -234,6 +243,32 @@ def test_mtls_handshake_rejects_admin_endpoint_on_non_admin_listener():
 def test_mtls_handshake_accepts_admin_endpoint_on_admin_listener():
     manager = _conn_manager()
     conn = _FakeConnection(peer_cn="admin@nvidia.com", admin_listener=True)
+    sfm_conn = SfmConnection(conn, Endpoint("server"))
+
+    manager.update_endpoint(sfm_conn, {HandshakeKeys.ENDPOINT_NAME: "_admin_9af49fef-235f-41bd-9296-12fd09eacb2a"})
+
+    assert "_admin_9af49fef-235f-41bd-9296-12fd09eacb2a" in manager.sfm_endpoints
+    assert not conn.closed
+
+
+def test_admin_only_tls_listener_rejects_non_admin_endpoint():
+    # A dedicated TLS admin listener (OIDC admin consoles) must not let regular
+    # endpoints bypass the mTLS identity binding of the FL listener.
+    manager = _conn_manager()
+    conn = _FakeConnection(peer_cn=None, conn_security=ConnectionSecurity.TLS, admin_listener=True, admin_only=True)
+    sfm_conn = SfmConnection(conn, Endpoint("server"))
+
+    with pytest.raises(CommError) as ex:
+        manager.update_endpoint(sfm_conn, {HandshakeKeys.ENDPOINT_NAME: "site-1"})
+
+    assert ex.value.code == CommError.BAD_DATA
+    assert "site-1" not in manager.sfm_endpoints
+    assert conn.closed
+
+
+def test_admin_only_tls_listener_accepts_admin_endpoint():
+    manager = _conn_manager()
+    conn = _FakeConnection(peer_cn=None, conn_security=ConnectionSecurity.TLS, admin_listener=True, admin_only=True)
     sfm_conn = SfmConnection(conn, Endpoint("server"))
 
     manager.update_endpoint(sfm_conn, {HandshakeKeys.ENDPOINT_NAME: "_admin_9af49fef-235f-41bd-9296-12fd09eacb2a"})

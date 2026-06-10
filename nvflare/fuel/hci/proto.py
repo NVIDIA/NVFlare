@@ -23,6 +23,20 @@ ALL_END = "\x04"  # Marks the end of a complete transmission (End of Transmissio
 
 MAX_BLOCK_SIZE = 1024
 
+# header keys whose values must never be logged: OIDC id_token/access_token, cell auth
+# token/signature ("__token__"/"__token_signature__"), and anything authorization-like
+SENSITIVE_HEADER_KEY_PARTS = ("token", "authorization", "signature", "secret", "password", "cookie")
+
+
+def redact_headers(headers) -> dict:
+    """Return a copy of the headers safe for logging: keep keys, mask sensitive values."""
+    if not isinstance(headers, dict):
+        return {}
+    return {
+        key: "********" if any(part in str(key).lower() for part in SENSITIVE_HEADER_KEY_PARTS) else value
+        for key, value in headers.items()
+    }
+
 
 class ProtoKey(object):
 
@@ -117,12 +131,13 @@ class ReplyKeyword:
 class InternalCommands(object):
 
     CERT_LOGIN = "_cert_login"
+    OIDC_LOGIN = "_oidc_login"
     LOGOUT = "_logout"
     GET_CMD_LIST = "_commands"
     CHECK_SESSION = "_check_session"
     LIST_SESSIONS = "list_sessions"
 
-    commands = [CERT_LOGIN, LOGOUT, GET_CMD_LIST, CHECK_SESSION, LIST_SESSIONS]
+    commands = [CERT_LOGIN, OIDC_LOGIN, LOGOUT, GET_CMD_LIST, CHECK_SESSION, LIST_SESSIONS]
 
     @classmethod
     def contains_command(cls, command: str):

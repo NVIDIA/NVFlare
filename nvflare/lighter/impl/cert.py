@@ -194,6 +194,16 @@ class CertBuilder(Builder):
 
     def _build_write_cert_pair(self, participant: Participant, base_name, ctx: ProvisionContext):
         assert isinstance(self.persistent_state, _CertState)
+        if participant.get_prop(PropKey.CERT_LESS):
+            # cert-less kits (e.g. the shared OIDC admin kit) authenticate elsewhere
+            # (identity provider); they get the root CA for server verification but
+            # no client cert/key pair.
+            dest_dir = ctx.get_kit_dir(participant)
+            os.makedirs(dest_dir, exist_ok=True)
+            with open(os.path.join(dest_dir, "rootCA.pem"), "wb") as f:
+                f.write(self.serialized_cert)
+            return
+
         subject = participant.subject
         if self.persistent_state.has_subject(subject):
             subject_cert = self.persistent_state.get_subject_cert(subject)

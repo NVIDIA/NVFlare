@@ -16,6 +16,7 @@ from typing import Any, List, Optional, Union
 
 from nvflare.apis.utils.format_check import name_check
 
+from .admin_auth import get_oidc_admin_kit_name, is_oidc_admin_auth
 from .constants import DEFINED_PARTICIPANT_TYPES, DEFINED_ROLES, ConnSecurity, ParticipantType, PropKey
 
 _logger = logging.getLogger(__name__)
@@ -256,8 +257,13 @@ class Participant(Entity):
         """
         Entity.__init__(self, f"{type}::{name}", name, props, parent=project)
 
+        # A cert-less admin is a generated shared login kit (e.g. for OIDC admin auth):
+        # its name is a kit directory name, not a user identity, so the email-format
+        # admin name check does not apply. A site-style name check is used instead.
+        cert_less_admin = type == ParticipantType.ADMIN and bool(self.get_prop(PropKey.CERT_LESS))
+
         if type in DEFINED_PARTICIPANT_TYPES:
-            err, reason = name_check(name, type)
+            err, reason = name_check(name, "site" if cert_less_admin else type)
             if err:
                 raise ValueError(reason)
         else:
@@ -266,11 +272,16 @@ class Participant(Entity):
                 raise ValueError(reason)
             print(f"Warning: participant type '{type}' of {name} is not a defined type {DEFINED_PARTICIPANT_TYPES}")
 
-        err, reason = name_check(org, "org")
-        if err:
-            raise ValueError(reason)
+        # A cert-less admin kit may be created before the server is known; its org is
+        # empty until it is synced to the server's org (see Project.add_participant).
+        if org or not cert_less_admin:
+            err, reason = name_check(org, "org")
+            if err:
+                raise ValueError(reason)
 
-        if type == ParticipantType.ADMIN:
+        # Cert-less admins carry no role: admin identities and their roles live in the
+        # identity provider, not in the provisioned cert, so the role check does not apply.
+        if type == ParticipantType.ADMIN and not cert_less_admin:
             if not props:
                 raise ValueError(f"missing role for admin '{name}'")
 
@@ -415,6 +426,16 @@ class Project(Entity):
         self.server = None
         self._participants_by_types = {}  # participant type => list of participants
         self._all_names = {}  # name => participant
+        self._oidc_admin_kit = None
+
+        try:
+            oidc_admin_auth = is_oidc_admin_auth(self)
+        except ValueError:
+            # invalid 'auth' / 'auth.admin' section: defer to provision-time validation,
+            # which fails the provision with a precise error message.
+            oidc_admin_auth = False
+        if oidc_admin_auth:
+            self._oidc_admin_kit = self._create_oidc_admin_kit()
 
         if participants:
             if not isinstance(participants, list):
@@ -424,6 +445,26 @@ class Project(Entity):
                 if not isinstance(p, Participant):
                     raise ValueError(f"bad item in participants: must be Participant but got {type(p)}")
                 self.add_participant(p)
+
+    def _create_oidc_admin_kit(self) -> Participant:
+        """Create the single shared admin kit participant for OIDC admin auth.
+
+        OIDC admin users are provisioned in the identity provider, not as FLARE
+        participants, so the project carries exactly one cert-less admin participant
+        that produces the shared admin startup kit. Builders that must skip client
+        cert/key generation should check PropKey.CERT_LESS on the participant.
+
+        The kit's org follows the server's org; it is synced when the server is added
+        (the server may not be defined yet at project construction time).
+        """
+        kit = Participant(
+            type=ParticipantType.ADMIN,
+            name=get_oidc_admin_kit_name(self),
+            org=self.server.org if self.server else "",
+            props={PropKey.CERT_LESS: True},
+            project=self,
+        )
+        return self.add_participant(kit)
 
     def set_server(self, name: str, org: str, props: dict) -> Participant:
         """Set the server of the project.
@@ -482,6 +523,20 @@ class Project(Entity):
             _logger.warning(f"Obsolete participant '{participant.name}' in project.yml will be ignored.")
             return None
 
+        if (
+            participant.type == ParticipantType.ADMIN
+            and self._oidc_admin_kit is not None
+            and not participant.get_prop(PropKey.CERT_LESS)
+        ):
+            # OIDC admin users live in the identity provider, not as FLARE participants:
+            # only the generated shared (cert-less) admin kit is provisioned.
+            _logger.warning(
+                f"admin '{participant.name}' will be ignored: admin auth type is 'oidc', so admin users "
+                f"are managed by the identity provider and only the shared admin kit "
+                f"'{self._oidc_admin_kit.name}' is generated."
+            )
+            return None
+
         if participant.name in self._all_names:
             raise ValueError(f"the project {self.name} already has a participant with the name '{participant.name}'")
 
@@ -490,6 +545,9 @@ class Project(Entity):
             if self.server:
                 raise ValueError(f"cannot add participant {participant.name} as server - server already exists")
             self.server = participant
+            if self._oidc_admin_kit is not None:
+                # the shared admin kit belongs to the server's org
+                self._oidc_admin_kit.org = participant.org
 
         participants = self._participants_by_types.get(participant.type)
         if not participants:

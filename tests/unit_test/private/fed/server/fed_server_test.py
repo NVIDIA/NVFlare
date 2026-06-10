@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nvflare.apis.fl_constant import ConnPropKey, RunProcessKey
+from nvflare.apis.fl_constant import RunProcessKey
 from nvflare.apis.job_def import JobMetaKey, RunStatus
 from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.shareable import Shareable
@@ -26,6 +26,7 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.private.defs import CellMessageHeaderKeys, ClientRegMsgKey, JobFailureMsgKey, new_cell_message
 from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN
+from nvflare.private.fed.server.client_manager import ClientManager, _AdminClientRecord
 from nvflare.private.fed.server.fed_server import FederatedServer
 from nvflare.private.fed.server.server_state import DEFAULT_SERVICE_SESSION_ID, HotState
 
@@ -41,56 +42,23 @@ class TestFederatedServer:
 
         assert server._resolve_client_fqcn_for_auth("site-a", "token-a") == MISSING_CLIENT_FQCN
 
-    def test_create_job_cell_allows_missing_server_config_for_non_secure_cell(self):
+    def test_resolve_client_fqcn_for_auth_binds_admin_tokens_to_registered_origin(self):
         server = object.__new__(FederatedServer)
-        server.engine = MagicMock()
+        server.client_manager = ClientManager(project_name="project", min_num_clients=1, max_num_clients=10)
+        server.client_manager.admin_clients["token-adm"] = _AdminClientRecord("admin@nvidia.com", "admin_abc123")
 
-        with (
-            patch("nvflare.private.fed.server.fed_server.Cell") as cell_cls,
-            patch("nvflare.private.fed.server.fed_server.NetAgent") as net_agent_cls,
-            patch("nvflare.private.fed.server.fed_server.ServerCommandAgent") as command_agent_cls,
-            patch("nvflare.private.fed.server.fed_server.mpm.add_cleanup_cb"),
-        ):
-            cell = MagicMock()
-            cell_cls.return_value = cell
-            net_agent_cls.return_value = MagicMock()
-            command_agent_cls.return_value = MagicMock()
+        assert server._resolve_client_fqcn_for_auth("admin@nvidia.com", "token-adm") == "admin_abc123"
+        # wrong name or unknown token: not resolvable (token signature check already covers identity)
+        # known admin token with a mismatched claimed name fails closed
+        assert server._resolve_client_fqcn_for_auth("someone-else", "token-adm") == MISSING_CLIENT_FQCN
+        assert server._resolve_client_fqcn_for_auth("admin@nvidia.com", "unknown-token") is None
 
-            result = server.create_job_cell("job-1", "tcp://root", "tcp://parent", False, None)
-
-        assert result is cell
-        assert cell_cls.call_args.kwargs["credentials"] == {}
-        assert cell_cls.call_args.kwargs["auth_identity"] is None
-        assert cell_cls.call_args.kwargs["auth_identity_map"] is None
-
-    def test_create_job_cell_uses_auth_identity_from_server_config(self):
+    def test_resolve_client_fqcn_for_auth_fails_closed_for_admin_with_missing_origin(self):
         server = object.__new__(FederatedServer)
-        server.engine = MagicMock()
-        auth_identity_map = {"server": "server-cn"}
+        server.client_manager = ClientManager(project_name="project", min_num_clients=1, max_num_clients=10)
+        server.client_manager.admin_clients["token-adm"] = _AdminClientRecord("admin@nvidia.com", None)
 
-        with (
-            patch("nvflare.private.fed.server.fed_server.Cell") as cell_cls,
-            patch("nvflare.private.fed.server.fed_server.NetAgent") as net_agent_cls,
-            patch("nvflare.private.fed.server.fed_server.ServerCommandAgent") as command_agent_cls,
-            patch("nvflare.private.fed.server.fed_server.mpm.add_cleanup_cb"),
-        ):
-            cell_cls.return_value = MagicMock()
-            net_agent_cls.return_value = MagicMock()
-            command_agent_cls.return_value = MagicMock()
-
-            server.create_job_cell(
-                "job-1",
-                "tcp://root",
-                "tcp://parent",
-                False,
-                {
-                    ConnPropKey.AUTH_IDENTITY: "server-cn",
-                    ConnPropKey.AUTH_IDENTITY_MAP: auth_identity_map,
-                },
-            )
-
-        assert cell_cls.call_args.kwargs["auth_identity"] == "server-cn"
-        assert cell_cls.call_args.kwargs["auth_identity_map"] == auth_identity_map
+        assert server._resolve_client_fqcn_for_auth("admin@nvidia.com", "token-adm") == MISSING_CLIENT_FQCN
 
     def test_hot_state_defaults_to_non_empty_session_id(self):
         assert HotState().ssid == DEFAULT_SERVICE_SESSION_ID

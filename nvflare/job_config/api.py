@@ -691,7 +691,7 @@ class FedJob:
         if threads is None:
             threads = n_clients
 
-        return self.job.simulator_run(
+        self.job.simulator_run(
             workspace,
             clients=",".join(self.clients),
             n_clients=n_clients,

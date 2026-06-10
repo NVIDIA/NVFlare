@@ -53,6 +53,7 @@ from nvflare.fuel.hci.proto import (
     StreamChannel,
     StreamTopic,
     make_error,
+    redact_headers,
     validate_proto,
 )
 from nvflare.fuel.hci.reg import CommandEntry, CommandModule, CommandRegister
@@ -63,7 +64,7 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
 from nvflare.private.defs import ClientType
 from nvflare.private.fed.authenticator import Authenticator, validate_auth_headers
-from nvflare.private.fed.utils.identity_utils import IdentityAsserter, TokenVerifier, get_cn_from_cert, load_cert_file
+from nvflare.private.fed.utils.identity_utils import TokenVerifier
 from nvflare.private.stream_runner import HeaderKey, ObjectStreamer
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
@@ -75,8 +76,11 @@ from .api_spec import (
     CommandInfo,
     ReplyProcessor,
     UidSource,
+    get_admin_auth_type,
+    get_admin_oidc_config,
 )
 from .api_status import APIStatus
+from .credentials import make_admin_credentials
 
 _CMD_TYPE_UNKNOWN = 0
 _CMD_TYPE_CLIENT = 1
@@ -297,6 +301,10 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         self.ca_cert = admin_config.get(AdminConfigKey.CA_CERT)
         self.client_cert = admin_config.get(AdminConfigKey.CLIENT_CERT)
         self.client_key = admin_config.get(AdminConfigKey.CLIENT_KEY)
+        self.auth_type = get_admin_auth_type(admin_config)
+        self.oidc_config = get_admin_oidc_config(admin_config)
+        # all auth-method specific behavior is delegated to this credential strategy
+        self.credentials = make_admin_credentials(self.auth_type)
         self.uid_source = admin_config.get(AdminConfigKey.UID_SOURCE, UidSource.USER_INPUT)
         self.host = admin_config.get(AdminConfigKey.HOST, "localhost")
         self.port = admin_config.get(AdminConfigKey.PORT, 8002)
@@ -309,15 +317,8 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
 
         if not self.ca_cert:
             raise ConfigError("missing CA Cert file name")
-        if not self.client_cert:
-            raise ConfigError("missing Client Cert file name")
-        if not self.client_key:
-            raise ConfigError("missing Client Key file name")
-
-        if self.uid_source == UidSource.CERT:
-            # We'll find the username from the client cert
-            cert = load_cert_file(self.client_cert)
-            self.user_name = get_cn_from_cert(cert)
+        self.credentials.validate_config(self)
+        self.user_name = self.credentials.resolve_user_name(self.user_name, self.uid_source, self.client_cert)
 
         if not self.user_name:
             raise Exception("user_name is required.")
@@ -332,6 +333,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         # for login
         self.token = None
         self.login_result = None
+        self._oidc_login_token = None  # id_token obtained once per login() and reused across retries
 
         self.server_cmd_reg = CommandRegister(app_ctx=self)
         self.client_cmd_reg = CommandRegister(app_ctx=self)
@@ -387,11 +389,11 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             return
 
         my_fqcn = new_admin_client_name()
-        credentials = {
-            DriverParams.CA_CERT.value: self.ca_cert,
-            DriverParams.CLIENT_CERT.value: self.client_cert,
-            DriverParams.CLIENT_KEY.value: self.client_key,
-        }
+        credentials = {DriverParams.CA_CERT.value: self.ca_cert}
+        if self.client_cert:
+            credentials[DriverParams.CLIENT_CERT.value] = self.client_cert
+        if self.client_key:
+            credentials[DriverParams.CLIENT_KEY.value] = self.client_key
 
         root_url = f"{self.scheme}://{self.host}:{self.port}"
         secure_conn = True
@@ -424,19 +426,22 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         self.cell.start()
 
         # authenticate
+        assert_client_identity = self.credentials.assert_client_identity(self)
+        verify_server_identity = self.credentials.verify_server_identity(self)
         authenticator = Authenticator(
             cell=self.cell,
             project_name=self.project_name,
             client_name=self.user_name,
             client_type=ClientType.ADMIN,
             expected_sp_identity=self.server_identity,
-            secure_mode=True,  # always True to authenticate the cell endpoint!
+            secure_mode=verify_server_identity,
             root_cert_file=self.ca_cert,
             private_key_file=self.client_key,
             cert_file=self.client_cert,
             msg_timeout=self.authenticate_msg_timeout,
             retry_interval=1.0,
             timeout=timeout,
+            assert_client_identity=assert_client_identity,
         )
 
         abort_signal = Signal()
@@ -548,6 +553,13 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         self.fire_event(event_type, ctx)
 
     def _try_login(self):
+        self.credentials.prepare_login(self)
+        try:
+            return self._login_with_retries()
+        finally:
+            self.credentials.end_login(self)
+
+    def _login_with_retries(self):
         resp = None
         for i in range(self.auto_login_max_tries):
             try:
@@ -611,6 +623,9 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         try:
             resp = self.server_execute(InternalCommands.LOGOUT)
         finally:
+            # credential-specific cleanup (e.g. drop any cached OIDC token so it is not
+            # replayed by a later session)
+            self.credentials.on_logout(self)
             # make sure to close
             self.close()
         return resp
@@ -660,30 +675,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         self.server_sess_active = True
         return {ResultKey.STATUS: APIStatus.SUCCESS, ResultKey.DETAILS: "Login success"}
 
-    def is_ready(self) -> bool:
-        """Whether the API is ready for executing commands."""
-        return self.server_sess_active
-
-    def _user_login(self):
-        """Login user
-
-        Returns:
-            A dict of login status and details
-        """
-        command = f"{InternalCommands.CERT_LOGIN} {self.user_name}"
-
-        id_asserter = IdentityAsserter(private_key_file=self.client_key, cert_file=self.client_cert)
-        cn_signature = id_asserter.sign_common_name(nonce="")
-
-        headers = {
-            "user_name": self.user_name,
-            "cert": id_asserter.cert_data,
-            "signature": cn_signature,
-            "study": self.study,
-        }
-
-        self.login_result = None
-        self.server_execute(command, _LoginReplyProcessor(), headers=headers)
+    def _login_result_to_status(self):
         if self.login_result is None:
             return {
                 ResultKey.STATUS: APIStatus.ERROR_RUNTIME,
@@ -709,6 +701,24 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
                 result[ResultKey.AUTH_CODE] = auth_code
             return result
         return self._after_login()
+
+    def is_ready(self) -> bool:
+        """Whether the API is ready for executing commands."""
+        return self.server_sess_active
+
+    def _user_login(self):
+        """Login user
+
+        Returns:
+            A dict of login status and details
+        """
+        return self.credentials.login(self)
+
+    def _execute_login_command(self, command: str, headers: dict) -> dict:
+        """Send a login command (built by the credential strategy) and process the reply."""
+        self.login_result = None
+        self.server_execute(command, _LoginReplyProcessor(), headers=headers)
+        return self._login_result_to_status()
 
     def _send_to_cell(self, ctx: CommandContext):
         command = ctx.get_command()
@@ -942,7 +952,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             ctx.set_command_props(props)
 
         if headers:
-            self.debug(f"setting cmd headers: {headers}")
+            self.debug(f"setting cmd headers: {redact_headers(headers)}")
             ctx.set_command_headers(headers)
 
         start = time.time()

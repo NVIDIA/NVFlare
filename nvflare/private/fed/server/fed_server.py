@@ -49,7 +49,7 @@ from nvflare.fuel.f3.cellnet.core_cell import make_reply as make_cellnet_reply
 from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey, MessageType
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN, FqcnInfo
-from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY
+from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY, ADMIN_ONLY_LISTENER_KEY
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
@@ -80,6 +80,27 @@ from .run_manager import RunManager
 from .server_engine import ServerEngine
 from .server_state import ABORT_RUN, ACTION, MESSAGE, NIS, HotState, ServerState
 from .server_status import ServerStatus
+
+
+def build_root_urls(scheme: str, fl_port: int, admin_port: int, admin_conn_security: str = None) -> list:
+    """Build the server cell's listener URLs for the FL port and the admin port.
+
+    A per-listener connection-security override (e.g. one-way TLS for OIDC admin consoles)
+    must never relax the FL listener, so it requires a dedicated admin port; the overridden
+    listener is then restricted to admin endpoints.
+    """
+    admin_url = f"{scheme}://0:{admin_port}?{ADMIN_LISTENER_KEY}=true"
+    if admin_conn_security:
+        if admin_port == fl_port:
+            raise RuntimeError(
+                f"{ConnPropKey.ADMIN_CONNECTION_SECURITY} requires a dedicated admin port: "
+                f"admin_port must differ from the FL port ({fl_port})"
+            )
+        admin_url += f"&{DriverParams.CONNECTION_SECURITY.value}={admin_conn_security}&{ADMIN_ONLY_LISTENER_KEY}=true"
+
+    if admin_port == fl_port:
+        return [admin_url]
+    return [f"{scheme}://0:{fl_port}", admin_url]
 
 
 class BaseServer(ABC):
@@ -177,10 +198,8 @@ class BaseServer(ABC):
         # get admin port
         admin_port = int(grpc_args.get("admin_port", fl_port))
 
-        admin_url = f"{scheme}://0:{admin_port}?{ADMIN_LISTENER_KEY}=true"
-        root_url = [admin_url if admin_port == fl_port else f"{scheme}://0:{fl_port}"]
-        if admin_port != fl_port:
-            root_url.append(admin_url)
+        admin_conn_security = grpc_args.get(ConnPropKey.ADMIN_CONNECTION_SECURITY)
+        root_url = build_root_urls(scheme, fl_port, admin_port, admin_conn_security)
 
         my_fqcn = FQCN.ROOT_SERVER
         auth_identity = grpc_args.get(ConnPropKey.AUTH_IDENTITY)
@@ -463,6 +482,12 @@ class FederatedServer(BaseServer):
         client = self.client_manager.clients.get(token)
         if client and client.name == client_name:
             return client.get_fqcn() or MISSING_CLIENT_FQCN
+
+        # Admin clients are not kept in client_manager.clients; consult their dedicated
+        # origin-binding map so admin tokens are also bound to their registered origin.
+        admin_fqcn = self.client_manager.resolve_admin_client_fqcn(client_name, token)
+        if admin_fqcn is not None:
+            return admin_fqcn or MISSING_CLIENT_FQCN
         return None
 
     def sign_auth_token(self, client_name: str, token: str):
@@ -544,7 +569,6 @@ class FederatedServer(BaseServer):
         )
 
     def create_job_cell(self, job_id, root_url, parent_url, secure_train, server_config) -> Cell:
-        server_config = server_config or {}
         my_fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
         if secure_train:
             root_cert = server_config[SecureTrainConst.SSL_ROOT_CERT]

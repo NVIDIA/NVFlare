@@ -18,7 +18,10 @@ Tests cover the _deploy_job server-side signature verification path that replace
 the old secure_train-based logic.
 """
 
+import os
+from io import BytesIO
 from unittest.mock import MagicMock, patch
+from zipfile import ZipFile
 
 import pytest
 
@@ -30,6 +33,22 @@ from nvflare.private.fed.server.job_runner import JobRunner
 # ---------------------------------------------------------------------------
 # Helpers shared across tests
 # ---------------------------------------------------------------------------
+
+
+def _zip_dir(path):
+    data = BytesIO()
+    with ZipFile(data, "w") as zf:
+        wrote = False
+        if path and os.path.isdir(path):
+            for root, _dirs, files in os.walk(path):
+                for file_name in files:
+                    full_path = os.path.join(root, file_name)
+                    arcname = os.path.relpath(full_path, path)
+                    zf.write(full_path, arcname)
+                    wrote = True
+        if not wrote:
+            zf.writestr("config/config_fed_server.json", "{}")
+    return data.getvalue()
 
 
 def _ok_reply():
@@ -58,7 +77,7 @@ def _build_server_deploy_ctx(job_meta=None, *, app_dir=None, startup_dir=None):
     job.min_sites = None
     job.required_sites = []
     job.get_deployment.return_value = {"app": [SiteType.SERVER]}
-    job.get_application.return_value = b"app_data"
+    job.get_application.return_value = _zip_dir(app_dir)
 
     engine = MagicMock()
     engine.get_clients.return_value = []
@@ -215,6 +234,47 @@ class TestUnsignedJobPolicyOff:
 
 
 # ---------------------------------------------------------------------------
+# Unsigned job, strict policy: no OIDC exemption
+# ---------------------------------------------------------------------------
+
+
+class TestUnsignedJobPolicyStrict:
+    def _oidc_meta(self):
+        from nvflare.fuel.sec.job_trust import JOB_SUBMITTER_PRINCIPAL_META_KEY
+        from nvflare.fuel.sec.principal import AUTH_METHOD_OIDC
+
+        return {JOB_SUBMITTER_PRINCIPAL_META_KEY: {"auth_method": AUTH_METHOD_OIDC}}
+
+    def test_strict_rejects_unsigned_oidc_job(self, tmp_path):
+        """require_signed_jobs="strict" → unsigned job rejected even for OIDC submitter."""
+        import json
+
+        (tmp_path / "fed_server.json").write_text(json.dumps({"require_signed_jobs": "strict"}))
+
+        runner, fl_ctx, engine, job, ws, deploy_detail = _build_server_deploy_ctx(
+            job_meta=self._oidc_meta(), app_dir=str(tmp_path), startup_dir=str(tmp_path)
+        )
+
+        with pytest.raises(RuntimeError, match="UNSIGNED_JOB_REJECTED"):
+            _run_deploy_with_workspace(runner, job, fl_ctx, ws)
+
+    def test_required_allows_unsigned_oidc_job(self, tmp_path):
+        """require_signed_jobs=true (the default "required" policy) → OIDC exemption applies."""
+        import json
+
+        (tmp_path / "fed_server.json").write_text(json.dumps({"require_signed_jobs": True}))
+
+        runner, fl_ctx, engine, job, ws, deploy_detail = _build_server_deploy_ctx(
+            job_meta=self._oidc_meta(), app_dir=str(tmp_path), startup_dir=str(tmp_path)
+        )
+
+        job_id, failed = _run_deploy_with_workspace(runner, job, fl_ctx, ws)
+
+        assert job_id == "test-job-1"
+        assert failed == []
+
+
+# ---------------------------------------------------------------------------
 # Unsigned job, simulator (no rootCA.pem, no explicit config)
 # ---------------------------------------------------------------------------
 
@@ -232,6 +292,37 @@ class TestUnsignedJobSimulator:
 
         assert job_id == "test-job-1"
         assert failed == []
+
+    def test_unsigned_job_does_not_extract_zip(self, tmp_path):
+        """Unsigned jobs are detected from the zip namelist; no disk extraction must occur."""
+        runner, fl_ctx, engine, job, ws, deploy_detail = _build_server_deploy_ctx(
+            app_dir=str(tmp_path), startup_dir=str(tmp_path)
+        )
+
+        with patch("nvflare.private.fed.server.job_runner.unzip_all_from_bytes") as mock_unzip:
+            job_id, failed = _run_deploy_with_workspace(runner, job, fl_ctx, ws)
+
+        mock_unzip.assert_not_called()
+        assert job_id == "test-job-1"
+
+    def test_signed_job_extracts_zip_for_verification(self, tmp_path):
+        """When the sig file is present in the zip, the app is extracted and verified."""
+        sig_file = tmp_path / ".__nvfl_sig.json"
+        sig_file.write_text('{"sig": "abc"}')
+
+        runner, fl_ctx, engine, job, ws, deploy_detail = _build_server_deploy_ctx(
+            app_dir=str(tmp_path), startup_dir=str(tmp_path)
+        )
+
+        with (
+            patch("nvflare.private.fed.server.job_runner.unzip_all_from_bytes") as mock_unzip,
+            patch("nvflare.private.fed.server.job_runner.verify_folder_signature", return_value=True) as mock_verify,
+        ):
+            job_id, _ = _run_deploy_with_workspace(runner, job, fl_ctx, ws)
+
+        mock_unzip.assert_called_once()
+        mock_verify.assert_called_once()
+        assert job_id == "test-job-1"
 
 
 # ---------------------------------------------------------------------------

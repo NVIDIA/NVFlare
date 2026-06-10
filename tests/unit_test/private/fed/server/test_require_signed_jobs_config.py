@@ -18,13 +18,64 @@ import json
 import os
 from unittest.mock import MagicMock
 
+from nvflare.private.fed.utils.fed_utils import SIGNED_JOBS_OFF, SIGNED_JOBS_REQUIRED, SIGNED_JOBS_STRICT
 from nvflare.private.fed.utils.fed_utils import require_signed_jobs as _require_signed_jobs
+from nvflare.private.fed.utils.fed_utils import signed_jobs_policy
 
 
 def _make_workspace(startup_dir: str):
     ws = MagicMock()
     ws.get_startup_kit_dir.return_value = startup_dir
     return ws
+
+
+class TestSignedJobsPolicy:
+    def test_explicit_true_is_required(self, tmp_path):
+        """require_signed_jobs=true → "required" policy (OIDC exemption active)."""
+        (tmp_path / "fed_server.json").write_text(json.dumps({"require_signed_jobs": True}))
+        ws = _make_workspace(str(tmp_path))
+        assert signed_jobs_policy(ws) == SIGNED_JOBS_REQUIRED
+        assert _require_signed_jobs(ws) is True
+
+    def test_explicit_false_is_off(self, tmp_path):
+        """require_signed_jobs=false → "off" policy."""
+        (tmp_path / "fed_server.json").write_text(json.dumps({"require_signed_jobs": False}))
+        ws = _make_workspace(str(tmp_path))
+        assert signed_jobs_policy(ws) == SIGNED_JOBS_OFF
+        assert _require_signed_jobs(ws) is False
+
+    def test_explicit_strict(self, tmp_path):
+        """require_signed_jobs="strict" → "strict" policy; require_signed_jobs() stays truthy."""
+        (tmp_path / "fed_server.json").write_text(json.dumps({"require_signed_jobs": "strict"}))
+        ws = _make_workspace(str(tmp_path))
+        assert signed_jobs_policy(ws) == SIGNED_JOBS_STRICT
+        assert _require_signed_jobs(ws) is True
+
+    def test_strict_is_case_insensitive(self, tmp_path):
+        (tmp_path / "fed_server.json").write_text(json.dumps({"require_signed_jobs": " STRICT "}))
+        ws = _make_workspace(str(tmp_path))
+        assert signed_jobs_policy(ws) == SIGNED_JOBS_STRICT
+
+    def test_other_truthy_string_is_required(self, tmp_path):
+        """Any other truthy value behaves like true → "required"."""
+        (tmp_path / "fed_server.json").write_text(json.dumps({"require_signed_jobs": "true"}))
+        ws = _make_workspace(str(tmp_path))
+        assert signed_jobs_policy(ws) == SIGNED_JOBS_REQUIRED
+
+    def test_inferred_default_with_rootca_is_required(self, tmp_path):
+        """Key absent, rootCA.pem present → "required" (not strict)."""
+        (tmp_path / "rootCA.pem").write_text("fake ca cert")
+        ws = _make_workspace(str(tmp_path))
+        assert signed_jobs_policy(ws) == SIGNED_JOBS_REQUIRED
+
+    def test_inferred_default_without_rootca_is_off(self, tmp_path):
+        ws = _make_workspace(str(tmp_path))
+        assert signed_jobs_policy(ws) == SIGNED_JOBS_OFF
+
+    def test_malformed_json_fails_closed_to_required(self, tmp_path):
+        (tmp_path / "fed_server.json").write_text("{invalid json")
+        ws = _make_workspace(str(tmp_path))
+        assert signed_jobs_policy(ws) == SIGNED_JOBS_REQUIRED
 
 
 class TestRequireSignedJobs:

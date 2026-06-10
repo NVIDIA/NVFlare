@@ -17,13 +17,15 @@ from unittest.mock import patch
 
 import pytest
 
-from nvflare.apis.fl_constant import ConnectionSecurity
+from nvflare.apis.fl_constant import ConnectionSecurity, SystemConfigs
 from nvflare.apis.job_def import DEFAULT_STUDY
 from nvflare.fuel.hci.client.api import CommandInfo, ResultKey
 from nvflare.fuel.hci.client.api_spec import AdminConfigKey, UidSource
 from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.hci.client.cli import AdminClient
 from nvflare.fuel.hci.tools import admin
+from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.private.fed.server.admin import get_configured_max_session_lifetime
 
 
 def _make_admin_client_for_study(study):
@@ -226,3 +228,68 @@ def test_admin_client_run_reports_login_rejection_and_skips_cmdloop():
     assert output == ["Login rejected: AUTH_UNKNOWN_STUDY: unknown study 'study-a'"]
     assert calls == [("connect", 5.0), ("login",), ("close",)]
     assert client.stopped is True
+
+
+def test_oidc_admin_client_does_not_prompt_for_legacy_username(tmp_path):
+    captured = {}
+    admin_config = {
+        AdminConfigKey.CONNECTION_SECURITY: ConnectionSecurity.TLS,
+        AdminConfigKey.CA_CERT: "ca.crt",
+        AdminConfigKey.AUTH_TYPE: "oidc",
+        AdminConfigKey.OIDC: {"issuer": "https://keycloak.example.com/realms/nvflare", "client_id": "nvflare"},
+    }
+
+    class _FakeAdminAPI:
+        def __init__(self, **kwargs):
+            captured["user_name"] = kwargs["user_name"]
+
+    with (
+        patch("nvflare.fuel.hci.client.cli.AdminAPI", _FakeAdminAPI),
+        patch.object(AdminClient, "_user_input", side_effect=AssertionError("OIDC should not prompt for username")),
+    ):
+        AdminClient(
+            admin_config=admin_config,
+            username="",
+            handlers=[],
+            cli_history_dir=str(tmp_path),
+            study=DEFAULT_STUDY,
+        )
+
+    assert captured["user_name"] == ""
+
+
+@pytest.fixture
+def startup_conf(tmp_path):
+    def _set(conf):
+        ConfigService.reset()
+        ConfigService.initialize(section_files={}, config_path=[str(tmp_path)], parsed_args=None, var_dict={})
+        ConfigService.add_section(SystemConfigs.STARTUP_CONF, conf)
+
+    yield _set
+    ConfigService.reset()
+
+
+def test_max_session_lifetime_read_from_admin_auth_config(startup_conf):
+    startup_conf({"auth": {"admin": {"type": "cert", "max_session_lifetime": 1234}}})
+
+    assert get_configured_max_session_lifetime() == 1234.0
+
+
+# numeric strings like "1234" are rejected too: runtime validation matches provisioning
+@pytest.mark.parametrize("value", ["not-a-number", "1234", -5, 0, True, None])
+def test_max_session_lifetime_ignores_invalid_values(startup_conf, value):
+    startup_conf({"auth": {"admin": {"type": "cert", "max_session_lifetime": value}}})
+
+    assert get_configured_max_session_lifetime() is None
+
+
+def test_max_session_lifetime_defaults_when_unset(startup_conf):
+    startup_conf({})
+
+    assert get_configured_max_session_lifetime() is None
+
+
+def test_max_session_lifetime_ignores_malformed_auth_section(startup_conf):
+    startup_conf({"auth": {"admin": "oidc"}})
+
+    assert get_configured_max_session_lifetime() is None

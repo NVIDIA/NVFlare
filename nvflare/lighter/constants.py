@@ -71,6 +71,11 @@ class PropKey:
     CC_ENABLED = "cc_enabled"
     USE_AIO = "use_aio"
     CC_ISSUERS = "cc_issuers"
+    # Marks a participant whose startup kit carries no client cert/key pair (only rootCA.pem).
+    # Set on the generated shared admin kit when admin auth is delegated to an external
+    # identity provider (e.g. OIDC). Builders should check this participant-level prop
+    # instead of the project's auth mode.
+    CERT_LESS = "cert_less"
 
     # the following are internal properties added by builders during provision
     PARENT = "parent"

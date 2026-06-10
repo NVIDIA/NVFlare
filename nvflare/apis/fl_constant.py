@@ -631,6 +631,7 @@ class ConnPropKey:
     SCHEME = "scheme"
     ADDRESS = "address"
     CONNECTION_SECURITY = "connection_security"
+    ADMIN_CONNECTION_SECURITY = "admin_connection_security"
 
     RELAY_CONFIG = "relay_config"
     CP_CONN_PROPS = "cp_conn_props"

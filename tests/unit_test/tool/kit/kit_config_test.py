@@ -45,6 +45,17 @@ def _make_poc_admin_startup_kit(parent: Path, name: str = "admin@nvidia.com") ->
     return kit_dir
 
 
+def _make_oidc_admin_startup_kit(parent: Path, name: str = "admin") -> Path:
+    kit_dir = parent / name
+    startup_dir = kit_dir / "startup"
+    startup_dir.mkdir(parents=True)
+    (startup_dir / "fed_admin.json").write_text(
+        '{"admin": {"username": "", "auth_type": "oidc", "ca_cert": "rootCA.pem"}}\n'
+    )
+    (startup_dir / "rootCA.pem").write_text("dummy root ca\n")
+    return kit_dir
+
+
 def _make_site_startup_kit(parent: Path, name: str = "site-1") -> Path:
     kit_dir = parent / name
     startup_dir = kit_dir / "startup"
@@ -234,6 +245,27 @@ class TestStartupKitRegistryConfig:
         assert metadata["identity"] == "site-1"
         assert metadata["kind"] == "site"
         assert metadata["findings"] == []
+
+    def test_oidc_admin_startup_kit_without_client_cert_can_be_registered(self, tmp_path):
+        from nvflare.tool.kit import kit_config
+
+        kit_dir = _make_oidc_admin_startup_kit(tmp_path)
+        config = CF.parse_string("version = 2")
+
+        updated = kit_config.add_startup_kit_entry(config, "oidc-admin", str(kit_dir))
+
+        assert _entry_path(updated, "oidc-admin") == kit_dir.resolve()
+        assert kit_config.classify_startup_kit(str(kit_dir)) == ("admin", str(kit_dir.resolve()))
+        assert kit_config.classify_startup_kit(str(kit_dir / "startup")) == ("admin", str(kit_dir.resolve()))
+
+    def test_admin_startup_kit_without_client_cert_must_be_oidc(self, tmp_path):
+        from nvflare.tool.kit import kit_config
+
+        kit_dir = _make_oidc_admin_startup_kit(tmp_path)
+        (kit_dir / "startup" / "fed_admin.json").write_text('{"admin": {"username": "admin@nvidia.com"}}\n')
+
+        with pytest.raises(kit_config.StartupKitConfigError):
+            kit_config.classify_startup_kit(str(kit_dir))
 
     def test_inspect_startup_kit_metadata_extracts_cert_identity_and_expiration(self, tmp_path):
         from nvflare.tool.kit import kit_config

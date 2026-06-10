@@ -11,12 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import logging
 import threading
 import time
 from typing import List, Optional
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import ServerCommandKey
+from nvflare.apis.fl_constant import ServerCommandKey, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
 from nvflare.fuel.f3.cellnet.cell import Cell
@@ -32,6 +33,13 @@ from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.hci.server.hci import AdminServer
 from nvflare.fuel.hci.server.login import LoginModule, SessionManager
 from nvflare.fuel.sec.audit import Auditor, AuditService
+from nvflare.fuel.sec.authn import (
+    MAX_SESSION_LIFETIME_KEY,
+    AuthError,
+    get_admin_auth_config,
+    parse_max_session_lifetime,
+)
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
 from nvflare.private.defs import ERROR_MSG_PREFIX, RequestHeader
 from nvflare.private.fed.server.message_send import ClientReply, send_requests
@@ -142,6 +150,30 @@ def check_client_replies(
     return timed_out_clients
 
 
+def get_configured_max_session_lifetime() -> Optional[float]:
+    """Optional admin session lifetime cap (seconds) from auth.admin.max_session_lifetime in the startup config.
+
+    Returns None (caller keeps the SessionManager default) when unset, malformed, or not a positive number.
+    """
+    logger = logging.getLogger(__name__)
+    try:
+        startup_conf = ConfigService.get_section(SystemConfigs.STARTUP_CONF) or {}
+        admin_auth_config = get_admin_auth_config(startup_conf)
+    except AuthError as ex:
+        logger.warning(f"ignoring admin auth config for max_session_lifetime: {ex}")
+        return None
+
+    value = admin_auth_config.get(MAX_SESSION_LIFETIME_KEY)
+    if value is None:
+        return None
+
+    try:
+        return parse_max_session_lifetime(value)
+    except ValueError as ex:
+        logger.warning(f"ignoring invalid admin {MAX_SESSION_LIFETIME_KEY}: {ex}")
+        return None
+
+
 class FedAdminServer(AdminServer):
     def __init__(
         self,
@@ -168,7 +200,11 @@ class FedAdminServer(AdminServer):
         self.cell = cell
         self.client_lock = threading.Lock()
 
-        sess_mgr = SessionManager(cell)
+        max_session_lifetime = get_configured_max_session_lifetime()
+        if max_session_lifetime is not None:
+            sess_mgr = SessionManager(cell, max_session_lifetime=max_session_lifetime)
+        else:
+            sess_mgr = SessionManager(cell)
         login_module = LoginModule(sess_mgr)
         cmd_reg.register_module(login_module)
 

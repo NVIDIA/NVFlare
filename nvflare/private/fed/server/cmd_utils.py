@@ -168,9 +168,8 @@ class CommandUtil(object):
         return ""
 
     def must_be_project_admin(self, conn: Connection, args: List[str]):
-        # This helper intentionally checks the certificate role. project_admin-only operations
-        # must stay scoped to the cert/global role.
-        role = conn.get_prop(ConnProps.USER_ROLE, "")
+        principal = conn.get_prop(ConnProps.USER_PRINCIPAL, None)
+        role = principal.policy_role() if principal else conn.get_prop(ConnProps.USER_ROLE, "")
         if role not in ["project_admin"]:
             conn.append_error(
                 f"{ReplyKeyword.NOT_AUTHORIZED} for {role}", meta=make_meta(MetaStatusValue.NOT_AUTHORIZED)

@@ -19,10 +19,18 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.streaming import StreamContext
 from nvflare.app_common.streamers.file_streamer import FileStreamer
 from nvflare.fuel.f3.cellnet.cell import Cell
-from nvflare.fuel.f3.cellnet.defs import CellChannel
+from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.hci.conn import Connection
-from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, ProtoKey, StreamChannel, make_meta, validate_proto
+from nvflare.fuel.hci.proto import (
+    MetaKey,
+    MetaStatusValue,
+    ProtoKey,
+    StreamChannel,
+    make_meta,
+    redact_headers,
+    validate_proto,
+)
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.fed.server.cred_keeper import CredKeeper
 from nvflare.security.logging import secure_log_traceback
@@ -168,7 +176,8 @@ class AdminServer:
             self.logger.debug(f"processing command {command}")
             self.cmd_reg.process_command(conn, command)
         else:
-            self.logger.error(f"received invalid command: {request.headers}")
+            origin = request.get_header(MessageHeaderKey.ORIGIN, "?")
+            self.logger.error(f"received invalid command from {origin}: headers={redact_headers(request.headers)}")
         payload = conn.close()
         return CellMessage(payload=payload)
 

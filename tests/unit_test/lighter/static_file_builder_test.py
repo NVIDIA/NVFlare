@@ -17,9 +17,13 @@ from pathlib import Path
 
 import pytest
 
-from nvflare.lighter.constants import CtxKey
+from nvflare.lighter.admin_auth import OIDC_ADMIN_KIT_NAME_KEY
+from nvflare.lighter.constants import CtxKey, PropKey
 from nvflare.lighter.entity import Participant, Project
+from nvflare.lighter.impl.cert import CertBuilder
 from nvflare.lighter.impl.static_file import StaticFileBuilder
+from nvflare.lighter.impl.workspace import WorkspaceBuilder
+from nvflare.lighter.provisioner import Provisioner
 
 
 class _FakeCtx:
@@ -84,6 +88,41 @@ def _extract_class_allow_list(resource_template):
                 end = i
                 break
     return json.loads(resource_template[start : end + 1])
+
+
+def _make_oidc_project(server_props: dict = None, oidc_config: dict = None) -> Project:
+    """Create a project with OIDC admin auth, one server and one client."""
+    if oidc_config is None:
+        oidc_config = {
+            "issuer": "https://login.example.com",
+            "client_id": "nvflare-sso",
+            "authorization_url": "https://login.example.com/oauth2/auth",
+            "token_url": "https://login.example.com/oauth2/token",
+            "scope": "openid profile email roles",
+            "open_browser": True,
+            "redirect_uri": "http://127.0.0.1:8765/callback",
+            "role_mapping": {
+                "roles": {"nvflare_project_admin": "project_admin"},
+            },
+        }
+    project = Project(
+        name="oidc_project",
+        description="desc",
+        props={
+            "auth": {
+                "admin": {
+                    "type": "oidc",
+                    "oidc": oidc_config,
+                },
+            },
+        },
+    )
+    props = {PropKey.FED_LEARN_PORT: 8002, PropKey.ADMIN_PORT: 8003}
+    if server_props:
+        props.update(server_props)
+    project.set_server("server1", "org", props)
+    project.add_client("site-1", "org", {})
+    return project
 
 
 class TestStaticFileBuilder:
@@ -403,3 +442,253 @@ class TestStaticFileBuilder:
                     "package prefix covering it, to class_allow_list; list the corresponding *_locator "
                     "component instead."
                 )
+
+    def test_oidc_admin_auth_generates_shared_admin_kit_without_private_key(self, tmp_path):
+        project = _make_oidc_project()
+
+        provisioner = Provisioner(
+            str(tmp_path),
+            [WorkspaceBuilder(), CertBuilder(), StaticFileBuilder(scheme="grpc")],
+        )
+        ctx = provisioner.provision(project)
+
+        assert not ctx.get(CtxKey.BUILD_ERROR)
+        prod_dir = tmp_path / "oidc_project" / "prod_00"
+
+        admin_startup = prod_dir / "admin" / "startup"
+        fed_admin = json.loads((admin_startup / "fed_admin.json").read_text())
+        assert fed_admin["admin"]["auth_type"] == "oidc"
+        assert fed_admin["admin"]["connection_security"] == "tls"
+        assert fed_admin["admin"]["port"] == 8003
+        assert fed_admin["admin"]["oidc"]["issuer"] == "https://login.example.com"
+        assert (admin_startup / "rootCA.pem").exists()
+        assert not (admin_startup / "client.key").exists()
+        assert not (admin_startup / "client.crt").exists()
+
+        # only the dedicated admin listener is relaxed to one-way TLS; the FL listener
+        # keeps the default mTLS, so OIDC never downgrades FL-client transport.
+        fed_server = json.loads((prod_dir / "server1" / "startup" / "fed_server.json").read_text())
+        assert fed_server["servers"][0]["connection_security"] == "mtls"
+        assert fed_server["servers"][0]["admin_connection_security"] == "tls"
+        assert fed_server["auth"]["admin"]["type"] == "oidc"
+        assert "authorization_url" not in fed_server["auth"]["admin"]["oidc"]
+        assert "token_url" not in fed_server["auth"]["admin"]["oidc"]
+        assert "redirect_uri" not in fed_server["auth"]["admin"]["oidc"]
+        assert fed_server["auth"]["admin"]["oidc"]["role_mapping"]["roles"] == {
+            "nvflare_project_admin": "project_admin"
+        }
+
+    def test_oidc_admin_kit_is_a_real_participant(self):
+        """The shared OIDC admin kit is a genuine Participant, so builders (including
+        custom ones) iterating project.get_admins() need no OIDC special case."""
+        project = _make_oidc_project()
+
+        admins = project.get_admins()
+        assert len(admins) == 1
+        kit = admins[0]
+        assert isinstance(kit, Participant)
+        assert kit.name == "admin"
+        assert kit.subject == "admin"
+        assert kit.org == "org"  # follows the server's org
+        assert kit.get_prop(PropKey.CERT_LESS) is True
+        assert kit.get_connect_to() is None
+        assert kit in project.get_all_participants()
+
+        # a minimal custom builder loop sees the kit like any other admin participant
+        seen = [(a.name, a.subject, bool(a.get_prop(PropKey.CERT_LESS))) for a in project.get_admins()]
+        assert seen == [("admin", "admin", True)]
+
+    def test_oidc_admin_auth_ignores_per_admin_participants(self):
+        """OIDC admin users live in the identity provider, so per-admin entries are not
+        provisioned as participants; only the shared admin kit is."""
+        project = _make_oidc_project()
+
+        assert project.add_admin("user@org.com", "org", {"role": "project_admin"}) is None
+        assert [a.name for a in project.get_admins()] == ["admin"]
+
+    def test_oidc_admin_kit_honors_custom_kit_name(self):
+        project = _make_oidc_project()
+        project.props["auth"]["admin"][OIDC_ADMIN_KIT_NAME_KEY] = "flare_console"
+
+        # the kit participant is created at Project construction time, so rebuild
+        project2 = Project(name="oidc_project", description="desc", props=project.props)
+        project2.set_server("server1", "org", {PropKey.FED_LEARN_PORT: 8002, PropKey.ADMIN_PORT: 8003})
+        assert [a.name for a in project2.get_admins()] == ["flare_console"]
+
+    def test_oidc_admin_auth_keeps_explicit_mtls_for_fl_listener(self, tmp_path):
+        """Explicit mtls + OIDC admin auth: FL transport stays mTLS, only the admin listener is TLS."""
+        project = _make_oidc_project(server_props={PropKey.CONN_SECURITY: "mtls"})
+
+        provisioner = Provisioner(
+            str(tmp_path),
+            [WorkspaceBuilder(), CertBuilder(), StaticFileBuilder(scheme="grpc")],
+        )
+        ctx = provisioner.provision(project)
+
+        assert not ctx.get(CtxKey.BUILD_ERROR)
+        prod_dir = tmp_path / "oidc_project" / "prod_00"
+        fed_server = json.loads((prod_dir / "server1" / "startup" / "fed_server.json").read_text())
+        assert fed_server["servers"][0]["connection_security"] == "mtls"
+        assert fed_server["servers"][0]["admin_connection_security"] == "tls"
+
+    def test_oidc_admin_auth_requires_dedicated_admin_port(self, tmp_path):
+        """OIDC needs its own admin listener (one-way TLS), so a shared admin/FL port is an error."""
+        project = _make_oidc_project(server_props={PropKey.ADMIN_PORT: 8002})
+
+        provisioner = Provisioner(
+            str(tmp_path),
+            [WorkspaceBuilder(), CertBuilder(), StaticFileBuilder(scheme="grpc")],
+        )
+        ctx = provisioner.provision(project)
+
+        assert ctx.get(CtxKey.BUILD_ERROR)
+        errors = ctx.get(CtxKey.ERRORS) or []
+        assert any("dedicated admin port" in e for e in errors)
+        assert not (tmp_path / "oidc_project" / "prod_00").exists()
+
+    def test_poc_provision_with_oidc_sets_uid_source_user_input(self, tmp_path):
+        """POC mode sets uid_source 'cert', but OIDC kits ship no client cert.
+
+        AdminAPI raises ConfigError at startup for uid_source 'cert' without a client cert,
+        so the OIDC admin config must reset uid_source to 'user_input'.
+        """
+        project = _make_oidc_project()
+
+        provisioner = Provisioner(
+            str(tmp_path),
+            [WorkspaceBuilder(), CertBuilder(), StaticFileBuilder(scheme="grpc")],
+        )
+        ctx = provisioner.provision(project, mode="poc")
+
+        assert not ctx.get(CtxKey.BUILD_ERROR)
+        prod_dir = tmp_path / "oidc_project" / "prod_00"
+        fed_admin = json.loads((prod_dir / "admin" / "startup" / "fed_admin.json").read_text())
+        assert fed_admin["admin"]["auth_type"] == "oidc"
+        assert fed_admin["admin"]["uid_source"] == "user_input"
+        assert "client_cert" not in fed_admin["admin"]
+        assert "client_key" not in fed_admin["admin"]
+
+    def test_provision_rejects_unsupported_oidc_keys_by_presence(self):
+        """Provision-time validation must match runtime semantics: reject by key presence.
+
+        A falsy value (e.g. client_secret: "") still makes the server runtime refuse to
+        load the config, so it must be rejected at provision time too.
+        """
+        from nvflare.lighter.impl.static_file import _reject_unsupported_oidc_client_config
+
+        with pytest.raises(ValueError, match="client_secret"):
+            _reject_unsupported_oidc_client_config({"client_secret": ""})
+        with pytest.raises(ValueError, match="roles_claim"):
+            _reject_unsupported_oidc_client_config({"roles_claim": "roles"})
+
+    def test_provision_oidc_validation_covers_all_runtime_rejected_server_keys(self):
+        """Every runtime-rejected key that would land in fed_server.json must be rejected at
+        provision time, so a kit that provisions successfully can never brick server logins."""
+        from nvflare.fuel.sec.oidc import UNSUPPORTED_SERVER_ADMIN_AUTH_KEYS
+        from nvflare.lighter.impl.static_file import _SERVER_OIDC_EXCLUDED_KEYS, _reject_unsupported_oidc_client_config
+
+        for key in UNSUPPORTED_SERVER_ADMIN_AUTH_KEYS:
+            if key in _SERVER_OIDC_EXCLUDED_KEYS:
+                # stripped from the server config by provisioning, so allowed in project.yml
+                _reject_unsupported_oidc_client_config({key: "x"})
+            else:
+                with pytest.raises(ValueError, match=key):
+                    _reject_unsupported_oidc_client_config({key: "x"})
+
+    def test_max_session_lifetime_lands_in_fed_server_json_for_oidc(self, tmp_path):
+        project = _make_oidc_project()
+        project.props["auth"]["admin"]["max_session_lifetime"] = 3600
+
+        provisioner = Provisioner(
+            str(tmp_path),
+            [WorkspaceBuilder(), CertBuilder(), StaticFileBuilder(scheme="grpc")],
+        )
+        ctx = provisioner.provision(project)
+
+        assert not ctx.get(CtxKey.BUILD_ERROR)
+        prod_dir = tmp_path / "oidc_project" / "prod_00"
+        fed_server = json.loads((prod_dir / "server1" / "startup" / "fed_server.json").read_text())
+        assert fed_server["auth"]["admin"]["type"] == "oidc"
+        assert fed_server["auth"]["admin"]["max_session_lifetime"] == 3600
+
+    def test_max_session_lifetime_lands_in_fed_server_json_for_cert(self, tmp_path):
+        project = Project(
+            name="cert_project",
+            description="desc",
+            props={"auth": {"admin": {"type": "cert", "max_session_lifetime": 7200}}},
+        )
+        project.set_server("server1", "org", {PropKey.FED_LEARN_PORT: 8002, PropKey.ADMIN_PORT: 8003})
+        project.add_client("site-1", "org", {})
+
+        provisioner = Provisioner(
+            str(tmp_path),
+            [WorkspaceBuilder(), CertBuilder(), StaticFileBuilder(scheme="grpc")],
+        )
+        ctx = provisioner.provision(project)
+
+        assert not ctx.get(CtxKey.BUILD_ERROR)
+        prod_dir = tmp_path / "cert_project" / "prod_00"
+        fed_server = json.loads((prod_dir / "server1" / "startup" / "fed_server.json").read_text())
+        assert fed_server["auth"]["admin"]["type"] == "cert"
+        assert fed_server["auth"]["admin"]["max_session_lifetime"] == 7200
+
+    @pytest.mark.parametrize("bad_value", [0, -1, "8h", True])
+    @pytest.mark.parametrize("auth_type", ["cert", "oidc"])
+    def test_invalid_max_session_lifetime_fails_provisioning(self, auth_type, bad_value):
+        """A bad max_session_lifetime must fail at provision time, not be ignored at server start."""
+        from nvflare.lighter.impl.static_file import _server_admin_auth_config
+
+        config = {"type": auth_type, "max_session_lifetime": bad_value}
+        if auth_type == "oidc":
+            config["oidc"] = {"issuer": "https://login.example.com", "client_id": "nvflare-sso"}
+        with pytest.raises(ValueError, match="max_session_lifetime"):
+            _server_admin_auth_config(config)
+
+    def test_invalid_max_session_lifetime_fails_full_provision(self, tmp_path):
+        project = _make_oidc_project()
+        project.props["auth"]["admin"]["max_session_lifetime"] = "8h"
+
+        provisioner = Provisioner(
+            str(tmp_path),
+            [WorkspaceBuilder(), CertBuilder(), StaticFileBuilder(scheme="grpc")],
+        )
+        ctx = provisioner.provision(project)
+
+        assert ctx.get(CtxKey.BUILD_ERROR)
+        errors = ctx.get(CtxKey.ERRORS) or []
+        assert any("max_session_lifetime" in e for e in errors)
+
+    def test_unknown_oidc_admin_level_key_warns(self, caplog):
+        """Unknown admin-level keys are dropped from the oidc server config, but with a warning
+        so typos (e.g. 'max_session_lifetim') are visible at provision time."""
+        import logging
+
+        from nvflare.lighter.impl.static_file import _server_admin_auth_config
+
+        config = {
+            "type": "oidc",
+            "oidc": {"issuer": "https://login.example.com", "client_id": "nvflare-sso"},
+            "max_session_lifetim": 3600,  # typo: dropped, must be warned about
+            "admin_kit_name": "admin",  # known provision-only key: no warning
+        }
+        with caplog.at_level(logging.WARNING, logger="nvflare.lighter.impl.static_file"):
+            server_config = _server_admin_auth_config(config)
+
+        assert "max_session_lifetim" not in server_config
+        # only the typo'd key is reported as dropped; admin_kit_name is provision-only but recognized
+        assert any(
+            "dropping unrecognized auth.admin key(s) ['max_session_lifetim']" in rec.message for rec in caplog.records
+        )
+
+    def test_non_mapping_admin_auth_section_raises(self):
+        """A present-but-non-mapping auth.admin section must fail provisioning loudly instead of
+        silently producing a cert-mode deployment (the server runtime also fails closed on this)."""
+        from nvflare.lighter.admin_auth import get_admin_auth_config
+
+        project = Project(name="proj", description="desc", props={"auth": {"admin": "oidc"}})
+        with pytest.raises(ValueError, match="must be a mapping"):
+            get_admin_auth_config(project)
+
+        project = Project(name="proj", description="desc", props={"auth": "oidc"})
+        with pytest.raises(ValueError, match="must be a mapping"):
+            get_admin_auth_config(project)

@@ -35,6 +35,8 @@ from nvflare.apis.shareable import Shareable
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
+from nvflare.fuel.sec.job_trust import JOB_AUTHORIZATION_META_KEY, JOB_SUBMITTER_PRINCIPAL_META_KEY
+from nvflare.fuel.sec.principal import AUTH_METHOD_OIDC, Principal
 from nvflare.lighter.tool_consts import NVFLARE_SUBMITTER_CRT_FILE
 from nvflare.private.fed.server import cmd_utils as cmd_utils_module
 from nvflare.private.fed.server import job_cmds as job_cmds_module
@@ -542,6 +544,37 @@ def test_submit_job_strips_user_supplied_from_hub_site(monkeypatch):
 
     assert conn.errors == []
     assert JobMetaKey.FROM_HUB_SITE.value not in engine.job_def_manager.created_meta
+
+
+def test_submit_job_strips_user_supplied_trust_metadata(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    monkeypatch.setattr(
+        job_cmds_module,
+        "JobMetaValidator",
+        lambda: _FakeJobMetaValidatorWithMeta(
+            {
+                JOB_SUBMITTER_PRINCIPAL_META_KEY: {"auth_method": "oidc"},
+                JOB_AUTHORIZATION_META_KEY: {"app": {"signature": "user-supplied"}},
+            }
+        ),
+    )
+
+    engine = _FakeEngine()
+    conn = _MockConnection(
+        app_ctx=engine,
+        props={
+            ConnProps.FILE_LOCATION: "job.zip",
+            ConnProps.USER_NAME: "submitter",
+            ConnProps.USER_ORG: "org",
+            ConnProps.USER_ROLE: "role",
+        },
+    )
+
+    JobCommandModule().submit_job(conn, ["submit_job", "job_folder"])
+
+    assert conn.errors == []
+    assert JOB_SUBMITTER_PRINCIPAL_META_KEY not in engine.job_def_manager.created_meta
+    assert JOB_AUTHORIZATION_META_KEY not in engine.job_def_manager.created_meta
 
 
 def test_submit_job_defaults_study_when_cmd_props_missing(monkeypatch):
@@ -1151,6 +1184,54 @@ def test_clone_job_preserves_byoc_flag(monkeypatch):
 
     assert conn.errors == []
     assert engine.job_def_manager.cloned_meta[AppValidationKey.BYOC] is True
+
+
+def test_clone_job_uses_sanitized_submitter_principal(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", object)
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+
+    source_job = _FakeListedJob(
+        {
+            JobMetaKey.JOB_ID.value: "source-job",
+            JobMetaKey.JOB_NAME.value: "source",
+            JobMetaKey.STUDY.value: "cancer-research",
+        }
+    )
+    principal = Principal(
+        subject="keycloak-subject",
+        username="admin@example.com",
+        email="admin@example.com",
+        org="example",
+        raw_roles=["nvflare_project_admin"],
+        groups=["provider-group"],
+        issuer="https://login.example.com",
+        token_id="token-id",
+        auth_time=123.0,
+        token_exp=456.0,
+        effective_role="project_admin",
+        auth_method=AUTH_METHOD_OIDC,
+    )
+    engine = _FakeEngine()
+    conn = _MockConnection(
+        app_ctx=engine,
+        props={
+            JobCommandModule.JOB: source_job,
+            JobCommandModule.JOB_ID: "source-job",
+            ConnProps.USER_NAME: "submitter",
+            ConnProps.USER_ORG: "org",
+            ConnProps.USER_ROLE: "project_admin",
+            ConnProps.USER_PRINCIPAL: principal,
+        },
+    )
+
+    JobCommandModule().clone_job(conn, ["clone_job", "source-job"])
+
+    submitter = engine.job_def_manager.cloned_meta[JOB_SUBMITTER_PRINCIPAL_META_KEY]
+    assert submitter == principal.to_submitter_dict()
+    assert "raw_roles" not in submitter
+    assert "groups" not in submitter
+    assert "token_id" not in submitter
+    assert "token_exp" not in submitter
 
 
 def test_list_jobs_filters_legacy_jobs_into_default_study(monkeypatch):

@@ -12,12 +12,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import functools
 import json
 import logging
 import os
 import shutil
 
+from nvflare.apis.fl_constant import ConnPropKey
+from nvflare.fuel.hci.client.api_spec import UidSource
+from nvflare.fuel.sec.authn import MAX_SESSION_LIFETIME_KEY, parse_max_session_lifetime
+from nvflare.fuel.sec.oidc import CLIENT_LOGIN_ONLY_OIDC_KEYS, UNSUPPORTED_SERVER_ADMIN_AUTH_KEYS
 from nvflare.lighter import utils
+from nvflare.lighter.admin_auth import (
+    AUTH_TYPE_OIDC,
+    OIDC_ADMIN_KIT_NAME_KEY,
+    get_admin_auth_config,
+    is_oidc_admin_auth,
+    is_oidc_admin_auth_config,
+)
 from nvflare.lighter.constants import (
     CommConfigArg,
     ConnSecurity,
@@ -32,6 +44,82 @@ from nvflare.lighter.entity import Participant
 from nvflare.lighter.spec import Builder, Project, ProvisionContext
 
 _logger = logging.getLogger(__name__)
+
+# Keys that provisioning strips from the server-side admin auth config (fed_server.json)
+# because they are only meaningful to the admin client login flow (fed_admin.json).
+# The runtime's oidc module owns this partition so provision-time and runtime handling cannot drift.
+_SERVER_OIDC_EXCLUDED_KEYS = CLIENT_LOGIN_ONLY_OIDC_KEYS
+
+# Keys rejected at provision time, derived from the runtime's canonical reject list so a kit
+# that provisions successfully can never produce a server config the runtime refuses to load.
+# Any runtime-rejected key that is not stripped by _SERVER_OIDC_EXCLUDED_KEYS would land in
+# fed_server.json and brick admin logins, so it must be rejected here.
+_UNSUPPORTED_PROVISION_OIDC_KEYS = frozenset(UNSUPPORTED_SERVER_ADMIN_AUTH_KEYS) - _SERVER_OIDC_EXCLUDED_KEYS
+
+
+def _reject_unsupported_oidc_client_config(oidc_config: dict):
+    # Check by key presence (not truthiness) to match the runtime's validation semantics:
+    # the server rejects these keys even with falsy values (e.g. client_secret: "").
+    present = sorted(k for k in _UNSUPPORTED_PROVISION_OIDC_KEYS if k in oidc_config)
+    if present:
+        raise ValueError(f"unsupported OIDC admin auth config key: {present[0]}")
+
+
+# Admin-level keys provisioning understands for type 'oidc'. Anything else is dropped from
+# fed_server.json with a warning so typos (e.g. 'max_session_lifetim') are visible at provision time.
+_KNOWN_OIDC_ADMIN_LEVEL_KEYS = {"type", "oidc", MAX_SESSION_LIFETIME_KEY, OIDC_ADMIN_KIT_NAME_KEY}
+
+
+def _server_admin_auth_config(admin_auth_config: dict) -> dict:
+    if MAX_SESSION_LIFETIME_KEY in admin_auth_config:
+        # Validate at provision time (with the runtime's shared parser) so a bad value fails
+        # the provision instead of being silently ignored (with a warning) at server start.
+        parse_max_session_lifetime(admin_auth_config[MAX_SESSION_LIFETIME_KEY])
+    if not is_oidc_admin_auth_config(admin_auth_config):
+        return admin_auth_config
+
+    oidc_config = dict(admin_auth_config.get("oidc") or {})
+    _reject_unsupported_oidc_client_config(oidc_config)
+    server_config = {
+        "type": AUTH_TYPE_OIDC,
+        "oidc": {k: v for k, v in oidc_config.items() if k not in _SERVER_OIDC_EXCLUDED_KEYS},
+    }
+    if MAX_SESSION_LIFETIME_KEY in admin_auth_config:
+        server_config[MAX_SESSION_LIFETIME_KEY] = admin_auth_config[MAX_SESSION_LIFETIME_KEY]
+    dropped = sorted(set(admin_auth_config) - _KNOWN_OIDC_ADMIN_LEVEL_KEYS)
+    if dropped:
+        _logger.warning(
+            f"dropping unrecognized auth.admin key(s) {dropped} from the server admin auth config "
+            f"(fed_server.json); recognized keys for type 'oidc' are {sorted(_KNOWN_OIDC_ADMIN_LEVEL_KEYS)}"
+        )
+    return server_config
+
+
+def _server_config_with_admin_auth(content: str, admin_auth_config: dict) -> str:
+    fed_server_config = json.loads(content)
+    fed_server_config["auth"] = {"admin": _server_admin_auth_config(admin_auth_config)}
+    if is_oidc_admin_auth_config(admin_auth_config):
+        # OIDC admin consoles cannot present client TLS certs, so the dedicated admin
+        # listener runs one-way TLS; the FL listener keeps the configured (mTLS) security.
+        for server_entry in fed_server_config.get("servers", []):
+            server_entry[ConnPropKey.ADMIN_CONNECTION_SECURITY] = ConnSecurity.TLS
+    return json.dumps(fed_server_config, indent=2)
+
+
+def _admin_config_with_oidc(content: str, oidc_config: dict) -> str:
+    fed_admin_config = json.loads(content)
+    _reject_unsupported_oidc_client_config(oidc_config)
+    admin_config = fed_admin_config["admin"]
+    admin_config["username"] = ""
+    admin_config["connection_security"] = ConnSecurity.TLS
+    admin_config["auth_type"] = "oidc"
+    admin_config["oidc"] = oidc_config
+    # OIDC kits carry no client cert, so uid_source must not be 'cert' (e.g. POC mode sets it):
+    # AdminAPI rejects uid_source 'cert' without a client cert file at startup.
+    admin_config["uid_source"] = UidSource.USER_INPUT
+    admin_config.pop("client_key", None)
+    admin_config.pop("client_cert", None)
+    return json.dumps(fed_admin_config, indent=2)
 
 
 class StaticFileBuilder(Builder):
@@ -102,6 +190,23 @@ class StaticFileBuilder(Builder):
         if custom_ca_cert:
             shutil.copyfile(custom_ca_cert, os.path.join(ctx.get_kit_dir(site), ProvFileName.CUSTOM_CA_CERT_FILE_NAME))
         return conn_security
+
+    @staticmethod
+    def _require_dedicated_admin_port_for_oidc(server: Participant, admin_port, fed_learn_port):
+        """OIDC admin auth needs its own admin listener with one-way TLS.
+
+        OIDC admin consoles authenticate with bearer tokens and cannot present a client TLS
+        certificate, so the admin listener runs one-way TLS. The FL listener keeps the
+        configured connection security (mTLS by default), which requires the two listeners
+        to be on different ports.
+        """
+        if admin_port == fed_learn_port:
+            raise ValueError(
+                f"server '{server.name}': OIDC admin auth requires a dedicated admin port, but "
+                f"admin_port equals the fed_learn port ({fed_learn_port}). Configure a distinct "
+                f"admin_port so the admin listener can use one-way TLS while the FL listener "
+                f"keeps its configured connection security."
+            )
 
     def _determine_scheme(self, participant: Participant, scheme=None) -> str:
         use_aio = participant.get_prop(PropKey.USE_AIO, False)
@@ -199,7 +304,14 @@ class StaticFileBuilder(Builder):
         fed_learn_port = ctx.get(CtxKey.FED_LEARN_PORT)
         target = f"{server.name}:{fed_learn_port}"
         conn_sec = self._build_conn_properties(server, ctx)
+        if is_oidc_admin_auth(project):
+            self._require_dedicated_admin_port_for_oidc(server, admin_port, fed_learn_port)
         server_auth_identity = self._get_auth_identity(server)
+
+        admin_auth_config = get_admin_auth_config(project)
+        content_modify_cb = None
+        if admin_auth_config:
+            content_modify_cb = functools.partial(_server_config_with_admin_auth, admin_auth_config=admin_auth_config)
 
         ctx.build_from_template(
             dest_dir,
@@ -219,6 +331,7 @@ class StaticFileBuilder(Builder):
                     indent=12,
                 ),
             },
+            content_modify_cb=content_modify_cb,
         )
 
         self._build_comm_config_for_internal_listener(server)
@@ -589,7 +702,7 @@ class StaticFileBuilder(Builder):
 
         dest_dir = ctx.get_kit_dir(admin)
         admin_port = ctx.get(CtxKey.ADMIN_PORT)
-        server_name = ctx.get(CtxKey.SERVER_NAME)
+        server_name = ctx.get(CtxKey.SERVER_NAME) or ctx.get_project().get_server().name
 
         replacement_dict = {
             "admin_name": admin.name,
@@ -646,11 +759,21 @@ class StaticFileBuilder(Builder):
             "port": conn_port,
             "uid_source": uid_source,
         }
+        oidc_config = None
+        if is_oidc_admin_auth(project):
+            admin_auth_config = get_admin_auth_config(project)
+            oidc_config = dict(admin_auth_config.get("oidc") or {})
+
+        content_modify_cb = None
+        if oidc_config is not None:
+            content_modify_cb = functools.partial(_admin_config_with_oidc, oidc_config=oidc_config)
+
         ctx.build_from_template(
             dest_dir=ctx.get_kit_dir(admin),
             temp_section=TemplateSectionKey.FED_ADMIN,
             file_name=ProvFileName.FED_ADMIN_JSON,
             replacement=replacement_dict,
+            content_modify_cb=content_modify_cb,
         )
 
         # create default resources in local

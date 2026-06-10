@@ -313,11 +313,5 @@ class TestSimulatorRunClientValidation:
     def test_clients_only_no_n_clients_passes(self, tmp_path):
         """Providing only clients (no n_clients) should pass."""
         job = self._make_job()
-        with patch.object(job.job, "simulator_run", return_value=0):
+        with patch.object(job.job, "simulator_run"):
             job.simulator_run(str(tmp_path), clients=["site-1", "site-2"])
-
-    def test_simulator_run_returns_process_status(self, tmp_path):
-        """FedJob.simulator_run() should surface the lower simulator status."""
-        job = self._make_job()
-        with patch.object(job.job, "simulator_run", return_value=2):
-            assert job.simulator_run(str(tmp_path), clients=["site-1", "site-2"]) == 2

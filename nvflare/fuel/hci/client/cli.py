@@ -37,8 +37,9 @@ from nvflare.fuel.hci.table import Table
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .api import AdminAPI, CommandInfo, ResultKey
-from .api_spec import AdminConfigKey, UidSource
+from .api_spec import AdminConfigKey, UidSource, get_admin_auth_type
 from .api_status import APIStatus
+from .credentials import make_admin_credentials
 from .event import EventContext, EventHandler, EventPropKey, EventType
 
 
@@ -109,7 +110,8 @@ class AdminClient(cmd.Cmd, EventHandler):
                 modules.append(m)
 
         uid_source = admin_config.get(AdminConfigKey.UID_SOURCE, UidSource.USER_INPUT)
-        if uid_source != UidSource.CERT:
+        credentials = make_admin_credentials(get_admin_auth_type(admin_config))
+        if uid_source != UidSource.CERT and credentials.prompts_for_username:
             self.user_name = self._user_input("User Name: ")
 
         event_handlers = [self]

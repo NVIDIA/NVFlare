@@ -21,7 +21,13 @@ from typing import Dict, List, Optional
 import msgpack
 
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
-from nvflare.fuel.f3.cellnet.identity import CellIdentityResolver, get_param, is_admin_listener, is_mtls_connection
+from nvflare.fuel.f3.cellnet.identity import (
+    CellIdentityResolver,
+    get_param,
+    is_admin_listener,
+    is_admin_only_listener,
+    is_mtls_connection,
+)
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.connection import BytesAlike, Connection, ConnState, FrameReceiver
 from nvflare.fuel.f3.drivers.connector_info import ConnectorInfo, Mode
@@ -418,6 +424,21 @@ class ConnManager(ConnMonitor):
             )
 
         conn_props = sfm_conn.conn.get_conn_properties()
+
+        # An admin-only listener may run with relaxed connection security (one-way TLS for
+        # OIDC admin consoles); non-admin endpoints must not use it to bypass the mTLS
+        # identity binding of the regular listeners.
+        if (
+            sfm_conn.conn.connector.mode == Mode.PASSIVE
+            and is_admin_only_listener(sfm_conn.conn.connector.params)
+            and not is_valid_admin_client_name(endpoint_name)
+        ):
+            sfm_conn.conn.close()
+            raise CommError(
+                CommError.BAD_DATA,
+                f"Endpoint '{endpoint_name}' can not connect through an admin-only listener",
+            )
+
         # Passive mTLS connections must always present the connecting peer's CN.
         # Active mTLS connections enforce the same binding when the driver exposes
         # a real peer CN; gRPC active-side connections may report "N/A"/None.

@@ -186,6 +186,22 @@ def load_crt_bytes(data: bytes):
     return x509.load_pem_x509_certificate(data, default_backend())
 
 
+def cert_not_valid_before_utc(cert) -> datetime.datetime:
+    """Timezone-aware notBefore, tolerating cryptography versions without the _utc accessors."""
+    value = getattr(cert, "not_valid_before_utc", None)
+    if value is None:
+        value = cert.not_valid_before.replace(tzinfo=datetime.timezone.utc)
+    return value
+
+
+def cert_not_valid_after_utc(cert) -> datetime.datetime:
+    """Timezone-aware notAfter, tolerating cryptography versions without the _utc accessors."""
+    value = getattr(cert, "not_valid_after_utc", None)
+    if value is None:
+        value = cert.not_valid_after.replace(tzinfo=datetime.timezone.utc)
+    return value
+
+
 def cert_to_dict(cert):
     return {
         "subject": {attr.oid._name: attr.value for attr in cert.subject},

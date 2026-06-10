@@ -66,6 +66,7 @@ from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.binary_transfer import BinaryTransfer
 from nvflare.fuel.hci.server.constants import ConnProps
+from nvflare.fuel.sec.job_trust import JOB_AUTHORIZATION_META_KEY, JOB_SUBMITTER_PRINCIPAL_META_KEY
 from nvflare.fuel.utils.argument_utils import SafeArgumentParser
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import RequestHeader, TrainingTopic
@@ -1080,6 +1081,9 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 job_meta[JobMetaKey.SUBMITTER_NAME.value] = conn.get_prop(ConnProps.USER_NAME)
                 job_meta[JobMetaKey.SUBMITTER_ORG.value] = conn.get_prop(ConnProps.USER_ORG)
                 job_meta[JobMetaKey.SUBMITTER_ROLE.value] = conn.get_prop(ConnProps.USER_ROLE, "")
+                principal = conn.get_prop(ConnProps.USER_PRINCIPAL)
+                if principal:
+                    job_meta[JOB_SUBMITTER_PRINCIPAL_META_KEY] = principal.to_submitter_dict()
                 job_meta[JobMetaKey.CLONED_FROM.value] = job_id
                 job_meta[JobMetaKey.STUDY.value] = get_job_meta_study(job.meta)
 
@@ -1572,6 +1576,8 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 meta.pop(JobMetaKey.FROM_HUB_SITE.value, None)
                 # Submit-token is server-owned submission metadata. User job metadata must not expose it.
                 meta.pop(SubmitRecordKey.SUBMIT_TOKEN.value, None)
+                meta.pop(JOB_SUBMITTER_PRINCIPAL_META_KEY, None)
+                meta.pop(JOB_AUTHORIZATION_META_KEY, None)
 
                 job_def_manager = engine.job_def_manager
                 if not isinstance(job_def_manager, JobDefManagerSpec):
@@ -1621,6 +1627,9 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 meta[JobMetaKey.SUBMITTER_NAME.value] = submitter["name"]
                 meta[JobMetaKey.SUBMITTER_ORG.value] = submitter["org"]
                 meta[JobMetaKey.SUBMITTER_ROLE.value] = submitter["role"]
+                principal = conn.get_prop(ConnProps.USER_PRINCIPAL)
+                if principal:
+                    meta[JOB_SUBMITTER_PRINCIPAL_META_KEY] = principal.to_submitter_dict()
                 meta[JobMetaKey.JOB_FOLDER_NAME.value] = folder_name
                 custom_props = conn.get_prop(ConnProps.CUSTOM_PROPS)
                 if custom_props:

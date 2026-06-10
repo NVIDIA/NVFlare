@@ -13,7 +13,9 @@
 # limitations under the License.
 
 from contextlib import nullcontext
+from io import BytesIO
 from unittest.mock import MagicMock, call, patch
+from zipfile import ZipFile
 
 import pytest
 
@@ -22,8 +24,10 @@ from nvflare.apis.fl_constant import FLContextKey, RunProcessKey
 from nvflare.apis.job_def import JobMetaKey, RunStatus
 from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.fuel.common.exit_codes import ProcessExitCode
+from nvflare.fuel.sec.job_trust import JOB_AUTHORIZATION_META_KEY, JOB_SUBMITTER_PRINCIPAL_META_KEY
+from nvflare.fuel.sec.principal import AUTH_METHOD_CERT, AUTH_METHOD_OIDC
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
-from nvflare.private.fed.server.job_runner import JobRunner
+from nvflare.private.fed.server.job_runner import JobRunner, _allow_unsigned_job_from_submitter
 from nvflare.private.fed.server.message_send import ClientReply
 
 
@@ -51,6 +55,158 @@ def _make_runner_inputs(num_clients=1):
 
     client_sites = {"site-1": MagicMock()}
     return runner, fl_ctx, engine, job, client_sites
+
+
+def _zip_bytes(files):
+    data = BytesIO()
+    with ZipFile(data, "w") as zf:
+        for name, content in files.items():
+            zf.writestr(name, content)
+    return data.getvalue()
+
+
+def test_attach_server_job_authorization_adds_app_authorization():
+    runner, fl_ctx, engine, job, _client_sites = _make_runner_inputs()
+    id_asserter = MagicMock()
+    engine.server.admin_server.get_id_asserter.return_value = id_asserter
+
+    with patch(
+        "nvflare.private.fed.server.job_runner.issue_job_authorization",
+        return_value={"manifest": {"schema_version": 1}, "signature": "sig", "server_cert": "cert"},
+    ) as mock_issue:
+        runner._attach_server_job_authorization(
+            job=job,
+            app_name="hello-client",
+            app_data=b"app",
+            target_sites=["site-1"],
+            fl_ctx=fl_ctx,
+        )
+
+    mock_issue.assert_called_once()
+    assert mock_issue.call_args.kwargs["id_asserter"] is id_asserter
+    assert job.meta[JOB_AUTHORIZATION_META_KEY]["hello-client"]["signature"] == "sig"
+
+
+def test_attach_server_job_authorization_fails_without_server_identity():
+    # Clients require a server-signed manifest on every direct deploy, so a server
+    # without identity material must fail the deploy with a clear error instead of
+    # shipping a deploy every client would reject.
+    runner, fl_ctx, engine, job, _client_sites = _make_runner_inputs()
+    engine.server.admin_server.get_id_asserter.return_value = None
+
+    with patch("nvflare.private.fed.server.job_runner.issue_job_authorization") as mock_issue:
+        with pytest.raises(RuntimeError, match="server identity"):
+            runner._attach_server_job_authorization(
+                job=job,
+                app_name="hello-client",
+                app_data=b"app",
+                target_sites=["site-1"],
+                fl_ctx=fl_ctx,
+            )
+
+    mock_issue.assert_not_called()
+    assert JOB_AUTHORIZATION_META_KEY not in job.meta
+
+
+def test_attach_server_job_authorization_raises_when_issue_fails():
+    runner, fl_ctx, engine, job, _client_sites = _make_runner_inputs()
+    engine.server.admin_server.get_id_asserter.return_value = MagicMock()
+
+    with (
+        patch("nvflare.private.fed.server.job_runner.issue_job_authorization", side_effect=ValueError("bad auth")),
+        pytest.raises(RuntimeError, match="server job authorization failed"),
+    ):
+        runner._attach_server_job_authorization(
+            job=job,
+            app_name="hello-client",
+            app_data=b"app",
+            target_sites=["site-1"],
+            fl_ctx=fl_ctx,
+        )
+
+
+def test_allow_unsigned_job_from_oidc_submitter():
+    job = MagicMock()
+    job.meta = {JOB_SUBMITTER_PRINCIPAL_META_KEY: {"auth_method": AUTH_METHOD_OIDC}}
+
+    assert _allow_unsigned_job_from_submitter(job) is True
+
+
+@pytest.mark.parametrize("principal", [{}, {"auth_method": AUTH_METHOD_CERT}, None])
+def test_allow_unsigned_job_rejects_non_oidc_submitter(principal):
+    job = MagicMock()
+    job.meta = {}
+    if principal is not None:
+        job.meta[JOB_SUBMITTER_PRINCIPAL_META_KEY] = principal
+
+    assert _allow_unsigned_job_from_submitter(job) is False
+
+
+@patch("nvflare.private.fed.server.job_runner.signed_jobs_policy", return_value="required")
+def test_verify_submitted_app_signature_rejects_unsigned_cert_admin_app(_mock_require_signed):
+    runner, fl_ctx, _engine, job, _client_sites = _make_runner_inputs()
+    workspace = MagicMock()
+    workspace.get_startup_kit_dir.return_value = "/tmp/startup"
+    job.meta = {}
+
+    with pytest.raises(RuntimeError, match="UNSIGNED_JOB_REJECTED"):
+        runner._verify_submitted_app_signature(
+            job=job,
+            app_name="client-only-app",
+            app_data=_zip_bytes({"config/config_fed_client.json": "{}"}),
+            workspace=workspace,
+            fl_ctx=fl_ctx,
+        )
+
+
+@patch("nvflare.private.fed.server.job_runner.signed_jobs_policy", return_value="required")
+def test_verify_submitted_app_signature_allows_unsigned_oidc_admin_app(_mock_require_signed):
+    runner, fl_ctx, _engine, job, _client_sites = _make_runner_inputs()
+    workspace = MagicMock()
+    workspace.get_startup_kit_dir.return_value = "/tmp/startup"
+    job.meta = {JOB_SUBMITTER_PRINCIPAL_META_KEY: {"auth_method": AUTH_METHOD_OIDC}}
+
+    runner._verify_submitted_app_signature(
+        job=job,
+        app_name="client-only-app",
+        app_data=_zip_bytes({"config/config_fed_client.json": "{}"}),
+        workspace=workspace,
+        fl_ctx=fl_ctx,
+    )
+
+
+@patch("nvflare.private.fed.server.job_runner.signed_jobs_policy", return_value="strict")
+def test_verify_submitted_app_signature_strict_rejects_unsigned_oidc_admin_app(_mock_policy):
+    """With the "strict" policy, the OIDC exemption does not apply: unsigned jobs are rejected for everyone."""
+    runner, fl_ctx, _engine, job, _client_sites = _make_runner_inputs()
+    workspace = MagicMock()
+    workspace.get_startup_kit_dir.return_value = "/tmp/startup"
+    job.meta = {JOB_SUBMITTER_PRINCIPAL_META_KEY: {"auth_method": AUTH_METHOD_OIDC}}
+
+    with pytest.raises(RuntimeError, match="UNSIGNED_JOB_REJECTED"):
+        runner._verify_submitted_app_signature(
+            job=job,
+            app_name="client-only-app",
+            app_data=_zip_bytes({"config/config_fed_client.json": "{}"}),
+            workspace=workspace,
+            fl_ctx=fl_ctx,
+        )
+
+
+@patch("nvflare.private.fed.server.job_runner.signed_jobs_policy", return_value="off")
+def test_verify_submitted_app_signature_policy_off_allows_unsigned_cert_admin_app(_mock_policy):
+    runner, fl_ctx, _engine, job, _client_sites = _make_runner_inputs()
+    workspace = MagicMock()
+    workspace.get_startup_kit_dir.return_value = "/tmp/startup"
+    job.meta = {}
+
+    runner._verify_submitted_app_signature(
+        job=job,
+        app_name="client-only-app",
+        app_data=_zip_bytes({"config/config_fed_client.json": "{}"}),
+        workspace=workspace,
+        fl_ctx=fl_ctx,
+    )
 
 
 # ---------------------------------------------------------------------------
