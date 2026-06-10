@@ -230,7 +230,7 @@ class TxTask(StreamTaskSpec):
         self.ack_progress_check_interval = max(0.01, config.get_streaming_ack_progress_check_interval(5.0))
         self.last_ack_progress_ts = time.monotonic()
         self.retry_wait = max(0.01, config.get_streaming_retry_wait(STREAM_RETRY_WAIT))
-        self.retry_timeout = config.get_streaming_retry_timeout(STREAM_RETRY_TIMEOUT)
+        self.retry_timeout = max(0.01, config.get_streaming_retry_timeout(STREAM_RETRY_TIMEOUT))
         self.retry_max_pending_bytes = config.get_streaming_retry_max_pending_bytes(2 * self.window_size)
 
         if self.reliable:

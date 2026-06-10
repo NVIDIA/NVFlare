@@ -330,6 +330,14 @@ class TestReliableByteStreamer:
 
         assert task.retry_max_pending_bytes == 7
 
+    def test_retry_timeout_has_positive_floor(self, monkeypatch, retry_scheduler):
+        self._patch_common_config(monkeypatch)
+        monkeypatch.setattr(CommConfigurator, "get_streaming_retry_timeout", lambda self, default: 0.0)
+
+        task = self._make_task_with_reliable(True, monkeypatch)
+
+        assert task.retry_timeout == 0.01
+
     def test_reliable_stream_waits_for_sequence_ack_before_completion(self, monkeypatch, retry_scheduler):
         task, cell = self._make_reliable_task(monkeypatch, retry_scheduler)
         cell.fire_and_forget.return_value = {"peer": "temporary failure"}
