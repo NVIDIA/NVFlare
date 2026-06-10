@@ -22,8 +22,9 @@ import pytest
 
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLMetaKey
+from nvflare.apis.fl_constant import FLContextKey, FLMetaKey
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
@@ -251,6 +252,7 @@ class TestMetricsArtifactWriterAggregationEvents:
 
         summary = _read_summary(run_dir)
         assert summary["status"] == "metrics_reported"
+        assert summary["job_name"] == "job-1"
         assert summary["final_round"] == 2
         assert _metrics_to_dict(summary["final_aggregated_metrics"]) == {"accuracy": 0.81, "loss": 0.35}
         assert summary["key_metric"] == key_metric
@@ -264,6 +266,24 @@ class TestMetricsArtifactWriterAggregationEvents:
         assert _metrics_to_dict(rounds[0]["sites"][0]["metrics"]) == {"accuracy": 0.80, "loss": 0.38}
         assert rounds[0]["key_metric"] == key_metric
         assert rounds[0]["aggregation"]["method"] == "weighted_average"
+
+    def test_summary_job_name_prefers_job_meta_name_over_runtime_id(self, tmp_path):
+        writer = MetricsArtifactWriter()
+        run_dir = tmp_path / "run"
+        fl_ctx = _make_fl_ctx(run_dir)
+        fl_ctx.get_job_id.return_value = "simulate_job"
+        fl_ctx.set_prop(
+            FLContextKey.JOB_META,
+            {JobMetaKey.JOB_NAME.value: "hello-numpy-metrics-e2e"},
+            private=True,
+            sticky=False,
+        )
+
+        writer.handle_event(EventType.START_RUN, fl_ctx)
+        _record_round(writer, fl_ctx, 1, {"accuracy": 0.82})
+        _finish_run(writer, fl_ctx)
+
+        assert _read_summary(run_dir)["job_name"] == "hello-numpy-metrics-e2e"
 
     def test_key_metric_metadata_does_not_make_writer_select_best_round(self, tmp_path):
         writer = MetricsArtifactWriter()

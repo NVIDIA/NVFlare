@@ -22,6 +22,7 @@ import numpy as np
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, FLMetaKey
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.app_constant import AppConstants
@@ -429,7 +430,7 @@ class MetricsArtifactWriter(Widget):
                 "Nonlinear metrics are not recomputed from pooled predictions.",
             ],
         }
-        job_name = self._safe_text(fl_ctx.get_job_id())
+        job_name = self._get_job_name(fl_ctx)
         if job_name:
             summary["job_name"] = job_name
         if self._metric_source:
@@ -553,6 +554,27 @@ class MetricsArtifactWriter(Widget):
         value = fl_ctx.get_prop(AppConstants.CURRENT_ROUND, None)
         if isinstance(value, int) and not isinstance(value, bool):
             return value
+        return None
+
+    def _get_job_name(self, fl_ctx):
+        job_name = self._get_job_name_from_meta(fl_ctx.get_prop(FLContextKey.JOB_META, None))
+        if job_name:
+            return job_name
+
+        return self._safe_text(fl_ctx.get_job_id())
+
+    def _get_job_name_from_meta(self, meta):
+        if not isinstance(meta, dict):
+            return None
+        for key in (
+            JobMetaKey.JOB_NAME.value,
+            JobMetaKey.JOB_NAME,
+            JobMetaKey.JOB_FOLDER_NAME.value,
+            JobMetaKey.JOB_FOLDER_NAME,
+        ):
+            job_name = self._safe_text(meta.get(key))
+            if job_name:
+                return job_name
         return None
 
     def _get_site_name(self, model, fl_ctx):
