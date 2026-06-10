@@ -1,0 +1,10 @@
+*
+!Dockerfile
+!assist_tools/
+!assist_tools/**
+assist_tools/**/__pycache__/
+assist_tools/**/*.pyc
+!dist/
+!dist/**
+!sdk_skills/
+!sdk_skills/**
