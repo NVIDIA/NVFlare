@@ -157,9 +157,16 @@ class RxTask:
         with self.stop_lock:
             failed = self.failed
             error_msg = self.error_msg
+            completed = self.completed
         if failed:
             if self.reliable and error_msg:
                 self._send_error(error_msg)
+            return False
+
+        if completed:
+            # The task is kept in the map for the retry window only to re-ACK retried chunks
+            if self.reliable:
+                self._send_ack(self._get_ack_offset(), self.seq)
             return False
 
         new_stream = False

@@ -281,6 +281,9 @@ class TxTask(StreamTaskSpec):
                 wait_start = time.monotonic()
 
                 while window > self.window_size:
+                    if self.stopped:
+                        return
+
                     now = time.monotonic()
                     if now - self.last_ack_progress_ts >= self.ack_progress_timeout:
                         self.stop(StreamError(f"{self} ACK made no progress for {self.ack_progress_timeout} seconds"))
