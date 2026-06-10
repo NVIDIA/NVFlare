@@ -250,10 +250,13 @@ class RxTask:
                 if self.completed or self.failed:
                     return
 
-                with self.ack_lock:
-                    needs_ack = self.seq != self.seq_ack
+                with self.lock:
+                    ack_offset = self.received_offset
+                    ack_seq = self.seq
+                    with self.ack_lock:
+                        needs_ack = ack_seq != self.seq_ack or ack_offset > self.offset_ack
                 if needs_ack:
-                    ack_to_send = (self.received_offset, self.seq)
+                    ack_to_send = (ack_offset, ack_seq)
                 if self.reliable:
                     self.completed = True
                     schedule_remove = True
@@ -302,9 +305,10 @@ class RxTask:
             self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_ACK_TOPIC, self.origin, message)
 
     def _remove_task(self):
-        if self.cleanup_timer:
-            self.cleanup_timer.cancel()
-            self.cleanup_timer = None
+        with self.stop_lock:
+            if self.cleanup_timer:
+                self.cleanup_timer.cancel()
+                self.cleanup_timer = None
 
         with RxTask.map_lock:
             task = RxTask.rx_task_map.get((self.origin, self.sid))

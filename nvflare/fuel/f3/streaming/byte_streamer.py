@@ -206,10 +206,12 @@ class TxTask(StreamTaskSpec):
 
         if self.reliable:
             self.pending_messages = {}
+            self.pending_message_bytes = 0
             self.retry_lock = threading.RLock()
             reliable_retry_scheduler.register(self)
         else:
             self.pending_messages = None
+            self.pending_message_bytes = 0
             self.retry_lock = None
 
     def __str__(self):
@@ -311,11 +313,16 @@ class TxTask(StreamTaskSpec):
                     if self.stopped:
                         return False
 
+                    pending_message_size = _payload_size(message.payload)
                     self.pending_messages[self.seq] = curr_time, curr_time, message
-                    pending_size = sum(_payload_size(msg.payload) for _, _, msg in self.pending_messages.values())
-                    if self.retry_max_pending_bytes > 0 and pending_size > self.retry_max_pending_bytes:
+                    self.pending_message_bytes += pending_message_size
+                    if self.retry_max_pending_bytes > 0 and self.pending_message_bytes > self.retry_max_pending_bytes:
                         self.pending_messages.pop(self.seq, None)
-                        msg = f"{self} has too many retry messages ({pending_size} > {self.retry_max_pending_bytes})"
+                        self.pending_message_bytes -= pending_message_size
+                        msg = (
+                            f"{self} has too many retry messages "
+                            f"({self.pending_message_bytes + pending_message_size} > {self.retry_max_pending_bytes})"
+                        )
                         over_limit_error = StreamError(msg)
 
                 if not over_limit_error:
@@ -423,6 +430,7 @@ class TxTask(StreamTaskSpec):
             self.stopping = False
             if error:
                 self.pending_messages.clear()
+                self.pending_message_bytes = 0
             return True
 
     def handle_ack(self, message: Message):
@@ -450,7 +458,8 @@ class TxTask(StreamTaskSpec):
                 if self.pending_messages and ack_seq is not None:
                     for seq in list(self.pending_messages):
                         if seq <= ack_seq:
-                            del self.pending_messages[seq]
+                            _start_time, _last_retry, message = self.pending_messages.pop(seq)
+                            self.pending_message_bytes -= _payload_size(message.payload)
 
                 should_stop = self.stopping and not self.pending_messages
 

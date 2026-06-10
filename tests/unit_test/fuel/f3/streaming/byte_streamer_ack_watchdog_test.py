@@ -339,6 +339,7 @@ class TestReliableByteStreamer:
         task.send_pending_buffer(final=True)
 
         assert task.pending_messages
+        assert task.pending_message_bytes == 1
         assert task.offset == 1
         assert not task.stopped
 
@@ -359,6 +360,7 @@ class TestReliableByteStreamer:
 
         assert task.stopped is True
         assert task.pending_messages == {}
+        assert task.pending_message_bytes == 0
         assert task.stream_future.result(timeout=0.1) == 1
 
     def test_reliable_stream_snapshots_retry_payload(self, monkeypatch, retry_scheduler):
@@ -372,6 +374,7 @@ class TestReliableByteStreamer:
         task.buffer[0:4] = b"wxyz"
 
         assert message.payload == b"abcd"
+        assert task.pending_message_bytes == 4
         assert message.get_header(StreamHeaderKey.RETRY_WAIT) == task.retry_wait
         assert message.get_header(StreamHeaderKey.RETRY_TIMEOUT) == task.retry_timeout
 
@@ -380,6 +383,7 @@ class TestReliableByteStreamer:
         task.send_pending_buffer()
 
         _start, _last_retry, next_message = task.pending_messages[1]
+        assert task.pending_message_bytes == 5
         assert next_message.get_header(StreamHeaderKey.RETRY_WAIT) is None
         assert next_message.get_header(StreamHeaderKey.RETRY_TIMEOUT) is None
 
@@ -435,6 +439,7 @@ class TestReliableByteStreamer:
         assert err is not None
         assert "too many retry messages" in str(err)
         assert task.pending_messages == {}
+        assert task.pending_message_bytes == 0
         assert task.stopped is True
 
     def test_stop_unregisters_retry_task(self, monkeypatch, retry_scheduler):
