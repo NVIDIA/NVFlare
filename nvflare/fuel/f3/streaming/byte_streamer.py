@@ -122,7 +122,7 @@ class ReliableRetryScheduler:
         thread = self.thread
         if thread and thread.is_alive() and thread is not threading.current_thread():
             thread.join(timeout=1.0)
-        self.retry_task_pool.shutdown(wait=True)
+        self.retry_task_pool.shutdown(wait=False)
 
     def _finish_inflight(self, task):
         with self.cv:
@@ -343,7 +343,7 @@ class TxTask(StreamTaskSpec):
                         return False
 
                     pending_message_size = _payload_size(message.payload)
-                    self.pending_messages[self.seq] = curr_time, curr_time, message
+                    self.pending_messages[self.seq] = None, curr_time, message
                     self.pending_message_bytes += pending_message_size
                     if self.retry_max_pending_bytes > 0 and self.pending_message_bytes > self.retry_max_pending_bytes:
                         self.pending_messages.pop(self.seq, None)
@@ -499,7 +499,7 @@ class TxTask(StreamTaskSpec):
                 if self.pending_messages and ack_seq is not None:
                     for seq in list(self.pending_messages):
                         if seq <= ack_seq:
-                            _start_time, _last_retry, message = self.pending_messages.pop(seq)
+                            _retry_start_time, _last_retry, message = self.pending_messages.pop(seq)
                             self.pending_message_bytes -= _payload_size(message.payload)
 
                 should_stop = self.stopping and not self.pending_messages
@@ -533,6 +533,7 @@ class TxTask(StreamTaskSpec):
         should_stop = False
         next_wait = None
         messages_to_retry = []
+        retry_next_wait = None
         retry_error = None
 
         with self.retry_lock:
@@ -544,18 +545,27 @@ class TxTask(StreamTaskSpec):
             else:
                 curr_time = time.monotonic()
                 for seq, value in list(self.pending_messages.items()):
-                    start_time, last_retry, message = value
-                    retry_time = curr_time - start_time
-                    if retry_time > self.retry_timeout:
-                        msg = f"{self} seq {seq} retry failed after {retry_time:.2f} seconds"
-                        log.error(msg)
-                        retry_error = StreamError(msg)
-                        break
-
+                    retry_start_time, last_retry, message = value
                     wait_time = self.retry_wait - (curr_time - last_retry)
+                    remaining_retry_timeout = self.retry_timeout
+                    if retry_start_time is not None:
+                        retry_time = curr_time - retry_start_time
+                        if retry_time > self.retry_timeout:
+                            msg = f"{self} seq {seq} retry failed after {retry_time:.2f} seconds from first retry"
+                            log.error(msg)
+                            retry_error = StreamError(msg)
+                            break
+                        remaining_retry_timeout = self.retry_timeout - retry_time
+                        wait_time = min(wait_time, remaining_retry_timeout)
+
                     if wait_time <= 0:
+                        retry_start_time = curr_time if retry_start_time is None else retry_start_time
                         messages_to_retry.append((seq, message))
-                        self.pending_messages[seq] = start_time, curr_time, message
+                        self.pending_messages[seq] = retry_start_time, curr_time, message
+                        after_retry_wait = min(self.retry_wait, remaining_retry_timeout)
+                        retry_next_wait = (
+                            after_retry_wait if retry_next_wait is None else min(retry_next_wait, after_retry_wait)
+                        )
                     else:
                         next_wait = wait_time if next_wait is None else min(next_wait, wait_time)
 
@@ -585,7 +595,7 @@ class TxTask(StreamTaskSpec):
                 )
 
         if messages_to_retry:
-            next_wait = self.retry_wait if next_wait is None else min(next_wait, self.retry_wait)
+            next_wait = retry_next_wait if next_wait is None else min(next_wait, retry_next_wait)
 
         return next_wait
 

@@ -218,6 +218,20 @@ class TestByteStreamerAckWatchdog:
 
 
 class TestReliableByteStreamer:
+    def test_retry_scheduler_shutdown_does_not_wait_for_pool(self):
+        scheduler = byte_streamer_module.ReliableRetryScheduler()
+        original_pool = scheduler.retry_task_pool
+        retry_task_pool = MagicMock()
+
+        try:
+            scheduler.retry_task_pool = retry_task_pool
+
+            scheduler.shutdown()
+
+            retry_task_pool.shutdown.assert_called_once_with(wait=False)
+        finally:
+            original_pool.shutdown(wait=False)
+
     @pytest.fixture
     def retry_scheduler(self, monkeypatch):
         calls = {"registered": [], "unregistered": [], "wakeups": 0}
@@ -508,6 +522,44 @@ class TestReliableByteStreamer:
             secure=False,
             optional=False,
         )
+
+    def test_retry_timeout_starts_at_first_retry(self, monkeypatch, retry_scheduler):
+        task, cell = self._make_reliable_task(monkeypatch, retry_scheduler)
+        cell.fire_and_forget.return_value = None
+        message = Message(
+            {
+                StreamHeaderKey.STREAM_ID: task.sid,
+                StreamHeaderKey.SEQUENCE: 0,
+            },
+            b"x",
+        )
+        task.pending_messages[0] = (None, 0.0, message)
+        task.retry_wait = 1.0
+        task.retry_timeout = 0.5
+        curr_time = [1.1]
+
+        monkeypatch.setattr(byte_streamer_module.time, "monotonic", lambda: curr_time[0])
+
+        assert task.retry_task() == task.retry_timeout
+        assert not task.stream_future.done()
+        retry_start_time, last_retry, _message = task.pending_messages[0]
+        assert retry_start_time == curr_time[0]
+        assert last_retry == curr_time[0]
+        cell.fire_and_forget.assert_called_once_with(
+            STREAM_CHANNEL,
+            STREAM_DATA_TOPIC,
+            "peer",
+            message,
+            secure=False,
+            optional=False,
+        )
+
+        curr_time[0] = 1.61
+        task.retry_task()
+
+        err = task.stream_future.exception(timeout=0.1)
+        assert err is not None
+        assert "retry failed" in str(err)
 
     def test_retry_task_failure_fails_stream_future(self, monkeypatch, retry_scheduler):
         task, cell = self._make_reliable_task(monkeypatch, retry_scheduler)
