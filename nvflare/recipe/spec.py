@@ -164,6 +164,7 @@ class Recipe(ABC):
             job: the job that implements the recipe.
         """
         self.job = job
+        self._helper_per_site_config = None
 
     def process_env(self, env: ExecEnv):
         """Process environment-specific configuration.
@@ -172,6 +173,37 @@ class Recipe(ABC):
         Script validation is handled by each ExecEnv subclass in deploy().
         """
         pass
+
+    def set_per_site_config(self, config: Dict[str, Dict]) -> None:
+        """Set helper-provided per-site configuration for this recipe.
+
+        The generic helper validates only the site-keyed shape. Recipes that
+        need to map fields into generated app config, command arguments, data
+        loaders, or validators should override ``_apply_per_site_config``.
+        """
+        self._helper_per_site_config = dict(config)
+        self._apply_per_site_config(dict(self._helper_per_site_config))
+
+    def _apply_per_site_config(self, config: Dict[str, Dict]) -> None:
+        """Recipe-specific hook for helper-provided per-site configuration."""
+        pass
+
+    def configured_sites(self) -> List[str]:
+        """Return site keys configured through the helper or legacy constructor config.
+
+        This reports configured site names only. It does not infer sites from job
+        metadata, validate production enrollment, or indicate which clients are
+        connected in the execution environment.
+        """
+        helper_per_site_config = getattr(self, "_helper_per_site_config", None)
+        if helper_per_site_config is not None:
+            return list(helper_per_site_config.keys())
+
+        legacy_per_site_config = getattr(self, "per_site_config", None)
+        if isinstance(legacy_per_site_config, dict):
+            return list(legacy_per_site_config.keys())
+
+        return []
 
     def _snapshot_additional_params(self) -> Dict[str, Dict]:
         snapshot = {}
