@@ -50,12 +50,18 @@ Low-level communication configuration (comm_config.py):
    * - streaming_ack_wait
      - varies
      - Time to wait for streaming ACK
+   * - streaming_reliable
+     - false
+     - Whether streamed chunks are retried until acknowledged
    * - streaming_retry_wait
      - 5.0
      - Time to wait before retrying an unacknowledged reliable streaming chunk
    * - streaming_retry_timeout
      - 60.0
      - Maximum time to retry an unacknowledged reliable streaming chunk
+   * - streaming_retry_max_pending_bytes
+     - 2 * streaming_window_size
+     - Maximum payload bytes held in memory for reliable streaming retry
 
 
 CoreCell Settings
@@ -2578,8 +2584,10 @@ comm_config.json (F3/CellNet Layer)
      "subnet_heartbeat_interval": 5,
      "streaming_read_timeout": 300,
      "streaming_ack_interval": 4194304,
+     "streaming_reliable": false,
      "streaming_retry_wait": 5.0,
      "streaming_retry_timeout": 60.0,
+     "streaming_retry_max_pending_bytes": 33554432,
      "streaming_chunk_size": 1048576,
      "max_message_size": 1048576
    }
