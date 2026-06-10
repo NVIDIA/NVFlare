@@ -414,6 +414,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             credentials=credentials,
             create_internal_listener=False,
             parent_url=None,
+            auth_identity_map={FQCN.ROOT_SERVER: self.server_identity},
         )
 
         self.cell.register_request_cb(

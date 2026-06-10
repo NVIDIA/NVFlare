@@ -153,7 +153,9 @@ python job.py \
 
 Use `--no-balance_train_labels` if you want the capped training subset to preserve the original site-file order.
 
-Check the notebook sentiment prompts against the final global adapter:
+Check the notebook sentiment prompts against the final global adapter. For the default 4B run, use this as a functional
+adapter-conversion smoke and rely on the exact split evaluation below for quality metrics. The documented 30B H100
+reference reproduced all sample prompts.
 
 ```bash
 python predict_sentiment.py \
@@ -162,7 +164,7 @@ python predict_sentiment.py \
   --output_json models/nemotron3_nano_prediction_summary.json
 ```
 
-The expected classifications are:
+The expected classifications for the 30B H100 reference are:
 
 ```text
 The products have a low salt and fat content . sentiment: neutral
