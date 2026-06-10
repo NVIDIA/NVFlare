@@ -333,6 +333,28 @@ def test_reliable_error_after_successful_receive_still_fails_future():
     assert "late failure" in str(err)
 
 
+def test_reliable_failed_task_rejects_retried_initial_chunk():
+    cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={}))
+    message = _make_chunk("site-1", sid=516, seq=0, data_type=StreamDataType.CHUNK, payload=b"abc", reliable=True)
+    task = RxTask.find_or_create_task(message, cell)
+
+    task.stop(StreamError("failed before callback"), notify=True)
+
+    with RxTask.map_lock:
+        assert RxTask.rx_task_map[("site-1", 516)] is task
+    assert task.stream_future is None
+    assert task.cleanup_timer is not None
+    assert cell.fire_and_forget.call_count == 1
+
+    assert task.process_chunk(message) is False
+
+    assert task.stream_future is None
+    assert cell.fire_and_forget.call_count == 2
+    error_msg = cell.fire_and_forget.call_args.args[3]
+    assert error_msg.get_header(StreamHeaderKey.DATA_TYPE) == StreamDataType.ERROR
+    assert "failed before callback" in error_msg.get_header(StreamHeaderKey.ERROR_MSG)
+
+
 def test_send_ack_updates_ack_state_only_on_success():
     cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={"site-1": "send failed"}))
     task = RxTask(sid=504, origin="site-1", cell=cell, reliable=True)

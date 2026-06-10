@@ -86,6 +86,7 @@ class RxTask:
         self.eos = False
         self.completed = False
         self.failed = False
+        self.error_msg = None
         self.stop_lock = threading.RLock()
         self.cleanup_timer = None
 
@@ -151,6 +152,14 @@ class RxTask:
 
     def process_chunk(self, message: Message) -> bool:
         """Returns True if a new stream is created"""
+
+        with self.stop_lock:
+            failed = self.failed
+            error_msg = self.error_msg
+        if failed:
+            if self.reliable and error_msg:
+                self._send_error(error_msg)
+            return False
 
         new_stream = False
         ack_to_send = None
@@ -271,12 +280,18 @@ class RxTask:
                 self._remove_task()
             return
 
+        schedule_remove = False
+        remove_now = False
         with self.stop_lock:
             if self.failed:
                 return
 
             self.failed = True
-            self._remove_task()
+            self.error_msg = str(error)
+            if self.reliable:
+                schedule_remove = True
+            else:
+                remove_now = True
 
         if self.headers:
             optional = self.headers.get(StreamHeaderKey.OPTIONAL, False)
@@ -293,16 +308,24 @@ class RxTask:
             self.stream_future.set_exception(error)
 
         if notify:
-            message = Message()
+            self._send_error(str(error))
 
-            message.add_headers(
-                {
-                    StreamHeaderKey.STREAM_ID: self.sid,
-                    StreamHeaderKey.DATA_TYPE: StreamDataType.ERROR,
-                    StreamHeaderKey.ERROR_MSG: str(error),
-                }
-            )
-            self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_ACK_TOPIC, self.origin, message)
+        if schedule_remove:
+            self._schedule_remove_task()
+        elif remove_now:
+            self._remove_task()
+
+    def _send_error(self, error_msg: str):
+        message = Message()
+
+        message.add_headers(
+            {
+                StreamHeaderKey.STREAM_ID: self.sid,
+                StreamHeaderKey.DATA_TYPE: StreamDataType.ERROR,
+                StreamHeaderKey.ERROR_MSG: error_msg,
+            }
+        )
+        self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_ACK_TOPIC, self.origin, message)
 
     def _remove_task(self):
         with self.stop_lock:
