@@ -14,7 +14,9 @@
 
 import json
 import os
+import sys
 from importlib import resources
+from importlib.machinery import ModuleSpec
 from types import SimpleNamespace
 
 import pytest
@@ -157,6 +159,34 @@ def test_validate_skill_dir_uses_current_frontmatter_loader(monkeypatch, tmp_pat
 
     monkeypatch.setattr(skill_manifest, "_load_frontmatter_module", lambda: second)
     assert skill_manifest._validate_skill_dir(tmp_path) == "second"
+
+
+def test_load_frontmatter_module_does_not_cache_failed_fallback_module(monkeypatch):
+    module_name = "nvflare_agent_skill_frontmatter"
+    sys.modules.pop(module_name, None)
+
+    def raise_import_error(_name):
+        raise ImportError("force direct loader fallback")
+
+    class FailingLoader:
+        def create_module(self, _spec):
+            return None
+
+        def exec_module(self, module):
+            module.partial_state = True
+            raise ModuleNotFoundError("No module named 'yaml'")
+
+    monkeypatch.setattr(skill_manifest.importlib, "import_module", raise_import_error)
+    monkeypatch.setattr(
+        skill_manifest.importlib.util,
+        "spec_from_file_location",
+        lambda name, _path: ModuleSpec(name, FailingLoader()),
+    )
+
+    with pytest.raises(ModuleNotFoundError, match="yaml"):
+        skill_manifest._load_frontmatter_module()
+
+    assert module_name not in sys.modules
 
 
 def test_copy_released_skills_to_bundle_writes_manifest_and_files(tmp_path):

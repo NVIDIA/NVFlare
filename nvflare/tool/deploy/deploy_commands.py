@@ -230,6 +230,9 @@ def stage_k8_deployment(args) -> None:
             "prepared_kit": str(kit),
             "local_configmap": local_configmap,
             "startup_resource_name": public_startup_resource_name,
+            # Compatibility alias for older stage output readers. This is the
+            # Kubernetes Secret resource name, not Secret data.
+            "startup_secret": public_startup_resource_name,
             "local_files": len(local_bundle["items"]),
             "startup_files": len(startup_bundle["items"]),
             "helm_values": str(kit / HELM_CHART_DIR / "values.yaml"),

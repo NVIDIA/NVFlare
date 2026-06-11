@@ -260,5 +260,10 @@ def _load_frontmatter_module():
         raise RuntimeError(f"Failed to load agent skill frontmatter validator from {module_path}")
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module
-    spec.loader.exec_module(module)
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        if sys.modules.get(module_name) is module:
+            sys.modules.pop(module_name, None)
+        raise
     return module
