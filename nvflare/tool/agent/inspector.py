@@ -533,7 +533,7 @@ def _display_path(path: Path, root: Path, redact: bool) -> str:
 
 
 def _inspected_target_path(path: Path) -> str:
-    return str(path.resolve(strict=False))
+    return os.path.abspath(os.path.normpath(str(path)))
 
 
 def _redact_literal(value: str, redact: bool) -> str:

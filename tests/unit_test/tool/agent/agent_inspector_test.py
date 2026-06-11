@@ -13,6 +13,9 @@
 # limitations under the License.
 
 import json
+import os
+
+import pytest
 
 from nvflare.tool.agent.inspector import inspect_path
 
@@ -57,6 +60,21 @@ def test_inspect_file_reports_inspected_target_path(tmp_path):
     data = inspect_path(script)
 
     assert data["path"] == str(script.resolve(strict=False))
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are not supported on this platform")
+def test_inspect_symlink_reports_link_path_without_resolving_target(tmp_path):
+    target_dir = tmp_path / "outside"
+    target_dir.mkdir()
+    (target_dir / "train.py").write_text("import tensorflow\n", encoding="utf-8")
+    link_dir = tmp_path / "linked-repo"
+    link_dir.symlink_to(target_dir, target_is_directory=True)
+
+    data = inspect_path(link_dir)
+
+    assert data["path"] == os.path.abspath(os.path.normpath(str(link_dir)))
+    assert data["path"] != str(target_dir.resolve(strict=False))
+    assert data["scan"]["files_skipped"][0]["code"] == "SYMLINK_SKIPPED"
 
 
 def test_inspect_redacts_secret_literals_and_absolute_paths_by_default(tmp_path):

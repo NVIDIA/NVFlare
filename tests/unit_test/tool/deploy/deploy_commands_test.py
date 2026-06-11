@@ -26,7 +26,6 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
-from nvflare.tool import cli_output
 from nvflare.tool.deploy.deploy_commands import (
     GPU_RESOURCE_CONSUMER,
     GPU_RESOURCE_MANAGER,
@@ -745,35 +744,9 @@ def test_stage_k8_creates_configmap_secret_and_patches_chart(tmp_path, capsys, m
     startup_paths = {item["path"] for item in values["workspaceConfig"]["startup"]["items"]}
     assert {"fed_client.json", "client.crt", "client.key", "rootCA.pem"} <= startup_paths
     assert "startup_resource_name: nvflare-startup-site-1" in out
-    assert "startup_secret: nvflare-startup-site-1" in out
+    assert "startup_secret:" not in out
     assert "next_step: Start the server/client parent pod with the helm_command." in out
     assert f"helm_command: helm upgrade --install site-1 {output / 'helm_chart'} --namespace flare" in out
-
-
-def test_stage_k8_json_keeps_startup_secret_output_alias(tmp_path, capsys, monkeypatch):
-    kit = _make_client_kit(tmp_path)
-    output = tmp_path / "site-1-k8s"
-    _run_prepare(
-        kit,
-        output,
-        {
-            "runtime": "k8s",
-            "namespace": "flare",
-            "parent": {"docker_image": "repo/nvflare:dev"},
-        },
-    )
-    capsys.readouterr()
-    _capture_kubectl(monkeypatch)
-
-    try:
-        cli_output.set_output_format("json")
-        stage_k8_deployment(_stage_k8_args(output))
-    finally:
-        cli_output.set_output_format("txt")
-    payload = json.loads(capsys.readouterr().out)
-
-    assert payload["data"]["startup_resource_name"] == "nvflare-startup-site-1"
-    assert payload["data"]["startup_secret"] == "nvflare-startup-site-1"
 
 
 def test_stage_k8_uses_explicit_resource_names_and_namespace(tmp_path, capsys, monkeypatch):
