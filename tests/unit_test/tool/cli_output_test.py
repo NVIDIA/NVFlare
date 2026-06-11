@@ -440,6 +440,23 @@ class TestOutputError:
         assert "message" in envelope
         assert "hint" in envelope
 
+    def test_error_envelope_supports_agent_fields(self, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "json")
+
+        with pytest.raises(SystemExit) as exc_info:
+            output_error(
+                "CONNECTION_FAILED",
+                recovery_category="RETRYABLE",
+                suggested_skill="nvflare-diagnose-job",
+            )
+
+        assert exc_info.value.code == 1
+        envelope = json.loads(capsys.readouterr().out)
+        assert envelope["error_code"] == "CONNECTION_FAILED"
+        assert "code" not in envelope
+        assert envelope["recovery_category"] == "RETRYABLE"
+        assert envelope["suggested_skill"] == "nvflare-diagnose-job"
+
     def test_custom_exit_code(self, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "json")
         with pytest.raises(SystemExit) as exc_info:

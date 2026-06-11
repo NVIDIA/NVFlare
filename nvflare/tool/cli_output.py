@@ -232,30 +232,62 @@ def output(data: Any, fmt: Optional[str]) -> None:
         _render_table(safe_output_data)
 
 
-def output_ok(data: Any, exit_code: int = 0) -> None:
-    """Print command success output."""
+def _add_agent_envelope_fields(
+    payload: dict,
+    code: str = None,
+    message: str = None,
+    hint: str = None,
+    recovery_category: str = None,
+    suggested_skill: str = None,
+) -> dict:
+    if code is not None:
+        payload["code"] = code
+    if message is not None:
+        payload["message"] = message
+    if hint is not None:
+        payload["hint"] = hint
+    if recovery_category is not None:
+        payload["recovery_category"] = recovery_category
+    if suggested_skill is not None:
+        payload["suggested_skill"] = suggested_skill
+    return payload
+
+
+def output_ok(
+    data: Any,
+    exit_code: int = 0,
+    code: str = None,
+    message: str = None,
+    hint: str = None,
+    recovery_category: str = None,
+    suggested_skill: str = None,
+) -> None:
+    """Print command success output.
+
+    code/message/hint/recovery fields are emitted in JSON/JSONL modes only;
+    human mode renders command data.
+    """
     safe_output_data = _sanitize_for_cli_output(data)
     if _is_jsonl_mode():
-        output_jsonl_event(
-            {
-                "event": "terminal",
-                "status": "ok",
-                "exit_code": exit_code,
-                "data": safe_output_data,
-                "terminal": True,
-            }
+        payload = _add_agent_envelope_fields(
+            {"event": "terminal", "status": "ok", "exit_code": exit_code, "data": safe_output_data, "terminal": True},
+            code=code,
+            message=message,
+            hint=hint,
+            recovery_category=recovery_category,
+            suggested_skill=suggested_skill,
         )
+        output_jsonl_event(payload)
     elif _is_json_mode():
-        print(
-            json.dumps(
-                {
-                    "schema_version": SCHEMA_VERSION,
-                    "status": "ok",
-                    "exit_code": exit_code,
-                    "data": safe_output_data,
-                }
-            )
+        payload = _add_agent_envelope_fields(
+            {"schema_version": SCHEMA_VERSION, "status": "ok", "exit_code": exit_code, "data": safe_output_data},
+            code=code,
+            message=message,
+            hint=hint,
+            recovery_category=recovery_category,
+            suggested_skill=suggested_skill,
         )
+        print(json.dumps(payload))
     else:
         _render_table(safe_output_data)
     if exit_code != 0:
@@ -268,6 +300,8 @@ def output_error(
     hint: str = None,
     data: Any = None,
     detail: str = None,
+    recovery_category: str = None,
+    suggested_skill: str = None,
     **kwargs,
 ) -> None:
     """Print an error from ERROR_REGISTRY and exit. Never returns."""
@@ -286,7 +320,7 @@ def output_error(
     safe_error_hint = _sanitize_for_cli_output(resolved_hint)
     safe_error_data = _sanitize_for_cli_output(data)
     if _is_machine_mode():
-        safe_error_payload = {
+        payload = {
             "schema_version": SCHEMA_VERSION,
             "status": "error",
             "exit_code": exit_code,
@@ -294,14 +328,19 @@ def output_error(
             "message": safe_error_message,
             "hint": safe_error_hint,
         }
+        _add_agent_envelope_fields(
+            payload,
+            recovery_category=recovery_category,
+            suggested_skill=suggested_skill,
+        )
         if safe_error_data is not None:
-            safe_error_payload["data"] = safe_error_data
+            payload["data"] = safe_error_data
         if _is_jsonl_mode():
-            safe_error_payload["event"] = "terminal"
-            safe_error_payload["terminal"] = True
-            print(json.dumps(safe_error_payload), flush=True)
+            payload["event"] = "terminal"
+            payload["terminal"] = True
+            print(json.dumps(payload), flush=True)
         else:
-            print(json.dumps(safe_error_payload))
+            print(json.dumps(payload))
     else:
         if safe_error_data is not None:
             _render_table(safe_error_data)
@@ -329,8 +368,16 @@ def output_error_message(
     fmt: Optional[str] = None,
     exit_code: int = 1,
     detail: str = None,
+    data: Any = None,
+    include_data: bool = False,
+    recovery_category: str = None,
+    suggested_skill: str = None,
 ) -> None:
-    """Print an explicit error message/hint pair and exit. Never returns."""
+    """Print an explicit error message/hint pair and exit. Never returns.
+
+    In machine modes, data is omitted when data is None unless include_data=True.
+    This lets callers distinguish an absent data field from an explicit JSON null.
+    """
     resolved_hint = hint or ""
     if detail:
         message = f"{message} \u2014 {detail}"
@@ -338,7 +385,7 @@ def output_error_message(
     safe_error_hint = _sanitize_for_cli_output(resolved_hint)
     jsonl_mode = fmt == "jsonl" or (fmt is None and _is_jsonl_mode())
     if fmt in {"json", "jsonl"} or (fmt is None and _is_machine_mode()):
-        safe_error_payload = {
+        payload = {
             "schema_version": SCHEMA_VERSION,
             "status": "error",
             "exit_code": exit_code,
@@ -346,12 +393,19 @@ def output_error_message(
             "message": safe_error_message,
             "hint": safe_error_hint,
         }
+        _add_agent_envelope_fields(
+            payload,
+            recovery_category=recovery_category,
+            suggested_skill=suggested_skill,
+        )
+        if include_data or data is not None:
+            payload["data"] = data
         if jsonl_mode:
-            safe_error_payload["event"] = "terminal"
-            safe_error_payload["terminal"] = True
-            print(json.dumps(safe_error_payload), flush=True)
+            payload["event"] = "terminal"
+            payload["terminal"] = True
+            print(json.dumps(payload), flush=True)
         else:
-            print(json.dumps(safe_error_payload))
+            print(json.dumps(payload))
     else:
         print(safe_error_message, file=sys.stderr)
         if safe_error_hint:
