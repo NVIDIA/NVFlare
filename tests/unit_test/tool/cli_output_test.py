@@ -239,6 +239,16 @@ class TestOutputOk:
         assert envelope["data"]["retry_token"] == {"supported": False}
         assert envelope["data"]["credential_revoked"] is False
 
+    def test_json_mode_redacts_sensitive_envelope_text(self, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "json")
+        output_ok(
+            {"ready": True}, message="completed with access_token=secret-value", hint="Authorization: Bearer abc123"
+        )
+
+        envelope = json.loads(capsys.readouterr().out)
+        assert envelope["message"] == "completed with access_token=<redacted>"
+        assert envelope["hint"] == "Authorization: Bearer <redacted>"
+
 
 # --- output_error_message() tests: explicit message/hint/fmt) ---
 
@@ -321,6 +331,19 @@ class TestOutputErrorCertPackage:
         captured = capsys.readouterr()
         payload = json.loads(captured.out)
         assert payload["message"] == "<redacted>"
+
+    def test_error_message_json_redacts_sensitive_data(self, capsys):
+        with pytest.raises(SystemExit):
+            output_error_message(
+                "MY_CODE",
+                "Error message here.",
+                "Fix hint.",
+                "json",
+                data={"session_token": "session-secret", "job_id": "abc123"},
+            )
+
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["data"] == {"session_token": "<redacted>", "job_id": "abc123"}
 
 
 class TestOutputUsageError:

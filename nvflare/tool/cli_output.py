@@ -241,15 +241,15 @@ def _add_agent_envelope_fields(
     suggested_skill: str = None,
 ) -> dict:
     if code is not None:
-        payload["code"] = code
+        payload["code"] = _sanitize_for_cli_output(code)
     if message is not None:
-        payload["message"] = message
+        payload["message"] = _sanitize_for_cli_output(message)
     if hint is not None:
-        payload["hint"] = hint
+        payload["hint"] = _sanitize_for_cli_output(hint)
     if recovery_category is not None:
-        payload["recovery_category"] = recovery_category
+        payload["recovery_category"] = _sanitize_for_cli_output(recovery_category)
     if suggested_skill is not None:
-        payload["suggested_skill"] = suggested_skill
+        payload["suggested_skill"] = _sanitize_for_cli_output(suggested_skill)
     return payload
 
 
@@ -383,6 +383,7 @@ def output_error_message(
         message = f"{message} \u2014 {detail}"
     safe_error_message = _sanitize_for_cli_output(message)
     safe_error_hint = _sanitize_for_cli_output(resolved_hint)
+    safe_error_data = _sanitize_for_cli_output(data)
     jsonl_mode = fmt == "jsonl" or (fmt is None and _is_jsonl_mode())
     if fmt in {"json", "jsonl"} or (fmt is None and _is_machine_mode()):
         payload = {
@@ -399,7 +400,7 @@ def output_error_message(
             suggested_skill=suggested_skill,
         )
         if include_data or data is not None:
-            payload["data"] = data
+            payload["data"] = safe_error_data
         if jsonl_mode:
             payload["event"] = "terminal"
             payload["terminal"] = True

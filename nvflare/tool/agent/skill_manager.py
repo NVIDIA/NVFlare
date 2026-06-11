@@ -330,7 +330,10 @@ def _sync_shared_references(source: SkillSource, target: Path) -> None:
     if not install_manifest or install_manifest.get("managed_by") != "nvflare":
         raise FileExistsError(f"shared reference target is not managed by nvflare: {target_shared}")
     installed_source_hash = skill_tree_hash(target_shared, exclude_names={INSTALL_MANIFEST_FILE_NAME})
-    if installed_source_hash == source_hash and install_manifest.get("source_hash") == source_hash:
+    managed_source_hash = install_manifest.get("source_hash")
+    if installed_source_hash != managed_source_hash:
+        raise FileExistsError(f"shared reference target has local modifications: {target_shared}")
+    if managed_source_hash == source_hash:
         return
     backup_path = _backup_path(target, target_shared.name)
     _replace_skill(source_shared, target_shared, backup_path, plan_entry, source)
@@ -501,13 +504,19 @@ def _target_system_symlink_aliases() -> tuple[Path, ...]:
     return tuple(sorted(aliases, key=lambda item: str(item)))
 
 
-def _is_allowed_system_target_symlink(path: Path) -> bool:
+def _is_allowed_system_target_symlink(path: Path, *, target: Path) -> bool:
     for alias in _target_system_symlink_aliases():
+        if path == alias:
+            return True
+        try:
+            target.relative_to(alias)
+        except ValueError:
+            continue
         try:
             alias.relative_to(path)
-            return True
         except ValueError:
-            pass
+            continue
+        return True
     return False
 
 
@@ -520,7 +529,7 @@ def _first_disallowed_target_symlink_component(path: Path) -> Optional[Path]:
             continue
         current = current / part
         if current.is_symlink():
-            if _is_allowed_system_target_symlink(current):
+            if _is_allowed_system_target_symlink(current, target=absolute):
                 continue
             return current
     return None

@@ -62,6 +62,23 @@ def test_resolve_target_override_accepts_system_temp_alias(tmp_path):
 
 
 @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are not supported on this platform")
+def test_resolve_target_override_allows_only_requested_temp_alias(monkeypatch, tmp_path):
+    actual_root = tmp_path / "actual-root"
+    actual_temp = actual_root / "folders" / "T"
+    actual_temp.mkdir(parents=True)
+    link_root = tmp_path / "link-root"
+    link_root.symlink_to(actual_root, target_is_directory=True)
+    alias = link_root / "folders" / "T"
+    monkeypatch.setattr(skill_manager, "_target_system_symlink_aliases", lambda: (alias,))
+
+    allowed = resolve_agent_target_dir("codex", target_dir=alias / "skills", env={"CODEX_HOME": "ignored"})
+
+    assert allowed == (actual_temp / "skills").resolve(strict=False)
+    with pytest.raises(ValueError, match="symlink components"):
+        resolve_agent_target_dir("codex", target_dir=link_root / "not-temp" / "skills", env={"CODEX_HOME": "ignored"})
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are not supported on this platform")
 def test_resolve_target_override_rejects_symlink_target(tmp_path):
     actual_target = tmp_path / "actual-target"
     actual_target.mkdir()
@@ -206,6 +223,40 @@ def test_install_skills_is_idempotent_for_same_managed_version(tmp_path):
     assert plan["applied"] is True
     assert plan["skills"][0]["action"] == "skip"
     assert plan["skills"][0]["reason"] == "already_installed"
+
+
+def test_install_skills_preserves_modified_shared_references(tmp_path):
+    source = _skill_source(tmp_path, shared_heading="Shared v1")
+    target = tmp_path / "target"
+    install_skills(agent="codex", target_dir=target, source=source)
+    shared_file = target / "_shared" / "nvflare-job-lifecycle.md"
+    shared_file.write_text("# User Edit\n", encoding="utf-8")
+
+    updated_source = _skill_source(tmp_path, shared_heading="Shared v2")
+    plan = install_skills(agent="codex", target_dir=target, source=updated_source)
+
+    assert plan["applied"] is False
+    assert plan["errors"] == [
+        {
+            "skill": "_shared",
+            "code": "skill_install_failed",
+            "type": "FileExistsError",
+            "message": f"shared reference target has local modifications: {target / '_shared'}",
+        }
+    ]
+    assert shared_file.read_text(encoding="utf-8") == "# User Edit\n"
+
+
+def test_install_skills_updates_unmodified_shared_references(tmp_path):
+    source = _skill_source(tmp_path, shared_heading="Shared v1")
+    target = tmp_path / "target"
+    install_skills(agent="codex", target_dir=target, source=source)
+
+    updated_source = _skill_source(tmp_path, shared_heading="Shared v2")
+    plan = install_skills(agent="codex", target_dir=target, source=updated_source)
+
+    assert plan["applied"] is True
+    assert "# Shared v2" in (target / "_shared" / "nvflare-job-lifecycle.md").read_text(encoding="utf-8")
 
 
 def test_install_skills_preserves_modified_managed_install(tmp_path):
@@ -700,9 +751,11 @@ def test_conflict_falls_back_to_code_for_unknown_conflict(tmp_path):
     assert conflict["message"] == "future_conflict"
 
 
-def _skill_source(tmp_path):
+def _skill_source(tmp_path, *, shared_heading=None):
     root = tmp_path / "skills"
     _write_skill(root, "nvflare-test-skill")
+    if shared_heading:
+        _write_shared_reference(root, shared_heading)
     return SkillSource(
         source_type="editable",
         root=root,
@@ -725,3 +778,10 @@ def _write_skill(root, name, heading="Test Skill"):
         encoding="utf-8",
     )
     return skill_dir
+
+
+def _write_shared_reference(root, heading):
+    shared_dir = root / "_shared"
+    shared_dir.mkdir(parents=True, exist_ok=True)
+    shared_dir.joinpath("nvflare-job-lifecycle.md").write_text(f"# {heading}\n", encoding="utf-8")
+    return shared_dir
