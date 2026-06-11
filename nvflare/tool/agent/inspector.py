@@ -64,13 +64,15 @@ FRAMEWORK_IMPORTS = {
 }
 FRAMEWORK_SKILLS = {
     "pytorch": "nvflare-convert-pytorch",
-    "pytorch_lightning": "nvflare-convert-lightning",
-    "tensorflow": "nvflare-convert-tensorflow",
-    "xgboost": "nvflare-convert-xgboost",
-    "sklearn": "nvflare-convert-sklearn",
-    "jax": "nvflare-convert-jax",
-    "numpy": "nvflare-convert-numpy",
 }
+# Future candidate mappings. Keep these inactive until the matching skill
+# directories are implemented, packaged, and covered by admission tests.
+# "pytorch_lightning": "nvflare-convert-lightning",
+# "tensorflow": "nvflare-convert-tensorflow",
+# "xgboost": "nvflare-convert-xgboost",
+# "sklearn": "nvflare-convert-sklearn",
+# "jax": "nvflare-convert-jax",
+# "numpy": "nvflare-convert-numpy",
 
 
 @dataclass
