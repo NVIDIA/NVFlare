@@ -304,8 +304,11 @@ def _get_subcommand_choices(parser):
 def _emit_argparse_error_json(parser, message):
     from nvflare.tool.cli_output import SCHEMA_VERSION
 
-    # Parser errors intentionally expose usage/choices inline because they are generated before any
-    # command handler runs and therefore sit outside the normal command data envelope.
+    # Parser errors intentionally expose usage/choices inline because they are
+    # generated before any command handler runs and therefore sit outside the
+    # normal command data envelope. Even with --format jsonl, argparse errors
+    # are a single pre-dispatch JSON envelope without event/terminal markers;
+    # command handlers own JSONL terminal events after dispatch succeeds.
     payload = {
         "schema_version": SCHEMA_VERSION,
         "status": "error",
