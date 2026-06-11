@@ -22,8 +22,9 @@ debugging that does not ask for FLARE conversion.
 
 ## Workflow
 
-1. Run `nvflare agent inspect <path> --format json` before editing.
-2. Identify the model definition, required `nn.Module.__init__` arguments,
+1. Follow the shared conversion workflow contract in
+   `../_shared/nvflare-job-lifecycle.md`.
+2. Identify the PyTorch model definition, required `nn.Module.__init__` arguments,
    training loop, data loading, metrics, and checkpoint behavior. Determine the
    concrete constructor values that server and client models must share before
    creating `job.py`.
@@ -34,41 +35,27 @@ debugging that does not ask for FLARE conversion.
    `references/recipe-selection.md`; do not add per-site recipe config unless
    the sites actually need different training scripts, arguments, or launch
    settings.
-4. Use the user-requested target location for the converted FLARE job source.
-5. Use the standard generated source names `client.py`, `job.py`, and `model.py`
-   when model code is copied or wrapped. Keep original files such as `train.py`
-   as source references unless the user explicitly asks to rewrite them.
-6. Convert training exchange to the FLARE Client API: initialize FLARE, receive
+4. Convert training exchange to the FLARE Client API: initialize FLARE, receive
    an `FLModel`, load `params` into the PyTorch model, train or evaluate, and
    send an `FLModel` with updated `params`, metrics, and useful metadata.
-7. Add or update a `job.py` that uses the selected PyTorch recipe or job API
+5. Add or update a `job.py` that uses the selected PyTorch recipe or job API
    path. Follow the shared lifecycle for generated layout, validation, export,
    runtime locations, and evidence reporting.
-8. Validate and export through the shared lifecycle. Use
+6. Validate and export through the shared lifecycle. Use
    `references/job-validation.md` for PyTorch-specific checks before calling the
    conversion complete.
 
 ## Requirements
 
-- Must keep edits scoped to training, model, job, and small config files.
 - Must audit model constructor arguments before writing `job.py`. If the model
   has required non-default `__init__` parameters, generate explicit recipe model
   config with `path` or `class_path` and `args`, then verify recipe
   construction and export preserve those arguments.
-- Must preserve user data paths and require user confirmation before changing
-  them.
-- Must translate natural user requests into concrete recipe, site-count,
-  dataset, split, training, validation, and export settings.
-- Must prefer synthetic or fixture data for validation when the original dataset
-  is unavailable.
 - Must follow the shared job lifecycle guidance for validation evidence,
   including final/best metrics, round/per-site metrics, and artifact paths when
   those artifacts are present.
-- Must not submit to POC or production without explicit user approval.
-- Must not generate Python solely to wrap `nvflare` CLI commands or scrape
-  human CLI output.
-- Must not require `rg` to be installed. Use `rg` when available; otherwise use
-  `nvflare agent inspect`, `find`, `git ls-files`, or a small Python search.
+- Must not require `rg` to be installed; the shared lifecycle defines fallback
+  search options.
 
 ## Agent Responsibilities
 
@@ -85,11 +72,9 @@ debugging that does not ask for FLARE conversion.
 ## User Input And Approval
 
 - Ask the user to clarify FL workflow intent when recipe selection is uncertain.
-- Ask before changing private data paths, replacing dataset access, or using
-  non-fixture data for validation.
-- Ask before POC, production, or startup-kit based runtime submission.
-- After approved POC or production submission, follow the shared lifecycle for
-  result download and artifact reporting.
+- Follow the shared lifecycle approval boundary for data-path changes,
+  non-fixture validation data, POC, production, and startup-kit based runtime
+  submission.
 
 Load `../_shared/nvflare-job-lifecycle.md` for every conversion. Load the
 smallest PyTorch-specific reference needed for the current phase:

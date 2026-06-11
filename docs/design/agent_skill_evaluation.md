@@ -35,9 +35,8 @@ owns the skill metadata, deterministic lint, runtime evidence, reporting, and
 publication handoff contracts used to judge whether a skill is ready for public
 use.
 
-This document does not define the full agent benchmark harness. The benchmark
-harness architecture is defined in
-[Agent Benchmark Harness Architecture](agent_benchmark_harness.md).
+This document does not define the full agent benchmark harness. The full
+benchmark harness architecture is follow-up work outside this PR's source set.
 
 Every public FLARE skill must have enough measurement to answer:
 

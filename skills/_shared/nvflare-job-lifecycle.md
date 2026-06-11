@@ -15,6 +15,25 @@ arguments, validation intent, and approval boundaries before asking follow-up
 questions. Ask only when a missing value changes the generated job or runtime
 behavior.
 
+## Conversion Workflow Contract
+
+- Run `nvflare agent inspect <path> --format json` before editing.
+- Use the user-requested target location for generated FLARE job source.
+- Keep edits scoped to training, model, job, and small config files.
+- Preserve user data paths and require user confirmation before changing them.
+- Translate natural user requests into concrete recipe, site-count, dataset,
+  split, training, validation, and export settings.
+- Use the standard generated source names `client.py`, `job.py`, and `model.py`
+  when model code is copied or wrapped. Keep original source files as
+  references unless the user explicitly asks to rewrite them.
+- Ask before changing private data paths, replacing dataset access, using
+  non-fixture data for validation, or submitting to POC, production, or
+  startup-kit based runtimes.
+- Do not generate Python solely to wrap `nvflare` CLI commands or scrape human
+  CLI output.
+- Do not require `rg` to be installed. Use `rg` when available; otherwise use
+  `nvflare agent inspect`, `find`, `git ls-files`, or a small Python search.
+
 ## Generated Job Layout
 
 Create generated FLARE source in a separate job folder unless the user asks for
