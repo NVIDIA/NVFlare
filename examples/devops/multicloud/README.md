@@ -72,8 +72,8 @@ Cluster creation and FLARE site deployment can be separate roles:
   clusters, node pools/autoscaling settings, storage classes, and container
   registries.
 - FLARE site deployer: permission to use the kubeconfig for each target site
-  cluster and create/delete namespaces, PVCs, pods, services, deployments, and
-  Helm release resources for that site.
+  cluster and create/delete namespaces, PVCs, ConfigMaps, Secrets, pods,
+  services, deployments, and Helm release resources for that site.
 - FLARE server site deployer: the FLARE site deployer permissions plus
   permission to reserve and release the public/static IP used by the server
   service.
@@ -146,9 +146,9 @@ python examples/devops/multicloud/deploy.py --config examples/devops/multicloud/
 ```
 
 `up` always re-runs `nvflare provision`, runs `nvflare deploy prepare` for
-each participant, refreshes the staged startup/local kit files in each
-participant workspace PVC, uninstalls any existing Helm release for each
-participant, then installs the prepared chart. The cloud IP name is
+each participant, stages `local/` as a ConfigMap and `startup/` as a Secret,
+uninstalls any existing Helm release for each participant, then installs the
+prepared chart. The cloud IP name is
 deterministic from the config `name`, for example `all-clouds` uses
 `nvflare-all-clouds`. If an IP with that name already exists, `up` reuses it.
 
@@ -167,9 +167,11 @@ cloud IP.
   `nvflare-all-clouds`.
 - One Kubernetes namespace per participant.
 - The configured PVCs in each participant namespace, including `nvflws` for the
-  workspace and `nvfldata` for study data in the shipped config.
-- A temporary `kit-copy-*` pod per participant to stage `startup/` and `local/`
-  files into the workspace PVC.
+  writable runtime workspace and `nvfldata` for study data in the shipped
+  config. The workspace PVC is no longer primed with `startup/` and `local/`.
+- One ConfigMap per participant for prepared `local/` files and one Secret per
+  participant for prepared `startup/` files. The parent chart mounts these over
+  the workspace path at runtime.
 - One Helm release per participant, which installs the parent Deployment and
   Service.
 

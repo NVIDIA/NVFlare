@@ -267,6 +267,31 @@ class TestEdgeFedBuffRecipe:
                 return comp
         raise AssertionError("ModelUpdateAssessor not found in server components")
 
+    def _find_metrics_writer(self, job):
+        """Find the MetricsArtifactWriter component in the job's server config."""
+        from nvflare.app_common.widgets.metrics_artifact_writer import MetricsArtifactWriter
+
+        server_app = job._deploy_map.get("server")
+        assert server_app is not None, "No server app found in job"
+        metrics_writer = server_app.app_config.components.get("metrics_artifact_writer")
+        assert isinstance(metrics_writer, MetricsArtifactWriter)
+        return metrics_writer
+
+    def test_metrics_artifact_writer_is_configured(
+        self, mock_file_system, simple_pt_model, model_manager_config, device_manager_config
+    ):
+        """Test that EdgeFedBuffRecipe configures the server-side metrics artifact writer."""
+        from nvflare.edge.tools.edge_fed_buff_recipe import EdgeFedBuffRecipe
+
+        recipe = EdgeFedBuffRecipe(
+            job_name="test_metrics_writer",
+            model=simple_pt_model,
+            model_manager_config=model_manager_config,
+            device_manager_config=device_manager_config,
+        )
+
+        self._find_metrics_writer(recipe.job)
+
     def test_device_wait_timeout_default_is_none(
         self, mock_file_system, simple_pt_model, model_manager_config, device_manager_config
     ):

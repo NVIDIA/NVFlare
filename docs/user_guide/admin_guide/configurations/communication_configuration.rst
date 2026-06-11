@@ -255,7 +255,11 @@ This is an example of comm_config.json file with default values for all the para
     "streaming_max_out_seq_chunks": 16,
     "streaming_window_size": 16777216,
     "streaming_ack_interval": 4194304,
-    "streaming_ack_wait": 10
+    "streaming_ack_wait": 10,
+    "streaming_reliable": false,
+    "streaming_retry_wait": 5.0,
+    "streaming_retry_timeout": 60.0,
+    "streaming_retry_max_pending_bytes": 33554432
   }
 
 When large amount of data are exchanged on busy hosts like in LLM training, following parameters are recommended in <site_workspace>/local/comm_config.json on both servers and clients,
@@ -357,3 +361,31 @@ The number of seconds that the sender waits for the next ACK.
 The default value is 10 seconds. 
 
 This timeout is used to detect dead receivers. On a very slow network, this value may need to be increased.
+
+streaming_reliable
+------------------
+
+Whether the streaming sender retries chunks that fail to send or have not been acknowledged.
+The default value is ``false`` so mixed-version deployments continue to interoperate during rolling upgrades.
+
+Set this to ``true`` on sites that support reliable streaming, or pass an explicit per-call reliable setting when using the streaming APIs.
+
+streaming_retry_wait
+--------------------
+
+The number of seconds that a reliable streaming sender waits before retrying an unacknowledged chunk.
+The default value is 5 seconds.
+
+streaming_retry_timeout
+-----------------------
+
+The maximum number of seconds that a reliable streaming sender keeps retrying an unacknowledged chunk before failing the stream.
+The default value is 60 seconds.
+
+streaming_retry_max_pending_bytes
+---------------------------------
+
+The maximum total payload bytes that a reliable streaming sender keeps in memory for retry.
+The default value is twice ``streaming_window_size``.
+
+Set this to 0 or a negative value to disable the retry pending-byte limit.

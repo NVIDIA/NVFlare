@@ -12,62 +12,78 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Tuple
+import shutil
+import tempfile
+from dataclasses import dataclass
+from typing import Any, Optional
 
 _ENABLE_TENSOR_DISK_OFFLOAD = "enable_tensor_disk_offload"
 _TENSOR_DISK_OFFLOAD_ROOT_DIR = "tensor_disk_offload_root_dir"
 
 
-def apply_enable_tensor_disk_offload(
-    engine,
-    enabled: bool,
-    root_dir: str = None,
-) -> Tuple[Any, bool]:
-    """Apply enable_tensor_disk_offload to cell FOBS context.
+@dataclass
+class TensorDiskOffloadContext:
+    previous_value: Any = None
+    previous_root_dir: Optional[str] = None
+    root_dir: Optional[str] = None
+    applied: bool = False
+
+
+def _get_cell(engine):
+    if not engine:
+        return None
+
+    run_manager = getattr(engine, "run_manager", None)
+    if run_manager and run_manager.cell:
+        return run_manager.cell
+    return engine.get_cell()
+
+
+def setup_tensor_disk_offload(engine, enabled: bool, job_id: str = "job") -> TensorDiskOffloadContext:
+    """Enable tensor disk offload in the active cell FOBS context.
 
     Returns:
-      (previous value, applied flag).
+      Context needed to restore the prior setting and cleanup temporary files.
     """
-    if not engine:
-        return None, False
+    if not enabled:
+        return TensorDiskOffloadContext()
 
-    run_manager = getattr(engine, "run_manager", None)
-    if run_manager and run_manager.cell:
-        cell = run_manager.cell
-    else:
-        cell = engine.get_cell()
+    cell = _get_cell(engine)
     if not cell:
-        return None, False
+        return TensorDiskOffloadContext()
 
-    previous = cell.get_fobs_context().get(_ENABLE_TENSOR_DISK_OFFLOAD, False)
-    if enabled:
-        if not root_dir:
-            raise ValueError("root_dir must be provided when tensor disk offload is enabled")
+    fobs_ctx = cell.get_fobs_context()
+    previous_value = fobs_ctx.get(_ENABLE_TENSOR_DISK_OFFLOAD, False)
+    previous_root_dir = fobs_ctx.get(_TENSOR_DISK_OFFLOAD_ROOT_DIR)
+    root_dir = tempfile.mkdtemp(prefix=f"nvflare_tensor_offload_{job_id}_")
+    try:
         cell.update_fobs_context({_ENABLE_TENSOR_DISK_OFFLOAD: True, _TENSOR_DISK_OFFLOAD_ROOT_DIR: root_dir})
-    elif previous != enabled:
-        cell.update_fobs_context({_ENABLE_TENSOR_DISK_OFFLOAD: False})
-    return previous, True
+    except Exception:
+        shutil.rmtree(root_dir, ignore_errors=True)
+        raise
+    return TensorDiskOffloadContext(
+        previous_value=previous_value,
+        previous_root_dir=previous_root_dir,
+        root_dir=root_dir,
+        applied=True,
+    )
 
 
-def restore_enable_tensor_disk_offload(engine, previous_value: Any, root_dir: str = None) -> None:
-    """Restore prior enable_tensor_disk_offload value on a cell."""
-    # previous_value is None only when apply was not executed because no
-    # engine/cell was available; False is a valid prior value and must restore.
-    if not engine or previous_value is None:
+def cleanup_tensor_disk_offload(engine, context: TensorDiskOffloadContext) -> None:
+    """Restore the prior FOBS context values and remove any temporary offload root."""
+    if not context:
         return
 
-    run_manager = getattr(engine, "run_manager", None)
-    if run_manager and run_manager.cell:
-        cell = run_manager.cell
-    else:
-        cell = engine.get_cell()
-    if not cell:
-        return
-
-    if root_dir:
-        cell.update_fobs_context({_ENABLE_TENSOR_DISK_OFFLOAD: previous_value, _TENSOR_DISK_OFFLOAD_ROOT_DIR: None})
-        return
-
-    current = cell.get_fobs_context().get(_ENABLE_TENSOR_DISK_OFFLOAD, False)
-    if current != previous_value:
-        cell.update_fobs_context({_ENABLE_TENSOR_DISK_OFFLOAD: previous_value})
+    try:
+        if context.applied:
+            cell = _get_cell(engine)
+            if cell:
+                cell.update_fobs_context(
+                    {
+                        _ENABLE_TENSOR_DISK_OFFLOAD: context.previous_value,
+                        _TENSOR_DISK_OFFLOAD_ROOT_DIR: context.previous_root_dir,
+                    }
+                )
+    finally:
+        if context.root_dir:
+            shutil.rmtree(context.root_dir, ignore_errors=True)

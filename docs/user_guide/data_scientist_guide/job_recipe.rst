@@ -161,6 +161,14 @@ We use our existing training network under ``../hello-world/hello-pt/model.py`` 
    print(f"Min clients: {recipe.min_clients}")
    print(f"Number of rounds: {recipe.num_rounds}")
 
+Metrics Artifacts
+-----------------
+
+Training aggregation recipes write standard metrics artifacts when their server
+workflow reports round-level aggregation metrics. See
+:ref:`recipe_metrics_artifacts` for the schema, security behavior, and artifact
+discovery contract.
+
 Execution Environments
 ----------------------
 
