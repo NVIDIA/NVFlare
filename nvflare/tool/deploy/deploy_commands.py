@@ -202,23 +202,23 @@ def prepare_deployment(args) -> None:
 
 
 def stage_k8_deployment(args) -> None:
-    kit, namespace, local_configmap, startup_secret = _resolve_k8_stage_inputs(args)
-    _validate_k8_stage_inputs(kit, namespace, local_configmap, startup_secret)
+    kit, namespace, local_configmap, startup_resource_name = _resolve_k8_stage_inputs(args)
+    _validate_k8_stage_inputs(kit, namespace, local_configmap, startup_resource_name)
     kubectl = _resolve_kubectl(args)
 
     local_bundle = _build_volume_bundle(kit / "local")
     startup_bundle = _build_volume_bundle(kit / "startup")
 
     _warn_if_large_k8_object("ConfigMap", local_configmap, local_bundle["encoded_size"])
-    _warn_if_large_k8_object("Secret", startup_secret, startup_bundle["encoded_size"])
+    _warn_if_large_k8_object("Secret", startup_resource_name, startup_bundle["encoded_size"])
 
     _kubectl_apply(_configmap_manifest(local_configmap, namespace, local_bundle["data"]), kubectl)
-    _kubectl_apply(_secret_manifest(startup_secret, namespace, startup_bundle["data"]), kubectl)
+    _kubectl_apply(_secret_manifest(startup_resource_name, namespace, startup_bundle["data"]), kubectl)
     _patch_k8_stage_values(
         kit=kit,
         local_configmap=local_configmap,
         local_items=local_bundle["items"],
-        startup_secret=startup_secret,
+        startup_resource_name=startup_resource_name,
         startup_items=startup_bundle["items"],
     )
     helm_command = _k8_stage_helm_command(kit, namespace)
@@ -228,7 +228,7 @@ def stage_k8_deployment(args) -> None:
             "namespace": namespace,
             "prepared_kit": str(kit),
             "local_configmap": local_configmap,
-            "startup_secret": startup_secret,
+            "startup_resource_name": _public_k8s_resource_name(startup_resource_name),
             "local_files": len(local_bundle["items"]),
             "startup_files": len(startup_bundle["items"]),
             "helm_values": str(kit / HELM_CHART_DIR / "values.yaml"),
@@ -272,15 +272,15 @@ def _resolve_k8_stage_inputs(args) -> tuple[Path, str, str, str]:
     values = _load_k8_stage_values(kit)
     namespace = getattr(args, "namespace", None) or _read_k8_launcher_namespace(kit) or "default"
     local_configmap = getattr(args, "local_configmap", None)
-    startup_secret = getattr(args, "startup_secret", None)
-    if not local_configmap or not startup_secret:
-        default_local_configmap, default_startup_secret = _default_k8_stage_resource_names(kit, values)
+    startup_resource_name = getattr(args, "startup_resource_name", None)
+    if not local_configmap or not startup_resource_name:
+        default_local_configmap, default_startup_resource_name = _default_k8_stage_resource_names(kit, values)
         local_configmap = local_configmap or default_local_configmap
-        startup_secret = startup_secret or default_startup_secret
-    return kit, namespace, local_configmap, startup_secret
+        startup_resource_name = startup_resource_name or default_startup_resource_name
+    return kit, namespace, local_configmap, startup_resource_name
 
 
-def _validate_k8_stage_inputs(kit: Path, namespace: str, local_configmap: str, startup_secret: str) -> None:
+def _validate_k8_stage_inputs(kit: Path, namespace: str, local_configmap: str, startup_resource_name: str) -> None:
     if not kit.is_dir():
         _fail("INVALID_KIT", f"Prepared kit directory does not exist: {kit}", "Provide an existing prepared K8s kit.")
     for folder in ("local", "startup"):
@@ -324,11 +324,17 @@ def _validate_k8_stage_inputs(kit: Path, namespace: str, local_configmap: str, s
         hint="Use a valid --local-configmap value.",
     )
     _validate_k8s_secret_name(
-        startup_secret,
+        startup_resource_name,
         "startup Secret name",
         error_code="INVALID_ARGS",
         hint="Use a valid --startup-secret value.",
     )
+
+
+def _public_k8s_resource_name(name: str) -> str:
+    if not K8S_SECRET_NAME_PATTERN.fullmatch(name):
+        raise ValueError(f"invalid Kubernetes resource name: {name}")
+    return name
 
 
 def _load_k8_stage_values(kit: Path) -> dict[str, Any]:
@@ -1274,7 +1280,7 @@ def _patch_k8_stage_values(
     kit: Path,
     local_configmap: str,
     local_items: list[dict[str, str]],
-    startup_secret: str,
+    startup_resource_name: str,
     startup_items: list[dict[str, str]],
 ) -> None:
     values_path = kit / HELM_CHART_DIR / "values.yaml"
@@ -1285,7 +1291,7 @@ def _patch_k8_stage_values(
         "items": local_items,
     }
     workspace_config[K8_STAGE_STARTUP_KEY] = {
-        "secretName": startup_secret,
+        "secretName": startup_resource_name,
         "items": startup_items,
     }
     _write_yaml(values_path, values)

@@ -189,7 +189,7 @@ def _stage_k8_args(kit, **overrides):
         "kit_flag": None,
         "namespace": None,
         "local_configmap": None,
-        "startup_secret": None,
+        "startup_resource_name": None,
         "kubectl": None,
     }
     args.update(overrides)
@@ -743,6 +743,8 @@ def test_stage_k8_creates_configmap_secret_and_patches_chart(tmp_path, capsys, m
     assert values["workspaceConfig"]["startup"]["secretName"] == "nvflare-startup-site-1"
     startup_paths = {item["path"] for item in values["workspaceConfig"]["startup"]["items"]}
     assert {"fed_client.json", "client.crt", "client.key", "rootCA.pem"} <= startup_paths
+    assert "startup_resource_name: nvflare-startup-site-1" in out
+    assert "startup_secret:" not in out
     assert "next_step: Start the server/client parent pod with the helm_command." in out
     assert f"helm_command: helm upgrade --install site-1 {output / 'helm_chart'} --namespace flare" in out
 
@@ -767,7 +769,7 @@ def test_stage_k8_uses_explicit_resource_names_and_namespace(tmp_path, capsys, m
             output,
             namespace="runtime-ns",
             local_configmap="manual-local",
-            startup_secret="manual-startup",
+            startup_resource_name="manual-startup",
             kubectl="oc",
         )
     )
