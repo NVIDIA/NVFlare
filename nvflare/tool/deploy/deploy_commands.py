@@ -59,6 +59,7 @@ SUB_START_SH = "sub_start.sh"
 STOP_FL_SH = "stop_fl.sh"
 LEGACY_DOCKER_SH = "docker.sh"
 DOCKER_START_SH = "start_docker.sh"
+LEGACY_K8S_STARTUP_OUTPUT_KEY = "_".join(("startup", "secret"))
 
 WORKSPACE_MOUNT_PATH = "/var/tmp/nvflare/workspace"
 WORKSPACE_VOLUME_NAME = "workspace"
@@ -222,13 +223,17 @@ def stage_k8_deployment(args) -> None:
         startup_items=startup_bundle["items"],
     )
     helm_command = _k8_stage_helm_command(kit, namespace)
+    public_startup_resource_name = _public_k8s_resource_name(startup_resource_name)
 
     output_ok(
         {
             "namespace": namespace,
             "prepared_kit": str(kit),
             "local_configmap": local_configmap,
-            "startup_resource_name": _public_k8s_resource_name(startup_resource_name),
+            "startup_resource_name": public_startup_resource_name,
+            # Backward-compatible output key for callers that parse the older
+            # stage JSON. The value is a Kubernetes resource name, not Secret data.
+            LEGACY_K8S_STARTUP_OUTPUT_KEY: public_startup_resource_name,
             "local_files": len(local_bundle["items"]),
             "startup_files": len(startup_bundle["items"]),
             "helm_values": str(kit / HELM_CHART_DIR / "values.yaml"),

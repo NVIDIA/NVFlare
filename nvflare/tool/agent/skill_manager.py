@@ -61,7 +61,7 @@ def resolve_agent_target_dir(
     if agent == "codex":
         codex_home = env_map.get("CODEX_HOME")
         if codex_home:
-            return Path(codex_home).expanduser() / "skills"
+            return _resolve_target_override(Path(codex_home).expanduser() / "skills")
         return Path.home() / ".codex" / "skills"
     if agent == "claude":
         return Path.home() / ".claude" / "skills"
@@ -351,7 +351,7 @@ def _skill_install_lock(target_dir: Path):
         _create_lock_dir(lock_dir)
     except FileExistsError as e:
         if _lock_dir_is_stale(lock_dir):
-            shutil.rmtree(lock_dir)
+            shutil.rmtree(lock_dir, ignore_errors=True)
             try:
                 _create_lock_dir(lock_dir)
             except FileExistsError as retry_error:

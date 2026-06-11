@@ -39,6 +39,22 @@ def test_resolve_codex_target_uses_codex_home(tmp_path):
     assert target == tmp_path / "codex-home" / "skills"
 
 
+def test_resolve_codex_home_rejects_parent_traversal(tmp_path):
+    with pytest.raises(ValueError, match="parent directory traversal"):
+        resolve_agent_target_dir("codex", env={"CODEX_HOME": str(tmp_path / "target" / ".." / "codex-home")})
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are not supported on this platform")
+def test_resolve_codex_home_rejects_symlink_component(tmp_path):
+    actual_home = tmp_path / "actual-codex-home"
+    actual_home.mkdir()
+    link_home = tmp_path / "codex-home-link"
+    link_home.symlink_to(actual_home, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="symlink components"):
+        resolve_agent_target_dir("codex", env={"CODEX_HOME": str(link_home)})
+
+
 def test_resolve_claude_target_uses_home(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
 
@@ -380,6 +396,29 @@ def test_install_skills_replace_publish_error_restores_existing_install(monkeypa
     assert "First Skill" in (target / "nvflare-test-skill" / "SKILL.md").read_text(encoding="utf-8")
     assert "Second Skill" not in (target / "nvflare-test-skill" / "SKILL.md").read_text(encoding="utf-8")
     assert not any((target / ".nvflare_bak").iterdir())
+
+
+def test_skill_install_lock_ignores_stale_lock_removal_race(monkeypatch, tmp_path):
+    target = tmp_path / "target"
+    target.mkdir()
+    lock_dir = tmp_path / ".target.install.lock"
+    lock_dir.mkdir()
+    real_rmtree = shutil.rmtree
+    calls = []
+
+    monkeypatch.setattr(skill_manager, "_lock_dir_is_stale", lambda path: path == lock_dir)
+
+    def rmtree_with_race(path, *args, **kwargs):
+        calls.append(kwargs)
+        assert kwargs.get("ignore_errors") is True
+        real_rmtree(path, ignore_errors=True)
+
+    monkeypatch.setattr(skill_manager.shutil, "rmtree", rmtree_with_race)
+
+    with skill_manager._skill_install_lock(target):
+        assert lock_dir.is_dir()
+
+    assert calls == [{"ignore_errors": True}, {"ignore_errors": True}]
 
 
 def test_install_skills_replace_reports_publish_error_when_recovery_fails(monkeypatch, tmp_path):
