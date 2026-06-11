@@ -39,6 +39,26 @@ def test_inspect_static_only_does_not_execute_user_module(tmp_path):
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
 
 
+def test_inspect_directory_reports_inspected_target_path(tmp_path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "train.py").write_text("import torch\n", encoding="utf-8")
+
+    data = inspect_path(root)
+
+    assert data["path"] == str(root.resolve(strict=False))
+    assert data["path"] != "."
+
+
+def test_inspect_file_reports_inspected_target_path(tmp_path):
+    script = tmp_path / "train.py"
+    script.write_text("import torch\n", encoding="utf-8")
+
+    data = inspect_path(script)
+
+    assert data["path"] == str(script.resolve(strict=False))
+
+
 def test_inspect_redacts_secret_literals_and_absolute_paths_by_default(tmp_path):
     script = tmp_path / "train.py"
     script.write_text(

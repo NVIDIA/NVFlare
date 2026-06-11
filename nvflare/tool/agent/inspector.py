@@ -128,7 +128,7 @@ def inspect_path(
     return {
         "schema_version": "1",
         "nvflare_version": nvflare.__version__,
-        "path": _display_path(target, target, redact=False),
+        "path": _inspected_target_path(target),
         "target_type": target_type,
         "static_only": True,
         "redaction": "on" if redact else "off",
@@ -530,6 +530,10 @@ def _display_path(path: Path, root: Path, redact: bool) -> str:
         if redact and path.is_absolute():
             return f"<REDACTED_PATH>/{path.name}"
         return str(path)
+
+
+def _inspected_target_path(path: Path) -> str:
+    return str(path.resolve(strict=False))
 
 
 def _redact_literal(value: str, redact: bool) -> str:
