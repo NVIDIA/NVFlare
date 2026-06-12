@@ -387,6 +387,7 @@ class _Transaction:
         self.last_active_time = time.time()
         self.start_time = time.time()
         self.total_bytes = 0
+        self._stats_lock = threading.Lock()
         self.transaction_done_cb = transaction_done_cb
         self.cb_kwargs = cb_kwargs or {}
         self.progress_cb = progress_cb
@@ -403,6 +404,16 @@ class _Transaction:
 
         """
         self.last_active_time = time.time()
+
+    def add_total_bytes(self, byte_count: int):
+        if byte_count <= 0:
+            return
+        with self._stats_lock:
+            self.total_bytes += byte_count
+
+    def get_total_bytes(self) -> int:
+        with self._stats_lock:
+            return self.total_bytes
 
     def add_object(
         self,
@@ -450,10 +461,11 @@ class _Transaction:
                 ref.emit_terminal_progress_for_started_receivers(progress_state)
 
         elapsed = time.time() - self.start_time
-        size_mb = self.total_bytes / (1024 * 1024)
+        total_bytes = self.get_total_bytes()
+        size_mb = total_bytes / (1024 * 1024)
         self.logger.info(
             f"[server] download tx {self.tid} done: status={status} elapsed={elapsed:.2f}s "
-            f"size={size_mb:.1f}MB ({self.total_bytes:,} bytes)"
+            f"size={size_mb:.1f}MB ({total_bytes:,} bytes)"
         )
 
         # Snapshot base_objs BEFORE the loop so the callback receives the
@@ -743,8 +755,7 @@ class DownloadService:
             if data is not None:
                 bytes_delta = sum(len(c) for c in data) if isinstance(data, list) else len(data)
                 items_delta = len(data) if isinstance(data, list) else None
-                with cls._tx_lock:
-                    tx.total_bytes += bytes_delta
+                tx.add_total_bytes(bytes_delta)
                 ref.emit_progress(
                     receiver_id=requester,
                     state=TransferProgressState.ACTIVE,

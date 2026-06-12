@@ -925,9 +925,9 @@ class TestDownloadService:
             assert isinstance(tx, _Transaction)
             # Simulate what _handle_download does: data is a list of byte chunks
             data = [b"hello", b"world", b"!!!!!"]  # 3 chunks, 5+5+5 = 15 bytes
-            tx.total_bytes += sum(len(chunk) for chunk in data)
-            assert tx.total_bytes == 15, (
-                f"H1 fix: expected 15 bytes from {data}, got {tx.total_bytes}. "
+            tx.add_total_bytes(sum(len(chunk) for chunk in data))
+            assert tx.get_total_bytes() == 15, (
+                f"H1 fix: expected 15 bytes from {data}, got {tx.get_total_bytes()}. "
                 "total_bytes must be the sum of chunk lengths, not the number of chunks."
             )
 
