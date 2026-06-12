@@ -47,14 +47,21 @@ _HEADER_HB_SEQ = _PREFIX + "hb_seq"
 
 def _cell_fqcn(mode, site_name, token, parent_fqcn):
     # The FQCN of the cell must be unique in the whole cellnet.
-    # We use the combination of mode, site_name, and token to derive the value of FQCN
-    # Since the token is usually used across all sites, the "site_name" differentiate cell on one site from another.
-    # The two peer pipes on the same site share the same site_name and token, but are differentiated by their modes.
-    base = f"{site_name}_{token}_{mode}"
+    # The cell is named <site_name>.<token>.<mode>, scoped under the FQCN of the
+    # cell it connects to. The hierarchical form keeps the owning site as a
+    # leading segment, so mTLS identity resolution and message routing follow
+    # the normal FQCN rules without any alias parsing.
+    # The two peer pipes on the same site share the same site_name and token,
+    # but are differentiated by their modes.
     if parent_fqcn == FQCN.ROOT_SERVER:
-        return base
+        prefix = site_name
+    elif FQCN.split(parent_fqcn)[-1] == site_name:
+        # connecting to the site's own CP: the site is already the last segment
+        prefix = parent_fqcn
     else:
-        return FQCN.join([parent_fqcn, base])
+        # connecting to another cell (e.g. a relay): scope the name to the site
+        prefix = FQCN.join([parent_fqcn, site_name])
+    return FQCN.join([prefix, token, mode])
 
 
 def _to_cell_message(msg: Message, extra=None) -> CellMessage:
@@ -157,14 +164,15 @@ class CellPipe(Pipe):
 
                 parent_url = parent_conn_props.get(ConnPropKey.URL)
 
-                if FQCN.get_parent(fqcn):
-                    # the cell has a parent: connect to the parent
-                    cell_root = None
-                    cell_parent_url = parent_url
-                else:
-                    # the cell has no parent: the parent_url is the root of the cellnet
+                if parent_conn_props.get(ConnPropKey.FQCN) == FQCN.ROOT_SERVER:
+                    # joining the cellnet at the root: use the backbone external
+                    # connector so the secure (TLS) connection settings apply
                     cell_root = parent_url
                     cell_parent_url = None
+                else:
+                    # joining at a non-root cell (CP or relay): connect to it as parent
+                    cell_root = None
+                    cell_parent_url = parent_url
 
                 cell = Cell(
                     fqcn=fqcn,
