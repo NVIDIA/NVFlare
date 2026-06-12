@@ -573,7 +573,9 @@ class TaskExchanger(Executor):
             return False
 
         elapsed = now - send_start_time
-        recent_records = [record for record in records if now - record.last_progress_time < streaming_idle_timeout]
+        recent_records = [
+            record for record in active_records if now - record.last_progress_time < streaming_idle_timeout
+        ]
         if not recent_records:
             return False
 

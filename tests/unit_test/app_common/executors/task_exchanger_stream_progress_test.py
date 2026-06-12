@@ -762,6 +762,31 @@ def test_task_send_recent_sibling_activity_holds_wait_until_group_stalls(monkeyp
     assert handler.send_calls == 1
 
 
+def test_task_send_recent_completed_sibling_does_not_mask_stalled_active_transfer(monkeypatch):
+    _patch_logs(monkeypatch)
+    now = [1000.0]
+    monkeypatch.setattr(task_exchanger_module.time, "time", lambda: now[0])
+    executor = TaskExchanger(pipe_id="pipe", peer_read_timeout=0.01, streaming_idle_timeout=10.0)
+    executor._handle_stream_progress_message(
+        _progress(task_id="task-1", transfer_id="stalled-transfer", sequence=1, bytes_done=1024)
+    )
+    now[0] += 11.0
+    executor._handle_stream_progress_message(
+        _progress(task_id="task-1", transfer_id="completed-transfer", sequence=1, bytes_done=2048, state="completed")
+    )
+
+    assert (
+        executor._should_continue_task_send_waiting(
+            task_name="train",
+            task_id="task-1",
+            job_id="job-1",
+            send_start_time=1000.0,
+            fl_ctx=_make_fl_ctx(),
+        )
+        is False
+    )
+
+
 def test_task_send_recent_sibling_activity_does_not_mask_failed_transfer(monkeypatch):
     _patch_logs(monkeypatch)
     now = [1000.0]
