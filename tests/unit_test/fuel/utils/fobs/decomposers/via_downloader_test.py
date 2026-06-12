@@ -216,6 +216,28 @@ class TestViaDownloaderTimeoutPolicy:
         with pytest.raises(ValueError, match="finite"):
             decomposer._create_downloader({fobs.FOBSContextKey.CELL: object()}, timeout_override=value)
 
+    def test_create_downloader_floors_timeout_override_to_legacy_min_download_timeout(self, monkeypatch):
+        observed = {}
+
+        def fake_get_positive_float_var(var_name, default):
+            if var_name == STREAMING_IDLE_TIMEOUT:
+                return 1200.0
+            if var_name == f"dummy_{ConfigVarName.MIN_DOWNLOAD_TIMEOUT}":
+                return 1800.0
+            return default
+
+        class FakeObjectDownloader:
+            def __init__(self, **kwargs):
+                observed.update(kwargs)
+
+        monkeypatch.setattr(via_downloader_module.acu, "get_positive_float_var", fake_get_positive_float_var)
+        monkeypatch.setattr(via_downloader_module, "ObjectDownloader", FakeObjectDownloader)
+
+        decomposer = _DummyViaDownloader()
+        decomposer._create_downloader({fobs.FOBSContextKey.CELL: object()}, timeout_override=600.0)
+
+        assert observed["timeout"] == 1800.0
+
     def test_create_downloader_honors_explicit_legacy_min_download_timeout(self, monkeypatch):
         observed = {}
 
@@ -253,6 +275,13 @@ class TestResultUploadProgressWiring:
     def test_single_receiver_progress_installs_download_service_callback_and_captures_expected_pair(self, monkeypatch):
         events = []
         obj = _FakeDownloadable([])
+
+        def fake_get_positive_float_var(var_name, default):
+            if var_name == f"dummy_{ConfigVarName.MIN_DOWNLOAD_TIMEOUT}":
+                return 1.0
+            return default
+
+        monkeypatch.setattr(via_downloader_module.acu, "get_positive_float_var", fake_get_positive_float_var)
         fobs_ctx = {
             fobs.FOBSContextKey.CELL: object(),
             fobs.FOBSContextKey.NUM_RECEIVERS: 1,

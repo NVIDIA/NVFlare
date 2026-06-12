@@ -543,19 +543,26 @@ class TaskExchanger(Executor):
                 return True
             return False
 
-        recent_records = [
-            record for record in active_records if now - record.last_progress_time < streaming_idle_timeout
+        terminal_failure_records = [
+            record
+            for record in records
+            if record.state in (TransferProgressState.FAILED, TransferProgressState.ABORTED)
         ]
-        if len(recent_records) != len(active_records):
+        if terminal_failure_records:
             return False
 
         elapsed = now - send_start_time
+        recent_records = [record for record in records if now - record.last_progress_time < streaming_idle_timeout]
+        if not recent_records:
+            return False
+
         record = max(recent_records, key=lambda item: item.last_progress_time)
         self.log_info(
             fl_ctx,
             f"peer has not read task '{task_name}' after {elapsed:.2f} secs, "
-            f"but stream transfer '{record.transfer_id}' is still progressing "
-            f"(bytes_done={record.bytes_done}, items_done={record.items_done}); continuing to wait",
+            f"but stream transfer '{record.transfer_id}' has recent activity "
+            f"(state={record.state}, bytes_done={record.bytes_done}, items_done={record.items_done}); "
+            "continuing to wait",
         )
         return True
 

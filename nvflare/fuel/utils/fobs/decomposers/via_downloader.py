@@ -416,7 +416,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         else:
             timeout = min_timeout
 
-        if timeout_override is None and timeout < min_timeout:
+        if timeout < min_timeout:
             timeout = min_timeout
         timeout = check_positive_finite_number("download timeout", timeout)
 

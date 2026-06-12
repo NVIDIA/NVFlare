@@ -675,7 +675,7 @@ def test_task_send_many_active_transfers_progress_past_fixed_timeout_without_res
     assert active_records == []
 
 
-def test_task_send_does_not_let_recent_sibling_mask_stalled_transfer(monkeypatch):
+def test_task_send_recent_sibling_activity_holds_wait_until_group_stalls(monkeypatch):
     _patch_logs(monkeypatch)
     now = [1000.0]
     monkeypatch.setattr(task_exchanger_module.time, "time", lambda: now[0])
@@ -684,6 +684,33 @@ def test_task_send_does_not_let_recent_sibling_mask_stalled_transfer(monkeypatch
         _progress(task_id="task-1", transfer_id="stalled-transfer", sequence=1, bytes_done=1024)
     )
     now[0] += 11.0
+    executor._handle_stream_progress_message(
+        _progress(task_id="task-1", transfer_id="recent-transfer", sequence=1, bytes_done=2048)
+    )
+
+    def send_cb(handler, msg, timeout, abort_signal):
+        assert msg._progress_wait_cb() is True
+        now[0] += 10.0
+        assert msg._progress_wait_cb() is False
+        return False
+
+    handler = _FakePipeHandler(send_cb)
+    executor.pipe_handler = handler
+
+    result = executor._do_execute("train", _make_task(task_id="task-1"), _make_fl_ctx(), _AbortSignal())
+
+    assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+    assert handler.send_calls == 1
+
+
+def test_task_send_recent_sibling_activity_does_not_mask_failed_transfer(monkeypatch):
+    _patch_logs(monkeypatch)
+    now = [1000.0]
+    monkeypatch.setattr(task_exchanger_module.time, "time", lambda: now[0])
+    executor = TaskExchanger(pipe_id="pipe", peer_read_timeout=0.01, streaming_idle_timeout=10.0)
+    executor._handle_stream_progress_message(
+        _progress(task_id="task-1", transfer_id="failed-transfer", sequence=1, bytes_done=1024, state="failed")
+    )
     executor._handle_stream_progress_message(
         _progress(task_id="task-1", transfer_id="recent-transfer", sequence=1, bytes_done=2048)
     )

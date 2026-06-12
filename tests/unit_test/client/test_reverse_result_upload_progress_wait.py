@@ -395,7 +395,7 @@ def test_result_upload_completed_ref_does_not_mask_stalled_sibling():
     assert "stalled" in decision.reason
 
 
-def test_result_upload_progressing_ref_does_not_mask_unstarted_sibling():
+def test_result_upload_recent_ref_activity_holds_unstarted_sibling_until_group_stalls():
     clock = FakeClock()
     tracker = _make_tracker(clock=clock, idle_timeout=10.0)
     _register(tracker, pairs=(("ref-a", None), ("ref-b", None)), created_time=clock.now)
@@ -406,13 +406,18 @@ def test_result_upload_progressing_ref_does_not_mask_unstarted_sibling():
     clock.advance(1.0)
     decision = tracker.decide()
 
+    assert decision.done is False
+
+    clock.advance(9.0)
+    decision = tracker.decide()
+
     assert decision.done is True
     assert decision.success is False
     assert "ref-b" in decision.reason
     assert "did not start" in decision.reason
 
 
-def test_result_upload_receiver_isolation_for_same_ref():
+def test_result_upload_recent_receiver_activity_holds_unstarted_receiver_until_group_stalls():
     clock = FakeClock()
     tracker = _make_tracker(clock=clock, idle_timeout=10.0)
     _register(
@@ -425,6 +430,11 @@ def test_result_upload_receiver_isolation_for_same_ref():
     clock.advance(9.0)
     _progress(tracker, receiver_id="server", sequence=2, bytes_done=200, timestamp=clock.now)
     clock.advance(1.0)
+    decision = tracker.decide()
+
+    assert decision.done is False
+
+    clock.advance(9.0)
     decision = tracker.decide()
 
     assert decision.done is True
