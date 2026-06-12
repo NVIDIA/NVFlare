@@ -91,7 +91,7 @@ class Scaffold(BaseFedAvg):
             cleanup_tensor_disk_offload(engine=getattr(self, "engine", None), context=disk_offload_context)
 
     def _run_rounds(self) -> None:
-        self.info("Start FedAvg.")
+        self.info("Start Scaffold.")
 
         for self.current_round in range(self.start_round, self.start_round + self.num_rounds):
             self.info(f"Round {self.current_round} started.")
@@ -119,7 +119,7 @@ class Scaffold(BaseFedAvg):
             # Memory cleanup at end of round (if configured)
             self._maybe_cleanup_memory()
 
-        self.info("Finished FedAvg.")
+        self.info("Finished Scaffold.")
 
 
 def scaffold_aggregate_fn(results: List[FLModel]) -> FLModel:
