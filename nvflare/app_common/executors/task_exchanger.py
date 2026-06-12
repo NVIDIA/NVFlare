@@ -228,6 +228,11 @@ class TaskExchanger(Executor):
         so a late PEER_GONE from a previous handler cannot kill the current one.
         The callback uses close_pipe=False because CellPipe.close() is irreversible.
         """
+        if self.heartbeat_timeout is None:
+            raise ValueError(
+                "heartbeat_timeout is None. Set heartbeat_timeout to 0 to disable heartbeat checking, "
+                "or to a non-negative timeout value."
+            )
         handler = PipeHandler(
             pipe=self.pipe,
             read_interval=self.read_interval,

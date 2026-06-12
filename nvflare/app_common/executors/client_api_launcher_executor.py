@@ -186,8 +186,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
 
     def initialize(self, fl_ctx: FLContext) -> None:
         self._apply_client_config_overrides(fl_ctx)
-        self._validate_required_timeout_values(fl_ctx)
-        self._validate_timeout_config(fl_ctx)
+        self._resolve_timeout_config_for_launch(fl_ctx)
         self._skip_required_timeout_validation_once = True
         try:
             self.prepare_config_for_launch(fl_ctx)
@@ -393,6 +392,18 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             self.log_error(fl_ctx, msg)
             raise ValueError(msg)
 
+    def _resolve_timeout_config_for_launch(self, fl_ctx: FLContext):
+        self._validate_required_timeout_values(fl_ctx)
+        self._validate_timeout_config(fl_ctx)
+        if self.heartbeat_timeout is None:
+            msg = (
+                "heartbeat_timeout is None after applying job-config overrides. Set heartbeat_timeout to 0 to "
+                "disable heartbeat checking, or to a non-negative timeout value in executor config or via "
+                "recipe.add_client_config()."
+            )
+            self.log_error(fl_ctx, msg)
+            raise ValueError(msg)
+
     def _validate_timeout_config(self, fl_ctx: FLContext):
         """Validate timeout parameters at job start.
 
@@ -553,7 +564,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
 
     def prepare_config_for_launch(self, fl_ctx: FLContext):
         if not getattr(self, "_skip_required_timeout_validation_once", False):
-            self._validate_required_timeout_values(fl_ctx)
+            self._resolve_timeout_config_for_launch(fl_ctx)
 
         pipe_export_class, pipe_export_args = self.pipe.export(ExportMode.PEER)
         task_exchange_attributes = {

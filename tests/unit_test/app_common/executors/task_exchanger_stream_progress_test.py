@@ -15,6 +15,8 @@
 import threading
 from unittest.mock import MagicMock
 
+import pytest
+
 from nvflare.apis.fl_constant import FLContextKey, FLMetaKey
 from nvflare.apis.shareable import ReturnCode, Shareable
 from nvflare.app_common.executors import task_exchanger as task_exchanger_module
@@ -640,6 +642,14 @@ def test_non_cell_pipe_keeps_disabled_peer_read_timeout_for_task_send():
     executor.pipe = _DummyPipe()
 
     assert executor._get_task_send_peer_read_timeout() is None
+
+
+def test_task_exchanger_rejects_unresolved_heartbeat_timeout_before_handler_creation():
+    executor = TaskExchanger(pipe_id="pipe", heartbeat_timeout=None)
+    executor.pipe = _DummyPipe()
+
+    with pytest.raises(ValueError, match="heartbeat_timeout is None"):
+        executor._create_pipe_handler()
 
 
 def test_non_cell_pipe_peer_read_timeout_disabled_failed_send_is_fatal(monkeypatch):
