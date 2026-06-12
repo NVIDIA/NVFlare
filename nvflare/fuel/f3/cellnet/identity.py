@@ -124,6 +124,24 @@ class CellIdentityResolver:
         parts = FQCN.split(child_suffix)
         return parts[0] if parts else None
 
+    @staticmethod
+    def _get_cell_pipe_alias_owner(segment: str) -> Optional[str]:
+        # Direct CellPipe cells use sibling names like "site-1_<runtime-id>_active"
+        # but authenticate with the owning site's certificate. Only the constrained
+        # form <owner>_<runtime_id>_(active|passive) with a non-empty runtime_id that
+        # contains no "." or "_" is treated as an alias: parsing from the right makes
+        # the interpretation unambiguous, so "site-a_x_<uuid>_active" can only belong
+        # to "site-a_x", never to "site-a" with a runtime id of "x_<uuid>".
+        head, sep, mode = segment.rpartition("_")
+        if not sep or mode not in ("active", "passive"):
+            return None
+
+        owner, sep, runtime_id = head.rpartition("_")
+        if not sep or not owner or not runtime_id or "." in runtime_id:
+            return None
+
+        return owner
+
     def resolve(self, fqcn: str) -> Optional[str]:
         if not fqcn:
             return None
@@ -142,6 +160,10 @@ class CellIdentityResolver:
             identity = self.prefix_identity_map.get(prefix)
             if identity:
                 return identity
+
+        alias_owner = self._get_cell_pipe_alias_owner(parts[-1]) if parts else None
+        if alias_owner:
+            return self.resolve(alias_owner)
 
         identity = self._resolve_local_child_identity(fqcn)
         if identity:
