@@ -160,6 +160,22 @@ def test_find_skill_source_does_not_misclassify_site_packages_skills(monkeypatch
     assert source.root == bundle_root
 
 
+def test_find_skill_source_requires_unpacked_bundle(monkeypatch, tmp_path):
+    fake_site_packages = tmp_path / "site-packages"
+    fake_package = fake_site_packages / "nvflare"
+    fake_package.mkdir(parents=True)
+    archive_path = tmp_path / "nvflare.zip" / "nvflare" / "tool" / "agent" / "bundled_skills"
+    monkeypatch.setattr(
+        skill_manager.util,
+        "find_spec",
+        lambda _name: type("Spec", (), {"submodule_search_locations": [str(fake_package)]})(),
+    )
+    monkeypatch.setattr(skill_manager.resources, "files", lambda _package: archive_path)
+
+    with pytest.raises(FileNotFoundError, match="unpacked filesystem package"):
+        find_skill_source()
+
+
 def test_find_skill_source_accepts_pyproject_checkout_without_setup_py(monkeypatch, tmp_path):
     repo_root = tmp_path / "repo"
     fake_package = repo_root / "nvflare"

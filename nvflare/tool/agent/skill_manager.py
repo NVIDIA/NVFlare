@@ -53,7 +53,12 @@ class SkillSource:
 def resolve_agent_target_dir(
     agent: str, *, target_dir: Optional[Path | str] = None, env: Optional[dict] = None
 ) -> Path:
-    """Resolve a named agent target to its skill installation directory."""
+    """Resolve a named agent target to its skill installation directory.
+
+    Explicit write targets, including CODEX_HOME-derived targets, use the same
+    no-traversal/no-symlink policy as --target. The only symlink exception is
+    the platform temp-directory alias handled in _resolve_target_override.
+    """
     if target_dir:
         return _resolve_target_override(target_dir)
 
@@ -78,7 +83,7 @@ def find_skill_source() -> SkillSource:
             manifest=build_skill_manifest(source_root, source_type="editable", nvflare_version=nvflare.__version__),
         )
 
-    bundle_root = Path(str(resources.files(BUNDLED_SKILLS_PACKAGE)))
+    bundle_root = _bundled_skills_root()
     manifest_path = bundle_root / MANIFEST_FILE_NAME
     manifest = (
         load_manifest(manifest_path)
@@ -86,6 +91,15 @@ def find_skill_source() -> SkillSource:
         else build_skill_manifest(bundle_root, source_type="wheel")
     )
     return SkillSource(source_type="wheel", root=bundle_root, manifest=manifest)
+
+
+def _bundled_skills_root() -> Path:
+    bundle_root = Path(str(resources.files(BUNDLED_SKILLS_PACKAGE)))
+    if not bundle_root.is_dir():
+        raise FileNotFoundError(
+            f"bundled agent skills must be available from an unpacked filesystem package: {BUNDLED_SKILLS_PACKAGE}"
+        )
+    return bundle_root
 
 
 def install_skills(
