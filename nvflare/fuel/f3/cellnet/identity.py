@@ -136,6 +136,8 @@ class CellIdentityResolver:
         if not sep or mode not in ("active", "passive"):
             return None
 
+        # rpartition splits on the last "_", so runtime_id can never contain "_";
+        # only the "." constraint needs an explicit check.
         owner, sep, runtime_id = head.rpartition("_")
         if not sep or not owner or not runtime_id or "." in runtime_id:
             return None
@@ -161,6 +163,10 @@ class CellIdentityResolver:
             if identity:
                 return identity
 
+        # This alias check intentionally precedes _resolve_local_child_identity:
+        # a CellPipe alias cell may connect as a direct child of this local cell,
+        # but it authenticates with the owning site's certificate, not with a
+        # certificate named after the alias segment itself.
         alias_owner = self._get_cell_pipe_alias_owner(parts[-1]) if parts else None
         if alias_owner:
             return self.resolve(alias_owner)
