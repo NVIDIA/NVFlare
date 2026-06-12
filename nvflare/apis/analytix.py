@@ -203,7 +203,7 @@ class AnalyticsData:
         cls, sender_data_type: AnalyticsDataType, sender: LogWriterName, receiver: LogWriterName
     ) -> AnalyticsDataType:
 
-        if sender == LogWriterName.TORCH_TB and (receiver == LogWriterName.MLFLOW or sender == LogWriterName.WANDB):
+        if sender == LogWriterName.TORCH_TB and (receiver == LogWriterName.MLFLOW or receiver == LogWriterName.WANDB):
             if AnalyticsDataType.SCALAR == sender_data_type:
                 return AnalyticsDataType.METRIC
             elif AnalyticsDataType.SCALARS == sender_data_type:
