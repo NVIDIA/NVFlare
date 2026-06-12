@@ -79,6 +79,19 @@ def test_resolve_target_override_accepts_system_temp_alias(tmp_path):
 
 @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are not supported on this platform")
 def test_resolve_target_override_allows_only_requested_temp_alias(monkeypatch, tmp_path):
+    actual_temp = tmp_path / "actual-temp"
+    actual_temp.mkdir()
+    alias = tmp_path / "temp-alias"
+    alias.symlink_to(actual_temp, target_is_directory=True)
+    monkeypatch.setattr(skill_manager, "_target_system_symlink_aliases", lambda: (alias,))
+
+    allowed = resolve_agent_target_dir("codex", target_dir=alias / "skills", env={"CODEX_HOME": "ignored"})
+
+    assert allowed == (actual_temp / "skills").resolve(strict=False)
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are not supported on this platform")
+def test_resolve_target_override_rejects_temp_alias_symlink_ancestor(monkeypatch, tmp_path):
     actual_root = tmp_path / "actual-root"
     actual_temp = actual_root / "folders" / "T"
     actual_temp.mkdir(parents=True)
@@ -87,11 +100,8 @@ def test_resolve_target_override_allows_only_requested_temp_alias(monkeypatch, t
     alias = link_root / "folders" / "T"
     monkeypatch.setattr(skill_manager, "_target_system_symlink_aliases", lambda: (alias,))
 
-    allowed = resolve_agent_target_dir("codex", target_dir=alias / "skills", env={"CODEX_HOME": "ignored"})
-
-    assert allowed == (actual_temp / "skills").resolve(strict=False)
     with pytest.raises(ValueError, match="symlink components"):
-        resolve_agent_target_dir("codex", target_dir=link_root / "not-temp" / "skills", env={"CODEX_HOME": "ignored"})
+        resolve_agent_target_dir("codex", target_dir=alias / "skills", env={"CODEX_HOME": "ignored"})
 
 
 @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are not supported on this platform")

@@ -204,3 +204,39 @@ def test_doctor_online_skips_when_session_would_create_download_dir(monkeypatch,
     assert data["online"]["status"] == "skipped"
     assert data["online"]["findings"][0]["code"] == "ONLINE_CHECK_WOULD_CREATE_DOWNLOAD_DIR"
     new_session.assert_not_called()
+
+
+def test_doctor_online_skips_invalid_download_dir_type(monkeypatch, tmp_path):
+    home = tmp_path / "home"
+    admin_dir = tmp_path / "active-admin"
+    startup_dir = admin_dir / "startup"
+    startup_dir.mkdir(parents=True)
+    (startup_dir / "fed_admin.json").write_text(
+        '{"admin": {"username": "admin@nvidia.com", "download_dir": ["transfer"]}}',
+        encoding="utf-8",
+    )
+    (startup_dir / "client.crt").write_text("cert", encoding="utf-8")
+    (startup_dir / "rootCA.pem").write_text("root", encoding="utf-8")
+    config_dir = home / ".nvflare"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.conf").write_text(
+        f"""
+        version = 2
+        startup_kits {{
+          active = "admin@nvidia.com"
+          entries {{
+            "admin@nvidia.com" = "{admin_dir}"
+          }}
+        }}
+        """,
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("NVFLARE_STARTUP_KIT_DIR", raising=False)
+
+    with patch("nvflare.tool.cli_session.new_cli_session_for_args") as new_session:
+        data = doctor_environment(online=True, args=SimpleNamespace(kit_id=None, startup_kit=None))
+
+    assert data["online"]["status"] == "skipped"
+    assert data["online"]["findings"][0]["code"] == "ONLINE_CHECK_DOWNLOAD_DIR_INVALID"
+    new_session.assert_not_called()

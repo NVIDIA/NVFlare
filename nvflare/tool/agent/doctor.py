@@ -358,6 +358,13 @@ def _online_read_only_preflight(startup_kit: dict) -> dict | None:
             "Online check skipped because the active admin config has no pre-existing download_dir.",
             "Create the startup kit transfer directory or use nvflare system status for the normal CLI path.",
         )
+    if not isinstance(download_dir, str):
+        return _finding(
+            "ONLINE_CHECK_DOWNLOAD_DIR_INVALID",
+            "warning",
+            "Online check skipped because fed_admin.json download_dir is not a string.",
+            "Set admin.download_dir to a pre-existing directory path or use nvflare system status for the normal CLI path.",
+        )
 
     download_path = Path(download_dir)
     if not download_path.is_absolute():

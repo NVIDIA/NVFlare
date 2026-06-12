@@ -521,23 +521,25 @@ def _target_system_symlink_aliases() -> tuple[Path, ...]:
     for value in (os.environ.get("TMPDIR"), tempfile.gettempdir()):
         if value:
             aliases.add(Path(os.path.abspath(os.path.normpath(value))))
+    var_alias = Path("/var")
+    if var_alias.is_symlink() and any(_path_is_relative_to(alias, var_alias) for alias in aliases):
+        aliases.add(var_alias)
     return tuple(sorted(aliases, key=lambda item: str(item)))
 
 
 def _is_allowed_system_target_symlink(path: Path, *, target: Path) -> bool:
     for alias in _target_system_symlink_aliases():
-        if path == alias:
+        if path == alias and _path_is_relative_to(target, alias):
             return True
-        try:
-            target.relative_to(alias)
-        except ValueError:
-            continue
-        try:
-            alias.relative_to(path)
-        except ValueError:
-            continue
-        return True
     return False
+
+
+def _path_is_relative_to(path: Path, base: Path) -> bool:
+    try:
+        path.relative_to(base)
+    except ValueError:
+        return False
+    return True
 
 
 def _first_disallowed_target_symlink_component(path: Path) -> Optional[Path]:
