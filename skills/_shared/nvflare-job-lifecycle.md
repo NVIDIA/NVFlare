@@ -61,10 +61,15 @@ runtime locations under `/tmp/nvflare/` unless the user provides another path:
   unavailable.
 - Before import checks, export, or simulation, install applicable
   source-provided `requirements*.txt` files into the same active Python
-  environment. Prefer `uv pip install -r <file>` when `uv` is available;
-  otherwise use `python -m pip install -r <file>` or the repository's documented
-  equivalent. If an import still fails, verify which environment received the
-  install before rerunning the failed check.
+  environment that runs the `nvflare` CLI and generated job. Prefer
+  `uv pip install -r <file>` when an active virtual environment is already the
+  `nvflare` environment; otherwise use `uv pip install --python <python> -r
+  <file>` with the Python interpreter behind `nvflare`, or use
+  `<python> -m pip install -r <file>`. Do not use `uv pip install --system`
+  when `nvflare` is installed in a virtual environment, because it skips virtual
+  environments and can install dependencies into the wrong Python. If an import
+  still fails, verify which environment received the install before rerunning
+  the failed check.
 - Once an applicable requirements file is found and framework imports are
   missing, install it before any Python command that imports framework-specific
   NVFLARE modules such as `nvflare.app_opt.pt.*`, recipe classes, or generated
