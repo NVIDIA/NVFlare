@@ -391,8 +391,9 @@ def _merge_named_items(template_items, job_items, label: str) -> list:
 
 
 def _select_job_container(containers: list[dict], container_name: str) -> dict:
+    target_names = {name for name in (container_name, "nvflare_job") if isinstance(name, str) and name}
     for container in containers:
-        if container.get("name") in (container_name, "nvflare_job"):
+        if container.get("name") in target_names:
             return container
     return containers[0]
 

@@ -358,6 +358,29 @@ class TestK8sJobHandle:
         container = handle.get_manifest()["spec"]["containers"][0]
         assert container["name"] == "nvflare_job"
 
+    def test_manifest_template_prefers_nvflare_job_over_unnamed_first_container(self):
+        cfg = _make_job_config()
+        del cfg["container_name"]
+        pod_manifest_template = {
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "spec": {
+                "containers": [
+                    {"image": "sidecar:v1"},
+                    {"name": "nvflare_job", "image": "template-image"},
+                ]
+            },
+        }
+
+        handle = K8sJobHandle("job-1", _make_api_instance(), cfg, pod_manifest_template=pod_manifest_template)
+
+        containers = handle.get_manifest()["spec"]["containers"]
+        assert containers[0] == {"image": "sidecar:v1"}
+        assert containers[1]["name"] == "nvflare_job"
+        assert containers[1]["image"] == "nvflare/nvflare:test"
+        assert containers[1]["command"] == ["/usr/local/bin/python"]
+        assert "nvflare.private.fed.app.client.worker_process" in containers[1]["args"]
+
     def test_manifest_restart_policy(self):
         cfg = _make_job_config()
         handle = K8sJobHandle("job-1", _make_api_instance(), cfg)
