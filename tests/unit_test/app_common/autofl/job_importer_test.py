@@ -19,6 +19,7 @@ from nvflare.app_common.autofl import (
     DeterministicJobImporter,
     dump_autofl_yaml,
     import_job_to_autofl_config,
+    job_importer,
 )
 
 
@@ -128,6 +129,7 @@ def test_import_is_repeatable_and_yaml_round_trips(tmp_path):
     assert first == second
     assert yaml.safe_load(yaml_text) == first
     assert "&id" not in yaml_text
+    assert first["trust_contract"]["unresolved"] is not first["unresolved"]
 
 
 def test_import_marks_dynamic_argparse_defaults_unresolved(tmp_path):
@@ -186,6 +188,49 @@ def main():
     } in config["unresolved"]
 
 
+def test_import_marks_dynamic_train_script_unresolved_without_client_fallback(tmp_path):
+    (tmp_path / "client.py").write_text(
+        """
+import argparse
+
+
+def build_parser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--lr", type=float, default=0.01)
+    return parser
+""",
+        encoding="utf-8",
+    )
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+def get_script():
+    return "client.py"
+
+
+def main():
+    recipe = FedAvgRecipe(
+        name="demo",
+        min_clients=2,
+        num_rounds=3,
+        train_script=get_script(),
+    )
+    recipe.execute(SimEnv(num_clients=2))
+""",
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert "train_script" not in config["job"]
+    assert "client.py" not in config["trust_contract"]["allowed_edit_paths"]
+    assert {"field": "job.train_script", "reason": "no train_script was found or resolved"} in config["unresolved"]
+
+
 def test_import_marks_unsupported_custom_job_as_partial(tmp_path):
     job_path = tmp_path / "job.py"
     job_path.write_text(
@@ -208,3 +253,15 @@ if __name__ == "__main__":
     assert "job.surface" in unresolved_fields
     assert "job.train_script" in unresolved_fields
     assert "budget.fixed_training_budget" in unresolved_fields
+
+
+def test_main_returns_clean_error_for_missing_job(tmp_path, capsys):
+    output_path = tmp_path / "autofl.yaml"
+
+    exit_code = job_importer.main([str(tmp_path / "missing.py"), "--output", str(output_path)])
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.out == ""
+    assert "error: job.py not found:" in captured.err
+    assert not output_path.exists()

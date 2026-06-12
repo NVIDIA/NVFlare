@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import ast
 import hashlib
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -217,7 +218,7 @@ class DeterministicJobImporter:
             },
             "trust_contract": {
                 "extracted": _trust_extracted(job_call, env_call, train_script, budget, metric_name, search_space),
-                "unresolved": unresolved,
+                "unresolved": list(unresolved),
                 "allowed_edit_paths": allowed_edit_paths,
                 "agent_controls": {
                     "must_not_edit_outside_allowed_paths": True,
@@ -225,7 +226,7 @@ class DeterministicJobImporter:
                     "must_report_candidate_diffs": True,
                 },
             },
-            "unresolved": unresolved,
+            "unresolved": list(unresolved),
         }
         return config
 
@@ -268,9 +269,9 @@ class DeterministicJobImporter:
 
         resolved = _resolve_value(train_script_node, job_call.assignments, parser_args, source_text)
         value = resolved.value
-        if isinstance(value, str):
+        if isinstance(value, str) and _is_resolved_path_string(resolved):
             return _existing_path((source_path.parent / value).resolve())
-        return _existing_path(source_path.parent / "client.py")
+        return None
 
     def _resolve_metric(
         self,
@@ -761,6 +762,10 @@ def _existing_path(path: Path) -> Optional[Path]:
     return path.resolve() if path.exists() else None
 
 
+def _is_resolved_path_string(value: ResolvedValue) -> bool:
+    return not value.unresolved and (value.source == "literal" or value.source.startswith("arg:"))
+
+
 def _sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
@@ -800,13 +805,17 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = parser.parse_args(argv)
 
     importer = DeterministicJobImporter()
-    config = importer.import_job(
-        args.job,
-        metric=args.metric,
-        mode=args.mode,
-        target_env=args.target_env,
-        max_candidates=args.max_candidates,
-    )
+    try:
+        config = importer.import_job(
+            args.job,
+            metric=args.metric,
+            mode=args.mode,
+            target_env=args.target_env,
+            max_candidates=args.max_candidates,
+        )
+    except JobImportError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(importer.dump_yaml(config), encoding="utf-8")
