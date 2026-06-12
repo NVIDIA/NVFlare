@@ -35,3 +35,18 @@ def test_agent_skill_checks_cli_emits_text(capsys, tmp_path):
 
     assert exit_code == 1
     assert "agent skill checks:" in capsys.readouterr().out
+
+
+def test_agent_skill_checks_cli_reports_invalid_check_as_json_error(capsys, tmp_path):
+    skills_root = tmp_path / "skills"
+    skills_root.mkdir()
+
+    exit_code = cli.main(["--skills-root", str(skills_root), "--format", "json", "--check", "bad-id"])
+
+    assert exit_code == 4
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["schema_version"] == "1"
+    assert payload["status"] == "error"
+    assert payload["passed"] is False
+    assert payload["error_code"] == "INVALID_ARGS"
+    assert "bad-id" in payload["message"]

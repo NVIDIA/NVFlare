@@ -133,6 +133,7 @@ _KNOWN_AGENT_FLAGS = {
     "agent skills list": {"--agent", "--format", "--schema", "--target"},
 }
 _DOC_FILES = (
+    "skills_architecture.md",
     "agent_implementation_plan.md",
     "agent_integration.md",
     "agent_skill_authoring.md",
@@ -1085,7 +1086,7 @@ def _resolve_docs_root(docs_root: Path | str | None) -> Optional[Path]:
     if docs_root is not None:
         return Path(docs_root)
     candidate = Path.cwd() / "docs" / "design"
-    return candidate if (candidate / "agent_skill_evaluation.md").is_file() else None
+    return candidate if (candidate / "skills_architecture.md").is_file() else None
 
 
 def _try_parse_frontmatter(skill_file: Path) -> dict[str, Any]:

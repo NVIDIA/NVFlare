@@ -397,6 +397,19 @@ def test_run_v1_lints_reports_broken_doc_crosslink(tmp_path):
     _assert_structured_findings(result)
 
 
+def test_run_v1_lints_checks_current_skills_architecture_doc(tmp_path):
+    _write_skill(tmp_path / "skills", "nvflare-doc-skill")
+    docs_root = _write_design_docs(tmp_path, ["nvflare-doc-skill"])
+    docs_root.joinpath("skills_architecture.md").write_text(
+        "# Skills Architecture\n\n[missing](missing.md)\n",
+        encoding="utf-8",
+    )
+
+    result = run_v1_lints(tmp_path / "skills", docs_root=docs_root, checks=[LINT_AGENT_DOC_CROSSLINK])
+
+    assert _has_finding(result, LINT_AGENT_DOC_CROSSLINK, "agent-doc-link-missing")
+
+
 def test_run_v1_lints_supports_check_selection(tmp_path):
     _write_skill(tmp_path / "skills", "nvflare-valid-skill")
     _write_skill(tmp_path / "skills", "nvflare-other-skill", evals={"evals": []})
@@ -598,6 +611,10 @@ def _write_design_docs(tmp_path, skills, *, category="Conversion", tier="bundle"
     )
     docs_root.joinpath("agent_skills_deferred_roadmap.md").write_text(
         "# Agent Skills Deferred Roadmap\n",
+        encoding="utf-8",
+    )
+    docs_root.joinpath("skills_architecture.md").write_text(
+        "# Skills Architecture\n\n" "[V1 Engineering Lints](agent_skill_evaluation.md#v1-engineering-lints)\n",
         encoding="utf-8",
     )
     return docs_root

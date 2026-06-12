@@ -529,6 +529,33 @@ def test_agent_skills_source_unavailable_is_structured_json_error(capsys, monkey
     assert "unpacked filesystem package" in payload["message"]
 
 
+@pytest.mark.parametrize("subcommand", ["install", "list"])
+def test_agent_skills_manifest_error_is_structured_json_error(capsys, monkeypatch, subcommand):
+    from nvflare.tool.agent import skill_manager
+    from nvflare.tool.agent.skill_manifest import SkillManifestError
+
+    def _raise_manifest_error():
+        raise SkillManifestError(
+            "AGENT_SKILL_MANIFEST_INVALID_JSON",
+            "Skill manifest is not valid JSON: manifest.json",
+            "Rebuild or reinstall the NVFLARE agent skill bundle.",
+            detail="line 1 column 1",
+        )
+
+    monkeypatch.setattr(skill_manager, "find_skill_source", _raise_manifest_error)
+
+    exit_code = _run_main(["nvflare", "agent", "skills", subcommand, "--agent", "codex", "--format", "json"])
+
+    assert exit_code == 1
+    payload = _load_single_stdout_json(capsys.readouterr())
+    _assert_envelope_shape(payload, "error")
+    assert payload["error_code"] == "AGENT_SKILL_MANIFEST_INVALID_JSON"
+    assert payload["hint"] == "Rebuild or reinstall the NVFLARE agent skill bundle."
+    assert payload["recovery_category"] == "ENVIRONMENT_FAILURE"
+    assert payload["data"] is None
+    assert "line 1 column 1" in payload["message"]
+
+
 def test_agent_skills_install_failure_is_structured_json_error(capsys, monkeypatch, tmp_path):
     from nvflare.tool.agent import skill_manager
 

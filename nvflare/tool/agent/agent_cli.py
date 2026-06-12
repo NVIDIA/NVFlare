@@ -304,6 +304,7 @@ def _handle_agent_doctor_cmd(args, handle_schema_flag, output_error_message, out
 
 def _handle_agent_skills_cmd(args, handle_schema_flag, output_error_message, output_ok) -> None:
     from nvflare.tool.agent.skill_manager import SUPPORTED_AGENT_TARGETS, install_skills, list_skills
+    from nvflare.tool.agent.skill_manifest import SkillManifestError
     from nvflare.tool.cli_output import is_json_mode, is_jsonl_mode, print_human
 
     skills_sub_cmd = getattr(args, "agent_skills_sub_cmd", None)
@@ -366,6 +367,9 @@ def _handle_agent_skills_cmd(args, handle_schema_flag, output_error_message, out
         except FileNotFoundError as e:
             _output_agent_skill_source_error(output_error_message, e)
             return
+        except SkillManifestError as e:
+            _output_agent_skill_manifest_error(output_error_message, e)
+            return
         except ValueError as e:
             _output_agent_skill_target_error(output_error_message, getattr(args, "target", None), e)
             return
@@ -419,6 +423,9 @@ def _handle_agent_skills_cmd(args, handle_schema_flag, output_error_message, out
             data = list_skills(agent=args.agent, target_dir=getattr(args, "target", None))
         except FileNotFoundError as e:
             _output_agent_skill_source_error(output_error_message, e)
+            return
+        except SkillManifestError as e:
+            _output_agent_skill_manifest_error(output_error_message, e)
             return
         except ValueError as e:
             _output_agent_skill_target_error(output_error_message, getattr(args, "target", None), e)
@@ -598,6 +605,18 @@ def _output_agent_skill_source_error(output_error_message, error: FileNotFoundEr
         "Install NVFLARE from a source checkout or an unpacked wheel, then retry the agent skills command.",
         exit_code=1,
         detail=str(error),
+        include_data=True,
+        recovery_category="ENVIRONMENT_FAILURE",
+    )
+
+
+def _output_agent_skill_manifest_error(output_error_message, error) -> None:
+    output_error_message(
+        error.code,
+        error.message,
+        error.hint,
+        exit_code=1,
+        detail=error.detail,
         include_data=True,
         recovery_category="ENVIRONMENT_FAILURE",
     )

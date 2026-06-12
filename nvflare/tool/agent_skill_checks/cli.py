@@ -32,16 +32,42 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--check", action="append", help="run one lint ID; may be repeated")
     args = parser.parse_args(argv)
 
-    result = run_v1_lints(
-        Path(args.skills_root),
-        docs_root=Path(args.docs_root) if args.docs_root else None,
-        checks=args.check,
-    )
+    try:
+        result = run_v1_lints(
+            Path(args.skills_root),
+            docs_root=Path(args.docs_root) if args.docs_root else None,
+            checks=args.check,
+        )
+    except ValueError as e:
+        _print_invalid_args(str(e), args.format)
+        return 4
     if args.format == "json":
         print(json.dumps(result, indent=2, sort_keys=True))
     else:
         _print_text_result(result)
     return 0 if result["status"] == "ok" else 1
+
+
+def _print_invalid_args(message: str, output_format: str) -> None:
+    hint = "Use --check with one of the supported lint IDs."
+    if output_format == "json":
+        print(
+            json.dumps(
+                {
+                    "schema_version": "1",
+                    "status": "error",
+                    "passed": False,
+                    "error_code": "INVALID_ARGS",
+                    "message": message,
+                    "hint": hint,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+    else:
+        print(f"error: {message}")
+        print(f"hint: {hint}")
 
 
 def _print_text_result(result: dict) -> None:

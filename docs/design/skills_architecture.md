@@ -99,16 +99,16 @@ flowchart LR
 
 ## Key Implementation Points
 
-- Public skill source: `/Users/chesterc/projects/NVFlare/skills`
+- Public skill source: `skills/`
 - Implemented skills:
   - `nvflare-orient`
   - `nvflare-convert-pytorch`
   - `nvflare-diagnose-job`
-- Agent-facing CLI: `/Users/chesterc/projects/NVFlare/nvflare/tool/agent/agent_cli.py`
-- Skill install/list logic: `/Users/chesterc/projects/NVFlare/nvflare/tool/agent/skill_manager.py`
-- Static inspection: `/Users/chesterc/projects/NVFlare/nvflare/tool/agent/inspector.py`
-- Readiness checks: `/Users/chesterc/projects/NVFlare/nvflare/tool/agent/doctor.py`
-- Packaging hook: `/Users/chesterc/projects/NVFlare/setup.py:116`
+- Agent-facing CLI: `nvflare/tool/agent/agent_cli.py`
+- Skill install/list logic: `nvflare/tool/agent/skill_manager.py`
+- Static inspection: `nvflare/tool/agent/inspector.py`
+- Readiness checks: `nvflare/tool/agent/doctor.py`
+- Packaging hook: `setup.py`
 - Benchmark harness architecture: follow-up work outside this PR
 
 The important boundary: NVFLARE does not run a custom agent runtime for these
