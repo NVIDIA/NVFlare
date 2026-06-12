@@ -483,6 +483,8 @@ def _prepare_k8s(kit_info: KitInfo, final_output: Path, config: dict[str, Any]) 
         launcher_args["security_context"] = job_launcher["job_pod_security_context"]
     if job_launcher.get("image_pull_secrets") is not None:
         launcher_args["image_pull_secrets"] = job_launcher["image_pull_secrets"]
+    if "study_job_spec_file_path" in job_launcher:
+        launcher_args["study_job_spec_file_path"] = job_launcher["study_job_spec_file_path"]
 
     _patch_resources(kit_info.kit_dir, "k8s_launcher", launcher_path, launcher_args)
     _patch_comm_config_for_k8s(kit_info.kit_dir, kit_info.role, kit_info.name, parent_port, server_service_name)
@@ -577,6 +579,7 @@ def _validate_runtime_config(runtime: str, config: dict[str, Any]) -> None:
                 "default_python_path",
                 "job_pod_security_context",
                 "image_pull_secrets",
+                "study_job_spec_file_path",
             },
             "job_launcher",
         )
@@ -597,6 +600,7 @@ def _validate_runtime_config(runtime: str, config: dict[str, Any]) -> None:
         _optional_non_negative_int(job_launcher, "pending_timeout", "job_launcher")
         _optional_mapping(job_launcher, "job_pod_security_context", "job_launcher")
         _optional_k8s_secret_name_list(job_launcher, "image_pull_secrets", "job launcher image pull references")
+        _optional_str(job_launcher, "study_job_spec_file_path", "job_launcher")
 
 
 def _validate_kit(kit_dir: Path) -> KitInfo:

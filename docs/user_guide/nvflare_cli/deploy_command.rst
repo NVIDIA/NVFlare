@@ -188,6 +188,15 @@ Top-level keys:
   registry Secret names to ``meta.json``.
 - ``job_pod_security_context``: security context passed to dynamically
   launched job pods.
+- ``study_job_spec_file_path``: optional YAML mapping from study name to
+  Kubernetes Pod template file. Matching studies use the template with
+  launcher-owned fields overlaid. If this is set without a configured
+  ``study_data_pvc_file_path``, no study-data PVC mounts are added. If both are
+  configured and the job study has entries in both files, the template is used
+  and the study-data entries are added as extra volume mounts with a warning.
+  Template volumes or job-container mounts named ``workspace-job`` or
+  ``startup-kit`` are replaced by the launcher-generated workspace and startup
+  mounts.
 
 Prepare the parent server or client kit first:
 

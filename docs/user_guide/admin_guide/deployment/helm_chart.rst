@@ -273,6 +273,8 @@ The runtime config controls site-level Kubernetes settings:
   to every dynamically launched job pod for this prepared site. Configure this
   during deployment preparation when job images live in a private registry; job
   authors still only specify the job image in ``meta.json``.
+  ``study_job_spec_file_path`` can point to a YAML file that maps study names to
+  Kubernetes Pod template files for dynamically launched job pods.
   ``pending_timeout`` is in seconds. It controls how long a dynamically launched
   job pod can stay in ``Pending`` or ``Unknown`` before the launcher deletes it
   and reports the run as an execution exception. The admin ``list_jobs`` command
@@ -472,6 +474,15 @@ the dataset at ``/data/<study>/<dataset>``, for example
 ``/data/default/data``. ``mode`` must be ``ro`` or ``rw``. Missing
 ``study_data.yaml`` files or missing entries for a job's study mean no
 study-data PVCs are mounted for that job.
+
+When ``study_job_spec_file_path`` is configured, matching jobs use the
+study-specific Pod template. If no ``study_data_pvc_file_path`` is configured,
+the template does not receive additional study-data mounts. If both are
+configured and the job study has matching entries in both files, the template is
+used and the study-data PVCs are added as extra volume mounts; the launcher logs
+a warning for this combination. The launcher always replaces template
+``workspace-job`` and ``startup-kit`` volumes and job-container mounts with its
+generated workspace ``emptyDir`` and startup-kit Secret mounts.
 
 Example ``nvfldata-pvc.yaml``:
 

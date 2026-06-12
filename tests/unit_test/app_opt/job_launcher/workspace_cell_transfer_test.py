@@ -121,6 +121,7 @@ class TestWorkspaceTransferManager:
                 os.path.join(ws_root, "local", "study_data.yaml"),
                 b"study-a:\n  training:\n    source: nvfldata\n    mode: ro\n",
             )
+            _write_file(os.path.join(ws_root, "local", "study_job_spec.yaml"), b"study-a: study-a-pod.yaml\n")
             _write_file(os.path.join(ws_root, "local", "custom", "helper.py"), b"VALUE = 1\n")
             zip_path = os.path.join(tmp, "workspace.zip")
 
@@ -132,6 +133,7 @@ class TestWorkspaceTransferManager:
             assert "local/custom/helper.py" in names
             assert f"{JOB_ID}/app/config/config_train.json" in names
             assert "local/study_data.yaml" not in names
+            assert "local/study_job_spec.yaml" not in names
 
     def test_prepare_download_returns_ref_for_valid_token(self, monkeypatch):
         with tempfile.TemporaryDirectory() as ws_root:

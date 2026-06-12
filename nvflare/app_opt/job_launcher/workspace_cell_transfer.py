@@ -67,7 +67,7 @@ BOOTSTRAP_CONNECT_TIMEOUT = 30.0
 BOOTSTRAP_CONNECT_POLL_INTERVAL = 0.1
 
 _BOOTSTRAP_CELL_PREFIX = "ws_transfer_"
-_WORKSPACE_DOWNLOAD_EXCLUDES = frozenset({"local/study_data.yaml"})
+_WORKSPACE_DOWNLOAD_EXCLUDES = frozenset({"local/study_data.yaml", "local/study_job_spec.yaml"})
 
 
 @dataclass
