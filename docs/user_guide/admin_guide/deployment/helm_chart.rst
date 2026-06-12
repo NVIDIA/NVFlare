@@ -460,6 +460,15 @@ study data mappings in ``local/study_data.yaml`` inside the prepared kit before
 copying ``local/`` into the workspace PVC. If the kit is already staged, edit
 the file on the PVC or restage ``local/``.
 
+``nvflare deploy prepare`` writes the K8s launcher's
+``study_data_pvc_file_path`` as ``<workspace_mount_path>/local/study_data.yaml``
+in the prepared ``local/resources.json.default``. Before staging the prepared
+kit or starting the parent pod, you can edit that launcher config to use a
+different ``study_data_pvc_file_path``, remove it entirely, and/or add
+``study_job_spec_file_path`` for study-specific Pod templates. Any mapping or
+template files referenced by these fields must be staged with ``local/`` or
+otherwise exist at the configured in-pod paths.
+
 Example ``study_data.yaml``:
 
 .. code-block:: yaml
