@@ -114,6 +114,7 @@ def test_seed_skills_dry_run_selects_all_seed_skills_without_copying(tmp_path):
     assert not target.exists()
 
 
+@pytest.mark.xdist_group(name="setup_py_packaging")
 def test_setup_build_py_can_disable_packaged_agent_skills(tmp_path):
     repo_root = _repo_root()
     build_lib = tmp_path / "build_lib"
@@ -141,6 +142,7 @@ def test_setup_build_py_can_disable_packaged_agent_skills(tmp_path):
         assert not bundle_root.joinpath(skill_name).exists()
 
 
+@pytest.mark.xdist_group(name="setup_py_packaging")
 def test_setup_bdist_wheel_no_skills_build_has_distinct_filename(tmp_path):
     if not _bdist_wheel_available():
         pytest.skip("bdist_wheel command is not installed in this test environment")
