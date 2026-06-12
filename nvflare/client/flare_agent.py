@@ -765,6 +765,9 @@ class FlareAgent:
                 )
                 if done_result is not None:
                     return done_result
+                decision = tracker.decide(callback_fired=download_done.is_set(), callback_status=download_status[0])
+                if decision.done:
+                    return self._finish_reverse_result_upload_wait(decision, tracker, transactions, wait_start)
                 if decision.reason == "completion_grace":
                     elapsed = tracker.clock() - wait_start
                     self.logger.info(

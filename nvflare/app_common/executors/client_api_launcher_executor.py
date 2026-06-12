@@ -468,12 +468,12 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                 )
 
         if configured_per_req is not None and self.heartbeat_timeout is None:
+            self.heartbeat_timeout = per_req
             self.log_warning(
                 fl_ctx,
                 "Timeout inconsistency: heartbeat_timeout is not set after applying job-config overrides. "
                 "The CJ/subprocess pipe may miss liveness detection while large payloads are downloading. "
-                f"Set heartbeat_timeout >= {per_req}s in job config; PipeHandler initialization will fail "
-                "until a numeric value is configured.",
+                f"Using {per_req}s for this run. Set heartbeat_timeout >= {per_req}s in job config.",
             )
         elif configured_per_req is not None and self.heartbeat_timeout < per_req:
             self.log_warning(

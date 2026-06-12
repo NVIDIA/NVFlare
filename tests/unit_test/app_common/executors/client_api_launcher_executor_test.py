@@ -1373,8 +1373,8 @@ def test_peer_read_none_does_not_warn_when_streaming_timeout_is_enabled(monkeypa
     assert not any("peer_read_timeout is not set" in w for w in warnings), warnings
 
 
-def test_heartbeat_timeout_none_warns_without_mutation(monkeypatch):
-    """Unset heartbeat_timeout warns but is not silently elevated to per_req; preserves configured liveness intent."""
+def test_heartbeat_timeout_none_is_corrected_when_per_req_is_configured(monkeypatch):
+    """Unset heartbeat_timeout is corrected to the configured per-request streaming timeout."""
     import nvflare.fuel.utils.app_config_utils as acu
     from nvflare.apis.fl_constant import ConfigVarName
     from nvflare.fuel.utils.config_service import ConfigService
@@ -1396,14 +1396,10 @@ def test_heartbeat_timeout_none_warns_without_mutation(monkeypatch):
         "get_float_var",
         lambda name, conf=None, default=None: 600.0 if ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT in name else default,
     )
-    try:
-        executor.initialize(fl_ctx)
-    except (TypeError, ValueError):
-        # PipeHandler init may reject heartbeat_timeout=None downstream; that is acceptable.
-        pass
+    executor.initialize(fl_ctx)
 
-    assert executor.heartbeat_timeout is None
-    assert any("heartbeat_timeout is not set" in w and "PipeHandler initialization" in w for w in warnings), warnings
+    assert executor.heartbeat_timeout == 600.0
+    assert any("heartbeat_timeout is not set" in w and "Using 600.0s" in w for w in warnings), warnings
 
 
 def test_default_peer_read_timeout_does_not_warn_without_configured_per_req(monkeypatch):
