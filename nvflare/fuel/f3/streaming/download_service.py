@@ -395,7 +395,7 @@ class _Transaction:
             raise ValueError(f"progress_interval must be non-negative, got {progress_interval}")
         self.progress_interval = float(progress_interval)
         self.refs = []
-        self._refs_lock = threading.Lock()
+        self._refs_lock = threading.RLock()
         self.logger = get_obj_logger(self)
 
     def mark_active(self):

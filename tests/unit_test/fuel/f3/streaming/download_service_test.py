@@ -499,6 +499,39 @@ class TestDownloadService:
         assert late_obj.transaction_done_calls == []
         assert len(tx.snapshot_refs()) == 2
 
+    def test_add_object_allows_set_transaction_to_snapshot_refs(self):
+        """CacheableObject.set_transaction() re-enters tx.snapshot_refs() via get_transaction_info()."""
+        from nvflare.fuel.f3.streaming.download_service import _Transaction
+
+        tx = _Transaction(timeout=10.0, num_receivers=1)
+        result = {}
+
+        class SnapshotInSetTransactionDownloadable(MockDownloadable):
+            def __init__(self):
+                super().__init__([b"chunk1"])
+                self.ref_count_seen = None
+
+            def set_transaction(self, tx_id: str, ref_id: str):
+                super().set_transaction(tx_id, ref_id)
+                self.ref_count_seen = len(tx.snapshot_refs())
+
+        obj = SnapshotInSetTransactionDownloadable()
+
+        def _add_object():
+            try:
+                result["ref"] = tx.add_object(obj)
+            except Exception as ex:
+                result["error"] = ex
+
+        add_thread = threading.Thread(target=_add_object)
+        add_thread.start()
+        add_thread.join(timeout=1.0)
+
+        assert not add_thread.is_alive()
+        assert "error" not in result
+        assert result["ref"].obj is obj
+        assert obj.ref_count_seen == 1
+
     def test_shutdown_clears_initialized_cells(self):
         """A new cell allocated after shutdown must register callbacks even if an old cell was initialized."""
         service = _make_isolated_download_service()
