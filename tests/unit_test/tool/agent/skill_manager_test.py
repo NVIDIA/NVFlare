@@ -783,6 +783,42 @@ def test_list_skills_flags_name_overlap_external_skill_as_conflict(tmp_path):
     ]
 
 
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are not supported on this platform")
+def test_list_skills_reports_name_overlap_symlink_without_following(tmp_path):
+    source = _skill_source(tmp_path)
+    target = tmp_path / "target"
+    target.mkdir()
+    external = tmp_path / "external-managed-skill"
+    external.mkdir()
+    external.joinpath(INSTALL_MANIFEST_FILE_NAME).write_text(
+        json.dumps(
+            {
+                "managed_by": "nvflare",
+                "name": "nvflare-test-skill",
+                "skill_version": "9.9.9",
+                "source_hash": "external-hash",
+                "source_type": "external",
+            }
+        ),
+        encoding="utf-8",
+    )
+    linked_skill = target / "nvflare-test-skill"
+    linked_skill.symlink_to(external, target_is_directory=True)
+
+    data = list_skills(agent="codex", target_dir=target, source=source)
+
+    assert data["installed"] == []
+    assert data["conflicts"] == [
+        {
+            "skill": "nvflare-test-skill",
+            "code": "target_symlink_detected",
+            "message": "target skill directory contains a symlink",
+            "target_path": str(linked_skill),
+            "symlink_path": str(linked_skill),
+        }
+    ]
+
+
 def test_conflict_falls_back_to_code_for_unknown_conflict(tmp_path):
     conflict = skill_manager._conflict("nvflare-test-skill", "future_conflict", tmp_path / "target")
 

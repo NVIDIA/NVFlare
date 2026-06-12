@@ -151,7 +151,13 @@ def list_skills(*, agent: str, target_dir: Optional[Path | str] = None, source: 
 
     if target.is_dir():
         for child in sorted(target.iterdir(), key=lambda p: p.name):
-            if child.name.startswith(".") or not child.is_dir():
+            if child.name.startswith("."):
+                continue
+            if child.is_symlink():
+                if child.name in available_names:
+                    conflicts.append(_target_symlink_conflict(child.name, child, child))
+                continue
+            if not child.is_dir():
                 continue
             install_manifest = _read_install_manifest(child)
             if install_manifest and install_manifest.get("managed_by") == "nvflare":

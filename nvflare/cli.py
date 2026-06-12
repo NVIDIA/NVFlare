@@ -302,7 +302,7 @@ def _get_subcommand_choices(parser):
 
 
 def _emit_argparse_error_json(parser, message):
-    from nvflare.tool.cli_output import SCHEMA_VERSION
+    from nvflare.tool.cli_output import SCHEMA_VERSION, sanitize_cli_output
 
     # Parser errors intentionally expose usage/choices inline because they are
     # generated before any command handler runs and therefore sit outside the
@@ -321,7 +321,7 @@ def _emit_argparse_error_json(parser, message):
             "choices": _get_subcommand_choices(parser),
         },
     }
-    print(json.dumps(payload))
+    print(json.dumps(sanitize_cli_output(payload)))
     parser.exit(4)
 
 

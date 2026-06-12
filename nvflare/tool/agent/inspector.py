@@ -110,7 +110,7 @@ def inspect_path(
     target = Path(path).expanduser()
     state = InspectState(root=target, redact=redact)
 
-    if not target.exists():
+    if not target.exists() and not target.is_symlink():
         raise FileNotFoundError(f"inspect path does not exist: {path}")
 
     if target.is_symlink():
@@ -409,6 +409,8 @@ def _conversion_state(state: InspectState, detected_framework: Optional[str]) ->
 
 
 def _target_type(path: Path, state: InspectState, detected_framework: Optional[str], conversion_state: str) -> str:
+    if path.is_symlink():
+        return "unknown_target"
     if path.is_file():
         return "single_training_script" if path.suffix == ".py" else "unknown_target"
     if conversion_state == "exported_job":
@@ -523,7 +525,7 @@ def _is_exported_job_marker(path: Path) -> bool:
 
 
 def _display_path(path: Path, root: Path, redact: bool) -> str:
-    base = root if root.is_dir() else root.parent
+    base = root if root.is_dir() and not root.is_symlink() else root.parent
     try:
         return path.relative_to(base).as_posix()
     except ValueError:

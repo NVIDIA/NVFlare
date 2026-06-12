@@ -77,6 +77,39 @@ def test_inspect_symlink_reports_link_path_without_resolving_target(tmp_path):
     assert data["scan"]["files_skipped"][0]["code"] == "SYMLINK_SKIPPED"
 
 
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are not supported on this platform")
+def test_inspect_symlinked_file_does_not_classify_target(tmp_path):
+    target_file = tmp_path / "outside.py"
+    target_file.write_text("import torch\n", encoding="utf-8")
+    link_file = tmp_path / "linked-train.py"
+    link_file.symlink_to(target_file)
+
+    data = inspect_path(link_file)
+
+    assert data["target_type"] == "unknown_target"
+    assert data["frameworks"] == []
+    assert data["scan"]["files_skipped"] == [
+        {
+            "code": "SYMLINK_SKIPPED",
+            "path": link_file.name,
+            "target": "<REDACTED_PATH>",
+            "message": "symlink was not followed during static inspection",
+        }
+    ]
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are not supported on this platform")
+def test_inspect_dangling_symlink_is_reported_as_skipped(tmp_path):
+    link_file = tmp_path / "dangling-train.py"
+    link_file.symlink_to(tmp_path / "missing.py")
+
+    data = inspect_path(link_file)
+
+    assert data["target_type"] == "unknown_target"
+    assert data["scan"]["files_skipped"][0]["code"] == "SYMLINK_SKIPPED"
+    assert data["scan"]["files_skipped"][0]["path"] == link_file.name
+
+
 def test_inspect_redacts_secret_literals_and_absolute_paths_by_default(tmp_path):
     script = tmp_path / "train.py"
     script.write_text(
