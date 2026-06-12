@@ -40,6 +40,8 @@ MAX_OUT_SEQ_CHUNKS = 16
 # 1/4 of the window size
 ACK_INTERVAL = 1024 * 1024 * 4
 READ_TIMEOUT = 300
+COMPLETED_TASK_TTL = 60.0
+RETRY_WAIT = 5.0
 COUNTER_NAME_RECEIVED = "received"
 
 # Read result status
@@ -54,9 +56,10 @@ class RxTask:
     rx_task_map: Dict[Tuple[str, int], "RxTask"] = {}
     map_lock = threading.Lock()
 
-    def __init__(self, sid: int, origin: str, cell: CoreCell):
+    def __init__(self, sid: int, origin: str, cell: CoreCell, reliable: bool = False):
         self.sid = sid
         self.origin = origin
+        self.reliable = reliable
         self.cell = cell
 
         self.channel = None
@@ -73,15 +76,28 @@ class RxTask:
         self.stream_future = None
         self.next_seq = 0
         self.offset = 0
+        self.received_offset = 0
         self.offset_ack = 0
+        self.seq = -1
+        self.seq_ack = -1
         self.waiter = threading.Event()
         self.lock = threading.Lock()
+        self.ack_lock = threading.Lock()
         self.eos = False
-        self.last_chunk_received = False
+        self.completed = False
+        self.failed = False
+        self.error = None
+        self.error_msg = None
+        self.stop_lock = threading.RLock()
+        self.cleanup_timer = None
 
-        self.timeout = CommConfigurator().get_streaming_read_timeout(READ_TIMEOUT)
-        self.ack_interval = CommConfigurator().get_streaming_ack_interval(ACK_INTERVAL)
-        self.max_out_seq = CommConfigurator().get_streaming_max_out_seq_chunks(MAX_OUT_SEQ_CHUNKS)
+        config = CommConfigurator()
+        self.timeout = config.get_streaming_read_timeout(READ_TIMEOUT)
+        self.ack_interval = config.get_streaming_ack_interval(ACK_INTERVAL)
+        self.max_out_seq = config.get_streaming_max_out_seq_chunks(MAX_OUT_SEQ_CHUNKS)
+        self.completed_task_ttl = config.get_streaming_retry_timeout(
+            COMPLETED_TASK_TTL
+        ) + config.get_streaming_retry_wait(RETRY_WAIT)
 
     def __str__(self):
         return f"Rx[SID:{self.sid} from {self.origin} for {self.channel}/{self.topic} Size: {self.size}]"
@@ -91,6 +107,7 @@ class RxTask:
 
         sid = message.get_header(StreamHeaderKey.STREAM_ID)
         origin = message.get_header(MessageHeaderKey.ORIGIN)
+        reliable = message.get_header(StreamHeaderKey.RELIABLE, False)
         error = message.get_header(StreamHeaderKey.ERROR_MSG, None)
         task_to_stop = None
 
@@ -101,7 +118,7 @@ class RxTask:
                     log.warning(f"Received error for non-existing stream: SID {sid} from {origin}")
                     return None
 
-                task = RxTask(sid, origin, cell)
+                task = RxTask(sid, origin, cell, reliable)
                 cls.rx_task_map[(origin, sid)] = task
             else:
                 if error:
@@ -137,72 +154,157 @@ class RxTask:
     def process_chunk(self, message: Message) -> bool:
         """Returns True if a new stream is created"""
 
+        with self.stop_lock:
+            failed = self.failed
+            error_msg = self.error_msg
+            completed = self.completed
+        if failed:
+            if self.reliable and error_msg:
+                self._send_error(error_msg)
+            return False
+
+        if completed:
+            # The task is kept in the map for the retry window only to re-ACK retried chunks
+            if self.reliable:
+                self._send_ack(self._get_ack_offset(), self.seq)
+            return False
+
         new_stream = False
+        ack_to_send = None
+        stop_error = None
+        should_stop = False
+        duplicate_start = False
         with self.lock:
             seq = message.get_header(StreamHeaderKey.SEQUENCE)
             if seq == 0:
                 if self.stream_future:
                     log.warning(f"{self} Received duplicate chunk 0, ignored")
-                    return new_stream
+                    if self.reliable:
+                        ack_to_send = (self._get_ack_offset(), self.seq)
+                    duplicate_start = True
+                else:
+                    self._handle_new_stream(message)
+                    new_stream = True
 
-                self._handle_new_stream(message)
-                new_stream = True
+            if not duplicate_start:
+                should_stop, ack_to_send, stop_error = self._handle_incoming_data(seq, message)
 
-            self._handle_incoming_data(seq, message)
-            return new_stream
+        if ack_to_send:
+            self._send_ack(*ack_to_send)
+
+        if stop_error:
+            self.stop(stop_error)
+        elif should_stop:
+            self.stop()
+
+        return new_stream
 
     def _handle_new_stream(self, message: Message):
         self.channel = message.get_header(StreamHeaderKey.CHANNEL)
         self.topic = message.get_header(StreamHeaderKey.TOPIC)
         self.headers = message.headers
         self.size = message.get_header(StreamHeaderKey.SIZE, 0)
+        retry_timeout = message.get_header(StreamHeaderKey.RETRY_TIMEOUT, None)
+        retry_wait = message.get_header(StreamHeaderKey.RETRY_WAIT, None)
+        if retry_timeout is not None and retry_wait is not None:
+            self.completed_task_ttl = max(self.completed_task_ttl, float(retry_timeout) + float(retry_wait))
 
         self.stream_future = StreamFuture(self.sid, self.headers)
         self.stream_future.set_size(self.size)
 
-    def _handle_incoming_data(self, seq: int, message: Message):
+    def _handle_incoming_data(
+        self, seq: int, message: Message
+    ) -> Tuple[bool, Optional[Tuple[int, int]], Optional[StreamError]]:
 
         data_type = message.get_header(StreamHeaderKey.DATA_TYPE)
 
         last_chunk = data_type == StreamDataType.FINAL
-        if last_chunk:
-            self.last_chunk_received = True
+        ack_to_send = None
 
         if seq < self.next_seq:
-            log.warning(f"{self} Duplicate chunk ignored {seq=}")
-            return
+            log.debug(f"{self} Duplicate chunk ignored {seq=}")
+            if self.reliable:
+                ack_to_send = (self._get_ack_offset(), self.seq)
+            return False, ack_to_send, None
 
         if seq == self.next_seq:
-            self._append((last_chunk, message.payload))
+            self._append(seq, (last_chunk, message.payload))
 
             # Try to reassemble out-of-seq chunks
             while self.next_seq in self.out_seq_chunks:
                 chunk = self.out_seq_chunks.pop(self.next_seq)
-                self._append(chunk)
+                self._append(self.next_seq, chunk)
         else:
             # Save out-of-seq chunks
             if len(self.out_seq_chunks) >= self.max_out_seq:
-                self.stop(StreamError(f"{self} Too many out-of-sequence chunks: {len(self.out_seq_chunks)}"))
-                return
+                return (
+                    False,
+                    None,
+                    StreamError(f"{self} Too many out-of-sequence chunks: {len(self.out_seq_chunks)}"),
+                )
             else:
                 if seq not in self.out_seq_chunks:
                     self.out_seq_chunks[seq] = last_chunk, message.payload
                 else:
                     log.warning(f"{self} Duplicate out-of-seq chunk ignored {seq=}")
+                    if self.reliable:
+                        ack_to_send = (self._get_ack_offset(), self.seq)
 
         # If all chunks are lined up and last chunk received, the task can be deleted
+        should_stop = False
         if not self.out_seq_chunks and self.chunks:
             last_chunk, _ = self.chunks[-1]
             if last_chunk:
-                self.stop()
+                should_stop = True
+
+        return should_stop, ack_to_send, None
 
     def stop(self, error: StreamError = None, notify=True):
 
-        with RxTask.map_lock:
-            RxTask.rx_task_map.pop((self.origin, self.sid), None)
-
         if not error:
+            ack_to_send = None
+            schedule_remove = False
+            remove_now = False
+            with self.stop_lock:
+                if self.completed or self.failed:
+                    return
+
+                with self.lock:
+                    ack_offset = self.received_offset
+                    ack_seq = self.seq
+                    with self.ack_lock:
+                        needs_ack = ack_seq != self.seq_ack or ack_offset > self.offset_ack
+                if needs_ack:
+                    ack_to_send = (ack_offset, ack_seq)
+                if self.reliable:
+                    self.completed = True
+                    schedule_remove = True
+                else:
+                    remove_now = True
+
+            if ack_to_send:
+                self._send_ack(*ack_to_send)
+            if schedule_remove:
+                self._schedule_remove_task()
+            elif remove_now:
+                self._remove_task()
             return
+
+        schedule_remove = False
+        remove_now = False
+        with self.stop_lock:
+            if self.completed or self.failed:
+                return
+
+            # failed must be set last: _try_to_read reads it without stop_lock and
+            # expects error/error_msg to be populated once failed is observed
+            self.error = error
+            self.error_msg = str(error)
+            self.failed = True
+            if self.reliable:
+                schedule_remove = True
+            else:
+                remove_now = True
 
         if self.headers:
             optional = self.headers.get(StreamHeaderKey.OPTIONAL, False)
@@ -218,19 +320,63 @@ class RxTask:
         if self.stream_future:
             self.stream_future.set_exception(error)
 
-        if notify:
-            message = Message()
+        if not self.waiter.is_set():
+            self.waiter.set()
 
-            message.add_headers(
-                {
-                    StreamHeaderKey.STREAM_ID: self.sid,
-                    StreamHeaderKey.DATA_TYPE: StreamDataType.ERROR,
-                    StreamHeaderKey.ERROR_MSG: str(error),
-                }
-            )
-            self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_ACK_TOPIC, self.origin, message)
+        if notify:
+            self._send_error(str(error))
+
+        if schedule_remove:
+            self._schedule_remove_task()
+        elif remove_now:
+            self._remove_task()
+
+    def _send_error(self, error_msg: str):
+        message = Message()
+
+        message.add_headers(
+            {
+                StreamHeaderKey.STREAM_ID: self.sid,
+                StreamHeaderKey.DATA_TYPE: StreamDataType.ERROR,
+                StreamHeaderKey.ERROR_MSG: error_msg,
+            }
+        )
+        try:
+            errors = self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_ACK_TOPIC, self.origin, message)
+        except Exception as ex:
+            log.error(f"{self} failed to send error to {self.origin}: {ex}")
+        else:
+            errors = errors or {}
+            error = errors.get(self.origin)
+            if error:
+                log.error(f"{self} failed to send error to {self.origin}: {error}")
+
+    def _remove_task(self):
+        with self.stop_lock:
+            if self.cleanup_timer:
+                self.cleanup_timer.cancel()
+                self.cleanup_timer = None
+
+        with RxTask.map_lock:
+            task = RxTask.rx_task_map.get((self.origin, self.sid))
+            if task is self:
+                RxTask.rx_task_map.pop((self.origin, self.sid), None)
+
+    def _schedule_remove_task(self):
+        with self.stop_lock:
+            if self.cleanup_timer:
+                return
+
+            self.cleanup_timer = threading.Timer(self.completed_task_ttl, self._remove_task)
+            self.cleanup_timer.daemon = True
+            self.cleanup_timer.start()
 
     def _try_to_read(self, size: int) -> Tuple[int, Optional[BytesAlike]]:
+
+        ack_to_send = None
+        with self.stop_lock:
+            if self.failed:
+                raise self.error or StreamError(self.error_msg)
 
         with self.lock:
             if self.eos:
@@ -238,6 +384,11 @@ class RxTask:
 
             if not self.chunks:
                 self.waiter.clear()
+                # stop(error) may have set failed and the waiter after the check at the top;
+                # re-check after the clear so the wakeup is not lost until the read timeout.
+                # stop_lock is not used here as it must not be acquired while holding self.lock.
+                if self.failed:
+                    raise self.error or StreamError(self.error_msg)
                 return RESULT_NO_DATA, None
 
             # Get the left most chunk
@@ -249,6 +400,7 @@ class RxTask:
                 # Partial read
                 result = buf[self.chunk_offset : end_offset]
                 self.chunk_offset = end_offset
+                final_chunk_consumed = False
             else:
                 # Whole chunk is consumed
                 if self.chunk_offset:
@@ -261,38 +413,70 @@ class RxTask:
 
                 if last_chunk:
                     self.eos = True
+                final_chunk_consumed = last_chunk
 
             self.offset += len(result)
 
-            if not self.last_chunk_received and (self.offset - self.offset_ack > self.ack_interval):
-                # Send ACK
-                message = Message()
-                message.add_headers(
-                    {
-                        StreamHeaderKey.STREAM_ID: self.sid,
-                        StreamHeaderKey.DATA_TYPE: StreamDataType.ACK,
-                        StreamHeaderKey.OFFSET: self.offset,
-                    }
-                )
-                self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_ACK_TOPIC, self.origin, message)
-                self.offset_ack = self.offset
+            with self.ack_lock:
+                ack_lag = self.offset - self.offset_ack
+                final_ack_needed = final_chunk_consumed and (self.offset > self.offset_ack or self.seq > self.seq_ack)
+            if ack_lag >= self.ack_interval or final_ack_needed:
+                ack_to_send = (self.offset, self.seq)
 
             if self.stream_future:
                 self.stream_future.set_progress(self.offset)
 
-            return RESULT_DATA, result
+        if ack_to_send:
+            self._send_ack(*ack_to_send)
 
-    def _append(self, buf: Tuple[bool, BytesAlike]):
+        return RESULT_DATA, result
+
+    def _append(self, seq: int, buf: Tuple[bool, BytesAlike]):
         if self.eos:
             log.error(f"{self} Data after EOS is ignored")
             return
 
         self.chunks.append(buf)
+        _last_chunk, payload = buf
+        self.received_offset += len(payload) if payload else 0
+        if seq <= self.seq:
+            log.error(f"Sequence error: {seq} <= {self.seq}")
+        self.seq = seq
         self.next_seq += 1
 
         # Wake up blocking read()
         if not self.waiter.is_set():
             self.waiter.set()
+
+    def _get_ack_offset(self):
+        return self.received_offset if self.completed else self.offset
+
+    def _send_ack(self, offset, seq):
+        message = Message()
+        message.add_headers(
+            {
+                StreamHeaderKey.STREAM_ID: self.sid,
+                StreamHeaderKey.DATA_TYPE: StreamDataType.ACK,
+                StreamHeaderKey.OFFSET: offset,
+                StreamHeaderKey.SEQUENCE: seq,
+            }
+        )
+        try:
+            errors = self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_ACK_TOPIC, self.origin, message)
+        except Exception as ex:
+            log.error(f"{self} failed to ack seq {seq} to {self.origin}: {ex}")
+            return False
+        else:
+            errors = errors or {}
+            error = errors.get(self.origin)
+            if error:
+                log.error(f"{self} failed to ack seq {seq} to {self.origin}: {error}")
+                return False
+
+        with self.ack_lock:
+            self.offset_ack = max(self.offset_ack, offset)
+            self.seq_ack = max(self.seq_ack, seq)
+        return True
 
 
 class RxStream(Stream):
