@@ -975,6 +975,22 @@ class K8sJobLauncher(JobLauncherSpec):
                 raise
         return secret_name
 
+    def _replace_pod_manifest_template_namespace(self, pod_manifest: dict) -> None:
+        metadata = _ensure_manifest_mapping(pod_manifest, "metadata", "pod manifest metadata")
+        if "namespace" not in metadata:
+            return
+
+        template_namespace = metadata["namespace"]
+        if template_namespace == self.namespace:
+            return
+
+        metadata["namespace"] = self.namespace
+        self.logger.warning(
+            "job pod is launched in namespace '%s' instead of metadata.namespace '%s'",
+            self.namespace,
+            template_namespace,
+        )
+
     def launch_job(self, job_meta: dict, fl_ctx: FLContext) -> JobHandleSpec:
         if self.core_v1 is None:
             from kubernetes import config
@@ -1159,6 +1175,8 @@ class K8sJobLauncher(JobLauncherSpec):
                 pod_manifest_template=pod_manifest_template,
             )
             pod_manifest = job_handle.get_manifest()
+            if pod_manifest_template is not None:
+                self._replace_pod_manifest_template_namespace(pod_manifest)
             self.logger.debug(
                 "launch job with k8s_launcher: pod_name=%s namespace=%s image=%s",
                 pod_manifest["metadata"]["name"],

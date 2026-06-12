@@ -2153,6 +2153,57 @@ spec:
         finally:
             _exit_patches(patches)
 
+    def test_pod_manifest_template_namespace_mismatch_uses_launcher_namespace(self, tmp_path, caplog):
+        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
+
+        pod_file = tmp_path / "study-a-pod.yaml"
+        pod_file.write_text(
+            """
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: template-ns
+spec:
+  containers:
+    - name: nvflare_job
+      image: template-image
+""",
+            encoding="utf-8",
+        )
+        study_job_spec_file = tmp_path / "study_job_spec.yaml"
+        study_job_spec_file.write_text(f"study-a: {pod_file}\n", encoding="utf-8")
+
+        patches = _make_k8s_launcher_patches(patch_open=False)
+        _mock_study_data_yaml, mock_core_cls, mock_transfer_cls, *_ = _enter_patches(patches)
+        try:
+            mock_api = MagicMock()
+            mock_core_cls.return_value = mock_api
+            mock_transfer = MagicMock()
+            mock_transfer_cls.get_or_create.return_value = mock_transfer
+            mock_transfer.owner_fqcn = "site-1.parent"
+            mock_transfer.add_job.return_value = "transfer-token"
+            self._prime_running(mock_api)
+
+            launcher = ClientK8sJobLauncher(
+                config_file_path="/fake/kube/config",
+                study_data_pvc_file_path=None,
+                namespace="test-ns",
+                study_job_spec_file_path=str(study_job_spec_file),
+            )
+
+            with caplog.at_level(logging.WARNING):
+                launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx())
+
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            assert manifest["metadata"]["namespace"] == "test-ns"
+            assert mock_api.create_namespaced_pod.call_args.kwargs["namespace"] == "test-ns"
+            assert (
+                "job pod is launched in namespace 'test-ns' instead of metadata.namespace 'template-ns'" in caplog.text
+            )
+            _mock_study_data_yaml.safe_load.assert_not_called()
+        finally:
+            _exit_patches(patches)
+
     def test_pod_manifest_template_is_cached_per_launcher(self, tmp_path):
         from nvflare.app_opt.job_launcher import k8s_launcher as k8s_launcher_module
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
