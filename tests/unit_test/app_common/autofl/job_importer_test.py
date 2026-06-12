@@ -231,6 +231,48 @@ def main():
     assert {"field": "job.train_script", "reason": "no train_script was found or resolved"} in config["unresolved"]
 
 
+def test_import_marks_imported_budget_and_metric_constants_unresolved(tmp_path):
+    (tmp_path / "client.py").write_text(
+        """
+def train():
+    pass
+""",
+        encoding="utf-8",
+    )
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+from config import KEY_METRIC, NUM_ROUNDS
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+def main():
+    recipe = FedAvgRecipe(
+        name="demo",
+        min_clients=2,
+        num_rounds=NUM_ROUNDS,
+        train_script="client.py",
+        key_metric=KEY_METRIC,
+    )
+    recipe.execute(SimEnv(num_clients=2))
+""",
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert config["objective"] == {"metric": "accuracy", "mode": "max", "source": "default"}
+    assert config["budget"]["fixed_training_budget"] == {"min_clients": 2, "num_clients": 2}
+    assert {
+        "field": "budget.fixed_training_budget.num_rounds",
+        "reason": "name:NUM_ROUNDS",
+    } in config["unresolved"]
+    assert {"field": "objective.metric", "reason": "name:KEY_METRIC"} in config["unresolved"]
+    assert {"field": "job.FedAvgRecipe.key_metric", "reason": "name:KEY_METRIC"} in config["unresolved"]
+    assert {"field": "job.FedAvgRecipe.num_rounds", "reason": "name:NUM_ROUNDS"} in config["unresolved"]
+
+
 def test_import_marks_unsupported_custom_job_as_partial(tmp_path):
     job_path = tmp_path / "job.py"
     job_path.write_text(

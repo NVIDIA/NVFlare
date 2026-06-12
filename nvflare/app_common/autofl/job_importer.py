@@ -621,7 +621,7 @@ def _resolve_value(
             return _resolve_arg_default(node.id, parser_args[node.id])
         if node.id in assignments:
             return _resolve_value(assignments[node.id], assignments, parser_args, source_text, seen | {node.id})
-        return ResolvedValue(node.id, f"name:{node.id}", "medium")
+        return ResolvedValue(node.id, f"name:{node.id}", "low", True)
 
     if isinstance(node, ast.Call):
         call_name = _call_name(node.func)
