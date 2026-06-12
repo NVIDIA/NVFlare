@@ -961,11 +961,45 @@ class FlareAgent:
                 )
                 result_upload_transactions.append(transaction)
 
+            def _collect_result_upload_transactions():
+                transactions = tuple(result_upload_transactions)
+                if not transactions and was_download_initiated():
+                    transactions = tuple(get_download_transactions())
+                    if progress_tracking_enabled:
+                        self._register_download_transactions(result_upload_tracker, transactions)
+                return transactions
+
+            previous_download_complete_cb = self._get_fobs_context_value(
+                self.pipe.cell, FOBSContextKey.DOWNLOAD_COMPLETE_CB
+            )
             previous_stream_progress_cb = self._get_fobs_context_value(
                 self.pipe.cell, FOBSContextKey.STREAM_PROGRESS_CB
             )
             previous_receiver_ids = self._get_fobs_context_value(self.pipe.cell, FOBSContextKey.RECEIVER_IDS)
             previous_tx_created_cb = self._get_fobs_context_value(self.pipe.cell, RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY)
+            fobs_context_installed = False
+
+            def _restore_result_upload_fobs_context():
+                nonlocal fobs_context_installed
+                if not fobs_context_installed:
+                    return
+                self.pipe.cell.update_fobs_context(
+                    {
+                        FOBSContextKey.DOWNLOAD_COMPLETE_CB: previous_download_complete_cb,
+                        FOBSContextKey.STREAM_PROGRESS_CB: previous_stream_progress_cb,
+                        FOBSContextKey.RECEIVER_IDS: previous_receiver_ids,
+                        RESULT_UPLOAD_PROGRESS_CTX_KEY: None,
+                        RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY: previous_tx_created_cb,
+                    }
+                )
+                fobs_context_installed = False
+
+            def _send_to_peer_and_restore_result_upload_fobs_context():
+                try:
+                    return self.pipe_handler.send_to_peer(reply, self.submit_result_timeout)
+                finally:
+                    _restore_result_upload_fobs_context()
+
             streaming_idle_timeout = getattr(self, "_streaming_idle_timeout", DEFAULT_STREAMING_IDLE_TIMEOUT)
             result_upload_progress_context = None
             if progress_tracking_enabled:
@@ -988,6 +1022,7 @@ class FlareAgent:
                     ),
                 }
             )
+            fobs_context_installed = True
             # Preserve the legacy message-root TTL for fallback paths where reverse
             # progress tracking cannot be installed.  The ViaDownloader decomposer
             # switches progress-trackable transactions to streaming_idle_timeout.
@@ -999,16 +1034,19 @@ class FlareAgent:
             submit_failed = False
             try:
                 send_start = time.time()
-                sent = self.pipe_handler.send_to_peer(reply, self.submit_result_timeout)
+                try:
+                    sent = _send_to_peer_and_restore_result_upload_fobs_context()
+                except Exception:
+                    transactions = _collect_result_upload_transactions()
+                    if transactions:
+                        self._fail_reverse_download_transactions(result_upload_tracker, transactions)
+                    submit_failed = True
+                    raise
                 if not sent:
                     self.logger.warning(
                         f"[subprocess] send_to_peer failed: task_ph.asked_to_stop={self.pipe_handler.asked_to_stop}"
                     )
-                    transactions = tuple(result_upload_transactions)
-                    if not transactions and was_download_initiated():
-                        transactions = tuple(get_download_transactions())
-                        if progress_tracking_enabled:
-                            self._register_download_transactions(result_upload_tracker, transactions)
+                    transactions = _collect_result_upload_transactions()
                     if transactions:
                         self._fail_reverse_download_transactions(result_upload_tracker, transactions)
                     submit_failed = True
@@ -1055,16 +1093,7 @@ class FlareAgent:
                         "no tensors in result — proceeding immediately"
                     )
             finally:
-                # Always clear the callback so stale refs do not accumulate across rounds.
-                self.pipe.cell.update_fobs_context(
-                    {
-                        FOBSContextKey.DOWNLOAD_COMPLETE_CB: None,
-                        FOBSContextKey.STREAM_PROGRESS_CB: previous_stream_progress_cb,
-                        FOBSContextKey.RECEIVER_IDS: previous_receiver_ids,
-                        RESULT_UPLOAD_PROGRESS_CTX_KEY: None,
-                        RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY: previous_tx_created_cb,
-                    }
-                )
+                _restore_result_upload_fobs_context()
                 if submit_failed:
                     self._cleanup_launch_once_submit_failure()
             if self._launch_once:

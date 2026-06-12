@@ -461,6 +461,8 @@ class Cell(StreamCell):
                     self.logger.info(f"{req_id=}: receiving failed with stream error")
                     return self._get_result(req_id)
                 if progress_wait_cb:
+                    # The same bounded progress policy applies after the first byte: a streamed reply body can still
+                    # be moving even though the peer has already started responding.
                     try:
                         if progress_wait_cb():
                             self.logger.debug(f"{req_id=}: receiving still has transfer progress; continue waiting")

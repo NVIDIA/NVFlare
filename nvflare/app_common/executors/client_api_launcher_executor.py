@@ -69,6 +69,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         submit_result_timeout: float = 300.0,
         max_resends: Optional[int] = 3,
         download_complete_timeout: float = 1800.0,
+        streaming_idle_timeout: Optional[float] = DEFAULT_STREAMING_IDLE_TIMEOUT,
         peer_read_timeout_explicit: bool = False,
         heartbeat_timeout_explicit: bool = False,
     ) -> None:
@@ -117,6 +118,8 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                 this gate, the subprocess may exit before the download completes and the server gets
                 missing download refs. Defaults to 1800 s. Recipe-based jobs can override via
                 recipe.add_client_config({"download_complete_timeout": N}).
+            streaming_idle_timeout (float, optional): Stream-progress idle timeout for task-send and reverse-result
+                upload waits. Recipe-based jobs can override this later via add_client_config().
             peer_read_timeout_explicit (bool): Whether the constructor-configured peer_read_timeout is an intentional
                 fast-fail override. When true, NVFLARE honors a value lower than streaming_idle_timeout instead of
                 raising it to the streaming idle timeout.
@@ -145,6 +148,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             to_nvflare_converter_id=to_nvflare_converter_id,
             max_resends=max_resends,
             peer_read_timeout_explicit=peer_read_timeout_explicit,
+            streaming_idle_timeout=streaming_idle_timeout,
         )
 
         # Preserve the bounded retry default across FedJobConfig export/reload.

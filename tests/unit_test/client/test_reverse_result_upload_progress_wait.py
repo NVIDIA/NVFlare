@@ -980,6 +980,74 @@ def test_do_submit_result_cleans_created_transactions_when_send_fails(monkeypatc
     assert deleted == ["tx-failed-send"]
 
 
+def test_do_submit_result_restores_fobs_context_before_reverse_upload_wait():
+    clear_download_initiated()
+    pipe = _make_cell_pipe()
+    previous_download_complete_cb = object()
+    previous_stream_progress_cb = object()
+    previous_receiver_ids = ("previous-receiver",)
+    previous_tx_created_cb = object()
+    pipe.cell.get_fobs_context.return_value = {
+        fobs.FOBSContextKey.DOWNLOAD_COMPLETE_CB: previous_download_complete_cb,
+        fobs.FOBSContextKey.STREAM_PROGRESS_CB: previous_stream_progress_cb,
+        fobs.FOBSContextKey.RECEIVER_IDS: previous_receiver_ids,
+        RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY: previous_tx_created_cb,
+    }
+    agent = _make_agent(pipe, download_complete_timeout=0.001)
+    transaction = DownloadTransactionInfo("tx-context", (("ref-context", None),), time.time())
+    restore_checked = []
+
+    def _send(reply, timeout):
+        ctx = pipe.cell.update_fobs_context.call_args.args[0]
+        ctx[RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY](transaction)
+        _tls.download_initiated = True
+        _tls.download_transactions = [transaction]
+        return True
+
+    def _wait(*args, **kwargs):
+        restored_ctx = pipe.cell.update_fobs_context.call_args.args[0]
+        assert restored_ctx[fobs.FOBSContextKey.DOWNLOAD_COMPLETE_CB] is previous_download_complete_cb
+        assert restored_ctx[fobs.FOBSContextKey.STREAM_PROGRESS_CB] is previous_stream_progress_cb
+        assert restored_ctx[fobs.FOBSContextKey.RECEIVER_IDS] == previous_receiver_ids
+        assert restored_ctx[RESULT_UPLOAD_PROGRESS_CTX_KEY] is None
+        assert restored_ctx[RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY] is previous_tx_created_cb
+        restore_checked.append(True)
+        return True
+
+    agent.pipe_handler.send_to_peer.side_effect = _send
+    agent._wait_for_reverse_result_upload = MagicMock(side_effect=_wait)
+
+    result = agent._do_submit_result(_TaskContext("tid-1", "train", "msg-1"), None, "OK")
+
+    assert result is True
+    assert restore_checked == [True]
+
+
+def test_do_submit_result_cleans_created_transactions_when_send_raises(monkeypatch):
+    clear_download_initiated()
+    pipe = _make_cell_pipe()
+    agent = _make_agent(pipe, download_complete_timeout=0.001)
+    transaction = DownloadTransactionInfo("tx-raised-send", (("ref-raised-send", None),), time.time())
+    deleted = []
+    monkeypatch.setattr(
+        "nvflare.client.flare_agent.DownloadService.delete_transaction", lambda tx_id: deleted.append(tx_id)
+    )
+
+    def _send(reply, timeout):
+        ctx = pipe.cell.update_fobs_context.call_args.args[0]
+        ctx[RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY](transaction)
+        _tls.download_initiated = True
+        _tls.download_transactions = [transaction]
+        raise RuntimeError("send failed after serialization")
+
+    agent.pipe_handler.send_to_peer.side_effect = _send
+
+    with pytest.raises(RuntimeError, match="send failed after serialization"):
+        agent._do_submit_result(_TaskContext("tid-1", "train", "msg-1"), None, "OK")
+
+    assert deleted == ["tx-raised-send"]
+
+
 def test_result_upload_unexpected_pair_logs_warning():
     clock = FakeClock()
     tracker = _make_tracker(clock=clock, idle_timeout=10.0)

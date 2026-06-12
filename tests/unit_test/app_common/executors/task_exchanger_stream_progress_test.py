@@ -401,6 +401,29 @@ def test_task_send_peer_read_timeout_disabled_still_aborts_failed_effective_send
     assert handler.send_calls == 1
 
 
+def test_cell_pipe_peer_read_timeout_disabled_still_aborts_failed_effective_send(monkeypatch):
+    _patch_logs(monkeypatch)
+    executor = TaskExchanger(
+        pipe_id="pipe",
+        peer_read_timeout=None,
+        streaming_idle_timeout=600.0,
+        result_poll_interval=0.01,
+    )
+    executor.pipe = object.__new__(CellPipe)
+
+    def send_cb(handler, msg, timeout, abort_signal):
+        assert timeout == task_exchanger_module.STREAM_PROGRESS_COMPLETION_ACK_GRACE
+        return False
+
+    handler = _FakePipeHandler(send_cb)
+    executor.pipe_handler = handler
+
+    result = executor._do_execute("train", _make_task(), _make_fl_ctx(), _AbortSignal())
+
+    assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+    assert handler.send_calls == 1
+
+
 def test_explicit_high_peer_read_timeout_logs_startup_budget_clamp(monkeypatch):
     logs = _patch_logs(monkeypatch)
     now = [1000.0]
@@ -584,6 +607,27 @@ def test_non_cell_pipe_keeps_disabled_peer_read_timeout_for_task_send():
     executor.pipe = _DummyPipe()
 
     assert executor._get_task_send_peer_read_timeout() is None
+
+
+def test_non_cell_pipe_peer_read_timeout_disabled_continues_after_unread_send(monkeypatch):
+    _patch_logs(monkeypatch)
+    executor = TaskExchanger(pipe_id="pipe", peer_read_timeout=None, streaming_idle_timeout=600.0)
+    executor.pipe = _DummyPipe()
+    captured = {}
+
+    def send_cb(handler, msg, timeout, abort_signal):
+        captured["timeout"] = timeout
+        handler.replies.append(_reply_for(msg))
+        return False
+
+    handler = _FakePipeHandler(send_cb)
+    executor.pipe_handler = handler
+
+    result = executor._do_execute("train", _make_task(), _make_fl_ctx(), _AbortSignal())
+
+    assert result.get_return_code() == ReturnCode.OK
+    assert captured["timeout"] is None
+    assert handler.send_calls == 1
 
 
 def test_task_send_many_active_transfers_progress_past_fixed_timeout_without_resend(monkeypatch):

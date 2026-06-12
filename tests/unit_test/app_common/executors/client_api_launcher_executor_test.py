@@ -430,6 +430,32 @@ def test_streaming_idle_timeout_overridden_from_config(monkeypatch):
     assert executor.heartbeat_timeout == 300.0
 
 
+def test_constructor_streaming_idle_timeout_sets_initial_policy_and_config_override_wins(monkeypatch):
+    from nvflare.fuel.f3.streaming.transfer_progress import STREAMING_IDLE_TIMEOUT
+
+    monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
+    monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(_GCV_MODULE, _make_gcv_stub({STREAMING_IDLE_TIMEOUT: 1200}))
+
+    executor = ClientAPILauncherExecutor(
+        pipe_id="test_pipe",
+        peer_read_timeout=300.0,
+        heartbeat_timeout=300.0,
+        streaming_idle_timeout=900.0,
+    )
+    fl_ctx = _FakeFLContext(_FakeCell())
+
+    assert executor.streaming_idle_timeout == 900.0
+    assert executor._stream_progress_tracker.idle_timeout == 900.0
+
+    executor.initialize(fl_ctx)
+
+    assert executor.streaming_idle_timeout == 1200.0
+    assert executor._stream_progress_tracker.idle_timeout == 1200.0
+
+
 def test_streaming_idle_timeout_override_mutates_tracker_under_lock(monkeypatch):
     from nvflare.fuel.f3.streaming.transfer_progress import STREAMING_IDLE_TIMEOUT
 

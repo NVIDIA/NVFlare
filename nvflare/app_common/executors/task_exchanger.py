@@ -657,6 +657,12 @@ class TaskExchanger(Executor):
             return peer_read_timeout
         return min(peer_read_timeout, streaming_idle_timeout, STREAM_PROGRESS_COMPLETION_ACK_GRACE)
 
+    def _unread_task_send_is_failure(self):
+        _, peer_read_timeout, streaming_idle_timeout = self._get_streaming_timeout_snapshot()
+        if peer_read_timeout is not None:
+            return True
+        return bool(streaming_idle_timeout and (self.pipe is None or isinstance(self.pipe, CellPipe)))
+
     def _send_task_to_peer(self, req: Message, fl_ctx: FLContext, abort_signal: Signal) -> bool:
         job_id = None
         get_header = getattr(req.data, "get_header", None)
@@ -722,14 +728,20 @@ class TaskExchanger(Executor):
         start_time = time.time()
         has_been_read = self._send_task_to_peer(req, fl_ctx, abort_signal)
         if not has_been_read:
-            self._mark_task_stream_progress_terminal(task_id, TransferProgressState.ABORTED, job_id=job_id)
-            self.log_error(
+            if self._unread_task_send_is_failure():
+                self._mark_task_stream_progress_terminal(task_id, TransferProgressState.ABORTED, job_id=job_id)
+                self.log_error(
+                    fl_ctx,
+                    f"peer does not accept task '{task_name}' in {time.time() - start_time} secs - aborting task!",
+                )
+                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+            self.log_info(
                 fl_ctx,
-                f"peer does not accept task '{task_name}' in {time.time() - start_time} secs - aborting task!",
+                f"peer did not confirm reading task '{task_name}' in {time.time() - start_time} secs; "
+                "continuing because peer_read_timeout is disabled",
             )
-            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-
-        self.log_info(fl_ctx, f"task {task_name} sent to peer in {time.time() - start_time} secs")
+        else:
+            self.log_info(fl_ctx, f"task {task_name} sent to peer in {time.time() - start_time} secs")
 
         # wait for result
         self.log_debug(fl_ctx, "Waiting for result from peer")
