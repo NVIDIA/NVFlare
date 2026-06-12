@@ -81,6 +81,15 @@ def build_skill_manifest(skills_root: Path | str, *, source_type: str, nvflare_v
                 )
                 continue
             metadata = dict(result.metadata)
+            try:
+                source_hash = skill_tree_hash(child)
+            except (OSError, ValueError) as exc:
+                raise SkillManifestError(
+                    "AGENT_SKILL_MANIFEST_BUILD_FAILED",
+                    f"Could not build skill manifest for skill source: {child}",
+                    "Check the skill source tree for symlinks or unreadable files, then rebuild the NVFLARE skill bundle.",
+                    detail=str(exc),
+                ) from exc
             skills.append(
                 {
                     "name": metadata["name"],
@@ -88,7 +97,7 @@ def build_skill_manifest(skills_root: Path | str, *, source_type: str, nvflare_v
                     "min_flare_version": metadata["min_flare_version"],
                     "max_flare_version": metadata.get("max_flare_version"),
                     "blast_radius": metadata["blast_radius"],
-                    "source_hash": skill_tree_hash(child),
+                    "source_hash": source_hash,
                     "relative_path": child.name,
                 }
             )

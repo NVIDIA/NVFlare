@@ -118,6 +118,21 @@ def test_build_skill_manifest_rejects_skill_symlinks(tmp_path):
     assert manifest["findings"][0]["issues"][0]["code"] == "skill-symlink-not-allowed"
 
 
+def test_build_skill_manifest_wraps_source_hash_errors(monkeypatch, tmp_path):
+    _write_skill(tmp_path, "nvflare-test-skill")
+
+    def fail_hash(_path, *, exclude_names=None):
+        raise ValueError("skill directory contains symlink: late-link")
+
+    monkeypatch.setattr(skill_manifest, "skill_tree_hash", fail_hash)
+
+    with pytest.raises(SkillManifestError) as exc_info:
+        build_skill_manifest(tmp_path, source_type="editable", nvflare_version="2.8.0")
+
+    assert exc_info.value.code == "AGENT_SKILL_MANIFEST_BUILD_FAILED"
+    assert "late-link" in exc_info.value.detail
+
+
 @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are not supported on this platform")
 def test_skill_tree_hash_rejects_skill_symlinks(tmp_path):
     skill_dir = _write_skill(tmp_path, "nvflare-test-skill")
