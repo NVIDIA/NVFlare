@@ -165,6 +165,8 @@ class _ReverseResultUploadProgressTracker:
             latest_activity_time = None
             for key, created_time in self.expected.items():
                 record = self._get_record(key)
+                if record and record.terminal:
+                    continue
                 activity_time = record.last_progress_time if record else created_time
                 if latest_activity_time is None or activity_time > latest_activity_time:
                     latest_activity_time = activity_time

@@ -399,6 +399,31 @@ def test_result_upload_completed_ref_does_not_mask_stalled_sibling():
     assert "stalled" in decision.reason
 
 
+def test_result_upload_recent_completed_ref_does_not_mask_stalled_active_sibling():
+    clock = FakeClock()
+    tracker = _make_tracker(clock=clock, idle_timeout=10.0)
+    _register(tracker, pairs=(("ref-a", None), ("ref-b", None)), created_time=clock.now)
+    _progress(tracker, ref_id="ref-b", sequence=1, bytes_done=50, timestamp=clock.now)
+
+    clock.advance(5.0)
+    _progress(
+        tracker,
+        ref_id="ref-a",
+        sequence=1,
+        bytes_done=100,
+        state=TransferProgressState.COMPLETED,
+        timestamp=clock.now,
+    )
+
+    clock.advance(5.0)
+    decision = tracker.decide()
+
+    assert decision.done is True
+    assert decision.success is False
+    assert "ref-b" in decision.reason
+    assert "stalled" in decision.reason
+
+
 def test_result_upload_recent_ref_activity_holds_unstarted_sibling_until_group_stalls():
     clock = FakeClock()
     tracker = _make_tracker(clock=clock, idle_timeout=10.0)
