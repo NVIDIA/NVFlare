@@ -162,19 +162,6 @@ class _ReverseResultUploadProgressTracker:
                     return _ReverseResultUploadDecision(done=True, success=True, reason="all_completed")
                 return _ReverseResultUploadDecision(done=False, success=False, reason="completion_grace")
 
-            latest_activity_time = None
-            for key, created_time in self.expected.items():
-                record = self._get_record(key)
-                if record and record.terminal:
-                    continue
-                activity_time = record.last_progress_time if record else created_time
-                if latest_activity_time is None or activity_time > latest_activity_time:
-                    latest_activity_time = activity_time
-
-            if latest_activity_time is not None and now - latest_activity_time < self.idle_timeout:
-                return _ReverseResultUploadDecision(done=False, success=False)
-
-            stalled_decision = None
             for key, created_time in self.expected.items():
                 record = self._get_record(key)
                 if record:
@@ -182,7 +169,7 @@ class _ReverseResultUploadProgressTracker:
                         continue
                     if self._is_started(record):
                         if now - record.last_progress_time >= self.idle_timeout:
-                            stalled_decision = stalled_decision or _ReverseResultUploadDecision(
+                            return _ReverseResultUploadDecision(
                                 done=True,
                                 success=False,
                                 reason=f"result_upload transfer {record.transfer_id} stalled",
@@ -195,8 +182,6 @@ class _ReverseResultUploadProgressTracker:
                         success=False,
                         reason=f"result_upload transfer {ref_id} receiver={receiver_id} did not start",
                     )
-            if stalled_decision:
-                return stalled_decision
 
         return _ReverseResultUploadDecision(done=False, success=False)
 

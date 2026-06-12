@@ -361,6 +361,15 @@ class TaskExchanger(Executor):
                 transfer_id=transfer_id,
                 direction=direction,
             )
+            if record and record.state in (TransferProgressState.FAILED, TransferProgressState.ABORTED):
+                if status in STREAM_PROGRESS_START_STATUSES:
+                    self._stream_progress_tracker.remove(
+                        job_id=job_id,
+                        task_id=task_id,
+                        transfer_id=transfer_id,
+                        direction=direction,
+                    )
+                    record = None
             if record is None:
                 has_capacity, record_count = self._stream_progress_tracker_capacity_locked(direction)
                 if not has_capacity:

@@ -812,6 +812,51 @@ def test_task_send_recent_sibling_activity_does_not_mask_failed_transfer(monkeyp
     assert handler.send_calls == 1
 
 
+def test_task_send_start_event_clears_stale_failed_transfer_for_retry(monkeypatch):
+    _patch_logs(monkeypatch)
+    now = [1000.0]
+    monkeypatch.setattr(task_exchanger_module.time, "time", lambda: now[0])
+    executor = TaskExchanger(pipe_id="pipe", peer_read_timeout=0.01, streaming_idle_timeout=10.0)
+    executor._handle_stream_progress_message(
+        _progress(task_id="task-1", transfer_id="retry-transfer", sequence=5, bytes_done=1024, state="failed")
+    )
+
+    assert (
+        executor._should_continue_task_send_waiting(
+            task_name="train",
+            task_id="task-1",
+            job_id="job-1",
+            send_start_time=now[0],
+            fl_ctx=_make_fl_ctx(),
+        )
+        is False
+    )
+
+    executor._handle_stream_progress_message(
+        _progress(task_id="task-1", transfer_id="retry-transfer", sequence=1, bytes_done=0, state="start")
+    )
+
+    record = executor._stream_progress_tracker.get_record(
+        job_id="job-1",
+        task_id="task-1",
+        transfer_id="retry-transfer",
+        direction=DIRECTION_TASK_PAYLOAD_DOWNLOAD,
+    )
+    assert record.terminal is False
+    assert record.sequence == 1
+    assert record.bytes_done == 0
+    assert (
+        executor._should_continue_task_send_waiting(
+            task_name="train",
+            task_id="task-1",
+            job_id="job-1",
+            send_start_time=now[0],
+            fl_ctx=_make_fl_ctx(),
+        )
+        is True
+    )
+
+
 def test_task_send_does_not_use_progress_from_another_job(monkeypatch):
     _patch_logs(monkeypatch)
     now = [1000.0]
