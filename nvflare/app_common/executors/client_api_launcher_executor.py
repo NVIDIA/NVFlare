@@ -186,7 +186,13 @@ class ClientAPILauncherExecutor(LauncherExecutor):
 
     def initialize(self, fl_ctx: FLContext) -> None:
         self._apply_client_config_overrides(fl_ctx)
-        self.prepare_config_for_launch(fl_ctx)
+        self._validate_required_timeout_values(fl_ctx)
+        self._validate_timeout_config(fl_ctx)
+        self._skip_required_timeout_validation_once = True
+        try:
+            self.prepare_config_for_launch(fl_ctx)
+        finally:
+            self._skip_required_timeout_validation_once = False
         super().initialize(fl_ctx)
 
         from nvflare.fuel.f3.cellnet.defs import CellChannel as _CellChannel
@@ -220,8 +226,6 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                         fl_ctx,
                         f"Receiver-side PASS_THROUGH enabled on CJ cell for channel '{channel_name}'",
                     )
-
-        self._validate_timeout_config(fl_ctx)
 
     def _get_client_config_override(self, fl_ctx: FLContext, key: str):
         return get_client_config_value(fl_ctx, key, _CONFIG_VALUE_MISSING)
@@ -548,7 +552,8 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         return not launcher.needs_deferred_stop()
 
     def prepare_config_for_launch(self, fl_ctx: FLContext):
-        self._validate_required_timeout_values(fl_ctx)
+        if not getattr(self, "_skip_required_timeout_validation_once", False):
+            self._validate_required_timeout_values(fl_ctx)
 
         pipe_export_class, pipe_export_args = self.pipe.export(ExportMode.PEER)
         task_exchange_attributes = {

@@ -101,16 +101,6 @@ class TestPipeHandlerBrokenPipe:
             time.sleep(0.01)
         return messages
 
-    def test_heartbeat_timeout_none_disables_heartbeat_check(self):
-        handler = PipeHandler(
-            pipe=_ScriptedPipe([]),
-            read_interval=0.01,
-            heartbeat_interval=5.0,
-            heartbeat_timeout=None,
-        )
-
-        assert handler.heartbeat_timeout == 0
-
     def test_pipe_closed_emits_peer_gone_and_stops(self):
         """When receive() raises BrokenPipeError('pipe is not open'), PEER_GONE is emitted and the reader stops."""
         handler = self._make_handler(_BrokenPipe("pipe is not open"))

@@ -846,6 +846,64 @@ def test_client_config_overrides_apply_before_subprocess_config_write(monkeypatc
     assert executor._stop_task_wait_timeout == 2400.0
 
 
+def test_heartbeat_timeout_none_fallback_is_serialized_to_subprocess_config(monkeypatch):
+    """The heartbeat fallback must run before prepare_config_for_launch writes the Client API config."""
+    import nvflare.fuel.utils.app_config_utils as acu
+    from nvflare.apis.fl_constant import ConfigVarName
+    from nvflare.client.config import ConfigKey
+    from nvflare.fuel.utils.config_service import ConfigService
+
+    captured = {}
+    warnings = []
+    monkeypatch.setattr(_GCV_MODULE, _make_gcv_stub({}))
+    monkeypatch.setattr(
+        "nvflare.app_common.executors.client_api_launcher_executor.write_config_to_file",
+        lambda config_data, config_file_path: captured.update(config_data),
+    )
+    monkeypatch.setattr(
+        "nvflare.app_common.executors.client_api_launcher_executor.update_export_props",
+        lambda config_data, fl_ctx: None,
+    )
+    monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: warnings.append(msg))
+
+    def _fake_get(name, default):
+        if ConfigVarName.MIN_DOWNLOAD_TIMEOUT in name:
+            return 700.0
+        if ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT in name:
+            return 600.0
+        return default
+
+    monkeypatch.setattr(acu, "get_positive_float_var", _fake_get)
+    monkeypatch.setattr(
+        ConfigService,
+        "get_float_var",
+        lambda name, conf=None, default=None: 600.0 if ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT in name else default,
+    )
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe", heartbeat_timeout=None)
+    mock_pipe = MagicMock()
+    mock_pipe.export.return_value = ("nvflare.some.PipeClass", {})
+    executor.pipe = mock_pipe
+    executor.get_pipe_channel_name = lambda: "task"
+
+    fake_workspace = MagicMock()
+    fake_workspace.get_app_config_dir.return_value = "/tmp/fake_dir"
+    fake_engine = MagicMock()
+    fake_engine.get_workspace.return_value = fake_workspace
+    fl_ctx = MagicMock()
+    fl_ctx.get_engine.return_value = fake_engine
+    fl_ctx.get_job_id.return_value = "test_job"
+
+    executor.initialize(fl_ctx)
+
+    task_exchange = captured[ConfigKey.TASK_EXCHANGE]
+    assert executor.heartbeat_timeout == 600.0
+    assert task_exchange[ConfigKey.HEARTBEAT_TIMEOUT] == 600.0
+    assert any("heartbeat_timeout is not set" in w and "Using 600.0s" in w for w in warnings), warnings
+
+
 @pytest.mark.parametrize("value", [-1, None, 2.9, 3.0, "3", True])
 def test_client_config_max_resends_override_rejects_invalid_values(monkeypatch, value):
     """Invalid top-level max_resends overrides must fail before config generation.
@@ -1162,7 +1220,8 @@ def test_initialize_validates_required_timeout_values_once(monkeypatch):
         calls.append(fl_ctx)
 
     def _prepare_config(self, fl_ctx):
-        self._validate_required_timeout_values(fl_ctx)
+        if not getattr(self, "_skip_required_timeout_validation_once", False):
+            self._validate_required_timeout_values(fl_ctx)
 
     def _fake_get(name, default):
         if ConfigVarName.MIN_DOWNLOAD_TIMEOUT in name:

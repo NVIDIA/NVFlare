@@ -671,6 +671,8 @@ class TaskExchanger(Executor):
         _, peer_read_timeout, streaming_idle_timeout = self._get_streaming_timeout_snapshot()
         if peer_read_timeout is not None:
             return True
+        if self.pipe is not None and not isinstance(self.pipe, CellPipe):
+            return True
         return bool(streaming_idle_timeout and (self.pipe is None or isinstance(self.pipe, CellPipe)))
 
     def _send_task_to_peer(self, req: Message, fl_ctx: FLContext, abort_signal: Signal) -> bool:
