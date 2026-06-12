@@ -61,7 +61,9 @@ def _write_simulator_resources(workspace_root: str, class_allow_list: list[str])
 def _collect_component_paths(element):
     paths = set()
     if isinstance(element, dict):
-        component_path = element.get("path") or element.get("class_path")
+        component_path = element.get("path")
+        if component_path is None:
+            component_path = element.get("class_path")
         if isinstance(component_path, str):
             paths.add(component_path)
         for value in element.values():
@@ -83,7 +85,12 @@ def _assert_allow_list_matches_exported_job(recipe, export_root, job_name: str, 
             with open(os.path.join(root, file_name)) as f:
                 actual_paths.update(_collect_component_paths(json.load(f)))
 
-    assert actual_paths == set(class_allow_list)
+    expected_paths = set(class_allow_list)
+    missing = expected_paths - actual_paths
+    extra = actual_paths - expected_paths
+    assert (
+        actual_paths == expected_paths
+    ), f"Allow-list mismatch for job '{job_name}': missing from config={missing}, extra in config={extra}"
 
 
 class TestRecipeSystemIntegration:
