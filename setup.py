@@ -104,7 +104,6 @@ setup(
     ),
     package_data={
         "": ["*.yml", "*.yaml", "*.tpl", "*.html", "*.js", "poc.zip", "*.config", "*.conf"],
-        "nvflare.agent.skills.autofl": ["*.md"],
         "nvflare.dashboard.application": extra_files,
         "nvflare.tool.job": job_templates,
         "nvflare.tool.deploy": deploy_templates,

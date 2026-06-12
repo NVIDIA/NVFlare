@@ -9,6 +9,10 @@ existing NVFlare ``job.py``.  The user entry point is the coding agent skill:
 select the NVFlare Auto-FL skill, point it at a job, and state the objective,
 environment, and candidate budget.
 
+The skill source lives in ``skills/nvflare-autofl`` with the other NVFlare-owned
+agent skills.  When the general agent skill CLI is available, install it through
+the standard ``nvflare agent skills`` workflow for the target coding agent.
+
 NVFlare does not add a separate public Auto-FL command family for this workflow.
 Instead, NVFlare provides the deterministic import, reviewable
 ``autofl.yaml`` contract, execution substrate, policy boundaries, artifacts,

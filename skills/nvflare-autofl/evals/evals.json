@@ -1,0 +1,113 @@
+{
+  "skill_name": "nvflare-autofl",
+  "evals": [
+    {
+      "id": "autofl-optimize-existing-job",
+      "prompt": "Use NVFLARE Auto-FL to optimize ./job.py for validation accuracy in simulation with an 8-candidate budget.",
+      "expected_output": "The agent invokes the NVFLARE Auto-FL skill, imports job.py into autofl.yaml, summarizes editable/unresolved/allowed campaign settings, and then runs bounded candidates through existing FLARE execution surfaces.",
+      "files": [],
+      "assertions": [
+        "The agent generates autofl.yaml before editing files.",
+        "The agent summarizes editable settings, unresolved fields, fixed-budget constraints, and allowed edit paths.",
+        "The agent runs candidates using the existing job.py rather than replacing it with autofl.yaml.",
+        "The agent records candidate results and reports the best reproducible candidate."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-autofl",
+        "mandatory_behavior": [
+          {
+            "id": "deterministic-import-first",
+            "description": "runs deterministic job import before candidate edits"
+          },
+          {
+            "id": "campaign-summary-before-runs",
+            "description": "shows editable, unresolved, allowed, and fixed-budget campaign fields before running candidates"
+          },
+          {
+            "id": "bounded-edit-surface",
+            "description": "edits only files allowed by autofl.yaml"
+          },
+          {
+            "id": "existing-flare-execution",
+            "description": "uses job.py and standard FLARE execution surfaces for candidate runs"
+          }
+        ],
+        "prohibited_behavior": [
+          {
+            "id": "no-autofl-yaml-as-exported-job",
+            "description": "does not treat autofl.yaml as a replacement for job.py or an exported FLARE job"
+          },
+          {
+            "id": "no-policy-bypass",
+            "description": "does not bypass startup-kit authentication, site policy, or normal job submission for production runs"
+          },
+          {
+            "id": "no-out-of-scope-edits",
+            "description": "does not edit outside the allowed edit paths"
+          }
+        ],
+        "process_metrics": [
+          {
+            "id": "import_before_edit",
+            "description": "whether deterministic import occurs before candidate code edits"
+          },
+          {
+            "id": "fixed_budget_violation_count",
+            "description": "number of candidate runs that changed fixed-budget fields without user approval"
+          },
+          {
+            "id": "metric_extraction_success",
+            "description": "whether the requested metric is extracted from NVFLARE artifacts or logs"
+          },
+          {
+            "id": "unwanted_production_action_count",
+            "description": "number of production submissions or policy-sensitive actions performed without explicit user context"
+          },
+          {
+            "id": "report_reproducibility",
+            "description": "whether the final report includes commands, artifacts, changed files, and the best candidate"
+          }
+        ]
+      }
+    },
+    {
+      "id": "autofl-negative-pytorch-conversion",
+      "prompt": "Convert this standalone PyTorch training script into an NVFLARE federated job.",
+      "expected_output": "The Auto-FL skill should not be the lead; a conversion skill should handle the request before Auto-FL is applicable.",
+      "files": [],
+      "assertions": [
+        "The selected skill is nvflare-convert-pytorch, not nvflare-autofl."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-pytorch",
+        "negative_for": "nvflare-autofl"
+      }
+    },
+    {
+      "id": "autofl-negative-diagnose-job",
+      "prompt": "My NVFLARE job failed with EXECUTION_EXCEPTION. Diagnose the client logs and tell me what went wrong.",
+      "expected_output": "The Auto-FL skill should not be the lead; failed-job diagnosis should route to nvflare-diagnose-job.",
+      "files": [],
+      "assertions": [
+        "The selected skill is nvflare-diagnose-job, not nvflare-autofl."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-diagnose-job",
+        "negative_for": "nvflare-autofl"
+      }
+    },
+    {
+      "id": "autofl-global-negative-web-app",
+      "prompt": "Build a React landing page for a bakery.",
+      "expected_output": "No FLARE skill should trigger.",
+      "files": [],
+      "assertions": [
+        "The selected skill is none."
+      ],
+      "nvflare": {
+        "expected_skill": null,
+        "negative_for": "*"
+      }
+    }
+  ]
+}

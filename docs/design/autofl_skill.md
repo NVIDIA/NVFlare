@@ -17,7 +17,8 @@ Auto-FL an NVFlare-owned feature.
 
 The first production-oriented slice includes:
 
-- A bundled `nvflare-autofl` agent skill.
+- A root `skills/nvflare-autofl` agent skill that follows the NVFLARE skills
+  layout used by the general agent-skills work.
 - A deterministic `job.py` importer that emits reviewable `autofl.yaml` for the
   Auto-FL campaign.
 - A trust contract in `autofl.yaml` showing editable campaign settings,
@@ -112,6 +113,6 @@ promotion command is needed.
   review and candidate comparability?
 - Which exported-job fields should be used as validation evidence versus static
   `job.py` parsing for authoring intent?
-- Is the skill installer target behavior acceptable, or should NVFlare add a
-  dedicated generic agent-skill install command in a follow-up?
+- Does the Auto-FL skill pass the general NVFLARE skill frontmatter, trigger,
+  and eval checks after it lands under `skills/nvflare-autofl`?
 - Which metric/artifact extraction gaps should become stable NVFlare APIs next?
