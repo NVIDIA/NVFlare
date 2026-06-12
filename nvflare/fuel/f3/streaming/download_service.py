@@ -395,6 +395,7 @@ class _Transaction:
             raise ValueError(f"progress_interval must be non-negative, got {progress_interval}")
         self.progress_interval = float(progress_interval)
         self.refs = []
+        self._refs_lock = threading.Lock()
         self.logger = get_obj_logger(self)
 
     def mark_active(self):
@@ -429,10 +430,15 @@ class _Transaction:
         Returns:
 
         """
-        r = _Ref(self, obj, ref_id)
-        self.refs.append(r)
-        obj.set_transaction(self.tid, r.rid)
+        with self._refs_lock:
+            r = _Ref(self, obj, ref_id)
+            self.refs.append(r)
+            obj.set_transaction(self.tid, r.rid)
         return r
+
+    def snapshot_refs(self):
+        with self._refs_lock:
+            return list(self.refs)
 
     def timed_out(self):
         """Called when the transaction is timed out.
@@ -447,7 +453,7 @@ class _Transaction:
         if self.num_receivers <= 0:
             return False
 
-        for ref in self.refs:
+        for ref in self.snapshot_refs():
             assert isinstance(ref, _Ref)
             if ref.num_receivers_done < self.num_receivers:
                 return False
@@ -455,9 +461,10 @@ class _Transaction:
 
     def transaction_done(self, status: str):
         """Called when the transaction is finished."""
+        refs = self.snapshot_refs()
         progress_state = self._progress_state_for_transaction_status(status)
         if progress_state:
-            for ref in self.refs:
+            for ref in refs:
                 ref.emit_terminal_progress_for_started_receivers(progress_state)
 
         elapsed = time.time() - self.start_time
@@ -473,9 +480,9 @@ class _Transaction:
         # (CacheableObject.clear_cache()); the source object itself is released
         # via obj.release() AFTER the callback so the callback can still
         # observe it (e.g. for memory-GC notifications).
-        base_objs = [ref.obj.base_obj for ref in self.refs]
+        base_objs = [ref.obj.base_obj for ref in refs]
 
-        for ref in self.refs:
+        for ref in refs:
             obj = ref.obj
             assert isinstance(obj, Downloadable)
             obj.transaction_done(self.tid, status)
@@ -486,7 +493,7 @@ class _Transaction:
         # Release source objects after the callback so the callback can still
         # reference them.  This drops the last infrastructure reference to
         # large objects (e.g. numpy dicts) allowing GC to reclaim them.
-        for ref in self.refs:
+        for ref in refs:
             ref.obj.release()
 
     def emit_progress_event(self, event: dict):
@@ -522,7 +529,7 @@ class TransactionInfo:
     def __init__(self, tx: _Transaction):
         self.timeout = tx.timeout
         self.num_receivers = tx.num_receivers
-        self.objects = [r.obj for r in tx.refs]
+        self.objects = [r.obj for r in tx.snapshot_refs()]
 
 
 class DownloadService:
@@ -644,7 +651,7 @@ class DownloadService:
 
         # remove all refs
         now = time.time() if tombstone_finished_refs else None
-        for r in tx.refs:
+        for r in tx.snapshot_refs():
             cls._ref_table.pop(r.rid, None)
             if tombstone_finished_refs:
                 cls._finished_refs[r.rid] = _FinishedRef(dict(r.receiver_statuses), now)

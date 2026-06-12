@@ -21,7 +21,11 @@ import pytest
 from nvflare.client import flare_agent as flare_agent_module
 from nvflare.client.flare_agent import FlareAgent, _ReverseResultUploadProgressTracker, _TaskContext
 from nvflare.fuel.f3.streaming.download_service import TransactionDoneStatus
-from nvflare.fuel.f3.streaming.transfer_progress import DIRECTION_RESULT_UPLOAD, TransferProgressState
+from nvflare.fuel.f3.streaming.transfer_progress import (
+    DIRECTION_RESULT_UPLOAD,
+    TransferProgressState,
+    TransferProgressUpdate,
+)
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import (
     RESULT_UPLOAD_PROGRESS_CTX_KEY,
@@ -478,6 +482,44 @@ def test_result_upload_completion_grace_waits_for_callback_then_succeeds_without
     decision = tracker.decide()
     assert decision.done is True
     assert decision.success is True
+
+
+def test_result_upload_late_accepted_success_update_does_not_restart_completion_grace(monkeypatch):
+    clock = FakeClock()
+    tracker = _make_tracker(clock=clock, idle_timeout=10.0)
+    _register(tracker, created_time=clock.now)
+    _progress(
+        tracker,
+        sequence=1,
+        bytes_done=100,
+        state=TransferProgressState.COMPLETED,
+        timestamp=clock.now,
+    )
+
+    decision = tracker.decide()
+    assert decision.reason == "completion_grace"
+    grace_started = tracker.all_success_since
+    record = tracker._get_record(("tx-1", "ref-1", None))
+
+    monkeypatch.setattr(
+        tracker.progress_tracker,
+        "update",
+        lambda **kwargs: TransferProgressUpdate(accepted=True, progressed=False, record=record),
+    )
+    clock.advance(5.0)
+    accepted, reason = tracker.update(
+        tx_id="tx-1",
+        transfer_id="ref-1",
+        receiver_id=None,
+        sequence=2,
+        bytes_done=100,
+        items_done=None,
+        state=TransferProgressState.COMPLETED,
+        timestamp=clock.now,
+    )
+
+    assert accepted, reason
+    assert tracker.all_success_since == grace_started
 
 
 def test_result_upload_all_completed_wins_over_late_timeout_callback():

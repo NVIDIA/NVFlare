@@ -127,7 +127,8 @@ class _ReverseResultUploadProgressTracker:
             )
             if result.accepted:
                 self.record_keys[key] = (record_job_id, record_task_id)
-                self.all_success_since = None
+                if not self._all_expected_terminal_success():
+                    self.all_success_since = None
             return result.accepted, result.reason
 
     def decide(self, callback_fired: bool = False, callback_status: Optional[str] = None):

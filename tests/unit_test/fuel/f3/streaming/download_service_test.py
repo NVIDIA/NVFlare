@@ -478,6 +478,27 @@ class TestDownloadService:
         assert result["ref_id"] not in service._ref_table
         assert obj.transaction_done_calls == [(tx.tid, TransactionDoneStatus.DELETED)]
 
+    def test_transaction_done_uses_ref_snapshot_when_refs_grow_during_callback(self):
+        """A late ref append must not be visited by an in-flight transaction_done() iteration."""
+        from nvflare.fuel.f3.streaming.download_service import _Transaction
+
+        tx = _Transaction(timeout=10.0, num_receivers=1)
+        late_obj = MockDownloadable([b"late"])
+
+        class AppendRefOnDone(MockDownloadable):
+            def transaction_done(self, transaction_id: str, status: str):
+                super().transaction_done(transaction_id, status)
+                tx.add_object(late_obj)
+
+        first_obj = AppendRefOnDone([b"first"])
+        tx.add_object(first_obj)
+
+        tx.transaction_done(TransactionDoneStatus.FINISHED)
+
+        assert first_obj.transaction_done_calls == [(tx.tid, TransactionDoneStatus.FINISHED)]
+        assert late_obj.transaction_done_calls == []
+        assert len(tx.snapshot_refs()) == 2
+
     def test_shutdown_clears_initialized_cells(self):
         """A new cell allocated after shutdown must register callbacks even if an old cell was initialized."""
         service = _make_isolated_download_service()

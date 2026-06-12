@@ -350,6 +350,23 @@ def test_task_send_no_progress_budget_is_unbounded_when_peer_read_timeout_disabl
     assert executor._get_task_send_peer_read_timeout() == task_exchanger_module.STREAM_PROGRESS_COMPLETION_ACK_GRACE
 
 
+def test_streaming_timeout_snapshot_is_immutable_copy():
+    executor = TaskExchanger(
+        pipe_id="pipe",
+        peer_read_timeout=10.0,
+        peer_read_timeout_explicit=True,
+        streaming_idle_timeout=600.0,
+    )
+
+    snapshot = executor._get_streaming_timeout_snapshot()
+    executor.peer_read_timeout = 20.0
+    executor.streaming_idle_timeout = 30.0
+
+    assert snapshot.peer_read_timeout_explicit is True
+    assert snapshot.peer_read_timeout == 10.0
+    assert snapshot.streaming_idle_timeout == 600.0
+
+
 def test_task_send_peer_read_timeout_disabled_polls_without_startup_budget(monkeypatch):
     logs = _patch_logs(monkeypatch)
     now = [1000.0]
