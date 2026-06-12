@@ -282,6 +282,14 @@ class FedAvgRecipe(Recipe):
         self.enable_tensor_disk_offload = v.enable_tensor_disk_offload
         self.client_memory_gc_rounds = v.client_memory_gc_rounds
         self.cuda_empty_cache = v.cuda_empty_cache
+        if self.enable_tensor_disk_offload and self.server_expected_format != ExchangeFormat.PYTORCH:
+            warnings.warn(
+                "enable_tensor_disk_offload=True only applies to streamed PyTorch tensors. "
+                "Set server_expected_format=ExchangeFormat.PYTORCH to enable tensor disk offload; "
+                f"current server_expected_format={self.server_expected_format!r} will not offload NumPy payloads.",
+                UserWarning,
+                stacklevel=2,
+            )
 
         # Validate that we have at least one model source
         # Note: Subclasses (e.g., sklearn) that manage models differently should pass

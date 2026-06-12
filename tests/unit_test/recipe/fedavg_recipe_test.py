@@ -18,6 +18,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import torch.nn as nn
 
+from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.abstract.model_locator import ModelLocator
@@ -28,10 +29,12 @@ from nvflare.app_common.executors.client_api_launcher_executor import ClientAPIL
 from nvflare.app_common.executors.launcher_executor import LauncherExecutor
 from nvflare.app_common.np.recipes import NumpyFedAvgRecipe
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
+from nvflare.app_common.widgets.metrics_artifact_writer import MetricsArtifactWriter
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.client.config import ConfigKey
 from nvflare.client.constants import CLIENT_API_CONFIG
 from nvflare.fuel.utils.class_utils import instantiate_class
+from nvflare.job_config.base_fed_job import BaseFedJob
 
 
 class SimpleTestModel(nn.Module):
@@ -86,6 +89,12 @@ class InvalidAggregator:
 
     def __init__(self):
         pass
+
+
+class CustomMetricSelector(FLComponent):
+    def __init__(self, key_metric):
+        super().__init__()
+        self.key_metric = key_metric
 
 
 class DummyPersistor(ModelPersistor):
@@ -159,6 +168,11 @@ def get_server_component(recipe, component_id):
     return server_app.app_config.components.get(component_id)
 
 
+def get_server_component_from_job(job, component_id):
+    server_app = job._deploy_map[SERVER_SITE_NAME]
+    return server_app.app_config.components.get(component_id)
+
+
 def get_server_controller(recipe):
     server_app = recipe.job._deploy_map[SERVER_SITE_NAME]
     return server_app.app_config.workflows[0].controller
@@ -219,6 +233,18 @@ class TestFedAvgRecipe:
         # When no aggregator is passed, built-in weighted averaging is used
         assert recipe.aggregator is None
 
+    def test_tensor_disk_offload_warns_when_server_format_is_not_pytorch(
+        self, mock_file_system, base_recipe_params, simple_model
+    ):
+        """Tensor disk offload only applies to PyTorch tensor payloads."""
+        with pytest.warns(UserWarning, match="only applies to streamed PyTorch tensors"):
+            FedAvgRecipe(
+                name="test_fedavg_offload_numpy_warning",
+                model=simple_model,
+                enable_tensor_disk_offload=True,
+                **base_recipe_params,
+            )
+
     def test_key_metric_passthrough_pt(self, mock_file_system, base_recipe_params, simple_model):
         key_metric = "val_auc"
         recipe = FedAvgRecipe(
@@ -228,6 +254,19 @@ class TestFedAvgRecipe:
         model_selector = get_model_selector(recipe)
         assert isinstance(model_selector, IntimeModelSelector)
         assert model_selector.key_metric == key_metric
+        metrics_writer = get_server_component(recipe, "metrics_artifact_writer")
+        assert isinstance(metrics_writer, MetricsArtifactWriter)
+        assert not hasattr(metrics_writer, "key_metric")
+
+    def test_metrics_writer_does_not_copy_policy_from_custom_selector(self):
+        key_metric = "custom_score"
+        job = BaseFedJob(
+            name="test_custom_selector_policy", min_clients=2, model_selector=CustomMetricSelector(key_metric)
+        )
+
+        metrics_writer = get_server_component_from_job(job, "metrics_artifact_writer")
+        assert isinstance(metrics_writer, MetricsArtifactWriter)
+        assert not hasattr(metrics_writer, "key_metric")
 
     def test_best_model_filename_passthrough_pt(self, mock_file_system, base_recipe_params, simple_model):
         """best_model_filename should configure the generated PT persistor's best model artifact."""
