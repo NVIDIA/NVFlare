@@ -363,6 +363,9 @@ def _handle_agent_skills_cmd(args, handle_schema_flag, output_error_message, out
                 dry_run=getattr(args, "dry_run", False),
                 target_dir=getattr(args, "target", None),
             )
+        except FileNotFoundError as e:
+            _output_agent_skill_source_error(output_error_message, e)
+            return
         except ValueError as e:
             _output_agent_skill_target_error(output_error_message, getattr(args, "target", None), e)
             return
@@ -414,6 +417,9 @@ def _handle_agent_skills_cmd(args, handle_schema_flag, output_error_message, out
         )
         try:
             data = list_skills(agent=args.agent, target_dir=getattr(args, "target", None))
+        except FileNotFoundError as e:
+            _output_agent_skill_source_error(output_error_message, e)
+            return
         except ValueError as e:
             _output_agent_skill_target_error(output_error_message, getattr(args, "target", None), e)
             return
@@ -585,6 +591,18 @@ def _output_agent_skill_target_error(output_error_message, target, error: ValueE
     )
 
 
+def _output_agent_skill_source_error(output_error_message, error: FileNotFoundError) -> None:
+    output_error_message(
+        "AGENT_SKILL_SOURCE_UNAVAILABLE",
+        "NVFLARE bundled agent skills are unavailable.",
+        "Install NVFLARE from a source checkout or an unpacked wheel, then retry the agent skills command.",
+        exit_code=1,
+        detail=str(error),
+        include_data=True,
+        recovery_category="ENVIRONMENT_FAILURE",
+    )
+
+
 def _schema_agent_skills_sub_cmd(argv: list[str]) -> Optional[str]:
     token = _raw_schema_agent_skills_sub_cmd(argv)
     return token if token in _agent_skills_sub_cmd_parsers else None
@@ -620,7 +638,7 @@ def _raw_schema_agent_skills_sub_cmd(argv: list[str]) -> Optional[str]:
             index += 1 if "=" in token else 2
             continue
         if token.startswith("-"):
-            index += 2
+            index += 1
             continue
         return token
     return None

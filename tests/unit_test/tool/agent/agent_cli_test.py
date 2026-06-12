@@ -473,6 +473,8 @@ def test_agent_skills_schema_subcommand_does_not_scan_option_values():
     assert _schema_agent_skills_sub_cmd(["agent", "skills", "--schema", "install"]) == "install"
     assert _schema_agent_skills_sub_cmd(["agent", "skills", "--schema", "--format", "json", "install"]) == "install"
     assert _schema_agent_skills_sub_cmd(["agent", "skills", "--schema", "--format=json", "list"]) == "list"
+    assert _schema_agent_skills_sub_cmd(["agent", "skills", "--unknown-flag", "install", "--schema"]) == "install"
+    assert _schema_agent_skills_sub_cmd(["agent", "skills", "--unknown-flag", "list", "--schema"]) == "list"
     assert _schema_agent_skills_sub_cmd(["agent", "skills", "benchmark", "--schema"]) is None
     assert _schema_agent_skills_sub_cmd(["agent", "--target", "skills", "skills", "install", "--schema"]) == "install"
     assert _schema_agent_skills_sub_cmd(["agent", "skills", "--skill", "benchmark", "--schema"]) is None
@@ -505,6 +507,26 @@ def test_agent_skills_missing_named_skill_is_structured_json_error(capsys, monke
     assert payload["error_code"] == "AGENT_SKILL_NOT_FOUND"
     assert "code" not in payload
     assert payload["data"]["missing"] == ["nvflare-missing"]
+
+
+@pytest.mark.parametrize("subcommand", ["install", "list"])
+def test_agent_skills_source_unavailable_is_structured_json_error(capsys, monkeypatch, subcommand):
+    from nvflare.tool.agent import skill_manager
+
+    def _raise_source_error():
+        raise FileNotFoundError("bundled agent skills must be available from an unpacked filesystem package")
+
+    monkeypatch.setattr(skill_manager, "find_skill_source", _raise_source_error)
+
+    exit_code = _run_main(["nvflare", "agent", "skills", subcommand, "--agent", "codex", "--format", "json"])
+
+    assert exit_code == 1
+    payload = _load_single_stdout_json(capsys.readouterr())
+    _assert_envelope_shape(payload, "error")
+    assert payload["error_code"] == "AGENT_SKILL_SOURCE_UNAVAILABLE"
+    assert payload["recovery_category"] == "ENVIRONMENT_FAILURE"
+    assert payload["data"] is None
+    assert "unpacked filesystem package" in payload["message"]
 
 
 def test_agent_skills_install_failure_is_structured_json_error(capsys, monkeypatch, tmp_path):
