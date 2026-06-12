@@ -1452,6 +1452,7 @@ class TestK8sJobLauncherInit:
         # study_data.yaml is populated lazily
         assert launcher.study_data_pvc_dict is None
         assert launcher.study_job_spec_dict is None
+        assert launcher.pod_manifest_template_dict == {}
 
     def test_init_stores_custom_workspace_mount_path(self):
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
@@ -1493,6 +1494,16 @@ class TestK8sJobLauncherInit:
                 config_file_path="/fake/kube/config",
                 study_data_pvc_file_path="/fake/study_data.yaml",
                 study_job_spec_file_path=study_job_spec_file_path,
+            )
+
+    @pytest.mark.parametrize("study_data_pvc_file_path", ["", 1, False])
+    def test_init_rejects_invalid_study_data_pvc_file_path(self, study_data_pvc_file_path):
+        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
+
+        with pytest.raises(ValueError, match="study_data_pvc_file_path"):
+            ClientK8sJobLauncher(
+                config_file_path="/fake/kube/config",
+                study_data_pvc_file_path=study_data_pvc_file_path,
             )
 
     def test_init_rejects_empty_ephemeral_storage(self):
@@ -2139,6 +2150,68 @@ spec:
             assert volume_names == {"workspace-job", "startup-kit"}
             assert mount_names == {"workspace-job", "startup-kit"}
             _mock_study_data_yaml.safe_load.assert_not_called()
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_template_is_cached_per_launcher(self, tmp_path):
+        from nvflare.app_opt.job_launcher import k8s_launcher as k8s_launcher_module
+        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
+
+        pod_file = tmp_path / "study-a-pod.yaml"
+        pod_file.write_text(
+            """
+apiVersion: v1
+kind: Pod
+spec:
+  serviceAccountName: first-sa
+  containers:
+    - name: nvflare_job
+      image: template-image
+""",
+            encoding="utf-8",
+        )
+        study_job_spec_file = tmp_path / "study_job_spec.yaml"
+        study_job_spec_file.write_text(f"study-a: {pod_file}\n", encoding="utf-8")
+
+        patches = _make_k8s_launcher_patches(patch_open=False)
+        _mock_study_data_yaml, mock_core_cls, mock_transfer_cls, *_ = _enter_patches(patches)
+        try:
+            mock_api = MagicMock()
+            mock_core_cls.return_value = mock_api
+            mock_transfer = MagicMock()
+            mock_transfer_cls.get_or_create.return_value = mock_transfer
+            mock_transfer.owner_fqcn = "site-1.parent"
+            mock_transfer.add_job.return_value = "transfer-token"
+            self._prime_running(mock_api)
+
+            launcher = ClientK8sJobLauncher(
+                config_file_path="/fake/kube/config",
+                study_data_pvc_file_path=None,
+                namespace="test-ns",
+                study_job_spec_file_path=str(study_job_spec_file),
+            )
+
+            with patch.object(
+                k8s_launcher_module, "load_pod_spec_file", wraps=k8s_launcher_module.load_pod_spec_file
+            ) as mock_load_pod_spec:
+                launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx())
+                pod_file.write_text(
+                    """
+apiVersion: v1
+kind: Pod
+spec:
+  serviceAccountName: second-sa
+  containers:
+    - name: nvflare_job
+      image: template-image
+""",
+                    encoding="utf-8",
+                )
+                launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx())
+
+            assert mock_load_pod_spec.call_count == 1
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            assert manifest["spec"]["serviceAccountName"] == "first-sa"
         finally:
             _exit_patches(patches)
 

@@ -894,6 +894,10 @@ class K8sJobLauncher(JobLauncherSpec):
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
         self.config_file_path = config_file_path
+        if study_data_pvc_file_path is not None and (
+            not isinstance(study_data_pvc_file_path, str) or not study_data_pvc_file_path
+        ):
+            raise ValueError("study_data_pvc_file_path must be a non-empty string or None")
         self.study_data_pvc_file_path = study_data_pvc_file_path
         if study_job_spec_file_path is not None and (
             not isinstance(study_job_spec_file_path, str) or not study_job_spec_file_path
@@ -918,6 +922,7 @@ class K8sJobLauncher(JobLauncherSpec):
         self.image_pull_secrets = _normalize_image_pull_secrets(image_pull_secrets)
         self.study_data_pvc_dict = None
         self.study_job_spec_dict = None
+        self.pod_manifest_template_dict = {}
         self.core_v1 = None
 
     def _get_pod_manifest_template(self, study: str):
@@ -930,7 +935,9 @@ class K8sJobLauncher(JobLauncherSpec):
         )
         if not pod_spec_file_path:
             return None
-        return load_pod_spec_file(pod_spec_file_path)
+        if pod_spec_file_path not in self.pod_manifest_template_dict:
+            self.pod_manifest_template_dict[pod_spec_file_path] = load_pod_spec_file(pod_spec_file_path)
+        return self.pod_manifest_template_dict[pod_spec_file_path]
 
     def _ensure_startup_secret(self, site_name: str, startup_dir: str) -> str:
         """Create or update a k8s Secret containing the site startup kit.

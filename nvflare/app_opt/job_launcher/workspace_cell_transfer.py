@@ -26,8 +26,10 @@ so large bundles move in chunks instead of being buffered into a single message.
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import os
+import posixpath
 import secrets
 import shutil
 import stat
@@ -37,6 +39,8 @@ import time
 import zipfile
 from dataclasses import dataclass
 from pathlib import PurePosixPath
+
+import yaml
 
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
@@ -67,7 +71,9 @@ BOOTSTRAP_CONNECT_TIMEOUT = 30.0
 BOOTSTRAP_CONNECT_POLL_INTERVAL = 0.1
 
 _BOOTSTRAP_CELL_PREFIX = "ws_transfer_"
-_WORKSPACE_DOWNLOAD_EXCLUDES = frozenset({"local/study_data.yaml", "local/study_job_spec.yaml"})
+_DEFAULT_WORKSPACE_DOWNLOAD_EXCLUDES = frozenset({"local/study_data.yaml", "local/study_job_spec.yaml"})
+_RESOURCE_CONFIG_NAMES = ("resources.json", "resources.json.default")
+_K8S_LAUNCHER_COMPONENT_ID = "k8s_launcher"
 
 
 @dataclass
@@ -77,6 +83,120 @@ class _JobTransferRecord:
     transfer_token: str
     download_tx_id: str = ""
     download_bundle_path: str = ""
+
+
+def _safe_rel_path(path: str) -> str | None:
+    if not isinstance(path, str) or not path:
+        return None
+    normalized = posixpath.normpath(path.replace("\\", "/").replace(os.sep, "/"))
+    if normalized in ("", "."):
+        return None
+    rel_path = PurePosixPath(normalized)
+    if rel_path.is_absolute() or ".." in rel_path.parts:
+        return None
+    return normalized
+
+
+def _config_path_to_workspace_rel(
+    path: str, workspace_root: str, workspace_mount_path: str | None = None
+) -> str | None:
+    if not isinstance(path, str) or not path:
+        return None
+    normalized = path.replace("\\", "/").replace(os.sep, "/")
+    if not posixpath.isabs(normalized):
+        return _safe_rel_path(normalized)
+
+    prefixes = []
+    if isinstance(workspace_mount_path, str) and workspace_mount_path:
+        prefixes.append(workspace_mount_path.replace("\\", "/").replace(os.sep, "/").rstrip("/"))
+    prefixes.append(os.path.abspath(workspace_root).replace(os.sep, "/").rstrip("/"))
+
+    for prefix in prefixes:
+        if normalized.startswith(f"{prefix}/"):
+            return _safe_rel_path(normalized[len(prefix) + 1 :])
+    return None
+
+
+def _load_resource_config(path: str) -> dict | None:
+    try:
+        with open(path, "rt") as f:
+            resource_config = json.load(f)
+    except FileNotFoundError:
+        return None
+    except Exception as e:
+        logger.debug("could not inspect resource config '%s' for workspace download excludes: %s", path, e)
+        return None
+    return resource_config if isinstance(resource_config, dict) else None
+
+
+def _iter_k8s_launcher_args(workspace_root: str):
+    local_dir = os.path.join(workspace_root, "local")
+    for resource_config_name in _RESOURCE_CONFIG_NAMES:
+        resource_config = _load_resource_config(os.path.join(local_dir, resource_config_name))
+        if not resource_config:
+            continue
+        components = resource_config.get("components")
+        if not isinstance(components, list):
+            continue
+        for component in components:
+            if not isinstance(component, dict) or component.get("id") != _K8S_LAUNCHER_COMPONENT_ID:
+                continue
+            args = component.get("args")
+            if isinstance(args, dict):
+                yield args
+
+
+def _resolve_study_job_spec_entry_rel(
+    pod_spec_file: str, mapping_rel_path: str, workspace_root: str, workspace_mount_path: str | None
+) -> str | None:
+    if not isinstance(pod_spec_file, str) or not pod_spec_file:
+        return None
+    if posixpath.isabs(pod_spec_file):
+        return _config_path_to_workspace_rel(pod_spec_file, workspace_root, workspace_mount_path)
+    mapping_dir = str(PurePosixPath(mapping_rel_path).parent)
+    if mapping_dir == ".":
+        mapping_dir = ""
+    return _safe_rel_path(posixpath.join(mapping_dir, pod_spec_file.replace("\\", "/").replace(os.sep, "/")))
+
+
+def _add_study_job_spec_excludes(
+    excluded_paths: set[str], workspace_root: str, mapping_rel_path: str, workspace_mount_path: str | None
+) -> None:
+    mapping_abs_path = os.path.join(workspace_root, *PurePosixPath(mapping_rel_path).parts)
+    try:
+        with open(mapping_abs_path, "rt") as f:
+            study_job_spec = yaml.safe_load(f)
+    except FileNotFoundError:
+        return
+    except Exception as e:
+        logger.debug("could not inspect study job spec '%s' for workspace download excludes: %s", mapping_abs_path, e)
+        return
+    if not isinstance(study_job_spec, dict):
+        return
+    for pod_spec_file in study_job_spec.values():
+        pod_spec_rel_path = _resolve_study_job_spec_entry_rel(
+            pod_spec_file, mapping_rel_path, workspace_root, workspace_mount_path
+        )
+        if pod_spec_rel_path:
+            excluded_paths.add(pod_spec_rel_path)
+
+
+def _workspace_download_excludes(workspace_root: str) -> frozenset[str]:
+    excluded_paths = set(_DEFAULT_WORKSPACE_DOWNLOAD_EXCLUDES)
+    for args in _iter_k8s_launcher_args(workspace_root):
+        workspace_mount_path = args.get("workspace_mount_path")
+        study_data_rel_path = _config_path_to_workspace_rel(
+            args.get("study_data_pvc_file_path"), workspace_root, workspace_mount_path
+        )
+        if study_data_rel_path:
+            excluded_paths.add(study_data_rel_path)
+        study_job_spec_rel_path = _config_path_to_workspace_rel(
+            args.get("study_job_spec_file_path"), workspace_root, workspace_mount_path
+        )
+        if study_job_spec_rel_path:
+            excluded_paths.add(study_job_spec_rel_path)
+            _add_study_job_spec_excludes(excluded_paths, workspace_root, study_job_spec_rel_path, workspace_mount_path)
+    return frozenset(excluded_paths)
 
 
 def _write_dir_to_zip(zf: zipfile.ZipFile, src: str, root: str, excluded_paths: frozenset[str] = frozenset()) -> None:
@@ -92,8 +212,9 @@ def _write_dir_to_zip(zf: zipfile.ZipFile, src: str, root: str, excluded_paths: 
 
 
 def _zip_workspace_to_file(workspace_root: str, job_id: str, file_path: str) -> None:
+    excluded_paths = _workspace_download_excludes(workspace_root)
     with zipfile.ZipFile(file_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        _write_dir_to_zip(zf, os.path.join(workspace_root, "local"), workspace_root, _WORKSPACE_DOWNLOAD_EXCLUDES)
+        _write_dir_to_zip(zf, os.path.join(workspace_root, "local"), workspace_root, excluded_paths)
         _write_dir_to_zip(zf, os.path.join(workspace_root, job_id), workspace_root)
 
 
