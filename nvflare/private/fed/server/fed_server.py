@@ -544,6 +544,7 @@ class FederatedServer(BaseServer):
         )
 
     def create_job_cell(self, job_id, root_url, parent_url, secure_train, server_config) -> Cell:
+        server_config = server_config or {}
         my_fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
         if secure_train:
             root_cert = server_config[SecureTrainConst.SSL_ROOT_CERT]
