@@ -554,6 +554,14 @@ class TaskExchanger(Executor):
 
         now = time.time()
         records, active_records = self._get_active_task_payload_records(task_id, job_id)
+        records = [
+            record
+            for record in records
+            if not (
+                record.state in (TransferProgressState.FAILED, TransferProgressState.ABORTED)
+                and record.last_progress_time < send_start_time
+            )
+        ]
         if not records:
             elapsed = now - send_start_time
             wait_budget = self._get_task_send_startup_budget(streaming_idle_timeout, peer_read_timeout)
