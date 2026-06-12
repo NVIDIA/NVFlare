@@ -86,38 +86,40 @@ class Scaffold(BaseFedAvg):
                     "enable_tensor_disk_offload=True but no active cell is available; "
                     "falling back to in-memory tensor download"
                 )
-
-            self.info("Start FedAvg.")
-
-            for self.current_round in range(self.start_round, self.start_round + self.num_rounds):
-                self.info(f"Round {self.current_round} started.")
-                self.model.current_round = self.current_round
-
-                clients = self.sample_clients(self.num_clients)
-
-                # Add SCAFFOLD global control terms to global model meta
-                global_model = self.model
-                global_model.meta[AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL] = self._global_ctrl_weights
-
-                results = self.send_model_and_wait(targets=clients, data=global_model)
-
-                aggregate_results = self.aggregate(results, aggregate_fn=scaffold_aggregate_fn)
-
-                self.model = self.update_model(self.model, aggregate_results)
-
-                # update SCAFFOLD global controls
-                ctr_diff = aggregate_results.meta[AlgorithmConstants.SCAFFOLD_CTRL_DIFF]
-                for v_name, v_value in ctr_diff.items():
-                    self._global_ctrl_weights[v_name] += v_value
-
-                self.save_model(self.model)
-
-                # Memory cleanup at end of round (if configured)
-                self._maybe_cleanup_memory()
-
-            self.info("Finished FedAvg.")
+            self._run_rounds()
         finally:
             cleanup_tensor_disk_offload(engine=getattr(self, "engine", None), context=disk_offload_context)
+
+    def _run_rounds(self) -> None:
+        self.info("Start FedAvg.")
+
+        for self.current_round in range(self.start_round, self.start_round + self.num_rounds):
+            self.info(f"Round {self.current_round} started.")
+            self.model.current_round = self.current_round
+
+            clients = self.sample_clients(self.num_clients)
+
+            # Add SCAFFOLD global control terms to global model meta
+            global_model = self.model
+            global_model.meta[AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL] = self._global_ctrl_weights
+
+            results = self.send_model_and_wait(targets=clients, data=global_model)
+
+            aggregate_results = self.aggregate(results, aggregate_fn=scaffold_aggregate_fn)
+
+            self.model = self.update_model(self.model, aggregate_results)
+
+            # update SCAFFOLD global controls
+            ctr_diff = aggregate_results.meta[AlgorithmConstants.SCAFFOLD_CTRL_DIFF]
+            for v_name, v_value in ctr_diff.items():
+                self._global_ctrl_weights[v_name] += v_value
+
+            self.save_model(self.model)
+
+            # Memory cleanup at end of round (if configured)
+            self._maybe_cleanup_memory()
+
+        self.info("Finished FedAvg.")
 
 
 def scaffold_aggregate_fn(results: List[FLModel]) -> FLModel:
