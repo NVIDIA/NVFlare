@@ -77,7 +77,7 @@ class PipeHandler(object):
             read_interval (float): how often to read from the pipe.
             heartbeat_interval (float): how often to send a heartbeat to the peer.
             heartbeat_timeout (float): how long to wait for a heartbeat from the peer before treating the peer as gone,
-                0 means DO NOT check for heartbeat.
+                0 or None means DO NOT check for heartbeat.
             resend_interval (float): how often to resend a message if failing to send. None means no resend.
                 Note that if the pipe does not support resending, then no resend.
             max_resends (int, optional): max number of resends. None means no limit.
@@ -85,6 +85,8 @@ class PipeHandler(object):
         """
         check_positive_number("read_interval", read_interval)
         check_positive_number("heartbeat_interval", heartbeat_interval)
+        if heartbeat_timeout is None:
+            heartbeat_timeout = 0
         check_non_negative_number("heartbeat_timeout", heartbeat_timeout)
         check_object_type("pipe", pipe, Pipe)
 

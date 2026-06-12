@@ -1684,6 +1684,51 @@ def test_reverse_result_upload_refreshes_decision_after_abandon_race(monkeypatch
     assert any("already reached terminal success" in call[0][0] for call in agent.logger.info.call_args_list)
 
 
+def test_reverse_result_upload_completion_during_final_abandon_wins(monkeypatch):
+    clock = FakeClock()
+    tracker = _make_tracker(clock=clock, idle_timeout=10.0)
+    _register(tracker, created_time=clock.now)
+    agent = FlareAgent.__new__(FlareAgent)
+    agent.logger = MagicMock()
+    agent._result_upload_poll_interval = 0.001
+    progress_event = MagicMock()
+    download_done = MagicMock()
+    download_done.is_set.return_value = False
+    download_done.wait.return_value = False
+    deleted = []
+    monkeypatch.setattr(
+        "nvflare.client.flare_agent.DownloadService.delete_transaction", lambda tx_id: deleted.append(tx_id)
+    )
+    original_mark_abandoned = tracker.mark_abandoned
+
+    def _complete_before_mark_abandoned():
+        _progress(
+            tracker,
+            sequence=1,
+            bytes_done=100,
+            state=TransferProgressState.COMPLETED,
+            timestamp=clock.now,
+        )
+        return original_mark_abandoned()
+
+    tracker.mark_abandoned = _complete_before_mark_abandoned
+    agent._get_reverse_result_upload_abandon_reason = MagicMock(return_value="task pipe handler is stopping")
+
+    result = agent._wait_for_reverse_result_upload(
+        tracker,
+        progress_event,
+        download_done,
+        [None],
+        wait_start=clock.now,
+        transactions=[DownloadTransactionInfo("tx-1", (("ref-1", None),), clock.now)],
+    )
+
+    assert result is True
+    assert deleted == []
+    assert not any("abandoning result_upload wait" in call[0][0] for call in agent.logger.warning.call_args_list)
+    assert any("reached terminal success before abandonment" in call[0][0] for call in agent.logger.info.call_args_list)
+
+
 def test_reverse_result_upload_download_done_race_wins_over_abandon(monkeypatch):
     tracker = _make_tracker(idle_timeout=10.0)
     _register(tracker)

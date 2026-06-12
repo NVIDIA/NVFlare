@@ -455,7 +455,7 @@ class TaskExchanger(Executor):
         now: float,
         fl_ctx: FLContext,
         task_name: str,
-        completed_ack_budget: float,
+        completed_ack_budget: Optional[float],
     ) -> bool:
         if not records:
             return False
@@ -464,13 +464,14 @@ class TaskExchanger(Executor):
             return False
         latest_record = max(completed_records, key=lambda record: record.last_progress_time)
         elapsed = now - latest_record.last_progress_time
-        if elapsed >= completed_ack_budget:
+        if completed_ack_budget is not None and elapsed >= completed_ack_budget:
             return False
+        completed_ack_budget_text = "unbounded" if completed_ack_budget is None else f"{completed_ack_budget}s"
         self.log_info(
             fl_ctx,
             f"peer has not ACKed task '{task_name}' yet, but stream transfer "
             f"'{latest_record.transfer_id}' completed {elapsed:.2f} secs ago; continuing to wait "
-            f"until task_send_completed_ack_budget={completed_ack_budget}s",
+            f"until task_send_completed_ack_budget={completed_ack_budget_text}",
         )
         return True
 
@@ -488,8 +489,10 @@ class TaskExchanger(Executor):
     def _get_task_send_completed_ack_budget(
         streaming_idle_timeout: float,
         peer_read_timeout: Optional[float] = None,
-    ) -> float:
-        peer_read_budget = STREAM_PROGRESS_COMPLETION_ACK_GRACE if peer_read_timeout is None else peer_read_timeout
+    ) -> Optional[float]:
+        if peer_read_timeout is None:
+            return None
+        peer_read_budget = peer_read_timeout
         return min(streaming_idle_timeout, max(peer_read_budget, STREAM_PROGRESS_COMPLETION_ACK_GRACE))
 
     @staticmethod

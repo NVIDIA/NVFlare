@@ -201,6 +201,8 @@ class _ReverseResultUploadProgressTracker:
         if timestamp is None:
             timestamp = self.clock()
         with self.lock:
+            if self._all_expected_terminal_success():
+                return True
             for key in self.expected:
                 tx_id, ref_id, receiver_id = key
                 record_key = self.record_keys.get(key)
@@ -224,6 +226,7 @@ class _ReverseResultUploadProgressTracker:
                     sequence=sequence,
                     timestamp=timestamp,
                 )
+            return False
 
     def _normalize_tx_id(self, tx_id: Optional[str], transfer_id: str, receiver_id: Optional[str]):
         if tx_id is not None and (str(tx_id), transfer_id, receiver_id) in self.expected:
@@ -715,8 +718,10 @@ class FlareAgent:
 
     def _fail_reverse_download_transactions(self, tracker, transactions):
         if tracker is not None:
-            tracker.mark_abandoned()
+            if tracker.mark_abandoned():
+                return True
         self._delete_reverse_download_transactions(transactions)
+        return False
 
     def _finish_reverse_result_upload_wait(self, decision, tracker, transactions, wait_start):
         """Log the final reverse result-upload decision and fail open transactions on explicit failure."""
@@ -729,7 +734,12 @@ class FlareAgent:
             self.logger.warning(
                 f"[subprocess] result_upload progress-aware wait failed after {elapsed:.2f}s: {decision.reason}"
             )
-            self._fail_reverse_download_transactions(tracker, transactions)
+            if self._fail_reverse_download_transactions(tracker, transactions):
+                self.logger.info(
+                    "[subprocess] result_upload transactions reached terminal success while handling failure; "
+                    f"returning success after {elapsed:.2f}s"
+                )
+                return True
         return decision.success
 
     def _finish_reverse_result_upload_if_download_done(
@@ -786,8 +796,14 @@ class FlareAgent:
                     )
                     if done_result is not None:
                         return done_result
+                if self._fail_reverse_download_transactions(tracker, transactions):
+                    elapsed = tracker.clock() - wait_start
+                    self.logger.info(
+                        "[subprocess] abandon signaled, but all result_upload transactions reached terminal success "
+                        f"before abandonment after {elapsed:.2f}s; returning success: {abandon_reason}"
+                    )
+                    return True
                 self.logger.warning(f"[subprocess] abandoning result_upload wait: {abandon_reason}")
-                self._fail_reverse_download_transactions(tracker, transactions)
                 return False
             if decision.reason == "completion_grace":
                 remaining_grace = tracker.completion_grace_remaining()
