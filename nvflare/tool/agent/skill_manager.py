@@ -177,13 +177,17 @@ def list_skills(*, agent: str, target_dir: Optional[Path | str] = None, source: 
             errors.append(_list_error(str(target), e))
             children = []
         for child in children:
-            if child.name.startswith("."):
-                continue
-            if child.is_symlink():
-                if child.name in available_names:
-                    conflicts.append(_target_symlink_conflict(child.name, child, child))
-                continue
-            if not child.is_dir():
+            try:
+                if child.name.startswith("."):
+                    continue
+                if child.is_symlink():
+                    if child.name in available_names:
+                        conflicts.append(_target_symlink_conflict(child.name, child, child))
+                    continue
+                if not child.is_dir():
+                    continue
+            except OSError as e:
+                errors.append(_list_error(str(child), e))
                 continue
             install_manifest = _read_install_manifest(child)
             if install_manifest and install_manifest.get("managed_by") == "nvflare":

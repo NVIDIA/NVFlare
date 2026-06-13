@@ -860,6 +860,35 @@ def test_list_skills_reports_unreadable_target_as_structured_error(tmp_path, mon
     ]
 
 
+def test_list_skills_reports_unreadable_child_as_structured_error(tmp_path, monkeypatch):
+    source = _skill_source(tmp_path)
+    target = tmp_path / "target"
+    target.mkdir()
+    child = target / "nvflare-test-skill"
+    child.mkdir()
+    original_is_symlink = type(child).is_symlink
+
+    def fake_is_symlink(path):
+        if path == child:
+            raise PermissionError("permission denied")
+        return original_is_symlink(path)
+
+    monkeypatch.setattr(type(child), "is_symlink", fake_is_symlink)
+
+    data = list_skills(agent="codex", target_dir=target, source=source)
+
+    assert data["installed"] == []
+    assert data["conflicts"] == []
+    assert data["errors"] == [
+        {
+            "target": str(child),
+            "code": "skill_list_failed",
+            "type": "PermissionError",
+            "message": "permission denied",
+        }
+    ]
+
+
 def test_list_skills_flags_name_overlap_external_skill_as_conflict(tmp_path):
     source = _skill_source(tmp_path)
     target = tmp_path / "target"
