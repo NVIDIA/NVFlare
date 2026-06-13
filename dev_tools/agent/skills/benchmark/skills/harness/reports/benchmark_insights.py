@@ -133,6 +133,17 @@ def truncate(value: Any, limit: int = 180) -> str:
     return text[: max(0, limit - 3)].rstrip() + "..."
 
 
+def inline_code_text(value: Any, limit: int = 180) -> str:
+    text = re.sub(
+        r"<<\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1\n.*?\n\2(?=\s|$)",
+        lambda match: f"<<{match.group(1)}{match.group(2)}{match.group(1)} ... {match.group(2)}",
+        str(value or "").strip(),
+        flags=re.DOTALL,
+    )
+    text = re.sub(r"\s+", " ", text).replace("`", "'")
+    return truncate(text, limit)
+
+
 def first_non_empty(*values: Any) -> Any:
     for value in values:
         if value is not None and value != "":
@@ -592,9 +603,72 @@ def _first_command_name(command: str) -> str:
     return Path(tokens[0]).name.lower() if tokens else ""
 
 
-def _shell_command_segments(command: str) -> list[str]:
+def _strip_quoted(text: str) -> str:
+    """Remove single/double quoted spans so quoted text is not mistaken for shell syntax."""
+    out: list[str] = []
+    quote = ""
+    for ch in text:
+        if quote:
+            if ch == quote:
+                quote = ""
+            continue
+        if ch in ("'", '"'):
+            quote = ch
+            continue
+        out.append(ch)
+    return "".join(out)
+
+
+def _shell_command_parts(command: str) -> list[tuple[str, str]]:
+    """Split a command into (segment, operator_after) pairs, honoring shell quoting.
+
+    Only unquoted ``&&``, ``||`` and ``;`` separate segments; operators inside quoted
+    strings (e.g. an ``rg`` search pattern) stay within the segment. ``operator_after`` is
+    the operator that joins the segment to the next one ("" for the final segment).
+    """
     text = _classification_command(command)
-    return [segment.strip() for segment in re.split(r"\s*(?:&&|\|\||;)\s*", text) if segment.strip()]
+    parts: list[tuple[str, str]] = []
+    buf: list[str] = []
+    quote = ""
+    index = 0
+    length = len(text)
+    while index < length:
+        char = text[index]
+        if quote:
+            buf.append(char)
+            if char == quote:
+                quote = ""
+            index += 1
+            continue
+        if char in ("'", '"'):
+            quote = char
+            buf.append(char)
+            index += 1
+            continue
+        if char == ";":
+            segment = "".join(buf).strip()
+            if segment:
+                parts.append((segment, ";"))
+            buf = []
+            index += 1
+            continue
+        if char in ("&", "|") and index + 1 < length and text[index + 1] == char:
+            segment = "".join(buf).strip()
+            if segment:
+                parts.append((segment, char * 2))
+            buf = []
+            index += 2
+            continue
+        buf.append(char)
+        index += 1
+    segment = "".join(buf).strip()
+    if segment:
+        parts.append((segment, ""))
+    return parts
+
+
+def _shell_command_segments(command: str) -> list[str]:
+    return [segment for segment, _operator in _shell_command_parts(command)]
 
 
 def _is_file_inspection_segment(segment: str) -> bool:
@@ -602,7 +676,7 @@ def _is_file_inspection_segment(segment: str) -> bool:
         return False
     return bool(
         re.search(
-            r"\b(?:cat|sed|nl|head|tail|grep|rg|find|ls)\b[^\n;&|]*(?:\.py|job|simulat)",
+            r"\b(?:cat|sed|nl|head|tail|grep|rg|find|ls)\b[^\n]*(?:\.py|job|simulat)",
             segment,
             flags=re.IGNORECASE,
         )
@@ -633,7 +707,7 @@ def _python_script_name_from_segment(command: str) -> str:
                     return Path(arg).name.lower()
             return ""
         break
-    match = re.search(r"\bpython(?:3)?\s+([A-Za-z0-9_./-]+\.py)\b", command)
+    match = re.search(r"\bpython(?:3)?\s+([A-Za-z0-9_./-]+\.py)\b", _strip_quoted(command))
     return Path(match.group(1)).name.lower() if match else ""
 
 
@@ -688,18 +762,55 @@ def is_simulation_or_job_command(command: str) -> bool:
     return is_job_entrypoint_command(command) or is_simulation_entrypoint_command(command)
 
 
-def is_nvflare_simulator_wrapper_command(command: str) -> bool:
-    script_name = python_script_name(command)
-    if not script_name:
+def _wrapper_target_name(segment: str) -> str:
+    """Return the script/target name a segment invokes, or '' when it is not a runner.
+
+    Recognizes ``python foo.py``, ``bash/sh foo.sh``, ``./foo.sh`` and ``make <target>`` so
+    non-Python wrappers can be classified alongside Python ones. File-inspection segments are
+    not runners and return ''.
+    """
+    if _is_file_inspection_segment(segment):
+        return ""
+    script_name = _python_script_name_from_segment(segment)
+    if script_name:
+        return Path(script_name).stem.lower()
+    tokens = _command_tokens(segment)
+    if not tokens:
+        return ""
+    head = Path(tokens[0]).name.lower()
+    if head == "make":
+        for token in tokens[1:]:
+            if not token.startswith("-"):
+                return token.lower()
+        return ""
+    if head in {"bash", "sh", "zsh"}:
+        for token in tokens[1:]:
+            if token.startswith("-"):
+                continue
+            return Path(token).stem.lower()
+        return ""
+    if tokens[0].endswith(".sh"):
+        return Path(tokens[0]).stem.lower()
+    return ""
+
+
+def _name_is_simulator_wrapper(name: str) -> bool:
+    if not name:
         return False
-    tokens = set(re.split(r"[_.-]+", Path(script_name).stem.lower()))
+    tokens = set(re.split(r"[_.-]+", name.lower()))
     helper_tokens = {"check", "validate", "verify", "test", "tests", "setup", "config", "lint", "probe"}
     action_tokens = {"run", "start", "launch", "execute"}
     runtime_tokens = {"job", "nvflare", "simulat", "simulate", "simulation", "simulator"}
-    return (
-        not helper_tokens.intersection(tokens)
-        and bool(action_tokens.intersection(tokens))
-        and bool(runtime_tokens.intersection(tokens))
+    if helper_tokens.intersection(tokens):
+        return False
+    if name in {"simulate", "simulation", "simulator"}:
+        return True
+    return bool(action_tokens.intersection(tokens)) and bool(runtime_tokens.intersection(tokens))
+
+
+def is_nvflare_simulator_wrapper_command(command: str) -> bool:
+    return any(
+        _name_is_simulator_wrapper(_wrapper_target_name(segment)) for segment in _shell_command_segments(command)
     )
 
 
@@ -792,6 +903,25 @@ def missing_python_module_name(output: str) -> str:
     return match.group(1) if match else ""
 
 
+def _direct_job_exit_is_trustworthy(command: str) -> bool:
+    """Return True when the aggregate exit code reflects the direct job's own success.
+
+    A direct ``python job.py`` segment's exit code only stands in for the job when nothing
+    runs after it that could mask a failure. That holds when the job is the last segment, or
+    when every separator after it is ``&&`` (a non-zero overall exit would otherwise short the
+    chain). A trailing ``;`` or ``||`` segment can flip the exit code, so success evidence is
+    required instead.
+    """
+    parts = _shell_command_parts(command)
+    job_index = None
+    for index, (segment, _operator) in enumerate(parts):
+        if job_entrypoint_match(segment) == "direct":
+            job_index = index
+    if job_index is None:
+        return False
+    return all(operator == "&&" for _segment, operator in parts[job_index : len(parts) - 1])
+
+
 def job_command_succeeded(event: dict[str, Any]) -> bool:
     command = str(event.get("command") or "")
     output = str(event.get("output") or "")
@@ -799,7 +929,9 @@ def job_command_succeeded(event: dict[str, Any]) -> bool:
         return False
     job_match = job_entrypoint_match(command)
     if job_match == "direct":
-        return True
+        if _direct_job_exit_is_trustworthy(command):
+            return True
+        return job_output_succeeded(output)
     if job_match == "ambiguous":
         return job_output_succeeded(output)
     if is_simulation_entrypoint_command(command):
@@ -952,7 +1084,7 @@ def bash_blocked_diagnostic(run: dict[str, Any], *, recovered: bool = False) -> 
         return None
     if recovered:
         denied_commands = permission_denial_commands(run)
-        command = f" Denied command: `{truncate(denied_commands[0], 180)}`." if denied_commands else ""
+        command = f" Denied command: `{inline_code_text(denied_commands[0], 180)}`." if denied_commands else ""
         return (
             f"Bash tool was blocked {blocked_count} time(s) earlier in this run, but a later simulator/job "
             f"command completed.{command} This usually means Claude rejected that specific command shape "
@@ -1072,7 +1204,7 @@ def job_run_status_reason(run: dict[str, Any]) -> str:
         if commands:
             return (
                 "simulation not attempted — captured commands did not run job.py "
-                f"(first command: `{truncate(commands[0], 120)}`)"
+                f"(first command: `{inline_code_text(commands[0], 120)}`)"
             )
         return "simulation not attempted — no captured job.py or simulator command"
 
@@ -1212,7 +1344,7 @@ def command_failure_diagnostics(run: dict[str, Any], limit: int = 3) -> list[str
         if missing_python_module_name(output):
             dependency_evidence = f" Dependency install evidence: {dependency_install_evidence(run)}."
         diagnostics.append(
-            f"Command `{truncate(command, 160)}` failed with exit {event.get('exit_code')}; "
+            f"Command `{inline_code_text(command, 160)}` failed with exit {event.get('exit_code')}; "
             f"{recovery}. Root cause evidence: {command_error_summary(output)}.{dependency_evidence}"
         )
         if len(diagnostics) >= limit:
@@ -1431,6 +1563,9 @@ def run_quality_issues(run: dict[str, Any]) -> list[str]:
             "Failed check `workspace_delta`: no generated workspace files, final job structure, or runtime artifacts "
             "were captured."
         )
+    algorithm_mismatch = fl_algorithm_recipe_mismatch(run)
+    if algorithm_mismatch:
+        issues.append(f"Failed check `fl_algorithm_recipe_match`: {algorithm_mismatch}")
     return issues
 
 
@@ -2142,9 +2277,36 @@ def _workflow_training_score(workflow: dict[str, Any]) -> int:
     return score
 
 
+def _final_message_without_event_log(text: str) -> str:
+    return str(text or "").split("\n{", 1)[0]
+
+
+def _recipe_from_generated_source(run: dict[str, Any]) -> str:
+    recipe_modules = {
+        "cyclic": "cyclic-pt",
+        "fedavg": "fedavg-pt",
+        "fedavg_he": "fedavg-he-pt",
+        "fedeval": "fedeval-pt",
+        "fedopt": "fedopt-pt",
+        "fedprox": "fedprox-pt",
+        "scaffold": "scaffold-pt",
+    }
+    for _, text in _workspace_python_sources(run):
+        for match in re.finditer(
+            r"from\s+nvflare\.app_opt\.pt\.recipes\.([A-Za-z0-9_]+)\s+import\s+([A-Za-z0-9_]+Recipe[A-Za-z0-9_]*)",
+            text,
+        ):
+            recipe = recipe_modules.get(match.group(1))
+            if recipe:
+                return recipe
+    return ""
+
+
 def _recipe_evidence(run: dict[str, Any]) -> str:
-    final_text = str(run.get("agent_last_message") or "")
+    final_text = _final_message_without_event_log(str(run.get("agent_last_message") or ""))
     final_patterns = (
+        r"\bSelected\s+the\s+recipe\b.*?`([A-Za-z0-9_.-]+)`",
+        r"\bselected\s+recipe\b.*?`([A-Za-z0-9_.-]+)`",
         r"\bRecipe:\*{0,2}\s*`?([A-Za-z0-9_.-]+)`?",
         r"`([A-Za-z0-9_.-]+)`\s*(?:→|->)\s*`?[A-Za-z0-9_.]*Recipe`?",
     )
@@ -2153,11 +2315,14 @@ def _recipe_evidence(run: dict[str, Any]) -> str:
         if match:
             return match.group(1)
     classification_excerpt = str(run_record(run).get("classification_excerpt") or "")
-    final_slice = classification_excerpt.split("\n{", 1)[0]
+    final_slice = _final_message_without_event_log(classification_excerpt)
     for pattern in final_patterns:
         match = re.search(pattern, final_slice)
         if match:
             return match.group(1)
+    source_recipe = _recipe_from_generated_source(run)
+    if source_recipe:
+        return source_recipe
     text = combined_text(run)
     command_patterns = (r"\bnvflare\s+recipe\s+show\s+([A-Za-z0-9_.-]+)",)
     for pattern in command_patterns:
@@ -2231,6 +2396,34 @@ def fl_algorithm_info(run: dict[str, Any]) -> dict[str, Any]:
                 evidence += f"; recipe {recipe}"
             return {"algorithm": name, "evidence": evidence, "num_rounds": None, "recipe": recipe}
     return {"algorithm": "not captured", "evidence": "no server workflow config or algorithm mention captured"}
+
+
+def _recipe_expected_algorithms(recipe: str) -> set[str]:
+    recipe_algorithms = {
+        "cyclic-pt": {"Cyclic"},
+        "fedavg-he-pt": {"FedAvg", "ScatterAndGather"},
+        "fedavg-pt": {"FedAvg", "ScatterAndGather"},
+        "fedeval-pt": {"FedEval"},
+        "fedopt-pt": {"FedOpt"},
+        "fedprox-pt": {"FedProx"},
+        "scaffold-pt": {"SCAFFOLD"},
+    }
+    return recipe_algorithms.get(str(recipe or "").lower(), set())
+
+
+def fl_algorithm_recipe_mismatch(run: dict[str, Any]) -> str:
+    info = fl_algorithm_info(run)
+    algorithm = str(info.get("algorithm") or "")
+    recipe = str(info.get("recipe") or "")
+    expected = _recipe_expected_algorithms(recipe)
+    if not algorithm or algorithm == "not captured" or not recipe or not expected:
+        return ""
+    if algorithm in expected:
+        return ""
+    return (
+        f"runtime workflow `{algorithm}` does not match selected recipe `{recipe}` "
+        f"(expected one of: {', '.join(sorted(expected))})."
+    )
 
 
 def fl_algorithm_display(run: dict[str, Any]) -> str:
@@ -2812,18 +3005,24 @@ def dependency_install_evidence(run: dict[str, Any]) -> str:
         if failed:
             event = failed[-1]
             return (
-                f"dependency install attempted and failed (`{truncate(str(event.get('command') or ''), 100)}` "
+                f"dependency install attempted and failed (`{inline_code_text(str(event.get('command') or ''), 100)}` "
                 f"exit {event.get('exit_code')}: {truncate(command_error_summary(str(event.get('output') or '')), 160)})"
             )
         succeeded = [event for event in events if command_succeeded(event)]
         if succeeded:
             event = succeeded[-1]
-            return f"dependency install command succeeded (`{truncate(str(event.get('command') or ''), 100)}`)"
+            return f"dependency install command succeeded (`{inline_code_text(str(event.get('command') or ''), 100)}`)"
         event = events[-1]
-        return f"dependency install command captured without success/failure status (`{truncate(str(event.get('command') or ''), 100)}`)"
+        return (
+            "dependency install command captured without success/failure status "
+            f"(`{inline_code_text(str(event.get('command') or ''), 100)}`)"
+        )
     commands = [command for command in commands_for_run(run) if is_dependency_install_command(command)]
     if commands:
-        return f"dependency install command listed in activity but no command result was captured (`{truncate(commands[-1], 100)}`)"
+        return (
+            "dependency install command listed in activity but no command result was captured "
+            f"(`{inline_code_text(commands[-1], 100)}`)"
+        )
     return "no dependency install command was captured before the failed job run"
 
 

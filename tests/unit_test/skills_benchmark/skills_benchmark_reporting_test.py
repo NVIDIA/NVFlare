@@ -278,6 +278,134 @@ def test_fl_algorithm_prefers_training_workflow_over_initialization(tmp_path):
     assert info["workflow_id"] == "train"
 
 
+def test_fl_algorithm_recipe_prefers_generated_source_over_recipe_list_catalog(tmp_path):
+    from skills.harness.modes import WITH_SKILLS_MODE
+    from skills.harness.reports.benchmark_insights import fl_algorithm_info
+
+    mode_dir = tmp_path / WITH_SKILLS_MODE
+    config_path = (
+        mode_dir
+        / "workspace_delta"
+        / "runtime_artifacts"
+        / "runtime_workspaces"
+        / "job"
+        / "server"
+        / "simulate_job"
+        / "app_server"
+        / "config"
+        / "config_fed_server.json"
+    )
+    job_path = mode_dir / "workspace_delta" / "changed_files" / "job.py"
+    config_path.parent.mkdir(parents=True)
+    job_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        json.dumps(
+            {
+                "workflows": [
+                    {
+                        "id": "controller",
+                        "path": "nvflare.app_common.workflows.fedavg.FedAvg",
+                        "args": {"num_rounds": 3},
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    job_path.write_text(
+        "from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe\n\n"
+        "recipe = FedAvgRecipe(name='job', min_clients=3, num_rounds=3)\n",
+        encoding="utf-8",
+    )
+    run = {
+        "available": True,
+        "mode_dir": mode_dir,
+        "agent_last_message": (
+            "Selected the recipe — `fedavg-pt` (`FedAvgRecipe`).\n"
+            '{"data": [{"name": "cyclic-pt"}, {"name": "fedavg-pt"}]}'
+        ),
+        "workspace_delta": {
+            "changed_files": [{"artifact_path": "changed_files/job.py", "path": "job.py"}],
+            "runtime_artifacts": [
+                {
+                    "artifact_path": (
+                        "runtime_artifacts/runtime_workspaces/job/server/simulate_job/app_server/config/"
+                        "config_fed_server.json"
+                    ),
+                    "path": "runtime_workspaces/job/server/simulate_job/app_server/config/config_fed_server.json",
+                }
+            ],
+        },
+    }
+
+    info = fl_algorithm_info(run)
+
+    assert info["algorithm"] == "FedAvg"
+    assert info["recipe"] == "fedavg-pt"
+    assert "recipe fedavg-pt" in info["evidence"]
+
+
+def test_fl_algorithm_recipe_mismatch_is_quality_issue(tmp_path):
+    from skills.harness.modes import WITH_SKILLS_MODE
+    from skills.harness.reports.benchmark_insights import run_quality_issues, run_status_kind
+
+    mode_dir = tmp_path / WITH_SKILLS_MODE
+    config_path = (
+        mode_dir
+        / "workspace_delta"
+        / "runtime_artifacts"
+        / "runtime_workspaces"
+        / "job"
+        / "server"
+        / "simulate_job"
+        / "app_server"
+        / "config"
+        / "config_fed_server.json"
+    )
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        json.dumps(
+            {
+                "workflows": [
+                    {
+                        "id": "controller",
+                        "path": "nvflare.app_common.workflows.fedavg.FedAvg",
+                        "args": {"num_rounds": 3},
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    run = {
+        "available": True,
+        "mode_dir": mode_dir,
+        "agent_last_message": "**Recipe:** `cyclic-pt`",
+        "container_exit": {"exit_code": 0},
+        "record": {},
+        "run": {"final_container_exit_code": 0},
+        "workspace_delta": {
+            "runtime_artifacts": [
+                {
+                    "artifact_path": (
+                        "runtime_artifacts/runtime_workspaces/job/server/simulate_job/app_server/config/"
+                        "config_fed_server.json"
+                    ),
+                    "path": "runtime_workspaces/job/server/simulate_job/app_server/config/config_fed_server.json",
+                }
+            ]
+        },
+    }
+
+    issues = run_quality_issues(run)
+
+    assert run_status_kind(run) == "needs review"
+    assert issues == [
+        "Failed check `fl_algorithm_recipe_match`: runtime workflow `FedAvg` does not match selected recipe "
+        "`cyclic-pt` (expected one of: Cyclic)."
+    ]
+
+
 def test_mode_dir_for_benchmark_does_not_guess_ambiguous_canonical_layout(tmp_path):
     from skills.harness.modes import NO_SKILLS_MODE
     from skills.harness.reports.benchmark_insights import mode_dir_for_benchmark
@@ -2564,6 +2692,134 @@ def test_job_success_detects_execution_after_wrapped_file_inspection():
     assert job_run_status(run) == "completed"
 
 
+def test_job_success_ignores_grep_pattern_with_inline_semicolon():
+    from skills.harness.reports.benchmark_insights import job_command_succeeded, job_run_status
+
+    # The ';' lives inside the rg search pattern; quote-aware splitting must keep it as a single
+    # inspection segment rather than exposing "python job.py" as an executed job.
+    event = {
+        "command": 'rg "foo; python job.py" -n .',
+        "exit_code": 0,
+        "output": 'job.py:print("Finished FedAvg.")',
+        "status": "completed",
+    }
+    run = {
+        "available": True,
+        "activity": {"commands": [event["command"]]},
+        "agent_events_text": json.dumps(
+            {"item": {"type": "command_execution", "aggregated_output": event["output"], **event}}
+        ),
+    }
+
+    assert job_command_succeeded(event) is False
+    assert job_run_status(run) == "not_started"
+
+
+def test_job_success_ignores_cd_prefix_before_grep_inspection():
+    from skills.harness.reports.benchmark_insights import job_command_succeeded, job_run_status
+
+    # A benign 'cd' prefix must not push python_script_name onto the broad regex and treat the
+    # grep pattern as a real python job.py run.
+    event = {
+        "command": "cd /work && rg 'python job.py|Finished FedAvg' -n .",
+        "exit_code": 0,
+        "output": 'README.md:Run with python job.py\njob.py:print("Finished FedAvg.")',
+        "status": "completed",
+    }
+    run = {
+        "available": True,
+        "activity": {"commands": [event["command"]]},
+        "agent_events_text": json.dumps(
+            {"item": {"type": "command_execution", "aggregated_output": event["output"], **event}}
+        ),
+    }
+
+    assert job_command_succeeded(event) is False
+    assert job_run_status(run) == "not_started"
+
+
+def test_job_success_requires_evidence_when_inspection_follows_job_with_semicolon():
+    from skills.harness.reports.benchmark_insights import job_command_succeeded
+
+    # The job failed but a trailing ';' inspection segment makes the aggregate exit code 0; the
+    # direct-job exit code can no longer be trusted, so success evidence is required.
+    event = {
+        "command": "python job.py ; cat results.txt",
+        "exit_code": 0,
+        "output": "Traceback (most recent call last):\nRuntimeError: job crashed",
+        "status": "completed",
+    }
+
+    assert job_command_succeeded(event) is False
+
+
+def test_job_success_trusts_direct_job_exit_in_and_chain():
+    from skills.harness.reports.benchmark_insights import job_command_succeeded
+
+    # An '&&' chain reaching exit 0 implies the job itself succeeded, so the aggregate exit code
+    # is trustworthy even without explicit success output.
+    event = {
+        "command": "python job.py && python validate.py",
+        "exit_code": 0,
+        "output": "validation ok",
+        "status": "completed",
+    }
+
+    assert job_command_succeeded(event) is True
+
+
+def test_simulator_wrapper_detected_after_non_runtime_first_segment():
+    from skills.harness.reports.benchmark_insights import job_run_status, job_run_status_reason
+
+    # The runtime wrapper is the second segment; per-segment classification must not stop at the
+    # non-runtime first script (prepare_data.py).
+    event = {
+        "item": {
+            "aggregated_output": (
+                "Running: python3 -m nvflare.cli simulator /workspace/fl_job -w /workspace/ws -n 2 -t 2\n"
+                "Finished FedAvg.\n"
+            ),
+            "command": "python prepare_data.py && python run_nvflare_fedavg.py",
+            "exit_code": 0,
+            "id": "item_1",
+            "status": "completed",
+            "type": "command_execution",
+        }
+    }
+    run = {
+        "available": True,
+        "activity": {"commands": ["python prepare_data.py && python run_nvflare_fedavg.py"]},
+        "agent_events_text": json.dumps(event),
+    }
+
+    assert job_run_status(run) == "completed"
+    assert "simulation completed" in job_run_status_reason(run)
+
+
+def test_simulator_wrapper_detected_for_make_target():
+    from skills.harness.reports.benchmark_insights import job_run_status
+
+    event = {
+        "item": {
+            "aggregated_output": (
+                "python3 -m nvflare.cli simulator /workspace/fl_job -w /workspace/ws -n 2 -t 2\n" "Finished FedAvg.\n"
+            ),
+            "command": "make simulate",
+            "exit_code": 0,
+            "id": "item_1",
+            "status": "completed",
+            "type": "command_execution",
+        }
+    }
+    run = {
+        "available": True,
+        "activity": {"commands": ["make simulate"]},
+        "agent_events_text": json.dumps(event),
+    }
+
+    assert job_run_status(run) == "completed"
+
+
 def test_job_run_status_requires_success_evidence_for_leading_job_entrypoint():
     from skills.harness.reports.benchmark_insights import job_run_status
 
@@ -2706,6 +2962,47 @@ def test_recovered_by_later_success_requires_simulation_success_evidence():
 
     assert diagnostics
     assert "not recovered in this run" in diagnostics[0]
+
+
+def test_failure_analysis_formats_multiline_recovered_command_as_single_line():
+    from skills.harness.modes import WITH_SKILLS_MODE
+    from skills.harness.reports.benchmark_insights import failure_analysis_section
+
+    failed_event = {
+        "item": {
+            "aggregated_output": "Traceback (most recent call last):\nTypeError: unsupported operand type(s)",
+            "command": "python3 -m py_compile client.py job.py && python3 - <<'EOF'\nprint('check')\nEOF",
+            "exit_code": 1,
+            "id": "item_1",
+            "status": "failed",
+            "type": "command_execution",
+        }
+    }
+    recovered_event = {
+        "item": {
+            "aggregated_output": "Finished FedAvg.",
+            "command": "python3 job.py",
+            "exit_code": 0,
+            "id": "item_2",
+            "status": "completed",
+            "type": "command_execution",
+        }
+    }
+    run = {
+        "available": True,
+        "label": "With skills",
+        "agent_events_text": "\n".join(json.dumps(event) for event in (failed_event, recovered_event)),
+        "container_exit": {"exit_code": 0},
+        "record": {},
+        "run": {"final_container_exit_code": 0},
+    }
+
+    section = failure_analysis_section({WITH_SKILLS_MODE: run}, [WITH_SKILLS_MODE])
+
+    evidence_lines = [line for line in section.splitlines() if "Recovered command evidence" in line]
+    assert evidence_lines
+    assert "python3 -m py_compile client.py job.py && python3 - <<'EOF' ... EOF" in evidence_lines[0]
+    assert "print('check')\nEOF" not in section
 
 
 def test_job_run_status_reason_includes_failed_job_command_error():
