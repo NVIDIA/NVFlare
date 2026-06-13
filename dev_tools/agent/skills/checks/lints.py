@@ -23,12 +23,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
-from nvflare.tool.agent_skill_checks.frontmatter import (
-    SKILL_FILE_NAME,
-    parse_skill_frontmatter,
-    should_skip_skill_dir,
-    validate_skill_dir,
-)
+try:
+    from .frontmatter import SKILL_FILE_NAME, parse_skill_frontmatter, should_skip_skill_dir, validate_skill_dir
+except ImportError:
+    from frontmatter import SKILL_FILE_NAME, parse_skill_frontmatter, should_skip_skill_dir, validate_skill_dir
 
 V1_LINT_IDS = (
     "skill-frontmatter-lint",

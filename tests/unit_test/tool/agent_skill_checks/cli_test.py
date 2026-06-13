@@ -13,8 +13,13 @@
 # limitations under the License.
 
 import json
+import sys
+from pathlib import Path
 
-from nvflare.tool.agent_skill_checks import cli
+CHECKS_PARENT = Path(__file__).resolve().parents[4] / "dev_tools" / "agent" / "skills"
+sys.path.insert(0, str(CHECKS_PARENT))
+
+from checks import cli  # noqa: E402
 
 
 def test_agent_skill_checks_cli_emits_json_and_nonzero_on_findings(tmp_path, capsys):

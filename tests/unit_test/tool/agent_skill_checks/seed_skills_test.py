@@ -12,9 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import sys
 from pathlib import Path
 
-from nvflare.tool.agent_skill_checks.lints import run_v1_lints
+CHECKS_PARENT = Path(__file__).resolve().parents[4] / "dev_tools" / "agent" / "skills"
+sys.path.insert(0, str(CHECKS_PARENT))
+
+from checks.lints import run_v1_lints  # noqa: E402
 
 
 def test_seed_skills_pass_v1_admission_lints():

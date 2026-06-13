@@ -169,7 +169,7 @@ setup(
         include=[
             "*",
         ],
-        exclude=["tests", "tests.*"],
+        exclude=["tests", "tests.*", "dev_tools", "dev_tools.*"],
     ),
     package_data={
         "": ["*.yml", "*.yaml", "*.tpl", "*.html", "*.js", "poc.zip", "*.config", "*.conf"],

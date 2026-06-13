@@ -13,11 +13,16 @@
 # limitations under the License.
 
 import json
+import sys
+from pathlib import Path
 
 import pytest
 
-from nvflare.tool.agent_skill_checks import lints as lints_module
-from nvflare.tool.agent_skill_checks.lints import (
+CHECKS_PARENT = Path(__file__).resolve().parents[4] / "dev_tools" / "agent" / "skills"
+sys.path.insert(0, str(CHECKS_PARENT))
+
+from checks import lints as lints_module  # noqa: E402
+from checks.lints import (  # noqa: E402
     MAX_SKILL_TEXT_FILE_BYTES,
     V1_LINT_IDS,
     _parse_conversion_table,

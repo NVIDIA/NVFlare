@@ -12,11 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import sys
 from pathlib import Path
 
 import pytest
 
-from nvflare.tool.agent_skill_checks.frontmatter import (
+CHECKS_PARENT = Path(__file__).resolve().parents[4] / "dev_tools" / "agent" / "skills"
+sys.path.insert(0, str(CHECKS_PARENT))
+
+from checks.frontmatter import (  # noqa: E402
     SkillFrontmatterError,
     parse_skill_frontmatter,
     validate_skill_dir,

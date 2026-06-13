@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.tool.agent_skill_checks.cli import main
+try:
+    from .cli import main
+except ImportError:
+    from cli import main
 
 raise SystemExit(main())

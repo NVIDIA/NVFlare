@@ -18,12 +18,15 @@ import argparse
 import json
 from pathlib import Path
 
-from nvflare.tool.agent_skill_checks.lints import run_v1_lints
+try:
+    from .lints import run_v1_lints
+except ImportError:
+    from lints import run_v1_lints
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="python -m nvflare.tool.agent_skill_checks",
+        prog="python dev_tools/agent/skills/checks/cli.py",
         description="Run deterministic v1 lint checks for NVFLARE agent skills.",
     )
     parser.add_argument("--skills-root", default="skills", help="path to the skills source root")

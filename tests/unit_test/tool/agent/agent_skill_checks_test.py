@@ -13,9 +13,13 @@
 # limitations under the License.
 
 import json
+import sys
 from pathlib import Path
 
-from nvflare.tool.agent_skill_checks.lints import run_v1_lints, validate_skills
+CHECKS_PARENT = Path(__file__).resolve().parents[4] / "dev_tools" / "agent" / "skills"
+sys.path.insert(0, str(CHECKS_PARENT))
+
+from checks.lints import run_v1_lints, validate_skills  # noqa: E402
 
 
 def test_process_metric_lint_requires_process_metrics(tmp_path):
@@ -149,7 +153,7 @@ def test_trigger_overlap_limit_uses_current_environment(tmp_path, monkeypatch):
 
 
 def test_iter_skill_text_files_skips_oversized_references(tmp_path):
-    from nvflare.tool.agent_skill_checks import lints
+    from checks import lints
 
     skill_dir = _write_skill(tmp_path, "nvflare-test-skill", {"skill_name": "nvflare-test-skill", "evals": []})
     references_dir = skill_dir / "references"
@@ -164,7 +168,7 @@ def test_iter_skill_text_files_skips_oversized_references(tmp_path):
 
 
 def test_doc_crosslink_lint_reads_each_doc_once(tmp_path, monkeypatch):
-    from nvflare.tool.agent_skill_checks import lints
+    from checks import lints
 
     skills_root = tmp_path / "skills"
     skills_root.mkdir()
@@ -195,7 +199,7 @@ def test_doc_crosslink_lint_reads_each_doc_once(tmp_path, monkeypatch):
 
 
 def test_doc_crosslink_lint_accepts_anchor_in_linked_markdown_outside_canonical_docs(tmp_path):
-    from nvflare.tool.agent_skill_checks import lints
+    from checks import lints
 
     skills_root = tmp_path / "skills"
     skills_root.mkdir()
@@ -215,7 +219,7 @@ def test_doc_crosslink_lint_accepts_anchor_in_linked_markdown_outside_canonical_
 
 
 def test_validate_skills_reuses_loaded_skill_records(tmp_path, monkeypatch):
-    from nvflare.tool.agent_skill_checks import lints
+    from checks import lints
 
     _write_skill(tmp_path, "nvflare-test-skill", {"skill_name": "nvflare-test-skill", "evals": []})
     load_count = 0

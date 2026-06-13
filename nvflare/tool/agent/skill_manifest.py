@@ -251,19 +251,15 @@ def _validate_skill_dir(skill_dir: Path):
 
 
 def _load_frontmatter_module():
-    try:
-        return importlib.import_module("nvflare.tool.agent_skill_checks.frontmatter")
-    except ImportError:
-        pass
-
     # setup.py loads this file before build isolation has all NVFLARE runtime
-    # dependencies, so fall back to loading the validator file directly.
+    # dependencies. Load the repo-local dev tool directly; dev_tools is a
+    # development directory, not a shipped NVFLARE package.
     # TODO: remove this direct-loader workaround when skill packaging no longer
     # imports manifest building from setup.py/build isolation.
     module_name = "nvflare_agent_skill_frontmatter"
     if module_name in sys.modules:
         return sys.modules[module_name]
-    module_path = Path(__file__).resolve().parents[1] / "agent_skill_checks" / "frontmatter.py"
+    module_path = Path(__file__).resolve().parents[3] / "dev_tools" / "agent" / "skills" / "checks" / "frontmatter.py"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"Failed to load agent skill frontmatter validator from {module_path}")

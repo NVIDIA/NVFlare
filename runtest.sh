@@ -19,7 +19,7 @@ fi
 
 WORK_DIR="$( cd -P "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 NUM_PARALLEL=1
-DIR_TO_CHECK=("nvflare" "examples" "tests")
+DIR_TO_CHECK=("nvflare" "examples" "tests" "dev_tools")
 
 target="${@: -1}"
 if [[ "${target}" == -* ]] ;then
