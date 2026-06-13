@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+import sys
 from argparse import ArgumentParser, Namespace
 from types import ModuleType
 
@@ -806,3 +807,45 @@ def test_recipe_catalog_prefers_leaf_recipe_class_when_module_has_base_and_subcl
             "privacy": [],
         }
     ]
+
+
+def test_recipe_catalog_uses_stable_recipe_base_during_fake_discovery(monkeypatch):
+    from nvflare.recipe.spec import Recipe
+    from nvflare.tool.recipe.recipe_cli import _load_catalog
+
+    class FakeRecipe(Recipe):
+        """Demo discovered recipe."""
+
+        def __init__(self):
+            pass
+
+    fake_package = ModuleType("fake.recipes")
+    fake_package.__path__ = ["fake/recipes"]
+
+    fake_module = ModuleType("fake.recipes.fedavg")
+    FakeRecipe.__module__ = "fake.recipes.fedavg"
+    setattr(fake_module, "FakeRecipe", FakeRecipe)
+
+    monkeypatch.setattr(
+        "nvflare.tool.recipe.recipe_cli._RECIPE_PACKAGE_ROOTS",
+        [{"package": "fake.recipes", "framework": "pytorch"}],
+    )
+    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli._DOCUMENTED_RECIPE_SPECS", {})
+
+    def fake_import_module(name):
+        if name == "fake.recipes":
+            return fake_package
+        if name == "fake.recipes.fedavg":
+            return fake_module
+        raise ImportError(name)
+
+    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli.importlib.import_module", fake_import_module)
+    monkeypatch.setattr(
+        "nvflare.tool.recipe.recipe_cli.pkgutil.iter_modules",
+        lambda path, prefix="": [(None, "fake.recipes.fedavg", False)],
+    )
+    monkeypatch.delitem(sys.modules, "nvflare.recipe.spec")
+
+    catalog = _load_catalog(framework="pytorch")
+
+    assert catalog[0]["class"] == "FakeRecipe"

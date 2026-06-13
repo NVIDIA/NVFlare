@@ -20,6 +20,7 @@ from enum import Enum
 from importlib import import_module
 from pathlib import Path
 
+from nvflare.recipe.spec import Recipe
 from nvflare.tool.cli_output import output_usage_error
 
 _RECIPE_PACKAGE_ROOTS = [
@@ -766,8 +767,6 @@ def _recipe_description(recipe_cls) -> str:
 
 
 def _iter_recipe_classes(module):
-    from nvflare.recipe.spec import Recipe
-
     for _name, obj in inspect.getmembers(module, inspect.isclass):
         if obj.__module__ != module.__name__:
             continue
