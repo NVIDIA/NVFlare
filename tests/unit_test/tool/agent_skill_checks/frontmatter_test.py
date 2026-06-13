@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import sys
 from pathlib import Path
 
@@ -201,6 +202,23 @@ def test_validate_skill_dir_reports_missing_skill_file(tmp_path):
 
     assert not result.ok
     assert _issue_codes(result) == {"skill-md-missing"}
+
+
+@pytest.mark.skipif(
+    not hasattr(os, "geteuid") or os.geteuid() == 0,
+    reason="unreadable-file test requires a non-root POSIX user (root bypasses file permissions)",
+)
+def test_validate_skill_dir_reports_unreadable_skill_file(tmp_path):
+    skill_dir = _write_skill(tmp_path, "nvflare-unreadable-skill")
+    skill_file = skill_dir / "SKILL.md"
+    skill_file.chmod(0o000)
+    try:
+        result = validate_skill_dir(skill_dir)
+    finally:
+        skill_file.chmod(0o644)
+
+    assert not result.ok
+    assert _issue_codes(result) == {"skill-md-unreadable"}
 
 
 def test_validate_skills_root_skips_non_skill_files(tmp_path):

@@ -108,6 +108,12 @@ def validate_skill_dir(skill_dir: Path | str) -> SkillValidationResult:
     except SkillFrontmatterError as e:
         issues.append(_issue("skill-frontmatter-invalid", str(e), skill_file))
         return SkillValidationResult(str(path), metadata, tuple(issues))
+    except OSError as e:
+        # An unreadable SKILL.md (e.g. PermissionError) is a skill-dir problem, not a
+        # crash: report it as an issue so callers handle it as a finding instead of a
+        # raw traceback escaping through build_skill_manifest/install.
+        issues.append(_issue("skill-md-unreadable", f"SKILL.md could not be read: {e}", skill_file))
+        return SkillValidationResult(str(path), metadata, tuple(issues))
 
     _validate_required_fields(metadata, skill_file, issues)
     _validate_name_matches_directory(metadata.get("name"), path, skill_file, issues)
