@@ -17,6 +17,7 @@
 import json
 import os
 import shutil
+import stat
 import tempfile
 import time
 from contextlib import contextmanager
@@ -180,11 +181,12 @@ def list_skills(*, agent: str, target_dir: Optional[Path | str] = None, source: 
             try:
                 if child.name.startswith("."):
                     continue
-                if child.is_symlink():
+                child_stat = child.lstat()
+                if stat.S_ISLNK(child_stat.st_mode):
                     if child.name in available_names:
                         conflicts.append(_target_symlink_conflict(child.name, child, child))
                     continue
-                if not child.is_dir():
+                if not stat.S_ISDIR(child_stat.st_mode):
                     continue
             except OSError as e:
                 errors.append(_list_error(str(child), e))

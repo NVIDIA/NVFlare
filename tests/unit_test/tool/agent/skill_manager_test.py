@@ -866,14 +866,14 @@ def test_list_skills_reports_unreadable_child_as_structured_error(tmp_path, monk
     target.mkdir()
     child = target / "nvflare-test-skill"
     child.mkdir()
-    original_is_symlink = type(child).is_symlink
+    original_lstat = type(child).lstat
 
-    def fake_is_symlink(path):
+    def fake_lstat(path):
         if path == child:
             raise PermissionError("permission denied")
-        return original_is_symlink(path)
+        return original_lstat(path)
 
-    monkeypatch.setattr(type(child), "is_symlink", fake_is_symlink)
+    monkeypatch.setattr(type(child), "lstat", fake_lstat)
 
     data = list_skills(agent="codex", target_dir=target, source=source)
 
