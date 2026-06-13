@@ -830,6 +830,34 @@ def test_list_skills_reports_available_installed_and_ignores_unrelated_external_
     assert data["available"][0]["name"] == "nvflare-test-skill"
     assert data["installed"][0]["name"] == "nvflare-test-skill"
     assert data["conflicts"] == []
+    assert data["errors"] == []
+
+
+def test_list_skills_reports_unreadable_target_as_structured_error(tmp_path, monkeypatch):
+    source = _skill_source(tmp_path)
+    target = tmp_path / "target"
+    target.mkdir()
+    original_iterdir = type(target).iterdir
+
+    def fake_iterdir(path):
+        if path == target:
+            raise PermissionError("permission denied")
+        return original_iterdir(path)
+
+    monkeypatch.setattr(type(target), "iterdir", fake_iterdir)
+
+    data = list_skills(agent="codex", target_dir=target, source=source)
+
+    assert data["installed"] == []
+    assert data["conflicts"] == []
+    assert data["errors"] == [
+        {
+            "target": str(target),
+            "code": "skill_list_failed",
+            "type": "PermissionError",
+            "message": "permission denied",
+        }
+    ]
 
 
 def test_list_skills_flags_name_overlap_external_skill_as_conflict(tmp_path):

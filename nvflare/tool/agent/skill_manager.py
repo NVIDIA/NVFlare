@@ -166,11 +166,17 @@ def list_skills(*, agent: str, target_dir: Optional[Path | str] = None, source: 
     target = resolve_agent_target_dir(agent, target_dir=target_dir)
     installed = []
     conflicts = []
+    errors = []
     available = source.manifest.get("skills", [])
     available_names = {skill["name"] for skill in available}
 
     if target.is_dir():
-        for child in sorted(target.iterdir(), key=lambda p: p.name):
+        try:
+            children = sorted(target.iterdir(), key=lambda p: p.name)
+        except OSError as e:
+            errors.append(_list_error(str(target), e))
+            children = []
+        for child in children:
             if child.name.startswith("."):
                 continue
             if child.is_symlink():
@@ -207,6 +213,7 @@ def list_skills(*, agent: str, target_dir: Optional[Path | str] = None, source: 
         "available": available,
         "installed": installed,
         "conflicts": conflicts,
+        "errors": errors,
     }
 
 
@@ -462,6 +469,15 @@ def _install_error(skill_name: str, error: Exception) -> dict:
             "message": str(recovery_error),
         }
     return result
+
+
+def _list_error(target_path: str, error: Exception) -> dict:
+    return {
+        "target": target_path,
+        "code": "skill_list_failed",
+        "type": type(error).__name__,
+        "message": str(error),
+    }
 
 
 def _publish_staged_skill(staged_dir: Path, target_dir: Path) -> None:

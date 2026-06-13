@@ -601,6 +601,49 @@ def test_agent_skills_install_failure_is_structured_json_error(capsys, monkeypat
     assert payload["data"]["errors"][0]["code"] == "skill_install_failed"
 
 
+def test_agent_skills_list_failure_is_structured_json_error(capsys, monkeypatch, tmp_path):
+    from nvflare.tool.agent import skill_manager
+
+    monkeypatch.setattr(
+        skill_manager,
+        "list_skills",
+        lambda **_kwargs: {
+            "agent": "codex",
+            "target_path": str(tmp_path / "target"),
+            "source": {},
+            "available": [],
+            "installed": [],
+            "conflicts": [],
+            "errors": [
+                {"target": str(tmp_path / "target"), "code": "skill_list_failed", "message": "permission denied"}
+            ],
+        },
+    )
+
+    exit_code = _run_main(
+        [
+            "nvflare",
+            "agent",
+            "skills",
+            "list",
+            "--agent",
+            "codex",
+            "--target",
+            str(tmp_path / "target"),
+            "--format",
+            "json",
+        ]
+    )
+
+    assert exit_code == 1
+    payload = _load_single_stdout_json(capsys.readouterr())
+    _assert_envelope_shape(payload, "error")
+    assert payload["error_code"] == "AGENT_SKILL_LIST_FAILED"
+    assert "code" not in payload
+    assert payload["recovery_category"] == "FIXABLE_BY_ENV"
+    assert payload["data"]["errors"][0]["code"] == "skill_list_failed"
+
+
 @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are not supported on this platform")
 def test_agent_skills_target_symlink_is_structured_json_error(capsys, monkeypatch, tmp_path):
     _patch_skill_source(monkeypatch, tmp_path)

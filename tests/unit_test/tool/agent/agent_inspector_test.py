@@ -234,6 +234,24 @@ def test_inspect_file_limit_records_unvisited_stack_directories(tmp_path):
     assert data["scan"]["files_skipped_count"] == 2
 
 
+def test_inspect_file_limit_records_pending_directories_when_last_child_reaches_limit(tmp_path):
+    root = tmp_path / "repo"
+    nested = root / "a_nested"
+    nested.mkdir(parents=True)
+    (nested / "train_nested.py").write_text("import torch\n", encoding="utf-8")
+    for index in range(3):
+        (root / f"train_{index:02d}.py").write_text("import torch\n", encoding="utf-8")
+
+    data = inspect_path(root, max_files=3)
+
+    skipped = {(entry["code"], entry["path"]) for entry in data["scan"]["files_skipped"]}
+    assert ("DIRECTORY_NOT_SCANNED_FILE_LIMIT", "a_nested") in skipped
+    assert all(code != "FILE_LIMIT_REACHED" for code, _path in skipped)
+    assert data["scan"]["entries_visited"] == 3
+    assert data["scan"]["files_scanned"] == 3
+    assert data["scan"]["files_skipped_count"] == 1
+
+
 def test_inspect_file_limit_counts_non_python_entries(tmp_path):
     root = tmp_path / "repo"
     root.mkdir()

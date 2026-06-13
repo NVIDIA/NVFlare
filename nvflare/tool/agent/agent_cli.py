@@ -430,6 +430,16 @@ def _handle_agent_skills_cmd(args, handle_schema_flag, output_error_message, out
         except ValueError as e:
             _output_agent_skill_target_error(output_error_message, getattr(args, "target", None), e)
             return
+        if data["errors"]:
+            output_error_message(
+                "AGENT_SKILL_LIST_FAILED",
+                "NVFLARE agent skills could not be listed.",
+                "Review data.errors and rerun the list command after fixing the reported filesystem issue.",
+                exit_code=1,
+                data=data,
+                recovery_category="FIXABLE_BY_ENV",
+            )
+            return
         if not is_json_mode() and not is_jsonl_mode():
             print_human(_format_agent_skills_list_human(data))
             return

@@ -199,6 +199,10 @@ def _inspect_dir(root: Path, state: InspectState, *, max_files: int, max_file_by
             if not child.is_file():
                 continue
             _inspect_file(child, state, max_file_bytes)
+            if state.entries_visited >= max_files:
+                _record_next_file_due_to_file_limit(state, children[index + 1 :])
+                _record_unvisited_directories_due_to_file_limit(state, root, stack, children[index + 1 :])
+                return
 
 
 def _record_unvisited_directories_due_to_file_limit(
@@ -228,6 +232,17 @@ def _record_unvisited_directories_due_to_file_limit(
                 "directory not scanned because file scan limit was reached",
             ),
         )
+
+
+def _record_next_file_due_to_file_limit(state: InspectState, remaining_children: list[Path]) -> None:
+    for child in remaining_children:
+        try:
+            if child.is_symlink() or child.is_dir():
+                continue
+        except OSError:
+            continue
+        _add_skip(state, _skip_entry(child, state, "FILE_LIMIT_REACHED", "file scan limit reached"))
+        return
 
 
 def _inspect_file(path: Path, state: InspectState, max_file_bytes: int) -> None:
