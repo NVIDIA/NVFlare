@@ -188,12 +188,30 @@ Top-level keys:
   registry Secret names to ``meta.json``.
 - ``job_pod_security_context``: security context passed to dynamically
   launched job pods.
+- ``study_job_spec_file_path``: optional YAML mapping from study name to
+  Kubernetes Pod template file. Matching studies use the template with
+  launcher-owned fields overlaid. If this is set without a configured
+  ``study_data_pvc_file_path``, no study-data PVC mounts are added. If both are
+  configured and the job study has entries in both files, the template is used
+  and the study-data entries are added as extra volume mounts with a warning.
+  Template volumes or job-container mounts named ``workspace-job`` or
+  ``startup-kit`` are replaced by the launcher-generated workspace and startup
+  mounts.
 
 Prepare the parent server or client kit first:
 
 .. code-block:: shell
 
    nvflare deploy prepare ./site-1 --config k8s.yaml --output ./site-1-k8s
+
+After ``deploy prepare`` and before staging or starting the parent pod, deployment
+owners may edit ``local/resources.json.default`` in the prepared kit to adjust
+study-specific launcher inputs. The generated K8s launcher config sets
+``study_data_pvc_file_path`` to ``<workspace_mount_path>/local/study_data.yaml``
+by default. You can change that path, remove it when no study-data PVC mounts
+should be added, and/or add ``study_job_spec_file_path`` to point to a study to
+Pod-template mapping file. Stage or copy any referenced files under
+``local/`` so the parent process can read them at the in-pod paths.
 
 Then choose one of the following two staging methods before starting the parent
 pod with Helm.

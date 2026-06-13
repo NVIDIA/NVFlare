@@ -122,8 +122,19 @@ def test_get_submit_result_timeout_absent_section():
     assert config.get_submit_result_timeout() == 300.0
 
 
+def test_get_streaming_idle_timeout_default_and_explicit():
+    config = ClientConfig({})
+    assert config.get_streaming_idle_timeout() == 600.0
+
+    config = ClientConfig({ConfigKey.TASK_EXCHANGE: {ConfigKey.STREAMING_IDLE_TIMEOUT: 1200}})
+    assert config.get_streaming_idle_timeout() == 1200.0
+
+    config = ClientConfig({ConfigKey.TASK_EXCHANGE: {ConfigKey.STREAMING_IDLE_TIMEOUT: None}})
+    assert config.get_streaming_idle_timeout() is None
+
+
 def test_ex_process_api_passes_submit_result_timeout_to_agent(monkeypatch):
-    """ExProcessClientAPI.init() must pass submit_result_timeout from config to FlareAgentWithFLModel."""
+    """ExProcessClientAPI.init() must pass task-exchange timeouts from config to FlareAgentWithFLModel."""
     from unittest.mock import MagicMock
 
     from nvflare.client.config import ConfigKey
@@ -139,6 +150,7 @@ def test_ex_process_api_passes_submit_result_timeout_to_agent(monkeypatch):
                 ConfigKey.SUBMIT_MODEL_TASK_NAME: "submit_model",
                 ConfigKey.HEARTBEAT_TIMEOUT: 60,
                 ConfigKey.SUBMIT_RESULT_TIMEOUT: 999.0,
+                ConfigKey.STREAMING_IDLE_TIMEOUT: 1200.0,
             }
         }
     )
@@ -180,6 +192,7 @@ def test_ex_process_api_passes_submit_result_timeout_to_agent(monkeypatch):
 
     assert "submit_result_timeout" in captured_kwargs, "submit_result_timeout was not passed to FlareAgentWithFLModel"
     assert captured_kwargs["submit_result_timeout"] == 999.0
+    assert captured_kwargs["streaming_idle_timeout"] == 1200.0
 
 
 def test_ex_process_receive_timeout_does_not_arm_send_under_congestion():
@@ -224,6 +237,32 @@ def test_ex_process_receive_timeout_then_later_task_allows_send():
     assert api.receive_called is True
     api.send(FLModel(params={"x": 2}), clear_cache=False)
     fake_agent.submit_result.assert_called_once()
+
+
+def test_ex_process_send_failure_raises_and_preserves_params():
+    from unittest.mock import MagicMock
+
+    from nvflare.client.config import ClientConfig
+    from nvflare.client.ex_process.api import ExProcessClientAPI
+    from nvflare.client.flare_agent import Task
+    from nvflare.client.model_registry import ModelRegistry
+
+    received_model = FLModel(params={"x": 1})
+    sent_model = FLModel(params={"x": 2})
+    fake_agent = MagicMock()
+    fake_agent.get_task.return_value = Task(task_name="train", task_id="task-1", data=received_model)
+    fake_agent.submit_result.return_value = False
+    registry = ModelRegistry(ClientConfig({}), rank="0", flare_agent=fake_agent)
+    api = ExProcessClientAPI(config_file="fake_config.json")
+    api.model_registry = registry
+
+    assert api.receive(timeout=0.1) is received_model
+    with pytest.raises(RuntimeError, match="failed to submit model result"):
+        api.send(sent_model, clear_cache=True)
+
+    assert sent_model.params == {"x": 2}
+    assert received_model.params == {"x": 1}
+    assert api.receive_called is True
 
 
 # ── _downgrade_rotating_handlers tests ────────────────────────────────────────

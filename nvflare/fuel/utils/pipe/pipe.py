@@ -22,6 +22,7 @@ from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.validation_utils import check_str
 
 HEARTBEAT_SEND_TIMEOUT = 600.0
+STREAM_PROGRESS_TOPIC = "_STREAM_PROGRESS_"
 
 
 class Topic(object):
@@ -30,6 +31,7 @@ class Topic(object):
     END = "_END_"
     HEARTBEAT = "_HEARTBEAT_"
     PEER_GONE = "_PEER_GONE_"
+    STREAM_PROGRESS = STREAM_PROGRESS_TOPIC
 
 
 class Message:
