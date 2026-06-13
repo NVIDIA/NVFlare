@@ -408,6 +408,24 @@ Supported `job_launcher` keys:
     `imagePullSecrets` to every dynamically launched job pod for this prepared
     site.
 
+- `study_job_spec_file_path`
+  - Required: no
+  - Default: `null`
+  - Description: optional YAML mapping from study name to a Kubernetes Pod YAML
+    template file. When the launched job's study has an entry, `K8sJobLauncher`
+    loads that pod template and overlays NVFlare-owned job fields such as pod
+    name, job container image/command/args, workspace volumes, transfer
+    environment variables, image pull secrets, and resource requests. Relative
+    pod-template paths are resolved from the mapping file directory. Studies
+    without an entry use the built-in pod manifest. If only
+    `study_job_spec_file_path` is set, no study-data PVC mounts are added. If
+    both `study_job_spec_file_path` and `study_data_pvc_file_path` are
+    configured and the job study has entries in both files, the Pod template is
+    used and the study-data PVC entries are added as extra volume mounts with a
+    warning. The launcher always owns the `workspace-job` and `startup-kit`
+    volume names; same-named template volumes and job-container mounts are
+    replaced.
+
 
 ## Docker Runtime Preparation
 
