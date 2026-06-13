@@ -1,58 +1,90 @@
 # FLARE Agent Skill Architecture
 
-This is a picture of what is implemented today for the `nvflare agent` skill
-system: the agent-facing CLI, the packaged skills, and the install/list paths.
+This document describes the implemented `nvflare agent` skill system: the
+agent-facing CLI, packaged skills, and install/list paths.
 The benchmark harness architecture is follow-up work outside this PR's source
 set.
+
+The implementation has two distinct scopes. **Dev-time and build-time**
+components author, validate, and package skills inside the repository. **Runtime**
+components are the commands and files an end user's agent uses. The skill install
+CLI is the bridge: it takes validated skill content from the repo or wheel bundle
+and installs it into an agent-specific skill directory.
 
 ## High-Level System View
 
 ```mermaid
 flowchart TB
-    Authoring["Skill Authoring Source: skills, references, eval contracts"] --> Lint["Engineering Lint Tool: module CLI plus pytest-covered checks"]
-    Lint --> Package["Python Packaging Hook: setup.py and bundled_skills manifest"]
-    Package --> Install["Skill Install CLI: nvflare agent skills install and list"]
-    Install --> AgentHome["Agent Skill Home: Codex or Claude skill directory"]
+    subgraph DevBuild["Dev-time / build-time"]
+        direction TB
+        Authoring["Skill authoring source: skills, references, eval contracts"] --> Lint["Engineering lint tool: repo-local CLI plus pytest checks"]
+        Lint --> Package["Packaging hook: setup.py and bundled_skills manifest"]
+    end
 
-    AgentHome --> AgentRuntime["Agent Runtime: Codex or Claude loads SKILL.md"]
-    AgentRuntime --> AgentCLI["Agent-Facing NVFLARE CLI: info, inspect, doctor, skills"]
-    AgentRuntime --> NVFLAREWork["NVFLARE Workflows: recipes, job.py, simulator, job CLI"]
+    subgraph InstallBridge["Install-time bridge"]
+        direction TB
+        Install["Skill install CLI: nvflare agent skills install/list"]
+    end
+
+    subgraph Runtime["Runtime"]
+        direction TB
+        AgentRuntime["Agent runtime: Codex or Claude loads installed SKILL.md"] --> AgentCLI["Agent-facing NVFLARE CLI: info, inspect, doctor, skills"]
+        AgentRuntime --> NVFLAREWork["NVFLARE workflows: recipes, job.py, simulator, job CLI"]
+    end
+
+    Package ==> Install
+    Install ==> AgentRuntime
+
+    style DevBuild fill:#f8fbff,stroke:#4f7fb8,stroke-width:2px
+    style InstallBridge fill:#fafbfc,stroke:#334155,stroke-width:3px
+    style Runtime fill:#f4fbf8,stroke:#2f7d68,stroke-width:2px
 ```
 
 ## System Layers
 
-| Layer | Implemented pieces | Purpose |
-| --- | --- | --- |
-| Authoring source | `skills/`, `SKILL.md`, `references/`, `evals/evals.json`, `BENCHMARK.md` | Human-readable skill instructions and supporting evidence. |
-| Engineering lint tool | `dev_tools/agent/skills/checks`, `python dev_tools/agent/skills/checks/cli.py`, pytest coverage | Deterministic admission checks for frontmatter, triggers, command drift, policy coverage, fixtures, process metrics, and doc links. The check itself is a repo-local CLI/library tool; pytest validates the tool behavior. |
-| Python packaging hook | `setup.py`, `nvflare.tool.agent.bundled_skills`, `manifest.json` | Standard wheel-build hook that copies released skills into the NVFLARE package or writes an empty bundle for no-skill builds. |
-| Skill install CLI | `nvflare agent skills install/list`, `skill_manager.py` | CLI copy/install tool that installs managed skills into Codex or Claude target directories with hashes, locks, backups, and symlink checks. |
-| Runtime agent surface | Codex/Claude skill loading, `nvflare agent inspect`, `nvflare agent doctor`, recipe/job CLI | The agent reads skill instructions and uses NVFLARE commands to inspect, convert, validate, or diagnose. |
-| Benchmark harness | Follow-up work outside this PR | Separate architecture for measuring skill impact with Docker, SDK profiles, agent plugins, and reporting. |
+| Layer | When | Implemented pieces | Purpose |
+| --- | --- | --- | --- |
+| Authoring source | Dev-time | `skills/`, `SKILL.md`, `references/`, `evals/evals.json`, `BENCHMARK.md` | Human-readable skill instructions and supporting evidence. |
+| Engineering lint tool | Dev-time / CI | `dev_tools/agent/skills/checks`, `python dev_tools/agent/skills/checks/cli.py`, pytest coverage | Deterministic admission checks for frontmatter, triggers, command drift, policy coverage, fixtures, process metrics, and doc links. This is a repo-local tool validated by pytest; it is not shipped in the wheel. |
+| Python packaging hook | Build-time | `setup.py`, `nvflare.tool.agent.bundled_skills`, `manifest.json` | Wheel-build hook that copies released skills into the NVFLARE package, or writes an empty bundle for no-skill builds. |
+| Skill install CLI | Install-time bridge | `nvflare agent skills install/list`, `skill_manager.py` | Managed installer that copies skills into Codex or Claude target directories with content hashes, locks, backups, local-modification checks, and symlink checks. |
+| Runtime agent surface | Runtime | Codex/Claude skill loading, `nvflare agent inspect`, `nvflare agent doctor`, recipe/job CLI | The agent reads skill instructions and uses NVFLARE commands to inspect, convert, validate, or diagnose. |
+| Benchmark harness | Separate | Follow-up work outside this PR | Separate architecture for measuring skill impact with Docker, SDK profiles, agent plugins, and reporting. |
 
 ## Implemented Architecture
 
 ```mermaid
-flowchart LR
-    User["User / Benchmark Prompt"] --> Agent["Codex or Claude CLI"]
+flowchart TB
+    subgraph SkillDelivery["Skill delivery"]
+        direction TB
+        SkillSource["repo-root skills: editable checkout"] --> SkillOps["nvflare agent skills install/list"]
+        WheelBundle["wheel bundled_skills package"] --> SkillOps
+    end
 
-    Agent --> InstalledSkills["Agent Skill Directory: Codex CODEX_HOME skills or Claude launch add-dir"]
+    subgraph AgentRuntime["Agent runtime"]
+        direction TB
+        User["User / benchmark prompt"] --> Agent["Codex or Claude CLI"]
+        AgentHome["Agent skill directory"] -->|loads SKILL.md| Agent
+    end
 
-    NVCLI["nvflare agent CLI"] --> Info["info"]
-    NVCLI --> Inspect["inspect: static AST scan"]
-    NVCLI --> Doctor["doctor: readiness check"]
-    NVCLI --> SkillOps["skills install/list"]
+    subgraph NVFLARESurface["NVFLARE command surface"]
+        direction TB
+        AgentCLI["nvflare agent runtime commands"] --> Info["info: command surface metadata"]
+        AgentCLI --> Inspect["inspect: static AST scan"]
+        AgentCLI --> Doctor["doctor: readiness check"]
+        Recipes["recipes / job.py / simulator / job CLI"]
+    end
 
-    SkillSource["repo-root skills: editable checkout"] --> SkillOps
-    WheelBundle["nvflare.tool.agent.bundled_skills: wheel package bundle"] --> SkillOps
-    SkillOps --> InstalledSkills
-
-    Agent -->|follows SKILL.md| Inspect
-    Agent -->|readiness| Doctor
-    Agent -->|normal NVFLARE work| Recipes["NVFLARE recipes / job.py / simulator / CLI"]
+    SkillOps ==> AgentHome
+    Agent -->|skill-guided calls| AgentCLI
+    Agent -->|normal NVFLARE work| Recipes
 
     Inspect --> Project["Local training code / FLARE job artifacts"]
     Doctor --> Env["Local NVFLARE install, startup kits, optional deps, POC workspace"]
+
+    style SkillDelivery fill:#f8fbff,stroke:#4f7fb8,stroke-width:2px
+    style AgentRuntime fill:#fafbfc,stroke:#334155,stroke-width:3px
+    style NVFLARESurface fill:#f4fbf8,stroke:#2f7d68,stroke-width:2px
 ```
 
 ## Skill Source And Install Flow
@@ -82,35 +114,45 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    Orient["nvflare-orient: read-only router"] --> InspectCmd["nvflare agent inspect"]
-    Orient --> DoctorCmd["nvflare agent doctor"]
-    Orient --> Recommend["Recommend next skill"]
+    Project["User project or NVFLARE artifacts"] --> Orient["nvflare-orient: read-only router"]
+    Project --> Convert["nvflare-convert-pytorch: conversion skill"]
+    Project --> Diagnose["nvflare-diagnose-job: read-only diagnosis"]
 
-    Convert["nvflare-convert-pytorch: edits files"] --> InspectCmd
-    Convert --> RecipeList["nvflare recipe list"]
-    Convert --> ClientAPI["Generate client.py/model.py/job.py with FLModel exchange"]
-    Convert --> Validate["python job.py and export job"]
+    Orient --> OrientInspect["Inspect project shape and FLARE readiness"]
+    Orient --> OrientDecision["Recommend the next concrete FLARE skill or workflow"]
 
-    Diagnose["nvflare-diagnose-job: read-only"] --> InspectCmd
-    Diagnose --> Logs["Bounded logs / job evidence"]
-    Diagnose --> Patterns["Packaged failure-pattern references"]
-    Diagnose --> Cause["Likely cause + next action"]
+    Convert --> ConvertInspect["Inspect model, data loading, requirements, and metrics"]
+    Convert --> RecipeList["Discover recipes with nvflare recipe list/show"]
+    Convert --> ClientAPI["Generate or update client.py, model.py, and job.py"]
+    Convert --> Lifecycle["Validate, export, and report metrics/artifact evidence"]
+
+    Diagnose --> Evidence["Collect bounded logs, configs, and run artifacts"]
+    Diagnose --> Patterns["Match packaged failure-pattern references"]
+    Diagnose --> Cause["Report likely cause, confidence, and next action"]
 ```
 
 ## Key Implementation Points
 
+Dev-time / build-time:
+
 - Public skill source: `skills/`
-- Implemented skills:
-  - `nvflare-orient`
-  - `nvflare-convert-pytorch`
-  - `nvflare-diagnose-job`
-- Agent-facing CLI: `nvflare/tool/agent/agent_cli.py`
+- Engineering lint tool and CI gate: `dev_tools/agent/skills/checks/`
+- Manifest builder: `nvflare/tool/agent/skill_manifest.py`
+- Packaging hook: `setup.py` (`AgentSkillsBuildPy`)
+
+Runtime (installed on the user's machine):
+
 - Skill install/list logic: `nvflare/tool/agent/skill_manager.py`
+- Agent-facing CLI: `nvflare/tool/agent/agent_cli.py`
+- Command surface metadata: `nvflare/tool/agent/command_registry.py`
 - Static inspection: `nvflare/tool/agent/inspector.py`
 - Readiness checks: `nvflare/tool/agent/doctor.py`
-- Packaging hook: `setup.py`
+- Implemented skills: `nvflare-orient`, `nvflare-convert-pytorch`, and `nvflare-diagnose-job`
+
+Separate:
+
 - Benchmark harness architecture: follow-up work outside this PR
 
-The important boundary: NVFLARE does not run a custom agent runtime for these
-skills. It packages, installs, validates, and measures skill files that
-Codex/Claude then load through their own skill mechanisms.
+The important boundary is that NVFLARE does not run a custom agent runtime for
+these skills. NVFLARE packages, installs, validates, and measures skill files;
+Codex and Claude load those files through their own skill mechanisms.
