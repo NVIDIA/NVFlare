@@ -597,9 +597,19 @@ def _shell_command_segments(command: str) -> list[str]:
     return [segment.strip() for segment in re.split(r"\s*(?:&&|\|\||;)\s*", text) if segment.strip()]
 
 
-def python_script_name(command: str) -> str:
-    if is_file_inspection_command(command):
-        return ""
+def _is_file_inspection_segment(segment: str) -> bool:
+    if _first_command_name(segment) not in FILE_INSPECTION_COMMANDS:
+        return False
+    return bool(
+        re.search(
+            r"\b(?:cat|sed|nl|head|tail|grep|rg|find|ls)\b[^\n;&|]*(?:\.py|job|simulat)",
+            segment,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def _python_script_name_from_segment(command: str) -> str:
     tokens = _command_tokens(command)
     index = 0
     while index < len(tokens):
@@ -623,8 +633,18 @@ def python_script_name(command: str) -> str:
                     return Path(arg).name.lower()
             return ""
         break
-    match = re.search(r"\bpython(?:3)?\s+([A-Za-z0-9_./-]+\.py)\b", _classification_command(command))
+    match = re.search(r"\bpython(?:3)?\s+([A-Za-z0-9_./-]+\.py)\b", command)
     return Path(match.group(1)).name.lower() if match else ""
+
+
+def python_script_name(command: str) -> str:
+    for segment in _shell_command_segments(command):
+        if _is_file_inspection_segment(segment):
+            continue
+        script_name = _python_script_name_from_segment(segment)
+        if script_name:
+            return script_name
+    return ""
 
 
 def job_entrypoint_match(command: str) -> str:
@@ -668,8 +688,34 @@ def is_simulation_or_job_command(command: str) -> bool:
     return is_job_entrypoint_command(command) or is_simulation_entrypoint_command(command)
 
 
+def is_nvflare_simulator_wrapper_command(command: str) -> bool:
+    script_name = python_script_name(command)
+    if not script_name:
+        return False
+    tokens = set(re.split(r"[_.-]+", Path(script_name).stem.lower()))
+    helper_tokens = {"check", "validate", "verify", "test", "tests", "setup", "config", "lint", "probe"}
+    action_tokens = {"run", "start", "launch", "execute"}
+    runtime_tokens = {"job", "nvflare", "simulat", "simulate", "simulation", "simulator"}
+    return (
+        not helper_tokens.intersection(tokens)
+        and bool(action_tokens.intersection(tokens))
+        and bool(runtime_tokens.intersection(tokens))
+    )
+
+
 def invokes_nvflare_simulator(command: str, output: str) -> bool:
-    text = f"{command}\n{output}"
+    command_text = "\n".join(
+        segment for segment in _shell_command_segments(command) if not _is_file_inspection_segment(segment)
+    )
+    if re.search(
+        r"\b(?:python(?:3)?\s+-m\s+)?nvflare(?:\.cli)?\s+simulator\b",
+        strip_ansi(command_text),
+        flags=re.IGNORECASE,
+    ):
+        return True
+    if not is_nvflare_simulator_wrapper_command(command):
+        return False
+    text = output
     return bool(
         re.search(
             r"\b(?:python(?:3)?\s+-m\s+)?nvflare(?:\.cli)?\s+simulator\b",
@@ -680,16 +726,7 @@ def invokes_nvflare_simulator(command: str, output: str) -> bool:
 
 
 def is_file_inspection_command(command: str) -> bool:
-    for segment in _shell_command_segments(command):
-        if _first_command_name(segment) not in FILE_INSPECTION_COMMANDS:
-            continue
-        if re.search(
-            r"\b(?:cat|sed|nl|head|tail|grep|rg|find|ls)\b[^\n;&|]*(?:\.py|job|simulat)",
-            segment,
-            flags=re.IGNORECASE,
-        ):
-            return True
-    return False
+    return any(_is_file_inspection_segment(segment) for segment in _shell_command_segments(command))
 
 
 def job_output_has_failure_status(output: str) -> bool:
@@ -758,8 +795,6 @@ def missing_python_module_name(output: str) -> str:
 def job_command_succeeded(event: dict[str, Any]) -> bool:
     command = str(event.get("command") or "")
     output = str(event.get("output") or "")
-    if is_file_inspection_command(command):
-        return False
     if not command_succeeded(event):
         return False
     job_match = job_entrypoint_match(command)

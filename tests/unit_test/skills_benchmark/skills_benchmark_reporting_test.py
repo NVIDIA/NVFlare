@@ -2543,6 +2543,27 @@ def test_job_success_ignores_wrapped_file_inspection_matching_python_job_text():
     assert job_run_status(run) == "not_started"
 
 
+def test_job_success_detects_execution_after_wrapped_file_inspection():
+    from skills.harness.reports.benchmark_insights import job_command_succeeded, job_run_status
+
+    event = {
+        "command": "/bin/bash -lc 'cd /work && rg \"python job.py|Finished FedAvg\" -n . && python job.py'",
+        "exit_code": 0,
+        "output": 'README.md:Run with python job.py\njob.py:print("Finished FedAvg.")\nFinished FedAvg.',
+        "status": "completed",
+    }
+    run = {
+        "available": True,
+        "activity": {"commands": [event["command"]]},
+        "agent_events_text": json.dumps(
+            {"item": {"type": "command_execution", "aggregated_output": event["output"], **event}}
+        ),
+    }
+
+    assert job_command_succeeded(event) is True
+    assert job_run_status(run) == "completed"
+
+
 def test_job_run_status_requires_success_evidence_for_leading_job_entrypoint():
     from skills.harness.reports.benchmark_insights import job_run_status
 
