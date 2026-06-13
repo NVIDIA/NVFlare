@@ -276,6 +276,18 @@ class TestDecomposeWithLazyDownloadRef:
         finalize_cbs = [cb for cb, _ in mgr.post_cbs if cb.__name__ == "_finalize_lazy_batch"]
         assert len(finalize_cbs) == 1, f"Expected exactly 1 _finalize_lazy_batch CB, got {len(finalize_cbs)}"
 
+    def test_mixed_lazy_download_batches_raise(self):
+        """A single lazy batch must not silently mix refs from different upstream download transactions."""
+        decomposer = _make_decomposer()
+        mgr = _make_manager()
+        lazy0 = LazyDownloadRef(fqcn=_SERVER_FQCN, ref_id=_REF_ID, item_id=_ITEM_ID_0)
+        lazy1 = LazyDownloadRef(fqcn="server/other", ref_id="other-ref", item_id=_ITEM_ID_1)
+
+        decomposer.decompose(lazy0, mgr)
+
+        with pytest.raises(RuntimeError, match="mixes download batches"):
+            decomposer.decompose(lazy1, mgr)
+
     def test_finalize_lazy_batch_adds_exactly_one_datum(self):
         """_finalize_lazy_batch post-CB must add exactly one datum per batch."""
         decomposer = _make_decomposer()
@@ -290,6 +302,18 @@ class TestDecomposeWithLazyDownloadRef:
 
         datums = list(mgr.get_datums().values())
         assert len(datums) == 1, f"Expected 1 datum from lazy batch, got {len(datums)}"
+
+    def test_finalize_lazy_batch_skips_datum_when_manager_has_error(self):
+        """If serialization already failed, lazy finalization must not mutate the DatumManager."""
+        decomposer = _make_decomposer()
+        mgr = _make_manager()
+        lazy = LazyDownloadRef(fqcn=_SERVER_FQCN, ref_id=_REF_ID, item_id=_ITEM_ID_0)
+
+        decomposer.decompose(lazy, mgr)
+        mgr.set_error("previous error")
+        mgr.post_process()
+
+        assert mgr.get_datums() == {}
 
     def test_finalize_lazy_batch_datum_has_correct_fqcn_and_ref_id(self):
         """The datum emitted by _finalize_lazy_batch must preserve original server fqcn/ref_id."""
