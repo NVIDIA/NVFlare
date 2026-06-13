@@ -14,6 +14,19 @@ This reference covers standard PyTorch training loops that already have a
 - Send `flare.FLModel(params=model.cpu().state_dict(), metrics=..., meta=...)`
   with `flare.send(...)`.
 
+## PyTorch Parameter Payload Type
+
+For `PTInProcessClientAPIExecutor`, outbound `FLModel(params=...)` must contain
+`torch.Tensor` values. `PTSendParamsConverter` excludes non-tensor params.
+
+```python
+params = {k: v.detach().cpu() for k, v in model.state_dict().items()}
+assert all(isinstance(v, torch.Tensor) for v in params.values())
+flare.send(FLModel(params=params, metrics=metrics, meta=meta))
+```
+
+Do not convert outbound weights to NumPy before sending.
+
 ## Source Layout
 
 For PyTorch conversions, the job source should normally contain:

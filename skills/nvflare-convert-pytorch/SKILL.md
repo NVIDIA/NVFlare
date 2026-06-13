@@ -58,6 +58,9 @@ debugging that does not ask for FLARE conversion.
 - Must follow the shared job lifecycle guidance for validation evidence,
   including final/best metrics, round/per-site metrics, and artifact paths when
   those artifacts are present.
+- Must keep outbound PyTorch model weights as `torch.Tensor` values in
+  `FLModel(params=...)` when using `PTInProcessClientAPIExecutor`; load
+  `references/pytorch-client-api-conversion.md` for the exact send pattern.
 - Must not require `rg` to be installed; the shared lifecycle defines fallback
   search options.
 
