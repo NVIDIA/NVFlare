@@ -203,6 +203,7 @@ class AnalyticsData:
         cls, sender_data_type: AnalyticsDataType, sender: LogWriterName, receiver: LogWriterName
     ) -> AnalyticsDataType:
 
+        # TensorBoard naming → MLflow/W&B naming
         if sender == LogWriterName.TORCH_TB and (receiver == LogWriterName.MLFLOW or receiver == LogWriterName.WANDB):
             if AnalyticsDataType.SCALAR == sender_data_type:
                 return AnalyticsDataType.METRIC
@@ -211,7 +212,8 @@ class AnalyticsData:
             else:
                 return sender_data_type
 
-        if sender == LogWriterName.MLFLOW and receiver == LogWriterName.TORCH_TB:
+        # MLflow/W&B naming → TensorBoard naming
+        if (sender == LogWriterName.MLFLOW or sender == LogWriterName.WANDB) and receiver == LogWriterName.TORCH_TB:
             if AnalyticsDataType.METRIC == sender_data_type:
                 return AnalyticsDataType.SCALAR
             elif AnalyticsDataType.METRICS == sender_data_type:
@@ -219,8 +221,14 @@ class AnalyticsData:
             else:
                 return sender_data_type
 
-        if sender == LogWriterName.MLFLOW and receiver == LogWriterName.WANDB:
+        # MLflow and W&B share the same METRIC/METRICS naming, so cross-mapping is a pass-through.
+        if (sender == LogWriterName.MLFLOW and receiver == LogWriterName.WANDB) or (
+            sender == LogWriterName.WANDB and receiver == LogWriterName.MLFLOW
+        ):
             return sender_data_type
+
+        # Same sender/receiver, or any combination not covered above: pass through unchanged.
+        return sender_data_type
 
     def __str__(self) -> str:
         return f"AnalyticsData(tag: {self.tag}, value: {self.value}, data_type: {self.data_type}, kwargs: {self.kwargs}, step: {self.step})"
