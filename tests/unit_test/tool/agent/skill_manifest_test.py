@@ -165,6 +165,30 @@ def test_skill_tree_hash_ignores_python_cache_files(tmp_path):
     assert skill_tree_hash(skill_dir) == first_hash
 
 
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are not supported on this platform")
+def test_skill_tree_hash_ignores_symlinked_pycache_dir(tmp_path):
+    skill_dir = _write_skill(tmp_path, "nvflare-test-skill")
+    first_hash = skill_tree_hash(skill_dir)
+    real_cache = tmp_path / "cache-store"
+    real_cache.mkdir()
+    real_cache.joinpath("SKILL.cpython-310.pyc").write_bytes(b"compiled cache")
+    skill_dir.joinpath("__pycache__").symlink_to(real_cache, target_is_directory=True)
+
+    # A symlinked byte-code cache is excluded, not treated as a forbidden skill symlink.
+    assert skill_tree_hash(skill_dir) == first_hash
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are not supported on this platform")
+def test_skill_tree_hash_ignores_symlinked_pyc_file(tmp_path):
+    skill_dir = _write_skill(tmp_path, "nvflare-test-skill")
+    first_hash = skill_tree_hash(skill_dir)
+    outside_pyc = tmp_path / "outside.pyc"
+    outside_pyc.write_bytes(b"compiled cache")
+    skill_dir.joinpath("SKILL.cpython-310.pyc").symlink_to(outside_pyc)
+
+    assert skill_tree_hash(skill_dir) == first_hash
+
+
 def test_validate_skill_dir_uses_current_frontmatter_loader(monkeypatch, tmp_path):
     first = SimpleNamespace(validate_skill_dir=lambda _path: "first")
     second = SimpleNamespace(validate_skill_dir=lambda _path: "second")

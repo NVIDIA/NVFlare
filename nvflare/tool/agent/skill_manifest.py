@@ -226,21 +226,26 @@ def _iter_skill_files(skill_dir: Path, *, exclude_names: set[str]) -> Iterable[P
         dir_names.sort()
         file_names.sort()
         for dir_name in list(dir_names):
+            # Drop excluded dirs (e.g. __pycache__) before the symlink guard so a
+            # symlinked byte-code cache does not block hashing valid skill trees.
+            if dir_name in exclude_names:
+                dir_names.remove(dir_name)
+                continue
             dir_path = root_path / dir_name
             if dir_path.is_symlink():
                 raise ValueError(f"skill directory contains symlink: {dir_path.relative_to(skill_dir).as_posix()}")
-            if dir_name in exclude_names:
-                dir_names.remove(dir_name)
 
         for file_name in file_names:
             file_path = root_path / file_name
             rel_path = file_path.relative_to(skill_dir)
-            if file_path.is_symlink():
-                raise ValueError(f"skill directory contains symlink: {rel_path.as_posix()}")
+            # Skip excluded and byte-code files before the symlink guard so a symlinked
+            # __pycache__/.pyc entry does not raise on otherwise-valid skill trees.
             if any(part in exclude_names for part in rel_path.parts):
                 continue
             if file_path.suffix in {".pyc", ".pyo"}:
                 continue
+            if file_path.is_symlink():
+                raise ValueError(f"skill directory contains symlink: {rel_path.as_posix()}")
             if not file_path.is_file():
                 continue
             yield file_path
