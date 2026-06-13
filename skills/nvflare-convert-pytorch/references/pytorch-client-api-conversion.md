@@ -22,7 +22,7 @@ For `PTInProcessClientAPIExecutor`, outbound `FLModel(params=...)` must contain
 ```python
 params = {k: v.detach().cpu() for k, v in model.state_dict().items()}
 assert all(isinstance(v, torch.Tensor) for v in params.values())
-flare.send(FLModel(params=params, metrics=metrics, meta=meta))
+flare.send(flare.FLModel(params=params, metrics=metrics, meta=meta))
 ```
 
 Do not convert outbound weights to NumPy before sending.
