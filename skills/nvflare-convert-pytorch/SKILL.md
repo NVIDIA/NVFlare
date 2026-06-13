@@ -22,26 +22,30 @@ debugging that does not ask for FLARE conversion.
 
 ## Workflow
 
-1. Follow the shared conversion workflow contract in
+1. Before Python import/inspect commands, install applicable source
+   `requirements*.txt` files in the active `nvflare` environment. Use `uv pip`
+   when available; see the shared lifecycle for interpreter selection and avoid
+   `uv pip install --system` with virtual environments.
+2. Follow the shared conversion workflow contract in
    `../_shared/nvflare-job-lifecycle.md`.
-2. Identify the PyTorch model definition, required `nn.Module.__init__` arguments,
+3. Identify the PyTorch model definition, required `nn.Module.__init__` arguments,
    training loop, data loading, metrics, and checkpoint behavior. Determine the
    concrete constructor values that server and client models must share before
    creating `job.py`.
-3. Run `nvflare recipe list --framework pytorch --format json` and select the
+4. Run `nvflare recipe list --framework pytorch --format json` and select the
    recipe from the requested FL workflow, not from PyTorch alone. Use FedAvg
    only for standard horizontal model-parameter aggregation.
    For standard FedAvg, use the portable fast path in
    `references/recipe-selection.md`; do not add per-site recipe config unless
    the sites actually need different training scripts, arguments, or launch
    settings.
-4. Convert training exchange to the FLARE Client API: initialize FLARE, receive
+5. Convert training exchange to the FLARE Client API: initialize FLARE, receive
    an `FLModel`, load `params` into the PyTorch model, train or evaluate, and
    send an `FLModel` with updated `params`, metrics, and useful metadata.
-5. Add or update a `job.py` that uses the selected PyTorch recipe or job API
+6. Add or update a `job.py` that uses the selected PyTorch recipe or job API
    path. Follow the shared lifecycle for generated layout, validation, export,
    runtime locations, and evidence reporting.
-6. Validate and export through the shared lifecycle. Use
+7. Validate and export through the shared lifecycle. Use
    `references/job-validation.md` for PyTorch-specific checks before calling the
    conversion complete.
 

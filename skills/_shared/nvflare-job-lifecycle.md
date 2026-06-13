@@ -59,21 +59,19 @@ runtime locations under `/tmp/nvflare/` unless the user provides another path:
 - Use `python job.py` for local recipe or SimEnv validation when supported.
 - Prefer synthetic data flags or small fixtures when the original dataset is
   unavailable.
-- Before import checks, export, or simulation, install applicable
+- Before Python import checks, export, or simulation, install applicable
   source-provided `requirements*.txt` files into the same active Python
-  environment that runs the `nvflare` CLI and generated job. Prefer
-  `uv pip install -r <file>` when an active virtual environment is already the
-  `nvflare` environment; otherwise use `uv pip install --python <python> -r
-  <file>` with the Python interpreter behind `nvflare`, or use
-  `<python> -m pip install -r <file>`. Do not use `uv pip install --system`
-  when `nvflare` is installed in a virtual environment, because it skips virtual
-  environments and can install dependencies into the wrong Python. If an import
-  still fails, verify which environment received the install before rerunning
-  the failed check.
-- Once an applicable requirements file is found and framework imports are
-  missing, install it before any Python command that imports framework-specific
-  NVFLARE modules such as `nvflare.app_opt.pt.*`, recipe classes, or generated
-  client/model code.
+  environment that runs the `nvflare` CLI and generated job, before commands
+  that import NVFLARE modules such as `nvflare.app_opt.pt.*`,
+  framework-specific modules, recipe classes, or generated client/model code.
+  Prefer `uv pip install -r <file>` when an active virtual environment is
+  already the `nvflare` environment; otherwise use
+  `uv pip install --python <python> -r <file>` with the Python interpreter
+  behind `nvflare`, or use `<python> -m pip install -r <file>`. Do not use
+  `uv pip install --system` when `nvflare` is installed in a virtual
+  environment, because it skips virtual environments and can install
+  dependencies into the wrong Python. If an import still fails, verify which
+  environment received the install before rerunning the failed check.
 - Treat missing dependencies as blockers only when no applicable dependency file
   exists, install fails, system/GPU resources are unavailable, or required
   approval/network access is unavailable.
