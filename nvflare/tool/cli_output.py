@@ -198,6 +198,14 @@ def sanitize_cli_output(value: Any) -> Any:
     return _sanitize_for_cli_output(value)
 
 
+def _emit_json(value: Any, *, flush: bool = False) -> None:
+    safe_value = _sanitize_for_cli_output(value)
+    sys.stdout.write(json.dumps(safe_value))
+    sys.stdout.write("\n")
+    if flush:
+        sys.stdout.flush()
+
+
 def _render_table(data: Any) -> None:
     safe_table_data = _sanitize_for_cli_output(data)
     if isinstance(safe_table_data, dict):
@@ -233,7 +241,7 @@ def output(data: Any, fmt: Optional[str]) -> None:
             "exit_code": 0,
             "data": safe_output_data,
         }
-        print(json.dumps(safe_output_payload))
+        _emit_json(safe_output_payload)
     elif fmt == "quiet":
         if isinstance(safe_output_data, dict):
             safe_quiet_value = next(iter(safe_output_data.values()), "")
@@ -302,7 +310,7 @@ def output_ok(
             recovery_category=recovery_category,
             suggested_skill=suggested_skill,
         )
-        print(json.dumps(payload))
+        _emit_json(payload)
     else:
         _render_table(safe_output_data)
     if exit_code != 0:
@@ -353,9 +361,9 @@ def output_error(
         if _is_jsonl_mode():
             payload["event"] = "terminal"
             payload["terminal"] = True
-            print(json.dumps(payload), flush=True)
+            _emit_json(payload, flush=True)
         else:
-            print(json.dumps(payload))
+            _emit_json(payload)
     else:
         if safe_error_data is not None:
             _render_table(safe_error_data)
@@ -373,7 +381,7 @@ def output_jsonl_event(event: Any) -> None:
     safe_event = _sanitize_for_cli_output(event)
     safe_jsonl_payload = {"schema_version": SCHEMA_VERSION}
     safe_jsonl_payload.update(safe_event)
-    print(json.dumps(safe_jsonl_payload), flush=True)
+    _emit_json(safe_jsonl_payload, flush=True)
 
 
 def output_error_message(
@@ -419,9 +427,9 @@ def output_error_message(
         if jsonl_mode:
             payload["event"] = "terminal"
             payload["terminal"] = True
-            print(json.dumps(payload), flush=True)
+            _emit_json(payload, flush=True)
         else:
-            print(json.dumps(payload))
+            _emit_json(payload)
     else:
         print(safe_error_message, file=sys.stderr)
         if safe_error_hint:

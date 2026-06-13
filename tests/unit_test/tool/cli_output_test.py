@@ -13,8 +13,8 @@
 # limitations under the License.
 
 import argparse
+import io
 import json
-from unittest.mock import patch
 
 import pytest
 
@@ -35,6 +35,16 @@ from nvflare.tool.cli_output import (
 def reset_cli_output_state(monkeypatch):
     monkeypatch.setattr(cli_output, "_output_format", "txt")
     monkeypatch.setattr(cli_output, "_connect_timeout", 5.0)
+
+
+class _FlushTrackingStringIO(io.StringIO):
+    def __init__(self):
+        super().__init__()
+        self.flush_called = False
+
+    def flush(self):
+        self.flush_called = True
+        super().flush()
 
 
 # --- output() tests (cert/package commands) ---
@@ -194,12 +204,14 @@ class TestOutputOk:
         assert payload["terminal"] is True
         assert payload["data"] == {"key": "value"}
 
-    def test_jsonl_event_flushes_stdout(self):
-        with patch("builtins.print") as mock_print:
-            output_jsonl_event({"event": "progress"})
+    def test_jsonl_event_flushes_stdout(self, monkeypatch):
+        stdout = _FlushTrackingStringIO()
+        monkeypatch.setattr(cli_output.sys, "stdout", stdout)
 
-        mock_print.assert_called_once()
-        assert mock_print.call_args.kwargs["flush"] is True
+        output_jsonl_event({"event": "progress"})
+
+        assert stdout.flush_called is True
+        assert json.loads(stdout.getvalue())["event"] == "progress"
 
     def test_human_mode_dict_renders_as_table(self, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
@@ -238,6 +250,15 @@ class TestOutputOk:
         assert envelope["data"]["message"] == "Authorization: Bearer <redacted>"
         assert envelope["data"]["retry_token"] == {"supported": False}
         assert envelope["data"]["credential_revoked"] is False
+
+    def test_jsonl_mode_redacts_sensitive_data(self, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", "jsonl")
+        output_ok({"access_token": "token-secret", "status": "ok"})
+
+        captured = capsys.readouterr()
+        assert "token-secret" not in captured.out
+        envelope = json.loads(captured.out)
+        assert envelope["data"] == {"access_token": "<redacted>", "status": "ok"}
 
     def test_json_mode_redacts_sensitive_envelope_text(self, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "json")
@@ -288,29 +309,31 @@ class TestOutputErrorCertPackage:
 
     def test_jsonl_format_goes_to_stdout_as_terminal_event(self, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "jsonl")
-        with patch("builtins.print") as mock_print:
-            with pytest.raises(SystemExit) as exc_info:
-                output_error_message("MY_CODE", "Error message here.", "Fix hint.", None)
+        stdout = _FlushTrackingStringIO()
+        monkeypatch.setattr(cli_output.sys, "stdout", stdout)
+
+        with pytest.raises(SystemExit) as exc_info:
+            output_error_message("MY_CODE", "Error message here.", "Fix hint.", None)
         assert exc_info.value.code == 1
 
-        mock_print.assert_called_once()
-        assert mock_print.call_args.kwargs["flush"] is True
-        result = json.loads(mock_print.call_args.args[0])
+        assert stdout.flush_called is True
+        result = json.loads(stdout.getvalue())
         assert result["schema_version"] == SCHEMA_VERSION
         assert result["event"] == "terminal"
         assert result["status"] == "error"
         assert result["terminal"] is True
         assert result["error_code"] == "MY_CODE"
 
-    def test_explicit_jsonl_format_goes_to_stdout_as_terminal_event(self):
-        with patch("builtins.print") as mock_print:
-            with pytest.raises(SystemExit) as exc_info:
-                output_error_message("MY_CODE", "Error message here.", "Fix hint.", "jsonl")
+    def test_explicit_jsonl_format_goes_to_stdout_as_terminal_event(self, monkeypatch):
+        stdout = _FlushTrackingStringIO()
+        monkeypatch.setattr(cli_output.sys, "stdout", stdout)
+
+        with pytest.raises(SystemExit) as exc_info:
+            output_error_message("MY_CODE", "Error message here.", "Fix hint.", "jsonl")
         assert exc_info.value.code == 1
 
-        mock_print.assert_called_once()
-        assert mock_print.call_args.kwargs["flush"] is True
-        result = json.loads(mock_print.call_args.args[0])
+        assert stdout.flush_called is True
+        result = json.loads(stdout.getvalue())
         assert result["schema_version"] == SCHEMA_VERSION
         assert result["event"] == "terminal"
         assert result["status"] == "error"
@@ -344,6 +367,21 @@ class TestOutputErrorCertPackage:
 
         payload = json.loads(capsys.readouterr().out)
         assert payload["data"] == {"session_token": "<redacted>", "job_id": "abc123"}
+
+    def test_error_message_jsonl_redacts_sensitive_data(self, capsys):
+        with pytest.raises(SystemExit):
+            output_error_message(
+                "MY_CODE",
+                "Error message here.",
+                "Fix hint.",
+                "jsonl",
+                data={"private_key": "private-secret", "job_id": "abc123"},
+            )
+
+        captured = capsys.readouterr()
+        assert "private-secret" not in captured.out
+        payload = json.loads(captured.out)
+        assert payload["data"] == {"private_key": "<redacted>", "job_id": "abc123"}
 
 
 class TestOutputUsageError:
@@ -388,14 +426,15 @@ class TestOutputErrorWithData:
 
     def test_jsonl_error_flushes_stdout(self, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "jsonl")
-        with patch("builtins.print") as mock_print:
-            with pytest.raises(SystemExit) as exc_info:
-                output_error("JOB_FAILED", exit_code=1, data={"status": "FAILED"}, job_id="abc123")
+        stdout = _FlushTrackingStringIO()
+        monkeypatch.setattr(cli_output.sys, "stdout", stdout)
+
+        with pytest.raises(SystemExit) as exc_info:
+            output_error("JOB_FAILED", exit_code=1, data={"status": "FAILED"}, job_id="abc123")
         assert exc_info.value.code == 1
 
-        mock_print.assert_called_once()
-        assert mock_print.call_args.kwargs["flush"] is True
-        payload = json.loads(mock_print.call_args.args[0])
+        assert stdout.flush_called is True
+        payload = json.loads(stdout.getvalue())
         assert payload["event"] == "terminal"
         assert payload["terminal"] is True
 
