@@ -181,7 +181,7 @@ def _inspect_dir(root: Path, state: InspectState, *, max_files: int, max_file_by
             _add_skip(state, _skip_entry(directory, state, "UNREADABLE_DIRECTORY", "could not read directory", e))
             continue
 
-        for child in children:
+        for index, child in enumerate(children):
             if child.is_symlink():
                 _record_symlink_skip(child, state)
                 continue
@@ -193,11 +193,41 @@ def _inspect_dir(root: Path, state: InspectState, *, max_files: int, max_file_by
                 continue
             if state.entries_visited >= max_files:
                 _add_skip(state, _skip_entry(child, state, "FILE_LIMIT_REACHED", "file scan limit reached"))
+                _record_unvisited_directories_due_to_file_limit(state, root, stack, children[index + 1 :])
                 return
             state.entries_visited += 1
             if not child.is_file():
                 continue
             _inspect_file(child, state, max_file_bytes)
+
+
+def _record_unvisited_directories_due_to_file_limit(
+    state: InspectState, root: Path, pending_stack: list[Path], remaining_children: list[Path]
+) -> None:
+    directories = list(pending_stack)
+    for child in remaining_children:
+        try:
+            if child.is_symlink() or not child.is_dir() or _should_skip_dir(child, root):
+                continue
+        except OSError:
+            continue
+        directories.append(child)
+
+    seen = set()
+    for directory in directories:
+        key = str(directory)
+        if key in seen:
+            continue
+        seen.add(key)
+        _add_skip(
+            state,
+            _skip_entry(
+                directory,
+                state,
+                "DIRECTORY_NOT_SCANNED_FILE_LIMIT",
+                "directory not scanned because file scan limit was reached",
+            ),
+        )
 
 
 def _inspect_file(path: Path, state: InspectState, max_file_bytes: int) -> None:

@@ -207,7 +207,10 @@ def _online_summary(args) -> dict:
             "findings": [_finding("STARTUP_KIT_NOT_READY", "warning", str(e), getattr(e, "hint", None))],
         }
 
-    read_only_finding = _online_read_only_preflight(startup_kit)
+    try:
+        read_only_finding = _online_read_only_preflight(startup_kit)
+    except Exception as e:
+        return _online_error(f"ONLINE_PREFLIGHT_FAILED_{type(e).__name__.upper()}", "error", str(e), startup_kit)
     if read_only_finding:
         return {
             "enabled": True,

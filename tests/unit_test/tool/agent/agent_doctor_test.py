@@ -170,6 +170,16 @@ def test_doctor_online_generic_error_includes_exception_type(monkeypatch, tmp_pa
     assert data["online"]["findings"][0]["code"] == "ONLINE_CHECK_FAILED_RUNTIMEERROR"
 
 
+def test_doctor_online_preflight_error_is_structured(monkeypatch, tmp_path):
+    _configure_active_startup_kit(tmp_path, monkeypatch)
+
+    with patch("nvflare.tool.agent.doctor._online_read_only_preflight", side_effect=RuntimeError("preflight failed")):
+        data = doctor_environment(online=True, args=SimpleNamespace(kit_id=None, startup_kit=None))
+
+    assert data["online"]["status"] == "error"
+    assert data["online"]["findings"][0]["code"] == "ONLINE_PREFLIGHT_FAILED_RUNTIMEERROR"
+
+
 def test_doctor_online_skips_when_session_would_create_download_dir(monkeypatch, tmp_path):
     home = tmp_path / "home"
     admin_dir = tmp_path / "active-admin"
