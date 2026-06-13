@@ -96,7 +96,6 @@ def def_deploy_cli_parser(sub_cmd) -> dict:
     )
     stage_parser.add_argument(
         "--startup-secret",
-        dest="startup_resource_name",
         help="Secret name for the prepared startup/ folder. Defaults to nvflare-startup-<site>.",
     )
     stage_parser.add_argument(
