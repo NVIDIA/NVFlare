@@ -646,6 +646,7 @@ def test_prepare_k8s_client_writes_chart_and_launcher_config(tmp_path, capsys):
                 "default_python_path": "/usr/bin/python3",
                 "job_pod_security_context": {"runAsNonRoot": True},
                 "image_pull_secrets": ["job-regcred", "site.registry.example.com"],
+                "study_job_spec_file_path": "/workspace/local/study_job_spec.yaml",
             },
         },
     )
@@ -663,6 +664,7 @@ def test_prepare_k8s_client_writes_chart_and_launcher_config(tmp_path, capsys):
     assert launcher["args"]["pending_timeout"] == 7
     assert launcher["args"]["security_context"] == {"runAsNonRoot": True}
     assert launcher["args"]["image_pull_secrets"] == ["job-regcred", "site.registry.example.com"]
+    assert launcher["args"]["study_job_spec_file_path"] == "/workspace/local/study_job_spec.yaml"
 
     comm_config = json.loads((output / "local" / "comm_config.json").read_text())
     assert comm_config["internal"]["resources"] == {
@@ -1357,6 +1359,14 @@ def test_prepare_rejects_admin_kit_without_writing_output(tmp_path, capsys):
                 "job_launcher": {"default_python_path": False},
             },
             "job_launcher.default_python_path",
+        ),
+        (
+            {
+                "runtime": "k8s",
+                "parent": {"docker_image": "repo/nvflare:dev"},
+                "job_launcher": {"study_job_spec_file_path": 7},
+            },
+            "job_launcher.study_job_spec_file_path",
         ),
     ],
 )
