@@ -202,7 +202,9 @@ def _emit_json(value: Any, *, flush: bool = False) -> None:
     safe_value = _sanitize_for_cli_output(value)
     safe_text = json.dumps(safe_value)
     # Safe: safe_text is serialized only after recursive CLI redaction above.
-    sys.stdout.write(safe_text)  # lgtm[py/clear-text-logging-sensitive-data]
+    # codeql[py/clear-text-logging-sensitive-data]
+    # lgtm[py/clear-text-logging-sensitive-data]
+    sys.stdout.write(safe_text)
     sys.stdout.write("\n")
     if flush:
         sys.stdout.flush()

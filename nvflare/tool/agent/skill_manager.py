@@ -263,11 +263,12 @@ def _install_plan(
                         installed_source_hash = skill_tree_hash(
                             target_skill_dir, exclude_names={INSTALL_MANIFEST_FILE_NAME}
                         )
-                    except ValueError as e:
+                    except (OSError, ValueError) as e:
                         installed_source_hash = None
                         entry["target_issue"] = {
                             "code": "local_modifications_detected",
                             "message": str(e),
+                            "error_type": type(e).__name__,
                             "target_path": str(target_skill_dir),
                         }
                     if installed_source_hash != install_manifest.get("source_hash"):
