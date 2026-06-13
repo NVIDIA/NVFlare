@@ -1,0 +1,155 @@
+# Agent profile contract
+#
+# Inputs:
+# - --model selects the measured model for direct runs; if omitted, Claude CLI
+#   uses its own default and the harness records default_model metadata.
+# - auth describes optional host files mounted into the container at runtime.
+# - launch defines the measured agent command. It must not contain prompt text;
+#   the harness supplies the prompt through stdin or a prompt file.
+# - skill_exposure defines how an already prepared SDK skills folder is exposed
+#   to this agent during with_skills runs.
+#
+# Outputs:
+# - images defines the Docker tags built and used by the harness.
+# - build.args are Docker build args. Values are profile-owned, not env-overridden.
+# - runtime_env/passthrough_env define container env passed to the agent process.
+# - final_message/events/usage/activity/exit define normalized run artifacts.
+#
+# Required sections:
+# name, display_name, agent_home_env, container_home, launch, skill_exposure,
+# final_message, events, usage, activity, and exit.
+#
+# Optional defaults:
+# default_model defaults to unspecified_default; images default to
+# agent-skills-benchmark:{agent}-skills/baseline/report; auth and passthrough
+# env may be omitted; availability_probe may be omitted.
+
+name: claude
+display_name: Claude Code
+default_model: unspecified_default
+agent_home_env: CLAUDE_CONFIG_DIR
+container_home: /workspace/.claude
+
+# Docker image tag outputs.
+images:
+  skills: agent-skills-benchmark:{agent}-skills
+  baseline: agent-skills-benchmark:{agent}-baseline
+  report: agent-skills-benchmark:{agent}-skills
+
+# Docker build inputs for the agent CLI layer and SDK skills setup target.
+build:
+  args:
+    BENCHMARK_DOCKER_AGENT: claude
+    BENCHMARK_AGENT_HOME: /workspace/.claude
+    AGENT_CLI_NAME: claude
+    AGENT_INSTALL_COMMAND: npm install -g "@anthropic-ai/claude-code@2.1.170"
+    AGENT_VERSION_COMMAND: claude --version
+
+# Optional runtime auth inputs from the host.
+auth:
+  default_host_home: ~/.claude
+  mount_by_default: true
+  files:
+    - source: .credentials.json
+      target: .credentials.json
+      read_only: true
+      description: Claude credentials
+
+# Runtime env outputs passed to the agent process.
+runtime_env:
+  CLAUDE_CONFIG_DIR: "{container_home}"
+
+passthrough_env:
+  - ANTHROPIC_API_KEY
+  - ANTHROPIC_AUTH_TOKEN
+  - ANTHROPIC_BASE_URL
+  - CLAUDE_CODE_OAUTH_TOKEN
+
+# Measured agent command input.
+launch:
+  prompt_input_mode: stdin
+  argv:
+    - claude
+    - --effort
+    - xhigh
+    - --no-session-persistence
+    - --permission-mode
+    - bypassPermissions
+    - --tools
+    - default
+    - --dangerously-skip-permissions
+    - --output-format
+    - stream-json
+    - --verbose
+    - --print
+  model_argv:
+    - --model
+    - "{model}"
+  model_argv_position: before_final_arg
+  sandbox_flags:
+    - --dangerously-skip-permissions
+    - --permission-mode
+    - bypassPermissions
+  bypass_reason: "isolated benchmark container; writable state is limited to mounted result/workspace paths"
+  environment:
+    CLAUDE_CONFIG_DIR: "{container_home}"
+
+# Skills exposure input consumed during with_skills runs.
+skill_exposure:
+  mechanism_type: launch_flag
+  skill_root: "{container_home}/skills"
+  launch_args:
+    - --add-dir
+    - "{skills_dir}"
+
+# Normalized artifact outputs.
+final_message:
+  source_type: structured_event
+  event_selector:
+    type: result
+    subtype: success
+  parser: generic_structured_event_message
+  parser_warnings:
+    - "final message from last result event; may be truncated at context limit"
+
+events:
+  parser: claude_stream_json
+  format: stream-json
+
+usage:
+  parser: claude_stream_usage
+  fidelity: parsed
+  is_cumulative: false
+
+activity:
+  parser: claude_stream_activity
+
+exit:
+  classifier: stderr_patterns
+  rules:
+    - category: agent_cli_missing
+      exit_codes:
+        - 127
+    - category: agent_model_unsupported
+      all:
+        - model
+      any:
+        - not supported
+        - unsupported
+    - category: agent_auth_failure
+      any:
+        - auth
+        - api key
+        - login
+    - category: agent_sandbox_or_approval_failure
+      any:
+        - bubblewrap
+        - bwrap
+        - permission
+        - approval
+        - sandbox
+        - socat
+
+availability_probe:
+  - claude
+  - --version
