@@ -218,6 +218,66 @@ def test_fl_algorithm_section_reads_captured_server_workflow_config(tmp_path):
     assert "nvflare.app_common.workflows.scaffold.Scaffold" in section
 
 
+def test_fl_algorithm_prefers_training_workflow_over_initialization(tmp_path):
+    from skills.harness.modes import WITH_SKILLS_MODE
+    from skills.harness.reports.benchmark_insights import fl_algorithm_info
+
+    mode_dir = tmp_path / WITH_SKILLS_MODE
+    config_path = (
+        mode_dir
+        / "workspace_delta"
+        / "runtime_artifacts"
+        / "runtime_workspaces"
+        / "job"
+        / "server"
+        / "simulate_job"
+        / "app_server"
+        / "config"
+        / "config_fed_server.json"
+    )
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        json.dumps(
+            {
+                "workflows": [
+                    {
+                        "id": "init",
+                        "path": "nvflare.app_common.workflows.initialize_global_weights.InitializeGlobalWeights",
+                        "args": {},
+                    },
+                    {
+                        "id": "train",
+                        "path": "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather",
+                        "args": {"num_rounds": 5, "train_task_name": "train"},
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    run = {
+        "available": True,
+        "mode_dir": mode_dir,
+        "workspace_delta": {
+            "runtime_artifacts": [
+                {
+                    "artifact_path": (
+                        "runtime_artifacts/runtime_workspaces/job/server/simulate_job/app_server/config/"
+                        "config_fed_server.json"
+                    ),
+                    "path": "runtime_workspaces/job/server/simulate_job/app_server/config/config_fed_server.json",
+                }
+            ]
+        },
+    }
+
+    info = fl_algorithm_info(run)
+
+    assert info["algorithm"] == "ScatterAndGather"
+    assert info["num_rounds"] == 5
+    assert info["workflow_id"] == "train"
+
+
 def test_mode_dir_for_benchmark_does_not_guess_ambiguous_canonical_layout(tmp_path):
     from skills.harness.modes import NO_SKILLS_MODE
     from skills.harness.reports.benchmark_insights import mode_dir_for_benchmark
@@ -2439,6 +2499,27 @@ def test_job_run_status_detects_leading_job_entrypoint():
     }
 
     assert job_run_status(run) == "completed"
+
+
+def test_job_success_ignores_file_inspection_matching_python_job_text():
+    from skills.harness.reports.benchmark_insights import job_command_succeeded, job_run_status
+
+    event = {
+        "command": "/bin/bash -lc 'rg \"python job.py|Finished FedAvg\" -n .'",
+        "exit_code": 0,
+        "output": 'README.md:Run with python job.py\njob.py:print("Finished FedAvg.")',
+        "status": "completed",
+    }
+    run = {
+        "available": True,
+        "activity": {"commands": [event["command"]]},
+        "agent_events_text": json.dumps(
+            {"item": {"type": "command_execution", "aggregated_output": event["output"], **event}}
+        ),
+    }
+
+    assert job_command_succeeded(event) is False
+    assert job_run_status(run) == "not_started"
 
 
 def test_job_run_status_requires_success_evidence_for_leading_job_entrypoint():

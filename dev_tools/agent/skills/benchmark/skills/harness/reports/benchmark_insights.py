@@ -20,6 +20,7 @@ import argparse
 import html
 import json
 import re
+import shlex
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,7 @@ from ..quality_signals import (
 )
 
 MODE_LABELS = {spec.mode: spec.label for spec in BENCHMARK_RUNS}
+FILE_INSPECTION_COMMANDS = {"cat", "sed", "nl", "head", "tail", "grep", "rg", "find", "ls"}
 REQUIRED_STRUCTURE_FILES = ("client.py", "model.py", "job.py")
 OPTIONAL_STRUCTURE_FILES = ("prepare_data.py", "download_data.py")
 CONFIG_STRUCTURE_SUFFIXES = (".cfg", ".ini", ".json", ".toml", ".yaml", ".yml")
@@ -565,8 +567,58 @@ def command_recovery_key(command: str) -> str:
     return first_word.group(1) if first_word else command[:80]
 
 
+def _classification_command(command: str) -> str:
+    text = str(command).strip()
+    try:
+        tokens = shlex.split(text)
+    except ValueError:
+        return text
+    if len(tokens) >= 3 and Path(tokens[0]).name in {"bash", "sh"}:
+        for index, token in enumerate(tokens[1:], start=1):
+            if token.startswith("-") and "c" in token and index + 1 < len(tokens):
+                return tokens[index + 1]
+    return text
+
+
+def _command_tokens(command: str) -> list[str]:
+    try:
+        return shlex.split(_classification_command(command))
+    except ValueError:
+        return []
+
+
+def _first_command_name(command: str) -> str:
+    tokens = _command_tokens(command)
+    return Path(tokens[0]).name.lower() if tokens else ""
+
+
 def python_script_name(command: str) -> str:
-    match = re.search(r"\bpython(?:3)?\s+([A-Za-z0-9_./-]+\.py)\b", str(command))
+    tokens = _command_tokens(command)
+    if _first_command_name(command) in FILE_INSPECTION_COMMANDS:
+        return ""
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        name = Path(token).name.lower()
+        if name in {"timeout", "gtimeout"}:
+            index += 1
+            while index < len(tokens) and (
+                tokens[index].startswith("-") or re.fullmatch(r"\d+(?:\.\d+)?[smhd]?", tokens[index])
+            ):
+                index += 1
+            continue
+        if name == "env":
+            index += 1
+            while index < len(tokens) and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", tokens[index]):
+                index += 1
+            continue
+        if name in {"python", "python3"}:
+            for arg in tokens[index + 1 :]:
+                if arg.endswith(".py"):
+                    return Path(arg).name.lower()
+            return ""
+        break
+    match = re.search(r"\bpython(?:3)?\s+([A-Za-z0-9_./-]+\.py)\b", _classification_command(command))
     return Path(match.group(1)).name.lower() if match else ""
 
 
@@ -623,12 +675,13 @@ def invokes_nvflare_simulator(command: str, output: str) -> bool:
 
 
 def is_file_inspection_command(command: str) -> bool:
-    if python_script_name(command) or re.search(r"\bnvflare(?:\.cli)?\s+simulator\b", command):
+    command_text = _classification_command(command)
+    if _first_command_name(command_text) not in FILE_INSPECTION_COMMANDS:
         return False
     return bool(
         re.search(
             r"\b(?:cat|sed|nl|head|tail|grep|rg|find|ls)\b[^\n;&|]*(?:\.py|job|simulat)",
-            command,
+            command_text,
             flags=re.IGNORECASE,
         )
     )
@@ -2028,6 +2081,27 @@ def _workflow_algorithm_name(workflow_path: str) -> str:
     return re.sub(r"(?<!^)(?=[A-Z])", " ", class_name)
 
 
+def _workflow_training_score(workflow: dict[str, Any]) -> int:
+    workflow_path = str(workflow.get("path") or "")
+    class_name = workflow_path.rsplit(".", 1)[-1]
+    normalized = re.sub(r"[^a-z0-9]+", "", class_name.lower())
+    args = workflow.get("args") if isinstance(workflow.get("args"), dict) else {}
+    score = 0
+    if args.get("num_rounds") is not None:
+        score += 100
+    if args.get("train_task_name") or args.get("train_task"):
+        score += 80
+    if normalized in {"scatterandgather", "scaffold", "fedavg", "fedopt", "fedprox", "cyclic"}:
+        score += 60
+    if "num_rounds" in workflow:
+        score += 30
+    if normalized in {"initializeglobalweights", "crosssiteeval", "fedeval"} or re.search(
+        r"(?:initialize|evaluation|eval)", workflow_path, flags=re.IGNORECASE
+    ):
+        score -= 40
+    return score
+
+
 def _recipe_evidence(run: dict[str, Any]) -> str:
     final_text = str(run.get("agent_last_message") or "")
     final_patterns = (
@@ -2087,26 +2161,27 @@ def fl_algorithm_info(run: dict[str, Any]) -> dict[str, Any]:
         workflows = config.get("workflows") if isinstance(config, dict) else None
         if not isinstance(workflows, list):
             continue
-        for workflow in workflows:
-            if not isinstance(workflow, dict):
-                continue
-            workflow_path = str(workflow.get("path") or "")
-            if not workflow_path:
-                continue
-            args = workflow.get("args") if isinstance(workflow.get("args"), dict) else {}
-            recipe = _recipe_evidence(run)
-            evidence_parts = [f"{Path(str(item.get('path') or item.get('artifact_path') or '')).name}: {workflow_path}"]
-            if recipe:
-                evidence_parts.append(f"recipe {recipe}")
-            return {
-                "algorithm": _workflow_algorithm_name(workflow_path),
-                "evidence": "; ".join(evidence_parts),
-                "num_rounds": args.get("num_rounds"),
-                "recipe": recipe,
-                "source": key,
-                "workflow_id": workflow.get("id"),
-                "workflow_path": workflow_path,
-            }
+        candidates = [
+            workflow for workflow in workflows if isinstance(workflow, dict) and str(workflow.get("path") or "")
+        ]
+        if not candidates:
+            continue
+        workflow = max(enumerate(candidates), key=lambda entry: (_workflow_training_score(entry[1]), -entry[0]))[1]
+        workflow_path = str(workflow.get("path") or "")
+        args = workflow.get("args") if isinstance(workflow.get("args"), dict) else {}
+        recipe = _recipe_evidence(run)
+        evidence_parts = [f"{Path(str(item.get('path') or item.get('artifact_path') or '')).name}: {workflow_path}"]
+        if recipe:
+            evidence_parts.append(f"recipe {recipe}")
+        return {
+            "algorithm": _workflow_algorithm_name(workflow_path),
+            "evidence": "; ".join(evidence_parts),
+            "num_rounds": args.get("num_rounds"),
+            "recipe": recipe,
+            "source": key,
+            "workflow_id": workflow.get("id"),
+            "workflow_path": workflow_path,
+        }
     text = combined_text(run)
     for name in ("SCAFFOLD", "FedAvg", "FedOpt", "FedProx", "Cyclic", "FedEval"):
         if re.search(rf"\b{re.escape(name)}\b", text, flags=re.IGNORECASE):
@@ -4165,13 +4240,16 @@ def embedded_bar_chart(runs: dict[str, dict[str, Any]]) -> str:
     modes = list(runs)
     metrics = benchmark_chart_metrics(runs, metric_name)
     width = 1180
-    height = 430
     margin_x = 32
     top = 104
-    panel_gap = 18
-    panel_w = (width - margin_x * 2 - panel_gap * (len(metrics) - 1)) / len(metrics)
-    axis_y = 328
-    chart_h = 170
+    panel_gap_x = 24
+    panel_gap_y = 52
+    panel_columns = 4 if len(metrics) > 4 else max(1, len(metrics))
+    panel_rows = (len(metrics) + panel_columns - 1) // panel_columns
+    panel_w = (width - margin_x * 2 - panel_gap_x * (panel_columns - 1)) / panel_columns
+    panel_h = 250
+    chart_h = 145
+    height = top + panel_rows * panel_h + max(0, panel_rows - 1) * panel_gap_y + 72
     bar_gap = 24 if len(modes) <= 2 else 12
     available_bar_w = max(40.0, panel_w - 44)
     bar_w = max(18.0, min(38.0, (available_bar_w - bar_gap * max(0, len(modes) - 1)) / max(1, len(modes))))
@@ -4187,7 +4265,11 @@ def embedded_bar_chart(runs: dict[str, dict[str, Any]]) -> str:
         '<text x="32" y="58" font-family="Arial, sans-serif" font-size="13" fill="#4b5563">Metrics are mode-local. Missing scalar results are shown as NA instead of drawing a numeric bar.</text>',
     ]
     for metric_index, item in enumerate(metrics):
-        x0 = margin_x + metric_index * (panel_w + panel_gap)
+        row = metric_index // panel_columns
+        column = metric_index % panel_columns
+        x0 = margin_x + column * (panel_w + panel_gap_x)
+        panel_top = top + row * (panel_h + panel_gap_y)
+        axis_y = panel_top + panel_h - 28
         title = html.escape(str(item["label"]))
         values = [chart_number(item["value"](runs[mode]), item["kind"]) for mode in modes]
         numeric_values = [value for value in values if value is not None]
@@ -4198,7 +4280,7 @@ def embedded_bar_chart(runs: dict[str, dict[str, Any]]) -> str:
         bar_start_x = x0 + max(14.0, (panel_w - bar_group_w) / 2)
         lines.extend(
             [
-                f'<text x="{x0:.1f}" y="{top:.1f}" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#111827">{title}</text>',
+                f'<text x="{x0:.1f}" y="{panel_top:.1f}" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#111827">{title}</text>',
                 f'<line x1="{x0:.1f}" y1="{axis_y}" x2="{x0 + panel_w:.1f}" y2="{axis_y}" stroke="#d1d5db" stroke-width="1"/>',
                 f'<line x1="{x0:.1f}" y1="{axis_y - chart_h}" x2="{x0:.1f}" y2="{axis_y}" stroke="#d1d5db" stroke-width="1"/>',
             ]
@@ -4231,7 +4313,7 @@ def embedded_bar_chart(runs: dict[str, dict[str, Any]]) -> str:
                 f'<text x="{bx + bar_w / 2:.1f}" y="{axis_y + 19}" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#374151">{run_label}</text>'
             )
     legend_x = 32
-    legend_y = 392
+    legend_y = height - 38
     for index, mode in enumerate(modes):
         run = runs[mode]
         color = colors.get(mode, fallback_colors[index % len(fallback_colors)])

@@ -7,8 +7,8 @@ NVFLARE skills affect applied conversion and diagnosis tasks.
 The harness is not an agent runtime and it is not an NVFLARE training workflow.
 It is a controlled runner that executes the same prompt and input folder with
 and without packaged NVFLARE skills, then normalizes the evidence for review.
-The skill packaging and install architecture is documented separately in
-[skills_architecture.md](skills_architecture.md).
+The skill packaging and install architecture is documented separately by the
+agent skills PR that this harness depends on.
 
 ## Major Components
 
