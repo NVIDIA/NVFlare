@@ -592,10 +592,15 @@ def _first_command_name(command: str) -> str:
     return Path(tokens[0]).name.lower() if tokens else ""
 
 
+def _shell_command_segments(command: str) -> list[str]:
+    text = _classification_command(command)
+    return [segment.strip() for segment in re.split(r"\s*(?:&&|\|\||;)\s*", text) if segment.strip()]
+
+
 def python_script_name(command: str) -> str:
-    tokens = _command_tokens(command)
-    if _first_command_name(command) in FILE_INSPECTION_COMMANDS:
+    if is_file_inspection_command(command):
         return ""
+    tokens = _command_tokens(command)
     index = 0
     while index < len(tokens):
         token = tokens[index]
@@ -675,16 +680,16 @@ def invokes_nvflare_simulator(command: str, output: str) -> bool:
 
 
 def is_file_inspection_command(command: str) -> bool:
-    command_text = _classification_command(command)
-    if _first_command_name(command_text) not in FILE_INSPECTION_COMMANDS:
-        return False
-    return bool(
-        re.search(
+    for segment in _shell_command_segments(command):
+        if _first_command_name(segment) not in FILE_INSPECTION_COMMANDS:
+            continue
+        if re.search(
             r"\b(?:cat|sed|nl|head|tail|grep|rg|find|ls)\b[^\n;&|]*(?:\.py|job|simulat)",
-            command_text,
+            segment,
             flags=re.IGNORECASE,
-        )
-    )
+        ):
+            return True
+    return False
 
 
 def job_output_has_failure_status(output: str) -> bool:

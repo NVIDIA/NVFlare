@@ -15,6 +15,7 @@
 import hashlib
 import json
 import os
+import sys
 from pathlib import Path
 
 
@@ -822,6 +823,49 @@ def test_synthesize_agent_record_caps_event_text_for_identity(tmp_path, monkeypa
     record = json.loads(agent_record_path.read_text(encoding="utf-8"))
     assert "skill" not in record
     assert record["event_identity_inference"]["skill"] == ""
+
+
+def test_records_synthesize_cli_accepts_prompt_path(tmp_path, monkeypatch):
+    from skills.harness import records
+
+    captured = {}
+    prompt = tmp_path / "prompt.txt"
+
+    def capture_synthesis(inputs):
+        captured["inputs"] = inputs
+
+    monkeypatch.setattr(records, "synthesize_agent_record", capture_synthesis)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "records.py",
+            "synthesize",
+            str(tmp_path / "agent_record.json"),
+            str(tmp_path / "records"),
+            str(tmp_path / "events.jsonl"),
+            str(tmp_path / "usage.json"),
+            str(tmp_path / "activity.json"),
+            str(tmp_path / "last_message.txt"),
+            str(tmp_path / "input"),
+            "with_skills",
+            "12",
+            "0",
+            "true",
+            "with_skills",
+            "test-model",
+            "123456",
+            str(tmp_path / "workspace_delta_manifest.json"),
+            "--agent",
+            "codex",
+            "--prompt",
+            str(prompt),
+        ],
+    )
+
+    records.main()
+
+    assert captured["inputs"].prompt_path == prompt
 
 
 def test_iter_json_records_enforces_file_count_limit(tmp_path, monkeypatch):

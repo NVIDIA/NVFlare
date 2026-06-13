@@ -363,6 +363,7 @@ def copy_harness(src: Path, dst: Path) -> None:
 def copy_harness_package(context: Path) -> None:
     copy_harness(SCRIPT_DIR / "config", context / "config")
     copy_harness(SCRIPT_DIR / "skills", context / "skills")
+    copy_harness(SCRIPT_DIR / "docker" / "scripts", context / "docker_scripts")
 
 
 def prepare_build_context() -> Path:

@@ -2522,6 +2522,27 @@ def test_job_success_ignores_file_inspection_matching_python_job_text():
     assert job_run_status(run) == "not_started"
 
 
+def test_job_success_ignores_wrapped_file_inspection_matching_python_job_text():
+    from skills.harness.reports.benchmark_insights import job_command_succeeded, job_run_status
+
+    event = {
+        "command": "/bin/bash -lc 'cd /work && rg \"python job.py|Finished FedAvg\" -n .'",
+        "exit_code": 0,
+        "output": 'README.md:Run with python job.py\njob.py:print("Finished FedAvg.")',
+        "status": "completed",
+    }
+    run = {
+        "available": True,
+        "activity": {"commands": [event["command"]]},
+        "agent_events_text": json.dumps(
+            {"item": {"type": "command_execution", "aggregated_output": event["output"], **event}}
+        ),
+    }
+
+    assert job_command_succeeded(event) is False
+    assert job_run_status(run) == "not_started"
+
+
 def test_job_run_status_requires_success_evidence_for_leading_job_entrypoint():
     from skills.harness.reports.benchmark_insights import job_run_status
 
@@ -3074,6 +3095,7 @@ def test_run_summary_uses_agent_keys_without_codex_aliases(tmp_path):
                 "agent_exit_code": 0,
                 "codex_exit_code": 0,
                 "elapsed_seconds": 1,
+                "command_count": 0,
             },
         },
     )
@@ -3084,6 +3106,7 @@ def test_run_summary_uses_agent_keys_without_codex_aliases(tmp_path):
     assert summary["agent_process_passed"] is True
     assert summary["agent_process_exit_code"] == 0
     assert summary["agent_exit_code"] == 0
+    assert summary["command_count"] == 0
     assert summary["agent_usage"] == {"total_tokens": 10}
     assert "codex_process_passed" not in summary
     assert "codex_process_exit_code" not in summary

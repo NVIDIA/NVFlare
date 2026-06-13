@@ -929,7 +929,6 @@ def write_run_summary(final_record_path: Path, summary_path: Path, *, print_summ
     runtime_metadata = load_json(summary_path.parent / "runtime_image.json", {}) or {}
     if not isinstance(runtime_metadata, dict):
         runtime_metadata = {}
-    activity = metrics.get("activity") if isinstance(metrics.get("activity"), dict) else {}
     skill_discovery = record.get("skill_discovery") if isinstance(record.get("skill_discovery"), dict) else {}
     quality_signals = record.get("quality_signals") if isinstance(record.get("quality_signals"), dict) else {}
     validation_signal = quality_signals.get("job_guidance_primary_validation_metric")
@@ -955,7 +954,7 @@ def write_run_summary(final_record_path: Path, summary_path: Path, *, print_summ
         "prompt_hash": prompt_metadata.get("prompt_sha256"),
         "prompt_source": prompt_metadata.get("template_path"),
         "token_count": metrics.get("token_count"),
-        "command_count": metrics.get("command_count") or activity.get("command_count"),
+        "command_count": metrics.get("command_count"),
         "cache_tokens": metrics.get("cache_tokens"),
         "cost": metrics.get("cost"),
         "runtime_image": runtime_metadata.get("runtime_image"),
@@ -1032,6 +1031,7 @@ def main() -> None:
     synth.add_argument("workspace_delta_manifest", type=Path)
     synth.add_argument("input_delta_manifest", nargs="?", type=Path)
     synth.add_argument("--agent", default=os.environ.get("BENCHMARK_AGENT", "unknown"))
+    synth.add_argument("--prompt", type=Path, default=None)
 
     merge = subparsers.add_parser("merge")
     merge.add_argument("agent_record", type=Path)
@@ -1077,6 +1077,7 @@ def main() -> None:
                 run_start_time_ns=args.run_start_time_ns,
                 workspace_delta_manifest_path=args.workspace_delta_manifest,
                 input_delta_manifest_path=args.input_delta_manifest,
+                prompt_path=args.prompt,
             )
         )
     elif args.command == "merge":

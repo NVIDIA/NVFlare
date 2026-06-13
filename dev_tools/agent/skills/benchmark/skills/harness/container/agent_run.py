@@ -724,8 +724,6 @@ def terminate_timed_out_process(process: subprocess.Popen, stderr, timeout: int 
 
 def _write_agent_home_diagnostic(config: AgentRunConfig, launch_env: dict) -> None:
     """Dump CLAUDE_CONFIG_DIR contents to a diagnostic file before launching the agent."""
-    import os
-
     diag: dict = {}
     agent_home = launch_env.get("CLAUDE_CONFIG_DIR") or os.environ.get("CLAUDE_CONFIG_DIR") or ""
     diag["claude_config_dir"] = agent_home

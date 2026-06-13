@@ -1,5 +1,7 @@
 *
 !Dockerfile
+!docker_scripts/
+!docker_scripts/**
 !config/
 !config/**
 config/**/__pycache__/

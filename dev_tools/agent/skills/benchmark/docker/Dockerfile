@@ -89,11 +89,13 @@ RUN printf '%s\n' \
     > /etc/profile.d/99-agent-benchmark-venv.sh && \
     /bin/bash -lc 'command -v python && python --version && python -m pip --version && pip --version'
 
+COPY docker_scripts/ /workspace/docker_scripts/
+
 RUN python --version && \
     python -m pip --version && \
     pip --version && \
     tree --version && \
-    python -c "import json, os, pathlib, subprocess; version_cmd=os.environ.get('AGENT_VERSION_COMMAND') or ''; version_output=subprocess.check_output(['/bin/bash', '-lc', version_cmd], text=True).strip() if version_cmd else ''; home=pathlib.Path(os.environ.get('BENCHMARK_AGENT_HOME', '/workspace/agent-home')); home.mkdir(parents=True, exist_ok=True); home.joinpath('build_metadata.json').write_text(json.dumps({'agent': os.environ.get('BENCHMARK_DOCKER_AGENT', 'agent'), 'agent_cli': os.environ.get('AGENT_CLI_NAME', 'agent'), 'agent_cli_install_command': os.environ.get('AGENT_INSTALL_COMMAND'), 'agent_cli_version_command': version_cmd, 'agent_cli_version_output': version_output, 'apt_package_policy': 'Debian apt packages are intentionally not exact-version pinned; rebuild comparability is tracked through the pinned base image/build args and recorded package/tool versions.', 'node_image': os.environ.get('NODE_IMAGE'), 'node_version': subprocess.check_output(['node', '--version'], text=True).strip(), 'sdk_import_name': os.environ.get('SDK_IMPORT_NAME'), 'sdk_package_name': os.environ.get('SDK_PACKAGE_NAME'), 'skills_install_expected_source': os.environ.get('SKILLS_INSTALL_EXPECTED_SOURCE'), 'skills_install_network_proof': 'not_enforced_by_dockerfile', 'tree_version': subprocess.check_output(['tree', '--version'], text=True).splitlines()[0], 'uv_image': os.environ.get('UV_IMAGE'), 'uv_version': subprocess.check_output(['uv', '--version'], text=True).strip(), 'virtual_env': os.environ.get('VIRTUAL_ENV')}, indent=2, sort_keys=True) + '\n')"
+    python /workspace/docker_scripts/write_build_metadata.py
 
 COPY config/ /workspace/config/
 COPY skills/ /workspace/skills/
@@ -117,7 +119,7 @@ FROM base AS skills
 
 # Install the configured SDK from the staged local wheel that packages skills.
 COPY --chown=agent:agent dist/skills/*.whl dist/skills/sdk_wheel_metadata.json /tmp/wheels/
-RUN python -c "import os, sys; from pathlib import Path; package=os.environ.get('SDK_PACKAGE_NAME', 'SDK'); wheels=sorted(Path('/tmp/wheels').glob('*.whl')); len(wheels) == 1 or sys.exit(f'Expected exactly one staged {package} skills wheel in /tmp/wheels, found {len(wheels)}: {[p.name for p in wheels]}'); Path('/tmp/selected_sdk_wheel').write_text(str(wheels[0]))" && \
+RUN python /workspace/docker_scripts/select_sdk_wheel.py skills /tmp/selected_sdk_wheel && \
     wheel="$(cat /tmp/selected_sdk_wheel)" && \
     uv pip install --python /workspace/venv/bin/python "${wheel}" && \
     cp /tmp/wheels/sdk_wheel_metadata.json "${BENCHMARK_AGENT_HOME}/sdk_wheel_metadata.json" && \
@@ -134,7 +136,7 @@ FROM base AS baseline
 
 # Baseline image: install the configured SDK from the staged local wheel built without packaged skills.
 COPY --chown=agent:agent dist/baseline/*.whl dist/baseline/sdk_wheel_metadata.json /tmp/wheels/
-RUN python -c "import os, sys; from pathlib import Path; package=os.environ.get('SDK_PACKAGE_NAME', 'SDK'); wheels=sorted(Path('/tmp/wheels').glob('*.whl')); len(wheels) == 1 or sys.exit(f'Expected exactly one staged {package} baseline wheel in /tmp/wheels, found {len(wheels)}: {[p.name for p in wheels]}'); Path('/tmp/selected_sdk_wheel').write_text(str(wheels[0]))" && \
+RUN python /workspace/docker_scripts/select_sdk_wheel.py baseline /tmp/selected_sdk_wheel && \
     wheel="$(cat /tmp/selected_sdk_wheel)" && \
     uv pip install --python /workspace/venv/bin/python "${wheel}" && \
     cp /tmp/wheels/sdk_wheel_metadata.json "${BENCHMARK_AGENT_HOME}/sdk_wheel_metadata.json" && \
@@ -142,4 +144,4 @@ RUN python -c "import os, sys; from pathlib import Path; package=os.environ.get(
     if [ -n "${SDK_VERSION_COMMAND}" ]; then /bin/bash -lc "${SDK_VERSION_COMMAND}"; fi && \
     python -c "import importlib, os; name=os.environ.get('SDK_IMPORT_NAME'); importlib.import_module(name) if name else None" && \
     /bin/bash -lc 'command -v python && python -m pip --version' && \
-    python -c "import json, os, pathlib; root=pathlib.Path(os.environ['BENCHMARK_AGENT_HOME']); agent=os.environ['BENCHMARK_DOCKER_AGENT']; reason=f'local baseline wheel does not package {agent} skills'; (root / os.environ['SKILLS_INSTALL_OUTPUT']).write_text(json.dumps({'status': 'skipped', 'agent': agent, 'reason': reason}, indent=2, sort_keys=True) + '\n'); (root / os.environ['SKILLS_LIST_OUTPUT']).write_text(json.dumps({'status': 'skipped', 'agent': agent, 'installed': [], 'reason': reason}, indent=2, sort_keys=True) + '\n')"
+    python /workspace/docker_scripts/write_baseline_skill_state.py
