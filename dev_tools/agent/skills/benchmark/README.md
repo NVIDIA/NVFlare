@@ -598,95 +598,16 @@ reports cover these top-level sections:
 | **Why** | Conditional slowdown analysis with driver comparison, elapsed-time accounting, longest commands, and runtime path differences. |
 | **Artifacts** | Pointers to generated reports and retained records. |
 
-The metrics section includes an SVG chart so the same Markdown can be viewed
-directly in GitHub or converted to HTML.
+The generated metrics report includes an SVG chart and an HTML version renders
+the chart directly. This README excerpt uses a checked-in SVG asset so the
+chart renders in GitHub Markdown.
 
 The excerpt below shows only the metrics section, not the full generated
 report.
 
 ### Metrics Excerpt
 
-<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="728" viewBox="0 0 1180 728">
-<rect width="100%" height="100%" fill="#ffffff"/>
-<text x="32" y="35" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#111827">Run comparison</text>
-<text x="32" y="58" font-family="Arial, sans-serif" font-size="13" fill="#4b5563">Metrics are mode-local. Missing scalar results are shown as NA instead of drawing a numeric bar.</text>
-<text x="32.0" y="104.0" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#111827">Total time seconds</text>
-<line x1="32.0" y1="326" x2="293.0" y2="326" stroke="#d1d5db" stroke-width="1"/>
-<line x1="32.0" y1="181" x2="32.0" y2="326" stroke="#d1d5db" stroke-width="1"/>
-<rect x="112.5" y="181.0" width="38.0" height="145.0" fill="#16a34a" rx="3"/>
-<text x="131.5" y="174.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#111827">580</text>
-<text x="131.5" y="345" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#374151">No skills</text>
-<rect x="174.5" y="182.0" width="38.0" height="144.0" fill="#2563eb" rx="3"/>
-<text x="193.5" y="175.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#111827">576</text>
-<text x="193.5" y="345" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#374151">With skills</text>
-<text x="317.0" y="104.0" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#111827">Runtime seconds</text>
-<line x1="317.0" y1="326" x2="578.0" y2="326" stroke="#d1d5db" stroke-width="1"/>
-<line x1="317.0" y1="181" x2="317.0" y2="326" stroke="#d1d5db" stroke-width="1"/>
-<rect x="397.5" y="181.0" width="38.0" height="145.0" fill="#16a34a" rx="3"/>
-<text x="416.5" y="174.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#111827">580</text>
-<text x="416.5" y="345" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#374151">No skills</text>
-<rect x="459.5" y="201.6" width="38.0" height="124.4" fill="#2563eb" rx="3"/>
-<text x="478.5" y="194.6" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#111827">497</text>
-<text x="478.5" y="345" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#374151">With skills</text>
-<text x="602.0" y="104.0" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#111827">Dependency install</text>
-<line x1="602.0" y1="326" x2="863.0" y2="326" stroke="#d1d5db" stroke-width="1"/>
-<line x1="602.0" y1="181" x2="602.0" y2="326" stroke="#d1d5db" stroke-width="1"/>
-<rect x="682.5" y="322.0" width="38.0" height="4.0" fill="#16a34a" rx="3"/>
-<text x="701.5" y="315.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#111827">0</text>
-<text x="701.5" y="345" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#374151">No skills</text>
-<rect x="744.5" y="181.0" width="38.0" height="145.0" fill="#2563eb" rx="3"/>
-<text x="763.5" y="174.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#111827">79</text>
-<text x="763.5" y="345" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#374151">With skills</text>
-<text x="887.0" y="104.0" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#111827">Total tokens</text>
-<line x1="887.0" y1="326" x2="1148.0" y2="326" stroke="#d1d5db" stroke-width="1"/>
-<line x1="887.0" y1="181" x2="887.0" y2="326" stroke="#d1d5db" stroke-width="1"/>
-<rect x="967.5" y="181.0" width="38.0" height="145.0" fill="#16a34a" rx="3"/>
-<text x="986.5" y="174.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#111827">3.7M</text>
-<text x="986.5" y="345" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#374151">No skills</text>
-<rect x="1029.5" y="253.1" width="38.0" height="72.9" fill="#2563eb" rx="3"/>
-<text x="1048.5" y="246.1" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#111827">1.9M</text>
-<text x="1048.5" y="345" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#374151">With skills</text>
-<text x="32.0" y="406.0" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#111827">Commands</text>
-<line x1="32.0" y1="628" x2="293.0" y2="628" stroke="#d1d5db" stroke-width="1"/>
-<line x1="32.0" y1="483" x2="32.0" y2="628" stroke="#d1d5db" stroke-width="1"/>
-<rect x="112.5" y="483.0" width="38.0" height="145.0" fill="#16a34a" rx="3"/>
-<text x="131.5" y="476.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#111827">186</text>
-<text x="131.5" y="647" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#374151">No skills</text>
-<rect x="174.5" y="529.8" width="38.0" height="98.2" fill="#2563eb" rx="3"/>
-<text x="193.5" y="522.8" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#111827">126</text>
-<text x="193.5" y="647" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#374151">With skills</text>
-<text x="317.0" y="406.0" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#111827">Structure score</text>
-<line x1="317.0" y1="628" x2="578.0" y2="628" stroke="#d1d5db" stroke-width="1"/>
-<line x1="317.0" y1="483" x2="317.0" y2="628" stroke="#d1d5db" stroke-width="1"/>
-<rect x="397.5" y="579.7" width="38.0" height="48.3" fill="#16a34a" rx="3"/>
-<text x="416.5" y="572.7" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#111827">33%</text>
-<text x="416.5" y="647" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#374151">No skills</text>
-<rect x="459.5" y="483.0" width="38.0" height="145.0" fill="#2563eb" rx="3"/>
-<text x="478.5" y="476.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#111827">100%</text>
-<text x="478.5" y="647" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#374151">With skills</text>
-<text x="602.0" y="406.0" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#111827">Code quality</text>
-<line x1="602.0" y1="628" x2="863.0" y2="628" stroke="#d1d5db" stroke-width="1"/>
-<line x1="602.0" y1="483" x2="602.0" y2="628" stroke="#d1d5db" stroke-width="1"/>
-<rect x="682.5" y="603.8" width="38.0" height="24.2" fill="#16a34a" rx="3"/>
-<text x="701.5" y="596.8" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#111827">7%</text>
-<text x="701.5" y="647" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#374151">No skills</text>
-<rect x="744.5" y="483.0" width="38.0" height="145.0" fill="#2563eb" rx="3"/>
-<text x="763.5" y="476.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#111827">43%</text>
-<text x="763.5" y="647" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#374151">With skills</text>
-<text x="887.0" y="406.0" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#111827">Metrics (AUROC)</text>
-<line x1="887.0" y1="628" x2="1148.0" y2="628" stroke="#d1d5db" stroke-width="1"/>
-<line x1="887.0" y1="483" x2="887.0" y2="628" stroke="#d1d5db" stroke-width="1"/>
-<rect x="967.5" y="604" width="38.0" height="20" fill="#e5e7eb" rx="3"/>
-<text x="986.5" y="619" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-weight="700" fill="#4b5563">NA</text>
-<text x="986.5" y="647" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#374151">No skills</text>
-<rect x="1029.5" y="483.0" width="38.0" height="145.0" fill="#2563eb" rx="3"/>
-<text x="1048.5" y="476.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#111827">0.7484</text>
-<text x="1048.5" y="647" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#374151">With skills</text>
-<rect x="32" y="690" width="14" height="14" fill="#16a34a" rx="2"/>
-<text x="54" y="702" font-family="Arial, sans-serif" font-size="13" fill="#111827">No skills baseline</text>
-<rect x="252" y="690" width="14" height="14" fill="#2563eb" rx="2"/>
-<text x="274" y="702" font-family="Arial, sans-serif" font-size="13" fill="#111827">With skills</text>
-</svg>
+![Example metrics report SVG chart](assets/metrics_report_example.svg)
 
 | Metric | No skills baseline | With skills |
 |---|---|---|
