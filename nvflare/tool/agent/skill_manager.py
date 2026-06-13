@@ -121,7 +121,13 @@ def install_skills(
     if dry_run or missing:
         return plan
 
-    target.mkdir(parents=True, exist_ok=True)
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        error = _install_error(str(target), e)
+        plan["errors"].append(error)
+        plan["applied"] = False
+        return plan
     try:
         _sync_shared_references(source, target)
     except Exception as e:

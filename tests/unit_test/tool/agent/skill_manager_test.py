@@ -552,6 +552,26 @@ def test_install_skills_reports_copy_error_and_continues(monkeypatch, tmp_path):
     assert (target / "nvflare-z-skill" / "SKILL.md").is_file()
 
 
+def test_install_skills_reports_target_mkdir_error(monkeypatch, tmp_path):
+    source = _skill_source(tmp_path)
+    target = tmp_path / "denied" / "target"
+
+    def mkdir_denied(self, *args, **kwargs):
+        raise PermissionError("permission denied")
+
+    monkeypatch.setattr(skill_manager.Path, "mkdir", mkdir_denied)
+
+    plan = install_skills(agent="codex", target_dir=target, source=source)
+
+    assert plan["applied"] is False
+    assert len(plan["errors"]) == 1
+    error = plan["errors"][0]
+    assert error["code"] == "skill_install_failed"
+    assert error["type"] == "PermissionError"
+    assert error["message"] == "permission denied"
+    assert not target.exists()
+
+
 def test_install_skills_fails_when_same_skill_install_lock_exists(tmp_path):
     source = _skill_source(tmp_path)
     target = tmp_path / "target"
