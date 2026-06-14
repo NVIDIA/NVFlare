@@ -342,6 +342,68 @@ def test_fl_algorithm_recipe_prefers_generated_source_over_recipe_list_catalog(t
     assert "recipe fedavg-pt" in info["evidence"]
 
 
+def test_fl_algorithm_recipe_keeps_explicit_selection_for_shared_recipe_source(tmp_path):
+    from skills.harness.modes import WITH_SKILLS_MODE
+    from skills.harness.reports.benchmark_insights import fl_algorithm_info
+
+    mode_dir = tmp_path / WITH_SKILLS_MODE
+    config_path = (
+        mode_dir
+        / "workspace_delta"
+        / "runtime_artifacts"
+        / "runtime_workspaces"
+        / "job"
+        / "server"
+        / "simulate_job"
+        / "app_server"
+        / "config"
+        / "config_fed_server.json"
+    )
+    job_path = mode_dir / "workspace_delta" / "changed_files" / "job.py"
+    config_path.parent.mkdir(parents=True)
+    job_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        json.dumps(
+            {
+                "workflows": [
+                    {
+                        "id": "controller",
+                        "path": "nvflare.app_common.workflows.fedavg.FedAvg",
+                        "args": {"num_rounds": 3},
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    job_path.write_text(
+        "from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe\n\n"
+        "recipe = FedAvgRecipe(name='job', min_clients=3, num_rounds=3)\n",
+        encoding="utf-8",
+    )
+    run = {
+        "available": True,
+        "mode_dir": mode_dir,
+        "agent_last_message": "Selected recipe: `fedprox-pt`.",
+        "workspace_delta": {
+            "changed_files": [{"artifact_path": "changed_files/job.py", "path": "job.py"}],
+            "runtime_artifacts": [
+                {
+                    "artifact_path": (
+                        "runtime_artifacts/runtime_workspaces/job/server/simulate_job/app_server/config/"
+                        "config_fed_server.json"
+                    ),
+                    "path": "runtime_workspaces/job/server/simulate_job/app_server/config/config_fed_server.json",
+                }
+            ],
+        },
+    }
+
+    info = fl_algorithm_info(run)
+
+    assert info["recipe"] == "fedprox-pt"
+
+
 def test_fl_algorithm_recipe_mismatch_is_quality_issue(tmp_path):
     from skills.harness.modes import WITH_SKILLS_MODE
     from skills.harness.reports.benchmark_insights import run_quality_issues, run_status_kind
@@ -718,7 +780,7 @@ def test_repeated_job_reason_uses_codex_agent_message_context():
                         "item": {
                             "text": (
                                 "I noticed one small robustness improvement in the client send path. "
-                                "I am re-exporting and rerunning the simulation so the final artifacts "
+                                "I am re-exporting and re-running the simulation so the final artifacts "
                                 "match the current source exactly."
                             ),
                             "type": "agent_message",
@@ -736,7 +798,7 @@ def test_repeated_job_reason_uses_codex_agent_message_context():
     section = repeated_job_runs_section({"with": run}, ["with"])
 
     assert "2 successful job/simulator executions captured" in summary
-    assert "re-exporting and rerunning the simulation" in summary
+    assert "re-exporting and re-running the simulation" in summary
     assert "final artifacts match the current source" in section
 
 
@@ -835,6 +897,46 @@ def test_why_section_surfaces_repeated_dependency_install_reason():
     assert "accelerator package evidence: nvidia-cublas, nvidia-cudnn-cu13" in explanation
     assert "Dependency install path differed" in explanation
     assert "large accelerator/framework wheels can dominate install time" in explanation
+
+
+def test_repeated_dependency_install_reason_does_not_mark_prior_success_as_recovery():
+    from skills.harness.reports.benchmark_insights import repeated_dependency_install_section
+
+    def command_event(item_id: str, command: str, exit_code: int, output: str) -> str:
+        status = "completed" if exit_code == 0 else "failed"
+        return json.dumps(
+            {
+                "type": "item.completed",
+                "harness_timestamp": "2026-06-13T20:00:00Z",
+                "item": {
+                    "aggregated_output": output,
+                    "command": command,
+                    "exit_code": exit_code,
+                    "id": item_id,
+                    "status": status,
+                    "type": "command_execution",
+                },
+            }
+        )
+
+    run = {
+        "available": True,
+        "label": "With skills",
+        "agent_events_text": "\n".join(
+            [
+                command_event("install-1", "python -m pip install -r requirements.txt", 0, "Successfully installed a"),
+                command_event("install-2", "python -m pip install -r requirements.txt", 0, "Successfully installed a"),
+                command_event(
+                    "install-3", "python -m pip install -r requirements.txt", 1, "ERROR: final install failed"
+                ),
+            ]
+        ),
+    }
+
+    section = repeated_dependency_install_section({"with": run}, ["with"])
+
+    assert "first failed: ERROR: final install failed" in section
+    assert "later dependency install succeeded" not in section
 
 
 def test_structure_tree_falls_back_to_final_workspace_when_changed_python_is_empty():

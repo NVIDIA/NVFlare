@@ -2376,36 +2376,51 @@ def _recipe_from_generated_source(run: dict[str, Any]) -> str:
     return ""
 
 
+def _first_matching_recipe(text: str, patterns: tuple[str, ...]) -> str:
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            return match.group(1)
+    return ""
+
+
+def _recipe_show_command_evidence(text: str) -> str:
+    matches = re.findall(r"\bnvflare\s+recipe\s+show\s+([A-Za-z0-9_.-]+)", text)
+    return matches[-1] if matches else ""
+
+
 def _recipe_evidence(run: dict[str, Any]) -> str:
-    # Generated job source is the strongest local evidence for what the run
-    # actually used. Final messages and command output can include full recipe
-    # catalogs where unrelated recipe names appear before the selected one.
-    source_recipe = _recipe_from_generated_source(run)
-    if source_recipe:
-        return source_recipe
     final_text = _final_message_without_event_log(str(run.get("agent_last_message") or ""))
-    final_patterns = (
+    classification_excerpt = str(run_record(run).get("classification_excerpt") or "")
+    final_slice = _final_message_without_event_log(classification_excerpt)
+    explicit_patterns = (
         r"\bSelected\s+the\s+recipe\b.*?`([A-Za-z0-9_.-]+)`",
         r"\bselected\s+recipe\b.*?`([A-Za-z0-9_.-]+)`",
+    )
+    generic_patterns = (
         r"\bRecipe:\*{0,2}\s*`?([A-Za-z0-9_.-]+)`?",
         r"`([A-Za-z0-9_.-]+)`\s*(?:→|->)\s*`?[A-Za-z0-9_.]*Recipe`?",
     )
-    for pattern in final_patterns:
-        match = re.search(pattern, final_text)
-        if match:
-            return match.group(1)
-    classification_excerpt = str(run_record(run).get("classification_excerpt") or "")
-    final_slice = _final_message_without_event_log(classification_excerpt)
-    for pattern in final_patterns:
-        match = re.search(pattern, final_slice)
-        if match:
-            return match.group(1)
+    explicit_recipe = _first_matching_recipe(final_text, explicit_patterns) or _first_matching_recipe(
+        final_slice, explicit_patterns
+    )
+    if explicit_recipe:
+        return explicit_recipe
+
     text = combined_text(run)
-    command_patterns = (r"\bnvflare\s+recipe\s+show\s+([A-Za-z0-9_.-]+)",)
-    for pattern in command_patterns:
-        match = re.search(pattern, text)
-        if match:
-            return match.group(1)
+    command_recipe = _recipe_show_command_evidence(text)
+    source_recipe = _recipe_from_generated_source(run)
+    if source_recipe == "fedavg-pt" and command_recipe == "fedprox-pt":
+        return command_recipe
+    if source_recipe:
+        return source_recipe
+    generic_recipe = _first_matching_recipe(final_text, generic_patterns) or _first_matching_recipe(
+        final_slice, generic_patterns
+    )
+    if generic_recipe:
+        return generic_recipe
+    if command_recipe:
+        return command_recipe
     return ""
 
 
@@ -3666,9 +3681,10 @@ def _dependency_install_slowdown_note(with_run: dict[str, Any], base_run: dict[s
 
 def _dependency_install_retry_reason(spans: list[dict[str, Any]]) -> str:
     failed = [span for span in spans if command_failed(span)]
-    succeeded_later = any(command_succeeded(span) for span in spans[1:])
     reason_parts = []
     if failed:
+        failed_index = spans.index(failed[0])
+        succeeded_later = any(command_succeeded(span) for span in spans[failed_index + 1 :])
         reason = f"first failed: {command_error_summary(str(failed[0].get('output') or ''))}"
         if succeeded_later:
             reason += "; later dependency install succeeded"
@@ -3752,7 +3768,7 @@ def _command_count_display(count: int) -> str:
 def _rerun_reason_from_agent_messages(run: dict[str, Any]) -> list[str]:
     reasons = []
     trigger = re.compile(
-        r"\b(?:re-?run|rerunning|run(?:ning)?\s+(?:the\s+)?(?:simulation|job)\s+again|"
+        r"\b(?:re-?run|re-?running|run(?:ning)?\s+(?:the\s+)?(?:simulation|job)\s+again|"
         r"re-?export(?:ing)?|final\s+(?:verification|validation)\s+pass)\b",
         flags=re.IGNORECASE,
     )
