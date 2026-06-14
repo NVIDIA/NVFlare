@@ -555,6 +555,29 @@ def agent_command_spans(run: dict[str, Any]) -> list[dict[str, Any]]:
     return spans
 
 
+def agent_message_texts(run: dict[str, Any]) -> list[str]:
+    messages = []
+    for line in str(run.get("agent_events_text") or "").splitlines():
+        try:
+            payload = json.loads(line)
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        item = payload.get("item")
+        if isinstance(item, dict) and item.get("type") == "agent_message":
+            text = strip_ansi(str(item.get("text") or "")).strip()
+            if text:
+                messages.append(text)
+        for content_item in message_content_items(payload):
+            if content_item.get("type") not in {"text", "agent_message"}:
+                continue
+            text = strip_ansi(str(content_item.get("text") or content_item.get("content") or "")).strip()
+            if text:
+                messages.append(text)
+    return messages
+
+
 def command_failed(event: dict[str, Any]) -> bool:
     exit_value = event.get("exit_code")
     if isinstance(exit_value, bool):
@@ -3615,7 +3638,34 @@ def _command_count_display(count: int) -> str:
     return f"{count} command" if count == 1 else f"{count} commands"
 
 
-def _job_rerun_reason(spans: list[dict[str, Any]]) -> str:
+def _rerun_reason_from_agent_messages(run: dict[str, Any]) -> list[str]:
+    reasons = []
+    trigger = re.compile(
+        r"\b(?:re-?run|rerunning|run(?:ning)?\s+(?:the\s+)?(?:simulation|job)\s+again|"
+        r"re-?export(?:ing)?|final\s+(?:verification|validation)\s+pass)\b",
+        flags=re.IGNORECASE,
+    )
+    reason_context = re.compile(
+        r"\b(?:after|because|before|so|patch|fix|change|configuration|metric|aligned|current\s+source|"
+        r"final\s+artifacts|validation|verification|robustness|match)\b",
+        flags=re.IGNORECASE,
+    )
+    progress_only = re.compile(
+        r"\b(?:healthy|completed\s+successfully|finished\s+successfully|is\s+running|is\s+underway|in\s+progress)\b",
+        flags=re.IGNORECASE,
+    )
+    for text in agent_message_texts(run):
+        if not trigger.search(text):
+            continue
+        sentences = re.split(r"(?<=[.!?])\s+", " ".join(text.split()))
+        for sentence in sentences:
+            if trigger.search(sentence) and reason_context.search(sentence) and not progress_only.search(sentence):
+                reasons.append(sentence)
+                break
+    return reasons
+
+
+def _job_rerun_reason(spans: list[dict[str, Any]], run: dict[str, Any]) -> str:
     reasons = []
     for span in spans[1:]:
         description = str(span.get("description") or "").strip()
@@ -3624,6 +3674,7 @@ def _job_rerun_reason(spans: list[dict[str, Any]]) -> str:
         command = str(span.get("command") or "")
         if re.search(r"\brm\s+-rf\b", command):
             reasons.append("runtime workspace was cleared before rerun")
+    reasons.extend(_rerun_reason_from_agent_messages(run))
     unique_reasons = []
     for reason in reasons:
         if reason and reason not in unique_reasons:
@@ -3638,7 +3689,7 @@ def repeated_job_run_summary(run: dict[str, Any]) -> str:
     if len(spans) <= 1:
         return ""
     total = fmt_seconds_with_unit(_span_total_seconds(spans))
-    reason = _job_rerun_reason(spans)
+    reason = _job_rerun_reason(spans, run)
     return (
         f"{len(spans)} successful job/simulator executions captured (total job time {total}; likely reason: {reason})"
     )
@@ -3660,7 +3711,7 @@ def repeated_job_runs_section(runs: dict[str, dict[str, Any]], modes: list[str])
                 str(len(spans)),
                 fmt_seconds_with_unit(_span_total_seconds(spans)),
                 execution_list,
-                _job_rerun_reason(spans),
+                _job_rerun_reason(spans, run),
             )
         )
     if not rows:

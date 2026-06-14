@@ -672,6 +672,74 @@ def test_why_section_surfaces_repeated_successful_job_executions():
     )
 
 
+def test_repeated_job_reason_uses_codex_agent_message_context():
+    from skills.harness.reports.benchmark_insights import repeated_job_run_summary, repeated_job_runs_section
+
+    def codex_command_pair(item_id: str, command: str, start: str, end: str) -> list[str]:
+        return [
+            json.dumps(
+                {
+                    "type": "item.started",
+                    "harness_timestamp": start,
+                    "item": {
+                        "command": command,
+                        "id": item_id,
+                        "status": "in_progress",
+                        "type": "command_execution",
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "harness_timestamp": end,
+                    "item": {
+                        "aggregated_output": "Finished FedAvg. Simulation workspace: /tmp/nvflare/workspaces/job",
+                        "command": command,
+                        "exit_code": 0,
+                        "id": item_id,
+                        "status": "completed",
+                        "type": "command_execution",
+                    },
+                }
+            ),
+        ]
+
+    run = {
+        "available": True,
+        "label": "With skills",
+        "agent_events_text": "\n".join(
+            codex_command_pair("run-1", "/bin/bash -lc 'python job.py'", "2026-06-13T20:00:00Z", "2026-06-13T20:01:00Z")
+            + [
+                json.dumps(
+                    {
+                        "type": "item.completed",
+                        "harness_timestamp": "2026-06-13T20:01:10Z",
+                        "item": {
+                            "text": (
+                                "I noticed one small robustness improvement in the client send path. "
+                                "I am re-exporting and rerunning the simulation so the final artifacts "
+                                "match the current source exactly."
+                            ),
+                            "type": "agent_message",
+                        },
+                    }
+                )
+            ]
+            + codex_command_pair(
+                "run-2", "/bin/bash -lc 'python job.py'", "2026-06-13T20:02:00Z", "2026-06-13T20:03:10Z"
+            )
+        ),
+    }
+
+    summary = repeated_job_run_summary(run)
+    section = repeated_job_runs_section({"with": run}, ["with"])
+
+    assert "2 successful job/simulator executions captured" in summary
+    assert "re-exporting and rerunning the simulation" in summary
+    assert "final artifacts match the current source" in section
+
+
 def test_structure_tree_falls_back_to_final_workspace_when_changed_python_is_empty():
     from skills.harness.modes import WITH_SKILLS_MODE
     from skills.harness.reports.benchmark_insights import structure_trees_section
