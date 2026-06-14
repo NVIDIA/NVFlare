@@ -14,7 +14,9 @@
 
 from unittest.mock import MagicMock, patch
 
-import nvflare.app_common.workflows.fedavg as fedavg_module
+import pytest
+
+import nvflare.app_common.utils.tensor_disk_offload_context as tensor_disk_offload_context_module
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, Task
 from nvflare.apis.fl_constant import FLMetaKey
@@ -28,8 +30,8 @@ from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.app_common.utils.tensor_disk_offload_context import (
     _TENSOR_DISK_OFFLOAD_ROOT_DIR,
-    apply_enable_tensor_disk_offload,
-    restore_enable_tensor_disk_offload,
+    cleanup_tensor_disk_offload,
+    setup_tensor_disk_offload,
 )
 from nvflare.app_common.workflows.base_fedavg import BaseFedAvg
 from nvflare.app_common.workflows.fedavg import FedAvg
@@ -61,6 +63,11 @@ class MockModelAggregator(ModelAggregator):
     def reset_stats(self):
         self.models = []
         self.reset_count += 1
+
+
+class _TestBaseFedAvg(BaseFedAvg):
+    def run(self):
+        pass
 
 
 class _FakeTempRef:
@@ -147,6 +154,41 @@ class TestFedAvgInit:
         assert controller.save_filename == "best_model.pt"
         assert controller.exclude_vars == "bn.*"
         assert controller.aggregation_weights == {"site-1": 2.0, "site-2": 1.0}
+
+
+class TestBaseFedAvgMetricsAggregationInfo:
+    def test_aggregate_adds_key_metric_info_from_existing_stop_condition(self):
+        controller = _TestBaseFedAvg()
+        controller.fl_ctx = FLContext()
+        controller.event = lambda _: None
+        controller.fire_event_with_data = lambda *args, **kwargs: None
+        controller.current_round = 1
+        controller.stop_cond = "score <= 0.2"
+        controller.stop_condition = ("score", 0.2, None)
+
+        aggr_result = controller.aggregate(
+            [
+                FLModel(
+                    params={"w": 1.0},
+                    current_round=1,
+                    metrics={"score": 0.1},
+                    meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+                ),
+                FLModel(
+                    params={"w": 3.0},
+                    current_round=1,
+                    metrics={"score": 0.3},
+                    meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+                ),
+            ]
+        )
+
+        metrics_info = aggr_result.meta[AppConstants.METRICS_AGGREGATION_INFO]
+        assert metrics_info["key_metric"] == {
+            "name": "score",
+            "mode": "min",
+            "mode_source": "derived_from_stop_condition",
+        }
 
     def test_stop_condition_parsing(self):
         """Test that stop condition is correctly parsed."""
@@ -662,6 +704,108 @@ class TestFedAvgAggregation:
         assert aggr_result.metrics is not None
         assert aggr_result.metrics["loss"] == 0.6
 
+    def test_aggregate_fl_model_metrics_empty_metrics_keep_round_enabled(self):
+        """Test the shared metric helper treats empty metrics as present."""
+        from nvflare.app_common.workflows.base_fedavg import _aggregate_fl_model_metrics
+
+        result1 = FLModel(
+            params={"w": 1.0},
+            params_type=ParamsType.FULL,
+            metrics={},
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 4},
+        )
+        result2 = FLModel(
+            params={"w": 3.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.6},
+            meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 6},
+        )
+        result1.current_round = 0
+        result2.current_round = 0
+
+        aggr_metrics = _aggregate_fl_model_metrics([result1, result2])
+
+        assert aggr_metrics == {"loss": pytest.approx(0.6)}
+
+    def test_aggregate_fl_model_metrics_uses_per_key_denominators(self):
+        """Test missing metric keys do not dilute keys contributed by other clients."""
+        from nvflare.app_common.workflows.base_fedavg import _aggregate_fl_model_metrics
+
+        result1 = FLModel(
+            params={"w": 1.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.2},
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 2},
+        )
+        result2 = FLModel(
+            params={"w": 3.0},
+            params_type=ParamsType.FULL,
+            metrics={"accuracy": 0.9},
+            meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 6},
+        )
+        result3 = FLModel(
+            params={"w": 5.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.6, "accuracy": 0.3},
+            meta={"client_name": "site-3", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 2},
+        )
+        result1.current_round = 0
+        result2.current_round = 0
+        result3.current_round = 0
+
+        aggr_metrics = _aggregate_fl_model_metrics([result1, result2, result3])
+
+        assert aggr_metrics == {
+            "loss": pytest.approx(0.4),
+            "accuracy": pytest.approx(0.75),
+        }
+
+    def test_aggregate_fl_model_metrics_sanitizes_invalid_num_steps(self):
+        """Test invalid client step counts do not become negative or non-finite metric weights."""
+        from nvflare.app_common.workflows.base_fedavg import _aggregate_fl_model_metrics
+
+        result1 = FLModel(
+            params={"w": 1.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.2},
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: -100},
+        )
+        result2 = FLModel(
+            params={"w": 3.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.6},
+            meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: float("inf")},
+        )
+        result3 = FLModel(
+            params={"w": 5.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 1.0},
+            meta={"client_name": "site-3", FLMetaKey.NUM_STEPS_CURRENT_ROUND: "bad"},
+        )
+        result1.current_round = 0
+        result2.current_round = 0
+        result3.current_round = 0
+
+        aggr_metrics = _aggregate_fl_model_metrics([result1, result2, result3])
+
+        assert aggr_metrics == {"loss": pytest.approx(0.6)}
+
+    def test_aggregate_fl_model_metrics_handles_none_meta(self):
+        """Test metrics aggregation falls back safely when client result meta is absent."""
+        from nvflare.app_common.workflows.base_fedavg import _aggregate_fl_model_metrics
+
+        result = FLModel(
+            params={"w": 1.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.2},
+            meta=None,
+        )
+        result.current_round = 0
+
+        aggr_metrics = _aggregate_fl_model_metrics([result])
+
+        assert aggr_metrics == {"loss": pytest.approx(0.2)}
+
     def test_base_fedavg_aggregate_fn_returns_none_when_all_metrics_filtered(self):
         """Test BaseFedAvg.aggregate_fn returns None when all metrics are non-aggregatable."""
         result1 = FLModel(
@@ -762,23 +906,30 @@ class TestFedAvgLazyCompatibility:
 
 
 class TestFedAvgDownloadToDiskContext:
-    def test_set_enable_tensor_disk_offload(self):
+    def test_set_enable_tensor_disk_offload(self, tmp_path, monkeypatch):
         cell = _MockCell(enable_tensor_disk_offload=False)
-        root_dir = "/tmp/nvflare_tensor_offload_test"
-        previous, applied = apply_enable_tensor_disk_offload(engine=_MockEngine(cell), enabled=True, root_dir=root_dir)
-        assert previous is False
-        assert applied is True
-        assert cell.ctx["enable_tensor_disk_offload"] is True
-        assert cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR] == root_dir
+        root_dir = tmp_path / "nvflare_tensor_offload_root"
 
-        restore_enable_tensor_disk_offload(_MockEngine(cell), previous, root_dir=root_dir)
+        def fake_mkdtemp(prefix):
+            root_dir.mkdir()
+            return str(root_dir)
+
+        monkeypatch.setattr(tensor_disk_offload_context_module.tempfile, "mkdtemp", fake_mkdtemp)
+
+        context = setup_tensor_disk_offload(engine=_MockEngine(cell), enabled=True, job_id="job")
+        assert context.applied is True
+        assert cell.ctx["enable_tensor_disk_offload"] is True
+        assert cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR] == str(root_dir)
+
+        cleanup_tensor_disk_offload(engine=_MockEngine(cell), context=context)
         assert cell.ctx["enable_tensor_disk_offload"] is False
         assert cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR] is None
+        assert not root_dir.exists()
 
     def test_set_enable_tensor_disk_offload_without_cell(self):
-        previous, applied = apply_enable_tensor_disk_offload(engine=_MockEngine(cell=None), enabled=True)
-        assert previous is None
-        assert applied is False
+        context = setup_tensor_disk_offload(engine=_MockEngine(cell=None), enabled=True)
+        assert context.applied is False
+        assert context.root_dir is None
 
     def test_run_restores_enable_tensor_disk_offload(self):
         controller = FedAvg(num_clients=1, num_rounds=1, model={"w": 1.0}, enable_tensor_disk_offload=True)
@@ -815,7 +966,7 @@ class TestFedAvgDownloadToDiskContext:
             retained_dir.mkdir()
             (retained_dir / "chunk_0.safetensors").write_bytes(b"retained")
 
-        monkeypatch.setattr(fedavg_module.tempfile, "mkdtemp", fake_mkdtemp)
+        monkeypatch.setattr(tensor_disk_offload_context_module.tempfile, "mkdtemp", fake_mkdtemp)
         controller.send_model = fake_send_model
         controller.get_num_standing_tasks = lambda: 0
         controller._get_aggregated_result = lambda: FLModel(params={"w": 1.0})
@@ -824,6 +975,82 @@ class TestFedAvgDownloadToDiskContext:
 
         controller.run()
 
+        assert cell.ctx["enable_tensor_disk_offload"] is False
+        assert cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR] is None
+        assert not root_dir.exists()
+
+
+class TestScatterAndGatherDownloadToDiskContext:
+    def test_control_flow_restores_enable_tensor_disk_offload_on_abort(self, tmp_path, monkeypatch):
+        from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
+
+        controller = ScatterAndGather(enable_tensor_disk_offload=True)
+        cell = _MockCell(enable_tensor_disk_offload=False)
+        controller._engine = _MockEngine(cell)
+        root_dir = tmp_path / "nvflare_tensor_offload_root"
+        observed = {}
+
+        def fake_mkdtemp(prefix):
+            root_dir.mkdir()
+            return str(root_dir)
+
+        def fake_check_abort_signal(fl_ctx, abort_signal):
+            observed["enable_tensor_disk_offload"] = cell.ctx["enable_tensor_disk_offload"]
+            observed["root_dir"] = cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR]
+            return True
+
+        monkeypatch.setattr(tensor_disk_offload_context_module.tempfile, "mkdtemp", fake_mkdtemp)
+        monkeypatch.setattr(controller, "_check_abort_signal", fake_check_abort_signal)
+        monkeypatch.setattr(controller, "fire_event", lambda *args, **kwargs: None)
+
+        controller.control_flow(Signal(), FLContext())
+
+        assert observed["enable_tensor_disk_offload"] is True
+        assert observed["root_dir"] == str(root_dir)
+        assert cell.ctx["enable_tensor_disk_offload"] is False
+        assert cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR] is None
+        assert not root_dir.exists()
+
+
+class TestScaffoldDownloadToDiskContext:
+    def test_run_restores_context_and_cleans_root_dir(self, tmp_path, monkeypatch):
+        from nvflare.app_common.app_constant import AlgorithmConstants
+        from nvflare.app_common.workflows.scaffold import Scaffold
+
+        controller = Scaffold(num_clients=1, num_rounds=1, enable_tensor_disk_offload=True)
+        cell = _MockCell(enable_tensor_disk_offload=False)
+        controller.engine = _MockEngine(cell)
+        controller.fl_ctx = FLContext()
+        controller.model = FLModel(params={"w": 1.0})
+        controller._global_ctrl_weights = {"w": 0.0}
+        controller.sample_clients = lambda _: ["site-1"]
+        root_dir = tmp_path / "nvflare_tensor_offload_root"
+        observed = {}
+
+        def fake_mkdtemp(prefix):
+            root_dir.mkdir()
+            return str(root_dir)
+
+        def fake_send_model_and_wait(targets, data):
+            observed["enable_tensor_disk_offload"] = cell.ctx["enable_tensor_disk_offload"]
+            observed["root_dir"] = cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR]
+            return []
+
+        monkeypatch.setattr(tensor_disk_offload_context_module.tempfile, "mkdtemp", fake_mkdtemp)
+        controller.send_model_and_wait = fake_send_model_and_wait
+        controller.aggregate = lambda results, aggregate_fn=None: FLModel(
+            params={"w": 1.0},
+            params_type=ParamsType.FULL,
+            meta={AlgorithmConstants.SCAFFOLD_CTRL_DIFF: {"w": 1.0}},
+        )
+        controller.update_model = lambda model, aggr_result: model
+        controller.save_model = lambda model: None
+
+        controller.run()
+
+        assert observed["enable_tensor_disk_offload"] is True
+        assert observed["root_dir"] == str(root_dir)
+        assert controller._global_ctrl_weights == {"w": 1.0}
         assert cell.ctx["enable_tensor_disk_offload"] is False
         assert cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR] is None
         assert not root_dir.exists()
@@ -1009,6 +1236,22 @@ class TestFedAvgWorkflowEvents:
 class TestScaffoldAggregation:
     """Test Scaffold aggregation behavior."""
 
+    @staticmethod
+    def _scaffold_result(client_name, params, ctrl_diff, metrics, num_steps):
+        from nvflare.app_common.app_constant import AlgorithmConstants
+
+        return FLModel(
+            params=params,
+            params_type=ParamsType.FULL,
+            metrics=metrics,
+            current_round=0,
+            meta={
+                "client_name": client_name,
+                FLMetaKey.NUM_STEPS_CURRENT_ROUND: num_steps,
+                AlgorithmConstants.SCAFFOLD_CTRL_DIFF: ctrl_diff,
+            },
+        )
+
     def test_missing_scaffold_ctrl_diff_raises_clear_error(self):
         """Test missing scaffold control diff raises a clear, framework-neutral error."""
         import re
@@ -1066,6 +1309,88 @@ class TestScaffoldAggregation:
         assert aggr_result.meta[AlgorithmConstants.SCAFFOLD_CTRL_DIFF]["w"] == 3.0
         assert aggr_result.meta["nr_aggregated"] == 2
         assert aggr_result.meta["current_round"] == 0
+        metrics_info = aggr_result.meta[AppConstants.METRICS_AGGREGATION_INFO]
+        assert metrics_info["metric_source"] == "client_reported_flmodel_metrics"
+        assert metrics_info["aggregation"]["method"] == "weighted_average"
+
+    def test_scaffold_aggregate_fn_aggregates_generic_numeric_metrics_with_step_weights(self):
+        """Test Scaffold aggregates metric keys generically with client local-step weights."""
+        from nvflare.app_common.app_constant import AlgorithmConstants
+        from nvflare.app_common.workflows.scaffold import scaffold_aggregate_fn
+
+        result1 = self._scaffold_result(
+            client_name="site-1",
+            params={"w": 1.0},
+            ctrl_diff={"w": 2.0},
+            metrics={"loss": 0.2, "accuracy": 0.8},
+            num_steps=2,
+        )
+        result2 = self._scaffold_result(
+            client_name="site-2",
+            params={"w": 5.0},
+            ctrl_diff={"w": 6.0},
+            metrics={"loss": 0.8, "accuracy": 0.2},
+            num_steps=6,
+        )
+
+        aggr_result = scaffold_aggregate_fn([result1, result2])
+
+        assert aggr_result.params["w"] == pytest.approx(4.0)
+        assert aggr_result.meta[AlgorithmConstants.SCAFFOLD_CTRL_DIFF]["w"] == pytest.approx(5.0)
+        assert aggr_result.metrics == {
+            "loss": pytest.approx(0.65),
+            "accuracy": pytest.approx(0.35),
+        }
+
+    def test_scaffold_aggregate_fn_filters_non_aggregatable_metrics(self):
+        """Test Scaffold skips unsupported metric values while preserving numeric metrics."""
+        from nvflare.app_common.workflows.scaffold import scaffold_aggregate_fn
+
+        result1 = self._scaffold_result(
+            client_name="site-1",
+            params={"w": 1.0},
+            ctrl_diff={"w": 2.0},
+            metrics={"loss": 0.2, "meta": {"site": "site-1"}, "tags": ["a"], "run_name": "r1"},
+            num_steps=1,
+        )
+        result2 = self._scaffold_result(
+            client_name="site-2",
+            params={"w": 3.0},
+            ctrl_diff={"w": 4.0},
+            metrics={"loss": 0.6, "meta": {"site": "site-2"}, "tags": ["b"], "run_name": "r2"},
+            num_steps=1,
+        )
+
+        aggr_result = scaffold_aggregate_fn([result1, result2])
+
+        assert aggr_result.metrics is not None
+        assert aggr_result.metrics["loss"] == pytest.approx(0.4)
+        assert "meta" not in aggr_result.metrics
+        assert "tags" not in aggr_result.metrics
+        assert "run_name" not in aggr_result.metrics
+
+    def test_scaffold_aggregate_fn_none_metrics_disable_round_metrics(self):
+        """Test Scaffold matches BaseFedAvg when any client returns metrics=None."""
+        from nvflare.app_common.workflows.scaffold import scaffold_aggregate_fn
+
+        result1 = self._scaffold_result(
+            client_name="site-1",
+            params={"w": 1.0},
+            ctrl_diff={"w": 2.0},
+            metrics=None,
+            num_steps=1,
+        )
+        result2 = self._scaffold_result(
+            client_name="site-2",
+            params={"w": 3.0},
+            ctrl_diff={"w": 4.0},
+            metrics={"loss": 0.6},
+            num_steps=1,
+        )
+
+        aggr_result = scaffold_aggregate_fn([result1, result2])
+
+        assert aggr_result.metrics is None
 
 
 class TestFedAvgAggregationWeights:
@@ -1181,6 +1506,46 @@ class TestFedAvgAggregationWeights:
         aggr_result = controller._get_aggregated_result()
         # Weighted average: (2.0*100 + 6.0*300) / (100 + 300) = (200 + 1800) / 400 = 2000/400 = 5.0
         assert aggr_result.params["w"] == 5.0
+
+    def test_streaming_aggregation_sanitizes_invalid_num_steps(self):
+        """Test invalid client step counts cannot become negative streaming aggregation weights."""
+        controller = FedAvg(num_clients=2)
+
+        from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+
+        controller._aggr_helper = WeightedAggregationHelper()
+        controller._aggr_metrics_helper = WeightedAggregationHelper()
+        controller._all_metrics = True
+        controller._received_count = 0
+        controller._expected_count = 2
+        controller._params_type = None
+        controller._site_metric_weights = {}
+        controller.current_round = 0
+
+        result1 = FLModel(
+            params={"w": 2.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.2},
+            meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: -100},
+        )
+        result2 = FLModel(
+            params={"w": 6.0},
+            params_type=ParamsType.FULL,
+            metrics={"loss": 0.6},
+            meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 3},
+        )
+
+        controller._aggregate_one_result(result1)
+        controller._aggregate_one_result(result2)
+
+        aggr_result = controller._get_aggregated_result()
+        assert aggr_result.params["w"] == pytest.approx(5.0)
+        assert aggr_result.metrics == {"loss": pytest.approx(0.5)}
+        site_weights = aggr_result.meta[AppConstants.METRICS_AGGREGATION_INFO]["site_weights"]
+        assert site_weights == [
+            {"name": "site-1", "weight": 1.0, "weight_key": "effective_fedavg_metric_weight"},
+            {"name": "site-2", "weight": 3.0, "weight_key": "effective_fedavg_metric_weight"},
+        ]
 
     def test_aggregation_with_multi_value_state_dict(self):
         """Test aggregation with state dict containing multiple parameters."""

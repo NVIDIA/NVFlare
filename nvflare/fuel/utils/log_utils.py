@@ -18,6 +18,7 @@ import logging
 import logging.config
 import os
 import re
+import sys
 from logging import Logger
 from logging.handlers import RotatingFileHandler
 from typing import Union
@@ -103,6 +104,11 @@ class ANSIColor:
             color = cls.COLORS.get(color.lower(), cls.COLORS["reset"])
 
         return f"\x1b[{color}m{text}\x1b[{cls.COLORS['reset']}m"
+
+
+def _stdout_supports_color() -> bool:
+    isatty = getattr(sys.stdout, "isatty", None)
+    return bool(isatty and isatty())
 
 
 class BaseFormatter(logging.Formatter):
@@ -192,6 +198,8 @@ class ColorFormatter(BaseFormatter):
 
     def format(self, record):
         record_s = super().format(record)
+        if not _stdout_supports_color():
+            return record_s
 
         # Apply level_colors based on record levelname
         log_color = self.level_colors.get(self.record.levelname, "reset")

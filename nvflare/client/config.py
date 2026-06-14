@@ -18,6 +18,12 @@ from enum import Enum
 from typing import Dict, Optional
 
 from nvflare.apis.fl_constant import ConnPropKey, FLMetaKey
+from nvflare.fuel.f3.streaming.download_service import DownloadService
+from nvflare.fuel.f3.streaming.transfer_progress import (
+    DEFAULT_STREAMING_IDLE_TIMEOUT,
+    STREAMING_IDLE_TIMEOUT,
+    check_positive_finite_number,
+)
 from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
@@ -55,6 +61,7 @@ class ConfigKey:
     SUBMIT_RESULT_TIMEOUT = "submit_result_timeout"
     MAX_RESENDS = "max_resends"
     DOWNLOAD_COMPLETE_TIMEOUT = "download_complete_timeout"
+    STREAMING_IDLE_TIMEOUT = STREAMING_IDLE_TIMEOUT
     LAUNCH_ONCE = "launch_once"
 
 
@@ -201,11 +208,36 @@ class ClientConfig:
 
         After send_to_peer() ACKs, the server asynchronously downloads tensors from the subprocess
         DownloadService.  This timeout gates subprocess exit so the process does not disappear before
-        the download completes.  Defaults to 1800 s (30 min) for large-model transfers.
+        the download completes.  Defaults to the DownloadService finished-ref TTL for large-model transfers.
         Recipe-based external-process jobs can override it with
         recipe.add_client_config({"download_complete_timeout": N}).
         """
-        return float(self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.DOWNLOAD_COMPLETE_TIMEOUT, 1800.0))
+        return float(
+            self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(
+                ConfigKey.DOWNLOAD_COMPLETE_TIMEOUT, DownloadService.FINISHED_REFS_TTL
+            )
+        )
+
+    def get_streaming_idle_timeout(self) -> Optional[float]:
+        """Return shared idle timeout for streamed task payloads and result uploads.
+
+        ``None`` is an explicit disabled state written by parent executors that
+        opt out of progress-aware waits.
+        """
+
+        value = self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(
+            ConfigKey.STREAMING_IDLE_TIMEOUT, DEFAULT_STREAMING_IDLE_TIMEOUT
+        )
+        if value is None:
+            return None
+        try:
+            timeout = float(value)
+        except (TypeError, ValueError) as e:
+            raise ValueError(f"invalid {ConfigKey.STREAMING_IDLE_TIMEOUT}: {value!r}") from e
+        try:
+            return check_positive_finite_number(ConfigKey.STREAMING_IDLE_TIMEOUT, timeout)
+        except ValueError as e:
+            raise ValueError(f"invalid {ConfigKey.STREAMING_IDLE_TIMEOUT}: {value!r}") from e
 
     def get_submit_result_timeout(self) -> float:
         """Return the timeout (seconds) for the subprocess to wait for CJ to ACK a result message.

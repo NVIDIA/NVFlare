@@ -15,6 +15,7 @@
 import copy
 import threading
 import time as _real_time
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -161,6 +162,7 @@ def test_prepare_config_includes_submit_result_timeout(monkeypatch):
         "nvflare.app_common.executors.client_api_launcher_executor.update_export_props",
         lambda config_data, fl_ctx: None,
     )
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: None)
 
     executor = ClientAPILauncherExecutor(pipe_id="test_pipe", submit_result_timeout=450.0)
 
@@ -213,6 +215,7 @@ def test_prepare_config_submit_result_timeout_default_value(monkeypatch):
         "nvflare.app_common.executors.client_api_launcher_executor.update_export_props",
         lambda config_data, fl_ctx: None,
     )
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: None)
 
     executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
 
@@ -262,8 +265,24 @@ def _make_gcv_stub(overrides: dict):
     return _gcv
 
 
+class _RecordingLock:
+    def __init__(self, on_enter=None):
+        self.entered = False
+        self.active = False
+        self.on_enter = on_enter
+
+    def __enter__(self):
+        self.entered = True
+        self.active = True
+        if self.on_enter:
+            self.on_enter()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.active = False
+
+
 def test_peer_read_timeout_not_overridden_when_absent(monkeypatch):
-    """When PEER_READ_TIMEOUT is absent from config, peer_read_timeout stays at its constructor default."""
+    """When PEER_READ_TIMEOUT is absent from config, preserve the no-progress startup budget."""
     monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
     monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
     monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None)
@@ -277,6 +296,7 @@ def test_peer_read_timeout_not_overridden_when_absent(monkeypatch):
     executor.initialize(fl_ctx)
 
     assert executor.peer_read_timeout == 300.0
+    assert executor.peer_read_timeout_explicit is False
 
 
 def test_peer_read_timeout_overridden_from_config(monkeypatch):
@@ -296,6 +316,42 @@ def test_peer_read_timeout_overridden_from_config(monkeypatch):
     executor.initialize(fl_ctx)
 
     assert executor.peer_read_timeout == 1800.0
+    assert executor.peer_read_timeout_explicit is True
+
+
+def test_explicit_low_peer_read_timeout_warns_fast_fail(monkeypatch):
+    from nvflare.client.constants import PEER_READ_TIMEOUT
+
+    warnings = []
+    monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
+    monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: warnings.append(msg))
+    monkeypatch.setattr(_GCV_MODULE, _make_gcv_stub({PEER_READ_TIMEOUT: 120}))
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe", peer_read_timeout=300.0)
+    fl_ctx = _FakeFLContext(_FakeCell())
+
+    executor.initialize(fl_ctx)
+
+    assert executor.peer_read_timeout == 120.0
+    assert any("honor the explicit fast-fail timeout" in w for w in warnings), warnings
+
+
+def test_constructor_explicit_low_peer_read_timeout_warns_fast_fail(monkeypatch):
+    warnings = []
+    monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
+    monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: warnings.append(msg))
+    monkeypatch.setattr(_GCV_MODULE, _make_gcv_stub({}))
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe", peer_read_timeout=120.0, peer_read_timeout_explicit=True)
+    executor.initialize(_FakeFLContext(_FakeCell()))
+
+    assert executor.peer_read_timeout == 120.0
+    assert executor.peer_read_timeout_explicit is True
+    assert any("honor the explicit fast-fail timeout" in w for w in warnings), warnings
 
 
 def test_peer_read_timeout_invalid_raises(monkeypatch):
@@ -354,6 +410,289 @@ def test_peer_read_timeout_and_external_pre_init_both_overridable(monkeypatch):
 
     assert executor.peer_read_timeout == 900.0
     assert executor._external_pre_init_timeout == 120.0
+
+
+def test_streaming_idle_timeout_overridden_from_config(monkeypatch):
+    from nvflare.fuel.f3.streaming.transfer_progress import STREAMING_IDLE_TIMEOUT
+
+    monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
+    monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(_GCV_MODULE, _make_gcv_stub({STREAMING_IDLE_TIMEOUT: 1200}))
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe", peer_read_timeout=300.0, heartbeat_timeout=300.0)
+    fl_ctx = _FakeFLContext(_FakeCell())
+
+    executor.initialize(fl_ctx)
+
+    assert executor.streaming_idle_timeout == 1200.0
+    assert executor._stream_progress_tracker.idle_timeout == 1200.0
+    assert executor.peer_read_timeout == 300.0
+    assert executor.heartbeat_timeout == 300.0
+
+
+def test_constructor_streaming_idle_timeout_sets_initial_policy_and_config_override_wins(monkeypatch):
+    from nvflare.fuel.f3.streaming.transfer_progress import STREAMING_IDLE_TIMEOUT
+
+    monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
+    monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(_GCV_MODULE, _make_gcv_stub({STREAMING_IDLE_TIMEOUT: 1200}))
+
+    executor = ClientAPILauncherExecutor(
+        pipe_id="test_pipe",
+        peer_read_timeout=300.0,
+        heartbeat_timeout=300.0,
+        streaming_idle_timeout=900.0,
+    )
+    fl_ctx = _FakeFLContext(_FakeCell())
+
+    assert executor.streaming_idle_timeout == 900.0
+    assert executor._stream_progress_tracker.idle_timeout == 900.0
+
+    executor.initialize(fl_ctx)
+
+    assert executor.streaming_idle_timeout == 1200.0
+    assert executor._stream_progress_tracker.idle_timeout == 1200.0
+
+
+def test_streaming_idle_timeout_override_mutates_tracker_under_lock(monkeypatch):
+    from nvflare.fuel.f3.streaming.transfer_progress import STREAMING_IDLE_TIMEOUT
+
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(_GCV_MODULE, _make_gcv_stub({STREAMING_IDLE_TIMEOUT: 1200}))
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
+    old_idle_timeout = executor.streaming_idle_timeout
+
+    def _assert_timeout_not_written_before_lock():
+        assert executor.streaming_idle_timeout == old_idle_timeout
+
+    lock = _RecordingLock(on_enter=_assert_timeout_not_written_before_lock)
+    executor._stream_progress_lock = lock
+    old_tracker = executor._stream_progress_tracker
+
+    def _make_tracker():
+        raise AssertionError("streaming idle override must not replace the in-flight progress tracker")
+
+    executor._make_stream_progress_tracker = _make_tracker
+    old_tracker.set_idle_timeout = MagicMock(wraps=old_tracker.set_idle_timeout)
+    executor._apply_streaming_progress_client_config_overrides(_FakeFLContext(_FakeCell()))
+
+    assert lock.entered
+    assert executor._stream_progress_tracker is old_tracker
+    old_tracker.set_idle_timeout.assert_called_once_with(1200.0)
+    assert executor._stream_progress_tracker.idle_timeout == 1200.0
+
+
+def test_absent_streaming_progress_override_preserves_disabled_idle_timeout(monkeypatch):
+    monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
+    monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(_GCV_MODULE, _make_gcv_stub({}))
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
+    executor.streaming_idle_timeout = None
+
+    executor.initialize(_FakeFLContext(_FakeCell()))
+
+    assert executor.streaming_idle_timeout is None
+
+
+def test_prepare_config_exports_disabled_streaming_idle_timeout(monkeypatch):
+    from unittest.mock import MagicMock
+
+    from nvflare.client.config import ClientConfig, ConfigKey
+
+    captured = {}
+    monkeypatch.setattr(
+        "nvflare.app_common.executors.client_api_launcher_executor.write_config_to_file",
+        lambda config_data, config_file_path: captured.update(config_data),
+    )
+    monkeypatch.setattr(
+        "nvflare.app_common.executors.client_api_launcher_executor.update_export_props",
+        lambda config_data, fl_ctx: None,
+    )
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: None)
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
+    executor.streaming_idle_timeout = None
+    mock_pipe = MagicMock()
+    mock_pipe.export.return_value = ("nvflare.some.PipeClass", {})
+    executor.pipe = mock_pipe
+    executor.get_pipe_channel_name = lambda: "task"
+
+    fake_workspace = MagicMock()
+    fake_workspace.get_app_config_dir.return_value = "/tmp/fake_dir"
+    fake_engine = MagicMock()
+    fake_engine.get_workspace.return_value = fake_workspace
+    fl_ctx = MagicMock()
+    fl_ctx.get_engine.return_value = fake_engine
+    fl_ctx.get_job_id.return_value = "test_job"
+
+    executor.prepare_config_for_launch(fl_ctx)
+
+    task_exchange = captured[ConfigKey.TASK_EXCHANGE]
+    assert task_exchange[ConfigKey.STREAMING_IDLE_TIMEOUT] is None
+    assert ClientConfig(config=captured).get_streaming_idle_timeout() is None
+
+
+def test_streaming_max_peer_silence_override_preserves_disabled_idle_timeout(monkeypatch):
+    from nvflare.fuel.f3.streaming.transfer_progress import STREAMING_MAX_PEER_SILENCE
+
+    infos = []
+    monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
+    monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: infos.append(msg))
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(_GCV_MODULE, _make_gcv_stub({STREAMING_MAX_PEER_SILENCE: 1300}))
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
+    executor.streaming_idle_timeout = None
+
+    executor.initialize(_FakeFLContext(_FakeCell()))
+
+    assert executor.streaming_idle_timeout is None
+    assert executor.streaming_max_peer_silence == 1300.0
+    resolved_logs = [msg for msg in infos if msg.startswith("Resolved streaming progress config")]
+    assert resolved_logs == ["Resolved streaming progress config: streaming_max_peer_silence 900.0s -> 1300.0s"]
+
+
+def test_streaming_idle_timeout_noop_override_does_not_log_resolved_config(monkeypatch):
+    from nvflare.fuel.f3.streaming.transfer_progress import STREAMING_IDLE_TIMEOUT
+
+    infos = []
+    monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
+    monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: infos.append(msg))
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(_GCV_MODULE, _make_gcv_stub({STREAMING_IDLE_TIMEOUT: 600}))
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
+    executor.initialize(_FakeFLContext(_FakeCell()))
+
+    assert executor.streaming_idle_timeout == 600.0
+    resolved_logs = [msg for msg in infos if msg.startswith("Resolved streaming progress config")]
+    assert resolved_logs == []
+
+
+def test_streaming_idle_timeout_enable_from_disabled_logs_disabled(monkeypatch):
+    from nvflare.fuel.f3.streaming.transfer_progress import STREAMING_IDLE_TIMEOUT
+
+    infos = []
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: infos.append(msg))
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(_GCV_MODULE, _make_gcv_stub({STREAMING_IDLE_TIMEOUT: 600}))
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
+    executor.streaming_idle_timeout = None
+    executor._apply_streaming_progress_client_config_overrides(_FakeFLContext(_FakeCell()))
+
+    resolved_logs = [msg for msg in infos if msg.startswith("Resolved streaming progress config")]
+    assert resolved_logs == ["Resolved streaming progress config: streaming_idle_timeout disabled -> 600.0s"]
+
+
+def test_streaming_max_peer_silence_derived_from_idle_timeout(monkeypatch):
+    from nvflare.fuel.f3.streaming.transfer_progress import STREAMING_IDLE_TIMEOUT
+
+    monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
+    monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(_GCV_MODULE, _make_gcv_stub({STREAMING_IDLE_TIMEOUT: 1200}))
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
+    executor.initialize(_FakeFLContext(_FakeCell()))
+
+    assert executor.streaming_max_peer_silence == 1800.0
+
+
+def test_streaming_max_peer_silence_explicit_override(monkeypatch):
+    from nvflare.fuel.f3.streaming.transfer_progress import STREAMING_IDLE_TIMEOUT, STREAMING_MAX_PEER_SILENCE
+
+    monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
+    monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(
+        _GCV_MODULE,
+        _make_gcv_stub({STREAMING_IDLE_TIMEOUT: 1200, STREAMING_MAX_PEER_SILENCE: 1300}),
+    )
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
+    executor.initialize(_FakeFLContext(_FakeCell()))
+
+    assert executor.streaming_max_peer_silence == 1300.0
+
+
+def test_explicit_low_heartbeat_timeout_warns_fast_fail(monkeypatch):
+    from nvflare.client.config import ConfigKey
+    from nvflare.fuel.f3.streaming.transfer_progress import STREAMING_IDLE_TIMEOUT
+
+    warnings = []
+    monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
+    monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: warnings.append(msg))
+    monkeypatch.setattr(
+        _GCV_MODULE,
+        _make_gcv_stub({ConfigKey.HEARTBEAT_TIMEOUT: 120, STREAMING_IDLE_TIMEOUT: 600}),
+    )
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe", heartbeat_timeout=300.0)
+    executor.initialize(_FakeFLContext(_FakeCell()))
+
+    assert executor.heartbeat_timeout == 120.0
+    assert executor.heartbeat_timeout_explicit is True
+    assert any("explicit heartbeat_timeout" in w and "streaming_idle_timeout" in w for w in warnings), warnings
+
+
+def test_constructor_explicit_low_heartbeat_timeout_warns_fast_fail(monkeypatch):
+    warnings = []
+    monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
+    monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: warnings.append(msg))
+    monkeypatch.setattr(_GCV_MODULE, _make_gcv_stub({}))
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe", heartbeat_timeout=120.0, heartbeat_timeout_explicit=True)
+    executor.initialize(_FakeFLContext(_FakeCell()))
+
+    assert executor.heartbeat_timeout == 120.0
+    assert executor.heartbeat_timeout_explicit is True
+    assert any("explicit heartbeat_timeout" in w and "streaming_idle_timeout" in w for w in warnings), warnings
+
+
+def test_heartbeat_timeout_negative_override_raises(monkeypatch):
+    from nvflare.client.config import ConfigKey
+
+    monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
+    monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_error", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(_GCV_MODULE, _make_gcv_stub({ConfigKey.HEARTBEAT_TIMEOUT: -1}))
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe", heartbeat_timeout=300.0)
+
+    with pytest.raises(ValueError, match="HEARTBEAT_TIMEOUT must be non-negative"):
+        executor.initialize(_FakeFLContext(_FakeCell()))
+
+
+def test_heartbeat_timeout_non_finite_override_raises(monkeypatch):
+    from nvflare.client.config import ConfigKey
+
+    monkeypatch.setattr(ClientAPILauncherExecutor, "prepare_config_for_launch", lambda self, fl_ctx: None)
+    monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_error", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(_GCV_MODULE, _make_gcv_stub({ConfigKey.HEARTBEAT_TIMEOUT: "nan"}))
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe", heartbeat_timeout=300.0)
+
+    with pytest.raises(ValueError, match="HEARTBEAT_TIMEOUT must be non-negative"):
+        executor.initialize(_FakeFLContext(_FakeCell()))
 
 
 # ---------------------------------------------------------------------------
@@ -419,6 +758,7 @@ def test_prepare_config_includes_max_resends(monkeypatch):
         "nvflare.app_common.executors.client_api_launcher_executor.update_export_props",
         lambda config_data, fl_ctx: None,
     )
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: None)
 
     executor = ClientAPILauncherExecutor(pipe_id="test_pipe", max_resends=5)
     mock_pipe = MagicMock()
@@ -466,6 +806,7 @@ def test_client_config_overrides_apply_before_subprocess_config_write(monkeypatc
                 ConfigKey.SUBMIT_RESULT_TIMEOUT: 650.0,
                 ConfigKey.MAX_RESENDS: 8,
                 ConfigKey.DOWNLOAD_COMPLETE_TIMEOUT: 2400.0,
+                ConfigKey.STREAMING_IDLE_TIMEOUT: 1200.0,
             }
         ),
     )
@@ -501,10 +842,106 @@ def test_client_config_overrides_apply_before_subprocess_config_write(monkeypatc
     assert task_exchange[ConfigKey.SUBMIT_RESULT_TIMEOUT] == 650.0
     assert task_exchange[ConfigKey.MAX_RESENDS] == 8
     assert task_exchange[ConfigKey.DOWNLOAD_COMPLETE_TIMEOUT] == 2400.0
+    assert task_exchange[ConfigKey.STREAMING_IDLE_TIMEOUT] == 1200.0
     assert executor._submit_result_timeout == 650.0
     assert executor.max_resends == 8
     assert executor._download_complete_timeout == 2400.0
+    assert executor.streaming_idle_timeout == 1200.0
     assert executor._stop_task_wait_timeout == 2400.0
+
+
+def test_heartbeat_timeout_none_fallback_is_serialized_to_subprocess_config(monkeypatch):
+    """The heartbeat fallback must run before prepare_config_for_launch writes the Client API config."""
+    import nvflare.fuel.utils.app_config_utils as acu
+    from nvflare.apis.fl_constant import ConfigVarName
+    from nvflare.client.config import ConfigKey
+    from nvflare.fuel.utils.config_service import ConfigService
+
+    captured = {}
+    warnings = []
+    monkeypatch.setattr(_GCV_MODULE, _make_gcv_stub({}))
+    monkeypatch.setattr(
+        "nvflare.app_common.executors.client_api_launcher_executor.write_config_to_file",
+        lambda config_data, config_file_path: captured.update(config_data),
+    )
+    monkeypatch.setattr(
+        "nvflare.app_common.executors.client_api_launcher_executor.update_export_props",
+        lambda config_data, fl_ctx: None,
+    )
+    monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_info", lambda self, fl_ctx, msg: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: warnings.append(msg))
+
+    def _fake_get(name, default):
+        if ConfigVarName.MIN_DOWNLOAD_TIMEOUT in name:
+            return 700.0
+        if ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT in name:
+            return 600.0
+        return default
+
+    monkeypatch.setattr(acu, "get_positive_float_var", _fake_get)
+    monkeypatch.setattr(
+        ConfigService,
+        "get_float_var",
+        lambda name, conf=None, default=None: 600.0 if ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT in name else default,
+    )
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe", heartbeat_timeout=None)
+    mock_pipe = MagicMock()
+    mock_pipe.export.return_value = ("nvflare.some.PipeClass", {})
+    executor.pipe = mock_pipe
+    executor.get_pipe_channel_name = lambda: "task"
+
+    fake_workspace = MagicMock()
+    fake_workspace.get_app_config_dir.return_value = "/tmp/fake_dir"
+    fake_engine = MagicMock()
+    fake_engine.get_workspace.return_value = fake_workspace
+    fl_ctx = MagicMock()
+    fl_ctx.get_engine.return_value = fake_engine
+    fl_ctx.get_job_id.return_value = "test_job"
+
+    executor.initialize(fl_ctx)
+
+    task_exchange = captured[ConfigKey.TASK_EXCHANGE]
+    assert executor.heartbeat_timeout == 600.0
+    assert task_exchange[ConfigKey.HEARTBEAT_TIMEOUT] == 600.0
+    assert any("heartbeat_timeout is not set" in w and "Using 600.0s" in w for w in warnings), warnings
+
+
+def test_heartbeat_timeout_none_without_per_req_config_fails_before_config_write(monkeypatch):
+    """Unset heartbeat_timeout cannot be serialized when no per-request streaming timeout config can resolve it."""
+    import nvflare.fuel.utils.app_config_utils as acu
+    from nvflare.apis.fl_constant import ConfigVarName
+    from nvflare.fuel.utils.config_service import ConfigService
+
+    errors = []
+    writes = []
+    monkeypatch.setattr(_GCV_MODULE, _make_gcv_stub({}))
+    monkeypatch.setattr(
+        "nvflare.app_common.executors.client_api_launcher_executor.write_config_to_file",
+        lambda config_data, config_file_path: writes.append(config_data),
+    )
+    monkeypatch.setattr(LauncherExecutor, "initialize", lambda self, fl_ctx: None)
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_error", lambda self, fl_ctx, msg: errors.append(msg))
+    monkeypatch.setattr(ClientAPILauncherExecutor, "log_warning", lambda self, fl_ctx, msg: None)
+
+    def _fake_get(name, default):
+        if ConfigVarName.MIN_DOWNLOAD_TIMEOUT in name:
+            return 600.0
+        if ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT in name:
+            return 600.0
+        return default
+
+    monkeypatch.setattr(acu, "get_positive_float_var", _fake_get)
+    monkeypatch.setattr(ConfigService, "get_float_var", lambda name, conf=None, default=None: default)
+
+    executor = ClientAPILauncherExecutor(pipe_id="test_pipe", heartbeat_timeout=None)
+
+    with pytest.raises(ValueError, match="heartbeat_timeout is None"):
+        executor.initialize(_FakeFLContext(_FakeCell()))
+
+    assert writes == []
+    assert any("heartbeat_timeout is None" in e and "Set heartbeat_timeout to 0" in e for e in errors), errors
 
 
 @pytest.mark.parametrize("value", [-1, None, 2.9, 3.0, "3", True])
@@ -544,7 +981,7 @@ def test_client_config_float_override_rejects_none(monkeypatch):
 
     executor = ClientAPILauncherExecutor(pipe_id="test_pipe")
 
-    with pytest.raises(ValueError, match="download_complete_timeout must be positive"):
+    with pytest.raises(ValueError, match="download_complete_timeout must be a positive number"):
         executor.initialize(_FakeFLContext(_FakeCell()))
 
     assert writes == []
@@ -823,7 +1260,8 @@ def test_initialize_validates_required_timeout_values_once(monkeypatch):
         calls.append(fl_ctx)
 
     def _prepare_config(self, fl_ctx):
-        self._validate_required_timeout_values(fl_ctx)
+        if not getattr(self, "_skip_required_timeout_validation_once", False):
+            self._validate_required_timeout_values(fl_ctx)
 
     def _fake_get(name, default):
         if ConfigVarName.MIN_DOWNLOAD_TIMEOUT in name:
@@ -948,8 +1386,8 @@ def test_no_warning_when_all_timeouts_consistent(monkeypatch):
     assert warnings == [], warnings
 
 
-def test_timeout_warning_peer_read_less_than_per_req(monkeypatch):
-    """A warning must fire when peer_read_timeout is lower than streaming_per_request_timeout."""
+def test_non_explicit_peer_read_less_than_per_req_preserves_startup_budget(monkeypatch):
+    """Non-explicit peer_read_timeout remains the no-progress startup budget when streaming is enabled."""
     import nvflare.fuel.utils.app_config_utils as acu
     from nvflare.apis.fl_constant import ConfigVarName
     from nvflare.fuel.utils.config_service import ConfigService
@@ -973,11 +1411,12 @@ def test_timeout_warning_peer_read_less_than_per_req(monkeypatch):
     )
     executor.initialize(fl_ctx)
 
-    assert any("peer_read_timeout" in w and "streaming_per_request_timeout" in w for w in warnings), warnings
+    assert executor.peer_read_timeout == 300.0
+    assert not any("peer_read_timeout" in w and "streaming_per_request_timeout" in w for w in warnings), warnings
 
 
-def test_timeout_warning_heartbeat_less_than_per_req(monkeypatch):
-    """A warning must fire when heartbeat_timeout is lower than streaming_per_request_timeout."""
+def test_non_explicit_heartbeat_less_than_per_req_warns_without_mutation(monkeypatch):
+    """Non-explicit heartbeat_timeout keeps crash detection semantics and warns on per-request mismatch."""
     import nvflare.fuel.utils.app_config_utils as acu
     from nvflare.apis.fl_constant import ConfigVarName
     from nvflare.fuel.utils.config_service import ConfigService
@@ -1001,11 +1440,12 @@ def test_timeout_warning_heartbeat_less_than_per_req(monkeypatch):
     )
     executor.initialize(fl_ctx)
 
+    assert executor.heartbeat_timeout == 300.0
     assert any("heartbeat_timeout" in w and "streaming_per_request_timeout" in w for w in warnings), warnings
 
 
-def test_timeout_warning_peer_read_none_when_per_req_is_configured(monkeypatch):
-    """A warning must fire when peer_read_timeout is unset and streaming timeout is configured."""
+def test_peer_read_none_does_not_warn_when_streaming_timeout_is_enabled(monkeypatch):
+    """Progress-aware task-send handles unset peer_read_timeout with polling and no startup cap."""
     import nvflare.fuel.utils.app_config_utils as acu
     from nvflare.apis.fl_constant import ConfigVarName
     from nvflare.fuel.utils.config_service import ConfigService
@@ -1029,11 +1469,11 @@ def test_timeout_warning_peer_read_none_when_per_req_is_configured(monkeypatch):
     )
     executor.initialize(fl_ctx)
 
-    assert any("peer_read_timeout is not set" in w for w in warnings), warnings
+    assert not any("peer_read_timeout is not set" in w for w in warnings), warnings
 
 
 def test_heartbeat_timeout_none_is_corrected_when_per_req_is_configured(monkeypatch):
-    """Unset heartbeat_timeout is corrected because PipeHandler requires a numeric value."""
+    """Unset heartbeat_timeout is corrected to the configured per-request streaming timeout."""
     import nvflare.fuel.utils.app_config_utils as acu
     from nvflare.apis.fl_constant import ConfigVarName
     from nvflare.fuel.utils.config_service import ConfigService

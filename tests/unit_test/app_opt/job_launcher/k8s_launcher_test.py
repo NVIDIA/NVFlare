@@ -108,6 +108,77 @@ def _make_api_instance():
     return MagicMock()
 
 
+def _make_condition(type_, status, reason=None, message=None):
+    condition = Mock()
+    condition.type = type_
+    condition.status = status
+    condition.reason = reason
+    condition.message = message
+    return condition
+
+
+def _make_waiting_container_status(reason, message=None):
+    waiting = Mock()
+    waiting.reason = reason
+    waiting.message = message
+    state = Mock()
+    state.waiting = waiting
+    container_status = Mock()
+    container_status.state = state
+    return container_status
+
+
+def _make_pod_response(phase=PodPhase.PENDING.value, conditions=None, node_name=None, container_statuses=None):
+    resp = Mock()
+    resp.status.phase = phase
+    resp.status.conditions = conditions or []
+    resp.status.node_name = node_name
+    resp.status.container_statuses = container_statuses or []
+    resp.status.init_container_statuses = []
+    return resp
+
+
+def _make_resource_pending_pod(resource="cpu"):
+    return _make_pod_response(
+        conditions=[
+            _make_condition(
+                "PodScheduled",
+                "False",
+                "Unschedulable",
+                f"0/1 nodes are available: 1 Insufficient {resource}.",
+            )
+        ]
+    )
+
+
+def _make_container_creating_pod():
+    return _make_pod_response(
+        node_name="node-1",
+        conditions=[_make_condition("PodScheduled", "True")],
+        container_statuses=[_make_waiting_container_status("ContainerCreating")],
+    )
+
+
+def _make_event(reason, message=None, event_type="Warning", last_timestamp=None):
+    event = Mock()
+    event.reason = reason
+    event.message = message
+    event.type = event_type
+    event.last_timestamp = last_timestamp
+    return event
+
+
+def _make_event_list(events):
+    event_list = Mock()
+    event_list.items = events
+    return event_list
+
+
+def _set_pod_events(api, events):
+    event_list = _make_event_list(events)
+    api.list_namespaced_event.return_value = event_list
+
+
 def _make_handle(job_id="job-1", api=None, cfg=None, **kwargs):
     if api is None:
         api = _make_api_instance()
@@ -235,20 +306,21 @@ class TestK8sJobHandle:
         handle = K8sJobHandle("job-1", _make_api_instance(), cfg, timeout=30)
         assert handle._stuck_count == 0
 
-    def test_max_stuck_count_equals_timeout(self):
+    def test_pending_timeout_is_independent_from_launch_timeout(self):
         cfg = _make_job_config()
         handle = K8sJobHandle("job-1", _make_api_instance(), cfg, timeout=30)
-        assert handle._max_stuck_count == 30
+        assert handle._pending_timeout_secs == 120
+        assert handle.pending_timeout == 120
 
-    def test_max_stuck_count_uses_pending_timeout_when_no_timeout(self):
+    def test_pending_timeout_secs_uses_pending_timeout_when_no_timeout(self):
         cfg = _make_job_config()
         handle = K8sJobHandle("job-1", _make_api_instance(), cfg, timeout=None)
-        assert handle._max_stuck_count == 120
+        assert handle._pending_timeout_secs == 120
 
-    def test_max_stuck_count_uses_custom_pending_timeout(self):
+    def test_pending_timeout_secs_uses_custom_pending_timeout(self):
         cfg = _make_job_config()
         handle = K8sJobHandle("job-1", _make_api_instance(), cfg, timeout=None, pending_timeout=60)
-        assert handle._max_stuck_count == 60
+        assert handle._pending_timeout_secs == 60
 
     # -- manifest -------------------------------------------------------------
     def test_manifest_metadata_name(self):
@@ -285,6 +357,29 @@ class TestK8sJobHandle:
         handle = K8sJobHandle("job-1", _make_api_instance(), cfg)
         container = handle.get_manifest()["spec"]["containers"][0]
         assert container["name"] == "nvflare_job"
+
+    def test_manifest_template_prefers_nvflare_job_over_unnamed_first_container(self):
+        cfg = _make_job_config()
+        del cfg["container_name"]
+        pod_manifest_template = {
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "spec": {
+                "containers": [
+                    {"image": "sidecar:v1"},
+                    {"name": "nvflare_job", "image": "template-image"},
+                ]
+            },
+        }
+
+        handle = K8sJobHandle("job-1", _make_api_instance(), cfg, pod_manifest_template=pod_manifest_template)
+
+        containers = handle.get_manifest()["spec"]["containers"]
+        assert containers[0] == {"image": "sidecar:v1"}
+        assert containers[1]["name"] == "nvflare_job"
+        assert containers[1]["image"] == "nvflare/nvflare:test"
+        assert containers[1]["command"] == ["/usr/local/bin/python"]
+        assert "nvflare.private.fed.app.client.worker_process" in containers[1]["args"]
 
     def test_manifest_restart_policy(self):
         cfg = _make_job_config()
@@ -560,21 +655,31 @@ class TestK8sJobHandle:
         assert handle._query_phase() == PodPhase.RUNNING.value
         api.read_namespaced_pod.assert_called_once_with(name="job-1-site-1", namespace="default")
 
-    # -- _stuck_in_pending ----------------------------------------------------
-    def test_stuck_in_pending_returns_true_at_max_count(self):
-        # With _stuck_count seeded to max-1, one more PENDING call increments to
-        # exactly max, which should fire (>=, not >).
+    def test_query_phase_returns_none_when_phase_missing(self):
         api = _make_api_instance()
-        handle = K8sJobHandle("job-1", api, _make_job_config(), timeout=5)
-        handle._stuck_count = handle._max_stuck_count - 1
-        assert handle._stuck_in_pending(PodPhase.PENDING.value) is True
+        resp = Mock()
+        resp.status.phase = None
+        api.read_namespaced_pod.return_value = resp
+        handle = _make_handle(api=api)
+        assert handle._query_phase() is None
 
-    def test_stuck_in_pending_returns_false_one_before_max(self):
-        # One iteration before the threshold must not fire.
+    # -- _stuck_in_pending ----------------------------------------------------
+    def test_stuck_in_pending_returns_true_at_pending_timeout(self):
         api = _make_api_instance()
-        handle = K8sJobHandle("job-1", api, _make_job_config(), timeout=5)
-        handle._stuck_count = handle._max_stuck_count - 2
-        assert handle._stuck_in_pending(PodPhase.PENDING.value) is False
+        handle = K8sJobHandle("job-1", api, _make_job_config(), pending_timeout=5)
+        assert handle._stuck_in_pending(PodPhase.PENDING.value, now=0) is False
+        assert handle._stuck_in_pending(PodPhase.PENDING.value, now=5) is True
+
+    def test_stuck_in_pending_returns_false_before_pending_timeout(self):
+        api = _make_api_instance()
+        handle = K8sJobHandle("job-1", api, _make_job_config(), pending_timeout=5)
+        assert handle._stuck_in_pending(PodPhase.PENDING.value, now=0) is False
+        assert handle._stuck_in_pending(PodPhase.PENDING.value, now=4.9) is False
+
+    def test_stuck_in_pending_returns_true_immediately_when_pending_timeout_zero(self):
+        api = _make_api_instance()
+        handle = K8sJobHandle("job-1", api, _make_job_config(), pending_timeout=0)
+        assert handle._stuck_in_pending(PodPhase.PENDING.value, now=0) is True
 
     def test_stuck_in_pending_returns_false_for_non_pending(self):
         api = _make_api_instance()
@@ -599,17 +704,19 @@ class TestK8sJobHandle:
     def test_stuck_in_pending_ignores_unobserved_phase(self):
         api = _make_api_instance()
         handle = K8sJobHandle("job-1", api, _make_job_config(), timeout=None, pending_timeout=2)
-        handle._stuck_count = handle._max_stuck_count - 1
+        handle._pending_since = 0
+        handle._stuck_count = 1
 
         assert handle._stuck_in_pending(None) is False
-        assert handle._stuck_count == handle._max_stuck_count - 1
+        assert handle._pending_since == 0
+        assert handle._stuck_count == 1
 
-    def test_stuck_in_pending_counts_unknown_as_not_making_progress(self):
+    def test_stuck_in_pending_does_not_count_unknown(self):
         api = _make_api_instance()
         handle = K8sJobHandle("job-1", api, _make_job_config(), timeout=None, pending_timeout=2)
 
-        assert handle._stuck_in_pending(PodPhase.UNKNOWN.value) is False
-        assert handle._stuck_in_pending(PodPhase.UNKNOWN.value) is True
+        assert handle._stuck_in_pending(PodPhase.UNKNOWN.value, now=0) is False
+        assert handle._stuck_in_pending(PodPhase.UNKNOWN.value, now=2) is False
 
     def test_stuck_in_pending_returns_false_when_under_max(self):
         api = _make_api_instance()
@@ -617,10 +724,10 @@ class TestK8sJobHandle:
         assert handle._stuck_in_pending(PodPhase.PENDING.value) is False
 
     def test_stuck_in_pending_never_fires_when_pending_timeout_none(self):
-        # pending_timeout=None with timeout=None → _max_stuck_count=None → stuck detection disabled
+        # pending_timeout=None with timeout=None disables resource-shortage stuck detection.
         api = _make_api_instance()
         handle = K8sJobHandle("job-1", api, _make_job_config(), timeout=None, pending_timeout=None)
-        assert handle._max_stuck_count is None
+        assert handle._pending_timeout_secs is None
         # Drive _stuck_count very high — must not raise and must return False
         handle._stuck_count = 10_000
         assert handle._stuck_in_pending(PodPhase.PENDING.value) is False
@@ -682,6 +789,21 @@ class TestK8sJobHandle:
         handle.wait()
         ws_transfer.remove_job.assert_called_once_with("job-raw")
 
+    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
+    def test_wait_deletes_pending_pod_after_pending_timeout(self, mock_time):
+        mock_time.time.side_effect = [0.0, 1.0]
+        mock_time.sleep = Mock()
+        api = _make_api_instance()
+        api.read_namespaced_pod.return_value = _make_resource_pending_pod()
+        handle = _make_handle(api=api, timeout=None, pending_timeout=1)
+
+        handle.wait()
+
+        assert api.read_namespaced_pod.call_count == 2
+        api.delete_namespaced_pod.assert_called_once()
+        assert handle.terminal_state == JobState.TERMINATED
+        assert handle.poll() == JobReturnCode.EXCEPTION
+
     def test_terminate_removes_workspace_job(self):
         api = _make_api_instance()
         ws_transfer = Mock()
@@ -706,6 +828,35 @@ class TestK8sJobHandle:
         handle.terminal_return_code = JobReturnCode.EXCEPTION
 
         assert handle.poll() == JobReturnCode.EXCEPTION
+        assert handle.terminal_state == JobState.TERMINATED
+
+    def test_poll_deletes_pending_pod_immediately_when_pending_timeout_zero(self):
+        api = _make_api_instance()
+        api.read_namespaced_pod.return_value = _make_resource_pending_pod()
+        handle = _make_handle(api=api, pending_timeout=0)
+
+        assert handle.poll() == JobReturnCode.EXCEPTION
+
+        api.delete_namespaced_pod.assert_called_once()
+        assert handle.terminal_state == JobState.TERMINATED
+
+    def test_poll_terminates_on_image_pull_backoff(self):
+        api = _make_api_instance()
+        api.read_namespaced_pod.return_value = _make_pod_response(
+            node_name="node-1",
+            conditions=[_make_condition("PodScheduled", "True")],
+            container_statuses=[
+                _make_waiting_container_status(
+                    "ImagePullBackOff",
+                    "Back-off pulling image",
+                )
+            ],
+        )
+        handle = _make_handle(api=api, pending_timeout=120)
+
+        assert handle.poll() == JobReturnCode.EXCEPTION
+
+        api.delete_namespaced_pod.assert_called_once()
         assert handle.terminal_state == JobState.TERMINATED
 
     # -- enter_states ---------------------------------------------------------
@@ -752,12 +903,12 @@ class TestK8sJobHandle:
         handle.enter_states([JobState.RUNNING])
         assert handle.poll() == JobReturnCode.EXCEPTION
 
-    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time.sleep")
-    def test_enter_states_deletes_pending_pod_after_pending_timeout(self, mock_sleep):
+    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
+    def test_enter_states_deletes_pending_pod_after_pending_timeout(self, mock_time):
+        mock_time.time.side_effect = [0.0, 0.0, 1.0, 2.0]
+        mock_time.sleep = Mock()
         api = _make_api_instance()
-        resp = Mock()
-        resp.status.phase = PodPhase.PENDING.value
-        api.read_namespaced_pod.return_value = resp
+        api.read_namespaced_pod.return_value = _make_resource_pending_pod()
         handle = _make_handle(
             api=api,
             timeout=None,
@@ -768,7 +919,7 @@ class TestK8sJobHandle:
 
         assert handle.enter_states([JobState.RUNNING]) is False
 
-        assert api.read_namespaced_pod.call_count == 2
+        assert api.read_namespaced_pod.call_count == 3
         api.delete_namespaced_pod.assert_called_once_with(
             name="pending-resource-pod",
             namespace="nvflare-test",
@@ -776,6 +927,214 @@ class TestK8sJobHandle:
         )
         assert handle.terminal_state == JobState.TERMINATED
         assert handle.poll() == JobReturnCode.EXCEPTION
+
+    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
+    def test_enter_states_deletes_pending_pod_immediately_when_pending_timeout_zero(self, mock_time):
+        mock_time.time.side_effect = [0.0, 0.0]
+        mock_time.sleep = Mock()
+        api = _make_api_instance()
+        api.read_namespaced_pod.return_value = _make_resource_pending_pod()
+        handle = _make_handle(api=api, timeout=None, pending_timeout=0)
+
+        assert handle.enter_states([JobState.RUNNING]) is False
+
+        api.read_namespaced_pod.assert_called_once()
+        api.delete_namespaced_pod.assert_called_once()
+        assert handle.terminal_state == JobState.TERMINATED
+        assert handle.poll() == JobReturnCode.EXCEPTION
+
+    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
+    def test_enter_states_uses_event_resource_shortage_for_pending_timeout(self, mock_time):
+        mock_time.time.side_effect = [0.0, 0.0]
+        mock_time.sleep = Mock()
+        api = _make_api_instance()
+        api.read_namespaced_pod.return_value = _make_pod_response()
+        _set_pod_events(
+            api,
+            [_make_event("FailedScheduling", "0/1 nodes are available: 1 Insufficient nvidia.com/gpu.")],
+        )
+        handle = _make_handle(api=api, timeout=None, pending_timeout=0)
+
+        assert handle.enter_states([JobState.RUNNING]) is False
+
+        api.list_namespaced_event.assert_called_once_with(
+            namespace="default",
+            field_selector="involvedObject.name=job-1",
+        )
+        api.delete_namespaced_pod.assert_called_once()
+        assert handle.poll() == JobReturnCode.EXCEPTION
+
+    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
+    def test_enter_states_terminates_on_non_resource_scheduling_failure(self, mock_time):
+        mock_time.time.side_effect = [0.0, 0.0]
+        mock_time.sleep = Mock()
+        api = _make_api_instance()
+        api.read_namespaced_pod.return_value = _make_pod_response(
+            conditions=[
+                _make_condition(
+                    "PodScheduled",
+                    "False",
+                    "Unschedulable",
+                    "0/1 nodes are available: pod has unbound immediate PersistentVolumeClaims.",
+                )
+            ]
+        )
+        handle = _make_handle(api=api, timeout=None, pending_timeout=120)
+
+        assert handle.enter_states([JobState.RUNNING]) is False
+
+        api.read_namespaced_pod.assert_called_once()
+        api.delete_namespaced_pod.assert_called_once()
+        assert handle.poll() == JobReturnCode.EXCEPTION
+
+    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
+    def test_enter_states_terminates_on_non_resource_failed_scheduling_event(self, mock_time):
+        mock_time.time.side_effect = [0.0, 0.0]
+        mock_time.sleep = Mock()
+        api = _make_api_instance()
+        api.read_namespaced_pod.return_value = _make_pod_response()
+        _set_pod_events(
+            api,
+            [_make_event("FailedScheduling", "0/1 nodes are available: pod did not match node affinity.")],
+        )
+        handle = _make_handle(api=api, timeout=None, pending_timeout=120)
+
+        assert handle.enter_states([JobState.RUNNING]) is False
+
+        api.delete_namespaced_pod.assert_called_once()
+        assert handle.poll() == JobReturnCode.EXCEPTION
+
+    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
+    def test_enter_states_uses_latest_scheduling_event(self, mock_time):
+        mock_time.time.side_effect = [0.0, 0.0]
+        mock_time.sleep = Mock()
+        api = _make_api_instance()
+        api.read_namespaced_pod.return_value = _make_pod_response()
+        _set_pod_events(
+            api,
+            [
+                _make_event(
+                    "FailedScheduling",
+                    "0/1 nodes are available: 1 Insufficient cpu.",
+                    last_timestamp="2026-01-01T00:00:00Z",
+                ),
+                _make_event(
+                    "FailedScheduling",
+                    "0/1 nodes are available: pod did not match node affinity.",
+                    last_timestamp="2026-01-01T00:01:00Z",
+                ),
+            ],
+        )
+        handle = _make_handle(api=api, timeout=None, pending_timeout=None)
+
+        assert handle.enter_states([JobState.RUNNING]) is False
+
+        api.delete_namespaced_pod.assert_called_once()
+        assert handle.poll() == JobReturnCode.EXCEPTION
+
+    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
+    def test_enter_states_ignores_non_warning_failed_scheduling_event(self, mock_time):
+        mock_time.time.side_effect = [0.0, 0.0, 1.0]
+        mock_time.sleep = Mock()
+        api = _make_api_instance()
+        running_resp = Mock()
+        running_resp.status.phase = PodPhase.RUNNING.value
+        api.read_namespaced_pod.side_effect = [_make_pod_response(), running_resp]
+        _set_pod_events(
+            api,
+            [_make_event("FailedScheduling", "non-warning scheduling event", event_type="Normal")],
+        )
+        handle = _make_handle(api=api, timeout=10, pending_timeout=0)
+
+        assert handle.enter_states([JobState.RUNNING]) is True
+
+        api.delete_namespaced_pod.assert_not_called()
+
+    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
+    def test_enter_states_waits_on_unrecognized_container_waiting_reason(self, mock_time):
+        mock_time.time.side_effect = [0.0, 0.0, 1.0]
+        mock_time.sleep = Mock()
+        api = _make_api_instance()
+        unknown_waiting = _make_pod_response(
+            node_name="node-1",
+            conditions=[_make_condition("PodScheduled", "True")],
+            container_statuses=[_make_waiting_container_status("ContainerStatusUnknown")],
+        )
+        running_resp = Mock()
+        running_resp.status.phase = PodPhase.RUNNING.value
+        api.read_namespaced_pod.side_effect = [unknown_waiting, running_resp]
+        handle = _make_handle(api=api, timeout=10, pending_timeout=0)
+
+        assert handle.enter_states([JobState.RUNNING]) is True
+
+        api.delete_namespaced_pod.assert_not_called()
+
+    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
+    def test_enter_states_terminates_on_recent_scheduled_warning_event(self, mock_time):
+        mock_time.time.side_effect = [10.0, 10.0]
+        mock_time.sleep = Mock()
+        api = _make_api_instance()
+        api.read_namespaced_pod.return_value = _make_container_creating_pod()
+        _set_pod_events(
+            api,
+            [_make_event("FailedMount", "Unable to attach or mount volumes", last_timestamp=9.0)],
+        )
+        handle = _make_handle(api=api, timeout=None, pending_timeout=120)
+
+        assert handle.enter_states([JobState.RUNNING]) is False
+
+        api.delete_namespaced_pod.assert_called_once()
+        assert handle.poll() == JobReturnCode.EXCEPTION
+
+    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
+    def test_enter_states_terminates_on_persistent_scheduled_warning_event(self, mock_time):
+        mock_time.time.side_effect = [100.0, 100.0]
+        mock_time.sleep = Mock()
+        api = _make_api_instance()
+        api.read_namespaced_pod.return_value = _make_container_creating_pod()
+        _set_pod_events(
+            api,
+            [_make_event("FailedMount", "Unable to attach or mount volumes", last_timestamp=80.0)],
+        )
+        handle = _make_handle(api=api, timeout=None, pending_timeout=120)
+
+        assert handle.enter_states([JobState.RUNNING]) is False
+
+        api.delete_namespaced_pod.assert_called_once()
+        assert handle.poll() == JobReturnCode.EXCEPTION
+
+    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
+    def test_enter_states_ignores_stale_scheduled_warning_event(self, mock_time):
+        mock_time.time.side_effect = [120.0, 120.0, 121.0]
+        mock_time.sleep = Mock()
+        api = _make_api_instance()
+        running_resp = Mock()
+        running_resp.status.phase = PodPhase.RUNNING.value
+        api.read_namespaced_pod.side_effect = [_make_container_creating_pod(), running_resp]
+        _set_pod_events(
+            api,
+            [_make_event("FailedMount", "Unable to attach or mount volumes", last_timestamp=1.0)],
+        )
+        handle = _make_handle(api=api, timeout=20, pending_timeout=0)
+
+        assert handle.enter_states([JobState.RUNNING]) is True
+
+        api.delete_namespaced_pod.assert_not_called()
+
+    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
+    def test_enter_states_ignores_event_api_failure_for_normal_startup_delay(self, mock_time):
+        mock_time.time.side_effect = [0.0, 0.0, 1.0]
+        mock_time.sleep = Mock()
+        api = _make_api_instance()
+        running_resp = Mock()
+        running_resp.status.phase = PodPhase.RUNNING.value
+        api.read_namespaced_pod.side_effect = [_make_container_creating_pod(), running_resp]
+        api.list_namespaced_event.side_effect = _FakeApiException(status=500, reason="Internal")
+        handle = _make_handle(api=api, timeout=10, pending_timeout=0)
+
+        assert handle.enter_states([JobState.RUNNING]) is True
+
+        api.delete_namespaced_pod.assert_not_called()
 
     def test_enter_states_returns_false_on_terminal_pod_phase(self):
         api = _make_api_instance()
@@ -804,25 +1163,24 @@ class TestK8sJobHandle:
         assert handle.terminal_state == JobState.TERMINATED
         api.delete_namespaced_pod.assert_not_called()
 
-    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time.sleep")
-    def test_enter_states_terminates_after_repeated_unknown_phase(self, mock_sleep):
+    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
+    def test_enter_states_terminates_immediately_on_unknown_phase(self, mock_time):
+        mock_time.time.side_effect = [0.0, 0.0]
+        mock_time.sleep = Mock()
         api = _make_api_instance()
-        resp = Mock()
-        resp.status.phase = PodPhase.UNKNOWN.value
-        api.read_namespaced_pod.return_value = resp
+        api.read_namespaced_pod.return_value = _make_pod_response(phase=PodPhase.UNKNOWN.value)
         handle = _make_handle(api=api, timeout=None, pending_timeout=2)
 
         assert handle.enter_states([JobState.RUNNING]) is False
         assert handle.terminal_state == JobState.TERMINATED
-        assert api.read_namespaced_pod.call_count == 2
+        assert api.read_namespaced_pod.call_count == 1
         api.delete_namespaced_pod.assert_called_once()
         assert handle.poll() == JobReturnCode.EXCEPTION
 
     @patch("nvflare.app_opt.job_launcher.k8s_launcher.time.sleep")
     def test_enter_states_does_not_count_api_errors_as_pending(self, mock_sleep):
         api = _make_api_instance()
-        pending_resp = Mock()
-        pending_resp.status.phase = PodPhase.PENDING.value
+        pending_resp = _make_resource_pending_pod()
         running_resp = Mock()
         running_resp.status.phase = PodPhase.RUNNING.value
         api.read_namespaced_pod.side_effect = [
@@ -837,24 +1195,105 @@ class TestK8sJobHandle:
         assert api.read_namespaced_pod.call_count == 3
         api.delete_namespaced_pod.assert_not_called()
 
+    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
+    def test_enter_states_pauses_pending_timeout_clock_across_api_errors(self, mock_time):
+        mock_time.time.side_effect = [0.0, 0.0, 1.0, 2.0, 3.0]
+        mock_time.sleep = Mock()
+        api = _make_api_instance()
+        pending_resp = _make_resource_pending_pod()
+        api.read_namespaced_pod.side_effect = [
+            pending_resp,
+            _FakeApiException(status=500, reason="Internal"),
+            pending_resp,
+            pending_resp,
+        ]
+        handle = _make_handle(api=api, timeout=None, pending_timeout=2)
+
+        assert handle.enter_states([JobState.RUNNING]) is False
+
+        assert api.read_namespaced_pod.call_count == 4
+        api.delete_namespaced_pod.assert_called_once()
+        assert handle.terminal_state == JobState.TERMINATED
+        assert handle.poll() == JobReturnCode.EXCEPTION
+
+    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
+    def test_enter_states_pauses_event_resource_pending_clock_across_event_api_errors(self, mock_time):
+        mock_time.time.side_effect = [0.0, 0.0, 1.0, 5.0, 10.0, 11.0]
+        mock_time.sleep = Mock()
+        api = _make_api_instance()
+        running_resp = Mock()
+        running_resp.status.phase = PodPhase.RUNNING.value
+        api.read_namespaced_pod.side_effect = [
+            _make_pod_response(),
+            _make_pod_response(),
+            _make_pod_response(),
+            _make_pod_response(),
+            running_resp,
+        ]
+        api.list_namespaced_event.side_effect = [
+            _make_event_list([_make_event("FailedScheduling", "0/1 nodes are available: 1 Insufficient cpu.")]),
+            _FakeApiException(status=500, reason="Internal"),
+            _FakeApiException(status=500, reason="Internal"),
+            _make_event_list([_make_event("FailedScheduling", "0/1 nodes are available: 1 Insufficient cpu.")]),
+        ]
+        handle = _make_handle(api=api, timeout=None, pending_timeout=2)
+
+        assert handle.enter_states([JobState.RUNNING]) is True
+
+        assert api.read_namespaced_pod.call_count == 5
+        api.delete_namespaced_pod.assert_not_called()
+
+    def test_scheduled_pod_event_api_failure_resets_resource_pending_timer(self):
+        api = _make_api_instance()
+        api.list_namespaced_event.side_effect = _FakeApiException(status=500, reason="Internal")
+        handle = _make_handle(api=api, timeout=None, pending_timeout=10)
+
+        assert handle._handle_starting_pod(_make_resource_pending_pod(), PodPhase.PENDING.value, now=0) is False
+        assert handle._pending_since == 0
+
+        assert handle._handle_starting_pod(_make_container_creating_pod(), PodPhase.PENDING.value, now=5) is False
+
+        assert handle._pending_since is None
+        assert handle._pending_timer_paused_at is None
+        api.delete_namespaced_pod.assert_not_called()
+
+    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
+    def test_enter_states_expires_event_resource_pending_after_event_api_recovery(self, mock_time):
+        mock_time.time.side_effect = [0.0, 0.0, 1.0, 5.0, 10.0, 11.0]
+        mock_time.sleep = Mock()
+        api = _make_api_instance()
+        api.read_namespaced_pod.return_value = _make_pod_response()
+        api.list_namespaced_event.side_effect = [
+            _make_event_list([_make_event("FailedScheduling", "0/1 nodes are available: 1 Insufficient cpu.")]),
+            _FakeApiException(status=500, reason="Internal"),
+            _FakeApiException(status=500, reason="Internal"),
+            _make_event_list([_make_event("FailedScheduling", "0/1 nodes are available: 1 Insufficient cpu.")]),
+            _make_event_list([_make_event("FailedScheduling", "0/1 nodes are available: 1 Insufficient cpu.")]),
+        ]
+        handle = _make_handle(api=api, timeout=None, pending_timeout=2)
+
+        assert handle.enter_states([JobState.RUNNING]) is False
+
+        assert api.read_namespaced_pod.call_count == 5
+        api.delete_namespaced_pod.assert_called_once()
+        assert handle.terminal_state == JobState.TERMINATED
+        assert handle.poll() == JobReturnCode.EXCEPTION
+
     def test_enter_states_raises_on_invalid_state(self):
         handle = _make_handle()
         with pytest.raises(ValueError, match="expect job_states_to_enter"):
             handle.enter_states(["not_a_state"])
 
     # -- enter_states: wall-clock timeout branch ------------------------------
-    # The pod is placed in UNKNOWN phase. Stuck detection does not fire before
-    # the mocked elapsed-time check because the threshold is higher than one
-    # iteration. This covers the wall-clock timeout branch.
+    # The pod is scheduled but still creating its container. Pending-resource
+    # detection does not fire, so these tests cover the wall-clock timeout branch.
 
     @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
     def test_enter_states_wall_clock_timeout_returns_false(self, mock_time):
         mock_time.time.side_effect = [0.0, 100.0]  # start=0, check=100 → 100 > timeout=10
         mock_time.sleep = Mock()
         api = _make_api_instance()
-        resp = Mock()
-        resp.status.phase = PodPhase.UNKNOWN.value
-        api.read_namespaced_pod.return_value = resp
+        api.read_namespaced_pod.return_value = _make_container_creating_pod()
         handle = _make_handle(api=api, timeout=10)
         assert handle.enter_states([JobState.RUNNING]) is False
 
@@ -863,9 +1302,7 @@ class TestK8sJobHandle:
         mock_time.time.side_effect = [0.0, 100.0]
         mock_time.sleep = Mock()
         api = _make_api_instance()
-        resp = Mock()
-        resp.status.phase = PodPhase.UNKNOWN.value
-        api.read_namespaced_pod.return_value = resp
+        api.read_namespaced_pod.return_value = _make_container_creating_pod()
         handle = _make_handle(api=api, timeout=10)
         handle.enter_states([JobState.RUNNING])
         api.delete_namespaced_pod.assert_called_once()
@@ -889,14 +1326,13 @@ class TestK8sJobHandle:
     def test_enter_states_wall_clock_not_fired_before_elapsed(self, mock_time):
         # First iteration: time not yet elapsed → wall-clock skipped, loop continues.
         # Second iteration: pod completes → exits via terminal-phase path, no terminate().
-        mock_time.time.side_effect = [0.0, 0.5]  # start=0, first check=0.5 < timeout=10
+        mock_time.time.side_effect = [0.0, 0.5, 1.0]  # start=0, first check=0.5 < timeout=10
         mock_time.sleep = Mock()
         api = _make_api_instance()
-        resp_unknown = Mock()
-        resp_unknown.status.phase = PodPhase.UNKNOWN.value
+        resp_creating = _make_container_creating_pod()
         resp_succeeded = Mock()
         resp_succeeded.status.phase = PodPhase.SUCCEEDED.value
-        api.read_namespaced_pod.side_effect = [resp_unknown, resp_succeeded]
+        api.read_namespaced_pod.side_effect = [resp_creating, resp_succeeded]
         handle = _make_handle(api=api, timeout=10)
         result = handle.enter_states([JobState.RUNNING])
         assert result is False
@@ -931,7 +1367,7 @@ class TestJobArgsDict:
 # ---------------------------------------------------------------------------
 # K8sJobLauncher handle_event
 # ---------------------------------------------------------------------------
-def _make_k8s_launcher_patches():
+def _make_k8s_launcher_patches(patch_open=True):
     # kubernetes is imported inside launch_job (not at module level), so we rely
     # on the sys.modules stubs injected at the top of this file.  The only
     # YAML dependency we need to intercept is in the shared study_data helper,
@@ -939,12 +1375,14 @@ def _make_k8s_launcher_patches():
     # already-stubbed _k8s_core module is patched with patch.object so each
     # test gets a fresh, controllable mock and the original stub is restored.
     # WorkspaceTransferManager is patched so tests don't register real CellNet handlers.
-    return [
-        patch("builtins.open", create=True),
+    patches = [
         patch("nvflare.app_opt.job_launcher.study_data.yaml"),
         patch.object(_k8s_core, "CoreV1Api"),
         patch("nvflare.app_opt.job_launcher.k8s_launcher.WorkspaceTransferManager"),
     ]
+    if patch_open:
+        patches.insert(0, patch("builtins.open", create=True))
+    return patches
 
 
 def _enter_patches(patches):
@@ -1025,15 +1463,19 @@ class TestK8sJobLauncherInit:
             timeout=60,
             namespace="test-ns",
             image_pull_secrets=["job-regcred"],
+            study_job_spec_file_path="/fake/study_job_spec.yaml",
         )
 
         assert launcher.study_data_pvc_file_path == "/fake/study_data.yaml"
+        assert launcher.study_job_spec_file_path == "/fake/study_job_spec.yaml"
         assert launcher.timeout == 60
         assert launcher.namespace == "test-ns"
         assert launcher.workspace_mount_path == WORKSPACE_MOUNT_PATH
         assert launcher.image_pull_secrets == ["job-regcred"]
         # study_data.yaml is populated lazily
         assert launcher.study_data_pvc_dict is None
+        assert launcher.study_job_spec_dict is None
+        assert launcher.pod_manifest_template_dict == {}
 
     def test_init_stores_custom_workspace_mount_path(self):
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
@@ -1066,6 +1508,27 @@ class TestK8sJobLauncherInit:
                 workspace_mount_path=1,
             )
 
+    @pytest.mark.parametrize("study_job_spec_file_path", ["", 1, False])
+    def test_init_rejects_invalid_study_job_spec_file_path(self, study_job_spec_file_path):
+        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
+
+        with pytest.raises(ValueError, match="study_job_spec_file_path"):
+            ClientK8sJobLauncher(
+                config_file_path="/fake/kube/config",
+                study_data_pvc_file_path="/fake/study_data.yaml",
+                study_job_spec_file_path=study_job_spec_file_path,
+            )
+
+    @pytest.mark.parametrize("study_data_pvc_file_path", ["", 1, False])
+    def test_init_rejects_invalid_study_data_pvc_file_path(self, study_data_pvc_file_path):
+        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
+
+        with pytest.raises(ValueError, match="study_data_pvc_file_path"):
+            ClientK8sJobLauncher(
+                config_file_path="/fake/kube/config",
+                study_data_pvc_file_path=study_data_pvc_file_path,
+            )
+
     def test_init_rejects_empty_ephemeral_storage(self):
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
@@ -1084,6 +1547,17 @@ class TestK8sJobLauncherInit:
                 config_file_path="/fake/kube/config",
                 study_data_pvc_file_path="/fake/study_data.yaml",
                 ephemeral_storage=1,
+            )
+
+    @pytest.mark.parametrize("pending_timeout", [-1, "1", True])
+    def test_init_rejects_invalid_pending_timeout(self, pending_timeout):
+        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
+
+        with pytest.raises(ValueError, match="pending_timeout"):
+            ClientK8sJobLauncher(
+                config_file_path="/fake/kube/config",
+                study_data_pvc_file_path="/fake/study_data.yaml",
+                pending_timeout=pending_timeout,
             )
 
     @pytest.mark.parametrize(
@@ -1252,6 +1726,8 @@ class TestK8sJobLauncherLaunchJob:
         ephemeral_storage=None,
         workspace_mount_path=None,
         image_pull_secrets=None,
+        pending_timeout=None,
+        config_file_path="/fake/kube/config",
     ):
         from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 
@@ -1270,7 +1746,7 @@ class TestK8sJobLauncherLaunchJob:
         mock_transfer.add_job.return_value = "transfer-token"
         self.mock_transfer = mock_transfer
         launcher_kwargs = {
-            "config_file_path": "/fake/kube/config",
+            "config_file_path": config_file_path,
             "study_data_pvc_file_path": "/fake/study_data.yaml",
             "namespace": namespace,
             "default_python_path": default_python_path,
@@ -1281,6 +1757,8 @@ class TestK8sJobLauncherLaunchJob:
             launcher_kwargs["workspace_mount_path"] = workspace_mount_path
         if image_pull_secrets is not None:
             launcher_kwargs["image_pull_secrets"] = image_pull_secrets
+        if pending_timeout is not None:
+            launcher_kwargs["pending_timeout"] = pending_timeout
         launcher = ClientK8sJobLauncher(**launcher_kwargs)
         return launcher, mock_api
 
@@ -1300,6 +1778,51 @@ class TestK8sJobLauncherLaunchJob:
         try:
             handle = launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
             assert isinstance(handle, K8sJobHandle)
+        finally:
+            _exit_patches(patches)
+
+    def test_incluster_config_is_loaded_when_config_file_path_is_none(self):
+        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
+
+        captured = {}
+
+        class FakeConfiguration:
+            def get_default_copy(self):
+                return self
+
+            @staticmethod
+            def set_default(configuration):
+                captured["configuration"] = configuration
+
+        patches = _make_k8s_launcher_patches()
+        patches.extend(
+            [
+                patch.object(_k8s_config, "load_incluster_config", create=True),
+                patch.object(_k8s_client, "Configuration", FakeConfiguration),
+            ]
+        )
+        _mock_open, mock_yaml, mock_core_cls, mock_transfer_cls, mock_load_incluster_config, *_ = _enter_patches(
+            patches
+        )
+        try:
+            mock_yaml.safe_load.return_value = {"study-a": {"training": {"source": "data-pvc", "mode": "ro"}}}
+            mock_api = MagicMock()
+            mock_core_cls.return_value = mock_api
+            mock_transfer = MagicMock()
+            mock_transfer_cls.get_or_create.return_value = mock_transfer
+            mock_transfer.owner_fqcn = "site-1.parent"
+            mock_transfer.add_job.return_value = "transfer-token"
+            self._prime_running(mock_api)
+
+            launcher = ClientK8sJobLauncher(
+                config_file_path=None,
+                study_data_pvc_file_path="/fake/study_data.yaml",
+                namespace="test-ns",
+            )
+            launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
+
+            mock_load_incluster_config.assert_called_once()
+            assert isinstance(captured["configuration"], FakeConfiguration)
         finally:
             _exit_patches(patches)
 
@@ -1325,6 +1848,53 @@ class TestK8sJobLauncherLaunchJob:
         finally:
             _exit_patches(patches)
 
+    def test_handle_uses_launcher_pending_timeout_by_default(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches, pending_timeout=30)
+        self._prime_running(mock_api)
+        try:
+            handle = launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
+            assert handle.pending_timeout == 30
+        finally:
+            _exit_patches(patches)
+
+    def test_handle_uses_job_pending_timeout_override(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches, pending_timeout=30)
+        self._prime_running(mock_api)
+        try:
+            meta = _make_launch_job_meta()
+            meta[JobMetaKey.JOB_LAUNCHER_SPEC.value]["site-1"]["k8s"]["pending_timeout"] = 0
+            handle = launcher.launch_job(meta, _make_launch_fl_ctx())
+            assert handle.pending_timeout == 0
+        finally:
+            _exit_patches(patches)
+
+    def test_handle_uses_job_pending_timeout_null_override(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches, pending_timeout=30)
+        self._prime_running(mock_api)
+        try:
+            meta = _make_launch_job_meta()
+            meta[JobMetaKey.JOB_LAUNCHER_SPEC.value]["site-1"]["k8s"]["pending_timeout"] = None
+            handle = launcher.launch_job(meta, _make_launch_fl_ctx())
+            assert handle.pending_timeout is None
+        finally:
+            _exit_patches(patches)
+
+    def test_rejects_invalid_job_pending_timeout_override(self):
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches, pending_timeout=30)
+        self._prime_running(mock_api)
+        try:
+            meta = _make_launch_job_meta()
+            meta[JobMetaKey.JOB_LAUNCHER_SPEC.value]["site-1"]["k8s"]["pending_timeout"] = -1
+            with pytest.raises(RuntimeError, match="pending_timeout"):
+                launcher.launch_job(meta, _make_launch_fl_ctx())
+            mock_api.create_namespaced_pod.assert_not_called()
+        finally:
+            _exit_patches(patches)
+
     # -- API call -------------------------------------------------------------
 
     def test_create_namespaced_pod_called_once(self):
@@ -1344,6 +1914,29 @@ class TestK8sJobLauncherLaunchJob:
         try:
             launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
             assert mock_api.create_namespaced_pod.call_args.kwargs["namespace"] == "prod-ns"
+        finally:
+            _exit_patches(patches)
+
+    @patch("nvflare.app_opt.job_launcher.k8s_launcher.time")
+    def test_launch_job_pending_timeout_zero_deletes_pending_pod_immediately(self, mock_time):
+        mock_time.time.side_effect = [0.0, 0.0]
+        mock_time.sleep = Mock()
+        patches = _make_k8s_launcher_patches()
+        launcher, mock_api = self._setup(patches)
+        mock_api.read_namespaced_pod.return_value = _make_resource_pending_pod()
+        try:
+            meta = _make_launch_job_meta()
+            meta[JobMetaKey.JOB_LAUNCHER_SPEC.value]["site-1"]["k8s"]["pending_timeout"] = 0
+            handle = launcher.launch_job(meta, _make_launch_fl_ctx())
+
+            assert handle.terminal_state == JobState.TERMINATED
+            assert handle.poll() == JobReturnCode.EXCEPTION
+            mock_api.read_namespaced_pod.assert_called_once_with(name=_EXPECTED_POD_NAME, namespace="test-ns")
+            mock_api.delete_namespaced_pod.assert_called_once_with(
+                name=_EXPECTED_POD_NAME,
+                namespace="test-ns",
+                grace_period_seconds=0,
+            )
         finally:
             _exit_patches(patches)
 
@@ -1393,6 +1986,387 @@ class TestK8sJobLauncherLaunchJob:
                 {"name": "job-regcred"},
                 {"name": "mirror-regcred"},
             ]
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_uses_study_specific_pod_template(self, tmp_path, caplog):
+        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
+
+        pod_dir = tmp_path / "pod_specs"
+        pod_dir.mkdir()
+        pod_file = pod_dir / "study-a-pod.yaml"
+        pod_file.write_text(
+            """
+apiVersion: v1
+kind: Pod
+metadata:
+  name: template-name
+  labels:
+    from-template: "true"
+spec:
+  serviceAccountName: custom-sa
+  restartPolicy: Always
+  nodeSelector:
+    accelerator: gpu
+  imagePullSecrets:
+    - name: template-regcred
+  volumes:
+    - name: template-volume
+      emptyDir: {}
+    - name: workspace-job
+      emptyDir:
+        sizeLimit: old
+    - name: startup-kit
+      secret:
+        secretName: old-startup-secret
+  containers:
+    - name: trainer
+      image: template-image
+      imagePullPolicy: IfNotPresent
+      env:
+        - name: KEEP_ME
+          value: "yes"
+        - name: NVFL_WORKSPACE_TRANSFER_TOKEN
+          value: old-token
+      volumeMounts:
+        - name: template-volume
+          mountPath: /template
+        - name: workspace-job
+          mountPath: /old-workspace
+        - name: startup-kit
+          mountPath: /old-startup
+          readOnly: false
+      resources:
+        limits:
+          cpu: "999"
+    - name: sidecar
+      image: sidecar:v1
+""",
+            encoding="utf-8",
+        )
+        study_job_spec_file = tmp_path / "study_job_spec.yaml"
+        study_job_spec_file.write_text("study-a: pod_specs/study-a-pod.yaml\n", encoding="utf-8")
+        study_data_file = tmp_path / "study_data.yaml"
+        study_data_file.write_text("study-a: {}\n", encoding="utf-8")
+
+        patches = _make_k8s_launcher_patches(patch_open=False)
+        _mock_study_data_yaml, mock_core_cls, mock_transfer_cls, *_ = _enter_patches(patches)
+        try:
+            _mock_study_data_yaml.safe_load.return_value = {
+                "study-a": {"training": {"source": "study-train-pvc", "mode": "ro"}}
+            }
+            mock_api = MagicMock()
+            mock_core_cls.return_value = mock_api
+            mock_transfer = MagicMock()
+            mock_transfer_cls.get_or_create.return_value = mock_transfer
+            mock_transfer.owner_fqcn = "site-1.parent"
+            mock_transfer.add_job.return_value = "transfer-token"
+            self._prime_running(mock_api)
+
+            launcher = ClientK8sJobLauncher(
+                config_file_path="/fake/kube/config",
+                study_data_pvc_file_path=str(study_data_file),
+                namespace="test-ns",
+                default_python_path="/usr/bin/python3",
+                image_pull_secrets=["job-regcred"],
+                study_job_spec_file_path=str(study_job_spec_file),
+            )
+            meta = _make_launch_job_meta(image="repo/nvflare-job:v2", study="study-a", ephemeral_storage="8Gi")
+            meta[JobMetaKey.JOB_LAUNCHER_SPEC.value]["site-1"]["k8s"].update({"cpu": "2", "memory": "8Gi"})
+
+            with caplog.at_level(logging.WARNING):
+                launcher.launch_job(meta, _make_launch_fl_ctx())
+
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            assert manifest["metadata"]["name"] == _EXPECTED_POD_NAME
+            assert manifest["metadata"]["labels"] == {"from-template": "true"}
+            assert manifest["spec"]["serviceAccountName"] == "custom-sa"
+            assert manifest["spec"]["nodeSelector"] == {"accelerator": "gpu"}
+            assert manifest["spec"]["restartPolicy"] == "Never"
+            assert manifest["spec"]["imagePullSecrets"] == [
+                {"name": "template-regcred"},
+                {"name": "job-regcred"},
+            ]
+
+            volume_map = {v["name"]: v for v in manifest["spec"]["volumes"]}
+            training_volume = study_dataset_volume_name("study-a", "training")
+            assert "template-volume" in volume_map
+            assert volume_map["workspace-job"]["emptyDir"]["sizeLimit"] == "8Gi"
+            assert volume_map["startup-kit"]["secret"]["secretName"] == "nvflare-startup-site-1-f505dccd"
+            assert volume_map[training_volume]["persistentVolumeClaim"]["claimName"] == "study-train-pvc"
+
+            job_container = manifest["spec"]["containers"][0]
+            assert job_container["name"] == f"container-{_EXPECTED_JOB_ID}"
+            assert job_container["image"] == "repo/nvflare-job:v2"
+            assert job_container["command"] == ["/usr/bin/python3"]
+            assert job_container["imagePullPolicy"] == "IfNotPresent"
+            assert _WORKER_MODULE in job_container["args"]
+            assert manifest["spec"]["containers"][1] == {"name": "sidecar", "image": "sidecar:v1"}
+
+            mount_map = {m["name"]: m for m in job_container["volumeMounts"]}
+            assert mount_map["template-volume"] == {"name": "template-volume", "mountPath": "/template"}
+            assert mount_map["workspace-job"]["mountPath"] == WORKSPACE_MOUNT_PATH
+            assert mount_map["startup-kit"]["mountPath"] == f"{WORKSPACE_MOUNT_PATH}/startup"
+            assert mount_map["startup-kit"]["readOnly"] is True
+            assert mount_map[training_volume] == {
+                "name": training_volume,
+                "mountPath": "/data/study-a/training",
+                "readOnly": True,
+            }
+
+            env_map = {e["name"]: e["value"] for e in job_container["env"]}
+            assert env_map["KEEP_ME"] == "yes"
+            assert env_map[ENV_WORKSPACE_TRANSFER_TOKEN] == "transfer-token"
+            assert env_map[ENV_WORKSPACE_OWNER_FQCN] == "site-1.parent"
+
+            resources = job_container["resources"]
+            assert resources["limits"]["cpu"] == "2"
+            assert resources["limits"]["memory"] == "8Gi"
+            assert resources["requests"]["ephemeral-storage"] == "8Gi"
+            assert "study_job_spec_file_path" in caplog.text
+            assert "study_data_pvc_file_path" in caplog.text
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_uses_study_template_without_study_data_path(self, tmp_path):
+        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
+
+        pod_file = tmp_path / "study-a-pod.yaml"
+        pod_file.write_text(
+            """
+apiVersion: v1
+kind: Pod
+spec:
+  serviceAccountName: custom-sa
+  containers:
+    - name: nvflare_job
+      image: template-image
+""",
+            encoding="utf-8",
+        )
+        study_job_spec_file = tmp_path / "study_job_spec.yaml"
+        study_job_spec_file.write_text(f"study-a: {pod_file}\n", encoding="utf-8")
+
+        patches = _make_k8s_launcher_patches(patch_open=False)
+        _mock_study_data_yaml, mock_core_cls, mock_transfer_cls, *_ = _enter_patches(patches)
+        try:
+            mock_api = MagicMock()
+            mock_core_cls.return_value = mock_api
+            mock_transfer = MagicMock()
+            mock_transfer_cls.get_or_create.return_value = mock_transfer
+            mock_transfer.owner_fqcn = "site-1.parent"
+            mock_transfer.add_job.return_value = "transfer-token"
+            self._prime_running(mock_api)
+
+            launcher = ClientK8sJobLauncher(
+                config_file_path="/fake/kube/config",
+                study_data_pvc_file_path=None,
+                namespace="test-ns",
+                study_job_spec_file_path=str(study_job_spec_file),
+            )
+
+            launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx())
+
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            volume_names = {v["name"] for v in manifest["spec"]["volumes"]}
+            mount_names = {m["name"] for m in manifest["spec"]["containers"][0]["volumeMounts"]}
+            assert volume_names == {"workspace-job", "startup-kit"}
+            assert mount_names == {"workspace-job", "startup-kit"}
+            _mock_study_data_yaml.safe_load.assert_not_called()
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_template_namespace_mismatch_uses_launcher_namespace(self, tmp_path, caplog):
+        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
+
+        pod_file = tmp_path / "study-a-pod.yaml"
+        pod_file.write_text(
+            """
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: template-ns
+spec:
+  containers:
+    - name: nvflare_job
+      image: template-image
+""",
+            encoding="utf-8",
+        )
+        study_job_spec_file = tmp_path / "study_job_spec.yaml"
+        study_job_spec_file.write_text(f"study-a: {pod_file}\n", encoding="utf-8")
+
+        patches = _make_k8s_launcher_patches(patch_open=False)
+        _mock_study_data_yaml, mock_core_cls, mock_transfer_cls, *_ = _enter_patches(patches)
+        try:
+            mock_api = MagicMock()
+            mock_core_cls.return_value = mock_api
+            mock_transfer = MagicMock()
+            mock_transfer_cls.get_or_create.return_value = mock_transfer
+            mock_transfer.owner_fqcn = "site-1.parent"
+            mock_transfer.add_job.return_value = "transfer-token"
+            self._prime_running(mock_api)
+
+            launcher = ClientK8sJobLauncher(
+                config_file_path="/fake/kube/config",
+                study_data_pvc_file_path=None,
+                namespace="test-ns",
+                study_job_spec_file_path=str(study_job_spec_file),
+            )
+
+            with caplog.at_level(logging.WARNING):
+                launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx())
+
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            assert manifest["metadata"]["namespace"] == "test-ns"
+            assert mock_api.create_namespaced_pod.call_args.kwargs["namespace"] == "test-ns"
+            assert (
+                "job pod is launched in namespace 'test-ns' instead of metadata.namespace 'template-ns'" in caplog.text
+            )
+            _mock_study_data_yaml.safe_load.assert_not_called()
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_template_is_cached_per_launcher(self, tmp_path):
+        from nvflare.app_opt.job_launcher import k8s_launcher as k8s_launcher_module
+        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
+
+        pod_file = tmp_path / "study-a-pod.yaml"
+        pod_file.write_text(
+            """
+apiVersion: v1
+kind: Pod
+spec:
+  serviceAccountName: first-sa
+  containers:
+    - name: nvflare_job
+      image: template-image
+""",
+            encoding="utf-8",
+        )
+        study_job_spec_file = tmp_path / "study_job_spec.yaml"
+        study_job_spec_file.write_text(f"study-a: {pod_file}\n", encoding="utf-8")
+
+        patches = _make_k8s_launcher_patches(patch_open=False)
+        _mock_study_data_yaml, mock_core_cls, mock_transfer_cls, *_ = _enter_patches(patches)
+        try:
+            mock_api = MagicMock()
+            mock_core_cls.return_value = mock_api
+            mock_transfer = MagicMock()
+            mock_transfer_cls.get_or_create.return_value = mock_transfer
+            mock_transfer.owner_fqcn = "site-1.parent"
+            mock_transfer.add_job.return_value = "transfer-token"
+            self._prime_running(mock_api)
+
+            launcher = ClientK8sJobLauncher(
+                config_file_path="/fake/kube/config",
+                study_data_pvc_file_path=None,
+                namespace="test-ns",
+                study_job_spec_file_path=str(study_job_spec_file),
+            )
+
+            with patch.object(
+                k8s_launcher_module, "load_pod_spec_file", wraps=k8s_launcher_module.load_pod_spec_file
+            ) as mock_load_pod_spec:
+                launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx())
+                pod_file.write_text(
+                    """
+apiVersion: v1
+kind: Pod
+spec:
+  serviceAccountName: second-sa
+  containers:
+    - name: nvflare_job
+      image: template-image
+""",
+                    encoding="utf-8",
+                )
+                launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx())
+
+            assert mock_load_pod_spec.call_count == 1
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            assert manifest["spec"]["serviceAccountName"] == "first-sa"
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_uses_builtin_template_when_study_job_spec_missing_study(self, tmp_path, caplog):
+        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
+
+        pod_file = tmp_path / "other-pod.yaml"
+        pod_file.write_text(
+            """
+apiVersion: v1
+kind: Pod
+spec:
+  serviceAccountName: custom-sa
+  containers:
+    - name: trainer
+      image: template-image
+""",
+            encoding="utf-8",
+        )
+        study_job_spec_file = tmp_path / "study_job_spec.yaml"
+        study_job_spec_file.write_text(f"other-study: {pod_file}\n", encoding="utf-8")
+
+        patches = _make_k8s_launcher_patches(patch_open=False)
+        _mock_study_data_yaml, mock_core_cls, mock_transfer_cls, *_ = _enter_patches(patches)
+        try:
+            mock_api = MagicMock()
+            mock_core_cls.return_value = mock_api
+            mock_transfer = MagicMock()
+            mock_transfer_cls.get_or_create.return_value = mock_transfer
+            mock_transfer.owner_fqcn = "site-1.parent"
+            mock_transfer.add_job.return_value = "transfer-token"
+            self._prime_running(mock_api)
+
+            launcher = ClientK8sJobLauncher(
+                config_file_path="/fake/kube/config",
+                study_data_pvc_file_path="/fake/study_data.yaml",
+                namespace="test-ns",
+                study_job_spec_file_path=str(study_job_spec_file),
+            )
+            with caplog.at_level(logging.WARNING):
+                launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx())
+
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            assert "serviceAccountName" not in manifest["spec"]
+            assert manifest["spec"]["containers"][0]["image"] == "nvflare/nvflare:latest"
+            assert "has no entry for study 'study-a'" in caplog.text
+        finally:
+            _exit_patches(patches)
+
+    def test_pod_manifest_rejects_non_pod_study_job_spec(self, tmp_path):
+        from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
+
+        pod_file = tmp_path / "job.yaml"
+        pod_file.write_text(
+            """
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: not-a-pod
+""",
+            encoding="utf-8",
+        )
+        study_job_spec_file = tmp_path / "study_job_spec.yaml"
+        study_job_spec_file.write_text(f"study-a: {pod_file}\n", encoding="utf-8")
+
+        patches = _make_k8s_launcher_patches(patch_open=False)
+        _mock_study_data_yaml, mock_core_cls, mock_transfer_cls, *_ = _enter_patches(patches)
+        try:
+            mock_api = MagicMock()
+            mock_core_cls.return_value = mock_api
+            launcher = ClientK8sJobLauncher(
+                config_file_path="/fake/kube/config",
+                study_data_pvc_file_path="/fake/study_data.yaml",
+                namespace="test-ns",
+                study_job_spec_file_path=str(study_job_spec_file),
+            )
+
+            with pytest.raises(ValueError, match="kind: Pod"):
+                launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx())
+            mock_api.create_namespaced_pod.assert_not_called()
+            mock_transfer_cls.get_or_create.assert_not_called()
         finally:
             _exit_patches(patches)
 
@@ -1998,6 +2972,7 @@ class TestK8sJobLauncherLaunchJob:
             handle = launcher.launch_job(_make_launch_job_meta(), _make_launch_fl_ctx())
             assert isinstance(handle, K8sJobHandle)
             assert handle.terminal_state == JobState.TERMINATED
+            assert handle.poll() == JobReturnCode.EXCEPTION
             self.mock_transfer.remove_job.assert_called_once_with(_JOB_UUID)
         finally:
             _exit_patches(patches)

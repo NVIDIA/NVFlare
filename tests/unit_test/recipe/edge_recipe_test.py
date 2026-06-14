@@ -58,6 +58,14 @@ def _iter_component_configs(value):
             yield from _iter_component_configs(child)
 
 
+class _AllowListWorkspace:
+    def __init__(self, resources_path):
+        self.resources_path = resources_path
+
+    def get_resources_file_path(self):
+        return str(self.resources_path)
+
+
 class _AuthorizingExportEnv(ExecEnv):
     def __init__(self, job_root):
         super().__init__()
@@ -78,11 +86,20 @@ class _AuthorizingExportEnv(ExecEnv):
         job_data = zip_directory_to_bytes("", str(job_dir))
         valid, error, meta = JobMetaValidator().validate(job.name, job_data)
         assert valid, error
-        assert meta.get(AppValidationKey.BYOC) is True
+        assert AppValidationKey.BYOC not in meta
         self.meta = meta
+
+        resources_path = self.job_root / "resources.json"
+        resources_path.write_text(json.dumps({"class_allow_list": ["nvflare.", "torch."]}))
 
         fl_ctx = FLContext()
         fl_ctx.set_prop(FLContextKey.JOB_META, meta, private=True, sticky=False)
+        fl_ctx.set_prop(
+            FLContextKey.WORKSPACE_OBJECT,
+            _AllowListWorkspace(resources_path),
+            private=True,
+            sticky=False,
+        )
         authorizer = ComponentPathAuthorizer()
         for config_path in sorted(job_dir.glob("*/config/config_fed_*.json")):
             config = json.loads(config_path.read_text())
@@ -204,10 +221,10 @@ class TestEdgeFedBuffRecipe:
         assert isinstance(recipe.model, dict)
         assert recipe.model["path"] == "torch.nn.Linear"
 
-    def test_run_validates_edge_job_byoc_before_component_authorization(
+    def test_run_validates_edge_job_allow_list_before_component_authorization(
         self, tmp_path, model_manager_config, device_manager_config
     ):
-        """Exported edge jobs must be BYOC before ComponentPathAuthorizer sees the configs."""
+        """Exported edge jobs without custom content must use allow-list component authorization."""
         from nvflare.edge.tools.edge_fed_buff_recipe import EdgeFedBuffRecipe
 
         recipe = EdgeFedBuffRecipe(
@@ -249,6 +266,31 @@ class TestEdgeFedBuffRecipe:
             if isinstance(comp, ModelUpdateAssessor):
                 return comp
         raise AssertionError("ModelUpdateAssessor not found in server components")
+
+    def _find_metrics_writer(self, job):
+        """Find the MetricsArtifactWriter component in the job's server config."""
+        from nvflare.app_common.widgets.metrics_artifact_writer import MetricsArtifactWriter
+
+        server_app = job._deploy_map.get("server")
+        assert server_app is not None, "No server app found in job"
+        metrics_writer = server_app.app_config.components.get("metrics_artifact_writer")
+        assert isinstance(metrics_writer, MetricsArtifactWriter)
+        return metrics_writer
+
+    def test_metrics_artifact_writer_is_configured(
+        self, mock_file_system, simple_pt_model, model_manager_config, device_manager_config
+    ):
+        """Test that EdgeFedBuffRecipe configures the server-side metrics artifact writer."""
+        from nvflare.edge.tools.edge_fed_buff_recipe import EdgeFedBuffRecipe
+
+        recipe = EdgeFedBuffRecipe(
+            job_name="test_metrics_writer",
+            model=simple_pt_model,
+            model_manager_config=model_manager_config,
+            device_manager_config=device_manager_config,
+        )
+
+        self._find_metrics_writer(recipe.job)
 
     def test_device_wait_timeout_default_is_none(
         self, mock_file_system, simple_pt_model, model_manager_config, device_manager_config

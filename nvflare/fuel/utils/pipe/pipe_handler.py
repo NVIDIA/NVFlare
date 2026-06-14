@@ -114,6 +114,7 @@ class PipeHandler(object):
         self._pause = False
         self._last_heartbeat_received_time = None
         self._check_interval = 0.01
+        self._stream_progress_drop_logged = False
         self.heartbeat_sender = threading.Thread(target=self._heartbeat)
         self.heartbeat_sender.daemon = True
 
@@ -318,6 +319,13 @@ class PipeHandler(object):
             if self.msg_cb is not None:
                 self.msg_cb(msg, *self.msg_cb_args, **self.msg_cb_kwargs)
                 return
+            if msg.topic == Topic.STREAM_PROGRESS:
+                if not self._stream_progress_drop_logged:
+                    self.logger.info("dropping stream progress message without message callback")
+                    self._stream_progress_drop_logged = True
+                else:
+                    self.logger.debug("dropping stream progress message without message callback")
+                return
 
         with self.lock:
             self.messages.append(msg)
@@ -360,10 +368,13 @@ class PipeHandler(object):
             now = time.time()
 
             if msg:
-                self._last_heartbeat_received_time = now
-                # if receive any messages even if Topic is END or ABORT or PEER_GONE
-                #    we still set peer_is_up_or_dead, as we no longer need to wait
-                self.peer_is_up_or_dead.set()
+                # Stream progress feeds transfer wait decisions only. Do not use it as peer liveness
+                # until heartbeat progress-awareness is intentionally enabled.
+                if msg.topic != Topic.STREAM_PROGRESS:
+                    self._last_heartbeat_received_time = now
+                    # if receive any non-progress messages even if Topic is END or ABORT or PEER_GONE
+                    #    we still set peer_is_up_or_dead, as we no longer need to wait
+                    self.peer_is_up_or_dead.set()
                 if msg.topic != Topic.HEARTBEAT and not self.asked_to_stop:
                     self._add_message(msg)
                 if msg.topic in [Topic.END, Topic.ABORT]:

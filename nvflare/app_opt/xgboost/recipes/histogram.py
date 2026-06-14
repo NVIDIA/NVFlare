@@ -17,6 +17,7 @@ from typing import Optional
 from pydantic import BaseModel, field_validator
 
 from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
+from nvflare.app_common.widgets.metrics_artifact_writer import MetricsArtifactWriter
 from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 from nvflare.app_opt.tracking.tb.tb_writer import TBWriter
 from nvflare.app_opt.xgboost.histogram_based_v2.fed_controller import XGBFedController
@@ -183,6 +184,7 @@ class XGBHorizontalRecipe(Recipe):
         """Configure the federated job for XGBoost histogram-based training."""
         # Create FedJob
         job = FedJob(name=self.name, min_clients=self.min_clients)
+        job.to_server(MetricsArtifactWriter(), id="metrics_artifact_writer")
 
         # Configure controller and executor (histogram-based V2)
         controller_kwargs = {

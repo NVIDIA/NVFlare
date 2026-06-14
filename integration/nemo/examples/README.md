@@ -1,7 +1,8 @@
 # Examples of NeMo-NVFlare Integration
 
 ### [Parameter-Efficient Fine-Tuning (PEFT) with NeMo](./peft/README.md)
-In this example, we utilize NeMo's [PEFT](https://docs.nvidia.com/deeplearning/nemo/user-guide/docs/en/v1.22.0/nlp/nemo_megatron/peft/landing_page.html) using NVFlare's new Client API (minimal code changes required to run a NeMo script in FL)
+In this example, we fine-tune Nemotron 3 Nano LoRA adapters with NeMo AutoModel PEFT using NVFlare's Recipe API and
+explicit Client API calls.
 methods to showcase how to adapt a large language model (LLM) to 
 a downstream task, such as financial sentiment predictions. 
 

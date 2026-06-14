@@ -58,6 +58,7 @@ class HubExecutor(TaskExchanger):
             resend_interval=resend_interval,
             max_resends=max_resends,
             peer_read_timeout=task_read_wait_time,
+            streaming_idle_timeout=None,
             task_wait_time=task_wait_time,
             result_poll_interval=result_poll_interval,
         )

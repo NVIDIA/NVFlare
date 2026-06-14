@@ -16,6 +16,7 @@ from typing import Optional
 
 from pydantic import BaseModel, field_validator
 
+from nvflare.app_common.widgets.metrics_artifact_writer import MetricsArtifactWriter
 from nvflare.app_common.workflows.cyclic_ctl import CyclicController
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 from nvflare.app_opt.xgboost.tree_based.bagging_aggregator import XGBBaggingAggregator
@@ -222,6 +223,7 @@ class XGBBaggingRecipe(Recipe):
         """Configure the federated job for XGBoost tree-based training."""
         # Create FedJob
         job = FedJob(name=self.name, min_clients=self.min_clients)
+        job.to_server(MetricsArtifactWriter(), id="metrics_artifact_writer")
 
         # Configure server components
         if self.training_mode == "cyclic":

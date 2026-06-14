@@ -52,9 +52,23 @@ def test_sim_env_deploy_with_explicit_clients_does_not_pass_n_clients():
 
     env = SimEnv(clients=["site-1", "site-2"])
     with patch("nvflare.recipe.sim_env.collect_non_local_scripts", return_value=[]):
-        with patch.object(job, "simulator_run") as mock_run:
+        with patch.object(job, "simulator_run", return_value=0) as mock_run:
             env.deploy(job)
 
     _, kwargs = mock_run.call_args
     assert kwargs.get("n_clients") is None
     assert kwargs.get("clients") == ["site-1", "site-2"]
+    assert not env.last_run_failed
+
+
+def test_sim_env_deploy_raises_on_failed_simulation(tmp_path):
+    job = FedJob(name="test_job")
+    job._deployed = True
+
+    env = SimEnv(num_clients=2, workspace_root=str(tmp_path))
+    with patch("nvflare.recipe.sim_env.collect_non_local_scripts", return_value=[]):
+        with patch.object(job, "simulator_run", return_value=2):
+            with pytest.raises(RuntimeError, match="Simulation failed with return code 2"):
+                env.deploy(job)
+
+    assert env.last_run_failed

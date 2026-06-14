@@ -17,12 +17,18 @@ from typing import List
 
 import numpy as np
 
-from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.app_constant import AlgorithmConstants, AppConstants
+from nvflare.app_common.utils.tensor_disk_offload_context import cleanup_tensor_disk_offload, setup_tensor_disk_offload
 
-from .base_fedavg import BaseFedAvg
+from .base_fedavg import (
+    BaseFedAvg,
+    _aggregate_fl_model_metrics,
+    _get_client_name,
+    _get_num_steps_weight,
+    make_fedavg_metrics_aggregation_info,
+)
 
 
 class Scaffold(BaseFedAvg):
@@ -47,7 +53,14 @@ class Scaffold(BaseFedAvg):
             Defaults to False.
         memory_gc_rounds (int, optional): Run memory cleanup (gc.collect + malloc_trim) every N rounds.
             Set to 0 to disable. Defaults to 0 (inherited from BaseFedAvg).
+        enable_tensor_disk_offload (bool, optional): Download tensors to disk during FOBS streaming
+            instead of holding them in memory, reducing server memory pressure for large models.
+            Only applies to streamed PyTorch tensor payloads. Defaults to False.
     """
+
+    def __init__(self, *args, enable_tensor_disk_offload: bool = False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.enable_tensor_disk_offload = enable_tensor_disk_offload
 
     def initialize(self, fl_ctx):
         super().initialize(fl_ctx)
@@ -61,7 +74,24 @@ class Scaffold(BaseFedAvg):
             self._global_ctrl_weights[k] = np.zeros_like(self._global_ctrl_weights[k])
 
     def run(self) -> None:
-        self.info("Start FedAvg.")
+        disk_offload_context = None
+        try:
+            disk_offload_context = setup_tensor_disk_offload(
+                engine=getattr(self, "engine", None),
+                enabled=self.enable_tensor_disk_offload,
+                job_id=self.fl_ctx.get_job_id("job"),
+            )
+            if self.enable_tensor_disk_offload and not disk_offload_context.applied:
+                self.warning(
+                    "enable_tensor_disk_offload=True but no active cell is available; "
+                    "falling back to in-memory tensor download"
+                )
+            self._run_rounds()
+        finally:
+            cleanup_tensor_disk_offload(engine=getattr(self, "engine", None), context=disk_offload_context)
+
+    def _run_rounds(self) -> None:
+        self.info("Start Scaffold.")
 
         for self.current_round in range(self.start_round, self.start_round + self.num_rounds):
             self.info(f"Round {self.current_round} started.")
@@ -89,7 +119,7 @@ class Scaffold(BaseFedAvg):
             # Memory cleanup at end of round (if configured)
             self._maybe_cleanup_memory()
 
-        self.info("Finished FedAvg.")
+        self.info("Finished Scaffold.")
 
 
 def scaffold_aggregate_fn(results: List[FLModel]) -> FLModel:
@@ -98,22 +128,23 @@ def scaffold_aggregate_fn(results: List[FLModel]) -> FLModel:
     aggregation_helper = WeightedAggregationHelper()
     crtl_aggregation_helper = WeightedAggregationHelper()
     for _result in results:
+        weight = _get_num_steps_weight(_result)
+        contributor_name = _get_client_name(_result)
         aggregation_helper.add(
             data=_result.params,
-            weight=_result.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, 1.0),
-            contributor_name=_result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN),
+            weight=weight,
+            contributor_name=contributor_name,
             contribution_round=_result.current_round,
         )
         if AlgorithmConstants.SCAFFOLD_CTRL_DIFF not in _result.meta:
-            client_name = _result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN)
             raise ValueError(
-                f"Client '{client_name}' did not return required "
+                f"Client '{contributor_name}' did not return required "
                 f"FLModel.meta['{AlgorithmConstants.SCAFFOLD_CTRL_DIFF}'] for Scaffold aggregation."
             )
         crtl_aggregation_helper.add(
             data=_result.meta[AlgorithmConstants.SCAFFOLD_CTRL_DIFF],
-            weight=_result.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, 1.0),
-            contributor_name=_result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN),
+            weight=weight,
+            contributor_name=contributor_name,
             contribution_round=_result.current_round,
         )
 
@@ -122,10 +153,12 @@ def scaffold_aggregate_fn(results: List[FLModel]) -> FLModel:
     aggr_result = FLModel(
         params=aggregated_dict,
         params_type=results[0].params_type,
+        metrics=_aggregate_fl_model_metrics(results),
         meta={
             AlgorithmConstants.SCAFFOLD_CTRL_DIFF: crtl_aggregation_helper.get_result(),
             "nr_aggregated": len(results),
             "current_round": results[0].current_round,
+            AppConstants.METRICS_AGGREGATION_INFO: make_fedavg_metrics_aggregation_info(),
         },
     )
 
