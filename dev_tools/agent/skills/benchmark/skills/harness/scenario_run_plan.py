@@ -168,15 +168,27 @@ def _integer_policy_overrides(raw: Mapping[str, Any], field_path: str) -> dict[s
     return overrides
 
 
+def _scenario_resource_policy_overrides(raw: Mapping[str, Any], field_path: str) -> dict[str, dict[str, int]]:
+    policies = {}
+    for scale, overrides in raw.items():
+        if scale not in DEFAULT_RESOURCE_POLICIES:
+            raise ScenarioValidationError(
+                f"{field_path}.{scale} is not a supported resource policy scale; "
+                f"expected one of: {', '.join(sorted(DEFAULT_RESOURCE_POLICIES))}"
+            )
+        if not isinstance(overrides, Mapping):
+            raise ScenarioValidationError(f"{field_path}.{scale} must be a mapping of resource policy fields")
+        policies[str(scale)] = _integer_policy_overrides(overrides, f"{field_path}.{scale}")
+    return policies
+
+
 def resource_policy_for(
     scale: str, scenario_raw: Mapping[str, Any], job_raw: Mapping[str, Any], job_policy_path: str
 ) -> dict[str, int]:
     policy = dict(DEFAULT_RESOURCE_POLICIES[scale])
     scenario_policy = scenario_raw.get("resource_policy") or {}
     if isinstance(scenario_policy, dict):
-        global_overrides = scenario_policy.get(scale) or {}
-        if isinstance(global_overrides, dict):
-            policy.update(_integer_policy_overrides(global_overrides, f"resource_policy.{scale}"))
+        policy.update(_scenario_resource_policy_overrides(scenario_policy, "resource_policy").get(scale, {}))
     job_policy = job_raw.get("resource_policy") or {}
     if isinstance(job_policy, dict):
         policy.update(_integer_policy_overrides(job_policy, job_policy_path))

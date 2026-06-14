@@ -544,6 +544,35 @@ def test_resource_policy_rejects_unknown_fields(tmp_path):
         raise AssertionError("unknown job resource policy fields should fail validation")
 
 
+def test_resource_policy_rejects_unknown_scales_and_unused_scale_fields(tmp_path):
+    from skills.harness.scenarios import ScenarioValidationError, compile_scenario
+
+    raw = base_scenario(tmp_path)
+    raw["resource_policy"] = {"smal": {"agent_timeout_seconds": 60}}
+
+    try:
+        compile_scenario(raw, base_dir=tmp_path)
+    except ScenarioValidationError as exc:
+        assert "resource_policy.smal" in str(exc)
+        assert "not a supported resource policy scale" in str(exc)
+    else:
+        raise AssertionError("unknown scenario resource policy scales should fail validation")
+
+    unused_scale_case = tmp_path / "unused-scale-policy"
+    unused_scale_case.mkdir()
+    raw = base_scenario(unused_scale_case)
+    raw["jobs"][0]["scale"] = "small"
+    raw["resource_policy"] = {"large": {"agent_timout_seconds": 60}}
+
+    try:
+        compile_scenario(raw, base_dir=unused_scale_case)
+    except ScenarioValidationError as exc:
+        assert "resource_policy.large.agent_timout_seconds" in str(exc)
+        assert "not a supported resource policy field" in str(exc)
+    else:
+        raise AssertionError("unknown fields under unused scenario resource policy scales should fail validation")
+
+
 def test_prompt_file_size_guard_rejects_large_prompt(tmp_path):
     from skills.harness.scenarios import MAX_PROMPT_BYTES, ScenarioValidationError, compile_scenario
 
