@@ -740,6 +740,103 @@ def test_repeated_job_reason_uses_codex_agent_message_context():
     assert "final artifacts match the current source" in section
 
 
+def test_why_section_surfaces_repeated_dependency_install_reason():
+    from skills.harness.reports.benchmark_insights import _why_slower
+
+    def command_event(
+        item_id: str,
+        command: str,
+        start: str,
+        end: str,
+        output: str,
+        *,
+        exit_code: int = 0,
+    ) -> list[str]:
+        status = "completed" if exit_code == 0 else "failed"
+        return [
+            json.dumps(
+                {
+                    "type": "item.started",
+                    "harness_timestamp": start,
+                    "item": {
+                        "command": command,
+                        "id": item_id,
+                        "status": "in_progress",
+                        "type": "command_execution",
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "harness_timestamp": end,
+                    "item": {
+                        "aggregated_output": output,
+                        "command": command,
+                        "exit_code": exit_code,
+                        "id": item_id,
+                        "status": status,
+                        "type": "command_execution",
+                    },
+                }
+            ),
+        ]
+
+    failed_output = (
+        "Downloading nvidia-cublas (517.7MiB)\n"
+        "pip._vendor.urllib3.exceptions.ProtocolError: "
+        "('Connection broken: IncompleteRead(197972800 bytes read, 23078544 more expected)')\n"
+    )
+    retry_output = "Successfully installed nvidia-cublas-13.1.1.3 nvidia-cudnn-cu13-9.20.0.48 torch-2.12.0\n"
+    with_run = {
+        "available": True,
+        "label": "With skills",
+        "run": {"elapsed_seconds": 1200},
+        "agent_events_text": "\n".join(
+            command_event(
+                "install-1",
+                "python -m pip install -r requirements-train.txt",
+                "2026-06-13T20:00:00Z",
+                "2026-06-13T20:11:42Z",
+                failed_output,
+                exit_code=2,
+            )
+            + command_event(
+                "install-2",
+                "python -m pip install -r requirements-train.txt --retries 10 --timeout 120",
+                "2026-06-13T20:12:00Z",
+                "2026-06-13T20:16:41Z",
+                retry_output,
+            )
+        ),
+    }
+    base_run = {
+        "available": True,
+        "label": "No skills baseline",
+        "run": {"elapsed_seconds": 500},
+        "agent_events_text": "\n".join(
+            command_event(
+                "install-base",
+                "python -m pip install -r requirements-train.txt",
+                "2026-06-13T20:00:00Z",
+                "2026-06-13T20:06:31Z",
+                "Successfully installed torch-2.12.0\n",
+            )
+        ),
+    }
+
+    explanation = "\n".join(_why_slower(with_run, base_run))
+
+    assert "### Repeated Dependency Install Attempts" in explanation
+    assert "| With skills | 2 | 983s |" in explanation
+    assert "first failed: ProtocolError" in explanation
+    assert "later dependency install succeeded" in explanation
+    assert "broken/incomplete download" in explanation
+    assert "accelerator package evidence: nvidia-cublas, nvidia-cudnn-cu13" in explanation
+    assert "Dependency install path differed" in explanation
+    assert "large accelerator/framework wheels can dominate install time" in explanation
+
+
 def test_structure_tree_falls_back_to_final_workspace_when_changed_python_is_empty():
     from skills.harness.modes import WITH_SKILLS_MODE
     from skills.harness.reports.benchmark_insights import structure_trees_section
@@ -2273,7 +2370,7 @@ while flare.is_running():
     assert "connection timeout" in explanation
     assert "resumed incomplete download" in explanation
     assert "DNS resolution failure" in explanation
-    assert "baseline longest install log showed no captured network retry/timeout markers" in explanation
+    assert "baseline install logs showed no captured network retry/timeout markers" in explanation
     assert "targeted package install" in explanation
     assert "NVFLARE runtime path diverged" in explanation
     assert "| Run | Runtime path | Successful runs | Total captured time | Representative command |" in explanation

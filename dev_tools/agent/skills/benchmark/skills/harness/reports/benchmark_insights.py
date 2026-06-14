@@ -976,6 +976,9 @@ def command_error_summary(output: str) -> str:
         r"ConfigError: [^\n]+",
         r"RuntimeError: [^\n]+",
         r"ModuleNotFoundError: [^\n]+",
+        r"ProtocolError: [^\n]+",
+        r"IncompleteRead\([^\n]+",
+        r"Connection broken: [^\n]+",
         r"No module named [^\n]+",
         r"sed: can't read [^\n]+",
         r"ERROR - [^\n]+",
@@ -3437,6 +3440,16 @@ def _dependency_install_spans(run: dict[str, Any]) -> list[dict[str, Any]]:
     return [span for span in agent_command_spans(run) if is_dependency_install_command(str(span.get("command") or ""))]
 
 
+def _package_name_from_install_token(token: str) -> str:
+    clean = token.strip().strip(",")
+    if "==" in clean:
+        return clean.split("==", 1)[0]
+    match = re.match(r"(.+?)-\d", clean)
+    if match:
+        return match.group(1)
+    return clean
+
+
 def _dependency_package_examples(output: str, limit: int = 4) -> list[str]:
     downloads: list[tuple[float, str]] = []
     for match in re.finditer(
@@ -3469,7 +3482,7 @@ def _dependency_package_examples(output: str, limit: int = 4) -> list[str]:
     ):
         for match in re.finditer(pattern, strip_ansi(output), flags=re.IGNORECASE | re.MULTILINE):
             if pattern.endswith("(.+)"):
-                names = [part.split("==", 1)[0].split("-", 1)[0] for part in match.group(1).split()]
+                names = [_package_name_from_install_token(part) for part in match.group(1).split()]
             else:
                 names = [match.group(1)]
             for name in names:
@@ -3479,6 +3492,20 @@ def _dependency_package_examples(output: str, limit: int = 4) -> list[str]:
                 if len(examples) >= limit:
                     return examples
     return examples
+
+
+def _accelerator_dependency_packages(output: str, limit: int = 5) -> list[str]:
+    packages = []
+    for token in re.findall(r"[A-Za-z0-9_.+-]+", strip_ansi(output)):
+        lowered = token.lower()
+        if not (lowered.startswith(("nvidia-", "cuda-", "triton-")) or lowered == "triton"):
+            continue
+        name = _package_name_from_install_token(token)
+        if name and name not in packages:
+            packages.append(name)
+        if len(packages) >= limit:
+            break
+    return packages
 
 
 def _targeted_followup_install_span(spans: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -3537,6 +3564,7 @@ def _install_network_markers(span: dict[str, Any] | None) -> list[str]:
     output = str(span.get("output") or "")
     checks = [
         ("connection timeout", r"connection timed out|read timed out|\btimed out\b"),
+        ("broken/incomplete download", r"IncompleteRead|Connection broken|ProtocolError|incomplete download"),
         ("resumed incomplete download", r"attempting to resume incomplete download|resuming download"),
         ("DNS resolution failure", r"NameResolutionError|failed to resolve|temporary failure in name resolution"),
         ("download retry", r"\bRetrying\b|after connection broken"),
@@ -3548,12 +3576,30 @@ def _install_network_markers(span: dict[str, Any] | None) -> list[str]:
     return markers
 
 
+def _install_network_markers_for_spans(spans: list[dict[str, Any]]) -> list[str]:
+    markers = []
+    for span in spans:
+        for marker in _install_network_markers(span):
+            if marker not in markers:
+                markers.append(marker)
+    return markers
+
+
 def _install_network_marker_display(label: str, span: dict[str, Any] | None) -> str:
     markers = _install_network_markers(span)
     if markers:
         return f"{label} install log showed {', '.join(markers)}"
     if span:
         return f"{label} install log showed no captured network retry/timeout markers"
+    return f"{label} had no captured install log"
+
+
+def _install_network_marker_display_for_spans(label: str, spans: list[dict[str, Any]]) -> str:
+    markers = _install_network_markers_for_spans(spans)
+    if markers:
+        return f"{label} install logs showed {', '.join(markers)}"
+    if spans:
+        return f"{label} install logs showed no captured network retry/timeout markers"
     return f"{label} had no captured install log"
 
 
@@ -3569,12 +3615,20 @@ def _dependency_install_slowdown_note(with_run: dict[str, Any], base_run: dict[s
     with_install = _longest_span(with_installs)
     if not with_install:
         return None
-    with_install_seconds = as_number(with_install.get("duration_seconds")) or 0
+    with_install_total_seconds = sum(as_number(span.get("duration_seconds")) or 0 for span in with_installs)
     base_install_seconds = sum(as_number(span.get("duration_seconds")) or 0 for span in base_installs)
-    if with_install_seconds < 60 or with_install_seconds <= base_install_seconds * 2:
+    if with_install_total_seconds < 60 or with_install_total_seconds <= base_install_seconds + 60:
         return None
-    package_examples = _dependency_package_examples(str(with_install.get("output") or ""))
+    with_install_output = "\n".join(str(span.get("output") or "") for span in with_installs)
+    package_examples = _dependency_package_examples(with_install_output)
     package_note = f"; downloaded packages included {', '.join(package_examples)}" if package_examples else ""
+    accelerator_packages = _accelerator_dependency_packages(with_install_output)
+    accelerator_note = ""
+    if accelerator_packages:
+        accelerator_note = (
+            " Accelerator dependency evidence: with-skills install logs included "
+            f"{', '.join(accelerator_packages)}; large accelerator/framework wheels can dominate install time."
+        )
     base_install = _longest_span(base_installs)
     base_note = (
         f"; baseline longest install was {_format_command_span(base_install)}"
@@ -3588,11 +3642,11 @@ def _dependency_install_slowdown_note(with_run: dict[str, Any], base_run: dict[s
             f"baseline longest install used {_install_tool_label(base_install)}."
         )
     network_note = ""
-    if _install_network_markers(with_install) or _install_network_markers(base_install):
+    if _install_network_markers_for_spans(with_installs) or _install_network_markers_for_spans(base_installs):
         network_note = (
             " Network/download evidence: "
-            f"{_install_network_marker_display('with-skills', with_install)}; "
-            f"{_install_network_marker_display('baseline longest', base_install)}."
+            f"{_install_network_marker_display_for_spans('with-skills', with_installs)}; "
+            f"{_install_network_marker_display_for_spans('baseline', base_installs)}."
         )
     baseline_followup_note = ""
     if len(base_installs) > 1:
@@ -3606,8 +3660,65 @@ def _dependency_install_slowdown_note(with_run: dict[str, Any], base_run: dict[s
         f"({_install_strategy_summary(with_installs)}), while the baseline spent "
         f"{_install_total_display(base_installs)} ({_install_strategy_summary(base_installs)}). "
         f"The longest with-skills install was {_format_command_span(with_install)}{package_note}{base_note}."
-        f"{installer_note}{network_note}{baseline_followup_note}"
+        f"{installer_note}{accelerator_note}{network_note}{baseline_followup_note}"
     )
+
+
+def _dependency_install_retry_reason(spans: list[dict[str, Any]]) -> str:
+    failed = [span for span in spans if command_failed(span)]
+    succeeded_later = any(command_succeeded(span) for span in spans[1:])
+    reason_parts = []
+    if failed:
+        reason = f"first failed: {command_error_summary(str(failed[0].get('output') or ''))}"
+        if succeeded_later:
+            reason += "; later dependency install succeeded"
+        reason_parts.append(reason)
+    markers = _install_network_markers_for_spans(spans)
+    if markers:
+        reason_parts.append(f"network/download evidence: {', '.join(markers)}")
+    accelerator_packages = _accelerator_dependency_packages("\n".join(str(span.get("output") or "") for span in spans))
+    if accelerator_packages:
+        reason_parts.append(f"accelerator package evidence: {', '.join(accelerator_packages)}")
+    if not reason_parts:
+        reason_parts.append("multiple dependency install commands captured; inspect command output for intent")
+    return "; ".join(reason_parts)
+
+
+def repeated_dependency_install_section(runs: dict[str, dict[str, Any]], modes: list[str]) -> str:
+    rows = []
+    for mode in modes:
+        run = runs[mode]
+        spans = _dependency_install_spans(run)
+        if len(spans) <= 1:
+            continue
+        attempts = "; ".join(f"{index + 1}. {_format_command_span(span)}" for index, span in enumerate(spans[:4]))
+        if len(spans) > 4:
+            attempts += f"; +{len(spans) - 4} more"
+        rows.append(
+            (
+                run.get("label") or mode,
+                str(len(spans)),
+                fmt_seconds_with_unit(_span_total_seconds(spans)),
+                attempts,
+                _dependency_install_retry_reason(spans),
+            )
+        )
+    if not rows:
+        return ""
+    lines = [
+        "### Repeated Dependency Install Attempts",
+        "",
+        "These are dependency-install commands captured during the agent run. Repeated attempts usually mean an install failed, was retried with different options, or the agent changed environments.",
+        "",
+        "| Run | Install attempts | Total captured install time | Attempts | Captured reason/evidence |",
+        "|---|---:|---:|---|---|",
+    ]
+    for label, count, total_time, attempts, reason in rows:
+        lines.append(
+            f"| {markdown_cell(label)} | {markdown_cell(count)} | {markdown_cell(total_time)} | "
+            f"{markdown_cell(attempts)} | {markdown_cell(reason)} |"
+        )
+    return "\n".join(lines)
 
 
 def _successful_job_spans(run: dict[str, Any]) -> list[dict[str, Any]]:
@@ -4283,6 +4394,12 @@ def _why_slower(with_run: dict[str, Any], base_run: dict[str, Any]) -> list[str]
                 "",
             ]
         )
+    repeated_dependency_installs = repeated_dependency_install_section(
+        {"with": with_run, "base": base_run},
+        ["with", "base"],
+    )
+    if repeated_dependency_installs:
+        lines.extend([repeated_dependency_installs, ""])
     repeated_runs = repeated_job_runs_slowdown_section(with_run, base_run)
     if repeated_runs:
         lines.extend([repeated_runs, ""])
