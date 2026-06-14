@@ -320,10 +320,7 @@ def test_fl_algorithm_recipe_prefers_generated_source_over_recipe_list_catalog(t
     run = {
         "available": True,
         "mode_dir": mode_dir,
-        "agent_last_message": (
-            "Selected the recipe — `fedavg-pt` (`FedAvgRecipe`).\n"
-            '{"data": [{"name": "cyclic-pt"}, {"name": "fedavg-pt"}]}'
-        ),
+        "agent_last_message": ("Recipe: `cyclic-pt`\n" '{"data": [{"name": "cyclic-pt"}, {"name": "fedavg-pt"}]}'),
         "workspace_delta": {
             "changed_files": [{"artifact_path": "changed_files/job.py", "path": "job.py"}],
             "runtime_artifacts": [

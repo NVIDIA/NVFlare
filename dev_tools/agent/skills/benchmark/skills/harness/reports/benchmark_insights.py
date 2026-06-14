@@ -2351,6 +2351,12 @@ def _recipe_from_generated_source(run: dict[str, Any]) -> str:
 
 
 def _recipe_evidence(run: dict[str, Any]) -> str:
+    # Generated job source is the strongest local evidence for what the run
+    # actually used. Final messages and command output can include full recipe
+    # catalogs where unrelated recipe names appear before the selected one.
+    source_recipe = _recipe_from_generated_source(run)
+    if source_recipe:
+        return source_recipe
     final_text = _final_message_without_event_log(str(run.get("agent_last_message") or ""))
     final_patterns = (
         r"\bSelected\s+the\s+recipe\b.*?`([A-Za-z0-9_.-]+)`",
@@ -2368,9 +2374,6 @@ def _recipe_evidence(run: dict[str, Any]) -> str:
         match = re.search(pattern, final_slice)
         if match:
             return match.group(1)
-    source_recipe = _recipe_from_generated_source(run)
-    if source_recipe:
-        return source_recipe
     text = combined_text(run)
     command_patterns = (r"\bnvflare\s+recipe\s+show\s+([A-Za-z0-9_.-]+)",)
     for pattern in command_patterns:
