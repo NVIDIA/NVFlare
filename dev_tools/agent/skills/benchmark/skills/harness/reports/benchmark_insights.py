@@ -134,12 +134,17 @@ def truncate(value: Any, limit: int = 180) -> str:
 
 
 def inline_code_text(value: Any, limit: int = 180) -> str:
+    raw = str(value or "").strip()
     text = re.sub(
         r"<<\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1\n.*?\n\2(?=\s|$)",
         lambda match: f"<<{match.group(1)}{match.group(2)}{match.group(1)} ... {match.group(2)}",
-        str(value or "").strip(),
+        raw,
         flags=re.DOTALL,
     )
+    if text == raw:
+        match = re.search(r"<<\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1", text)
+        if match:
+            text = f"{text[: match.end()]} ... {match.group(2)}"
     text = re.sub(r"\s+", " ", text).replace("`", "'")
     return truncate(text, limit)
 
@@ -1320,7 +1325,7 @@ def job_run_action(run: dict[str, Any]) -> str:
     return "Inspect run artifacts; job execution evidence is unavailable."
 
 
-def command_failure_diagnostics(run: dict[str, Any], limit: int = 3) -> list[str]:
+def command_failure_diagnostic_items(run: dict[str, Any], limit: int = 3) -> list[dict[str, str]]:
     events = agent_command_events(run)
     failed_events = [event for event in events if command_failed(event)]
     material_events = [event for event in failed_events if is_material_failed_command(event)]
@@ -1342,14 +1347,57 @@ def command_failure_diagnostics(run: dict[str, Any], limit: int = 3) -> list[str
             recovery = "not recovered in this run"
         dependency_evidence = ""
         if missing_python_module_name(output):
-            dependency_evidence = f" Dependency install evidence: {dependency_install_evidence(run)}."
+            dependency_evidence = dependency_install_evidence(run)
         diagnostics.append(
-            f"Command `{inline_code_text(command, 160)}` failed with exit {event.get('exit_code')}; "
-            f"{recovery}. Root cause evidence: {command_error_summary(output)}.{dependency_evidence}"
+            {
+                "command": inline_code_text(command, 180),
+                "exit": str(event.get("exit_code")),
+                "recovery": recovery,
+                "root_cause": command_error_summary(output),
+                "dependency": dependency_evidence,
+            }
         )
         if len(diagnostics) >= limit:
             break
     return diagnostics
+
+
+def command_failure_diagnostics(run: dict[str, Any], limit: int = 3) -> list[str]:
+    diagnostics = []
+    for item in command_failure_diagnostic_items(run, limit=limit):
+        dependency_evidence = ""
+        if item.get("dependency"):
+            dependency_evidence = f" Dependency install evidence: {item['dependency']}."
+        diagnostics.append(
+            f"Command `{item['command']}` failed with exit {item['exit']}; {item['recovery']}. "
+            f"Root cause evidence: {item['root_cause']}.{dependency_evidence}"
+        )
+    return diagnostics
+
+
+def command_failure_diagnostics_table(
+    run: dict[str, Any],
+    *,
+    limit: int = 3,
+    recovered_only: bool = False,
+) -> str:
+    items = command_failure_diagnostic_items(run, limit=limit)
+    if recovered_only:
+        items = [item for item in items if "not recovered in this run" not in item["recovery"]]
+    if not items:
+        return ""
+    lines = [
+        "| Command | Exit | Recovery | Root cause | Dependency evidence |",
+        "|---|---:|---|---|---|",
+    ]
+    for item in items:
+        dependency = item["dependency"] or "none"
+        command = markdown_cell(f"`{item['command']}`")
+        lines.append(
+            f"| {command} | {markdown_cell(item['exit'])} | {markdown_cell(item['recovery'])} | "
+            f"{markdown_cell(item['root_cause'])} | {markdown_cell(dependency)} |"
+        )
+    return "\n".join(lines)
 
 
 def successful_job_evidence(run: dict[str, Any]) -> str:
@@ -4680,15 +4728,22 @@ def failure_analysis_section(runs: dict[str, dict[str, Any]], modes: list[str]) 
             bash_blocked = bash_blocked_diagnostic(run, recovered=True)
             if bash_blocked:
                 lines.append(f"- Recovered Bash/tool issue: {bash_blocked}")
-            for diagnostic in command_failure_diagnostics(run):
-                if "not recovered in this run" not in diagnostic:
-                    lines.append(f"- Recovered command evidence: {diagnostic}")
+            recovered_commands = command_failure_diagnostics_table(run, recovered_only=True)
+            if recovered_commands:
+                lines.append("")
+                lines.append("**Recovered Command Evidence**")
+                lines.append("")
+                lines.append(recovered_commands)
         else:
             bash_blocked = bash_blocked_diagnostic(run)
             if bash_blocked:
                 lines.append(f"- Bash blocking: {bash_blocked}")
-            for diagnostic in command_failure_diagnostics(run):
-                lines.append(f"- Command evidence: {diagnostic}")
+            command_evidence = command_failure_diagnostics_table(run)
+            if command_evidence:
+                lines.append("")
+                lines.append("**Command Evidence**")
+                lines.append("")
+                lines.append(command_evidence)
             success_evidence = successful_job_evidence(run)
             if success_evidence:
                 lines.append(f"- Recovery evidence: {success_evidence}.")

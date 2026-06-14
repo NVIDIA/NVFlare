@@ -1661,7 +1661,7 @@ def test_failure_analysis_reports_recovered_job_failure_and_metric_gap():
 
     section = failure_analysis_section({NO_SKILLS_MODE: run}, [NO_SKILLS_MODE])
 
-    assert "Command evidence" in section
+    assert "Command Evidence" in section
     assert "recovered by a later successful similar command" in section
     assert "SmilesCNN.__init__() missing 4 required positional arguments" in section
     assert "Recovery evidence" in section
@@ -2999,9 +2999,9 @@ def test_failure_analysis_formats_multiline_recovered_command_as_single_line():
 
     section = failure_analysis_section({WITH_SKILLS_MODE: run}, [WITH_SKILLS_MODE])
 
-    evidence_lines = [line for line in section.splitlines() if "Recovered command evidence" in line]
-    assert evidence_lines
-    assert "python3 -m py_compile client.py job.py && python3 - <<'EOF' ... EOF" in evidence_lines[0]
+    assert "Recovered Command Evidence" in section
+    assert "| Command | Exit | Recovery | Root cause | Dependency evidence |" in section
+    assert "python3 -m py_compile client.py job.py && python3 - <<'EOF' ... EOF" in section
     assert "print('check')\nEOF" not in section
 
 
@@ -3145,10 +3145,8 @@ def test_failure_analysis_reports_dependency_install_evidence_for_missing_module
 
     section = failure_analysis_section({NO_SKILLS_MODE: run}, [NO_SKILLS_MODE])
 
-    assert "Root cause evidence: ModuleNotFoundError: No module named 'torch'" in section
-    assert (
-        "Dependency install evidence: no dependency install command was captured before the failed job run" in section
-    )
+    assert "ModuleNotFoundError: No module named 'torch'" in section
+    assert "no dependency install command was captured before the failed job run" in section
 
 
 def test_job_run_status_reason_reports_failed_dependency_install():
