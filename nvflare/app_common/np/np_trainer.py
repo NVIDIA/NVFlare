@@ -26,9 +26,15 @@ from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.model import ModelLearnable
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.utils.file_utils import resolve_path_under_root
+from nvflare.fuel.utils.deprecated import warn_deprecated
 from nvflare.security.logging import secure_format_exception
 
 from .constants import NPConstants
+
+_NP_TRAINER_DEPRECATION_MSG = (
+    "NPTrainer is deprecated but remains supported for backward compatibility. "
+    "Use the Recipe API with the Client API for new projects."
+)
 
 
 class NPTrainer(Executor):
@@ -44,6 +50,7 @@ class NPTrainer(Executor):
         # Init functions of components should be very minimal. Init
         # is called when json is read. A big init will cause json loading to halt
         # for long time.
+        warn_deprecated(_NP_TRAINER_DEPRECATION_MSG, stacklevel=3)
         super().__init__()
 
         if not (isinstance(delta, float) or isinstance(delta, int)):
