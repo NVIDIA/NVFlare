@@ -529,16 +529,50 @@ def test_recipe_spec_import_strips_export_flags_from_sys_argv(monkeypatch):
     importlib.reload(spec_module)
 
     assert sys.argv == ["python", "job.py", "--other", "value"]
+    assert spec_module._peek_recipe_args() == (True, "/tmp/out")
 
 
-def test_consume_recipe_args_requires_export_dir_argument(monkeypatch):
+def test_recipe_spec_import_strips_export_dir_equals_form(monkeypatch):
     import sys
+
+    monkeypatch.setattr(sys, "argv", ["python", "job.py", "--export", "--export-dir=out", "--other"])
 
     import nvflare.recipe.spec as spec_module
 
+    importlib.reload(spec_module)
+
+    assert sys.argv == ["python", "job.py", "--other"]
+    assert spec_module._peek_recipe_args() == (True, "out")
+
+
+def test_consume_recipe_args_dangling_export_dir_does_not_raise(monkeypatch):
+    import sys
+
     monkeypatch.setattr(sys, "argv", ["python", "job.py", "--export", "--export-dir"])
-    with pytest.raises(ValueError, match="--export-dir requires an argument"):
-        spec_module._consume_recipe_args()
+
+    import nvflare.recipe.spec as spec_module
+
+    importlib.reload(spec_module)  # malformed input must not raise on import
+
+    # Transactional: the whole pass is abandoned -- export stays disabled and sys.argv
+    # is left untouched so the caller's own parser can surface the leftover flags.
+    assert spec_module._peek_recipe_args() == (False, spec_module.DEFAULT_EXPORT_DIR)
+    assert sys.argv == ["python", "job.py", "--export", "--export-dir"]
+
+
+def test_consume_recipe_args_freezes_import_time_decision(monkeypatch):
+    import sys
+
+    monkeypatch.setattr(sys, "argv", ["python", "job.py", "--export", "--export-dir"])
+
+    import nvflare.recipe.spec as spec_module
+
+    importlib.reload(spec_module)
+
+    # A later direct call returns the recorded import-time decision even if sys.argv
+    # has since changed -- it must not re-scan and flip to a different answer.
+    monkeypatch.setattr(sys, "argv", ["python", "job.py", "--export", "--export-dir", "out"])
+    assert spec_module._consume_recipe_args() == (False, spec_module.DEFAULT_EXPORT_DIR)
 
 
 def test_export_processes_falsy_env(tmp_path):
