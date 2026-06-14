@@ -142,17 +142,21 @@ class TestJobDownload:
         assert envelope["data"]["artifacts"]["global_model"] == str(model_path)
         assert "global_model" not in envelope["data"]["missing_artifacts"]
 
-    def test_download_discovers_metrics_summary_and_client_logs(self, tmp_path, capsys):
-        """metrics_summary.json and client log.txt files are reported from the local download path."""
+    def test_download_discovers_metrics_artifacts_and_client_logs(self, tmp_path, capsys):
+        """metrics artifacts and client log.txt files are reported from the local download path."""
         download_path = tmp_path / "results"
+        metrics_dir = download_path / "metrics"
         site_log_dir = download_path / "site-1"
         server_log_dir = download_path / "server"
+        metrics_dir.mkdir(parents=True)
         site_log_dir.mkdir(parents=True)
         server_log_dir.mkdir()
-        metrics_path = download_path / "metrics_summary.json"
+        metrics_path = metrics_dir / "metrics_summary.json"
+        round_metrics_path = metrics_dir / "round_metrics.jsonl"
         site_log_path = site_log_dir / "log.txt"
         server_log_path = server_log_dir / "log.txt"
         metrics_path.write_text("{}")
+        round_metrics_path.write_text("{}\n")
         site_log_path.write_text("client log")
         server_log_path.write_text("server log")
 
@@ -160,9 +164,11 @@ class TestJobDownload:
 
         artifacts = envelope["data"]["artifacts"]
         assert artifacts["metrics_summary"] == str(metrics_path)
+        assert artifacts["round_metrics"] == str(round_metrics_path)
         assert artifacts["client_logs"] == {"site-1": str(site_log_path)}
         assert str(server_log_path) not in artifacts["client_logs"].values()
         assert "metrics_summary" not in envelope["data"]["missing_artifacts"]
+        assert "round_metrics" not in envelope["data"]["missing_artifacts"]
         assert "client_logs" not in envelope["data"]["missing_artifacts"]
 
     def test_download_client_logs_only_include_log_files(self, tmp_path, capsys):

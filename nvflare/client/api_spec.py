@@ -97,6 +97,9 @@ class APISpec(ABC):
             model (FLModel): The FLModel object to be sent.
             clear_cache (bool): Whether to clear the cache after send.
 
+        Raises:
+            RuntimeError: If the model cannot be submitted to NVFLARE.
+
         Example:
 
             .. code-block:: python

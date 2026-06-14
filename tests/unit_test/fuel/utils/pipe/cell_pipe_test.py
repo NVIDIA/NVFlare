@@ -44,6 +44,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.apis.fl_constant import FLMetaKey
+from nvflare.apis.shareable import Shareable
 from nvflare.fuel.f3.cellnet.cell import Message as CellMessage  # f3-layer message
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.utils.constants import Mode
@@ -223,6 +225,65 @@ class TestHeartbeatNotCached:
 
         pipe.cell.fire_and_forget.assert_called_once()
         pipe.cell.send_request.assert_not_called()
+
+
+def test_stream_progress_is_fire_and_forget():
+    pipe = _make_pipe()
+    msg = _make_msg(topic=Topic.STREAM_PROGRESS, data={"task_id": "task-1"})
+
+    assert pipe.send(msg) is True
+
+    pipe.cell.fire_and_forget.assert_called_once()
+    pipe.cell.send_request.assert_not_called()
+
+
+def test_stream_progress_does_not_update_peer_active_time():
+    pipe = _make_pipe()
+    pipe.last_peer_active_time = 123.0
+
+    with patch("nvflare.fuel.utils.pipe.cell_pipe.time.time", return_value=456.0):
+        pipe._update_peer_active_time(
+            _make_cell_message(topic=Topic.STREAM_PROGRESS, payload={"direction": "result_upload"}),
+            ch_name="task",
+            msg_type="req",
+        )
+
+    assert pipe.last_peer_active_time == 123.0
+
+    with patch("nvflare.fuel.utils.pipe.cell_pipe.time.time", return_value=456.0):
+        pipe._update_peer_active_time(_make_cell_message(topic="train"), ch_name="task", msg_type="req")
+
+    assert pipe.last_peer_active_time == 456.0
+
+
+def test_to_cell_message_carries_shareable_job_id():
+    shareable = Shareable()
+    shareable.set_header(FLMetaKey.JOB_ID, "job-1")
+
+    cell_msg = _to_cell_message(_make_msg(data=shareable))
+
+    assert cell_msg.get_header(FLMetaKey.JOB_ID) == "job-1"
+
+
+def test_to_cell_message_carries_empty_shareable_job_id():
+    shareable = Shareable()
+    shareable.set_header(FLMetaKey.JOB_ID, "")
+
+    cell_msg = _to_cell_message(_make_msg(data=shareable))
+
+    assert cell_msg.get_header(FLMetaKey.JOB_ID) == ""
+
+
+def test_send_passes_result_receiver_ids_to_stream_encode():
+    pipe = _make_pipe()
+    msg = _make_msg()
+    msg._receiver_ids = ("server.job-1", "peer.job-1")
+
+    assert pipe.send(msg, timeout=1.0) is True
+
+    call_kwargs = pipe.cell.send_request.call_args.kwargs
+    assert call_kwargs["num_receivers"] == 2
+    assert call_kwargs["receiver_ids"] == ("server.job-1", "peer.job-1")
 
 
 # ---------------------------------------------------------------------------

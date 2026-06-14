@@ -29,6 +29,8 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.ccwf.client_ctl import ClientSideController
 from nvflare.app_common.ccwf.common import Constant, NumberMetricComparator, ResultType, make_task_name
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.validation_utils import check_non_empty_str, check_positive_int, check_positive_number
 from nvflare.security.logging import secure_format_traceback
 
@@ -749,6 +751,52 @@ class SwarmClientController(ClientSideController):
         decode_ctx = cell.get_fobs_context(props={fobs.FOBSContextKey.PASS_THROUGH: False})
         return fobs.loads(encoded, fobs_ctx=decode_ctx)
 
+    def _get_aggregation_client_fqcn(self, aggr: str, fl_ctx: FLContext):
+        engine = getattr(self, "engine", None) or fl_ctx.get_engine()
+        get_client_from_name = getattr(engine, "get_client_from_name", None)
+        if not callable(get_client_from_name):
+            return None
+
+        client = get_client_from_name(aggr)
+        get_fqcn = getattr(client, "get_fqcn", None)
+        if not callable(get_fqcn):
+            return None
+
+        client_fqcn = get_fqcn()
+        if not isinstance(client_fqcn, str) or not client_fqcn:
+            return None
+        return client_fqcn
+
+    def _stamp_result_upload_receiver_ids(self, task_data: Shareable, aggr: str, fl_ctx: FLContext):
+        """Tell the external subprocess which downstream parent will pull result refs.
+
+        The Client API subprocess creates the DownloadService transaction before the
+        CJ forwards the result.  For swarm, stamp the same job-scoped FQCN that aux
+        routing will use for the aggregation client so result_upload progress matches
+        the DownloadService requester's identity in relay/hierarchical topologies.
+        """
+
+        job_id = fl_ctx.get_job_id()
+        if not isinstance(job_id, str) or not job_id:
+            self.log_warning(
+                fl_ctx,
+                "cannot stamp result_upload receiver id for swarm task because job_id is unavailable; "
+                "using single-receiver fallback progress tracking",
+            )
+            return
+
+        aggr_fqcn = self._get_aggregation_client_fqcn(aggr, fl_ctx)
+        if not aggr_fqcn:
+            self.log_warning(
+                fl_ctx,
+                f"cannot resolve exact result_upload receiver FQCN for swarm aggregation client {aggr}; "
+                "using single-receiver fallback progress tracking",
+            )
+            return
+
+        receiver_id = FQCN.join([aggr_fqcn, job_id])
+        task_data.set_header(FOBSContextKey.RECEIVER_IDS, [receiver_id])
+
     def _process_learn_result(self, request: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         try:
             peer_ctx = fl_ctx.get_peer_context()
@@ -816,6 +864,7 @@ class SwarmClientController(ClientSideController):
             self.log_error(fl_ctx, f"missing aggregation client for round {current_round}")
             self.update_status(action="do_learn_task", error=ReturnCode.EXECUTION_EXCEPTION)
             return
+        self._stamp_result_upload_receiver_ids(task_data, aggr, fl_ctx)
 
         self.log_info(fl_ctx, f"Round {current_round} started.")
 

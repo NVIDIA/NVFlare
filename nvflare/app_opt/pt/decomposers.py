@@ -56,26 +56,29 @@ class TensorDecomposer(ViaDownloaderDecomposer):
         secure=False,
         optional=False,
         abort_signal=None,
+        progress_cb=None,
     ) -> Tuple[str, Union[dict, LazyTensorDict]]:
         use_disk = cell.get_fobs_context().get("enable_tensor_disk_offload", False)
         if use_disk:
             return download_tensors_to_disk(
-                from_fqcn,
-                ref_id,
-                per_request_timeout,
-                cell,
-                secure,
-                optional,
-                abort_signal,
+                from_fqcn=from_fqcn,
+                ref_id=ref_id,
+                per_request_timeout=per_request_timeout,
+                cell=cell,
+                secure=secure,
+                optional=optional,
+                abort_signal=abort_signal,
+                progress_cb=progress_cb,
             )
         return download_tensors(
-            from_fqcn,
-            ref_id,
-            per_request_timeout,
-            cell,
-            secure,
-            optional,
-            abort_signal,
+            from_fqcn=from_fqcn,
+            ref_id=ref_id,
+            per_request_timeout=per_request_timeout,
+            cell=cell,
+            secure=secure,
+            optional=optional,
+            abort_signal=abort_signal,
+            progress_cb=progress_cb,
         )
 
     def native_decompose(self, target: torch.Tensor, manager: DatumManager = None) -> bytes:

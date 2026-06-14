@@ -350,7 +350,10 @@ class FlowerServerApplet(Applet):
 
         db_arg = ""
         if self.database:
-            db_arg = f"--database {self.database}"
+            db_path = self.database
+            if not os.path.isabs(db_path) and db_path not in (":memory:", ":flwr-in-memory:"):
+                db_path = os.path.abspath(db_path)
+            db_arg = f"--database {shlex.quote(db_path)}"
 
         # Get the full path to flower-superlink from the current Python environment
         python_bin_dir = os.path.dirname(sys.executable)
@@ -370,7 +373,7 @@ class FlowerServerApplet(Applet):
         --control-api-address 127.0.0.1:9093
         """
         superlink_cmd = (
-            f"{flower_superlink_path} --insecure --fleet-api-type grpc-adapter {db_arg} "
+            f"{shlex.quote(flower_superlink_path)} --insecure --fleet-api-type grpc-adapter {db_arg} "
             f"--serverappio-api-address {serverapp_api_addr} "
             f"--fleet-api-address {fleet_api_addr} "
             f"--control-api-address {exec_api_addr} "
@@ -379,8 +382,13 @@ class FlowerServerApplet(Applet):
         if self.allow_runtime_dependency_installation and _check_runtime_dependency_installation_support(self.logger):
             superlink_cmd += "--allow-runtime-dependency-installation"
 
+        run_dir = ws.get_run_dir(fl_ctx.get_job_id())
+        if not os.path.exists(run_dir):
+            os.makedirs(run_dir, exist_ok=True)
+
         cmd_desc = CommandDescriptor(
             cmd=superlink_cmd,
+            cwd=run_dir,
             env=env,
             log_file_name="superlink_log.txt",
             stdout_msg_prefix="FLWR-SL",
