@@ -570,33 +570,18 @@ When a case fails, look for:
 
 A paired benchmark run writes a compact status view, detailed diagnostic
 evidence, numeric comparison, and machine-readable artifacts. The generated
-reports cover these top-level sections:
+reports are organized around these areas:
 
-| Section | What it includes |
-| --- | --- |
-| **Run Identity** | Run IDs, labels, agent, model, model source, and mode. |
-| **Aggregate Results** | Completed runs, quality pass counts, median agent seconds, and median tokens. |
-| **Winner Policy** | The policy used to select a winner and the selected mode. |
-| **Executive Summary** | Overall status, agent/model, job execution, FL workflow, quality gate, metric gaps, input protection, and captured artifacts. |
-| **Status** | Per-mode pass or needs-review result with the main analysis message. |
-| **Job Run Status** | Whether the generated NVFLARE job actually ran, with evidence and review action. |
-| **FL Algorithm / Workflow** | Detected workflow, recipe, rounds, and source evidence. |
-| **Failure Analysis** | Per-mode issues, recovered command failures, root-cause evidence, dependency evidence, and outcome. |
-| **Missing, Partial, Or Mismatched Result Metrics** | Whether the expected validation metric was missing, partial, mismatched, or usable. |
-| **Metrics** | SVG charts plus metric tables for time, tokens, commands, structure score, code quality, and validation metric. |
-| **Quality Signals** | Expected metric, reported result, status, and metric evidence. |
-| **Output Changes** | Changed/generated file counts and notable files. |
-| **Outcome Details** | Quality gate result, reported metrics, source input protection, generated artifacts, and structure-file status. |
-| **Structure Correctness** | Required files, optional helpers, final workspace inventory, changed/generated Python inventory, and runtime artifact inventory. |
-| **Captured Structure Trees** | Tree-format snapshots of final workspace, changed/generated files, and runtime artifacts. |
-| **Generated Code Quality Signals** | Data split, lifecycle, metric workload, observability, output locality, dependency strategy, and API pattern signals. |
-| **Activity Insights** | File reads, discovery/search commands, simulation references, compile checks, skill references, and job entry-point usage. |
-| **Event Mix** | Counts by captured event type. |
-| **Cost And Work Comparison** | Total time, runtime seconds, dependency-install seconds, non-install command seconds, tokens, commands, unique commands, changed files, and runtime artifacts. |
-| **Interpretation** | Quality-gate caveats, runtime winner, token-use winner, and cost-comparison guidance. |
-| **Comparison** | Numeric deltas between with-skills and without-skills runs. |
-| **Why** | Conditional slowdown analysis with driver comparison, elapsed-time accounting, longest commands, and runtime path differences. |
-| **Artifacts** | Pointers to generated reports and retained records. |
+| Report area | Sections | What it includes |
+| --- | --- | --- |
+| **Run overview** | **Run Identity**, **Aggregate Results**, **Winner Policy**, **Executive Summary**, **Status** | Run labels, agent/model identity, pass counts, selected winner policy, overall status, job execution summary, FL workflow, quality gate status, metric gaps, input protection, and captured artifacts. |
+| **Execution evidence** | **Job Run Status**, **FL Algorithm / Workflow**, **Failure Analysis**, **Missing, Partial, Or Mismatched Result Metrics** | Whether the generated NVFLARE job actually ran, detected workflow/recipe/rounds, recovered failures, root-cause evidence, dependency evidence, and whether expected validation metrics were usable. |
+| **Metric comparison** | **Metrics**, **Quality Signals**, **Comparison** | SVG charts and tables for time, tokens, commands, structure score, code quality, validation metrics, expected-vs-reported metric evidence, and numeric deltas between modes. |
+| **Output and structure** | **Output Changes**, **Outcome Details**, **Structure Correctness**, **Captured Structure Trees** | Changed/generated file counts, notable files, quality gate result, source input protection, required files, optional helpers, workspace inventories, runtime artifact inventories, and tree snapshots. |
+| **Generated code signals** | **Generated Code Quality Signals** | Data split behavior, lifecycle patterns, metric workload, observability, output locality, dependency strategy, and API pattern evidence. |
+| **Agent activity** | **Activity Insights**, **Event Mix** | File reads, discovery/search commands, simulation references, compile checks, skill references, job entry-point usage, and captured event-type counts. |
+| **Cost and explanation** | **Cost And Work Comparison**, **Why**, **Interpretation** | Total time, runtime seconds, dependency-install seconds, non-install command seconds, tokens, commands, unique commands, slowdown drivers, elapsed-time accounting, longest commands, runtime path differences, runtime winner, token-use winner, and cost-comparison caveats. |
+| **Retained artifacts** | **Artifacts** | Pointers to generated reports and retained records for deeper inspection. |
 
 The generated metrics report includes an SVG chart and an HTML version renders
 the chart directly. This README excerpt uses a checked-in SVG asset so the
