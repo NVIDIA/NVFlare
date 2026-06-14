@@ -532,6 +532,20 @@ def test_recipe_spec_import_strips_export_flags_from_sys_argv(monkeypatch):
     assert spec_module._peek_recipe_args() == (True, "/tmp/out")
 
 
+def test_recipe_spec_import_bare_export_uses_default_dir(monkeypatch):
+    import sys
+
+    # The canonical invocation: `python job.py --export` with no --export-dir.
+    monkeypatch.setattr(sys, "argv", ["python", "job.py", "--export", "--other"])
+
+    import nvflare.recipe.spec as spec_module
+
+    importlib.reload(spec_module)
+
+    assert sys.argv == ["python", "job.py", "--other"]
+    assert spec_module._peek_recipe_args() == (True, spec_module.DEFAULT_EXPORT_DIR)
+
+
 def test_recipe_spec_import_strips_export_dir_equals_form(monkeypatch):
     import sys
 

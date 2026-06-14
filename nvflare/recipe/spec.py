@@ -83,8 +83,8 @@ def _consume_recipe_args() -> tuple:
 _RECIPE_EXPORT, _RECIPE_EXPORT_DIR = _consume_recipe_args()
 
 
-def _peek_recipe_args(argv: Optional[List[str]] = None) -> tuple:
-    """Return the export flags consumed at import time (argv argument is ignored)."""
+def _peek_recipe_args() -> tuple:
+    """Return the export flags consumed at import time."""
     return _RECIPE_EXPORT, _RECIPE_EXPORT_DIR
 
 
