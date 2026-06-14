@@ -16,11 +16,15 @@ import copy
 import hashlib
 import os
 import random
-import resource
 import threading
 import time
 from abc import ABC
 from typing import List, Union
+
+try:
+    import resource
+except ImportError:
+    resource = None
 
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.connector_manager import ConnectorData
@@ -914,7 +918,10 @@ class NetAgent:
 
     def _do_process_info(self, request: Message) -> Union[None, Message]:
 
-        usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        if resource is not None:
+            usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        else:
+            usage = "N/A (not supported on this platform)"
         rows = [
             ["Process ID", str(os.getpid())],
             ["Memory Usage", str(usage)],

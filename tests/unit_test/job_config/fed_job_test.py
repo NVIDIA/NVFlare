@@ -20,18 +20,25 @@ from unittest.mock import patch
 import pytest
 
 from nvflare.apis.fl_constant import ConfigVarName
-from nvflare.app_common.abstract.model_learner import ModelLearner
+from nvflare.app_common.abstract.model_learner import _MODEL_LEARNER_DEPRECATION_MSG, ModelLearner
 from nvflare.app_common.executors.model_learner_executor import ModelLearnerExecutor
 from nvflare.app_common.workflows.fedavg import FedAvg
+from nvflare.fuel.utils.deprecated import _WARNED_DEPRECATION_MESSAGES
 from nvflare.job_config.api import FedApp, FedJob
 from nvflare.job_config.fed_app_config import ClientAppConfig
+
+
+def _create_model_learner():
+    _WARNED_DEPRECATION_MESSAGES.discard(_MODEL_LEARNER_DEPRECATION_MSG)
+    with pytest.warns(DeprecationWarning, match="ModelLearner is deprecated"):
+        return ModelLearner()
 
 
 class TestFedJob:
     def test_validate_targets(self):
         job = FedJob()
         controller = FedAvg()
-        executor = ModelLearnerExecutor(learner_id=job.as_id(ModelLearner()))
+        executor = ModelLearnerExecutor(learner_id=job.as_id(_create_model_learner()))
 
         job.to(controller, "server")
         job.to(executor, "site-1")
@@ -54,7 +61,7 @@ class TestFedJob:
         job.to_server(controller)
 
         # Add an executor to clients
-        executor = ModelLearnerExecutor(learner_id=job.as_id(ModelLearner()))
+        executor = ModelLearnerExecutor(learner_id=job.as_id(_create_model_learner()))
         job.to_clients(executor)
 
         # Add additional arguments to server
@@ -100,7 +107,7 @@ class TestFedJob:
 
         controller = FedAvg()
         job.to_server(controller)
-        executor = ModelLearnerExecutor(learner_id=job.as_id(ModelLearner()))
+        executor = ModelLearnerExecutor(learner_id=job.as_id(_create_model_learner()))
         job.to_clients(executor)
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -117,7 +124,7 @@ class TestFedJob:
 
         controller = FedAvg()
         job.to_server(controller)
-        executor = ModelLearnerExecutor(learner_id=job.as_id(ModelLearner()))
+        executor = ModelLearnerExecutor(learner_id=job.as_id(_create_model_learner()))
         job.to_clients(executor)
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -139,7 +146,7 @@ class TestFedJob:
 
         controller = FedAvg()
         job.to_server(controller)
-        executor = ModelLearnerExecutor(learner_id=job.as_id(ModelLearner()))
+        executor = ModelLearnerExecutor(learner_id=job.as_id(_create_model_learner()))
         job.to_clients(executor)
 
         with tempfile.TemporaryDirectory() as temp_dir:
