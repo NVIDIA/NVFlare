@@ -155,7 +155,13 @@ def resolve_workflows(raw: Mapping[str, Any]) -> tuple[list[WorkflowSpec], list[
 
 def _integer_policy_overrides(raw: Mapping[str, Any], field_path: str) -> dict[str, int]:
     overrides = {}
+    known_keys = set(next(iter(DEFAULT_RESOURCE_POLICIES.values())).keys())
     for key, value in raw.items():
+        if key not in known_keys:
+            raise ScenarioValidationError(
+                f"{field_path}.{key} is not a supported resource policy field; "
+                f"expected one of: {', '.join(sorted(known_keys))}"
+            )
         if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
             raise ScenarioValidationError(f"{field_path}.{key} must be an integer greater than 0; got {value!r}")
         overrides[str(key)] = value
