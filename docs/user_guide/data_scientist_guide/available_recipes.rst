@@ -50,6 +50,30 @@ Most training recipes accept the following model-related parameters:
 
 See :ref:`job_recipe` for detailed explanations of these options.
 
+Fed Task
+==============
+
+For one-round workflows that do not have a global model lifecycle, use ``FedTaskRecipe``.
+This is useful for client-side embedding extraction, preprocessing, feature generation, local evaluation,
+or other federated tasks that only need the server to coordinate one script execution across clients.
+
+.. code-block:: python
+
+    from nvflare.recipe import FedTaskRecipe, SimEnv
+
+    recipe = FedTaskRecipe(
+        name="extract-embeddings",
+        task_name="embed",
+        min_clients=2,
+        task_script="client.py",
+        task_args="--data-root /data --output-root /tmp/embeddings",
+    )
+    env = SimEnv(num_clients=2)
+    run = recipe.execute(env)
+
+``FedTaskRecipe`` sends one ``FLModel`` task to the selected clients and waits for their results.
+It does not require ``model``, ``initial_ckpt``, or ``model_persistor``.
+
 Federated Averaging (FedAvg)
 ============================
 
@@ -185,6 +209,8 @@ FedProx
 
 FedProx is FedAvg with a proximal term added to the client loss function to handle data heterogeneity.
 It uses the standard FedAvgRecipe with the FedProx loss helper on the client side.
+Because PyTorch FedProx uses ``FedAvgRecipe``, it also supports ``enable_tensor_disk_offload=True`` for
+streamed PyTorch tensor updates, with the same behavior and constraints as PyTorch FedAvg.
 
 PyTorch FedProx
 ---------------
@@ -284,6 +310,12 @@ PyTorch FedOpt
     )
     env = SimEnv(num_clients=2)
     run = recipe.execute(env)
+
+.. note::
+   PyTorch FedOpt supports ``enable_tensor_disk_offload=True`` for streamed PyTorch tensor updates.
+   Import ``ExchangeFormat`` from ``nvflare.client.config`` and configure
+   ``server_expected_format=ExchangeFormat.PYTORCH`` so the server path preserves tensors instead of converting
+   updates to NumPy before aggregation.
 
 **Examples:**
 

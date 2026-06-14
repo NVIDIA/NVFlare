@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import logging
+import math
 import os
 from typing import Optional
 
@@ -23,8 +24,13 @@ from nvflare.app_common.executors.launcher_executor import LauncherExecutor
 from nvflare.app_common.utils.export_utils import update_export_props
 from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType, write_config_to_file
 from nvflare.client.constants import CLIENT_API_CONFIG, EXTERNAL_PRE_INIT_TIMEOUT, PEER_READ_TIMEOUT
+from nvflare.fuel.f3.streaming.transfer_progress import (
+    DEFAULT_STREAMING_IDLE_TIMEOUT,
+    STREAMING_IDLE_TIMEOUT,
+    STREAMING_MAX_PEER_SILENCE,
+    resolve_streaming_progress_config,
+)
 from nvflare.fuel.utils.attributes_exportable import ExportMode
-from nvflare.fuel.utils.fobs.decomposers.via_downloader import MIN_DOWNLOAD_TIMEOUT_DEFAULT
 from nvflare.fuel.utils.validation_utils import check_non_negative_int
 from nvflare.utils.configs import get_client_config_value
 
@@ -63,6 +69,9 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         submit_result_timeout: float = 300.0,
         max_resends: Optional[int] = 3,
         download_complete_timeout: float = 1800.0,
+        streaming_idle_timeout: Optional[float] = DEFAULT_STREAMING_IDLE_TIMEOUT,
+        peer_read_timeout_explicit: bool = False,
+        heartbeat_timeout_explicit: bool = False,
     ) -> None:
         """Initializes the ClientAPILauncherExecutor.
 
@@ -109,6 +118,13 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                 this gate, the subprocess may exit before the download completes and the server gets
                 missing download refs. Defaults to 1800 s. Recipe-based jobs can override via
                 recipe.add_client_config({"download_complete_timeout": N}).
+            streaming_idle_timeout (float, optional): Stream-progress idle timeout for task-send and reverse-result
+                upload waits. Recipe-based jobs can override this later via add_client_config().
+            peer_read_timeout_explicit (bool): Whether the constructor-configured peer_read_timeout is an intentional
+                fast-fail override. When true, NVFLARE honors a value lower than streaming_idle_timeout instead of
+                raising it to the streaming idle timeout.
+            heartbeat_timeout_explicit (bool): Whether the constructor-configured heartbeat_timeout is an intentional
+                fast-fail override. When true, NVFLARE honors a value lower than streaming_idle_timeout.
         """
         LauncherExecutor.__init__(
             self,
@@ -131,6 +147,8 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             from_nvflare_converter_id=from_nvflare_converter_id,
             to_nvflare_converter_id=to_nvflare_converter_id,
             max_resends=max_resends,
+            peer_read_timeout_explicit=peer_read_timeout_explicit,
+            streaming_idle_timeout=streaming_idle_timeout,
         )
 
         # Preserve the bounded retry default across FedJobConfig export/reload.
@@ -152,6 +170,8 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         self._stop_task_wait_timeout = download_complete_timeout
         self._cell_with_pass_through = None  # track cell so finalize() can clean up
         self._pass_through_channel = None  # channel name registered in decode_pass_through_channels
+        self.heartbeat_timeout_explicit = heartbeat_timeout_explicit
+        self.streaming_max_peer_silence = resolve_streaming_progress_config().streaming_max_peer_silence
 
     def finalize(self, fl_ctx: FLContext) -> None:
         if self._cell_with_pass_through is not None and self._pass_through_channel is not None:
@@ -166,7 +186,12 @@ class ClientAPILauncherExecutor(LauncherExecutor):
 
     def initialize(self, fl_ctx: FLContext) -> None:
         self._apply_client_config_overrides(fl_ctx)
-        self.prepare_config_for_launch(fl_ctx)
+        self._resolve_timeout_config_for_launch(fl_ctx)
+        self._skip_required_timeout_validation_once = True
+        try:
+            self.prepare_config_for_launch(fl_ctx)
+        finally:
+            self._skip_required_timeout_validation_once = False
         super().initialize(fl_ctx)
 
         from nvflare.fuel.f3.cellnet.defs import CellChannel as _CellChannel
@@ -201,8 +226,6 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                         f"Receiver-side PASS_THROUGH enabled on CJ cell for channel '{channel_name}'",
                     )
 
-        self._validate_timeout_config(fl_ctx)
-
     def _get_client_config_override(self, fl_ctx: FLContext, key: str):
         return get_client_config_value(fl_ctx, key, _CONFIG_VALUE_MISSING)
 
@@ -214,13 +237,33 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         try:
             timeout_value = float(value)
         except (TypeError, ValueError) as e:
-            msg = f"{key} must be positive, got {value}"
+            msg = f"{key} must be a positive number, got {value}"
             self.log_error(fl_ctx, msg)
             raise ValueError(msg) from e
 
-        if timeout_value <= 0:
+        if not math.isfinite(timeout_value) or timeout_value <= 0:
             self.log_error(fl_ctx, f"Invalid {key}: {timeout_value}s (must be positive)")
             raise ValueError(f"{key} must be positive, got {timeout_value}")
+
+        old_value = getattr(self, attr_name)
+        self.log_info(fl_ctx, f"Overriding {attr_name} from config: {old_value}s -> {timeout_value}s")
+        setattr(self, attr_name, timeout_value)
+
+    def _apply_non_negative_float_client_config_override(self, fl_ctx: FLContext, key: str, attr_name: str):
+        value = self._get_client_config_override(fl_ctx, key)
+        if value is _CONFIG_VALUE_MISSING:
+            return
+
+        try:
+            timeout_value = float(value)
+        except (TypeError, ValueError) as e:
+            msg = f"{key} must be a non-negative number, got {value}"
+            self.log_error(fl_ctx, msg)
+            raise ValueError(msg) from e
+
+        if not math.isfinite(timeout_value) or timeout_value < 0:
+            self.log_error(fl_ctx, f"Invalid {key}: {timeout_value}s (must be non-negative)")
+            raise ValueError(f"{key} must be non-negative, got {timeout_value}")
 
         old_value = getattr(self, attr_name)
         self.log_info(fl_ctx, f"Overriding {attr_name} from config: {old_value}s -> {timeout_value}s")
@@ -246,6 +289,52 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         self.log_info(fl_ctx, f"Overriding max_resends from config: {self.max_resends} -> {value}")
         self.max_resends = value
 
+    def _apply_streaming_progress_client_config_overrides(self, fl_ctx: FLContext):
+        config_values = {}
+        for key in (STREAMING_IDLE_TIMEOUT, STREAMING_MAX_PEER_SILENCE):
+            value = self._get_client_config_override(fl_ctx, key)
+            if value is not _CONFIG_VALUE_MISSING:
+                config_values[key] = value
+
+        if not config_values:
+            return
+
+        try:
+            streaming_config = resolve_streaming_progress_config(config_values)
+        except (TypeError, ValueError) as e:
+            msg = f"Invalid streaming progress config: {e}"
+            self.log_error(fl_ctx, msg)
+            raise ValueError(msg) from e
+
+        old_idle_timeout = self.streaming_idle_timeout
+        old_max_peer_silence = self.streaming_max_peer_silence
+        idle_timeout_configured = STREAMING_IDLE_TIMEOUT in config_values
+        max_peer_silence_configured = STREAMING_MAX_PEER_SILENCE in config_values
+        if idle_timeout_configured:
+            with self._stream_progress_lock:
+                self.streaming_idle_timeout = streaming_config.streaming_idle_timeout
+                self.streaming_max_peer_silence = streaming_config.streaming_max_peer_silence
+                if self._stream_progress_tracker.idle_timeout != self.streaming_idle_timeout:
+                    self._stream_progress_tracker.set_idle_timeout(self.streaming_idle_timeout)
+        elif max_peer_silence_configured:
+            with self._stream_progress_lock:
+                self.streaming_max_peer_silence = streaming_config.streaming_max_peer_silence
+
+        changes = []
+        if idle_timeout_configured and self.streaming_idle_timeout != old_idle_timeout:
+            old_idle_timeout_str = "disabled" if old_idle_timeout is None else f"{old_idle_timeout}s"
+            changes.append(f"streaming_idle_timeout {old_idle_timeout_str} -> {self.streaming_idle_timeout}s")
+        if self.streaming_max_peer_silence != old_max_peer_silence:
+            changes.append(f"streaming_max_peer_silence {old_max_peer_silence}s -> {self.streaming_max_peer_silence}s")
+        if changes:
+            self.log_info(fl_ctx, "Resolved streaming progress config: " + ", ".join(changes))
+        if max_peer_silence_configured:
+            self.log_debug(
+                fl_ctx,
+                "streaming_max_peer_silence is resolved for compatibility, but Phase 1 progress-aware "
+                "task-send waits do not use stream progress for heartbeat liveness.",
+            )
+
     def _apply_client_config_overrides(self, fl_ctx: FLContext):
         # Apply top-level config_fed_client.json overrides before writing the
         # subprocess Client API config so add_client_config() affects both sides.
@@ -255,7 +344,12 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         # peer_read_timeout is enforced on the CJ side, while submit_result_timeout is
         # enforced by the subprocess. Keep both tunable from add_client_config() so
         # operators can coordinate large-model transfer timeouts in one place.
+        if self._get_client_config_override(fl_ctx, PEER_READ_TIMEOUT) is not _CONFIG_VALUE_MISSING:
+            self.peer_read_timeout_explicit = True
         self._apply_positive_float_client_config_override(fl_ctx, PEER_READ_TIMEOUT, "peer_read_timeout")
+        if self._get_client_config_override(fl_ctx, ConfigKey.HEARTBEAT_TIMEOUT) is not _CONFIG_VALUE_MISSING:
+            self.heartbeat_timeout_explicit = True
+        self._apply_non_negative_float_client_config_override(fl_ctx, ConfigKey.HEARTBEAT_TIMEOUT, "heartbeat_timeout")
         self._apply_positive_float_client_config_override(
             fl_ctx, ConfigKey.SUBMIT_RESULT_TIMEOUT, "_submit_result_timeout"
         )
@@ -263,6 +357,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         self._apply_positive_float_client_config_override(
             fl_ctx, ConfigKey.DOWNLOAD_COMPLETE_TIMEOUT, "_download_complete_timeout"
         )
+        self._apply_streaming_progress_client_config_overrides(fl_ctx)
         self._stop_task_wait_timeout = self._download_complete_timeout
 
     def _decomposer_prefix(self) -> str:
@@ -297,6 +392,18 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             self.log_error(fl_ctx, msg)
             raise ValueError(msg)
 
+    def _resolve_timeout_config_for_launch(self, fl_ctx: FLContext):
+        self._validate_required_timeout_values(fl_ctx)
+        self._validate_timeout_config(fl_ctx)
+        if self.heartbeat_timeout is None:
+            msg = (
+                "heartbeat_timeout is None after applying job-config overrides. Set heartbeat_timeout to 0 to "
+                "disable heartbeat checking, or to a non-negative timeout value in executor config or via "
+                "recipe.add_client_config()."
+            )
+            self.log_error(fl_ctx, msg)
+            raise ValueError(msg)
+
     def _validate_timeout_config(self, fl_ctx: FLContext):
         """Validate timeout parameters at job start.
 
@@ -317,8 +424,9 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         per_req_key = f"{prefix}{ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT}"
         configured_per_req = ConfigService.get_float_var(per_req_key, conf=SystemConfigs.APPLICATION_CONF, default=None)
         per_req = acu.get_positive_float_var(per_req_key, 600.0)
+        effective_streaming_idle_timeout = self.streaming_idle_timeout or DEFAULT_STREAMING_IDLE_TIMEOUT
         min_dl = acu.get_positive_float_var(
-            f"{prefix}{ConfigVarName.MIN_DOWNLOAD_TIMEOUT}", MIN_DOWNLOAD_TIMEOUT_DEFAULT
+            f"{prefix}{ConfigVarName.MIN_DOWNLOAD_TIMEOUT}", effective_streaming_idle_timeout
         )
 
         if min_dl < per_req:
@@ -330,21 +438,49 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                 f"Set {prefix}min_download_timeout >= {per_req}s in job config.",
             )
 
-        if configured_per_req is not None and self.peer_read_timeout is None:
+        if (
+            self.peer_read_timeout_explicit
+            and self.peer_read_timeout is not None
+            and self.streaming_idle_timeout is not None
+            and self.peer_read_timeout < self.streaming_idle_timeout
+        ):
+            self._explicit_peer_read_timeout_warned = True
             self.log_warning(
                 fl_ctx,
-                "Timeout inconsistency: peer_read_timeout is not set after applying job-config overrides. "
-                "Large task payloads may fall back to a shorter pipe default and resend while the subprocess is "
-                f"still downloading. Set peer_read_timeout >= {per_req}s in job config.",
+                f"explicit peer_read_timeout ({self.peer_read_timeout}s) is lower than "
+                f"streaming_idle_timeout ({self.streaming_idle_timeout}s); NVFLARE will honor the explicit "
+                "fast-fail timeout instead of extending task-send waits on stream progress.",
             )
-        elif configured_per_req is not None and self.peer_read_timeout < per_req:
+
+        if (
+            self.heartbeat_timeout_explicit
+            and self.heartbeat_timeout is not None
+            and self.streaming_idle_timeout is not None
+            and self.heartbeat_timeout < self.streaming_idle_timeout
+        ):
             self.log_warning(
                 fl_ctx,
-                f"Timeout inconsistency: peer_read_timeout ({self.peer_read_timeout}s, after job-config overrides) < "
-                f"{prefix}streaming_per_request_timeout ({per_req}s). "
-                "The CJ may resend the task while the subprocess is still downloading large payloads. "
-                f"Set peer_read_timeout >= {per_req}s in job config.",
+                f"explicit heartbeat_timeout ({self.heartbeat_timeout}s) is lower than "
+                f"streaming_idle_timeout ({self.streaming_idle_timeout}s); NVFLARE will honor the explicit "
+                "heartbeat fast-fail timeout instead of extending peer liveness on stream progress.",
             )
+
+        if configured_per_req is not None and self.streaming_idle_timeout is None:
+            if self.peer_read_timeout is None:
+                self.log_warning(
+                    fl_ctx,
+                    "Timeout inconsistency: peer_read_timeout is not set after applying job-config overrides. "
+                    "Large task payloads may fall back to a shorter pipe default and resend while the subprocess is "
+                    f"still downloading. Set peer_read_timeout >= {per_req}s in job config.",
+                )
+            elif self.peer_read_timeout < per_req:
+                self.log_warning(
+                    fl_ctx,
+                    f"Timeout inconsistency: peer_read_timeout ({self.peer_read_timeout}s, after job-config "
+                    f"overrides) < {prefix}streaming_per_request_timeout ({per_req}s). "
+                    "The CJ may resend the task while the subprocess is still downloading large payloads. "
+                    f"Set peer_read_timeout >= {per_req}s in job config.",
+                )
 
         if configured_per_req is not None and self.heartbeat_timeout is None:
             self.heartbeat_timeout = per_req
@@ -427,7 +563,8 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         return not launcher.needs_deferred_stop()
 
     def prepare_config_for_launch(self, fl_ctx: FLContext):
-        self._validate_required_timeout_values(fl_ctx)
+        if not getattr(self, "_skip_required_timeout_validation_once", False):
+            self._resolve_timeout_config_for_launch(fl_ctx)
 
         pipe_export_class, pipe_export_args = self.pipe.export(ExportMode.PEER)
         task_exchange_attributes = {
@@ -449,6 +586,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             ConfigKey.SUBMIT_RESULT_TIMEOUT: self._submit_result_timeout,
             ConfigKey.MAX_RESENDS: self.max_resends,
             ConfigKey.DOWNLOAD_COMPLETE_TIMEOUT: self._download_complete_timeout,
+            ConfigKey.STREAMING_IDLE_TIMEOUT: self.streaming_idle_timeout,
             ConfigKey.LAUNCH_ONCE: self._resolve_launch_once(fl_ctx),
         }
 

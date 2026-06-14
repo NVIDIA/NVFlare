@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import warnings
 from typing import Any, Optional, Union
 
 from pydantic import BaseModel
@@ -43,6 +44,7 @@ class _ScaffoldValidator(BaseModel):
     server_memory_gc_rounds: int = 0
     client_memory_gc_rounds: int = 0
     cuda_empty_cache: bool = False
+    enable_tensor_disk_offload: bool = False
 
 
 class ScaffoldRecipe(Recipe):
@@ -76,6 +78,9 @@ class ScaffoldRecipe(Recipe):
         train_args: Command line arguments to pass to the training script. Defaults to "".
         server_memory_gc_rounds: Run memory cleanup (gc.collect + malloc_trim) every N rounds on server.
             Set to 0 to disable. Defaults to 0.
+        enable_tensor_disk_offload (bool): Download streamed PyTorch tensors to disk on the server during
+            receive/aggregation instead of holding them in memory, reducing server memory pressure for
+            large models. Requires server_expected_format=ExchangeFormat.PYTORCH. Defaults to False.
     Example:
         ```python
         recipe = ScaffoldRecipe(
@@ -106,6 +111,7 @@ class ScaffoldRecipe(Recipe):
         server_memory_gc_rounds: int = 0,
         client_memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
+        enable_tensor_disk_offload: bool = False,
     ):
         # Validate inputs internally
         v = _ScaffoldValidator(
@@ -123,6 +129,7 @@ class ScaffoldRecipe(Recipe):
             server_memory_gc_rounds=server_memory_gc_rounds,
             client_memory_gc_rounds=client_memory_gc_rounds,
             cuda_empty_cache=cuda_empty_cache,
+            enable_tensor_disk_offload=enable_tensor_disk_offload,
         )
 
         self.name = v.name
@@ -147,6 +154,15 @@ class ScaffoldRecipe(Recipe):
         self.server_memory_gc_rounds = v.server_memory_gc_rounds
         self.client_memory_gc_rounds = v.client_memory_gc_rounds
         self.cuda_empty_cache = v.cuda_empty_cache
+        self.enable_tensor_disk_offload = v.enable_tensor_disk_offload
+        if self.enable_tensor_disk_offload and self.server_expected_format != ExchangeFormat.PYTORCH:
+            warnings.warn(
+                "enable_tensor_disk_offload=True only applies to streamed PyTorch tensors. "
+                "Set server_expected_format=ExchangeFormat.PYTORCH to enable tensor disk offload; "
+                f"current server_expected_format={self.server_expected_format!r} will not offload NumPy payloads.",
+                UserWarning,
+                stacklevel=2,
+            )
 
         # Create BaseFedJob
         job = BaseFedJob(
@@ -161,7 +177,12 @@ class ScaffoldRecipe(Recipe):
             from nvflare.recipe.utils import prepare_initial_ckpt
 
             ckpt_path = prepare_initial_ckpt(self.initial_ckpt, job)
-            pt_model = PTModel(model=self.model, initial_ckpt=ckpt_path)
+            # Disable numpy conversion when using tensor format to keep PyTorch tensors.
+            pt_model = PTModel(
+                model=self.model,
+                initial_ckpt=ckpt_path,
+                allow_numpy_conversion=self.server_expected_format != ExchangeFormat.PYTORCH,
+            )
             result = job.to_server(pt_model, id="persistor")
             persistor_id = result["persistor_id"]
 
@@ -171,6 +192,7 @@ class ScaffoldRecipe(Recipe):
             num_rounds=self.num_rounds,
             persistor_id=persistor_id,
             memory_gc_rounds=self.server_memory_gc_rounds,
+            enable_tensor_disk_offload=self.enable_tensor_disk_offload,
         )
         # Send the controller to the server
         job.to_server(controller)

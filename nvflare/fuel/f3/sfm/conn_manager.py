@@ -20,6 +20,8 @@ from typing import Dict, List, Optional
 
 import msgpack
 
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.cellnet.identity import CellIdentityResolver, get_param, is_admin_listener, is_mtls_connection
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.connection import BytesAlike, Connection, ConnState, FrameReceiver
 from nvflare.fuel.f3.drivers.connector_info import ConnectorInfo, Mode
@@ -34,6 +36,7 @@ from nvflare.fuel.f3.sfm.prefix import PREFIX_LEN, Prefix
 from nvflare.fuel.f3.sfm.sfm_conn import SfmConnection
 from nvflare.fuel.f3.sfm.sfm_endpoint import SfmEndpoint
 from nvflare.fuel.f3.stats_pool import StatsPoolManager
+from nvflare.fuel.utils.admin_name_utils import is_valid_admin_client_name
 from nvflare.fuel.utils.buffer_list import BufferList
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
@@ -63,8 +66,9 @@ class ConnManager(ConnMonitor):
     The class is responsible for maintaining state of SFM connections and pumping data through them
     """
 
-    def __init__(self, local_endpoint: Endpoint):
+    def __init__(self, local_endpoint: Endpoint, identity_resolver: CellIdentityResolver = None):
         self.local_endpoint = local_endpoint
+        self.identity_resolver = identity_resolver if identity_resolver else CellIdentityResolver(local_endpoint.name)
 
         # Active connectors
         self.connectors: Dict[str, ConnectorInfo] = {}
@@ -399,14 +403,45 @@ class ConnManager(ConnMonitor):
         if not endpoint_name:
             raise CommError(CommError.BAD_DATA, f"Handshake without endpoint name for connection {sfm_conn.get_name()}")
 
+        endpoint_name = FQCN.normalize(endpoint_name)
+        err = FQCN.validate(endpoint_name)
+        if err:
+            sfm_conn.conn.close()
+            raise CommError(
+                CommError.BAD_DATA,
+                f"Invalid endpoint name '{endpoint_name}' for connection {sfm_conn.get_name()}: {err}",
+            )
+
         if endpoint_name == self.local_endpoint.name:
             raise CommError(
                 CommError.BAD_DATA, f"Duplicate endpoint name {endpoint_name} for connection {sfm_conn.get_name()}"
             )
 
+        conn_props = sfm_conn.conn.get_conn_properties()
+        # Passive mTLS connections must always present the connecting peer's CN.
+        # Active mTLS connections enforce the same binding when the driver exposes
+        # a real peer CN; gRPC active-side connections may report "N/A"/None.
+        if is_mtls_connection(sfm_conn.conn.connector.params):
+            peer_cn = get_param(conn_props, DriverParams.PEER_CN)
+            if sfm_conn.conn.connector.mode == Mode.PASSIVE or (peer_cn and peer_cn != "N/A"):
+                if (
+                    is_valid_admin_client_name(endpoint_name)
+                    and sfm_conn.conn.connector.mode == Mode.PASSIVE
+                    and not is_admin_listener(sfm_conn.conn.connector.params)
+                ):
+                    sfm_conn.conn.close()
+                    raise CommError(
+                        CommError.BAD_DATA,
+                        f"Admin endpoint '{endpoint_name}' can only connect through an admin listener",
+                    )
+                try:
+                    self.identity_resolver.require_match(endpoint_name, peer_cn, f"connection {sfm_conn.get_name()}")
+                except ValueError as ex:
+                    sfm_conn.conn.close()
+                    raise CommError(CommError.BAD_DATA, str(ex))
+
         endpoint = Endpoint(endpoint_name, data)
         endpoint.state = EndpointState.READY
-        conn_props = sfm_conn.conn.get_conn_properties()
         if conn_props:
             endpoint.conn_props.update(conn_props)
 

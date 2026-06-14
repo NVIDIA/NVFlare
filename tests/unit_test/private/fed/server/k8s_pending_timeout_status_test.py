@@ -48,16 +48,25 @@ from nvflare.private.fed.server.job_runner import JobRunner
 from nvflare.private.fed.server.server_engine import ServerEngine
 
 
-def _stuck_pending_handle(pending_timeout=2):
-    """Build a real K8sJobHandle whose pod stays in PENDING forever.
+def _stuck_pending_handle(pending_timeout=0):
+    """Build a real K8sJobHandle whose pod waits for cluster resources forever.
 
-    Using pending_timeout=2 makes _stuck_in_pending() trip after two polls,
-    so the test doesn't have to wait the default 120s. We patch time.sleep
-    at the call site to keep the loop tight.
+    Using pending_timeout=0 makes the resource-wait path fail fast, so the
+    test doesn't have to wait the default 120s. We patch time.sleep at the call
+    site to keep the loop tight.
     """
     api = MagicMock()
     resp = MagicMock()
     resp.status.phase = PodPhase.PENDING.value
+    resp.status.node_name = None
+    condition = MagicMock()
+    condition.type = "PodScheduled"
+    condition.status = "False"
+    condition.reason = "Unschedulable"
+    condition.message = "0/1 nodes are available: 1 Insufficient nvidia.com/gpu."
+    resp.status.conditions = [condition]
+    resp.status.container_statuses = []
+    resp.status.init_container_statuses = []
     api.read_namespaced_pod.return_value = resp
 
     job_config = {
@@ -80,7 +89,7 @@ def _stuck_pending_handle(pending_timeout=2):
 @patch("nvflare.app_opt.job_launcher.k8s_launcher.time.sleep")
 def test_k8s_launcher_returns_exception_when_pod_stuck_pending(_mock_sleep):
     """Sanity: the K8s launcher's contract is that stuck-pending → EXCEPTION."""
-    handle = _stuck_pending_handle(pending_timeout=2)
+    handle = _stuck_pending_handle(pending_timeout=0)
 
     from nvflare.app_opt.job_launcher.k8s_launcher import JobState
 
@@ -96,7 +105,7 @@ def test_server_side_pending_timeout_reports_finished_execution_exception(_mock_
     JobRunner._get_finished_job_status, then asserts the finished status value.
     """
     # 1. K8s pod stuck pending → poll() = EXCEPTION (101).
-    handle = _stuck_pending_handle(pending_timeout=2)
+    handle = _stuck_pending_handle(pending_timeout=0)
     from nvflare.app_opt.job_launcher.k8s_launcher import JobState
 
     handle.enter_states([JobState.RUNNING])
@@ -154,7 +163,7 @@ def test_client_side_pending_timeout_reports_finished_execution_exception(_mock_
     status value.
     """
     # 1. K8s CJ pod stuck pending → poll() = EXCEPTION (101).
-    handle = _stuck_pending_handle(pending_timeout=2)
+    handle = _stuck_pending_handle(pending_timeout=0)
     from nvflare.app_opt.job_launcher.k8s_launcher import JobState
 
     handle.enter_states([JobState.RUNNING])

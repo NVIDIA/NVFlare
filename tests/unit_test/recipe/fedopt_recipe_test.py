@@ -92,6 +92,44 @@ class TestPTFedOptRecipe:
         assert recipe.model == simple_model
         assert recipe.job is not None
 
+    def test_enable_tensor_disk_offload_configures_controller(self, mock_file_system, base_recipe_params, simple_model):
+        """Test PT FedOptRecipe passes tensor disk offload settings to ScatterAndGather."""
+        from nvflare.apis.job_def import SERVER_SITE_NAME
+        from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
+        from nvflare.app_opt.pt.recipes.fedopt import FedOptRecipe
+        from nvflare.client.config import ExchangeFormat
+
+        recipe = FedOptRecipe(
+            name="test_fedopt_tensor_disk_offload",
+            model=simple_model,
+            enable_tensor_disk_offload=True,
+            server_expected_format=ExchangeFormat.PYTORCH,
+            **base_recipe_params,
+        )
+
+        assert recipe.enable_tensor_disk_offload is True
+        server_app = recipe.job._deploy_map[SERVER_SITE_NAME]
+        controller = server_app.app_config.workflows[0].controller
+        assert isinstance(controller, ScatterAndGather)
+        assert controller.enable_tensor_disk_offload is True
+
+        persistor = server_app.app_config.components["persistor"]
+        assert persistor._allow_numpy_conversion is False
+
+    def test_enable_tensor_disk_offload_warns_when_server_format_is_not_pytorch(
+        self, mock_file_system, base_recipe_params, simple_model
+    ):
+        """Tensor disk offload only applies to PyTorch tensor payloads."""
+        from nvflare.app_opt.pt.recipes.fedopt import FedOptRecipe
+
+        with pytest.warns(UserWarning, match="only applies to streamed PyTorch tensors"):
+            FedOptRecipe(
+                name="test_fedopt_tensor_disk_offload_warning",
+                model=simple_model,
+                enable_tensor_disk_offload=True,
+                **base_recipe_params,
+            )
+
     def test_initial_ckpt_parameter_accepted(self, mock_file_system, base_recipe_params, simple_model):
         """Test that initial_ckpt parameter is accepted."""
         from nvflare.app_opt.pt.recipes.fedopt import FedOptRecipe
@@ -201,14 +239,14 @@ class TestPTFedOptRecipe:
                 **base_recipe_params,
             )
 
-    def test_dict_config_missing_path_raises_error(self, mock_file_system, base_recipe_params):
-        """Test that dict config without 'class_path' key raises error."""
+    def test_dict_config_missing_class_path_or_path_raises_error(self, mock_file_system, base_recipe_params):
+        """Test that dict config without 'class_path' or 'path' key raises error."""
         from nvflare.app_opt.pt.recipes.fedopt import FedOptRecipe
 
-        with pytest.raises(ValueError, match="must have 'class_path' key"):
+        with pytest.raises(ValueError, match="must have 'class_path' or 'path' key"):
             FedOptRecipe(
                 name="test_invalid_dict",
-                model={"args": {"input_size": 10}},  # Missing 'class_path'
+                model={"args": {"input_size": 10}},  # Missing 'class_path'/'path'
                 **base_recipe_params,
             )
 

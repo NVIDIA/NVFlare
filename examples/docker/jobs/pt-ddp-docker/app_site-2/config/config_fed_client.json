@@ -10,7 +10,7 @@
                 "args": {
                     "pipe_id": "pipe",
                     "launcher_id": "launcher",
-                    "max_resends": null
+                    "max_resends": 3
                 }
             }
         }

@@ -13,11 +13,11 @@
 # limitations under the License.
 
 import ast
-import importlib
 import inspect
 import pkgutil
 import sys
 from enum import Enum
+from importlib import import_module
 from pathlib import Path
 
 from nvflare.tool.cli_output import output_usage_error
@@ -377,7 +377,7 @@ def _static_recipe_parameters(module_name: str, class_name: str) -> list:
 
 def _try_import_recipe_class(module_name: str, class_name: str):
     try:
-        module = importlib.import_module(module_name)
+        module = import_module(module_name)
     except (ImportError, SyntaxError):
         return None
     return getattr(module, class_name, None)
@@ -576,10 +576,11 @@ def _privacy_compatible(entry: dict, parameters: list, recipe_cls) -> list:
 
 def _client_requirements(entry: dict, parameters: list) -> dict:
     by_name = {p["name"]: p for p in parameters}
+    per_site_config = by_name.get("per_site_config")
     requirements = {
         "state_exchange": entry.get("state_exchange"),
         "requires_training_script": "train_script" in by_name,
-        "requires_per_site_config": "per_site_config" in by_name,
+        "requires_per_site_config": bool(per_site_config and per_site_config["required"]),
         "requires_site_list": "sites" in by_name,
     }
     for name in ("min_clients", "sites", "label_owner", "client_ranks"):
@@ -806,7 +807,7 @@ def _load_catalog(framework: str = None, include_recipe_class: bool = False) -> 
         if framework and root["framework"] != framework:
             continue
         try:
-            package = importlib.import_module(root["package"])
+            package = import_module(root["package"])
         except (ImportError, SyntaxError):
             pass
 
@@ -815,7 +816,7 @@ def _load_catalog(framework: str = None, include_recipe_class: bool = False) -> 
                 if module_name.endswith(".__init__"):
                     continue
                 try:
-                    mod = importlib.import_module(module_name)
+                    mod = import_module(module_name)
                 except (ImportError, SyntaxError):
                     continue
 

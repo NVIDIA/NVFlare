@@ -18,6 +18,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import torch.nn as nn
 
+from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.abstract.model_locator import ModelLocator
@@ -28,10 +29,12 @@ from nvflare.app_common.executors.client_api_launcher_executor import ClientAPIL
 from nvflare.app_common.executors.launcher_executor import LauncherExecutor
 from nvflare.app_common.np.recipes import NumpyFedAvgRecipe
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
+from nvflare.app_common.widgets.metrics_artifact_writer import MetricsArtifactWriter
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.client.config import ConfigKey
 from nvflare.client.constants import CLIENT_API_CONFIG
 from nvflare.fuel.utils.class_utils import instantiate_class
+from nvflare.job_config.base_fed_job import BaseFedJob
 
 
 class SimpleTestModel(nn.Module):
@@ -86,6 +89,12 @@ class InvalidAggregator:
 
     def __init__(self):
         pass
+
+
+class CustomMetricSelector(FLComponent):
+    def __init__(self, key_metric):
+        super().__init__()
+        self.key_metric = key_metric
 
 
 class DummyPersistor(ModelPersistor):
@@ -159,6 +168,11 @@ def get_server_component(recipe, component_id):
     return server_app.app_config.components.get(component_id)
 
 
+def get_server_component_from_job(job, component_id):
+    server_app = job._deploy_map[SERVER_SITE_NAME]
+    return server_app.app_config.components.get(component_id)
+
+
 def get_server_controller(recipe):
     server_app = recipe.job._deploy_map[SERVER_SITE_NAME]
     return server_app.app_config.workflows[0].controller
@@ -219,6 +233,18 @@ class TestFedAvgRecipe:
         # When no aggregator is passed, built-in weighted averaging is used
         assert recipe.aggregator is None
 
+    def test_tensor_disk_offload_warns_when_server_format_is_not_pytorch(
+        self, mock_file_system, base_recipe_params, simple_model
+    ):
+        """Tensor disk offload only applies to PyTorch tensor payloads."""
+        with pytest.warns(UserWarning, match="only applies to streamed PyTorch tensors"):
+            FedAvgRecipe(
+                name="test_fedavg_offload_numpy_warning",
+                model=simple_model,
+                enable_tensor_disk_offload=True,
+                **base_recipe_params,
+            )
+
     def test_key_metric_passthrough_pt(self, mock_file_system, base_recipe_params, simple_model):
         key_metric = "val_auc"
         recipe = FedAvgRecipe(
@@ -228,6 +254,19 @@ class TestFedAvgRecipe:
         model_selector = get_model_selector(recipe)
         assert isinstance(model_selector, IntimeModelSelector)
         assert model_selector.key_metric == key_metric
+        metrics_writer = get_server_component(recipe, "metrics_artifact_writer")
+        assert isinstance(metrics_writer, MetricsArtifactWriter)
+        assert not hasattr(metrics_writer, "key_metric")
+
+    def test_metrics_writer_does_not_copy_policy_from_custom_selector(self):
+        key_metric = "custom_score"
+        job = BaseFedJob(
+            name="test_custom_selector_policy", min_clients=2, model_selector=CustomMetricSelector(key_metric)
+        )
+
+        metrics_writer = get_server_component_from_job(job, "metrics_artifact_writer")
+        assert isinstance(metrics_writer, MetricsArtifactWriter)
+        assert not hasattr(metrics_writer, "key_metric")
 
     def test_best_model_filename_passthrough_pt(self, mock_file_system, base_recipe_params, simple_model):
         """best_model_filename should configure the generated PT persistor's best model artifact."""
@@ -679,12 +718,12 @@ class TestFedAvgRecipeValidation:
         assert server_app is not None
         assert server_app.app_config.components.get(locator_id) is locator
 
-    def test_dict_config_missing_path_raises_error(self, mock_file_system, base_recipe_params):
-        """Test that dict config without 'class_path' key raises error."""
-        with pytest.raises(ValueError, match="must have 'class_path' key"):
+    def test_dict_config_missing_class_path_or_path_raises_error(self, mock_file_system, base_recipe_params):
+        """Test that dict config without 'class_path' or 'path' key raises error."""
+        with pytest.raises(ValueError, match="must have 'class_path' or 'path' key"):
             FedAvgRecipe(
                 name="test_invalid_dict",
-                model={"args": {"input_size": 10}},  # Missing 'class_path'
+                model={"args": {"input_size": 10}},  # Missing 'class_path'/'path'
                 **base_recipe_params,
             )
 
@@ -749,6 +788,51 @@ class TestFedAvgRecipeInitialCkpt:
 
         assert recipe.model["path"] == "my_module.models.SimpleNet"
         assert recipe.model["args"] == {"input_size": 10, "output_size": 5}
+
+    def test_dict_model_config_path_alias_accepted(self, mock_file_system, base_recipe_params):
+        """Test that dict model config accepts path as an alias for class_path."""
+        model_config = {
+            "path": "my_module.models.SimpleNet",
+            "args": {"input_size": 10, "output_size": 5},
+        }
+        recipe = FedAvgRecipe(
+            name="test_dict_config_path_alias",
+            model=model_config,
+            **base_recipe_params,
+        )
+
+        assert recipe.model["path"] == "my_module.models.SimpleNet"
+        assert recipe.model["args"] == {"input_size": 10, "output_size": 5}
+
+    def test_dict_model_config_class_path_takes_precedence(self, mock_file_system, base_recipe_params):
+        """Test that class_path is used when both class_path and path are provided."""
+        model_config = {
+            "class_path": "my_module.models.ClassPathNet",
+            "path": "my_module.models.PathNet",
+            "args": {"input_size": 10},
+        }
+        recipe = FedAvgRecipe(
+            name="test_dict_config_class_path_precedence",
+            model=model_config,
+            **base_recipe_params,
+        )
+
+        assert recipe.model["path"] == "my_module.models.ClassPathNet"
+        assert recipe.model["args"] == {"input_size": 10}
+
+    def test_dict_model_config_explicit_none_class_path_raises(self, mock_file_system, base_recipe_params):
+        """Test that explicit class_path=None does not fall through to path alias."""
+        model_config = {
+            "class_path": None,
+            "path": "my_module.models.PathNet",
+            "args": {"input_size": 10},
+        }
+        with pytest.raises(ValueError, match="'class_path' must be a string"):
+            FedAvgRecipe(
+                name="test_dict_config_none_class_path",
+                model=model_config,
+                **base_recipe_params,
+            )
 
     def test_dict_model_config_with_initial_ckpt(self, mock_file_system, base_recipe_params):
         """Test that dict model config (class_path) with initial_ckpt is accepted."""

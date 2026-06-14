@@ -88,3 +88,39 @@ class TestInTimeModelSelector:
             handler.handle_event(AppEventType.BEFORE_CONTRIBUTION_ACCEPT, fl_ctx)
         handler.handle_event(AppEventType.BEFORE_AGGREGATION, fl_ctx)
         assert (engine.last_event == AppEventType.GLOBAL_BEST_MODEL_AVAILABLE) == expected
+
+    def test_model_selection_publishes_metrics_selection_info(self):
+        handler = IntimeModelSelector(key_metric="loss", negate_key_metric=True)
+        engine = MockSimpleEngine()
+        peer_ctx = FLContext()
+        dxo = DXO(
+            DataKind.WEIGHT_DIFF,
+            data=dict(),
+            meta={
+                MetaKey.INITIAL_METRICS: {"loss": 0.2},
+                MetaKey.NUM_STEPS_CURRENT_ROUND: 1,
+            },
+        )
+        shareable = dxo.to_shareable()
+        shareable.add_cookie(AppConstants.CONTRIBUTION_ROUND, 1)
+        peer_ctx.set_prop(FLContextKey.SHAREABLE, shareable, private=True)
+        fl_ctx = engine.fl_ctx_mgr.new_context()
+        fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 1, private=True, sticky=False)
+        fl_ctx.set_peer_context(peer_ctx)
+
+        handler.handle_event(AppEventType.BEFORE_CONTRIBUTION_ACCEPT, fl_ctx)
+        handler.handle_event(AppEventType.BEFORE_AGGREGATION, fl_ctx)
+
+        assert engine.last_event == AppEventType.GLOBAL_BEST_MODEL_AVAILABLE
+        assert fl_ctx.get_prop(AppConstants.VALIDATION_RESULT) == -0.2
+        assert fl_ctx.get_prop(AppConstants.METRICS_SELECTION_INFO) == {
+            "source": "IntimeModelSelector",
+            "metric_source": MetaKey.INITIAL_METRICS,
+            "key_metric": {
+                "name": "loss",
+                "mode": "min",
+                "mode_source": "IntimeModelSelector.negate_key_metric",
+            },
+            "best_round": 1,
+            "best_metrics": {"loss": 0.2},
+        }
