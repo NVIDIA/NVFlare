@@ -15,6 +15,7 @@
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import zipfile
@@ -59,7 +60,7 @@ def test_convert_pytorch_eval_requires_declared_primary_metric_alignment():
     assert "reports that scalar as validation evidence" in description
 
 
-def test_seed_bundle_copy_includes_references_evals_and_log_fixtures(tmp_path):
+def test_seed_bundle_copy_includes_analysis_fixtures_by_default(tmp_path):
     skills_root = _repo_root() / "skills"
     bundle_root = tmp_path / "bundle"
 
@@ -69,7 +70,10 @@ def test_seed_bundle_copy_includes_references_evals_and_log_fixtures(tmp_path):
     assert SEED_SKILLS.issubset(names)
     assert (bundle_root / "_shared" / "nvflare-job-lifecycle.md").is_file()
     _assert_convert_pytorch_payload(bundle_root / "nvflare-convert-pytorch")
-    _assert_diagnose_payload(bundle_root / "nvflare-diagnose-job")
+    _assert_diagnose_runtime_payload(bundle_root / "nvflare-diagnose-job")
+    _assert_analysis_payload_present(bundle_root / "nvflare-diagnose-job")
+    assert bundle_root.joinpath("nvflare-convert-pytorch", "BENCHMARK.md").is_file()
+    assert bundle_root.joinpath("nvflare-convert-pytorch", "evals", "evals.json").is_file()
 
 
 def test_seed_skills_install_into_codex_and_claude_temp_targets(tmp_path):
@@ -88,13 +92,40 @@ def test_seed_skills_install_into_codex_and_claude_temp_targets(tmp_path):
     assert claude_target.joinpath("_shared", "nvflare-job-lifecycle.md").is_file()
     _assert_convert_pytorch_payload(codex_target / "nvflare-convert-pytorch")
     _assert_convert_pytorch_payload(claude_target / "nvflare-convert-pytorch")
-    _assert_diagnose_payload(codex_target / "nvflare-diagnose-job")
-    _assert_diagnose_payload(claude_target / "nvflare-diagnose-job")
+    _assert_diagnose_runtime_payload(codex_target / "nvflare-diagnose-job")
+    _assert_diagnose_runtime_payload(claude_target / "nvflare-diagnose-job")
+    _assert_analysis_payload_present(codex_target / "nvflare-diagnose-job")
+    _assert_analysis_payload_present(claude_target / "nvflare-diagnose-job")
 
     codex_list = list_skills(agent="codex", target_dir=codex_target, source=source)
     claude_list = list_skills(agent="claude", target_dir=claude_target, source=source)
     assert SEED_SKILLS.issubset({skill["name"] for skill in codex_list["installed"]})
     assert SEED_SKILLS.issubset({skill["name"] for skill in claude_list["installed"]})
+
+
+def test_released_seed_skills_install_without_analysis_fixtures(tmp_path):
+    skills_root = _repo_root() / "skills"
+    bundle_root = tmp_path / "bundle"
+    manifest = copy_released_skills_to_bundle(
+        skills_root, bundle_root, nvflare_version="2.8.0", include_analysis_files=False
+    )
+    source = SkillSource(source_type="wheel", root=bundle_root, manifest=manifest)
+    target = tmp_path / "target"
+
+    plan = install_skills(agent="codex", target_dir=target, source=source)
+    repeat_plan = install_skills(agent="codex", target_dir=target, source=source)
+
+    assert plan["applied"] is True
+    assert repeat_plan["applied"] is True
+    assert all(
+        entry["action"] == "skip" and entry.get("reason") == "already_installed" for entry in repeat_plan["skills"]
+    )
+    listed = list_skills(agent="codex", target_dir=target, source=source)
+    assert SEED_SKILLS.issubset({skill["name"] for skill in listed["installed"]})
+    _assert_diagnose_runtime_payload(target / "nvflare-diagnose-job")
+    _assert_analysis_payload_filtered(target / "nvflare-diagnose-job")
+    _assert_analysis_payload_filtered(target / "nvflare-convert-pytorch")
+    _assert_runtime_markdown_references_resolve(target)
 
 
 def test_seed_skills_dry_run_selects_all_seed_skills_without_copying(tmp_path):
@@ -140,6 +171,43 @@ def test_setup_build_py_can_disable_packaged_agent_skills(tmp_path):
     assert manifest["findings"] == []
     for skill_name in SEED_SKILLS:
         assert not bundle_root.joinpath(skill_name).exists()
+
+
+@pytest.mark.xdist_group(name="setup_py_packaging")
+def test_setup_build_py_release_filters_analysis_fixtures(tmp_path):
+    repo_root = _repo_root()
+    build_lib = tmp_path / "build_lib"
+    env = os.environ.copy()
+    env["NVFL_RELEASE"] = "1"
+
+    result = subprocess.run(
+        [sys.executable, "setup.py", "build_py", "--build-lib", str(build_lib)],
+        cwd=repo_root,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    bundle_root = build_lib / "nvflare" / "tool" / "agent" / "bundled_skills"
+    manifest = json.loads(bundle_root.joinpath("manifest.json").read_text(encoding="utf-8"))
+    assert manifest["source_type"] == "wheel"
+    assert manifest["content_mode"] == "release"
+    assert SEED_SKILLS.issubset({skill["name"] for skill in manifest["skills"]})
+    _assert_diagnose_runtime_payload(bundle_root / "nvflare-diagnose-job")
+    _assert_analysis_payload_filtered(bundle_root / "nvflare-diagnose-job")
+    _assert_analysis_payload_filtered(bundle_root / "nvflare-convert-pytorch")
+    _assert_runtime_markdown_references_resolve(bundle_root)
+
+    target = tmp_path / "target"
+    source = SkillSource(source_type="wheel", root=bundle_root, manifest=manifest)
+    install_plan = install_skills(agent="codex", target_dir=target, source=source)
+    listed = list_skills(agent="codex", target_dir=target, source=source)
+    assert install_plan["applied"] is True
+    assert SEED_SKILLS.issubset({skill["name"] for skill in listed["installed"]})
+    _assert_runtime_markdown_references_resolve(target)
 
 
 @pytest.mark.xdist_group(name="setup_py_packaging")
@@ -213,14 +281,38 @@ def _assert_convert_pytorch_payload(skill_dir: Path) -> None:
     assert "Must not require `rg` to be installed" in packaged_text
 
 
-def _assert_diagnose_payload(skill_dir: Path) -> None:
+def _assert_diagnose_runtime_payload(skill_dir: Path) -> None:
     assert skill_dir.joinpath("SKILL.md").is_file()
     assert skill_dir.joinpath("references", "evidence-collection.md").is_file()
     assert skill_dir.joinpath("references", "failure-patterns.md").is_file()
+
+
+def _assert_analysis_payload_present(skill_dir: Path) -> None:
     assert skill_dir.joinpath("evals", "evals.json").is_file()
     assert skill_dir.joinpath("evals", "files", "poc_component_not_authorized.log").is_file()
     assert skill_dir.joinpath("evals", "files", "simulation_import_error.log").is_file()
     assert skill_dir.joinpath("evals", "files", "transfer_progress_timeout.log").is_file()
+
+
+def _assert_analysis_payload_filtered(skill_dir: Path) -> None:
+    assert not skill_dir.joinpath("BENCHMARK.md").exists()
+    assert not skill_dir.joinpath("evals").exists()
+
+
+def _assert_runtime_markdown_references_resolve(root: Path) -> None:
+    missing = []
+    for markdown_path in sorted(root.rglob("*.md")):
+        rel_parts = markdown_path.relative_to(root).parts
+        if "evals" in rel_parts or markdown_path.name == "BENCHMARK.md":
+            continue
+        text = markdown_path.read_text(encoding="utf-8")
+        for ref in sorted(set(re.findall(r"`([^`]+\.md)`", text))):
+            ref_path = Path(ref)
+            if ref_path.is_absolute():
+                continue
+            if not (markdown_path.parent / ref_path).resolve(strict=False).is_file():
+                missing.append(f"{markdown_path.relative_to(root).as_posix()} -> {ref}")
+    assert missing == []
 
 
 def _repo_root() -> Path:
