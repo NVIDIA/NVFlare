@@ -27,6 +27,10 @@ from typing import Iterable, Optional
 MANIFEST_FILE_NAME = "manifest.json"
 MANIFEST_SCHEMA_VERSION = "1"
 IGNORED_SKILL_FILE_NAMES = {"__pycache__", "*.pyc", "*.pyo"}
+ANALYSIS_ONLY_SKILL_FILE_NAMES = {"BENCHMARK.md", "evals"}
+RELEASE_SKILL_FILE_EXCLUDE_NAMES = IGNORED_SKILL_FILE_NAMES | ANALYSIS_ONLY_SKILL_FILE_NAMES
+MANIFEST_CONTENT_MODE_DEV = "dev"
+MANIFEST_CONTENT_MODE_RELEASE = "release"
 SHARED_SKILL_REFERENCE_DIR = "_shared"
 HASH_READ_CHUNK_BYTES = 1024 * 1024
 
@@ -59,11 +63,18 @@ def skill_tree_hash(skill_dir: Path, *, exclude_names: Optional[set[str]] = None
     return digest.hexdigest()
 
 
-def build_skill_manifest(skills_root: Path | str, *, source_type: str, nvflare_version: str = "") -> dict:
+def build_skill_manifest(
+    skills_root: Path | str,
+    *,
+    source_type: str,
+    nvflare_version: str = "",
+    include_analysis_files: bool = True,
+) -> dict:
     """Build the released-skill manifest for a skills source root."""
     root = Path(skills_root)
     skills = []
     findings = []
+    source_hash_exclude_names = _source_hash_exclude_names(include_analysis_files)
     if root.is_dir():
         for child in sorted(root.iterdir(), key=lambda p: p.name):
             if _should_skip_skill_dir(child):
@@ -82,7 +93,7 @@ def build_skill_manifest(skills_root: Path | str, *, source_type: str, nvflare_v
                 continue
             metadata = dict(result.metadata)
             try:
-                source_hash = skill_tree_hash(child)
+                source_hash = skill_tree_hash(child, exclude_names=source_hash_exclude_names)
             except (OSError, ValueError) as exc:
                 raise SkillManifestError(
                     "AGENT_SKILL_MANIFEST_BUILD_FAILED",
@@ -105,6 +116,7 @@ def build_skill_manifest(skills_root: Path | str, *, source_type: str, nvflare_v
     return {
         "schema_version": MANIFEST_SCHEMA_VERSION,
         "source_type": source_type,
+        "content_mode": MANIFEST_CONTENT_MODE_DEV if include_analysis_files else MANIFEST_CONTENT_MODE_RELEASE,
         "nvflare_version": nvflare_version,
         "skills": skills,
         "findings": findings,
@@ -113,6 +125,12 @@ def build_skill_manifest(skills_root: Path | str, *, source_type: str, nvflare_v
 
 def _should_skip_skill_dir(path: Path) -> bool:
     return path.name.startswith(".") or path.name.startswith("_") or not path.is_dir()
+
+
+def _source_hash_exclude_names(include_analysis_files: bool) -> set[str]:
+    if not include_analysis_files:
+        return set(RELEASE_SKILL_FILE_EXCLUDE_NAMES)
+    return set(IGNORED_SKILL_FILE_NAMES)
 
 
 def write_manifest(manifest: dict, manifest_path: Path | str) -> None:
@@ -151,36 +169,46 @@ def load_manifest(manifest_path: Path | str) -> dict:
 
 
 def copy_released_skills_to_bundle(
-    skills_root: Path | str, bundle_root: Path | str, *, nvflare_version: str = ""
+    skills_root: Path | str,
+    bundle_root: Path | str,
+    *,
+    nvflare_version: str = "",
+    include_analysis_files: bool = True,
 ) -> dict:
     """Copy valid released skills and write their manifest into a package bundle directory."""
     source_root = Path(skills_root)
     target_root = Path(bundle_root)
     _clean_bundle_root(target_root)
 
-    manifest = build_skill_manifest(source_root, source_type="wheel", nvflare_version=nvflare_version)
-    _copy_shared_references_to_bundle(source_root, target_root)
+    manifest = build_skill_manifest(
+        source_root,
+        source_type="wheel",
+        nvflare_version=nvflare_version,
+        include_analysis_files=include_analysis_files,
+    )
+    ignore_names = IGNORED_SKILL_FILE_NAMES if include_analysis_files else RELEASE_SKILL_FILE_EXCLUDE_NAMES
+    _copy_shared_references_to_bundle(source_root, target_root, ignore_names=ignore_names)
     for skill in manifest["skills"]:
         shutil.copytree(
             source_root / skill["relative_path"],
             target_root / skill["relative_path"],
-            ignore=shutil.ignore_patterns(*IGNORED_SKILL_FILE_NAMES),
+            ignore=shutil.ignore_patterns(*ignore_names),
         )
     write_manifest(manifest, target_root / MANIFEST_FILE_NAME)
     return manifest
 
 
-def _copy_shared_references_to_bundle(source_root: Path, target_root: Path) -> None:
+def _copy_shared_references_to_bundle(source_root: Path, target_root: Path, *, ignore_names: set[str]) -> None:
     shared_root = source_root / SHARED_SKILL_REFERENCE_DIR
     if not shared_root.is_dir():
         return
     # Validate that shared references contain no symlinks. The hash value is
     # not needed here; skill_tree_hash raises before copying unsafe content.
-    skill_tree_hash(shared_root)
+    skill_tree_hash(shared_root, exclude_names=ignore_names)
     shutil.copytree(
         shared_root,
         target_root / SHARED_SKILL_REFERENCE_DIR,
-        ignore=shutil.ignore_patterns(*IGNORED_SKILL_FILE_NAMES),
+        ignore=shutil.ignore_patterns(*ignore_names),
     )
 
 

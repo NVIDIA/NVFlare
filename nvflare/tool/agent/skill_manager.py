@@ -30,7 +30,9 @@ from typing import Optional
 import nvflare
 from nvflare.tool.agent.skill_manifest import (
     IGNORED_SKILL_FILE_NAMES,
+    MANIFEST_CONTENT_MODE_RELEASE,
     MANIFEST_FILE_NAME,
+    RELEASE_SKILL_FILE_EXCLUDE_NAMES,
     SHARED_SKILL_REFERENCE_DIR,
     build_skill_manifest,
     load_manifest,
@@ -241,7 +243,11 @@ def _install_plan(
             "source_hash": skill["source_hash"],
             "relative_path": skill["relative_path"],
             "target_path": str(target_skill_dir),
-            "files": [] if source_symlink else _files_to_copy(source_skill_dir, target_skill_dir),
+            "files": (
+                []
+                if source_symlink
+                else _files_to_copy(source_skill_dir, target_skill_dir, exclude_names=_copy_exclude_names(source))
+            ),
             "version_delta": "new",
         }
         if source_symlink:
@@ -358,7 +364,8 @@ def _sync_shared_references(source: SkillSource, target: Path) -> None:
     source_shared = source.root / SHARED_SKILL_REFERENCE_DIR
     if not source_shared.is_dir():
         return
-    source_hash = skill_tree_hash(source_shared)
+    exclude_names = _copy_exclude_names(source)
+    source_hash = skill_tree_hash(source_shared, exclude_names=exclude_names)
     target_shared = target / SHARED_SKILL_REFERENCE_DIR
     plan_entry = {"name": SHARED_SKILL_REFERENCE_DIR, "source_hash": source_hash}
     if not target_shared.exists():
@@ -369,7 +376,7 @@ def _sync_shared_references(source: SkillSource, target: Path) -> None:
     install_manifest = _read_install_manifest(target_shared)
     if not install_manifest or install_manifest.get("managed_by") != "nvflare":
         raise FileExistsError(f"shared reference target is not managed by nvflare: {target_shared}")
-    installed_source_hash = skill_tree_hash(target_shared, exclude_names={INSTALL_MANIFEST_FILE_NAME})
+    installed_source_hash = skill_tree_hash(target_shared, exclude_names={INSTALL_MANIFEST_FILE_NAME, *exclude_names})
     managed_source_hash = install_manifest.get("source_hash")
     if installed_source_hash != managed_source_hash:
         raise FileExistsError(f"shared reference target has local modifications: {target_shared}")
@@ -498,7 +505,7 @@ def _stage_skill(
     symlink = _first_symlink_in_tree(source_dir)
     if symlink:
         raise ValueError(f"skill source must not contain symlinks: {symlink.relative_to(source_dir).as_posix()}")
-    shutil.copytree(source_dir, staged_dir, ignore=shutil.ignore_patterns(*IGNORED_SKILL_FILE_NAMES))
+    shutil.copytree(source_dir, staged_dir, ignore=shutil.ignore_patterns(*_copy_exclude_names(source)))
     manifest = {
         "schema_version": "1",
         "managed_by": "nvflare",
@@ -601,14 +608,22 @@ def _first_symlink_in_tree(root_dir: Path) -> Optional[Path]:
     return None
 
 
-def _files_to_copy(source_dir: Path, target_dir: Path) -> list[dict]:
+def _copy_exclude_names(source: SkillSource) -> set[str]:
+    if source.manifest.get("content_mode") == MANIFEST_CONTENT_MODE_RELEASE:
+        return set(RELEASE_SKILL_FILE_EXCLUDE_NAMES)
+    return set(IGNORED_SKILL_FILE_NAMES)
+
+
+def _files_to_copy(source_dir: Path, target_dir: Path, *, exclude_names: set[str]) -> list[dict]:
     files = []
     for root, dir_names, file_names in os.walk(source_dir, topdown=True, followlinks=False):
         root_path = Path(root)
         dir_names.sort()
         file_names.sort()
-        dir_names[:] = [name for name in dir_names if name != "__pycache__" and not (root_path / name).is_symlink()]
+        dir_names[:] = [name for name in dir_names if name not in exclude_names and not (root_path / name).is_symlink()]
         for file_name in file_names:
+            if file_name in exclude_names:
+                continue
             file_path = root_path / file_name
             if file_path.is_symlink():
                 continue

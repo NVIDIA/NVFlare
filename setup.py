@@ -101,6 +101,10 @@ def _package_agent_skills_enabled():
     return value not in {"0", "false", "no", "off"}
 
 
+def _package_agent_skills_analysis_files():
+    return release != "1"
+
+
 def _no_skills_wheel_build_tag():
     return os.environ.get("NVFLARE_NO_SKILLS_WHEEL_BUILD_TAG", "1no_skills").strip()
 
@@ -125,6 +129,7 @@ class AgentSkillsBuildPy(_base_build_py):
                 os.path.join(ROOT_DIR, "skills"),
                 bundle_root,
                 nvflare_version=version,
+                include_analysis_files=_package_agent_skills_analysis_files(),
             )
         else:
             agent_skill_manifest.write_empty_skill_bundle(
