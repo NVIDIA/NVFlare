@@ -50,6 +50,18 @@ Low-level communication configuration (comm_config.py):
    * - streaming_ack_wait
      - varies
      - Time to wait for streaming ACK
+   * - streaming_reliable
+     - false
+     - Whether streamed chunks are retried until acknowledged
+   * - streaming_retry_wait
+     - 5.0
+     - Time to wait before retrying an unacknowledged reliable streaming chunk
+   * - streaming_retry_timeout
+     - 60.0
+     - Maximum time to retry an unacknowledged reliable streaming chunk
+   * - streaming_retry_max_pending_bytes
+     - 2 * streaming_window_size
+     - Maximum payload bytes held in memory for reliable streaming retry
 
 
 CoreCell Settings
@@ -257,8 +269,8 @@ FlareAgent for external process integration (flare_agent.py):
    * - max_resends
      - None in raw ``FlareAgent``; 3 through Client API job config
      - Maximum send retries on failure. For ``ClientAPILauncherExecutor`` jobs,
-       use a finite non-negative value; ``None`` is rejected at job initialization.
-       Configurable via ``add_client_config({"max_resends": N})``.
+       the default is the finite value ``3``; ``None`` is rejected at job
+       initialization. Override via ``add_client_config({"max_resends": N})``.
    * - download_complete_timeout
      - 1800.0
      - Time the subprocess waits after result ACK while the server finishes
@@ -268,7 +280,11 @@ FlareAgent for external process integration (flare_agent.py):
 **Note**: Raw ``FlareAgentWithCellPipe`` defaults to 60.0 s for
 ``submit_result_timeout`` and unlimited ``max_resends``. When launched through
 ``ClientAPILauncherExecutor``, the generated Client API config supplies the
-safer job defaults described above.
+safer job defaults described above. Recipe-based external-process jobs also
+serialize ``max_resends=3`` in the executor args, so reloaded jobs do not fall
+back to the raw unlimited retry default. Use
+``recipe.add_client_config({"max_resends": N})`` only when a job needs a
+different finite retry budget.
 
 IPC Agent
 ^^^^^^^^^
@@ -550,8 +566,16 @@ For subprocess-mode Client API jobs with large payloads, FLARE validates the
 following at job start:
 
 - ``download_complete_timeout`` must not be ``None``.
-- ``max_resends`` must be a finite non-negative integer. Use ``0`` to disable
+- ``max_resends`` must be a finite non-negative integer. Recipe-based jobs
+  serialize the default value ``3`` in executor args. Use ``0`` to disable
   retries; do not use ``None`` for unlimited retries.
+
+Values supplied through ``recipe.add_client_config()`` are top-level entries in
+``config_fed_client.json``. For subprocess-mode Client API jobs,
+``ClientAPILauncherExecutor`` applies these overrides before writing the
+subprocess ``client_api_config.json``, so ``submit_result_timeout``,
+``download_complete_timeout``, and ``max_resends`` are seen by both the parent
+client job process and the external training process.
 
 When ``tensor_streaming_per_request_timeout`` or
 ``np_streaming_per_request_timeout`` is explicitly configured, FLARE also warns
@@ -1535,6 +1559,9 @@ subprocess pipe settings:
 - ``download_complete_timeout`` should be at least the configured streaming
   per-request timeout and long enough for the server to pull large tensor
   results from the subprocess after result ACK.
+- ``max_resends`` should stay finite. The recipe default is ``3``; raise it
+  only when the network is expected to recover after a small number of delayed
+  result acknowledgments.
 
 Swarm Learning Large Model Setup
 --------------------------------
@@ -2557,6 +2584,10 @@ comm_config.json (F3/CellNet Layer)
      "subnet_heartbeat_interval": 5,
      "streaming_read_timeout": 300,
      "streaming_ack_interval": 4194304,
+     "streaming_reliable": false,
+     "streaming_retry_wait": 5.0,
+     "streaming_retry_timeout": 60.0,
+     "streaming_retry_max_pending_bytes": 33554432,
      "streaming_chunk_size": 1048576,
      "max_message_size": 1048576
    }

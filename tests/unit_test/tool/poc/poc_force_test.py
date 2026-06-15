@@ -118,6 +118,12 @@ class TestPocForce:
         workspace.mkdir()
         sentinel = workspace / "keep.txt"
         sentinel.write_text("keep me")
+        current_time = -31
+
+        def fake_time():
+            nonlocal current_time
+            current_time += 31
+            return current_time
 
         with (
             patch(
@@ -133,7 +139,7 @@ class TestPocForce:
             patch("nvflare.tool.poc.poc_commands.is_poc_ready", return_value=True),
             patch("nvflare.tool.poc.poc_commands.is_poc_running", return_value=True),
             patch("nvflare.tool.poc.poc_commands._stop_poc"),
-            patch("nvflare.tool.poc.poc_commands.time.time", side_effect=[0, 31]),
+            patch("nvflare.tool.poc.poc_commands.time.time", side_effect=fake_time),
             patch("nvflare.tool.poc.poc_commands.prepare_poc_provision") as mock_prov,
         ):
             with pytest.raises(

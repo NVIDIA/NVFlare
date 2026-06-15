@@ -44,6 +44,9 @@ for more specific cases as required.
 ModelLearner
 ------------
 
+The ModelLearner API is deprecated and remains available for backward compatibility.
+For new projects, use the :ref:`job_recipe` with :ref:`client_api`.
+
 The :ref:`model_learner` is designed to simplify writing learning logic by
 minimizing FLARE-specific concepts.
 The :class:`ModelLearner<nvflare.app_common.abstract.model_learner.ModelLearner>`

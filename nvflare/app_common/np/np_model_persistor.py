@@ -20,6 +20,7 @@ import numpy as np
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
+from nvflare.app_common.utils.file_utils import resolve_path_under_root
 
 from .constants import NPConstants
 from .utils import load_numpy_model
@@ -84,7 +85,7 @@ class NPModelPersistor(ModelPersistor):
 
     def load_model(self, fl_ctx: FLContext) -> ModelLearnable:
         run_dir = _get_run_dir(fl_ctx)
-        model_path = os.path.join(run_dir, self.model_dir, self.model_name)
+        model_path = resolve_path_under_root(run_dir, os.path.join(self.model_dir, self.model_name), "model path")
 
         data = load_numpy_model(
             fl_ctx=fl_ctx,
@@ -102,10 +103,12 @@ class NPModelPersistor(ModelPersistor):
     def save_model(self, model_learnable: ModelLearnable, fl_ctx: FLContext):
         workspace = fl_ctx.get_workspace()
         job_id = fl_ctx.get_job_id()
-        model_root_dir = os.path.join(workspace.get_result_root(job_id), self.model_dir)
+        model_path = resolve_path_under_root(
+            workspace.get_result_root(job_id), os.path.join(self.model_dir, self.model_name), "model path"
+        )
+        model_root_dir = os.path.dirname(model_path)
         if not os.path.exists(model_root_dir):
             os.makedirs(model_root_dir)
 
-        model_path = os.path.join(model_root_dir, self.model_name)
         np.save(model_path, model_learnable[ModelLearnableKey.WEIGHTS][NPConstants.NUMPY_KEY])
         self.log_info(fl_ctx, f"Saved numpy model to: {model_path}")

@@ -26,6 +26,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from nvflare.apis.fl_constant import FLContextKey, MachineStatus, WorkspaceConstants
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorClientRunner, SimulatorRunner
 from nvflare.private.fed.utils.fed_utils import split_gpus
 
@@ -164,6 +165,8 @@ class TestSimulatorRunner:
                     fl_ctx = runner.server.engine.new_context()
                     workspace_obj = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
                     assert workspace_obj.get_root_dir() == os.path.join(workspace, "server")
+                    job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
+                    assert job_meta[JobMetaKey.JOB_NAME.value] == "sag"
 
                     runner.server.logger = Mock()
                     runner.server.engine.asked_to_stop = True

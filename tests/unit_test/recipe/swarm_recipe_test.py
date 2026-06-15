@@ -148,14 +148,14 @@ class TestSwarmLearningRecipe:
 
         assert recipe.job is not None
 
-    def test_dict_model_missing_path_rejected(self, mock_file_system):
-        """Test that dict model without 'class_path' key is rejected."""
+    def test_dict_model_missing_class_path_or_path_rejected(self, mock_file_system):
+        """Test that dict model without 'class_path' or 'path' key is rejected."""
         from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
 
-        with pytest.raises(ValueError, match="must have 'class_path' key"):
+        with pytest.raises(ValueError, match="must have 'class_path' or 'path' key"):
             SwarmLearningRecipe(
                 name="test_swarm_bad_dict",
-                model={"args": {"in_features": 10}},  # Missing 'path'
+                model={"args": {"in_features": 10}},  # Missing 'class_path'/'path'
                 num_rounds=5,
                 train_script="train.py",
                 min_clients=2,

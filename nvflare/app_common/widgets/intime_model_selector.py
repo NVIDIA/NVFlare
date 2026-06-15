@@ -48,6 +48,7 @@ class IntimeModelSelector(Widget):
         super().__init__()
 
         self.val_metric = self.best_val_metric = -np.inf
+        self.raw_val_metric = self.best_raw_val_metric = None
         self.weigh_by_local_iter = weigh_by_local_iter
         self.validation_metric_name = validation_metric_name
         self.aggregation_weights = aggregation_weights or {}
@@ -72,6 +73,7 @@ class IntimeModelSelector(Widget):
 
     def _reset_stats(self):
         self.validation_metric_weighted_sum = 0
+        self.raw_validation_metric_weighted_sum = 0
         self.validation_metric_sum_of_weights = 0
 
     def _before_accept(self, fl_ctx: FLContext):
@@ -125,6 +127,7 @@ class IntimeModelSelector(Widget):
                 )
                 return False
 
+        raw_validation_metric = validation_metric
         if self.negate_key_metric:
             validation_metric = -1.0 * validation_metric
 
@@ -140,6 +143,7 @@ class IntimeModelSelector(Widget):
 
         weight = n_iter * aggregation_weights
         self.validation_metric_weighted_sum += validation_metric * weight
+        self.raw_validation_metric_weighted_sum += raw_validation_metric * weight
         self.validation_metric_sum_of_weights += weight
         return True
 
@@ -148,18 +152,42 @@ class IntimeModelSelector(Widget):
             self.log_debug(fl_ctx, "nothing accumulated")
             return False
         self.val_metric = self.validation_metric_weighted_sum / self.validation_metric_sum_of_weights
+        self.raw_val_metric = self.raw_validation_metric_weighted_sum / self.validation_metric_sum_of_weights
         self.logger.debug(f"weighted validation metric {self.val_metric}")
         if self.val_metric > self.best_val_metric:
             self.best_val_metric = self.val_metric
+            self.best_raw_val_metric = self.raw_val_metric
             current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
             self.log_info(fl_ctx, f"new best validation metric at round {current_round}: {self.best_val_metric}")
 
             # Fire event to notify that the current global model is a new best
             fl_ctx.set_prop(AppConstants.VALIDATION_RESULT, self.best_val_metric, private=True, sticky=False)
+            fl_ctx.set_prop(
+                AppConstants.METRICS_SELECTION_INFO,
+                self._make_metrics_selection_info(current_round),
+                private=True,
+                sticky=False,
+            )
             self.fire_event(AppEventType.GLOBAL_BEST_MODEL_AVAILABLE, fl_ctx)
 
         self._reset_stats()
         return True
+
+    def _make_metrics_selection_info(self, current_round):
+        mode = "min" if self.negate_key_metric else "max"
+        return {
+            "source": self.__class__.__name__,
+            "metric_source": self.validation_metric_name,
+            "key_metric": {
+                "name": self.key_metric,
+                "mode": mode,
+                "mode_source": f"{self.__class__.__name__}.negate_key_metric",
+            },
+            "best_round": current_round,
+            "best_metrics": {
+                self.key_metric: self.best_raw_val_metric,
+            },
+        }
 
 
 class IntimeModelSelectionHandler(IntimeModelSelector):

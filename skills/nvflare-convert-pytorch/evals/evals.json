@@ -1,0 +1,432 @@
+{
+  "skill_name": "nvflare-convert-pytorch",
+  "evals": [
+    {
+      "id": "pytorch-convert-basic",
+      "prompt": "Here is my PyTorch training code. Convert it to FLARE FL code, run the converted job with 3 simulated sites using this dataset, split the dataset evenly for the 3 sites, use FedAvg, and train for 3 rounds.",
+      "expected_output": "A FLARE-compatible PyTorch Client API training integration with standard client.py/job.py/model.py layout, a runnable job.py using FedAvg with 3 simulated sites and 3 rounds, local validation evidence, result or metric evidence, and an export attempt under /tmp/nvflare/job_config when supported.",
+      "files": [
+        "evals/files/hello-pt/train.py",
+        "evals/files/hello-pt/model.py"
+      ],
+      "assertions": [
+        "The agent runs nvflare agent inspect before editing.",
+        "The agent edits only training, model, job, or small config files.",
+        "The agent audits required model constructor arguments before writing job.py and uses explicit path or class_path plus args when needed.",
+        "The agent translates the natural request into recipe, site-count, dataset, split, training, validation, and export settings.",
+        "The agent checks nvflare recipe list --framework pytorch --format json before selecting the job recipe.",
+        "The agent selects FedAvg only when the requested workflow is standard horizontal model-parameter aggregation.",
+        "The generated source uses standard names such as client.py, job.py, and model.py instead of ad hoc names such as fl_train.py.",
+        "The generated training code uses nvflare.client receive/send and FLModel for model exchange.",
+        "The agent keeps simulation workspaces, exported job folders, and generated runtime outputs under /tmp/nvflare unless the user gives another location.",
+        "The agent runs python job.py for local validation when dependencies are available.",
+        "When job documentation, task guidance, or source project guidance declares a primary or target validation metric, the agent configures the FL recipe/global metric to that metric and reports that scalar.",
+        "The agent reports recipe choice, validation status, export status, metric or result evidence, exact result paths, and remaining blockers.",
+        "The agent records failed generated-job validation as evaluation evidence when the job does not run as expected.",
+        "The agent does not submit to POC or production without explicit approval."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-pytorch",
+        "mandatory_behavior": [
+          {
+            "id": "inspect-first",
+            "description": "runs nvflare agent inspect before editing"
+          },
+          {
+            "id": "scoped-edits",
+            "description": "edits only training, model, job, or small config files"
+          },
+          {
+            "id": "audit-model-constructor-args",
+            "description": "audits required model constructor arguments before writing job.py and uses explicit path or class_path plus args when needed"
+          },
+          {
+            "id": "derive-config-from-natural-request",
+            "description": "translates natural user requests into recipe, site-count, dataset, split, training, validation, and export settings"
+          },
+          {
+            "id": "discover-pytorch-recipes",
+            "description": "checks nvflare recipe list --framework pytorch --format json before selecting the job recipe"
+          },
+          {
+            "id": "select-recipe-from-fl-intent",
+            "description": "selects the PyTorch recipe from the requested FL workflow instead of assuming every PyTorch job is FedAvg"
+          },
+          {
+            "id": "standard-generated-layout",
+            "description": "uses standard generated file names such as client.py, job.py, and model.py"
+          },
+          {
+            "id": "tmp-runtime-outputs",
+            "description": "uses /tmp/nvflare locations for exported jobs, simulation workspaces, and generated validation outputs unless overridden by the user"
+          },
+          {
+            "id": "use-client-api-for-training-exchange",
+            "description": "uses nvflare.client receive/send and FLModel for training exchange"
+          },
+          {
+            "id": "local-validation",
+            "description": "runs local job validation when dependencies are available"
+          },
+          {
+            "id": "align-primary-metric",
+            "description": "when job documentation, task guidance, or source project guidance declares a primary or target validation metric, configures the FL recipe/global metric to that metric key, returns that numeric scalar in FLModel.metrics, and reports that scalar as validation evidence"
+          },
+          {
+            "id": "report-validation-evidence",
+            "description": "reports recipe choice, validation command status, export status, metric or result evidence, exact result paths, and remaining blockers"
+          },
+          {
+            "id": "record-validation-failures",
+            "description": "records failed generated-job validation as evaluation evidence when the job does not run as expected"
+          }
+        ],
+        "prohibited_behavior": [
+          {
+            "id": "no-production-submit",
+            "description": "does not submit to POC or production without explicit approval"
+          },
+          {
+            "id": "no-user-data-copy",
+            "description": "does not copy private site data into generated artifacts"
+          },
+          {
+            "id": "no-cli-wrapper-python",
+            "description": "does not generate Python solely to wrap NVFLARE CLI operations or scrape human CLI output"
+          }
+        ],
+        "optional_behavior": [
+          {
+            "id": "export-job",
+            "description": "exports the job folder with NVFLARE job system arguments when export is requested"
+          },
+          {
+            "id": "approved-poc-submit",
+            "description": "submits the exported job to POC only when the user explicitly approves POC or provides a POC workspace and asks for submission"
+          }
+        ],
+        "process_metrics": [
+          {
+            "id": "first_pass_accepted",
+            "description": "whether the first generated conversion satisfies layout, recipe, validation, and evidence requirements without user correction"
+          },
+          {
+            "id": "turns_to_acceptable",
+            "description": "number of user/agent turns before the conversion is accepted as structurally correct and validated or explicitly blocked"
+          },
+          {
+            "id": "user_correction_count",
+            "description": "number of user corrections needed for workflow, layout, validation, evidence, or artifact-location mistakes"
+          },
+          {
+            "id": "missed_instruction_count",
+            "description": "number of applicable user, design, or skill instructions missed during conversion, such as requested output locations, non-destructive edits, or requested review passes"
+          },
+          {
+            "id": "layout_violations",
+            "description": "count of generated source layout, file naming, or runtime artifact placement violations found before final acceptance"
+          },
+          {
+            "id": "validation_evidence_completeness",
+            "description": "whether the final answer reports validation commands, statuses, the declared primary/global metric scalar when applicable, result evidence, and exact artifact paths"
+          },
+          {
+            "id": "elapsed_seconds",
+            "description": "wall-clock time used for the conversion workflow from first skill-guided action to final reported result"
+          },
+          {
+            "id": "token_count",
+            "description": "total conversation token count for the conversion run when supplied by the evaluation runner"
+          },
+          {
+            "id": "conversion_quality",
+            "description": "reviewer-rated 1-5 quality of the converted FLARE job, considering structure, API choices, validation evidence, and artifact placement"
+          }
+        ]
+      }
+    },
+    {
+      "id": "pytorch-approved-poc-handoff",
+      "prompt": "Simulation looks good. I have a POC workspace at /tmp/nvflare/poc_workspace. Submit the exported job to it and wait for the result.",
+      "expected_output": "The agent treats this as explicit POC approval, validates the exported job folder, uses the supplied POC workspace, submits the job, waits or monitors as requested, and reports job ID, status, result paths, and failure evidence if any.",
+      "files": [
+        "evals/files/hello-pt/train.py",
+        "evals/files/hello-pt/model.py"
+      ],
+      "assertions": [
+        "The agent treats the request as explicit POC approval.",
+        "The agent validates the exported job folder before submission.",
+        "The agent uses the supplied POC workspace instead of guessing a production environment.",
+        "The agent reports job ID, status, result paths, and failure evidence if any."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-pytorch",
+        "optional_behavior": [
+          {
+            "id": "approved-poc-submit",
+            "description": "submits the exported job to POC only when explicitly approved"
+          }
+        ],
+        "prohibited_behavior": [
+          {
+            "id": "no-production-submit",
+            "description": "does not submit to production when the user asked for POC"
+          }
+        ]
+      }
+    },
+    {
+      "id": "pytorch-iterative-rerun",
+      "prompt": "Change the batch size to 64, increase the training to 5 rounds, switch from FedAvg to SCAFFOLD, and run it again.",
+      "expected_output": "The agent treats this as a scoped update to an existing generated PyTorch FL job, inspects the SCAFFOLD recipe metadata, updates only affected job or training arguments, reruns local validation, exports again if export remains in scope, and reports updated settings and validation evidence.",
+      "files": [
+        "evals/files/hello-pt/train.py",
+        "evals/files/hello-pt/model.py"
+      ],
+      "assertions": [
+        "The agent treats hyperparameter and recipe changes as scoped updates.",
+        "The agent runs nvflare recipe show scaffold-pt --format json before switching recipes.",
+        "The agent updates only affected job or training arguments.",
+        "The agent reruns local validation and reports updated settings and evidence."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-pytorch",
+        "mandatory_behavior": [
+          {
+            "id": "iterative-job-update",
+            "description": "applies requested hyperparameter, round-count, min-client, site-count, or recipe changes to the existing generated job"
+          },
+          {
+            "id": "recipe-change-show",
+            "description": "runs nvflare recipe show for the target recipe before switching recipes"
+          },
+          {
+            "id": "local-validation",
+            "description": "reruns local validation after the scoped job update when dependencies are available"
+          }
+        ]
+      }
+    },
+    {
+      "id": "pytorch-recipe-search",
+      "prompt": "Find the best recipe among the available PyTorch recipes and give me the best accuracy for this training code.",
+      "expected_output": "The agent treats this as bounded experiment planning, asks for missing metric or run budget when needed, lists compatible PyTorch recipes, inspects selected recipe metadata, runs comparable experiments only when authorized and feasible, and reports measured results without claiming a best recipe without evidence.",
+      "files": [
+        "evals/files/hello-pt/train.py",
+        "evals/files/hello-pt/model.py"
+      ],
+      "assertions": [
+        "The agent does not claim the best recipe without measured evidence.",
+        "The agent asks for target metric or run budget when missing.",
+        "The agent uses nvflare recipe list --framework pytorch --format json to find candidates.",
+        "The agent keeps dataset split, site count, rounds, and metric comparable across runs."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-pytorch",
+        "mandatory_behavior": [
+          {
+            "id": "bounded-recipe-search",
+            "description": "treats best-recipe requests as bounded experiment planning and execution"
+          },
+          {
+            "id": "no-unmeasured-best-claim",
+            "description": "does not claim a best recipe or best accuracy without measured evidence"
+          },
+          {
+            "id": "comparable-recipe-runs",
+            "description": "keeps dataset split, site count, rounds, and metric comparable across recipe runs"
+          }
+        ]
+      }
+    },
+    {
+      "id": "pytorch-data-distribution-rerun",
+      "prompt": "Split the dataset differently to represent IID and heterogeneous non-IID site distributions, train the model again, and show me the result.",
+      "expected_output": "The agent treats this as a data-partition experiment, defines IID and non-IID split strategies, keeps recipe and training budget comparable, avoids copying private data into generated artifacts, reruns validation for each split when feasible, and reports measured metrics, commands, status, and result paths.",
+      "files": [
+        "evals/files/hello-pt/train.py",
+        "evals/files/hello-pt/model.py"
+      ],
+      "assertions": [
+        "The agent defines concrete IID and non-IID split strategies before editing.",
+        "The agent keeps recipe, rounds, epochs, batch size, seed, and metric comparable unless asked to tune them.",
+        "The agent avoids copying private data into generated artifacts.",
+        "The agent reports measured metrics, commands, status, and result paths for each split."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-pytorch",
+        "mandatory_behavior": [
+          {
+            "id": "define-data-split-strategies",
+            "description": "defines concrete IID and non-IID split strategies before running data-distribution experiments"
+          },
+          {
+            "id": "comparable-data-split-runs",
+            "description": "keeps recipe and training budget comparable across data split experiments"
+          },
+          {
+            "id": "report-distribution-results",
+            "description": "reports metrics, commands, status, and result paths for each data split"
+          }
+        ],
+        "prohibited_behavior": [
+          {
+            "id": "no-user-data-copy",
+            "description": "does not copy private site data into generated artifacts"
+          }
+        ]
+      }
+    },
+    {
+      "id": "pytorch-dataset-url-rerun",
+      "prompt": "I want to use a different dataset and repeat the experiment. Here is the URL for the dataset: https://example.com/datasets/new-image-data.zip",
+      "expected_output": "The agent treats this as a dataset-replacement experiment, records the dataset URL and source details, validates download and preprocessing assumptions, keeps recipe and training settings comparable unless asked to tune them, reruns validation when feasible, and reports metrics, commands, status, result path, and blockers.",
+      "files": [
+        "evals/files/hello-pt/train.py",
+        "evals/files/hello-pt/model.py"
+      ],
+      "assertions": [
+        "The agent records dataset URL and source details.",
+        "The agent validates download and preprocessing assumptions before rerunning.",
+        "The agent follows the existing download_data and prepare_data structure instead of inventing a parallel data-prep layout.",
+        "The agent references hello-world data-prep examples when adding new helpers.",
+        "The agent keeps recipe, site count, rounds, split policy, and metric comparable unless asked to tune them.",
+        "The agent reports metrics, commands, status, result path, dataset source, and blockers."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-pytorch",
+        "mandatory_behavior": [
+          {
+            "id": "record-dataset-source",
+            "description": "records dataset URL, source details, local path, and known version or access constraints"
+          },
+          {
+            "id": "validate-dataset-access",
+            "description": "validates dataset download, preprocessing, schema, and label assumptions before rerunning"
+          },
+          {
+            "id": "follow-data-prep-structure",
+            "description": "follows existing download_data and prepare_data helpers or the established NVFLARE separate download/prepare convention"
+          },
+          {
+            "id": "reference-hello-world-data-prep",
+            "description": "uses hello-world data-prep examples as convention references when adding new helpers"
+          },
+          {
+            "id": "comparable-dataset-rerun",
+            "description": "keeps recipe and training settings comparable across dataset replacement experiments unless asked to tune them"
+          }
+        ],
+        "prohibited_behavior": [
+          {
+            "id": "no-silent-dataset-substitution",
+            "description": "does not silently substitute a different dataset if the requested URL is unavailable"
+          }
+        ]
+      }
+    },
+    {
+      "id": "pytorch-synthetic-site-data",
+      "prompt": "Use synthetic data for each site, generate deterministic data for 3 sites, then run the training again and show the result.",
+      "expected_output": "The agent treats this as a synthetic per-site data generation task, follows existing download_data or prepare_data structure, records seed/schema/site counts/output paths, runs validation when feasible, and reports generation and training evidence.",
+      "files": [
+        "evals/files/hello-pt/train.py",
+        "evals/files/hello-pt/model.py"
+      ],
+      "assertions": [
+        "The agent creates or extends a deterministic data generation or prepare_data step.",
+        "The agent infers modality, schema, labels, missingness, site distribution, and task type only when clear.",
+        "The agent asks for a generation spec or approved generator/library when modality, task, shape/schema, labels, missingness, site distribution, or expected behavior are unclear.",
+        "The agent follows existing data-prep structure or hello-world conventions.",
+        "The agent writes explicit per-site outputs and reports seed, schema, and site counts.",
+        "The agent treats synthetic validation as a smoke test unless the user provides meaningful expected metrics.",
+        "The agent reruns validation and reports command, status, metric, and result path."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-pytorch",
+        "mandatory_behavior": [
+          {
+            "id": "deterministic-synthetic-data",
+            "description": "generates synthetic site data deterministically with seed, modality/schema, site count, and sample counts"
+          },
+          {
+            "id": "require-synthetic-data-spec",
+            "description": "asks for a data generation spec or approved generator when modality, task, shape/schema, labels, missingness, site distribution, or expected behavior are unclear"
+          },
+          {
+            "id": "follow-data-prep-structure",
+            "description": "follows existing download_data and prepare_data helpers or hello-world data-prep conventions"
+          },
+          {
+            "id": "report-synthetic-data-evidence",
+            "description": "reports generation command, seed, modality/schema, missingness/noise assumptions, per-site counts, validation status, and result path"
+          }
+        ],
+        "prohibited_behavior": [
+          {
+            "id": "no-invented-synthetic-schema",
+            "description": "does not invent synthetic labels, features, class balance, missingness, site skew, or expected accuracy when the data schema is unclear"
+          }
+        ]
+      }
+    },
+    {
+      "id": "pytorch-site-specific-training",
+      "prompt": "Simulate that sites train at different speeds and use different learning rates and batch sizes. Change the generated job and run it again.",
+      "expected_output": "The agent treats this as site-specific training heterogeneity, prefers per-site args or config over duplicate scripts, reruns validation when feasible, and reports per-site settings, commands, status, metrics, and result paths.",
+      "files": [
+        "evals/files/hello-pt/train.py",
+        "evals/files/hello-pt/model.py"
+      ],
+      "assertions": [
+        "The agent prefers per-site args or config in job.py over copying the training script.",
+        "The agent creates site-specific scripts only when args/config cannot express the behavior.",
+        "The agent keeps shared model and training helpers common if scripts are split.",
+        "The agent reports each site's learning rate, batch size, speed simulation, command, status, metric, and result path."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-pytorch",
+        "mandatory_behavior": [
+          {
+            "id": "prefer-site-specific-args",
+            "description": "uses per-site args or config for site-specific training settings before duplicating scripts"
+          },
+          {
+            "id": "avoid-script-drift",
+            "description": "keeps shared model and training logic common when site-specific scripts are unavoidable"
+          },
+          {
+            "id": "report-site-heterogeneity",
+            "description": "reports per-site settings, commands, status, metrics, and result paths"
+          }
+        ]
+      }
+    },
+    {
+      "id": "pytorch-negative-lightning",
+      "prompt": "Convert my PyTorch Lightning Trainer and LightningModule to an NVFLARE workflow.",
+      "expected_output": "The PyTorch conversion skill should not be the lead; route to the Lightning conversion skill when available.",
+      "files": [],
+      "assertions": [
+        "The selected skill is not nvflare-convert-pytorch."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-lightning",
+        "negative_for": "nvflare-convert-pytorch"
+      }
+    },
+    {
+      "id": "pytorch-global-negative-kubernetes",
+      "prompt": "Deploy an existing FLARE startup kit to Kubernetes.",
+      "expected_output": "No PyTorch conversion skill should trigger.",
+      "files": [],
+      "assertions": [
+        "The selected skill is not nvflare-convert-pytorch."
+      ],
+      "nvflare": {
+        "expected_skill": null,
+        "negative_for": "*"
+      }
+    }
+  ]
+}

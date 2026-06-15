@@ -28,6 +28,7 @@ from nvflare.app_common.abstract.params_converter import ParamsConverter
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.task_exchanger import TaskExchanger
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+from nvflare.fuel.f3.streaming.transfer_progress import DEFAULT_STREAMING_IDLE_TIMEOUT
 from nvflare.fuel.utils.validation_utils import check_object_type
 from nvflare.security.logging import secure_format_exception
 
@@ -55,6 +56,9 @@ class LauncherExecutor(TaskExchanger):
         submit_model_task_name: str = AppConstants.TASK_SUBMIT_MODEL,
         from_nvflare_converter_id: Optional[str] = None,
         to_nvflare_converter_id: Optional[str] = None,
+        max_resends: Optional[int] = None,
+        peer_read_timeout_explicit: bool = False,
+        streaming_idle_timeout: Optional[float] = DEFAULT_STREAMING_IDLE_TIMEOUT,
     ) -> None:
         """Initializes the LauncherExecutor.
 
@@ -80,6 +84,9 @@ class LauncherExecutor(TaskExchanger):
                 Parameter conversion for launcher-based external execution now happens in the subprocess agent.
             to_nvflare_converter_id (Optional[str]): Deprecated in LauncherExecutor path.
                 Parameter conversion for launcher-based external execution now happens in the subprocess agent.
+            max_resends (Optional[int]): Maximum number of retries for pipe sends. None means no limit.
+            peer_read_timeout_explicit (bool): whether peer_read_timeout came from an explicit user override.
+            streaming_idle_timeout (float, optional): stream-progress idle timeout for task-send waits.
         """
         TaskExchanger.__init__(
             self,
@@ -87,7 +94,10 @@ class LauncherExecutor(TaskExchanger):
             read_interval=read_interval,
             heartbeat_interval=heartbeat_interval,
             heartbeat_timeout=heartbeat_timeout,
+            max_resends=max_resends,
             peer_read_timeout=peer_read_timeout,
+            peer_read_timeout_explicit=peer_read_timeout_explicit,
+            streaming_idle_timeout=streaming_idle_timeout,
             task_wait_time=task_wait_timeout,
         )
         self.launcher: Optional[Launcher] = None
@@ -379,7 +389,7 @@ class LauncherExecutor(TaskExchanger):
             and self.launcher.needs_deferred_stop()
             and self._deferred_stop_event.is_set()
         ):
-            # The subprocess may be blocking in download_done.wait() (Fix 16 / DOWNLOAD_COMPLETE_CB)
+            # The subprocess may be blocking in its download-completion wait
             # so the server can pull large tensors directly from its DownloadService.
             # Calling stop_task() here would send SIGTERM and tear down the subprocess cell
             # before the server connects, causing "no path" errors on every retry.

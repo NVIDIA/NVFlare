@@ -114,6 +114,50 @@ class TestDownloadObject:
         assert consumer.completed
         assert consumer.consumed_data == [b"c1", b"c2", b"c3"]
 
+    def test_progress_callback_reports_start_progress_and_completion(self, cell, consumer):
+        """Test download progress callback emits monotonic bytes/items and terminal completion."""
+        events = []
+        cell.send_request.side_effect = [
+            _make_reply(ReturnCode.OK, status=ProduceRC.OK, data=[b"c1", b"c2"], state={"start": 0, "count": 2}),
+            _make_reply(ReturnCode.OK, status=ProduceRC.OK, data=[b"c3"], state={"start": 2, "count": 1}),
+            _make_reply(ReturnCode.OK, status=ProduceRC.EOF),
+        ]
+
+        download_object(
+            "server.site-1",
+            "ref-001",
+            10.0,
+            cell,
+            consumer,
+            progress_cb=lambda **kwargs: events.append(kwargs),
+            progress_interval=0.0,
+        )
+
+        assert [event["state"] for event in events] == ["start", "active", "active", "completed"]
+        assert [event["sequence"] for event in events] == [1, 2, 3, 4]
+        assert [event["bytes_done"] for event in events] == [0, 4, 6, 6]
+        assert [event["items_done"] for event in events] == [None, 2, 3, 3]
+
+    def test_progress_callback_reports_failure(self, cell, consumer):
+        """Test download progress callback emits terminal failure when the producer errors."""
+        events = []
+        cell.send_request.side_effect = [
+            _make_reply(ReturnCode.OK, status=ProduceRC.ERROR),
+        ]
+
+        download_object(
+            "server.site-1",
+            "ref-001",
+            10.0,
+            cell,
+            consumer,
+            progress_cb=lambda **kwargs: events.append(kwargs),
+            progress_interval=0.0,
+        )
+
+        assert consumer.failed
+        assert [event["state"] for event in events] == ["start", "failed"]
+
     def test_immediate_eof(self, cell, consumer):
         """Test producer has nothing to send — EOF on first request."""
         cell.send_request.side_effect = [

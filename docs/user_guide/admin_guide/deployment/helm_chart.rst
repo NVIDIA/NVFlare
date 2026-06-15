@@ -13,8 +13,8 @@ kits and then preparing each server or client kit for the Kubernetes runtime.
 The prepared kit contains a participant-specific Helm chart plus the
 ``startup/`` and ``local/`` folders that must be staged into Kubernetes storage.
 
-For example scripts that automate temporary Kubernetes and managed cloud cluster
-testing flows, see
+For example scripts that automate temporary Kubernetes, OpenShift, and managed
+cloud cluster testing flows, see
 :github_nvflare_link:`examples/devops <examples/devops>`. These scripts are
 for development, smoke testing, demos, and learning only; they are not
 production deployment guidance.
@@ -28,6 +28,9 @@ Before you start, make sure you have:
   ``nvflare deploy prepare``.
 * ``kubectl`` configured for the target cluster. Use a ``kubectl`` version that
   is compatible with the Kubernetes API server.
+* ``tar`` installed locally and in any temporary pod image used with
+  ``kubectl cp``. The staging examples below use ``busybox:1.36``, which
+  includes ``tar``.
 * Helm 3.
 * A Kubernetes cluster with standard ``apps/v1`` Deployment,
   ``rbac.authorization.k8s.io/v1`` Role/RoleBinding, Service, Secret, and PVC
@@ -40,6 +43,9 @@ Before you start, make sure you have:
 * NVIDIA GPU Operator or NVIDIA device plugin installed on clusters that will
   run jobs with ``resource_spec[site].num_of_gpus``. See
   `Cloud GPU Setup References`_.
+* For Kubernetes job launching, a Kubernetes API-server CA chain that passes
+  Python 3.13+ strict X.509 validation. CA certificates must include required
+  RFC 5280 extensions such as ``keyUsage`` with certificate signing allowed.
 
 The generated charts do not install a Kubernetes cluster, storage class, GPU
 device plugin, ingress controller, or registry credentials.
@@ -90,6 +96,9 @@ Kubernetes deployment has two runtime layers:
 The generated Helm chart does not run submitted jobs directly. It installs the
 parent participant process, its Kubernetes Service, its ServiceAccount, and the
 Role/RoleBinding that allow the launcher to create job pods.
+
+When ``job_launcher.config_file_path`` is omitted or set to ``null``, the
+launcher uses Kubernetes in-cluster config from the parent pod's ServiceAccount.
 
 The parent Service is the stable in-cluster address for dynamically launched job
 pods. ``nvflare deploy prepare`` patches the prepared kit's internal
@@ -264,6 +273,8 @@ The runtime config controls site-level Kubernetes settings:
   to every dynamically launched job pod for this prepared site. Configure this
   during deployment preparation when job images live in a private registry; job
   authors still only specify the job image in ``meta.json``.
+  ``study_job_spec_file_path`` can point to a YAML file that maps study names to
+  Kubernetes Pod template files for dynamically launched job pods.
   ``pending_timeout`` is in seconds. It controls how long a dynamically launched
   job pod can stay in ``Pending`` or ``Unknown`` before the launcher deletes it
   and reports the run as an execution exception. The admin ``list_jobs`` command
@@ -309,10 +320,22 @@ Workspace PVC
 
 The workspace PVC is for the parent server or client pod. The generated chart
 mounts ``parent.workspace_pvc`` at ``parent.workspace_mount_path``, but it does
-not upload files to the PVC. Copy the prepared kit's ``startup/`` and
-``local/`` directories into the root of that workspace PVC before installing the
-chart. For server kits, also create or copy ``transfer/`` at the workspace root
-for admin file-transfer storage.
+not upload files to the PVC. Before installing the chart, choose one of two
+supported staging methods for the parent pod's ``startup/`` and ``local/``
+folders:
+
+- Copy the prepared kit's ``startup/`` and ``local/`` directories into the
+  workspace PVC root.
+- Run ``nvflare deploy k8s stage`` to create a ConfigMap for ``local/`` and a
+  Secret for ``startup/`` and patch the generated chart values.
+
+For server kits using the PVC-copy method, also create or copy ``transfer/`` at
+the workspace root for admin file-transfer storage. If you use ``kubectl cp`` as
+shown below, the temporary copy pod image must contain ``tar`` because
+``kubectl cp`` requires it in the target container.
+
+After either staging method, run ``helm upgrade --install`` for the generated
+chart to start the long-lived parent server or client pod.
 
 Example ``workspace-pvc.yaml``:
 
@@ -335,8 +358,11 @@ Use a larger size if the server's job history, snapshots, or logs need more
 space. Use a distinct workspace claim per participant when multiple
 participants run in the same namespace.
 
+Method 1: copy into the workspace PVC
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
 For example, with a prepared folder named ``server-k8s`` and a workspace PVC
-named ``nvflws``:
+named ``nvflws``, copy ``startup/`` and ``local/`` directly into the PVC root:
 
 .. code-block:: bash
 
@@ -379,6 +405,13 @@ named ``nvflws``:
    kubectl -n "$NAMESPACE" exec nvflare-pvc-copy -- ls -la /mnt/nvflws
    kubectl -n "$NAMESPACE" delete pod nvflare-pvc-copy
 
+The OpenShift helper
+:github_nvflare_link:`examples/devops/openshift/scripts/k8s_deploy.sh <examples/devops/openshift/scripts/k8s_deploy.sh>`
+shows this PVC-copy method end to end. Its ``stage_workspace_pvc`` helper in
+:github_nvflare_link:`examples/devops/openshift/scripts/k8s_common.sh <examples/devops/openshift/scripts/k8s_common.sh>`
+creates a temporary copy pod, copies ``startup/`` and ``local/`` into the PVC,
+and then the script runs Helm for each participant.
+
 The PVC root must contain ``startup/`` and ``local/`` directly. At runtime,
 those folders appear under the configured workspace mount path
 (``parent.workspace_mount_path``, rendered as
@@ -387,6 +420,27 @@ expects ``/var/tmp/nvflare/workspace/startup`` and
 ``/var/tmp/nvflare/workspace/local``. If the PVC root contains a nested
 ``server-k8s/`` or ``site-1-k8s/`` folder instead, the parent pod will not find
 those folders under the configured mount path.
+
+Method 2: stage ConfigMap and Secret
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+As an alternative to copying ``startup/`` and ``local/`` into the PVC, run
+``nvflare deploy k8s stage`` to create read-only Kubernetes resources for those
+folders. ``nvflare deploy k8 stage`` is accepted as an alias.
+
+.. code-block:: bash
+
+   nvflare deploy k8s stage "$PREPARED_KIT" --namespace "$NAMESPACE"
+
+Use ``--kubectl oc`` when staging into OpenShift with ``oc`` instead of
+``kubectl``. This creates a ConfigMap for ``local/`` and a Secret for
+``startup/``, then patches ``helm_chart/values.yaml`` so the parent pod mounts them at
+``/var/tmp/nvflare/workspace/local`` and
+``/var/tmp/nvflare/workspace/startup``. The workspace PVC is still mounted at
+the workspace root for writable runtime state such as jobs, snapshots, logs, and
+``transfer/``. After this staging command succeeds, run the printed
+``helm_command`` or the equivalent ``helm upgrade --install`` command for the
+prepared chart.
 
 The dynamically launched job pod does **not** mount this workspace PVC. Each job
 pod receives its own writable ``emptyDir`` mounted at the configured workspace
@@ -406,6 +460,15 @@ study data mappings in ``local/study_data.yaml`` inside the prepared kit before
 copying ``local/`` into the workspace PVC. If the kit is already staged, edit
 the file on the PVC or restage ``local/``.
 
+``nvflare deploy prepare`` writes the K8s launcher's
+``study_data_pvc_file_path`` as ``<workspace_mount_path>/local/study_data.yaml``
+in the prepared ``local/resources.json.default``. Before staging the prepared
+kit or starting the parent pod, you can edit that launcher config to use a
+different ``study_data_pvc_file_path``, remove it entirely, and/or add
+``study_job_spec_file_path`` for study-specific Pod templates. Any mapping or
+template files referenced by these fields must be staged with ``local/`` or
+otherwise exist at the configured in-pod paths.
+
 Example ``study_data.yaml``:
 
 .. code-block:: yaml
@@ -420,6 +483,103 @@ the dataset at ``/data/<study>/<dataset>``, for example
 ``/data/default/data``. ``mode`` must be ``ro`` or ``rw``. Missing
 ``study_data.yaml`` files or missing entries for a job's study mean no
 study-data PVCs are mounted for that job.
+
+When ``study_job_spec_file_path`` is configured, matching jobs use the
+study-specific Pod template. If no ``study_data_pvc_file_path`` is configured,
+the template does not receive additional study-data mounts. If both are
+configured and the job study has matching entries in both files, the template is
+used and the study-data PVCs are added as extra volume mounts; the launcher logs
+a warning for this combination. The launcher always replaces template
+``workspace-job`` and ``startup-kit`` volumes and job-container mounts with its
+generated workspace ``emptyDir`` and startup-kit Secret mounts.
+
+Minimal Study Job Pod Template
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Use ``study_job_spec_file_path`` to point the launcher to a study-to-template
+mapping file:
+
+.. code-block:: yaml
+
+   study-a: pod_specs/default-job-pod.yaml
+
+The following ``pod_specs/default-job-pod.yaml`` starts with the minimal Pod
+template and shows common optional fields, including a node selector for an H100
+node labeled by the NVIDIA GPU Operator or NVIDIA GPU Feature Discovery (GFD).
+Before setting the selector, verify the exact label value in your cluster:
+
+.. code-block:: console
+
+   $ kubectl get nodes -L nvidia.com/gpu.product,nvidia.com/gpu.count,nvidia.com/gpu.present
+
+If you omit the optional fields and keep only the ``nvflare_job`` container, the
+study uses ``study_job_spec_file_path`` while keeping the same effective job pod
+manifest as the built-in launcher behavior:
+
+.. code-block:: yaml
+
+   apiVersion: v1
+   kind: Pod
+   metadata:
+     labels:
+       nvflare.io/study: study-a
+       workload: h100-training
+     annotations:
+       nvflare.io/study-owner: research-team-a
+       cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+   spec:
+     serviceAccountName: study-a-job
+     nodeSelector:
+       nvidia.com/gpu.product: NVIDIA-H100-80GB-HBM3
+     tolerations:
+       - key: nvidia.com/gpu
+         operator: Exists
+         effect: NoSchedule
+     containers:
+       - name: nvflare_job
+
+At launch time, NVFLARE selects the ``nvflare_job`` container and overlays the
+same launcher-owned fields used by the built-in manifest: pod name, job
+container name, image, command, args, resources, workspace ``emptyDir``,
+startup-kit Secret, volume mounts, transfer environment variables, image pull
+Secrets, and ``restartPolicy: Never``. Add template fields such as
+``serviceAccountName``, ``nodeSelector``, ``affinity``, ``tolerations``, sidecar
+containers, or additional volumes only when the study needs behavior that
+differs from the original launcher manifest.
+
+Use Kubernetes node labels to steer study job pods to specific nodes. On
+clusters with the NVIDIA GPU Operator or GFD, GPU nodes commonly have labels
+such as ``nvidia.com/gpu.product`` and ``nvidia.com/gpu.count``; the H100
+selector above matches the product label value NVIDIA documents for a full H100
+80GB HBM3 node. If the cluster uses MIG, GPU sharing, or a different H100 form
+factor, copy the exact ``nvidia.com/gpu.product`` value from ``kubectl get
+nodes``. For more complex placement rules, such as accepting multiple H100
+product labels, use ``spec.affinity.nodeAffinity`` instead of, or in addition
+to, ``nodeSelector``:
+
+.. code-block:: yaml
+
+   spec:
+     affinity:
+       nodeAffinity:
+         requiredDuringSchedulingIgnoredDuringExecution:
+           nodeSelectorTerms:
+             - matchExpressions:
+                 - key: nvidia.com/gpu.product
+                   operator: In
+                   values:
+                     - NVIDIA-H100-80GB-HBM3
+                     - NVIDIA-H100-NVL
+
+To target one named node, use a label that identifies that node, such as the
+standard ``kubernetes.io/hostname`` label, or add your own operational label and
+select it from the template. Keep in mind that strict node selection can leave a
+job pod ``Pending`` when the selected node has no available capacity.
+Pod annotations in ``metadata.annotations`` are preserved and can be used by
+admission controllers, schedulers, or monitoring integrations, but Kubernetes
+does not select nodes by annotation alone. GPU resource requests and limits are
+still launcher-owned; set them in the submitted job's
+``launcher_spec[site][k8s].num_of_gpus`` rather than in the Pod template.
 
 Example ``nvfldata-pvc.yaml``:
 
@@ -455,7 +615,8 @@ Install the Charts
 ==================
 
 Prepare, stage, and install each server or client kit in the Kubernetes cluster
-or namespace where that participant runs.
+or namespace where that participant runs. After either staging method described
+above, install the generated Helm chart to start the long-lived parent pod.
 
 Install the server chart:
 
@@ -974,7 +1135,18 @@ Check the parent logs for Kubernetes import or authorization failures:
        --as=system:serviceaccount:"$NAMESPACE":server
 
 If the logs show that the ``kubernetes`` Python package is missing, rebuild the
-parent image with the NVFlare ``K8S`` extra or ``pip install kubernetes``.
+parent image with the NVFlare ``K8S`` extra or
+``pip install "kubernetes!=36.0.0"``.
+
+If the logs show ``SSLCertVerificationError`` with
+``CA cert does not include key usage extension``, the parent Kubernetes client
+is rejecting the cluster API-server CA. This is known to affect some MicroK8s
+CA certificates that omit the X.509 ``keyUsage`` extension; see
+`canonical/microk8s#4864 <https://github.com/canonical/microk8s/issues/4864>`__.
+Regenerate or replace the cluster CA with an RFC 5280-compliant CA. As a
+temporary compatibility workaround for development clusters, use a custom
+parent image based on Python 3.12 or earlier. Do not disable Kubernetes API TLS
+verification in production.
 
 Job pod stays ``Pending`` or ``Unknown``
 ----------------------------------------

@@ -15,6 +15,7 @@ import collections
 import copy
 import json
 import os
+import sys
 
 import pytest
 import yaml
@@ -102,6 +103,34 @@ class TestPOCCommands:
         assert my_env["CUDA_VISIBLE_DEVICES"] == "0"
         assert "GPU2USE" not in my_env
         assert "SVR_NAME" not in my_env
+
+    def test_prepare_env_prefers_cli_python_dir(self, monkeypatch):
+        monkeypatch.setenv("PATH", "/usr/bin")
+        my_env = prepare_env("site-1", [], {})
+
+        assert my_env["PATH"].split(os.pathsep)[0] == os.path.dirname(sys.executable)
+
+    def test_start_poc_admin_only_requires_running_server(self, monkeypatch, tmp_path):
+        project_config = {
+            "participants": [
+                {"name": "server", "type": "server", "fed_learn_port": 8002},
+                {"name": "admin@nvidia.com", "type": "admin"},
+                {"name": "site-1", "type": "client"},
+            ]
+        }
+        service_config = {
+            SC.FLARE_SERVER: "server",
+            SC.FLARE_PROJ_ADMIN: "admin@nvidia.com",
+            SC.FLARE_OTHER_ADMINS: [],
+            SC.FLARE_CLIENTS: ["site-1"],
+        }
+        monkeypatch.setattr(poc_commands, "setup_service_config", lambda _workspace: (project_config, service_config))
+        monkeypatch.setattr(poc_commands, "validate_poc_workspace", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(poc_commands, "_is_local_port_available", lambda _port: (True, None))
+        monkeypatch.setattr(poc_commands, "_run_poc", lambda *_args, **_kwargs: None)
+
+        with pytest.raises(poc_commands.PocServiceStartError, match="server is not running"):
+            poc_commands._start_poc(str(tmp_path), [], services_list=["admin@nvidia.com"])
 
     def test_get_package_command(self):
         cmd = get_service_command(SC.CMD_START, "/tmp/nvflare/poc", SC.FLARE_SERVER, {})

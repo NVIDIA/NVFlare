@@ -162,7 +162,8 @@ Expected behavior:
 
 - `up` provisions fresh.
 - `nvflare deploy prepare` creates each runtime kit.
-- Startup/local kit files are staged into the workspace PVC.
+- Prepared `local/` files are staged as a ConfigMap and `startup/` files are
+  staged as a Secret.
 - The server is deployed first.
 - Clients are deployed in parallel.
 - The deterministic cloud IP name comes from the config `name`.
