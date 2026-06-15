@@ -48,12 +48,14 @@ from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.apis.shareable import Shareable
 from nvflare.fuel.f3.cellnet.cell import Message as CellMessage  # f3-layer message
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.pipe.cell_pipe import (
     _HEADER_MSG_ID,
     _HEADER_MSG_TYPE,
     _HEADER_REQ_ID,
     CellPipe,
+    _cell_fqcn,
     _from_cell_message,
     _to_cell_message,
 )
@@ -103,6 +105,31 @@ def _make_cell_message(
 
 def _make_msg(topic="train", data="payload"):
     return Message.new_request(topic=topic, data=data)
+
+
+# ---------------------------------------------------------------------------
+# Cell FQCN format
+# ---------------------------------------------------------------------------
+
+
+class TestCellFqcnFormat:
+    """CellPipe cells are named <site>.<token>.<mode>, scoped under the cell
+    they connect to, so identity resolution and routing follow the normal
+    FQCN hierarchy."""
+
+    def test_connect_to_root_server(self):
+        assert _cell_fqcn("active", "site-1", "job-123", FQCN.ROOT_SERVER) == "site-1.job-123.active"
+
+    def test_connect_to_own_cp(self):
+        assert _cell_fqcn("passive", "site-1", "job-123", "site-1") == "site-1.job-123.passive"
+
+    def test_connect_to_relay(self):
+        assert _cell_fqcn("active", "site-1", "job-123", "relay-1") == "relay-1.site-1.job-123.active"
+
+    def test_connect_to_cp_behind_relay(self):
+        # same name as connecting to the relay itself, so the two peer pipes
+        # agree on each other's FQCN regardless of which of the two they use
+        assert _cell_fqcn("active", "site-1", "job-123", "relay-1.site-1") == "relay-1.site-1.job-123.active"
 
 
 # ---------------------------------------------------------------------------
