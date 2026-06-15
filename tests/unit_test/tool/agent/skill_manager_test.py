@@ -30,7 +30,7 @@ from nvflare.tool.agent.skill_manager import (
     list_skills,
     resolve_agent_target_dir,
 )
-from nvflare.tool.agent.skill_manifest import build_skill_manifest, write_manifest
+from nvflare.tool.agent.skill_manifest import build_skill_manifest, skill_tree_hash, write_manifest
 
 
 def test_resolve_codex_target_uses_codex_home(tmp_path):
@@ -228,6 +228,58 @@ def test_install_skills_installs_all_by_default(tmp_path):
     install_manifest = json.loads(skill_dir.joinpath(INSTALL_MANIFEST_FILE_NAME).read_text(encoding="utf-8"))
     assert install_manifest["managed_by"] == "nvflare"
     assert install_manifest["name"] == "nvflare-test-skill"
+
+
+def test_install_skills_keeps_analysis_files_for_dev_wheel_source(tmp_path):
+    root = tmp_path / "skills"
+    skill_dir = _write_skill(root, "nvflare-test-skill")
+    skill_dir.joinpath("BENCHMARK.md").write_text("# Benchmark-only notes\n", encoding="utf-8")
+    skill_dir.joinpath("evals").mkdir()
+    skill_dir.joinpath("evals", "evals.json").write_text("{}\n", encoding="utf-8")
+    source = SkillSource(
+        source_type="wheel",
+        root=root,
+        manifest=build_skill_manifest(root, source_type="wheel", nvflare_version="2.8.0"),
+    )
+    target = tmp_path / "target"
+
+    plan = install_skills(agent="codex", target_dir=target, source=source)
+
+    installed = target / "nvflare-test-skill"
+    assert plan["applied"] is True
+    assert installed.joinpath("SKILL.md").is_file()
+    assert installed.joinpath("BENCHMARK.md").is_file()
+    assert installed.joinpath("evals", "evals.json").is_file()
+    assert (
+        skill_tree_hash(installed, exclude_names={INSTALL_MANIFEST_FILE_NAME})
+        == source.manifest["skills"][0]["source_hash"]
+    )
+
+
+def test_install_skills_filters_analysis_files_for_release_source(tmp_path):
+    root = tmp_path / "skills"
+    skill_dir = _write_skill(root, "nvflare-test-skill")
+    skill_dir.joinpath("BENCHMARK.md").write_text("# Benchmark-only notes\n", encoding="utf-8")
+    skill_dir.joinpath("evals").mkdir()
+    skill_dir.joinpath("evals", "evals.json").write_text("{}\n", encoding="utf-8")
+    source = SkillSource(
+        source_type="wheel",
+        root=root,
+        manifest=build_skill_manifest(root, source_type="wheel", nvflare_version="2.8.0", include_analysis_files=False),
+    )
+    target = tmp_path / "target"
+
+    plan = install_skills(agent="codex", target_dir=target, source=source)
+
+    installed = target / "nvflare-test-skill"
+    assert plan["applied"] is True
+    assert installed.joinpath("SKILL.md").is_file()
+    assert not installed.joinpath("BENCHMARK.md").exists()
+    assert not installed.joinpath("evals").exists()
+    assert (
+        skill_tree_hash(installed, exclude_names={INSTALL_MANIFEST_FILE_NAME})
+        == source.manifest["skills"][0]["source_hash"]
+    )
 
 
 def test_install_skills_reports_missing_named_skill(tmp_path):
