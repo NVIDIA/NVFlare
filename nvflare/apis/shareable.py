@@ -229,8 +229,9 @@ def make_copy(source: Shareable, exclude_headers: list = None, no_copy_types: _N
     """Make a copy from the source.
 
     The content and headers will be deep-copied into the new instance, but large binary/array values are reused.
-    Built-in no-copy values are bytes, bytearray, memoryview, and numpy.ndarray. Additional no-copy types can be
-    supplied with no_copy_types. For example, to reuse PyTorch tensors by identity:
+    Built-in no-copy values are bytes, bytearray, memoryview, and numpy.ndarray. These values are shared by
+    identity in the copy, so mutations to mutable no-copy values are visible from both the source and copy.
+    Additional no-copy types can be supplied with no_copy_types. For example, to reuse PyTorch tensors by identity:
 
         import torch
 
