@@ -296,6 +296,26 @@ def test_inspect_lightning_script_with_many_torch_imports_recommends_lightning(t
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
 
 
+def test_inspect_non_pytorch_workspace_with_incidental_lightning_import_is_not_lightning(tmp_path):
+    # The Lightning-over-PyTorch preference is a PyTorch-family rule only. A
+    # TensorFlow-dominant workspace with an incidental pytorch_lightning import
+    # must not be routed to the Lightning conversion skill.
+    (tmp_path / "train.py").write_text(
+        "import tensorflow\n" "import keras\n" "from tensorflow.keras import layers\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "optional_utils.py").write_text(
+        "import pytorch_lightning\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    framework_names = [framework["name"] for framework in data["frameworks"]]
+    assert framework_names[0] == "tensorflow"
+    assert "nvflare-convert-lightning" not in data["skill_selection"]["recommended_skills"]
+
+
 def test_inspect_lightning_with_other_frameworks_recommends_lightning(tmp_path):
     # Lightning wins over PyTorch and is surfaced first for display even when a
     # third, higher-import-count framework is present in the workspace.

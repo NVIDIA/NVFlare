@@ -533,16 +533,19 @@ def _rank_frameworks(state: InspectState) -> list[dict]:
 
 
 def _detect_primary_framework(state: InspectState, ranked: list[dict]) -> Optional[str]:
-    # PyTorch Lightning is a PyTorch superset: any Lightning evidence (a
-    # pytorch_lightning/lightning.pytorch import, a LightningModule/DataModule
-    # subclass, or a Trainer) means the project is a Lightning project even when
-    # plain torch imports are also present. This mirrors the skill trigger
-    # contract: Lightning code routes to nvflare-convert-lightning; plain PyTorch
-    # without Lightning routes to nvflare-convert-pytorch. Otherwise the
-    # strongest-evidence framework wins (confidence-ranked, name tie-break).
-    if LIGHTNING_FRAMEWORK in state.framework_evidence:
+    if not ranked:
+        return None
+    primary = ranked[0]["name"]
+    # Resolve only the PyTorch-family conflict here: PyTorch Lightning is a
+    # PyTorch superset, so when the strongest framework is plain PyTorch but
+    # Lightning evidence (a pytorch_lightning/lightning.pytorch import, a
+    # LightningModule/DataModule subclass, or a Trainer) is also present, route to
+    # nvflare-convert-lightning. Do not override a stronger framework from another
+    # family (TensorFlow, JAX, etc.) -- those get their own family-conflict
+    # handling when their conversion skills land.
+    if primary == "pytorch" and LIGHTNING_FRAMEWORK in state.framework_evidence:
         return LIGHTNING_FRAMEWORK
-    return ranked[0]["name"] if ranked else None
+    return primary
 
 
 def _order_frameworks_for_display(ranked: list[dict], detected_framework: Optional[str]) -> list[dict]:
