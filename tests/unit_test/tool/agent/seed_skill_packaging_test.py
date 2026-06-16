@@ -74,7 +74,6 @@ def test_seed_bundle_copy_includes_analysis_fixtures_by_default(tmp_path):
     _assert_convert_lightning_payload(bundle_root / "nvflare-convert-lightning")
     _assert_diagnose_runtime_payload(bundle_root / "nvflare-diagnose-job")
     _assert_analysis_payload_present(bundle_root / "nvflare-diagnose-job")
-    assert bundle_root.joinpath("nvflare-convert-pytorch", "BENCHMARK.md").is_file()
     assert bundle_root.joinpath("nvflare-convert-pytorch", "evals", "evals.json").is_file()
 
 
@@ -325,7 +324,6 @@ def _assert_analysis_payload_present(skill_dir: Path) -> None:
 
 
 def _assert_analysis_payload_filtered(skill_dir: Path) -> None:
-    assert not skill_dir.joinpath("BENCHMARK.md").exists()
     assert not skill_dir.joinpath("evals").exists()
 
 
@@ -333,7 +331,7 @@ def _assert_runtime_markdown_references_resolve(root: Path) -> None:
     missing = []
     for markdown_path in sorted(root.rglob("*.md")):
         rel_parts = markdown_path.relative_to(root).parts
-        if "evals" in rel_parts or markdown_path.name == "BENCHMARK.md":
+        if "evals" in rel_parts:
             continue
         text = markdown_path.read_text(encoding="utf-8")
         for ref in sorted(set(re.findall(r"`([^`]+\.md)`", text))):

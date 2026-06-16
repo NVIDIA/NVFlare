@@ -233,7 +233,6 @@ def test_install_skills_installs_all_by_default(tmp_path):
 def test_install_skills_keeps_analysis_files_for_dev_wheel_source(tmp_path):
     root = tmp_path / "skills"
     skill_dir = _write_skill(root, "nvflare-test-skill")
-    skill_dir.joinpath("BENCHMARK.md").write_text("# Benchmark-only notes\n", encoding="utf-8")
     skill_dir.joinpath("evals").mkdir()
     skill_dir.joinpath("evals", "evals.json").write_text("{}\n", encoding="utf-8")
     source = SkillSource(
@@ -248,7 +247,6 @@ def test_install_skills_keeps_analysis_files_for_dev_wheel_source(tmp_path):
     installed = target / "nvflare-test-skill"
     assert plan["applied"] is True
     assert installed.joinpath("SKILL.md").is_file()
-    assert installed.joinpath("BENCHMARK.md").is_file()
     assert installed.joinpath("evals", "evals.json").is_file()
     assert (
         skill_tree_hash(installed, exclude_names={INSTALL_MANIFEST_FILE_NAME})
@@ -259,7 +257,6 @@ def test_install_skills_keeps_analysis_files_for_dev_wheel_source(tmp_path):
 def test_install_skills_filters_analysis_files_for_release_source(tmp_path):
     root = tmp_path / "skills"
     skill_dir = _write_skill(root, "nvflare-test-skill")
-    skill_dir.joinpath("BENCHMARK.md").write_text("# Benchmark-only notes\n", encoding="utf-8")
     skill_dir.joinpath("evals").mkdir()
     skill_dir.joinpath("evals", "evals.json").write_text("{}\n", encoding="utf-8")
     source = SkillSource(
@@ -274,7 +271,6 @@ def test_install_skills_filters_analysis_files_for_release_source(tmp_path):
     installed = target / "nvflare-test-skill"
     assert plan["applied"] is True
     assert installed.joinpath("SKILL.md").is_file()
-    assert not installed.joinpath("BENCHMARK.md").exists()
     assert not installed.joinpath("evals").exists()
     assert (
         skill_tree_hash(installed, exclude_names={INSTALL_MANIFEST_FILE_NAME})
