@@ -543,16 +543,28 @@ def _prefer_lightning_over_pytorch(ranked: list[dict], state: InspectState, entr
     if "pytorch" not in names or LIGHTNING_FRAMEWORK not in names:
         return ranked
 
-    if not _should_prefer_lightning(state, entry_point_files):
-        if _has_entry_point_evidence(state, "pytorch", entry_point_files):
-            pytorch = ranked.pop(names.index("pytorch"))
-            lightning_index = next(index for index, item in enumerate(ranked) if item["name"] == LIGHTNING_FRAMEWORK)
-            ranked.insert(lightning_index, pytorch)
-        return ranked
+    # Decide the single routing winner between the two PyTorch-family frameworks,
+    # then ensure it ranks ahead of the other. The move never disturbs the
+    # relative order of any unrelated framework.
+    if _should_prefer_lightning(state, entry_point_files):
+        return _ensure_ranked_before(ranked, LIGHTNING_FRAMEWORK, "pytorch")
+    if _has_entry_point_evidence(state, "pytorch", entry_point_files):
+        return _ensure_ranked_before(ranked, "pytorch", LIGHTNING_FRAMEWORK)
+    return ranked
 
-    lightning = ranked.pop(names.index(LIGHTNING_FRAMEWORK))
-    pytorch_index = next(index for index, item in enumerate(ranked) if item["name"] == "pytorch")
-    ranked.insert(pytorch_index, lightning)
+
+def _ensure_ranked_before(ranked: list[dict], winner: str, loser: str) -> list[dict]:
+    names = [item["name"] for item in ranked]
+    winner_index = names.index(winner)
+    loser_index = names.index(loser)
+    if winner_index < loser_index:
+        # Winner already ranks ahead of loser; leave the order unchanged so an
+        # intervening higher-confidence framework is neither promoted above the
+        # winner nor used to demote the winner below it.
+        return ranked
+    winner_item = ranked.pop(winner_index)
+    loser_index = next(index for index, item in enumerate(ranked) if item["name"] == loser)
+    ranked.insert(loser_index, winner_item)
     return ranked
 
 

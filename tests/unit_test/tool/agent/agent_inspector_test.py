@@ -324,6 +324,65 @@ def test_inspect_lightning_script_with_many_torch_imports_recommends_lightning(t
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
 
 
+def test_inspect_pytorch_lead_not_demoted_below_intervening_framework(tmp_path):
+    # PyTorch is the entry point and already ranks first; a third framework
+    # (tensorflow) sits between PyTorch and the non-entry Lightning helper. The
+    # PyTorch-over-Lightning reorder must not demote PyTorch below tensorflow.
+    (tmp_path / "train.py").write_text(
+        "import torch\n"
+        "import torchvision\n"
+        "import torchaudio\n"
+        "from torch import nn\n"
+        "\n"
+        "class Net(torch.nn.Module):\n"
+        "    pass\n"
+        "\n"
+        "def train():\n"
+        "    return Net()\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "tf_helper.py").write_text(
+        "import tensorflow\n" "import keras\n" "from tensorflow.keras import layers\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "lit_helper.py").write_text(
+        "import pytorch_lightning as pl\n" "\n" "class Helper(pl.LightningModule):\n" "    pass\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    framework_names = [framework["name"] for framework in data["frameworks"]]
+    assert framework_names[0] == "pytorch"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
+
+
+def test_inspect_lightning_lead_not_demoted_below_intervening_framework(tmp_path):
+    # Lightning is the entry point and already ranks first; a third framework
+    # (tensorflow) sits between Lightning and PyTorch. The Lightning-over-PyTorch
+    # reorder must not demote Lightning below tensorflow.
+    (tmp_path / "train.py").write_text(
+        "import torch\n"
+        "import pytorch_lightning as pl\n"
+        "\n"
+        "class Net(pl.LightningModule):\n"
+        "    pass\n"
+        "\n"
+        "trainer = pl.Trainer(max_epochs=1)\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "tf_helper.py").write_text(
+        "import tensorflow\n" "import keras\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    framework_names = [framework["name"] for framework in data["frameworks"]]
+    assert framework_names[0] == "pytorch_lightning"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
+
+
 def test_inspect_exported_job_priority_over_lightning_routing(tmp_path):
     app = tmp_path / "app_server"
     app.mkdir()
