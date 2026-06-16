@@ -182,6 +182,25 @@ def test_inspect_classifies_fully_qualified_lightning_patch_as_client_api_conver
     assert data["conversion_state"] == "client_api_converted"
 
 
+def test_inspect_classifies_from_import_lightning_module_alias_as_client_api_converted(tmp_path):
+    script = tmp_path / "client.py"
+    script.write_text(
+        "import lightning as L\n"
+        "from nvflare.client import lightning as flare\n"
+        "\n"
+        "trainer = L.Trainer(max_epochs=1)\n"
+        "flare.patch(trainer)\n"
+        "trainer.fit(model, datamodule=data)\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["frameworks"][0]["name"] == "pytorch_lightning"
+    assert "flare.patch" in data["flare_integration"]["calls"]
+    assert data["conversion_state"] == "client_api_converted"
+
+
 def test_inspect_classifies_wrapper_trainer_lightning_patch_as_client_api_converted(tmp_path):
     # nemo.lightning-style wrapper: the trainer is built via ``nl.Trainer`` which
     # is not a recognized Lightning constructor, but ``flare.patch(trainer)`` is

@@ -428,11 +428,18 @@ class _PythonInspector(ast.NodeVisitor):
                 self.lightning_symbols[alias.asname or alias.name] = alias.name
 
     def _record_lightning_patch_imports(self, module: str, aliases: list[ast.alias]) -> None:
-        if module != LIGHTNING_PATCH_MODULE:
+        if module == LIGHTNING_PATCH_MODULE:
+            for alias in aliases:
+                if alias.name == "patch":
+                    self.lightning_patch_symbols.add(alias.asname or alias.name)
             return
-        for alias in aliases:
-            if alias.name == "patch":
-                self.lightning_patch_symbols.add(alias.asname or alias.name)
+        # ``from nvflare.client import lightning as flare`` -> ``flare.patch`` is
+        # the module-alias form of the canonical conversion call.
+        parent, _, submodule = LIGHTNING_PATCH_MODULE.rpartition(".")
+        if module == parent:
+            for alias in aliases:
+                if alias.name == submodule:
+                    self.lightning_patch_modules.add(alias.asname or alias.name)
 
     def _is_lightning_class_base(self, base_name: str) -> bool:
         if self.lightning_symbols.get(base_name) in LIGHTNING_CLASS_SYMBOLS:
