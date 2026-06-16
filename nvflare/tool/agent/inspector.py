@@ -538,14 +538,12 @@ def _prefer_lightning_over_pytorch(ranked: list[dict], state: InspectState) -> l
         return ranked
 
     # Lightning always imports torch, so a genuine Lightning project carries both
-    # frameworks. Only rank Lightning ahead of PyTorch when there is active
-    # Lightning use (a LightningModule/DataModule subclass or a Trainer call) and
-    # that evidence is at least as strong as the PyTorch evidence. Otherwise a
-    # plain PyTorch training entry point with an incidental Lightning import
-    # elsewhere in the workspace would be misrouted to the Lightning skill.
-    lightning_count = len(state.framework_evidence.get(LIGHTNING_FRAMEWORK, []))
-    pytorch_count = len(state.framework_evidence.get("pytorch", []))
-    if not _has_active_lightning_evidence(state) or lightning_count < pytorch_count:
+    # frameworks and usually has more generic torch imports (torch, nn, DataLoader)
+    # than Lightning symbols. Active Lightning use -- a LightningModule/DataModule
+    # subclass or a Trainer call -- is definitive and outweighs any number of plain
+    # torch imports, so rank Lightning ahead of PyTorch in that case. Without active
+    # use (only an incidental Lightning import), keep PyTorch as the lead framework.
+    if not _has_active_lightning_evidence(state):
         return ranked
 
     lightning = ranked.pop(names.index(LIGHTNING_FRAMEWORK))
