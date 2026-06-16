@@ -1,5 +1,11 @@
 # PyTorch Job Validation Notes
 
+Use `../../_shared/validation-evidence.md` for generic validation status,
+commands, blockers, and evidence reporting. Use
+`../../_shared/metrics-and-artifact-reporting.md` for final metrics, round
+metrics, model artifact paths, and missing-evidence reporting. This file only
+covers PyTorch-specific validation checks.
+
 ## PyTorch-Specific Validation
 
 - Validate that received `FLModel.params` load into the PyTorch model through
@@ -9,8 +15,7 @@
 - Confirm that checkpoint loading, metric collection, and device placement still
   work after the Client API conversion.
 - Confirm that scalar validation metrics are sent in `FLModel.metrics` so
-  aggregation recipes can write server-side metrics artifacts. Follow the
-  shared job lifecycle guidance for simulation metric artifact reporting.
+  aggregation recipes can write server-side metrics artifacts.
 - For data-prep changes, confirm the PyTorch `Dataset` or `DataLoader` receives
   the generated per-site path or arguments rather than hard-coded global paths.
 - Report PyTorch-specific blockers such as non-serializable model state,

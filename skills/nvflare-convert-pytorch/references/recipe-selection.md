@@ -157,7 +157,8 @@ topology-specific workflow:
 - supply parameters marked `"required": true`;
 - leave optional parameters at defaults unless the user request, source code, or
   validation result requires them;
-- keep generated source names and runtime locations consistent with this skill;
+- keep generated source names consistent with this skill and runtime locations
+  consistent with `../../_shared/runtime-output-guidance.md`;
 - keep shared generated files on all clients unless the recipe semantics or user
   request require site-specific roles, scripts, arguments, or launch settings;
 - ask before choosing when recipe intent or topology is ambiguous.

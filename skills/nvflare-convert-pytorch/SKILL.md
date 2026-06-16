@@ -22,12 +22,13 @@ debugging that does not ask for FLARE conversion.
 
 ## Workflow
 
-1. Before Python import/inspect commands, install applicable source
-   `requirements*.txt` files in the active `nvflare` environment. Use `uv pip`
-   when available; see the shared lifecycle for interpreter selection and avoid
-   `uv pip install --system` with virtual environments.
+1. Before Python import/inspect commands, load
+   `../_shared/dependency-install.md` and install applicable source
+   `requirements*.txt` files in the active `nvflare` environment.
 2. Follow the shared conversion workflow contract in
-   `../_shared/nvflare-job-lifecycle.md`.
+   `../_shared/nvflare-job-lifecycle.md`. Use
+   `../_shared/runtime-output-guidance.md` when choosing generated output,
+   export, and simulator workspace locations.
 3. Identify the PyTorch model definition, required `nn.Module.__init__` arguments,
    training loop, data loading, metrics, and checkpoint behavior. Determine the
    concrete constructor values that server and client models must share before
@@ -43,11 +44,12 @@ debugging that does not ask for FLARE conversion.
    an `FLModel`, load `params` into the PyTorch model, train or evaluate, and
    send an `FLModel` with updated `params`, metrics, and useful metadata.
 6. Add or update a `job.py` that uses the selected PyTorch recipe or job API
-   path. Follow the shared lifecycle for generated layout, validation, export,
-   runtime locations, and evidence reporting.
-7. Validate and export through the shared lifecycle. Use
-   `references/job-validation.md` for PyTorch-specific checks before calling the
-   conversion complete.
+   path. Follow the shared lifecycle for generated layout and export behavior.
+7. Validate and export through the shared lifecycle. Load
+   `../_shared/validation-evidence.md` and
+   `../_shared/metrics-and-artifact-reporting.md` for generic evidence
+   reporting, then use `references/job-validation.md` for PyTorch-specific
+   checks before calling the conversion complete.
 
 ## Requirements
 
@@ -55,14 +57,13 @@ debugging that does not ask for FLARE conversion.
   has required non-default `__init__` parameters, generate explicit recipe model
   config with `path` or `class_path` and `args`, then verify recipe
   construction and export preserve those arguments.
-- Must follow the shared job lifecycle guidance for validation evidence,
-  including final/best metrics, round/per-site metrics, and artifact paths when
-  those artifacts are present.
 - Must keep outbound PyTorch model weights as `torch.Tensor` values in
   `FLModel(params=...)` when using `PTInProcessClientAPIExecutor`; load
+  `../_shared/pytorch-model-exchange.md` and
   `references/pytorch-client-api-conversion.md` for the exact send pattern.
-- Must not require `rg` to be installed; the shared lifecycle defines fallback
-  search options.
+- Must not make TensorFlow or other non-PyTorch skills load
+  `../_shared/pytorch-model-exchange.md`; that reference is only for
+  PyTorch-family model/state-dict exchange.
 
 ## Agent Responsibilities
 
@@ -83,8 +84,16 @@ debugging that does not ask for FLARE conversion.
   non-fixture validation data, POC, production, and startup-kit based runtime
   submission.
 
-Load `../_shared/nvflare-job-lifecycle.md` for every conversion. Load the
-smallest PyTorch-specific reference needed for the current phase:
+Load only the shared references needed for the current phase:
+`../_shared/dependency-install.md` before Python import/inspect commands,
+`../_shared/nvflare-job-lifecycle.md` for every conversion,
+`../_shared/runtime-output-guidance.md` before choosing runtime/export
+locations, `../_shared/validation-evidence.md` before validation, and
+`../_shared/metrics-and-artifact-reporting.md` before final reporting. Load
+`../_shared/pytorch-model-exchange.md` only for PyTorch-family model/state-dict
+exchange.
+
+Load the smallest PyTorch-specific reference needed for the current phase:
 `references/recipe-selection.md` before selecting or constructing a recipe,
 `references/pytorch-client-api-conversion.md` when converting training code to
 Client API model exchange, and `references/job-validation.md` before validation,

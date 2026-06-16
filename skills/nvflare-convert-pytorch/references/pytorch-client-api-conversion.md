@@ -1,7 +1,9 @@
 # PyTorch Client API Conversion
 
 This reference covers standard PyTorch training loops that already have a
-`torch.nn.Module`, optimizer, data loaders, and metrics.
+`torch.nn.Module`, optimizer, data loaders, and metrics. Load
+`../../_shared/pytorch-model-exchange.md` for PyTorch-family state-dict and
+tensor payload rules before changing model exchange code.
 
 ## Conversion Pattern
 
@@ -16,8 +18,9 @@ This reference covers standard PyTorch training loops that already have a
 
 ## PyTorch Parameter Payload Type
 
-For `PTInProcessClientAPIExecutor`, outbound `FLModel(params=...)` must contain
-`torch.Tensor` values. `PTSendParamsConverter` excludes non-tensor params.
+For `PTInProcessClientAPIExecutor`, follow the shared PyTorch-family model
+exchange guidance: outbound `FLModel(params=...)` must contain `torch.Tensor`
+values. `PTSendParamsConverter` excludes non-tensor params.
 
 ```python
 params = {k: v.detach().cpu() for k, v in model.state_dict().items()}
@@ -37,6 +40,9 @@ For PyTorch conversions, the job source should normally contain:
 - `model.py`: copied, wrapped, or imported model definition when needed;
 - `requirements.txt` or a small requirements file only when dependencies differ
   from the source project.
+
+Use `../../_shared/runtime-output-guidance.md` for runtime workspaces, exported
+job directories, and validation output locations.
 
 Avoid names such as `fl_train.py` for the generated FLARE Client API entry
 point unless the user explicitly requests that naming.
@@ -89,8 +95,9 @@ without local training.
   data into generated artifacts.
 - For checkpoints, preserve user checkpoint semantics and document what is
   federated versus site-local.
-- For metrics, send scalar summaries in the `metrics` field and keep rich
-  tracking artifacts in the normal experiment-tracking path.
+- For metrics, send scalar summaries in the `metrics` field. Use
+  `../../_shared/metrics-and-artifact-reporting.md` for generic final metrics,
+  round metrics, model artifact paths, and missing-evidence reporting.
 
 ## Job Pattern Reference
 
