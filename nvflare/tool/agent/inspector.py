@@ -127,14 +127,9 @@ def inspect_path(
     else:
         _inspect_dir(target, state, max_files=max_files, max_file_bytes=max_file_bytes)
 
-    entry_point_files = {entry["path"] for entry in state.entry_points}
-    if target.is_file() and not target.is_symlink():
-        # When a single file is inspected, that file is the entry point even if it
-        # does not match the directory-scan entry-point heuristics (name, main
-        # guard, or train/fit functions).
-        entry_point_files.add(_display_path(target, state.root, redact))
-    frameworks = _rank_frameworks(state, entry_point_files)
-    detected_framework = frameworks[0]["name"] if frameworks else None
+    frameworks = _rank_frameworks(state)
+    detected_framework = _detect_primary_framework(state, frameworks)
+    frameworks = _order_frameworks_for_display(frameworks, detected_framework)
     conversion_state = _conversion_state(state, detected_framework)
     target_type = _target_type(target, state, detected_framework, conversion_state)
 
@@ -516,7 +511,7 @@ def _framework_for_import(module: str) -> Optional[str]:
     return FRAMEWORK_IMPORTS.get(first)
 
 
-def _rank_frameworks(state: InspectState, entry_point_files: set[str]) -> list[dict]:
+def _rank_frameworks(state: InspectState) -> list[dict]:
     total = sum(len(evidence) for evidence in state.framework_evidence.values())
     ranked = []
     for framework, evidence in state.framework_evidence.items():
@@ -534,67 +529,27 @@ def _rank_frameworks(state: InspectState, entry_point_files: set[str]) -> list[d
                 "contradicting_evidence": [],
             }
         )
-    ranked = sorted(ranked, key=lambda item: (-item["confidence"], item["name"]))
-    return _prefer_lightning_over_pytorch(ranked, state, entry_point_files)
+    return sorted(ranked, key=lambda item: (-item["confidence"], item["name"]))
 
 
-def _prefer_lightning_over_pytorch(ranked: list[dict], state: InspectState, entry_point_files: set[str]) -> list[dict]:
-    names = [item["name"] for item in ranked]
-    if "pytorch" not in names or LIGHTNING_FRAMEWORK not in names:
-        return ranked
-
-    # Decide the single routing winner between the two PyTorch-family frameworks,
-    # then ensure it ranks ahead of the other. The move never disturbs the
-    # relative order of any unrelated framework.
-    if _should_prefer_lightning(state, entry_point_files):
-        return _ensure_ranked_before(ranked, LIGHTNING_FRAMEWORK, "pytorch")
-    if _has_entry_point_evidence(state, "pytorch", entry_point_files):
-        return _ensure_ranked_before(ranked, "pytorch", LIGHTNING_FRAMEWORK)
-    return ranked
+def _detect_primary_framework(state: InspectState, ranked: list[dict]) -> Optional[str]:
+    # PyTorch Lightning is a PyTorch superset: any Lightning evidence (a
+    # pytorch_lightning/lightning.pytorch import, a LightningModule/DataModule
+    # subclass, or a Trainer) means the project is a Lightning project even when
+    # plain torch imports are also present. This mirrors the skill trigger
+    # contract: Lightning code routes to nvflare-convert-lightning; plain PyTorch
+    # without Lightning routes to nvflare-convert-pytorch. Otherwise the
+    # strongest-evidence framework wins (confidence-ranked, name tie-break).
+    if LIGHTNING_FRAMEWORK in state.framework_evidence:
+        return LIGHTNING_FRAMEWORK
+    return ranked[0]["name"] if ranked else None
 
 
-def _ensure_ranked_before(ranked: list[dict], winner: str, loser: str) -> list[dict]:
-    names = [item["name"] for item in ranked]
-    winner_index = names.index(winner)
-    loser_index = names.index(loser)
-    if winner_index < loser_index:
-        # Winner already ranks ahead of loser; leave the order unchanged so an
-        # intervening higher-confidence framework is neither promoted above the
-        # winner nor used to demote the winner below it.
-        return ranked
-    winner_item = ranked.pop(winner_index)
-    loser_index = next(index for index, item in enumerate(ranked) if item["name"] == loser)
-    ranked.insert(loser_index, winner_item)
-    return ranked
-
-
-def _should_prefer_lightning(state: InspectState, entry_point_files: set[str]) -> bool:
-    # Lightning always imports torch, so a genuine Lightning project carries both
-    # frameworks and usually has more generic torch imports (torch, nn, DataLoader)
-    # than Lightning symbols. Prefer Lightning only when active Lightning use -- a
-    # LightningModule/DataModule subclass or a Trainer call -- is in the inspected
-    # file or a likely training entry point, so that a plain PyTorch entry point
-    # with Lightning code only in a secondary helper file stays PyTorch. As a
-    # fallback, prefer Lightning when its evidence is strictly stronger overall
-    # only if there is no competing PyTorch entry point.
-    active = [
-        item
-        for item in state.framework_evidence.get(LIGHTNING_FRAMEWORK, [])
-        if item.get("kind") in {"lightning_class", "lightning_trainer"}
-    ]
-    if not active:
-        return False
-    if any(item.get("file") in entry_point_files for item in active):
-        return True
-    if _has_entry_point_evidence(state, "pytorch", entry_point_files):
-        return False
-    lightning_count = len(state.framework_evidence.get(LIGHTNING_FRAMEWORK, []))
-    pytorch_count = len(state.framework_evidence.get("pytorch", []))
-    return lightning_count > pytorch_count
-
-
-def _has_entry_point_evidence(state: InspectState, framework: str, entry_point_files: set[str]) -> bool:
-    return any(item.get("file") in entry_point_files for item in state.framework_evidence.get(framework, []))
+def _order_frameworks_for_display(ranked: list[dict], detected_framework: Optional[str]) -> list[dict]:
+    # Keep the confidence-ranked order but surface the detected primary framework
+    # first so callers reading frameworks[0] stay aligned with the routing
+    # decision. sorted() is stable, so non-primary frameworks keep their order.
+    return sorted(ranked, key=lambda item: item["name"] != detected_framework)
 
 
 def _conversion_state(state: InspectState, detected_framework: Optional[str]) -> str:

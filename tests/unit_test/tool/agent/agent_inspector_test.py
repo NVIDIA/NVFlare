@@ -243,10 +243,10 @@ def test_inspect_keeps_plain_pytorch_routing_separate_from_lightning(tmp_path):
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
 
 
-def test_inspect_mixed_workspace_keeps_pytorch_when_lightning_is_incidental(tmp_path):
-    # A plain PyTorch training entry point plus an incidental Lightning import in
-    # another file must not be promoted to the Lightning skill: there is no active
-    # Lightning use (no LightningModule subclass or Trainer call).
+def test_inspect_workspace_with_any_lightning_evidence_recommends_lightning(tmp_path):
+    # Per the trigger contract, any Lightning evidence makes the project a
+    # Lightning project even when plain torch imports are also present -- a
+    # PyTorch entry point plus a Lightning import anywhere routes to Lightning.
     (tmp_path / "train.py").write_text(
         "import torch\n"
         "import torchvision\n"
@@ -259,49 +259,21 @@ def test_inspect_mixed_workspace_keeps_pytorch_when_lightning_is_incidental(tmp_
         encoding="utf-8",
     )
     (tmp_path / "optional_utils.py").write_text(
-        "import pytorch_lightning  # incidental dependency, not the training entry point\n",
+        "import pytorch_lightning\n",
         encoding="utf-8",
     )
 
     data = inspect_path(tmp_path)
 
     framework_names = [framework["name"] for framework in data["frameworks"]]
-    assert framework_names[0] == "pytorch"
-    assert "pytorch_lightning" in framework_names
-    assert data["conversion_state"] == "not_converted"
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
-
-
-def test_inspect_mixed_workspace_keeps_pytorch_when_lightning_is_in_non_entry_file(tmp_path):
-    # train.py is the likely PyTorch training entry point; active Lightning use
-    # (a LightningModule subclass) lives only in a secondary helper file. Keep
-    # PyTorch as the lead framework rather than misrouting to Lightning.
-    (tmp_path / "train.py").write_text(
-        "import torch\n" "\n" "class Net(torch.nn.Module):\n" "    pass\n" "\n" "def train():\n" "    return Net()\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "lit_helper.py").write_text(
-        "import pytorch_lightning as pl\n"
-        "\n"
-        "class Helper(pl.LightningModule):\n"
-        "    pass\n"
-        "\n"
-        "trainer = pl.Trainer(max_epochs=1)\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(tmp_path)
-
-    framework_names = [framework["name"] for framework in data["frameworks"]]
-    assert framework_names[0] == "pytorch"
-    assert "pytorch_lightning" in framework_names
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
+    assert framework_names[0] == "pytorch_lightning"
+    assert "pytorch" in framework_names
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
 
 
 def test_inspect_lightning_script_with_many_torch_imports_recommends_lightning(tmp_path):
     # A normal Lightning script imports several torch symbols, so PyTorch import
-    # evidence outnumbers Lightning symbols. Active Lightning use (a LightningModule
-    # subclass and a Trainer call) must still win over the raw torch import count.
+    # evidence outnumbers Lightning symbols. Lightning still wins.
     script = tmp_path / "train.py"
     script.write_text(
         "import torch\n"
@@ -324,43 +296,9 @@ def test_inspect_lightning_script_with_many_torch_imports_recommends_lightning(t
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
 
 
-def test_inspect_pytorch_lead_not_demoted_below_intervening_framework(tmp_path):
-    # PyTorch is the entry point and already ranks first; a third framework
-    # (tensorflow) sits between PyTorch and the non-entry Lightning helper. The
-    # PyTorch-over-Lightning reorder must not demote PyTorch below tensorflow.
-    (tmp_path / "train.py").write_text(
-        "import torch\n"
-        "import torchvision\n"
-        "import torchaudio\n"
-        "from torch import nn\n"
-        "\n"
-        "class Net(torch.nn.Module):\n"
-        "    pass\n"
-        "\n"
-        "def train():\n"
-        "    return Net()\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "tf_helper.py").write_text(
-        "import tensorflow\n" "import keras\n" "from tensorflow.keras import layers\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "lit_helper.py").write_text(
-        "import pytorch_lightning as pl\n" "\n" "class Helper(pl.LightningModule):\n" "    pass\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(tmp_path)
-
-    framework_names = [framework["name"] for framework in data["frameworks"]]
-    assert framework_names[0] == "pytorch"
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
-
-
-def test_inspect_lightning_lead_not_demoted_below_intervening_framework(tmp_path):
-    # Lightning is the entry point and already ranks first; a third framework
-    # (tensorflow) sits between Lightning and PyTorch. The Lightning-over-PyTorch
-    # reorder must not demote Lightning below tensorflow.
+def test_inspect_lightning_with_other_frameworks_recommends_lightning(tmp_path):
+    # Lightning wins over PyTorch and is surfaced first for display even when a
+    # third, higher-import-count framework is present in the workspace.
     (tmp_path / "train.py").write_text(
         "import torch\n"
         "import pytorch_lightning as pl\n"
@@ -372,7 +310,7 @@ def test_inspect_lightning_lead_not_demoted_below_intervening_framework(tmp_path
         encoding="utf-8",
     )
     (tmp_path / "tf_helper.py").write_text(
-        "import tensorflow\n" "import keras\n",
+        "import tensorflow\n" "import keras\n" "from tensorflow.keras import layers\n",
         encoding="utf-8",
     )
 
@@ -380,6 +318,7 @@ def test_inspect_lightning_lead_not_demoted_below_intervening_framework(tmp_path
 
     framework_names = [framework["name"] for framework in data["frameworks"]]
     assert framework_names[0] == "pytorch_lightning"
+    assert "tensorflow" in framework_names
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
 
 
