@@ -243,6 +243,55 @@ def test_inspect_keeps_plain_pytorch_routing_separate_from_lightning(tmp_path):
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
 
 
+def test_inspect_mixed_workspace_keeps_pytorch_when_lightning_is_incidental(tmp_path):
+    # A plain PyTorch training entry point plus an incidental Lightning import in
+    # another file must not be promoted to the Lightning skill: there is no active
+    # Lightning use (no LightningModule subclass or Trainer call).
+    (tmp_path / "train.py").write_text(
+        "import torch\n"
+        "import torchvision\n"
+        "\n"
+        "class Net(torch.nn.Module):\n"
+        "    pass\n"
+        "\n"
+        "def main():\n"
+        "    model = Net()\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "optional_utils.py").write_text(
+        "import pytorch_lightning  # incidental dependency, not the training entry point\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    framework_names = [framework["name"] for framework in data["frameworks"]]
+    assert framework_names[0] == "pytorch"
+    assert "pytorch_lightning" in framework_names
+    assert data["conversion_state"] == "not_converted"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
+
+
+def test_inspect_mixed_workspace_keeps_pytorch_when_pytorch_evidence_is_stronger(tmp_path):
+    # Active Lightning use exists in a secondary file, but the PyTorch evidence is
+    # stronger; keep PyTorch as the lead framework rather than misrouting.
+    (tmp_path / "train.py").write_text(
+        "import torch\n" "import torchvision\n" "import torchaudio\n" "\n" "class Net(torch.nn.Module):\n" "    pass\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "lit_helper.py").write_text(
+        "import pytorch_lightning as pl\n" "\n" "class Helper(pl.LightningModule):\n" "    pass\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    framework_names = [framework["name"] for framework in data["frameworks"]]
+    assert framework_names[0] == "pytorch"
+    assert "pytorch_lightning" in framework_names
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
+
+
 def test_inspect_exported_job_priority_over_lightning_routing(tmp_path):
     app = tmp_path / "app_server"
     app.mkdir()
