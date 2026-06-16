@@ -4,6 +4,14 @@ Use this reference for framework-agnostic conversion, validation, export, and
 POC handoff behavior. Framework skills should combine it with framework-specific
 model, training-loop, and aggregation guidance.
 
+Load the smaller shared references when the task reaches that phase:
+
+- `dependency-install.md` before Python import or inspect commands;
+- `runtime-output-guidance.md` before choosing generated source, export, or
+  runtime workspace locations;
+- `validation-evidence.md` before validation and final conversion acceptance;
+- `metrics-and-artifact-reporting.md` before final metric or artifact reporting.
+
 ## Natural Request Parsing
 
 Users may describe work in product terms, for example: "Here is my training
@@ -36,70 +44,30 @@ behavior.
 
 ## Generated Job Layout
 
-Use the current project or job source root as the default generated FLARE source
-location. Add or update standard source files such as `client.py`, `job.py`,
-`model.py`, `requirements.txt`, and small config files beside the existing
-training files unless the user explicitly asks for another target directory.
-Do not create an extra wrapper folder such as `nvflare_jobs/<job_name>/` by
-default. Preserve original training files such as `train.py` as references
-instead of renaming or overwriting them unless the user explicitly asks for an
-in-place rewrite.
-
-Do not put exported jobs, simulation workspaces, generated model artifacts, or
-temporary vocab/cache files in the original source root by default. Use explicit
-runtime locations under `/tmp/nvflare/` unless the user provides another path:
-
-- exported job config: `/tmp/nvflare/job_config/<job_name>/`;
-- simulation workspace: `/tmp/nvflare/workspaces/<job_name>/`;
-- generated validation outputs or evaluation records:
-  `/tmp/nvflare/results/<job_name>/`.
+Follow `runtime-output-guidance.md` for generated source layout, runtime
+workspace placement, generated validation outputs, and export directory
+defaults.
 
 ## Local Validation
 
 - Use `python job.py` for local recipe or SimEnv validation when supported.
 - Prefer synthetic data flags or small fixtures when the original dataset is
   unavailable.
-- Before Python import checks, export, or simulation, install applicable
-  source-provided `requirements*.txt` files into the same active Python
-  environment that runs the `nvflare` CLI and generated job, before commands
-  that import NVFLARE modules such as `nvflare.app_opt.pt.*`,
-  framework-specific modules, recipe classes, or generated client/model code.
-  Prefer `uv pip install -r <file>` when an active virtual environment is
-  already the `nvflare` environment; otherwise use
-  `uv pip install --python <python> -r <file>` with the Python interpreter
-  behind `nvflare`, or use `<python> -m pip install -r <file>`. Do not use
-  `uv pip install --system` when `nvflare` is installed in a virtual
-  environment, because it skips virtual environments and can install
-  dependencies into the wrong Python. If an import still fails, verify which
-  environment received the install before rerunning the failed check.
+- Before Python import checks, export, or simulation, follow
+  `dependency-install.md`.
 - Treat missing dependencies as blockers only when no applicable dependency file
   exists, install fails, system/GPU resources are unavailable, or required
   approval/network access is unavailable.
 - Keep validation commands single-purpose. Run cleanup, dependency install,
   export, and simulation as separate commands; do not combine destructive
   cleanup and execution such as `rm -rf <workspace> && python job.py`.
-- After successful simulation, inspect the server workspace metrics directory.
-  Standard aggregation recipes write
-  `/tmp/nvflare/workspaces/<job_name>/server/simulate_job/metrics/metrics_summary.json`
-  for final/best aggregate metrics and `round_metrics.jsonl` for per-round or
-  per-site evidence when present. Report both categories and paths separately;
-  if either file is absent, say so and fall back to bounded stdout/stderr or
-  server logs.
-- Report command, status, result directory, and dependency or data blockers.
+- After successful simulation, follow `metrics-and-artifact-reporting.md`.
 
 ## Preflight Before Full Simulation
 
-Before `python job.py`, run cheap checks first:
-
-- Compile generated Python files.
-- Construct the recipe and export to a temporary directory.
-- Inspect exported server config for model path and constructor args.
-- Verify `app/custom` includes files imported by server and client code; add
-  explicit file packaging only when export misses a required file.
-- Check server/client model `state_dict` compatibility.
-
-Use preflight results to fix packaging, config, or model-state issues before
-spending time on full simulation.
+Follow `validation-evidence.md` for generic preflight checks. Framework skills
+own framework-specific compatibility checks such as model state, data loading,
+or metric serialization.
 
 ## Export
 
@@ -113,7 +81,7 @@ spending time on full simulation.
   reject or consume them before the NVFLARE job/export layer handles export.
   Treat this as a generation-time requirement; validation should confirm the
   behavior rather than discovering it through a failed export.
-- Default `<dir>` to `/tmp/nvflare/job_config/<job_name>` unless the user
+- Default `<dir>` according to `runtime-output-guidance.md` unless the user
   provides an export directory.
 - If writing explicit Job API code without a recipe execution helper, call
   `job.export_job(<dir>)` directly when needed.
@@ -122,21 +90,8 @@ spending time on full simulation.
 
 ## Validation Evidence
 
-Before calling a generated job correct, report:
-
-- selected recipe and the `nvflare recipe show` command used to inspect it;
-- changed files and why they were changed;
-- local validation command and pass/fail status;
-- export command, export directory, and exported folder inspection result when
-  export is in scope;
-- metric values or a clear explanation that metrics were unavailable;
-- exact evidence paths: simulation workspace, generated result files,
-  server-side metrics artifacts, logs, and global-model artifacts. Include both
-  `metrics_summary.json` and `round_metrics.jsonl` paths when present;
-- unresolved blockers such as unavailable data, missing dependencies, or
-  required user approval.
-
-If `python job.py` cannot run, the conversion may still be saved as a draft, but
+Follow `validation-evidence.md` and `metrics-and-artifact-reporting.md`. If
+`python job.py` cannot run, the conversion may still be saved as a draft, but
 report it as unvalidated and name the concrete blocker.
 
 ## POC Handoff
@@ -150,14 +105,9 @@ then use the supplied POC workspace or start POC as requested, submit the job,
 and wait or monitor if requested.
 
 Report the POC workspace, submitted job folder, job ID, final status or current
-status, command evidence, and log/result paths. For POC or production runs in a
-terminal state, use `nvflare job download <job_id> -o <dir> --format json` to
-download consumable result artifacts. Read `data.artifacts.global_model`,
-`data.artifacts.metrics_summary`, and `data.artifacts.round_metrics` from the
-JSON response when present instead of constructing server paths manually.
-`round_metrics` is optional, and missing artifact categories should be reported
-from `data.missing_artifacts` without treating a successful download as failed.
-If the POC run fails, record the failure as evaluation evidence.
+status, command evidence, and log/result paths. For terminal POC or production
+runs, follow `metrics-and-artifact-reporting.md` for downloaded artifact
+handling. If the POC run fails, record the failure as evaluation evidence.
 
 ## Approval Boundary
 
