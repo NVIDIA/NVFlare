@@ -272,6 +272,34 @@ def test_inspect_mixed_workspace_keeps_pytorch_when_lightning_is_incidental(tmp_
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
 
 
+def test_inspect_mixed_workspace_keeps_pytorch_when_lightning_is_in_non_entry_file(tmp_path):
+    # train.py is the likely PyTorch training entry point; active Lightning use
+    # (a LightningModule subclass) lives only in a secondary helper file. Keep
+    # PyTorch as the lead framework rather than misrouting to Lightning.
+    (tmp_path / "train.py").write_text(
+        "import torch\n"
+        "import torchvision\n"
+        "\n"
+        "class Net(torch.nn.Module):\n"
+        "    pass\n"
+        "\n"
+        "def train():\n"
+        "    return Net()\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "lit_helper.py").write_text(
+        "import pytorch_lightning as pl\n" "\n" "class Helper(pl.LightningModule):\n" "    pass\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    framework_names = [framework["name"] for framework in data["frameworks"]]
+    assert framework_names[0] == "pytorch"
+    assert "pytorch_lightning" in framework_names
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
+
+
 def test_inspect_lightning_script_with_many_torch_imports_recommends_lightning(tmp_path):
     # A normal Lightning script imports several torch symbols, so PyTorch import
     # evidence outnumbers Lightning symbols. Active Lightning use (a LightningModule
