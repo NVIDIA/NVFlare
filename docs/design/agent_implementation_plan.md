@@ -402,28 +402,6 @@ Skill coverage:
   - Non-triggers: plain PyTorch without Lightning, exported jobs, failed job
     diagnosis, POC start/stop/cleanup, and job submit/monitor/download.
 
-Milestone 8 Stage 5 checkpoint:
-
-- Run the private deterministic checkpoint with:
-
-  ```bash
-  python -m dev_tools.agent.skills.checks.milestone8_checkpoint \
-    --repo-root . \
-    --benchmark-evidence <stage5-benchmark-evidence.json> \
-    --format json
-  ```
-
-- The checkpoint validates skill lint/admission, PyTorch/Lightning
-  `nvflare agent inspect` routing, install/list behavior, and dev/release
-  packaging for the two conversion skills.
-- The checkpoint does not run Codex or Claude. It requires separately produced
-  benchmark evidence for Codex/PyTorch, Codex/Lightning, Claude/PyTorch, and
-  Claude/Lightning conversion runs before Stage 5 can be considered complete.
-- Required benchmark evidence per run: correctness, runtime seconds,
-  dependency behavior, generated structure, token usage, metric evidence, and
-  artifact location. Missing benchmark evidence leaves the checkpoint
-  `incomplete`, not `ok`.
-
 - `nvflare-poc-workflow`
   - Use cases: bridge from generated-job simulation (`python job.py` with
     SimEnv) to a local FLARE system with separate server and client processes;
