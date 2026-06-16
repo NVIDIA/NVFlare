@@ -144,6 +144,64 @@ def test_inspect_classifies_imported_lightning_patch_as_client_api_converted(tmp
     assert data["conversion_state"] == "client_api_converted"
 
 
+def test_inspect_classifies_aliased_lightning_patch_module_as_client_api_converted(tmp_path):
+    script = tmp_path / "client.py"
+    script.write_text(
+        "import lightning as L\n"
+        "import nvflare.client.lightning as nfl\n"
+        "\n"
+        "trainer = L.Trainer(max_epochs=1)\n"
+        "nfl.patch(trainer)\n"
+        "trainer.fit(model, datamodule=data)\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["frameworks"][0]["name"] == "pytorch_lightning"
+    assert "nfl.patch" in data["flare_integration"]["calls"]
+    assert data["conversion_state"] == "client_api_converted"
+
+
+def test_inspect_classifies_fully_qualified_lightning_patch_as_client_api_converted(tmp_path):
+    script = tmp_path / "client.py"
+    script.write_text(
+        "import lightning as L\n"
+        "import nvflare.client.lightning\n"
+        "\n"
+        "trainer = L.Trainer(max_epochs=1)\n"
+        "nvflare.client.lightning.patch(trainer)\n"
+        "trainer.fit(model, datamodule=data)\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["frameworks"][0]["name"] == "pytorch_lightning"
+    assert "nvflare.client.lightning.patch" in data["flare_integration"]["calls"]
+    assert data["conversion_state"] == "client_api_converted"
+
+
+def test_inspect_classifies_wrapper_trainer_lightning_patch_as_client_api_converted(tmp_path):
+    # nemo.lightning-style wrapper: the trainer is built via ``nl.Trainer`` which
+    # is not a recognized Lightning constructor, but ``flare.patch(trainer)`` is
+    # still the definitive conversion signal.
+    script = tmp_path / "client.py"
+    script.write_text(
+        "from nemo import lightning as nl\n"
+        "import nvflare.client.lightning as flare\n"
+        "\n"
+        "trainer = nl.Trainer(max_steps=10)\n"
+        "flare.patch(trainer, restore_state=False)\n"
+        "trainer.fit(model)\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["conversion_state"] == "client_api_converted"
+
+
 def test_inspect_keeps_plain_pytorch_routing_separate_from_lightning(tmp_path):
     script = tmp_path / "train.py"
     script.write_text(

@@ -51,6 +51,7 @@ LIGHTNING_MODULES = {"pytorch_lightning", "lightning", "lightning.pytorch"}
 LIGHTNING_CLASS_SYMBOLS = {"LightningModule", "LightningDataModule"}
 LIGHTNING_TRAINER_SYMBOLS = {"Trainer"}
 LIGHTNING_SYMBOLS = LIGHTNING_CLASS_SYMBOLS | LIGHTNING_TRAINER_SYMBOLS
+LIGHTNING_PATCH_MODULE = "nvflare.client.lightning"
 
 FRAMEWORK_IMPORTS = {
     "torch": "pytorch",
@@ -312,11 +313,13 @@ class _PythonInspector(ast.NodeVisitor):
         self.lightning_aliases: set[str] = set()
         self.lightning_symbols: dict[str, str] = {}
         self.lightning_patch_symbols: set[str] = set()
+        self.lightning_patch_modules: set[str] = set()
 
     def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:
             self._record_import(alias.name, node.lineno)
             self._record_lightning_import_alias(alias)
+            self._record_lightning_patch_module_alias(alias)
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
@@ -384,10 +387,16 @@ class _PythonInspector(ast.NodeVisitor):
         if alias.name in LIGHTNING_MODULES:
             self.lightning_aliases.add(alias.asname or alias.name.split(".")[0])
 
+    def _record_lightning_patch_module_alias(self, alias: ast.alias) -> None:
+        if alias.name == LIGHTNING_PATCH_MODULE:
+            # ``import nvflare.client.lightning as flare`` -> ``flare.patch`` is
+            # the canonical conversion call; a plain import keeps the full path.
+            self.lightning_patch_modules.add(alias.asname or alias.name)
+
     def _record_call(self, call_name: str, lineno: int) -> None:
         if call_name.startswith("flare.") or call_name.startswith("nvflare."):
             self.state.flare_calls.add(call_name)
-        if call_name in self.lightning_patch_symbols:
+        if call_name in self.lightning_patch_symbols or self._is_lightning_patch_call(call_name):
             self.state.flare_calls.add(call_name)
             self.state.lightning_patch_calls.add(call_name)
         if call_name in {"FedJob", "FLModel", "SimEnv"}:
@@ -419,7 +428,7 @@ class _PythonInspector(ast.NodeVisitor):
                 self.lightning_symbols[alias.asname or alias.name] = alias.name
 
     def _record_lightning_patch_imports(self, module: str, aliases: list[ast.alias]) -> None:
-        if module != "nvflare.client.lightning":
+        if module != LIGHTNING_PATCH_MODULE:
             return
         for alias in aliases:
             if alias.name == "patch":
@@ -434,6 +443,12 @@ class _PythonInspector(ast.NodeVisitor):
         return symbol in LIGHTNING_CLASS_SYMBOLS and (
             prefix in self.lightning_aliases or prefix in LIGHTNING_MODULES or prefix.startswith("lightning.pytorch")
         )
+
+    def _is_lightning_patch_call(self, call_name: str) -> bool:
+        prefix, _, symbol = call_name.rpartition(".")
+        if symbol != "patch":
+            return False
+        return prefix in self.lightning_patch_modules or prefix == LIGHTNING_PATCH_MODULE
 
     def _is_lightning_trainer_call(self, call_name: str) -> bool:
         if self.lightning_symbols.get(call_name) in LIGHTNING_TRAINER_SYMBOLS:
@@ -526,12 +541,10 @@ def _conversion_state(state: InspectState, detected_framework: Optional[str]) ->
         return "exported_job"
     if state.job_py or state.sim_env_used:
         return "flare_job"
-    if (
-        detected_framework == LIGHTNING_FRAMEWORK
-        and state.flare_imports
-        and ("flare.patch" in state.flare_calls or state.lightning_patch_calls)
-        and _has_framework_evidence(state, LIGHTNING_FRAMEWORK, "lightning_trainer")
-    ):
+    if state.lightning_patch_calls and state.flare_imports:
+        # An nvflare.client.lightning ``patch(trainer)`` call is the definitive
+        # Lightning conversion signal regardless of how the trainer was built
+        # (e.g. ``nl.Trainer`` from a wrapper such as nemo.lightning).
         return "client_api_converted"
     if {"flare.receive", "flare.send"} <= state.flare_calls or "FLModel" in state.flare_calls:
         return "client_api_converted"
@@ -540,10 +553,6 @@ def _conversion_state(state: InspectState, detected_framework: Optional[str]) ->
     if detected_framework:
         return "not_converted"
     return "unknown"
-
-
-def _has_framework_evidence(state: InspectState, framework: str, kind: str) -> bool:
-    return any(item.get("kind") == kind for item in state.framework_evidence.get(framework, []))
 
 
 def _target_type(path: Path, state: InspectState, detected_framework: Optional[str], conversion_state: str) -> str:
