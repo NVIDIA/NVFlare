@@ -42,7 +42,7 @@ def test_inspect_static_only_does_not_execute_user_module(tmp_path):
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
 
 
-def test_inspect_detects_pytorch_lightning_without_unavailable_skill_recommendation(tmp_path):
+def test_inspect_detects_pytorch_lightning_and_recommends_lightning_skill(tmp_path):
     script = tmp_path / "train_lightning.py"
     script.write_text(
         "import torch\n" "import pytorch_lightning as pl\n" "\n" "class Net(pl.LightningModule):\n" "    pass\n",
@@ -53,8 +53,11 @@ def test_inspect_detects_pytorch_lightning_without_unavailable_skill_recommendat
 
     assert data["frameworks"][0]["name"] == "pytorch_lightning"
     assert data["conversion_state"] == "not_converted"
-    assert data["skill_selection"]["recommended_skills"] == []
-    assert data["recommended_next_commands"] == ["nvflare agent doctor --format json"]
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
+    assert data["recommended_next_commands"] == [
+        "nvflare agent doctor --format json",
+        "Use the nvflare-convert-lightning skill before editing.",
+    ]
     assert any(item["kind"] == "lightning_class" for item in data["frameworks"][0]["evidence"])
 
 
@@ -73,7 +76,7 @@ def test_inspect_detects_lightning_pytorch_trainer_import(tmp_path):
     data = inspect_path(script)
 
     assert data["frameworks"][0]["name"] == "pytorch_lightning"
-    assert data["skill_selection"]["recommended_skills"] == []
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
     evidence_kinds = {item["kind"] for item in data["frameworks"][0]["evidence"]}
     assert {"import", "lightning_class", "lightning_trainer"} <= evidence_kinds
 
@@ -98,7 +101,7 @@ def test_inspect_detects_top_level_lightning_alias_and_from_import(tmp_path):
     data = inspect_path(script)
 
     assert data["frameworks"][0]["name"] == "pytorch_lightning"
-    assert data["skill_selection"]["recommended_skills"] == []
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
     evidence = data["frameworks"][0]["evidence"]
     assert any(item["kind"] == "lightning_class" and item["value"] == "L.LightningModule" for item in evidence)
     assert any(item["kind"] == "lightning_class" and item["value"] == "LightningModule" for item in evidence)
