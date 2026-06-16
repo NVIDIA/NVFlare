@@ -53,6 +53,7 @@ class FOBSContextKey:
     DOWNLOAD_REQ_TIMEOUT = "download_req_timeout"
     SEC_CREDS = "sec_creds"
     NUM_RECEIVERS = "num_receivers"
+    RECEIVER_IDS = "receiver_ids"
     # When True, ViaDownloaderDecomposer will NOT download tensors at this hop.
     # Instead it creates LazyDownloadRef placeholders that preserve the original
     # source FQCN/ref_id so the reference can be forwarded verbatim to the next
@@ -69,3 +70,6 @@ class FOBSContextKey:
     # subprocess's DownloadService.  FlareAgent waits on a threading.Event
     # backed by this callback to gate subprocess exit on download completion.
     DOWNLOAD_COMPLETE_CB = "download_complete_cb"
+    # Optional callable used by streamed materialization paths to report
+    # monotonic transfer progress to a waiting peer.
+    STREAM_PROGRESS_CB = "stream_progress_cb"

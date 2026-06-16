@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import importlib
 import json
+import sys
 from argparse import ArgumentParser, Namespace
 from types import ModuleType
 
@@ -568,7 +570,7 @@ def test_recipe_catalog_is_discovered_from_package_modules(monkeypatch):
             return fake_module
         raise ImportError(name)
 
-    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli.importlib.import_module", fake_import_module)
+    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli._import_module", fake_import_module)
     monkeypatch.setattr(
         "nvflare.tool.recipe.recipe_cli.pkgutil.iter_modules",
         lambda path, prefix="": [(None, "fake.recipes.fedavg", False)],
@@ -621,7 +623,7 @@ def test_recipe_catalog_prefers_specific_algorithm_marker_over_fedavg_class_name
             return fake_module
         raise ImportError(name)
 
-    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli.importlib.import_module", fake_import_module)
+    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli._import_module", fake_import_module)
     monkeypatch.setattr(
         "nvflare.tool.recipe.recipe_cli.pkgutil.iter_modules",
         lambda path, prefix="": [(None, "fake.recipes.kmeans", False)],
@@ -667,7 +669,7 @@ def test_recipe_catalog_core_framework_is_not_special_catch_all(monkeypatch):
             return core_module
         raise ModuleNotFoundError(name)
 
-    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli.importlib.import_module", fake_import_module)
+    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli._import_module", fake_import_module)
     monkeypatch.setattr(
         "nvflare.tool.recipe.recipe_cli.pkgutil.iter_modules",
         lambda path, prefix="": [(None, "fake.core.fedavg", False)],
@@ -708,7 +710,7 @@ def test_recipe_catalog_skips_plain_import_errors_from_optional_recipes(monkeypa
             raise ImportError("broken recipe import")
         raise ModuleNotFoundError(name)
 
-    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli.importlib.import_module", fake_import_module)
+    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli._import_module", fake_import_module)
     monkeypatch.setattr(
         "nvflare.tool.recipe.recipe_cli.pkgutil.iter_modules",
         lambda path, prefix="": [(None, "fake.recipes.broken", False)],
@@ -736,7 +738,7 @@ def test_recipe_catalog_skips_syntax_errors_from_optional_recipes(monkeypatch):
             raise SyntaxError("invalid syntax")
         raise ModuleNotFoundError(name)
 
-    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli.importlib.import_module", fake_import_module)
+    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli._import_module", fake_import_module)
     monkeypatch.setattr(
         "nvflare.tool.recipe.recipe_cli.pkgutil.iter_modules",
         lambda path, prefix="": [(None, "fake.recipes.broken", False)],
@@ -783,7 +785,7 @@ def test_recipe_catalog_prefers_leaf_recipe_class_when_module_has_base_and_subcl
             return fake_module
         raise ImportError(name)
 
-    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli.importlib.import_module", fake_import_module)
+    monkeypatch.setattr("nvflare.tool.recipe.recipe_cli._import_module", fake_import_module)
     monkeypatch.setattr(
         "nvflare.tool.recipe.recipe_cli.pkgutil.iter_modules",
         lambda path, prefix="": [(None, "fake.recipes.swarm", False)],
@@ -804,3 +806,14 @@ def test_recipe_catalog_prefers_leaf_recipe_class_when_module_has_base_and_subcl
             "privacy": [],
         }
     ]
+
+
+def test_recipe_cli_import_does_not_consume_recipe_export_args(monkeypatch):
+    argv = ["nvflare", "job", "list", "--export", "--export-dir"]
+    monkeypatch.setattr(sys, "argv", list(argv))
+    monkeypatch.delitem(sys.modules, "nvflare.tool.recipe.recipe_cli", raising=False)
+    monkeypatch.delitem(sys.modules, "nvflare.recipe.spec", raising=False)
+
+    importlib.import_module("nvflare.tool.recipe.recipe_cli")
+
+    assert sys.argv == argv

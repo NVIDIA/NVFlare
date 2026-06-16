@@ -124,6 +124,30 @@ class CellIdentityResolver:
         parts = FQCN.split(child_suffix)
         return parts[0] if parts else None
 
+    @staticmethod
+    def _get_cell_pipe_alias_owner(segment: str) -> Optional[str]:
+        # CellPipe cells from older NVFlare versions use sibling names like
+        # "site-1_<runtime-id>_active" but authenticate with the owning site's
+        # certificate. Current versions name these cells <site>.<token>.<mode>,
+        # which resolves through the normal FQCN hierarchy; this parser is kept
+        # for backward compatibility with peers running older versions. Only the
+        # constrained form <owner>_<runtime_id>_(active|passive) with a non-empty
+        # runtime_id that contains no "." or "_" is treated as an alias: parsing
+        # from the right makes the interpretation unambiguous, so
+        # "site-a_x_<uuid>_active" can only belong to "site-a_x", never to
+        # "site-a" with a runtime id of "x_<uuid>".
+        head, sep, mode = segment.rpartition("_")
+        if not sep or mode not in ("active", "passive"):
+            return None
+
+        # rpartition splits on the last "_", so runtime_id can never contain "_";
+        # only the "." constraint needs an explicit check.
+        owner, sep, runtime_id = head.rpartition("_")
+        if not sep or not owner or not runtime_id or "." in runtime_id:
+            return None
+
+        return owner
+
     def resolve(self, fqcn: str) -> Optional[str]:
         if not fqcn:
             return None
@@ -142,6 +166,14 @@ class CellIdentityResolver:
             identity = self.prefix_identity_map.get(prefix)
             if identity:
                 return identity
+
+        # This legacy-alias check intentionally precedes _resolve_local_child_identity:
+        # an old-format CellPipe alias cell may connect as a direct child of this
+        # local cell, but it authenticates with the owning site's certificate, not
+        # with a certificate named after the alias segment itself.
+        alias_owner = self._get_cell_pipe_alias_owner(parts[-1]) if parts else None
+        if alias_owner:
+            return self.resolve(alias_owner)
 
         identity = self._resolve_local_child_identity(fqcn)
         if identity:

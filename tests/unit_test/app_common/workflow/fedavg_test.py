@@ -16,7 +16,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import nvflare.app_common.workflows.fedavg as fedavg_module
+import nvflare.app_common.utils.tensor_disk_offload_context as tensor_disk_offload_context_module
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, Task
 from nvflare.apis.fl_constant import FLMetaKey
@@ -30,8 +30,8 @@ from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.app_common.utils.tensor_disk_offload_context import (
     _TENSOR_DISK_OFFLOAD_ROOT_DIR,
-    apply_enable_tensor_disk_offload,
-    restore_enable_tensor_disk_offload,
+    cleanup_tensor_disk_offload,
+    setup_tensor_disk_offload,
 )
 from nvflare.app_common.workflows.base_fedavg import BaseFedAvg
 from nvflare.app_common.workflows.fedavg import FedAvg
@@ -906,23 +906,30 @@ class TestFedAvgLazyCompatibility:
 
 
 class TestFedAvgDownloadToDiskContext:
-    def test_set_enable_tensor_disk_offload(self):
+    def test_set_enable_tensor_disk_offload(self, tmp_path, monkeypatch):
         cell = _MockCell(enable_tensor_disk_offload=False)
-        root_dir = "/tmp/nvflare_tensor_offload_test"
-        previous, applied = apply_enable_tensor_disk_offload(engine=_MockEngine(cell), enabled=True, root_dir=root_dir)
-        assert previous is False
-        assert applied is True
-        assert cell.ctx["enable_tensor_disk_offload"] is True
-        assert cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR] == root_dir
+        root_dir = tmp_path / "nvflare_tensor_offload_root"
 
-        restore_enable_tensor_disk_offload(_MockEngine(cell), previous, root_dir=root_dir)
+        def fake_mkdtemp(prefix):
+            root_dir.mkdir()
+            return str(root_dir)
+
+        monkeypatch.setattr(tensor_disk_offload_context_module.tempfile, "mkdtemp", fake_mkdtemp)
+
+        context = setup_tensor_disk_offload(engine=_MockEngine(cell), enabled=True, job_id="job")
+        assert context.applied is True
+        assert cell.ctx["enable_tensor_disk_offload"] is True
+        assert cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR] == str(root_dir)
+
+        cleanup_tensor_disk_offload(engine=_MockEngine(cell), context=context)
         assert cell.ctx["enable_tensor_disk_offload"] is False
         assert cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR] is None
+        assert not root_dir.exists()
 
     def test_set_enable_tensor_disk_offload_without_cell(self):
-        previous, applied = apply_enable_tensor_disk_offload(engine=_MockEngine(cell=None), enabled=True)
-        assert previous is None
-        assert applied is False
+        context = setup_tensor_disk_offload(engine=_MockEngine(cell=None), enabled=True)
+        assert context.applied is False
+        assert context.root_dir is None
 
     def test_run_restores_enable_tensor_disk_offload(self):
         controller = FedAvg(num_clients=1, num_rounds=1, model={"w": 1.0}, enable_tensor_disk_offload=True)
@@ -959,7 +966,7 @@ class TestFedAvgDownloadToDiskContext:
             retained_dir.mkdir()
             (retained_dir / "chunk_0.safetensors").write_bytes(b"retained")
 
-        monkeypatch.setattr(fedavg_module.tempfile, "mkdtemp", fake_mkdtemp)
+        monkeypatch.setattr(tensor_disk_offload_context_module.tempfile, "mkdtemp", fake_mkdtemp)
         controller.send_model = fake_send_model
         controller.get_num_standing_tasks = lambda: 0
         controller._get_aggregated_result = lambda: FLModel(params={"w": 1.0})
@@ -968,6 +975,82 @@ class TestFedAvgDownloadToDiskContext:
 
         controller.run()
 
+        assert cell.ctx["enable_tensor_disk_offload"] is False
+        assert cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR] is None
+        assert not root_dir.exists()
+
+
+class TestScatterAndGatherDownloadToDiskContext:
+    def test_control_flow_restores_enable_tensor_disk_offload_on_abort(self, tmp_path, monkeypatch):
+        from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
+
+        controller = ScatterAndGather(enable_tensor_disk_offload=True)
+        cell = _MockCell(enable_tensor_disk_offload=False)
+        controller._engine = _MockEngine(cell)
+        root_dir = tmp_path / "nvflare_tensor_offload_root"
+        observed = {}
+
+        def fake_mkdtemp(prefix):
+            root_dir.mkdir()
+            return str(root_dir)
+
+        def fake_check_abort_signal(fl_ctx, abort_signal):
+            observed["enable_tensor_disk_offload"] = cell.ctx["enable_tensor_disk_offload"]
+            observed["root_dir"] = cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR]
+            return True
+
+        monkeypatch.setattr(tensor_disk_offload_context_module.tempfile, "mkdtemp", fake_mkdtemp)
+        monkeypatch.setattr(controller, "_check_abort_signal", fake_check_abort_signal)
+        monkeypatch.setattr(controller, "fire_event", lambda *args, **kwargs: None)
+
+        controller.control_flow(Signal(), FLContext())
+
+        assert observed["enable_tensor_disk_offload"] is True
+        assert observed["root_dir"] == str(root_dir)
+        assert cell.ctx["enable_tensor_disk_offload"] is False
+        assert cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR] is None
+        assert not root_dir.exists()
+
+
+class TestScaffoldDownloadToDiskContext:
+    def test_run_restores_context_and_cleans_root_dir(self, tmp_path, monkeypatch):
+        from nvflare.app_common.app_constant import AlgorithmConstants
+        from nvflare.app_common.workflows.scaffold import Scaffold
+
+        controller = Scaffold(num_clients=1, num_rounds=1, enable_tensor_disk_offload=True)
+        cell = _MockCell(enable_tensor_disk_offload=False)
+        controller.engine = _MockEngine(cell)
+        controller.fl_ctx = FLContext()
+        controller.model = FLModel(params={"w": 1.0})
+        controller._global_ctrl_weights = {"w": 0.0}
+        controller.sample_clients = lambda _: ["site-1"]
+        root_dir = tmp_path / "nvflare_tensor_offload_root"
+        observed = {}
+
+        def fake_mkdtemp(prefix):
+            root_dir.mkdir()
+            return str(root_dir)
+
+        def fake_send_model_and_wait(targets, data):
+            observed["enable_tensor_disk_offload"] = cell.ctx["enable_tensor_disk_offload"]
+            observed["root_dir"] = cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR]
+            return []
+
+        monkeypatch.setattr(tensor_disk_offload_context_module.tempfile, "mkdtemp", fake_mkdtemp)
+        controller.send_model_and_wait = fake_send_model_and_wait
+        controller.aggregate = lambda results, aggregate_fn=None: FLModel(
+            params={"w": 1.0},
+            params_type=ParamsType.FULL,
+            meta={AlgorithmConstants.SCAFFOLD_CTRL_DIFF: {"w": 1.0}},
+        )
+        controller.update_model = lambda model, aggr_result: model
+        controller.save_model = lambda model: None
+
+        controller.run()
+
+        assert observed["enable_tensor_disk_offload"] is True
+        assert observed["root_dir"] == str(root_dir)
+        assert controller._global_ctrl_weights == {"w": 1.0}
         assert cell.ctx["enable_tensor_disk_offload"] is False
         assert cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR] is None
         assert not root_dir.exists()

@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@ from nvflare.fuel.hci.tools.authz_preview import define_authz_preview_parser, ru
 from nvflare.lighter.provision import define_provision_parser, handle_provision
 from nvflare.private.fed.app.simulator.simulator import define_simulator_parser, run_simulator
 from nvflare.private.fed.app.utils import version_check
+from nvflare.tool.agent.agent_cli import def_agent_cli_parser, handle_agent_cmd
 from nvflare.tool.cert.cert_cli import def_cert_cli_parser, handle_cert_cmd
 from nvflare.tool.deploy.deploy_cli import def_deploy_cli_parser, handle_deploy_cmd
 from nvflare.tool.job.job_cli import def_job_cli_parser, handle_job_cli_cmd
@@ -65,6 +66,7 @@ CMD_PACKAGE = "package"
 CMD_DEPLOY = "deploy"
 CMD_SYSTEM = "system"
 CMD_STUDY = "study"
+CMD_AGENT = "agent"
 
 _JSONL_COMMANDS = {
     (CMD_JOB, "monitor"),
@@ -300,14 +302,15 @@ def _get_subcommand_choices(parser):
 
 
 def _emit_argparse_error_json(parser, message):
-    from nvflare.tool.cli_output import SCHEMA_VERSION
+    from nvflare.tool.cli_output import SCHEMA_VERSION, sanitize_cli_output
 
-    # Parser errors intentionally expose usage/choices inline because they are generated before any
-    # command handler runs and therefore sit outside the normal command data envelope.
+    # Parser errors intentionally expose usage/choices inline because they are
+    # generated before any command handler runs and therefore sit outside the
+    # normal command data envelope. Even with --format jsonl, argparse errors
+    # are a single pre-dispatch JSON envelope without event/terminal markers;
+    # command handlers own JSONL terminal events after dispatch succeeds.
     payload = {
         "schema_version": SCHEMA_VERSION,
-        "event": "terminal",
-        "terminal": True,
         "status": "error",
         "exit_code": 4,
         "error_code": "INVALID_ARGS",
@@ -318,7 +321,7 @@ def _emit_argparse_error_json(parser, message):
             "choices": _get_subcommand_choices(parser),
         },
     }
-    print(json.dumps(payload))
+    print(json.dumps(sanitize_cli_output(payload)))
     parser.exit(4)
 
 
@@ -466,6 +469,7 @@ def parse_args(prog_name: str):
     sub_cmd_parsers.update(def_package_cli_parser(sub_cmd))
     sub_cmd_parsers.update(def_deploy_cli_parser(sub_cmd))
     sub_cmd_parsers.update(def_study_cli_parser(sub_cmd))
+    sub_cmd_parsers.update(def_agent_cli_parser(sub_cmd))
     system_parser = sub_cmd.add_parser(CMD_SYSTEM, help="FL system operations (status, shutdown, version, ...)")
     sub_cmd_parsers.update({CMD_SYSTEM: system_parser})
     def_system_cli_parser(system_parser)
@@ -500,6 +504,7 @@ def parse_args(prog_name: str):
         ns.recipe_sub_cmd = sub_sub or "list"
         ns.deploy_sub_cmd = sub_sub
         ns.deploy_k8_sub_cmd = positionals[2] if len(positionals) > 2 else None
+        ns.agent_sub_cmd = sub_sub
         ns.format = global_args.format
         ns.connect_timeout = global_args.connect_timeout
         ns.version = global_args.version
@@ -544,6 +549,7 @@ handlers = {
     CMD_DEPLOY: handle_deploy_cmd,
     CMD_STUDY: handle_study_cmd,
     CMD_SYSTEM: handle_system_cmd,
+    CMD_AGENT: handle_agent_cmd,
 }
 
 

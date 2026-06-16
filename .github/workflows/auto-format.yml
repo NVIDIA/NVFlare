@@ -8,7 +8,7 @@ jobs:
   black-format:
     runs-on: ubuntu-latest
     env:
-     DIRS: "nvflare examples tests"
+     DIRS: "nvflare examples tests dev_tools"
 
     steps:
       - name: Checkout repo

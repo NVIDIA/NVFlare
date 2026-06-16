@@ -105,3 +105,51 @@ class TestAnalytix:
     def test_from_dxo_invalid(self, dxo, expected_error, expected_msg):
         with pytest.raises(expected_error, match=expected_msg):
             _ = AnalyticsData.from_dxo(dxo)
+
+    @pytest.mark.parametrize(
+        "sender_data_type,sender,receiver,expected",
+        [
+            # TORCH_TB → MLFLOW: SCALAR/SCALARS map to METRIC/METRICS
+            (AnalyticsDataType.SCALAR, LogWriterName.TORCH_TB, LogWriterName.MLFLOW, AnalyticsDataType.METRIC),
+            (AnalyticsDataType.SCALARS, LogWriterName.TORCH_TB, LogWriterName.MLFLOW, AnalyticsDataType.METRICS),
+            (AnalyticsDataType.TEXT, LogWriterName.TORCH_TB, LogWriterName.MLFLOW, AnalyticsDataType.TEXT),
+            # TORCH_TB → WANDB: same mapping as TORCH_TB → MLFLOW (regression test for the typo fix)
+            (AnalyticsDataType.SCALAR, LogWriterName.TORCH_TB, LogWriterName.WANDB, AnalyticsDataType.METRIC),
+            (AnalyticsDataType.SCALARS, LogWriterName.TORCH_TB, LogWriterName.WANDB, AnalyticsDataType.METRICS),
+            (AnalyticsDataType.TEXT, LogWriterName.TORCH_TB, LogWriterName.WANDB, AnalyticsDataType.TEXT),
+            # MLFLOW → TORCH_TB: METRIC/METRICS map back to SCALAR/SCALARS
+            (AnalyticsDataType.METRIC, LogWriterName.MLFLOW, LogWriterName.TORCH_TB, AnalyticsDataType.SCALAR),
+            (AnalyticsDataType.METRICS, LogWriterName.MLFLOW, LogWriterName.TORCH_TB, AnalyticsDataType.SCALARS),
+            (AnalyticsDataType.TEXT, LogWriterName.MLFLOW, LogWriterName.TORCH_TB, AnalyticsDataType.TEXT),
+            # WANDB → TORCH_TB: same mapping as MLFLOW → TORCH_TB
+            (AnalyticsDataType.METRIC, LogWriterName.WANDB, LogWriterName.TORCH_TB, AnalyticsDataType.SCALAR),
+            (AnalyticsDataType.METRICS, LogWriterName.WANDB, LogWriterName.TORCH_TB, AnalyticsDataType.SCALARS),
+            (AnalyticsDataType.TEXT, LogWriterName.WANDB, LogWriterName.TORCH_TB, AnalyticsDataType.TEXT),
+            # MLFLOW ↔ WANDB: pass-through (shared METRIC/METRICS naming)
+            (AnalyticsDataType.METRIC, LogWriterName.MLFLOW, LogWriterName.WANDB, AnalyticsDataType.METRIC),
+            (AnalyticsDataType.METRIC, LogWriterName.WANDB, LogWriterName.MLFLOW, AnalyticsDataType.METRIC),
+            # Same sender == receiver: pass-through
+            (AnalyticsDataType.SCALAR, LogWriterName.TORCH_TB, LogWriterName.TORCH_TB, AnalyticsDataType.SCALAR),
+        ],
+    )
+    def test_convert_data_type(self, sender_data_type, sender, receiver, expected):
+        result = AnalyticsData.convert_data_type(sender_data_type, sender, receiver)
+        assert result == expected
+
+    def test_convert_data_type_never_returns_none(self):
+        """All combinations of sender/receiver/data_type must return a concrete AnalyticsDataType."""
+        for sender in LogWriterName:
+            for receiver in LogWriterName:
+                for dt in AnalyticsDataType:
+                    result = AnalyticsData.convert_data_type(dt, sender, receiver)
+                    assert result is not None, f"convert_data_type returned None for {dt}, {sender}, {receiver}"
+                    assert isinstance(result, AnalyticsDataType)
+
+    def test_from_dxo_torch_tb_to_wandb_preserves_data(self):
+        """from_dxo must not return None when a TORCH_TB DXO is received by a WANDB receiver."""
+        dxo = create_analytic_dxo(tag="loss", value=0.5, data_type=AnalyticsDataType.SCALAR, global_step=1)
+        result = AnalyticsData.from_dxo(dxo, receiver=LogWriterName.WANDB)
+        assert result is not None
+        assert result.tag == "loss"
+        assert result.value == 0.5
+        assert result.data_type == AnalyticsDataType.METRIC
