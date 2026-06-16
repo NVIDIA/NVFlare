@@ -127,7 +127,13 @@ def inspect_path(
     else:
         _inspect_dir(target, state, max_files=max_files, max_file_bytes=max_file_bytes)
 
-    frameworks = _rank_frameworks(state)
+    entry_point_files = {entry["path"] for entry in state.entry_points}
+    if target.is_file() and not target.is_symlink():
+        # When a single file is inspected, that file is the entry point even if it
+        # does not match the directory-scan entry-point heuristics (name, main
+        # guard, or train/fit functions).
+        entry_point_files.add(_display_path(target, state.root, redact))
+    frameworks = _rank_frameworks(state, entry_point_files)
     detected_framework = frameworks[0]["name"] if frameworks else None
     conversion_state = _conversion_state(state, detected_framework)
     target_type = _target_type(target, state, detected_framework, conversion_state)
@@ -510,7 +516,7 @@ def _framework_for_import(module: str) -> Optional[str]:
     return FRAMEWORK_IMPORTS.get(first)
 
 
-def _rank_frameworks(state: InspectState) -> list[dict]:
+def _rank_frameworks(state: InspectState, entry_point_files: set[str]) -> list[dict]:
     total = sum(len(evidence) for evidence in state.framework_evidence.values())
     ranked = []
     for framework, evidence in state.framework_evidence.items():
@@ -529,21 +535,15 @@ def _rank_frameworks(state: InspectState) -> list[dict]:
             }
         )
     ranked = sorted(ranked, key=lambda item: (-item["confidence"], item["name"]))
-    return _prefer_lightning_over_pytorch(ranked, state)
+    return _prefer_lightning_over_pytorch(ranked, state, entry_point_files)
 
 
-def _prefer_lightning_over_pytorch(ranked: list[dict], state: InspectState) -> list[dict]:
+def _prefer_lightning_over_pytorch(ranked: list[dict], state: InspectState, entry_point_files: set[str]) -> list[dict]:
     names = [item["name"] for item in ranked]
     if "pytorch" not in names or LIGHTNING_FRAMEWORK not in names:
         return ranked
 
-    # Lightning always imports torch, so a genuine Lightning project carries both
-    # frameworks and usually has more generic torch imports (torch, nn, DataLoader)
-    # than Lightning symbols. Active Lightning use -- a LightningModule/DataModule
-    # subclass or a Trainer call -- is definitive and outweighs any number of plain
-    # torch imports, so rank Lightning ahead of PyTorch in that case. Without active
-    # use (only an incidental Lightning import), keep PyTorch as the lead framework.
-    if not _has_active_lightning_evidence(state):
+    if not _should_prefer_lightning(state, entry_point_files):
         return ranked
 
     lightning = ranked.pop(names.index(LIGHTNING_FRAMEWORK))
@@ -552,9 +552,26 @@ def _prefer_lightning_over_pytorch(ranked: list[dict], state: InspectState) -> l
     return ranked
 
 
-def _has_active_lightning_evidence(state: InspectState) -> bool:
-    evidence = state.framework_evidence.get(LIGHTNING_FRAMEWORK, [])
-    return any(item.get("kind") in {"lightning_class", "lightning_trainer"} for item in evidence)
+def _should_prefer_lightning(state: InspectState, entry_point_files: set[str]) -> bool:
+    # Lightning always imports torch, so a genuine Lightning project carries both
+    # frameworks and usually has more generic torch imports (torch, nn, DataLoader)
+    # than Lightning symbols. Prefer Lightning only when active Lightning use -- a
+    # LightningModule/DataModule subclass or a Trainer call -- is in the inspected
+    # file or a likely training entry point, so that a plain PyTorch entry point
+    # with Lightning code only in a secondary helper file stays PyTorch. As a
+    # fallback, prefer Lightning when its evidence is strictly stronger overall.
+    active = [
+        item
+        for item in state.framework_evidence.get(LIGHTNING_FRAMEWORK, [])
+        if item.get("kind") in {"lightning_class", "lightning_trainer"}
+    ]
+    if not active:
+        return False
+    if any(item.get("file") in entry_point_files for item in active):
+        return True
+    lightning_count = len(state.framework_evidence.get(LIGHTNING_FRAMEWORK, []))
+    pytorch_count = len(state.framework_evidence.get("pytorch", []))
+    return lightning_count > pytorch_count
 
 
 def _conversion_state(state: InspectState, detected_framework: Optional[str]) -> str:
