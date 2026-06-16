@@ -59,7 +59,6 @@ def test_build_skill_manifest_includes_valid_skill(tmp_path):
 
 def test_build_skill_manifest_hashes_release_runtime_payload_only_when_requested(tmp_path):
     skill_dir = _write_skill(tmp_path, "nvflare-test-skill")
-    skill_dir.joinpath("BENCHMARK.md").write_text("# Benchmark notes\n", encoding="utf-8")
     skill_dir.joinpath("evals").mkdir()
     skill_dir.joinpath("evals", "evals.json").write_text("{}\n", encoding="utf-8")
 
@@ -255,7 +254,6 @@ def test_copy_released_skills_to_bundle_keeps_analysis_files_by_default(tmp_path
     source_root = tmp_path / "skills"
     bundle_root = tmp_path / "bundle"
     skill_dir = _write_skill(source_root, "nvflare-test-skill")
-    skill_dir.joinpath("BENCHMARK.md").write_text("# Analysis-only benchmark notes\n", encoding="utf-8")
     skill_dir.joinpath("evals").mkdir()
     skill_dir.joinpath("evals", "evals.json").write_text("{}\n", encoding="utf-8")
 
@@ -263,7 +261,6 @@ def test_copy_released_skills_to_bundle_keeps_analysis_files_by_default(tmp_path
 
     assert bundle_root.joinpath("manifest.json").is_file()
     assert bundle_root.joinpath("nvflare-test-skill", "SKILL.md").is_file()
-    assert bundle_root.joinpath("nvflare-test-skill", "BENCHMARK.md").is_file()
     assert bundle_root.joinpath("nvflare-test-skill", "evals", "evals.json").is_file()
     saved_manifest = json.loads(bundle_root.joinpath("manifest.json").read_text(encoding="utf-8"))
     assert saved_manifest == manifest
@@ -276,7 +273,6 @@ def test_copy_released_skills_to_bundle_filters_analysis_files_for_release_mode(
     source_root = tmp_path / "skills"
     bundle_root = tmp_path / "bundle"
     skill_dir = _write_skill(source_root, "nvflare-test-skill")
-    skill_dir.joinpath("BENCHMARK.md").write_text("# Analysis-only benchmark notes\n", encoding="utf-8")
     skill_dir.joinpath("evals").mkdir()
     skill_dir.joinpath("evals", "evals.json").write_text("{}\n", encoding="utf-8")
 
@@ -286,7 +282,6 @@ def test_copy_released_skills_to_bundle_filters_analysis_files_for_release_mode(
 
     assert bundle_root.joinpath("manifest.json").is_file()
     assert bundle_root.joinpath("nvflare-test-skill", "SKILL.md").is_file()
-    assert not bundle_root.joinpath("nvflare-test-skill", "BENCHMARK.md").exists()
     assert not bundle_root.joinpath("nvflare-test-skill", "evals").exists()
     saved_manifest = json.loads(bundle_root.joinpath("manifest.json").read_text(encoding="utf-8"))
     assert saved_manifest == manifest

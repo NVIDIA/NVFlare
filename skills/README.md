@@ -3,7 +3,7 @@
 This directory contains NVFLARE-owned agent skills for supported coding agents.
 
 Each skill lives in its own directory with a `SKILL.md` file. Skills may also
-include supporting references, evaluation fixtures, and benchmark notes:
+include supporting references and evaluation fixtures:
 
 ```text
 skills/
@@ -13,7 +13,6 @@ skills/
     evals/
       evals.json
       files/
-    BENCHMARK.md
 ```
 
 Directories whose names start with `_`, such as `_shared/`, are reference-only

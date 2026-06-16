@@ -44,7 +44,7 @@ flowchart TB
 
 | Layer | When | Implemented pieces | Purpose |
 | --- | --- | --- | --- |
-| Authoring source | Dev-time | `skills/`, `SKILL.md`, `references/`, `evals/evals.json`, `BENCHMARK.md` | Human-readable skill instructions and supporting evidence. |
+| Authoring source | Dev-time | `skills/`, `SKILL.md`, `references/`, `evals/evals.json` | Human-readable skill instructions and supporting evidence. |
 | Engineering lint tool | Dev-time / CI | `dev_tools/agent/skills/checks`, `python dev_tools/agent/skills/checks/cli.py`, pytest coverage | Deterministic admission checks for frontmatter, triggers, command drift, policy coverage, fixtures, process metrics, and doc links. This is a repo-local tool validated by pytest; it is not shipped in the wheel. |
 | Python packaging hook | Build-time | `setup.py`, `nvflare.tool.agent.bundled_skills`, `manifest.json` | Wheel-build hook that copies released skills into the NVFLARE package, or writes an empty bundle for no-skill builds. |
 | Skill install CLI | Install-time bridge | `nvflare agent skills install/list`, `skill_manager.py` | Managed installer that copies skills into Codex or Claude target directories with content hashes, locks, backups, local-modification checks, and symlink checks. |
