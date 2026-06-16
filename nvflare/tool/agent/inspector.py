@@ -46,13 +46,18 @@ SKIPPED_DIR_NAMES = {
 SENSITIVE_FILE_SUFFIXES = {".key", ".pem", ".p12", ".pfx"}
 SENSITIVE_FILE_NAMES = {"id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"}
 SECRET_NAME_PATTERN = re.compile(r"(api[_-]?key|secret|token|password|passwd|credential|access[_-]?key)", re.I)
+LIGHTNING_FRAMEWORK = "pytorch_lightning"
+LIGHTNING_MODULES = {"pytorch_lightning", "lightning", "lightning.pytorch"}
+LIGHTNING_CLASS_SYMBOLS = {"LightningModule", "LightningDataModule"}
+LIGHTNING_TRAINER_SYMBOLS = {"Trainer"}
+LIGHTNING_SYMBOLS = LIGHTNING_CLASS_SYMBOLS | LIGHTNING_TRAINER_SYMBOLS
 
 FRAMEWORK_IMPORTS = {
     "torch": "pytorch",
     "torchvision": "pytorch",
     "torchaudio": "pytorch",
-    "pytorch_lightning": "pytorch_lightning",
-    "lightning": "pytorch_lightning",
+    "pytorch_lightning": LIGHTNING_FRAMEWORK,
+    "lightning": LIGHTNING_FRAMEWORK,
     "tensorflow": "tensorflow",
     "keras": "tensorflow",
     "xgboost": "xgboost",
@@ -89,6 +94,7 @@ class InspectState:
     framework_evidence: dict[str, list[dict]] = field(default_factory=dict)
     flare_imports: list[dict] = field(default_factory=list)
     flare_calls: set[str] = field(default_factory=set)
+    lightning_patch_calls: set[str] = field(default_factory=set)
     entry_points: list[dict] = field(default_factory=list)
     job_py: Optional[str] = None
     sim_env_used: bool = False
@@ -303,19 +309,36 @@ class _PythonInspector(ast.NodeVisitor):
         self.path = path
         self.rel_path = rel_path
         self.state = state
+        self.lightning_aliases: set[str] = set()
+        self.lightning_symbols: dict[str, str] = {}
+        self.lightning_patch_symbols: set[str] = set()
 
     def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:
             self._record_import(alias.name, node.lineno)
+            self._record_lightning_import_alias(alias)
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         module = node.module or ""
         self._record_import(module, node.lineno)
+        self._record_lightning_from_imports(module, node.names)
+        self._record_lightning_patch_imports(module, node.names)
         for alias in node.names:
             if alias.name in {"FedJob", "FLModel", "SimEnv"}:
                 self.state.flare_imports.append(
                     _evidence(self.rel_path, node.lineno, "from_import", f"{module}.{alias.name}")
+                )
+        self.generic_visit(node)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        for base in node.bases:
+            base_name = _symbol_name(base)
+            if base_name and self._is_lightning_class_base(base_name):
+                _append_capped(
+                    self.state.framework_evidence,
+                    LIGHTNING_FRAMEWORK,
+                    _evidence(self.rel_path, node.lineno, "lightning_class", base_name),
                 )
         self.generic_visit(node)
 
@@ -357,9 +380,16 @@ class _PythonInspector(ast.NodeVisitor):
         if module == "accelerate" or module.startswith("accelerate."):
             self.state.distributed_patterns.append(_evidence(self.rel_path, lineno, "accelerate_import", module))
 
+    def _record_lightning_import_alias(self, alias: ast.alias) -> None:
+        if alias.name in LIGHTNING_MODULES:
+            self.lightning_aliases.add(alias.asname or alias.name.split(".")[0])
+
     def _record_call(self, call_name: str, lineno: int) -> None:
         if call_name.startswith("flare.") or call_name.startswith("nvflare."):
             self.state.flare_calls.add(call_name)
+        if call_name in self.lightning_patch_symbols:
+            self.state.flare_calls.add(call_name)
+            self.state.lightning_patch_calls.add(call_name)
         if call_name in {"FedJob", "FLModel", "SimEnv"}:
             self.state.flare_calls.add(call_name)
         if call_name == "SimEnv" or call_name.endswith(".SimEnv"):
@@ -374,6 +404,46 @@ class _PythonInspector(ast.NodeVisitor):
             self.state.distributed_patterns.append(_evidence(self.rel_path, lineno, "distributed_call", call_name))
         if call_name.endswith("FSDP") or call_name.endswith("Accelerator"):
             self.state.distributed_patterns.append(_evidence(self.rel_path, lineno, "distributed_call", call_name))
+        if self._is_lightning_trainer_call(call_name):
+            _append_capped(
+                self.state.framework_evidence,
+                LIGHTNING_FRAMEWORK,
+                _evidence(self.rel_path, lineno, "lightning_trainer", call_name),
+            )
+
+    def _record_lightning_from_imports(self, module: str, aliases: list[ast.alias]) -> None:
+        if module not in LIGHTNING_MODULES and not any(module.startswith(f"{prefix}.") for prefix in LIGHTNING_MODULES):
+            return
+        for alias in aliases:
+            if alias.name in LIGHTNING_SYMBOLS:
+                self.lightning_symbols[alias.asname or alias.name] = alias.name
+
+    def _record_lightning_patch_imports(self, module: str, aliases: list[ast.alias]) -> None:
+        if module != "nvflare.client.lightning":
+            return
+        for alias in aliases:
+            if alias.name == "patch":
+                self.lightning_patch_symbols.add(alias.asname or alias.name)
+
+    def _is_lightning_class_base(self, base_name: str) -> bool:
+        if self.lightning_symbols.get(base_name) in LIGHTNING_CLASS_SYMBOLS:
+            return True
+        if "." not in base_name:
+            return False
+        prefix, _, symbol = base_name.rpartition(".")
+        return symbol in LIGHTNING_CLASS_SYMBOLS and (
+            prefix in self.lightning_aliases or prefix in LIGHTNING_MODULES or prefix.startswith("lightning.pytorch")
+        )
+
+    def _is_lightning_trainer_call(self, call_name: str) -> bool:
+        if self.lightning_symbols.get(call_name) in LIGHTNING_TRAINER_SYMBOLS:
+            return True
+        if "." not in call_name:
+            return False
+        prefix, _, symbol = call_name.rpartition(".")
+        return symbol in LIGHTNING_TRAINER_SYMBOLS and (
+            prefix in self.lightning_aliases or prefix in LIGHTNING_MODULES or prefix.startswith("lightning.pytorch")
+        )
 
     def _inspect_secret_assignment(self, targets: list[ast.AST], value: ast.AST, lineno: Optional[int]) -> None:
         if not isinstance(value, ast.Constant) or not isinstance(value.value, str):
@@ -436,7 +506,19 @@ def _rank_frameworks(state: InspectState) -> list[dict]:
                 "contradicting_evidence": [],
             }
         )
-    return sorted(ranked, key=lambda item: (-item["confidence"], item["name"]))
+    ranked = sorted(ranked, key=lambda item: (-item["confidence"], item["name"]))
+    return _prefer_lightning_over_pytorch(ranked)
+
+
+def _prefer_lightning_over_pytorch(ranked: list[dict]) -> list[dict]:
+    names = [item["name"] for item in ranked]
+    if "pytorch" not in names or LIGHTNING_FRAMEWORK not in names:
+        return ranked
+
+    lightning = ranked.pop(names.index(LIGHTNING_FRAMEWORK))
+    pytorch_index = next(index for index, item in enumerate(ranked) if item["name"] == "pytorch")
+    ranked.insert(pytorch_index, lightning)
+    return ranked
 
 
 def _conversion_state(state: InspectState, detected_framework: Optional[str]) -> str:
@@ -444,6 +526,13 @@ def _conversion_state(state: InspectState, detected_framework: Optional[str]) ->
         return "exported_job"
     if state.job_py or state.sim_env_used:
         return "flare_job"
+    if (
+        detected_framework == LIGHTNING_FRAMEWORK
+        and state.flare_imports
+        and ("flare.patch" in state.flare_calls or state.lightning_patch_calls)
+        and _has_framework_evidence(state, LIGHTNING_FRAMEWORK, "lightning_trainer")
+    ):
+        return "client_api_converted"
     if {"flare.receive", "flare.send"} <= state.flare_calls or "FLModel" in state.flare_calls:
         return "client_api_converted"
     if state.flare_imports or state.flare_calls:
@@ -451,6 +540,10 @@ def _conversion_state(state: InspectState, detected_framework: Optional[str]) ->
     if detected_framework:
         return "not_converted"
     return "unknown"
+
+
+def _has_framework_evidence(state: InspectState, framework: str, kind: str) -> bool:
+    return any(item.get("kind") == kind for item in state.framework_evidence.get(framework, []))
 
 
 def _target_type(path: Path, state: InspectState, detected_framework: Optional[str], conversion_state: str) -> str:
@@ -522,7 +615,9 @@ def _recommended_next_commands(
     elif state.job_py and state.export_support:
         commands.append("python job.py --export --export-dir <job-dir>")
     elif detected_framework and conversion_state == "not_converted":
-        commands.append("Use the matching nvflare-convert-* skill before editing.")
+        skill = FRAMEWORK_SKILLS.get(detected_framework)
+        if skill:
+            commands.append(f"Use the {skill} skill before editing.")
     return commands
 
 
@@ -614,6 +709,12 @@ def _call_name(node: ast.AST) -> Optional[str]:
         prefix = _call_name(node.value)
         return f"{prefix}.{node.attr}" if prefix else node.attr
     return None
+
+
+def _symbol_name(node: ast.AST) -> Optional[str]:
+    if isinstance(node, ast.Subscript):
+        return _call_name(node.value)
+    return _call_name(node)
 
 
 def _target_name(node: ast.AST) -> Optional[str]:

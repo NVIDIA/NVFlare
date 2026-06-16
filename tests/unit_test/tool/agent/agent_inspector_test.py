@@ -42,6 +42,144 @@ def test_inspect_static_only_does_not_execute_user_module(tmp_path):
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
 
 
+def test_inspect_detects_pytorch_lightning_without_unavailable_skill_recommendation(tmp_path):
+    script = tmp_path / "train_lightning.py"
+    script.write_text(
+        "import torch\n" "import pytorch_lightning as pl\n" "\n" "class Net(pl.LightningModule):\n" "    pass\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["frameworks"][0]["name"] == "pytorch_lightning"
+    assert data["conversion_state"] == "not_converted"
+    assert data["skill_selection"]["recommended_skills"] == []
+    assert data["recommended_next_commands"] == ["nvflare agent doctor --format json"]
+    assert any(item["kind"] == "lightning_class" for item in data["frameworks"][0]["evidence"])
+
+
+def test_inspect_detects_lightning_pytorch_trainer_import(tmp_path):
+    script = tmp_path / "train_lightning.py"
+    script.write_text(
+        "from lightning.pytorch import LightningDataModule, Trainer\n"
+        "\n"
+        "class Data(LightningDataModule):\n"
+        "    pass\n"
+        "\n"
+        "trainer = Trainer(max_epochs=1)\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["frameworks"][0]["name"] == "pytorch_lightning"
+    assert data["skill_selection"]["recommended_skills"] == []
+    evidence_kinds = {item["kind"] for item in data["frameworks"][0]["evidence"]}
+    assert {"import", "lightning_class", "lightning_trainer"} <= evidence_kinds
+
+
+def test_inspect_detects_top_level_lightning_alias_and_from_import(tmp_path):
+    script = tmp_path / "train_lightning.py"
+    script.write_text(
+        "import lightning as L\n"
+        "from lightning import LightningModule, Trainer\n"
+        "\n"
+        "class AliasNet(L.LightningModule):\n"
+        "    pass\n"
+        "\n"
+        "class ImportedNet(LightningModule):\n"
+        "    pass\n"
+        "\n"
+        "alias_trainer = L.Trainer(max_epochs=1)\n"
+        "imported_trainer = Trainer(max_epochs=1)\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["frameworks"][0]["name"] == "pytorch_lightning"
+    assert data["skill_selection"]["recommended_skills"] == []
+    evidence = data["frameworks"][0]["evidence"]
+    assert any(item["kind"] == "lightning_class" and item["value"] == "L.LightningModule" for item in evidence)
+    assert any(item["kind"] == "lightning_class" and item["value"] == "LightningModule" for item in evidence)
+    assert any(item["kind"] == "lightning_trainer" and item["value"] == "L.Trainer" for item in evidence)
+    assert any(item["kind"] == "lightning_trainer" and item["value"] == "Trainer" for item in evidence)
+
+
+def test_inspect_classifies_lightning_patched_trainer_as_client_api_converted(tmp_path):
+    script = tmp_path / "client.py"
+    script.write_text(
+        "import lightning as L\n"
+        "import nvflare.client.lightning as flare\n"
+        "\n"
+        "trainer = L.Trainer(max_epochs=1)\n"
+        "flare.patch(trainer)\n"
+        "trainer.fit(model, datamodule=data)\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["frameworks"][0]["name"] == "pytorch_lightning"
+    assert data["flare_integration"]["calls"] == ["flare.patch"]
+    assert data["conversion_state"] == "client_api_converted"
+
+
+def test_inspect_classifies_imported_lightning_patch_as_client_api_converted(tmp_path):
+    script = tmp_path / "client.py"
+    script.write_text(
+        "import lightning as L\n"
+        "from nvflare.client.lightning import patch\n"
+        "\n"
+        "trainer = L.Trainer(max_epochs=1)\n"
+        "patch(trainer)\n"
+        "trainer.fit(model, datamodule=data)\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["frameworks"][0]["name"] == "pytorch_lightning"
+    assert data["flare_integration"]["calls"] == ["patch"]
+    assert data["conversion_state"] == "client_api_converted"
+
+
+def test_inspect_keeps_plain_pytorch_routing_separate_from_lightning(tmp_path):
+    script = tmp_path / "train.py"
+    script.write_text(
+        "import torch\n"
+        "from torch.utils.data import DataLoader\n"
+        "\n"
+        "class Net(torch.nn.Module):\n"
+        "    pass\n"
+        "\n"
+        "loader = DataLoader([])\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert [framework["name"] for framework in data["frameworks"]] == ["pytorch"]
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
+
+
+def test_inspect_exported_job_priority_over_lightning_routing(tmp_path):
+    app = tmp_path / "app_server"
+    app.mkdir()
+    (app / "config_fed_server.json").write_text("{}\n", encoding="utf-8")
+    (tmp_path / "client.py").write_text(
+        "import pytorch_lightning as pl\n" "\n" "class Net(pl.LightningModule):\n" "    pass\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    assert data["frameworks"][0]["name"] == "pytorch_lightning"
+    assert data["conversion_state"] == "exported_job"
+    assert data["target_type"] == "exported_submit_ready_flare_job"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-job-lifecycle"]
+
+
 def test_inspect_directory_reports_inspected_target_path(tmp_path):
     root = tmp_path / "repo"
     root.mkdir()
