@@ -277,18 +277,16 @@ def test_inspect_mixed_workspace_keeps_pytorch_when_lightning_is_in_non_entry_fi
     # (a LightningModule subclass) lives only in a secondary helper file. Keep
     # PyTorch as the lead framework rather than misrouting to Lightning.
     (tmp_path / "train.py").write_text(
-        "import torch\n"
-        "import torchvision\n"
-        "\n"
-        "class Net(torch.nn.Module):\n"
-        "    pass\n"
-        "\n"
-        "def train():\n"
-        "    return Net()\n",
+        "import torch\n" "\n" "class Net(torch.nn.Module):\n" "    pass\n" "\n" "def train():\n" "    return Net()\n",
         encoding="utf-8",
     )
     (tmp_path / "lit_helper.py").write_text(
-        "import pytorch_lightning as pl\n" "\n" "class Helper(pl.LightningModule):\n" "    pass\n",
+        "import pytorch_lightning as pl\n"
+        "\n"
+        "class Helper(pl.LightningModule):\n"
+        "    pass\n"
+        "\n"
+        "trainer = pl.Trainer(max_epochs=1)\n",
         encoding="utf-8",
     )
 

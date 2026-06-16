@@ -544,6 +544,10 @@ def _prefer_lightning_over_pytorch(ranked: list[dict], state: InspectState, entr
         return ranked
 
     if not _should_prefer_lightning(state, entry_point_files):
+        if _has_entry_point_evidence(state, "pytorch", entry_point_files):
+            pytorch = ranked.pop(names.index("pytorch"))
+            lightning_index = next(index for index, item in enumerate(ranked) if item["name"] == LIGHTNING_FRAMEWORK)
+            ranked.insert(lightning_index, pytorch)
         return ranked
 
     lightning = ranked.pop(names.index(LIGHTNING_FRAMEWORK))
@@ -559,7 +563,8 @@ def _should_prefer_lightning(state: InspectState, entry_point_files: set[str]) -
     # LightningModule/DataModule subclass or a Trainer call -- is in the inspected
     # file or a likely training entry point, so that a plain PyTorch entry point
     # with Lightning code only in a secondary helper file stays PyTorch. As a
-    # fallback, prefer Lightning when its evidence is strictly stronger overall.
+    # fallback, prefer Lightning when its evidence is strictly stronger overall
+    # only if there is no competing PyTorch entry point.
     active = [
         item
         for item in state.framework_evidence.get(LIGHTNING_FRAMEWORK, [])
@@ -569,9 +574,15 @@ def _should_prefer_lightning(state: InspectState, entry_point_files: set[str]) -
         return False
     if any(item.get("file") in entry_point_files for item in active):
         return True
+    if _has_entry_point_evidence(state, "pytorch", entry_point_files):
+        return False
     lightning_count = len(state.framework_evidence.get(LIGHTNING_FRAMEWORK, []))
     pytorch_count = len(state.framework_evidence.get("pytorch", []))
     return lightning_count > pytorch_count
+
+
+def _has_entry_point_evidence(state: InspectState, framework: str, entry_point_files: set[str]) -> bool:
+    return any(item.get("file") in entry_point_files for item in state.framework_evidence.get(framework, []))
 
 
 def _conversion_state(state: InspectState, detected_framework: Optional[str]) -> str:
