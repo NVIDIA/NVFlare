@@ -704,7 +704,7 @@ def test_agent_inspect_json_reports_static_framework_evidence(capsys, tmp_path):
     assert payload["data"]["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
 
 
-def test_agent_inspect_json_reports_lightning_evidence_without_unavailable_skill(capsys, tmp_path):
+def test_agent_inspect_json_reports_lightning_evidence_and_recommends_lightning_skill(capsys, tmp_path):
     script = tmp_path / "train_lightning.py"
     script.write_text(
         "from lightning.pytorch import LightningModule, Trainer\n"
@@ -723,7 +723,7 @@ def test_agent_inspect_json_reports_lightning_evidence_without_unavailable_skill
     _assert_envelope_shape(payload, "ok")
     assert payload["data"]["frameworks"][0]["name"] == "pytorch_lightning"
     assert payload["data"]["conversion_state"] == "not_converted"
-    assert payload["data"]["skill_selection"]["recommended_skills"] == []
+    assert payload["data"]["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
 
 
 def test_agent_inspect_missing_path_is_structured_json_error(capsys, tmp_path):

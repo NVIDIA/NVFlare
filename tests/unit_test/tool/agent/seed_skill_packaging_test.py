@@ -29,6 +29,7 @@ from nvflare.tool.agent.skill_manifest import build_skill_manifest, copy_release
 SEED_SKILLS = {
     "nvflare-orient",
     "nvflare-convert-pytorch",
+    "nvflare-convert-lightning",
     "nvflare-diagnose-job",
 }
 
@@ -70,6 +71,7 @@ def test_seed_bundle_copy_includes_analysis_fixtures_by_default(tmp_path):
     assert SEED_SKILLS.issubset(names)
     assert (bundle_root / "_shared" / "nvflare-job-lifecycle.md").is_file()
     _assert_convert_pytorch_payload(bundle_root / "nvflare-convert-pytorch")
+    _assert_convert_lightning_payload(bundle_root / "nvflare-convert-lightning")
     _assert_diagnose_runtime_payload(bundle_root / "nvflare-diagnose-job")
     _assert_analysis_payload_present(bundle_root / "nvflare-diagnose-job")
     assert bundle_root.joinpath("nvflare-convert-pytorch", "BENCHMARK.md").is_file()
@@ -92,6 +94,8 @@ def test_seed_skills_install_into_codex_and_claude_temp_targets(tmp_path):
     assert claude_target.joinpath("_shared", "nvflare-job-lifecycle.md").is_file()
     _assert_convert_pytorch_payload(codex_target / "nvflare-convert-pytorch")
     _assert_convert_pytorch_payload(claude_target / "nvflare-convert-pytorch")
+    _assert_convert_lightning_payload(codex_target / "nvflare-convert-lightning")
+    _assert_convert_lightning_payload(claude_target / "nvflare-convert-lightning")
     _assert_diagnose_runtime_payload(codex_target / "nvflare-diagnose-job")
     _assert_diagnose_runtime_payload(claude_target / "nvflare-diagnose-job")
     _assert_analysis_payload_present(codex_target / "nvflare-diagnose-job")
@@ -125,6 +129,7 @@ def test_released_seed_skills_install_without_analysis_fixtures(tmp_path):
     _assert_diagnose_runtime_payload(target / "nvflare-diagnose-job")
     _assert_analysis_payload_filtered(target / "nvflare-diagnose-job")
     _assert_analysis_payload_filtered(target / "nvflare-convert-pytorch")
+    _assert_analysis_payload_filtered(target / "nvflare-convert-lightning")
     _assert_runtime_markdown_references_resolve(target)
 
 
@@ -199,6 +204,7 @@ def test_setup_build_py_release_filters_analysis_fixtures(tmp_path):
     _assert_diagnose_runtime_payload(bundle_root / "nvflare-diagnose-job")
     _assert_analysis_payload_filtered(bundle_root / "nvflare-diagnose-job")
     _assert_analysis_payload_filtered(bundle_root / "nvflare-convert-pytorch")
+    _assert_analysis_payload_filtered(bundle_root / "nvflare-convert-lightning")
     _assert_runtime_markdown_references_resolve(bundle_root)
 
     target = tmp_path / "target"
@@ -278,7 +284,31 @@ def _assert_convert_pytorch_payload(skill_dir: Path) -> None:
         ]
     )
     assert "nvflare-job-lifecycle.md" in packaged_text
-    assert "Must not require `rg` to be installed" in packaged_text
+
+    shared_lifecycle = skill_dir.parent / "_shared" / "nvflare-job-lifecycle.md"
+    assert shared_lifecycle.is_file()
+    assert "Do not require `rg` to be installed" in shared_lifecycle.read_text(encoding="utf-8")
+
+
+def _assert_convert_lightning_payload(skill_dir: Path) -> None:
+    assert skill_dir.joinpath("SKILL.md").is_file()
+    assert skill_dir.joinpath("references", "lightning-detection.md").is_file()
+    assert skill_dir.joinpath("references", "lightning-conversion.md").is_file()
+    assert skill_dir.joinpath("references", "lightning-validation.md").is_file()
+    assert skill_dir.joinpath("references", "lightning-ddp-and-tracking.md").is_file()
+
+    packaged_text = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in [
+            skill_dir / "SKILL.md",
+            skill_dir / "references" / "lightning-conversion.md",
+        ]
+    )
+    assert "flare.patch(trainer)" in packaged_text
+    assert "nvflare-job-lifecycle.md" in packaged_text
+
+    shared_lifecycle = skill_dir.parent / "_shared" / "nvflare-job-lifecycle.md"
+    assert shared_lifecycle.is_file()
 
 
 def _assert_diagnose_runtime_payload(skill_dir: Path) -> None:
