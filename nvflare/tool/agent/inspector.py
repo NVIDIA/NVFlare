@@ -529,18 +529,34 @@ def _rank_frameworks(state: InspectState) -> list[dict]:
             }
         )
     ranked = sorted(ranked, key=lambda item: (-item["confidence"], item["name"]))
-    return _prefer_lightning_over_pytorch(ranked)
+    return _prefer_lightning_over_pytorch(ranked, state)
 
 
-def _prefer_lightning_over_pytorch(ranked: list[dict]) -> list[dict]:
+def _prefer_lightning_over_pytorch(ranked: list[dict], state: InspectState) -> list[dict]:
     names = [item["name"] for item in ranked]
     if "pytorch" not in names or LIGHTNING_FRAMEWORK not in names:
+        return ranked
+
+    # Lightning always imports torch, so a genuine Lightning project carries both
+    # frameworks. Only rank Lightning ahead of PyTorch when there is active
+    # Lightning use (a LightningModule/DataModule subclass or a Trainer call) and
+    # that evidence is at least as strong as the PyTorch evidence. Otherwise a
+    # plain PyTorch training entry point with an incidental Lightning import
+    # elsewhere in the workspace would be misrouted to the Lightning skill.
+    lightning_count = len(state.framework_evidence.get(LIGHTNING_FRAMEWORK, []))
+    pytorch_count = len(state.framework_evidence.get("pytorch", []))
+    if not _has_active_lightning_evidence(state) or lightning_count < pytorch_count:
         return ranked
 
     lightning = ranked.pop(names.index(LIGHTNING_FRAMEWORK))
     pytorch_index = next(index for index, item in enumerate(ranked) if item["name"] == "pytorch")
     ranked.insert(pytorch_index, lightning)
     return ranked
+
+
+def _has_active_lightning_evidence(state: InspectState) -> bool:
+    evidence = state.framework_evidence.get(LIGHTNING_FRAMEWORK, [])
+    return any(item.get("kind") in {"lightning_class", "lightning_trainer"} for item in evidence)
 
 
 def _conversion_state(state: InspectState, detected_framework: Optional[str]) -> str:

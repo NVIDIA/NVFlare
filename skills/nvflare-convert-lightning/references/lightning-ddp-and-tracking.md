@@ -49,10 +49,13 @@ Lightning logger.
 
 - Preserve existing Lightning loggers such as `TensorBoardLogger` or
   `MLFlowLogger`.
-- Hand metrics to FLARE through `add_experiment_tracking` or
-  `nvflare.app_opt.lightning.loggers.ClientLogger` when the workflow needs
-  server-side or streamed tracking.
-- `ClientLogger` streams metrics through the FL client; it is not a full
+- Hand metrics to FLARE through `add_experiment_tracking` or the FLARE client
+  logger when the workflow needs server-side or streamed tracking. The canonical
+  client-facing shortcut is `flare.logger()` (with
+  `import nvflare.client.lightning as flare`); the class is
+  `nvflare.app_opt.lightning.loggers.client_logger.ClientLogger`. Do not import
+  it as `nvflare.app_opt.lightning.loggers.ClientLogger`, which is not exported.
+- The client logger streams metrics through the FL client; it is not a full
   replacement for a standalone tracking server. State this limitation rather
   than promising parity with a dedicated tracking backend.
 
