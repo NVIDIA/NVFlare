@@ -1163,6 +1163,15 @@ Work:
 - run `nvflare agent inspect` tests for Lightning/PyTorch routing;
 - run install/list tests for PyTorch and Lightning skills;
 - run packaging checks needed to install the Lightning skill in dev mode;
+- run the private deterministic checkpoint:
+
+  ```bash
+  python -m dev_tools.agent.skills.checks.milestone8_checkpoint \
+    --repo-root . \
+    --benchmark-evidence <stage5-benchmark-evidence.json> \
+    --format json
+  ```
+
 - run focused PyTorch and Lightning conversion benchmark cases with Codex and
   Claude, without adding lifecycle/POC skills to the comparison;
 - record PyTorch and Lightning observed correctness, runtime, dependency
@@ -1188,6 +1197,14 @@ Exit criteria:
 - PyTorch behavior is not regressed by shared guidance refactoring;
 - token/runtime effect of adding the Lightning skill is understood before POC
   lifecycle content is added.
+
+The checkpoint command intentionally does not run agent benchmarks. It validates
+the deterministic source checks and then requires a separate evidence JSON with
+four run records: Codex/PyTorch, Codex/Lightning, Claude/PyTorch, and
+Claude/Lightning. Each run record must include the agent, skill, correctness,
+runtime seconds, dependency behavior, generated structure, token usage, metric
+evidence, and artifact location. Without this evidence the checkpoint reports
+`incomplete`, not `ok`.
 
 ### Stage 6: Lifecycle Skill Content
 
