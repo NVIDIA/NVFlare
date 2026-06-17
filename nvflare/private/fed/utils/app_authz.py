@@ -31,20 +31,26 @@ class AppAuthzService(object):
         AppAuthzService.app_validator = app_validator
 
     @staticmethod
-    def authorize(
-        app_path: str,
+    def validate_app(app_path: str) -> (str, dict):
+        if not AppAuthzService.app_validator:
+            return "", {}
+
+        err, app_info = AppAuthzService.app_validator.validate(app_path)
+        if err:
+            return err, {}
+        if not isinstance(app_info, dict):
+            return f"app validator must return app info as dict but got {type(app_info)}", {}
+
+        return "", app_info
+
+    @staticmethod
+    def authorize_app_info(
+        app_info: dict,
         submitter_name: str,
         submitter_org: str,
         submitter_role: str,
         job_meta: dict = None,
     ) -> (bool, str):
-        if not AppAuthzService.app_validator:
-            return True, ""
-
-        err, app_info = AppAuthzService.app_validator.validate(app_path)
-        if err:
-            return False, err
-
         app_has_custom_code = app_info.get(AppValidationKey.BYOC, False)
         if app_has_custom_code:
             ctx = AuthzContext(
@@ -75,3 +81,23 @@ class AppAuthzService(object):
                 )
 
         return True, ""
+
+    @staticmethod
+    def authorize(
+        app_path: str,
+        submitter_name: str,
+        submitter_org: str,
+        submitter_role: str,
+        job_meta: dict = None,
+    ) -> (bool, str):
+        err, app_info = AppAuthzService.validate_app(app_path)
+        if err:
+            return False, err
+
+        return AppAuthzService.authorize_app_info(
+            app_info=app_info,
+            submitter_name=submitter_name,
+            submitter_org=submitter_org,
+            submitter_role=submitter_role,
+            job_meta=job_meta,
+        )

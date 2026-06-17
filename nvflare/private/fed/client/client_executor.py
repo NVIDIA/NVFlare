@@ -17,6 +17,7 @@ import threading
 import time
 from abc import ABC, abstractmethod
 
+from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import AdminCommandNames, ConnPropKey, FLContextKey, RunProcessKey, SystemConfigs
 from nvflare.apis.fl_context import FLContext
@@ -30,7 +31,7 @@ from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobFailureMsgKey, new_cell_message
-from nvflare.private.fed.utils.fed_utils import get_job_launcher, get_return_code
+from nvflare.private.fed.utils.fed_utils import get_job_launcher, get_job_meta_from_workspace, get_return_code
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .client_status import ClientStatus, get_status_message
@@ -176,8 +177,22 @@ class JobExecutor(ClientExecutor):
         # update the job meta
         workspace = Workspace(args.workspace, site_name=client.client_name)
         meta_file = workspace.get_job_meta_path(job_id)
+        try:
+            local_job_meta = get_job_meta_from_workspace(workspace, job_id)
+            local_app_info = {AppValidationKey.BYOC: True} if local_job_meta.get(AppValidationKey.BYOC, False) else {}
+        except Exception as e:
+            self.logger.warning(
+                f"could not read local app validation info for job '{job_id}'; treating as non-BYOC: "
+                f"{secure_format_exception(e)}"
+            )
+            local_app_info = {}
+        job_meta = copy.deepcopy(job_meta)
+        if local_app_info.get(AppValidationKey.BYOC, False):
+            job_meta[AppValidationKey.BYOC] = True
+        else:
+            job_meta.pop(AppValidationKey.BYOC, None)
 
-        # rewrite the meta file with the received meta
+        # Preserve the locally detected BYOC value when refreshing server-supplied job meta.
         with open(meta_file, "w") as f:
             json.dump(job_meta, f, indent=4)
 
