@@ -45,7 +45,6 @@ from nvflare.apis.job_def import ALL_SITES, JobMetaKey
 from nvflare.apis.utils.job_utils import convert_legacy_zipped_app_to_job
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.exit_codes import ProcessExitCode
-from nvflare.fuel.common.multi_process_executor_constants import CommunicationMetaData
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.f3.stats_pool import StatsPoolManager
 from nvflare.fuel.hci.server.authz import AuthorizationService
@@ -851,7 +850,7 @@ class SimulatorClientRunner(FLComponent):
         while not conn:
             try:
                 address = ("localhost", open_port)
-                conn = Client(address, authkey=CommunicationMetaData.CHILD_PASSWORD.encode())
+                conn = Client(address)
             except Exception:
                 if time.time() - start > timeout:
                     raise RuntimeError(
