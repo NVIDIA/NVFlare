@@ -291,6 +291,23 @@ class CCManager(FLComponent):
             if not cc_info:  # a cc-enabled site does not have any cc_info
                 invalid_participant_list.append(k + " namespace: {None} ")
                 continue
+            required_namespaces = set(self.cc_verifiers)
+            present_namespaces = set()
+            duplicate_namespaces = set()
+            for v in cc_info:
+                namespace = v.get(CC_NAMESPACE, "")
+                if namespace in present_namespaces:
+                    duplicate_namespaces.add(namespace)
+                present_namespaces.add(namespace)
+
+            missing_namespaces = required_namespaces - present_namespaces
+            unknown_namespaces = present_namespaces - required_namespaces
+            invalid_namespaces = missing_namespaces | unknown_namespaces | duplicate_namespaces
+            if invalid_namespaces:
+                for namespace in sorted(invalid_namespaces):
+                    invalid_participant_list.append(k + " namespace: {" + namespace + "}")
+                continue
+
             for v in cc_info:
                 token = v.get(CC_TOKEN, "")
                 namespace = v.get(CC_NAMESPACE, "")

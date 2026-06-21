@@ -34,6 +34,7 @@ from nvflare.app_opt.confidential_computing.tdx_authorizer import TDX_NAMESPACE,
 
 VALID_TOKEN = "valid_token"
 INVALID_TOKEN = "invalid_token"
+GPU_NAMESPACE = "gpu"
 
 
 def _verify_token(token: str) -> bool:
@@ -279,6 +280,59 @@ class TestCCManager:
         assert result["client1." + TDX_NAMESPACE] is True
         assert len(invalid_list) == 1
         assert "client2" in invalid_list[0]
+
+    def test_verify_participants_tokens_fails_with_missing_required_namespace(self, logger, cc_test_env, monkeypatch):
+        """Test verification fails if a CC-enabled site omits a required verifier namespace."""
+        logger.info("Testing _verify_participants_tokens with missing namespace")
+        cc_manager, fl_ctx, tdx_authorizer = cc_test_env
+
+        gpu_authorizer = Mock()
+        gpu_authorizer.verify = _verify_token
+        monkeypatch.setitem(cc_manager.cc_verifiers, GPU_NAMESPACE, gpu_authorizer)
+
+        participants_tokens = {
+            "client1": [{CC_TOKEN: VALID_TOKEN, CC_NAMESPACE: TDX_NAMESPACE}],
+        }
+
+        result, invalid_list = cc_manager._verify_participants_tokens(participants_tokens)
+
+        assert result == {}
+        assert len(invalid_list) == 1
+        assert f"client1 namespace: {{{GPU_NAMESPACE}}}" in invalid_list
+
+    def test_verify_participants_tokens_fails_with_duplicate_namespace(self, logger, cc_test_env):
+        """Test verification fails if a CC-enabled site submits duplicate verifier namespaces."""
+        logger.info("Testing _verify_participants_tokens with duplicate namespace")
+        cc_manager, fl_ctx, tdx_authorizer = cc_test_env
+
+        participants_tokens = {
+            "client1": [
+                {CC_TOKEN: VALID_TOKEN, CC_NAMESPACE: TDX_NAMESPACE},
+                {CC_TOKEN: VALID_TOKEN, CC_NAMESPACE: TDX_NAMESPACE},
+            ],
+        }
+
+        result, invalid_list = cc_manager._verify_participants_tokens(participants_tokens)
+
+        assert result == {}
+        assert len(invalid_list) == 1
+        assert f"client1 namespace: {{{TDX_NAMESPACE}}}" in invalid_list
+
+    def test_verify_participants_tokens_fails_with_unknown_namespace(self, logger, cc_test_env):
+        """Test verification fails if a CC-enabled site submits an unknown verifier namespace."""
+        logger.info("Testing _verify_participants_tokens with unknown namespace")
+        cc_manager, fl_ctx, tdx_authorizer = cc_test_env
+
+        participants_tokens = {
+            "client1": [{CC_TOKEN: VALID_TOKEN, CC_NAMESPACE: GPU_NAMESPACE}],
+        }
+
+        result, invalid_list = cc_manager._verify_participants_tokens(participants_tokens)
+
+        assert result == {}
+        assert len(invalid_list) == 2
+        assert f"client1 namespace: {{{GPU_NAMESPACE}}}" in invalid_list
+        assert f"client1 namespace: {{{TDX_NAMESPACE}}}" in invalid_list
 
     def test_verify_participants_tokens_not_in_enabled_sites(self, logger, cc_test_env):
         """Test that sites not in enabled_sites are automatically validated."""
