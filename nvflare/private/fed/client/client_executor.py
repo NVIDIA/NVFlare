@@ -179,15 +179,15 @@ class JobExecutor(ClientExecutor):
         meta_file = workspace.get_job_meta_path(job_id)
         try:
             local_job_meta = get_job_meta_from_workspace(workspace, job_id)
-            local_app_info = {AppValidationKey.BYOC: True} if local_job_meta.get(AppValidationKey.BYOC, False) else {}
+            local_byoc = local_job_meta.get(AppValidationKey.BYOC, False)
         except Exception as e:
             self.logger.warning(
                 f"could not read local app validation info for job '{job_id}'; treating as non-BYOC: "
                 f"{secure_format_exception(e)}"
             )
-            local_app_info = {}
+            local_byoc = False
         job_meta = copy.deepcopy(job_meta)
-        if local_app_info.get(AppValidationKey.BYOC, False):
+        if local_byoc:
             job_meta[AppValidationKey.BYOC] = True
         else:
             job_meta.pop(AppValidationKey.BYOC, None)

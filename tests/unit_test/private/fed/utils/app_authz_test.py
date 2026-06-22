@@ -43,6 +43,42 @@ def setup_authz():
 class TestAppAuthzService:
     """Test AppAuthzService authorization logic for Flower predeployed mode."""
 
+    def test_validate_app_without_validator_returns_empty_info(self, tmp_path):
+        AppAuthzService.initialize(None)
+
+        error, app_info = AppAuthzService.validate_app(str(tmp_path / "app"))
+
+        assert error == ""
+        assert app_info == {}
+
+    def test_validate_app_rejects_non_dict_app_info(self, tmp_path):
+        app_path = str(tmp_path / "app")
+        (tmp_path / "app").mkdir()
+
+        AppAuthzService.initialize(_MockAppValidator(validate_return=("", [])))
+
+        error, app_info = AppAuthzService.validate_app(app_path)
+
+        assert "app validator must return app info as dict" in error
+        assert app_info == {}
+
+    def test_authorize_returns_validation_error(self, tmp_path):
+        app_path = str(tmp_path / "app")
+        (tmp_path / "app").mkdir()
+
+        AppAuthzService.initialize(_MockAppValidator(validate_return=("invalid app", {})))
+
+        authorized, error = AppAuthzService.authorize(
+            app_path=app_path,
+            submitter_name="test_user",
+            submitter_org="test_org",
+            submitter_role="org_admin",
+            job_meta={},
+        )
+
+        assert not authorized
+        assert error == "invalid app"
+
     def test_authorize_flower_predeployed_granted(self, tmp_path):
         """Predeployed mode with granted right -> succeeds."""
         app_path = str(tmp_path / "app")
@@ -126,6 +162,24 @@ class TestAppAuthzService:
 
         assert authorized
         assert error == ""
+
+    def test_authorize_byoc_denied(self, tmp_path):
+        app_path = str(tmp_path / "app")
+        (tmp_path / "app").mkdir()
+
+        AppAuthzService.initialize(_MockAppValidator(validate_return=("", {AppValidationKey.BYOC: True})))
+
+        with patch.object(AuthorizationService, "authorize", return_value=(False, "not permitted")):
+            authorized, error = AppAuthzService.authorize(
+                app_path=app_path,
+                submitter_name="test_user",
+                submitter_org="test_org",
+                submitter_role="org_admin",
+                job_meta={},
+            )
+
+        assert not authorized
+        assert error == "BYOC not permitted"
 
     def test_authorize_both_flags(self, tmp_path):
         """Both BYOC and predeployed flags -> both checks run."""

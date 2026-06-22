@@ -138,6 +138,7 @@ def test_wait_child_process_does_not_report_non_failure_return_code(return_code)
     [
         ({AppValidationKey.BYOC: True}, {}, False),
         ({}, {AppValidationKey.BYOC: True}, True),
+        ({AppValidationKey.BYOC: True}, None, False),
     ],
 )
 def test_start_app_preserves_locally_detected_byoc_when_rewriting_job_meta(
@@ -145,8 +146,9 @@ def test_start_app_preserves_locally_detected_byoc_when_rewriting_job_meta(
 ):
     workspace = _make_workspace(str(tmp_path / "workspace"))
     os.makedirs(workspace.get_run_dir("job-1"), exist_ok=True)
-    with open(workspace.get_job_meta_path("job-1"), "w") as f:
-        json.dump(local_meta, f)
+    if local_meta is not None:
+        with open(workspace.get_job_meta_path("job-1"), "w") as f:
+            json.dump(local_meta, f)
 
     client = MagicMock()
     client.client_name = "site-1"
