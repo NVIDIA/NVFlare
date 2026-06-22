@@ -212,6 +212,18 @@ def cert_to_dict(cert):
     }
 
 
+def _cert_to_submitter(cert):
+    def _get_subject_attr(oid):
+        attrs = cert.subject.get_attributes_for_oid(oid)
+        return attrs[0].value if attrs else ""
+
+    return (
+        _get_subject_attr(NameOID.COMMON_NAME),
+        _get_subject_attr(NameOID.ORGANIZATION_NAME),
+        _get_subject_attr(NameOID.UNSTRUCTURED_NAME),
+    )
+
+
 def generate_password(passlen=16):
     s = string.ascii_letters + string.digits
     p = "".join(secrets.choice(s) for _ in range(passlen))
@@ -346,7 +358,9 @@ def sign_folders(folder, signing_pri_key, crt_path=None, max_depth=9999, signatu
             break
 
 
-def verify_folder_signature(src_folder, root_ca_path, single_signer=False, signature_file=NVFLARE_SIG_FILE):
+def verify_folder_signature_and_get_signers(
+    src_folder, root_ca_path, single_signer=False, signature_file=NVFLARE_SIG_FILE
+):
     """Verify the signature of each file in one folder recursively.
 
     This function iterates over all files in one folder verifying its signature stored in the signature_file
@@ -364,28 +378,35 @@ def verify_folder_signature(src_folder, root_ca_path, single_signer=False, signa
         signature_file (str): The file name to store signature.  Defaults to NVFLARE_SIG_FILE.
 
     Returns:
-        True if all files have valid signatures.
-        False if any file fails signature check.
+        A tuple of (verified, signers).
+        verified is True if all files have valid signatures.
+        verified is False if any file fails signature check.
+        signers contains unique (name, org, role) tuples from verified certificates.
 
     """
 
     try:
         root_ca_cert = load_crt(root_ca_path)
         root_ca_public_key = root_ca_cert.public_key()
+        root_submitter = _cert_to_submitter(root_ca_cert)
+        signers = {}
         for root, folders, files in os.walk(src_folder):
             try:
                 with open(os.path.join(root, signature_file), "rt") as f:
                     signatures = json.load(f)
                 if single_signer:
                     public_key = root_ca_public_key
+                    signer = root_submitter
                 else:
                     cert_chain = load_crt_chain(os.path.join(root, NVFLARE_SUBMITTER_CRT_FILE))
                     cert = cert_chain[0]
                     public_key = cert.public_key()
                     verify_cert_chain(cert_chain=cert_chain, root_ca_cert=root_ca_cert)
                     validate_admin_leaf_cert(cert)
+                    signer = _cert_to_submitter(cert)
+                signers[signer] = signer
             except Exception:
-                return False
+                return False, []
 
             for file in files:
                 if file == signature_file or file == NVFLARE_SUBMITTER_CRT_FILE:
@@ -399,7 +420,7 @@ def verify_folder_signature(src_folder, root_ca_path, single_signer=False, signa
                             public_key=public_key,
                         )
                 else:
-                    return False
+                    return False, []
             for folder in folders:
                 signature = signatures.get(folder)
                 if signature:
@@ -409,10 +430,18 @@ def verify_folder_signature(src_folder, root_ca_path, single_signer=False, signa
                         public_key=public_key,
                     )
                 else:
-                    return False
-        return True
+                    return False, []
+        return True, list(signers.values())
     except Exception:
-        return False
+        return False, []
+
+
+def verify_folder_signature(src_folder, root_ca_path, single_signer=False, signature_file=NVFLARE_SIG_FILE):
+    """Verify folder signatures and preserve the legacy boolean return contract."""
+    verified, _signers = verify_folder_signature_and_get_signers(
+        src_folder, root_ca_path, single_signer, signature_file
+    )
+    return verified
 
 
 def sign_all(content_folder, signing_pri_key):
