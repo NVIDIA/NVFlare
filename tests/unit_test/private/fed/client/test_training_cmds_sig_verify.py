@@ -14,14 +14,16 @@
 
 """Unit tests for DeployProcessor.process() signature verification in training_cmds.py.
 
-Tests cover the client-side verification logic that replaced the old secure_train-based check.
+Tests cover client-side verification of the app bytes received for deploy.
 """
 
-import os
+import io
 import types
 from unittest.mock import MagicMock, patch
+from zipfile import ZipFile
 
 from nvflare.apis.job_def import JobMetaKey
+from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import RequestHeader
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
@@ -108,14 +110,23 @@ class _StubEngine(ClientEngineInternalSpec):
 # ---------------------------------------------------------------------------
 
 
-def _make_request(job_id="job-1", app_name="test-app", job_meta=None):
+def _make_app_zip(signed=True) -> bytes:
+    zip_bytes = io.BytesIO()
+    with ZipFile(zip_bytes, "w") as zf:
+        zf.writestr("config/config_fed_client.json", "{}")
+        if signed:
+            zf.writestr(NVFLARE_SIG_FILE, "{}")
+    return zip_bytes.getvalue()
+
+
+def _make_request(job_id="job-1", app_name="test-app", job_meta=None, body=None):
     """Build a minimal deploy Message.
 
     job_meta defaults to a sentinel dict with one key so it passes the "if not job_meta" check.
     """
     req = MagicMock(spec=Message)
     req.topic = "deploy"
-    req.body = b"app_data"
+    req.body = body if body is not None else _make_app_zip()
 
     if job_meta is None:
         # Non-empty so "if not job_meta" in process() doesn't trigger early return
@@ -133,15 +144,18 @@ def _make_request(job_id="job-1", app_name="test-app", job_meta=None):
     return req
 
 
-def _run_process(req, engine, app_dir):
+def _run_process(req, engine, startup_dir):
     """Run DeployProcessor.process() with Workspace mocked."""
     processor = DeployProcessor()
     workspace_mock = MagicMock()
-    workspace_mock.get_app_dir.return_value = app_dir
-    workspace_mock.get_startup_kit_dir.return_value = os.path.dirname(app_dir)
+    workspace_mock.get_startup_kit_dir.return_value = startup_dir
 
     with patch("nvflare.private.fed.client.training_cmds.Workspace", return_value=workspace_mock):
         return processor.process(req, engine)
+
+
+def _write_root_ca(startup_dir):
+    (startup_dir / "rootCA.pem").write_text("FAKECERT")
 
 
 # ---------------------------------------------------------------------------
@@ -151,12 +165,10 @@ def _run_process(req, engine, app_dir):
 
 class TestSignedValid:
     def test_signed_valid_returns_ok(self, tmp_path):
-        """.__nvfl_sig.json present + verify_folder_signature returns True → ok_reply."""
-        sig_file = tmp_path / ".__nvfl_sig.json"
-        sig_file.write_text('{"sig": "valid"}')
-
+        """.__nvfl_sig.json present + verify_folder_signature returns True -> ok_reply."""
         req = _make_request()
         engine = _StubEngine(workspace_dir=str(tmp_path))
+        _write_root_ca(tmp_path)
 
         with patch("nvflare.private.fed.client.training_cmds.verify_folder_signature", return_value=True):
             reply = _run_process(req, engine, str(tmp_path))
@@ -165,18 +177,18 @@ class TestSignedValid:
         assert len(engine._deploy_calls) == 1
         assert "deployed" in reply.body
 
-    def test_signed_valid_calls_deploy_app(self, tmp_path):
-        """Valid signature → engine.deploy_app is invoked."""
-        sig_file = tmp_path / ".__nvfl_sig.json"
-        sig_file.write_text('{"sig": "valid"}')
-
+    def test_signed_valid_calls_deploy_app_with_verified_bytes(self, tmp_path):
+        """Valid signature -> engine.deploy_app is invoked with the same received bytes."""
         req = _make_request()
         engine = _StubEngine(workspace_dir=str(tmp_path))
+        _write_root_ca(tmp_path)
 
-        with patch("nvflare.private.fed.client.training_cmds.verify_folder_signature", return_value=True):
+        with patch("nvflare.private.fed.client.training_cmds.verify_folder_signature", return_value=True) as mock_vfs:
             _run_process(req, engine, str(tmp_path))
 
+        mock_vfs.assert_called_once()
         assert len(engine._deploy_calls) == 1
+        assert engine._deploy_calls[0][4] == req.body
 
 
 # ---------------------------------------------------------------------------
@@ -186,12 +198,10 @@ class TestSignedValid:
 
 class TestSignedInvalid:
     def test_tampered_sig_returns_error(self, tmp_path):
-        """.__nvfl_sig.json present + verify_folder_signature returns False → error_reply."""
-        sig_file = tmp_path / ".__nvfl_sig.json"
-        sig_file.write_text('{"sig": "tampered"}')
-
+        """.__nvfl_sig.json present + verify_folder_signature returns False -> error_reply."""
         req = _make_request(app_name="my-app")
         engine = _StubEngine(workspace_dir=str(tmp_path))
+        _write_root_ca(tmp_path)
 
         with patch("nvflare.private.fed.client.training_cmds.verify_folder_signature", return_value=False):
             reply = _run_process(req, engine, str(tmp_path))
@@ -200,11 +210,9 @@ class TestSignedInvalid:
 
     def test_tampered_sig_does_not_call_deploy_app(self, tmp_path):
         """When sig is invalid, engine.deploy_app must NOT be called."""
-        sig_file = tmp_path / ".__nvfl_sig.json"
-        sig_file.write_text('{"sig": "bad"}')
-
         req = _make_request()
         engine = _StubEngine(workspace_dir=str(tmp_path))
+        _write_root_ca(tmp_path)
 
         with patch("nvflare.private.fed.client.training_cmds.verify_folder_signature", return_value=False):
             _run_process(req, engine, str(tmp_path))
@@ -213,38 +221,57 @@ class TestSignedInvalid:
 
 
 # ---------------------------------------------------------------------------
-# Unsigned — client does not enforce policy, should return ok_reply
+# Unsigned — rejected when signing is required, otherwise accepted
 # ---------------------------------------------------------------------------
 
 
 class TestUnsignedJob:
-    def test_unsigned_job_succeeds(self, tmp_path):
-        """No .__nvfl_sig.json → client does not enforce require_signed_jobs → ok_reply."""
-        req = _make_request()
-        engine = _StubEngine(workspace_dir=str(tmp_path))
-
-        reply = _run_process(req, engine, str(tmp_path))
-
-        assert "deployed" in reply.body
-
-    def test_unsigned_job_calls_deploy_app(self, tmp_path):
-        """No .__nvfl_sig.json → engine.deploy_app is called (client proceeds normally)."""
-        req = _make_request()
+    def test_unsigned_job_calls_deploy_app_when_signing_not_required(self, tmp_path):
+        """No .__nvfl_sig.json and no rootCA.pem -> engine.deploy_app is called."""
+        req = _make_request(body=_make_app_zip(signed=False))
         engine = _StubEngine(workspace_dir=str(tmp_path))
 
         _run_process(req, engine, str(tmp_path))
 
         assert len(engine._deploy_calls) == 1
 
-    def test_verify_folder_signature_not_called_for_unsigned(self, tmp_path):
-        """No .__nvfl_sig.json → verify_folder_signature must not be called."""
+    def test_signed_job_calls_deploy_app_when_root_ca_is_missing(self, tmp_path):
+        """No rootCA.pem -> client cannot verify signature and preserves no-rootCA deploy behavior."""
         req = _make_request()
         engine = _StubEngine(workspace_dir=str(tmp_path))
 
-        with patch("nvflare.private.fed.client.training_cmds.verify_folder_signature", return_value=True) as mock_vfs:
-            _run_process(req, engine, str(tmp_path))
+        with patch("nvflare.private.fed.client.training_cmds.verify_folder_signature") as mock_vfs:
+            reply = _run_process(req, engine, str(tmp_path))
 
+        assert "deployed" in reply.body
+        assert len(engine._deploy_calls) == 1
         mock_vfs.assert_not_called()
+
+    def test_existing_stale_signed_app_does_not_allow_unsigned_new_body(self, tmp_path):
+        """Existing signed app dir must not make unsigned received bytes deployable."""
+        app_dir = tmp_path / "run_1" / "app"
+        app_dir.mkdir(parents=True)
+        (app_dir / NVFLARE_SIG_FILE).write_text("{}")
+        _write_root_ca(app_dir.parent)
+        req = _make_request(body=_make_app_zip(signed=False))
+        engine = _StubEngine(workspace_dir=str(tmp_path))
+
+        with patch("nvflare.private.fed.client.training_cmds.verify_folder_signature") as mock_vfs:
+            reply = _run_process(req, engine, str(app_dir.parent))
+
+        assert "unsigned job rejected" in reply.body
+        assert len(engine._deploy_calls) == 0
+        mock_vfs.assert_not_called()
+
+    def test_bad_zip_does_not_call_deploy_app(self, tmp_path):
+        """Malformed received app bytes -> error_reply before deploy_app."""
+        req = _make_request(body=b"not a zip")
+        engine = _StubEngine(workspace_dir=str(tmp_path))
+
+        reply = _run_process(req, engine, str(tmp_path))
+
+        assert "failed to stage app" in reply.body
+        assert len(engine._deploy_calls) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -254,29 +281,17 @@ class TestUnsignedJob:
 
 class TestFromHubSite:
     def test_from_hub_site_skips_verification(self, tmp_path):
-        """from_hub_site=True → verification block skipped entirely → ok_reply."""
+        """from_hub_site=True -> verification block skipped entirely -> ok_reply."""
         job_meta = {JobMetaKey.FROM_HUB_SITE.value: "hub-1"}
-        req = _make_request(job_meta=job_meta)
+        req = _make_request(job_meta=job_meta, body=b"hub payload")
         engine = _StubEngine(workspace_dir=str(tmp_path))
 
-        # Even if a sig file exists, it should not be checked
-        sig_file = tmp_path / ".__nvfl_sig.json"
-        sig_file.write_text('{"sig": "doesnotmatter"}')
-
-        with patch("nvflare.private.fed.client.training_cmds.verify_folder_signature", return_value=False) as mock_vfs:
+        with (
+            patch("nvflare.private.fed.client.training_cmds.unzip_all_from_bytes") as mock_unzip,
+            patch("nvflare.private.fed.client.training_cmds.verify_folder_signature") as mock_vfs,
+        ):
             reply = _run_process(req, engine, str(tmp_path))
 
+        mock_unzip.assert_not_called()
         mock_vfs.assert_not_called()
         assert "deployed" in reply.body
-
-    def test_from_hub_site_no_sig_file_succeeds(self, tmp_path):
-        """from_hub_site=True, no sig file → deploy succeeds without calling verify."""
-        job_meta = {JobMetaKey.FROM_HUB_SITE.value: "hub-1"}
-        req = _make_request(job_meta=job_meta)
-        engine = _StubEngine(workspace_dir=str(tmp_path))
-
-        with patch("nvflare.private.fed.client.training_cmds.verify_folder_signature") as mock_vfs:
-            reply = _run_process(req, engine, str(tmp_path))
-
-        mock_vfs.assert_not_called()
-        assert len(engine._deploy_calls) == 1
