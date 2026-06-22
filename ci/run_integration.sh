@@ -98,6 +98,15 @@ run_pytest() {
     "${PYTHON_BIN[@]}" -m pytest "${PYTEST_ARGS[@]}" --junitxml=./integration_test.xml "$@"
 }
 
+prepare_cifar10_data() {
+    local test_mode=$1
+    case $test_mode in
+        client_api|client_api_qa|model_controller_api|pytorch|cifar)
+            "${PYTHON_BIN[@]}" tools/prepare_cifar10.py
+            ;;
+    esac
+}
+
 resolve_xgboost_federated_wheel_url() {
     if [[ -n "${XGBOOST_FEDERATED_WHEEL_URL}" ]]; then
         echo "${XGBOOST_FEDERATED_WHEEL_URL}"
@@ -130,6 +139,7 @@ PY
 run_system_test() {
     local test_mode=$1
     local status
+    prepare_cifar10_data "$test_mode" || return $?
     export NVFLARE_TEST_FRAMEWORK=$test_mode
     run_pytest system_test.py
     status=$?

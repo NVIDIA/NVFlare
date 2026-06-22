@@ -46,11 +46,10 @@ REPO_ROOT = os.path.dirname(os.path.dirname(INTEGRATION_TEST_ROOT))
 @pytest.fixture(scope="module")
 def cifar10_data_root(tmp_path_factory):
     """Download CIFAR-10 once so simulated clients do not race on the same download/extract path."""
-    from torchvision.datasets import CIFAR10
+    from tests.integration_test.tools.prepare_cifar10 import prepare_cifar10
 
     data_root = str(tmp_path_factory.mktemp("cifar10_data"))
-    CIFAR10(root=data_root, train=True, download=True)
-    CIFAR10(root=data_root, train=False, download=True)
+    prepare_cifar10(roots=[data_root])
     return data_root
 
 
