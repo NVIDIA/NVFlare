@@ -30,7 +30,7 @@ from nvflare.fuel.utils.admin_name_utils import is_valid_admin_client_name
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellMessageHeaderKeys, ClientRegSession, ClientType, InternalFLContextKey
 from nvflare.private.fed.server.cred_keeper import CredKeeper
-from nvflare.private.fed.utils.identity_utils import get_org_from_cert, load_crt_bytes
+from nvflare.private.fed.utils.identity_utils import get_org_from_cert, load_crt_bytes, load_crt_chain_bytes
 from nvflare.security.logging import secure_format_exception
 
 
@@ -287,7 +287,8 @@ class ClientManager:
                 self.logger.error("missing signature in register request")
                 return None
 
-            asserter_cert = load_crt_bytes(asserter_cert_data)
+            asserter_cert_chain = load_crt_chain_bytes(asserter_cert_data)
+            asserter_cert = asserter_cert_chain[0]
             id_verifier = self._get_id_verifier(fl_ctx)
             reg = fl_ctx.get_prop(InternalFLContextKey.CLIENT_REG_SESSION)
             if not reg:
@@ -304,6 +305,7 @@ class ClientManager:
                     asserter_cert=asserter_cert,
                     signature=signature,
                     nonce=reg.nonce,
+                    cert_chain=asserter_cert_chain,
                 )
             except Exception as ex:
                 self.logger.error(f"failed to verify client identity: {secure_format_exception(ex)}")

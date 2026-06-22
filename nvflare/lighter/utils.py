@@ -28,7 +28,9 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from cryptography.x509.oid import ExtensionOID, NameOID
+from cryptography.x509.verification import ExtensionPolicy, PolicyBuilder, Store
 
+from nvflare.fuel.sec.admin_cert import validate_admin_leaf_cert
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE, NVFLARE_SUBMITTER_CRT_FILE
 
 _GENERATE_CERT_RESERVED_EXTENSION_OIDS = {
@@ -186,6 +188,18 @@ def load_crt_bytes(data: bytes):
     return x509.load_pem_x509_certificate(data, default_backend())
 
 
+def load_crt_chain(path):
+    with open(path, "rb") as f:
+        return load_crt_chain_bytes(f.read())
+
+
+def load_crt_chain_bytes(data: bytes):
+    certs = x509.load_pem_x509_certificates(data)
+    if not certs:
+        raise ValueError("no PEM certificate found")
+    return certs
+
+
 def cert_to_dict(cert):
     return {
         "subject": {attr.oid._name: attr.value for attr in cert.subject},
@@ -241,12 +255,43 @@ def verify_content(content, signature, public_key):
     )
 
 
+def _utc_now():
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
 def verify_cert(cert_to_be_verified, root_ca_public_key):
-    root_ca_public_key.verify(
-        cert_to_be_verified.signature,
-        cert_to_be_verified.tbs_certificate_bytes,
+    _verify_cert_signature(cert_to_be_verified, root_ca_public_key)
+
+
+def verify_cert_chain(cert_chain, root_ca_cert, now=None):
+    """Validate a FLARE certificate chain against the pinned project root.
+
+    FLARE uses this helper for admin, site, and server certificates, so leaf
+    purpose checks stay with the caller. The chain validation itself is handled
+    by cryptography's path verifier, with the project root as the pinned trust
+    store and normal CA constraints required for intermediates.
+    """
+    if not cert_chain:
+        raise ValueError("cert_chain must contain at least one certificate")
+    now = now or _utc_now()
+    verifier = (
+        PolicyBuilder()
+        .store(Store([root_ca_cert]))
+        .time(now)
+        .extension_policies(ca_policy=ExtensionPolicy.webpki_defaults_ca(), ee_policy=ExtensionPolicy.permit_all())
+        .build_client_verifier()
+    )
+    verifier.verify(cert_chain[0], cert_chain[1:])
+
+
+def _verify_cert_signature(cert, issuer_public_key):
+    if not isinstance(issuer_public_key, rsa.RSAPublicKey):
+        raise ValueError(f"unsupported certificate issuer public key type: {type(issuer_public_key)}")
+    issuer_public_key.verify(
+        cert.signature,
+        cert.tbs_certificate_bytes,
         padding.PKCS1v15(),
-        cert_to_be_verified.signature_hash_algorithm,
+        cert.signature_hash_algorithm,
     )
 
 
@@ -319,9 +364,11 @@ def verify_folder_signature(src_folder, root_ca_path, single_signer=False, signa
                 if single_signer:
                     public_key = root_ca_public_key
                 else:
-                    cert = load_crt(os.path.join(root, NVFLARE_SUBMITTER_CRT_FILE))
+                    cert_chain = load_crt_chain(os.path.join(root, NVFLARE_SUBMITTER_CRT_FILE))
+                    cert = cert_chain[0]
                     public_key = cert.public_key()
-                    verify_cert(cert_to_be_verified=cert, root_ca_public_key=root_ca_public_key)
+                    verify_cert_chain(cert_chain=cert_chain, root_ca_cert=root_ca_cert)
+                    validate_admin_leaf_cert(cert)
             except Exception:
                 return False
 

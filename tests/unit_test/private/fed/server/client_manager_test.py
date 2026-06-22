@@ -64,7 +64,7 @@ def test_authenticated_client_stores_org_extracted_from_cert():
 
     with (
         patch.object(manager, "_get_id_verifier", return_value=verifier),
-        patch("nvflare.private.fed.server.client_manager.load_crt_bytes", return_value=object()),
+        patch("nvflare.private.fed.server.client_manager.load_crt_chain_bytes", return_value=[object()]),
         patch("nvflare.private.fed.server.client_manager.get_org_from_cert", return_value="org_a"),
         patch.object(manager, "_set_client_props"),
     ):

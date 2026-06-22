@@ -18,6 +18,8 @@ from cryptography.exceptions import InvalidKey, InvalidSignature
 from cryptography.hazmat.primitives import asymmetric, ciphers, hashes, padding
 from cryptography.x509 import Certificate
 
+from nvflare.lighter.utils import verify_cert_chain
+
 HASH_LENGTH = 4  # Adjustable to avoid collision
 NONCE_LENGTH = 16  # For AES, this is 128 bits (i.e. block size)
 KEY_LENGTH = 32  # AES 256.  Choose from 16, 24, 32
@@ -40,6 +42,12 @@ class SessionKeyUnavailable(Exception):
 
 class InvalidCertChain(Exception):
     pass
+
+
+def _normalize_cert_chain(cert) -> list:
+    if isinstance(cert, Certificate):
+        return [cert]
+    return list(cert)
 
 
 def _asym_enc(k, m):
@@ -139,7 +147,7 @@ class SessionKeyManager:
             public_key = remote_cert.public_key()
             _verify(public_key, session_key, signature)
             self.key_hash_dict[get_hash(session_key)[-HASH_LENGTH:]] = session_key
-        except (InvalidKey, InvalidSignature):
+        except (InvalidKey, InvalidSignature, InvalidCertChain):
             return False
         return True
 
@@ -158,26 +166,33 @@ class SessionKeyManager:
 
 
 class SimpleCellCipher:
-    def __init__(self, root_ca: Certificate, pri_key: asymmetric.rsa.RSAPrivateKey, cert: Certificate):
+    def __init__(self, root_ca: Certificate, pri_key: asymmetric.rsa.RSAPrivateKey, cert):
         self._root_ca = root_ca
         self._root_ca_pub_key = root_ca.public_key()
         self._pri_key = pri_key
-        self._cert = cert
-        self._pub_key = cert.public_key()
-        self._validate_cert_chain(self._cert)
+        self._cert_chain = _normalize_cert_chain(cert)
+        self._cert = self._cert_chain[0]
+        self._pub_key = self._cert.public_key()
+        self._validate_cert_chain(self._cert_chain)
         self._cached_enc = dict()
         self._cached_dec = dict()
 
-    def _validate_cert_chain(self, cert: Certificate):
-        self._root_ca_pub_key.verify(
-            cert.signature, cert.tbs_certificate_bytes, asymmetric.padding.PKCS1v15(), cert.signature_hash_algorithm
-        )
+    def _validate_cert_chain(self, cert) -> Certificate:
+        cert_chain = _normalize_cert_chain(cert)
+        try:
+            verify_cert_chain(cert_chain=cert_chain, root_ca_cert=self._root_ca)
+        except Exception as ex:
+            raise InvalidCertChain(str(ex)) from ex
 
-    def encrypt(self, message: bytes, target_cert: Certificate):
+        return cert_chain[0]
+
+    def encrypt(self, message: bytes, target_cert):
+        target_cert_chain = _normalize_cert_chain(target_cert)
+        target_cert = target_cert_chain[0]
         cert_hash = hash(target_cert)
         secret = self._cached_enc.get(cert_hash)
         if secret is None:
-            self._validate_cert_chain(target_cert)
+            target_cert = self._validate_cert_chain(target_cert_chain)
             key = os.urandom(KEY_LENGTH)
             remote_pub_key = target_cert.public_key()
             key_enc = _asym_enc(remote_pub_key, key)
@@ -189,7 +204,7 @@ class SimpleCellCipher:
         ct = nonce + key_enc + signature + _sym_enc(key, nonce, message)
         return ct
 
-    def decrypt(self, message: bytes, origin_cert: Certificate):
+    def decrypt(self, message: bytes, origin_cert):
         nonce, key_enc, signature = (
             message[:NONCE_LENGTH],
             message[NONCE_LENGTH : NONCE_LENGTH + KEY_ENC_LENGTH],
@@ -202,7 +217,7 @@ class SimpleCellCipher:
         key_hash = hash(key_enc)
         dec = self._cached_dec.get(key_hash)
         if dec is None:
-            self._validate_cert_chain(origin_cert)
+            origin_cert = self._validate_cert_chain(origin_cert)
             public_key = origin_cert.public_key()
             _verify(public_key, key_enc, signature)
             key = _asym_dec(self._pri_key, key_enc)

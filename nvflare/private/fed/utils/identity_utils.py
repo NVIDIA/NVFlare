@@ -19,9 +19,11 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.lighter.utils import (
     load_crt,
     load_crt_bytes,
+    load_crt_chain_bytes,
     load_private_key_file,
     sign_content,
     verify_cert,
+    verify_cert_chain,
     verify_content,
 )
 from nvflare.security.logging import secure_format_exception
@@ -62,6 +64,10 @@ def load_cert_file(path: str):
 
 def load_cert_bytes(data: bytes):
     return load_crt_bytes(data)
+
+
+def load_cert_chain_bytes(data: bytes):
+    return load_crt_chain_bytes(data)
 
 
 def get_parent_site_name(fqsn: str) -> Optional[str]:
@@ -115,13 +121,16 @@ class IdentityVerifier:
         self.root_cert = load_cert_file(root_cert_file)
         self.root_public_key = self.root_cert.public_key()
 
-    def verify_common_name(self, asserted_cn: str, nonce: str, asserter_cert, signature) -> bool:
+    def verify_common_name(self, asserted_cn: str, nonce: str, asserter_cert, signature, cert_chain=None) -> bool:
         # verify asserter_cert
         try:
-            verify_cert(
-                cert_to_be_verified=asserter_cert,
-                root_ca_public_key=self.root_public_key,
-            )
+            if cert_chain:
+                verify_cert_chain(cert_chain=cert_chain, root_ca_cert=self.root_cert)
+            else:
+                verify_cert(
+                    cert_to_be_verified=asserter_cert,
+                    root_ca_public_key=self.root_public_key,
+                )
         except:
             raise InvalidAsserterCert()
 
