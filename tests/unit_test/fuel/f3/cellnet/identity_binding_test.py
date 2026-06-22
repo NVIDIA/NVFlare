@@ -170,6 +170,56 @@ def test_identity_resolver_rejects_admin_like_endpoint_without_authenticated_ide
         resolver.require_match("_admin_not-a-uuid", "admin@nvidia.com", "connection admin")
 
 
+def test_identity_resolver_maps_hierarchical_cell_pipe_cell_to_owner_identity():
+    # current CellPipe naming: <site>.<token>.<mode> resolves via the FQCN hierarchy
+    resolver = CellIdentityResolver(local_fqcn="server", prefix_identity_map={"site-1": "site-1"})
+
+    assert resolver.resolve("site-1.8cb50f16-8158-46f6-a8d7-ec85b1f06c53.active") == "site-1"
+    assert resolver.resolve("site-1.8cb50f16-8158-46f6-a8d7-ec85b1f06c53.passive") == "site-1"
+
+
+def test_identity_resolver_maps_hierarchical_cell_pipe_cell_behind_relay_to_owner_identity():
+    resolver = CellIdentityResolver(local_fqcn="relay-1", exact_identity_map={"relay-1": "relay-1"})
+
+    assert resolver.resolve("relay-1.site-1.job-123.active") == "site-1"
+
+
+def test_identity_resolver_maps_legacy_cell_pipe_alias_to_owner_identity():
+    # CellPipe cells from older NVFlare versions use underscore alias names
+    resolver = CellIdentityResolver(local_fqcn="server", prefix_identity_map={"site-1": "site-1"})
+
+    assert resolver.resolve("site-1_8cb50f16-8158-46f6-a8d7-ec85b1f06c53_active") == "site-1"
+    assert resolver.resolve("site-1_8cb50f16-8158-46f6-a8d7-ec85b1f06c53_passive") == "site-1"
+
+
+def test_identity_resolver_maps_cell_pipe_alias_to_configured_owner_identity():
+    resolver = CellIdentityResolver(local_fqcn="server", prefix_identity_map={"site-1": "custom-site-cn"})
+
+    assert resolver.resolve("site-1_job-123_active") == "custom-site-cn"
+
+
+def test_identity_resolver_maps_cell_pipe_alias_owner_with_underscores_from_the_right():
+    resolver = CellIdentityResolver(local_fqcn="server")
+
+    # The runtime id cannot contain "_", so the only valid owner is "site-a_x"
+    assert resolver.resolve("site-a_x_job-123_active") == "site-a_x"
+
+
+def test_identity_resolver_maps_dotted_cell_pipe_alias_to_owner_identity():
+    resolver = CellIdentityResolver(local_fqcn="site-1")
+
+    assert resolver.resolve("site-1.site-1_job-123_passive") == "site-1"
+
+
+def test_identity_resolver_does_not_treat_unconstrained_names_as_cell_pipe_aliases():
+    resolver = CellIdentityResolver(local_fqcn="server")
+
+    # Too few segments, empty runtime id, or an unknown mode are not aliases
+    assert resolver.resolve("site-1_active") == "site-1_active"
+    assert resolver.resolve("site-1__active") == "site-1__active"
+    assert resolver.resolve("site-1_job-123_idle") == "site-1_job-123_idle"
+
+
 def test_mtls_handshake_accepts_job_cell_with_parent_cert_identity():
     manager = _conn_manager(identity_map={"site-1": "site-1"})
     conn = _FakeConnection(peer_cn="site-1")
@@ -202,6 +252,49 @@ def test_mtls_handshake_rejects_spoofed_endpoint_identity():
 
     assert ex.value.code == CommError.BAD_DATA
     assert "site-1.job-123" not in manager.sfm_endpoints
+    assert conn.closed
+
+
+def test_mtls_handshake_accepts_hierarchical_cell_pipe_cell_with_site_cert_identity():
+    manager = _conn_manager(identity_map={"site-1": "site-1"})
+    conn = _FakeConnection(peer_cn="site-1")
+    sfm_conn = SfmConnection(conn, Endpoint("server"))
+
+    manager.update_endpoint(sfm_conn, {HandshakeKeys.ENDPOINT_NAME: "site-1.job-123.active"})
+
+    assert "site-1.job-123.active" in manager.sfm_endpoints
+    assert not conn.closed
+
+
+def test_mtls_handshake_accepts_legacy_cell_pipe_alias_with_site_cert_identity():
+    manager = _conn_manager(identity_map={"site-1": "site-1"})
+    conn = _FakeConnection(peer_cn="site-1")
+    sfm_conn = SfmConnection(conn, Endpoint("server"))
+
+    manager.update_endpoint(sfm_conn, {HandshakeKeys.ENDPOINT_NAME: "site-1_job-123_active"})
+
+    assert "site-1_job-123_active" in manager.sfm_endpoints
+    assert not conn.closed
+
+
+def test_mtls_handshake_rejects_spoofed_cell_pipe_alias_identity():
+    manager = _conn_manager(identity_map={"site-1": "site-1", "site-a": "site-a"})
+    conn = _FakeConnection(peer_cn="attacker")
+    sfm_conn = SfmConnection(conn, Endpoint("server"))
+
+    with pytest.raises(CommError) as ex:
+        manager.update_endpoint(sfm_conn, {HandshakeKeys.ENDPOINT_NAME: "site-1_job-123_active"})
+
+    assert ex.value.code == CommError.BAD_DATA
+    assert conn.closed
+
+    # An ambiguous alias resolves only to its right-anchored owner, never a shorter site
+    conn = _FakeConnection(peer_cn="site-a")
+    sfm_conn = SfmConnection(conn, Endpoint("server"))
+    with pytest.raises(CommError) as ex:
+        manager.update_endpoint(sfm_conn, {HandshakeKeys.ENDPOINT_NAME: "site-a_x_job-123_active"})
+
+    assert ex.value.code == CommError.BAD_DATA
     assert conn.closed
 
 

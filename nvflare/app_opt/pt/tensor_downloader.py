@@ -120,6 +120,7 @@ def download_tensors(
     optional=False,
     abort_signal=None,
     tensors_received_cb=None,
+    progress_cb=None,
     **cb_kwargs,
 ) -> Tuple[str, Optional[dict[str, torch.Tensor]]]:
     """Download the referenced state dict from the source.
@@ -147,6 +148,7 @@ def download_tensors(
         secure=secure,
         optional=optional,
         abort_signal=abort_signal,
+        progress_cb=progress_cb,
     )
     return consumer.error, consumer.result
 
@@ -238,6 +240,7 @@ def download_tensors_to_disk(
     secure=False,
     optional=False,
     abort_signal=None,
+    progress_cb=None,
 ) -> Tuple[str, Optional[LazyTensorDict]]:
     """Download tensors to disk instead of memory.
 
@@ -259,6 +262,7 @@ def download_tensors_to_disk(
             secure=secure,
             optional=optional,
             abort_signal=abort_signal,
+            progress_cb=progress_cb,
         )
     except Exception:
         consumer.cleanup()

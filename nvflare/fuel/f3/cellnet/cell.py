@@ -233,7 +233,7 @@ class Cell(StreamCell):
         future_to_target = {}
 
         # encode the request now so each target thread won't need to do it again.
-        self._encode_message(request, abort_signal, num_receivers=len(targets))
+        self._encode_message(request, abort_signal, num_receivers=len(targets), receiver_ids=targets)
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(targets)) as executor:
             self.logger.debug(f"broadcast to {targets=}")
@@ -337,12 +337,14 @@ class Cell(StreamCell):
         else:
             return True
 
-    def _encode_message(self, msg: Message, abort_signal, num_receivers=1) -> int:
+    def _encode_message(self, msg: Message, abort_signal, num_receivers=1, receiver_ids=None) -> int:
         try:
             props = {
                 FOBSContextKey.ABORT_SIGNAL: abort_signal,
                 FOBSContextKey.NUM_RECEIVERS: num_receivers,
             }
+            if receiver_ids is not None:
+                props[FOBSContextKey.RECEIVER_IDS] = receiver_ids
             return encode_payload(msg, StreamHeaderKey.PAYLOAD_ENCODING, fobs_ctx=self.get_fobs_context(props))
         except BaseException as exc:
             self.logger.error(f"Can't encode {msg=} {exc=}")
@@ -358,6 +360,9 @@ class Cell(StreamCell):
         secure=False,
         optional=False,
         abort_signal: Signal = None,
+        progress_wait_cb=None,
+        num_receivers=1,
+        receiver_ids=None,
     ):
         """Stream one request to the target
 
@@ -374,8 +379,10 @@ class Cell(StreamCell):
         Returns: reply data
 
         """
-        self._encode_message(request, abort_signal)
-        return self._send_one_request(channel, target, topic, request, timeout, secure, optional, abort_signal)
+        self._encode_message(request, abort_signal, num_receivers=num_receivers, receiver_ids=receiver_ids)
+        return self._send_one_request(
+            channel, target, topic, request, timeout, secure, optional, abort_signal, progress_wait_cb
+        )
 
     def _send_one_request(
         self,
@@ -387,6 +394,7 @@ class Cell(StreamCell):
         secure=False,
         optional=False,
         abort_signal=None,
+        progress_wait_cb=None,
     ):
         req_id = str(uuid.uuid4())
         request.add_headers({StreamHeaderKey.STREAM_REQ_ID: req_id})
@@ -417,8 +425,24 @@ class Cell(StreamCell):
             # waiting for receiving first byte
             self.logger.debug(f"{req_id=}: entering remote process wait {timeout=}")
 
-            waiter_rc = conditional_wait(waiter.in_receiving, timeout, abort_signal)
-            if waiter_rc != WaiterRC.IS_SET:
+            # With progress-aware waits, timeout is the remote-process idle polling interval.
+            # The progress callback owns the total idle budget and decides whether to keep waiting.
+            while True:
+                waiter_rc = conditional_wait(waiter.in_receiving, timeout, abort_signal)
+                if waiter_rc == WaiterRC.IS_SET:
+                    break
+                if waiter_rc == WaiterRC.TIMEOUT and progress_wait_cb:
+                    try:
+                        if progress_wait_cb():
+                            self.logger.debug(
+                                f"{req_id=}: remote processing still has transfer progress; continue waiting"
+                            )
+                            continue
+                    except Exception as ex:
+                        self.logger.warning(
+                            f"{req_id=}: progress_wait_cb raised, treating as no-progress: "
+                            f"{secure_format_exception(ex)}"
+                        )
                 self.logger.debug(f"{req_id=}: remote processing timeout {timeout=} {waiter_rc=}")
                 return self._get_result(req_id)
             self.logger.debug(f"{req_id=}: in receiving")
@@ -426,8 +450,28 @@ class Cell(StreamCell):
             # receiving with progress timeout
             r_future = waiter.receiving_future
             self.logger.debug(f"{req_id=}: entering receiving wait {timeout=}")
-            receiving_complete = self._future_wait(r_future, timeout, abort_signal)
-            if not receiving_complete:
+            while True:
+                receiving_complete = self._future_wait(r_future, timeout, abort_signal)
+                if receiving_complete:
+                    break
+                if abort_signal and abort_signal.triggered:
+                    self.logger.info(f"{req_id=}: receiving aborted {timeout=}")
+                    return self._get_result(req_id)
+                if getattr(r_future, "error", None):
+                    self.logger.info(f"{req_id=}: receiving failed with stream error")
+                    return self._get_result(req_id)
+                if progress_wait_cb:
+                    # The same bounded progress policy applies after the first byte: a streamed reply body can still
+                    # be moving even though the peer has already started responding.
+                    try:
+                        if progress_wait_cb():
+                            self.logger.debug(f"{req_id=}: receiving still has transfer progress; continue waiting")
+                            continue
+                    except Exception as ex:
+                        self.logger.warning(
+                            f"{req_id=}: progress_wait_cb raised during receiving, treating as no-progress: "
+                            f"{secure_format_exception(ex)}"
+                        )
                 self.logger.info(f"{req_id=}: receiving timeout {timeout=}")
                 return self._get_result(req_id)
             self.logger.debug(f"{req_id=}: receiving complete")
