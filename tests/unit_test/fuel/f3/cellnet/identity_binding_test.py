@@ -23,7 +23,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
 from nvflare.apis.fl_constant import ConnectionSecurity
-from nvflare.fuel.f3.cellnet.cell_cipher import SimpleCellCipher
+from nvflare.fuel.f3.cellnet.cell_cipher import InvalidCertChain, SimpleCellCipher
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.credential_manager import CERT_CONTENT, CredentialManager
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessageType, ReturnCode
@@ -470,6 +470,23 @@ def test_cell_cipher_accepts_leaf_certificate_with_intermediate_chain():
     encrypted = cipher.encrypt(b"hello", [leaf_cert, intermediate_cert])
 
     assert cipher.decrypt(encrypted, [leaf_cert, intermediate_cert]) == b"hello"
+
+
+def test_cell_cipher_encrypt_rejects_empty_peer_cert_chain():
+    root_cert, leaf_key, leaf_cert, intermediate_cert = _make_chained_cell_cipher_cert()
+    cipher = SimpleCellCipher(root_cert, leaf_key, [leaf_cert, intermediate_cert])
+
+    with pytest.raises(InvalidCertChain, match="cert chain must contain at least one certificate"):
+        cipher.encrypt(b"hello", [])
+
+
+def test_cell_cipher_encrypt_rejects_untrusted_peer_cert_chain():
+    root_cert, leaf_key, leaf_cert, intermediate_cert = _make_chained_cell_cipher_cert()
+    _other_root_cert, _other_leaf_key, other_leaf_cert, other_intermediate_cert = _make_chained_cell_cipher_cert()
+    cipher = SimpleCellCipher(root_cert, leaf_key, [leaf_cert, intermediate_cert])
+
+    with pytest.raises(InvalidCertChain, match="validation failed"):
+        cipher.encrypt(b"hello", [other_leaf_cert, other_intermediate_cert])
 
 
 def test_cell_cipher_encrypt_validates_peer_chain_only_on_cache_miss(monkeypatch):

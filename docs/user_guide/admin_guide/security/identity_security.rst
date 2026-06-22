@@ -169,6 +169,13 @@ also be evaluated. The job will be rejected if either right fails.
 
 Hence it is quite possible that the job is accepted at submission time, but cannot run due to authorization errors from FL clients.
 
+When job signing uses a submitter certificate, FLARE validates that the signer
+certificate chains to the project root CA and contains the admin identity fields
+used by site authorization: common name, organization, and one of the supported
+FLARE roles. Older manually signed job packages whose submitter certificate is
+missing these fields can be rejected by newer clients and should be signed again
+with a valid FLARE admin certificate.
+
 Study-Scoped Authorization
 """"""""""""""""""""""""""
 When multi-study is enabled, the user's role for study-scoped authorization is determined by the active

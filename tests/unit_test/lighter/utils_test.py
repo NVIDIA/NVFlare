@@ -25,7 +25,7 @@ import pytest
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed25519, rsa
 from cryptography.x509.oid import NameOID
 
 import nvflare.lighter.utils as lighter_utils
@@ -33,10 +33,16 @@ from nvflare.lighter.impl.cert import serialize_cert
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
 from nvflare.lighter.utils import Identity, cert_to_dict
 from nvflare.lighter.utils import generate_cert as lighter_generate_cert
-from nvflare.lighter.utils import load_private_key_file, load_yaml, sign_folders, verify_folder_signature
+from nvflare.lighter.utils import load_private_key_file, load_yaml, sign_folders, verify_cert, verify_folder_signature
 
 folders = ["folder1", "folder2"]
 files = ["file1", "file2"]
+
+
+def _signing_algorithm(private_key):
+    if isinstance(private_key, ed25519.Ed25519PrivateKey):
+        return None
+    return hashes.SHA256()
 
 
 def generate_cert(subject, subject_org, issuer, signing_pri_key, subject_pub_key, valid_days=360, ca=False):
@@ -87,7 +93,7 @@ def generate_cert(subject, subject_org, issuer, signing_pri_key, subject_pub_key
             ),
             critical=True,
         )
-    return builder.sign(signing_pri_key, hashes.SHA256(), default_backend())
+    return builder.sign(signing_pri_key, _signing_algorithm(signing_pri_key), default_backend())
 
 
 def get_test_certs():
@@ -119,6 +125,32 @@ def get_test_certs():
         subject_pub_key=server_pub_key,
     )
     return root_cert, client_pri_key, client_cert, server_pri_key, server_cert
+
+
+@pytest.mark.parametrize(
+    "root_key_factory",
+    [
+        lambda: rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend()),
+        lambda: ec.generate_private_key(ec.SECP256R1(), backend=default_backend()),
+        lambda: dsa.generate_private_key(key_size=2048, backend=default_backend()),
+        ed25519.Ed25519PrivateKey.generate,
+    ],
+    ids=["rsa", "ec", "dsa", "ed25519"],
+)
+def test_verify_cert_accepts_supported_issuer_key_types(root_key_factory):
+    root_pri_key = root_key_factory()
+    root_cert = generate_cert("root", "nvidia", "root", root_pri_key, root_pri_key.public_key(), ca=True)
+    leaf_pri_key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
+    leaf_cert = generate_cert("client", "nvidia", "root", root_pri_key, leaf_pri_key.public_key())
+
+    verify_cert(leaf_cert, root_cert.public_key())
+
+
+def test_verify_cert_chain_rejects_empty_chain():
+    root_cert, *_ = get_test_certs()
+
+    with pytest.raises(ValueError, match="cert_chain must contain at least one certificate"):
+        lighter_utils.verify_cert_chain([], root_cert)
 
 
 def test_cert_to_dict_serial_number_is_hex_string():

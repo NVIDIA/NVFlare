@@ -188,6 +188,8 @@ class SimpleCellCipher:
 
     def encrypt(self, message: bytes, target_cert):
         target_cert_chain = _normalize_cert_chain(target_cert)
+        if not target_cert_chain:
+            raise InvalidCertChain("cert chain must contain at least one certificate")
         target_cert = target_cert_chain[0]
         cert_hash = hash(target_cert)
         secret = self._cached_enc.get(cert_hash)

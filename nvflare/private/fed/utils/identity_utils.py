@@ -131,8 +131,8 @@ class IdentityVerifier:
                     cert_to_be_verified=asserter_cert,
                     root_ca_public_key=self.root_public_key,
                 )
-        except:
-            raise InvalidAsserterCert()
+        except Exception as ex:
+            raise InvalidAsserterCert() from ex
 
         # verify signature provided by the asserter
         asserter_public_key = asserter_cert.public_key()

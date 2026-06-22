@@ -26,7 +26,7 @@ import yaml
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding, rsa
+from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed448, ed25519, padding, rsa
 from cryptography.x509.oid import ExtensionOID, NameOID
 from cryptography.x509.verification import ExtensionPolicy, PolicyBuilder, Store
 
@@ -285,14 +285,29 @@ def verify_cert_chain(cert_chain, root_ca_cert, now=None):
 
 
 def _verify_cert_signature(cert, issuer_public_key):
-    if not isinstance(issuer_public_key, rsa.RSAPublicKey):
+    if isinstance(issuer_public_key, rsa.RSAPublicKey):
+        issuer_public_key.verify(
+            cert.signature,
+            cert.tbs_certificate_bytes,
+            padding.PKCS1v15(),
+            cert.signature_hash_algorithm,
+        )
+    elif isinstance(issuer_public_key, ec.EllipticCurvePublicKey):
+        issuer_public_key.verify(
+            cert.signature,
+            cert.tbs_certificate_bytes,
+            ec.ECDSA(cert.signature_hash_algorithm),
+        )
+    elif isinstance(issuer_public_key, dsa.DSAPublicKey):
+        issuer_public_key.verify(
+            cert.signature,
+            cert.tbs_certificate_bytes,
+            cert.signature_hash_algorithm,
+        )
+    elif isinstance(issuer_public_key, (ed25519.Ed25519PublicKey, ed448.Ed448PublicKey)):
+        issuer_public_key.verify(cert.signature, cert.tbs_certificate_bytes)
+    else:
         raise ValueError(f"unsupported certificate issuer public key type: {type(issuer_public_key)}")
-    issuer_public_key.verify(
-        cert.signature,
-        cert.tbs_certificate_bytes,
-        padding.PKCS1v15(),
-        cert.signature_hash_algorithm,
-    )
 
 
 def load_private_key(data: str):
