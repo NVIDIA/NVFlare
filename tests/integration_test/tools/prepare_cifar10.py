@@ -99,8 +99,15 @@ def _link_or_copy_cache(cache_data_dir: str, root: str):
     try:
         os.symlink(cache_data_dir, target_data_dir)
         print(f"Linked CIFAR-10 data into {root}")
-    except OSError:
-        shutil.copytree(cache_data_dir, target_data_dir)
+    except OSError as symlink_error:
+        print(f"Failed to link CIFAR-10 data into {root}: {symlink_error}. Copying instead.")
+        try:
+            shutil.copytree(cache_data_dir, target_data_dir)
+        except OSError as copy_error:
+            raise RuntimeError(
+                f"Failed to expose CIFAR-10 data at {root}. "
+                f"Symlink failed with: {symlink_error}. Copy failed with: {copy_error}."
+            ) from copy_error
         print(f"Copied CIFAR-10 data into {root}")
 
     if not _is_valid_cifar10_root(root):
@@ -109,6 +116,9 @@ def _link_or_copy_cache(cache_data_dir: str, root: str):
 
 def prepare_cifar10(roots: Iterable[str] = (), cache_root: str | None = None):
     """Prepare CIFAR-10 once in a shared cache and expose it at each requested root."""
+
+    if isinstance(roots, str):
+        raise TypeError("roots must be an iterable of paths, not a single string; use roots=[path]")
 
     cache_root = cache_root or os.environ.get("NVFLARE_TEST_DATA_CACHE", DEFAULT_CACHE_ROOT)
     cache_dataset_root = _cache_dataset_root(cache_root)
