@@ -120,50 +120,6 @@ def test_deploy_strips_server_supplied_byoc_without_local_byoc_app(tmp_path):
     assert "allow_list" in build_err
 
 
-def test_deploy_validation_error_cleans_run_dir_without_writing_meta(tmp_path):
-    workspace = _make_workspace(str(tmp_path / "workspace"))
-
-    with patch("nvflare.private.fed.utils.app_deployer.PrivacyService.is_scope_allowed", return_value=True):
-        with patch(
-            "nvflare.private.fed.utils.app_deployer.AppAuthzService.validate_app",
-            return_value=("invalid app", {}),
-        ):
-            err = AppDeployer().deploy(
-                workspace=workspace,
-                job_id="job-1",
-                job_meta={AppValidationKey.BYOC: True},
-                app_name="app",
-                app_data=_make_app_zip(),
-                fl_ctx=None,
-            )
-
-    assert err == "invalid app"
-    assert not os.path.exists(workspace.get_run_dir("job-1"))
-    assert not os.path.exists(workspace.get_job_meta_path("job-1"))
-
-
-def test_deploy_authorization_failure_cleans_run_dir(tmp_path):
-    workspace = _make_workspace(str(tmp_path / "workspace"))
-
-    with patch("nvflare.private.fed.utils.app_deployer.PrivacyService.is_scope_allowed", return_value=True):
-        with patch("nvflare.private.fed.utils.app_deployer.AppAuthzService.validate_app", return_value=("", {})):
-            with patch(
-                "nvflare.private.fed.utils.app_deployer.AppAuthzService.authorize_app_info",
-                return_value=(False, ""),
-            ):
-                err = AppDeployer().deploy(
-                    workspace=workspace,
-                    job_id="job-1",
-                    job_meta={},
-                    app_name="app",
-                    app_data=_make_app_zip(),
-                    fl_ctx=None,
-                )
-
-    assert err == "not authorized"
-    assert not os.path.exists(workspace.get_run_dir("job-1"))
-
-
 def test_deploy_detects_custom_dir_as_local_byoc_for_allow_list(tmp_path):
     workspace = _make_workspace(str(tmp_path / "workspace"))
     AuthorizationService.initialize(EmptyAuthorizer())

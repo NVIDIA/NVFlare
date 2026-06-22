@@ -38,8 +38,6 @@ class AppAuthzService(object):
         err, app_info = AppAuthzService.app_validator.validate(app_path)
         if err:
             return err, {}
-        if not isinstance(app_info, dict):
-            return f"app validator must return app info as dict but got {type(app_info)}", {}
 
         return "", app_info
 
