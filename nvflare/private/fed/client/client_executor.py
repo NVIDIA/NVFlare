@@ -18,6 +18,7 @@ import threading
 import time
 from abc import ABC, abstractmethod
 
+from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import AdminCommandNames, ConnPropKey, FLContextKey, RunProcessKey, SystemConfigs
 from nvflare.apis.fl_context import FLContext
@@ -194,6 +195,10 @@ class JobExecutor(ClientExecutor):
                 raise RuntimeError(f"START_JOB metadata differs from deployed job metadata for '{meta_key}'")
             if meta_key in deployed_job_meta:
                 job_meta[meta_key] = copy.deepcopy(deployed_value)
+        if deployed_job_meta.get(AppValidationKey.BYOC, False):
+            job_meta[AppValidationKey.BYOC] = True
+        else:
+            job_meta.pop(AppValidationKey.BYOC, None)
 
         # Preserve deploy-time launch metadata while recording scheduler-maintained start metadata.
         with open(meta_file, "w") as f:
