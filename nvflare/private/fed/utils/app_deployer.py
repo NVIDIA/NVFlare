@@ -12,11 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import json
 import os
 import shutil
 
 from nvflare.apis.app_deployer_spec import AppDeployerSpec
+from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.workspace import Workspace
@@ -61,9 +63,6 @@ class AppDeployer(AppDeployerSpec):
             with open(app_file, "wt") as f:
                 f.write(f"{app_name}")
 
-            with open(job_meta_file, "w") as f:
-                json.dump(job_meta, f, indent=4)
-
             submitter_name = job_meta.get(JobMetaKey.SUBMITTER_NAME, "")
             submitter_org = job_meta.get(JobMetaKey.SUBMITTER_ORG, "")
             submitter_role = job_meta.get(JobMetaKey.SUBMITTER_ROLE, "")
@@ -83,9 +82,23 @@ class AppDeployer(AppDeployerSpec):
                     return f"app {app_name}: signature verified but no signer identity could be extracted"
                 authz_submitters = signers
 
+            err, app_info = AppAuthzService.validate_app(app_path)
+            if err:
+                if os.path.exists(run_dir):
+                    shutil.rmtree(run_dir, ignore_errors=True)
+                return err
+
+            job_meta = copy.deepcopy(job_meta)
+            if app_info.get(AppValidationKey.BYOC, False):
+                job_meta[AppValidationKey.BYOC] = True
+            else:
+                job_meta.pop(AppValidationKey.BYOC, None)
+            with open(job_meta_file, "w") as f:
+                json.dump(job_meta, f, indent=4)
+
             for authz_name, authz_org, authz_role in authz_submitters:
-                authorized, err = AppAuthzService.authorize(
-                    app_path=app_path,
+                authorized, err = AppAuthzService.authorize_app_info(
+                    app_info=app_info,
                     submitter_name=authz_name,
                     submitter_org=authz_org,
                     submitter_role=authz_role,

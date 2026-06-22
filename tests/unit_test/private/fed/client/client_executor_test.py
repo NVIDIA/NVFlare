@@ -19,6 +19,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants, RunProcessKey
 from nvflare.apis.job_def import JobMetaKey
@@ -94,6 +95,56 @@ def test_start_app_allows_scheduler_metadata(tmp_path):
     launch_meta = launcher.launch_job.call_args.args[0]
     assert launch_meta[JobMetaKey.JOB_CLIENTS.value] == [{"name": "site-1", "token": "token-1"}]
     assert launch_meta[JobMetaKey.JOB_LAUNCHER_SPEC.value]["default"]["docker"]["image"] == "trusted/image:1"
+
+
+@pytest.mark.parametrize(
+    "deployed_byoc, start_byoc, expected_byoc",
+    [
+        (False, True, False),
+        (True, False, True),
+    ],
+)
+def test_start_app_uses_deployed_byoc_when_rewriting_job_meta(tmp_path, deployed_byoc, start_byoc, expected_byoc):
+    job_id = "job-1"
+    deployed_meta = {JobConstants.JOB_ID: job_id}
+    if deployed_byoc:
+        deployed_meta[AppValidationKey.BYOC] = True
+    workspace = _write_deployed_meta(tmp_path, job_id, deployed_meta)
+    start_meta = {JobConstants.JOB_ID: job_id, AppValidationKey.BYOC: start_byoc}
+
+    client = MagicMock()
+    client.client_name = "site-1"
+    client.cell.get_internal_listener_url.return_value = "tcp://parent:8002"
+    client.cell.get_internal_listener_params.return_value = {}
+    fl_ctx = MagicMock()
+    fl_ctx.get_prop.side_effect = lambda key, *args, **kwargs: {
+        FLContextKey.WORKSPACE_OBJECT: workspace,
+        FLContextKey.SERVER_CONFIG: [{"service": {"scheme": "grpc", "target": "parent:8002"}}],
+    }.get(key)
+    launcher = MagicMock()
+    launcher.launch_job.return_value = MagicMock()
+
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
+        patch.object(threading.Thread, "start", lambda self: None),
+    ):
+        JobExecutor(client=client, startup=workspace.get_startup_kit_dir()).start_app(
+            client,
+            job_id,
+            start_meta,
+            SimpleNamespace(workspace=str(tmp_path), set=[]),
+            None,
+            None,
+            None,
+            fl_ctx,
+        )
+
+    with open(workspace.get_job_meta_path(job_id)) as f:
+        refreshed_meta = json.load(f)
+    launch_meta = launcher.launch_job.call_args.args[0]
+
+    assert refreshed_meta.get(AppValidationKey.BYOC, False) is expected_byoc
+    assert launch_meta.get(AppValidationKey.BYOC, False) is expected_byoc
 
 
 @pytest.mark.parametrize(
