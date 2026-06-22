@@ -25,6 +25,8 @@ class ObjectDownloader:
         num_receivers: int,
         tx_id=None,
         transaction_done_cb=None,
+        progress_cb=None,
+        progress_interval: float = 30.0,
         **cb_kwargs,
     ):
         """Constructor of ObjectDownloader.
@@ -36,6 +38,8 @@ class ObjectDownloader:
             tx_id: if specified, this will be used as the ID of the new transaction. If not specified, dynamically
                 generates the transaction id.
             transaction_done_cb: the callback to be called when the transaction is done.
+            progress_cb: optional callback for source-side per-ref/per-receiver progress.
+            progress_interval: minimum seconds between active progress callback events for advancing counters.
             **cb_kwargs: kwargs to be passed to transaction_done_cb.
 
         Notes: the CB signature is:
@@ -56,6 +60,8 @@ class ObjectDownloader:
             num_receivers=num_receivers,
             tx_id=tx_id,
             transaction_done_cb=transaction_done_cb,
+            progress_cb=progress_cb,
+            progress_interval=progress_interval,
             **cb_kwargs,
         )
 

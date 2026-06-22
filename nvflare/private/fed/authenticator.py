@@ -309,11 +309,13 @@ def _origin_matches_fqcn(origin: str, fqcn: str, channel: Optional[str] = None) 
     if origin == fqcn or FQCN.is_ancestor(fqcn, origin):
         return True
 
-    # Direct CellPipe stream cells use sibling names such as
-    # "site-1_<job-id>_active" and "site-1_<job-id>_passive", but their auth
-    # token is issued to the registered site FQCN ("site-1").  Treat only those
-    # stream aliases as the owning site; normal server-command origins remain
-    # bound to the exact registered FQCN/descendant relationship above.
+    # CellPipe stream cells from older NVFlare versions use sibling names such
+    # as "site-1_<job-id>_active" and "site-1_<job-id>_passive", but their auth
+    # token is issued to the registered site FQCN ("site-1"). Current versions
+    # name these cells <site>.<token>.<mode>, which the descendant check above
+    # already covers. Treat only the legacy stream aliases as the owning site;
+    # normal server-command origins remain bound to the exact registered
+    # FQCN/descendant relationship above.
     if channel != STREAM_CHANNEL or not origin.startswith(f"{fqcn}_"):
         return False
 

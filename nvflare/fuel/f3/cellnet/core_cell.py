@@ -645,6 +645,11 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
         if self.connector_manager.should_connect_to_server(self.my_info):
             self._create_bb_external_connector()
+        elif not parent_url and self.root_url:
+            # A cell configured with only a root URL (e.g. a CellPipe cell named
+            # <site>.<token>.<mode> that joins the cellnet at the root) has no
+            # other way to connect, regardless of its generation.
+            self._create_bb_external_connector()
 
     def _set_bb_for_server_root(self):
         if isinstance(self.root_url, list):
@@ -1171,12 +1176,15 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 self.logger.debug(f"{self.my_info.fqcn}: target {target_fqcn} is or share my ancestor")
                 parent_fqcn = FQCN.get_parent(self.my_info.fqcn)
                 agent = self.agents.get(parent_fqcn)
-                if not agent:
-                    self.log_warning(f"no connection to parent {parent_fqcn}", for_msg)
-                    return None
-                return agent.endpoint
+                if agent:
+                    return agent.endpoint
+                # I'm not connected to my FQCN parent: cells with hierarchical
+                # names (e.g. CellPipe cells named <site>.<token>.<mode>) connect
+                # to an ancestor or to the root instead. Fall through to the
+                # generic resolution below.
+                self.logger.debug(f"{self.my_info.fqcn}: no connection to parent {parent_fqcn}")
 
-        # not the same family
+        # not the same family, or no direct path within the family
         ep = self._try_path(target_info.path)
         if ep:
             return ep

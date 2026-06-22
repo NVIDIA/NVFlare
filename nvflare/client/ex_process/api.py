@@ -14,6 +14,8 @@
 
 import importlib
 import os
+import threading
+import time
 from typing import Any, Dict, Optional, Tuple
 
 from nvflare.apis.analytix import AnalyticsDataType
@@ -198,6 +200,30 @@ class ExProcessClientAPI(APISpec):
 
                     if isinstance(pipe, _CellPipe):
                         pipe.pass_through_on_send = True
+                        from nvflare.fuel.utils.fobs import FOBSContextKey
+                        from nvflare.fuel.utils.pipe.pipe import Message, Topic
+
+                        last_progress_warning_time = 0.0
+                        progress_warning_lock = threading.Lock()
+
+                        def _send_stream_progress(**kwargs):
+                            nonlocal last_progress_warning_time
+                            if getattr(pipe, "closed", False):
+                                return
+                            try:
+                                pipe.send(Message.new_request(Topic.STREAM_PROGRESS, kwargs))
+                            except Exception as ex:
+                                with progress_warning_lock:
+                                    now = time.time()
+                                    should_warn = now - last_progress_warning_time >= 60.0
+                                    if should_warn:
+                                        last_progress_warning_time = now
+                                if should_warn:
+                                    self.logger.warning(f"failed to send stream progress event: {ex}")
+                                else:
+                                    self.logger.debug(f"failed to send stream progress event: {ex}")
+
+                        pipe.cell.update_fobs_context({FOBSContextKey.STREAM_PROGRESS_CB: _send_stream_progress})
                         self.logger.info("PASS_THROUGH enabled on subprocess CellPipe (reverse path)")
                 metric_pipe, metric_channel_name = None, ""
                 if ConfigKey.METRICS_EXCHANGE in client_config.config:
@@ -221,6 +247,7 @@ class ExProcessClientAPI(APISpec):
                     submit_result_timeout=client_config.get_submit_result_timeout(),
                     max_resends=client_config.get_max_resends(),
                     download_complete_timeout=client_config.get_download_complete_timeout(),
+                    streaming_idle_timeout=client_config.get_streaming_idle_timeout(),
                     launch_once=client_config.get_launch_once(),
                     from_nvflare_converter=from_nvflare_converter,
                     to_nvflare_converter=to_nvflare_converter,
@@ -261,6 +288,11 @@ class ExProcessClientAPI(APISpec):
         return model_registry.get_model(timeout)
 
     def send(self, model: FLModel, clear_cache: bool = True) -> None:
+        """Submit a model result to FLARE.
+
+        Raises:
+            RuntimeError: If no model has been received yet or if FLARE rejects/does not accept the submission.
+        """
         model_registry = self.get_model_registry()
         if not self.receive_called:
             raise RuntimeError('"receive" needs to be called before sending model!')

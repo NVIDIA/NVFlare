@@ -28,6 +28,7 @@ from nvflare.app_common.abstract.params_converter import ParamsConverter
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.task_exchanger import TaskExchanger
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+from nvflare.fuel.f3.streaming.transfer_progress import DEFAULT_STREAMING_IDLE_TIMEOUT
 from nvflare.fuel.utils.validation_utils import check_object_type
 from nvflare.security.logging import secure_format_exception
 
@@ -56,6 +57,8 @@ class LauncherExecutor(TaskExchanger):
         from_nvflare_converter_id: Optional[str] = None,
         to_nvflare_converter_id: Optional[str] = None,
         max_resends: Optional[int] = None,
+        peer_read_timeout_explicit: bool = False,
+        streaming_idle_timeout: Optional[float] = DEFAULT_STREAMING_IDLE_TIMEOUT,
     ) -> None:
         """Initializes the LauncherExecutor.
 
@@ -82,6 +85,8 @@ class LauncherExecutor(TaskExchanger):
             to_nvflare_converter_id (Optional[str]): Deprecated in LauncherExecutor path.
                 Parameter conversion for launcher-based external execution now happens in the subprocess agent.
             max_resends (Optional[int]): Maximum number of retries for pipe sends. None means no limit.
+            peer_read_timeout_explicit (bool): whether peer_read_timeout came from an explicit user override.
+            streaming_idle_timeout (float, optional): stream-progress idle timeout for task-send waits.
         """
         TaskExchanger.__init__(
             self,
@@ -91,6 +96,8 @@ class LauncherExecutor(TaskExchanger):
             heartbeat_timeout=heartbeat_timeout,
             max_resends=max_resends,
             peer_read_timeout=peer_read_timeout,
+            peer_read_timeout_explicit=peer_read_timeout_explicit,
+            streaming_idle_timeout=streaming_idle_timeout,
             task_wait_time=task_wait_timeout,
         )
         self.launcher: Optional[Launcher] = None
