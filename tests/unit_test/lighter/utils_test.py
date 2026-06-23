@@ -33,7 +33,13 @@ from nvflare.lighter.impl.cert import serialize_cert
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
 from nvflare.lighter.utils import Identity, cert_to_dict
 from nvflare.lighter.utils import generate_cert as lighter_generate_cert
-from nvflare.lighter.utils import load_private_key_file, load_yaml, sign_folders, verify_folder_signature
+from nvflare.lighter.utils import (
+    load_private_key_file,
+    load_yaml,
+    sign_folders,
+    verify_folder_signature,
+    verify_folder_signature_and_get_signers,
+)
 
 folders = ["folder1", "folder2"]
 files = ["file1", "file2"]
@@ -260,6 +266,43 @@ class TestVerifyFolderSignature:
         folder, root_ca_path, client_crt_path, client_pri_key, _ = self._setup_certs_and_folder(tmp_path)
         sign_folders(folder, client_pri_key, crt_path=client_crt_path)
         assert verify_folder_signature(folder, root_ca_path, single_signer=False) is True
+
+    def test_verify_folder_signature_returns_signer_identity(self, tmp_path):
+        """Verifier exposes the trusted submitter identity from the signing cert."""
+        root_pri_key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
+        root_pub_key = root_pri_key.public_key()
+        root_cert = lighter_generate_cert(
+            subject=Identity("root", "nvidia"),
+            issuer=Identity("root", "nvidia"),
+            signing_pri_key=root_pri_key,
+            subject_pub_key=root_pub_key,
+            ca=True,
+        )
+
+        signer_pri_key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
+        signer_pub_key = signer_pri_key.public_key()
+        signer_cert = lighter_generate_cert(
+            subject=Identity("alice@nvidia.com", "nvidia", "lead"),
+            issuer=Identity("root", "nvidia"),
+            signing_pri_key=root_pri_key,
+            subject_pub_key=signer_pub_key,
+        )
+
+        root_ca_path = tmp_path / "root.crt"
+        signer_crt_path = tmp_path / "alice.crt"
+        root_ca_path.write_bytes(serialize_cert(root_cert))
+        signer_crt_path.write_bytes(serialize_cert(signer_cert))
+
+        folder = tmp_path / "signed_folder"
+        folder.mkdir()
+        (folder / "config.json").write_bytes(b"{}")
+        sign_folders(str(folder), signer_pri_key, crt_path=str(signer_crt_path))
+
+        verified, signers = verify_folder_signature_and_get_signers(str(folder), str(root_ca_path))
+
+        assert verified is True
+        assert len(signers) == 1
+        assert signers[0] == ("alice@nvidia.com", "nvidia", "lead")
 
     def test_verify_folder_signature_success_single_signer(self, tmp_path):
         """Verify returns True when folder is signed by root key only (single_signer=True)."""

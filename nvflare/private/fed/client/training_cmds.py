@@ -13,12 +13,15 @@
 # limitations under the License.
 
 import json
+import logging
 import os
+import tempfile
 from typing import List
 
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci.proto import MetaStatusValue, make_meta
+from nvflare.fuel.utils.zip_utils import unzip_all_from_bytes
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
 from nvflare.lighter.utils import verify_folder_signature
 from nvflare.private.admin_defs import Message, error_reply, ok_reply
@@ -26,6 +29,9 @@ from nvflare.private.defs import RequestHeader, ScopeInfoKey, TrainingTopic
 from nvflare.private.fed.client.admin import RequestProcessor
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
 from nvflare.private.fed.utils.fed_utils import get_scope_info
+from nvflare.security.logging import secure_format_exception
+
+logger = logging.getLogger(__name__)
 
 
 class AbortAppProcessor(RequestProcessor):
@@ -106,18 +112,25 @@ class DeployProcessor(RequestProcessor):
         from_hub_site = job_meta.get(JobMetaKey.FROM_HUB_SITE.value)
         if not from_hub_site:
             workspace = Workspace(root_dir=engine.args.workspace, site_name=client_name)
-            app_path = workspace.get_app_dir(job_id)
             root_ca_path = os.path.join(workspace.get_startup_kit_dir(), "rootCA.pem")
-            sig_file = os.path.join(app_path, NVFLARE_SIG_FILE)
-            if os.path.exists(sig_file):
-                if not verify_folder_signature(app_path, root_ca_path):
-                    return error_reply(f"app {app_name} does not pass signature verification")
-            # No elif on the client: require_signed_jobs is a server-side policy.
-            # The server already rejected unsigned jobs before deploying to clients.
-            # Accepted trust boundary: in a compromised-server scenario a malicious
-            # unsigned job could reach the client, but at that point the server itself
-            # is untrusted. Defense-in-depth here would require the client to independently
-            # know the policy, which is not part of the current threat model.
+            # Verify the received bytes before deploying them. AppDeployer will
+            # extract these same bytes into the run directory.
+            with tempfile.TemporaryDirectory() as app_staging_dir:
+                try:
+                    unzip_all_from_bytes(req.body, app_staging_dir)
+                except Exception as e:
+                    logger.warning("failed to stage app %s: %s", app_name, secure_format_exception(e))
+                    return error_reply(f"failed to stage app {app_name}")
+
+                sig_file = os.path.join(app_staging_dir, NVFLARE_SIG_FILE)
+                has_root_ca = os.path.exists(root_ca_path)
+                if os.path.exists(sig_file) and has_root_ca:
+                    if not verify_folder_signature(app_staging_dir, root_ca_path):
+                        return error_reply(f"app {app_name} does not pass signature verification")
+                elif has_root_ca:
+                    # Client startup kits do not carry the server's require_signed_jobs override.
+                    # With a local trust root, direct-deploy bytes must be signed and fail closed.
+                    return error_reply("unsigned job rejected - signed deploy is required")
 
         err = engine.deploy_app(
             app_name=app_name, job_id=job_id, job_meta=job_meta, client_name=client_name, app_data=req.body
