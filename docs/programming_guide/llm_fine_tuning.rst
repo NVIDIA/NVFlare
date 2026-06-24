@@ -10,7 +10,6 @@ fine-tuning strategies are supported:
 
 - **SFT (Supervised Fine-Tuning)** -- Full or partial model fine-tuning on task-specific data
 - **PEFT (Parameter-Efficient Fine-Tuning)** -- LoRA and other adapter-based methods that train only a small subset of parameters
-- **Prompt Learning** -- Learning soft prompts while keeping the base model frozen
 
 All approaches use the standard FLARE Client API, so you can convert existing
 single-machine fine-tuning scripts to federated with minimal code changes.
@@ -49,7 +48,7 @@ NVIDIA NeMo Integration
 For NVIDIA NeMo models, FLARE provides tight integration for multiple fine-tuning strategies:
 
 - `Federated SFT with NeMo <https://github.com/NVIDIA/NVFlare/tree/main/integration/nemo/examples/supervised_fine_tuning>`_ -- Supervised fine-tuning of NeMo models across sites
-- `Federated PEFT with NeMo <https://github.com/NVIDIA/NVFlare/tree/main/integration/nemo/examples/peft>`_ -- Parameter-efficient fine-tuning (LoRA, P-Tuning) with NeMo
+- `Federated PEFT with NeMo <https://github.com/NVIDIA/NVFlare/tree/main/integration/nemo/examples/peft>`_ -- Parameter-efficient LoRA fine-tuning with NeMo
 
 Self-Paced Training
 ===================
