@@ -25,6 +25,7 @@ import torch
 PERSISTENCE_KEY_MODEL = "model"
 PERSISTENCE_KEY_TRAIN_CONF = "train_conf"
 PERSISTENCE_KEY_META_PROPS = "meta_props"
+STATE_PREVIEW_LIMIT = 5
 
 
 def _torch_load(path: str, map_location: str = "cpu"):
@@ -129,11 +130,68 @@ def save_nvflare_model_checkpoint(
     torch.save(data, path)
 
 
+def count_model_state_tensors(state_dict: Mapping[str, Any]) -> int:
+    return sum(1 for value in state_dict.values() if isinstance(value, torch.Tensor))
+
+
+def _preview_values(values: list[str]) -> str:
+    preview = ", ".join(values[:STATE_PREVIEW_LIMIT])
+    if len(values) > STATE_PREVIEW_LIMIT:
+        preview += f", ... ({len(values) - STATE_PREVIEW_LIMIT} more)"
+    return preview
+
+
+def _preview_shape_mismatches(shape_mismatches: list[tuple[str, tuple[int, ...], tuple[int, ...]]]) -> str:
+    values = [
+        f"{key}: candidate {candidate_shape}, reference {reference_shape}"
+        for key, candidate_shape, reference_shape in shape_mismatches
+    ]
+    return _preview_values(values)
+
+
+def validate_model_state_coverage(
+    candidate_state_dict: Mapping[str, torch.Tensor],
+    reference_state_dict: Mapping[str, torch.Tensor],
+    candidate_name: str = "candidate model state",
+    reference_name: str = "reference model state",
+) -> None:
+    """Verify that every reference tensor exists in the candidate state with the same shape."""
+    missing = []
+    shape_mismatches = []
+    for key, reference_value in reference_state_dict.items():
+        if not isinstance(reference_value, torch.Tensor):
+            continue
+        candidate_value = candidate_state_dict.get(key)
+        if not isinstance(candidate_value, torch.Tensor):
+            missing.append(key)
+            continue
+        if candidate_value.shape != reference_value.shape:
+            shape_mismatches.append((key, tuple(candidate_value.shape), tuple(reference_value.shape)))
+
+    if not missing and not shape_mismatches:
+        return
+
+    reference_tensor_count = count_model_state_tensors(reference_state_dict)
+    matched = reference_tensor_count - len(missing) - len(shape_mismatches)
+    details = [f"matched {matched}/{reference_tensor_count} tensors"]
+    if missing:
+        details.append(f"missing keys: {_preview_values(missing)}")
+    if shape_mismatches:
+        details.append(f"shape mismatches: {_preview_shape_mismatches(shape_mismatches)}")
+    raise RuntimeError(f"{candidate_name} does not cover all tensors from {reference_name}; " + "; ".join(details))
+
+
 def match_model_state_to_reference(
     state_dict: Mapping[str, torch.Tensor],
     reference_state_dict: Mapping[str, torch.Tensor],
+    require_all: bool = False,
+    candidate_name: str = "candidate model state",
+    reference_name: str = "reference model state",
 ) -> OrderedDict[str, torch.Tensor]:
     """Return updated tensors in the reference key namespace."""
+    if require_all:
+        validate_model_state_coverage(state_dict, reference_state_dict, candidate_name, reference_name)
+
     matched = OrderedDict()
     for key in reference_state_dict:
         if key in state_dict:

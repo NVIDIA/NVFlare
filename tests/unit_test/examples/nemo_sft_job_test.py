@@ -161,6 +161,95 @@ def test_sft_model_checkpoint_state_files_are_deduplicated(tmp_path):
     assert files.count(str(checkpoint_dir / "pytorch_model.bin")) == 1
 
 
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for model state coverage checks")
+def test_sft_model_state_coverage_allows_extra_candidate_tensors():
+    import torch
+
+    model_checkpoint = _load_example_module("model_checkpoint")
+    incoming_state = {
+        "model.embed.weight": torch.zeros((2, 2)),
+        "model.norm.weight": torch.ones((2,)),
+    }
+    candidate_state = {
+        **incoming_state,
+        "model.extra.weight": torch.ones((3, 3)),
+    }
+
+    model_checkpoint.validate_model_state_coverage(candidate_state, incoming_state)
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for model state coverage checks")
+def test_sft_model_state_coverage_rejects_missing_incoming_tensor():
+    import torch
+
+    model_checkpoint = _load_example_module("model_checkpoint")
+    incoming_state = {
+        "model.embed.weight": torch.zeros((2, 2)),
+        "model.norm.weight": torch.ones((2,)),
+    }
+    candidate_state = {"model.embed.weight": torch.zeros((2, 2))}
+
+    with pytest.raises(RuntimeError) as exc_info:
+        model_checkpoint.validate_model_state_coverage(
+            candidate_state,
+            incoming_state,
+            candidate_name="updated checkpoint",
+            reference_name="incoming global model",
+        )
+
+    message = str(exc_info.value)
+    assert "matched 1/2 tensors" in message
+    assert "model.norm.weight" in message
+    assert "updated checkpoint" in message
+    assert "incoming global model" in message
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for model state coverage checks")
+def test_sft_model_state_coverage_rejects_shape_mismatch():
+    import torch
+
+    model_checkpoint = _load_example_module("model_checkpoint")
+    incoming_state = {
+        "model.embed.weight": torch.zeros((2, 2)),
+        "model.norm.weight": torch.ones((2,)),
+    }
+    candidate_state = {
+        "model.embed.weight": torch.zeros((2, 2)),
+        "model.norm.weight": torch.ones((3,)),
+    }
+
+    with pytest.raises(RuntimeError) as exc_info:
+        model_checkpoint.validate_model_state_coverage(candidate_state, incoming_state)
+
+    message = str(exc_info.value)
+    assert "matched 1/2 tensors" in message
+    assert "model.norm.weight" in message
+    assert "candidate (3,)" in message
+    assert "reference (2,)" in message
+
+
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required for model state coverage checks")
+def test_sft_model_state_matching_preserves_full_incoming_key_set():
+    import torch
+
+    model_checkpoint = _load_example_module("model_checkpoint")
+    incoming_state = {
+        "model.embed.weight": torch.zeros((2, 2)),
+        "model.norm.weight": torch.ones((2,)),
+    }
+    updated_state = {
+        "model.extra.weight": torch.ones((3, 3)),
+        "model.embed.weight": torch.full((2, 2), 2.0),
+        "model.norm.weight": torch.full((2,), 3.0),
+    }
+
+    matched = model_checkpoint.match_model_state_to_reference(updated_state, incoming_state, require_all=True)
+
+    assert list(matched) == list(incoming_state)
+    assert torch.equal(matched["model.embed.weight"], torch.full((2, 2), 2.0))
+    assert torch.equal(matched["model.norm.weight"], torch.full((2,), 3.0))
+
+
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to import the AutoModel client helper")
 def test_sft_latest_model_dir_prefers_step_over_epoch(tmp_path):
     client_module = _load_example_module("automodel_sft_client")

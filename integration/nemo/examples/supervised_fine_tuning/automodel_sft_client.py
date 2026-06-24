@@ -339,9 +339,15 @@ def main():
         else:
             updated_state, metrics, steps = _run_automodel_round(args, round_dir, incoming_state)
 
-        updated_state = model_checkpoint.match_model_state_to_reference(updated_state, incoming_state)
+        updated_state = model_checkpoint.match_model_state_to_reference(
+            updated_state,
+            incoming_state,
+            require_all=True,
+            candidate_name=f"updated AutoModel checkpoint for site={client_name}, round={current_round}",
+            reference_name="incoming global model",
+        )
         if not updated_state:
-            raise RuntimeError("No common model keys between the received and updated model states.")
+            raise RuntimeError("No model tensors to send after matching updated checkpoint to incoming global model.")
         params = _move_tensor_params(updated_state, server_tensor_device)
         meta = {FLMetaKey.NUM_STEPS_CURRENT_ROUND: steps}
         flare.send(flare.FLModel(params_type=flare.ParamsType.FULL, params=params, metrics=metrics, meta=meta))

@@ -114,6 +114,12 @@ to release GPU memory, but the model state does not restart from the initial che
 4. The client sends the full updated model state.
 5. FedAvg averages the full-model tensors and replaces the global model with the aggregate.
 
+The AutoModel loader uses `strict=False` only to tolerate extra model/checkpoint tensors. The client still requires
+every incoming federated tensor to be accepted by AutoModel and to appear in the saved update with the same shape;
+otherwise it raises before sending a partial `FULL` update. Extra checkpoint tensors are trimmed away when the update is
+matched back to the incoming federated key set. The H100 validation below logged `Loaded 263/263 incoming global model
+tensors` for every client task, which is the intended full-model continuity signal.
+
 This is intentionally heavier than PEFT. For lower-memory experimentation, use the PEFT example. For full-model SFT,
 use small step counts for smoke tests and increase clients/rounds only on hardware sized for full-model transfer and
 aggregation.

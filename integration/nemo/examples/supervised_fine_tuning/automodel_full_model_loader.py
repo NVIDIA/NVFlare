@@ -66,11 +66,15 @@ def from_pretrained_with_global_state(
     )
     if incoming_model_ckpt:
         incoming_state = model_checkpoint.load_model_state(incoming_model_ckpt)
-        compatible_state = _compatible_model_state(model.state_dict(), incoming_state)
-        if not compatible_state:
-            raise RuntimeError(
-                f"No incoming model tensors from {incoming_model_ckpt} matched the AutoModel state dict."
-            )
+        model_state = model.state_dict()
+        model_checkpoint.validate_model_state_coverage(
+            model_state,
+            incoming_state,
+            candidate_name=f"AutoModel state dict for {pretrained_model_name_or_path}",
+            reference_name=f"incoming global model checkpoint {incoming_model_ckpt}",
+        )
+        compatible_state = _compatible_model_state(model_state, incoming_state)
         model.load_state_dict(compatible_state, strict=False)
-        print(f"Loaded {len(compatible_state)}/{len(incoming_state)} incoming global model tensors")
+        incoming_tensor_count = model_checkpoint.count_model_state_tensors(incoming_state)
+        print(f"Loaded {len(compatible_state)}/{incoming_tensor_count} incoming global model tensors")
     return model
