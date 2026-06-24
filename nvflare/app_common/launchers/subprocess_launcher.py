@@ -15,6 +15,7 @@
 import os
 import re
 import shlex
+import signal
 import subprocess
 from threading import Lock, Thread
 from typing import Optional
@@ -176,9 +177,21 @@ class SubprocessLauncher(Launcher):
                     stderr=subprocess.STDOUT,
                     cwd=self._app_dir,
                     env=env,
+                    start_new_session=os.name == "posix",
                 )
                 self._log_thread = Thread(target=log_subprocess_output, args=(self._process, self.logger))
                 self._log_thread.start()
+
+    def _terminate_process(self):
+        if os.name == "posix":
+            try:
+                os.killpg(self._process.pid, signal.SIGTERM)
+                return
+            except ProcessLookupError:
+                return
+            except Exception as e:
+                self.logger.debug(f"failed to terminate subprocess process group: {e}")
+        self._process.terminate()
 
     def _stop_external_process(self):
         with self._lock:
@@ -188,7 +201,7 @@ class SubprocessLauncher(Launcher):
                 except subprocess.TimeoutExpired:
                     pass
                 self.logger.info(f"_stop_external_process: terminating pid={self._process.pid}")
-                self._process.terminate()
+                self._terminate_process()
                 self._log_thread.join()
                 if self._clean_up_script:
                     command_seq = shlex.split(self._clean_up_script)
