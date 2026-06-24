@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from collections import OrderedDict
 
 import model_checkpoint
@@ -62,6 +63,12 @@ def _greedy_generate_no_cache(model, input_ids, max_new_tokens: int, eos_token_i
     return generated
 
 
+def _write_predictions(output_json: str, checkpoint: str, results: list[dict[str, str]]) -> None:
+    os.makedirs(os.path.dirname(os.path.abspath(output_json)), exist_ok=True)
+    with open(output_json, "w") as f:
+        json.dump({"checkpoint": checkpoint, "predictions": results}, f, indent=2)
+
+
 def main():
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -97,8 +104,7 @@ def main():
         generated = tokenizer.decode(output_ids[0][inputs["input_ids"].shape[-1] :], skip_special_tokens=True).strip()
         results.append({"prompt": prompt, "generated": generated})
 
-    with open(args.output_json, "w") as f:
-        json.dump({"checkpoint": args.checkpoint, "predictions": results}, f, indent=2)
+    _write_predictions(args.output_json, args.checkpoint, results)
     for item in results:
         print(f"PROMPT: {item['prompt']}")
         print(f"GENERATED: {item['generated']}")

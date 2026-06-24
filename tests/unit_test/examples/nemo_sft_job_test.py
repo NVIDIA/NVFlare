@@ -443,6 +443,22 @@ def test_sft_predict_uses_no_cache_greedy_loop():
     assert [call["use_cache"] for call in model.calls] == [False, False]
 
 
+@pytest.mark.skipif(not HAS_TORCH, reason="PyTorch is required to import prediction helpers")
+def test_sft_predict_creates_output_parent_dir(tmp_path):
+    predict_module = _load_example_module("predict")
+    output_json = tmp_path / "missing" / "nested" / "predictions.json"
+
+    predict_module._write_predictions(str(output_json), "checkpoint.pt", [{"prompt": "p", "generated": "g"}])
+
+    with open(output_json) as f:
+        data = json.load(f)
+
+    assert data == {
+        "checkpoint": "checkpoint.pt",
+        "predictions": [{"prompt": "p", "generated": "g"}],
+    }
+
+
 def test_sft_synthetic_data_generator_writes_site_and_validation_files(tmp_path):
     data_module = _load_example_module("data/create_synthetic_sft_data")
     out_dir = tmp_path / "synthetic"
