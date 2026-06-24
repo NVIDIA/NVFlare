@@ -7,9 +7,8 @@ methods to showcase how to adapt a large language model (LLM) to
 a downstream task, such as financial sentiment predictions. 
 
 ### [Supervised fine-tuning (SFT) with NeMo and NVFlare](./supervised_fine_tuning/README.md)
-An example of using NVIDIA FLARE
-with NeMo for [supervised fine-tuning (SFT)](https://github.com/NVIDIA/NeMo-Megatron-Launcher#5152-sft-training) 
-to fine-tune all parameters of a large language model (LLM) on supervised data to teach the model how to follow user specified instructions. 
+In this example, we fine-tune all trainable weights of a Nemotron 3 Nano model with NeMo AutoModel SFT using NVFlare's
+Recipe API, full-model FedAvg transfer, and explicit Client API calls.
 
 ### [Prompt learning with NeMo and NVFlare](./prompt_learning/README.md)
 An example of using NVIDIA FLARE

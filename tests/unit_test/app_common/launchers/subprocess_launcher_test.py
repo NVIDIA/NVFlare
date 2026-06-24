@@ -13,6 +13,8 @@
 # limitations under the License.
 
 import shutil
+import signal as signal_module
+import subprocess
 import tempfile
 from io import BufferedReader, BytesIO
 from unittest.mock import Mock, patch
@@ -20,6 +22,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from nvflare.apis.dxo import DXO, DataKind
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.signal import Signal
 from nvflare.app_common.launchers.subprocess_launcher import (
@@ -30,6 +33,17 @@ from nvflare.app_common.launchers.subprocess_launcher import (
 
 
 class TestSubprocessLauncher:
+    @staticmethod
+    def _make_fl_ctx(tmp_dir):
+        class _Workspace:
+            def get_app_custom_dir(self, job_id):
+                return tmp_dir
+
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, _Workspace(), private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, "test_job", private=True, sticky=False)
+        return fl_ctx
+
     def test_launch(self):
         tempdir = tempfile.mkdtemp()
         fl_ctx = FLContext()
@@ -123,6 +137,53 @@ class TestSubprocessLauncher:
         assert launcher._launch_once is False
         assert launcher._clean_up_script == "echo 'cleanup'"
         assert launcher._shutdown_timeout == 0.0
+
+    def test_start_external_process_uses_posix_process_group(self, monkeypatch, tmp_path):
+        popen_calls = []
+
+        class _Proc:
+            pid = 1234
+            stdout = BufferedReader(BytesIO(b""))
+
+            def __init__(self, *args, **kwargs):
+                popen_calls.append({"args": args, "kwargs": kwargs})
+
+        monkeypatch.setattr("nvflare.app_common.launchers.subprocess_launcher.os.name", "posix")
+        monkeypatch.setattr("nvflare.app_common.launchers.subprocess_launcher.subprocess.Popen", _Proc)
+        launcher = SubprocessLauncher("python train.py", launch_once=False)
+        launcher._app_dir = str(tmp_path)
+
+        launcher.launch_task(
+            "__test_task", DXO(DataKind.WEIGHTS, {}).to_shareable(), self._make_fl_ctx(str(tmp_path)), Signal()
+        )
+        launcher._log_thread.join()
+
+        assert popen_calls[0]["kwargs"]["start_new_session"] is True
+        assert launcher._process is not None
+
+    def test_stop_external_process_terminates_posix_process_group(self, monkeypatch):
+        killpg_calls = []
+
+        class _Proc:
+            pid = 1234
+
+            def wait(self, timeout=None):
+                raise subprocess.TimeoutExpired("python train.py", timeout)
+
+        launcher = SubprocessLauncher("python train.py", launch_once=False)
+        launcher._process = _Proc()
+        launcher._log_thread = Mock()
+        monkeypatch.setattr("nvflare.app_common.launchers.subprocess_launcher.os.name", "posix")
+        monkeypatch.setattr(
+            "nvflare.app_common.launchers.subprocess_launcher.os.killpg",
+            lambda pid, sig: killpg_calls.append((pid, sig)),
+        )
+
+        launcher._stop_external_process()
+
+        assert killpg_calls == [(1234, signal_module.SIGTERM)]
+        launcher._log_thread.join.assert_called_once()
+        assert launcher._process is None
 
     def test_log_subprocess_output(self):
         class _Proc:
