@@ -7,7 +7,7 @@ WORKDIR /opt/NVFlare
 # This layer is cached until packaging metadata or setup helpers change — PyTorch
 # won't re-download on every source edit.
 COPY pyproject.toml setup.py setup.cfg versioneer.py README.md ./
-RUN mkdir -p nvflare/tool/agent && touch nvflare/__init__.py
+RUN mkdir -p nvflare/tool/agent && touch nvflare/__init__.py nvflare/tool/__init__.py nvflare/tool/agent/__init__.py
 COPY nvflare/tool/agent/skill_manifest.py ./nvflare/tool/agent/skill_manifest.py
 RUN pip install -U pip && pip install -e ".[dev,MONITORING,PT]"
 
