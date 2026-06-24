@@ -50,7 +50,6 @@ For NVIDIA NeMo models, FLARE provides tight integration for multiple fine-tunin
 
 - `Federated SFT with NeMo <https://github.com/NVIDIA/NVFlare/tree/main/integration/nemo/examples/supervised_fine_tuning>`_ -- Supervised fine-tuning of NeMo models across sites
 - `Federated PEFT with NeMo <https://github.com/NVIDIA/NVFlare/tree/main/integration/nemo/examples/peft>`_ -- Parameter-efficient fine-tuning (LoRA, P-Tuning) with NeMo
-- `Federated Prompt Learning with NeMo <https://github.com/NVIDIA/NVFlare/tree/main/integration/nemo/examples/prompt_learning>`_ -- Learning soft prompts while keeping base model frozen
 
 Self-Paced Training
 ===================
