@@ -14,6 +14,7 @@
 
 import logging
 import sys
+import threading
 from types import ModuleType
 from unittest.mock import MagicMock, patch
 
@@ -267,6 +268,61 @@ class TestDockerJobHandleTerminalState:
         assert rc == JobReturnCode.SUCCESS
         assert h.terminal_state == JobReturnCode.SUCCESS
 
+    def test_wait_watcher_caches_exit_code_before_auto_remove(self):
+        dc = _make_docker_client()
+        dc.containers.get.side_effect = _NotFound()
+        container = MagicMock()
+        container.wait.return_value = {"StatusCode": 0}
+        h = _make_handle(docker_client=dc, container=container, watch_exit=True)
+
+        h.wait()
+
+        assert h.terminal_state == JobReturnCode.SUCCESS
+        assert h.poll() == JobReturnCode.SUCCESS
+
+    def test_auto_removed_container_is_unknown_until_wait_watcher_finishes(self):
+        dc = _make_docker_client()
+        dc.containers.get.side_effect = _NotFound()
+        wait_can_finish = threading.Event()
+
+        def wait_for_exit():
+            assert wait_can_finish.wait(timeout=5)
+            return {"StatusCode": 0}
+
+        container = MagicMock()
+        container.wait.side_effect = wait_for_exit
+        h = _make_handle(docker_client=dc, container=container, watch_exit=True)
+
+        assert h.poll() == JobReturnCode.UNKNOWN
+        assert h.terminal_state is None
+
+        wait_can_finish.set()
+        h.wait()
+        assert h.terminal_state == JobReturnCode.SUCCESS
+
+    @pytest.mark.parametrize("wait_result", [None, {}, {"StatusCode": None}, {"StatusCode": "bad"}])
+    def test_wait_watcher_invalid_result_falls_back_to_container_poll(self, wait_result):
+        dc = _make_docker_client()
+        dc.containers.get.return_value = _make_container("exited", exit_code=0)
+        container = MagicMock()
+        container.wait.return_value = wait_result
+        h = _make_handle(docker_client=dc, container=container)
+
+        h.wait()
+
+        assert h.terminal_state == JobReturnCode.SUCCESS
+
+    def test_wait_watcher_api_error_falls_back_to_container_poll(self):
+        dc = _make_docker_client()
+        dc.containers.get.return_value = _make_container("exited", exit_code=0)
+        container = MagicMock()
+        container.wait.side_effect = _APIError("wait failed")
+        h = _make_handle(docker_client=dc, container=container)
+
+        h.wait()
+
+        assert h.terminal_state == JobReturnCode.SUCCESS
+
 
 # ---------------------------------------------------------------------------
 # DockerJobHandle — terminate
@@ -384,7 +440,18 @@ class TestDockerJobLauncherInit:
         assert launcher.workspace == "/host/ws"
 
     def test_raises_if_default_job_container_kwargs_contains_reserved_key(self):
-        for reserved in ("volumes", "mounts", "network", "environment", "command", "name", "detach"):
+        for reserved in (
+            "volumes",
+            "mounts",
+            "network",
+            "environment",
+            "command",
+            "name",
+            "detach",
+            "auto_remove",
+            "user",
+            "working_dir",
+        ):
             with pytest.raises(ValueError, match="reserved"):
                 _make_launcher(default_job_container_kwargs={reserved: "anything"})
 
@@ -522,6 +589,7 @@ class TestDockerJobLauncherLaunchJob:
 
         assert handle is not None
         assert isinstance(handle, DockerJobHandle)
+        assert dc.containers.run.call_args[1]["auto_remove"] is True
 
     def test_launch_overrides_parent_url(self):
         """Launcher must derive parent_url from site name + port; localhost must not reach job container."""

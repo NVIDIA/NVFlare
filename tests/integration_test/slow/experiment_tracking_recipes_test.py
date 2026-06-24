@@ -31,6 +31,7 @@ To run manually:
     pytest slow/experiment_tracking_recipes_test.py -v
 """
 
+import json
 import os
 
 import pytest
@@ -75,7 +76,19 @@ class TestExperimentTrackingRecipes:
 
     def _add_model_to_apps(self, recipe):
         recipe.job.add_file_to_server(self.model_path)
-        recipe.job.add_file_to_clients(self.model_path)
+        for site_name in ("site-1", "site-2"):
+            recipe.job.add_file_to(self.model_path, site_name)
+
+    def _assert_exported_client_configs_have_executors(self, recipe, export_root: str):
+        recipe.export(export_root)
+        job_root = os.path.join(export_root, recipe.name)
+        assert os.path.exists(os.path.join(job_root, "app_server", "custom", "model.py"))
+        for site_name in ("site-1", "site-2"):
+            client_config_path = os.path.join(job_root, f"app_{site_name}", "config", "config_fed_client.json")
+            with open(client_config_path, "r") as f:
+                client_config = json.load(f)
+            assert client_config.get("executors"), f"{client_config_path} has no executors"
+            assert os.path.exists(os.path.join(job_root, f"app_{site_name}", "custom", "model.py"))
 
     def _per_site_config(self, dataset_path: str, model_dir: str) -> dict[str, dict[str, str]]:
         return {
@@ -89,12 +102,29 @@ class TestExperimentTrackingRecipes:
             for site_name in ("site-1", "site-2")
         }
 
+    def test_per_site_export_preserves_client_executors(self, tmp_path):
+        """Adding shared model files must not replace per-site client apps."""
+        recipe = FedAvgRecipe(
+            name="test_export",
+            min_clients=2,
+            num_rounds=1,
+            model={"class_path": "model.SimpleNetwork", "args": {}},
+            train_script=self.client_script_path,
+            per_site_config=self._per_site_config(str(tmp_path / "data"), str(tmp_path)),
+        )
+        self._add_model_to_apps(recipe)
+
+        # Exercise the same mutation path as the runtime tests.
+        add_experiment_tracking(recipe, "tensorboard")
+
+        self._assert_exported_client_configs_have_executors(recipe, str(tmp_path / "export"))
+
     def test_tensorboard_tracking_integration(self, cifar10_data_root):
         """Test TensorBoard tracking can be added and job completes."""
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            env = SimEnv(num_clients=2, workspace_root=os.path.join(tmpdir, "test_tensorboard"))
+            env = SimEnv(clients=["site-1", "site-2"], workspace_root=os.path.join(tmpdir, "test_tensorboard"))
             recipe = FedAvgRecipe(
                 name="test_tensorboard",
                 min_clients=2,
@@ -119,7 +149,7 @@ class TestExperimentTrackingRecipes:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             mlflow_dir = os.path.join(tmpdir, "test_mlflow")
-            env = SimEnv(num_clients=2, workspace_root=mlflow_dir)
+            env = SimEnv(clients=["site-1", "site-2"], workspace_root=mlflow_dir)
             recipe = FedAvgRecipe(
                 name="test_mlflow",
                 min_clients=2,

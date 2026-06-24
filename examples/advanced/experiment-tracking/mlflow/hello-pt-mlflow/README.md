@@ -36,6 +36,7 @@ python3 job.py
 The Recipe API makes it simple:
 ```python
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
 from nvflare.recipe.utils import add_experiment_tracking
 
 # Create training recipe
@@ -63,7 +64,8 @@ add_experiment_tracking(
     }
 )
 
-recipe.run()
+env = SimEnv(num_clients=2)
+run = recipe.execute(env)
 ```
 
 ### 4. Access the logs and results
