@@ -195,8 +195,6 @@ class FedJobConfig:
                 process = subprocess.Popen(shlex.split(command, True), shell=False, preexec_fn=os.setsid, env=new_env)
 
                 return_code = process.wait()
-                if return_code != 0:
-                    raise RuntimeError(f"Simulator run failed with exit code {return_code}.")
                 return return_code
 
             except KeyboardInterrupt:
