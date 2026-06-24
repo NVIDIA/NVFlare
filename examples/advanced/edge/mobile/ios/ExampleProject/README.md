@@ -28,7 +28,7 @@ cp -r build/apple_framework/* /path/to/your/app/Frameworks/
 ### 2. NVFlareSDK
 ```bash
 # Copy the NVFlareSDK folder into your app
-cp -r nvflare/edge/device/ios/NVFlareSDK nvflare/edge/device/ios/ExampleProject
+cp -r examples/advanced/edge/mobile/ios/NVFlareSDK examples/advanced/edge/mobile/ios/ExampleProject
 ```
 
 ## Project Structure
@@ -38,7 +38,7 @@ ExampleProject/
 ├── Frameworks/              # ExecutorTorch frameworks go here
 │   ├── ExecutorTorch.xcframework
 │   └── ...
-├── NVFlareSDK/              # Copied from nvflare/edge/device/ios/NVFlareSDK
+├── NVFlareSDK/              # Copied from examples/advanced/edge/mobile/ios/NVFlareSDK
 │   ├── Core/
 │   ├── Models/
 │   └── ...
@@ -63,4 +63,3 @@ ExampleProject/
 - Start/stop federated learning
 - Real-time status updates
 - Error handling and recovery
-

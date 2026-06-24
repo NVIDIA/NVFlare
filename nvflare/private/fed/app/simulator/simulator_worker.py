@@ -23,7 +23,6 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, RunnerTask, WorkspaceConstants
 from nvflare.apis.workspace import Workspace
-from nvflare.fuel.common.multi_process_executor_constants import CommunicationMetaData
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
@@ -226,7 +225,7 @@ class ClientTaskWorker(FLComponent):
 
 def _create_connection(listen_port):
     address = ("localhost", int(listen_port))
-    listener = Listener(address, authkey=CommunicationMetaData.CHILD_PASSWORD.encode())
+    listener = Listener(address)
     conn = listener.accept()
     return conn
 
