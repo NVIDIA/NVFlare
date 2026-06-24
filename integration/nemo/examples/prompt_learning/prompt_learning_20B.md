@@ -1,4 +1,8 @@
-## Federated p-tuning using a 20 billion parameter GPT model
+## Federated p-tuning using a 20 billion parameter GPT model (legacy)
+
+> **Legacy support:** This 20B variant is legacy-supported only for NeMo <=2.5.0. It uses the NeMo
+> NLP/Megatron prompt-learning APIs that are not present in current NeMo v2.5.1+, v2.6+, v2.7.x, or NeMo
+> AutoModel.
 
 In this example, we utilize NeMo's [prompt learning](https://docs.nvidia.com/deeplearning/nemo/user-guide/docs/en/v1.17.0/nlp/nemo_megatron/prompt_learning.html)
 feature to showcase how to adapt a large language model (LLM) to 
@@ -20,6 +24,8 @@ to install the NeMo framework and mount the required code.
 
 The example was tested using the [NeMo Docker container](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/nemo), 
 available with `docker pull nvcr.io/nvidia/nemo:23.02`.
+Use a NeMo environment with the legacy prompt-learning APIs, up to NeMo v2.5.0; newer NeMo v2.5.1+,
+v2.6+, v2.7.x, and AutoModel containers are not expected to run this example.
 
 For downloading the pre-trained model, we use [git lfs](https://git-lfs.com).
 Install it in the container with

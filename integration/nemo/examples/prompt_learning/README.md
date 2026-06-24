@@ -1,4 +1,8 @@
-## Prompt Learning with NeMo
+## Prompt Learning with NeMo (legacy)
+
+> **Legacy support:** This example is legacy-supported only for NeMo <=2.5.0. It uses the NeMo NLP/Megatron
+> prompt-learning APIs that are not present in current NeMo v2.5.1+, v2.6+, v2.7.x, or NeMo AutoModel. For
+> current NeMo workflows, use the AutoModel PEFT or SFT examples in this directory.
 
 In this example, we utilize NeMo's [prompt learning](https://docs.nvidia.com/deeplearning/nemo/user-guide/docs/en/v1.17.0/nlp/nemo_megatron/prompt_learning.html)
 feature to showcase how to adapt a large language model (LLM) to 
@@ -14,6 +18,8 @@ In our federated implementation, the LLM parameters stay fixed. Prompt encoder p
 
 ## Dependencies
 The example was tested with the [NeMo 23.02 container](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/nemo).
+Use a NeMo environment with the legacy prompt-learning APIs, up to NeMo v2.5.0. Newer NeMo v2.5.1+,
+v2.6+, v2.7.x, and AutoModel containers are not expected to run this example.
 In the following, we assume this example folder of the container is mounted to `/workspace` and all downloading, etc. operations are based on this root path.
 
 Start the Docker container from **this directory** using
