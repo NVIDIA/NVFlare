@@ -8,6 +8,7 @@ These examples use the Recipe API with the `add_experiment_tracking()` utility f
 
 ```python
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
 from nvflare.recipe.utils import add_experiment_tracking
 
 # Create your training recipe
@@ -25,7 +26,8 @@ recipe = FedAvgRecipe(
 # Add experiment tracking with ONE line!
 add_experiment_tracking(recipe, "mlflow")  # or "tensorboard" or "wandb"
 
-recipe.run()
+env = SimEnv(num_clients=2)
+run = recipe.execute(env)
 ```
 
 ## How Metric Tracking Works
