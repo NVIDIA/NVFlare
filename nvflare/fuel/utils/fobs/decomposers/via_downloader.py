@@ -13,16 +13,24 @@
 # limitations under the License.
 import json
 import threading
+import time
 import uuid
 from abc import ABC, abstractmethod
 from typing import Any
 
 import nvflare.fuel.utils.app_config_utils as acu
-from nvflare.apis.fl_constant import ConfigVarName
+from nvflare.apis.fl_constant import ConfigVarName, FLMetaKey
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.streaming.download_service import Downloadable
 from nvflare.fuel.f3.streaming.file_downloader import ObjectDownloader
+from nvflare.fuel.f3.streaming.transfer_progress import (
+    DEFAULT_STREAMING_IDLE_TIMEOUT,
+    DIRECTION_RESULT_UPLOAD,
+    DIRECTION_TASK_PAYLOAD_DOWNLOAD,
+    STREAMING_IDLE_TIMEOUT,
+    check_positive_finite_number,
+)
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.datum import Datum, DatumManager, DatumType
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -38,6 +46,26 @@ _MIN_DOWNLOAD_TIMEOUT = MIN_DOWNLOAD_TIMEOUT_DEFAULT  # backward-compat alias
 # _finalize_download_tx() is always called synchronously in the thread that invoked
 # send_to_peer() → encode_payload() → FOBS serialisation.
 _tls = threading.local()
+
+RESULT_UPLOAD_PROGRESS_CTX_KEY = "result_upload_progress_context"
+RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY = "result_upload_tx_created_cb"
+RESULT_UPLOAD_RECEIVER_IDS_CTX_KEY = fobs.FOBSContextKey.RECEIVER_IDS
+RESULT_UPLOAD_PROGRESS_INTERVAL = 30.0
+
+
+class ResultUploadProgressContextKey:
+    JOB_ID = "job_id"
+    TASK_ID = "task_id"
+    STREAMING_IDLE_TIMEOUT = STREAMING_IDLE_TIMEOUT
+
+
+class DownloadTransactionInfo:
+    __slots__ = ("created_time", "expected_pairs", "tx_id")
+
+    def __init__(self, tx_id: str, expected_pairs: tuple[tuple[str, str | None], ...], created_time: float):
+        self.tx_id = tx_id
+        self.expected_pairs = expected_pairs
+        self.created_time = created_time
 
 
 def was_download_initiated() -> bool:
@@ -58,6 +86,31 @@ def clear_download_initiated() -> None:
     from carrying over to the current validate round (which has no tensors).
     """
     _tls.download_initiated = False
+    _tls.download_transactions = []
+
+
+def get_download_transactions() -> tuple[DownloadTransactionInfo, ...]:
+    """Return progress-trackable DownloadService transactions created by the current encode call."""
+
+    return tuple(getattr(_tls, "download_transactions", ()))
+
+
+def _append_download_transaction(info: DownloadTransactionInfo):
+    transactions = getattr(_tls, "download_transactions", None)
+    if transactions is None:
+        transactions = []
+        _tls.download_transactions = transactions
+    transactions.append(info)
+
+
+def _notify_download_transaction_created(fobs_ctx: dict, info: DownloadTransactionInfo, logger):
+    tx_created_cb = fobs_ctx.get(RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY)
+    if not tx_created_cb:
+        return
+    try:
+        tx_created_cb(info)
+    except Exception as ex:
+        logger.warning(f"result_upload transaction-created callback failed for tx={info.tx_id}: {ex}")
 
 
 class LazyDownloadRef:
@@ -200,6 +253,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         secure=False,
         optional=False,
         abort_signal=None,
+        progress_cb=None,
     ) -> tuple[str, dict]:
         pass
 
@@ -282,6 +336,14 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
                 # items have been serialised.
                 fobs_ctx[lazy_batch_key] = {"fqcn": target.fqcn, "ref_id": target.ref_id}
                 manager.register_post_cb(self._finalize_lazy_batch)
+            else:
+                lazy_batch = fobs_ctx[lazy_batch_key]
+                if lazy_batch["fqcn"] != target.fqcn or lazy_batch["ref_id"] != target.ref_id:
+                    raise RuntimeError(
+                        "LazyDownloadRef payload mixes download batches: "
+                        f"existing fqcn={lazy_batch['fqcn']} ref_id={lazy_batch['ref_id']}, "
+                        f"new fqcn={target.fqcn} ref_id={target.ref_id}"
+                    )
 
             self.logger.debug(
                 f"ViaDownloader: re-emitting LazyDownloadRef {target.item_id=} " f"{target.fqcn=} {target.ref_id=}"
@@ -318,7 +380,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         self.logger.debug(f"ViaDownloader: created ref for target {target_id}: {item_id}")
         return {EncKey.TYPE: EncType.REF, EncKey.DATA: item_id}
 
-    def _create_downloader(self, fobs_ctx: dict):
+    def _create_downloader(self, fobs_ctx: dict, progress_cb=None, timeout_override=None, num_receivers_override=None):
         # Transaction lifecycle is managed solely by _monitor_tx() (download_service.py).
         # We deliberately do NOT subscribe to msg_root deletion here.  The msg_root is
         # deleted as soon as all blobs are delivered, but blob_cb fires asynchronously —
@@ -330,28 +392,44 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         # receiver completing all chunk downloads — sufficient for all model sizes.
         msg_root_id, msg_root_ttl = self._determine_msg_root(fobs_ctx)
 
-        # Read min_download_timeout from job config so operators can tune
-        # it per-job (e.g. np_min_download_timeout: 600 for a 70B model).
-        # Falls back to the module-level constant (60s) when not set.
+        # The generic streaming idle timeout is the default lifetime floor for streamed
+        # materialization. The legacy per-type min_download_timeout remains an explicit
+        # override and a backward-compatible fallback when the generic key is absent.
+        streaming_idle_timeout = acu.get_positive_float_var(STREAMING_IDLE_TIMEOUT, DEFAULT_STREAMING_IDLE_TIMEOUT)
+        streaming_idle_timeout = check_positive_finite_number(STREAMING_IDLE_TIMEOUT, streaming_idle_timeout)
         min_timeout = acu.get_positive_float_var(
             self._config_var_name(ConfigVarName.MIN_DOWNLOAD_TIMEOUT),
-            _MIN_DOWNLOAD_TIMEOUT,
+            streaming_idle_timeout or _MIN_DOWNLOAD_TIMEOUT,
+        )
+        min_timeout = check_positive_finite_number(
+            self._config_var_name(ConfigVarName.MIN_DOWNLOAD_TIMEOUT), min_timeout
         )
 
-        if msg_root_ttl:
+        if timeout_override is not None:
+            try:
+                timeout = float(timeout_override)
+            except (TypeError, ValueError) as e:
+                raise ValueError(f"{STREAMING_IDLE_TIMEOUT} must be positive finite, got {timeout_override}") from e
+            timeout = check_positive_finite_number(STREAMING_IDLE_TIMEOUT, timeout)
+        elif msg_root_ttl:
             timeout = msg_root_ttl
         else:
             timeout = min_timeout
 
         if timeout < min_timeout:
             timeout = min_timeout
+        timeout = check_positive_finite_number("download timeout", timeout)
 
         self.logger.debug(f"ViaDownloader: {msg_root_id=} {timeout=}")
 
         downloader = None
         cell = fobs_ctx.get(fobs.FOBSContextKey.CELL)
         if cell:
-            num = fobs_ctx.get(fobs.FOBSContextKey.NUM_RECEIVERS)
+            num = (
+                num_receivers_override
+                if num_receivers_override is not None
+                else fobs_ctx.get(fobs.FOBSContextKey.NUM_RECEIVERS)
+            )
             num_receivers = num if num else 1
 
             # Optional lifecycle callback set by FlareAgent._do_submit_result()
@@ -365,9 +443,79 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
                 cell=cell,
                 timeout=timeout,
                 transaction_done_cb=on_complete_cb,
+                progress_cb=progress_cb,
+                progress_interval=RESULT_UPLOAD_PROGRESS_INTERVAL,
             )
 
         return downloader
+
+    def _get_result_upload_receiver_ids(self, fobs_ctx: dict, num_receivers: int):
+        receiver_ids = fobs_ctx.get(RESULT_UPLOAD_RECEIVER_IDS_CTX_KEY)
+        if receiver_ids is None:
+            if num_receivers == 1:
+                return (None,)
+            return None
+
+        if isinstance(receiver_ids, str):
+            receiver_ids = [receiver_ids]
+        try:
+            normalized = tuple(None if receiver_id is None else str(receiver_id) for receiver_id in receiver_ids)
+        except TypeError:
+            self.logger.warning(f"invalid {RESULT_UPLOAD_RECEIVER_IDS_CTX_KEY}: {receiver_ids}")
+            return None
+
+        if not normalized:
+            return None
+        deduped = tuple(dict.fromkeys(normalized))
+        if len(deduped) != len(normalized):
+            self.logger.warning(
+                f"{RESULT_UPLOAD_RECEIVER_IDS_CTX_KEY} contains duplicate receiver ids; "
+                f"using {len(deduped)} unique receiver(s)"
+            )
+            normalized = deduped
+            num_receivers = len(normalized)
+        if num_receivers > 0 and len(normalized) != num_receivers:
+            self.logger.warning(
+                f"{RESULT_UPLOAD_RECEIVER_IDS_CTX_KEY} has {len(normalized)} receivers, "
+                f"but DownloadService transaction expects {num_receivers}"
+            )
+            return None
+        return normalized
+
+    @staticmethod
+    def _make_result_upload_progress_cb(fobs_ctx: dict, receiver_ids: tuple[str | None, ...]):
+        progress_cb = fobs_ctx.get(fobs.FOBSContextKey.STREAM_PROGRESS_CB)
+        if not progress_cb:
+            return None
+
+        progress_context = fobs_ctx.get(RESULT_UPLOAD_PROGRESS_CTX_KEY) or {}
+        job_id = progress_context.get(ResultUploadProgressContextKey.JOB_ID)
+        task_id = progress_context.get(ResultUploadProgressContextKey.TASK_ID)
+
+        msg = fobs_ctx.get(fobs.FOBSContextKey.MESSAGE)
+        if msg:
+            if job_id is None:
+                job_id = msg.get_header(FLMetaKey.JOB_ID)
+            if task_id is None:
+                task_id = msg.get_header(MessageHeaderKey.MSG_ROOT_ID) or msg.get_header(MessageHeaderKey.REQ_ID)
+
+        single_receiver_without_identity = receiver_ids == (None,)
+
+        def _progress_cb(**kwargs):
+            event = dict(kwargs)
+            transfer_id = event.get("transfer_id") or event.get("ref_id")
+            receiver_id = None if single_receiver_without_identity else event.get("receiver_id")
+            event["transfer_id"] = transfer_id
+            event.setdefault("transfer_id_kind", "download_ref")
+            event["receiver_id"] = receiver_id
+            event["direction"] = DIRECTION_RESULT_UPLOAD
+            progress_cb(
+                job_id="" if job_id is None else str(job_id),
+                task_id=transfer_id if task_id is None else str(task_id),
+                **event,
+            )
+
+        return _progress_cb
 
     def _process_items_to_datum(self, mgr: DatumManager):
         """This method is called during serialization after all target items are serialized.
@@ -437,7 +585,47 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         downloadable_objs = fobs_ctx.get(_CtxKey.OBJECTS)
 
         if downloadable_objs:
-            downloader = self._create_downloader(fobs_ctx)
+            num_receivers = fobs_ctx.get(fobs.FOBSContextKey.NUM_RECEIVERS) or 1
+            receiver_ids = self._get_result_upload_receiver_ids(fobs_ctx, num_receivers)
+            # Use the deduped receiver tuple length so DownloadService's completion
+            # accounting matches the distinct downstream receivers that can report done.
+            download_num_receivers = len(receiver_ids) if receiver_ids else num_receivers
+            progress_requested = bool(fobs_ctx.get(fobs.FOBSContextKey.STREAM_PROGRESS_CB))
+            progress_cb = self._make_result_upload_progress_cb(fobs_ctx, receiver_ids) if receiver_ids else None
+            progress_trackable = bool(progress_cb and receiver_ids)
+            if progress_requested and receiver_ids is None:
+                self.logger.warning(
+                    "result_upload progress tracking is disabled because expected receiver ids are not known"
+                )
+
+            timeout_override = None
+            if progress_trackable:
+                progress_context = fobs_ctx.get(RESULT_UPLOAD_PROGRESS_CTX_KEY) or {}
+                timeout_override = progress_context.get(ResultUploadProgressContextKey.STREAMING_IDLE_TIMEOUT)
+
+            downloader = self._create_downloader(
+                fobs_ctx,
+                progress_cb=progress_cb if progress_trackable else None,
+                timeout_override=timeout_override,
+                num_receivers_override=download_num_receivers,
+            )
+            if downloader is None:
+                self.logger.warning("download transaction was not created because FOBS context has no cell")
+                return
+
+            expected_pairs = []
+            if progress_trackable:
+                for ref_id, _ in downloadable_objs:
+                    for receiver_id in receiver_ids:
+                        expected_pairs.append((ref_id, receiver_id))
+                transaction_info = DownloadTransactionInfo(
+                    tx_id=downloader.tx_id,
+                    expected_pairs=tuple(expected_pairs),
+                    created_time=time.time(),
+                )
+                _append_download_transaction(transaction_info)
+                _notify_download_transaction_created(fobs_ctx, transaction_info, self.logger)
+
             for ref_id, obj in downloadable_objs:
                 self.logger.debug(f"ViaDownloader: adding object to downloader: {ref_id=}")
                 downloader.add_object(obj, ref_id=ref_id)
@@ -458,6 +646,9 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         lazy_batch_key = f"{self.prefix}{_LAZY_BATCH_CTX_SUFFIX}"
         lazy_batch = fobs_ctx.get(lazy_batch_key)
         if not lazy_batch:
+            return
+        get_error = getattr(mgr, "get_error", None)
+        if callable(get_error) and get_error():
             return
         ref = {_RefKey.FQCN: lazy_batch["fqcn"], _RefKey.REF_ID: lazy_batch["ref_id"]}
         datum = Datum(datum_type=DatumType.TEXT, value=json.dumps(ref), dot=self.get_download_dot())
@@ -600,6 +791,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         self.logger.debug(f"DOWNLOAD_REQ_TIMEOUT={req_timeout}")
 
         abort_signal = fobs_ctx.get(fobs.FOBSContextKey.ABORT_SIGNAL)
+        stream_progress_cb = self._make_stream_progress_cb(fobs_ctx, ref_id)
 
         self.logger.debug(f"trying to download: {ref_id=} {fqcn=}")
         err, items = self.download(
@@ -608,6 +800,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
             per_request_timeout=req_timeout,
             cell=cell,
             abort_signal=abort_signal,
+            progress_cb=stream_progress_cb,
         )
         if err:
             self.logger.error(f"failed to download from {fqcn} for source {ref}: {err}")
@@ -615,6 +808,31 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         else:
             self.logger.debug(f"downloaded {len(items)} items successfully")
         return items
+
+    @staticmethod
+    def _make_stream_progress_cb(fobs_ctx: dict, ref_id: str):
+        progress_cb = fobs_ctx.get(fobs.FOBSContextKey.STREAM_PROGRESS_CB)
+        if not progress_cb:
+            return None
+
+        msg = fobs_ctx.get(fobs.FOBSContextKey.MESSAGE)
+        task_id = None
+        job_id = None
+        if msg:
+            task_id = msg.get_header(MessageHeaderKey.MSG_ROOT_ID) or msg.get_header(MessageHeaderKey.REQ_ID)
+            job_id = msg.get_header(FLMetaKey.JOB_ID)
+
+        def _progress_cb(**kwargs):
+            progress_cb(
+                job_id=job_id,
+                task_id=task_id,
+                transfer_id=ref_id,
+                transfer_id_kind="download_ref",
+                direction=DIRECTION_TASK_PAYLOAD_DOWNLOAD,
+                **kwargs,
+            )
+
+        return _progress_cb
 
 
 class LazyDownloadRefDecomposer(fobs.Decomposer):

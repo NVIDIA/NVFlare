@@ -129,7 +129,8 @@ if [[ "${SKIP_DEPS}" != "1" ]]; then
     install_requirements_without_nvflare "${REQUIREMENTS}"
   fi
 
-  "${PYTHON}" -m pip uninstall -y nvflare nvflare-nightly >/dev/null 2>&1 || true
+  "${PYTHON}" -m pip uninstall -y nvflare-nightly >/dev/null 2>&1 || true
+  "${PYTHON}" -m pip uninstall -y nvflare >/dev/null 2>&1 || true
   if [[ -n "${NVFLARE_EXTRA}" ]]; then
     "${PYTHON}" -m pip install -e "${REPO}[${NVFLARE_EXTRA}]"
   else

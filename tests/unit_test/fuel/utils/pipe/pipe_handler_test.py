@@ -13,9 +13,10 @@
 # limitations under the License.
 
 import time
+from unittest.mock import MagicMock
 
 from nvflare.fuel.utils.constants import Mode
-from nvflare.fuel.utils.pipe.pipe import Pipe, Topic
+from nvflare.fuel.utils.pipe.pipe import STREAM_PROGRESS_TOPIC, Message, Pipe, Topic
 from nvflare.fuel.utils.pipe.pipe_handler import PipeHandler
 
 
@@ -37,6 +38,37 @@ class _BrokenPipe(Pipe):
 
     def receive(self, timeout=None):
         raise BrokenPipeError(self._error_msg)
+
+    def get_last_peer_active_time(self):
+        return 0.0
+
+    def clear(self):
+        pass
+
+    def can_resend(self) -> bool:
+        return False
+
+
+class _ScriptedPipe(Pipe):
+    def __init__(self, messages):
+        super().__init__(mode=Mode.ACTIVE)
+        self.messages = list(messages)
+        self.receive_calls = 0
+
+    def open(self, name):
+        pass
+
+    def close(self):
+        pass
+
+    def send(self, msg, timeout=None):
+        return True
+
+    def receive(self, timeout=None):
+        self.receive_calls += 1
+        if self.messages:
+            return self.messages.pop(0)
+        return None
 
     def get_last_peer_active_time(self):
         return 0.0
@@ -139,3 +171,70 @@ class TestPipeHandlerBrokenPipe:
             time.sleep(0.01)
 
         assert not any(m.topic == Topic.PEER_GONE for m in received)
+
+
+def test_stream_progress_topic_uses_internal_sentinel():
+    assert STREAM_PROGRESS_TOPIC == "_STREAM_PROGRESS_"
+    assert Topic.STREAM_PROGRESS == STREAM_PROGRESS_TOPIC
+
+
+def test_result_upload_stream_progress_does_not_refresh_heartbeat_liveness(monkeypatch):
+    import nvflare.fuel.utils.pipe.pipe_handler as pipe_handler_module
+
+    now = [1000.0]
+
+    def fake_sleep(seconds):
+        now[0] += seconds
+
+    monkeypatch.setattr(pipe_handler_module.time, "time", lambda: now[0])
+    monkeypatch.setattr(pipe_handler_module.time, "sleep", fake_sleep)
+
+    pipe = _ScriptedPipe(
+        [Message.new_request(Topic.STREAM_PROGRESS, {"task_id": "task-1", "direction": "result_upload"})]
+    )
+    handler = PipeHandler(pipe=pipe, read_interval=1.0, heartbeat_interval=1.0, heartbeat_timeout=1.5)
+
+    handler._try_read()
+
+    peer_gone = handler.get_next()
+    msg = handler.get_next()
+
+    assert msg is None
+    assert not handler.peer_is_up_or_dead.is_set()
+    assert peer_gone.topic == Topic.PEER_GONE
+    assert pipe.receive_calls == 2
+
+
+def test_stream_progress_routes_to_message_callback_without_queueing():
+    received = []
+    msg = Message.new_request(Topic.STREAM_PROGRESS, {"task_id": "task-1", "direction": "result_upload"})
+    handler = PipeHandler(
+        pipe=_ScriptedPipe([]),
+        read_interval=1.0,
+        heartbeat_interval=1.0,
+        heartbeat_timeout=1.5,
+    )
+    handler.set_message_cb(lambda message: received.append(message))
+
+    handler._add_message(msg)
+
+    assert received == [msg]
+    assert handler.get_next() is None
+
+
+def test_stream_progress_without_message_callback_logs_first_drop_only():
+    msg = Message.new_request(Topic.STREAM_PROGRESS, {"task_id": "task-1", "direction": "result_upload"})
+    handler = PipeHandler(
+        pipe=_ScriptedPipe([]),
+        read_interval=1.0,
+        heartbeat_interval=1.0,
+        heartbeat_timeout=1.5,
+    )
+    handler.logger = MagicMock()
+
+    handler._add_message(msg)
+    handler._add_message(msg)
+
+    handler.logger.info.assert_called_once()
+    handler.logger.debug.assert_called_once()
+    assert handler.get_next() is None

@@ -102,6 +102,9 @@ def send(model: FLModel, clear_cache: bool = True, ctx: Optional[APIContext] = N
     Args:
         model (FLModel): The FLModel object to be sent.
         clear_cache (bool): Whether to clear the cache after send.
+
+    Raises:
+        RuntimeError: If the model cannot be submitted to NVFLARE.
     """
     if not isinstance(model, FLModel):
         raise TypeError("model needs to be an instance of FLModel")

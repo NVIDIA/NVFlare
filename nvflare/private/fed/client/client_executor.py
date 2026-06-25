@@ -13,13 +13,16 @@
 # limitations under the License.
 import copy
 import json
+import os
 import threading
 import time
 from abc import ABC, abstractmethod
 
+from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import AdminCommandNames, ConnPropKey, FLContextKey, RunProcessKey, SystemConfigs
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobLauncherSpec, JobProcessArgs, JobReturnCode
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
 from nvflare.apis.workspace import Workspace
@@ -176,8 +179,28 @@ class JobExecutor(ClientExecutor):
         # update the job meta
         workspace = Workspace(args.workspace, site_name=client.client_name)
         meta_file = workspace.get_job_meta_path(job_id)
+        if not os.path.exists(meta_file):
+            raise RuntimeError(f"missing deployed job metadata file for job '{job_id}': {meta_file}")
+        with open(meta_file) as f:
+            deployed_job_meta = json.load(f)
+        for meta_key in (
+            JobMetaKey.JOB_ID.value,
+            JobMetaKey.RESOURCE_SPEC.value,
+            JobMetaKey.JOB_LAUNCHER_SPEC.value,
+            JobMetaKey.SCOPE.value,
+            JobMetaKey.STUDY.value,
+        ):
+            deployed_value = deployed_job_meta.get(meta_key)
+            if deployed_value != job_meta.get(meta_key):
+                raise RuntimeError(f"START_JOB metadata differs from deployed job metadata for '{meta_key}'")
+            if meta_key in deployed_job_meta:
+                job_meta[meta_key] = copy.deepcopy(deployed_value)
+        if deployed_job_meta.get(AppValidationKey.BYOC, False):
+            job_meta[AppValidationKey.BYOC] = True
+        else:
+            job_meta.pop(AppValidationKey.BYOC, None)
 
-        # rewrite the meta file with the received meta
+        # Preserve deploy-time launch metadata while recording scheduler-maintained start metadata.
         with open(meta_file, "w") as f:
             json.dump(job_meta, f, indent=4)
 

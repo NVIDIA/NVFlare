@@ -44,14 +44,18 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.apis.fl_constant import FLMetaKey
+from nvflare.apis.shareable import Shareable
 from nvflare.fuel.f3.cellnet.cell import Message as CellMessage  # f3-layer message
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.pipe.cell_pipe import (
     _HEADER_MSG_ID,
     _HEADER_MSG_TYPE,
     _HEADER_REQ_ID,
     CellPipe,
+    _cell_fqcn,
     _from_cell_message,
     _to_cell_message,
 )
@@ -101,6 +105,31 @@ def _make_cell_message(
 
 def _make_msg(topic="train", data="payload"):
     return Message.new_request(topic=topic, data=data)
+
+
+# ---------------------------------------------------------------------------
+# Cell FQCN format
+# ---------------------------------------------------------------------------
+
+
+class TestCellFqcnFormat:
+    """CellPipe cells are named <site>.<token>.<mode>, scoped under the cell
+    they connect to, so identity resolution and routing follow the normal
+    FQCN hierarchy."""
+
+    def test_connect_to_root_server(self):
+        assert _cell_fqcn("active", "site-1", "job-123", FQCN.ROOT_SERVER) == "site-1.job-123.active"
+
+    def test_connect_to_own_cp(self):
+        assert _cell_fqcn("passive", "site-1", "job-123", "site-1") == "site-1.job-123.passive"
+
+    def test_connect_to_relay(self):
+        assert _cell_fqcn("active", "site-1", "job-123", "relay-1") == "relay-1.site-1.job-123.active"
+
+    def test_connect_to_cp_behind_relay(self):
+        # same name as connecting to the relay itself, so the two peer pipes
+        # agree on each other's FQCN regardless of which of the two they use
+        assert _cell_fqcn("active", "site-1", "job-123", "relay-1.site-1") == "relay-1.site-1.job-123.active"
 
 
 # ---------------------------------------------------------------------------
@@ -223,6 +252,65 @@ class TestHeartbeatNotCached:
 
         pipe.cell.fire_and_forget.assert_called_once()
         pipe.cell.send_request.assert_not_called()
+
+
+def test_stream_progress_is_fire_and_forget():
+    pipe = _make_pipe()
+    msg = _make_msg(topic=Topic.STREAM_PROGRESS, data={"task_id": "task-1"})
+
+    assert pipe.send(msg) is True
+
+    pipe.cell.fire_and_forget.assert_called_once()
+    pipe.cell.send_request.assert_not_called()
+
+
+def test_stream_progress_does_not_update_peer_active_time():
+    pipe = _make_pipe()
+    pipe.last_peer_active_time = 123.0
+
+    with patch("nvflare.fuel.utils.pipe.cell_pipe.time.time", return_value=456.0):
+        pipe._update_peer_active_time(
+            _make_cell_message(topic=Topic.STREAM_PROGRESS, payload={"direction": "result_upload"}),
+            ch_name="task",
+            msg_type="req",
+        )
+
+    assert pipe.last_peer_active_time == 123.0
+
+    with patch("nvflare.fuel.utils.pipe.cell_pipe.time.time", return_value=456.0):
+        pipe._update_peer_active_time(_make_cell_message(topic="train"), ch_name="task", msg_type="req")
+
+    assert pipe.last_peer_active_time == 456.0
+
+
+def test_to_cell_message_carries_shareable_job_id():
+    shareable = Shareable()
+    shareable.set_header(FLMetaKey.JOB_ID, "job-1")
+
+    cell_msg = _to_cell_message(_make_msg(data=shareable))
+
+    assert cell_msg.get_header(FLMetaKey.JOB_ID) == "job-1"
+
+
+def test_to_cell_message_carries_empty_shareable_job_id():
+    shareable = Shareable()
+    shareable.set_header(FLMetaKey.JOB_ID, "")
+
+    cell_msg = _to_cell_message(_make_msg(data=shareable))
+
+    assert cell_msg.get_header(FLMetaKey.JOB_ID) == ""
+
+
+def test_send_passes_result_receiver_ids_to_stream_encode():
+    pipe = _make_pipe()
+    msg = _make_msg()
+    msg._receiver_ids = ("server.job-1", "peer.job-1")
+
+    assert pipe.send(msg, timeout=1.0) is True
+
+    call_kwargs = pipe.cell.send_request.call_args.kwargs
+    assert call_kwargs["num_receivers"] == 2
+    assert call_kwargs["receiver_ids"] == ("server.job-1", "peer.job-1")
 
 
 # ---------------------------------------------------------------------------

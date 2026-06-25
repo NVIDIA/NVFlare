@@ -118,7 +118,6 @@ Techniques for federated training and fine-tuning of large models, including LLM
 - `Federated PEFT (Parameter-Efficient Fine-Tuning) <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/llm_hf>`_ -- LoRA and other PEFT methods
 - `NeMo SFT Integration <https://github.com/NVIDIA/NVFlare/tree/main/integration/nemo/examples/supervised_fine_tuning>`_ -- Federated SFT with NeMo
 - `NeMo PEFT Integration <https://github.com/NVIDIA/NVFlare/tree/main/integration/nemo/examples/peft>`_ -- Federated PEFT with NeMo
-- `NeMo Prompt Learning <https://github.com/NVIDIA/NVFlare/tree/main/integration/nemo/examples/prompt_learning>`_ -- Federated prompt tuning with NeMo
 
 .. toctree::
    :maxdepth: 1

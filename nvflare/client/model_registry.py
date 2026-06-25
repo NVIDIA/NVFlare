@@ -48,6 +48,9 @@ class ModelRegistry(TaskRegistry):
 
         Args:
             model (FLModel): Trained local model to be submitted.
+
+        Raises:
+            RuntimeError: If the model is empty or the underlying task submission fails.
         """
         if not self.flare_agent:
             return None
@@ -57,7 +60,8 @@ class ModelRegistry(TaskRegistry):
         if model.params is None and model.metrics is None:
             raise RuntimeError("the model to send does not have either params or metrics")
 
-        self.submit_task(model)
+        if not self.submit_task(model):
+            raise RuntimeError("failed to submit model result to FLARE")
 
     def release_params(self, sent_model: FLModel) -> None:
         """Release large parameter arrays after serialization is complete.
