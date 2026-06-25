@@ -63,7 +63,8 @@ def main():
         },
     )
 
-    flare.send(output_model)
+    if rank == 0:
+        flare.send(output_model)
     dist.destroy_process_group()
 
 
