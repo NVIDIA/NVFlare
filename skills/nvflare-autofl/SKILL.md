@@ -51,7 +51,7 @@ python "$CODEX_HOME/skills/nvflare-autofl/scripts/run_job_campaign.py" ./job.py 
 If the user did not specify a candidate cap, omit `--max-candidates`; the
 runner will keep launching same-budget candidate attempts and refresh
 `results.tsv`, `progress.png`, `.nvflare/autofl/campaign_state.json`, and
-`autofl_report.md` after every finalized candidate until interrupted or blocked.
+the Auto-FL report after every finalized candidate until interrupted or blocked.
 In this uncapped mode, do not ask the user whether to keep going. Report
 checkpoint status as an observation, then continue monitoring or executing the
 same runner while `final_response_allowed=false`.
@@ -61,8 +61,8 @@ comparison budget and mutation bounds as authoritative. Invalid generated
 proposals are product friction, not campaign blockers; preserve the same
 campaign and continue with another same-budget candidate.
 
-Do not read or follow research harness prose, `program.md`, task profile
-runbooks, `scripts/init_run.sh`, `.autoresearch` branch rules, or manual
+Do not read or follow research harness program prose, task profile runbooks,
+`scripts/init_run.sh`, `.autoresearch` branch rules, or manual
 research campaign instructions before starting the product runner. Those files
 belong to the incubator workflow and can pull the agent back into an old
 agent-driven loop. The product runner may read `mutation_schema.yaml`,
