@@ -250,10 +250,24 @@ launching more candidates. If it prints `recommendation=continue`, keep
 iterating locally unless repeated crashes share one root cause or no
 non-duplicate safe axis remains.
 
+11. Run the campaign guard and obey its machine-readable stop/continue state:
+
+    ```bash
+    "${PYTHON}" scripts/campaign_guard.py results.tsv --state .autoresearch/campaign_state.json --format json
+    ```
+
+The guard owns whether a final response is allowed. If it writes
+`"final_response_allowed": false`, do not produce a final answer: execute the
+reported `next_action` immediately. Reports, plots, commits, watchdog checks,
+and encoded `job.py` defaults are checkpoints, not stop conditions, unless the
+guard reports a stop state.
+
 ## Never Stop
 
 Once setup and the initial baseline are complete, continue autonomously until
-manually interrupted. Do not pause to ask whether to keep going.
+manually interrupted. Do not pause to ask whether to keep going. The
+deterministic stop authority is `scripts/campaign_guard.py`; run it after every
+batch/checkpoint and before any final response.
 
 Cycle through:
 
@@ -265,13 +279,15 @@ Cycle through:
 - finalize `results.tsv` statuses
 - run the plateau watchdog
 - switch to literature mode when triggered
+- run `scripts/campaign_guard.py results.tsv --state .autoresearch/campaign_state.json`
 - commit surviving code and ledger checkpoints
 - repeat
 
 If local ideas run out, inspect recent near-misses in `results.tsv`, reread the
 task profile and its `mutation_schema.yaml`, combine compatible kept settings,
 or switch to the literature loop. Stay within the hard invariants and active
-budget.
+budget. If the guard says `decision=continue`, choose a next axis even when the
+current best stack has been encoded into defaults and verified.
 
 ## Literature Loop
 
@@ -389,3 +405,14 @@ At checkpoints, generate a compact progress plot with:
 ```bash
 "${PYTHON:-python3}" scripts/plot_progress.py results.tsv --output progress.png
 ```
+
+Then refresh the campaign state:
+
+```bash
+"${PYTHON:-python3}" scripts/campaign_guard.py results.tsv --state .autoresearch/campaign_state.json
+```
+
+Only write a final run report after the guard prints
+`final_response_allowed=true`, for example because the human created a stop
+file, an explicit candidate cap was exhausted, or a hard repeated-failure
+blocker prevents comparable runs.

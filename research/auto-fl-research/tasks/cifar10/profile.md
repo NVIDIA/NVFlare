@@ -177,6 +177,18 @@ After finalizing reviewed statuses, run the plateau watchdog before selecting an
 If it prints `recommendation=literature`, stop local hyperparameter jittering, run the literature loop, record a `literature` row, and launch the selected source-backed candidates next.
 If it prints `recommendation=continue`, do not start a literature review just because one or two small batches missed; choose a clearer local sweep axis, narrow around near-misses, or inspect `mutation_schema.yaml` for another allowed axis.
 
+Then refresh deterministic campaign state:
+
+```bash
+"${PYTHON}" scripts/campaign_guard.py results.tsv --state .autoresearch/campaign_state.json --format json
+```
+
+If the guard returns `final_response_allowed=false`, do not produce a final
+answer. Execute its `next_action`: finalize pending rows, run the literature
+loop, or launch the next same-budget batch. Encoded defaults and refreshed
+reports are checkpoints, not stop conditions, unless the guard allows a final
+response.
+
 When finalizing a same-H100 batch, use the CIFAR default width:
 
 ```bash
