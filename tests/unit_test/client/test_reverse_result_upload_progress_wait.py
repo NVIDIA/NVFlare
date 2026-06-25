@@ -851,6 +851,15 @@ def test_do_submit_result_non_swarm_without_receiver_ids_stalls_at_streaming_idl
         callbacks["progress"] = ctx[fobs.FOBSContextKey.STREAM_PROGRESS_CB]
         callbacks["complete"] = ctx[fobs.FOBSContextKey.DOWNLOAD_COMPLETE_CB]
         ctx[RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY](transaction)
+        callbacks["progress"](
+            direction=DIRECTION_RESULT_UPLOAD,
+            tx_id="tx-non-swarm",
+            transfer_id="ref-non-swarm",
+            sequence=1,
+            bytes_done=0,
+            state=TransferProgressState.ACTIVE,
+            timestamp=time.time(),
+        )
         _tls.download_initiated = True
         _tls.download_transactions = [transaction]
         callbacks_ready.set()
@@ -865,16 +874,6 @@ def test_do_submit_result_non_swarm_without_receiver_ids_stalls_at_streaming_idl
     start = time.time()
     thread.start()
     assert callbacks_ready.wait(timeout=1.0)
-
-    callbacks["progress"](
-        direction=DIRECTION_RESULT_UPLOAD,
-        tx_id="tx-non-swarm",
-        transfer_id="ref-non-swarm",
-        sequence=1,
-        bytes_done=0,
-        state=TransferProgressState.ACTIVE,
-        timestamp=time.time(),
-    )
 
     thread.join(timeout=1.0)
     if thread.is_alive():

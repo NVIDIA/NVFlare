@@ -20,7 +20,7 @@ tests:
           "type": "run_state"
           "data": { "run_finished": True }
     setup:
-      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/data', train=True, download=True)"
+      - python tools/prepare_cifar10.py --root /tmp/nvflare/data
     teardown:
       - rm -rf /tmp/nvflare/data
   - test_name: "run pt-mc-cyclic"
@@ -39,6 +39,6 @@ tests:
           "type": "run_state"
           "data": { "run_finished": True }
     setup:
-      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/data', train=True, download=True)"
+      - python tools/prepare_cifar10.py --root /tmp/nvflare/data
     teardown:
       - rm -rf /tmp/nvflare/data

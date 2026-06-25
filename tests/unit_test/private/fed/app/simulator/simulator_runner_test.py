@@ -27,6 +27,7 @@ import pytest
 
 from nvflare.apis.fl_constant import FLContextKey, MachineStatus, WorkspaceConstants
 from nvflare.apis.job_def import JobMetaKey
+from nvflare.private.fed.app.simulator import simulator_worker
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorClientRunner, SimulatorRunner
 from nvflare.private.fed.utils.fed_utils import split_gpus
 
@@ -204,3 +205,28 @@ class TestSimulatorRunner:
         new_sys_path = runner._get_new_sys_path()
         assert old_sys_path == new_sys_path
         sys.path = old_sys_path
+
+    def test_create_connection_does_not_require_authkey(self):
+        args = Namespace(workspace="/tmp")
+        args.set = []
+        runner = SimulatorClientRunner(None, args, [], None, None, None)
+        conn = Mock()
+
+        with patch("nvflare.private.fed.app.simulator.simulator_runner.Client", return_value=conn) as client:
+            result = runner._create_connection(1234)
+
+        assert result is conn
+        client.assert_called_once_with(("localhost", 1234))
+
+    def test_worker_create_connection_does_not_require_authkey(self):
+        conn = Mock()
+        listener = Mock()
+        listener.accept.return_value = conn
+
+        with patch(
+            "nvflare.private.fed.app.simulator.simulator_worker.Listener", return_value=listener
+        ) as listener_cls:
+            result = simulator_worker._create_connection(1234)
+
+        assert result is conn
+        listener_cls.assert_called_once_with(("localhost", 1234))
