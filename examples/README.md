@@ -155,7 +155,6 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 | Example                                                                             | Framework | Summary                                                                                                               |
 |-------------------------------------------------------------------------------------|-----------|-----------------------------------------------------------------------------------------------------------------------|
 | [Parameter Efficient Fine Turning](../integration/nemo/examples/peft)               | NeMo      | Example utilizing NeMo's PEFT methods to adapt a LLM to a downstream task. |
-| [Prompt-Tuning Example](../integration/nemo/examples/prompt_learning)               | NeMo      | Example for using FLARE with NeMo for prompt learning.|
 | [Supervised Fine Tuning (SFT)](../integration/nemo/examples/supervised_fine_tuning) | NeMo      | Example to fine-tune all parameters of a LLM on supervised data. |
 | [LLM Tuning via HuggingFace SFT Trainer](./advanced/llm_hf)                         | NeMo      | Example for using FLARE with a HuggingFace trainer for LLM tuning tasks. |
 
