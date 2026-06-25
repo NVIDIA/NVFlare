@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import importlib.util
 import json
 import os
 import re
@@ -81,6 +82,9 @@ SIMULATOR_PROGRESS_PATTERNS = (
 )
 SIMULATOR_PROGRESS_LOG_LIMIT = 131072
 DEFAULT_SIMULATOR_NO_PROGRESS_TIMEOUT = 240
+DEFAULT_HARD_CRASH_THRESHOLD = 6
+DEFAULT_PLATEAU_MIN_DELTA = 0.0005
+DEFAULT_PLATEAU_THRESHOLD = 32
 
 FIXED_BUDGET_TO_CLI = {
     "num_clients": "n_clients",
@@ -129,6 +133,22 @@ class JobRun:
     command: List[str] = field(default_factory=list)
 
 
+def env_int(name: str, default: int) -> int:
+    try:
+        value = int(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default
+    return value
+
+
+def env_float(name: str, default: float) -> float:
+    try:
+        value = float(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default
+    return value
+
+
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("job", help="NVFlare job.py to optimize")
@@ -146,14 +166,38 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--progress", default="progress.png")
     parser.add_argument("--report", default="autofl_report.md")
     parser.add_argument("--output-root", default="autofl_runs")
+    parser.add_argument(
+        "--plateau-threshold",
+        type=int,
+        default=env_int("AUTOFL_PLATEAU_THRESHOLD", DEFAULT_PLATEAU_THRESHOLD),
+        help=(
+            "scored comparable candidate attempts after the last material improvement or literature event "
+            "before campaign state requests run_literature_loop"
+        ),
+    )
+    parser.add_argument(
+        "--plateau-min-delta",
+        type=float,
+        default=env_float("AUTOFL_PLATEAU_MIN_DELTA", DEFAULT_PLATEAU_MIN_DELTA),
+        help="minimum metric delta required to reset the plateau clock",
+    )
+    parser.add_argument(
+        "--hard-crash-threshold",
+        type=int,
+        default=env_int("AUTOFL_HARD_CRASH_THRESHOLD", DEFAULT_HARD_CRASH_THRESHOLD),
+        help="stop after this many consecutive real candidate crashes; set 0 to disable",
+    )
+    parser.add_argument(
+        "--stop-file",
+        action="append",
+        help="manual stop-file path; defaults to STOP_AUTOFL and .nvflare/autofl/STOP under the job directory",
+    )
     parser.add_argument("--base-args", default="", help="extra job args applied to baseline and all candidates")
     parser.add_argument("--timeout", type=int, default=900)
     parser.add_argument(
         "--simulator-no-progress-timeout",
         type=int,
-        default=int(
-            os.environ.get("AUTOFL_SIMULATOR_NO_PROGRESS_TIMEOUT_SECONDS", DEFAULT_SIMULATOR_NO_PROGRESS_TIMEOUT)
-        ),
+        default=env_int("AUTOFL_SIMULATOR_NO_PROGRESS_TIMEOUT_SECONDS", DEFAULT_SIMULATOR_NO_PROGRESS_TIMEOUT),
         help=(
             "candidate-level simulator no-progress timeout in seconds; set 0 to disable. "
             "This is separate from the full run timeout and only applies after progress markers appear."
@@ -440,11 +484,36 @@ def write_json(path: Path, data: Dict[str, Any]) -> None:
     path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+_CAMPAIGN_GUARD = None
+
+
+def load_campaign_guard():
+    global _CAMPAIGN_GUARD
+    if _CAMPAIGN_GUARD is not None:
+        return _CAMPAIGN_GUARD
+
+    guard_path = Path(__file__).resolve().with_name("campaign_guard.py")
+    spec = importlib.util.spec_from_file_location("nvflare_autofl_skill_campaign_guard", guard_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Unable to load campaign guard from {guard_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    _CAMPAIGN_GUARD = module
+    return module
+
+
 def resolve_output_path(cwd: Path, value: str) -> Path:
     path = Path(value)
     if path.is_absolute():
         return path
     return cwd / path
+
+
+def resolve_stop_files(cwd: Path, values: Optional[Sequence[str]]) -> List[str]:
+    guard = load_campaign_guard()
+    stop_files = values if values is not None else list(guard.DEFAULT_STOP_FILES)
+    return [str(resolve_output_path(cwd, value)) for value in stop_files]
 
 
 def extract_result_dir(output: str) -> Optional[Path]:
@@ -1009,57 +1078,79 @@ def finalize_candidates(records: List[RunRecord], mode: str) -> None:
 
 def write_state(
     path: Path,
+    results_path: Path,
     records: List[RunRecord],
     max_candidates: Optional[int],
     *,
+    mode: str = "max",
+    stop_files: Optional[List[str]] = None,
+    plateau_threshold: int = DEFAULT_PLATEAU_THRESHOLD,
+    plateau_min_delta: float = DEFAULT_PLATEAU_MIN_DELTA,
+    hard_crash_threshold: int = DEFAULT_HARD_CRASH_THRESHOLD,
     manual_stop: bool = False,
-) -> None:
+) -> Dict[str, Any]:
+    guard = load_campaign_guard()
     attempts = len([r for r in records if r.status in {"keep", "discard", "crash"}])
     if manual_stop:
-        state = {
-            "schema_version": "nvflare.autofl.skill_state.v1",
-            "candidate_cap": max_candidates,
-            "candidate_attempts": attempts,
-            "decision": "manual_stop",
-            "next_action": "final_report",
-            "final_response_allowed": True,
-        }
+        state = guard.guard_state(
+            results_path,
+            max_candidates=max_candidates,
+            stop_files=stop_files,
+            plateau_threshold=plateau_threshold,
+            min_delta=plateau_min_delta,
+            hard_crash_threshold=hard_crash_threshold,
+            mode=mode,
+        )
+        state.update(
+            {
+                "candidate_attempts": attempts,
+                "decision": "stop",
+                "reason": "manual_interrupt",
+                "next_action": "final_report",
+                "final_response_allowed": True,
+                "agent_instruction": "Final report is allowed because the campaign was manually interrupted.",
+            }
+        )
         write_json(path, state)
-        return
+        return state
 
     if any(r.status == INFRASTRUCTURE_RETRY for r in records):
-        state = {
-            "schema_version": "nvflare.autofl.skill_state.v1",
-            "candidate_cap": max_candidates,
-            "candidate_attempts": attempts,
-            "decision": "retry_infrastructure",
-            "next_action": "rerun_with_escalated_execution",
-            "final_response_allowed": False,
-        }
+        state = guard.guard_state(
+            results_path,
+            max_candidates=max_candidates,
+            stop_files=stop_files,
+            plateau_threshold=plateau_threshold,
+            min_delta=plateau_min_delta,
+            hard_crash_threshold=hard_crash_threshold,
+            mode=mode,
+        )
+        state.update(
+            {
+                "candidate_attempts": attempts,
+                "decision": "retry_infrastructure",
+                "reason": "infrastructure_retry",
+                "next_action": "rerun_with_escalated_execution",
+                "final_response_allowed": False,
+                "agent_instruction": (
+                    "Do not produce a final answer. Rerun the same command with escalated execution or repaired "
+                    "runtime permissions; infrastructure retries do not count against the candidate budget."
+                ),
+            }
+        )
         write_json(path, state)
-        return
+        return state
 
-    if max_candidates is None:
-        state = {
-            "schema_version": "nvflare.autofl.skill_state.v1",
-            "candidate_cap": None,
-            "candidate_attempts": attempts,
-            "decision": "continue",
-            "next_action": "launch_next_candidate",
-            "final_response_allowed": False,
-        }
-        write_json(path, state)
-        return
-
-    state = {
-        "schema_version": "nvflare.autofl.skill_state.v1",
-        "candidate_cap": max_candidates,
-        "candidate_attempts": attempts,
-        "decision": "stop" if attempts >= max_candidates else "continue",
-        "next_action": "final_report" if attempts >= max_candidates else "launch_next_candidate",
-        "final_response_allowed": attempts >= max_candidates,
-    }
+    state = guard.guard_state(
+        results_path,
+        max_candidates=max_candidates,
+        stop_files=stop_files,
+        plateau_threshold=plateau_threshold,
+        min_delta=plateau_min_delta,
+        hard_crash_threshold=hard_crash_threshold,
+        mode=mode,
+    )
     write_json(path, state)
+    return state
 
 
 def write_progress(path: Path, records: List[RunRecord], mode: str) -> None:
@@ -1151,10 +1242,47 @@ def write_report(path: Path, config: Dict[str, Any], records: List[RunRecord], a
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def candidate_attempts(records: List[RunRecord]) -> int:
+    return len([r for r in records if r.status in {"keep", "discard", "crash"}])
+
+
+def campaign_summary(
+    autofl_yaml: Path,
+    results: Path,
+    state: Path,
+    progress: Path,
+    report: Path,
+    records: List[RunRecord],
+    state_payload: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    payload = {
+        "autofl_yaml": str(autofl_yaml.resolve()),
+        "results": str(results.resolve()),
+        "state": str(state.resolve()),
+        "progress": str(progress.resolve()),
+        "report": str(report.resolve()),
+        "candidate_attempts": candidate_attempts(records),
+    }
+    if state_payload:
+        for key in ["decision", "reason", "next_action", "final_response_allowed", "agent_instruction"]:
+            if key in state_payload:
+                payload[key] = state_payload[key]
+    return payload
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
     if args.max_candidates is not None and args.max_candidates < 1:
         print("--max-candidates must be positive when provided", file=sys.stderr)
+        return 2
+    if args.plateau_threshold < 1:
+        print("--plateau-threshold must be positive", file=sys.stderr)
+        return 2
+    if args.plateau_min_delta < 0:
+        print("--plateau-min-delta must be non-negative", file=sys.stderr)
+        return 2
+    if args.hard_crash_threshold < 0:
+        print("--hard-crash-threshold must be non-negative", file=sys.stderr)
         return 2
     job = Path(args.job).resolve()
     cwd = job.parent
@@ -1164,6 +1292,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     progress = resolve_output_path(cwd, args.progress)
     report = resolve_output_path(cwd, args.report)
     output_root = resolve_output_path(cwd, args.output_root)
+    stop_files = resolve_stop_files(cwd, args.stop_file)
     output_root.mkdir(parents=True, exist_ok=True)
     schema = load_mutation_schema(cwd)
     profile_budget = h100_comparison_budget(schema)
@@ -1218,21 +1347,23 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
     records.append(baseline_record)
     write_results(results, records)
-    write_state(state, records, args.max_candidates)
+    state_payload = write_state(
+        state,
+        results,
+        records,
+        args.max_candidates,
+        mode=args.mode,
+        stop_files=stop_files,
+        plateau_threshold=args.plateau_threshold,
+        plateau_min_delta=args.plateau_min_delta,
+        hard_crash_threshold=args.hard_crash_threshold,
+    )
     write_progress(progress, records, args.mode)
     write_report(report, config, records, args)
     if baseline_record.status == INFRASTRUCTURE_RETRY:
         print(
             json.dumps(
-                {
-                    "autofl_yaml": str(autofl_yaml.resolve()),
-                    "results": str(results.resolve()),
-                    "state": str(state.resolve()),
-                    "progress": str(progress.resolve()),
-                    "report": str(report.resolve()),
-                    "candidate_attempts": 0,
-                    "next_action": "rerun_with_escalated_execution",
-                },
+                campaign_summary(autofl_yaml, results, state, progress, report, records, state_payload),
                 indent=2,
                 sort_keys=True,
             )
@@ -1262,42 +1393,58 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             records.append(record)
             finalize_candidates(records, args.mode)
             write_results(results, records)
-            write_state(state, records, args.max_candidates)
+            state_payload = write_state(
+                state,
+                results,
+                records,
+                args.max_candidates,
+                mode=args.mode,
+                stop_files=stop_files,
+                plateau_threshold=args.plateau_threshold,
+                plateau_min_delta=args.plateau_min_delta,
+                hard_crash_threshold=args.hard_crash_threshold,
+            )
             write_progress(progress, records, args.mode)
             write_report(report, config, records, args)
             if record.status == INFRASTRUCTURE_RETRY:
                 print(
                     json.dumps(
-                        {
-                            "autofl_yaml": str(autofl_yaml.resolve()),
-                            "results": str(results.resolve()),
-                            "state": str(state.resolve()),
-                            "progress": str(progress.resolve()),
-                            "report": str(report.resolve()),
-                            "candidate_attempts": len([r for r in records if r.status in {"keep", "discard", "crash"}]),
-                            "next_action": "rerun_with_escalated_execution",
-                        },
+                        campaign_summary(autofl_yaml, results, state, progress, report, records, state_payload),
                         indent=2,
                         sort_keys=True,
                     )
                 )
                 return 75
+            if state_payload.get("next_action") == "run_literature_loop":
+                print(
+                    json.dumps(
+                        campaign_summary(autofl_yaml, results, state, progress, report, records, state_payload),
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+                return 0
+            if state_payload.get("final_response_allowed"):
+                break
     except KeyboardInterrupt:
         write_results(results, records)
-        write_state(state, records, args.max_candidates, manual_stop=True)
+        state_payload = write_state(
+            state,
+            results,
+            records,
+            args.max_candidates,
+            mode=args.mode,
+            stop_files=stop_files,
+            plateau_threshold=args.plateau_threshold,
+            plateau_min_delta=args.plateau_min_delta,
+            hard_crash_threshold=args.hard_crash_threshold,
+            manual_stop=True,
+        )
         write_progress(progress, records, args.mode)
         write_report(report, config, records, args)
         print(
             json.dumps(
-                {
-                    "autofl_yaml": str(autofl_yaml.resolve()),
-                    "results": str(results.resolve()),
-                    "state": str(state.resolve()),
-                    "progress": str(progress.resolve()),
-                    "report": str(report.resolve()),
-                    "candidate_attempts": len([r for r in records if r.status in {"keep", "discard", "crash"}]),
-                    "next_action": "final_report",
-                },
+                campaign_summary(autofl_yaml, results, state, progress, report, records, state_payload),
                 indent=2,
                 sort_keys=True,
             )
@@ -1305,17 +1452,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 130
 
     write_report(report, config, records, args)
-    candidate_attempts = len([r for r in records if r.status in {"keep", "discard", "crash"}])
+    state_payload = write_state(
+        state,
+        results,
+        records,
+        args.max_candidates,
+        mode=args.mode,
+        stop_files=stop_files,
+        plateau_threshold=args.plateau_threshold,
+        plateau_min_delta=args.plateau_min_delta,
+        hard_crash_threshold=args.hard_crash_threshold,
+    )
     print(
         json.dumps(
-            {
-                "autofl_yaml": str(autofl_yaml.resolve()),
-                "results": str(results.resolve()),
-                "state": str(state.resolve()),
-                "progress": str(progress.resolve()),
-                "report": str(report.resolve()),
-                "candidate_attempts": candidate_attempts,
-            },
+            campaign_summary(autofl_yaml, results, state, progress, report, records, state_payload),
             indent=2,
             sort_keys=True,
         )

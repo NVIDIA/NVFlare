@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -193,3 +194,73 @@ def test_run_stops_on_stale_partial_simulator_aggregation(tmp_path):
     assert runtime < 5
     assert "SIMULATOR_STALL: partial simulator aggregation made no server-side progress" in output
     assert "Aggregated 1/8 results" in log_text
+
+
+def test_runner_state_routes_plateau_to_literature_checkpoint(tmp_path):
+    runner = _load_runner()
+    records = [
+        runner.RunRecord("baseline", "baseline", 0.85, 1.0, "none", "baseline", "python job.py", "/tmp/baseline"),
+        runner.RunRecord("discard", "candidate_1", 0.84, 1.0, "none", "candidate", "python job.py", "/tmp/c1"),
+        runner.RunRecord("discard", "candidate_2", 0.84, 1.0, "none", "candidate", "python job.py", "/tmp/c2"),
+    ]
+    results_path = tmp_path / "results.tsv"
+    state_path = tmp_path / "state.json"
+    runner.write_results(results_path, records)
+
+    state = runner.write_state(
+        state_path,
+        results_path,
+        records,
+        None,
+        plateau_threshold=2,
+    )
+
+    assert state["schema_version"] == "nvflare.autofl.campaign_state.v1"
+    assert state["reason"] == "plateau_literature"
+    assert state["next_action"] == "run_literature_loop"
+    assert state["final_response_allowed"] is False
+    assert state == json.loads(state_path.read_text(encoding="utf-8"))
+
+
+def test_runner_state_finalizes_after_explicit_candidate_cap(tmp_path):
+    runner = _load_runner()
+    records = [
+        runner.RunRecord("baseline", "baseline", 0.85, 1.0, "none", "baseline", "python job.py", "/tmp/baseline"),
+        runner.RunRecord("discard", "candidate_1", 0.84, 1.0, "none", "candidate", "python job.py", "/tmp/c1"),
+    ]
+    results_path = tmp_path / "results.tsv"
+    state_path = tmp_path / "state.json"
+    runner.write_results(results_path, records)
+
+    state = runner.write_state(state_path, results_path, records, 1)
+
+    assert state["decision"] == "stop"
+    assert state["reason"] == "candidate_cap_exhausted"
+    assert state["next_action"] == "final_report"
+    assert state["final_response_allowed"] is True
+
+
+def test_runner_state_marks_infrastructure_retry_non_final(tmp_path):
+    runner = _load_runner()
+    records = [
+        runner.RunRecord(
+            runner.INFRASTRUCTURE_RETRY,
+            "baseline",
+            None,
+            1.0,
+            "none",
+            "baseline",
+            "python job.py",
+            "/tmp/baseline",
+        )
+    ]
+    results_path = tmp_path / "results.tsv"
+    state_path = tmp_path / "state.json"
+    runner.write_results(results_path, records)
+
+    state = runner.write_state(state_path, results_path, records, None)
+
+    assert state["decision"] == "retry_infrastructure"
+    assert state["reason"] == "infrastructure_retry"
+    assert state["next_action"] == "rerun_with_escalated_execution"
+    assert state["final_response_allowed"] is False

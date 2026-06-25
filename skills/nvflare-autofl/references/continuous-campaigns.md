@@ -27,19 +27,22 @@ GPU use and the child process remain active, keep waiting.
 
 ## Campaign Guards
 
-If `.autoresearch/campaign_state.json` exists, read it before any final
-response. If `scripts/campaign_guard.py` exists, run it after every checkpoint
-and before any final response. If the state has `final_response_allowed=false`,
-execute `next_action` immediately; the skill text is only the interaction layer.
+The product runner writes `.nvflare/autofl/campaign_state.json` through
+`scripts/campaign_guard.py`; read that state before any final response. If a
+legacy `.autoresearch/campaign_state.json` also exists, treat it as additional
+research-harness context, but do not let it override the product runner state.
+If the state has `final_response_allowed=false`, execute `next_action`
+immediately; the skill text is only the interaction layer.
 
 Common next actions:
 
 - `finalize_pending_candidates`: finalize reviewed candidate rows and rerun the
   guard.
-- `run_literature_loop`: run the literature loop and launch source-backed
-  candidates.
-- `launch_next_candidate_batch`: choose a safe same-budget axis and launch the
-  next batch.
+- `run_literature_loop`: run a short source-backed literature pass, record a
+  non-scored `literature` row when a ledger is available, then launch the next
+  compatible same-budget candidates.
+- `launch_next_candidate` or `launch_next_candidate_batch`: choose a safe
+  same-budget axis and launch the next candidate or batch.
 
 After every finalized batch, run the available plateau or progress watchdog when
 the task provides one. If it recommends `continue`, refresh `progress.png` and
