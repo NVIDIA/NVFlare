@@ -1222,7 +1222,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     write_progress(progress, records, args.mode)
     write_report(report, config, records, args)
     if baseline_record.status == INFRASTRUCTURE_RETRY:
-        write_report(report, config, records, args)
         print(
             json.dumps(
                 {

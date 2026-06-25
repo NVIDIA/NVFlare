@@ -410,7 +410,7 @@ class DeterministicJobImporter:
                 "source": value.source,
                 "confidence": value.confidence,
             }
-            if value.unresolved:
+            if value.unresolved and key != "model":
                 unresolved.append(_unresolved(f"job.{call_info.name}.{key}", value.source))
         return resolved, unresolved
 
@@ -629,7 +629,7 @@ def _resolve_value(
             arg_value = _first_resolved_argparse_string(node, assignments, parser_args, source_text)
             if arg_value is not None:
                 return arg_value
-        return ResolvedValue(_source_segment(source_text, node) or call_name, f"call:{call_name}", "medium")
+        return ResolvedValue(_source_segment(source_text, node) or call_name, f"call:{call_name}", "low", True)
 
     return ResolvedValue(_source_segment(source_text, node) or type(node).__name__, "expression", "low", True)
 

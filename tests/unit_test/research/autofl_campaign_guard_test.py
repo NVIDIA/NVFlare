@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -26,7 +27,7 @@ def _write_results(path, rows):
     path.write_text(HEADER + "\n".join(rows) + "\n", encoding="utf-8")
 
 
-def _run_guard(tmp_path, *args):
+def _run_guard(tmp_path, *args, env=None):
     state_path = tmp_path / "campaign_state.json"
     command = [
         sys.executable,
@@ -38,7 +39,8 @@ def _run_guard(tmp_path, *args):
         "json",
         *args,
     ]
-    process = subprocess.run(command, cwd=tmp_path, text=True, capture_output=True, check=True)
+    process_env = None if env is None else {**os.environ, **env}
+    process = subprocess.run(command, cwd=tmp_path, text=True, capture_output=True, check=True, env=process_env)
     payload = json.loads(process.stdout)
     assert json.loads(state_path.read_text(encoding="utf-8")) == payload
     return payload
@@ -93,3 +95,20 @@ def test_campaign_guard_allows_final_report_after_explicit_cap(tmp_path):
     assert payload["reason"] == "candidate_cap_exhausted"
     assert payload["next_action"] == "final_report"
     assert payload["final_response_allowed"] is True
+
+
+def test_campaign_guard_ignores_malformed_env_cap(tmp_path):
+    _write_results(
+        tmp_path / "results.tsv",
+        [
+            "abc\t0.84\t10\t--name baseline\tkeep\tjob.py\tbaseline\t/tmp/baseline",
+            "def\t0.86\t20\t--name candidate\tdiscard\tjob.py\tcandidate row\t/tmp/candidate",
+        ],
+    )
+
+    payload = _run_guard(tmp_path, env={"AUTOFL_MAX_CANDIDATES": "not-a-number"})
+
+    assert payload["decision"] == "continue"
+    assert payload["reason"] == "continue"
+    assert payload["candidate_cap"] is None
+    assert payload["final_response_allowed"] is False

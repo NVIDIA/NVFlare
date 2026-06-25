@@ -99,9 +99,19 @@ def best_score(rows: list[dict[str, str]]) -> float | None:
 def parse_max_candidates(value: str | None) -> int | None:
     if value is None or str(value).strip() == "":
         return None
-    parsed = int(value)
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
     if parsed <= 0:
         return None
+    return parsed
+
+
+def parse_max_candidates_arg(value: str) -> int:
+    parsed = parse_max_candidates(value)
+    if parsed is None:
+        raise argparse.ArgumentTypeError("must be a positive integer")
     return parsed
 
 
@@ -253,7 +263,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("results", nargs="?", default="results.tsv")
     parser.add_argument("--state", default=DEFAULT_STATE_PATH)
-    parser.add_argument("--max-candidates", type=parse_max_candidates)
+    parser.add_argument("--max-candidates", type=parse_max_candidates_arg)
     parser.add_argument("--stop-file", action="append", default=list(DEFAULT_STOP_FILES))
     parser.add_argument("--plateau-threshold", type=int, default=DEFAULT_MAX_SCORED_SINCE_RESET)
     parser.add_argument("--min-delta", type=float, default=DEFAULT_MIN_DELTA)
