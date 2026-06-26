@@ -88,7 +88,7 @@ optimization once. For long-running and simulator-stall handling, read
 Read `autofl.yaml` and show the user a concise campaign summary:
 
 - **Editable**: metric, environment, candidate budget, tunables, artifact
-  locations, metric source, source hash, and importer version.
+  locations, `objective.optimization_metric`, metric source, source hash, and importer version.
 - **Unresolved**: dynamic defaults, unsupported Python semantics, missing
   metric sources, unknown data paths, or any low-confidence fields.
 - **Allowed**: files the agent may edit, fixed-budget fields it must preserve,

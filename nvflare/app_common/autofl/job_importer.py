@@ -151,6 +151,7 @@ class DeterministicJobImporter:
             unresolved.append(_unresolved("job.train_script", "no train_script was found or resolved"))
 
         metric_name, metric_source, metric_issue = self._resolve_metric(metric, job_call, index.parser_args)
+        objective = _objective_contract(metric_name, mode, metric_source)
         if metric_issue:
             unresolved.append(metric_issue)
 
@@ -208,7 +209,7 @@ class DeterministicJobImporter:
                 },
             },
             "job": job_payload,
-            "objective": {"metric": metric_name, "mode": mode, "source": metric_source},
+            "objective": objective,
             "budget": budget,
             "environment": environment,
             "search_space": {"suggested": search_space},
@@ -217,7 +218,14 @@ class DeterministicJobImporter:
                 "result_root": "autofl_runs",
             },
             "trust_contract": {
-                "extracted": _trust_extracted(job_call, env_call, train_script, budget, metric_name, search_space),
+                "extracted": _trust_extracted(
+                    job_call,
+                    env_call,
+                    train_script,
+                    budget,
+                    objective,
+                    search_space,
+                ),
                 "unresolved": list(unresolved),
                 "allowed_edit_paths": allowed_edit_paths,
                 "agent_controls": {
@@ -735,7 +743,7 @@ def _trust_extracted(
     env_call: Optional[CallInfo],
     train_script: Optional[Path],
     budget: Dict[str, Any],
-    metric_name: str,
+    objective: Dict[str, Any],
     search_space: Dict[str, Any],
 ) -> List[Dict[str, Any]]:
     extracted = []
@@ -746,12 +754,24 @@ def _trust_extracted(
         extracted.append({"field": "environment.discovered", "value": env_call.name})
     if train_script:
         extracted.append({"field": "job.train_script", "value": train_script.name})
-    extracted.append({"field": "objective.metric", "value": metric_name})
+    extracted.append({"field": "objective.metric", "value": objective["metric"]})
+    extracted.append({"field": "objective.optimization_metric", "value": objective["optimization_metric"]})
     if "fixed_training_budget" in budget:
         extracted.append({"field": "budget.fixed_training_budget", "value": budget["fixed_training_budget"]})
     if search_space:
         extracted.append({"field": "search_space.suggested", "value": sorted(search_space)})
     return extracted
+
+
+def _objective_contract(metric_name: str, mode: str, source: str) -> Dict[str, Any]:
+    return {
+        "metric": metric_name,
+        "requested_metric": metric_name,
+        "optimization_metric": metric_name,
+        "metric_extraction_order": [metric_name],
+        "mode": mode,
+        "source": source,
+    }
 
 
 def _has_main_entrypoint(tree: ast.AST) -> bool:

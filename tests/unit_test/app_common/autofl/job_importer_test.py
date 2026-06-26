@@ -23,6 +23,17 @@ from nvflare.app_common.autofl import (
 )
 
 
+def _objective(metric, source="user_request"):
+    return {
+        "metric": metric,
+        "requested_metric": metric,
+        "optimization_metric": metric,
+        "metric_extraction_order": [metric],
+        "mode": "max",
+        "source": source,
+    }
+
+
 def _write_recipe_job(root):
     (root / "model.py").write_text(
         """
@@ -102,7 +113,7 @@ def test_import_recipe_job_extracts_trust_contract_without_executing_code(tmp_pa
     assert config["job"]["surface"] == "recipe"
     assert config["job"]["recipe"] == "FedAvgRecipe"
     assert config["job"]["train_script"] == "client.py"
-    assert config["objective"] == {"metric": "AUC", "mode": "max", "source": "user_request"}
+    assert config["objective"] == _objective("AUC")
     assert config["budget"]["max_candidates"] == 8
     assert config["budget"]["fixed_training_budget"] == {
         "num_rounds": 5,
@@ -262,7 +273,7 @@ def main():
 
     config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
 
-    assert config["objective"] == {"metric": "accuracy", "mode": "max", "source": "default"}
+    assert config["objective"] == _objective("accuracy", source="default")
     assert config["budget"]["fixed_training_budget"] == {"min_clients": 2, "num_clients": 2}
     assert {
         "field": "budget.fixed_training_budget.num_rounds",
@@ -311,7 +322,7 @@ def main():
 
     config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
 
-    assert config["objective"] == {"metric": "accuracy", "mode": "max", "source": "default"}
+    assert config["objective"] == _objective("accuracy", source="default")
     assert config["budget"]["fixed_training_budget"] == {"min_clients": 2, "num_clients": 2}
     assert {
         "field": "budget.fixed_training_budget.num_rounds",

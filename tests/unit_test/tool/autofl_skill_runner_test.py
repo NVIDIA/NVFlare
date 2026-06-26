@@ -70,7 +70,35 @@ def test_runner_prefers_explicit_test_accuracy_alias(tmp_path):
         encoding="utf-8",
     )
 
-    assert runner.extract_score(tmp_path, "accuracy") == 0.8
+    assert runner.extract_score(tmp_path, ["test_accuracy", "accuracy"]) == 0.8
+
+
+def test_runner_applies_schema_metric_contract():
+    runner = _load_runner()
+    config = {
+        "objective": {
+            "metric": "accuracy",
+            "requested_metric": "accuracy",
+            "optimization_metric": "accuracy",
+            "metric_extraction_order": ["accuracy"],
+        }
+    }
+    schema = {
+        "objective": {
+            "requested_metric": "accuracy",
+            "optimization_metric": "test_accuracy",
+            "metric_extraction_order": ["test_accuracy", "accuracy"],
+            "metric_source": "held-out CIFAR-10 test set",
+        }
+    }
+
+    updated = runner.apply_metric_contract(config, "accuracy", schema)
+
+    assert updated["objective"]["metric"] == "accuracy"
+    assert updated["objective"]["requested_metric"] == "accuracy"
+    assert updated["objective"]["optimization_metric"] == "test_accuracy"
+    assert updated["objective"]["metric_extraction_order"] == ["test_accuracy", "accuracy"]
+    assert updated["objective"]["metric_source"] == "held-out CIFAR-10 test set"
 
 
 def test_profile_budget_suppresses_duplicate_imported_fixed_budget_args():

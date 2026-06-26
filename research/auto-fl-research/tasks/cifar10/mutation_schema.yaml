@@ -1,6 +1,12 @@
 target: task-local client.py, job.py, model.py; shared custom_aggregators.py
 goal: mutate local client behavior and bounded registered model architectures without changing the federated protocol; scaffold metadata is allowed only when explicitly selected
 
+objective:
+  requested_metric: accuracy
+  optimization_metric: test_accuracy
+  metric_extraction_order: [test_accuracy, accuracy]
+  metric_source: held-out global CIFAR-10 test set via torchvision.datasets.CIFAR10(train=False)
+
 fixed_invariants:
   api_loop:
     - flare.init()

@@ -106,10 +106,6 @@ PROFILE_BUDGET_TO_CLI = {
     "final_eval_clients": "final_eval_clients",
 }
 
-METRIC_ALIASES = {
-    "accuracy": ["test_accuracy", "accuracy"],
-}
-
 
 @dataclass
 class RunRecord:
@@ -483,6 +479,12 @@ def read_yaml(path: Path) -> Dict[str, Any]:
     return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
 
+def write_yaml(path: Path, data: Dict[str, Any]) -> None:
+    if yaml is None:
+        raise RuntimeError("PyYAML is required to write autofl.yaml")
+    path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+
 def write_json(path: Path, data: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -533,8 +535,64 @@ def extract_result_dir(output: str) -> Optional[Path]:
     return None
 
 
-def find_metric_value(payload: Any, metric: str) -> Optional[float]:
-    metric_keys = METRIC_ALIASES.get(metric, [metric])
+def objective_contract(config: Dict[str, Any], requested_metric: str) -> Dict[str, Any]:
+    objective = config.get("objective", {})
+    if not isinstance(objective, dict):
+        objective = {}
+    metric = str(objective.get("metric") or requested_metric)
+    requested = str(objective.get("requested_metric") or metric)
+    optimization = str(objective.get("optimization_metric") or metric)
+    extraction_order = objective.get("metric_extraction_order")
+    if not isinstance(extraction_order, list) or not extraction_order:
+        extraction_order = [optimization]
+    extraction_order = [str(item) for item in extraction_order if item]
+    if optimization not in extraction_order:
+        extraction_order.insert(0, optimization)
+    return {
+        **objective,
+        "metric": metric,
+        "requested_metric": requested,
+        "optimization_metric": optimization,
+        "metric_extraction_order": extraction_order,
+    }
+
+
+def apply_metric_contract(
+    config: Dict[str, Any], requested_metric: str, schema: Optional[Dict[str, Any]]
+) -> Dict[str, Any]:
+    objective = objective_contract(config, requested_metric)
+    schema_objective = (schema or {}).get("objective", {})
+    if isinstance(schema_objective, dict):
+        schema_requested = schema_objective.get("requested_metric") or schema_objective.get("metric")
+        if not schema_requested or schema_requested == objective["requested_metric"]:
+            for key in ("optimization_metric", "metric_extraction_order", "metric_source"):
+                if key in schema_objective:
+                    objective[key] = schema_objective[key]
+    config["objective"] = objective_contract({"objective": objective}, requested_metric)
+    return config
+
+
+def metric_extraction_order(config: Dict[str, Any], requested_metric: str) -> List[str]:
+    return list(objective_contract(config, requested_metric)["metric_extraction_order"])
+
+
+def optimization_metric(config: Dict[str, Any], requested_metric: str) -> str:
+    return str(objective_contract(config, requested_metric)["optimization_metric"])
+
+
+def metric_source(config: Dict[str, Any]) -> str:
+    source = config.get("objective", {}).get("metric_source", "")
+    return str(source) if source else "NVFlare metric artifacts"
+
+
+def normalize_metric_order(metrics: Sequence[str] | str) -> List[str]:
+    if isinstance(metrics, str):
+        return [metrics]
+    return [str(metric) for metric in metrics if metric]
+
+
+def find_metric_value(payload: Any, metric_order: Sequence[str] | str) -> Optional[float]:
+    metric_keys = normalize_metric_order(metric_order)
     if isinstance(payload, dict):
         for key in ("final_aggregated_metrics", "best_metrics", "metrics"):
             for metric_key in metric_keys:
@@ -545,7 +603,7 @@ def find_metric_value(payload: Any, metric: str) -> Optional[float]:
             if metric_key in payload and isinstance(payload[metric_key], (int, float)):
                 return float(payload[metric_key])
         for value in payload.values():
-            score = find_metric_value(value, metric)
+            score = find_metric_value(value, metric_keys)
             if score is not None:
                 return score
     elif isinstance(payload, list):
@@ -554,7 +612,7 @@ def find_metric_value(payload: Any, metric: str) -> Optional[float]:
             if value is not None:
                 return value
         for item in payload:
-            score = find_metric_value(item, metric)
+            score = find_metric_value(item, metric_keys)
             if score is not None:
                 return score
     return None
@@ -571,7 +629,8 @@ def metric_from_list(items: Any, metric: str) -> Optional[float]:
     return None
 
 
-def extract_score(artifact_root: Path, metric: str) -> Optional[float]:
+def extract_score(artifact_root: Path, metrics: Sequence[str] | str) -> Optional[float]:
+    metric_order = normalize_metric_order(metrics)
     metric_files = list(artifact_root.glob("**/metrics_summary.json")) + list(
         artifact_root.glob("**/cross_val_results.json")
     )
@@ -580,14 +639,13 @@ def extract_score(artifact_root: Path, metric: str) -> Optional[float]:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except Exception:
             continue
-        score = find_metric_value(payload, metric)
+        score = find_metric_value(payload, metric_order)
         if score is not None:
             return score
 
-    number_patterns = [
-        rf"{re.escape(metric)}[^0-9+\-.]+([+-]?[0-9]+(?:\.[0-9]+)?)",
-        r"Accuracy of the network[^0-9+\-.]+([+-]?[0-9]+(?:\.[0-9]+)?)",
-    ]
+    number_patterns = [rf"{re.escape(metric)}[^0-9+\-.]+([+-]?[0-9]+(?:\.[0-9]+)?)" for metric in metric_order]
+    if "accuracy" in metric_order:
+        number_patterns.append(r"Accuracy of the network[^0-9+\-.]+([+-]?[0-9]+(?:\.[0-9]+)?)")
     for path in artifact_root.glob("**/*.log"):
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
@@ -977,7 +1035,7 @@ def run_job(
     output_root: Path,
     timeout: int,
     simulator_no_progress_timeout: int,
-    metric: str,
+    metrics: Sequence[str],
     config: Dict[str, Any],
 ) -> RunRecord:
     log_path = output_root / run_def.name / "run.log"
@@ -1016,10 +1074,10 @@ def run_job(
             run_def.status = "crash"
             run_def.failure_reason = f"exit_code={rc}"
     else:
-        score = extract_score(artifact_dir, metric)
+        score = extract_score(artifact_dir, metrics)
         if score is None:
             run_def.status = "crash"
-            run_def.failure_reason = f"metric '{metric}' not found"
+            run_def.failure_reason = f"metrics '{', '.join(metrics)}' not found"
         else:
             run_def.score = score
 
@@ -1161,7 +1219,7 @@ def write_state(
     return state
 
 
-def write_progress(path: Path, records: List[RunRecord], mode: str) -> None:
+def write_progress(path: Path, records: List[RunRecord], mode: str, metric_label: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         from PIL import Image, ImageDraw, ImageFont
@@ -1175,7 +1233,12 @@ def write_progress(path: Path, records: List[RunRecord], mode: str) -> None:
     image = Image.new("RGB", (width, height), "white")
     draw = ImageDraw.Draw(image)
     font = ImageFont.load_default()
-    draw.text((margin, 24), f"Auto-FL Progress: {len(records)} rows, {len(scores)} scored", fill="black", font=font)
+    draw.text(
+        (margin, 24),
+        f"Auto-FL Progress ({metric_label}): {len(records)} rows, {len(scores)} scored",
+        fill="black",
+        font=font,
+    )
     draw.line((margin, height - margin, width - margin, height - margin), fill=(80, 80, 80), width=2)
     draw.line((margin, margin, margin, height - margin), fill=(80, 80, 80), width=2)
 
@@ -1214,11 +1277,14 @@ def write_report(path: Path, config: Dict[str, Any], records: List[RunRecord], a
     candidate_budget = (
         str(args.max_candidates) if args.max_candidates is not None else "uncapped; runs until manual interruption"
     )
+    objective = objective_contract(config, args.metric)
     lines = [
         "# Auto-FL Report",
         "",
-        f"Objective: optimize `{args.metric}` in `{args.target_env}`.",
-        f"Metric extraction order: `{', '.join(METRIC_ALIASES.get(args.metric, [args.metric]))}`.",
+        f"Objective: optimize `{objective['optimization_metric']}` in `{args.target_env}`.",
+        f"Requested metric: `{objective['requested_metric']}`.",
+        f"Metric source: `{metric_source(config)}`.",
+        f"Metric extraction order: `{', '.join(objective['metric_extraction_order'])}`.",
         f"Candidate budget: `{candidate_budget}`.",
         f"Config: `{args.autofl_yaml}`.",
         f"Fixed budget: `{json.dumps(config.get('budget', {}).get('fixed_training_budget', {}), sort_keys=True)}`.",
@@ -1245,7 +1311,7 @@ def write_report(path: Path, config: Dict[str, Any], records: List[RunRecord], a
         ]
     )
     if best:
-        lines.append(f"Best retained run: `{best.name}` with `{args.metric}={best.score:.6f}`.")
+        lines.append(f"Best retained run: `{best.name}` with `{objective['optimization_metric']}={best.score:.6f}`.")
     else:
         lines.append("No scored run was retained.")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -1333,7 +1399,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(output, file=sys.stderr)
         return rc
 
-    config = read_yaml(autofl_yaml)
+    config = apply_metric_contract(read_yaml(autofl_yaml), args.metric, schema)
+    write_yaml(autofl_yaml, config)
+    metrics = metric_extraction_order(config, args.metric)
+    metric_label = optimization_metric(config, args.metric)
     help_text = job_help(args.python, job, cwd)
     fixed_args = build_fixed_args(config, help_text, schema)
     base_args = build_base_args(args, help_text, schema)
@@ -1351,7 +1420,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         output_root=output_root,
         timeout=timeout,
         simulator_no_progress_timeout=simulator_no_progress_timeout,
-        metric=args.metric,
+        metrics=metrics,
         config=config,
     )
     records.append(baseline_record)
@@ -1367,7 +1436,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         plateau_min_delta=args.plateau_min_delta,
         hard_crash_threshold=args.hard_crash_threshold,
     )
-    write_progress(progress, records, args.mode)
+    write_progress(progress, records, args.mode, metric_label)
     write_report(report, config, records, args)
     if baseline_record.status == INFRASTRUCTURE_RETRY:
         print(
@@ -1380,7 +1449,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 75
     if baseline_record.score is None:
         write_report(report, config, records, args)
-        print(f"Baseline run did not produce metric '{args.metric}'. See {baseline_record.artifacts}", file=sys.stderr)
+        print(
+            f"Baseline run did not produce metrics '{', '.join(metrics)}'. See {baseline_record.artifacts}",
+            file=sys.stderr,
+        )
         return 1
 
     try:
@@ -1396,7 +1468,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 output_root=output_root,
                 timeout=timeout,
                 simulator_no_progress_timeout=simulator_no_progress_timeout,
-                metric=args.metric,
+                metrics=metrics,
                 config=config,
             )
             records.append(record)
@@ -1413,7 +1485,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 plateau_min_delta=args.plateau_min_delta,
                 hard_crash_threshold=args.hard_crash_threshold,
             )
-            write_progress(progress, records, args.mode)
+            write_progress(progress, records, args.mode, metric_label)
             write_report(report, config, records, args)
             if record.status == INFRASTRUCTURE_RETRY:
                 print(
@@ -1449,7 +1521,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             hard_crash_threshold=args.hard_crash_threshold,
             manual_stop=True,
         )
-        write_progress(progress, records, args.mode)
+        write_progress(progress, records, args.mode, metric_label)
         write_report(report, config, records, args)
         print(
             json.dumps(
