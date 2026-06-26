@@ -113,23 +113,20 @@ def _make_msg(topic="train", data="payload"):
 
 
 class TestCellFqcnFormat:
-    """CellPipe cells are named <site>.<token>.<mode>, scoped under the cell
-    they connect to, so identity resolution and routing follow the normal
-    FQCN hierarchy."""
+    """CellPipe cells are named under the cell they connect to, with the token
+    and mode in one leaf segment so the FQCN parent matches the topology."""
 
     def test_connect_to_root_server(self):
-        assert _cell_fqcn("active", "site-1", "job-123", FQCN.ROOT_SERVER) == "site-1.job-123.active"
+        assert _cell_fqcn("active", "site-1", "job-123", FQCN.ROOT_SERVER) == "site-1.job-123_active"
 
     def test_connect_to_own_cp(self):
-        assert _cell_fqcn("passive", "site-1", "job-123", "site-1") == "site-1.job-123.passive"
+        assert _cell_fqcn("passive", "site-1", "job-123", "site-1") == "site-1.job-123_passive"
 
     def test_connect_to_relay(self):
-        assert _cell_fqcn("active", "site-1", "job-123", "relay-1") == "relay-1.site-1.job-123.active"
+        assert _cell_fqcn("active", "site-1", "job-123", "relay-1") == "relay-1.site-1_job-123_active"
 
     def test_connect_to_cp_behind_relay(self):
-        # same name as connecting to the relay itself, so the two peer pipes
-        # agree on each other's FQCN regardless of which of the two they use
-        assert _cell_fqcn("active", "site-1", "job-123", "relay-1.site-1") == "relay-1.site-1.job-123.active"
+        assert _cell_fqcn("active", "site-1", "job-123", "relay-1.site-1") == "relay-1.site-1.job-123_active"
 
 
 # ---------------------------------------------------------------------------

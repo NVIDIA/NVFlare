@@ -309,17 +309,25 @@ def _origin_matches_fqcn(origin: str, fqcn: str, channel: Optional[str] = None) 
     if origin == fqcn or FQCN.is_ancestor(fqcn, origin):
         return True
 
-    # CellPipe stream cells from older NVFlare versions use sibling names such
-    # as "site-1_<job-id>_active" and "site-1_<job-id>_passive", but their auth
-    # token is issued to the registered site FQCN ("site-1"). Current versions
-    # name these cells <site>.<token>.<mode>, which the descendant check above
-    # already covers. Treat only the legacy stream aliases as the owning site;
-    # normal server-command origins remain bound to the exact registered
-    # FQCN/descendant relationship above.
-    if channel != STREAM_CHANNEL or not origin.startswith(f"{fqcn}_"):
+    # CellPipe stream cells can use an alias leaf such as
+    # "site-1_<job-id>_active" when connected through another cell, but their
+    # auth token is issued to the owning site FQCN. Treat only stream aliases
+    # under the same FQCN parent as the owning site; normal server-command
+    # origins remain bound to the exact registered FQCN/descendant relationship.
+    if channel != STREAM_CHANNEL:
         return False
 
-    runtime_id, sep, mode = origin[len(fqcn) + 1 :].rpartition("_")
+    origin_parent = FQCN.get_parent(origin)
+    fqcn_parent = FQCN.get_parent(fqcn)
+    if origin_parent != fqcn_parent:
+        return False
+
+    owner = FQCN.split(fqcn)[-1]
+    alias = FQCN.split(origin)[-1]
+    if not alias.startswith(f"{owner}_"):
+        return False
+
+    runtime_id, sep, mode = alias[len(owner) + 1 :].rpartition("_")
     if not sep or mode not in {"active", "passive"}:
         return False
 

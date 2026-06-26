@@ -47,21 +47,26 @@ _HEADER_HB_SEQ = _PREFIX + "hb_seq"
 
 def _cell_fqcn(mode, site_name, token, parent_fqcn):
     # The FQCN of the cell must be unique in the whole cellnet.
-    # The cell is named <site_name>.<token>.<mode>, scoped under the FQCN of the
-    # cell it connects to. The hierarchical form keeps the owning site as a
-    # leading segment, so mTLS identity resolution and message routing follow
-    # the normal FQCN rules without any alias parsing.
+    # The cell is scoped under the FQCN of the cell it connects to, so its FQCN
+    # parent matches its physical cellnet parent. The runtime token and pipe
+    # mode are kept in one leaf segment to avoid introducing an unconnected
+    # FQCN parent such as <site>.<token>.
     # The two peer pipes on the same site share the same site_name and token,
     # but are differentiated by their modes.
+    cell_name = f"{token}_{mode}"
     if parent_fqcn == FQCN.ROOT_SERVER:
         prefix = site_name
     elif FQCN.split(parent_fqcn)[-1] == site_name:
         # connecting to the site's own CP: the site is already the last segment
         prefix = parent_fqcn
+    elif parent_fqcn:
+        # connecting to another cell (e.g. a relay): keep the owning site in the
+        # leaf segment so mTLS identity resolution maps the cell to the site.
+        prefix = parent_fqcn
+        cell_name = f"{site_name}_{cell_name}"
     else:
-        # connecting to another cell (e.g. a relay): scope the name to the site
-        prefix = FQCN.join([parent_fqcn, site_name])
-    return FQCN.join([prefix, token, mode])
+        prefix = site_name
+    return FQCN.join([prefix, cell_name])
 
 
 def _to_cell_message(msg: Message, extra=None) -> CellMessage:

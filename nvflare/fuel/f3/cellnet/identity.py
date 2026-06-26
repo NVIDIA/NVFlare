@@ -126,16 +126,15 @@ class CellIdentityResolver:
 
     @staticmethod
     def _get_cell_pipe_alias_owner(segment: str) -> Optional[str]:
-        # CellPipe cells from older NVFlare versions use sibling names like
-        # "site-1_<runtime-id>_active" but authenticate with the owning site's
-        # certificate. Current versions name these cells <site>.<token>.<mode>,
-        # which resolves through the normal FQCN hierarchy; this parser is kept
-        # for backward compatibility with peers running older versions. Only the
-        # constrained form <owner>_<runtime_id>_(active|passive) with a non-empty
-        # runtime_id that contains no "." or "_" is treated as an alias: parsing
-        # from the right makes the interpretation unambiguous, so
-        # "site-a_x_<uuid>_active" can only belong to "site-a_x", never to
-        # "site-a" with a runtime id of "x_<uuid>".
+        # CellPipe cells connected through another cell may use a leaf segment
+        # like "site-1_<runtime-id>_active" but authenticate with the owning
+        # site's certificate. Older NVFlare versions also used this sibling
+        # alias form. Only the constrained form
+        # <owner>_<runtime_id>_(active|passive) with a non-empty runtime_id that
+        # contains no "." or "_" is treated as an alias: parsing from the right
+        # makes the interpretation unambiguous, so "site-a_x_<uuid>_active" can
+        # only belong to "site-a_x", never to "site-a" with a runtime id of
+        # "x_<uuid>".
         head, sep, mode = segment.rpartition("_")
         if not sep or mode not in ("active", "passive"):
             return None

@@ -170,18 +170,18 @@ def test_identity_resolver_rejects_admin_like_endpoint_without_authenticated_ide
         resolver.require_match("_admin_not-a-uuid", "admin@nvidia.com", "connection admin")
 
 
-def test_identity_resolver_maps_hierarchical_cell_pipe_cell_to_owner_identity():
-    # current CellPipe naming: <site>.<token>.<mode> resolves via the FQCN hierarchy
+def test_identity_resolver_maps_topology_cell_pipe_cell_to_owner_identity():
     resolver = CellIdentityResolver(local_fqcn="server", prefix_identity_map={"site-1": "site-1"})
 
-    assert resolver.resolve("site-1.8cb50f16-8158-46f6-a8d7-ec85b1f06c53.active") == "site-1"
-    assert resolver.resolve("site-1.8cb50f16-8158-46f6-a8d7-ec85b1f06c53.passive") == "site-1"
+    assert resolver.resolve("site-1.8cb50f16-8158-46f6-a8d7-ec85b1f06c53_active") == "site-1"
+    assert resolver.resolve("site-1.8cb50f16-8158-46f6-a8d7-ec85b1f06c53_passive") == "site-1"
 
 
-def test_identity_resolver_maps_hierarchical_cell_pipe_cell_behind_relay_to_owner_identity():
+def test_identity_resolver_maps_relay_cell_pipe_cell_to_owner_identity():
     resolver = CellIdentityResolver(local_fqcn="relay-1", exact_identity_map={"relay-1": "relay-1"})
 
-    assert resolver.resolve("relay-1.site-1.job-123.active") == "site-1"
+    assert resolver.resolve("relay-1.site-1_job-123_active") == "site-1"
+    assert resolver.resolve("relay-1.site-1.job-123_active") == "site-1"
 
 
 def test_identity_resolver_maps_legacy_cell_pipe_alias_to_owner_identity():
@@ -255,14 +255,14 @@ def test_mtls_handshake_rejects_spoofed_endpoint_identity():
     assert conn.closed
 
 
-def test_mtls_handshake_accepts_hierarchical_cell_pipe_cell_with_site_cert_identity():
+def test_mtls_handshake_accepts_topology_cell_pipe_cell_with_site_cert_identity():
     manager = _conn_manager(identity_map={"site-1": "site-1"})
     conn = _FakeConnection(peer_cn="site-1")
     sfm_conn = SfmConnection(conn, Endpoint("server"))
 
-    manager.update_endpoint(sfm_conn, {HandshakeKeys.ENDPOINT_NAME: "site-1.job-123.active"})
+    manager.update_endpoint(sfm_conn, {HandshakeKeys.ENDPOINT_NAME: "site-1.job-123_active"})
 
-    assert "site-1.job-123.active" in manager.sfm_endpoints
+    assert "site-1.job-123_active" in manager.sfm_endpoints
     assert not conn.closed
 
 
