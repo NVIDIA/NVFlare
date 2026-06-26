@@ -25,7 +25,7 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
-DEFAULT_MAX_SCORED_SINCE_RESET = 32
+DEFAULT_MAX_SCORED_SINCE_RESET = 8
 DEFAULT_MIN_DELTA = 0.0005
 NON_PLATEAU_STATUSES = {"crash", "literature"}
 ASSIGNMENT_PATTERN = re.compile(r"\b([A-Za-z][A-Za-z0-9_+-]*)=([^\s,;\]\)]+)")

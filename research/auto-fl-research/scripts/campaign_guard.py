@@ -33,7 +33,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-DEFAULT_MAX_SCORED_SINCE_RESET = 32
+DEFAULT_MAX_SCORED_SINCE_RESET = 8
 DEFAULT_MIN_DELTA = 0.0005
 DEFAULT_STATE_PATH = ".autoresearch/campaign_state.json"
 DEFAULT_STOP_FILES = ("STOP_AUTOFL", ".autoresearch/STOP_AUTOFL", ".nvflare/autofl/STOP")

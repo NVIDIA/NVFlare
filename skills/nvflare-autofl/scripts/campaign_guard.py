@@ -34,7 +34,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 DEFAULT_HARD_CRASH_THRESHOLD = 6
 DEFAULT_MIN_DELTA = 0.0005
-DEFAULT_PLATEAU_THRESHOLD = 32
+DEFAULT_PLATEAU_THRESHOLD = 8
 DEFAULT_STATE_PATH = ".nvflare/autofl/campaign_state.json"
 DEFAULT_STOP_FILES = ("STOP_AUTOFL", ".nvflare/autofl/STOP")
 COMPARABLE_STATUSES = {"candidate", "keep", "discard", "crash"}
