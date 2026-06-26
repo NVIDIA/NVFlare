@@ -88,7 +88,7 @@ optimization once. For long-running and simulator-stall handling, read
 Read `autofl.yaml` and show the user a concise campaign summary:
 
 - **Editable**: metric, environment, candidate budget, tunables, artifact
-  locations, source hash, and importer version.
+  locations, metric source, source hash, and importer version.
 - **Unresolved**: dynamic defaults, unsupported Python semantics, missing
   metric sources, unknown data paths, or any low-confidence fields.
 - **Allowed**: files the agent may edit, fixed-budget fields it must preserve,
@@ -140,8 +140,8 @@ source-code mutations that the runner cannot express yet.
 2. Propose and run a candidate tied to supported tunables or allowed files.
 3. Validate importability and fixed-budget comparability.
 4. Extract the requested metric from NVFLARE artifacts/logs.
-5. Update `results.tsv`, mark non-survivors as `discard`, crashes as `crash`,
-   the survivor as `keep`, and unresolved active rows as `candidate`.
+5. Update `results.tsv`: non-survivors=`discard`, crashes=`crash`,
+   survivor=`keep`, unresolved=`candidate`; prefer explicit metrics such as `test_accuracy`.
 6. Refresh `progress.png`, update campaign state, and launch the next
    comparable candidate batch unless the code-owned state says
     `final_response_allowed=true` or production policy blocks execution.
@@ -195,6 +195,5 @@ Only produce a final answer for a campaign when the code-owned campaign state
 reports `final_response_allowed=true`, for example because the user manually
 stopped it, an explicit cap is exhausted, production policy blocks execution, or
 a hard safety/runtime blocker prevents further comparable runs. At that point,
-end with finalized `results.tsv`, refreshed `progress.png`, a concise report
-covering baseline, best score, artifacts, failures, product friction, and
-reproduction commands, plus absolute paths to all final artifacts.
+end with finalized `results.tsv`, refreshed `progress.png`, and a concise report covering
+baseline, best score, metric source, failures, friction, commands, and absolute artifact paths.

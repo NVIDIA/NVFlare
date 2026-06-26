@@ -44,6 +44,7 @@ def get_site_class_summary(train_label, site_idx):
 
 
 def create_datasets(site_name, train_idx_root, central=False):
+    """Return a site-local CIFAR-10 train split and the global CIFAR-10 test set."""
     transform_train = transforms.Compose(
         [
             transforms.ToTensor(),
@@ -84,17 +85,17 @@ def create_datasets(site_name, train_idx_root, central=False):
             download=True,
             transform=transform_train,
         )
-        valid_dataset = torchvision.datasets.CIFAR10(
+        test_dataset = torchvision.datasets.CIFAR10(
             root=CIFAR10_ROOT,
             train=False,
             download=True,
             transform=transform_valid,
         )
 
-    return train_dataset, valid_dataset
+    return train_dataset, test_dataset
 
 
-def create_data_loaders(train_dataset, valid_dataset, batch_size, num_workers):
+def create_data_loaders(train_dataset, eval_dataset, batch_size, num_workers):
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
         batch_size=batch_size,
@@ -103,12 +104,12 @@ def create_data_loaders(train_dataset, valid_dataset, batch_size, num_workers):
         pin_memory=True,
         persistent_workers=True if num_workers > 0 else False,
     )
-    valid_loader = torch.utils.data.DataLoader(
-        valid_dataset,
+    eval_loader = torch.utils.data.DataLoader(
+        eval_dataset,
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
         pin_memory=True,
         persistent_workers=True if num_workers > 0 else False,
     )
-    return train_loader, valid_loader
+    return train_loader, eval_loader

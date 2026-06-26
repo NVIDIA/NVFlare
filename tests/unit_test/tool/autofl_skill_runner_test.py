@@ -53,6 +53,26 @@ def test_candidate_plan_skips_out_of_bounds_learning_rate():
     assert "--lr 0.2" not in candidate_commands
 
 
+def test_runner_prefers_explicit_test_accuracy_alias(tmp_path):
+    runner = _load_runner()
+    result_path = tmp_path / "cross_val_results.json"
+    result_path.write_text(
+        json.dumps(
+            {
+                "site-1": {
+                    "SRV_FL_global_model.pt": {
+                        "accuracy": 0.5,
+                        "test_accuracy": 0.8,
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert runner.extract_score(tmp_path, "accuracy") == 0.8
+
+
 def test_profile_budget_suppresses_duplicate_imported_fixed_budget_args():
     runner = _load_runner()
     config = {"budget": {"fixed_training_budget": {"num_clients": 8, "num_rounds": 10}}}

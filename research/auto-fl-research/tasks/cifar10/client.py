@@ -158,7 +158,7 @@ def _make_generator(seed):
 
 def _create_seeded_data_loaders(
     train_dataset,
-    valid_dataset,
+    test_dataset,
     batch_size,
     eval_batch_size,
     num_workers,
@@ -174,8 +174,8 @@ def _create_seeded_data_loaders(
         worker_init_fn=_seed_worker if num_workers > 0 else None,
         generator=_make_generator(seed),
     )
-    valid_loader = torch.utils.data.DataLoader(
-        valid_dataset,
+    test_loader = torch.utils.data.DataLoader(
+        test_dataset,
         batch_size=eval_batch_size,
         shuffle=False,
         num_workers=num_workers,
@@ -184,7 +184,7 @@ def _create_seeded_data_loaders(
         worker_init_fn=_seed_worker if num_workers > 0 else None,
         generator=_make_generator(seed + 1),
     )
-    return train_loader, valid_loader
+    return train_loader, test_loader
 
 
 def _zero_scaffold_controls(model):
@@ -304,13 +304,13 @@ def main(args):
         criterion_prox = PTFedProxLoss(mu=args.fedproxloss_mu)
 
     print(f"Creating datasets for site={site_name}")
-    train_dataset, valid_dataset = create_datasets(
+    train_dataset, test_dataset = create_datasets(
         site_name,
         train_idx_root=args.train_idx_root,
     )
-    train_loader, valid_loader = _create_seeded_data_loaders(
+    train_loader, test_loader = _create_seeded_data_loaders(
         train_dataset,
-        valid_dataset,
+        test_dataset,
         batch_size=args.batch_size,
         eval_batch_size=args.eval_batch_size,
         num_workers=args.num_workers,
@@ -343,18 +343,21 @@ def main(args):
 
         if flare.is_evaluate():
             print(f"{site_name}: cross-site evaluation task")
-            val_acc_global_model = evaluate(model, valid_loader, DEVICE)
-            print(f"{site_name}: global validation accuracy={100 * val_acc_global_model:.2f}%")
+            test_acc_global_model = evaluate(model, test_loader, DEVICE)
+            print(f"{site_name}: global CIFAR-10 test accuracy={100 * test_acc_global_model:.2f}%")
             summary_writer.add_scalar(
-                tag="val_acc_global_model",
-                scalar=val_acc_global_model,
+                tag="test_acc_global_model",
+                scalar=test_acc_global_model,
                 global_step=current_round,
             )
             # Cross-site validation expects a metrics-only DXO (DataKind.METRICS).
             # Sending no params lets FLModelUtils emit DataKind.METRICS instead of WEIGHT_DIFF.
             flare.send(
                 flare.FLModel(
-                    metrics={"accuracy": val_acc_global_model},
+                    metrics={
+                        "accuracy": test_acc_global_model,
+                        "test_accuracy": test_acc_global_model,
+                    },
                     meta={"NUM_STEPS_CURRENT_ROUND": 0},
                 )
             )
@@ -375,12 +378,13 @@ def main(args):
 
         metrics = {}
         if args.eval_global_every_round:
-            val_acc_global_model = evaluate(global_model, valid_loader, DEVICE)
-            metrics["accuracy"] = val_acc_global_model
-            print(f"{site_name}: global validation accuracy={100 * val_acc_global_model:.2f}%")
+            test_acc_global_model = evaluate(global_model, test_loader, DEVICE)
+            metrics["accuracy"] = test_acc_global_model
+            metrics["test_accuracy"] = test_acc_global_model
+            print(f"{site_name}: global CIFAR-10 test accuracy={100 * test_acc_global_model:.2f}%")
             summary_writer.add_scalar(
-                tag="val_acc_global_model",
-                scalar=val_acc_global_model,
+                tag="test_acc_global_model",
+                scalar=test_acc_global_model,
                 global_step=current_round,
             )
 
@@ -446,11 +450,11 @@ def main(args):
             )
 
             if args.evaluate_local:
-                val_acc_local_model = evaluate(model, valid_loader, DEVICE)
-                print(f"{site_name}: local validation accuracy={100 * val_acc_local_model:.2f}%")
+                test_acc_local_model = evaluate(model, test_loader, DEVICE)
+                print(f"{site_name}: local CIFAR-10 test accuracy={100 * test_acc_local_model:.2f}%")
                 summary_writer.add_scalar(
-                    tag="val_acc_local_model",
-                    scalar=val_acc_local_model,
+                    tag="test_acc_local_model",
+                    scalar=test_acc_local_model,
                     global_step=global_step,
                 )
         else:
@@ -496,11 +500,11 @@ def main(args):
                 )
 
                 if args.evaluate_local:
-                    val_acc_local_model = evaluate(model, valid_loader, DEVICE)
-                    print(f"{site_name}: local validation accuracy={100 * val_acc_local_model:.2f}%")
+                    test_acc_local_model = evaluate(model, test_loader, DEVICE)
+                    print(f"{site_name}: local CIFAR-10 test accuracy={100 * test_acc_local_model:.2f}%")
                     summary_writer.add_scalar(
-                        tag="val_acc_local_model",
-                        scalar=val_acc_local_model,
+                        tag="test_acc_local_model",
+                        scalar=test_acc_local_model,
                         global_step=global_epoch,
                     )
 

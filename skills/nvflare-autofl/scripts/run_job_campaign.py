@@ -106,6 +106,10 @@ PROFILE_BUDGET_TO_CLI = {
     "final_eval_clients": "final_eval_clients",
 }
 
+METRIC_ALIASES = {
+    "accuracy": ["test_accuracy", "accuracy"],
+}
+
 
 @dataclass
 class RunRecord:
@@ -530,21 +534,25 @@ def extract_result_dir(output: str) -> Optional[Path]:
 
 
 def find_metric_value(payload: Any, metric: str) -> Optional[float]:
+    metric_keys = METRIC_ALIASES.get(metric, [metric])
     if isinstance(payload, dict):
         for key in ("final_aggregated_metrics", "best_metrics", "metrics"):
-            value = metric_from_list(payload.get(key), metric)
-            if value is not None:
-                return value
-        if metric in payload and isinstance(payload[metric], (int, float)):
-            return float(payload[metric])
+            for metric_key in metric_keys:
+                value = metric_from_list(payload.get(key), metric_key)
+                if value is not None:
+                    return value
+        for metric_key in metric_keys:
+            if metric_key in payload and isinstance(payload[metric_key], (int, float)):
+                return float(payload[metric_key])
         for value in payload.values():
             score = find_metric_value(value, metric)
             if score is not None:
                 return score
     elif isinstance(payload, list):
-        value = metric_from_list(payload, metric)
-        if value is not None:
-            return value
+        for metric_key in metric_keys:
+            value = metric_from_list(payload, metric_key)
+            if value is not None:
+                return value
         for item in payload:
             score = find_metric_value(item, metric)
             if score is not None:
@@ -1210,6 +1218,7 @@ def write_report(path: Path, config: Dict[str, Any], records: List[RunRecord], a
         "# Auto-FL Report",
         "",
         f"Objective: optimize `{args.metric}` in `{args.target_env}`.",
+        f"Metric extraction order: `{', '.join(METRIC_ALIASES.get(args.metric, [args.metric]))}`.",
         f"Candidate budget: `{candidate_budget}`.",
         f"Config: `{args.autofl_yaml}`.",
         f"Fixed budget: `{json.dumps(config.get('budget', {}).get('fixed_training_budget', {}), sort_keys=True)}`.",
