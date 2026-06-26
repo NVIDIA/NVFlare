@@ -123,10 +123,19 @@ class TestCellFqcnFormat:
         assert _cell_fqcn("passive", "site-1", "job-123", "site-1") == "site-1.job-123_passive"
 
     def test_connect_to_relay(self):
+        # The passive and active pipes for a given pair are built from the same
+        # root_url, so they share the same parent FQCN. Relay and CP-behind-relay
+        # names can differ because they describe different physical parents.
         assert _cell_fqcn("active", "site-1", "job-123", "relay-1") == "relay-1.site-1_job-123_active"
+        assert _cell_fqcn("passive", "site-1", "job-123", "relay-1") == "relay-1.site-1_job-123_passive"
 
     def test_connect_to_cp_behind_relay(self):
         assert _cell_fqcn("active", "site-1", "job-123", "relay-1.site-1") == "relay-1.site-1.job-123_active"
+        assert _cell_fqcn("passive", "site-1", "job-123", "relay-1.site-1") == "relay-1.site-1.job-123_passive"
+
+    @pytest.mark.parametrize("parent_fqcn", ["", None])
+    def test_missing_parent_fqcn_falls_back_to_site_parent(self, parent_fqcn):
+        assert _cell_fqcn("active", "site-1", "job-123", parent_fqcn) == "site-1.job-123_active"
 
 
 # ---------------------------------------------------------------------------

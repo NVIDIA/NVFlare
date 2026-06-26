@@ -461,7 +461,7 @@ class ClientSideController(Executor, TaskController):
                 try:
                     self.do_learn_task(t.task_name, t.task_data, t.fl_ctx, t.abort_signal)
                 except:
-                    self.logger.log(f"exception from do_learn_task: {secure_format_traceback()}")
+                    self.logger.error(f"exception from do_learn_task: {secure_format_traceback()}")
                 finally:
                     # force garbage collection
                     gc.collect()

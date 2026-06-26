@@ -56,7 +56,7 @@ def _cell_fqcn(mode, site_name, token, parent_fqcn):
     cell_name = f"{token}_{mode}"
     if parent_fqcn == FQCN.ROOT_SERVER:
         prefix = site_name
-    elif FQCN.split(parent_fqcn)[-1] == site_name:
+    elif parent_fqcn and FQCN.split(parent_fqcn)[-1] == site_name:
         # connecting to the site's own CP: the site is already the last segment
         prefix = parent_fqcn
     elif parent_fqcn:
@@ -65,6 +65,8 @@ def _cell_fqcn(mode, site_name, token, parent_fqcn):
         prefix = parent_fqcn
         cell_name = f"{site_name}_{cell_name}"
     else:
+        # Missing parent FQCN: keep the cell under the owning site so routing
+        # still has a topology-shaped parent instead of creating <site>.<token>.
         prefix = site_name
     return FQCN.join([prefix, cell_name])
 
