@@ -67,10 +67,13 @@ FLARE conversion.
   `references/lightning-conversion.md` for the exact patch pattern.
 - Must treat `flare.receive()` inside the patched loop as optional metadata or
   task-progression access only, not as a second model-load path.
-- Must audit model constructor arguments before writing `job.py`. If the
-  `LightningModule` has required non-default `__init__` parameters, generate
-  explicit recipe model config with `path` or `class_path` and `args`, then
-  verify recipe construction and export preserve those arguments.
+- Must audit model constructor arguments before writing `job.py` by reading the
+  `LightningModule.__init__` signature and the selected recipe's `model`
+  parameter from `nvflare recipe show <recipe-name> --format json`, not by
+  reading NVFLARE library source. If the `LightningModule` has required
+  non-default `__init__` parameters, generate explicit recipe model config with
+  `path` or `class_path` and `args`, then verify recipe construction and export
+  preserve those arguments.
 - Must use the PyTorch recipe family; must not invent a Lightning-only recipe.
 - Must use external process launch such as `launch_external_process=True` for
   Lightning DDP or multi-GPU training instead of running distributed workers

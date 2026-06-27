@@ -42,11 +42,44 @@ behavior.
 - Do not require `rg` to be installed. Use `rg` when available; otherwise use
   `nvflare agent inspect`, `find`, `git ls-files`, or a small Python search.
 
+## Source Of Truth Boundary
+
+Use the active skill and its references for conversion workflow, safety rules,
+client API or patch patterns, exchange format expectations, generated layout,
+and evidence reporting. For current recipe names and parameters, use
+`nvflare recipe list --format json` and
+`nvflare recipe show <recipe-name> --format json` as the source of truth.
+
+Only consult NVFLARE library source, such as `site-packages/nvflare/**`, when
+the skill references and structured CLI metadata do not answer a specific
+question. If source reading is necessary, name the unanswered question and
+record it as a skill/reference gap so future runs can avoid the source dive.
+
 ## Generated Job Layout
 
 Follow `runtime-output-guidance.md` for generated source layout, runtime
 workspace placement, generated validation outputs, and export directory
 defaults.
+
+## Execution Environments
+
+Recipe jobs run through an execution environment from `nvflare.recipe`, usually
+`SimEnv` for local simulation and validation, `PocEnv` for local POC systems, or
+`ProdEnv` for production systems. Default to `SimEnv` during conversion
+validation. Use `PocEnv` or `ProdEnv` only after the approval boundary below.
+
+For recipe-based generated jobs, build the recipe and call `recipe.execute(env)`
+from `job.py`. For example:
+
+```python
+env = SimEnv(num_clients=num_clients, num_threads=num_clients, workspace_root=workspace_root)
+recipe.execute(env)
+```
+
+This lets `python job.py` run local validation and lets NVFLARE recipe/job
+system export arguments such as `--export` and `--export-dir` be handled by the
+NVFLARE layer. Do not define generated job-local `--export` or `--export-dir`
+arguments.
 
 ## Local Validation
 

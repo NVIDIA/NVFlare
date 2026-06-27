@@ -129,6 +129,50 @@
       }
     },
     {
+      "id": "lightning-data-derived-required-arg",
+      "prompt": "Convert this PyTorch Lightning training code to a FLARE FedAvg job over 2 sites. The model needs a vocab_size argument built from the data.",
+      "expected_output": "A FLARE Lightning Client API conversion that pins one shared vocab_size value for server and client model construction, passes the recipe model as an explicit path or class_path plus args config rather than a live LightningModule instance, patches the trainer with flare.patch, validates with python job.py when dependencies are available, and reports the shared constructor value and validation evidence.",
+      "files": [
+        "evals/files/vocab-lightning/train.py",
+        "evals/files/vocab-lightning/model.py"
+      ],
+      "assertions": [
+        "The agent pins a shared vocab_size for both server recipe model config and client model construction.",
+        "The agent passes the recipe model as explicit path or class_path plus args, not as a live LightningModule instance.",
+        "The agent does not pass a live LightningModule instance with required constructor args as the recipe model.",
+        "The agent integrates through flare.patch(trainer).",
+        "The agent runs python job.py for local validation when dependencies are available.",
+        "The agent reports the shared vocab_size value and any validation blockers."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-lightning",
+        "mandatory_behavior": [
+          {
+            "id": "pin-data-derived-arg",
+            "description": "pins a data-derived constructor argument such as vocab_size to one shared value for server and client model construction"
+          },
+          {
+            "id": "explicit-model-config-with-args",
+            "description": "uses explicit recipe model config with path or class_path plus args for required constructor arguments"
+          },
+          {
+            "id": "use-lightning-patched-trainer",
+            "description": "Lightning conversion uses flare.patch(trainer) and the Lightning callback path for model exchange"
+          }
+        ],
+        "prohibited_behavior": [
+          {
+            "id": "no-live-instance-with-required-args",
+            "description": "does not pass a live LightningModule instance with required constructor args as the recipe model"
+          },
+          {
+            "id": "no-manual-flmodel-exchange-lightning",
+            "description": "Lightning conversion does not generate a manual FLModel send/receive training exchange"
+          }
+        ]
+      }
+    },
+    {
       "id": "lightning-ddp-multigpu",
       "prompt": "My Lightning Trainer uses DDP across multiple GPUs. Federate it with FedAvg and keep multi-GPU training on each site.",
       "expected_output": "The agent treats this as a Lightning DDP conversion, uses external process launch such as launch_external_process=True instead of an in-process executor, applies the rank-synchronized while loop that broadcasts flare.is_running() from rank 0 before receive/validate/fit, keeps the patched trainer in charge of exchange, and reports validation status and blockers.",
