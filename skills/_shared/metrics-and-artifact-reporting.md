@@ -19,6 +19,14 @@ category is absent, say so and fall back to bounded stdout/stderr, server logs,
 or other job-produced artifacts. Do not invent metrics or treat missing round
 metrics as a successful final metric.
 
+## Round Progression Evidence
+
+When round metrics are present, compare them across rounds before declaring the
+training behavior healthy. If the reported metric is unchanged across rounds,
+or if the best/final metric evidence appears to come only from initial or
+pre-training evaluation, report this as a training-lifecycle concern and name
+the artifact path. Do not hide the concern just because the final metric exists.
+
 ## POC Or Production Downloaded Artifacts
 
 For POC or production runs in a terminal state, use:

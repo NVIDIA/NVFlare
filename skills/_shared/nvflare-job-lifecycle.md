@@ -42,6 +42,19 @@ behavior.
 - Do not require `rg` to be installed. Use `rg` when available; otherwise use
   `nvflare agent inspect`, `find`, `git ls-files`, or a small Python search.
 
+## Site Data Partitioning
+
+When converting single-node training code to multiple simulated or federated
+sites, preserve any existing user-provided site split. If no split exists and
+the user asks the agent to create one, prefer a deterministic seeded shuffle and
+use a stratified split when classification labels are available. Do not use a
+simple stride or contiguous split as the default because it can create biased
+site partitions from ordered data.
+
+Report the split policy, seed, site count, and any reason stratification was not
+used. Treat private data movement as part of the approval boundary: do not copy
+private site data into generated artifacts unless the user explicitly asks.
+
 ## Source Of Truth Boundary
 
 Use the active skill and its references for conversion workflow, safety rules,

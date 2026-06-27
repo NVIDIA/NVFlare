@@ -17,3 +17,9 @@ pin one shared vocabulary size for the server recipe model config and every
 client model construction path. Passing a live `LightningModule` instance with
 required args can serialize without those args and fail server-side
 reconstruction in the model persistor.
+
+The `imbalanced-lightning` fixture is a single-node binary classifier that
+derives per-example loss scaling from the labels in the training data. The
+conversion should keep that statistic local to each site's training partition
+and should not convert it into a globally pinned model or recipe constructor
+value.

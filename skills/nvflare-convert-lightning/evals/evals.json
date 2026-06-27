@@ -173,6 +173,51 @@
       }
     },
     {
+      "id": "lightning-local-loss-weight-and-partition",
+      "prompt": "Convert this single-node PyTorch Lightning binary classifier to a FLARE FedAvg job over 3 simulated sites. The source computes a label-derived loss weight from the training labels.",
+      "expected_output": "A FLARE Lightning Client API conversion that uses flare.patch(trainer), creates a deterministic seeded and preferably stratified site split when inventing partitions, recomputes label-derived loss statistics from each site's local training partition instead of pinning one global value in job.py, and reports split policy plus local validation evidence.",
+      "files": [
+        "evals/files/imbalanced-lightning/train.py",
+        "evals/files/imbalanced-lightning/model.py"
+      ],
+      "assertions": [
+        "The agent uses a deterministic seeded shuffle and stratifies the invented split when labels are available.",
+        "The agent does not use a simple stride split as the default site partition.",
+        "The agent recomputes label-derived loss or sampler statistics from each site's local training partition or keeps the source's local computation.",
+        "The agent does not hardcode one global label-derived training statistic in job.py as a model constructor or recipe value.",
+        "The agent distinguishes architecture/state-dict constructor args from loss/training statistics.",
+        "The agent integrates through flare.patch(trainer).",
+        "The agent reports the split policy, seed, and validation evidence."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-lightning",
+        "mandatory_behavior": [
+          {
+            "id": "seeded-stratified-site-split",
+            "description": "uses deterministic seeded and preferably stratified site partitioning when inventing a split from single-node data"
+          },
+          {
+            "id": "local-loss-statistics",
+            "description": "keeps loss weights and label-derived training statistics local to each site's training partition unless the user requests a global policy"
+          },
+          {
+            "id": "use-lightning-patched-trainer",
+            "description": "Lightning conversion uses flare.patch(trainer) and the Lightning callback path for model exchange"
+          }
+        ],
+        "prohibited_behavior": [
+          {
+            "id": "no-stride-split-default",
+            "description": "does not use a simple stride split as the default invented site partition"
+          },
+          {
+            "id": "no-global-loss-stat-for-compatibility",
+            "description": "does not hardcode one global label-derived loss or training statistic as a model constructor or recipe compatibility value"
+          }
+        ]
+      }
+    },
+    {
       "id": "lightning-ddp-multigpu",
       "prompt": "My Lightning Trainer uses DDP across multiple GPUs. Federate it with FedAvg and keep multi-GPU training on each site.",
       "expected_output": "The agent treats this as a Lightning DDP conversion, uses external process launch such as launch_external_process=True instead of an in-process executor, applies the rank-synchronized while loop that broadcasts flare.is_running() from rank 0 before receive/validate/fit, keeps the patched trainer in charge of exchange, and reports validation status and blockers.",

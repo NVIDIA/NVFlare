@@ -65,6 +65,21 @@ so the round reports global-model metrics. Keep this inside the
   round loop; construct the model, datamodule, and trainer once before the loop
   when the source code allows it.
 
+## Local Data And Loss Policy
+
+When the source code computes loss weights or training statistics from labels or
+site data, keep that computation tied to the local training partition unless
+the user explicitly requests one global training policy. Examples include
+class-imbalance weights, sample weights, decision thresholds, and sampler
+weights. These values affect training behavior, not model state-dict
+compatibility, so do not pin them globally just because architecture arguments
+must be shared.
+
+If the conversion must invent a site split for a single-node dataset, follow the
+shared site data partitioning guidance in
+`../../_shared/nvflare-job-lifecycle.md`: use a deterministic seeded shuffle,
+stratify when labels are available, and report the split policy.
+
 ## Model Construction Consistency
 
 Follow the shared state-dict and constructor rules in
