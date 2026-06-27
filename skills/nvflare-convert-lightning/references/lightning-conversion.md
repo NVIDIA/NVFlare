@@ -67,15 +67,14 @@ so the round reports global-model metrics. Keep this inside the
 
 ## Model Construction Consistency
 
-The model the recipe constructs for the server-side initial model and the
-`LightningModule` constructed on the client must have matching constructor
-arguments and state-dict shapes. When the `LightningModule` needs arguments such
-as input dimension, number of classes, hidden size, learning rate, or dropout,
-make those values explicit in both `job.py` (recipe model config) and the client
-model construction, using a shared `model_args` dict, an explicit
-`{"path": "model.LitClass", "args": model_args}` recipe model config, or
-explicit `train_args`. Treat a state-dict key or tensor-shape mismatch as a
-conversion bug, not a reason to change the architecture without user approval.
+Follow the shared state-dict and constructor rules in
+`../../_shared/pytorch-model-exchange.md`. The Lightning-specific point is that
+the exchanged unit is the whole `LightningModule` managed by the patched
+trainer, so construct the identical `LightningModule` on the server through the
+recipe `model` config and on the client in `client.py`, not just the inner
+`torch.nn.Module`. Express shared arguments with a `model_args` dict, an
+explicit `{"path": "model.LitClass", "args": model_args}` recipe model config,
+or explicit `train_args`.
 
 ## Source Layout
 

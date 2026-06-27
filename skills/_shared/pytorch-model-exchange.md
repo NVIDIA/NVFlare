@@ -11,13 +11,30 @@ For `PTInProcessClientAPIExecutor`, outbound `FLModel(params=...)` must contain
 weights to NumPy before sending. `PTSendParamsConverter` excludes non-tensor
 params.
 
-Plain PyTorch Client API code should use a pattern equivalent to:
+The manual `flare.send` snippet below applies only to plain PyTorch, where
+client code builds the payload itself:
 
 ```python
 params = {k: v.detach().cpu() for k, v in model.state_dict().items()}
 assert all(isinstance(v, torch.Tensor) for v in params.values())
 flare.send(flare.FLModel(params=params, metrics=metrics, meta=meta))
 ```
+
+For PyTorch Lightning, the patched trainer builds and sends the payload, so do
+not write this snippet in Lightning client code. The tensor-not-NumPy rule still
+applies to the PyTorch family, but Lightning enforces it through recipe/job
+configuration rather than manual client payload construction.
+
+## Exchange Format Recipe Settings
+
+Tensor-preserving exchange is a `job.py`/recipe setting, not something to infer
+by reading NVFLARE library source. Confirm the selected recipe parameters with
+`nvflare recipe show <recipe-name> --format json`.
+
+If the selected recipe exposes `server_expected_format`, prefer
+`ExchangeFormat.PYTORCH` for PyTorch-family tensor-preserving exchange. If the
+recipe exposes `params_transfer_type`, choose the mode that matches the user's
+intent: `FULL` sends whole tensors; `DIFF` sends tensor differences.
 
 ## State-Dict Compatibility
 
@@ -27,8 +44,16 @@ model constructor needs values such as input dimension, vocabulary size, number
 of classes, hidden size, or dropout, make those values explicit in both the
 server recipe/job config and the client model construction path.
 
-Treat state-dict key or tensor-shape mismatches as conversion bugs. Do not
-change the user model architecture to hide the mismatch without user approval.
+Pay special attention to data-derived arguments, such as a `vocab_size` built
+from training data. Pin them to a shared value so the server and every site
+construct the same architecture.
+
+Constructing the model the same way on both sides guarantees matching keys and
+shapes, so do not read NVFLARE exchange source to determine which subset of keys
+is serialized. A state-dict key or tensor-shape mismatch means the server and
+site constructions diverged, usually through a missing or data-derived argument.
+Treat it as a conversion bug, and do not change the user model architecture to
+hide the mismatch without user approval.
 
 ## Scope
 

@@ -53,10 +53,12 @@ debugging that does not ask for FLARE conversion.
 
 ## Requirements
 
-- Must audit model constructor arguments before writing `job.py`. If the model
-  has required non-default `__init__` parameters, generate explicit recipe model
-  config with `path` or `class_path` and `args`, then verify recipe
-  construction and export preserve those arguments.
+- Must audit model constructor arguments before writing `job.py` by reading the
+  model module's `__init__` and the selected recipe's `model` parameter from
+  `nvflare recipe show <recipe-name> --format json`, not by reading NVFLARE
+  library source. If the model has required non-default `__init__` parameters,
+  generate explicit recipe model config with `path` or `class_path` and `args`,
+  then verify recipe construction and export preserve those arguments.
 - Must keep outbound PyTorch model weights as `torch.Tensor` values in
   `FLModel(params=...)` when using `PTInProcessClientAPIExecutor`; load
   `../_shared/pytorch-model-exchange.md` and
