@@ -48,6 +48,14 @@ Pay special attention to data-derived arguments, such as a `vocab_size` built
 from training data. Pin them to a shared value so the server and every site
 construct the same architecture.
 
+Pin only architecture or state-dict compatibility values this way. Do not treat
+training-policy values or label/data-derived loss statistics as model
+constructor values that must be globally pinned for exchange compatibility.
+Examples include class-imbalance weights, sample weights, batch weights,
+thresholds, sampler weights, and optimizer state. These values should be
+computed from each site's local training partition or passed as an explicit
+user-requested training policy outside the exchanged model state.
+
 Constructing the model the same way on both sides guarantees matching keys and
 shapes, so do not read NVFLARE exchange source to determine which subset of keys
 is serialized. A state-dict key or tensor-shape mismatch means the server and
