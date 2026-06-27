@@ -67,18 +67,17 @@ so the round reports global-model metrics. Keep this inside the
 
 ## Local Data And Loss Policy
 
-When the source code computes loss weights or training statistics from labels or
-site data, keep that computation tied to the local training partition unless
-the user explicitly requests one global training policy. Examples include
-class-imbalance weights, sample weights, decision thresholds, and sampler
-weights. These values affect training behavior, not model state-dict
-compatibility, so do not pin them globally just because architecture arguments
-must be shared.
+Follow the training-policy distinction in
+`../../_shared/pytorch-model-exchange.md` and the site split guidance in
+`../../_shared/nvflare-job-lifecycle.md`. Lightning-specific implication:
+label/site-derived values that affect `training_step`, `LightningDataModule`
+sampling, or validation/test decision logic remain local to each site partition
+unless the user explicitly requests one global training policy. Do not move
+those values into recipe `model` args just because architecture args must be
+shared.
 
-If the conversion must invent a site split for a single-node dataset, follow the
-shared site data partitioning guidance in
-`../../_shared/nvflare-job-lifecycle.md`: use a deterministic seeded shuffle,
-stratify when labels are available, and report the split policy.
+Report the split policy, seed, and where local training-policy values are
+computed.
 
 ## Model Construction Consistency
 
