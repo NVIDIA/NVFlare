@@ -839,11 +839,13 @@ def _exact_module_candidates_for_import(import_name: str, importing_file: str) -
 
 
 def _package_module_prefix_candidates_for_import(import_name: str, importing_file: str) -> set[str]:
+    # Package-prefix candidates let us follow the __init__.py of a package whose full path
+    # resolves locally (e.g. ``import pkg.sub`` reaching ``pkg/__init__.py``). We never apply
+    # the importing file's context prefix here: doing so would let a partial prefix of an
+    # absolute import (e.g. ``lightning`` from ``import lightning.pytorch``) resolve to an
+    # unrelated local package (``models.lightning``), incorrectly promoting it.
     candidates = set(_module_name_prefixes(import_name))
     candidates.difference_update(_exact_module_candidates_for_import(import_name, importing_file))
-    context_prefix = _import_context_prefix(importing_file)
-    if context_prefix and _is_single_segment_import(import_name):
-        candidates.update(f"{context_prefix}.{module_name}" for module_name in list(candidates))
     return candidates
 
 
