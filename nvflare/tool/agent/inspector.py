@@ -815,7 +815,7 @@ def _local_files_for_import(
 def _exact_module_candidates_for_import(import_name: str, importing_file: str) -> set[str]:
     candidates = {import_name} if import_name else set()
     context_prefix = _import_context_prefix(importing_file)
-    if context_prefix:
+    if context_prefix and _is_single_segment_import(import_name):
         candidates.update(f"{context_prefix}.{module_name}" for module_name in list(candidates))
     return candidates
 
@@ -824,9 +824,13 @@ def _package_module_prefix_candidates_for_import(import_name: str, importing_fil
     candidates = set(_module_name_prefixes(import_name))
     candidates.difference_update(_exact_module_candidates_for_import(import_name, importing_file))
     context_prefix = _import_context_prefix(importing_file)
-    if context_prefix:
+    if context_prefix and _is_single_segment_import(import_name):
         candidates.update(f"{context_prefix}.{module_name}" for module_name in list(candidates))
     return candidates
+
+
+def _is_single_segment_import(import_name: str) -> bool:
+    return bool(import_name) and "." not in import_name
 
 
 def _module_name_prefixes(module_name: str) -> set[str]:
