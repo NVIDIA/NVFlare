@@ -17,7 +17,7 @@ import os
 
 import pytest
 
-from nvflare.tool.agent.inspector import inspect_path
+from nvflare.tool.agent.inspector import _module_names_for_file, inspect_path
 
 
 def test_inspect_static_only_does_not_execute_user_module(tmp_path):
@@ -430,6 +430,47 @@ def test_inspect_split_file_lightning_model_imported_by_entry_point_recommends_l
     assert framework_names[0] == "pytorch_lightning"
     assert "pytorch" in framework_names
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
+
+
+def test_inspect_package_lightning_model_imported_by_entry_point_recommends_lightning(tmp_path):
+    package = tmp_path / "models"
+    package.mkdir()
+    (tmp_path / "train.py").write_text(
+        "import torch\n" "from models import LitModel\n" "\n" "def main():\n" "    return LitModel()\n",
+        encoding="utf-8",
+    )
+    (package / "__init__.py").write_text(
+        "import pytorch_lightning as pl\n" "\n" "class LitModel(pl.LightningModule):\n" "    pass\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    framework_names = [framework["name"] for framework in data["frameworks"]]
+    assert framework_names[0] == "pytorch_lightning"
+    assert "pytorch" in framework_names
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
+
+
+def test_inspect_lightning_subscripted_base_recommends_lightning(tmp_path):
+    script = tmp_path / "model.py"
+    script.write_text(
+        "import pytorch_lightning as pl\n" "\n" "class LitModel(pl.LightningModule[int]):\n" "    pass\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["frameworks"][0]["name"] == "pytorch_lightning"
+    assert any(item["kind"] == "lightning_class" for item in data["frameworks"][0]["evidence"])
+
+
+def test_module_names_for_file_handles_package_and_invalid_paths():
+    assert _module_names_for_file("model.py") == {"model"}
+    assert _module_names_for_file("pkg/model.py") == {"pkg.model", "model"}
+    assert _module_names_for_file("pkg/__init__.py") == {"pkg"}
+    assert _module_names_for_file("notes.txt") == set()
+    assert _module_names_for_file("../model.py") == set()
 
 
 def test_inspect_lightning_script_with_many_torch_imports_recommends_lightning(tmp_path):
