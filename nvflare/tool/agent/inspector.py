@@ -54,6 +54,22 @@ LIGHTNING_SYMBOLS = LIGHTNING_CLASS_SYMBOLS | LIGHTNING_TRAINER_SYMBOLS
 LIGHTNING_PATCH_PARENT_MODULE = "nvflare.client"
 LIGHTNING_PATCH_SUBMODULE = "lightning"
 LIGHTNING_PATCH_MODULE = f"{LIGHTNING_PATCH_PARENT_MODULE}.{LIGHTNING_PATCH_SUBMODULE}"
+PYTORCH_MODULE_SYMBOLS = {"Module"}
+PYTORCH_TRAINING_SYMBOLS = {
+    "Adagrad",
+    "Adam",
+    "AdamW",
+    "BCELoss",
+    "BCEWithLogitsLoss",
+    "CrossEntropyLoss",
+    "DataLoader",
+    "DistributedSampler",
+    "MSELoss",
+    "NLLLoss",
+    "RMSprop",
+    "SGD",
+    "TensorDataset",
+}
 
 FRAMEWORK_IMPORTS = {
     "torch": "pytorch",
@@ -76,6 +92,8 @@ FRAMEWORK_SKILLS = {
 }
 FRAMEWORK_EVIDENCE_WEIGHTS = {
     "import": 1,
+    "pytorch_call": 2,
+    "pytorch_class": 3,
     "lightning_class": 3,
     "lightning_trainer": 3,
 }
@@ -323,12 +341,19 @@ class _PythonInspector(ast.NodeVisitor):
         self.lightning_symbols: dict[str, str] = {}
         self.lightning_patch_symbols: set[str] = set()
         self.lightning_patch_modules: set[str] = set()
+        self.torch_aliases: set[str] = set()
+        self.torch_nn_aliases: set[str] = set()
+        self.torch_optim_aliases: set[str] = set()
+        self.torch_data_aliases: set[str] = set()
+        self.pytorch_module_symbols: set[str] = set()
+        self.pytorch_training_symbols: set[str] = set()
 
     def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:
             self._record_import(alias.name, node.lineno)
             self._record_lightning_import_alias(alias)
             self._record_lightning_patch_module_alias(alias)
+            self._record_pytorch_import_alias(alias)
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
@@ -337,6 +362,7 @@ class _PythonInspector(ast.NodeVisitor):
         self._record_import_from_modules(module, node.level, node.names)
         self._record_lightning_from_imports(module, node.names)
         self._record_lightning_patch_imports(module, node.names)
+        self._record_pytorch_from_imports(module, node.names)
         for alias in node.names:
             if alias.name in {"FedJob", "FLModel", "SimEnv"}:
                 self.state.flare_imports.append(
@@ -347,6 +373,12 @@ class _PythonInspector(ast.NodeVisitor):
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         for base in node.bases:
             base_name = _symbol_name(base)
+            if base_name and self._is_pytorch_class_base(base_name):
+                _append_capped(
+                    self.state.framework_evidence,
+                    "pytorch",
+                    _evidence(self.rel_path, node.lineno, "pytorch_class", base_name),
+                )
             if base_name and self._is_lightning_class_base(base_name):
                 _append_capped(
                     self.state.framework_evidence,
@@ -434,6 +466,12 @@ class _PythonInspector(ast.NodeVisitor):
             self.state.distributed_patterns.append(_evidence(self.rel_path, lineno, "distributed_call", call_name))
         if call_name.endswith("FSDP") or call_name.endswith("Accelerator"):
             self.state.distributed_patterns.append(_evidence(self.rel_path, lineno, "distributed_call", call_name))
+        if self._is_pytorch_activity_call(call_name):
+            _append_capped(
+                self.state.framework_evidence,
+                "pytorch",
+                _evidence(self.rel_path, lineno, "pytorch_call", call_name),
+            )
         if self._is_lightning_trainer_call(call_name):
             _append_capped(
                 self.state.framework_evidence,
@@ -460,6 +498,72 @@ class _PythonInspector(ast.NodeVisitor):
             for alias in aliases:
                 if alias.name == LIGHTNING_PATCH_SUBMODULE:
                     self.lightning_patch_modules.add(alias.asname or alias.name)
+
+    def _record_pytorch_import_alias(self, alias: ast.alias) -> None:
+        name = alias.name
+        alias_name = alias.asname or name
+        if name == "torch":
+            self.torch_aliases.add(alias_name)
+        elif name == "torch.nn":
+            self.torch_nn_aliases.add(alias_name)
+        elif name == "torch.optim":
+            self.torch_optim_aliases.add(alias_name)
+        elif name == "torch.utils.data":
+            self.torch_data_aliases.add(alias_name)
+
+    def _record_pytorch_from_imports(self, module: str, aliases: list[ast.alias]) -> None:
+        if module == "torch":
+            for alias in aliases:
+                alias_name = alias.asname or alias.name
+                if alias.name == "nn":
+                    self.torch_nn_aliases.add(alias_name)
+                elif alias.name == "optim":
+                    self.torch_optim_aliases.add(alias_name)
+        elif module == "torch.nn":
+            for alias in aliases:
+                alias_name = alias.asname or alias.name
+                if alias.name in PYTORCH_MODULE_SYMBOLS:
+                    self.pytorch_module_symbols.add(alias_name)
+                elif alias.name in PYTORCH_TRAINING_SYMBOLS:
+                    self.pytorch_training_symbols.add(alias_name)
+        elif module == "torch.optim":
+            for alias in aliases:
+                if alias.name in PYTORCH_TRAINING_SYMBOLS:
+                    self.pytorch_training_symbols.add(alias.asname or alias.name)
+        elif module == "torch.utils.data":
+            for alias in aliases:
+                if alias.name in PYTORCH_TRAINING_SYMBOLS:
+                    self.pytorch_training_symbols.add(alias.asname or alias.name)
+
+    def _is_pytorch_class_base(self, base_name: str) -> bool:
+        if base_name in self.pytorch_module_symbols:
+            return True
+        if "." not in base_name:
+            return False
+        prefix, _, symbol = base_name.rpartition(".")
+        if symbol not in PYTORCH_MODULE_SYMBOLS:
+            return False
+        if prefix in self.torch_nn_aliases:
+            return True
+        for alias in self.torch_aliases:
+            if prefix == f"{alias}.nn":
+                return True
+        return False
+
+    def _is_pytorch_activity_call(self, call_name: str) -> bool:
+        if call_name in self.pytorch_training_symbols:
+            return True
+        if "." not in call_name:
+            return False
+        prefix, _, symbol = call_name.rpartition(".")
+        if symbol not in PYTORCH_TRAINING_SYMBOLS:
+            return False
+        if prefix in self.torch_nn_aliases or prefix in self.torch_optim_aliases or prefix in self.torch_data_aliases:
+            return True
+        for alias in self.torch_aliases:
+            if prefix in {f"{alias}.nn", f"{alias}.optim", f"{alias}.utils.data"}:
+                return True
+        return False
 
     def _is_lightning_class_base(self, base_name: str) -> bool:
         if self.lightning_symbols.get(base_name) in LIGHTNING_CLASS_SYMBOLS:
@@ -581,13 +685,18 @@ def _should_promote_lightning_over_pytorch(state: InspectState) -> bool:
     active_lightning_evidence = _active_lightning_evidence(lightning_evidence)
     if _active_lightning_evidence_tied_to_entry_context(state, active_lightning_evidence):
         return True
-    if _framework_evidence_tied_to_inspected_file_or_entry_point(state, pytorch_evidence):
+    active_pytorch_evidence = _active_pytorch_evidence(pytorch_evidence)
+    if _framework_evidence_tied_to_inspected_file_or_entry_point(state, active_pytorch_evidence):
         return False
     return _evidence_score(active_lightning_evidence) > _evidence_score(pytorch_evidence)
 
 
 def _active_lightning_evidence(evidence: list[dict]) -> list[dict]:
     return [item for item in evidence if _is_active_lightning_evidence(item)]
+
+
+def _active_pytorch_evidence(evidence: list[dict]) -> list[dict]:
+    return [item for item in evidence if _is_active_pytorch_evidence(item)]
 
 
 def _active_lightning_evidence_tied_to_entry_context(state: InspectState, evidence: list[dict]) -> bool:
@@ -608,6 +717,10 @@ def _framework_evidence_tied_to_inspected_file_or_entry_point(state: InspectStat
 
 def _is_active_lightning_evidence(evidence: dict) -> bool:
     return evidence.get("kind") in {"lightning_class", "lightning_trainer"}
+
+
+def _is_active_pytorch_evidence(evidence: dict) -> bool:
+    return evidence.get("kind") in {"pytorch_class", "pytorch_call"}
 
 
 def _entry_point_imports_file(state: InspectState, evidence_file: str) -> bool:
