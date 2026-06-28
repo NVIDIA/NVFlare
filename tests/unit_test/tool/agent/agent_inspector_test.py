@@ -224,6 +224,20 @@ def test_inspect_classifies_wrapper_trainer_lightning_patch_as_client_api_conver
     assert data["conversion_state"] == "client_api_converted"
 
 
+def test_inspect_does_not_route_unconverted_nemo_wrapper_as_lightning(tmp_path):
+    script = tmp_path / "train.py"
+    script.write_text(
+        "from nemo import lightning as nl\n" "\n" "trainer = nl.Trainer(max_steps=10)\n" "trainer.fit(model)\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["frameworks"] == []
+    assert data["conversion_state"] == "unknown"
+    assert data["skill_selection"]["recommended_skills"] == []
+
+
 def test_inspect_keeps_plain_pytorch_routing_separate_from_lightning(tmp_path):
     script = tmp_path / "train.py"
     script.write_text(
