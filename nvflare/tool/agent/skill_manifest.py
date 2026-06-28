@@ -108,6 +108,7 @@ def build_skill_manifest(
                     "min_flare_version": metadata["min_flare_version"],
                     "max_flare_version": metadata.get("max_flare_version"),
                     "blast_radius": metadata["blast_radius"],
+                    "category": metadata.get("category"),
                     "source_hash": source_hash,
                     "relative_path": child.name,
                 }

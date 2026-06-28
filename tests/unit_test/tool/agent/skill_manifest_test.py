@@ -51,6 +51,7 @@ def test_build_skill_manifest_includes_valid_skill(tmp_path):
             "min_flare_version": "2.8.0",
             "max_flare_version": None,
             "blast_radius": "read_only",
+            "category": "Test",
             "source_hash": skill_tree_hash(skill_dir),
             "relative_path": "nvflare-test-skill",
         }
