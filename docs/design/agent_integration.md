@@ -810,6 +810,9 @@ It should report:
 
 - ranked framework evidence with numeric confidence, supporting evidence, and
   contradicting evidence;
+  `frameworks[0]` is the framework selected for routing, not a strict
+  max-confidence guarantee when framework-family rules apply, such as
+  PyTorch Lightning taking priority over plain PyTorch evidence;
 - likely entry points;
 - whether FLARE integration usage is present;
 - whether the code is `not_converted`, `partial_client_api`,
