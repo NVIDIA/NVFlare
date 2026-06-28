@@ -435,6 +435,50 @@ def test_inspect_split_file_lightning_model_imported_by_entry_point_recommends_l
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
 
 
+def test_inspect_top_level_model_import_does_not_reach_nested_model_file(tmp_path):
+    helpers = tmp_path / "helpers"
+    helpers.mkdir()
+    (tmp_path / "train.py").write_text(
+        "import torch\n" "import model\n" "\n" "def train():\n" "    return model.Net()\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "model.py").write_text(
+        "import torch\n" "\n" "class Net(torch.nn.Module):\n" "    pass\n",
+        encoding="utf-8",
+    )
+    (helpers / "model.py").write_text(
+        "import pytorch_lightning as pl\n" "\n" "class Helper(pl.LightningModule):\n" "    pass\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    framework_names = [framework["name"] for framework in data["frameworks"]]
+    assert framework_names[0] == "pytorch"
+    assert "pytorch_lightning" in framework_names
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
+
+
+def test_inspect_same_directory_model_import_can_reach_lightning_helper(tmp_path):
+    package = tmp_path / "pkg"
+    package.mkdir()
+    (package / "train.py").write_text(
+        "import torch\n" "from model import LitModel\n" "\n" "def main():\n" "    return LitModel()\n",
+        encoding="utf-8",
+    )
+    (package / "model.py").write_text(
+        "import pytorch_lightning as pl\n" "\n" "class LitModel(pl.LightningModule):\n" "    pass\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    framework_names = [framework["name"] for framework in data["frameworks"]]
+    assert framework_names[0] == "pytorch_lightning"
+    assert "pytorch" in framework_names
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
+
+
 def test_inspect_split_file_lightning_trainer_helper_beats_pytorch_entry_point(tmp_path):
     (tmp_path / "train.py").write_text(
         "import torch\n"
@@ -574,7 +618,7 @@ def test_inspect_lightning_subscripted_base_recommends_lightning(tmp_path):
 
 def test_module_names_for_file_handles_package_and_invalid_paths():
     assert _module_names_for_file("model.py") == {"model"}
-    assert _module_names_for_file("pkg/model.py") == {"pkg.model", "model"}
+    assert _module_names_for_file("pkg/model.py") == {"pkg.model"}
     assert _module_names_for_file("pkg/__init__.py") == {"pkg"}
     assert _module_names_for_file("notes.txt") == set()
     assert _module_names_for_file("../model.py") == set()

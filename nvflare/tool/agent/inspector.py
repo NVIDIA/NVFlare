@@ -358,7 +358,7 @@ class _PythonInspector(ast.NodeVisitor):
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         module = node.module or ""
-        self._record_import(module, node.lineno)
+        self._record_import(_resolve_import_from_module(self.rel_path, module, node.level), node.lineno)
         self._record_import_from_modules(module, node.level, node.names)
         self._record_lightning_from_imports(module, node.names)
         self._record_lightning_patch_imports(module, node.names)
@@ -726,6 +726,7 @@ def _entry_point_imports_file(state: InspectState, evidence_file: str) -> bool:
     for entry_point in state.entry_points:
         if _imports_reach_modules(
             state,
+            entry_point["path"],
             state.file_imports.get(entry_point["path"], set()),
             evidence_modules,
             local_files_by_module,
@@ -735,25 +736,32 @@ def _entry_point_imports_file(state: InspectState, evidence_file: str) -> bool:
 
 
 def _imports_reach_modules(
-    state: InspectState, imports: set[str], target_modules: set[str], local_files_by_module: dict[str, set[str]]
+    state: InspectState,
+    importing_file: str,
+    imports: set[str],
+    target_modules: set[str],
+    local_files_by_module: dict[str, set[str]],
 ) -> bool:
-    pending_imports = list(imports)
+    pending_imports = [(importing_file, import_name) for import_name in imports]
     seen_imports = set()
     seen_files = set()
     while pending_imports:
-        import_name = pending_imports.pop()
-        if import_name in seen_imports:
+        source_file, import_name = pending_imports.pop()
+        import_key = (source_file, import_name)
+        if import_key in seen_imports:
             continue
-        seen_imports.add(import_name)
-        if target_modules.intersection(_module_name_prefixes(import_name)):
+        seen_imports.add(import_key)
+        if target_modules.intersection(_module_candidates_for_import(import_name, source_file)):
             return True
-        for imported_file in _local_files_for_import(import_name, local_files_by_module):
+        for imported_file in _local_files_for_import(import_name, source_file, local_files_by_module):
             if imported_file in seen_files:
                 continue
             seen_files.add(imported_file)
             if target_modules.intersection(_module_names_for_file(imported_file)):
                 return True
-            pending_imports.extend(state.file_imports.get(imported_file, set()))
+            pending_imports.extend(
+                (imported_file, nested_import) for nested_import in state.file_imports.get(imported_file, set())
+            )
     return False
 
 
@@ -765,11 +773,21 @@ def _local_files_by_module(state: InspectState) -> dict[str, set[str]]:
     return files_by_module
 
 
-def _local_files_for_import(import_name: str, local_files_by_module: dict[str, set[str]]) -> set[str]:
+def _local_files_for_import(
+    import_name: str, importing_file: str, local_files_by_module: dict[str, set[str]]
+) -> set[str]:
     files = set()
-    for module_name in _module_name_prefixes(import_name):
+    for module_name in _module_candidates_for_import(import_name, importing_file):
         files.update(local_files_by_module.get(module_name, set()))
     return files
+
+
+def _module_candidates_for_import(import_name: str, importing_file: str) -> set[str]:
+    candidates = set(_module_name_prefixes(import_name))
+    context_prefix = _import_context_prefix(importing_file)
+    if context_prefix:
+        candidates.update(f"{context_prefix}.{module_name}" for module_name in list(candidates))
+    return candidates
 
 
 def _module_name_prefixes(module_name: str) -> set[str]:
@@ -784,7 +802,17 @@ def _module_names_for_file(file_path: str) -> set[str]:
     parts = path.parent.parts if path.name == "__init__.py" else path.with_suffix("").parts
     if not parts or any(part in {"", ".", ".."} for part in parts):
         return set()
-    return {".".join(parts), parts[-1]}
+    return {".".join(parts)}
+
+
+def _import_context_prefix(file_path: str) -> str:
+    if not file_path.endswith(".py"):
+        return ""
+    path = Path(file_path)
+    parts = path.parent.parts
+    if any(part in {"", ".", ".."} for part in parts):
+        return ""
+    return ".".join(parts)
 
 
 def _resolve_import_from_module(importing_file: str, module: str, level: int) -> str:
