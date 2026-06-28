@@ -51,6 +51,36 @@ flowchart TB
 | Runtime agent surface | Runtime | Codex/Claude skill loading, `nvflare agent inspect`, `nvflare agent doctor`, recipe/job CLI | The agent reads skill instructions and uses NVFLARE commands to inspect, convert, validate, or diagnose. |
 | Benchmark harness | Separate | Follow-up work outside this PR | Separate architecture for measuring skill impact with Docker, SDK profiles, agent plugins, and reporting. |
 
+## Lint Engine Independence (Design Invariant)
+
+The engineering lint tool (`dev_tools/agent/skills/checks/lints.py`) is
+**self-contained over the `skills/` tree**. This is a deliberate invariant, not
+an accident of the current code:
+
+- The lint engine MUST NOT read `docs/design/*.md`. Those are human planning
+  docs; the admission engine validates shippable skill artifacts only. There is
+  no `docs_root` parameter and no `--docs-root` flag.
+- `SKILL.md` is a **runtime artifact** loaded by the agent. Do not add
+  offline-lint-only fields to its frontmatter (e.g. a `category`). The runtime
+  frontmatter carries only what the agent needs at runtime.
+- `skill-trigger-overlap-lint` groups skills by deterministic skill-name
+  families, such as `nvflare-convert` or `nvflare-diagnose`
+  (`_trigger_overlap_group`), so the overlap guard runs purely over `skills/`
+  with no external source of truth.
+- Catalog/publication sync (is a skill listed in the human product catalog?) is
+  a **docs concern**, not a skill-admission concern. If wanted, it belongs in a
+  separate docs check that the skill engine does not import. Do not add
+  `skill-catalog-category-lint` or `agent-doc-crosslink-lint` back into this
+  engine.
+
+History: an earlier change coupled the engine to `agent_integration.md` and
+mirrored a `category` field into `SKILL.md`. That created two coupling surfaces
+(runtime frontmatter + design doc) and silently skipped checks in CI when the
+docs were absent. It was reverted on purpose. Keep it reverted; if you think the
+engine needs a catalog source of truth, source it from `skills/` (deterministic
+skill-name families or an analysis-only file stripped from the release bundle),
+never from `docs/design` or runtime `SKILL.md`.
+
 ## Implemented Architecture
 
 ```mermaid

@@ -135,10 +135,9 @@ def test_helper_script_json_warning_ignores_python_json_reader(tmp_path):
 def test_trigger_overlap_limit_uses_current_environment(tmp_path, monkeypatch):
     _write_skill(tmp_path, "nvflare-convert-left", {"skill_name": "nvflare-convert-left", "evals": []})
     _write_skill(tmp_path, "nvflare-convert-right", {"skill_name": "nvflare-convert-right", "evals": []})
-    docs_root = _write_design_docs(tmp_path, ["nvflare-convert-left", "nvflare-convert-right"])
     monkeypatch.setenv("NVFLARE_AGENT_MAX_TRIGGER_OVERLAP_SKILLS", "1")
 
-    result = run_v1_lints(tmp_path, docs_root=docs_root, checks=["skill-trigger-overlap-lint"])
+    result = run_v1_lints(tmp_path, checks=["skill-trigger-overlap-lint"])
 
     assert result["skipped_checks"][0]["id"] == "skill-trigger-overlap-lint"
     assert "limit is 1" in result["skipped_checks"][0]["reason"]
@@ -163,7 +162,6 @@ def test_validate_skills_reuses_loaded_skill_records(tmp_path, monkeypatch):
     from checks import lints
 
     _write_skill(tmp_path, "nvflare-test-skill", {"skill_name": "nvflare-test-skill", "evals": []})
-    docs_root = _write_design_docs(tmp_path, ["nvflare-test-skill"])
     load_count = 0
     original_load = lints._load_skill_records
 
@@ -174,13 +172,13 @@ def test_validate_skills_reuses_loaded_skill_records(tmp_path, monkeypatch):
 
     monkeypatch.setattr(lints, "_load_skill_records", counting_load)
 
-    result = validate_skills(tmp_path, skill_name="nvflare-test-skill", docs_root=docs_root)
+    result = validate_skills(tmp_path, skill_name="nvflare-test-skill")
 
     assert result["requested_skill"] == "nvflare-test-skill"
     assert load_count == 1
 
 
-def _write_skill(root, name, evals, *, category="Conversion"):
+def _write_skill(root, name, evals):
     skill_dir = root / name
     skill_dir.mkdir(parents=True)
     skill_dir.joinpath("SKILL.md").write_text(
@@ -189,7 +187,6 @@ def _write_skill(root, name, evals, *, category="Conversion"):
         "description: Test skill fixture.\n"
         'min_flare_version: "2.8.0"\n'
         "blast_radius: read_only\n"
-        f"category: {category}\n"
         "---\n"
         "\n"
         "# Test Skill\n"
@@ -203,49 +200,3 @@ def _write_skill(root, name, evals, *, category="Conversion"):
     evals_dir.mkdir()
     evals_dir.joinpath("evals.json").write_text(json.dumps(evals), encoding="utf-8")
     return skill_dir
-
-
-def _write_design_docs(tmp_path, skills, *, category="Conversion", tier="bundle"):
-    docs_root = tmp_path / "docs"
-    docs_root.mkdir(exist_ok=True)
-    catalog_rows = "\n".join(f"| {category} | `{skill}` | {tier} | Test skill. |" for skill in skills)
-    conversion_rows = "\n".join(f"| PyTorch | `{skill}` | Test scope. | Test fixture. | {tier} |" for skill in skills)
-    lint_ids = (
-        "skill-frontmatter-lint",
-        "skill-md-size-lint",
-        "skill-trigger-lint",
-        "skill-trigger-overlap-lint",
-        "skill-catalog-category-lint",
-        "skill-global-negative-lint",
-        "skill-policy-coverage-lint",
-        "skill-process-metric-lint",
-        "skill-command-drift-lint",
-        "skill-helper-script-lint",
-        "skill-fixture-lint",
-        "agent-doc-crosslink-lint",
-    )
-    lint_rows = "\n".join(f"| `{lint_id}` | Test lint definition. |" for lint_id in lint_ids)
-
-    docs_root.joinpath("agent_integration.md").write_text(
-        "# Agent Integration\n\n"
-        "| Category | Skill | Tier | Purpose |\n"
-        "| --- | --- | --- | --- |\n"
-        f"{catalog_rows}\n",
-        encoding="utf-8",
-    )
-    docs_root.joinpath("agent_skill_authoring.md").write_text(
-        "# Agent Skill Authoring\n\n"
-        "| Code Family | Skill | Scope | Current Repo Evidence | Tier |\n"
-        "| --- | --- | --- | --- | --- |\n"
-        f"{conversion_rows}\n",
-        encoding="utf-8",
-    )
-    docs_root.joinpath("agent_skill_evaluation.md").write_text(
-        "# Agent Skill Evaluation\n\n"
-        "## Engineering Lints\n\n"
-        "| Check | Definition |\n"
-        "| --- | --- |\n"
-        f"{lint_rows}\n",
-        encoding="utf-8",
-    )
-    return docs_root

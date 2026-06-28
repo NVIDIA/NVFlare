@@ -12,7 +12,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Deterministic v1 admission lints for NVFLARE-owned agent skills."""
+"""Deterministic v1 admission lints for NVFLARE-owned agent skills.
+
+DESIGN INVARIANT -- lint engine independence (do not revert):
+This engine MUST be self-contained over the ``skills/`` tree. It must NOT read
+``docs/design/*.md`` and must NOT add lint-only fields (e.g. ``category``) to the
+runtime ``SKILL.md`` frontmatter -- SKILL.md is a runtime artifact loaded by the
+agent, not a place to stash offline-check metadata.
+
+Concretely:
+- Group skills for ``skill-trigger-overlap-lint`` by deterministic skill-name
+  families (see ``_trigger_overlap_group``), never by a frontmatter ``category``
+  or a product-catalog table parsed from design docs.
+- Do not add a ``docs_root`` parameter or a ``--docs-root`` flag back to this
+  engine, and do not re-introduce ``skill-catalog-category-lint`` /
+  ``agent-doc-crosslink-lint`` here.
+- Catalog/publication sync (skill listed in the human product catalog) is a
+  docs concern: put it in a SEPARATE docs check, not in this skill engine.
+
+Rationale and history: docs/design/skills_architecture.md "Lint engine
+independence". A prior change coupled this engine to design docs and added a
+SKILL.md ``category`` field; it was reverted on purpose. Please keep it reverted.
+"""
 
 import json
 import os
@@ -33,28 +54,24 @@ V1_LINT_IDS = (
     "skill-md-size-lint",
     "skill-trigger-lint",
     "skill-trigger-overlap-lint",
-    "skill-catalog-category-lint",
     "skill-global-negative-lint",
     "skill-policy-coverage-lint",
     "skill-process-metric-lint",
     "skill-command-drift-lint",
     "skill-helper-script-lint",
     "skill-fixture-lint",
-    "agent-doc-crosslink-lint",
 )
 
 LINT_SKILL_FRONTMATTER = "skill-frontmatter-lint"
 LINT_SKILL_MD_SIZE = "skill-md-size-lint"
 LINT_SKILL_TRIGGER = "skill-trigger-lint"
 LINT_SKILL_TRIGGER_OVERLAP = "skill-trigger-overlap-lint"
-LINT_SKILL_CATALOG_CATEGORY = "skill-catalog-category-lint"
 LINT_SKILL_GLOBAL_NEGATIVE = "skill-global-negative-lint"
 LINT_SKILL_POLICY_COVERAGE = "skill-policy-coverage-lint"
 LINT_SKILL_PROCESS_METRIC = "skill-process-metric-lint"
 LINT_SKILL_COMMAND_DRIFT = "skill-command-drift-lint"
 LINT_SKILL_HELPER_SCRIPT = "skill-helper-script-lint"
 LINT_SKILL_FIXTURE = "skill-fixture-lint"
-LINT_AGENT_DOC_CROSSLINK = "agent-doc-crosslink-lint"
 
 FINDING_ERROR = "error"
 FINDING_WARNING = "warning"
@@ -80,7 +97,6 @@ _TRIGGER_TERMS = (
 )
 _BOUNDARY_TERMS = ("do not use", "do-not-use", "use boundary", "boundary", "negative")
 _NORMATIVE_RE = re.compile(r"\b(must|must not|required|prohibited|approval)\b", re.IGNORECASE)
-_MARKDOWN_LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 _BACKTICK_NVFLARE_RE = re.compile(r"`(nvflare(?:\s+[^`]+)?)`")
 _SAFE_COMMAND_TOKEN_RE = re.compile(r"^(?:--?[A-Za-z0-9][\w-]*(?:=[^\s`;&|]+)?|[A-Za-z0-9_./:=+@%,-]+|<[^>\n]+>)$")
 _SIGNIFICANT_TOKEN_RE = re.compile(r"[a-z][a-z0-9_-]{2,}")
@@ -101,7 +117,6 @@ _STOPWORDS = {
     "federated",
     "workflow",
 }
-_CATEGORY_FIELD = "category"
 _KNOWN_NVFLARE_ROOT_COMMANDS = {
     "agent",
     "authz-preview",
@@ -131,11 +146,6 @@ _KNOWN_AGENT_FLAGS = {
     "agent skills install": {"--agent", "--dry-run", "--format", "--schema", "--skill", "--target"},
     "agent skills list": {"--agent", "--format", "--schema", "--target"},
 }
-_REQUIRED_CANONICAL_DOCS = (
-    "agent_integration.md",
-    "agent_skill_authoring.md",
-    "agent_skill_evaluation.md",
-)
 
 
 @dataclass(frozen=True)
@@ -190,7 +200,6 @@ class SkillRecord:
 @dataclass
 class LintContext:
     skills_root: Path
-    docs_root: Optional[Path]
     max_skill_md_lines: int
     records: list[SkillRecord]
     findings: list[LintFinding]
@@ -200,14 +209,12 @@ class LintContext:
 def run_v1_lints(
     skills_root: Path | str = "skills",
     *,
-    docs_root: Path | str | None = None,
     checks: Optional[Iterable[str]] = None,
     max_skill_md_lines: int = SKILL_MD_MAX_LINES,
 ) -> dict[str, Any]:
     """Run deterministic v1 admission lints and return structured findings."""
     result, _records = _run_v1_lints_with_records(
         skills_root,
-        docs_root=docs_root,
         checks=checks,
         max_skill_md_lines=max_skill_md_lines,
     )
@@ -217,7 +224,6 @@ def run_v1_lints(
 def _run_v1_lints_with_records(
     skills_root: Path | str = "skills",
     *,
-    docs_root: Path | str | None = None,
     checks: Optional[Iterable[str]] = None,
     max_skill_md_lines: int = SKILL_MD_MAX_LINES,
 ) -> tuple[dict[str, Any], list[SkillRecord]]:
@@ -227,12 +233,10 @@ def _run_v1_lints_with_records(
         raise ValueError(f"unknown agent skill lint check(s): {', '.join(unknown)}")
 
     root = Path(skills_root)
-    resolved_docs_root = _resolve_docs_root(root, docs_root)
     findings: list[LintFinding] = []
     records = _load_skill_records(root, findings)
     context = LintContext(
         skills_root=root,
-        docs_root=resolved_docs_root,
         max_skill_md_lines=max_skill_md_lines,
         records=records,
         findings=findings,
@@ -247,7 +251,6 @@ def _run_v1_lints_with_records(
             "status": status,
             "passed": status == "ok",
             "skills_root": str(root),
-            "docs_root": str(resolved_docs_root) if resolved_docs_root is not None else None,
             "checks": list(selected),
             "skipped_checks": context.skipped_checks,
             "summary": summary,
@@ -259,14 +262,12 @@ def _run_v1_lints_with_records(
         "skill-md-size-lint": _lint_md_size,
         "skill-trigger-lint": _lint_trigger,
         "skill-trigger-overlap-lint": _lint_trigger_overlap,
-        "skill-catalog-category-lint": _lint_catalog_category,
         "skill-global-negative-lint": _lint_global_negative,
         "skill-policy-coverage-lint": _lint_policy_coverage,
         "skill-process-metric-lint": _lint_process_metrics,
         "skill-command-drift-lint": _lint_command_drift,
         "skill-helper-script-lint": _lint_helper_scripts,
         "skill-fixture-lint": _lint_fixtures,
-        "agent-doc-crosslink-lint": _lint_doc_crosslinks,
     }
 
     for check in selected:
@@ -279,7 +280,6 @@ def _run_v1_lints_with_records(
         "status": status,
         "passed": status == "ok",
         "skills_root": str(root),
-        "docs_root": str(resolved_docs_root) if resolved_docs_root is not None else None,
         "checks": list(selected),
         "skipped_checks": context.skipped_checks,
         "summary": summary,
@@ -291,13 +291,11 @@ def validate_skills(
     skills_root: Path | str = "skills",
     *,
     skill_name: Optional[str] = None,
-    docs_root: Path | str | None = None,
     max_skill_md_lines: int = SKILL_MD_MAX_LINES,
 ) -> dict[str, Any]:
     """Compatibility wrapper for callers that validate one skill source root."""
     result, records = _run_v1_lints_with_records(
         skills_root,
-        docs_root=docs_root,
         max_skill_md_lines=max_skill_md_lines,
     )
 
@@ -545,30 +543,16 @@ def _lint_trigger(context: LintContext) -> None:
 def _lint_trigger_overlap(context: LintContext) -> None:
     grouped: dict[str, list[SkillRecord]] = defaultdict(list)
     for record in _public_records(context.records):
-        category = _trigger_overlap_group(record)
-        if not category:
-            context.findings.append(
-                _finding(
-                    LINT_SKILL_TRIGGER_OVERLAP,
-                    FINDING_ERROR,
-                    record.skill_file,
-                    "public skill is missing a trigger-overlap category",
-                    "Add a non-empty 'category' field to SKILL.md frontmatter so overlap checks compare it to nearby skills.",
-                    code="skill-trigger-category-missing",
-                    skill=record.name,
-                    line=_line_for_field(record.skill_file, _CATEGORY_FIELD),
-                )
-            )
-            continue
-        grouped[category].append(record)
+        group = _trigger_overlap_group(record.name)
+        grouped[group].append(record)
 
     max_trigger_overlap_skills = _max_trigger_overlap_skills()
-    for category, records in grouped.items():
+    for group, records in grouped.items():
         if len(records) > max_trigger_overlap_skills:
             _skip(
                 context,
                 "skill-trigger-overlap-lint",
-                f"category {category!r} has {len(records)} skills; limit is {max_trigger_overlap_skills}",
+                f"group {group!r} has {len(records)} skills; limit is {max_trigger_overlap_skills}",
             )
             continue
         token_cache = {record.name: _trigger_tokens(record) for record in records}
@@ -583,12 +567,22 @@ def _lint_trigger_overlap(context: LintContext) -> None:
                         "skill-trigger-overlap-lint",
                         FINDING_ERROR,
                         left.skill_file,
-                        f"same-category skills '{left.name}' and '{right.name}' have overlapping trigger language",
+                        f"same trigger-group skills '{left.name}' and '{right.name}' have overlapping trigger language",
                         "Add use/do-not-use boundaries and adjacent negative evals covering the overlap.",
                         code="skill-trigger-overlap",
                         skill=left.name,
                     )
                 )
+
+
+def _trigger_overlap_group(skill_name: str) -> str:
+    normalized = skill_name.strip().lower()
+    if normalized.startswith("nvflare-"):
+        normalized = normalized[len("nvflare-") :]
+    family = normalized.split("-", maxsplit=1)[0].strip()
+    if family:
+        return f"nvflare-{family}"
+    return skill_name.strip().lower() or skill_name
 
 
 def _max_trigger_overlap_skills() -> int:
@@ -600,135 +594,6 @@ def _max_trigger_overlap_skills() -> int:
     except ValueError:
         return DEFAULT_MAX_TRIGGER_OVERLAP_SKILLS
     return parsed if parsed > 0 else DEFAULT_MAX_TRIGGER_OVERLAP_SKILLS
-
-
-def _lint_catalog_category(context: LintContext) -> None:
-    if not _require_docs_root(context, LINT_SKILL_CATALOG_CATEGORY):
-        return
-
-    docs_root = context.docs_root
-    catalog_path = docs_root / "agent_integration.md"
-    authoring_path = docs_root / "agent_skill_authoring.md"
-    if not _require_canonical_doc(context, LINT_SKILL_CATALOG_CATEGORY, catalog_path):
-        return
-    if not _require_canonical_doc(context, LINT_SKILL_CATALOG_CATEGORY, authoring_path):
-        return
-
-    product = _parse_product_catalog(catalog_path)
-    conversion = _parse_conversion_table(authoring_path)
-    if not product:
-        context.findings.append(
-            _finding(
-                LINT_SKILL_CATALOG_CATEGORY,
-                FINDING_ERROR,
-                catalog_path,
-                "product skill catalog could not be parsed",
-                "Keep the catalog markdown table headed by Category, Skill, Tier, and Purpose.",
-                code="skill-catalog-unparseable",
-                global_finding=True,
-            )
-        )
-        return
-    if not conversion:
-        context.findings.append(
-            _finding(
-                LINT_SKILL_CATALOG_CATEGORY,
-                FINDING_ERROR,
-                authoring_path,
-                "conversion-family table could not be parsed",
-                "Keep the authoring markdown table headed by Code Family, Skill, Scope, Current Repo Evidence, and Tier.",
-                code="conversion-skill-table-unparseable",
-                global_finding=True,
-            )
-        )
-        return
-
-    for record in _public_records(context.records):
-        skill_category = _trigger_overlap_group(record)
-        if not skill_category:
-            context.findings.append(
-                _finding(
-                    LINT_SKILL_CATALOG_CATEGORY,
-                    FINDING_ERROR,
-                    record.skill_file,
-                    f"public skill '{record.name}' is missing frontmatter category",
-                    "Add a SKILL.md category matching the product skill catalog before release.",
-                    code="skill-category-frontmatter-missing",
-                    skill=record.name,
-                    line=_line_for_field(record.skill_file, _CATEGORY_FIELD),
-                )
-            )
-
-        if record.name not in product:
-            context.findings.append(
-                _finding(
-                    LINT_SKILL_CATALOG_CATEGORY,
-                    FINDING_ERROR,
-                    record.skill_file,
-                    f"public skill '{record.name}' is missing from the product skill catalog",
-                    "Add the skill to agent_integration.md or mark it draft/internal.",
-                    code="skill-catalog-entry-missing",
-                    skill=record.name,
-                )
-            )
-            continue
-
-        product_row = product[record.name]
-        if skill_category and product_row["category"] != skill_category:
-            context.findings.append(
-                _finding(
-                    LINT_SKILL_CATALOG_CATEGORY,
-                    FINDING_ERROR,
-                    record.skill_file,
-                    f"skill '{record.name}' frontmatter category '{skill_category}' differs from product catalog category '{product_row['category']}'",
-                    "Keep SKILL.md frontmatter category and docs/design/agent_integration.md in sync.",
-                    code="skill-category-catalog-mismatch",
-                    skill=record.name,
-                    line=_line_for_field(record.skill_file, _CATEGORY_FIELD),
-                )
-            )
-
-    for skill, conversion_tier in conversion.items():
-        product_row = product.get(skill)
-        if product_row is None:
-            context.findings.append(
-                _finding(
-                    LINT_SKILL_CATALOG_CATEGORY,
-                    FINDING_ERROR,
-                    authoring_path,
-                    f"conversion-family skill '{skill}' is missing from the product catalog",
-                    "Keep conversion-family rows and the product catalog in sync.",
-                    code="conversion-skill-catalog-missing",
-                    skill=skill,
-                )
-            )
-            continue
-        if product_row["category"] != "Conversion":
-            context.findings.append(
-                _finding(
-                    LINT_SKILL_CATALOG_CATEGORY,
-                    FINDING_ERROR,
-                    catalog_path,
-                    f"conversion-family skill '{skill}' has category '{product_row['category']}'",
-                    "Conversion-family skills should use the Conversion category for overlap checks.",
-                    code="conversion-skill-category-mismatch",
-                    skill=skill,
-                )
-            )
-        product_tier = _strip_backticks(product_row["tier"])
-        conversion_tier = _strip_backticks(conversion_tier)
-        if conversion_tier and product_tier and conversion_tier != product_tier:
-            context.findings.append(
-                _finding(
-                    LINT_SKILL_CATALOG_CATEGORY,
-                    FINDING_ERROR,
-                    catalog_path,
-                    f"skill '{skill}' tier differs between catalog and conversion-family table",
-                    "Use one tier consistently across the authoring and integration docs.",
-                    code="skill-catalog-tier-mismatch",
-                    skill=skill,
-                )
-            )
 
 
 def _lint_global_negative(context: LintContext) -> None:
@@ -1034,160 +899,6 @@ def _lint_fixtures(context: LintContext) -> None:
             )
 
 
-def _lint_doc_crosslinks(context: LintContext) -> None:
-    if not _require_docs_root(context, LINT_AGENT_DOC_CROSSLINK):
-        return
-
-    docs_root = context.docs_root
-    for doc_name in _REQUIRED_CANONICAL_DOCS:
-        _require_canonical_doc(context, LINT_AGENT_DOC_CROSSLINK, docs_root / doc_name)
-
-    text_by_path = {
-        doc_path: text
-        for doc_path in _iter_existing_doc_files(docs_root)
-        if (text := _read_bounded_text(doc_path)) is not None
-    }
-    anchors_by_path = {doc_path.resolve(): _markdown_anchors(text) for doc_path, text in text_by_path.items()}
-
-    def anchors_for_path(path: Path) -> set[str]:
-        resolved = path.resolve()
-        if resolved not in anchors_by_path and path.suffix.lower() in {".md", ".markdown"} and path.is_file():
-            text = _read_bounded_text(path)
-            if text is not None:
-                anchors_by_path[resolved] = _markdown_anchors(text)
-        return anchors_by_path.get(resolved, set())
-
-    for doc_path, text in text_by_path.items():
-        for line_no, href in _iter_markdown_links(text):
-            if href.startswith(("http://", "https://", "mailto:")):
-                continue
-            target, _, anchor = href.partition("#")
-            target_path = (doc_path.parent / target).resolve() if target else doc_path.resolve()
-            if target and not target_path.exists():
-                context.findings.append(
-                    _finding(
-                        LINT_AGENT_DOC_CROSSLINK,
-                        FINDING_ERROR,
-                        doc_path,
-                        f"markdown link target does not exist: {href}",
-                        "Update the link or restore the referenced design document.",
-                        code="agent-doc-link-missing",
-                        line=line_no,
-                    )
-                )
-                continue
-            if anchor and _normalize_anchor(anchor) not in anchors_for_path(target_path):
-                context.findings.append(
-                    _finding(
-                        LINT_AGENT_DOC_CROSSLINK,
-                        FINDING_ERROR,
-                        doc_path,
-                        f"markdown link anchor does not exist: {href}",
-                        "Update the link anchor to match the target heading.",
-                        code="agent-doc-anchor-missing",
-                        line=line_no,
-                    )
-                )
-
-    eval_doc = docs_root / "agent_skill_evaluation.md"
-    if eval_doc.is_file():
-        text = text_by_path.get(eval_doc)
-        if text is not None:
-            for lint_id in V1_LINT_IDS:
-                if f"`{lint_id}`" not in text:
-                    context.findings.append(
-                        _finding(
-                            LINT_AGENT_DOC_CROSSLINK,
-                            FINDING_ERROR,
-                            eval_doc,
-                            f"lint id '{lint_id}' is missing from the canonical evaluation doc",
-                            "Keep agent_skill_evaluation.md#engineering-lints as the canonical lint table.",
-                            code="agent-doc-lint-id-missing",
-                        )
-                    )
-
-    for doc_path, text in text_by_path.items():
-        for line_no, command in _extract_nvflare_commands(text):
-            if not command.startswith("nvflare agent"):
-                continue
-            message = _command_drift_message(command, check_flags=False, allow_planned=True)
-            if message is None:
-                continue
-            context.findings.append(
-                _finding(
-                    LINT_AGENT_DOC_CROSSLINK,
-                    FINDING_ERROR,
-                    doc_path,
-                    f"agent command reference is stale: {message}",
-                    "Update the design doc command reference or the agent CLI command surface.",
-                    code="agent-doc-command-reference-stale",
-                    line=line_no,
-                )
-            )
-
-
-def _resolve_docs_root(skills_root: Path, docs_root: Path | str | None) -> Optional[Path]:
-    if docs_root is not None:
-        return Path(docs_root)
-    if skills_root.name == "skills":
-        candidate = skills_root.parent / "docs" / "design"
-        if all((candidate / doc_name).is_file() for doc_name in _REQUIRED_CANONICAL_DOCS):
-            return candidate
-    candidate = Path.cwd() / "docs" / "design"
-    return candidate if all((candidate / doc_name).is_file() for doc_name in _REQUIRED_CANONICAL_DOCS) else None
-
-
-def _require_docs_root(context: LintContext, lint_id: str) -> bool:
-    docs_root = context.docs_root
-    if docs_root is not None and docs_root.is_dir():
-        return True
-    path = docs_root if docs_root is not None else Path("docs/design")
-    _add_canonical_doc_error(
-        context,
-        lint_id,
-        path,
-        "canonical agent design docs root is not available",
-        "Pass --docs-root pointing at docs/design or restore the required agent design documents.",
-        "agent-docs-root-missing",
-    )
-    return False
-
-
-def _require_canonical_doc(context: LintContext, lint_id: str, path: Path) -> bool:
-    if path.is_file():
-        return True
-    _add_canonical_doc_error(
-        context,
-        lint_id,
-        path,
-        f"canonical agent design doc is missing: {path.name}",
-        "Restore the required design doc or move its canonical table and update the lint parser.",
-        "agent-doc-source-missing",
-    )
-    return False
-
-
-def _add_canonical_doc_error(
-    context: LintContext,
-    lint_id: str,
-    path: Path,
-    message: str,
-    hint: str,
-    code: str,
-) -> None:
-    context.findings.append(
-        _finding(
-            lint_id,
-            FINDING_ERROR,
-            path,
-            message,
-            hint,
-            code=code,
-            global_finding=True,
-        )
-    )
-
-
 def _try_parse_frontmatter(skill_file: Path) -> dict[str, Any]:
     try:
         return parse_skill_frontmatter(skill_file)
@@ -1349,64 +1060,6 @@ def _has_adjacent_negative_pair(left: SkillRecord, right: SkillRecord) -> bool:
 def _negative_for_neighbor(item: dict[str, Any], skill_name: str, neighbor_name: str) -> bool:
     nvflare = _nvflare_ext(item)
     return nvflare.get("negative_for") == skill_name and nvflare.get("expected_skill") == neighbor_name
-
-
-def _trigger_overlap_group(record: SkillRecord) -> Optional[str]:
-    category = record.metadata.get(_CATEGORY_FIELD)
-    if not isinstance(category, str):
-        return None
-    category = category.strip()
-    return category or None
-
-
-def _parse_product_catalog(path: Path) -> dict[str, dict[str, str]]:
-    text = _read_bounded_text(path)
-    if text is None:
-        return {}
-    rows = {}
-    in_table = False
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("| Category | Skill | Tier | Purpose |"):
-            in_table = True
-            continue
-        if not in_table:
-            continue
-        if not stripped.startswith("|"):
-            break
-        if set(stripped.replace("|", "").replace("-", "").replace(" ", "")) == set():
-            continue
-        columns = [column.strip() for column in stripped.strip("|").split("|")]
-        if len(columns) < 4 or columns[0] == "Category":
-            continue
-        skill = _strip_backticks(columns[1])
-        if skill:
-            rows[skill] = {"category": columns[0], "tier": columns[2]}
-    return rows
-
-
-def _parse_conversion_table(path: Path) -> dict[str, str]:
-    text = _read_bounded_text(path)
-    if text is None:
-        return {}
-    rows = {}
-    in_table = False
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("| Code Family | Skill | Scope | Current Repo Evidence | Tier |"):
-            in_table = True
-            continue
-        if not in_table:
-            continue
-        if not stripped.startswith("|"):
-            break
-        columns = [column.strip() for column in stripped.strip("|").split("|")]
-        if len(columns) < 5 or columns[0] == "Code Family" or columns[0].startswith("---"):
-            continue
-        skill = _strip_backticks(columns[1])
-        if skill:
-            rows[skill] = columns[4]
-    return rows
 
 
 def _strip_backticks(value: str) -> str:
@@ -1587,36 +1240,6 @@ def _has_bounded_size_exception(path: Path) -> bool:
     except OSError:
         return False
     return _has_size_exception(prefix.decode("utf-8", errors="replace"))
-
-
-def _iter_existing_doc_files(docs_root: Path) -> Iterable[Path]:
-    return (path for path in sorted(docs_root.glob("agent_*.md")) if path.is_file())
-
-
-def _iter_markdown_links(text: str) -> Iterable[tuple[int, str]]:
-    for line_no, line in enumerate(text.splitlines(), start=1):
-        for match in _MARKDOWN_LINK_RE.finditer(line):
-            yield line_no, match.group(1).strip()
-
-
-def _markdown_anchors(text: str) -> set[str]:
-    anchors = set()
-    for line in text.splitlines():
-        if not line.startswith("#"):
-            continue
-        heading = line.lstrip("#").strip()
-        if heading:
-            anchors.add(_normalize_anchor(heading))
-    return anchors
-
-
-def _normalize_anchor(value: str) -> str:
-    value = value.strip().lower()
-    value = re.sub(r"`([^`]+)`", r"\1", value)
-    value = re.sub(r"[^a-z0-9 _-]", "", value)
-    value = value.replace(" ", "-")
-    value = re.sub(r"-+", "-", value)
-    return value.strip("-")
 
 
 def _line_for_frontmatter_issue(skill_file: Path, code: str, message: str) -> Optional[int]:
