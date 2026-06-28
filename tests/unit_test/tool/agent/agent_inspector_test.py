@@ -602,6 +602,53 @@ def test_inspect_external_lightning_import_does_not_reach_local_lightning_packag
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
 
 
+def test_inspect_external_lightning_import_does_not_promote_shadowing_lightning_package(tmp_path):
+    # An unreachable local ``lightning`` package can carry far more active
+    # Lightning evidence than the PyTorch entry point. The dotted external import
+    # ``import lightning.pytorch`` must not resolve to that local package, so the
+    # entry-context guard -- not the weighted fallback score -- must keep routing
+    # on PyTorch even though the helper would otherwise win on raw evidence.
+    package = tmp_path / "models"
+    package.mkdir()
+    (package / "train.py").write_text(
+        "import lightning.pytorch\n"
+        "import torch\n"
+        "from torch.utils.data import DataLoader\n"
+        "\n"
+        "def train():\n"
+        "    return DataLoader([])\n",
+        encoding="utf-8",
+    )
+    lightning_package = package / "lightning"
+    lightning_package.mkdir()
+    (lightning_package / "__init__.py").write_text(
+        "import pytorch_lightning as pl\n"
+        "import lightning.pytorch\n"
+        "from pytorch_lightning.callbacks import ModelCheckpoint\n"
+        "\n"
+        "class HelperA(pl.LightningModule):\n"
+        "    pass\n"
+        "\n"
+        "class HelperB(pl.LightningModule):\n"
+        "    pass\n"
+        "\n"
+        "trainer = pl.Trainer(max_epochs=1)\n"
+        "second_trainer = pl.Trainer(max_epochs=2)\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    framework_by_name = {framework["name"]: framework for framework in data["frameworks"]}
+    framework_names = [framework["name"] for framework in data["frameworks"]]
+    assert framework_names[0] == "pytorch"
+    assert "pytorch_lightning" in framework_names
+    # The helper genuinely carries more raw evidence; routing still stays on
+    # PyTorch because the helper is unreachable from the entry point.
+    assert len(framework_by_name["pytorch_lightning"]["evidence"]) > len(framework_by_name["pytorch"]["evidence"])
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
+
+
 def test_inspect_external_lightning_import_does_not_reach_top_level_lightning_package(tmp_path):
     (tmp_path / "train.py").write_text(
         "import lightning.pytorch\n"
