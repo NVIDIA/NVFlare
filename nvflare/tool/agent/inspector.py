@@ -564,11 +564,16 @@ def _should_promote_lightning_over_pytorch(state: InspectState) -> bool:
 
 
 def _lightning_evidence_tied_to_inspected_file_or_entry_point(state: InspectState, evidence: list[dict]) -> bool:
+    active_evidence = [item for item in evidence if _is_active_lightning_evidence(item)]
     if state.root.is_file():
         inspected_file = _display_path(state.root, state.root, state.redact)
-        return any(item["file"] == inspected_file for item in evidence)
+        return any(item["file"] == inspected_file for item in active_evidence)
     entry_point_paths = {entry["path"] for entry in state.entry_points}
-    return any(item["file"] in entry_point_paths for item in evidence)
+    return any(item["file"] in entry_point_paths for item in active_evidence)
+
+
+def _is_active_lightning_evidence(evidence: dict) -> bool:
+    return evidence.get("kind") in {"lightning_class", "lightning_trainer"}
 
 
 def _evidence_score(evidence: list[dict]) -> int:
