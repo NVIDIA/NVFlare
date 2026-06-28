@@ -23,6 +23,7 @@ from pathlib import Path
 
 import pytest
 
+from nvflare.tool.agent.inspector import inspect_path
 from nvflare.tool.agent.skill_manager import SkillSource, install_skills, list_skills
 from nvflare.tool.agent.skill_manifest import build_skill_manifest, copy_released_skills_to_bundle
 
@@ -44,6 +45,29 @@ def test_seed_skill_manifest_includes_public_skills_and_skips_shared_references(
     assert SEED_SKILLS.issubset(names)
     assert "_shared" not in names
     assert all(skill["relative_path"] != "_shared" for skill in manifest["skills"])
+
+
+def test_inspector_recommendations_are_available_in_seed_manifest(tmp_path):
+    skills_root = _repo_root() / "skills"
+    manifest = build_skill_manifest(skills_root, source_type="editable", nvflare_version="2.8.0")
+    available_names = {skill["name"] for skill in manifest["skills"]}
+
+    cases = {
+        "pytorch": ("import torch\n", ["nvflare-convert-pytorch"]),
+        "lightning": (
+            "import pytorch_lightning as pl\n\nclass Net(pl.LightningModule):\n    pass\n",
+            ["nvflare-convert-lightning"],
+        ),
+    }
+    for name, (source, expected_skills) in cases.items():
+        script = tmp_path / f"{name}.py"
+        script.write_text(source, encoding="utf-8")
+
+        data = inspect_path(script)
+
+        recommended_skills = data["skill_selection"]["recommended_skills"]
+        assert recommended_skills == expected_skills
+        assert set(recommended_skills) <= available_names
 
 
 def test_convert_pytorch_eval_requires_declared_primary_metric_alignment():
