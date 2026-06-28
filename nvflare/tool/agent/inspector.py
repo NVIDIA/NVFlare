@@ -51,7 +51,9 @@ LIGHTNING_MODULES = {"pytorch_lightning", "lightning", "lightning.pytorch"}
 LIGHTNING_CLASS_SYMBOLS = {"LightningModule", "LightningDataModule"}
 LIGHTNING_TRAINER_SYMBOLS = {"Trainer"}
 LIGHTNING_SYMBOLS = LIGHTNING_CLASS_SYMBOLS | LIGHTNING_TRAINER_SYMBOLS
-LIGHTNING_PATCH_MODULE = "nvflare.client.lightning"
+LIGHTNING_PATCH_PARENT_MODULE = "nvflare.client"
+LIGHTNING_PATCH_SUBMODULE = "lightning"
+LIGHTNING_PATCH_MODULE = f"{LIGHTNING_PATCH_PARENT_MODULE}.{LIGHTNING_PATCH_SUBMODULE}"
 
 FRAMEWORK_IMPORTS = {
     "torch": "pytorch",
@@ -436,10 +438,9 @@ class _PythonInspector(ast.NodeVisitor):
             return
         # ``from nvflare.client import lightning as flare`` -> ``flare.patch`` is
         # the module-alias form of the canonical conversion call.
-        parent, _, submodule = LIGHTNING_PATCH_MODULE.rpartition(".")
-        if module == parent:
+        if module == LIGHTNING_PATCH_PARENT_MODULE:
             for alias in aliases:
-                if alias.name == submodule:
+                if alias.name == LIGHTNING_PATCH_SUBMODULE:
                     self.lightning_patch_modules.add(alias.asname or alias.name)
 
     def _is_lightning_class_base(self, base_name: str) -> bool:
