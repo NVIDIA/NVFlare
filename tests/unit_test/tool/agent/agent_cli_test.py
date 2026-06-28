@@ -726,6 +726,27 @@ def test_agent_inspect_json_reports_lightning_evidence_and_recommends_lightning_
     assert payload["data"]["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
 
 
+def test_agent_inspect_json_classifies_aliased_lightning_patch_import_as_converted(capsys, tmp_path):
+    script = tmp_path / "client_lightning.py"
+    script.write_text(
+        "import lightning as L\n"
+        "from nvflare.client.lightning import patch as flare_patch\n"
+        "\n"
+        "trainer = L.Trainer(max_epochs=1)\n"
+        "flare_patch(trainer)\n",
+        encoding="utf-8",
+    )
+
+    exit_code = _run_main(["nvflare", "agent", "inspect", str(script), "--format", "json"])
+
+    assert exit_code == 0
+    payload = _load_single_stdout_json(capsys.readouterr())
+    _assert_envelope_shape(payload, "ok")
+    assert payload["data"]["frameworks"][0]["name"] == "pytorch_lightning"
+    assert payload["data"]["flare_integration"]["calls"] == ["flare_patch"]
+    assert payload["data"]["conversion_state"] == "client_api_converted"
+
+
 def test_agent_inspect_missing_path_is_structured_json_error(capsys, tmp_path):
     exit_code = _run_main(["nvflare", "agent", "inspect", str(tmp_path / "missing"), "--format", "json"])
 
