@@ -103,6 +103,7 @@ class InspectState:
     flare_imports: list[dict] = field(default_factory=list)
     flare_calls: set[str] = field(default_factory=set)
     lightning_patch_calls: set[str] = field(default_factory=set)
+    file_imports: dict[str, set[str]] = field(default_factory=dict)
     entry_points: list[dict] = field(default_factory=list)
     job_py: Optional[str] = None
     sim_env_used: bool = False
@@ -375,6 +376,7 @@ class _PythonInspector(ast.NodeVisitor):
     def _record_import(self, module: str, lineno: int) -> None:
         if not module:
             return
+        self.state.file_imports.setdefault(self.rel_path, set()).add(module)
         framework = _framework_for_import(module)
         if framework:
             _append_capped(
@@ -562,16 +564,24 @@ def _should_promote_lightning_over_pytorch(state: InspectState) -> bool:
     pytorch_evidence = state.framework_evidence.get("pytorch", [])
     if not lightning_evidence or not pytorch_evidence:
         return False
-    if _lightning_evidence_tied_to_inspected_file_or_entry_point(state, lightning_evidence):
+    active_lightning_evidence = _active_lightning_evidence(lightning_evidence)
+    if _active_lightning_evidence_tied_to_entry_context(state, active_lightning_evidence):
         return True
     if _framework_evidence_tied_to_inspected_file_or_entry_point(state, pytorch_evidence):
         return False
     return _evidence_score(lightning_evidence) > _evidence_score(pytorch_evidence)
 
 
-def _lightning_evidence_tied_to_inspected_file_or_entry_point(state: InspectState, evidence: list[dict]) -> bool:
-    active_evidence = [item for item in evidence if _is_active_lightning_evidence(item)]
-    return _framework_evidence_tied_to_inspected_file_or_entry_point(state, active_evidence)
+def _active_lightning_evidence(evidence: list[dict]) -> list[dict]:
+    return [item for item in evidence if _is_active_lightning_evidence(item)]
+
+
+def _active_lightning_evidence_tied_to_entry_context(state: InspectState, evidence: list[dict]) -> bool:
+    if _framework_evidence_tied_to_inspected_file_or_entry_point(state, evidence):
+        return True
+    if state.root.is_file():
+        return False
+    return any(_entry_point_imports_file(state, item["file"]) for item in evidence)
 
 
 def _framework_evidence_tied_to_inspected_file_or_entry_point(state: InspectState, evidence: list[dict]) -> bool:
@@ -584,6 +594,26 @@ def _framework_evidence_tied_to_inspected_file_or_entry_point(state: InspectStat
 
 def _is_active_lightning_evidence(evidence: dict) -> bool:
     return evidence.get("kind") in {"lightning_class", "lightning_trainer"}
+
+
+def _entry_point_imports_file(state: InspectState, evidence_file: str) -> bool:
+    evidence_modules = _module_names_for_file(evidence_file)
+    if not evidence_modules:
+        return False
+    for entry_point in state.entry_points:
+        if evidence_modules.intersection(state.file_imports.get(entry_point["path"], set())):
+            return True
+    return False
+
+
+def _module_names_for_file(file_path: str) -> set[str]:
+    if not file_path.endswith(".py"):
+        return set()
+    path = Path(file_path)
+    parts = path.parent.parts if path.name == "__init__.py" else path.with_suffix("").parts
+    if not parts or any(part in {"", ".", ".."} for part in parts):
+        return set()
+    return {".".join(parts), parts[-1]}
 
 
 def _evidence_score(evidence: list[dict]) -> int:
