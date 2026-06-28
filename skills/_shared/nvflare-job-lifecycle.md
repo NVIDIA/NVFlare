@@ -115,6 +115,32 @@ arguments.
   cleanup and execution such as `rm -rf <workspace> && python job.py`.
 - After successful simulation, follow `metrics-and-artifact-reporting.md`.
 
+## Final Validation Run Must Finish Before You Finalize
+
+This is a hard rule for every conversion skill, framework-agnostic:
+
+- Run the final `python job.py` validation in the **foreground** and let it run
+  to completion in the same step. Do not choose background execution for the
+  final validation run.
+- A conversion is **not complete** until you have observed terminal completion
+  evidence (process exit code, server log reaching a Finished state, and a
+  metrics artifact such as `metrics_summary.json`, or a concrete explanation
+  for why metrics are unavailable). See `validation-evidence.md` for the exact
+  evidence contract.
+- Never emit a pending-status message as your final answer. Phrases like
+  "the simulation is running in the background", "I'll be notified when it
+  completes", "standing by", or "I'll wait" are **not** valid final answers:
+  they end the task while the run is still in progress, which can kill the run
+  before it finishes and before any metrics are written.
+- Do not rely on being notified after your final response. If tooling forces
+  background execution or you must use it for a non-final probe, you are
+  responsible for polling for the terminal artifact within the same turn and
+  confirming completion before you finalize; in a non-interactive run there is
+  no later turn in which a notification can arrive.
+- If the run genuinely exceeds the allowed time, report it as blocked or timed
+  out with the current command status and log/artifact evidence. A timed-out or
+  still-running simulation is not a success.
+
 ## Preflight Before Full Simulation
 
 Follow `validation-evidence.md` for generic preflight checks. Framework skills
