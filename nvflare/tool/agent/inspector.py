@@ -685,18 +685,14 @@ def _should_promote_lightning_over_pytorch(state: InspectState) -> bool:
     active_lightning_evidence = _active_lightning_evidence(lightning_evidence)
     if _active_lightning_evidence_tied_to_entry_context(state, active_lightning_evidence):
         return True
-    active_pytorch_evidence = _active_pytorch_evidence(pytorch_evidence)
-    if _framework_evidence_tied_to_inspected_file_or_entry_point(state, active_pytorch_evidence):
-        return False
+    # Split-file Lightning projects can still have active PyTorch calls in the
+    # entry point; let the weighted evidence decide instead of treating that as
+    # an absolute veto.
     return _evidence_score(active_lightning_evidence) > _evidence_score(pytorch_evidence)
 
 
 def _active_lightning_evidence(evidence: list[dict]) -> list[dict]:
     return [item for item in evidence if _is_active_lightning_evidence(item)]
-
-
-def _active_pytorch_evidence(evidence: list[dict]) -> list[dict]:
-    return [item for item in evidence if _is_active_pytorch_evidence(item)]
 
 
 def _active_lightning_evidence_tied_to_entry_context(state: InspectState, evidence: list[dict]) -> bool:
@@ -717,10 +713,6 @@ def _framework_evidence_tied_to_inspected_file_or_entry_point(state: InspectStat
 
 def _is_active_lightning_evidence(evidence: dict) -> bool:
     return evidence.get("kind") in {"lightning_class", "lightning_trainer"}
-
-
-def _is_active_pytorch_evidence(evidence: dict) -> bool:
-    return evidence.get("kind") in {"pytorch_class", "pytorch_call"}
 
 
 def _entry_point_imports_file(state: InspectState, evidence_file: str) -> bool:
