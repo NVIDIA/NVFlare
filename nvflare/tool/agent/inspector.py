@@ -548,8 +548,12 @@ def _detect_primary_framework(state: InspectState, ranked: list[dict]) -> Option
     # Do not override a stronger framework from another family (TensorFlow, JAX,
     # etc.) -- those get their own family-conflict handling when their conversion
     # skills land.
-    if primary == "pytorch" and _should_promote_lightning_over_pytorch(state):
-        return LIGHTNING_FRAMEWORK
+    if (
+        primary in {"pytorch", LIGHTNING_FRAMEWORK}
+        and "pytorch" in state.framework_evidence
+        and LIGHTNING_FRAMEWORK in state.framework_evidence
+    ):
+        return LIGHTNING_FRAMEWORK if _should_promote_lightning_over_pytorch(state) else "pytorch"
     return primary
 
 
@@ -560,16 +564,22 @@ def _should_promote_lightning_over_pytorch(state: InspectState) -> bool:
         return False
     if _lightning_evidence_tied_to_inspected_file_or_entry_point(state, lightning_evidence):
         return True
+    if _framework_evidence_tied_to_inspected_file_or_entry_point(state, pytorch_evidence):
+        return False
     return _evidence_score(lightning_evidence) > _evidence_score(pytorch_evidence)
 
 
 def _lightning_evidence_tied_to_inspected_file_or_entry_point(state: InspectState, evidence: list[dict]) -> bool:
     active_evidence = [item for item in evidence if _is_active_lightning_evidence(item)]
+    return _framework_evidence_tied_to_inspected_file_or_entry_point(state, active_evidence)
+
+
+def _framework_evidence_tied_to_inspected_file_or_entry_point(state: InspectState, evidence: list[dict]) -> bool:
     if state.root.is_file():
         inspected_file = _display_path(state.root, state.root, state.redact)
-        return any(item["file"] == inspected_file for item in active_evidence)
+        return any(item["file"] == inspected_file for item in evidence)
     entry_point_paths = {entry["path"] for entry in state.entry_points}
-    return any(item["file"] in entry_point_paths for item in active_evidence)
+    return any(item["file"] in entry_point_paths for item in evidence)
 
 
 def _is_active_lightning_evidence(evidence: dict) -> bool:

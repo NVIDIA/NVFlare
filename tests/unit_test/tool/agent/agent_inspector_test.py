@@ -314,21 +314,43 @@ def test_inspect_keeps_plain_pytorch_routing_separate_from_lightning(tmp_path):
 
 
 def test_inspect_mixed_pytorch_workspace_with_incidental_lightning_keeps_pytorch(tmp_path):
-    # A plain PyTorch entry point plus an incidental Lightning import should
-    # surface the mixed workspace without hiding the PyTorch training script.
+    # A plain PyTorch entry point plus incidental Lightning imports should
+    # surface the mixed workspace without hiding the PyTorch training script,
+    # even when the helper has more raw Lightning import evidence.
     (tmp_path / "train.py").write_text(
-        "import torch\n"
-        "import torchvision\n"
-        "\n"
-        "class Net(torch.nn.Module):\n"
-        "    pass\n"
-        "\n"
-        "def main():\n"
-        "    model = Net()\n",
+        "import torch\n" "\n" "class Net(torch.nn.Module):\n" "    pass\n" "\n" "def main():\n" "    model = Net()\n",
         encoding="utf-8",
     )
     (tmp_path / "optional_utils.py").write_text(
-        "import pytorch_lightning\n",
+        "import pytorch_lightning\n"
+        "import lightning.pytorch\n"
+        "from pytorch_lightning.callbacks import ModelCheckpoint\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    framework_names = [framework["name"] for framework in data["frameworks"]]
+    assert framework_names[0] == "pytorch"
+    assert "pytorch_lightning" in framework_names
+    assert data["target_type"] == "mixed_workspace"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
+
+
+def test_inspect_mixed_pytorch_workspace_with_active_lightning_in_non_entry_file_keeps_pytorch(tmp_path):
+    # train.py is the likely PyTorch training entry point; active Lightning use
+    # lives only in a secondary helper file and should not redirect routing.
+    (tmp_path / "train.py").write_text(
+        "import torch\n" "\n" "class Net(torch.nn.Module):\n" "    pass\n" "\n" "def train():\n" "    return Net()\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "lit_helper.py").write_text(
+        "import pytorch_lightning as pl\n"
+        "\n"
+        "class Helper(pl.LightningModule):\n"
+        "    pass\n"
+        "\n"
+        "trainer = pl.Trainer(max_epochs=1)\n",
         encoding="utf-8",
     )
 
