@@ -334,6 +334,7 @@ class _PythonInspector(ast.NodeVisitor):
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         module = node.module or ""
         self._record_import(module, node.lineno)
+        self._record_import_from_modules(module, node.level, node.names)
         self._record_lightning_from_imports(module, node.names)
         self._record_lightning_patch_imports(module, node.names)
         for alias in node.names:
@@ -392,6 +393,16 @@ class _PythonInspector(ast.NodeVisitor):
             self.state.distributed_patterns.append(_evidence(self.rel_path, lineno, "distributed_import", module))
         if module == "accelerate" or module.startswith("accelerate."):
             self.state.distributed_patterns.append(_evidence(self.rel_path, lineno, "accelerate_import", module))
+
+    def _record_import_from_modules(self, module: str, level: int, aliases: list[ast.alias]) -> None:
+        resolved_module = _resolve_import_from_module(self.rel_path, module, level)
+        imports = self.state.file_imports.setdefault(self.rel_path, set())
+        if resolved_module:
+            imports.add(resolved_module)
+        for alias in aliases:
+            if alias.name == "*":
+                continue
+            imports.add(f"{resolved_module}.{alias.name}" if resolved_module else alias.name)
 
     def _record_lightning_import_alias(self, alias: ast.alias) -> None:
         if alias.name in LIGHTNING_MODULES:
@@ -614,6 +625,18 @@ def _module_names_for_file(file_path: str) -> set[str]:
     if not parts or any(part in {"", ".", ".."} for part in parts):
         return set()
     return {".".join(parts), parts[-1]}
+
+
+def _resolve_import_from_module(importing_file: str, module: str, level: int) -> str:
+    if level <= 0:
+        return module
+    path = Path(importing_file)
+    package_parts = path.parent.parts if path.name != "__init__.py" else path.parent.parts
+    keep = max(0, len(package_parts) - level + 1)
+    parts = list(package_parts[:keep])
+    if module:
+        parts.extend(module.split("."))
+    return ".".join(part for part in parts if part)
 
 
 def _evidence_score(evidence: list[dict]) -> int:
