@@ -36,9 +36,12 @@ the skill from the training entry point the user asks to federate:
 ## Lightning Trainer Wrappers
 
 Some ecosystems build the trainer through a wrapper or factory, for example
-`nl.Trainer(...)` from `nemo.lightning`. Treat these as Lightning when the
-wrapper trainer still owns fit/validate/test and accepts `flare.patch(trainer)`.
-The definitive conversion signal is a patched trainer, not the exact
+`nl.Trainer(...)` from `nemo.lightning`. Do not treat wrapper imports alone as
+PyTorch Lightning evidence. Use this skill only when the user explicitly asks
+for Lightning conversion, canonical PyTorch Lightning evidence is also present,
+or an existing/verified `nvflare.client.lightning.patch(trainer)` compatibility
+signal shows that the wrapper trainer can use the Lightning Client API. The
+definitive converted-state signal is a patched trainer, not the exact
 constructor module.
 
 ## Negative Handoff
