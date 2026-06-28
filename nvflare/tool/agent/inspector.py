@@ -821,6 +821,12 @@ def _local_files_for_import(
     files = set()
     for module_name in _exact_module_candidates_for_import(import_name, importing_file):
         files.update(local_files_by_module.get(module_name, set()))
+    # Only follow a package's ``__init__.py`` once the full imported module path resolves to a
+    # local file. Otherwise an external absolute import (e.g. ``import lightning.pytorch``) whose
+    # leading segment happens to match an unrelated local package (a top-level ``lightning/``)
+    # would resolve that package's ``__init__.py`` and incorrectly promote it.
+    if not files:
+        return files
     for module_name in _package_module_prefix_candidates_for_import(import_name, importing_file):
         files.update(
             file_path
@@ -840,8 +846,9 @@ def _exact_module_candidates_for_import(import_name: str, importing_file: str) -
 
 def _package_module_prefix_candidates_for_import(import_name: str, importing_file: str) -> set[str]:
     # Package-prefix candidates let us follow the __init__.py of a package whose full path
-    # resolves locally (e.g. ``import pkg.sub`` reaching ``pkg/__init__.py``). We never apply
-    # the importing file's context prefix here: doing so would let a partial prefix of an
+    # resolves locally (e.g. ``import pkg.sub`` reaching ``pkg/__init__.py``). The caller only
+    # consults these once the full imported module path resolves to a local file. We also never
+    # apply the importing file's context prefix here: doing so would let a partial prefix of an
     # absolute import (e.g. ``lightning`` from ``import lightning.pytorch``) resolve to an
     # unrelated local package (``models.lightning``), incorrectly promoting it.
     candidates = set(_module_name_prefixes(import_name))

@@ -602,6 +602,31 @@ def test_inspect_external_lightning_import_does_not_reach_local_lightning_packag
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
 
 
+def test_inspect_external_lightning_import_does_not_reach_top_level_lightning_package(tmp_path):
+    (tmp_path / "train.py").write_text(
+        "import lightning.pytorch\n"
+        "import torch\n"
+        "from torch.utils.data import DataLoader\n"
+        "\n"
+        "def train():\n"
+        "    return DataLoader([])\n",
+        encoding="utf-8",
+    )
+    lightning_package = tmp_path / "lightning"
+    lightning_package.mkdir()
+    (lightning_package / "__init__.py").write_text(
+        "import pytorch_lightning as pl\n" "\n" "class Helper(pl.LightningModule):\n" "    pass\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    framework_names = [framework["name"] for framework in data["frameworks"]]
+    assert framework_names[0] == "pytorch"
+    assert "pytorch_lightning" in framework_names
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
+
+
 def test_inspect_same_directory_model_import_can_reach_lightning_helper(tmp_path):
     package = tmp_path / "pkg"
     package.mkdir()
