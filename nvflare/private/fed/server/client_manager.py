@@ -21,6 +21,8 @@ import uuid
 from contextlib import suppress
 from typing import Optional
 
+from cryptography.x509.oid import ExtendedKeyUsageOID
+
 from nvflare.apis.client import Client, ClientPropKey
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
@@ -306,6 +308,7 @@ class ClientManager:
                     signature=signature,
                     nonce=reg.nonce,
                     cert_chain=asserter_cert_chain,
+                    expected_eku=ExtendedKeyUsageOID.CLIENT_AUTH,
                 )
             except Exception as ex:
                 self.logger.error(f"failed to verify client identity: {secure_format_exception(ex)}")

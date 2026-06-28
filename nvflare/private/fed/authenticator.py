@@ -17,6 +17,8 @@ import traceback
 import uuid
 from typing import Callable, Optional
 
+from cryptography.x509.oid import ExtendedKeyUsageOID
+
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.shareable import Shareable
@@ -161,6 +163,7 @@ class Authenticator:
             nonce=my_nonce,
             signature=server_signature,
             cert_chain=server_cert_chain,
+            expected_eku=ExtendedKeyUsageOID.SERVER_AUTH,
         )
 
         self.logger.info(f"verified server identity '{self.expected_sp_identity}'")

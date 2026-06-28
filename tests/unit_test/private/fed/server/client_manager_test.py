@@ -16,6 +16,7 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
+from cryptography.x509.oid import ExtendedKeyUsageOID
 
 from nvflare.apis.client import Client, ClientPropKey
 from nvflare.apis.fl_constant import FLContextKey
@@ -61,10 +62,11 @@ def test_authenticated_client_stores_org_extracted_from_cert():
     request = _make_request("site-a")
     fl_ctx = _make_fl_ctx(secure_mode=True, client_name="site-a")
     verifier = MagicMock()
+    cert = object()
 
     with (
         patch.object(manager, "_get_id_verifier", return_value=verifier),
-        patch("nvflare.private.fed.server.client_manager.load_crt_chain_bytes", return_value=[object()]),
+        patch("nvflare.private.fed.server.client_manager.load_crt_chain_bytes", return_value=[cert]),
         patch("nvflare.private.fed.server.client_manager.get_org_from_cert", return_value="org_a"),
         patch.object(manager, "_set_client_props"),
     ):
@@ -72,7 +74,14 @@ def test_authenticated_client_stores_org_extracted_from_cert():
 
     assert client is not None
     assert client.get_prop(ClientPropKey.ORG) == "org_a"
-    verifier.verify_common_name.assert_called_once()
+    verifier.verify_common_name.assert_called_once_with(
+        asserted_cn="site-a",
+        asserter_cert=cert,
+        signature=b"fake-signature",
+        nonce=fl_ctx.get_prop(InternalFLContextKey.CLIENT_REG_SESSION).nonce,
+        cert_chain=[cert],
+        expected_eku=ExtendedKeyUsageOID.CLIENT_AUTH,
+    )
 
 
 def test_authenticated_client_sets_empty_org_when_secure_mode_is_disabled():

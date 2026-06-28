@@ -13,6 +13,7 @@
 # limitations under the License.
 from typing import Optional
 
+from cryptography import x509
 from cryptography.x509.oid import NameOID
 
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -121,7 +122,9 @@ class IdentityVerifier:
         self.root_cert = load_cert_file(root_cert_file)
         self.root_public_key = self.root_cert.public_key()
 
-    def verify_common_name(self, asserted_cn: str, nonce: str, asserter_cert, signature, cert_chain=None) -> bool:
+    def verify_common_name(
+        self, asserted_cn: str, nonce: str, asserter_cert, signature, cert_chain=None, expected_eku=None
+    ) -> bool:
         # verify asserter_cert
         try:
             if cert_chain:
@@ -131,8 +134,9 @@ class IdentityVerifier:
                     cert_to_be_verified=asserter_cert,
                     root_ca_public_key=self.root_public_key,
                 )
+            _validate_identity_cert_usage(asserter_cert, expected_eku)
         except Exception as ex:
-            raise InvalidAsserterCert() from ex
+            raise InvalidAsserterCert(str(ex)) from ex
 
         # verify signature provided by the asserter
         asserter_public_key = asserter_cert.public_key()
@@ -147,6 +151,32 @@ class IdentityVerifier:
         except Exception as ex:
             raise InvalidCNSignature(f"cannot verify common name signature: {secure_format_exception(ex)}")
         return True
+
+
+def _validate_identity_cert_usage(cert, expected_eku):
+    """Enforce certificate usage restrictions for the common-name challenge.
+
+    Legacy FLARE certificates may omit KeyUsage and ExtendedKeyUsage, so absent
+    extensions remain unrestricted. When present, they must allow the signing
+    operation and the caller-specific authentication purpose.
+    """
+    try:
+        key_usage = cert.extensions.get_extension_for_class(x509.KeyUsage).value
+    except x509.ExtensionNotFound:
+        pass
+    else:
+        if not key_usage.digital_signature:
+            raise ValueError("asserter certificate keyUsage must allow digitalSignature")
+
+    if expected_eku is None:
+        return
+
+    try:
+        extended_key_usage = cert.extensions.get_extension_for_class(x509.ExtendedKeyUsage).value
+    except x509.ExtensionNotFound:
+        return
+    if expected_eku not in extended_key_usage:
+        raise ValueError(f"asserter certificate extendedKeyUsage must allow {expected_eku.dotted_string}")
 
 
 class TokenVerifier:
