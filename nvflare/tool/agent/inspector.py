@@ -688,9 +688,10 @@ def _should_promote_lightning_over_pytorch(state: InspectState) -> bool:
         return True
     if _active_pytorch_evidence_tied_to_entry_context(state, active_pytorch_evidence):
         return False
-    # Split-file Lightning projects can still have PyTorch imports in the
-    # entry point. Active Lightning evidence is the promotion gate, and
-    # import-only PyTorch evidence should not dominate once that gate is met.
+    if _framework_evidence_tied_to_entry_context(state, pytorch_evidence):
+        return False
+    # With no PyTorch evidence tied to the entry context, keep the weighted
+    # fallback for model-only directories that do not expose an entry point.
     active_lightning_score = _evidence_score(active_lightning_evidence)
     if active_lightning_score == 0:
         return False
@@ -706,14 +707,14 @@ def _active_pytorch_evidence(evidence: list[dict]) -> list[dict]:
 
 
 def _active_lightning_evidence_tied_to_entry_context(state: InspectState, evidence: list[dict]) -> bool:
-    if _framework_evidence_tied_to_inspected_file_or_entry_point(state, evidence):
-        return True
-    if state.root.is_file():
-        return False
-    return any(_entry_point_imports_file(state, item["file"]) for item in evidence)
+    return _framework_evidence_tied_to_entry_context(state, evidence)
 
 
 def _active_pytorch_evidence_tied_to_entry_context(state: InspectState, evidence: list[dict]) -> bool:
+    return _framework_evidence_tied_to_entry_context(state, evidence)
+
+
+def _framework_evidence_tied_to_entry_context(state: InspectState, evidence: list[dict]) -> bool:
     if _framework_evidence_tied_to_inspected_file_or_entry_point(state, evidence):
         return True
     if state.root.is_file():
