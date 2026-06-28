@@ -315,7 +315,7 @@ selectable check in the skill lint runner.
 | `skill-md-size-lint` | `SKILL.md` exceeds the 200-line hard gate without an approved exception | `skills/<skill>/SKILL.md` | Fail when `SKILL.md` exceeds 200 lines unless an explicit approved exception marker exists. Report the roughly 2,000-token guidance as advisory using a simple whitespace estimate until a tokenizer is standardized. |
 | `skill-trigger-lint` | missing trigger/use-boundary text, missing positive trigger eval, or missing adjacent negative trigger case | `SKILL.md` trigger text and `evals/evals.json` | Require a non-empty trigger/use-boundary description, at least one positive trigger eval, and at least one adjacent negative trigger case in `negative_trigger_cases` for the nearest competing skill in the same deterministic trigger group. |
 | `skill-trigger-overlap-lint` | same trigger-group public skills have overlapping descriptions or trigger examples without negative trigger cases or documented boundaries | deterministic skill-name family, `SKILL.md` descriptions, and trigger eval prompts | For public skills sharing the same deterministic skill-name family, flag overlapping descriptions or trigger examples unless the skills include documented use/do-not-use boundaries and adjacent negative trigger cases covering the overlap. The lint uses deterministic text/name-family checks, not design-doc parsing or a runtime LLM recommender. |
-| `skill-global-negative-lint` | unrelated global negative prompt coverage is missing or malformed | repo-root `skills/_shared/global_negative_prompts.json` and per-skill `evals/evals.json` | Require coverage for prompts that should trigger no FLARE skill, such as unrelated web, Kubernetes-only, or generic coding tasks. The shared bank should use `schema_version: "1"` and `prompts` entries with `id`, `prompt`, and `description`. The deterministic lint validates that public skills include or reference required global-negative cases. |
+| `skill-global-negative-lint` | unrelated global negative prompt coverage is missing or malformed | per-skill `evals/evals.json`, plus optional shared negative prompt metadata if introduced | Require coverage for prompts that should trigger no FLARE skill, such as unrelated web, Kubernetes-only, or generic coding tasks. `negative_for: "*"` is the shared wildcard convention for global negatives that apply to every public FLARE skill. The deterministic lint validates that public skills declare required global-negative coverage without requiring prompt duplication in every skill file. |
 | `skill-policy-coverage-lint` | normative words appear without a nearby measurable behavior ID, deterministic helper test, or checklist item | `SKILL.md`, `references/`, helper tests, and `evals/evals.json` | Flag normative words such as `must`, `must not`, `required`, `prohibited`, and `approval` unless the rule maps to `nvflare.mandatory_behavior`, `nvflare.prohibited_behavior`, a deterministic helper test, or a release checklist item. |
 | `skill-process-metric-lint` | missing process metric contracts for a public skill, or malformed process metric entries | `evals/evals.json` | Require at least one `nvflare.process_metrics` entry for every public skill. Each metric must have a stable `id` and `description` so runtime runs can record first-pass quality, correction count, unwanted actions, validation evidence completeness, and related process outcomes. |
 | `skill-command-drift-lint` | referenced `nvflare` commands, flags, or JSON examples do not match the installed CLI or exported command schema | `SKILL.md`, `references/`, `scripts/`, CLI parser/schema output | Verify each referenced `nvflare` command, flag, and JSON example against the installed CLI or exported `--schema` output so stale commands fail before release. |
@@ -342,11 +342,14 @@ parser or exported command schema, and fail on unknown commands or flags. The CI
 environment for this lint must run from the same NVFLARE checkout or installed
 wheel whose CLI is being validated.
 
-Global negative coverage is per public skill: every public skill must either
-include `negative_trigger_cases` entries marked `negative_for: <skill-name>` for each prompt ID in
-`skills/_shared/global_negative_prompts.json`, or reference a shared coverage
-set that expands to those IDs. Deterministic lint only validates coverage
-declarations; benchmark or research runs may execute selected prompts later.
+Global negative coverage is per public skill: every public skill must include or
+reference unrelated prompts that should trigger no FLARE skill. A case marked
+`negative_for: "*"` is the canonical wildcard shared-coverage declaration and
+counts for every public FLARE skill; skill-specific adjacent negatives should
+continue to use `negative_for: <skill-name>`. If a shared prompt bank is added
+later, `negative_for: "*"` remains valid coverage for global prompts that apply
+to all public skills. Deterministic lint only validates coverage declarations;
+benchmark or research runs may execute selected prompts later.
 
 Each lint should emit structured findings with at least `id`, `severity`,
 `file`, `line` when available, `message`, and `hint`. These findings are
