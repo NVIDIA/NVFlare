@@ -94,10 +94,12 @@ def run_milestone8_checkpoint(
 
 
 def _check_skill_lints(repo_root: Path) -> dict[str, Any]:
+    # The admission lint engine is intentionally self-contained over ``skills/``
+    # and never reads ``docs/design``; do not pass a docs root here. See
+    # docs/design/skills_architecture.md "Lint engine independence".
     skills_root = repo_root / "skills"
-    docs_root = repo_root / "docs" / "design"
     try:
-        result = run_v1_lints(skills_root, docs_root=docs_root)
+        result = run_v1_lints(skills_root)
     except Exception as e:
         return _failed("skill_admission_lints", f"skill lint/admission checks raised {type(e).__name__}: {e}")
     if result.get("status") != "ok":
