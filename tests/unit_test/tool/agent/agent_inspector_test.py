@@ -858,6 +858,22 @@ def test_lightning_routing_helper_defensive_branches(tmp_path):
     assert _evidence_score([{"kind": "unknown"}]) == 1
 
 
+def test_lightning_routing_fallback_prefers_active_lightning_over_pytorch_imports(tmp_path):
+    state = InspectState(root=tmp_path, redact=True)
+    state.framework_evidence["pytorch_lightning"] = [
+        {"file": "model.py", "line": 1, "kind": "import", "value": "pytorch_lightning"},
+        {"file": "model.py", "line": 6, "kind": "lightning_class", "value": "pl.LightningModule"},
+    ]
+    state.framework_evidence["pytorch"] = [
+        {"file": "model.py", "line": 2, "kind": "import", "value": "torch"},
+        {"file": "model.py", "line": 3, "kind": "import", "value": "torch.nn"},
+        {"file": "model.py", "line": 4, "kind": "import", "value": "torch.optim"},
+        {"file": "model.py", "line": 5, "kind": "import", "value": "torch.utils.data"},
+    ]
+
+    assert _should_promote_lightning_over_pytorch(state)
+
+
 def test_inspect_lightning_script_with_many_torch_imports_recommends_lightning(tmp_path):
     # A normal Lightning script imports several torch symbols, so PyTorch import
     # evidence outnumbers Lightning symbols. Lightning still wins.
