@@ -372,9 +372,9 @@ def test_inspect_incidental_lightning_does_not_demote_ranked_pytorch(tmp_path):
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
 
 
-def test_inspect_mixed_pytorch_workspace_with_active_lightning_in_non_entry_file_keeps_pytorch(tmp_path):
-    # train.py is the likely PyTorch training entry point; active Lightning use
-    # lives only in a secondary helper file and should not redirect routing.
+def test_inspect_active_lightning_helper_can_outweigh_pytorch_entry_point(tmp_path):
+    # Active PyTorch use in train.py should not veto a split-file Lightning
+    # workspace when the helper has stronger active Lightning evidence.
     (tmp_path / "train.py").write_text(
         "import torch\n" "\n" "class Net(torch.nn.Module):\n" "    pass\n" "\n" "def train():\n" "    return Net()\n",
         encoding="utf-8",
@@ -392,10 +392,10 @@ def test_inspect_mixed_pytorch_workspace_with_active_lightning_in_non_entry_file
     data = inspect_path(tmp_path)
 
     framework_names = [framework["name"] for framework in data["frameworks"]]
-    assert framework_names[0] == "pytorch"
+    assert framework_names[0] == "pytorch_lightning"
     assert "pytorch_lightning" in framework_names
-    assert data["target_type"] == "mixed_workspace"
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
+    assert "pytorch" in framework_names
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
 
 
 def test_inspect_sparse_pytorch_entry_with_lightning_helper_class_keeps_pytorch(tmp_path):
