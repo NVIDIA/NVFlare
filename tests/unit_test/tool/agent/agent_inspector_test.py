@@ -331,8 +331,11 @@ def test_inspect_mixed_pytorch_workspace_with_incidental_lightning_keeps_pytorch
     data = inspect_path(tmp_path)
 
     framework_names = [framework["name"] for framework in data["frameworks"]]
+    framework_by_name = {framework["name"]: framework for framework in data["frameworks"]}
     assert framework_names[0] == "pytorch"
     assert "pytorch_lightning" in framework_names
+    assert framework_by_name["pytorch_lightning"]["confidence"] > framework_by_name["pytorch"]["confidence"]
+    assert len(framework_by_name["pytorch_lightning"]["evidence"]) > len(framework_by_name["pytorch"]["evidence"])
     assert data["target_type"] == "mixed_workspace"
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
 
