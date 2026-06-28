@@ -621,10 +621,31 @@ def _evidence_score(evidence: list[dict]) -> int:
 
 
 def _order_frameworks_for_display(ranked: list[dict], detected_framework: Optional[str]) -> list[dict]:
+    if detected_framework == "pytorch":
+        return _order_pytorch_before_lightning_if_needed(ranked)
+
     # Keep the confidence-ranked order but surface the detected primary framework
     # first so callers reading frameworks[0] stay aligned with the routing
     # decision. sorted() is stable, so non-primary frameworks keep their order.
     return sorted(ranked, key=lambda item: item["name"] != detected_framework)
+
+
+def _order_pytorch_before_lightning_if_needed(ranked: list[dict]) -> list[dict]:
+    names = [item["name"] for item in ranked]
+    try:
+        pytorch_index = names.index("pytorch")
+        lightning_index = names.index(LIGHTNING_FRAMEWORK)
+    except ValueError:
+        return ranked
+
+    if pytorch_index < lightning_index:
+        return ranked
+
+    ordered = list(ranked)
+    pytorch = ordered.pop(pytorch_index)
+    lightning_index = next(index for index, item in enumerate(ordered) if item["name"] == LIGHTNING_FRAMEWORK)
+    ordered.insert(lightning_index, pytorch)
+    return ordered
 
 
 def _conversion_state(state: InspectState, detected_framework: Optional[str]) -> str:
