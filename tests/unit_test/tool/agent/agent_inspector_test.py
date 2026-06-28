@@ -584,10 +584,12 @@ def test_inspect_package_lightning_submodule_imported_by_entry_point_recommends_
     (package / "__init__.py").write_text("", encoding="utf-8")
     (tmp_path / "train.py").write_text(
         "import torch\n"
+        "from torch.utils.data import DataLoader\n"
         "from models import lightning_model\n"
         "\n"
         "def main():\n"
-        "    return lightning_model.LitModel()\n",
+        "    loader = DataLoader([])\n"
+        "    return lightning_model.LitModel(), loader\n",
         encoding="utf-8",
     )
     (package / "lightning_model.py").write_text(
@@ -601,6 +603,10 @@ def test_inspect_package_lightning_submodule_imported_by_entry_point_recommends_
     assert framework_names[0] == "pytorch_lightning"
     assert "pytorch" in framework_names
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
+    lightning_evidence = data["frameworks"][0]["evidence"]
+    assert any(
+        item["file"] == "models/lightning_model.py" and item["kind"] == "lightning_class" for item in lightning_evidence
+    )
 
 
 def test_inspect_relative_package_lightning_submodule_imported_by_entry_point_recommends_lightning(tmp_path):
@@ -609,13 +615,15 @@ def test_inspect_relative_package_lightning_submodule_imported_by_entry_point_re
     (package / "__init__.py").write_text("", encoding="utf-8")
     (package / "train.py").write_text(
         "import torch\n"
-        "from . import lightning_model\n"
+        "from torch.utils.data import DataLoader\n"
+        "from . import model\n"
         "\n"
         "def main():\n"
-        "    return lightning_model.LitModel()\n",
+        "    loader = DataLoader([])\n"
+        "    return model.LitModel(), loader\n",
         encoding="utf-8",
     )
-    (package / "lightning_model.py").write_text(
+    (package / "model.py").write_text(
         "import pytorch_lightning as pl\n" "\n" "class LitModel(pl.LightningModule):\n" "    pass\n",
         encoding="utf-8",
     )
@@ -626,6 +634,8 @@ def test_inspect_relative_package_lightning_submodule_imported_by_entry_point_re
     assert framework_names[0] == "pytorch_lightning"
     assert "pytorch" in framework_names
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
+    lightning_evidence = data["frameworks"][0]["evidence"]
+    assert any(item["file"] == "models/model.py" and item["kind"] == "lightning_class" for item in lightning_evidence)
 
 
 def test_inspect_lightning_subscripted_base_recommends_lightning(tmp_path):
