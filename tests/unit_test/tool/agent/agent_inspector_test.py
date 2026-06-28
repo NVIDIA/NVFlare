@@ -147,6 +147,25 @@ def test_inspect_classifies_imported_lightning_patch_as_client_api_converted(tmp
     assert data["conversion_state"] == "client_api_converted"
 
 
+def test_inspect_classifies_aliased_lightning_patch_import_as_client_api_converted(tmp_path):
+    script = tmp_path / "client.py"
+    script.write_text(
+        "import lightning as L\n"
+        "from nvflare.client.lightning import patch as flare_patch\n"
+        "\n"
+        "trainer = L.Trainer(max_epochs=1)\n"
+        "flare_patch(trainer)\n"
+        "trainer.fit(model, datamodule=data)\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["frameworks"][0]["name"] == "pytorch_lightning"
+    assert data["flare_integration"]["calls"] == ["flare_patch"]
+    assert data["conversion_state"] == "client_api_converted"
+
+
 def test_inspect_classifies_aliased_lightning_patch_module_as_client_api_converted(tmp_path):
     script = tmp_path / "client.py"
     script.write_text(

@@ -560,10 +560,7 @@ def _conversion_state(state: InspectState, detected_framework: Optional[str]) ->
         return "exported_job"
     if state.job_py or state.sim_env_used:
         return "flare_job"
-    if state.lightning_patch_calls and state.flare_imports:
-        # An nvflare.client.lightning ``patch(trainer)`` call is the definitive
-        # Lightning conversion signal regardless of how the trainer was built
-        # (e.g. ``nl.Trainer`` from a wrapper such as nemo.lightning).
+    if _has_lightning_client_api_completion(state):
         return "client_api_converted"
     if {"flare.receive", "flare.send"} <= state.flare_calls or "FLModel" in state.flare_calls:
         return "client_api_converted"
@@ -572,6 +569,13 @@ def _conversion_state(state: InspectState, detected_framework: Optional[str]) ->
     if detected_framework:
         return "not_converted"
     return "unknown"
+
+
+def _has_lightning_client_api_completion(state: InspectState) -> bool:
+    # An nvflare.client.lightning ``patch(trainer)`` call is the definitive
+    # Lightning conversion signal even without explicit ``flare.send`` because
+    # the patched trainer performs the result exchange.
+    return bool(state.lightning_patch_calls and state.flare_imports)
 
 
 def _target_type(path: Path, state: InspectState, detected_framework: Optional[str], conversion_state: str) -> str:
