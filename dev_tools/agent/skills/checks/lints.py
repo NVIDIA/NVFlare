@@ -101,6 +101,7 @@ _STOPWORDS = {
     "federated",
     "workflow",
 }
+_CATEGORY_FIELD = "category"
 _KNOWN_NVFLARE_ROOT_COMMANDS = {
     "agent",
     "authz-preview",
@@ -542,26 +543,24 @@ def _lint_trigger(context: LintContext) -> None:
 
 
 def _lint_trigger_overlap(context: LintContext) -> None:
-    if not _require_docs_root(context, LINT_SKILL_TRIGGER_OVERLAP):
-        return
-
-    category_map = _category_map(context)
-    if not category_map:
-        _add_canonical_doc_error(
-            context,
-            LINT_SKILL_TRIGGER_OVERLAP,
-            context.docs_root / "agent_integration.md",
-            "product skill catalog categories are not available",
-            "Restore agent_integration.md with the Category/Skill/Tier/Purpose product catalog table.",
-            "skill-catalog-source-unavailable",
-        )
-        return
-
     grouped: dict[str, list[SkillRecord]] = defaultdict(list)
     for record in _public_records(context.records):
-        category = category_map.get(record.name)
-        if category:
-            grouped[category].append(record)
+        category = _trigger_overlap_group(record)
+        if not category:
+            context.findings.append(
+                _finding(
+                    LINT_SKILL_TRIGGER_OVERLAP,
+                    FINDING_ERROR,
+                    record.skill_file,
+                    "public skill is missing a trigger-overlap category",
+                    "Add a non-empty 'category' field to SKILL.md frontmatter so overlap checks compare it to nearby skills.",
+                    code="skill-trigger-category-missing",
+                    skill=record.name,
+                    line=_line_for_field(record.skill_file, _CATEGORY_FIELD),
+                )
+            )
+            continue
+        grouped[category].append(record)
 
     max_trigger_overlap_skills = _max_trigger_overlap_skills()
     for category, records in grouped.items():
@@ -645,6 +644,21 @@ def _lint_catalog_category(context: LintContext) -> None:
         return
 
     for record in _public_records(context.records):
+        skill_category = _trigger_overlap_group(record)
+        if not skill_category:
+            context.findings.append(
+                _finding(
+                    LINT_SKILL_CATALOG_CATEGORY,
+                    FINDING_ERROR,
+                    record.skill_file,
+                    f"public skill '{record.name}' is missing frontmatter category",
+                    "Add a SKILL.md category matching the product skill catalog before release.",
+                    code="skill-category-frontmatter-missing",
+                    skill=record.name,
+                    line=_line_for_field(record.skill_file, _CATEGORY_FIELD),
+                )
+            )
+
         if record.name not in product:
             context.findings.append(
                 _finding(
@@ -655,6 +669,22 @@ def _lint_catalog_category(context: LintContext) -> None:
                     "Add the skill to agent_integration.md or mark it draft/internal.",
                     code="skill-catalog-entry-missing",
                     skill=record.name,
+                )
+            )
+            continue
+
+        product_row = product[record.name]
+        if skill_category and product_row["category"] != skill_category:
+            context.findings.append(
+                _finding(
+                    LINT_SKILL_CATALOG_CATEGORY,
+                    FINDING_ERROR,
+                    record.skill_file,
+                    f"skill '{record.name}' frontmatter category '{skill_category}' differs from product catalog category '{product_row['category']}'",
+                    "Keep SKILL.md frontmatter category and docs/design/agent_integration.md in sync.",
+                    code="skill-category-catalog-mismatch",
+                    skill=record.name,
+                    line=_line_for_field(record.skill_file, _CATEGORY_FIELD),
                 )
             )
 
@@ -1321,11 +1351,12 @@ def _negative_for_neighbor(item: dict[str, Any], skill_name: str, neighbor_name:
     return nvflare.get("negative_for") == skill_name and nvflare.get("expected_skill") == neighbor_name
 
 
-def _category_map(context: LintContext) -> dict[str, str]:
-    if context.docs_root is None or not context.docs_root.is_dir():
-        return {}
-    product = _parse_product_catalog(context.docs_root / "agent_integration.md")
-    return {skill: row["category"] for skill, row in product.items()}
+def _trigger_overlap_group(record: SkillRecord) -> Optional[str]:
+    category = record.metadata.get(_CATEGORY_FIELD)
+    if not isinstance(category, str):
+        return None
+    category = category.strip()
+    return category or None
 
 
 def _parse_product_catalog(path: Path) -> dict[str, dict[str, str]]:

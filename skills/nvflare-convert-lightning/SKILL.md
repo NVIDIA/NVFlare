@@ -3,6 +3,7 @@ name: nvflare-convert-lightning
 description: "Convert existing PyTorch Lightning training code into an NVFLARE federated job using the Lightning Client API patch, local validation, and job export; do not use for plain PyTorch, other frameworks, or deployment-only tasks."
 min_flare_version: "2.8.0"
 blast_radius: edits_files
+category: Conversion
 skill_version: "0.1.0"
 ---
 

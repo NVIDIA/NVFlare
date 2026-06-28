@@ -3,6 +3,7 @@ name: nvflare-convert-pytorch
 description: "Convert existing PyTorch training code into an NVFLARE federated job using Client API model exchange, local validation, and job export; do not use for other frameworks or deployment-only tasks."
 min_flare_version: "2.8.0"
 blast_radius: edits_files
+category: Conversion
 skill_version: "0.1.0"
 ---
 

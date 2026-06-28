@@ -198,6 +198,7 @@ name: nvflare-convert-pytorch
 description: "Convert PyTorch training code into an NVFLARE federated training job and validate it with SimEnv and exported FLARE jobs."
 min_flare_version: "2.8.0"
 blast_radius: edits_files
+category: Conversion
 ---
 ```
 
@@ -212,6 +213,7 @@ stay minimal:
 | `description` | yes | concise trigger description for the agent |
 | `min_flare_version` | yes | first NVFLARE release that supports the skill; lint/documentation metadata initially because bundled skills ship with FLARE |
 | `blast_radius` | yes | `read_only`, `edits_files`, `runs_simulator`, `submits_poc`, or `submits_production`; informational initially and the hook for future enforcement |
+| `category` | yes for public NVFLARE skills | canonical trigger-overlap group; must match the product skill catalog category |
 | `skill_version` | optional | useful for changelog and debugging inside a FLARE release, but not a separate distribution cadence |
 
 Do not add a broad `references/contract.yaml` requirement for the initial implementation. Rich sidecar

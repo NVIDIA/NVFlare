@@ -163,6 +163,16 @@ def test_run_v1_lints_reports_missing_catalog_entry(tmp_path):
     _assert_structured_findings(result)
 
 
+def test_run_v1_lints_reports_frontmatter_catalog_category_mismatch(tmp_path):
+    _write_skill(tmp_path / "skills", "nvflare-category-skill", category="Orientation")
+    docs_root = _write_design_docs(tmp_path, ["nvflare-category-skill"], category="Conversion")
+
+    result = run_v1_lints(tmp_path / "skills", docs_root=docs_root, checks=[LINT_SKILL_CATALOG_CATEGORY])
+
+    assert _has_finding(result, LINT_SKILL_CATALOG_CATEGORY, "skill-category-catalog-mismatch")
+    _assert_structured_findings(result)
+
+
 def test_run_v1_lints_reports_trigger_overlap_without_negative_boundary(tmp_path):
     evals_one = _default_evals("nvflare-convert-one", adjacent_negative=False)
     evals_two = _default_evals("nvflare-convert-two", adjacent_negative=False)
@@ -183,6 +193,32 @@ def test_run_v1_lints_reports_trigger_overlap_without_negative_boundary(tmp_path
     docs_root = _write_design_docs(tmp_path, ["nvflare-convert-one", "nvflare-convert-two"])
 
     result = run_v1_lints(tmp_path / "skills", docs_root=docs_root)
+
+    assert _has_finding(result, LINT_SKILL_TRIGGER_OVERLAP, "skill-trigger-overlap")
+    _assert_structured_findings(result)
+
+
+def test_run_v1_lints_reports_non_convert_trigger_overlap_from_frontmatter_category(tmp_path):
+    evals_one = _default_evals("nvflare-route-one", adjacent_negative=False)
+    evals_two = _default_evals("nvflare-route-two", adjacent_negative=False)
+    _write_skill(
+        tmp_path / "skills",
+        "nvflare-route-one",
+        description="Route ambiguous FLARE project requests using inspect and readiness evidence.",
+        body="Use when routing ambiguous FLARE project requests with inspect evidence.\n",
+        evals=evals_one,
+        category="Orientation",
+    )
+    _write_skill(
+        tmp_path / "skills",
+        "nvflare-route-two",
+        description="Route ambiguous FLARE project requests using inspect and readiness evidence.",
+        body="Use when routing ambiguous FLARE project requests with inspect evidence.\n",
+        evals=evals_two,
+        category="Orientation",
+    )
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_TRIGGER_OVERLAP])
 
     assert _has_finding(result, LINT_SKILL_TRIGGER_OVERLAP, "skill-trigger-overlap")
     _assert_structured_findings(result)
@@ -259,8 +295,8 @@ def test_run_v1_lints_skips_trigger_overlap_when_skill_count_exceeds_cap(monkeyp
     ]
 
 
-def test_run_v1_lints_reports_doc_dependent_overlap_source_missing(tmp_path):
-    _write_skill(tmp_path / "skills", "nvflare-valid-skill")
+def test_run_v1_lints_reports_missing_frontmatter_category_for_overlap(tmp_path):
+    _write_skill(tmp_path / "skills", "nvflare-valid-skill", category=None)
 
     result = run_v1_lints(
         tmp_path / "skills",
@@ -270,7 +306,7 @@ def test_run_v1_lints_reports_doc_dependent_overlap_source_missing(tmp_path):
 
     assert result["status"] == "failed"
     assert result["skipped_checks"] == []
-    assert _has_finding(result, LINT_SKILL_TRIGGER_OVERLAP, "agent-docs-root-missing")
+    assert _has_finding(result, LINT_SKILL_TRIGGER_OVERLAP, "skill-trigger-category-missing")
     _assert_structured_findings(result)
 
 
@@ -492,19 +528,21 @@ def _write_skill(
     description="Convert PyTorch training code into a FLARE job.",
     body="Use when converting PyTorch training code.\nDo not use for Kubernetes deployment.\n",
     evals=None,
-    category="conversion",
+    category="Conversion",
     write_fixture=True,
     status=None,
 ):
     skill_dir = root / name
     skill_dir.mkdir(parents=True)
     status_line = f"status: {status}\n" if status else ""
+    category_line = f"category: {category}\n" if category else ""
     skill_dir.joinpath("SKILL.md").write_text(
         "---\n"
         f"name: {name}\n"
         f"description: {description}\n"
         'min_flare_version: "2.8.0"\n'
         "blast_radius: edits_files\n"
+        f"{category_line}"
         f"{status_line}"
         "---\n"
         "\n"

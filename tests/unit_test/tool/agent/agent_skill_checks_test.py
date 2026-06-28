@@ -180,7 +180,7 @@ def test_validate_skills_reuses_loaded_skill_records(tmp_path, monkeypatch):
     assert load_count == 1
 
 
-def _write_skill(root, name, evals):
+def _write_skill(root, name, evals, *, category="Conversion"):
     skill_dir = root / name
     skill_dir.mkdir(parents=True)
     skill_dir.joinpath("SKILL.md").write_text(
@@ -189,6 +189,7 @@ def _write_skill(root, name, evals):
         "description: Test skill fixture.\n"
         'min_flare_version: "2.8.0"\n'
         "blast_radius: read_only\n"
+        f"category: {category}\n"
         "---\n"
         "\n"
         "# Test Skill\n"
