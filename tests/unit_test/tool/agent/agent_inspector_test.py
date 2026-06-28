@@ -874,6 +874,22 @@ def test_lightning_routing_fallback_prefers_active_lightning_over_pytorch_import
     assert _should_promote_lightning_over_pytorch(state)
 
 
+def test_lightning_routing_fallback_keeps_pytorch_import_threshold_for_unrelated_helpers(tmp_path):
+    state = InspectState(root=tmp_path, redact=True)
+    state.framework_evidence["pytorch_lightning"] = [
+        {"file": "lightning_helper.py", "line": 1, "kind": "import", "value": "pytorch_lightning"},
+        {"file": "lightning_helper.py", "line": 4, "kind": "lightning_class", "value": "pl.LightningModule"},
+    ]
+    state.framework_evidence["pytorch"] = [
+        {"file": "experiment.py", "line": 1, "kind": "import", "value": "torch"},
+        {"file": "experiment.py", "line": 2, "kind": "import", "value": "torch.nn"},
+        {"file": "experiment.py", "line": 3, "kind": "import", "value": "torch.optim"},
+        {"file": "experiment.py", "line": 4, "kind": "import", "value": "torch.utils.data"},
+    ]
+
+    assert not _should_promote_lightning_over_pytorch(state)
+
+
 def test_inspect_lightning_script_with_many_torch_imports_recommends_lightning(tmp_path):
     # A normal Lightning script imports several torch symbols, so PyTorch import
     # evidence outnumbers Lightning symbols. Lightning still wins.
@@ -945,6 +961,31 @@ def test_inspect_lightning_model_file_with_many_torch_imports_recommends_lightni
     assert framework_names[0] == "pytorch_lightning"
     assert "pytorch" in framework_names
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
+
+
+def test_inspect_unrelated_lightning_helper_does_not_beat_pytorch_import_heavy_workspace(tmp_path):
+    (tmp_path / "experiment.py").write_text(
+        "import torch\n"
+        "import torch.nn\n"
+        "import torch.optim\n"
+        "import torch.utils.data\n"
+        "import torchaudio\n"
+        "import torchvision\n"
+        "\n"
+        "DEFAULT_EPOCHS = 1\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "lightning_helper.py").write_text(
+        "import pytorch_lightning as pl\n" "\n" "class Helper(pl.LightningModule):\n" "    pass\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    framework_names = [framework["name"] for framework in data["frameworks"]]
+    assert framework_names[0] == "pytorch"
+    assert "pytorch_lightning" in framework_names
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
 
 
 @pytest.mark.parametrize(
