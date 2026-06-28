@@ -16,6 +16,7 @@
         "The agent translates the natural request into recipe, site-count, dataset, split, training, validation, and export settings.",
         "The agent checks nvflare recipe list --framework pytorch --format json before selecting the job recipe.",
         "The agent selects FedAvg only when the requested workflow is standard horizontal model-parameter aggregation.",
+        "The agent does not abandon the skill's Client API and recipe.execute strategy based on NVFLARE SDK source or docstring inspection.",
         "The generated source uses standard names such as client.py, job.py, and model.py instead of ad hoc names such as fl_train.py.",
         "The generated training code uses nvflare.client receive/send and FLModel for model exchange.",
         "The agent keeps simulation workspaces, exported job folders, and generated runtime outputs under /tmp/nvflare unless the user gives another location.",
@@ -93,6 +94,10 @@
           {
             "id": "no-cli-wrapper-python",
             "description": "does not generate Python solely to wrap NVFLARE CLI operations or scrape human CLI output"
+          },
+          {
+            "id": "no-source-discovered-strategy-override",
+            "description": "does not replace the skill's Client API or recipe.execute strategy based on NVFLARE SDK source or docstring inspection without a concrete validation failure"
           }
         ],
         "optional_behavior": [

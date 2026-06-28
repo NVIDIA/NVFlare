@@ -8,6 +8,23 @@ The Lightning integration owns model load and send through callbacks installed
 by `flare.patch(trainer)`. Do not generate a manual `FLModel` send/receive path
 for normal Lightning training.
 
+## Canonical Path
+
+Use this path unless a validation command proves the installed NVFLARE version
+does not support it:
+
+1. Confirm Lightning routing with `nvflare agent inspect`.
+2. Select a PyTorch-family recipe with `nvflare recipe list/show`.
+3. Generate `client.py` with `flare.patch(trainer)` as the model exchange path.
+4. Generate `job.py` that builds the selected recipe and calls
+   `recipe.execute(SimEnv(...))`.
+5. Validate with `python job.py`, inspect terminal evidence, then export.
+
+Do not read NVFLARE SDK source or docstrings to choose an alternate Lightning
+exchange path. If an import or validation command fails, treat it as an
+installed-version compatibility check and report the exact failure instead of
+switching to a source-discovered strategy.
+
 ## Conversion Pattern
 
 - Import the Lightning client API: `import nvflare.client.lightning as flare`.
@@ -111,3 +128,9 @@ intent with `nvflare recipe list --framework pytorch --format json` and
 `nvflare recipe show <recipe-name> --format json`. Use FedAvg for standard
 horizontal training and FedEval for evaluation-only. Follow
 `../../_shared/nvflare-job-lifecycle.md` for export and command-line behavior.
+
+The generated `job.py` should use the selected recipe's public parameters from
+`recipe show`, construct the model through explicit `path` or `class_path` plus
+`args` when constructor arguments are required, and call
+`recipe.execute(SimEnv(...))`. Do not replace this with ad hoc SDK-internal
+APIs based on local source or docstring inspection.

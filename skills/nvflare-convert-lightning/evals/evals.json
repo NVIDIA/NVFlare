@@ -18,6 +18,7 @@
         "The agent audits required LightningModule constructor arguments before writing job.py and uses explicit path or class_path plus args when needed.",
         "The agent checks nvflare recipe list --framework pytorch --format json before selecting the job recipe.",
         "The agent selects the PyTorch FedAvg recipe for standard horizontal training instead of inventing a Lightning-only recipe.",
+        "The agent does not abandon the skill's Lightning patch and recipe.execute strategy based on NVFLARE SDK source or docstring inspection.",
         "The generated source uses standard names such as client.py, job.py, and model.py.",
         "The agent keeps simulation workspaces, exported job folders, and generated runtime outputs under /tmp/nvflare unless the user gives another location.",
         "The agent preserves existing Lightning callbacks, loggers, and checkpoint behavior.",
@@ -84,6 +85,10 @@
           {
             "id": "no-lightning-only-recipe",
             "description": "does not invent a Lightning-only recipe instead of reusing the PyTorch recipe family"
+          },
+          {
+            "id": "no-source-discovered-strategy-override",
+            "description": "does not replace the skill's Lightning patch or recipe.execute strategy based on NVFLARE SDK source or docstring inspection without a concrete validation failure"
           },
           {
             "id": "no-production-submit",
