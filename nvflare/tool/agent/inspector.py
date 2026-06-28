@@ -683,23 +683,37 @@ def _should_promote_lightning_over_pytorch(state: InspectState) -> bool:
     if not lightning_evidence or not pytorch_evidence:
         return False
     active_lightning_evidence = _active_lightning_evidence(lightning_evidence)
+    active_pytorch_evidence = _active_pytorch_evidence(pytorch_evidence)
     if _active_lightning_evidence_tied_to_entry_context(state, active_lightning_evidence):
         return True
-    # Split-file Lightning projects can still have PyTorch evidence in the
-    # entry point; do not treat that as an absolute veto. Active Lightning
-    # evidence is the promotion gate, then import context can contribute to
-    # the score because normal Lightning modules usually import Torch symbols.
+    if _active_pytorch_evidence_tied_to_entry_context(state, active_pytorch_evidence):
+        return False
+    # Split-file Lightning projects can still have PyTorch imports in the
+    # entry point. Active Lightning evidence is the promotion gate, and
+    # import-only PyTorch evidence should not dominate once that gate is met.
     active_lightning_score = _evidence_score(active_lightning_evidence)
     if active_lightning_score == 0:
         return False
-    return _evidence_score(lightning_evidence) > _evidence_score(pytorch_evidence)
+    return active_lightning_score > _evidence_score(active_pytorch_evidence)
 
 
 def _active_lightning_evidence(evidence: list[dict]) -> list[dict]:
     return [item for item in evidence if _is_active_lightning_evidence(item)]
 
 
+def _active_pytorch_evidence(evidence: list[dict]) -> list[dict]:
+    return [item for item in evidence if _is_active_pytorch_evidence(item)]
+
+
 def _active_lightning_evidence_tied_to_entry_context(state: InspectState, evidence: list[dict]) -> bool:
+    if _framework_evidence_tied_to_inspected_file_or_entry_point(state, evidence):
+        return True
+    if state.root.is_file():
+        return False
+    return any(_entry_point_imports_file(state, item["file"]) for item in evidence)
+
+
+def _active_pytorch_evidence_tied_to_entry_context(state: InspectState, evidence: list[dict]) -> bool:
     if _framework_evidence_tied_to_inspected_file_or_entry_point(state, evidence):
         return True
     if state.root.is_file():
@@ -717,6 +731,10 @@ def _framework_evidence_tied_to_inspected_file_or_entry_point(state: InspectStat
 
 def _is_active_lightning_evidence(evidence: dict) -> bool:
     return evidence.get("kind") in {"lightning_class", "lightning_trainer"}
+
+
+def _is_active_pytorch_evidence(evidence: dict) -> bool:
+    return evidence.get("kind") in {"pytorch_class", "pytorch_call"}
 
 
 def _entry_point_imports_file(state: InspectState, evidence_file: str) -> bool:
