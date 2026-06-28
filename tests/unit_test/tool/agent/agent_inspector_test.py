@@ -313,10 +313,9 @@ def test_inspect_keeps_plain_pytorch_routing_separate_from_lightning(tmp_path):
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
 
 
-def test_inspect_workspace_with_any_lightning_evidence_recommends_lightning(tmp_path):
-    # Per the trigger contract, any Lightning evidence makes the project a
-    # Lightning project even when plain torch imports are also present -- a
-    # PyTorch entry point plus a Lightning import anywhere routes to Lightning.
+def test_inspect_mixed_pytorch_workspace_with_incidental_lightning_keeps_pytorch(tmp_path):
+    # A plain PyTorch entry point plus an incidental Lightning import should
+    # surface the mixed workspace without hiding the PyTorch training script.
     (tmp_path / "train.py").write_text(
         "import torch\n"
         "import torchvision\n"
@@ -336,9 +335,10 @@ def test_inspect_workspace_with_any_lightning_evidence_recommends_lightning(tmp_
     data = inspect_path(tmp_path)
 
     framework_names = [framework["name"] for framework in data["frameworks"]]
-    assert framework_names[0] == "pytorch_lightning"
-    assert "pytorch" in framework_names
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
+    assert framework_names[0] == "pytorch"
+    assert "pytorch_lightning" in framework_names
+    assert data["target_type"] == "mixed_workspace"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
 
 
 def test_inspect_lightning_script_with_many_torch_imports_recommends_lightning(tmp_path):
