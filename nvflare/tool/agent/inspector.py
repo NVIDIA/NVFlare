@@ -770,8 +770,6 @@ def _imports_reach_modules(
         if import_key in seen_imports:
             continue
         seen_imports.add(import_key)
-        if target_modules.intersection(_module_candidates_for_import(import_name, source_file)):
-            return True
         for imported_file in _local_files_for_import(import_name, source_file, local_files_by_module):
             if imported_file in seen_files:
                 continue
@@ -796,13 +794,28 @@ def _local_files_for_import(
     import_name: str, importing_file: str, local_files_by_module: dict[str, set[str]]
 ) -> set[str]:
     files = set()
-    for module_name in _module_candidates_for_import(import_name, importing_file):
+    for module_name in _exact_module_candidates_for_import(import_name, importing_file):
         files.update(local_files_by_module.get(module_name, set()))
+    for module_name in _package_module_prefix_candidates_for_import(import_name, importing_file):
+        files.update(
+            file_path
+            for file_path in local_files_by_module.get(module_name, set())
+            if _is_package_module_file(file_path)
+        )
     return files
 
 
-def _module_candidates_for_import(import_name: str, importing_file: str) -> set[str]:
+def _exact_module_candidates_for_import(import_name: str, importing_file: str) -> set[str]:
+    candidates = {import_name} if import_name else set()
+    context_prefix = _import_context_prefix(importing_file)
+    if context_prefix:
+        candidates.update(f"{context_prefix}.{module_name}" for module_name in list(candidates))
+    return candidates
+
+
+def _package_module_prefix_candidates_for_import(import_name: str, importing_file: str) -> set[str]:
     candidates = set(_module_name_prefixes(import_name))
+    candidates.difference_update(_exact_module_candidates_for_import(import_name, importing_file))
     context_prefix = _import_context_prefix(importing_file)
     if context_prefix:
         candidates.update(f"{context_prefix}.{module_name}" for module_name in list(candidates))
@@ -812,6 +825,10 @@ def _module_candidates_for_import(import_name: str, importing_file: str) -> set[
 def _module_name_prefixes(module_name: str) -> set[str]:
     parts = [part for part in module_name.split(".") if part]
     return {".".join(parts[:index]) for index in range(1, len(parts) + 1)}
+
+
+def _is_package_module_file(file_path: str) -> bool:
+    return Path(file_path).name == "__init__.py"
 
 
 def _module_names_for_file(file_path: str) -> set[str]:
