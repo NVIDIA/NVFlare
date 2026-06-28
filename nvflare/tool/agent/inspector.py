@@ -574,7 +574,8 @@ def _conversion_state(state: InspectState, detected_framework: Optional[str]) ->
 def _has_lightning_client_api_completion(state: InspectState) -> bool:
     # An nvflare.client.lightning ``patch(trainer)`` call is the definitive
     # Lightning conversion signal even without explicit ``flare.send`` because
-    # the patched trainer performs the result exchange.
+    # the patched trainer performs the result exchange. Do not require static
+    # Trainer-constructor evidence here: wrappers and factories can hide it.
     return bool(state.lightning_patch_calls and state.flare_imports)
 
 
