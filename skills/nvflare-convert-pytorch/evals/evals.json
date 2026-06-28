@@ -16,7 +16,7 @@
         "The agent translates the natural request into recipe, site-count, dataset, split, training, validation, and export settings.",
         "The agent checks nvflare recipe list --framework pytorch --format json before selecting the job recipe.",
         "The agent selects FedAvg only when the requested workflow is standard horizontal model-parameter aggregation.",
-        "The agent does not abandon the skill's Client API and recipe.execute strategy based on NVFLARE SDK source or docstring inspection.",
+        "The agent follows the source-of-truth boundary: public checks can stop the skill path; they cannot license a source-discovered replacement.",
         "The generated source uses standard names such as client.py, job.py, and model.py instead of ad hoc names such as fl_train.py.",
         "The generated training code uses nvflare.client receive/send and FLModel for model exchange.",
         "The agent keeps simulation workspaces, exported job folders, and generated runtime outputs under /tmp/nvflare unless the user gives another location.",
@@ -97,7 +97,7 @@
           },
           {
             "id": "no-source-discovered-strategy-override",
-            "description": "does not replace the skill's Client API or recipe.execute strategy based on NVFLARE SDK source or docstring inspection; reports any validation or import failure as a version mismatch or skill gap instead of switching to a source-discovered strategy"
+            "description": "follows the source-of-truth boundary: public checks can stop the skill path; they cannot license a source-discovered replacement"
           }
         ],
         "optional_behavior": [
