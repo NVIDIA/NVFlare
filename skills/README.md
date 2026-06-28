@@ -26,12 +26,14 @@ name: nvflare-your-skill
 description: Short trigger-oriented description.
 min_flare_version: "2.8.0"
 blast_radius: read_only
-category: Conversion
 ---
 ```
 
 The skill name above is illustrative; actual skill directories use their
 published skill names.
+
+Do not add `category` to `SKILL.md` frontmatter. It is not a runtime skill
+metadata field.
 
 `blast_radius` must be one of:
 
