@@ -727,10 +727,59 @@ def _entry_point_imports_file(state: InspectState, evidence_file: str) -> bool:
     evidence_modules = _module_names_for_file(evidence_file)
     if not evidence_modules:
         return False
+    local_files_by_module = _local_files_by_module(state)
     for entry_point in state.entry_points:
-        if evidence_modules.intersection(state.file_imports.get(entry_point["path"], set())):
+        if _imports_reach_modules(
+            state,
+            state.file_imports.get(entry_point["path"], set()),
+            evidence_modules,
+            local_files_by_module,
+        ):
             return True
     return False
+
+
+def _imports_reach_modules(
+    state: InspectState, imports: set[str], target_modules: set[str], local_files_by_module: dict[str, set[str]]
+) -> bool:
+    pending_imports = list(imports)
+    seen_imports = set()
+    seen_files = set()
+    while pending_imports:
+        import_name = pending_imports.pop()
+        if import_name in seen_imports:
+            continue
+        seen_imports.add(import_name)
+        if target_modules.intersection(_module_name_prefixes(import_name)):
+            return True
+        for imported_file in _local_files_for_import(import_name, local_files_by_module):
+            if imported_file in seen_files:
+                continue
+            seen_files.add(imported_file)
+            if target_modules.intersection(_module_names_for_file(imported_file)):
+                return True
+            pending_imports.extend(state.file_imports.get(imported_file, set()))
+    return False
+
+
+def _local_files_by_module(state: InspectState) -> dict[str, set[str]]:
+    files_by_module: dict[str, set[str]] = {}
+    for file_path in state.file_imports:
+        for module_name in _module_names_for_file(file_path):
+            files_by_module.setdefault(module_name, set()).add(file_path)
+    return files_by_module
+
+
+def _local_files_for_import(import_name: str, local_files_by_module: dict[str, set[str]]) -> set[str]:
+    files = set()
+    for module_name in _module_name_prefixes(import_name):
+        files.update(local_files_by_module.get(module_name, set()))
+    return files
+
+
+def _module_name_prefixes(module_name: str) -> set[str]:
+    parts = [part for part in module_name.split(".") if part]
+    return {".".join(parts[:index]) for index in range(1, len(parts) + 1)}
 
 
 def _module_names_for_file(file_path: str) -> set[str]:
