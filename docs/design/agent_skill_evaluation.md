@@ -309,8 +309,8 @@ deterministic checks run before a public skill is accepted.
 | `skill-frontmatter-lint` | missing required frontmatter, invalid `blast_radius`, name mismatch, or non-`nvflare-` public skill name | `skills/<skill>/SKILL.md` frontmatter, directory name, and the frontmatter schema in [Agent Skill Authoring](agent_skill_authoring.md#frontmatter-and-product-metadata) | Parse frontmatter as YAML, require the authoring-guide required fields, require public skill names to match their directory and start with `nvflare-`, and require `blast_radius` to be an allowed value. |
 | `skill-md-size-lint` | `SKILL.md` exceeds the 200-line hard gate without an approved exception | `skills/<skill>/SKILL.md` | Fail when `SKILL.md` exceeds 200 lines unless an explicit approved exception marker exists. Report the roughly 2,000-token guidance as advisory using a simple whitespace estimate until a tokenizer is standardized. |
 | `skill-trigger-lint` | missing trigger/use-boundary text, missing positive trigger eval, or missing adjacent negative trigger case | `SKILL.md` trigger text and `evals/evals.json` | Require a non-empty trigger/use-boundary description, at least one positive trigger eval, and at least one adjacent negative trigger case in `negative_trigger_cases` for the nearest competing same-category skill. |
-| `skill-trigger-overlap-lint` | same-category public skills have overlapping descriptions or trigger examples without negative trigger cases or documented boundaries | product catalog category, conversion-family table, `SKILL.md` descriptions, and trigger eval prompts | For same-category public skills, flag overlapping descriptions or trigger examples unless the skills include documented use/do-not-use boundaries and adjacent negative trigger cases covering the overlap. The lint uses deterministic text/category checks, not a runtime LLM recommender. |
-| `skill-catalog-category-lint` | category values used for overlap lint drift from the product catalog table or conversion-family table | product catalog table, conversion-family table, and any generated lint category map | Verify every public skill has one canonical category source for overlap checks, and fail if the category map disagrees with the catalog or conversion-family table. |
+| `skill-trigger-overlap-lint` | same-category public skills have overlapping descriptions or trigger examples without negative trigger cases or documented boundaries | `SKILL.md` frontmatter category, descriptions, and trigger eval prompts | For public skills sharing the same frontmatter `category`, flag overlapping descriptions or trigger examples unless the skills include documented use/do-not-use boundaries and adjacent negative trigger cases covering the overlap. The lint uses deterministic text/category checks, not design-doc parsing or a runtime LLM recommender. |
+| `skill-catalog-category-lint` | frontmatter category values used for overlap lint drift from the product catalog table or conversion-family table | `SKILL.md` frontmatter category, product catalog table, and conversion-family table | Verify every public skill has one canonical frontmatter category for overlap checks, and fail if the frontmatter category disagrees with the catalog or conversion-family table. |
 | `skill-global-negative-lint` | unrelated global negative prompt coverage is missing or malformed | repo-root `skills/_shared/global_negative_prompts.json` and per-skill `evals/evals.json` | Require coverage for prompts that should trigger no FLARE skill, such as unrelated web, Kubernetes-only, or generic coding tasks. The shared bank should use `schema_version: "1"` and `prompts` entries with `id`, `prompt`, and `description`. The deterministic lint validates that public skills include or reference required global-negative cases. |
 | `skill-policy-coverage-lint` | normative words appear without a nearby measurable behavior ID, deterministic helper test, or checklist item | `SKILL.md`, `references/`, helper tests, and `evals/evals.json` | Flag normative words such as `must`, `must not`, `required`, `prohibited`, and `approval` unless the rule maps to `nvflare.mandatory_behavior`, `nvflare.prohibited_behavior`, a deterministic helper test, or a release checklist item. |
 | `skill-process-metric-lint` | missing process metric contracts for a public skill, or malformed process metric entries | `evals/evals.json` | Require at least one `nvflare.process_metrics` entry for every public skill. Each metric must have a stable `id` and `description` so runtime runs can record first-pass quality, correction count, unwanted actions, validation evidence completeness, and related process outcomes. |
@@ -325,7 +325,7 @@ containing `id`, `description`, and `evidence_expected`. Prose-only checklist
 mentions do not satisfy `skill-policy-coverage-lint`.
 
 For `skill-trigger-overlap-lint`, the deterministic algorithm compares only
-skills in the same catalog category, normalizes trigger and
+skills in the same frontmatter category, normalizes trigger and
 use/do-not-use text to lowercase tokens, remove stop words, and flag exact or
 substring overlap of skill names, framework names, recipe names, command names,
 or three-token phrases unless both skills have adjacent negative trigger-case coverage
@@ -428,9 +428,9 @@ Cost, repeatability, paired with-skill/without-skill deltas, and independent
 monitor reports belong to the benchmark harness rather than the skill metadata
 contract.
 
-Same-category overlap means skills sharing the `Category` column in the product
-catalog table, with conversion-family refinements from the authoring guide.
-Category is not a required frontmatter field.
+Same-category overlap means skills sharing the `category` field in `SKILL.md`
+frontmatter. The product catalog table remains the product-facing cross-check,
+not the source used by the overlap lint.
 
 <a id="runtime-process-evidence"></a>
 

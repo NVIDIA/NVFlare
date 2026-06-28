@@ -556,11 +556,11 @@ intent. This table is a roadmap view, not the initial implementation scope. The
 `Tier` column is the release-grouping source for this design: `seed` means the
 first implementation seed, `m8` means the Milestone 8 base conversion and
 customer lifecycle expansion, `next` means follow-on customer-journey skills,
-and `later` means later catalog expansion. The `Category` column is also the
-initial source for same-category trigger-overlap lint unless a later metadata
-schema adds category directly to skills. Any change to category names or
-skill-category assignment must update the evaluation lint expectations in the
-same PR.
+and `later` means later catalog expansion. Public skills declare the canonical
+same-category trigger-overlap group in `SKILL.md` frontmatter. The `Category`
+column is the product-facing cross-check for that frontmatter value. Any change
+to category names or skill-category assignment must update the skills and
+evaluation lint expectations in the same PR.
 Framework conversion scope, repo evidence, and tier are canonical in
 [Agent Skill Authoring](agent_skill_authoring.md#skill-granularity-and-naming).
 This catalog table is a product overview and should not redefine conversion
