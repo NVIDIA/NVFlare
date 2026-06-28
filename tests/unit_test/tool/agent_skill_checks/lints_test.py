@@ -25,8 +25,6 @@ from checks import lints as lints_module  # noqa: E402
 from checks.lints import (  # noqa: E402
     MAX_SKILL_TEXT_FILE_BYTES,
     V1_LINT_IDS,
-    _parse_conversion_table,
-    _parse_product_catalog,
     _run_v1_lints_with_records,
     run_v1_lints,
     validate_skills,
@@ -36,14 +34,12 @@ LINT_SKILL_FRONTMATTER = "skill-frontmatter-lint"
 LINT_SKILL_MD_SIZE = "skill-md-size-lint"
 LINT_SKILL_TRIGGER = "skill-trigger-lint"
 LINT_SKILL_TRIGGER_OVERLAP = "skill-trigger-overlap-lint"
-LINT_SKILL_CATALOG_CATEGORY = "skill-catalog-category-lint"
 LINT_SKILL_GLOBAL_NEGATIVE = "skill-global-negative-lint"
 LINT_SKILL_POLICY_COVERAGE = "skill-policy-coverage-lint"
 LINT_SKILL_PROCESS_METRIC = "skill-process-metric-lint"
 LINT_SKILL_COMMAND_DRIFT = "skill-command-drift-lint"
 LINT_SKILL_HELPER_SCRIPT = "skill-helper-script-lint"
 LINT_SKILL_FIXTURE = "skill-fixture-lint"
-LINT_AGENT_DOC_CROSSLINK = "agent-doc-crosslink-lint"
 REQUIRED_FINDING_FIELDS = {"id", "severity", "file", "message", "hint"}
 
 
@@ -62,14 +58,12 @@ def test_run_v1_lints_passes_complete_skill(tmp_path):
         LINT_SKILL_MD_SIZE,
         LINT_SKILL_TRIGGER,
         LINT_SKILL_TRIGGER_OVERLAP,
-        LINT_SKILL_CATALOG_CATEGORY,
         LINT_SKILL_GLOBAL_NEGATIVE,
         LINT_SKILL_POLICY_COVERAGE,
         LINT_SKILL_PROCESS_METRIC,
         LINT_SKILL_COMMAND_DRIFT,
         LINT_SKILL_HELPER_SCRIPT,
         LINT_SKILL_FIXTURE,
-        LINT_AGENT_DOC_CROSSLINK,
     }
 
 
@@ -153,37 +147,25 @@ def test_run_v1_lints_reports_missing_trigger_evals(tmp_path):
     _assert_structured_findings(result)
 
 
-def test_run_v1_lints_reports_missing_catalog_entry(tmp_path):
-    _write_skill(tmp_path / "skills", "nvflare-one-skill")
-    _write_skill(tmp_path / "skills", "nvflare-two-skill")
-    docs_root = _write_design_docs(tmp_path, ["nvflare-one-skill"])
-
-    result = run_v1_lints(tmp_path / "skills", docs_root=docs_root)
-
-    assert _has_finding(result, LINT_SKILL_CATALOG_CATEGORY, "skill-catalog-entry-missing")
-    _assert_structured_findings(result)
-
-
 def test_run_v1_lints_reports_trigger_overlap_without_negative_boundary(tmp_path):
-    evals_one = _default_evals("nvflare-one-skill", adjacent_negative=False)
-    evals_two = _default_evals("nvflare-two-skill", adjacent_negative=False)
+    evals_one = _default_evals("nvflare-convert-one", adjacent_negative=False)
+    evals_two = _default_evals("nvflare-convert-two", adjacent_negative=False)
     _write_skill(
         tmp_path / "skills",
-        "nvflare-one-skill",
+        "nvflare-convert-one",
         description="Convert PyTorch training code to FLARE.",
         body="Use when converting PyTorch training code.\n",
         evals=evals_one,
     )
     _write_skill(
         tmp_path / "skills",
-        "nvflare-two-skill",
+        "nvflare-convert-two",
         description="Convert PyTorch training code to FLARE.",
         body="Use when converting PyTorch training code.\n",
         evals=evals_two,
     )
-    docs_root = _write_design_docs(tmp_path, ["nvflare-one-skill", "nvflare-two-skill"])
 
-    result = run_v1_lints(tmp_path / "skills", docs_root=docs_root)
+    result = run_v1_lints(tmp_path / "skills")
 
     assert _has_finding(result, LINT_SKILL_TRIGGER_OVERLAP, "skill-trigger-overlap")
     _assert_structured_findings(result)
@@ -246,18 +228,17 @@ def test_run_v1_lints_parses_quoted_nvflare_command_with_shlex(tmp_path):
 
 def test_run_v1_lints_skips_trigger_overlap_when_skill_count_exceeds_cap(monkeypatch, tmp_path):
     monkeypatch.setenv("NVFLARE_AGENT_MAX_TRIGGER_OVERLAP_SKILLS", "1")
-    _write_skill(tmp_path / "skills", "nvflare-one-skill")
-    _write_skill(tmp_path / "skills", "nvflare-two-skill")
-    docs_root = _write_design_docs(tmp_path, ["nvflare-one-skill", "nvflare-two-skill"])
+    _write_skill(tmp_path / "skills", "nvflare-convert-one")
+    _write_skill(tmp_path / "skills", "nvflare-convert-two")
 
-    result = run_v1_lints(tmp_path / "skills", docs_root=docs_root, checks=[LINT_SKILL_TRIGGER_OVERLAP])
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_TRIGGER_OVERLAP])
 
     assert result["status"] == "ok"
     assert result["findings"] == []
     assert result["skipped_checks"] == [
         {
             "id": LINT_SKILL_TRIGGER_OVERLAP,
-            "reason": "category 'Conversion' has 2 skills; limit is 1",
+            "reason": "group 'nvflare-convert' has 2 skills; limit is 1",
         }
     ]
 
@@ -386,35 +367,6 @@ def test_run_v1_lints_rejects_fixture_paths_that_escape_skill_dir(tmp_path):
     _assert_structured_findings(result)
 
 
-def test_run_v1_lints_reports_broken_doc_crosslink(tmp_path):
-    _write_skill(tmp_path / "skills", "nvflare-doc-skill")
-    docs_root = _write_design_docs(tmp_path, ["nvflare-doc-skill"])
-    docs_root.joinpath("agent_integration.md").write_text(
-        docs_root.joinpath("agent_integration.md").read_text(encoding="utf-8")
-        + "\n[missing](missing.md)\n[bad anchor](agent_integration.md#nope)\n",
-        encoding="utf-8",
-    )
-
-    result = run_v1_lints(tmp_path / "skills", docs_root=docs_root)
-
-    assert _has_finding(result, LINT_AGENT_DOC_CROSSLINK, "agent-doc-link-missing")
-    assert _has_finding(result, LINT_AGENT_DOC_CROSSLINK, "agent-doc-anchor-missing")
-    _assert_structured_findings(result)
-
-
-def test_run_v1_lints_checks_current_skills_architecture_doc(tmp_path):
-    _write_skill(tmp_path / "skills", "nvflare-doc-skill")
-    docs_root = _write_design_docs(tmp_path, ["nvflare-doc-skill"])
-    docs_root.joinpath("skills_architecture.md").write_text(
-        "# Skills Architecture\n\n[missing](missing.md)\n",
-        encoding="utf-8",
-    )
-
-    result = run_v1_lints(tmp_path / "skills", docs_root=docs_root, checks=[LINT_AGENT_DOC_CROSSLINK])
-
-    assert _has_finding(result, LINT_AGENT_DOC_CROSSLINK, "agent-doc-link-missing")
-
-
 def test_run_v1_lints_supports_check_selection(tmp_path):
     _write_skill(tmp_path / "skills", "nvflare-valid-skill")
     _write_skill(tmp_path / "skills", "nvflare-other-skill", evals={"evals": []})
@@ -441,45 +393,6 @@ def test_run_v1_lints_skips_shared_reference_dirs(tmp_path):
     assert result["findings"] == []
 
 
-def test_run_v1_lints_records_doc_dependent_overlap_skip(tmp_path):
-    _write_skill(tmp_path / "skills", "nvflare-valid-skill")
-
-    result = run_v1_lints(
-        tmp_path / "skills",
-        docs_root=tmp_path / "missing-docs",
-        checks=[LINT_SKILL_TRIGGER_OVERLAP],
-    )
-
-    assert result["status"] == "ok"
-    assert result["skipped_checks"] == [{"id": LINT_SKILL_TRIGGER_OVERLAP, "reason": "docs root is not available"}]
-
-
-def test_run_v1_lints_doc_crosslinks_skip_oversized_doc(tmp_path):
-    _write_skill(tmp_path / "skills", "nvflare-valid-skill")
-    docs_root = _write_design_docs(tmp_path, ["nvflare-valid-skill"])
-    doc_path = docs_root / "agent_implementation_plan.md"
-    doc_path.write_text("[Broken](missing.md)\n", encoding="utf-8")
-    with doc_path.open("ab") as stream:
-        stream.truncate(MAX_SKILL_TEXT_FILE_BYTES + 1)
-
-    result = run_v1_lints(tmp_path / "skills", docs_root=docs_root, checks=[LINT_AGENT_DOC_CROSSLINK])
-
-    assert result["status"] == "ok"
-    assert result["findings"] == []
-
-
-def test_catalog_parsers_skip_oversized_docs(tmp_path):
-    docs_root = _write_design_docs(tmp_path, ["nvflare-valid-skill"])
-    product_doc = docs_root / "agent_integration.md"
-    conversion_doc = docs_root / "agent_skill_authoring.md"
-    for doc_path in (product_doc, conversion_doc):
-        with doc_path.open("ab") as stream:
-            stream.truncate(MAX_SKILL_TEXT_FILE_BYTES + 1)
-
-    assert _parse_product_catalog(product_doc) == {}
-    assert _parse_conversion_table(conversion_doc) == {}
-
-
 def test_validate_skills_filters_summary_to_requested_skill(tmp_path):
     _write_skill(tmp_path / "skills", "nvflare-valid-skill")
     _write_skill(tmp_path / "skills", "nvflare-other-skill", evals={"evals": []})
@@ -491,22 +404,6 @@ def test_validate_skills_filters_summary_to_requested_skill(tmp_path):
     assert result["requested_skill"] == "nvflare-valid-skill"
     assert result["summary"]["skill_count"] == 1
     assert result["findings"] == []
-
-
-def test_validate_skills_excludes_unattributed_doc_findings_for_requested_skill(tmp_path):
-    _write_skill(tmp_path / "skills", "nvflare-valid-skill")
-    docs_root = _write_design_docs(tmp_path, ["nvflare-valid-skill"])
-    docs_root.joinpath("agent_implementation_plan.md").write_text(
-        "# Agent Implementation Plan\n\n[Missing](missing.md)\n",
-        encoding="utf-8",
-    )
-
-    all_result = run_v1_lints(tmp_path / "skills", docs_root=docs_root)
-    requested_result = validate_skills(tmp_path / "skills", skill_name="nvflare-valid-skill", docs_root=docs_root)
-
-    assert _has_finding(all_result, LINT_AGENT_DOC_CROSSLINK, "agent-doc-link-missing")
-    assert requested_result["status"] == "ok"
-    assert requested_result["findings"] == []
 
 
 def test_validate_skills_keeps_global_findings_for_requested_skill(tmp_path):
