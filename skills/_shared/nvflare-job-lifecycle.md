@@ -51,6 +51,12 @@ use a stratified split when classification labels are available. Do not use a
 simple stride or contiguous split as the default because it can create biased
 site partitions from ordered data.
 
+For pandas `DataFrame` inputs, split positional row indices first, then build
+each site frame with `df.iloc[positions]` or equivalent. Do not apply generic
+array chunking directly to the `DataFrame` object; library versions can return
+chunks that no longer behave like data frames and can break concatenation,
+validation, or metric checks.
+
 Report the split policy, seed, site count, and any reason stratification was not
 used. Treat private data movement as part of the approval boundary: do not copy
 private site data into generated artifacts unless the user explicitly asks.
