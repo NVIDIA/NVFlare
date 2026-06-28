@@ -583,7 +583,7 @@ def _should_promote_lightning_over_pytorch(state: InspectState) -> bool:
         return True
     if _framework_evidence_tied_to_inspected_file_or_entry_point(state, pytorch_evidence):
         return False
-    return _evidence_score(lightning_evidence) > _evidence_score(pytorch_evidence)
+    return _evidence_score(active_lightning_evidence) > _evidence_score(pytorch_evidence)
 
 
 def _active_lightning_evidence(evidence: list[dict]) -> list[dict]:
