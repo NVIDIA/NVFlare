@@ -478,12 +478,21 @@ def test_inspect_lightning_module_with_many_torch_imports_recommends_lightning(t
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
 
 
-def test_inspect_non_pytorch_workspace_with_incidental_lightning_import_is_not_lightning(tmp_path):
+@pytest.mark.parametrize(
+    ("expected_framework", "training_imports"),
+    [
+        ("tensorflow", "import tensorflow\nimport keras\nfrom tensorflow.keras import layers\n"),
+        ("jax", "import jax\nimport flax\nimport optax\n"),
+    ],
+)
+def test_inspect_non_pytorch_workspace_with_incidental_lightning_import_is_not_lightning(
+    tmp_path, expected_framework, training_imports
+):
     # The Lightning-over-PyTorch preference is a PyTorch-family rule only. A
-    # TensorFlow-dominant workspace with an incidental pytorch_lightning import
+    # non-PyTorch workspace with an incidental pytorch_lightning import
     # must not be routed to the Lightning conversion skill.
     (tmp_path / "train.py").write_text(
-        "import tensorflow\n" "import keras\n" "from tensorflow.keras import layers\n",
+        training_imports,
         encoding="utf-8",
     )
     (tmp_path / "optional_utils.py").write_text(
@@ -494,7 +503,8 @@ def test_inspect_non_pytorch_workspace_with_incidental_lightning_import_is_not_l
     data = inspect_path(tmp_path)
 
     framework_names = [framework["name"] for framework in data["frameworks"]]
-    assert framework_names[0] == "tensorflow"
+    assert framework_names[0] == expected_framework
+    assert data["skill_selection"]["detected_framework"] == expected_framework
     assert "nvflare-convert-lightning" not in data["skill_selection"]["recommended_skills"]
 
 
