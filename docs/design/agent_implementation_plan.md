@@ -124,7 +124,7 @@ Deliverables:
 
 - Add repo-root `skills/` with guide-compatible structure.
 - Add minimal frontmatter validation for `name`, `description`,
-  `min_flare_version`, and `blast_radius`.
+  `min_flare_version`, `blast_radius`, and public-skill `category`.
 - Add at least one fixture skill for validator tests.
 
 Engineering tests:

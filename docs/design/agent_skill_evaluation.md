@@ -281,7 +281,8 @@ includes:
 
 - `SKILL.md` with valid frontmatter, a precise trigger description, and clear
   "use / do not use" boundaries.
-- `min_flare_version` and `blast_radius` in frontmatter.
+- `min_flare_version`, `blast_radius`, and public-skill `category` in
+  frontmatter.
 - at least one positive trigger eval in `evals/evals.json`;
 - at least one adjacent negative trigger case for the nearest competing skill;
 - global negative coverage for prompts that should trigger no FLARE skill;
@@ -311,7 +312,7 @@ selectable check in the skill lint runner.
 
 | Check | Failure Condition | Deterministic Inputs | Required Behavior |
 | --- | --- | --- | --- |
-| `skill-frontmatter-lint` | missing required frontmatter, invalid `blast_radius`, name mismatch, or non-`nvflare-` public skill name | `skills/<skill>/SKILL.md` frontmatter, directory name, and the frontmatter schema in [Agent Skill Authoring](agent_skill_authoring.md#frontmatter-and-product-metadata) | Parse frontmatter as YAML, require the authoring-guide required fields, require public skill names to match their directory and start with `nvflare-`, and require `blast_radius` to be an allowed value. |
+| `skill-frontmatter-lint` | missing required frontmatter, invalid `blast_radius`, name mismatch, or non-`nvflare-` public skill name | `skills/<skill>/SKILL.md` frontmatter, directory name, and the frontmatter schema in [Agent Skill Authoring](agent_skill_authoring.md#frontmatter-and-product-metadata) | Parse frontmatter as YAML, require the authoring-guide required fields including public-skill `category`, require public skill names to match their directory and start with `nvflare-`, and require `blast_radius` to be an allowed value. |
 | `skill-md-size-lint` | `SKILL.md` exceeds the 200-line hard gate without an approved exception | `skills/<skill>/SKILL.md` | Fail when `SKILL.md` exceeds 200 lines unless an explicit approved exception marker exists. Report the roughly 2,000-token guidance as advisory using a simple whitespace estimate until a tokenizer is standardized. |
 | `skill-trigger-lint` | missing trigger/use-boundary text, missing positive trigger eval, or missing adjacent negative trigger case | `SKILL.md` trigger text and `evals/evals.json` | Require a non-empty trigger/use-boundary description, at least one positive trigger eval, and at least one adjacent negative trigger case in `negative_trigger_cases` for the nearest competing skill in the same deterministic trigger group. |
 | `skill-trigger-overlap-lint` | same trigger-group public skills have overlapping descriptions or trigger examples without negative trigger cases or documented boundaries | deterministic skill-name family, `SKILL.md` descriptions, and trigger eval prompts | For public skills sharing the same deterministic skill-name family, flag overlapping descriptions or trigger examples unless the skills include documented use/do-not-use boundaries and adjacent negative trigger cases covering the overlap. The lint uses deterministic text/name-family checks, not design-doc parsing or a runtime LLM recommender. |

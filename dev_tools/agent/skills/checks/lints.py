@@ -16,14 +16,14 @@
 
 DESIGN INVARIANT -- lint engine independence (do not revert):
 This engine MUST be self-contained over the ``skills/`` tree. It must NOT read
-``docs/design/*.md`` and must NOT add lint-only fields (e.g. ``category``) to the
-runtime ``SKILL.md`` frontmatter -- SKILL.md is a runtime artifact loaded by the
-agent, not a place to stash offline-check metadata.
+``docs/design/*.md`` or rely on offline-only catalog metadata. ``SKILL.md`` is a
+runtime artifact loaded by the agent; fields validated here must be runtime or
+public skill metadata, not private lint scratch data.
 
 Concretely:
 - Group skills for ``skill-trigger-overlap-lint`` by deterministic skill-name
-  families (see ``_trigger_overlap_group``), never by a frontmatter ``category``
-  or a product-catalog table parsed from design docs.
+  families (see ``_trigger_overlap_group``), never by the public frontmatter
+  ``category`` or by a product-catalog table parsed from design docs.
 - Do not add a ``docs_root`` parameter or a ``--docs-root`` flag back to this
   engine, and do not re-introduce ``skill-catalog-category-lint`` /
   ``agent-doc-crosslink-lint`` here.
@@ -31,8 +31,10 @@ Concretely:
   docs concern: put it in a SEPARATE docs check, not in this skill engine.
 
 Rationale and history: docs/design/skills_architecture.md "Lint engine
-independence". A prior change coupled this engine to design docs and added a
-SKILL.md ``category`` field; it was reverted on purpose. Please keep it reverted.
+independence". A prior change coupled this engine to design docs and made
+catalog synchronization part of the skill lint runner; that coupling was
+reverted on purpose. Keep category validation local to SKILL.md frontmatter, and
+keep docs/catalog synchronization in separate docs tooling.
 """
 
 import json

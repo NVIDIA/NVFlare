@@ -38,6 +38,7 @@ def test_parse_skill_frontmatter_reads_required_fields():
     assert metadata["description"] == "Example fixture skill used by frontmatter validator tests."
     assert metadata["min_flare_version"] == "2.8.0"
     assert metadata["blast_radius"] == "read_only"
+    assert metadata["category"] == "Test"
 
 
 def test_parse_skill_frontmatter_accepts_utf8_bom(tmp_path):
@@ -48,6 +49,7 @@ def test_parse_skill_frontmatter_accepts_utf8_bom(tmp_path):
         b"description: Test skill fixture.\n"
         b'min_flare_version: "2.8.0"\n'
         b"blast_radius: read_only\n"
+        b"category: Test\n"
         b"---\n"
         b"\n"
         b"# Test Skill\n"
@@ -101,7 +103,7 @@ def test_validate_skill_dir_reports_missing_required_fields(tmp_path):
 
     assert not result.ok
     assert _issue_codes(result) == {"skill-frontmatter-field-required"}
-    assert len(result.issues) == 2
+    assert len(result.issues) == 3
 
 
 def test_validate_skill_dir_reports_wrong_type_fields(tmp_path):
@@ -113,6 +115,7 @@ def test_validate_skill_dir_reports_wrong_type_fields(tmp_path):
         "description: Wrong type fixture.\n"
         "min_flare_version: 2.8\n"
         "blast_radius: read_only\n"
+        "category: Test\n"
         "---\n"
         "\n"
         "# Wrong Type\n",
@@ -127,16 +130,17 @@ def test_validate_skill_dir_reports_wrong_type_fields(tmp_path):
     assert "float=2.8" in result.issues[0].message
 
 
-def test_validate_skill_dir_allows_missing_category_for_public_skill(tmp_path):
-    skill_dir = _write_skill(tmp_path, "nvflare-missing-category")
+def test_validate_skill_dir_requires_category_for_public_skill(tmp_path):
+    skill_dir = _write_skill(tmp_path, "nvflare-missing-category", category=None)
 
     result = validate_skill_dir(skill_dir)
 
-    assert result.ok
-    assert result.issues == ()
+    assert not result.ok
+    assert _issue_codes(result) == {"skill-frontmatter-field-required"}
+    assert "category" in result.issues[0].message
 
 
-@pytest.mark.parametrize("status", ["draft", "internal"])
+@pytest.mark.parametrize("status", ["draft", "internal", "private"])
 def test_validate_skill_dir_allows_missing_category_for_non_public_skill(tmp_path, status):
     skill_dir = _write_skill(tmp_path, f"nvflare-{status}-skill", category=None, status=status)
 
@@ -146,13 +150,23 @@ def test_validate_skill_dir_allows_missing_category_for_non_public_skill(tmp_pat
     assert result.issues == ()
 
 
-def test_validate_skill_dir_rejects_category_frontmatter(tmp_path):
+def test_validate_skill_dir_accepts_category_frontmatter(tmp_path):
     skill_dir = _write_skill(tmp_path, "nvflare-category-skill", category="Test")
 
     result = validate_skill_dir(skill_dir)
 
+    assert result.ok
+    assert result.metadata["category"] == "Test"
+    assert result.issues == ()
+
+
+def test_validate_skill_dir_rejects_wrong_type_category(tmp_path):
+    skill_dir = _write_skill(tmp_path, "nvflare-category-skill", category=123)
+
+    result = validate_skill_dir(skill_dir)
+
     assert not result.ok
-    assert _issue_codes(result) == {"skill-frontmatter-field-unsupported"}
+    assert _issue_codes(result) == {"skill-frontmatter-field-type"}
     assert "category" in result.issues[0].message
 
 
@@ -271,7 +285,7 @@ def test_validate_skills_root_reports_missing_root(tmp_path):
     assert _issue_codes(results[0]) == {"skills-root-missing"}
 
 
-def _write_skill(tmp_path, skill_name, *, name=None, blast_radius="read_only", category=None, status=None):
+def _write_skill(tmp_path, skill_name, *, name=None, blast_radius="read_only", category="Test", status=None):
     skill_dir = tmp_path / skill_name
     skill_dir.mkdir()
     category_line = f"category: {category}\n" if category is not None else ""
