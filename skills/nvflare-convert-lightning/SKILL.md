@@ -66,6 +66,11 @@ FLARE conversion.
   default Lightning exchange, and must not pass the received `input_model` into
   the `Trainer`. Load `../_shared/pytorch-model-exchange.md` and
   `references/lightning-conversion.md` for the exact patch pattern.
+- Must not inspect NVFLARE SDK source or docstrings to choose, override, or
+  recover the Lightning conversion strategy. If public commands, recipe
+  metadata, import checks, or validation prove the installed NVFLARE version
+  cannot support the canonical skill path, report a version mismatch or
+  skill/reference gap instead of switching to a source-discovered strategy.
 - Must treat `flare.receive()` inside the patched loop as optional metadata or
   task-progression access only, not as a second model-load path.
 - Must audit model constructor arguments before writing `job.py` by reading the

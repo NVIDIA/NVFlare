@@ -64,6 +64,11 @@ debugging that does not ask for FLARE conversion.
   `FLModel(params=...)` when using `PTInProcessClientAPIExecutor`; load
   `../_shared/pytorch-model-exchange.md` and
   `references/pytorch-client-api-conversion.md` for the exact send pattern.
+- Must not inspect NVFLARE SDK source or docstrings to choose, override, or
+  recover the PyTorch conversion strategy. If public commands, recipe metadata,
+  import checks, or validation prove the installed NVFLARE version cannot
+  support the canonical skill path, report a version mismatch or
+  skill/reference gap instead of switching to a source-discovered strategy.
 - Must not make TensorFlow or other non-PyTorch skills load
   `../_shared/pytorch-model-exchange.md`; that reference is only for
   PyTorch-family model/state-dict exchange.

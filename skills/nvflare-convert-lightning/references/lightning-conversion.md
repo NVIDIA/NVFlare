@@ -10,8 +10,7 @@ for normal Lightning training.
 
 ## Canonical Path
 
-Use this path unless a validation command proves the installed NVFLARE version
-does not support it:
+Use this path for Lightning conversion:
 
 1. Confirm Lightning routing with `nvflare agent inspect`.
 2. Select a PyTorch-family recipe with `nvflare recipe list/show`.
@@ -21,9 +20,10 @@ does not support it:
 5. Validate with `python job.py`, inspect terminal evidence, then export.
 
 Do not read NVFLARE SDK source or docstrings to choose an alternate Lightning
-exchange path. If an import or validation command fails, treat it as an
-installed-version compatibility check and report the exact failure instead of
-switching to a source-discovered strategy.
+exchange path. If a public import, recipe metadata, or validation command shows
+the installed NVFLARE version cannot support this path, stop and report the
+exact version mismatch or skill/reference gap instead of switching to a
+source-discovered strategy.
 
 ## Conversion Pattern
 
