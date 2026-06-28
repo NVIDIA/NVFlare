@@ -29,6 +29,8 @@ class LitRiskClassifier(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         features, labels, example_scale = batch
+        if labels.numel() == 0:
+            raise ValueError("empty training batch; check per-site data partitioning")
         logits = self(features)
         raw_loss = F.binary_cross_entropy_with_logits(logits, labels.float(), reduction="none")
         loss = (raw_loss * example_scale).mean()
