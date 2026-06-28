@@ -766,6 +766,27 @@ def test_inspect_lightning_module_with_many_torch_imports_recommends_lightning(t
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
 
 
+def test_inspect_lightning_model_file_with_many_torch_imports_recommends_lightning(tmp_path):
+    script = tmp_path / "model.py"
+    script.write_text(
+        "import torch\n"
+        "from torch import nn\n"
+        "from torch.utils.data import DataLoader\n"
+        "import pytorch_lightning as pl\n"
+        "\n"
+        "class LitModel(pl.LightningModule):\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    framework_names = [framework["name"] for framework in data["frameworks"]]
+    assert framework_names[0] == "pytorch_lightning"
+    assert "pytorch" in framework_names
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
+
+
 @pytest.mark.parametrize(
     ("expected_framework", "training_imports"),
     [
