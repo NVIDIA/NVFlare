@@ -32,6 +32,8 @@ class LitTextCNN(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         tokens, labels = batch
+        if labels.numel() == 0:
+            raise ValueError("empty training batch; check per-site data partitioning")
         loss = F.cross_entropy(self(tokens), labels)
         self.log("train_loss", loss)
         return loss
