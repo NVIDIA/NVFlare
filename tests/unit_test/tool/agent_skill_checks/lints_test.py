@@ -462,6 +462,7 @@ def _write_skill(
         f"description: {description}\n"
         'min_flare_version: "2.8.0"\n'
         "blast_radius: edits_files\n"
+        f"category: {category}\n"
         f"{status_line}"
         "---\n"
         "\n"

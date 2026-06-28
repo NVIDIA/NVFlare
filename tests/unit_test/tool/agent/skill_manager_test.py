@@ -1021,6 +1021,7 @@ def _write_skill(root, name, heading="Test Skill"):
         "description: Test skill fixture.\n"
         'min_flare_version: "2.8.0"\n'
         "blast_radius: read_only\n"
+        "category: Test\n"
         "---\n"
         "\n"
         f"# {heading}\n",
