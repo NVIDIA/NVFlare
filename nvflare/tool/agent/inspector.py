@@ -686,12 +686,13 @@ def _should_promote_lightning_over_pytorch(state: InspectState) -> bool:
     if _active_lightning_evidence_tied_to_entry_context(state, active_lightning_evidence):
         return True
     # Split-file Lightning projects can still have PyTorch evidence in the
-    # entry point; do not treat that as an absolute veto when active Lightning
-    # evidence is stronger.
+    # entry point; do not treat that as an absolute veto. Active Lightning
+    # evidence is the promotion gate, then import context can contribute to
+    # the score because normal Lightning modules usually import Torch symbols.
     active_lightning_score = _evidence_score(active_lightning_evidence)
     if active_lightning_score == 0:
         return False
-    return active_lightning_score > _evidence_score(pytorch_evidence)
+    return _evidence_score(lightning_evidence) > _evidence_score(pytorch_evidence)
 
 
 def _active_lightning_evidence(evidence: list[dict]) -> list[dict]:
