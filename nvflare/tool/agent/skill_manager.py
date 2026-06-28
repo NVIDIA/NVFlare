@@ -172,6 +172,7 @@ def list_skills(*, agent: str, target_dir: Optional[Path | str] = None, source: 
     errors = []
     available = source.manifest.get("skills", [])
     available_names = {skill["name"] for skill in available}
+    available_category = {skill["name"]: skill.get("category") for skill in available}
 
     if target.is_dir():
         try:
@@ -195,11 +196,13 @@ def list_skills(*, agent: str, target_dir: Optional[Path | str] = None, source: 
                 continue
             install_manifest = _read_install_manifest(child)
             if install_manifest and install_manifest.get("managed_by") == "nvflare":
+                installed_name = install_manifest.get("name", child.name)
                 installed.append(
                     {
-                        "name": install_manifest.get("name", child.name),
+                        "name": installed_name,
                         "skill_version": install_manifest.get("skill_version"),
                         "source_hash": install_manifest.get("source_hash"),
+                        "category": available_category.get(installed_name),
                         "target_path": str(child),
                         "source_type": install_manifest.get("source_type"),
                     }
