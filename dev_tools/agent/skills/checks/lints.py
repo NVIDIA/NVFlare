@@ -22,8 +22,11 @@ public skill metadata, not private lint scratch data.
 
 Concretely:
 - Group skills for ``skill-trigger-overlap-lint`` by deterministic skill-name
-  families (see ``_trigger_overlap_group``), never by the public frontmatter
-  ``category`` or by a product-catalog table parsed from design docs.
+  families (see ``_trigger_overlap_group``), not by frontmatter ``category``
+  values or by a product-catalog table parsed from design docs.
+- ``category`` is valid public SKILL.md metadata for publishable skills; it is
+  not a trigger-overlap grouping source or a docs-catalog sync key for this
+  engine.
 - Do not add a ``docs_root`` parameter or a ``--docs-root`` flag back to this
   engine, and do not re-introduce ``skill-catalog-category-lint`` /
   ``agent-doc-crosslink-lint`` here.

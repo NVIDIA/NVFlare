@@ -83,6 +83,15 @@ def test_run_v1_lints_allows_internal_skill_without_nvflare_prefix(tmp_path):
     assert result["findings"] == []
 
 
+def test_run_v1_lints_accepts_public_category_frontmatter(tmp_path):
+    _write_skill(tmp_path / "skills", "nvflare-category-skill", category="diagnosis")
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_FRONTMATTER])
+
+    assert result["status"] == "ok"
+    assert result["findings"] == []
+
+
 def test_run_v1_lints_reports_skill_md_size(tmp_path):
     body = "\n".join(f"line {i}" for i in range(205))
     _write_skill(tmp_path / "skills", "nvflare-large-skill", body=body)
