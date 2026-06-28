@@ -67,6 +67,22 @@ def test_validate_benchmark_evidence_accepts_complete_records():
     assert checkpoint._validate_benchmark_evidence_payload(_valid_payload()) == []
 
 
+def test_check_skill_lints_passes_only_skills_root(monkeypatch, tmp_path):
+    calls = []
+
+    def fake_run_v1_lints(skills_root):
+        calls.append(skills_root)
+        return {"status": "ok", "summary": {"skill_count": 2}}
+
+    monkeypatch.setattr(checkpoint, "run_v1_lints", fake_run_v1_lints)
+
+    result = checkpoint._check_skill_lints(tmp_path)
+
+    assert result["status"] == "ok"
+    assert result["data"]["summary"] == {"skill_count": 2}
+    assert calls == [tmp_path / "skills"]
+
+
 def test_check_packaging_fails_when_release_install_plan_reports_errors(monkeypatch, tmp_path):
     skill_names = list(checkpoint.CONVERSION_SKILLS)
     release_manifest = {"skills": [{"name": name} for name in skill_names]}
