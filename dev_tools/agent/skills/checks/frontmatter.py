@@ -24,9 +24,8 @@ import yaml
 
 SKILL_FILE_NAME = "SKILL.md"
 YAML_ANCHOR_OR_ALIAS_RE = re.compile(r"(^|[:\s\[{,])([&*])[A-Za-z0-9_-]+(?=\s|$|[,}\]])")
-BASE_REQUIRED_FRONTMATTER_FIELDS = ("name", "description", "min_flare_version", "blast_radius")
-REQUIRED_FRONTMATTER_FIELDS = BASE_REQUIRED_FRONTMATTER_FIELDS + ("category",)
-PUBLIC_EXEMPT_STATUS = frozenset({"draft", "internal", "private"})
+REQUIRED_FRONTMATTER_FIELDS = ("name", "description", "min_flare_version", "blast_radius")
+UNSUPPORTED_FRONTMATTER_FIELDS = ("category",)
 VALID_BLAST_RADIUS = frozenset(
     {
         "read_only",
@@ -118,6 +117,7 @@ def validate_skill_dir(skill_dir: Path | str) -> SkillValidationResult:
         return SkillValidationResult(str(path), metadata, tuple(issues))
 
     _validate_required_fields(metadata, skill_file, issues)
+    _validate_unsupported_fields(metadata, skill_file, issues)
     _validate_name_matches_directory(metadata.get("name"), path, skill_file, issues)
     _validate_blast_radius(metadata.get("blast_radius"), skill_file, issues)
 
@@ -153,8 +153,7 @@ def _find_closing_delimiter(lines: list[str]) -> Optional[int]:
 def _validate_required_fields(
     metadata: Mapping[str, Any], skill_file: Path, issues: list[SkillValidationIssue]
 ) -> None:
-    required_fields = REQUIRED_FRONTMATTER_FIELDS if _is_public_skill(metadata) else BASE_REQUIRED_FRONTMATTER_FIELDS
-    for field in required_fields:
+    for field in REQUIRED_FRONTMATTER_FIELDS:
         value = metadata.get(field)
         if value is None or (isinstance(value, str) and not value.strip()):
             issues.append(
@@ -170,9 +169,18 @@ def _validate_required_fields(
             )
 
 
-def _is_public_skill(metadata: Mapping[str, Any]) -> bool:
-    status = str(metadata.get("status", "public")).strip().lower()
-    return status not in PUBLIC_EXEMPT_STATUS
+def _validate_unsupported_fields(
+    metadata: Mapping[str, Any], skill_file: Path, issues: list[SkillValidationIssue]
+) -> None:
+    for field in UNSUPPORTED_FRONTMATTER_FIELDS:
+        if field in metadata:
+            issues.append(
+                _issue(
+                    "skill-frontmatter-field-unsupported",
+                    f"frontmatter field '{field}' is not supported in SKILL.md",
+                    skill_file,
+                )
+            )
 
 
 def _validate_name_matches_directory(

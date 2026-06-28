@@ -1247,7 +1247,12 @@ def _line_for_frontmatter_issue(skill_file: Path, code: str, message: str) -> Op
         match = re.search(r"field '([^']+)'", message)
         if match:
             return _line_for_field(skill_file, match.group(1))
-    if code in {"skill-name-directory-mismatch", "skill-blast-radius-invalid", "skill-frontmatter-field-type"}:
+    if code in {
+        "skill-name-directory-mismatch",
+        "skill-blast-radius-invalid",
+        "skill-frontmatter-field-type",
+        "skill-frontmatter-field-unsupported",
+    }:
         for field in ("name", "blast_radius", "description", "min_flare_version", "category"):
             if field in message:
                 return _line_for_field(skill_file, field)
