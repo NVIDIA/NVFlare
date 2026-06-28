@@ -24,7 +24,7 @@ from checks.lints import run_v1_lints  # noqa: E402
 def test_seed_skills_pass_v1_admission_lints():
     repo_root = Path(__file__).resolve().parents[4]
 
-    result = run_v1_lints(repo_root / "skills")
+    result = run_v1_lints(repo_root / "skills", docs_root=repo_root / "docs" / "design")
 
     assert result["status"] == "ok"
     assert result["summary"]["skill_count"] >= 2

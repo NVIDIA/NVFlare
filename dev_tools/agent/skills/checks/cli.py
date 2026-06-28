@@ -30,6 +30,7 @@ def main(argv: list[str] | None = None) -> int:
         description="Run deterministic v1 lint checks for NVFLARE agent skills.",
     )
     parser.add_argument("--skills-root", default="skills", help="path to the skills source root")
+    parser.add_argument("--docs-root", help="optional docs/design root for catalog and cross-document checks")
     parser.add_argument("--format", choices=["text", "json"], default="text", help="output format")
     parser.add_argument("--check", action="append", help="run one lint ID; may be repeated")
     args = parser.parse_args(argv)
@@ -37,6 +38,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         result = run_v1_lints(
             Path(args.skills_root),
+            docs_root=Path(args.docs_root) if args.docs_root else None,
             checks=args.check,
         )
     except ValueError as e:
