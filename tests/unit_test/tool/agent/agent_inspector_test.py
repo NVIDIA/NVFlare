@@ -603,6 +603,31 @@ def test_inspect_package_lightning_submodule_imported_by_entry_point_recommends_
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
 
 
+def test_inspect_relative_package_lightning_submodule_imported_by_entry_point_recommends_lightning(tmp_path):
+    package = tmp_path / "models"
+    package.mkdir()
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "train.py").write_text(
+        "import torch\n"
+        "from . import lightning_model\n"
+        "\n"
+        "def main():\n"
+        "    return lightning_model.LitModel()\n",
+        encoding="utf-8",
+    )
+    (package / "lightning_model.py").write_text(
+        "import pytorch_lightning as pl\n" "\n" "class LitModel(pl.LightningModule):\n" "    pass\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    framework_names = [framework["name"] for framework in data["frameworks"]]
+    assert framework_names[0] == "pytorch_lightning"
+    assert "pytorch" in framework_names
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
+
+
 def test_inspect_lightning_subscripted_base_recommends_lightning(tmp_path):
     script = tmp_path / "model.py"
     script.write_text(
