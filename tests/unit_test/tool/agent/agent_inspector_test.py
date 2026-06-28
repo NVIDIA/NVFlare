@@ -20,6 +20,7 @@ import pytest
 from nvflare.tool.agent.inspector import (
     InspectState,
     _active_lightning_evidence_tied_to_entry_context,
+    _active_pytorch_evidence_tied_to_entry_context,
     _entry_point_imports_file,
     _evidence_score,
     _module_names_for_file,
@@ -381,9 +382,9 @@ def test_inspect_incidental_lightning_does_not_demote_ranked_pytorch(tmp_path):
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
 
 
-def test_inspect_active_lightning_helper_can_outweigh_pytorch_entry_point(tmp_path):
-    # Active PyTorch use in train.py should not veto a split-file Lightning
-    # workspace when the helper has stronger active Lightning evidence.
+def test_inspect_unrelated_active_lightning_helper_does_not_outweigh_pytorch_entry_point(tmp_path):
+    # Active PyTorch evidence tied to the entry point keeps unrelated Lightning
+    # helpers from taking over routing just because they have more active evidence.
     (tmp_path / "train.py").write_text(
         "import torch\n" "\n" "class Net(torch.nn.Module):\n" "    pass\n" "\n" "def train():\n" "    return Net()\n",
         encoding="utf-8",
@@ -401,10 +402,11 @@ def test_inspect_active_lightning_helper_can_outweigh_pytorch_entry_point(tmp_pa
     data = inspect_path(tmp_path)
 
     framework_names = [framework["name"] for framework in data["frameworks"]]
-    assert framework_names[0] == "pytorch_lightning"
+    assert framework_names[0] == "pytorch"
     assert "pytorch_lightning" in framework_names
     assert "pytorch" in framework_names
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
+    assert data["target_type"] == "mixed_workspace"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
 
 
 def test_inspect_sparse_pytorch_entry_with_lightning_helper_class_keeps_pytorch(tmp_path):
@@ -442,6 +444,34 @@ def test_inspect_split_file_lightning_model_imported_by_entry_point_recommends_l
     assert framework_names[0] == "pytorch_lightning"
     assert "pytorch" in framework_names
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
+
+
+def test_inspect_split_file_pytorch_model_with_unrelated_lightning_helper_keeps_pytorch(tmp_path):
+    (tmp_path / "train.py").write_text(
+        "from model import Net\n" "\n" "def main():\n" "    return Net()\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "model.py").write_text(
+        "import torch\n" "\n" "class Net(torch.nn.Module):\n" "    pass\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "lit_helper.py").write_text(
+        "import pytorch_lightning as pl\n"
+        "\n"
+        "class Helper(pl.LightningModule):\n"
+        "    pass\n"
+        "\n"
+        "trainer = pl.Trainer(max_epochs=1)\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    framework_names = [framework["name"] for framework in data["frameworks"]]
+    assert framework_names[0] == "pytorch"
+    assert "pytorch_lightning" in framework_names
+    assert data["target_type"] == "mixed_workspace"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
 
 
 def test_inspect_top_level_model_import_does_not_reach_nested_model_file(tmp_path):
@@ -713,9 +743,13 @@ def test_lightning_routing_helper_defensive_branches(tmp_path):
     state.framework_evidence["pytorch_lightning"] = [
         {"file": "helper.py", "line": 1, "kind": "lightning_class", "value": "pl.LightningModule"}
     ]
+    state.framework_evidence["pytorch"] = [
+        {"file": "model.py", "line": 1, "kind": "pytorch_class", "value": "torch.nn.Module"}
+    ]
 
     assert not _should_promote_lightning_over_pytorch(state)
     assert not _active_lightning_evidence_tied_to_entry_context(state, state.framework_evidence["pytorch_lightning"])
+    assert not _active_pytorch_evidence_tied_to_entry_context(state, state.framework_evidence["pytorch"])
     assert not _entry_point_imports_file(state, "README.md")
     assert _evidence_score([{"kind": "unknown"}]) == 1
 
@@ -770,7 +804,13 @@ def test_inspect_lightning_model_file_with_many_torch_imports_recommends_lightni
     script = tmp_path / "model.py"
     script.write_text(
         "import torch\n"
+        "import torch.nn as nn\n"
+        "import torch.optim as optim\n"
+        "import torchaudio\n"
+        "import torchvision\n"
         "from torch import nn\n"
+        "from torch.nn import functional as F\n"
+        "from torch.optim import Adam\n"
         "from torch.utils.data import DataLoader\n"
         "import pytorch_lightning as pl\n"
         "\n"
