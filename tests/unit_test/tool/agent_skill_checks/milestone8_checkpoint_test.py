@@ -48,19 +48,42 @@ def test_validate_benchmark_evidence_rejects_placeholder_values():
     payload = _valid_payload()
     payload["runs"][0].update(
         {
+            "agent": "",
+            "skill": None,
             "correctness": " ",
             "runtime_seconds": None,
+            "dependency_behavior": [],
+            "generated_structure": {},
             "token_usage": {},
             "metric_evidence": "",
+            "artifact_location": "\t",
         }
     )
 
     findings = checkpoint._validate_benchmark_evidence_payload(payload)
 
+    assert "runs[0] field agent must be a non-empty string" in findings
+    assert "runs[0] field skill must be a non-empty string" in findings
     assert "runs[0] field correctness must be a non-empty string" in findings
     assert "runs[0] field runtime_seconds must be a non-negative number" in findings
+    assert "runs[0] field dependency_behavior must be a non-empty string" in findings
+    assert "runs[0] field generated_structure must be a non-empty string" in findings
     assert "runs[0] field token_usage must contain at least one positive token count" in findings
     assert "runs[0] field metric_evidence must be a non-empty string" in findings
+    assert "runs[0] field artifact_location must be a non-empty string" in findings
+
+
+def test_validate_benchmark_evidence_rejects_non_numeric_token_usage():
+    payload = _valid_payload()
+    payload["runs"][0]["token_usage"] = {
+        "input_tokens": "100",
+        "output_tokens": None,
+        "nested": {"total_tokens": 0},
+    }
+
+    findings = checkpoint._validate_benchmark_evidence_payload(payload)
+
+    assert "runs[0] field token_usage must contain at least one positive token count" in findings
 
 
 def test_validate_benchmark_evidence_accepts_complete_records():
@@ -106,7 +129,49 @@ def test_check_packaging_fails_when_release_install_plan_reports_errors(monkeypa
 
     assert result["status"] == "failed"
     assert result["message"] == "release skill bundle did not install successfully"
+    assert "install plan was not applied" in result["data"]["install_plan_findings"]
+    assert "install plan reported errors" in result["data"]["install_plan_findings"]
     assert result["data"]["install_plan"]["errors"]
+
+
+def test_check_packaging_fails_when_release_install_plan_skips_conversion_skill(monkeypatch, tmp_path):
+    skill_names = list(checkpoint.CONVERSION_SKILLS)
+    release_manifest = {"skills": [{"name": name} for name in skill_names]}
+
+    def fake_copy_released_skills_to_bundle(skills_root, bundle_root, **kwargs):
+        if kwargs.get("include_analysis_files", True):
+            bundle_root.joinpath(checkpoint.LIGHTNING_SKILL, "evals").mkdir(parents=True)
+            bundle_root.joinpath(checkpoint.LIGHTNING_SKILL, "evals", "evals.json").write_text("{}", encoding="utf-8")
+        else:
+            bundle_root.joinpath(checkpoint.LIGHTNING_SKILL).mkdir(parents=True)
+        return release_manifest
+
+    monkeypatch.setattr(checkpoint, "copy_released_skills_to_bundle", fake_copy_released_skills_to_bundle)
+    monkeypatch.setattr(
+        checkpoint,
+        "install_skills",
+        lambda **kwargs: {
+            "applied": True,
+            "errors": [],
+            "conflicts": [{"skill": checkpoint.LIGHTNING_SKILL}],
+            "skills": [
+                {"name": checkpoint.PYTORCH_SKILL, "status": "installed"},
+                {"name": checkpoint.LIGHTNING_SKILL, "status": "skipped", "conflict": "external_install_detected"},
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        checkpoint,
+        "list_skills",
+        lambda **kwargs: {"installed": [{"name": name} for name in skill_names], "errors": []},
+    )
+
+    result = checkpoint._check_packaging(tmp_path)
+
+    assert result["status"] == "failed"
+    assert result["message"] == "release skill bundle did not install successfully"
+    assert "install plan reported conflicts" in result["data"]["install_plan_findings"]
+    assert f"install plan did not install {checkpoint.LIGHTNING_SKILL}" in result["data"]["install_plan_findings"]
 
 
 def test_check_packaging_fails_when_release_install_is_not_listable(monkeypatch, tmp_path):
@@ -122,7 +187,15 @@ def test_check_packaging_fails_when_release_install_is_not_listable(monkeypatch,
         return release_manifest
 
     monkeypatch.setattr(checkpoint, "copy_released_skills_to_bundle", fake_copy_released_skills_to_bundle)
-    monkeypatch.setattr(checkpoint, "install_skills", lambda **kwargs: {"applied": True, "errors": []})
+    monkeypatch.setattr(
+        checkpoint,
+        "install_skills",
+        lambda **kwargs: {
+            "applied": True,
+            "errors": [],
+            "skills": [{"name": name, "status": "installed"} for name in skill_names],
+        },
+    )
     monkeypatch.setattr(
         checkpoint,
         "list_skills",
