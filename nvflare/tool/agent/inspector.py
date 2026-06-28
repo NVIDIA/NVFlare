@@ -819,7 +819,7 @@ def _local_files_for_import(
     import_name: str, importing_file: str, local_files_by_module: dict[str, set[str]]
 ) -> set[str]:
     files = set()
-    for module_name in _exact_module_candidates_for_import(import_name, importing_file):
+    for module_name in _exact_module_candidates_for_import(import_name, importing_file, local_files_by_module):
         files.update(local_files_by_module.get(module_name, set()))
     # Only follow a package's ``__init__.py`` once the full imported module path resolves to a
     # local file. Otherwise an external absolute import (e.g. ``import lightning.pytorch``) whose
@@ -827,7 +827,7 @@ def _local_files_for_import(
     # would resolve that package's ``__init__.py`` and incorrectly promote it.
     if not files:
         return files
-    for module_name in _package_module_prefix_candidates_for_import(import_name, importing_file):
+    for module_name in _package_module_prefix_candidates_for_import(import_name, importing_file, local_files_by_module):
         files.update(
             file_path
             for file_path in local_files_by_module.get(module_name, set())
@@ -836,15 +836,29 @@ def _local_files_for_import(
     return files
 
 
-def _exact_module_candidates_for_import(import_name: str, importing_file: str) -> set[str]:
+def _exact_module_candidates_for_import(
+    import_name: str, importing_file: str, local_files_by_module: dict[str, set[str]]
+) -> set[str]:
     candidates = {import_name} if import_name else set()
     context_prefix = _import_context_prefix(importing_file)
-    if context_prefix and _is_single_segment_import(import_name):
-        candidates.update(f"{context_prefix}.{module_name}" for module_name in list(candidates))
+    if context_prefix:
+        for module_name in list(candidates):
+            prefixed = f"{context_prefix}.{module_name}"
+            # Single-segment imports always take the importing file's context prefix so a sibling
+            # module (``from block import ...`` next to the script) resolves. Dotted imports only
+            # take it when the full context-prefixed module resolves to a local file. This keeps
+            # nested local dotted imports reachable (``from layers.block import ...`` in
+            # ``models/train.py`` resolving ``models/layers/block.py``) without promoting an
+            # external absolute import (``import lightning.pytorch``) onto an unrelated local
+            # package.
+            if _is_single_segment_import(module_name) or prefixed in local_files_by_module:
+                candidates.add(prefixed)
     return candidates
 
 
-def _package_module_prefix_candidates_for_import(import_name: str, importing_file: str) -> set[str]:
+def _package_module_prefix_candidates_for_import(
+    import_name: str, importing_file: str, local_files_by_module: dict[str, set[str]]
+) -> set[str]:
     # Package-prefix candidates let us follow the __init__.py of a package whose full path
     # resolves locally (e.g. ``import pkg.sub`` reaching ``pkg/__init__.py``). The caller only
     # consults these once the full imported module path resolves to a local file. We also never
@@ -852,7 +866,9 @@ def _package_module_prefix_candidates_for_import(import_name: str, importing_fil
     # absolute import (e.g. ``lightning`` from ``import lightning.pytorch``) resolve to an
     # unrelated local package (``models.lightning``), incorrectly promoting it.
     candidates = set(_module_name_prefixes(import_name))
-    candidates.difference_update(_exact_module_candidates_for_import(import_name, importing_file))
+    candidates.difference_update(
+        _exact_module_candidates_for_import(import_name, importing_file, local_files_by_module)
+    )
     return candidates
 
 

@@ -694,6 +694,29 @@ def test_inspect_same_directory_model_import_can_reach_lightning_helper(tmp_path
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
 
 
+def test_inspect_nested_local_dotted_import_can_reach_lightning_helper(tmp_path):
+    package = tmp_path / "models"
+    package.mkdir()
+    (package / "train.py").write_text(
+        "import torch\n" "from layers.block import LitModel\n" "\n" "def main():\n" "    return LitModel()\n",
+        encoding="utf-8",
+    )
+    layers = package / "layers"
+    layers.mkdir()
+    (layers / "__init__.py").write_text("", encoding="utf-8")
+    (layers / "block.py").write_text(
+        "import pytorch_lightning as pl\n" "\n" "class LitModel(pl.LightningModule):\n" "    pass\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    framework_names = [framework["name"] for framework in data["frameworks"]]
+    assert framework_names[0] == "pytorch_lightning"
+    assert "pytorch" in framework_names
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
+
+
 def test_inspect_split_file_lightning_trainer_helper_beats_pytorch_entry_point(tmp_path):
     (tmp_path / "train.py").write_text(
         "import torch\n"
