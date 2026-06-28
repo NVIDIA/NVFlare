@@ -555,19 +555,22 @@ def _detect_primary_framework(state: InspectState, ranked: list[dict]) -> Option
     if not ranked:
         return None
     primary = ranked[0]["name"]
-    # Resolve only the PyTorch-family conflict here: PyTorch Lightning is a
-    # PyTorch superset, but an incidental Lightning import elsewhere in a plain
-    # PyTorch workspace should not hide the PyTorch entry point from routing.
-    # Do not override a stronger framework from another family (TensorFlow, JAX,
-    # etc.) -- those get their own family-conflict handling when their conversion
-    # skills land.
-    if (
-        primary in {"pytorch", LIGHTNING_FRAMEWORK}
-        and "pytorch" in state.framework_evidence
-        and LIGHTNING_FRAMEWORK in state.framework_evidence
-    ):
-        return LIGHTNING_FRAMEWORK if _should_promote_lightning_over_pytorch(state) else "pytorch"
+    pytorch_family_primary = _resolve_pytorch_lightning_primary(state)
+    if pytorch_family_primary and primary in {"pytorch", LIGHTNING_FRAMEWORK}:
+        return pytorch_family_primary
     return primary
+
+
+def _resolve_pytorch_lightning_primary(state: InspectState) -> Optional[str]:
+    # Resolve the PyTorch-family conflict whenever both buckets exist: PyTorch
+    # Lightning is a PyTorch superset, but incidental Lightning imports elsewhere
+    # in a plain PyTorch workspace should not hide the PyTorch entry point from
+    # routing. Do not override a stronger framework from another family
+    # (TensorFlow, JAX, etc.) -- those get their own family-conflict handling
+    # when their conversion skills land.
+    if "pytorch" not in state.framework_evidence or LIGHTNING_FRAMEWORK not in state.framework_evidence:
+        return None
+    return LIGHTNING_FRAMEWORK if _should_promote_lightning_over_pytorch(state) else "pytorch"
 
 
 def _should_promote_lightning_over_pytorch(state: InspectState) -> bool:
