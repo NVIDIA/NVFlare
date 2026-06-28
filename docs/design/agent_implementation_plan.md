@@ -43,8 +43,8 @@ The first useful slice is:
 - `nvflare agent doctor [--online] --format json`;
 - guide-compatible skill layout under `skills/<skill>/`;
 - initial lints for frontmatter, size, trigger boundaries, trigger overlap,
-  global negatives, policy coverage, command drift, helper scripts, and
-  fixtures;
+  global negatives, policy coverage, process metrics, command drift, helper
+  scripts, and fixtures;
 - at least one public-candidate skill, preferably `nvflare-orient` or
   `nvflare-convert-pytorch`, with `evals/evals.json`.
 
@@ -218,14 +218,15 @@ Deliverables:
 - Implement lints:
   `skill-frontmatter-lint`, `skill-md-size-lint`, `skill-trigger-lint`,
   `skill-trigger-overlap-lint`, `skill-global-negative-lint`,
-  `skill-policy-coverage-lint`, `skill-command-drift-lint`,
-  `skill-helper-script-lint`, and `skill-fixture-lint`.
+  `skill-policy-coverage-lint`, `skill-process-metric-lint`,
+  `skill-command-drift-lint`, `skill-helper-script-lint`, and
+  `skill-fixture-lint`.
 - Do not implement `agent-doc-crosslink-lint` or other docs-root/catalog lints
   in this admission gate. Cross-document and catalog validation is deferred to
   separate docs-only tooling outside `run_v1_lints` and its CLI check IDs.
-- Add the shared global negative prompt bank at
-  `skills/_shared/global_negative_prompts.json` with `schema_version: "1"` and
-  `prompts` entries containing `id`, `prompt`, and `description`.
+- Accept global-negative eval declarations in per-skill `evals/evals.json`,
+  including `nvflare.negative_for: "*"` as the wildcard coverage convention for
+  prompts that should trigger no public FLARE skill.
 - Treat [Agent Skill Evaluation](agent_skill_evaluation.md#engineering-lints)
   as the canonical lint behavior definition; the implementation plan should not
   restate each lint's inputs and pass/fail semantics.
@@ -254,8 +255,8 @@ Engineering tests:
 - trigger-overlap lint fixtures with same trigger-group overlap,
   adjacent-negative coverage, and unrelated-group non-overlap cases;
 - CLI command-schema drift fixtures;
-- global negative bank schema fixtures and per-skill global-negative coverage
-  fixtures;
+- global-negative declaration fixtures, including wildcard
+  `nvflare.negative_for: "*"` and per-skill global-negative coverage fixtures;
 - command-drift fixtures for stale command names.
 
 ## Milestone 6: Seed Skill Bundle
