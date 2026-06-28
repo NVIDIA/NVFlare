@@ -19,10 +19,9 @@ import pytest
 
 from nvflare.tool.agent.inspector import (
     InspectState,
-    _active_lightning_evidence_tied_to_entry_context,
-    _active_pytorch_evidence_tied_to_entry_context,
     _entry_point_imports_file,
     _evidence_score,
+    _framework_evidence_tied_to_entry_context,
     _module_names_for_file,
     _resolve_import_from_module,
     _should_promote_lightning_over_pytorch,
@@ -749,6 +748,43 @@ def test_inspect_nested_dotted_import_follows_context_resolved_package_init(tmp_
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
 
 
+def test_inspect_nested_dotted_import_does_not_follow_raw_top_level_package_init(tmp_path):
+    # Complement to the test above: the raw top-level prefix ``layers`` now carries the active
+    # Lightning evidence, while the context-resolved ``models.layers`` package is plain PyTorch.
+    # Following the raw top-level prefix would incorrectly reach the Lightning evidence, so routing
+    # must stay on PyTorch to prove only the context-resolved package prefix is traversed.
+    package = tmp_path / "models"
+    package.mkdir()
+    (package / "train.py").write_text(
+        "import torch\n" "from layers.block import Model\n" "\n" "def main():\n" "    return Model()\n",
+        encoding="utf-8",
+    )
+    nested_layers = package / "layers"
+    nested_layers.mkdir()
+    # The context-resolved ``models.layers`` package is plain PyTorch.
+    (nested_layers / "__init__.py").write_text(
+        "import torch.nn as nn\n" "\n" "class Model(nn.Module):\n" "    pass\n",
+        encoding="utf-8",
+    )
+    (nested_layers / "block.py").write_text("import torch\n", encoding="utf-8")
+    # The unrelated top-level ``layers/`` package matches the raw prefix and holds Lightning
+    # evidence; it must not be followed from ``models/train.py``.
+    unrelated_layers = tmp_path / "layers"
+    unrelated_layers.mkdir()
+    (unrelated_layers / "__init__.py").write_text(
+        "import pytorch_lightning as pl\n" "\n" "class Helper(pl.LightningModule):\n" "    pass\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    framework_names = [framework["name"] for framework in data["frameworks"]]
+    assert framework_names[0] == "pytorch"
+    # Lightning is still detected globally but stays unreachable, so routing remains PyTorch.
+    assert "pytorch_lightning" in framework_names
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
+
+
 def test_inspect_split_file_lightning_trainer_helper_beats_pytorch_entry_point(tmp_path):
     (tmp_path / "train.py").write_text(
         "import torch\n"
@@ -979,8 +1015,8 @@ def test_lightning_routing_helper_defensive_branches(tmp_path):
     ]
 
     assert not _should_promote_lightning_over_pytorch(state)
-    assert not _active_lightning_evidence_tied_to_entry_context(state, state.framework_evidence["pytorch_lightning"])
-    assert not _active_pytorch_evidence_tied_to_entry_context(state, state.framework_evidence["pytorch"])
+    assert not _framework_evidence_tied_to_entry_context(state, state.framework_evidence["pytorch_lightning"])
+    assert not _framework_evidence_tied_to_entry_context(state, state.framework_evidence["pytorch"])
     assert not _entry_point_imports_file(state, "README.md")
     assert _evidence_score([{"kind": "unknown"}]) == 1
 
