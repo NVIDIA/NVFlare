@@ -1,23 +1,24 @@
 # Lightning Detection
 
-Use this reference to confirm that the project is a PyTorch Lightning project
-before applying the Lightning conversion pattern, and to hand off to
-`nvflare-convert-pytorch` when no Lightning evidence exists.
+Use this reference to decide whether to apply the Lightning conversion pattern or
+hand off to another framework skill. It covers **how to use and when to override**
+`nvflare agent inspect`, not a second copy of its detection rules.
 
-## Positive Lightning Evidence
+## Default Evidence Source
 
-Treat the project as Lightning when any of the following are present:
+`nvflare agent inspect <path> --format json` is the default detection source. It
+enumerates Lightning framework evidence (imports, `LightningModule` /
+`LightningDataModule` subclasses, and `Trainer` usage, including aliased and
+submodule import forms) and reports `conversion_state`. Trust its `frameworks`
+and `conversion_state` by default.
 
-- imports of `pytorch_lightning` or `lightning.pytorch` (including aliased
-  imports such as `import lightning as L` or `import pytorch_lightning as pl`);
-- a class that subclasses `LightningModule` or `LightningDataModule`;
-- a `Trainer(...)` construction followed by `trainer.fit`, `trainer.validate`,
-  or `trainer.test`;
-- Lightning callbacks, `LightningModule.training_step`/`validation_step`, or
-  Lightning loggers such as `TensorBoardLogger` or `MLFlowLogger`.
+At a high level, a Lightning project uses a `LightningModule` /
+`LightningDataModule` and a `Trainer` fit/validate/test loop. Do not maintain a
+separate list of exact import or alias forms here; `inspect` owns that and is the
+tested source of truth.
 
-`nvflare agent inspect <path> --format json` reports Lightning framework
-evidence and routing; use it to confirm before editing.
+`inspect` is advisory, not a hard gate. Override its default only with explicit
+code or user evidence, as described below.
 
 ## Plain PyTorch Versus Lightning
 
@@ -36,13 +37,13 @@ the skill from the training entry point the user asks to federate:
 ## Lightning Trainer Wrappers
 
 Some ecosystems build the trainer through a wrapper or factory, for example
-`nl.Trainer(...)` from `nemo.lightning`. Do not treat wrapper imports alone as
-PyTorch Lightning evidence. Use this skill only when the user explicitly asks
-for Lightning conversion, canonical PyTorch Lightning evidence is also present,
-or an existing/verified `nvflare.client.lightning.patch(trainer)` compatibility
-signal shows that the wrapper trainer can use the Lightning Client API. The
-definitive converted-state signal is a patched trainer, not the exact
-constructor module.
+`nl.Trainer(...)` from `nemo.lightning`. `inspect` intentionally does not promote
+wrapper imports alone to Lightning, so this is a case where you confirm with
+extra evidence. Use this skill only when the user explicitly asks for Lightning
+conversion, canonical PyTorch Lightning evidence is also present, or an
+existing/verified `nvflare.client.lightning.patch(trainer)` compatibility signal
+shows that the wrapper trainer can use the Lightning Client API. The definitive
+converted-state signal is a patched trainer, not the exact constructor module.
 
 ## Negative Handoff
 
