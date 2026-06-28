@@ -179,7 +179,6 @@ class SkillRecord:
 @dataclass
 class LintContext:
     skills_root: Path
-    docs_root: Optional[Path]
     max_skill_md_lines: int
     records: list[SkillRecord]
     findings: list[LintFinding]
@@ -189,14 +188,12 @@ class LintContext:
 def run_v1_lints(
     skills_root: Path | str = "skills",
     *,
-    docs_root: Path | str | None = None,
     checks: Optional[Iterable[str]] = None,
     max_skill_md_lines: int = SKILL_MD_MAX_LINES,
 ) -> dict[str, Any]:
     """Run deterministic v1 admission lints and return structured findings."""
     result, _records = _run_v1_lints_with_records(
         skills_root,
-        docs_root=docs_root,
         checks=checks,
         max_skill_md_lines=max_skill_md_lines,
     )
@@ -206,7 +203,6 @@ def run_v1_lints(
 def _run_v1_lints_with_records(
     skills_root: Path | str = "skills",
     *,
-    docs_root: Path | str | None = None,
     checks: Optional[Iterable[str]] = None,
     max_skill_md_lines: int = SKILL_MD_MAX_LINES,
 ) -> tuple[dict[str, Any], list[SkillRecord]]:
@@ -216,12 +212,10 @@ def _run_v1_lints_with_records(
         raise ValueError(f"unknown agent skill lint check(s): {', '.join(unknown)}")
 
     root = Path(skills_root)
-    resolved_docs_root = _resolve_docs_root(docs_root)
     findings: list[LintFinding] = []
     records = _load_skill_records(root, findings)
     context = LintContext(
         skills_root=root,
-        docs_root=resolved_docs_root,
         max_skill_md_lines=max_skill_md_lines,
         records=records,
         findings=findings,
@@ -236,7 +230,6 @@ def _run_v1_lints_with_records(
             "status": status,
             "passed": status == "ok",
             "skills_root": str(root),
-            "docs_root": str(resolved_docs_root) if resolved_docs_root is not None else None,
             "checks": list(selected),
             "skipped_checks": context.skipped_checks,
             "summary": summary,
@@ -266,7 +259,6 @@ def _run_v1_lints_with_records(
         "status": status,
         "passed": status == "ok",
         "skills_root": str(root),
-        "docs_root": str(resolved_docs_root) if resolved_docs_root is not None else None,
         "checks": list(selected),
         "skipped_checks": context.skipped_checks,
         "summary": summary,
@@ -278,13 +270,11 @@ def validate_skills(
     skills_root: Path | str = "skills",
     *,
     skill_name: Optional[str] = None,
-    docs_root: Path | str | None = None,
     max_skill_md_lines: int = SKILL_MD_MAX_LINES,
 ) -> dict[str, Any]:
     """Compatibility wrapper for callers that validate one skill source root."""
     result, records = _run_v1_lints_with_records(
         skills_root,
-        docs_root=docs_root,
         max_skill_md_lines=max_skill_md_lines,
     )
 
@@ -882,13 +872,6 @@ def _lint_fixtures(context: LintContext) -> None:
                     skill=record.name,
                 )
             )
-
-
-def _resolve_docs_root(docs_root: Path | str | None) -> Optional[Path]:
-    if docs_root is not None:
-        return Path(docs_root)
-    candidate = Path.cwd() / "docs" / "design"
-    return candidate if (candidate / "skills_architecture.md").is_file() else None
 
 
 def _try_parse_frontmatter(skill_file: Path) -> dict[str, Any]:
