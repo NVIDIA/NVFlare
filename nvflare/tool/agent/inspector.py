@@ -692,14 +692,20 @@ def _should_promote_lightning_over_pytorch(state: InspectState) -> bool:
         return False
     if _has_inspected_file_or_entry_point(state):
         return False
-    # With no PyTorch evidence tied to the entry context, keep the weighted
-    # fallback for model-only directories that do not expose an entry point.
-    # Active Lightning evidence beats PyTorch import-only evidence; import
-    # evidence is only a tie breaker after active PyTorch signals are compared.
+    # With no evidence tied to the entry context, keep the weighted fallback for
+    # model-only directories that do not expose an entry point. Active Lightning
+    # evidence still beats ordinary torch imports in the same Lightning file,
+    # but unrelated PyTorch imports remain a threshold against incidental
+    # Lightning helpers.
     active_lightning_score = _evidence_score(active_lightning_evidence)
     if active_lightning_score == 0:
         return False
     active_pytorch_score = _evidence_score(active_pytorch_evidence)
+    if active_pytorch_score == 0 and _has_pytorch_evidence_outside_active_lightning_files(
+        pytorch_evidence, active_lightning_evidence
+    ):
+        if _evidence_score(pytorch_evidence) >= _evidence_score(lightning_evidence):
+            return False
     if active_lightning_score != active_pytorch_score:
         return active_lightning_score > active_pytorch_score
     return _evidence_score(lightning_evidence) > _evidence_score(pytorch_evidence)
@@ -711,6 +717,13 @@ def _active_lightning_evidence(evidence: list[dict]) -> list[dict]:
 
 def _active_pytorch_evidence(evidence: list[dict]) -> list[dict]:
     return [item for item in evidence if _is_active_pytorch_evidence(item)]
+
+
+def _has_pytorch_evidence_outside_active_lightning_files(
+    pytorch_evidence: list[dict], active_lightning_evidence: list[dict]
+) -> bool:
+    active_lightning_files = {item["file"] for item in active_lightning_evidence}
+    return any(item["file"] not in active_lightning_files for item in pytorch_evidence)
 
 
 def _active_lightning_evidence_tied_to_entry_context(state: InspectState, evidence: list[dict]) -> bool:
