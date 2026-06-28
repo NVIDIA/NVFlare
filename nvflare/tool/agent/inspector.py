@@ -694,10 +694,15 @@ def _should_promote_lightning_over_pytorch(state: InspectState) -> bool:
         return False
     # With no PyTorch evidence tied to the entry context, keep the weighted
     # fallback for model-only directories that do not expose an entry point.
+    # Active Lightning evidence beats PyTorch import-only evidence; import
+    # evidence is only a tie breaker after active PyTorch signals are compared.
     active_lightning_score = _evidence_score(active_lightning_evidence)
     if active_lightning_score == 0:
         return False
-    return active_lightning_score > _evidence_score(active_pytorch_evidence)
+    active_pytorch_score = _evidence_score(active_pytorch_evidence)
+    if active_lightning_score != active_pytorch_score:
+        return active_lightning_score > active_pytorch_score
+    return _evidence_score(lightning_evidence) > _evidence_score(pytorch_evidence)
 
 
 def _active_lightning_evidence(evidence: list[dict]) -> list[dict]:
