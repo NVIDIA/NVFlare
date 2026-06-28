@@ -97,7 +97,7 @@
           },
           {
             "id": "no-source-discovered-strategy-override",
-            "description": "does not replace the skill's Client API or recipe.execute strategy based on NVFLARE SDK source or docstring inspection without a concrete validation failure"
+            "description": "does not replace the skill's Client API or recipe.execute strategy based on NVFLARE SDK source or docstring inspection; reports any validation or import failure as a version mismatch or skill gap instead of switching to a source-discovered strategy"
           }
         ],
         "optional_behavior": [
