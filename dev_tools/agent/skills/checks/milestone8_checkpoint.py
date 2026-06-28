@@ -196,11 +196,12 @@ def _check_packaging(repo_root: Path) -> dict[str, Any]:
             release_source = SkillSource(source_type="wheel", root=release_bundle, manifest=release_manifest)
             release_target = tmp_root / "release-target"
             install_plan = install_skills(agent="codex", target_dir=release_target, source=release_source)
-            if _install_plan_failed(install_plan):
+            install_plan_findings = _validate_install_plan(install_plan)
+            if install_plan_findings:
                 return _failed(
                     "packaging",
                     "release skill bundle did not install successfully",
-                    {"install_plan": install_plan},
+                    {"install_plan_findings": install_plan_findings, "install_plan": install_plan},
                 )
             listed = list_skills(agent="codex", target_dir=release_target, source=release_source)
 
@@ -334,10 +335,33 @@ def _is_positive_number(value: Any) -> bool:
     return _is_non_negative_number(value) and value > 0
 
 
-def _install_plan_failed(plan: Any) -> bool:
+def _validate_install_plan(plan: Any) -> list[str]:
     if not isinstance(plan, dict):
-        return True
-    return not plan.get("applied") or bool(plan.get("errors"))
+        return ["install plan must be an object"]
+
+    findings = []
+    if not plan.get("applied"):
+        findings.append("install plan was not applied")
+    if plan.get("errors"):
+        findings.append("install plan reported errors")
+    if plan.get("missing"):
+        findings.append("install plan reported missing skills")
+    if plan.get("conflicts"):
+        findings.append("install plan reported conflicts")
+
+    entries = {entry.get("name"): entry for entry in plan.get("skills", []) if isinstance(entry, dict)}
+    for skill in CONVERSION_SKILLS:
+        entry = entries.get(skill)
+        if not entry:
+            findings.append(f"install plan did not include {skill}")
+            continue
+        status = entry.get("status")
+        if status in {"installed", "replaced"}:
+            continue
+        if status == "skipped" and entry.get("reason") == "already_installed":
+            continue
+        findings.append(f"install plan did not install {skill}")
+    return findings
 
 
 def _required_benchmark_pairs() -> list[tuple[str, str]]:
