@@ -12,8 +12,13 @@ covers Lightning-specific validation checks.
    using `uv pip` when available, before importing the user's Lightning code.
 2. Run local SimEnv validation with `python job.py`; follow
    `../../_shared/runtime-output-guidance.md` for workspace location.
-3. Validate export through the shared lifecycle when export is in scope.
-4. Report the declared primary/global metric scalar when one exists.
+3. Wait for terminal completion according to
+   `../../_shared/validation-evidence.md`; Lightning simulations can run longer
+   than plain PyTorch, so scheduled wakeups or progress logs are not success
+   evidence. If the run times out, report it as blocked or timed out with the
+   current server/client log evidence.
+4. Validate export through the shared lifecycle when export is in scope.
+5. Report the declared primary/global metric scalar when one exists.
 
 ## Lightning-Specific Checks
 
