@@ -187,7 +187,7 @@ CLAUDE.local.md
 .cursor/
 .claude/
 .devcontainer/
-tmp/review/
+tmp/
 
 # memory profiler output
 tests/memory_profile/**/*.dat
