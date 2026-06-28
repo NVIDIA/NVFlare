@@ -366,6 +366,27 @@ def test_inspect_lightning_script_with_many_torch_imports_recommends_lightning(t
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
 
 
+def test_inspect_lightning_module_with_many_torch_imports_recommends_lightning(tmp_path):
+    script = tmp_path / "train.py"
+    script.write_text(
+        "import torch\n"
+        "from torch import nn\n"
+        "from torch.utils.data import DataLoader\n"
+        "import pytorch_lightning as pl\n"
+        "\n"
+        "class Net(pl.LightningModule):\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    framework_names = [framework["name"] for framework in data["frameworks"]]
+    assert framework_names[0] == "pytorch_lightning"
+    assert "pytorch" in framework_names
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
+
+
 def test_inspect_non_pytorch_workspace_with_incidental_lightning_import_is_not_lightning(tmp_path):
     # The Lightning-over-PyTorch preference is a PyTorch-family rule only. A
     # TensorFlow-dominant workspace with an incidental pytorch_lightning import
