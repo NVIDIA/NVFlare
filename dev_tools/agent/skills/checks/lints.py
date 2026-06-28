@@ -1248,7 +1248,7 @@ def _line_for_frontmatter_issue(skill_file: Path, code: str, message: str) -> Op
         if match:
             return _line_for_field(skill_file, match.group(1))
     if code in {"skill-name-directory-mismatch", "skill-blast-radius-invalid", "skill-frontmatter-field-type"}:
-        for field in ("name", "blast_radius", "description", "min_flare_version"):
+        for field in ("name", "blast_radius", "description", "min_flare_version", "category"):
             if field in message:
                 return _line_for_field(skill_file, field)
     return 1 if skill_file.is_file() else None

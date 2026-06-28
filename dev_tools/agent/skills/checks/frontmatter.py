@@ -24,7 +24,9 @@ import yaml
 
 SKILL_FILE_NAME = "SKILL.md"
 YAML_ANCHOR_OR_ALIAS_RE = re.compile(r"(^|[:\s\[{,])([&*])[A-Za-z0-9_-]+(?=\s|$|[,}\]])")
-REQUIRED_FRONTMATTER_FIELDS = ("name", "description", "min_flare_version", "blast_radius")
+BASE_REQUIRED_FRONTMATTER_FIELDS = ("name", "description", "min_flare_version", "blast_radius")
+REQUIRED_FRONTMATTER_FIELDS = BASE_REQUIRED_FRONTMATTER_FIELDS + ("category",)
+PUBLIC_EXEMPT_STATUS = frozenset({"draft", "internal", "private"})
 VALID_BLAST_RADIUS = frozenset(
     {
         "read_only",
@@ -151,7 +153,8 @@ def _find_closing_delimiter(lines: list[str]) -> Optional[int]:
 def _validate_required_fields(
     metadata: Mapping[str, Any], skill_file: Path, issues: list[SkillValidationIssue]
 ) -> None:
-    for field in REQUIRED_FRONTMATTER_FIELDS:
+    required_fields = REQUIRED_FRONTMATTER_FIELDS if _is_public_skill(metadata) else BASE_REQUIRED_FRONTMATTER_FIELDS
+    for field in required_fields:
         value = metadata.get(field)
         if value is None or (isinstance(value, str) and not value.strip()):
             issues.append(
@@ -165,6 +168,11 @@ def _validate_required_fields(
                     skill_file,
                 )
             )
+
+
+def _is_public_skill(metadata: Mapping[str, Any]) -> bool:
+    status = str(metadata.get("status", "public")).strip().lower()
+    return status not in PUBLIC_EXEMPT_STATUS
 
 
 def _validate_name_matches_directory(
