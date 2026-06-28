@@ -72,9 +72,14 @@ for static project evidence. For current recipe names and parameters, use
 
 Do not use NVFLARE library source or docstrings to choose or override the
 conversion strategy, exchange pattern, recipe execution pattern, or generated
-layout. Those decisions are the skill contract. Treat local SDK source only as a
-bounded version/API investigation after a concrete validation failure or a named
-missing structured CLI field.
+layout. Those decisions are the skill contract. During conversion, do not read
+`site-packages/nvflare/**`, local NVFLARE SDK source, or NVFLARE docstrings to
+discover a replacement strategy after the skill path fails. Public capability
+checks are allowed: `nvflare --help`, `nvflare <cmd> --schema`,
+`nvflare recipe show`, small import or `hasattr` checks, and validation
+commands. If those public checks do not support the skill path, report a
+version mismatch or skill/reference gap instead of switching to a
+source-discovered implementation.
 
 If local SDK source or a docstring appears to conflict with the skill, do not
 abandon the skill path based on that reading. Verify with a small import,
