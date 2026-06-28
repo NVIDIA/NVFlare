@@ -685,10 +685,13 @@ def _should_promote_lightning_over_pytorch(state: InspectState) -> bool:
     active_lightning_evidence = _active_lightning_evidence(lightning_evidence)
     if _active_lightning_evidence_tied_to_entry_context(state, active_lightning_evidence):
         return True
-    # Split-file Lightning projects can still have active PyTorch calls in the
-    # entry point; let the weighted evidence decide instead of treating that as
-    # an absolute veto.
-    return _evidence_score(active_lightning_evidence) > _evidence_score(pytorch_evidence)
+    # Split-file Lightning projects can still have PyTorch evidence in the
+    # entry point; do not treat that as an absolute veto when active Lightning
+    # evidence is stronger.
+    active_lightning_score = _evidence_score(active_lightning_evidence)
+    if active_lightning_score == 0:
+        return False
+    return active_lightning_score > _evidence_score(pytorch_evidence)
 
 
 def _active_lightning_evidence(evidence: list[dict]) -> list[dict]:

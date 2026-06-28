@@ -435,6 +435,37 @@ def test_inspect_split_file_lightning_model_imported_by_entry_point_recommends_l
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
 
 
+def test_inspect_split_file_lightning_trainer_helper_beats_pytorch_entry_point(tmp_path):
+    (tmp_path / "train.py").write_text(
+        "import torch\n"
+        "from torch.utils.data import DataLoader\n"
+        "from lightning_helper import build_trainer\n"
+        "\n"
+        "def main():\n"
+        "    loader = DataLoader([])\n"
+        "    return build_trainer(loader)\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "lightning_helper.py").write_text(
+        "import pytorch_lightning as pl\n"
+        "\n"
+        "class LitModel(pl.LightningModule):\n"
+        "    pass\n"
+        "\n"
+        "def build_trainer(_loader):\n"
+        "    trainer = pl.Trainer(max_epochs=1)\n"
+        "    return trainer, LitModel()\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    framework_names = [framework["name"] for framework in data["frameworks"]]
+    assert framework_names[0] == "pytorch_lightning"
+    assert "pytorch" in framework_names
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
+
+
 def test_inspect_package_lightning_model_imported_by_entry_point_recommends_lightning(tmp_path):
     package = tmp_path / "models"
     package.mkdir()
