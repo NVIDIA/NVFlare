@@ -337,6 +337,38 @@ def test_inspect_mixed_pytorch_workspace_with_incidental_lightning_keeps_pytorch
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
 
 
+def test_inspect_incidental_lightning_does_not_demote_ranked_pytorch(tmp_path):
+    # When PyTorch already ranks ahead of Lightning, preserving that order keeps
+    # unrelated frameworks from becoming the display primary.
+    (tmp_path / "train.py").write_text(
+        "import torch\n"
+        "import torchvision\n"
+        "import torchaudio\n"
+        "\n"
+        "class Net(torch.nn.Module):\n"
+        "    pass\n"
+        "\n"
+        "def train():\n"
+        "    return Net()\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "boost_helper.py").write_text(
+        "import xgboost\n" "import xgboost as xgb\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "optional_lightning.py").write_text(
+        "import pytorch_lightning\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    framework_names = [framework["name"] for framework in data["frameworks"]]
+    assert framework_names[:3] == ["pytorch", "xgboost", "pytorch_lightning"]
+    assert data["target_type"] == "mixed_workspace"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
+
+
 def test_inspect_mixed_pytorch_workspace_with_active_lightning_in_non_entry_file_keeps_pytorch(tmp_path):
     # train.py is the likely PyTorch training entry point; active Lightning use
     # lives only in a secondary helper file and should not redirect routing.
