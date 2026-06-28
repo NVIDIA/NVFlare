@@ -17,11 +17,9 @@ Use this path for plain PyTorch conversion:
    `recipe.execute(SimEnv(...))`.
 5. Validate with `python job.py`, inspect terminal evidence, then export.
 
-Do not read NVFLARE SDK source or docstrings to choose an alternate PyTorch
-exchange path. If a public import, recipe metadata, or validation command shows
-the installed NVFLARE version cannot support this path, stop and report the
-exact version mismatch or skill/reference gap instead of switching to a
-source-discovered strategy.
+Follow the Source Of Truth Boundary in
+`../../_shared/nvflare-job-lifecycle.md`: public checks can stop the skill path;
+they cannot license a source-discovered replacement.
 
 ## Conversion Pattern
 

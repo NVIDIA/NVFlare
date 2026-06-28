@@ -88,6 +88,9 @@ validates, continue. If it does not validate, report the exact failed symbol,
 NVFLARE version, and command output as a version mismatch or skill/reference
 gap.
 
+Canonical short form for framework skills and evals: public checks can stop the
+skill path; they cannot license a source-discovered replacement.
+
 ## Generated Job Layout
 
 Follow `runtime-output-guidance.md` for generated source layout, runtime
