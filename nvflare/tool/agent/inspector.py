@@ -682,12 +682,16 @@ def _should_promote_lightning_over_pytorch(state: InspectState) -> bool:
     pytorch_evidence = state.framework_evidence.get("pytorch", [])
     if not lightning_evidence or not pytorch_evidence:
         return False
+
+    # Base/superset precedence, currently PyTorch/PyTorch Lightning:
+    #   1. Active superset evidence tied to the entry context -> superset.
+    #   2. Any base evidence tied to the entry context -> base.
+    #   3. Entry point or inspected file exists but neither is tied -> base.
+    #   4. Model-only/no-entry contexts use weighted evidence fallback below.
     active_lightning_evidence = _active_lightning_evidence(lightning_evidence)
     active_pytorch_evidence = _active_pytorch_evidence(pytorch_evidence)
-    if _active_lightning_evidence_tied_to_entry_context(state, active_lightning_evidence):
+    if _framework_evidence_tied_to_entry_context(state, active_lightning_evidence):
         return True
-    if _active_pytorch_evidence_tied_to_entry_context(state, active_pytorch_evidence):
-        return False
     if _framework_evidence_tied_to_entry_context(state, pytorch_evidence):
         return False
     if _has_inspected_file_or_entry_point(state):
@@ -724,14 +728,6 @@ def _has_pytorch_evidence_outside_active_lightning_files(
 ) -> bool:
     active_lightning_files = {item["file"] for item in active_lightning_evidence}
     return any(item["file"] not in active_lightning_files for item in pytorch_evidence)
-
-
-def _active_lightning_evidence_tied_to_entry_context(state: InspectState, evidence: list[dict]) -> bool:
-    return _framework_evidence_tied_to_entry_context(state, evidence)
-
-
-def _active_pytorch_evidence_tied_to_entry_context(state: InspectState, evidence: list[dict]) -> bool:
-    return _framework_evidence_tied_to_entry_context(state, evidence)
 
 
 def _framework_evidence_tied_to_entry_context(state: InspectState, evidence: list[dict]) -> bool:
