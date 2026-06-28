@@ -690,6 +690,8 @@ def _should_promote_lightning_over_pytorch(state: InspectState) -> bool:
         return False
     if _framework_evidence_tied_to_entry_context(state, pytorch_evidence):
         return False
+    if _has_inspected_file_or_entry_point(state):
+        return False
     # With no PyTorch evidence tied to the entry context, keep the weighted
     # fallback for model-only directories that do not expose an entry point.
     active_lightning_score = _evidence_score(active_lightning_evidence)
@@ -720,6 +722,10 @@ def _framework_evidence_tied_to_entry_context(state: InspectState, evidence: lis
     if state.root.is_file():
         return False
     return any(_entry_point_imports_file(state, item["file"]) for item in evidence)
+
+
+def _has_inspected_file_or_entry_point(state: InspectState) -> bool:
+    return state.root.is_file() or bool(state.entry_points)
 
 
 def _framework_evidence_tied_to_inspected_file_or_entry_point(state: InspectState, evidence: list[dict]) -> bool:
