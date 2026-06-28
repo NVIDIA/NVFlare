@@ -717,6 +717,38 @@ def test_inspect_nested_local_dotted_import_can_reach_lightning_helper(tmp_path)
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
 
 
+def test_inspect_nested_dotted_import_follows_context_resolved_package_init(tmp_path):
+    # The Lightning evidence lives in ``models/layers/__init__.py`` and is only reachable through
+    # the context-resolved ``models.layers`` package prefix of ``from layers.block import ...`` in
+    # ``models/train.py``. An unrelated top-level ``layers/`` package (matching the raw prefix) must
+    # not be followed.
+    package = tmp_path / "models"
+    package.mkdir()
+    (package / "train.py").write_text(
+        "import torch\n" "from layers.block import LitModel\n" "\n" "def main():\n" "    return LitModel()\n",
+        encoding="utf-8",
+    )
+    nested_layers = package / "layers"
+    nested_layers.mkdir()
+    (nested_layers / "__init__.py").write_text(
+        "import pytorch_lightning as pl\n" "\n" "class LitModel(pl.LightningModule):\n" "    pass\n",
+        encoding="utf-8",
+    )
+    # block.py is neutral so the Lightning evidence in ``models/layers/__init__.py`` is reachable
+    # only through the package-prefix follow of the resolved ``models.layers.block`` module.
+    (nested_layers / "block.py").write_text("import torch\n", encoding="utf-8")
+    unrelated_layers = tmp_path / "layers"
+    unrelated_layers.mkdir()
+    (unrelated_layers / "__init__.py").write_text("import tensorflow\n", encoding="utf-8")
+
+    data = inspect_path(tmp_path)
+
+    framework_names = [framework["name"] for framework in data["frameworks"]]
+    assert framework_names[0] == "pytorch_lightning"
+    assert "pytorch" in framework_names
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
+
+
 def test_inspect_split_file_lightning_trainer_helper_beats_pytorch_entry_point(tmp_path):
     (tmp_path / "train.py").write_text(
         "import torch\n"
