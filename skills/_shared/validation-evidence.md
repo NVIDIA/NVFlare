@@ -14,17 +14,25 @@ Use this reference before declaring a generated or exported NVFLARE job valid.
 
 ## Terminal Simulation Evidence
 
-Do not report local simulation or job validation as successful while
+Run the final validation in the foreground and let it finish in the same step
+(see `nvflare-job-lifecycle.md`, "Final Validation Run Must Finish Before You
+Finalize"). Do not report local simulation or job validation as successful while
 `python job.py`, simulator, or another generated run command is still running.
-If using background execution, wait for task completion, record the exit code,
-then inspect server/client logs and generated artifacts before reporting
-success.
+
+Prefer foreground execution for the final run. Do not depend on a background
+task notifying you after your final answer: in a non-interactive run the task
+ends with your final message, so a backgrounded run can be killed before it
+finishes and before metrics are written. If you do background a run, you must
+poll for the terminal artifact within the same turn, record the exit code, and
+confirm completion before reporting success — never finalize on a still-running
+or "will be notified" basis.
 
 Required success evidence is process exit code 0, terminal FL evidence such as
 the server log reaching a Finished state, and metrics evidence such as
 `metrics_summary.json` or a concrete explanation for why metrics are
-unavailable. Progress messages, scheduled wakeups, and active processes are not
-completion evidence.
+unavailable. Progress messages, scheduled wakeups, "standing by"/"I'll wait"
+statements, and active processes are not completion evidence and are not valid
+final answers.
 
 If the run exceeds the allowed time, report it as blocked or timed out with the
 current command status, log evidence, and artifact evidence. Do not describe a
