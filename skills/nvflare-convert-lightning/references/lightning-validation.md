@@ -10,8 +10,8 @@ covers Lightning-specific validation checks.
 
 1. Install dependencies first through `../../_shared/dependency-install.md`,
    using `uv pip` when available, before importing the user's Lightning code.
-2. Run local SimEnv validation with `python job.py`, keeping the simulation
-   workspace under `/tmp/nvflare` unless the user gives another location.
+2. Run local SimEnv validation with `python job.py`; follow
+   `../../_shared/runtime-output-guidance.md` for workspace location.
 3. Validate export through the shared lifecycle when export is in scope.
 4. Report the declared primary/global metric scalar when one exists.
 

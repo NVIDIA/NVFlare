@@ -32,9 +32,13 @@ both the read-only source root and generated job source location.
 
 ## Runtime And Export Outputs
 
-Do not put exported jobs, simulation workspaces, generated model artifacts, or
-temporary vocab/cache files in the original source root by default. Use explicit
-runtime locations under `/tmp/nvflare/` unless the user provides another path.
+Keep generated source and runtime artifacts separate. The source root may hold
+generated source files, but it must not be the default root for exported jobs,
+simulation workspaces, generated model artifacts, caches, or validation results.
+Use explicit runtime locations under `/tmp/nvflare/` unless the user provides
+another path. `.gitignore` entries or NVFLARE current-directory defaults are not
+user approval to place runtime, export, or result artifacts under the source
+root.
 
 Recommended defaults:
 
@@ -48,9 +52,15 @@ report the chosen location. Otherwise keep generated runtime output separate
 from source edits so code review and agent context are not polluted by simulator
 or artifact files.
 
+Before declaring conversion complete, inspect generated entry points and report
+whether their default workspace, export, and result locations are outside the
+source root. If any default remains project-local, either move it to the runtime
+location convention above or state the explicit user instruction that requires
+the project-local location.
+
 ## Export Directory
 
-For generated `job.py` files that support NVFLARE export, default
-`--export-dir` to `/tmp/nvflare/job_config/<job_name>` unless the user provides
-an export directory. The exported job root is the exact directory later passed
-to `nvflare job submit -j`.
+For generated `job.py` files that support NVFLARE export, use the exported job
+config location selected above unless the user provides an export directory. The
+exported job root is the exact directory later passed to
+`nvflare job submit -j`.
