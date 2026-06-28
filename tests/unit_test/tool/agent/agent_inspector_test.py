@@ -17,7 +17,16 @@ import os
 
 import pytest
 
-from nvflare.tool.agent.inspector import _module_names_for_file, _resolve_import_from_module, inspect_path
+from nvflare.tool.agent.inspector import (
+    InspectState,
+    _active_lightning_evidence_tied_to_entry_context,
+    _entry_point_imports_file,
+    _evidence_score,
+    _module_names_for_file,
+    _resolve_import_from_module,
+    _should_promote_lightning_over_pytorch,
+    inspect_path,
+)
 
 
 def test_inspect_static_only_does_not_execute_user_module(tmp_path):
@@ -609,6 +618,26 @@ def test_inspect_package_lightning_submodule_imported_by_entry_point_recommends_
     )
 
 
+def test_inspect_package_star_import_can_reach_lightning_model(tmp_path):
+    package = tmp_path / "models"
+    package.mkdir()
+    (tmp_path / "train.py").write_text(
+        "import torch\n" "from models import *\n" "\n" "def main():\n" "    return LitModel()\n",
+        encoding="utf-8",
+    )
+    (package / "__init__.py").write_text(
+        "import pytorch_lightning as pl\n" "\n" "class LitModel(pl.LightningModule):\n" "    pass\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    framework_names = [framework["name"] for framework in data["frameworks"]]
+    assert framework_names[0] == "pytorch_lightning"
+    assert "pytorch" in framework_names
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
+
+
 def test_inspect_relative_package_lightning_submodule_imported_by_entry_point_recommends_lightning(tmp_path):
     package = tmp_path / "models"
     package.mkdir()
@@ -638,6 +667,19 @@ def test_inspect_relative_package_lightning_submodule_imported_by_entry_point_re
     assert any(item["file"] == "models/model.py" and item["kind"] == "lightning_class" for item in lightning_evidence)
 
 
+def test_inspect_unqualified_lightning_symbol_without_from_import_stays_import_only(tmp_path):
+    script = tmp_path / "train.py"
+    script.write_text(
+        "import pytorch_lightning\n" "\n" "class LitModel(LightningModule):\n" "    pass\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert data["frameworks"][0]["name"] == "pytorch_lightning"
+    assert all(item["kind"] == "import" for item in data["frameworks"][0]["evidence"])
+
+
 def test_inspect_lightning_subscripted_base_recommends_lightning(tmp_path):
     script = tmp_path / "model.py"
     script.write_text(
@@ -664,6 +706,18 @@ def test_resolve_import_from_module_handles_absolute_and_relative_imports():
     assert _resolve_import_from_module("pkg/train.py", "", 1) == "pkg"
     assert _resolve_import_from_module("pkg/train.py", "model", 1) == "pkg.model"
     assert _resolve_import_from_module("pkg/sub/train.py", "model", 2) == "pkg.model"
+
+
+def test_lightning_routing_helper_defensive_branches(tmp_path):
+    state = InspectState(root=tmp_path / "train.py", redact=True)
+    state.framework_evidence["pytorch_lightning"] = [
+        {"file": "helper.py", "line": 1, "kind": "lightning_class", "value": "pl.LightningModule"}
+    ]
+
+    assert not _should_promote_lightning_over_pytorch(state)
+    assert not _active_lightning_evidence_tied_to_entry_context(state, state.framework_evidence["pytorch_lightning"])
+    assert not _entry_point_imports_file(state, "README.md")
+    assert _evidence_score([{"kind": "unknown"}]) == 1
 
 
 def test_inspect_lightning_script_with_many_torch_imports_recommends_lightning(tmp_path):
