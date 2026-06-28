@@ -74,6 +74,11 @@ FRAMEWORK_SKILLS = {
     "pytorch": "nvflare-convert-pytorch",
     "pytorch_lightning": "nvflare-convert-lightning",
 }
+FRAMEWORK_EVIDENCE_WEIGHTS = {
+    "import": 1,
+    "lightning_class": 3,
+    "lightning_trainer": 3,
+}
 # Future candidate mappings. Keep these inactive until the matching skill
 # directories are implemented, packaged, and covered by admission tests.
 # "tensorflow": "nvflare-convert-tensorflow",
@@ -538,15 +543,36 @@ def _detect_primary_framework(state: InspectState, ranked: list[dict]) -> Option
         return None
     primary = ranked[0]["name"]
     # Resolve only the PyTorch-family conflict here: PyTorch Lightning is a
-    # PyTorch superset, so when the strongest framework is plain PyTorch but
-    # Lightning evidence (a pytorch_lightning/lightning.pytorch import, a
-    # LightningModule/DataModule subclass, or a Trainer) is also present, route to
-    # nvflare-convert-lightning. Do not override a stronger framework from another
-    # family (TensorFlow, JAX, etc.) -- those get their own family-conflict
-    # handling when their conversion skills land.
-    if primary == "pytorch" and LIGHTNING_FRAMEWORK in state.framework_evidence:
+    # PyTorch superset, but an incidental Lightning import elsewhere in a plain
+    # PyTorch workspace should not hide the PyTorch entry point from routing.
+    # Do not override a stronger framework from another family (TensorFlow, JAX,
+    # etc.) -- those get their own family-conflict handling when their conversion
+    # skills land.
+    if primary == "pytorch" and _should_promote_lightning_over_pytorch(state):
         return LIGHTNING_FRAMEWORK
     return primary
+
+
+def _should_promote_lightning_over_pytorch(state: InspectState) -> bool:
+    lightning_evidence = state.framework_evidence.get(LIGHTNING_FRAMEWORK, [])
+    pytorch_evidence = state.framework_evidence.get("pytorch", [])
+    if not lightning_evidence or not pytorch_evidence:
+        return False
+    if _lightning_evidence_tied_to_inspected_file_or_entry_point(state, lightning_evidence):
+        return True
+    return _evidence_score(lightning_evidence) > _evidence_score(pytorch_evidence)
+
+
+def _lightning_evidence_tied_to_inspected_file_or_entry_point(state: InspectState, evidence: list[dict]) -> bool:
+    if state.root.is_file():
+        inspected_file = _display_path(state.root, state.root, state.redact)
+        return any(item["file"] == inspected_file for item in evidence)
+    entry_point_paths = {entry["path"] for entry in state.entry_points}
+    return any(item["file"] in entry_point_paths for item in evidence)
+
+
+def _evidence_score(evidence: list[dict]) -> int:
+    return sum(FRAMEWORK_EVIDENCE_WEIGHTS.get(item["kind"], 1) for item in evidence)
 
 
 def _order_frameworks_for_display(ranked: list[dict], detected_framework: Optional[str]) -> list[dict]:
@@ -591,9 +617,19 @@ def _target_type(path: Path, state: InspectState, detected_framework: Optional[s
         return "flare_job_source"
     if detected_framework and conversion_state in {"partial_client_api", "client_api_converted"}:
         return "mixed_workspace"
+    if _is_mixed_pytorch_lightning_workspace(state, detected_framework):
+        return "mixed_workspace"
     if detected_framework:
         return "training_repository"
     return "unknown_target"
+
+
+def _is_mixed_pytorch_lightning_workspace(state: InspectState, detected_framework: Optional[str]) -> bool:
+    return (
+        detected_framework == "pytorch"
+        and "pytorch" in state.framework_evidence
+        and LIGHTNING_FRAMEWORK in state.framework_evidence
+    )
 
 
 def _add_entry_point(path: Path, rel_path: str, tree: ast.Module, state: InspectState) -> None:
