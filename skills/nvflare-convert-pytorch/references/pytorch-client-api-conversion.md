@@ -5,6 +5,24 @@ This reference covers standard PyTorch training loops that already have a
 `../../_shared/pytorch-model-exchange.md` for PyTorch-family state-dict and
 tensor payload rules before changing model exchange code.
 
+## Canonical Path
+
+Use this path unless a validation command proves the installed NVFLARE version
+does not support it:
+
+1. Confirm PyTorch routing with `nvflare agent inspect`.
+2. Select a PyTorch-family recipe with `nvflare recipe list/show`.
+3. Generate `client.py` with `nvflare.client` `receive` / `send` and
+   `FLModel(params=...)` as the model exchange path.
+4. Generate `job.py` that builds the selected recipe and calls
+   `recipe.execute(SimEnv(...))`.
+5. Validate with `python job.py`, inspect terminal evidence, then export.
+
+Do not read NVFLARE SDK source or docstrings to choose an alternate PyTorch
+exchange path. If an import or validation command fails, treat it as an
+installed-version compatibility check and report the exact failure instead of
+switching to a source-discovered strategy.
+
 ## Conversion Pattern
 
 - Import `nvflare.client as flare`.

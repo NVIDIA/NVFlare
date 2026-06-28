@@ -63,16 +63,25 @@ private site data into generated artifacts unless the user explicitly asks.
 
 ## Source Of Truth Boundary
 
-Use the active skill and its references for conversion workflow, safety rules,
-client API or patch patterns, exchange format expectations, generated layout,
-and evidence reporting. For current recipe names and parameters, use
+Use the active skill and its references for conversion strategy: client API or
+patch pattern, exchange format expectations, generated layout, validation
+evidence, and safety rules. Use `nvflare agent inspect <path> --format json`
+for static project evidence. For current recipe names and parameters, use
 `nvflare recipe list --format json` and
-`nvflare recipe show <recipe-name> --format json` as the source of truth.
+`nvflare recipe show <recipe-name> --format json`.
 
-Only consult NVFLARE library source, such as `site-packages/nvflare/**`, when
-the skill references and structured CLI metadata do not answer a specific
-question. If source reading is necessary, name the unanswered question and
-record it as a skill/reference gap so future runs can avoid the source dive.
+Do not use NVFLARE library source or docstrings to choose or override the
+conversion strategy, exchange pattern, recipe execution pattern, or generated
+layout. Those decisions are the skill contract. Treat local SDK source only as a
+bounded version/API investigation after a concrete validation failure or a named
+missing structured CLI field.
+
+If local SDK source or a docstring appears to conflict with the skill, do not
+abandon the skill path based on that reading. Verify with a small import,
+attribute, recipe metadata, or validation command. If the skill pattern
+validates, continue. If it does not validate, report the exact failed symbol,
+NVFLARE version, and command output as a version mismatch or skill/reference
+gap.
 
 ## Generated Job Layout
 
