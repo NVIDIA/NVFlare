@@ -204,6 +204,24 @@ def test_inspect_classifies_fully_qualified_lightning_patch_as_client_api_conver
     assert data["conversion_state"] == "client_api_converted"
 
 
+def test_inspect_classifies_fully_qualified_lightning_patch_for_wrapper_trainer_as_converted(tmp_path):
+    script = tmp_path / "client.py"
+    script.write_text(
+        "from nemo import lightning as nl\n"
+        "import nvflare.client.lightning\n"
+        "\n"
+        "trainer = nl.Trainer(max_steps=10)\n"
+        "nvflare.client.lightning.patch(trainer)\n"
+        "trainer.fit(model)\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(script)
+
+    assert "nvflare.client.lightning.patch" in data["flare_integration"]["calls"]
+    assert data["conversion_state"] == "client_api_converted"
+
+
 def test_inspect_classifies_from_import_lightning_module_alias_as_client_api_converted(tmp_path):
     script = tmp_path / "client.py"
     script.write_text(
