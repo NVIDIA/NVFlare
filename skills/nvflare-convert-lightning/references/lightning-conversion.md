@@ -26,9 +26,8 @@ flare.patch(trainer)
 
 while flare.is_running():
     # Optional: call receive() only when round/site/task metadata is needed.
-    # Do not pass input_model to trainer; the patched trainer loads the
-    # global model internally.
-    input_model = flare.receive()
+    # The patched trainer loads the global model internally.
+    flare.receive()
     trainer.validate(model, datamodule=datamodule)
     trainer.fit(model, datamodule=datamodule)
     trainer.test(ckpt_path="best", datamodule=datamodule)  # when test evidence is requested/available
