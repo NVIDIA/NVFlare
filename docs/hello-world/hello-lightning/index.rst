@@ -2,19 +2,32 @@
 Hello Pytorch Lightning
 =======================
 
-This example demonstrates how to use NVIDIA FLARE with PyTorch lightning to train an image classifier using
-federated averaging (FedAvg). The complete example code can be found in the :github_nvflare_link:`hello-lightning directory <examples/hello-world/hello-lightning>`.
+This example demonstrates how to use NVIDIA FLARE with PyTorch Lightning to train an image classifier using
+federated averaging (FedAvg) or SCAFFOLD. The complete example code can be found in the
+:github_nvflare_link:`hello-lightning directory <examples/hello-world/hello-lightning>`.
+
+.. note::
+
+   Automatic Lightning SCAFFOLD support is introduced for NVFlare 2.8.0. Until that package is published,
+   install NVFlare from this repository before installing the remaining example requirements.
+
 It is recommended to create a virtual environment and run everything within a virtualenv.
 
 
 NVIDIA FLARE Installation
 -------------------------
 
-for the complete installation instructions, see :doc:`Installation </installation>`
+For the complete installation instructions, see :doc:`Installation </installation>`. On a released branch:
 
 .. code-block:: text
 
     pip install nvflare
+
+For the current ``main`` branch, install from the repository root so the automatic SCAFFOLD support is available:
+
+.. code-block:: text
+
+    python -m pip install -e .
 
 
 get the example code from github:
@@ -195,6 +208,9 @@ Here's a breakdown of the key steps:
 5. **NVFlare Integration:**
 
    - The `flare.patch(trainer)` function is called to integrate NVFlare with the PyTorch Lightning trainer. This allows the trainer to handle federated learning tasks.
+   - When ``ScaffoldRecipe`` sends SCAFFOLD controls, the patch automatically applies the required
+     ``PTScaffoldHelper`` updates and returns the control difference. This path requires Lightning automatic
+     optimization with one optimizer.
 
 6. **Federated Learning Loop:**
 
@@ -271,6 +287,15 @@ number of rounds, batch size, and number of clients.
 .. code-block:: text
 
   python job.py --num_rounds 2 --batch_size 16
+
+FedAvg is the default. The same client can run SCAFFOLD without changing its training loop:
+
+.. code-block:: text
+
+  python job.py --algorithm scaffold --num_rounds 2 --batch_size 16
+
+For manual Lightning optimization, integrate ``PTScaffoldHelper`` directly rather than relying on
+``flare.patch(trainer)``.
 
 
 output

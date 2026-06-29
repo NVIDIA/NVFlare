@@ -241,6 +241,17 @@ For tutorial examples, see the
 :github_nvflare_link:`Hello FLARE API notebook <examples/tutorials/flare_api.ipynb>`
 and :github_nvflare_link:`Job Recipe notebook <examples/tutorials/job_recipe.ipynb>`.
 
+Automatic Lightning SCAFFOLD Support
+------------------------------------
+
+``nvflare.client.lightning.patch`` now detects SCAFFOLD control metadata and automatically applies the
+required ``PTScaffoldHelper`` updates around Lightning optimizer steps. The same patched Lightning client can
+therefore run with either ``FedAvgRecipe`` or ``ScaffoldRecipe`` and returns the control difference required by
+server-side SCAFFOLD aggregation. The automatic path supports Lightning automatic optimization with one
+optimizer; manual optimization continues to require explicit ``PTScaffoldHelper`` integration.
+
+See the :github_nvflare_link:`Hello Lightning example <examples/hello-world/hello-lightning>` for both modes.
+
 Feature Election
 ----------------
 

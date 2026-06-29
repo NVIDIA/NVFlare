@@ -26,7 +26,7 @@ from nvflare.client.api import clear, get_config, init, is_evaluate, is_submit_m
 from nvflare.client.config import ConfigKey
 from nvflare.fuel.utils import fobs
 
-from .callbacks import RestoreState
+from .callbacks import RestoreState, _ScaffoldHandler
 
 FL_META_KEY = "__fl_meta__"
 
@@ -50,6 +50,12 @@ def patch(
             model updates where the client only keeps part of the server keyspace.
         update_fit_loop: whether to increase `trainer.fit_loop.max_epochs` and `trainer.fit_loop.epoch_loop.max_steps` each FL round.
             Defaults to `True` which is suitable for most PyTorch Lightning applications.
+
+    SCAFFOLD:
+        When the received model contains SCAFFOLD global controls, ``patch`` automatically
+        applies ``PTScaffoldHelper`` around Lightning's optimizer steps and returns the
+        required control difference. This supports automatic optimization with one optimizer;
+        manual optimization must integrate ``PTScaffoldHelper`` directly.
 
     Example:
 
@@ -128,6 +134,7 @@ class FLCallback(Callback):
         self._is_submit_model = False
         self._load_state_dict_strict = load_state_dict_strict
         self._update_fit_loop = update_fit_loop
+        self._scaffold = _ScaffoldHandler()
 
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -165,18 +172,28 @@ class FLCallback(Callback):
 
     def on_train_start(self, trainer, pl_module):
         # receive the global model and update the local model with global model
-        self._receive_and_update_model(trainer, pl_module)
+        input_model = self._receive_and_update_model(trainer, pl_module)
+        if input_model and self._is_training:
+            self._scaffold.start_round(trainer=trainer, pl_module=pl_module, input_model=input_model)
+
+    def on_before_optimizer_step(self, trainer, pl_module, optimizer, *args):
+        self._scaffold.before_optimizer_step(optimizer)
+
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
+        self._scaffold.after_train_batch(pl_module)
 
     def on_train_end(self, trainer, pl_module):
         if hasattr(pl_module, FL_META_KEY):
             fl_meta = getattr(pl_module, FL_META_KEY)
             if not isinstance(fl_meta, dict):
                 raise RuntimeError(f"The {FL_META_KEY} needs to be a dictionary")
+            fl_meta = dict(fl_meta)
         else:
             fl_meta = {}
-        if MetaKey.NUM_STEPS_CURRENT_ROUND not in fl_meta:
-            fl_meta[MetaKey.NUM_STEPS_CURRENT_ROUND] = trainer.estimated_stepping_batches
         if self._is_training:
+            fl_meta.update(self._scaffold.finish_round(pl_module))
+            if MetaKey.NUM_STEPS_CURRENT_ROUND not in fl_meta:
+                fl_meta[MetaKey.NUM_STEPS_CURRENT_ROUND] = trainer.estimated_stepping_batches
             model = FLModel(params=pl_module.cpu().state_dict(), meta=fl_meta)
             if self.train_with_evaluation:
                 if self.metrics is None:
@@ -249,6 +266,7 @@ class FLCallback(Callback):
                     raise RuntimeError(f"Failed to load model state dict: {str(e)}")
             if model.current_round is not None:
                 self.current_round = model.current_round
+        return model
 
     def _receive_model(self, trainer) -> FLModel:
         """Receives model from NVFlare."""

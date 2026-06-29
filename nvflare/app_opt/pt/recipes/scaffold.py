@@ -54,12 +54,15 @@ class ScaffoldRecipe(Recipe):
     Karimireddy et al. "SCAFFOLD: Stochastic Controlled Averaging for Federated Learning"
     (https://arxiv.org/abs/1910.06378).
 
-    **Client script requirement**: Unlike FedAvgRecipe, the client script *must* use
+    **Client script requirement**: Unlike FedAvgRecipe, a raw PyTorch client loop *must* use
     `PTScaffoldHelper` (nvflare.app_opt.pt.scaffold): call init(model), model_update()
     during training, terms_update() after training, and include
     ``meta[AlgorithmConstants.SCAFFOLD_CTRL_DIFF] = scaffold_helper.get_delta_controls()``
     in the FLModel sent back to the server. A standard flare.receive/send loop without
-    PTScaffoldHelper will cause server-side aggregation to fail.
+    PTScaffoldHelper will cause server-side aggregation to fail. PyTorch Lightning clients
+    that call ``nvflare.client.lightning.patch(trainer)`` perform these steps automatically
+    when SCAFFOLD metadata is received. Automatic Lightning support requires automatic
+    optimization with one optimizer; manual optimization must integrate PTScaffoldHelper directly.
 
     This recipe sets up a complete federated learning workflow with Scaffold controller.
 
