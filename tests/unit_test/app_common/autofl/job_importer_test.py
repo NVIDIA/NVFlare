@@ -125,6 +125,8 @@ def test_import_recipe_job_extracts_trust_contract_without_executing_code(tmp_pa
     assert config["search_space"]["suggested"]["lr"]["default"] == 0.01
     assert config["search_space"]["suggested"]["batch_size"]["type"] == "int"
     assert config["trust_contract"]["allowed_edit_paths"] == ["job.py", "client.py", "model.py"]
+    assert config["job"]["allowed_create_patterns"] == ["**/*.py"]
+    assert config["trust_contract"]["allowed_create_patterns"] == ["**/*.py"]
     assert config["trust_contract"]["agent_controls"]["must_not_edit_outside_allowed_paths"] is True
     assert config["unresolved"] == []
 

@@ -220,7 +220,7 @@ def guard_state_for_rows(
 
     decision = "continue"
     reason = "continue"
-    next_action = "launch_next_candidate"
+    next_action = "propose_candidate"
     final_response_allowed = False
 
     if pending:
@@ -257,7 +257,7 @@ def guard_state_for_rows(
             "then launch source-backed candidates under the same comparison budget."
         )
     else:
-        instruction = "Do not produce a final answer. Launch the next same-budget candidate now."
+        instruction = "Do not produce a final answer. Propose and prepare the next same-budget candidate now."
 
     return {
         "schema_version": "nvflare.autofl.campaign_state.v1",

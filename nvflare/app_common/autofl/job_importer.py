@@ -34,6 +34,7 @@ import yaml
 
 AUTOFL_CONFIG_SCHEMA_VERSION = "nvflare.autofl.config.v1"
 IMPORTER_VERSION = "nvflare-autofl-job-importer/v1"
+ALLOWED_CREATE_PATTERNS = ["**/*.py"]
 
 SUPPORTED_ENV_NAMES = {"PocEnv", "ProdEnv", "SimEnv"}
 TUNABLE_ARG_NAMES = {
@@ -167,6 +168,7 @@ class DeterministicJobImporter:
             "surface": _surface_name(job_call),
             "entrypoint": "main" if _has_main_entrypoint(tree) else "unresolved",
             "allowed_edit_paths": allowed_edit_paths,
+            "allowed_create_patterns": list(ALLOWED_CREATE_PATTERNS),
         }
         if job_call:
             call_args, call_issues = self._resolved_call_keywords(job_call, index.parser_args, source_text)
@@ -228,6 +230,7 @@ class DeterministicJobImporter:
                 ),
                 "unresolved": list(unresolved),
                 "allowed_edit_paths": allowed_edit_paths,
+                "allowed_create_patterns": list(ALLOWED_CREATE_PATTERNS),
                 "agent_controls": {
                     "must_not_edit_outside_allowed_paths": True,
                     "must_preserve_fixed_training_budget": bool(budget.get("fixed_training_budget")),

@@ -16,8 +16,8 @@ the standard ``nvflare agent skills`` workflow for the target coding agent.
 NVFlare does not add a separate public Auto-FL command family for this workflow.
 Instead, NVFlare provides the deterministic import, reviewable
 ``autofl.yaml`` contract, execution substrate, policy boundaries, artifacts,
-and reproducibility evidence.  The agent plans candidate edits and runs them
-through existing NVFlare surfaces.
+and reproducibility evidence.  The agent chooses hypotheses, edits source,
+implements algorithms, and runs candidates through existing NVFlare surfaces.
 
 ``autofl.yaml`` is the human-reviewable campaign configuration, not a replacement
 for ``job.py`` or for exported NVFlare job folders.  It exposes the editable
@@ -62,7 +62,8 @@ things from ``autofl.yaml``:
 - **Unresolved**: dynamic defaults, unsupported Python semantics, missing metric
   sources, unknown data paths, or low-confidence fields.
 - **Allowed**: files the agent may edit, fixed-budget fields it must preserve,
-  and environment or policy boundaries.
+  Python modules it may add under the job root, and environment or policy
+  boundaries.
 
 This makes the workflow feel native and reproducible: NVFlare owns the truth of
 the campaign settings and execution surfaces; the agent owns exploration within
@@ -71,11 +72,44 @@ explicit constraints.
 Execution
 =========
 
-The skill uses existing NVFlare surfaces after import:
+The bundled helper is an internal skill surface, not a public NVFlare command
+family.  It first initializes the campaign and baseline:
+
+.. code-block:: shell
+
+   python "$CODEX_HOME/skills/nvflare-autofl/scripts/run_job_campaign.py" \
+       initialize ./job.py --metric accuracy --mode max --env sim
+
+For each attempt, the agent supplies a hypothesis and receives an isolated
+candidate source directory plus ``candidate_manifest.json``:
+
+.. code-block:: shell
+
+   python "$CODEX_HOME/skills/nvflare-autofl/scripts/run_job_campaign.py" \
+       prepare ./job.py --name fedprox-variant \
+       --hypothesis "stabilize heterogeneous client updates"
+
+The agent edits that candidate source, including new Python algorithm modules
+when useful, and asks the helper to evaluate it:
+
+.. code-block:: shell
+
+   python "$CODEX_HOME/skills/nvflare-autofl/scripts/run_job_campaign.py" \
+       evaluate ./job.py --manifest <candidate_manifest.json>
+
+NVFlare computes the source diff and hash, checks allowed paths and detectable
+fixed-budget drift, executes the candidate, updates ``results.tsv`` and
+``progress.png``, and either retains the new best source or restores the prior
+best.  Built-in tunable candidates are available through the helper's
+``suggest`` action only as optional seeds; the agent remains free to implement
+new algorithms.
+
+The workflow then uses existing NVFlare execution surfaces:
 
 - Simulation jobs run through the job's configured ``SimEnv``.
 - POC and production jobs use the standard startup-kit and ``nvflare job``
-  submission, wait, download, and inspection commands.
+  submission, wait, download, and inspection commands.  The skill records the
+  resulting job ID, artifacts, and metric against the candidate manifest.
 - Production execution is allowed when the user requests it, but the skill must
   not bypass normal startup-kit authentication, site policy, or job submission.
 

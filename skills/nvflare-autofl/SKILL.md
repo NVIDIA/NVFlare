@@ -26,35 +26,36 @@ Use this skill to optimize an existing NVFLARE `job.py` without asking the user
 to learn a new Auto-FL command tree. The user selects this skill, points to a
 job, and states the objective, environment, and optional budget. NVFLARE
 provides the deterministic campaign import, execution substrate, policy
-boundaries, artifacts, and machine-readable contracts. For simulation, the
-coding agent invokes the product runner and monitors its code-owned state; the
-runner owns candidate generation, execution, comparison, plots, and reports.
-Manual agent edits are a fallback path, not the default product experience.
+boundaries, artifacts, and machine-readable contracts. The coding agent owns
+hypotheses, source edits, new algorithm implementations, and candidate choice.
 
-Before any candidate work, import the job deterministically:
+Initialize the campaign and baseline through the bundled helper:
 
 ```bash
-python -m nvflare.app_common.autofl.job_importer ./job.py --metric <metric> --env <sim|poc|prod> --max-candidates <n> --output autofl.yaml
+python "$CODEX_HOME/skills/nvflare-autofl/scripts/run_job_campaign.py" initialize ./job.py --metric <metric> --mode <max|min> --env <sim|poc|prod> [--max-candidates <n>]
 ```
 
-If the user did not specify a candidate cap, omit `--max-candidates` or leave it
-unset in the review summary. Do not invent a default cap.
-
-For simulation campaigns, use the bundled deterministic campaign runner as the
-code-owned loop. Include
-`--max-candidates <n>` only when the user gave an explicit candidate budget:
+Read `autofl.yaml` and the JSON response, then prepare an agent-authored
+candidate with a short hypothesis and optional candidate-only arguments:
 
 ```bash
-python "$CODEX_HOME/skills/nvflare-autofl/scripts/run_job_campaign.py" ./job.py --metric <metric> --env sim [--max-candidates <n>]
+python "$CODEX_HOME/skills/nvflare-autofl/scripts/run_job_campaign.py" prepare ./job.py --name <candidate> --hypothesis "<expected improvement>" [--run-args "<args>"]
 ```
 
-If the user did not specify a candidate cap, omit `--max-candidates`; the
-runner will keep launching same-budget candidate attempts and refresh
-`results.tsv`, `progress.png`, `.nvflare/autofl/campaign_state.json`, and
-the Auto-FL report after every finalized candidate until interrupted or blocked.
-In this uncapped mode, do not ask the user whether to keep going. Report
-checkpoint status as an observation, then continue monitoring or executing the
-same runner while `final_response_allowed=false`.
+Edit only the returned candidate source directory. Modify existing allowed
+files or add Python modules under the job root; do not edit the live best source
+directly. Then evaluate the manifest:
+
+```bash
+python "$CODEX_HOME/skills/nvflare-autofl/scripts/run_job_campaign.py" evaluate ./job.py --manifest <candidate_manifest.json>
+```
+
+Simulation evaluation runs the candidate immediately. POC and production
+evaluation validates and materializes the candidate; submit it with standard
+`nvflare job` commands, then call `record` with the manifest, job ID, artifacts,
+and score. Use `abandon` to restore a pending candidate. Use `suggest` only when
+you want deterministic tunable seeds; suggestions are never executed
+automatically and do not limit agent-authored code candidates.
 
 If the job directory contains a task-local `mutation_schema.yaml`, treat its
 `comparison_budget_args.default_candidate_budget` and mutation bounds as
@@ -72,13 +73,11 @@ runner command reports a sandbox/socket permission failure, treat it as an
 infrastructure retry, not as a candidate result, and rerun the same command with
 escalated execution.
 
-The runner owns deterministic import, baseline/candidate execution, candidate
-counting, ledger updates, campaign state, progress plotting, and the concise
-report. Do not produce a final response while the runner is active. After it
-exits, read `.nvflare/autofl/campaign_state.json` and only finalize when
-`final_response_allowed=true`. If an uncapped runner exits for a recoverable
-runner/schema/simulator issue, repair the cause and resume the same requested
-optimization once. For long-running and simulator-stall handling, read
+The helper owns deterministic import, source snapshots, candidate validation,
+execution, restoration, counting, ledger updates, campaign state, plotting,
+and reports. After each lifecycle action, read
+`.nvflare/autofl/campaign_state.json` and only finalize when
+`final_response_allowed=true`. For long-running and simulator-stall handling, read
 [continuous-campaigns.md](references/continuous-campaigns.md).
 
 Read `autofl.yaml` and show the user a concise campaign summary:
@@ -87,8 +86,9 @@ Read `autofl.yaml` and show the user a concise campaign summary:
   locations, `objective.optimization_metric`, metric source, source hash, and importer version.
 - **Unresolved**: dynamic defaults, unsupported Python semantics, missing
   metric sources, unknown data paths, or any low-confidence fields.
-- **Allowed**: files the agent may edit, fixed-budget fields it must preserve,
-  and policy boundaries for the requested environment.
+- **Allowed**: files the agent may edit, Python source it may create,
+  fixed-budget fields it must preserve, and policy boundaries for the requested
+  environment.
 
 Treat `autofl.yaml` as the human-reviewable Auto-FL campaign config, not as a
 replacement for `job.py` or an exported NVFLARE job folder. Use the original
@@ -100,7 +100,9 @@ specific fields before running candidates.
 
 ## Requirements
 
-- Do not edit outside `job.allowed_edit_paths`.
+- Edit existing files only through candidate drafts and within
+  `job.allowed_edit_paths`. New Python modules may match
+  `job.allowed_create_patterns` under the job root.
 - Preserve `budget.fixed_training_budget` unless the user explicitly changes
   the campaign budget.
 - If the environment provides `PYTHON`, `VIRTUAL_ENV`, or a venv on `PATH`,
@@ -125,29 +127,20 @@ specific fields before running candidates.
 
 ## Candidate Loop
 
-For simulation (`--env sim`), prefer `scripts/run_job_campaign.py` for both
-explicitly capped and uncapped campaigns. Start the runner before inspecting or
-editing task code beyond the deterministic import and `mutation_schema.yaml`
-review. Use the manual loop below only when the runner is unavailable, when the
-requested environment is POC/production, or when the user explicitly asks for
-source-code mutations that the runner cannot express yet.
-
-1. Inspect `autofl.yaml`, the allowed files, and the current job behavior.
-2. Propose and run a candidate tied to supported tunables or allowed files.
-3. Validate importability and fixed-budget comparability.
-4. Extract the requested metric from NVFLARE artifacts/logs.
-5. Update `results.tsv`: non-survivors=`discard`, crashes=`crash`,
-   survivor=`keep`, unresolved=`candidate`; prefer explicit metrics such as `test_accuracy`.
-6. Refresh `progress.png`, update campaign state, and launch the next
-   comparable candidate batch unless the code-owned state says
-    `final_response_allowed=true` or production policy blocks execution.
+1. Inspect `autofl.yaml`, current best source, prior manifests, and results.
+2. Form a concrete hypothesis. Use literature, framework knowledge, source
+   edits, new algorithms, or a fallback tunable suggestion as appropriate.
+3. Prepare a candidate, edit its draft, and evaluate its manifest.
+4. Let the helper validate paths and fixed-budget comparability, compute the
+   patch hash, execute or materialize it, extract metrics, and keep or restore.
+5. Read campaign state and execute `next_action`. Run a source-backed literature
+   pass when requested, then implement its strongest compatible idea.
 
 ## Continuous Campaign Rule
 
-For uncapped campaigns, continue launching same-budget candidate batches after
-setup and baseline until manually interrupted. Do not ask whether to keep going.
-Do not produce a final answer from your own judgment while the code-owned
-campaign state says `final_response_allowed=false`.
+For uncapped campaigns, continue proposing and evaluating same-budget candidates
+after setup and baseline until manually interrupted. Do not ask whether to keep
+going or finalize while campaign state says `final_response_allowed=false`.
 
 A kept improvement, refreshed plot, updated report, local commit, first plateau
 check, or encoded `job.py` default is a checkpoint, not completion. Treat the
@@ -163,9 +156,9 @@ Campaigns are uncapped by default. If the user says "optimize this job" without
 an explicit candidate budget, continue the campaign until manually interrupted
 or blocked. Do not stop after the first baseline, first batch, first successful
 candidate, first kept improvement, first local commit, or first plateau
-checkpoint. Do not stop after a first sweep of available CLI tunables; in
-uncapped mode repeating, broadening, or generated same-budget candidates are
-valid continued campaign work. Progress reports in uncapped mode must not be
+checkpoint. Do not stop after a first sweep of tunables; broaden into
+agent-authored code or literature-derived algorithm candidates. Progress
+reports in uncapped mode must not be
 phrased as "should I continue?" decisions; the answer is continue unless the
 user explicitly interrupts or the code-owned state permits finalization.
 Do not invent a replacement campaign or new objective after a recoverable
@@ -183,6 +176,8 @@ Treat plateau as a decision checkpoint, not an automatic stop. Summarize the
 plateau in the running report, refresh `progress.png`, run the campaign guard or
 read the runner's `.nvflare/autofl/campaign_state.json`, choose the returned
 next mode, and continue unless the state reports `final_response_allowed=true`.
+After a source-backed review, record it with the helper's `record --literature
+--hypothesis "<sources and decision>"` action before preparing its candidate.
 
 ## Stop Handling
 

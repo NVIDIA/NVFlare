@@ -13,17 +13,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Run a deterministic Auto-FL campaign for an existing NVFlare job.py.
+"""Manage agent-authored Auto-FL candidates for an existing NVFlare job.py.
 
-The runner executes a baseline and comparable CLI-argument candidates, records
-state and artifacts, and uses only the job plus optional job-local campaign
-configuration.
+The coding agent owns hypotheses and source edits. This helper snapshots the
+current best source, validates and evaluates candidate manifests, restores
+discarded candidates, and records reproducible campaign state and artifacts.
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import difflib
+import hashlib
 import importlib.util
 import json
 import os
@@ -36,12 +38,13 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 try:
     import yaml
-except ImportError:  # pragma: no cover - launcher installs PyYAML through NVFlare deps
+except ImportError:  # pragma: no cover - NVFlare installs PyYAML
     yaml = None
 
 
@@ -55,7 +58,18 @@ RESULT_FIELDS = [
     "run_command",
     "artifacts",
     "failure_reason",
+    "candidate_manifest",
+    "base_candidate",
+    "patch_sha256",
 ]
+
+CANDIDATE_MANIFEST_SCHEMA_VERSION = "nvflare.autofl.candidate.v1"
+CAMPAIGN_METADATA_SCHEMA_VERSION = "nvflare.autofl.campaign.v1"
+CAMPAIGN_METADATA_PATH = ".nvflare/autofl/campaign.json"
+CANDIDATE_ROOT = ".nvflare/autofl/candidates"
+BEST_SNAPSHOT_ROOT = ".nvflare/autofl/snapshots/best"
+ALLOWED_CREATE_PATTERNS = ["**/*.py"]
+RESERVED_CANDIDATE_PATH_PARTS = {".git", ".nvflare", "__pycache__", "autofl_runs"}
 
 INFRASTRUCTURE_RETRY = "infrastructure_retry"
 SIMULATOR_STALL_EXIT_CODE = 125
@@ -87,6 +101,7 @@ DEFAULT_PLATEAU_THRESHOLD = 8
 
 FIXED_BUDGET_TO_CLI = {
     "num_clients": "n_clients",
+    "min_clients": "min_clients",
     "num_rounds": "num_rounds",
 }
 
@@ -117,6 +132,9 @@ class RunRecord:
     run_command: str
     artifacts: str
     failure_reason: str = ""
+    candidate_manifest: str = ""
+    base_candidate: str = ""
+    patch_sha256: str = ""
 
 
 @dataclass
@@ -150,10 +168,15 @@ def env_float(name: str, default: float) -> float:
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "action",
+        choices=["initialize", "prepare", "evaluate", "abandon", "suggest", "record", "status"],
+        help="skill-internal campaign lifecycle action",
+    )
     parser.add_argument("job", help="NVFlare job.py to optimize")
     parser.add_argument("--metric", default="accuracy")
     parser.add_argument("--mode", choices=["max", "min"], default="max")
-    parser.add_argument("--env", dest="target_env", choices=["sim"], default="sim")
+    parser.add_argument("--env", dest="target_env", choices=["sim", "poc", "prod"], default="sim")
     parser.add_argument(
         "--max-candidates",
         type=int,
@@ -206,6 +229,17 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--prefer-synthetic", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--synthetic-train-size", type=int, default=2048)
     parser.add_argument("--synthetic-test-size", type=int, default=256)
+    parser.add_argument("--name", help="candidate name for prepare")
+    parser.add_argument("--hypothesis", help="candidate hypothesis for prepare")
+    parser.add_argument("--manifest", help="candidate_manifest.json path")
+    parser.add_argument("--run-args", default="", help="candidate-only job.py arguments")
+    parser.add_argument("--score", type=float, help="externally measured metric for record")
+    parser.add_argument("--artifacts", dest="external_artifacts", help="external POC/production artifacts")
+    parser.add_argument("--job-id", help="standard NVFlare job ID for an external result")
+    parser.add_argument("--failure-reason", default="", help="external execution failure")
+    parser.add_argument("--baseline", action="store_true", help="record an externally executed baseline")
+    parser.add_argument("--literature", action="store_true", help="record a literature-review checkpoint")
+    parser.add_argument("--limit", type=int, default=10, help="maximum fallback suggestions")
     return parser.parse_args(argv)
 
 
@@ -481,6 +515,214 @@ def write_json(path: Path, data: Dict[str, Any]) -> None:
     path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def read_json(path: Path) -> Dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        raise ValueError(f"failed to read JSON from {path}: {e}") from e
+    if not isinstance(payload, dict):
+        raise ValueError(f"expected a JSON object in {path}")
+    return payload
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def sha256_json(data: Any) -> str:
+    return sha256_bytes(json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+
+
+def safe_relative_path(workspace: Path, value: str) -> str:
+    path = Path(value)
+    resolved = path.resolve() if path.is_absolute() else (workspace / path).resolve()
+    try:
+        relative = resolved.relative_to(workspace.resolve())
+    except ValueError as e:
+        raise ValueError(f"path escapes the Auto-FL job workspace: {value}") from e
+    if not relative.parts or any(part in RESERVED_CANDIDATE_PATH_PARTS for part in relative.parts):
+        raise ValueError(f"path is reserved for Auto-FL or repository metadata: {value}")
+    return relative.as_posix()
+
+
+def allowed_edit_paths(config: Dict[str, Any], workspace: Path) -> List[str]:
+    values = config.get("job", {}).get("allowed_edit_paths", []) or []
+    if not isinstance(values, list):
+        raise ValueError("autofl.yaml job.allowed_edit_paths must be a list")
+    return list(dict.fromkeys(safe_relative_path(workspace, str(value)) for value in values))
+
+
+def is_allowed_new_source(path: str) -> bool:
+    relative = Path(path)
+    return relative.suffix == ".py" and not any(part in RESERVED_CANDIDATE_PATH_PARTS for part in relative.parts)
+
+
+def file_map(root: Path) -> Dict[str, str]:
+    if not root.exists():
+        return {}
+    files: Dict[str, str] = {}
+    for path in sorted(root.rglob("*")):
+        if path.is_symlink():
+            raise ValueError(f"candidate source contains a symlink: {path}")
+        if path.is_file():
+            relative = path.relative_to(root).as_posix()
+            files[relative] = sha256_bytes(path.read_bytes())
+    return files
+
+
+def source_hash(files: Dict[str, str]) -> str:
+    return sha256_json(files)
+
+
+def copy_relative_file(source_root: Path, destination_root: Path, relative: str) -> None:
+    source = source_root / relative
+    destination = destination_root / relative
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, destination)
+
+
+def create_best_snapshot(workspace: Path, config: Dict[str, Any], snapshot_root: Path) -> Dict[str, str]:
+    if snapshot_root.exists():
+        shutil.rmtree(snapshot_root)
+    source_root = snapshot_root / "source"
+    source_root.mkdir(parents=True, exist_ok=True)
+    for relative in allowed_edit_paths(config, workspace):
+        source = workspace / relative
+        if source.is_symlink():
+            raise ValueError(f"allowed edit path is a symlink: {source}")
+        if source.is_file():
+            copy_relative_file(workspace, source_root, relative)
+    files = file_map(source_root)
+    write_json(snapshot_root / "snapshot.json", {"source_sha256": source_hash(files), "files": files})
+    return files
+
+
+def load_best_snapshot(snapshot_root: Path) -> Tuple[Path, Dict[str, str]]:
+    metadata = read_json(snapshot_root / "snapshot.json")
+    files = metadata.get("files")
+    if not isinstance(files, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in files.items()):
+        raise ValueError("best snapshot metadata has an invalid files mapping")
+    source_root = snapshot_root / "source"
+    if source_hash(files) != metadata.get("source_sha256") or file_map(source_root) != files:
+        raise ValueError("best snapshot failed its integrity check")
+    return source_root, files
+
+
+def workspace_matches_snapshot(workspace: Path, source_root: Path, files: Dict[str, str]) -> bool:
+    for relative, digest in files.items():
+        path = workspace / relative
+        if path.is_symlink() or not path.is_file() or sha256_bytes(path.read_bytes()) != digest:
+            return False
+    return True
+
+
+def validate_candidate_id(value: str) -> str:
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", value or ""):
+        raise ValueError("candidate name must match [A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+    return value
+
+
+def candidate_manifest_path(workspace: Path, candidate_id: str) -> Path:
+    return workspace / CANDIDATE_ROOT / candidate_id / "candidate_manifest.json"
+
+
+def load_candidate_manifest(path: Path) -> Dict[str, Any]:
+    manifest = read_json(path)
+    if manifest.get("schema_version") != CANDIDATE_MANIFEST_SCHEMA_VERSION:
+        raise ValueError(f"unsupported candidate manifest schema in {path}")
+    candidate_id = validate_candidate_id(str(manifest.get("candidate_id") or ""))
+    expected = candidate_manifest_path(Path(str(manifest.get("workspace_root") or "")), candidate_id).resolve()
+    if path.resolve() != expected:
+        raise ValueError("candidate manifest path does not match its workspace and candidate ID")
+    if manifest.get("status") not in {"prepared", "ready_for_external_execution"}:
+        raise ValueError(f"candidate {candidate_id} is not pending evaluation")
+    return manifest
+
+
+def campaign_metadata_path(workspace: Path) -> Path:
+    return workspace / CAMPAIGN_METADATA_PATH
+
+
+def load_campaign_metadata(workspace: Path, job: Path) -> Dict[str, Any]:
+    metadata = read_json(campaign_metadata_path(workspace))
+    if metadata.get("schema_version") != CAMPAIGN_METADATA_SCHEMA_VERSION:
+        raise ValueError("unsupported Auto-FL campaign metadata schema")
+    if Path(str(metadata.get("job") or "")).resolve() != job.resolve():
+        raise ValueError("campaign metadata belongs to a different job.py")
+    return metadata
+
+
+def fixed_budget_hash(config: Dict[str, Any]) -> str:
+    return sha256_json(config.get("budget", {}).get("fixed_training_budget", {}) or {})
+
+
+def candidate_changes(
+    workspace: Path,
+    config: Dict[str, Any],
+    best_source: Path,
+    best_files: Dict[str, str],
+    draft_source: Path,
+) -> Tuple[List[str], List[str]]:
+    draft_files = file_map(draft_source)
+    deleted = sorted(set(best_files) - set(draft_files))
+    if deleted:
+        raise ValueError(f"candidate deletes managed source files: {', '.join(deleted)}")
+
+    allowed = set(allowed_edit_paths(config, workspace))
+    changed = sorted(path for path, digest in draft_files.items() if best_files.get(path) != digest)
+    created = []
+    for relative in changed:
+        if relative in best_files:
+            if relative not in allowed:
+                raise ValueError(f"candidate modifies a path outside job.allowed_edit_paths: {relative}")
+            continue
+        if (workspace / relative).exists() or not is_allowed_new_source(relative):
+            raise ValueError(f"candidate creates an unauthorized source path: {relative}")
+        created.append(relative)
+    return changed, created
+
+
+def text_for_diff(path: Path) -> List[str]:
+    data = path.read_bytes()
+    if b"\0" in data:
+        raise ValueError(f"candidate diff does not support binary file: {path}")
+    return data.decode("utf-8", errors="replace").splitlines(keepends=True)
+
+
+def render_candidate_patch(best_source: Path, draft_source: Path, changed: Sequence[str]) -> str:
+    chunks: List[str] = []
+    for relative in changed:
+        before = text_for_diff(best_source / relative) if (best_source / relative).is_file() else []
+        after = text_for_diff(draft_source / relative)
+        chunks.extend(
+            difflib.unified_diff(
+                before,
+                after,
+                fromfile=f"a/{relative}",
+                tofile=f"b/{relative}",
+            )
+        )
+    return "".join(chunks)
+
+
+def apply_candidate_source(workspace: Path, draft_source: Path, changed: Sequence[str]) -> None:
+    for relative in changed:
+        copy_relative_file(draft_source, workspace, relative)
+
+
+def restore_best_source(workspace: Path, best_source: Path, best_files: Dict[str, str], changed: Sequence[str]) -> None:
+    for relative in changed:
+        destination = workspace / relative
+        if relative in best_files:
+            copy_relative_file(best_source, workspace, relative)
+        elif destination.exists() and not destination.is_dir():
+            destination.unlink()
+
+
 _CAMPAIGN_GUARD = None
 
 
@@ -706,7 +948,13 @@ def candidate_arg_values(candidate_args: Sequence[str]) -> Dict[str, Any]:
         if not raw.startswith("--"):
             idx += 1
             continue
-        name = raw[2:].replace("-", "_")
+        option = raw[2:]
+        if "=" in option:
+            name, value = option.split("=", 1)
+            values[name.replace("-", "_")] = value
+            idx += 1
+            continue
+        name = option.replace("-", "_")
         if idx + 1 >= len(candidate_args) or candidate_args[idx + 1].startswith("--"):
             values[name] = True
             idx += 1
@@ -756,6 +1004,19 @@ def candidate_args_allowed(candidate_args: Sequence[str], schema: Dict[str, Any]
     return True, ""
 
 
+def candidate_preserves_fixed_args(
+    candidate_args: Sequence[str], config: Dict[str, Any], schema: Dict[str, Any]
+) -> Tuple[bool, str]:
+    values = candidate_arg_values(candidate_args)
+    fixed_names = set(fixed_within_campaign(schema))
+    fixed_budget = config.get("budget", {}).get("fixed_training_budget", {}) or {}
+    fixed_names.update(FIXED_BUDGET_TO_CLI[field] for field in fixed_budget if field in FIXED_BUDGET_TO_CLI)
+    changed = sorted(fixed_names.intersection(values))
+    if changed:
+        return False, f"candidate run arguments change fixed-budget fields: {', '.join(changed)}"
+    return True, ""
+
+
 def load_mutation_schema(cwd: Path) -> Dict[str, Any]:
     path = cwd / "mutation_schema.yaml"
     if not path.exists():
@@ -784,8 +1045,8 @@ def fixed_within_campaign(schema: Dict[str, Any]) -> set:
 def build_comparison_budget_args(schema: Dict[str, Any], help_text: str) -> List[str]:
     budget = comparison_budget(schema)
     args: List[str] = []
-    for field, cli_name in COMPARISON_BUDGET_TO_CLI.items():
-        value = budget.get(field)
+    for budget_field, cli_name in COMPARISON_BUDGET_TO_CLI.items():
+        value = budget.get(budget_field)
         if value is not None and supports_flag(help_text, f"--{cli_name}"):
             args.extend([f"--{cli_name}", str(value)])
     if budget.get("cross_site_eval") and supports_flag(help_text, "--cross_site_eval"):
@@ -797,13 +1058,13 @@ def build_fixed_args(config: Dict[str, Any], help_text: str, schema: Dict[str, A
     fixed = config.get("budget", {}).get("fixed_training_budget", {}) or {}
     budget = comparison_budget(schema)
     budget_cli_names = {
-        cli_name for field, cli_name in COMPARISON_BUDGET_TO_CLI.items() if budget.get(field) is not None
+        cli_name for budget_field, cli_name in COMPARISON_BUDGET_TO_CLI.items() if budget.get(budget_field) is not None
     }
     args: List[str] = []
-    for field, cli_name in FIXED_BUDGET_TO_CLI.items():
+    for budget_field, cli_name in FIXED_BUDGET_TO_CLI.items():
         if cli_name in budget_cli_names:
             continue
-        value = fixed.get(field)
+        value = fixed.get(budget_field)
         if value is not None and supports_flag(help_text, f"--{cli_name}"):
             args.extend([f"--{cli_name}", str(value)])
     return args
@@ -1102,8 +1363,37 @@ def write_results(path: Path, records: List[RunRecord]) -> None:
                     "run_command": record.run_command,
                     "artifacts": record.artifacts,
                     "failure_reason": record.failure_reason,
+                    "candidate_manifest": record.candidate_manifest,
+                    "base_candidate": record.base_candidate,
+                    "patch_sha256": record.patch_sha256,
                 }
             )
+
+
+def load_results(path: Path) -> List[RunRecord]:
+    if not path.exists():
+        return []
+    records = []
+    with path.open("r", encoding="utf-8", newline="") as f:
+        for row in csv.DictReader(f, delimiter="\t"):
+            score_text = row.get("score", "")
+            records.append(
+                RunRecord(
+                    status=row.get("status", ""),
+                    name=row.get("name", ""),
+                    score=float(score_text) if score_text else None,
+                    runtime_seconds=float(row.get("runtime_seconds") or 0.0),
+                    changed_files=row.get("changed_files", ""),
+                    diff_summary=row.get("diff_summary", ""),
+                    run_command=row.get("run_command", ""),
+                    artifacts=row.get("artifacts", ""),
+                    failure_reason=row.get("failure_reason", ""),
+                    candidate_manifest=row.get("candidate_manifest", ""),
+                    base_candidate=row.get("base_candidate", ""),
+                    patch_sha256=row.get("patch_sha256", ""),
+                )
+            )
+    return records
 
 
 def better(new_score: Optional[float], old_score: Optional[float], mode: str) -> bool:
@@ -1112,25 +1402,6 @@ def better(new_score: Optional[float], old_score: Optional[float], mode: str) ->
     if old_score is None:
         return True
     return new_score > old_score if mode == "max" else new_score < old_score
-
-
-def finalize_candidates(records: List[RunRecord], mode: str) -> None:
-    baseline = next((r for r in records if r.status == "baseline"), None)
-    best_score = baseline.score if baseline else None
-    for record in records:
-        if record.status == "keep" and better(record.score, best_score, mode):
-            best_score = record.score
-    best_idx: Optional[int] = None
-    for idx, record in enumerate(records):
-        if record.status != "candidate":
-            continue
-        if better(record.score, best_score, mode):
-            best_score = record.score
-            best_idx = idx
-    for idx, record in enumerate(records):
-        if record.status != "candidate":
-            continue
-        record.status = "keep" if idx == best_idx else "discard"
 
 
 def write_state(
@@ -1282,12 +1553,15 @@ def write_report(path: Path, config: Dict[str, Any], records: List[RunRecord], a
         "",
         "## Leaderboard",
         "",
-        "| Status | Name | Score | Artifacts | Notes |",
-        "| --- | --- | ---: | --- | --- |",
+        "| Status | Name | Score | Changed files | Manifest | Artifacts | Notes |",
+        "| --- | --- | ---: | --- | --- | --- | --- |",
     ]
     for record in records:
         score = "" if record.score is None else f"{record.score:.6f}"
-        lines.append(f"| {record.status} | {record.name} | {score} | `{record.artifacts}` | {record.diff_summary} |")
+        lines.append(
+            f"| {record.status} | {record.name} | {score} | `{record.changed_files}` | "
+            f"`{record.candidate_manifest}` | `{record.artifacts}` | {record.diff_summary} |"
+        )
     lines.extend(
         [
             "",
@@ -1344,214 +1618,843 @@ def campaign_summary(
     return payload
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
-    args = parse_args(argv)
-    if args.max_candidates is not None and args.max_candidates < 1:
-        print("--max-candidates must be positive when provided", file=sys.stderr)
-        return 2
-    if args.plateau_threshold < 1:
-        print("--plateau-threshold must be positive", file=sys.stderr)
-        return 2
-    if args.plateau_min_delta < 0:
-        print("--plateau-min-delta must be non-negative", file=sys.stderr)
-        return 2
-    if args.hard_crash_threshold < 0:
-        print("--hard-crash-threshold must be non-negative", file=sys.stderr)
-        return 2
-    job = Path(args.job).resolve()
-    cwd = job.parent
-    autofl_yaml = resolve_output_path(cwd, args.autofl_yaml)
-    results = resolve_output_path(cwd, args.results)
-    state = resolve_output_path(cwd, args.state)
-    progress = resolve_output_path(cwd, args.progress)
-    report = resolve_output_path(cwd, args.report)
-    output_root = resolve_output_path(cwd, args.output_root)
-    stop_files = resolve_stop_files(cwd, args.stop_file)
-    output_root.mkdir(parents=True, exist_ok=True)
-    schema = load_mutation_schema(cwd)
+def campaign_paths(args: argparse.Namespace, job: Path) -> Dict[str, Path]:
+    workspace = job.parent
+    return {
+        "workspace": workspace,
+        "autofl_yaml": resolve_output_path(workspace, args.autofl_yaml),
+        "results": resolve_output_path(workspace, args.results),
+        "state": resolve_output_path(workspace, args.state),
+        "progress": resolve_output_path(workspace, args.progress),
+        "report": resolve_output_path(workspace, args.report),
+        "output_root": resolve_output_path(workspace, args.output_root),
+        "snapshot_root": workspace / BEST_SNAPSHOT_ROOT,
+    }
+
+
+CAMPAIGN_SETTING_NAMES = (
+    "metric",
+    "mode",
+    "target_env",
+    "max_candidates",
+    "autofl_yaml",
+    "results",
+    "state",
+    "progress",
+    "report",
+    "output_root",
+    "plateau_threshold",
+    "plateau_min_delta",
+    "hard_crash_threshold",
+    "base_args",
+    "timeout",
+    "simulator_no_progress_timeout",
+    "python",
+    "prefer_synthetic",
+    "synthetic_train_size",
+    "synthetic_test_size",
+)
+
+
+def campaign_settings(args: argparse.Namespace) -> Dict[str, Any]:
+    return {name: getattr(args, name) for name in CAMPAIGN_SETTING_NAMES}
+
+
+def restore_campaign_settings(args: argparse.Namespace, metadata: Dict[str, Any]) -> None:
+    settings = metadata.get("settings")
+    if not isinstance(settings, dict):
+        raise ValueError("campaign metadata is missing settings")
+    for name in CAMPAIGN_SETTING_NAMES:
+        if name in settings:
+            setattr(args, name, settings[name])
+
+
+def campaign_timeout(args: argparse.Namespace, schema: Dict[str, Any]) -> Tuple[int, int]:
     budget = comparison_budget(schema)
     budget_timeout = budget.get("run_timeout_seconds")
     timeout = max(args.timeout, int(budget_timeout)) if budget_timeout is not None else args.timeout
     budget_no_progress_timeout = budget.get("simulator_no_progress_timeout_seconds")
-    simulator_no_progress_timeout = (
+    no_progress_timeout = (
         int(budget_no_progress_timeout)
         if budget_no_progress_timeout is not None
         else args.simulator_no_progress_timeout
     )
+    return timeout, no_progress_timeout
 
-    import_cmd = [
+
+def import_job_config(
+    args: argparse.Namespace,
+    job: Path,
+    output: Path,
+    log_path: Path,
+    timeout: int,
+) -> Dict[str, Any]:
+    command = [
         args.python,
         "-m",
         "nvflare.app_common.autofl.job_importer",
         str(job),
         "--metric",
         args.metric,
+        "--mode",
+        args.mode,
         "--env",
         args.target_env,
         "--output",
-        str(autofl_yaml),
+        str(output),
     ]
     if args.max_candidates is not None:
-        import_cmd.extend(["--max-candidates", str(args.max_candidates)])
-    rc, output, _ = run(import_cmd, cwd, timeout, output_root / "import.log")
+        command.extend(["--max-candidates", str(args.max_candidates)])
+    rc, text, _ = run(command, job.parent, timeout, log_path)
     if rc != 0:
-        print(output, file=sys.stderr)
-        return rc
+        raise RuntimeError(text.strip() or f"deterministic import exited with status {rc}")
+    return read_yaml(output)
 
-    config = apply_metric_contract(read_yaml(autofl_yaml), args.metric, schema)
-    write_yaml(autofl_yaml, config)
-    metrics = metric_extraction_order(config, args.metric)
-    metric_label = optimization_metric(config, args.metric)
-    help_text = job_help(args.python, job, cwd)
-    fixed_args = build_fixed_args(config, help_text, schema)
-    base_args = build_base_args(args, help_text, schema)
 
-    records: List[RunRecord] = []
-    baseline = JobRun(name="baseline", args=[], description="baseline", status="baseline")
-    baseline_record = run_job(
-        baseline,
+def best_retained_record(records: Sequence[RunRecord], mode: str) -> Optional[RunRecord]:
+    best = None
+    for record in records:
+        if record.status in {"baseline", "keep"} and better(record.score, best.score if best else None, mode):
+            best = record
+    return best
+
+
+def refresh_campaign_artifacts(
+    args: argparse.Namespace,
+    paths: Dict[str, Path],
+    config: Dict[str, Any],
+    records: List[RunRecord],
+    metadata: Dict[str, Any],
+    *,
+    pending_manifest: Optional[Path] = None,
+    next_action: Optional[str] = None,
+    reason: Optional[str] = None,
+) -> Dict[str, Any]:
+    write_results(paths["results"], records)
+    state = write_state(
+        paths["state"],
+        paths["results"],
+        records,
+        args.max_candidates,
+        mode=args.mode,
+        stop_files=resolve_stop_files(paths["workspace"], args.stop_file),
+        plateau_threshold=args.plateau_threshold,
+        plateau_min_delta=args.plateau_min_delta,
+        hard_crash_threshold=args.hard_crash_threshold,
+    )
+    if not state.get("final_response_allowed") and next_action:
+        state["next_action"] = next_action
+        state["reason"] = reason or next_action
+        state["agent_instruction"] = f"Do not produce a final answer. Execute `{next_action}` for this campaign."
+    state.update(
+        {
+            "best_candidate": metadata.get("best_candidate"),
+            "best_source_sha256": metadata.get("best_source_sha256"),
+            "pending_candidate_manifest": str(pending_manifest.resolve()) if pending_manifest else None,
+        }
+    )
+    write_json(paths["state"], state)
+    write_progress(paths["progress"], records, args.mode, optimization_metric(config, args.metric))
+    write_report(paths["report"], config, records, args)
+    return state
+
+
+def print_campaign_result(
+    paths: Dict[str, Path], records: List[RunRecord], state: Dict[str, Any], **extra: Any
+) -> None:
+    payload = campaign_summary(
+        paths["autofl_yaml"],
+        paths["results"],
+        paths["state"],
+        paths["progress"],
+        paths["report"],
+        records,
+        state,
+    )
+    payload.update(extra)
+    print(json.dumps(payload, indent=2, sort_keys=True))
+
+
+def execute_sim_baseline(
+    args: argparse.Namespace,
+    job: Path,
+    paths: Dict[str, Path],
+    config: Dict[str, Any],
+    schema: Dict[str, Any],
+) -> RunRecord:
+    timeout, no_progress_timeout = campaign_timeout(args, schema)
+    help_text = job_help(args.python, job, job.parent)
+    return run_job(
+        JobRun(name="baseline", args=[], description="baseline", status="baseline"),
         python=args.python,
         job=job,
-        cwd=cwd,
+        cwd=job.parent,
         help_text=help_text,
-        fixed_args=fixed_args,
-        base_args=base_args,
-        output_root=output_root,
+        fixed_args=build_fixed_args(config, help_text, schema),
+        base_args=build_base_args(args, help_text, schema),
+        output_root=paths["output_root"],
         timeout=timeout,
-        simulator_no_progress_timeout=simulator_no_progress_timeout,
-        metrics=metrics,
+        simulator_no_progress_timeout=no_progress_timeout,
+        metrics=metric_extraction_order(config, args.metric),
         config=config,
     )
-    records.append(baseline_record)
-    write_results(results, records)
-    state_payload = write_state(
-        state,
-        results,
-        records,
-        args.max_candidates,
-        mode=args.mode,
-        stop_files=stop_files,
-        plateau_threshold=args.plateau_threshold,
-        plateau_min_delta=args.plateau_min_delta,
-        hard_crash_threshold=args.hard_crash_threshold,
-    )
-    write_progress(progress, records, args.mode, metric_label)
-    write_report(report, config, records, args)
-    if baseline_record.status == INFRASTRUCTURE_RETRY:
-        print(
-            json.dumps(
-                campaign_summary(autofl_yaml, results, state, progress, report, records, state_payload),
-                indent=2,
-                sort_keys=True,
-            )
-        )
-        return 75
-    if baseline_record.score is None:
-        write_report(report, config, records, args)
-        print(
-            f"Baseline run did not produce metrics '{', '.join(metrics)}'. See {baseline_record.artifacts}",
-            file=sys.stderr,
-        )
-        return 1
 
-    try:
-        for candidate in candidate_plan(config, help_text, args.max_candidates, schema):
-            record = run_job(
-                candidate,
-                python=args.python,
-                job=job,
-                cwd=cwd,
-                help_text=help_text,
-                fixed_args=fixed_args,
-                base_args=base_args,
-                output_root=output_root,
-                timeout=timeout,
-                simulator_no_progress_timeout=simulator_no_progress_timeout,
-                metrics=metrics,
-                config=config,
+
+def initialize_campaign(args: argparse.Namespace, job: Path) -> int:
+    workspace = job.parent
+    metadata_path = campaign_metadata_path(workspace)
+    if metadata_path.exists():
+        metadata = load_campaign_metadata(workspace, job)
+        restore_campaign_settings(args, metadata)
+        paths = campaign_paths(args, job)
+        records = load_results(paths["results"])
+        if args.target_env == "sim" and not any(
+            record.status == "baseline" and record.score is not None for record in records
+        ):
+            config = read_yaml(paths["autofl_yaml"])
+            baseline = execute_sim_baseline(args, job, paths, config, load_mutation_schema(workspace))
+            records = [baseline]
+            metadata["best_score"] = baseline.score
+            metadata["updated_at"] = utc_now()
+            write_json(metadata_path, metadata)
+            next_action = "propose_candidate" if baseline.score is not None else "repair_baseline"
+            state = refresh_campaign_artifacts(
+                args, paths, config, records, metadata, next_action=next_action, reason="baseline_retried"
             )
-            records.append(record)
-            finalize_candidates(records, args.mode)
-            write_results(results, records)
-            state_payload = write_state(
-                state,
-                results,
-                records,
-                args.max_candidates,
-                mode=args.mode,
-                stop_files=stop_files,
-                plateau_threshold=args.plateau_threshold,
-                plateau_min_delta=args.plateau_min_delta,
-                hard_crash_threshold=args.hard_crash_threshold,
-            )
-            write_progress(progress, records, args.mode, metric_label)
-            write_report(report, config, records, args)
-            if record.status == INFRASTRUCTURE_RETRY:
-                print(
-                    json.dumps(
-                        campaign_summary(autofl_yaml, results, state, progress, report, records, state_payload),
-                        indent=2,
-                        sort_keys=True,
-                    )
-                )
+            print_campaign_result(paths, records, state, initialized=False, baseline_retried=True)
+            if baseline.status == INFRASTRUCTURE_RETRY:
                 return 75
-            if state_payload.get("next_action") == "run_literature_loop":
-                print(
-                    json.dumps(
-                        campaign_summary(autofl_yaml, results, state, progress, report, records, state_payload),
-                        indent=2,
-                        sort_keys=True,
-                    )
-                )
-                return 0
-            if state_payload.get("final_response_allowed"):
-                break
-    except KeyboardInterrupt:
-        write_results(results, records)
-        state_payload = write_state(
-            state,
-            results,
-            records,
-            args.max_candidates,
-            mode=args.mode,
-            stop_files=stop_files,
-            plateau_threshold=args.plateau_threshold,
-            plateau_min_delta=args.plateau_min_delta,
-            hard_crash_threshold=args.hard_crash_threshold,
-            manual_stop=True,
-        )
-        write_progress(progress, records, args.mode, metric_label)
-        write_report(report, config, records, args)
-        print(
-            json.dumps(
-                campaign_summary(autofl_yaml, results, state, progress, report, records, state_payload),
-                indent=2,
-                sort_keys=True,
-            )
-        )
-        return 130
+            return 0 if baseline.score is not None else 1
+        print_campaign_result(paths, records, read_json(paths["state"]), initialized=False)
+        return 0
 
-    state_payload = write_state(
-        state,
-        results,
-        records,
-        args.max_candidates,
-        mode=args.mode,
-        stop_files=stop_files,
-        plateau_threshold=args.plateau_threshold,
-        plateau_min_delta=args.plateau_min_delta,
-        hard_crash_threshold=args.hard_crash_threshold,
+    paths = campaign_paths(args, job)
+    paths["output_root"].mkdir(parents=True, exist_ok=True)
+    schema = load_mutation_schema(workspace)
+    timeout, _ = campaign_timeout(args, schema)
+    config = import_job_config(args, job, paths["autofl_yaml"], paths["output_root"] / "import.log", timeout)
+    config = apply_metric_contract(config, args.metric, schema)
+    config.setdefault("job", {})["allowed_create_patterns"] = list(ALLOWED_CREATE_PATTERNS)
+    config.setdefault("trust_contract", {})["allowed_create_patterns"] = list(ALLOWED_CREATE_PATTERNS)
+    write_yaml(paths["autofl_yaml"], config)
+    snapshot_files = create_best_snapshot(workspace, config, paths["snapshot_root"])
+    metadata = {
+        "schema_version": CAMPAIGN_METADATA_SCHEMA_VERSION,
+        "created_at": utc_now(),
+        "updated_at": utc_now(),
+        "job": str(job.resolve()),
+        "workspace_root": str(workspace.resolve()),
+        "settings": campaign_settings(args),
+        "best_candidate": "baseline",
+        "best_score": None,
+        "best_source_sha256": source_hash(snapshot_files),
+        "fixed_budget_sha256": fixed_budget_hash(config),
+    }
+    write_json(metadata_path, metadata)
+
+    records: List[RunRecord] = []
+    if args.target_env == "sim":
+        baseline = execute_sim_baseline(args, job, paths, config, schema)
+        records.append(baseline)
+        metadata["best_score"] = baseline.score
+        metadata["updated_at"] = utc_now()
+        write_json(metadata_path, metadata)
+        next_action = "propose_candidate" if baseline.score is not None else "repair_baseline"
+    else:
+        next_action = "submit_baseline"
+
+    state = refresh_campaign_artifacts(
+        args, paths, config, records, metadata, next_action=next_action, reason="campaign_initialized"
     )
-    write_progress(progress, records, args.mode, metric_label)
-    write_report(report, config, records, args)
-    print(
-        json.dumps(
-            campaign_summary(autofl_yaml, results, state, progress, report, records, state_payload),
-            indent=2,
-            sort_keys=True,
-        )
+    print_campaign_result(paths, records, state, initialized=True)
+    if records and records[0].status == INFRASTRUCTURE_RETRY:
+        return 75
+    if args.target_env == "sim" and (not records or records[0].score is None):
+        return 1
+    return 0
+
+
+def pending_candidate_manifests(workspace: Path) -> List[Path]:
+    root = workspace / CANDIDATE_ROOT
+    pending = []
+    if not root.exists():
+        return pending
+    for path in sorted(root.glob("*/candidate_manifest.json")):
+        try:
+            status = read_json(path).get("status")
+        except ValueError:
+            continue
+        if status in {"prepared", "ready_for_external_execution"}:
+            pending.append(path)
+    return pending
+
+
+def prepare_candidate(args: argparse.Namespace, job: Path) -> int:
+    workspace = job.parent
+    metadata = load_campaign_metadata(workspace, job)
+    restore_campaign_settings(args, metadata)
+    paths = campaign_paths(args, job)
+    records = load_results(paths["results"])
+    if not any(record.status == "baseline" and record.score is not None for record in records):
+        raise ValueError("a scored baseline is required before preparing candidates")
+    state = read_json(paths["state"])
+    if state.get("final_response_allowed"):
+        raise ValueError(f"campaign is already final: {state.get('reason')}")
+    pending = pending_candidate_manifests(workspace)
+    if pending:
+        raise ValueError(f"campaign already has a pending candidate: {pending[0]}")
+    candidate_id = validate_candidate_id(args.name or "")
+    if not args.hypothesis:
+        raise ValueError("--hypothesis is required for prepare")
+    manifest_path = candidate_manifest_path(workspace, candidate_id)
+    candidate_dir = manifest_path.parent
+    if candidate_dir.exists():
+        raise ValueError(f"candidate already exists: {candidate_id}")
+
+    best_source, best_files = load_best_snapshot(paths["snapshot_root"])
+    if source_hash(best_files) != metadata.get("best_source_sha256"):
+        raise ValueError("campaign best-source hash is stale")
+    if not workspace_matches_snapshot(workspace, best_source, best_files):
+        raise ValueError("job workspace differs from the recorded best candidate; reconcile edits before preparing")
+
+    draft_source = candidate_dir / "source"
+    shutil.copytree(best_source, draft_source)
+    manifest = {
+        "schema_version": CANDIDATE_MANIFEST_SCHEMA_VERSION,
+        "candidate_id": candidate_id,
+        "name": candidate_id,
+        "hypothesis": args.hypothesis,
+        "status": "prepared",
+        "created_at": utc_now(),
+        "updated_at": utc_now(),
+        "workspace_root": str(workspace.resolve()),
+        "base_candidate": metadata.get("best_candidate"),
+        "base_source_sha256": source_hash(best_files),
+        "fixed_budget_sha256": metadata.get("fixed_budget_sha256"),
+        "objective": {"metric": args.metric, "mode": args.mode},
+        "environment": args.target_env,
+        "run_args": shlex.split(args.run_args),
+        "changed_files": [],
+        "patch_sha256": "",
+        "candidate_source_sha256": source_hash(best_files),
+        "provenance": {
+            "job": str(job.resolve()),
+            "autofl_yaml": str(paths["autofl_yaml"].resolve()),
+            "import_source_sha256": read_yaml(paths["autofl_yaml"]).get("import", {}).get("source_sha256"),
+        },
+        "artifacts": {},
+        "result": {},
+    }
+    write_json(manifest_path, manifest)
+    config = read_yaml(paths["autofl_yaml"])
+    state = refresh_campaign_artifacts(
+        args,
+        paths,
+        config,
+        records,
+        metadata,
+        pending_manifest=manifest_path,
+        next_action="edit_candidate",
+        reason="candidate_prepared",
+    )
+    print_campaign_result(
+        paths,
+        records,
+        state,
+        candidate_manifest=str(manifest_path.resolve()),
+        candidate_source=str(draft_source.resolve()),
     )
     return 0
+
+
+def validate_candidate_for_evaluation(
+    args: argparse.Namespace,
+    job: Path,
+    metadata: Dict[str, Any],
+    paths: Dict[str, Path],
+    manifest_path: Path,
+) -> Tuple[Dict[str, Any], Dict[str, Any], Path, Dict[str, str], List[str], List[str], str]:
+    manifest = load_candidate_manifest(manifest_path)
+    if Path(str(manifest.get("workspace_root") or "")).resolve() != job.parent.resolve():
+        raise ValueError("candidate manifest belongs to a different job workspace")
+    config = read_yaml(paths["autofl_yaml"])
+    best_source, best_files = load_best_snapshot(paths["snapshot_root"])
+    best_hash = source_hash(best_files)
+    if manifest.get("base_source_sha256") != best_hash or metadata.get("best_source_sha256") != best_hash:
+        raise ValueError("candidate was prepared from a stale best candidate")
+    if manifest.get("fixed_budget_sha256") != metadata.get("fixed_budget_sha256"):
+        raise ValueError("candidate fixed-budget provenance is stale")
+    if not workspace_matches_snapshot(job.parent, best_source, best_files):
+        raise ValueError("job workspace differs from the recorded best candidate")
+    draft_source = manifest_path.parent / "source"
+    changed, created = candidate_changes(job.parent, config, best_source, best_files, draft_source)
+    run_args = manifest.get("run_args")
+    if not isinstance(run_args, list) or not all(isinstance(item, str) for item in run_args):
+        raise ValueError("candidate manifest run_args must be a list of strings")
+    allowed, reason = candidate_args_allowed(run_args, load_mutation_schema(job.parent))
+    if not allowed:
+        raise ValueError(reason)
+    allowed, reason = candidate_preserves_fixed_args(run_args, config, load_mutation_schema(job.parent))
+    if not allowed:
+        raise ValueError(reason)
+    if not changed and not run_args:
+        raise ValueError("candidate has no source changes or run arguments")
+    patch = render_candidate_patch(best_source, draft_source, changed)
+    return manifest, config, best_source, best_files, changed, created, patch
+
+
+def update_config_for_kept_sources(config: Dict[str, Any], created: Sequence[str]) -> None:
+    if not created:
+        return
+    job_paths = config.setdefault("job", {}).setdefault("allowed_edit_paths", [])
+    trust_paths = config.setdefault("trust_contract", {}).setdefault("allowed_edit_paths", [])
+    for relative in created:
+        if relative not in job_paths:
+            job_paths.append(relative)
+        if relative not in trust_paths:
+            trust_paths.append(relative)
+
+
+def candidate_campaign_config(
+    candidate_config: Dict[str, Any], current_config: Dict[str, Any], args: argparse.Namespace, schema: Dict[str, Any]
+) -> Dict[str, Any]:
+    candidate_config = apply_metric_contract(candidate_config, args.metric, schema)
+    current_paths = current_config.get("job", {}).get("allowed_edit_paths", []) or []
+    candidate_paths = candidate_config.setdefault("job", {}).setdefault("allowed_edit_paths", [])
+    trust_paths = candidate_config.setdefault("trust_contract", {}).setdefault("allowed_edit_paths", [])
+    for path in current_paths:
+        if path not in candidate_paths:
+            candidate_paths.append(path)
+        if path not in trust_paths:
+            trust_paths.append(path)
+    create_patterns = current_config.get("job", {}).get("allowed_create_patterns", ALLOWED_CREATE_PATTERNS)
+    candidate_config["job"]["allowed_create_patterns"] = list(create_patterns)
+    candidate_config["trust_contract"]["allowed_create_patterns"] = list(create_patterns)
+    return candidate_config
+
+
+def finalize_candidate_result(
+    args: argparse.Namespace,
+    job: Path,
+    metadata: Dict[str, Any],
+    paths: Dict[str, Path],
+    config: Dict[str, Any],
+    manifest_path: Path,
+    manifest: Dict[str, Any],
+    best_source: Path,
+    best_files: Dict[str, str],
+    changed: List[str],
+    created: List[str],
+    patch: str,
+    record: RunRecord,
+) -> Tuple[List[RunRecord], Dict[str, Any]]:
+    records = load_results(paths["results"])
+    previous_best = best_retained_record(records, args.mode)
+    if record.status == "candidate":
+        record.status = (
+            "keep" if better(record.score, previous_best.score if previous_best else None, args.mode) else "discard"
+        )
+    patch_path = manifest_path.parent / "candidate.patch"
+    patch_path.write_text(patch, encoding="utf-8")
+    patch_sha256 = sha256_bytes(patch.encode("utf-8"))
+    record.changed_files = ",".join(changed) if changed else "none"
+    record.diff_summary = str(manifest.get("hypothesis") or "candidate")
+    record.candidate_manifest = str(manifest_path.resolve())
+    record.base_candidate = str(manifest.get("base_candidate") or "")
+    record.patch_sha256 = patch_sha256
+
+    if record.status == "keep":
+        update_config_for_kept_sources(config, created)
+        write_yaml(paths["autofl_yaml"], config)
+        snapshot_files = create_best_snapshot(job.parent, config, paths["snapshot_root"])
+        metadata.update(
+            {
+                "best_candidate": record.name,
+                "best_score": record.score,
+                "best_source_sha256": source_hash(snapshot_files),
+                "updated_at": utc_now(),
+            }
+        )
+    else:
+        restore_best_source(job.parent, best_source, best_files, changed)
+
+    manifest.update(
+        {
+            "status": record.status,
+            "updated_at": utc_now(),
+            "changed_files": changed,
+            "created_files": created,
+            "patch_sha256": patch_sha256,
+            "artifacts": {"patch": str(patch_path.resolve()), "run": record.artifacts},
+            "result": {
+                "score": record.score,
+                "runtime_seconds": record.runtime_seconds,
+                "run_command": record.run_command,
+                "failure_reason": record.failure_reason,
+            },
+        }
+    )
+    write_json(manifest_path, manifest)
+    write_json(campaign_metadata_path(job.parent), metadata)
+    records.append(record)
+    state = refresh_campaign_artifacts(args, paths, config, records, metadata)
+    return records, state
+
+
+def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
+    workspace = job.parent
+    metadata = load_campaign_metadata(workspace, job)
+    restore_campaign_settings(args, metadata)
+    paths = campaign_paths(args, job)
+    manifest_path = Path(args.manifest).resolve() if args.manifest else None
+    if manifest_path is None:
+        pending = pending_candidate_manifests(workspace)
+        if len(pending) != 1:
+            raise ValueError("--manifest is required when there is not exactly one pending candidate")
+        manifest_path = pending[0]
+    manifest, config, best_source, best_files, changed, created, patch = validate_candidate_for_evaluation(
+        args, job, metadata, paths, manifest_path
+    )
+    patch_path = manifest_path.parent / "candidate.patch"
+    patch_path.write_text(patch, encoding="utf-8")
+    manifest.update(
+        {
+            "updated_at": utc_now(),
+            "changed_files": changed,
+            "created_files": created,
+            "patch_sha256": sha256_bytes(patch.encode("utf-8")),
+            "candidate_source_sha256": source_hash(file_map(manifest_path.parent / "source")),
+        }
+    )
+    write_json(manifest_path, manifest)
+    apply_candidate_source(workspace, manifest_path.parent / "source", changed)
+
+    schema = load_mutation_schema(workspace)
+    timeout, no_progress_timeout = campaign_timeout(args, schema)
+    candidate_config_path = manifest_path.parent / "candidate_autofl.yaml"
+    try:
+        candidate_config = import_job_config(
+            args,
+            job,
+            candidate_config_path,
+            manifest_path.parent / "import.log",
+            timeout,
+        )
+        if fixed_budget_hash(candidate_config) != metadata.get("fixed_budget_sha256"):
+            raise ValueError("candidate changes budget.fixed_training_budget")
+        candidate_config = candidate_campaign_config(candidate_config, config, args, schema)
+    except Exception:
+        restore_best_source(workspace, best_source, best_files, changed)
+        raise
+
+    if args.target_env != "sim":
+        manifest["status"] = "ready_for_external_execution"
+        manifest["updated_at"] = utc_now()
+        write_json(manifest_path, manifest)
+        records = load_results(paths["results"])
+        state = refresh_campaign_artifacts(
+            args,
+            paths,
+            config,
+            records,
+            metadata,
+            pending_manifest=manifest_path,
+            next_action="submit_candidate",
+            reason="candidate_validated",
+        )
+        print_campaign_result(
+            paths,
+            records,
+            state,
+            candidate_manifest=str(manifest_path.resolve()),
+            job=str(job.resolve()),
+        )
+        return 0
+
+    help_text = job_help(args.python, job, workspace)
+    try:
+        run_record = run_job(
+            JobRun(
+                name=str(manifest["candidate_id"]),
+                args=list(manifest.get("run_args") or []),
+                description=str(manifest.get("hypothesis") or "candidate"),
+            ),
+            python=args.python,
+            job=job,
+            cwd=workspace,
+            help_text=help_text,
+            fixed_args=build_fixed_args(config, help_text, schema),
+            base_args=build_base_args(args, help_text, schema),
+            output_root=paths["output_root"],
+            timeout=timeout,
+            simulator_no_progress_timeout=no_progress_timeout,
+            metrics=metric_extraction_order(config, args.metric),
+            config=config,
+        )
+    except BaseException:
+        restore_best_source(workspace, best_source, best_files, changed)
+        raise
+    if run_record.status == INFRASTRUCTURE_RETRY:
+        restore_best_source(workspace, best_source, best_files, changed)
+        manifest["status"] = "prepared"
+        manifest["result"] = {"failure_reason": run_record.failure_reason}
+        manifest["updated_at"] = utc_now()
+        write_json(manifest_path, manifest)
+        records = load_results(paths["results"])
+        state = refresh_campaign_artifacts(
+            args,
+            paths,
+            config,
+            records,
+            metadata,
+            pending_manifest=manifest_path,
+            next_action="rerun_with_escalated_execution",
+            reason="infrastructure_retry",
+        )
+        print_campaign_result(paths, records, state, candidate_manifest=str(manifest_path.resolve()))
+        return 75
+
+    records, state = finalize_candidate_result(
+        args,
+        job,
+        metadata,
+        paths,
+        candidate_config,
+        manifest_path,
+        manifest,
+        best_source,
+        best_files,
+        changed,
+        created,
+        patch,
+        run_record,
+    )
+    print_campaign_result(paths, records, state, candidate_manifest=str(manifest_path.resolve()))
+    return 0
+
+
+def abandon_candidate(args: argparse.Namespace, job: Path) -> int:
+    workspace = job.parent
+    metadata = load_campaign_metadata(workspace, job)
+    restore_campaign_settings(args, metadata)
+    paths = campaign_paths(args, job)
+    manifest_path = Path(args.manifest).resolve() if args.manifest else None
+    if manifest_path is None:
+        pending = pending_candidate_manifests(workspace)
+        if len(pending) != 1:
+            raise ValueError("--manifest is required when there is not exactly one pending candidate")
+        manifest_path = pending[0]
+    manifest = load_candidate_manifest(manifest_path)
+    best_source, best_files = load_best_snapshot(paths["snapshot_root"])
+    changed = manifest.get("changed_files") or []
+    if not isinstance(changed, list):
+        raise ValueError("candidate manifest changed_files must be a list")
+    restore_best_source(workspace, best_source, best_files, changed)
+    manifest["status"] = "abandoned"
+    manifest["updated_at"] = utc_now()
+    write_json(manifest_path, manifest)
+    records = load_results(paths["results"])
+    config = read_yaml(paths["autofl_yaml"])
+    state = refresh_campaign_artifacts(
+        args,
+        paths,
+        config,
+        records,
+        metadata,
+        next_action="propose_candidate",
+        reason="candidate_abandoned",
+    )
+    print_campaign_result(paths, records, state, candidate_manifest=str(manifest_path.resolve()))
+    return 0
+
+
+def suggest_candidates(args: argparse.Namespace, job: Path) -> int:
+    metadata = load_campaign_metadata(job.parent, job)
+    restore_campaign_settings(args, metadata)
+    if args.limit < 1:
+        raise ValueError("--limit must be positive")
+    config = read_yaml(campaign_paths(args, job)["autofl_yaml"])
+    help_text = job_help(args.python, job, job.parent)
+    suggestions = [
+        {"name": candidate.name, "run_args": candidate.args, "hypothesis": candidate.description}
+        for candidate in candidate_plan(
+            config,
+            help_text,
+            args.limit,
+            load_mutation_schema(job.parent),
+        )
+    ]
+    print(json.dumps({"suggestions": suggestions}, indent=2, sort_keys=True))
+    return 0
+
+
+def record_external_result(args: argparse.Namespace, job: Path) -> int:
+    workspace = job.parent
+    metadata = load_campaign_metadata(workspace, job)
+    restore_campaign_settings(args, metadata)
+    paths = campaign_paths(args, job)
+    config = read_yaml(paths["autofl_yaml"])
+    artifact_path = Path(args.external_artifacts).resolve() if args.external_artifacts else None
+    score = args.score
+    if score is None and artifact_path:
+        score = extract_score(artifact_path, metric_extraction_order(config, args.metric))
+    if args.literature:
+        records = load_results(paths["results"])
+        name = f"literature_review_{sum(record.status == 'literature' for record in records) + 1}"
+        records.append(
+            RunRecord(
+                status="literature",
+                name=name,
+                score=None,
+                runtime_seconds=0.0,
+                changed_files="none",
+                diff_summary=args.hypothesis or "source-backed literature review",
+                run_command="agent literature review",
+                artifacts=str(artifact_path or ""),
+            )
+        )
+        state = refresh_campaign_artifacts(
+            args,
+            paths,
+            config,
+            records,
+            metadata,
+            next_action="propose_candidate",
+            reason="literature_review_recorded",
+        )
+        print_campaign_result(paths, records, state, literature_event=name)
+        return 0
+    if args.baseline:
+        records = load_results(paths["results"])
+        if records:
+            raise ValueError("external baseline can only be recorded before campaign candidates")
+        if score is None:
+            raise ValueError("a score or extractable --artifacts path is required for the baseline")
+        record = RunRecord(
+            status="baseline",
+            name="baseline",
+            score=score,
+            runtime_seconds=0.0,
+            changed_files="none",
+            diff_summary="external baseline",
+            run_command=f"nvflare job id={args.job_id or 'unreported'}",
+            artifacts=str(artifact_path or ""),
+        )
+        records.append(record)
+        metadata["best_score"] = score
+        metadata["updated_at"] = utc_now()
+        write_json(campaign_metadata_path(workspace), metadata)
+        state = refresh_campaign_artifacts(
+            args,
+            paths,
+            config,
+            records,
+            metadata,
+            next_action="propose_candidate",
+            reason="baseline_recorded",
+        )
+        print_campaign_result(paths, records, state, job_id=args.job_id)
+        return 0
+
+    manifest_path = Path(args.manifest).resolve() if args.manifest else None
+    if manifest_path is None:
+        pending = pending_candidate_manifests(workspace)
+        if len(pending) != 1:
+            raise ValueError("--manifest is required when there is not exactly one pending candidate")
+        manifest_path = pending[0]
+    manifest = load_candidate_manifest(manifest_path)
+    if manifest.get("status") != "ready_for_external_execution":
+        raise ValueError("external candidate must be validated before its result is recorded")
+    draft_source = manifest_path.parent / "source"
+    draft_files = file_map(draft_source)
+    if source_hash(draft_files) != manifest.get("candidate_source_sha256") or not workspace_matches_snapshot(
+        workspace, draft_source, draft_files
+    ):
+        raise ValueError("materialized candidate source changed after validation")
+    best_source, best_files = load_best_snapshot(paths["snapshot_root"])
+    changed = manifest.get("changed_files") or []
+    created = manifest.get("created_files") or []
+    if not isinstance(changed, list) or not isinstance(created, list):
+        raise ValueError("candidate manifest source lists must be arrays")
+    patch_path = manifest_path.parent / "candidate.patch"
+    patch = patch_path.read_text(encoding="utf-8") if patch_path.exists() else ""
+    candidate_config_path = manifest_path.parent / "candidate_autofl.yaml"
+    candidate_config = read_yaml(candidate_config_path) if candidate_config_path.exists() else config
+    candidate_config = candidate_campaign_config(candidate_config, config, args, load_mutation_schema(workspace))
+    status = "crash" if args.failure_reason or score is None else "candidate"
+    record = RunRecord(
+        status=status,
+        name=str(manifest["candidate_id"]),
+        score=score,
+        runtime_seconds=0.0,
+        changed_files="none",
+        diff_summary=str(manifest.get("hypothesis") or "candidate"),
+        run_command=f"nvflare job id={args.job_id or 'unreported'}",
+        artifacts=str(artifact_path or ""),
+        failure_reason=args.failure_reason or ("metric not found" if score is None else ""),
+    )
+    records, state = finalize_candidate_result(
+        args,
+        job,
+        metadata,
+        paths,
+        candidate_config,
+        manifest_path,
+        manifest,
+        best_source,
+        best_files,
+        changed,
+        created,
+        patch,
+        record,
+    )
+    updated_manifest = read_json(manifest_path)
+    updated_manifest.setdefault("artifacts", {})["job_id"] = args.job_id
+    write_json(manifest_path, updated_manifest)
+    print_campaign_result(paths, records, state, candidate_manifest=str(manifest_path.resolve()), job_id=args.job_id)
+    return 0
+
+
+def show_campaign_status(args: argparse.Namespace, job: Path) -> int:
+    metadata = load_campaign_metadata(job.parent, job)
+    restore_campaign_settings(args, metadata)
+    paths = campaign_paths(args, job)
+    records = load_results(paths["results"])
+    print_campaign_result(paths, records, read_json(paths["state"]), campaign=metadata)
+    return 0
+
+
+def validate_args(args: argparse.Namespace) -> None:
+    if args.max_candidates is not None and args.max_candidates < 1:
+        raise ValueError("--max-candidates must be positive when provided")
+    if args.plateau_threshold < 1:
+        raise ValueError("--plateau-threshold must be positive")
+    if args.plateau_min_delta < 0:
+        raise ValueError("--plateau-min-delta must be non-negative")
+    if args.hard_crash_threshold < 0:
+        raise ValueError("--hard-crash-threshold must be non-negative")
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    args = parse_args(argv)
+    try:
+        validate_args(args)
+        job = Path(args.job).resolve()
+        if not job.is_file():
+            raise ValueError(f"job.py does not exist: {job}")
+        actions = {
+            "initialize": initialize_campaign,
+            "prepare": prepare_candidate,
+            "evaluate": evaluate_candidate,
+            "abandon": abandon_candidate,
+            "suggest": suggest_candidates,
+            "record": record_external_result,
+            "status": show_campaign_status,
+        }
+        return actions[args.action](args, job)
+    except (OSError, RuntimeError, ValueError) as e:
+        print(f"Auto-FL {args.action} failed: {e}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

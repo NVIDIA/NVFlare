@@ -5,25 +5,23 @@ recovering from a simulator stall. The top-level skill owns the interaction
 contract; this file carries the operational detail that keeps the campaign from
 prematurely stopping.
 
-## Runner State
+## Lifecycle State
 
-When `scripts/run_job_campaign.py` is running without `--max-candidates`, never
-send Ctrl-C, interrupt the background terminal, or stop the runner because a
-first sweep is complete, duplicate-cycle candidates started, a current best
-looks clear, a plot/report exists, or no new obvious local axis remains. In
-uncapped mode those are monitoring observations only. The user owns manual
-interruption; the agent may inspect the ledger/state and report progress, but
-must leave the runner active while `final_response_allowed=false`.
+Each `scripts/run_job_campaign.py` lifecycle action exits with a JSON envelope;
+the campaign continues through `.nvflare/autofl/campaign_state.json`. In
+uncapped mode, a completed action, current best, plot, report, or exhausted local
+tunable sweep is a checkpoint only. Execute `next_action` while
+`final_response_allowed=false`.
 
-Also never interrupt an uncapped runner because it attempted, skipped, or
-recorded an invalid candidate proposal. Invalid proposals should be filtered by
-the runner and treated as product friction to repair while preserving the
-long-running optimization intent.
+A prepared manifest is pending work. Edit its candidate source and evaluate it,
+or abandon it explicitly; do not silently start another candidate. Invalid
+drafts are product friction to repair and reevaluate, not a reason to terminate
+the campaign.
 
-During long simulations, monitor the active process plus the current
+During a long `evaluate` action, monitor the process plus
 `autofl_runs/<candidate>/run.log`. A live process with no final ledger row is a
-running candidate, not a reason to stop. If logs are temporarily quiet but CPU or
-GPU use and the child process remain active, keep waiting.
+running candidate. If logs are temporarily quiet but CPU or GPU use and the
+child process remain active, keep waiting.
 
 ## Campaign Guards
 
@@ -34,13 +32,14 @@ execute `next_action` immediately; the skill text is only the interaction layer.
 
 Common next actions:
 
-- `finalize_pending_candidates`: finalize reviewed candidate rows and rerun the
-  guard.
+- `edit_candidate` or `evaluate_candidate`: finish the pending candidate draft.
+- `propose_candidate`: form a hypothesis, prepare its manifest, and edit the
+  returned candidate source directory.
+- `submit_baseline` or `submit_candidate`: use the standard POC/production job
+  lifecycle, then call `record` with its job ID and artifacts.
 - `run_literature_loop`: run a short source-backed literature pass, record a
   non-scored `literature` row when a ledger is available, then launch the next
   compatible same-budget candidates.
-- `launch_next_candidate` or `launch_next_candidate_batch`: choose a safe
-  same-budget axis and launch the next candidate or batch.
 
 After every finalized batch, run the available plateau or progress watchdog when
 the task provides one. If it recommends `continue`, refresh `progress.png` and
@@ -48,8 +47,8 @@ keep iterating locally. If it recommends a literature or exploration mode, recor
 that decision in the ledger/report, refresh `progress.png`, and launch the top
 compatible candidate batch next. If no non-duplicate safe local axis remains,
 switch mode rather than stopping: broaden the search within `autofl.yaml`, run a
-literature-inspired proposal pass, revisit unresolved-but-safe tunables, or let
-the deterministic uncapped runner continue its generated candidate stream.
+literature-inspired proposal pass, implement a compatible algorithm change, or
+request deterministic tunable suggestions as seeds.
 
 ## Simulator Recovery
 

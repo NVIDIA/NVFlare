@@ -29,6 +29,9 @@ RESULT_FIELDS = [
     "run_command",
     "artifacts",
     "failure_reason",
+    "candidate_manifest",
+    "base_candidate",
+    "patch_sha256",
 ]
 
 
@@ -61,6 +64,9 @@ def _row(status, name, score="", diff_summary="candidate", run_command="python j
         "run_command": run_command,
         "artifacts": "/tmp/run",
         "failure_reason": "",
+        "candidate_manifest": "",
+        "base_candidate": "",
+        "patch_sha256": "",
     }
 
 
@@ -76,7 +82,7 @@ def test_guard_continues_uncapped_before_plateau():
 
     assert state["schema_version"] == "nvflare.autofl.campaign_state.v1"
     assert state["decision"] == "continue"
-    assert state["next_action"] == "launch_next_candidate"
+    assert state["next_action"] == "propose_candidate"
     assert state["final_response_allowed"] is False
     assert state["candidate_cap"] is None
     assert state["candidate_cap_source"] == "uncapped"
@@ -109,7 +115,7 @@ def test_guard_literature_event_resets_plateau_clock():
     state = guard.guard_state_for_rows(rows, plateau_threshold=4)
 
     assert state["reason"] == "continue"
-    assert state["next_action"] == "launch_next_candidate"
+    assert state["next_action"] == "propose_candidate"
     assert state["plateau"]["last_literature_event_index"] == 5
     assert state["plateau"]["scored_since_reset"] == 2
 

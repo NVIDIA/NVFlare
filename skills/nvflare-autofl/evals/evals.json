@@ -4,11 +4,13 @@
     {
       "id": "autofl-optimize-existing-job",
       "prompt": "Use NVFLARE Auto-FL to optimize ./job.py for validation accuracy in simulation with an 8-candidate budget.",
-      "expected_output": "The agent invokes the NVFLARE Auto-FL skill, imports job.py into autofl.yaml, summarizes editable/unresolved/allowed campaign settings, and then runs bounded candidates through existing FLARE execution surfaces.",
+      "expected_output": "The agent invokes the NVFLARE Auto-FL skill, imports job.py into autofl.yaml, summarizes editable/unresolved/allowed campaign settings, then prepares and evaluates agent-authored source or tunable candidates through candidate manifests and existing FLARE execution surfaces.",
       "files": [],
       "assertions": [
         "The agent generates autofl.yaml before editing files.",
         "The agent summarizes editable settings, unresolved fields, fixed-budget constraints, and allowed edit paths.",
+        "The agent forms hypotheses and edits isolated candidate source rather than limiting the campaign to built-in tunable sweeps.",
+        "The agent records changed files, patch hash, base candidate, and artifacts in candidate_manifest.json.",
         "The agent runs candidates using the existing job.py rather than replacing it with autofl.yaml.",
         "The agent records candidate results and reports the best reproducible candidate."
       ],
@@ -28,6 +30,14 @@
             "description": "edits only files allowed by autofl.yaml"
           },
           {
+            "id": "agent-authored-code-candidates",
+            "description": "lets the coding agent implement source and algorithm candidates in an isolated draft"
+          },
+          {
+            "id": "candidate-manifest-provenance",
+            "description": "computes a manifest with base source, changed files, patch hash, budget hash, artifacts, and result"
+          },
+          {
             "id": "existing-flare-execution",
             "description": "uses job.py and standard FLARE execution surfaces for candidate runs"
           }
@@ -44,6 +54,10 @@
           {
             "id": "no-out-of-scope-edits",
             "description": "does not edit outside the allowed edit paths"
+          },
+          {
+            "id": "no-default-generated-search-policy",
+            "description": "does not let built-in tunable suggestions replace agent candidate planning"
           }
         ],
         "process_metrics": [
@@ -58,6 +72,10 @@
           {
             "id": "metric_extraction_success",
             "description": "whether the requested metric is extracted from NVFLARE artifacts or logs"
+          },
+          {
+            "id": "candidate_manifest_completeness",
+            "description": "whether code candidates include deterministic source, budget, patch, and artifact provenance"
           },
           {
             "id": "unwanted_production_action_count",

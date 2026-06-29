@@ -13,7 +13,7 @@ FLARE version: 2.8.0 minimum
 | Adjacent negative trigger | Draft | PyTorch conversion routes to `nvflare-convert-pytorch`. |
 | Diagnosis negative trigger | Draft | Failed-job diagnosis routes to `nvflare-diagnose-job`. |
 | Global negative trigger | Draft | Non-FLARE prompts route to no skill. |
-| Mandatory behavior | Draft | Behavior IDs cover deterministic import, campaign summary, bounded edits, and existing FLARE execution. |
+| Mandatory behavior | Draft | Behavior IDs cover deterministic import, agent-authored code candidates, candidate manifests, bounded edits, and existing FLARE execution. |
 | Prohibited behavior | Draft | Behavior IDs prohibit bypassing policy, editing outside allowed paths, and treating `autofl.yaml` as an exported job. |
 | Process evaluation | Draft | Metrics cover import-first behavior, contract preservation, score extraction, and unwanted production actions. |
 

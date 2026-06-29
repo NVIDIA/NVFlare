@@ -23,6 +23,9 @@ The first production-oriented slice includes:
   Auto-FL campaign.
 - A trust contract in `autofl.yaml` showing editable campaign settings,
   unresolved fields, fixed-budget constraints, and allowed edit paths.
+- A skill-local candidate lifecycle that snapshots the current best source,
+  gives the agent an isolated draft, validates the resulting patch, and keeps or
+  restores source according to the campaign metric.
 - Documentation for using the skill with simulation, POC, and production
   environments through existing NVFlare surfaces.
 
@@ -44,6 +47,7 @@ layer:
   scripts.
 - Fixed-budget constraints that must remain comparable across candidates.
 - Allowed edit paths and files that are out of scope for the agent.
+- Allowed creation patterns for new Python modules under the job root.
 - Artifact, ledger, and report locations for the campaign.
 - Provenance and unresolved fields that need user review before safe execution.
 
@@ -92,15 +96,40 @@ The skill must present editable, unresolved, and allowed sections before it runs
 candidates. This is the core product guardrail: NVFlare makes the campaign
 reviewable and reproducible; the agent makes it interactive and exploratory.
 
+## Candidate Contract
+
+The agent, rather than the deterministic runner, owns search policy. It may
+change tunables, edit the imported job's allowed source files, or implement new
+algorithms as Python modules. Each attempt starts from the retained best source
+in `.nvflare/autofl/candidates/<id>/source` and has a generated
+`candidate_manifest.json` containing its hypothesis, base candidate, run
+arguments, changed files, source and budget hashes, patch hash, artifacts, and
+result.
+
+NVFlare computes the manifest's evidence fields; the agent does not assert them.
+Before execution, the helper rejects stale candidates, path traversal, symlink
+escapes, unauthorized existing-file edits, and detectable fixed-budget drift.
+It applies the candidate transactionally to the real job workspace, retains a
+new best, and restores the previous best after a discard or crash. This works
+without requiring a Git repository and leaves the best source ready for the
+standard NVFlare job lifecycle.
+
+The built-in parameter candidates are suggestion seeds only. They are returned
+as machine-readable hypotheses and arguments when requested, but are not the
+default search loop and are never executed without agent selection.
+
 ## Execution Model
 
 The skill uses existing NVFlare execution surfaces:
 
-- Simulation: run the existing `job.py` with its configured `SimEnv`.
+- Simulation: initialize a baseline, prepare an agent-authored candidate draft,
+  and evaluate it through the existing `job.py` and configured `SimEnv`.
 - POC: use the existing job authoring/export flow, startup kits, and standard
-  `nvflare job` commands.
+  `nvflare job` commands, then record the job ID, artifacts, and metric against
+  the candidate manifest.
 - Production: use standard startup-kit authentication, site policy, job submit,
-  wait, download, and inspection commands.
+  wait, download, and inspection commands with the same manifest and result
+  recording contract.
 
 Production is a valid optimization environment. The best candidate may later be
 submitted or reused through the standard NVFlare job lifecycle; no separate
@@ -109,10 +138,11 @@ promotion command is needed.
 ## Review Questions
 
 - Are the supported `job.py` patterns sufficient for an initial prototype?
-- Are the editable `autofl.yaml` fields enough for human-in-the-loop campaign
-  review and candidate comparability?
+- Are the edit and creation permissions in `autofl.yaml` appropriate for
+  algorithm-level candidates while preserving candidate comparability?
 - Which exported-job fields should be used as validation evidence versus static
   `job.py` parsing for authoring intent?
 - Does the Auto-FL skill pass the general NVFLARE skill frontmatter, trigger,
   and eval checks after it lands under `skills/nvflare-autofl`?
-- Which metric/artifact extraction gaps should become stable NVFlare APIs next?
+- Which candidate-manifest and metric/artifact fields should become stable
+  NVFlare APIs after the skill-local contract proves itself?
