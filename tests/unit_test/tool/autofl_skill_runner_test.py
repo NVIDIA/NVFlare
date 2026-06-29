@@ -484,6 +484,21 @@ def test_candidate_rejects_stale_manifest_and_budget_drift(tmp_path, monkeypatch
     assert client.read_text(encoding="utf-8") == "ALGORITHM = 'baseline'\n"
 
 
+def test_candidate_schema_failure_does_not_modify_workspace(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, client, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    assert runner.main(["prepare", str(job), "--name", "bad_schema", "--hypothesis", "change code"]) == 0
+    candidate_dir = tmp_path / ".nvflare" / "autofl" / "candidates" / "bad_schema"
+    candidate_dir.joinpath("source/client.py").write_text("ALGORITHM = 'candidate'\n", encoding="utf-8")
+    tmp_path.joinpath("mutation_schema.yaml").write_text(
+        "comparison_budget_args:\n  default_candidate_budget:\n    run_timeout_seconds: fast\n",
+        encoding="utf-8",
+    )
+
+    assert runner.main(["evaluate", str(job)]) == 2
+    assert client.read_text(encoding="utf-8") == "ALGORITHM = 'baseline'\n"
+
+
 def test_abandon_candidate_clears_pending_draft_without_touching_best(tmp_path, monkeypatch):
     runner = _load_runner()
     job, client, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)

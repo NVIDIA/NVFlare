@@ -2127,10 +2127,10 @@ def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
         }
     )
     write_json(manifest_path, manifest)
-    apply_candidate_source(workspace, manifest_path.parent / "source", changed)
-
     schema = load_mutation_schema(workspace)
     timeout, no_progress_timeout = campaign_timeout(args, schema)
+    apply_candidate_source(workspace, manifest_path.parent / "source", changed)
+
     candidate_config_path = manifest_path.parent / "candidate_autofl.yaml"
     try:
         candidate_config = import_job_config(
