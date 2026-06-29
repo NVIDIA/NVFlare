@@ -44,7 +44,6 @@ Each experiment should run under a **fixed communication, data, and evaluation b
 - `max_model_params`
 - whether cross-site evaluation is enabled
 - `final_eval_clients`
-- the evaluation split (`torchvision.datasets.CIFAR10(train=False)`, the held-out CIFAR-10 test set)
 
 Some of these values are technically mutable in `mutation_schema.yaml`, but changing them starts a new comparison budget. Do not compare scores across runs with different values for the fixed budget fields above unless the run is explicitly labeled as a new campaign or subcampaign. Architecture-search scores must be labeled with their `model_arch` and `max_model_params`; do not mix them with optimizer-only `moderate_cnn` results as if they were the same search.
 
@@ -62,13 +61,13 @@ Default H100 candidate budget:
 - `--max_model_params 5000000`
 - `--aggregator weighted`
 - cross-site evaluation enabled
-- final global CIFAR-10 test-set evaluation on `site-1`
+- final global evaluation on `site-1`
 - `--eval_batch_size 1024`
 - `RUN_TIMEOUT_SECONDS=1200`
 - deterministic PyTorch/DataLoader training enabled
 
 Each candidate targets a capped run on one local H100. The 80 GB H100 can usually support several same-budget candidates concurrently; if runs consistently finish much sooner, sweep local compute first with either `aggregation_epochs` or `local_train_steps`. If they time out or hit CUDA OOM, reduce candidate parallelism before changing communication, model, parameter-cap, or data contracts.
-The CIFAR-10 evaluation loader is the held-out global CIFAR-10 test set (`torchvision.datasets.CIFAR10(train=False)`) and is identical on every simulated client. Final scoring evaluates the server/global model on `site-1` by default, reports both `test_accuracy` and the backward-compatible `accuracy` alias, and keeps the output in NVFlare's `cross_site_val/cross_val_results.json` path. Use `--final_eval_clients all` only for an audit run or after changing evaluation to be site-specific.
+The current CIFAR-10 validation loader is identical on every simulated client, so final scoring evaluates the server/global model on `site-1` by default and keeps the output in NVFlare's `cross_site_val/cross_val_results.json` path. Use `--final_eval_clients all` only for an audit run or after changing validation to be site-specific.
 Training splits are cached by fixed data-budget fields under `/tmp/cifar10_splits/autofl_cifar10_<n>sites_alpha<a>_seed<s>`. Do not make the split path depend on the candidate `--name`; repeated candidates with the same `n_clients`, `alpha`, and `seed` should reuse the same `.npy` indices.
 Client training derives stable per-site RNG seeds from `--seed`, enables PyTorch deterministic algorithms, disables cuDNN benchmarking, and seeds DataLoader shuffling/workers. Treat `--no_deterministic_training` as a separate noisy subcampaign.
 
@@ -177,18 +176,6 @@ After finalizing reviewed statuses, run the plateau watchdog before selecting an
 
 If it prints `recommendation=literature`, stop local hyperparameter jittering, run the literature loop, record a `literature` row, and launch the selected source-backed candidates next.
 If it prints `recommendation=continue`, do not start a literature review just because one or two small batches missed; choose a clearer local sweep axis, narrow around near-misses, or inspect `mutation_schema.yaml` for another allowed axis.
-
-Then refresh deterministic campaign state:
-
-```bash
-"${PYTHON}" scripts/campaign_guard.py results.tsv --state .autoresearch/campaign_state.json --format json
-```
-
-If the guard returns `final_response_allowed=false`, do not produce a final
-answer. Execute its `next_action`: finalize pending rows, run the literature
-loop, or launch the next same-budget batch. Encoded defaults and refreshed
-reports are checkpoints, not stop conditions, unless the guard allows a final
-response.
 
 When finalizing a same-H100 batch, use the CIFAR default width:
 

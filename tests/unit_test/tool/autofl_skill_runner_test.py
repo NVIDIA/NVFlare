@@ -101,12 +101,12 @@ def test_runner_applies_schema_metric_contract():
     assert updated["objective"]["metric_source"] == "held-out CIFAR-10 test set"
 
 
-def test_profile_budget_suppresses_duplicate_imported_fixed_budget_args():
+def test_comparison_budget_suppresses_duplicate_imported_fixed_budget_args():
     runner = _load_runner()
     config = {"budget": {"fixed_training_budget": {"num_clients": 8, "num_rounds": 10}}}
     schema = {
         "comparison_budget_args": {
-            "h100_default_candidate_budget": {
+            "default_candidate_budget": {
                 "n_clients": 8,
                 "num_rounds": 20,
             }

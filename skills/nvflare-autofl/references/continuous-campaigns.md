@@ -28,11 +28,9 @@ GPU use and the child process remain active, keep waiting.
 ## Campaign Guards
 
 The product runner writes `.nvflare/autofl/campaign_state.json` through
-`scripts/campaign_guard.py`; read that state before any final response. If a
-legacy `.autoresearch/campaign_state.json` also exists, treat it as additional
-research-harness context, but do not let it override the product runner state.
-If the state has `final_response_allowed=false`, execute `next_action`
-immediately; the skill text is only the interaction layer.
+`scripts/campaign_guard.py`; read that state before any final response. This
+product state is authoritative. If it has `final_response_allowed=false`,
+execute `next_action` immediately; the skill text is only the interaction layer.
 
 Common next actions:
 

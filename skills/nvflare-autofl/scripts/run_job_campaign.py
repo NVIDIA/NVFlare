@@ -13,12 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Small deterministic Auto-FL campaign runner for an existing NVFlare job.py.
+"""Run a deterministic Auto-FL campaign for an existing NVFlare job.py.
 
-This script is intentionally modest: it runs a baseline plus a fixed number of
-same-budget CLI-argument candidates, records state and artifacts, and never
-depends on the research/auto-fl-research harness. It is a skill-side scaffold
-for validating the product UX while the supported Auto-FL APIs mature.
+The runner executes a baseline and comparable CLI-argument candidates, records
+state and artifacts, and uses only the job plus optional job-local campaign
+configuration.
 """
 
 from __future__ import annotations
@@ -91,7 +90,7 @@ FIXED_BUDGET_TO_CLI = {
     "num_rounds": "num_rounds",
 }
 
-PROFILE_BUDGET_TO_CLI = {
+COMPARISON_BUDGET_TO_CLI = {
     "n_clients": "n_clients",
     "num_rounds": "num_rounds",
     "aggregation_epochs": "aggregation_epochs",
@@ -766,12 +765,12 @@ def load_mutation_schema(cwd: Path) -> Dict[str, Any]:
     return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
 
-def h100_comparison_budget(schema: Dict[str, Any]) -> Dict[str, Any]:
-    return (
-        schema.get("comparison_budget_args", {}).get("h100_default_candidate_budget", {})
-        if isinstance(schema.get("comparison_budget_args"), dict)
-        else {}
-    )
+def comparison_budget(schema: Dict[str, Any]) -> Dict[str, Any]:
+    comparison = schema.get("comparison_budget_args")
+    if not isinstance(comparison, dict):
+        return {}
+    budget = comparison.get("default_candidate_budget")
+    return budget if isinstance(budget, dict) else {}
 
 
 def fixed_within_campaign(schema: Dict[str, Any]) -> set:
@@ -782,10 +781,10 @@ def fixed_within_campaign(schema: Dict[str, Any]) -> set:
     return set(values) if isinstance(values, list) else set()
 
 
-def build_profile_args(schema: Dict[str, Any], help_text: str) -> List[str]:
-    budget = h100_comparison_budget(schema)
+def build_comparison_budget_args(schema: Dict[str, Any], help_text: str) -> List[str]:
+    budget = comparison_budget(schema)
     args: List[str] = []
-    for field, cli_name in PROFILE_BUDGET_TO_CLI.items():
+    for field, cli_name in COMPARISON_BUDGET_TO_CLI.items():
         value = budget.get(field)
         if value is not None and supports_flag(help_text, f"--{cli_name}"):
             args.extend([f"--{cli_name}", str(value)])
@@ -796,13 +795,13 @@ def build_profile_args(schema: Dict[str, Any], help_text: str) -> List[str]:
 
 def build_fixed_args(config: Dict[str, Any], help_text: str, schema: Dict[str, Any]) -> List[str]:
     fixed = config.get("budget", {}).get("fixed_training_budget", {}) or {}
-    profile_budget = h100_comparison_budget(schema)
-    profile_cli_names = {
-        cli_name for field, cli_name in PROFILE_BUDGET_TO_CLI.items() if profile_budget.get(field) is not None
+    budget = comparison_budget(schema)
+    budget_cli_names = {
+        cli_name for field, cli_name in COMPARISON_BUDGET_TO_CLI.items() if budget.get(field) is not None
     }
     args: List[str] = []
     for field, cli_name in FIXED_BUDGET_TO_CLI.items():
-        if cli_name in profile_cli_names:
+        if cli_name in budget_cli_names:
             continue
         value = fixed.get(field)
         if value is not None and supports_flag(help_text, f"--{cli_name}"):
@@ -812,9 +811,9 @@ def build_fixed_args(config: Dict[str, Any], help_text: str, schema: Dict[str, A
 
 def build_base_args(args: argparse.Namespace, help_text: str, schema: Dict[str, Any]) -> List[str]:
     base = shlex.split(args.base_args)
-    profile_args = build_profile_args(schema, help_text)
-    if profile_args:
-        base.extend(profile_args)
+    budget_args = build_comparison_budget_args(schema, help_text)
+    if budget_args:
+        base.extend(budget_args)
     if args.prefer_synthetic and supports_flag(help_text, "--synthetic_data"):
         if "--synthetic_data" not in base:
             base.append("--synthetic_data")
@@ -1370,13 +1369,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     stop_files = resolve_stop_files(cwd, args.stop_file)
     output_root.mkdir(parents=True, exist_ok=True)
     schema = load_mutation_schema(cwd)
-    profile_budget = h100_comparison_budget(schema)
-    profile_timeout = profile_budget.get("run_timeout_seconds")
-    timeout = max(args.timeout, int(profile_timeout)) if profile_timeout is not None else args.timeout
-    profile_no_progress_timeout = profile_budget.get("simulator_no_progress_timeout_seconds")
+    budget = comparison_budget(schema)
+    budget_timeout = budget.get("run_timeout_seconds")
+    timeout = max(args.timeout, int(budget_timeout)) if budget_timeout is not None else args.timeout
+    budget_no_progress_timeout = budget.get("simulator_no_progress_timeout_seconds")
     simulator_no_progress_timeout = (
-        int(profile_no_progress_timeout)
-        if profile_no_progress_timeout is not None
+        int(budget_no_progress_timeout)
+        if budget_no_progress_timeout is not None
         else args.simulator_no_progress_timeout
     )
 

@@ -57,18 +57,14 @@ checkpoint status as an observation, then continue monitoring or executing the
 same runner while `final_response_allowed=false`.
 
 If the job directory contains a task-local `mutation_schema.yaml`, treat its
-comparison budget and mutation bounds as authoritative. Invalid generated
-proposals are product friction, not campaign blockers; preserve the same
-campaign and continue with another same-budget candidate.
+`comparison_budget_args.default_candidate_budget` and mutation bounds as
+authoritative. Invalid generated proposals are product friction, not campaign
+blockers; preserve the same campaign and continue with another same-budget
+candidate.
 
-Do not read or follow research harness program prose, task profile runbooks,
-`scripts/init_run.sh`, `.autoresearch` branch rules, or manual
-research campaign instructions before starting the product runner. Those files
-belong to the incubator workflow and can pull the agent back into an old
-agent-driven loop. The product runner may read `mutation_schema.yaml`,
-`autofl.yaml`, and the original `job.py`; use broader research instructions only
-if the runner is unavailable or the user explicitly asks for the legacy research
-campaign.
+Treat `job.py`, generated `autofl.yaml`, and optional job-local
+`mutation_schema.yaml` as campaign inputs. Do not require example-specific
+runbooks, branches, or initialization scripts.
 
 Request escalated execution for the runner command because NVFLARE simulator
 runs create local sockets that fail inside the restricted Codex sandbox. If a
@@ -114,8 +110,8 @@ specific fields before running candidates.
   user explicitly asks you to prepare the environment.
 - Treat generated `autofl.yaml`, task-local `mutation_schema.yaml`, and
   existing NVFLARE job/runtime configuration as authoritative. In the default
-  simulation product flow, do not require task-local prose profiles, campaign
-  branch setup, or research harness initialization before invoking the runner.
+  simulation product flow, do not require task-local prose profiles, special
+  branch setup, or harness initialization before invoking the runner.
 - Use NVFLARE's existing execution surfaces:
   - For simulation, run the imported job with its configured `SimEnv`.
   - For POC and production, use standard `nvflare job submit`, `job wait`,
@@ -146,13 +142,12 @@ source-code mutations that the runner cannot express yet.
    comparable candidate batch unless the code-owned state says
     `final_response_allowed=true` or production policy blocks execution.
 
-## Autoresearch Operating Rule
+## Continuous Campaign Rule
 
-For uncapped campaigns, behave like the original Auto-FL research loop: after
-setup and baseline, continue launching same-budget candidate batches until
-manually interrupted. Do not ask whether to keep going. Do not produce a final
-answer from your own judgment while the code-owned campaign state says
-`final_response_allowed=false`.
+For uncapped campaigns, continue launching same-budget candidate batches after
+setup and baseline until manually interrupted. Do not ask whether to keep going.
+Do not produce a final answer from your own judgment while the code-owned
+campaign state says `final_response_allowed=false`.
 
 A kept improvement, refreshed plot, updated report, local commit, first plateau
 check, or encoded `job.py` default is a checkpoint, not completion. Treat the
@@ -160,7 +155,7 @@ campaign state as authoritative: if `final_response_allowed=false`, execute
 `next_action` and keep the same `job.py`, `autofl.yaml`, metric, environment,
 ledger, and comparison budget. Use
 [continuous-campaigns.md](references/continuous-campaigns.md) for simulator
-watchdogs, legacy `.autoresearch` guard handling, and recovery rules.
+watchdogs, campaign-state handling, and recovery rules.
 
 ## Candidate Caps
 

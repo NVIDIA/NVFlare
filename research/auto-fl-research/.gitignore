@@ -13,5 +13,3 @@ run.log
 .DS_Store
 .venv
 progress.png
-.autoresearch/
-campaign_state.json

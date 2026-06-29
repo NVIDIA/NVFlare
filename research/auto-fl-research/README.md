@@ -54,7 +54,7 @@ QWBE is currently implemented as an **instruction and artifact workflow**, not a
 
 The current flow is:
 
-1. Run `scripts/plateau_watchdog.py results.tsv` after finalizing each batch. Its default hard trigger is 8 scored non-crash candidates without a material improvement or literature reset. Treat this as the normal trigger for literature mode.
+1. Run `scripts/plateau_watchdog.py results.tsv` after finalizing each batch. Its default hard trigger is 32 scored non-crash candidates without a material improvement or literature reset. Treat this as the normal trigger for literature mode.
 2. Start a literature-review timer with `scripts/log_literature_review.py --start`, then generate source-backed proposal cards from recent `results.tsv` symptoms and relevant papers.
 3. Filter out duplicates, known null/worse ideas, and proposals that violate the current contract.
 4. Score each remaining proposal from 1-5 on expected gain, contract safety, simplicity, evidence, novelty, and runtime cost.

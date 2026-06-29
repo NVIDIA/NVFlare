@@ -1,12 +1,6 @@
 target: task-local client.py, job.py, model.py; shared custom_aggregators.py
 goal: mutate local client behavior and bounded registered model architectures without changing the federated protocol; scaffold metadata is allowed only when explicitly selected
 
-objective:
-  requested_metric: accuracy
-  optimization_metric: test_accuracy
-  metric_extraction_order: [test_accuracy, accuracy]
-  metric_source: held-out global CIFAR-10 test set via torchvision.datasets.CIFAR10(train=False)
-
 fixed_invariants:
   api_loop:
     - flare.init()
@@ -23,7 +17,6 @@ fixed_invariants:
   fixed_assets:
     - create_datasets/create_data_loaders contract
     - train_idx_root partitioning scheme
-    - global CIFAR-10 test-set evaluation via torchvision.datasets.CIFAR10(train=False)
 
 mutable_args:
   model_arch:
@@ -66,7 +59,6 @@ comparison_budget_args:
     aggregator: weighted
     cross_site_eval: true
     final_eval_clients: site-1
-    evaluation_split: cifar10_test
     run_timeout_seconds: 1200
   fixed_within_campaign:
     - n_clients
@@ -79,16 +71,13 @@ comparison_budget_args:
     - max_model_params
     - cross_site_eval
     - final_eval_clients
-    - evaluation_split
   note: >
     Keep communication and data-budget fields fixed within a comparison
     campaign. aggregation_epochs and local_train_steps are local-compute knobs:
     local_train_steps=0 means epoch-based training with aggregation_epochs, and
     local_train_steps>0 means exact optimizer steps per client per round.
     Vary only one local-compute mode in a narrow sweep and keep candidates
-    within run_timeout_seconds. The comparable CIFAR-10 score is held-out
-    test_accuracy from the global CIFAR-10 test set; accuracy is retained only
-    as a backward-compatible alias.
+    within run_timeout_seconds.
   split_cache: >
     CIFAR-10 train index splits are cached under /tmp/cifar10_splits by
     n_clients, alpha, and seed. Candidate job names must not create new splits

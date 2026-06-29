@@ -1,8 +1,8 @@
 # Helper Script Coverage
 
-Repository tests cover the bundled Python campaign runner in
-`tests/unit_test/tool/autofl_skill_runner_test.py`.
+The bundled campaign helpers are covered by focused repository tests:
 
-The H100 launcher is a host-side integration helper for fresh-agent trials. It
-is exercised during H100 validation and kept under the skill so reviewers can
-inspect the exact setup command used for end-to-end UX tests.
+- `scripts/campaign_guard.py`:
+  `tests/unit_test/tool/autofl_skill_campaign_guard_test.py`
+- `scripts/run_job_campaign.py`:
+  `tests/unit_test/tool/autofl_skill_runner_test.py`
