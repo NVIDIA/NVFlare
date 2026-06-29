@@ -499,6 +499,51 @@ def test_candidate_schema_failure_does_not_modify_workspace(tmp_path, monkeypatc
     assert client.read_text(encoding="utf-8") == "ALGORITHM = 'baseline'\n"
 
 
+def test_candidate_partial_apply_failure_restores_workspace(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, client, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    baseline_job = job.read_text(encoding="utf-8")
+    baseline_client = client.read_text(encoding="utf-8")
+    assert runner.main(["prepare", str(job), "--name", "partial", "--hypothesis", "change two files"]) == 0
+    draft = tmp_path / ".nvflare" / "autofl" / "candidates" / "partial" / "source"
+    draft.joinpath("client.py").write_text("ALGORITHM = 'candidate'\n", encoding="utf-8")
+    draft.joinpath("job.py").write_text("print('candidate')\n", encoding="utf-8")
+    original_copy = runner.copy_relative_file
+
+    def fail_second_candidate_copy(source_root, destination_root, relative):
+        if source_root == draft and relative == "job.py":
+            raise OSError("simulated candidate copy failure")
+        original_copy(source_root, destination_root, relative)
+
+    monkeypatch.setattr(runner, "copy_relative_file", fail_second_candidate_copy)
+
+    assert runner.main(["evaluate", str(job)]) == 2
+    assert job.read_text(encoding="utf-8") == baseline_job
+    assert client.read_text(encoding="utf-8") == baseline_client
+
+
+def test_malformed_yaml_returns_clean_cli_errors(tmp_path, monkeypatch, capsys):
+    runner = _load_runner()
+    job, _, config = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    capsys.readouterr()
+    autofl_yaml = tmp_path / "autofl.yaml"
+    autofl_yaml.write_text("job: [\n", encoding="utf-8")
+
+    assert runner.main(["suggest", str(job)]) == 2
+    stderr = capsys.readouterr().err
+    assert f"Auto-FL suggest failed: invalid YAML in {autofl_yaml}" in stderr
+    assert "Traceback" not in stderr
+
+    runner.write_yaml(autofl_yaml, config)
+    mutation_schema = tmp_path / "mutation_schema.yaml"
+    mutation_schema.write_text("comparison_budget_args: [\n", encoding="utf-8")
+
+    assert runner.main(["suggest", str(job)]) == 2
+    stderr = capsys.readouterr().err
+    assert f"Auto-FL suggest failed: invalid YAML in {mutation_schema}" in stderr
+    assert "Traceback" not in stderr
+
+
 def test_abandon_candidate_clears_pending_draft_without_touching_best(tmp_path, monkeypatch):
     runner = _load_runner()
     job, client, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)

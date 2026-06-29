@@ -500,8 +500,14 @@ def run_allow_timeout(
 
 def read_yaml(path: Path) -> Dict[str, Any]:
     if yaml is None:
-        raise RuntimeError("PyYAML is required to read autofl.yaml")
-    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        raise RuntimeError("PyYAML is required to read YAML files")
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as e:
+        raise ValueError(f"invalid YAML in {path}: {e}") from e
+    if not isinstance(data, dict):
+        raise ValueError(f"invalid YAML in {path}: expected a mapping")
+    return data
 
 
 def write_yaml(path: Path, data: Dict[str, Any]) -> None:
@@ -1021,9 +1027,7 @@ def load_mutation_schema(cwd: Path) -> Dict[str, Any]:
     path = cwd / "mutation_schema.yaml"
     if not path.exists():
         return {}
-    if yaml is None:
-        raise RuntimeError("PyYAML is required to read mutation_schema.yaml")
-    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    return read_yaml(path)
 
 
 def comparison_budget(schema: Dict[str, Any]) -> Dict[str, Any]:
@@ -2129,10 +2133,9 @@ def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
     write_json(manifest_path, manifest)
     schema = load_mutation_schema(workspace)
     timeout, no_progress_timeout = campaign_timeout(args, schema)
-    apply_candidate_source(workspace, manifest_path.parent / "source", changed)
-
     candidate_config_path = manifest_path.parent / "candidate_autofl.yaml"
     try:
+        apply_candidate_source(workspace, manifest_path.parent / "source", changed)
         candidate_config = import_job_config(
             args,
             job,
