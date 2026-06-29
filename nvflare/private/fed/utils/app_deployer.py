@@ -88,6 +88,8 @@ class AppDeployer(AppDeployerSpec):
                     shutil.rmtree(run_dir, ignore_errors=True)
                 return err
 
+            app_info = AppAuthzService.derive_local_app_info(app_info, job_meta, workspace.site_name)
+
             job_meta = copy.deepcopy(job_meta)
             if app_info.get(AppValidationKey.BYOC, False):
                 job_meta[AppValidationKey.BYOC] = True
