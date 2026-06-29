@@ -12,11 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import os.path
 from typing import Optional
 
 from pydantic import BaseModel, model_validator
 
+from nvflare.apis.fl_constant import WorkspaceConstants
+from nvflare.app_common.default_component_policy import DEFAULT_CLASS_ALLOW_LIST
+from nvflare.app_common.widgets.component_path_authorizer import CLASS_ALLOW_LIST
 from nvflare.job_config.api import FedJob
 
 from .spec import ExecEnv
@@ -106,8 +110,10 @@ class SimEnv(ExecEnv):
             )
 
         job_id = job.name
+        workspace = os.path.join(self.workspace_root, job_id)
+        self._ensure_default_component_policy(workspace)
         run_status = job.simulator_run(
-            workspace=os.path.join(self.workspace_root, job.name),
+            workspace=workspace,
             n_clients=self.num_clients if self.clients is None else None,
             clients=self.clients,
             threads=self.num_threads,
@@ -122,6 +128,29 @@ class SimEnv(ExecEnv):
                 f"e.g. server/simulate_job/log.txt"
             )
         return job_id
+
+    @staticmethod
+    def _ensure_default_component_policy(workspace: str) -> None:
+        """Install the standard policy unless the simulation workspace already defines one."""
+        local_dir = os.path.join(workspace, WorkspaceConstants.SITE_FOLDER_NAME)
+        resources_file = os.path.join(local_dir, WorkspaceConstants.RESOURCES_CONFIG)
+        default_resources_file = os.path.join(local_dir, WorkspaceConstants.DEFAULT_RESOURCES_CONFIG)
+
+        target_file = resources_file if os.path.exists(resources_file) else default_resources_file
+        resources = {"format_version": 2}
+        if os.path.exists(target_file):
+            with open(target_file) as f:
+                resources = json.load(f)
+            if not isinstance(resources, dict):
+                raise ValueError(f"Simulator resources file must contain a JSON object: {target_file}")
+
+        if CLASS_ALLOW_LIST in resources:
+            return
+
+        resources[CLASS_ALLOW_LIST] = list(DEFAULT_CLASS_ALLOW_LIST)
+        os.makedirs(local_dir, exist_ok=True)
+        with open(target_file, "w") as f:
+            json.dump(resources, f, indent=4)
 
     def get_job_status(self, job_id: str) -> Optional[str]:
         """Get job status - not supported in simulation environment."""
