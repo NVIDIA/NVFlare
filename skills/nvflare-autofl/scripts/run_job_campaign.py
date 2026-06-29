@@ -37,6 +37,7 @@ import signal
 import subprocess
 import sys
 import time
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -521,6 +522,28 @@ def write_json(path: Path, data: Dict[str, Any]) -> None:
     path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def atomic_write_bytes(path: Path, data: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.tmp-{uuid.uuid4().hex}")
+    try:
+        temporary.write_bytes(data)
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def capture_file_versions(paths: Iterable[Path]) -> Dict[Path, Optional[bytes]]:
+    return {path: path.read_bytes() if path.is_file() else None for path in paths}
+
+
+def restore_file_versions(versions: Dict[Path, Optional[bytes]]) -> None:
+    for path, data in versions.items():
+        if data is None:
+            path.unlink(missing_ok=True)
+        else:
+            atomic_write_bytes(path, data)
+
+
 def read_json(path: Path) -> Dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -591,19 +614,65 @@ def copy_relative_file(source_root: Path, destination_root: Path, relative: str)
     shutil.copy2(source, destination)
 
 
-def create_best_snapshot(workspace: Path, config: Dict[str, Any], snapshot_root: Path) -> Dict[str, str]:
-    if snapshot_root.exists():
-        shutil.rmtree(snapshot_root)
-    source_root = snapshot_root / "source"
+def stage_best_snapshot(workspace: Path, config: Dict[str, Any], snapshot_root: Path) -> Tuple[Path, Dict[str, str]]:
+    snapshot_root.parent.mkdir(parents=True, exist_ok=True)
+    staged_root = snapshot_root.parent / f".{snapshot_root.name}.staged-{uuid.uuid4().hex}"
+    source_root = staged_root / "source"
     source_root.mkdir(parents=True, exist_ok=True)
-    for relative in allowed_edit_paths(config, workspace):
-        source = workspace / relative
-        if source.is_symlink():
-            raise ValueError(f"allowed edit path is a symlink: {source}")
-        if source.is_file():
-            copy_relative_file(workspace, source_root, relative)
-    files = file_map(source_root)
-    write_json(snapshot_root / "snapshot.json", {"source_sha256": source_hash(files), "files": files})
+    try:
+        for relative in allowed_edit_paths(config, workspace):
+            source = workspace / relative
+            if source.is_symlink():
+                raise ValueError(f"allowed edit path is a symlink: {source}")
+            if source.is_file():
+                copy_relative_file(workspace, source_root, relative)
+        files = file_map(source_root)
+        write_json(staged_root / "snapshot.json", {"source_sha256": source_hash(files), "files": files})
+        return staged_root, files
+    except BaseException:
+        shutil.rmtree(staged_root, ignore_errors=True)
+        raise
+
+
+def activate_best_snapshot(snapshot_root: Path, staged_root: Path) -> Optional[Path]:
+    previous_root = None
+    if snapshot_root.exists():
+        previous_root = snapshot_root.parent / f".{snapshot_root.name}.previous-{uuid.uuid4().hex}"
+        os.replace(snapshot_root, previous_root)
+    try:
+        os.replace(staged_root, snapshot_root)
+    except BaseException:
+        if previous_root is not None:
+            os.replace(previous_root, snapshot_root)
+        raise
+    return previous_root
+
+
+def rollback_best_snapshot(snapshot_root: Path, previous_root: Optional[Path]) -> None:
+    if previous_root is None:
+        shutil.rmtree(snapshot_root, ignore_errors=True)
+        return
+    failed_root = snapshot_root.parent / f".{snapshot_root.name}.failed-{uuid.uuid4().hex}"
+    if snapshot_root.exists():
+        os.replace(snapshot_root, failed_root)
+    try:
+        os.replace(previous_root, snapshot_root)
+    except BaseException:
+        if failed_root.exists():
+            os.replace(failed_root, snapshot_root)
+        raise
+    shutil.rmtree(failed_root, ignore_errors=True)
+
+
+def create_best_snapshot(workspace: Path, config: Dict[str, Any], snapshot_root: Path) -> Dict[str, str]:
+    staged_root, files = stage_best_snapshot(workspace, config, snapshot_root)
+    try:
+        previous_root = activate_best_snapshot(snapshot_root, staged_root)
+    finally:
+        if staged_root.exists():
+            shutil.rmtree(staged_root, ignore_errors=True)
+    if previous_root is not None:
+        shutil.rmtree(previous_root, ignore_errors=True)
     return files
 
 
@@ -2052,56 +2121,93 @@ def finalize_candidate_result(
     patch: str,
     record: RunRecord,
 ) -> Tuple[List[RunRecord], Dict[str, Any]]:
-    records = load_results(paths["results"])
-    previous_best = best_retained_record(records, args.mode)
-    if record.status == "candidate":
-        record.status = (
-            "keep" if better(record.score, previous_best.score if previous_best else None, args.mode) else "discard"
+    rollback_files: Dict[Path, Optional[bytes]] = {}
+    staged_snapshot = None
+    previous_snapshot = None
+    try:
+        records = load_results(paths["results"])
+        previous_best = best_retained_record(records, args.mode)
+        if record.status == "candidate":
+            record.status = (
+                "keep" if better(record.score, previous_best.score if previous_best else None, args.mode) else "discard"
+            )
+        patch_path = manifest_path.parent / "candidate.patch"
+        rollback_files = capture_file_versions(
+            [
+                paths["autofl_yaml"],
+                manifest_path,
+                campaign_metadata_path(job.parent),
+                paths["results"],
+                paths["state"],
+                paths["progress"],
+                paths["report"],
+                patch_path,
+            ]
         )
-    patch_path = manifest_path.parent / "candidate.patch"
-    patch_path.write_text(patch, encoding="utf-8")
-    patch_sha256 = sha256_bytes(patch.encode("utf-8"))
-    record.changed_files = ",".join(changed) if changed else "none"
-    record.diff_summary = str(manifest.get("hypothesis") or "candidate")
-    record.candidate_manifest = str(manifest_path.resolve())
-    record.base_candidate = str(manifest.get("base_candidate") or "")
-    record.patch_sha256 = patch_sha256
+        patch_path.write_text(patch, encoding="utf-8")
+        patch_sha256 = sha256_bytes(patch.encode("utf-8"))
+        record.changed_files = ",".join(changed) if changed else "none"
+        record.diff_summary = str(manifest.get("hypothesis") or "candidate")
+        record.candidate_manifest = str(manifest_path.resolve())
+        record.base_candidate = str(manifest.get("base_candidate") or "")
+        record.patch_sha256 = patch_sha256
 
-    if record.status == "keep":
-        update_config_for_kept_sources(config, created)
-        write_yaml(paths["autofl_yaml"], config)
-        snapshot_files = create_best_snapshot(job.parent, config, paths["snapshot_root"])
-        metadata.update(
+        if record.status == "keep":
+            update_config_for_kept_sources(config, created)
+            staged_snapshot, snapshot_files = stage_best_snapshot(job.parent, config, paths["snapshot_root"])
+            write_yaml(paths["autofl_yaml"], config)
+            previous_snapshot = activate_best_snapshot(paths["snapshot_root"], staged_snapshot)
+            staged_snapshot = None
+            metadata.update(
+                {
+                    "best_candidate": record.name,
+                    "best_score": record.score,
+                    "best_source_sha256": source_hash(snapshot_files),
+                    "updated_at": utc_now(),
+                }
+            )
+        else:
+            restore_best_source(job.parent, best_source, best_files, changed)
+
+        manifest.update(
             {
-                "best_candidate": record.name,
-                "best_score": record.score,
-                "best_source_sha256": source_hash(snapshot_files),
+                "status": record.status,
                 "updated_at": utc_now(),
+                "changed_files": changed,
+                "created_files": created,
+                "patch_sha256": patch_sha256,
+                "artifacts": {"patch": str(patch_path.resolve()), "run": record.artifacts},
+                "result": {
+                    "score": record.score,
+                    "runtime_seconds": record.runtime_seconds,
+                    "run_command": record.run_command,
+                    "failure_reason": record.failure_reason,
+                },
             }
         )
-    else:
-        restore_best_source(job.parent, best_source, best_files, changed)
+        write_json(manifest_path, manifest)
+        write_json(campaign_metadata_path(job.parent), metadata)
+        records.append(record)
+        state = refresh_campaign_artifacts(args, paths, config, records, metadata)
+    except BaseException as error:
+        try:
+            if previous_snapshot is not None:
+                rollback_best_snapshot(paths["snapshot_root"], previous_snapshot)
+                previous_snapshot = None
+            restore_best_source(job.parent, paths["snapshot_root"] / "source", best_files, changed)
+            if rollback_files:
+                restore_file_versions(rollback_files)
+        except BaseException as rollback_error:
+            raise RuntimeError(
+                f"candidate finalization failed ({error}); automatic workspace rollback also failed ({rollback_error})"
+            ) from rollback_error
+        raise
+    finally:
+        if staged_snapshot is not None:
+            shutil.rmtree(staged_snapshot, ignore_errors=True)
 
-    manifest.update(
-        {
-            "status": record.status,
-            "updated_at": utc_now(),
-            "changed_files": changed,
-            "created_files": created,
-            "patch_sha256": patch_sha256,
-            "artifacts": {"patch": str(patch_path.resolve()), "run": record.artifacts},
-            "result": {
-                "score": record.score,
-                "runtime_seconds": record.runtime_seconds,
-                "run_command": record.run_command,
-                "failure_reason": record.failure_reason,
-            },
-        }
-    )
-    write_json(manifest_path, manifest)
-    write_json(campaign_metadata_path(job.parent), metadata)
-    records.append(record)
-    state = refresh_campaign_artifacts(args, paths, config, records, metadata)
+    if previous_snapshot is not None:
+        shutil.rmtree(previous_snapshot, ignore_errors=True)
     return records, state
 
 
@@ -2174,8 +2280,8 @@ def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
         )
         return 0
 
-    help_text = job_help(args.python, job, workspace)
     try:
+        help_text = job_help(args.python, job, workspace)
         run_record = run_job(
             JobRun(
                 name=str(manifest["candidate_id"]),

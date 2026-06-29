@@ -522,6 +522,116 @@ def test_candidate_partial_apply_failure_restores_workspace(tmp_path, monkeypatc
     assert client.read_text(encoding="utf-8") == baseline_client
 
 
+def test_candidate_job_help_failure_restores_workspace(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, client, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    assert runner.main(["prepare", str(job), "--name", "help_failure", "--hypothesis", "change code"]) == 0
+    draft = tmp_path / ".nvflare" / "autofl" / "candidates" / "help_failure" / "source"
+    draft.joinpath("client.py").write_text("ALGORITHM = 'candidate'\n", encoding="utf-8")
+
+    def fail_job_help(*args, **kwargs):
+        raise OSError("simulated missing Python executable")
+
+    monkeypatch.setattr(runner, "job_help", fail_job_help)
+
+    assert runner.main(["evaluate", str(job)]) == 2
+    assert client.read_text(encoding="utf-8") == "ALGORITHM = 'baseline'\n"
+
+
+def test_candidate_finalization_failure_rolls_back_workspace_and_campaign_files(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, client, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    assert runner.main(["prepare", str(job), "--name", "late_failure", "--hypothesis", "improve code"]) == 0
+    candidate_dir = tmp_path / ".nvflare" / "autofl" / "candidates" / "late_failure"
+    candidate_dir.joinpath("source/client.py").write_text("ALGORITHM = 'candidate'\n", encoding="utf-8")
+    original_autofl = tmp_path.joinpath("autofl.yaml").read_bytes()
+    original_results = tmp_path.joinpath("results.tsv").read_bytes()
+    original_state = tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_bytes()
+    original_progress = tmp_path.joinpath("progress.png").read_bytes()
+    original_report = tmp_path.joinpath("autofl_report.md").read_bytes()
+
+    def improved_run(run_def, **kwargs):
+        return runner.RunRecord(
+            "candidate", run_def.name, 0.7, 2.0, "none", run_def.description, "python job.py", "/tmp/late_failure"
+        )
+
+    original_refresh = runner.refresh_campaign_artifacts
+
+    def fail_artifact_refresh(*args, **kwargs):
+        original_refresh(*args, **kwargs)
+        raise OSError("simulated report write failure")
+
+    monkeypatch.setattr(runner, "run_job", improved_run)
+    monkeypatch.setattr(runner, "refresh_campaign_artifacts", fail_artifact_refresh)
+
+    assert runner.main(["evaluate", str(job)]) == 2
+    assert client.read_text(encoding="utf-8") == "ALGORITHM = 'baseline'\n"
+    assert tmp_path.joinpath("autofl.yaml").read_bytes() == original_autofl
+    assert tmp_path.joinpath("results.tsv").read_bytes() == original_results
+    assert tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_bytes() == original_state
+    assert tmp_path.joinpath("progress.png").read_bytes() == original_progress
+    assert tmp_path.joinpath("autofl_report.md").read_bytes() == original_report
+    best_source, best_files = runner.load_best_snapshot(tmp_path / ".nvflare" / "autofl" / "snapshots" / "best")
+    assert runner.workspace_matches_snapshot(tmp_path, best_source, best_files)
+    metadata = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign.json").read_text(encoding="utf-8"))
+    assert metadata["best_candidate"] == "baseline"
+    manifest = json.loads(candidate_dir.joinpath("candidate_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["status"] == "prepared"
+
+
+def test_candidate_snapshot_stage_failure_preserves_previous_best(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, client, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    assert runner.main(["prepare", str(job), "--name", "snapshot_failure", "--hypothesis", "improve code"]) == 0
+    draft = tmp_path / ".nvflare" / "autofl" / "candidates" / "snapshot_failure" / "source"
+    draft.joinpath("client.py").write_text("ALGORITHM = 'candidate'\n", encoding="utf-8")
+
+    def improved_run(run_def, **kwargs):
+        return runner.RunRecord(
+            "candidate", run_def.name, 0.7, 2.0, "none", run_def.description, "python job.py", "/tmp/snapshot"
+        )
+
+    def fail_snapshot_stage(*args, **kwargs):
+        raise OSError("simulated snapshot copy failure")
+
+    monkeypatch.setattr(runner, "run_job", improved_run)
+    monkeypatch.setattr(runner, "stage_best_snapshot", fail_snapshot_stage)
+
+    assert runner.main(["evaluate", str(job)]) == 2
+    assert client.read_text(encoding="utf-8") == "ALGORITHM = 'baseline'\n"
+    best_source, best_files = runner.load_best_snapshot(tmp_path / ".nvflare" / "autofl" / "snapshots" / "best")
+    assert runner.workspace_matches_snapshot(tmp_path, best_source, best_files)
+
+
+def test_candidate_discard_restore_failure_retries_rollback(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, client, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    assert runner.main(["prepare", str(job), "--name", "discard_failure", "--hypothesis", "regress code"]) == 0
+    draft = tmp_path / ".nvflare" / "autofl" / "candidates" / "discard_failure" / "source"
+    draft.joinpath("client.py").write_text("ALGORITHM = 'candidate'\n", encoding="utf-8")
+    original_restore = runner.restore_best_source
+    restore_calls = 0
+
+    def fail_first_restore(*args, **kwargs):
+        nonlocal restore_calls
+        restore_calls += 1
+        if restore_calls == 1:
+            raise OSError("simulated restore failure")
+        original_restore(*args, **kwargs)
+
+    def regressed_run(run_def, **kwargs):
+        return runner.RunRecord(
+            "candidate", run_def.name, 0.3, 2.0, "none", run_def.description, "python job.py", "/tmp/discard_failure"
+        )
+
+    monkeypatch.setattr(runner, "restore_best_source", fail_first_restore)
+    monkeypatch.setattr(runner, "run_job", regressed_run)
+
+    assert runner.main(["evaluate", str(job)]) == 2
+    assert restore_calls == 2
+    assert client.read_text(encoding="utf-8") == "ALGORITHM = 'baseline'\n"
+
+
 def test_malformed_yaml_returns_clean_cli_errors(tmp_path, monkeypatch, capsys):
     runner = _load_runner()
     job, _, config = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
