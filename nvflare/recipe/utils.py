@@ -59,6 +59,33 @@ MODEL_LOCATOR_REGISTRY = {
 }
 
 
+def _validate_per_site_config_shape(config: Any) -> Dict[str, Dict]:
+    if not isinstance(config, dict):
+        raise TypeError(f"config must be a dict, got {type(config).__name__}")
+
+    for site_name, site_config in config.items():
+        if not isinstance(site_name, str):
+            raise TypeError(f"per-site config key must be a str, got {type(site_name).__name__}")
+        if not isinstance(site_config, dict):
+            raise TypeError(f"per-site config for site {site_name!r} must be a dict, got {type(site_config).__name__}")
+
+    return config
+
+
+def set_per_site_config(recipe: Recipe, config: Dict[str, Dict]) -> None:
+    """Set site-keyed configuration on a recipe.
+
+    The helper only validates the generic shape:
+    - top-level keys are site names
+    - values are recipe-specific dictionaries
+
+    Each recipe is responsible for validating and interpreting the fields inside
+    each site's dictionary. The execution environment still controls which
+    clients are present for a run.
+    """
+    recipe.set_per_site_config(_validate_per_site_config_shape(config))
+
+
 def _has_cross_site_eval_workflow(job: FedJob) -> bool:
     """Check if CrossSiteModelEval workflow is already configured on server."""
     from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
