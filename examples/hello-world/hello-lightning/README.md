@@ -2,7 +2,7 @@
 This example demonstrates how to use NVIDIA FLARE with PyTorch Lightning to train an image classifier using
 federated averaging (FedAvg) or SCAFFOLD. The same patched client script works with both algorithms.
 
-> **Main branch note:** Automatic Lightning SCAFFOLD support is introduced for NVFlare 2.8.0. Until that
+> **Main branch note:** Automatic Lightning SCAFFOLD support is introduced for NVFlare 2.9.0. Until that
 > package is published, install NVFlare from this repository before installing the remaining requirements.
 
 ## NVIDIA FLARE Installation

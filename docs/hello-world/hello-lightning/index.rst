@@ -8,7 +8,7 @@ federated averaging (FedAvg) or SCAFFOLD. The complete example code can be found
 
 .. note::
 
-   Automatic Lightning SCAFFOLD support is introduced for NVFlare 2.8.0. Until that package is published,
+   Automatic Lightning SCAFFOLD support is introduced for NVFlare 2.9.0. Until that package is published,
    install NVFlare from this repository before installing the remaining example requirements.
 
 It is recommended to create a virtual environment and run everything within a virtualenv.
