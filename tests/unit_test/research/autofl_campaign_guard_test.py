@@ -97,7 +97,7 @@ def test_campaign_guard_allows_final_report_after_explicit_cap(tmp_path):
     assert payload["final_response_allowed"] is True
 
 
-def test_campaign_guard_ignores_malformed_env_cap(tmp_path):
+def test_campaign_guard_ignores_ambient_env_cap(tmp_path):
     _write_results(
         tmp_path / "results.tsv",
         [
@@ -106,9 +106,24 @@ def test_campaign_guard_ignores_malformed_env_cap(tmp_path):
         ],
     )
 
-    payload = _run_guard(tmp_path, env={"AUTOFL_MAX_CANDIDATES": "not-a-number"})
+    payload = _run_guard(tmp_path, env={"AUTOFL_MAX_CANDIDATES": "1"})
 
     assert payload["decision"] == "continue"
     assert payload["reason"] == "continue"
     assert payload["candidate_cap"] is None
+    assert payload["candidate_cap_source"] == "uncapped"
     assert payload["final_response_allowed"] is False
+
+
+def test_campaign_guard_reports_best_score_for_minimization(tmp_path):
+    _write_results(
+        tmp_path / "results.tsv",
+        [
+            "abc\t0.84\t10\t--name baseline\tkeep\tjob.py\tbaseline\t/tmp/baseline",
+            "def\t0.42\t20\t--name candidate\tkeep\tjob.py\tcandidate row\t/tmp/candidate",
+        ],
+    )
+
+    payload = _run_guard(tmp_path, "--mode", "min")
+
+    assert payload["best_score"] == 0.42

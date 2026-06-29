@@ -455,22 +455,14 @@ def run_allow_timeout(
     simulator_stall_roots: Sequence[Path] = (),
     simulator_no_progress_timeout: int = DEFAULT_SIMULATOR_NO_PROGRESS_TIMEOUT,
 ) -> Tuple[int, str, float]:
-    try:
-        return run(
-            argv,
-            cwd,
-            timeout,
-            log_path,
-            simulator_stall_roots=simulator_stall_roots,
-            simulator_no_progress_timeout=simulator_no_progress_timeout,
-        )
-    except subprocess.TimeoutExpired as e:
-        output = e.stdout or ""
-        if isinstance(output, bytes):
-            output = output.decode("utf-8", errors="replace")
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_path.write_text(output + f"\nTIMEOUT after {timeout}s\n", encoding="utf-8")
-        return 124, output, float(timeout)
+    return run(
+        argv,
+        cwd,
+        timeout,
+        log_path,
+        simulator_stall_roots=simulator_stall_roots,
+        simulator_no_progress_timeout=simulator_no_progress_timeout,
+    )
 
 
 def read_yaml(path: Path) -> Dict[str, Any]:
@@ -1339,7 +1331,15 @@ def campaign_summary(
         "candidate_attempts": candidate_attempts(records),
     }
     if state_payload:
-        for key in ["decision", "reason", "next_action", "final_response_allowed", "agent_instruction"]:
+        for key in [
+            "decision",
+            "reason",
+            "next_action",
+            "final_response_allowed",
+            "candidate_cap",
+            "candidate_cap_source",
+            "agent_instruction",
+        ]:
             if key in state_payload:
                 payload[key] = state_payload[key]
     return payload
@@ -1532,7 +1532,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         )
         return 130
 
-    write_report(report, config, records, args)
     state_payload = write_state(
         state,
         results,
@@ -1544,6 +1543,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         plateau_min_delta=args.plateau_min_delta,
         hard_crash_threshold=args.hard_crash_threshold,
     )
+    write_progress(progress, records, args.mode, metric_label)
+    write_report(report, config, records, args)
     print(
         json.dumps(
             campaign_summary(autofl_yaml, results, state, progress, report, records, state_payload),

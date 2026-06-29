@@ -27,7 +27,6 @@ import argparse
 import csv
 import json
 import math
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -215,8 +214,7 @@ def guard_state_for_rows(
     attempts = comparable_attempts(rows)
     pending = pending_candidates(rows)
     cap = max_candidates
-    if cap is None:
-        cap = parse_max_candidates(os.environ.get("AUTOFL_MAX_CANDIDATES"))
+    cap_source = "explicit" if cap is not None else "uncapped"
     stop_file_hits = existing_stop_files(stop_files or list(DEFAULT_STOP_FILES))
     plateau = plateau_status(rows, plateau_threshold, min_delta, mode)
 
@@ -270,6 +268,7 @@ def guard_state_for_rows(
         "next_action": next_action,
         "final_response_allowed": final_response_allowed,
         "candidate_cap": cap,
+        "candidate_cap_source": cap_source,
         "candidate_attempts": len(attempts),
         "pending_candidates": len(pending),
         "scored_attempts": len(scored_attempts_with_index(rows)),
@@ -316,6 +315,7 @@ def print_text(state: Dict[str, Any]) -> None:
         "next_action",
         "final_response_allowed",
         "candidate_cap",
+        "candidate_cap_source",
         "candidate_attempts",
         "pending_candidates",
         "scored_attempts",

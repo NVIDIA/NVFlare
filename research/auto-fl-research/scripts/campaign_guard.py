@@ -26,7 +26,6 @@ import argparse
 import csv
 import json
 import math
-import os
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -88,12 +87,12 @@ def pending_candidates(rows: list[dict[str, str]]) -> list[dict[str, str]]:
     return [row for row in rows if normalize_status(row) == "candidate"]
 
 
-def best_score(rows: list[dict[str, str]]) -> float | None:
+def best_score(rows: list[dict[str, str]], mode: str) -> float | None:
     scores = [parse_score(row.get("score", "")) for row in rows]
     scores = [score for score in scores if score is not None]
     if not scores:
         return None
-    return max(scores)
+    return min(scores) if mode == "min" else max(scores)
 
 
 def parse_max_candidates(value: str | None) -> int | None:
@@ -169,8 +168,7 @@ def guard_state(args) -> dict[str, Any]:
     attempts = comparable_attempts(rows)
     pending = pending_candidates(rows)
     cap = args.max_candidates
-    if cap is None:
-        cap = parse_max_candidates(os.environ.get("AUTOFL_MAX_CANDIDATES"))
+    cap_source = "explicit" if cap is not None else "uncapped"
     stop_files = existing_stop_files(args.stop_file)
     watchdog = run_watchdog(results_path, args.plateau_threshold, args.min_delta)
 
@@ -221,10 +219,11 @@ def guard_state(args) -> dict[str, Any]:
         "next_action": next_action,
         "final_response_allowed": final_response_allowed,
         "candidate_cap": cap,
+        "candidate_cap_source": cap_source,
         "candidate_attempts": len(attempts),
         "pending_candidates": len(pending),
         "scored_attempts": len(scored_attempts(rows)),
-        "best_score": best_score(rows),
+        "best_score": best_score(rows, args.mode),
         "stop_files": stop_files,
         "watchdog": watchdog,
         "agent_instruction": instruction,
@@ -245,6 +244,7 @@ def print_text(state: dict[str, Any]) -> None:
         "next_action",
         "final_response_allowed",
         "candidate_cap",
+        "candidate_cap_source",
         "candidate_attempts",
         "pending_candidates",
         "scored_attempts",
@@ -268,6 +268,7 @@ def main() -> int:
     parser.add_argument("--plateau-threshold", type=int, default=DEFAULT_MAX_SCORED_SINCE_RESET)
     parser.add_argument("--min-delta", type=float, default=DEFAULT_MIN_DELTA)
     parser.add_argument("--hard-crash-threshold", type=int, default=6)
+    parser.add_argument("--mode", choices=["max", "min"], default="max")
     parser.add_argument("--format", choices=["text", "json"], default="text")
     args = parser.parse_args()
 

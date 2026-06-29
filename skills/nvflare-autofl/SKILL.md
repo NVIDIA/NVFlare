@@ -177,12 +177,12 @@ Do not invent a replacement campaign or new objective after a recoverable
 failure. Keep the current campaign identity and artifacts coherent unless the
 human explicitly requests a new campaign.
 
-If the user provides an `N`-candidate budget, count up to `N` comparable
-candidate attempts after the baseline. Do not count deterministic import,
-validation, smoke runs, plotting, reporting, the baseline, or
-infrastructure-only retries caused by sandbox/socket/runtime setup. Count a real
-candidate crash once the candidate run starts under the intended execution
-environment.
+If the user provides an `N`-candidate budget, pass it only through the runner's
+explicit `--max-candidates` argument and count up to `N` comparable attempts
+after baseline. Never infer a cap from an inherited environment variable. Do
+not count import, validation, smoke runs, plotting, reporting, baseline, or
+infrastructure-only retries. Count a real candidate crash after execution
+starts. State must report `candidate_cap_source=explicit` or `uncapped`.
 
 Treat plateau as a decision checkpoint, not an automatic stop. Summarize the
 plateau in the running report, refresh `progress.png`, run the campaign guard or
@@ -194,6 +194,6 @@ next mode, and continue unless the state reports `final_response_allowed=true`.
 Only produce a final answer for a campaign when the code-owned campaign state
 reports `final_response_allowed=true`, for example because the user manually
 stopped it, an explicit cap is exhausted, production policy blocks execution, or
-a hard safety/runtime blocker prevents further comparable runs. At that point,
-end with finalized `results.tsv`, refreshed `progress.png`, and a concise report covering
-baseline, best score, metric source, failures, friction, commands, and absolute artifact paths.
+a hard safety/runtime blocker prevents further comparable runs. Then finalize
+`results.tsv`, `progress.png`, and a concise report with baseline, best score,
+metric source, failures, friction, commands, and absolute artifact paths.

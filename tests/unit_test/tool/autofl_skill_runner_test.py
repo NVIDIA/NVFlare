@@ -286,6 +286,27 @@ def test_runner_state_finalizes_after_explicit_candidate_cap(tmp_path):
     assert state["reason"] == "candidate_cap_exhausted"
     assert state["next_action"] == "final_report"
     assert state["final_response_allowed"] is True
+    assert state["candidate_cap_source"] == "explicit"
+
+
+def test_runner_state_ignores_ambient_candidate_cap(tmp_path, monkeypatch):
+    runner = _load_runner()
+    monkeypatch.setenv("AUTOFL_MAX_CANDIDATES", "1")
+    records = [
+        runner.RunRecord("baseline", "baseline", 0.85, 1.0, "none", "baseline", "python job.py", "/tmp/baseline"),
+        runner.RunRecord("discard", "candidate_1", 0.84, 1.0, "none", "candidate", "python job.py", "/tmp/c1"),
+    ]
+    results_path = tmp_path / "results.tsv"
+    state_path = tmp_path / "state.json"
+    runner.write_results(results_path, records)
+
+    state = runner.write_state(state_path, results_path, records, None)
+
+    assert state["decision"] == "continue"
+    assert state["reason"] == "continue"
+    assert state["candidate_cap"] is None
+    assert state["candidate_cap_source"] == "uncapped"
+    assert state["final_response_allowed"] is False
 
 
 def test_runner_state_marks_infrastructure_retry_non_final(tmp_path):

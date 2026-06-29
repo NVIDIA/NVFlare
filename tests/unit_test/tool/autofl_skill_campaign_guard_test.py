@@ -79,6 +79,7 @@ def test_guard_continues_uncapped_before_plateau():
     assert state["next_action"] == "launch_next_candidate"
     assert state["final_response_allowed"] is False
     assert state["candidate_cap"] is None
+    assert state["candidate_cap_source"] == "uncapped"
     assert state["candidate_attempts"] == 2
     assert state["best_score"] == 0.851
 
@@ -125,6 +126,24 @@ def test_guard_counts_candidate_with_baseline_in_description():
     assert state["candidate_attempts"] == 1
     assert state["decision"] == "stop"
     assert state["reason"] == "candidate_cap_exhausted"
+    assert state["candidate_cap_source"] == "explicit"
+
+
+def test_guard_ignores_ambient_candidate_cap(monkeypatch):
+    guard = _load_guard()
+    monkeypatch.setenv("AUTOFL_MAX_CANDIDATES", "1")
+    rows = [
+        _row("baseline", "baseline", "0.85"),
+        _row("discard", "candidate_1", "0.84"),
+    ]
+
+    state = guard.guard_state_for_rows(rows)
+
+    assert state["decision"] == "continue"
+    assert state["reason"] == "continue"
+    assert state["candidate_cap"] is None
+    assert state["candidate_cap_source"] == "uncapped"
+    assert state["final_response_allowed"] is False
 
 
 def test_guard_cli_writes_campaign_state_json(tmp_path):
