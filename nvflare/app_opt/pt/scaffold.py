@@ -111,8 +111,9 @@ class PTScaffoldHelper(object):
         global_model_para = model_global.state_dict()
         net_para = model.state_dict()
         for key in net_para:
+            global_value = global_model_para[key].to(net_para[key])
             c_new_para[key] = (
-                c_new_para[key] - c_global_para[key] + (global_model_para[key] - net_para[key]) / (self.cnt * curr_lr)
+                c_new_para[key] - c_global_para[key] + (global_value - net_para[key]) / (self.cnt * curr_lr)
             )
             c_delta = (c_new_para[key] - c_local_para[key]).cpu()
             if c_delta.dtype == torch.bfloat16:

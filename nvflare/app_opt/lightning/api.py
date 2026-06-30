@@ -26,7 +26,8 @@ from nvflare.client.api import clear, get_config, init, is_evaluate, is_submit_m
 from nvflare.client.config import ConfigKey
 from nvflare.fuel.utils import fobs
 
-from .callbacks import RestoreState, _ScaffoldHandler
+from .algorithm import _AlgorithmHandlerManager
+from .callbacks import RestoreState
 
 FL_META_KEY = "__fl_meta__"
 
@@ -135,7 +136,8 @@ class FLCallback(Callback):
         self._is_submit_model = False
         self._load_state_dict_strict = load_state_dict_strict
         self._update_fit_loop = update_fit_loop
-        self._scaffold = _ScaffoldHandler()
+        self._algorithm_handler = _AlgorithmHandlerManager()
+        self._pending_train_model = None
 
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -169,19 +171,23 @@ class FLCallback(Callback):
 
         # resets attributes
         self.metrics = None
+        self._pending_train_model = None
         clear()
 
     def on_train_start(self, trainer, pl_module):
-        # receive the global model and update the local model with global model
-        input_model = self._receive_and_update_model(trainer, pl_module)
+        # Validation may already have received and loaded the training model.
+        input_model = self._pending_train_model
+        self._pending_train_model = None
+        if input_model is None:
+            input_model = self._receive_and_update_model(trainer, pl_module)
         if input_model and self._is_training:
-            self._scaffold.start_round(trainer=trainer, pl_module=pl_module, input_model=input_model)
+            self._algorithm_handler.start_round(trainer=trainer, pl_module=pl_module, input_model=input_model)
 
     def on_before_optimizer_step(self, trainer, pl_module, optimizer, *args):
-        self._scaffold.before_optimizer_step(optimizer)
+        self._algorithm_handler.before_optimizer_step(optimizer)
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
-        self._scaffold.after_train_batch(pl_module)
+        self._algorithm_handler.after_train_batch(pl_module)
 
     def on_train_end(self, trainer, pl_module):
         if hasattr(pl_module, FL_META_KEY):
@@ -192,11 +198,13 @@ class FLCallback(Callback):
         else:
             fl_meta = {}
         if self._is_training:
-            scaffold_steps = self._scaffold.num_steps if self._scaffold.active else None
-            fl_meta.update(self._scaffold.finish_round(pl_module))
+            algorithm_result = self._algorithm_handler.finish_round(pl_module)
+            fl_meta.update(algorithm_result.metadata)
             if MetaKey.NUM_STEPS_CURRENT_ROUND not in fl_meta:
                 fl_meta[MetaKey.NUM_STEPS_CURRENT_ROUND] = (
-                    scaffold_steps if scaffold_steps is not None else trainer.estimated_stepping_batches
+                    algorithm_result.num_steps
+                    if algorithm_result.num_steps is not None
+                    else trainer.estimated_stepping_batches
                 )
             model = FLModel(params=pl_module.cpu().state_dict(), meta=fl_meta)
             if self.train_with_evaluation:
@@ -216,7 +224,9 @@ class FLCallback(Callback):
         # The subsequent validate() calls will not trigger the receive update model.
         # Hence the validate() will be validating the local model.
         if pl_module and self.metrics is None:
-            self._receive_and_update_model(trainer, pl_module)
+            input_model = self._receive_and_update_model(trainer, pl_module)
+            if input_model and self._is_training:
+                self._pending_train_model = input_model
 
     def on_validation_end(self, trainer, pl_module):
         if pl_module and self.metrics is None:
