@@ -127,3 +127,43 @@ The first version is intentionally narrow:
 The default user experience should not require editing ``autofl.yaml``.  Users
 review it only when the importer reports unresolved fields or when they want to
 override the campaign configuration.
+
+Final Report After Stop
+=======================
+
+After a campaign is manually stopped, reaches its explicit cap, or ends at a
+hard policy/runtime boundary, select the companion NVFlare Auto-FL Report skill.
+It turns the recorded campaign evidence into a reviewable final report without
+requiring Git or rerunning candidates:
+
+.. code-block:: text
+
+   Use the NVFlare Auto-FL Report skill.
+   Generate the final report for the stopped campaign in ./job.
+
+The skill verifies ``.nvflare/autofl/campaign_state.json`` before finalizing,
+refreshes ``progress.png``, and produces:
+
+- ``autofl_final_report.md`` for human review;
+- ``autofl_report_summary.json`` for tools and downstream agents;
+- a synthesis of every literature checkpoint and the candidates evaluated
+  after it;
+- best-candidate lineage, inherited code changes, manifests, patch hashes,
+  exact commands, artifacts, failures, and reproducibility warnings.
+
+The deterministic helper can also be invoked directly by an agent:
+
+.. code-block:: shell
+
+   python "$CODEX_HOME/skills/nvflare-autofl-report/scripts/generate_report.py" \
+       <job-dir>
+
+If a process was abruptly interrupted and campaign state still appears active,
+the agent must first independently confirm that execution has stopped.  It may
+then add ``--confirm-interrupted``.  This records the reporting assertion but
+does not mutate campaign state.
+
+The report distinguishes the imported budget in ``autofl.yaml`` from the exact
+arguments that ran.  It warns when the selected candidate changed training
+compute or when multiple candidates were selected against a test-like metric.
+This keeps the final result useful without overstating the evidence.
