@@ -72,10 +72,12 @@ for example ``component.args.child.args.worker``.
 Use the Built-in Component Path Authorizer
 ------------------------------------------
 When BYOC is disabled, NVFLARE runs a built-in component path authorization check while parsing job
-configuration. Sites get this protection without installing an authorizer component in ``resources.json``. The built-in
-policy allows only class paths that match ``class_allow_list`` in the site's top-level ``resources.json`` or
-``resources.json.default``. There is no default allow list; if ``class_allow_list`` is not configured, the effective list
-is empty and non-BYOC component builds fail with an explicit setup error.
+configuration. Sites get this protection without installing an authorizer component in ``resources.json``. The policy
+allows only class paths that match ``class_allow_list`` in the site's top-level ``resources.json`` or
+``resources.json.default``. Standard provisioning installs a curated list of built-in components. The authorizer itself
+has no fallback: if ``class_allow_list`` is not configured, non-BYOC component builds fail with an explicit setup error.
+
+``SimEnv`` also installs this curated list in new simulation workspaces without changing POC or production authorization.
 
 Migration note for upgrades: startup kits created before this policy may not contain ``class_allow_list``. Before running
 non-BYOC jobs after upgrade, add a top-level ``class_allow_list`` to each site's ``resources.json`` or
