@@ -15,13 +15,13 @@
 import copy
 import importlib
 import os
-from numbers import Number
 from typing import Any, Dict, List, Optional
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.job_config.api import FedJob
+from nvflare.job_config.fed_job_config import FedJobConfig
 from nvflare.recipe.spec import Recipe
 
 TRACKING_REGISTRY = {
@@ -80,12 +80,12 @@ def _normalize_recipe_meta_key(key: Any) -> str:
 
 
 def _validate_recipe_meta_value(key: str, value: Any) -> None:
-    if isinstance(value, bool) or not isinstance(value, (Number, str, dict, list)):
-        allowed_types = "number, str, dict, or list"
-        raise TypeError(f"recipe meta value for key {key!r} must be a {allowed_types}; got {type(value).__name__}")
+    if isinstance(value, bool) or not isinstance(value, (int, float, str, dict, list)):
+        allowed_types = "int, float, str, dict, or list"
+        raise TypeError(f"recipe meta value for key {key!r} must be one of {allowed_types}; got {type(value).__name__}")
 
 
-def _get_recipe_job_config(recipe: Recipe):
+def _get_recipe_job_config(recipe: Recipe) -> FedJobConfig:
     job = getattr(recipe, "job", None)
     job_config = getattr(job, "job", None)
     if job_config is None:
@@ -99,13 +99,13 @@ def set_recipe_meta(recipe: Recipe, key: JobMetaKey, value: Any) -> None:
     The key must be a ``JobMetaKey`` enum member. The value is stored in
     ``meta_props`` and replaces any existing ``meta_props`` value for that key.
     """
-    key = _normalize_recipe_meta_key(key)
-    _validate_recipe_meta_value(key, value)
+    key_str = _normalize_recipe_meta_key(key)
+    _validate_recipe_meta_value(key_str, value)
     job_config = _get_recipe_job_config(recipe)
 
-    meta_props = copy.deepcopy(job_config.meta_props) or {}
-    meta_props[key] = copy.deepcopy(value)
-    job_config.meta_props = meta_props
+    if job_config.meta_props is None:
+        job_config.meta_props = {}
+    job_config.meta_props[key_str] = copy.deepcopy(value)
 
 
 def _validate_per_site_config_shape(config: Any) -> Dict[str, Dict]:

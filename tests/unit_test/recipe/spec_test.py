@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import tempfile
+from decimal import Decimal
 
 import pytest
 
@@ -503,8 +504,10 @@ class TestRecipeMetaHelper:
                 )
 
         recipe = BasicRecipe()
+        original_meta_props = recipe.job.job.meta_props
         set_recipe_meta(recipe, JobMetaKey.STUDY, "b")
 
+        assert recipe.job.job.meta_props is original_meta_props
         assert recipe.job.job.meta_props["study"] == "b"
 
     def test_set_recipe_meta_allows_existing_meta_props_that_differ_from_generated_values(self):
@@ -558,8 +561,10 @@ class TestRecipeMetaHelper:
         [
             (1, "value", TypeError, "key must be a JobMetaKey"),
             ("study", "default", TypeError, "key must be a JobMetaKey"),
-            (JobMetaKey.STUDY, True, TypeError, "must be a number, str, dict, or list"),
-            (JobMetaKey.STUDY, None, TypeError, "must be a number, str, dict, or list"),
+            (JobMetaKey.STUDY, True, TypeError, "must be one of int, float, str, dict, or list"),
+            (JobMetaKey.STUDY, None, TypeError, "must be one of int, float, str, dict, or list"),
+            (JobMetaKey.STUDY, Decimal("1.5"), TypeError, "must be one of int, float, str, dict, or list"),
+            (JobMetaKey.STUDY, 1 + 2j, TypeError, "must be one of int, float, str, dict, or list"),
         ],
     )
     def test_set_recipe_meta_validates_key_and_supported_value_types(self, key, value, error_type, match):

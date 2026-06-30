@@ -276,11 +276,12 @@ The key must be one of ``JobMetaKey.MIN_CLIENTS``,
 ``JobMetaKey.MANDATORY_CLIENTS``, ``JobMetaKey.RESOURCE_SPEC``,
 ``JobMetaKey.JOB_LAUNCHER_SPEC``, ``JobMetaKey.SCOPE``, ``JobMetaKey.STUDY``,
 or ``JobMetaKey.CUSTOM_PROPS``. Other enum members and raw strings are not
-accepted. The value must be a number, a string, a dictionary, or a list. The
-helper writes the key/value pair through ``meta_props`` and does not mutate
-dedicated recipe or ``FedJobConfig`` fields such as ``min_clients``. If the
-generated ``meta.json`` also contains that key, the ``meta_props`` value is
-written last by the job generator.
+accepted. The value must be an integer, a floating-point number, a string, a
+dictionary, or a list; booleans are not accepted. The helper writes the
+key/value pair through ``meta_props`` and does not mutate dedicated recipe or
+``FedJobConfig`` fields such as ``min_clients``. If the generated
+``meta.json`` also contains that key, the ``meta_props`` value is written last
+by the job generator.
 
 If the same key already exists in ``meta_props``, ``set_recipe_meta`` replaces
 that value.
