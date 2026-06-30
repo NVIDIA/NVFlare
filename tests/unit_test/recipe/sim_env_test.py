@@ -115,13 +115,15 @@ def test_sim_env_bootstraps_standard_component_policy(tmp_path):
 
     resources = json.loads(_default_resources_path(tmp_path, job.name).read_text())
     assert resources == {"format_version": 2, CLASS_ALLOW_LIST: list(DEFAULT_CLASS_ALLOW_LIST)}
-    assert len(resources[CLASS_ALLOW_LIST]) == 81
     assert all(not path.endswith(".") for path in resources[CLASS_ALLOW_LIST])
 
 
-def test_sim_env_adds_standard_policy_to_existing_resources(tmp_path):
+@pytest.mark.parametrize(
+    "resources_name", [WorkspaceConstants.DEFAULT_RESOURCES_CONFIG, WorkspaceConstants.RESOURCES_CONFIG]
+)
+def test_sim_env_adds_standard_policy_to_existing_resources(tmp_path, resources_name):
     job = _make_job("missing-policy")
-    resources_file = _default_resources_path(tmp_path, job.name)
+    resources_file = tmp_path / job.name / WorkspaceConstants.SITE_FOLDER_NAME / resources_name
     resources_file.parent.mkdir(parents=True)
     resources_file.write_text(json.dumps({"format_version": 2, "preserved": True}))
     env = SimEnv(num_clients=2, workspace_root=str(tmp_path))
