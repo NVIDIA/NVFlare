@@ -72,27 +72,27 @@ class CredentialManager:
             self.ca_cert = self.read_file(ca_cert_path)
             self.local_cert = self.read_file(local_cert_path)
             self.local_key = self.read_file(local_key_path)
-            self.cell_cipher = SimpleCellCipher(self.get_ca_cert(), self.get_local_key(), self.get_local_cert())
+            self.cell_cipher = SimpleCellCipher(self.get_ca_cert(), self.get_local_key(), self.get_local_cert_chain())
 
         if not self.local_cert:
             log.debug("Certificate is not configured, secure message is not supported")
             self.cell_cipher = None
         else:
-            self.cell_cipher = SimpleCellCipher(self.get_ca_cert(), self.get_local_key(), self.get_local_cert())
+            self.cell_cipher = SimpleCellCipher(self.get_ca_cert(), self.get_local_key(), self.get_local_cert_chain())
 
     def encrypt(self, target_cert: bytes, payload: bytes) -> bytes:
 
         if not self.cell_cipher:
             raise RuntimeError("Secure message not supported, Cell not running in secure mode")
 
-        return self.cell_cipher.encrypt(payload, x509.load_pem_x509_certificate(target_cert))
+        return self.cell_cipher.encrypt(payload, x509.load_pem_x509_certificates(target_cert))
 
     def decrypt(self, origin_cert: bytes, cipher: bytes) -> bytes:
 
         if not self.cell_cipher:
             raise RuntimeError("Secure message not supported, Cell not running in secure mode")
 
-        return self.cell_cipher.decrypt(cipher, x509.load_pem_x509_certificate(origin_cert))
+        return self.cell_cipher.decrypt(cipher, x509.load_pem_x509_certificates(origin_cert))
 
     def get_certificate(self, fqcn: str) -> bytes:
         if not self.cell_cipher:
@@ -153,6 +153,9 @@ class CredentialManager:
 
     def get_local_cert(self) -> Certificate:
         return x509.load_pem_x509_certificate(self.local_cert)
+
+    def get_local_cert_chain(self) -> list:
+        return x509.load_pem_x509_certificates(self.local_cert)
 
     def get_local_key(self) -> RSAPrivateKey:
         return serialization.load_pem_private_key(self.local_key, password=None)

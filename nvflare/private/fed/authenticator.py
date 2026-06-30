@@ -17,6 +17,8 @@ import traceback
 import uuid
 from typing import Callable, Optional
 
+from cryptography.x509.oid import ExtendedKeyUsageOID
+
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.shareable import Shareable
@@ -32,7 +34,12 @@ from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeaderKeys, ClientRegMsgKey, new_cell_message
-from nvflare.private.fed.utils.identity_utils import IdentityAsserter, IdentityVerifier, TokenVerifier, load_crt_bytes
+from nvflare.private.fed.utils.identity_utils import (
+    IdentityAsserter,
+    IdentityVerifier,
+    TokenVerifier,
+    load_crt_chain_bytes,
+)
 
 MISSING_CLIENT_FQCN = ""
 
@@ -135,7 +142,8 @@ class Authenticator:
         assert isinstance(reply, Shareable)
         server_nonce = reply.get(IdentityChallengeKey.NONCE)
         cert_bytes = reply.get(IdentityChallengeKey.CERT)
-        server_cert = load_crt_bytes(cert_bytes)
+        server_cert_chain = load_crt_chain_bytes(cert_bytes)
+        server_cert = server_cert_chain[0]
         server_signature = reply.get(IdentityChallengeKey.SIGNATURE)
         server_cn = reply.get(IdentityChallengeKey.COMMON_NAME)
 
@@ -150,7 +158,12 @@ class Authenticator:
         # - signature received from the server is valid
         id_verifier = IdentityVerifier(root_cert_file=self.root_cert_file)
         id_verifier.verify_common_name(
-            asserter_cert=server_cert, asserted_cn=server_cn, nonce=my_nonce, signature=server_signature
+            asserter_cert=server_cert,
+            asserted_cn=server_cn,
+            nonce=my_nonce,
+            signature=server_signature,
+            intermediate_certs=server_cert_chain[1:],
+            expected_eku=ExtendedKeyUsageOID.SERVER_AUTH,
         )
 
         self.logger.info(f"verified server identity '{self.expected_sp_identity}'")
