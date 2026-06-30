@@ -236,6 +236,12 @@ class TestRecipePackageExports:
 
         assert callable(add_cross_site_evaluation)
 
+    def test_set_per_site_config_importable_from_recipe(self):
+        """set_per_site_config must be importable from the top-level nvflare.recipe package."""
+        from nvflare.recipe import set_per_site_config
+
+        assert callable(set_per_site_config)
+
 
 class TestCrossSiteEvalIdempotency:
     """Tests for resilient idempotency in add_cross_site_evaluation."""

@@ -32,7 +32,7 @@ from nvflare.private.fed.utils.app_authz import AppAuthzService
 from nvflare.private.fed.utils.app_deployer import AppDeployer
 from nvflare.private.fed.utils.fed_utils import authorize_build_component
 from nvflare.private.json_configer import ConfigContext
-from nvflare.security.security import EmptyAuthorizer
+from nvflare.security.security import EmptyAuthorizer, FLAuthorizer
 
 
 def _make_workspace(root_dir: str) -> Workspace:
@@ -56,6 +56,31 @@ def _job_meta(submitter_role: str):
         JobMetaKey.SUBMITTER_ORG: "nvidia",
         JobMetaKey.SUBMITTER_ROLE: submitter_role,
     }
+
+
+def _launcher_meta(mode: str, source: str, values: dict) -> dict:
+    if source == "default":
+        return {JobMetaKey.JOB_LAUNCHER_SPEC.value: {"default": {mode: values}}}
+    if source == "site":
+        return {JobMetaKey.JOB_LAUNCHER_SPEC.value: {"site-1": {mode: values}}}
+    if source == "legacy":
+        return {JobMetaKey.RESOURCE_SPEC.value: {"site-1": {mode: values}}}
+    raise ValueError(f"unsupported launcher metadata source: {source}")
+
+
+def _byoc_none_authorizer():
+    return FLAuthorizer(
+        "site-org",
+        {
+            "format_version": "1.0",
+            "permissions": {
+                "lead": {
+                    "submit_job": "any",
+                    "byoc": "none",
+                }
+            },
+        },
+    )
 
 
 def test_deploy_rejects_traversing_job_id_before_touching_outside_path(tmp_path):
@@ -160,6 +185,24 @@ def test_deploy_detects_custom_dir_as_local_byoc_for_allow_list(tmp_path):
         )
         == ""
     )
+
+
+@pytest.mark.parametrize("mode", ["docker", "k8s"])
+@pytest.mark.parametrize("source", ["default", "site", "legacy"])
+@pytest.mark.parametrize("field", ["image", "python_path"])
+def test_deploy_requires_byoc_for_job_selected_launcher_content(tmp_path, monkeypatch, mode, source, field):
+    workspace = _make_workspace(str(tmp_path / "workspace"))
+    monkeypatch.setattr(AppAuthzService, "app_validator", DefaultAppValidator(site_type=SiteType.CLIENT))
+    monkeypatch.setattr(AuthorizationService, "the_authorizer", _byoc_none_authorizer())
+    job_meta = _job_meta("lead")
+    job_meta[AppValidationKey.BYOC] = False
+    job_meta.update(_launcher_meta(mode, source, {field: "attacker.example/value"}))
+
+    with patch("nvflare.private.fed.utils.app_deployer.PrivacyService.is_scope_allowed", return_value=True):
+        err = AppDeployer().deploy(workspace, "job-1", job_meta, "app", _make_app_zip(), None)
+
+    assert err == "BYOC not permitted"
+    assert not os.path.exists(workspace.get_run_dir("job-1"))
 
 
 @pytest.mark.parametrize(
