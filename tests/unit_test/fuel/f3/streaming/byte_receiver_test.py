@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import threading
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -225,7 +226,7 @@ def test_reliable_duplicate_initial_chunk_sends_sequence_ack():
     assert task.process_chunk(message) is False
 
     cell.fire_and_forget.assert_called_with(
-        STREAM_CHANNEL, STREAM_ACK_TOPIC, "site-1", cell.fire_and_forget.call_args.args[3]
+        STREAM_CHANNEL, STREAM_ACK_TOPIC, "site-1", cell.fire_and_forget.call_args.args[3], optional=False
     )
     ack = cell.fire_and_forget.call_args.args[3]
     assert ack.get_header(StreamHeaderKey.SEQUENCE) == 0
@@ -275,6 +276,7 @@ def test_reliable_final_chunk_sends_sequence_ack():
 
     ack = cell.fire_and_forget.call_args.args[3]
     assert cell.fire_and_forget.call_args.args[:3] == (STREAM_CHANNEL, STREAM_ACK_TOPIC, "site-1")
+    assert cell.fire_and_forget.call_args.kwargs == {"optional": True}
     assert ack.get_header(StreamHeaderKey.SEQUENCE) == 0
     assert ack.get_header(StreamHeaderKey.OFFSET) == 0
 
@@ -409,6 +411,7 @@ def test_send_ack_updates_ack_state_only_on_success():
     task = RxTask(sid=504, origin="site-1", cell=cell, reliable=True)
 
     assert task._send_ack(offset=10, seq=2) is False
+    assert cell.fire_and_forget.call_args.kwargs == {"optional": False}
     assert task.offset_ack == 0
     assert task.seq_ack == -1
 
@@ -417,6 +420,19 @@ def test_send_ack_updates_ack_state_only_on_success():
     assert task._send_ack(offset=10, seq=2) is True
     assert task.offset_ack == 10
     assert task.seq_ack == 2
+
+
+def test_completed_ack_send_failure_is_debug_only(caplog):
+    cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={"site-1": "target_unreachable"}))
+    task = RxTask(sid=519, origin="site-1", cell=cell, reliable=True)
+    task.completed = True
+
+    with caplog.at_level(logging.DEBUG, logger="nvflare.fuel.f3.streaming.byte_receiver"):
+        assert task._send_ack(offset=10, seq=2) is False
+
+    assert cell.fire_and_forget.call_args.kwargs == {"optional": True}
+    assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
+    assert "failed to ack seq 2" in caplog.text
 
 
 def test_reliable_completed_task_reacks_duplicate_final_chunk():
