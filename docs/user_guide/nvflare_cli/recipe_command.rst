@@ -234,6 +234,11 @@ Behavior notes:
 The CLI prints a human-readable table in text mode and also emits the machine-
 readable result envelope.
 
+The successful ``nvflare recipe list --format json`` response is the recipe
+catalog JSON contract, sometimes referred to as ``catalog.json``. It is
+described by the
+:download:`recipe catalog JSON schema <../../schemas/recipe_catalog.schema.json>`.
+
 Example JSON response:
 
 .. code-block:: json
@@ -353,6 +358,10 @@ Use ``--schema`` for machine-readable command discovery:
 
    nvflare recipe list --schema
    nvflare recipe show --schema
+
+``--schema`` describes command arguments and command behavior. Use the recipe
+catalog JSON schema when validating the catalog output of
+``nvflare recipe list --format json``.
 
 The top-level CLI also supports JSON output mode:
 

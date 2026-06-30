@@ -10,6 +10,8 @@ Job Recipes provide a simplified abstraction that hides the complexity of low-le
 .. note::
    This is a technical preview. Not all algorithms are currently implemented with recipes.
 
+For the stable public Recipe surface, see :ref:`recipe_api`.
+
 
 Motivation for Using JobRecipe
 ------------------------------
