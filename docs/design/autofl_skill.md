@@ -26,6 +26,9 @@ The first production-oriented slice includes:
 - A skill-local candidate lifecycle that snapshots the current best source,
   gives the agent an isolated draft, validates the resulting patch, and keeps or
   restores source according to the campaign metric.
+- A companion `skills/nvflare-autofl-report` skill that deterministically turns
+  a stopped campaign ledger, state, config, and manifests into human- and
+  machine-readable final report artifacts.
 - Documentation for using the skill with simulation, POC, and production
   environments through existing NVFlare surfaces.
 
@@ -246,6 +249,41 @@ needs the same interface and the schema has proved stable. The general,
 read-only `nvflare agent inspect` surface does not acquire an Auto-FL-specific
 profile in this proposal.
 
+## Stopped-Campaign Reporting
+
+Reporting is a separate skill boundary because its trigger and safety posture
+differ from active optimization. `nvflare-autofl` must continue an active,
+uncapped campaign while state has `final_response_allowed=false`.
+`nvflare-autofl-report` operates only after a clean stop, explicit cap, hard
+blocker, or independently confirmed interruption.
+
+The report helper consumes `results.tsv`, `autofl.yaml`, campaign state, and
+candidate manifests. It refreshes the shared `progress.png` and writes:
+
+- `autofl_final_report.md`, a concise review artifact with executive summary,
+  trajectory, best-candidate lineage, exact commands, reliability, and
+  reproduction guidance;
+- `autofl_report_summary.json`, a machine-readable
+  `nvflare.autofl.report.v1` summary for tools and future automation.
+
+The helper does not edit source, ledger, manifests, or campaign state and does
+not require Git. If an abrupt interruption leaves state active, the human must
+confirm interruption after execution is independently checked; the report
+records that assertion without rewriting history.
+
+Literature reporting follows measured evidence rather than agent narrative.
+Each recorded literature checkpoint owns the comparable candidates until the
+next checkpoint. Their best result is compared with the incumbent immediately
+before the review and classified as helped, matched, not confirmed, failed, or
+not evaluated. Recorded `[src: ...]` markers are preserved as campaign
+provenance, not presented as independently verified citations.
+
+Finally, the report compares the declarative/imported budget with exact
+baseline and best-candidate commands. It highlights changed compute or data
+arguments, incomplete lineage, and repeated selection on test-like metrics.
+This makes the report a trust artifact rather than a polished restatement of
+the agent's conclusions.
+
 ## Review Questions
 
 - Are the supported `job.py` patterns sufficient for an initial prototype?
@@ -257,3 +295,5 @@ profile in this proposal.
   and eval checks after it lands under `skills/nvflare-autofl`?
 - Which candidate-manifest and metric/artifact fields should become stable
   NVFlare APIs after the skill-local contract proves itself?
+- Is `nvflare.autofl.report.v1` sufficient for downstream review and automation
+  while remaining explicitly skill-local in this follow-up?

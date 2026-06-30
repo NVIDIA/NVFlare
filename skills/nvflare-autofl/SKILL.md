@@ -195,6 +195,14 @@ compatible, record why in the event. Flags, env vars, and full semantics:
 Only produce a final answer for a campaign when the code-owned campaign state
 reports `final_response_allowed=true`, for example because the user manually
 stopped it, an explicit cap is exhausted, production policy blocks execution, or
-a hard safety/runtime blocker prevents further comparable runs. Then finalize
-`results.tsv`, `progress.png`, and a concise report with baseline, best score,
-metric source, failures, friction, commands, and absolute artifact paths.
+a hard safety/runtime blocker prevents further comparable runs. Then hand off
+to the `nvflare-autofl-report` skill. It deterministically refreshes
+`progress.png` and generates **autofl_final_report.md** plus
+`autofl_report_summary.json` from the ledger, campaign state, config, and
+candidate manifests. The final answer must include baseline, best score,
+metric source, literature outcomes, failures, comparability warnings,
+commands, and absolute artifact paths.
+
+When execution was interrupted before state could be finalized, first confirm
+that no campaign or job process remains. The report skill may then record that
+human-confirmed interruption without rewriting campaign state.
