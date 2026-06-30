@@ -299,6 +299,10 @@ def _module_source_path(module_name: str):
     return _NVFLARE_PACKAGE_ROOT.joinpath(*parts[1:]).with_suffix(".py")
 
 
+def _import_module(module_name: str):
+    return importlib.import_module(module_name)
+
+
 def _ast_default_value(node):
     if node is None:
         return None
@@ -377,7 +381,7 @@ def _static_recipe_parameters(module_name: str, class_name: str) -> list:
 
 def _try_import_recipe_class(module_name: str, class_name: str):
     try:
-        module = importlib.import_module(module_name)
+        module = _import_module(module_name)
     except (ImportError, SyntaxError):
         return None
     return getattr(module, class_name, None)
@@ -806,7 +810,7 @@ def _load_catalog(framework: str = None, include_recipe_class: bool = False) -> 
         if framework and root["framework"] != framework:
             continue
         try:
-            package = importlib.import_module(root["package"])
+            package = _import_module(root["package"])
         except (ImportError, SyntaxError):
             pass
 
@@ -815,7 +819,7 @@ def _load_catalog(framework: str = None, include_recipe_class: bool = False) -> 
                 if module_name.endswith(".__init__"):
                     continue
                 try:
-                    mod = importlib.import_module(module_name)
+                    mod = _import_module(module_name)
                 except (ImportError, SyntaxError):
                     continue
 
