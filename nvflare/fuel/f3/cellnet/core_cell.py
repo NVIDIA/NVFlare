@@ -39,6 +39,12 @@ from nvflare.fuel.f3.cellnet.defs import (
     ServiceUnavailable,
 )
 from nvflare.fuel.f3.cellnet.fqcn import FQCN, FqcnInfo, same_family
+from nvflare.fuel.f3.cellnet.identity import (
+    CellIdentityResolver,
+    get_cert_common_name_from_file,
+    get_param,
+    is_mtls_config,
+)
 from nvflare.fuel.f3.cellnet.registry import Callback, Registry
 from nvflare.fuel.f3.cellnet.utils import decode_payload, encode_payload, format_log_message, make_reply
 from nvflare.fuel.f3.comm_config import CommConfigurator
@@ -214,6 +220,17 @@ def _validate_url(url: str) -> bool:
     return True
 
 
+def _is_failed_cert_exchange(channel: str, topic: str, reply: Message) -> bool:
+    if not reply:
+        return False
+
+    return (
+        channel == _SM_CHANNEL
+        and topic == _SM_TOPIC
+        and reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.PROCESS_EXCEPTION
+    )
+
+
 class _CounterName:
 
     LATE = "late"
@@ -288,6 +305,8 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         bulk_check_interval=0.5,
         bulk_process_interval=0.5,
         max_bulk_size=100,
+        auth_identity: str = None,
+        auth_identity_map: dict = None,
     ):
         """
 
@@ -300,6 +319,8 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             create_internal_listener: whether to create an internal listener for child cells
             parent_url: url for connecting to parent cell
             parent_resources: extra resources for making connection to parent
+            auth_identity: authenticated identity of this cell's local certificate
+            auth_identity_map: FQCN prefix to expected certificate identity map for mTLS peers
 
         FQCN is the names of all ancestor, concatenated with dots.
 
@@ -395,6 +416,20 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             enhance_credential_info(credentials)
             self.update_fobs_context({FOBSContextKey.SEC_CREDS: credentials})
 
+        local_auth_identity = auth_identity if auth_identity else self._get_auth_identity_from_credentials(credentials)
+        prefix_identity_map = dict(auth_identity_map) if auth_identity_map else {}
+        exact_identity_map = {}
+        if local_auth_identity:
+            exact_identity_map[self.my_info.fqcn] = local_auth_identity
+            if self.my_info.is_on_server:
+                prefix_identity_map[FQCN.ROOT_SERVER] = local_auth_identity
+
+        self.identity_resolver = CellIdentityResolver(
+            local_fqcn=self.my_info.fqcn,
+            prefix_identity_map=prefix_identity_map,
+            exact_identity_map=exact_identity_map,
+        )
+
         ep = Endpoint(
             name=fqcn,
             conn_props=credentials,
@@ -403,7 +438,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             },
         )
 
-        self.communicator = Communicator(local_endpoint=ep)
+        self.communicator = Communicator(local_endpoint=ep, identity_resolver=self.identity_resolver)
 
         self.endpoint = ep
         self.connector_manager = ConnectorManager(
@@ -505,8 +540,22 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         )
         self.ALL_CELLS[fqcn] = self
 
-        self.credential_manager = CredentialManager(self.endpoint)
+        self.credential_manager = CredentialManager(
+            self.endpoint,
+            identity_resolver=self.identity_resolver,
+            enforce_identity=is_mtls_config(credentials, secure),
+        )
         self.cert_ex = CertificateExchanger(self, self.credential_manager)
+
+    @staticmethod
+    def _get_auth_identity_from_credentials(credentials: dict):
+        if not credentials:
+            return None
+
+        cert_path = get_param(credentials, DriverParams.SERVER_CERT)
+        if not cert_path:
+            cert_path = get_param(credentials, DriverParams.CLIENT_CERT)
+        return get_cert_common_name_from_file(cert_path)
 
     def update_fobs_context(self, props: dict):
         if not isinstance(props, dict):
@@ -595,6 +644,11 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             self._create_internal_listener()
 
         if self.connector_manager.should_connect_to_server(self.my_info):
+            self._create_bb_external_connector()
+        elif not parent_url and self.root_url:
+            # A cell configured with only a root URL (e.g. a CellPipe cell named
+            # <site>.<token>.<mode> that joins the cellnet at the root) has no
+            # other way to connect, regardless of its generation.
             self._create_bb_external_connector()
 
     def _set_bb_for_server_root(self):
@@ -1122,12 +1176,15 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 self.logger.debug(f"{self.my_info.fqcn}: target {target_fqcn} is or share my ancestor")
                 parent_fqcn = FQCN.get_parent(self.my_info.fqcn)
                 agent = self.agents.get(parent_fqcn)
-                if not agent:
-                    self.log_warning(f"no connection to parent {parent_fqcn}", for_msg)
-                    return None
-                return agent.endpoint
+                if agent:
+                    return agent.endpoint
+                # I'm not connected to my FQCN parent: cells with hierarchical
+                # names (e.g. CellPipe cells named <site>.<token>.<mode>) connect
+                # to an ancestor or to the root instead. Fall through to the
+                # generic resolution below.
+                self.logger.debug(f"{self.my_info.fqcn}: no connection to parent {parent_fqcn}")
 
-        # not the same family
+        # not the same family, or no direct path within the family
         ep = self._try_path(target_info.path)
         if ep:
             return ep
@@ -1983,6 +2040,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             channel = message.get_header(MessageHeaderKey.CHANNEL, "")
             topic = message.get_header(MessageHeaderKey.TOPIC, "")
             reply = self._process_request(origin, message)
+            should_close_connection = _is_failed_cert_exchange(channel, topic, reply)
 
             if not reply:
                 self.received_msg_counter_pool.increment(
@@ -1999,6 +2057,8 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 self.received_msg_counter_pool.increment(
                     category=self._stats_category(message), counter_name=_CounterName.REPLY_NOT_EXPECTED
                 )
+                if should_close_connection and connection:
+                    connection.close()
                 return
 
             # send the reply back
@@ -2036,6 +2096,8 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                         reply = r
                         break
             self._send_reply(reply, endpoint)
+            if should_close_connection and connection:
+                connection.close()
         else:
             # the message is either a reply or a return for a previous request: handle replies
             self._process_reply(origin, message, msg_type)

@@ -12,11 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from .fed_task import FedTaskRecipe
 from .fedavg import FedAvgRecipe
 from .poc_env import PocEnv
 from .prod_env import ProdEnv
 from .run import Run
 from .sim_env import SimEnv
-from .utils import add_cross_site_evaluation, add_experiment_tracking
+from .utils import add_cross_site_evaluation, add_experiment_tracking, set_per_site_config
 
-__all__ = ["SimEnv", "PocEnv", "ProdEnv", "Run", "add_experiment_tracking", "add_cross_site_evaluation", "FedAvgRecipe"]
+__all__ = [
+    "SimEnv",
+    "PocEnv",
+    "ProdEnv",
+    "Run",
+    "add_experiment_tracking",
+    "add_cross_site_evaluation",
+    "set_per_site_config",
+    "FedAvgRecipe",
+    "FedTaskRecipe",
+]

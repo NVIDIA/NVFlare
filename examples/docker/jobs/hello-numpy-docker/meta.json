@@ -4,12 +4,13 @@
     "deploy_map": {
         "app": ["site-1", "server", "site-2"]
     },
-    "resource_spec": {
+    "launcher_spec": {
         "server": {
             "docker": {"image": "nvflare-job:latest"}
         },
         "site-1": {
             "docker": {"image": "nvflare-job:latest"}
         }
-    }
+    },
+    "resource_spec": {}
 }

@@ -10,21 +10,20 @@ effort level: max.
 ![Example Auto-FL progress plot](assets/example_progress.png)
 
 It is designed to combine:
-- NVFlare's **Client API + Recipe API** patterns for `client.py`, `FedAvgRecipe`, `SimEnv`, TensorBoard tracking, and optional cross-site evaluation;
-- the CIFAR-10 simulation path for **diff-based uploads** and **custom aggregators**; and
-- the **`program.md`-centered control-plane** style popularized by [karpathy/autoresearch](https://github.com/karpathy/autoresearch), where the human primarily evolves the research instructions and the agent iterates on a bounded code surface.
+- NVFlare's **Client API + Recipe API** patterns for task-local `client.py`, `job.py`, `FedAvgRecipe`, `SimEnv`, TensorBoard tracking, and optional cross-site evaluation;
+- task-specific training profiles that preserve **diff-based uploads** and comparable cross-site scoring; and
+- the **`program.md` control-plane plus task profile** style popularized by [karpathy/autoresearch](https://github.com/karpathy/autoresearch), where the human primarily evolves the research instructions and the agent iterates on a bounded code surface.
 
 ## What is included
 
-- `program.md` — the main agent control plane
-- `AGENTS.md`, `CLAUDE.md` — thin repository guardrails that point back to `program.md`
-- `job.py` — merged NVFlare baseline recipe
-- `client.py` — merged client with DIFF updates and `flare.is_evaluate()` support
-- `custom_aggregators.py` — FedAvg, FedOpt-style, SCAFFOLD, and median aggregators
-- `model.py`, `train_utils.py`, `data/` — minimal supporting code
-- `mutation_schema.yaml` — bounded mutation surface for the current harness
+- `program.md` — the general agent control plane
+- `tasks/cifar10/` — the default CIFAR-10/H100 task folder with `profile.md`, `requirements.txt`, `mutation_schema.yaml`, `client.py`, `job.py`, `model.py`, and `train_utils.py`
+- `tasks/vlm_med/` — a medical VLM task folder for Qwen3-VL adapter FL campaigns
+- `tasks/shared/` — shared task utilities such as `custom_aggregators.py`
+- `AGENTS.md`, `CLAUDE.md` — thin repository guardrails that point back to `program.md` and the active task profile
+- `data/` — shared CIFAR-10 data utilities used by the default task
 - `scripts/init_run.sh` — creates an autoresearch branch and initializes `results.tsv`
-- `scripts/run_iteration.sh` — runs one candidate mutation with log redirection and score extraction
+- `scripts/run_iteration.sh` — runs one candidate mutation with task-folder-aware log redirection and score extraction
 - `scripts/finalize_batch_status.py` — promotes reviewed candidates to `keep` or demotes them to `discard`
 - `scripts/plateau_watchdog.py` — recommends when a stalled run must switch back to literature review
 - `scripts/log_literature_review.py` — records stall-recovery literature review events in `results.tsv`
@@ -38,11 +37,11 @@ It is designed to combine:
 
 The [autoresearch](https://github.com/karpathy/autoresearch) repo keeps the setup intentionally small and treats `program.md` as the agent-facing control plane. The core repo only has a few files that matter, with one main editable target and a fixed evaluation harness. This starter follows that spirit, but adapts it to NVFlare:
 
-- **Primary control plane:** `program.md` is the first file the agent should read.
-- **Bounded edit surface:** mutations should mostly target `client.py`, then `custom_aggregators.py`, then `job.py`; registered, parameter-capped architecture variants may also touch `model.py`.
-- **Fixed communication budget:** compare candidates with the same round/data/evaluation setup while allowing local-compute sweeps (`aggregation_epochs` or `local_train_steps`) under the runtime cap.
-- **Comparable metric extraction:** recommended runs enable cross-site evaluation and extract a single score from `cross_val_results.json`.
-- **Run keep / discard loop:** on one local H100, the agent can launch several same-budget candidates concurrently when the 80 GB memory budget allows, then rank the completed batch against the ledger and keep, narrow, or discard.
+- **Primary control plane:** `program.md` is the first file the agent should read; the active task profile, such as `tasks/cifar10/profile.md` or `tasks/vlm_med/profile.md`, is read immediately afterward.
+- **Bounded edit surface:** mutations should follow the active task profile. For the default CIFAR-10 profile this mostly means `tasks/cifar10/client.py`, then `tasks/shared/custom_aggregators.py` for shared aggregation experiments, then `tasks/cifar10/job.py`; registered, parameter-capped variants may also touch `tasks/cifar10/model.py`.
+- **Fixed communication budget:** compare candidates with the same round/data/evaluation setup while allowing task-profile-approved local-compute sweeps under the runtime cap.
+- **Comparable metric extraction:** recommended runs enable cross-site evaluation and extract one task-defined score from `cross_val_results.json`.
+- **Run keep / discard loop:** the agent follows the active task profile's local hardware and candidate-width rules, then ranks completed candidates against the ledger and keeps, narrows, or discards.
 - **Autonomous continuation:** after setup and baseline, the agent keeps running same-budget candidates until manually interrupted.
 - **Literature-grounded recovery:** when progress stalls, `scripts/plateau_watchdog.py` gives the agent a hard backstop for switching from local sweeps back to the Camyla-inspired literature loop in `program.md`.
 - **Tracked experiment ledger:** `results.tsv` is committed on experiment branches so the branch carries run provenance, including non-scored literature-review events when progress stalls.
@@ -67,10 +66,10 @@ The current flow is:
 
 6. Rank the next compatible proposals with the scoring rubric and select a small batch of top candidates, up to the current `PARALLEL_CANDIDATES` width.
 7. Append a `literature` event row with `scripts/log_literature_review.py --finish` so the ledger and plot show how long the review cycle took.
-8. Launch the selected candidates with the normal `scripts/run_iteration.sh` mechanism, using unique `RUN_LOG` and `--name` values for each concurrent run on the same H100.
+8. Launch the selected candidates with the normal `scripts/run_iteration.sh` mechanism, using unique `RUN_LOG` and `--name` values for each concurrent run under the active task profile's hardware rules.
 9. Wait for the batch to finish or time out, rank the completed runs, then finalize reviewed ledger rows so completed `candidate` rows become `keep` or `discard`.
 
-This keeps the Camyla/QWBE idea inside the existing harness contract: no new dependencies, no evaluation changes, and no server-client protocol changes except explicitly labeled modes such as `--aggregator scaffold`. Architecture changes are allowed only as registered `--model_arch` variants under the active `--max_model_params` budget.
+This keeps the Camyla/QWBE idea inside the existing harness contract: no new dependencies, no evaluation changes, and no server-client protocol changes except explicitly labeled modes such as `--aggregator scaffold`. Architecture or adapter changes are allowed only as registered variants under the active task profile's parameter budget.
 
 ## Recommended agent runtime
 
@@ -111,7 +110,7 @@ This workflow assumes `/workspace` is a writable NVFlare git clone, not a source
 
 Inside the container, `cd` to `/workspace/research/auto-fl-research`, install this harness' Python requirements once with Python 3.12, export the prepared interpreter, and run preflight before handing control to the agent. Do not use the container's default `python3` if it points to Python 3.13. For Debian/Ubuntu-based devcontainers, install Python 3.12 first if it is missing.
 
-Run the following from `/workspace/research/auto-fl-research`. This directory is the entry point for the harness, and it contains the `Makefile`, `requirements.txt`, `program.md`, and run scripts:
+Run the following from `/workspace/research/auto-fl-research`. This directory is the entry point for the harness, and it contains the `Makefile`, `program.md`, `tasks/`, and run scripts:
 
 ```bash
 cd /workspace/research/auto-fl-research
@@ -128,7 +127,7 @@ python -c 'import sys; assert sys.version_info[:2] == (3, 12), sys.version'
 
 python -m pip install --upgrade pip
 python -m pip uninstall -y nvflare-nightly
-python -m pip install -r requirements.txt
+python -m pip install -r tasks/cifar10/requirements.txt
 export PYTHON=.venv/bin/python
 "$PYTHON" -c 'import sys; assert sys.version_info[:2] == (3, 12), sys.version'
 "$PYTHON" -c 'import nvflare; print(nvflare.__version__, nvflare.__file__)'
@@ -136,9 +135,16 @@ make validate
 make smoke
 ```
 
-The harness expects the released PyPI `nvflare` package from `requirements.txt`, not an editable install of the repository checkout. If `pip freeze` shows `nvflare-nightly @ file://...`, remove it with `python -m pip uninstall -y nvflare-nightly` and rerun `python -m pip install -r requirements.txt`.
+The default CIFAR-10 harness expects the released PyPI `nvflare` package from `tasks/cifar10/requirements.txt`, not an editable install of the repository checkout. If `pip freeze` shows `nvflare-nightly @ file://...`, remove it with `python -m pip uninstall -y nvflare-nightly` and rerun `python -m pip install -r tasks/cifar10/requirements.txt`.
 
 If `apt-get` cannot find the Python 3.12 packages, update the devcontainer image or add an appropriate Python 3.12 package source before continuing; do not fall back to Python 3.13.
+
+Shared runner scripts default to `TASK_DIR=tasks/cifar10`. For another task,
+set `TASK_DIR=tasks/<task>` before running `make validate` or
+`scripts/run_iteration.sh`; advanced cases can override `JOB_SCRIPT` and
+`CLIENT_CONTRACT_PATH` directly. For `make smoke`, non-CIFAR tasks must also
+provide task-specific `SMOKE_ARGS`; otherwise the smoke wrapper fails instead
+of silently skipping runtime coverage.
 
 On the H100 node, verify that the container can see the GPU before starting an overnight campaign:
 
@@ -165,7 +171,7 @@ Make the bundled local `autofl-nvflare` skill available first if your runtime ha
 
 Then use the autofl-nvflare skill.
 
-Start in this directory and read `program.md` first. Treat it as the complete research control plane and follow its setup, mutation, budget, ledger, literature-loop, and continuation instructions.
+Start in this directory and read `program.md` first, then read `tasks/cifar10/profile.md` for the default task profile. Treat `program.md` as the general research control plane and `tasks/cifar10/profile.md` as the CIFAR-10/H100 source for environment, mutation, budget, and scoring details.
 
 Start a fresh autoresearch campaign for the local single GPU node before running validation, smoke tests, the baseline, or any candidate experiment. Derive a descriptive run tag at runtime using `<node>-<campaign-topic>-$(date +%Y%m%d)`, then run `bash scripts/init_run.sh <run-tag>` to create and switch to `autoresearch/<run-tag>` and initialize `results.tsv`. Verify with `git branch --show-current` that you are on that new `autoresearch/` branch. Do not run experiments on `main`, `upstream/main`, or the starter branch, and do not use date-only names or copy stale example dates.
 
@@ -174,13 +180,7 @@ export PYTHON=.venv/bin/python
 Treat that PYTHON value as authoritative. First verify it with `test -x "$PYTHON"` and `"$PYTHON" -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version; print(sys.executable)"`, then use that exact interpreter for validation, smoke tests, candidate runs, plotting, summaries, and reports.
 Do not create a virtual environment, install dependencies, or search for alternate Python interpreters unless I explicitly ask you to. If `.venv/bin/python` is missing, invalid, or not Python 3.12, stop and tell me to rerun the README preflight in this directory with `python3.12`.
 
-Use the default H100 candidate budget unless `program.md` says otherwise:
---n_clients 8 --num_rounds 20 --aggregation_epochs 4 --local_train_steps 0 --batch_size 64 --eval_batch_size 1024 --alpha 0.5 --seed 0 --model_arch moderate_cnn --max_model_params 5000000 --aggregator weighted --final_eval_clients site-1
-
-Use cross-site evaluation and keep RUN_TIMEOUT_SECONDS=1200.
-Keep `--num_rounds 20` fixed as the communication budget. You may sweep either `--aggregation_epochs` or `--local_train_steps` as the local-compute budget knob when each candidate stays within RUN_TIMEOUT_SECONDS; do not vary both in the same narrow sweep. `--local_train_steps 0` means epoch-based training with `--aggregation_epochs`; positive values use exact optimizer steps per client per round.
-
-Set PARALLEL_CANDIDATES=4 unless I override it. Use one local GPU; if multiple GPUs are visible, pin candidate runs to CUDA_VISIBLE_DEVICES=0 rather than spreading candidates across devices. Lower the candidate width if CUDA memory, host memory, or I/O contention appears.
+Use the default candidate budget, local hardware policy, calibration sequence, and mutation surface from the active task profile. Keep task-specific budget values in the profile instead of copying them into this prompt.
 
 Once setup and baseline are complete, do not ask whether to keep going or whether this is a good stopping point. Continue the experiment loop until manually interrupted.
 
@@ -189,94 +189,81 @@ After every reviewed batch, run `"${PYTHON}" scripts/plateau_watchdog.py results
 Commit `results.tsv` locally after the baseline and after each reviewed batch. Commit surviving code changes locally on the active `autoresearch/` branch as soon as they are kept; do not let kept mutations accumulate only in the working tree. Do not require pushing from inside the devcontainer.
 ```
 
-## Scoring recommendation
+## Task budgets and calibration
 
-For automatic comparison, use **cross-site evaluation** and compare the server global model score extracted from:
+The active task profile owns model or adapter budgets, default CLI args,
+algorithm calibration sequences, local hardware width, and task-specific
+mutation surfaces. Use this README for setup and task-selection flow; use
+`tasks/cifar10/profile.md` or `tasks/vlm_med/profile.md` for comparable budget
+and calibration details.
 
-```text
-<result_dir>/server/simulate_job/cross_site_val/cross_val_results.json
-```
+## Progress Plot
 
-The helper script `scripts/extract_score.py` reads metrics for the final server/global model key, `SRV_FL_global_model.pt`, and ignores `SRV_best_FL_global_model.pt`.
-It tries common metric keys such as `accuracy`, `val_accuracy`, and `test_accuracy`.
-Because the current CIFAR-10 validation loader is the same full test set on every simulated client, the harness defaults to final global-model evaluation on `site-1` only. This keeps the same score definition while avoiding redundant client evaluations. Use `--final_eval_clients all` for a full audit run or after making validation site-specific.
-
-The default single-H100 candidate budget is:
-
-```bash
---n_clients 8 --num_rounds 20 --aggregation_epochs 4 --local_train_steps 0 --batch_size 64 --eval_batch_size 1024 --alpha 0.5 --seed 0 --model_arch moderate_cnn --max_model_params 5000000 --aggregator weighted --final_eval_clients site-1
-```
-
-Candidate runs default to a 1200-second timeout through `scripts/run_iteration.sh`, and each appended `results.tsv` row includes `runtime_seconds` for experimental cost accounting. With result logging enabled, `run_iteration.sh` refuses to run outside an `autoresearch/` branch and initializes the `results.tsv` header before the training job starts; the scored row is appended after the candidate exits.
-The agent may optimize local training work with `--aggregation_epochs` or `--local_train_steps` while keeping `--num_rounds 20` fixed. Compare score first, use `runtime_seconds` as the cost/tie-breaker, and keep the full args in the logged `budget` string.
-Training splits are reused across candidates with the same `n_clients`, `alpha`, and `seed` under `/tmp/cifar10_splits/autofl_cifar10_*`. A lock guards split creation, so candidate `--name` values do not create duplicate data-partition directories.
-Client training is deterministic by default for a fixed `--seed`: each site derives a stable per-site RNG seed, PyTorch deterministic algorithms are enabled, cuDNN benchmarking is disabled, and DataLoader shuffling/workers are seeded. Use `--no_deterministic_training` only for a deliberately faster but noisier subcampaign, and do not compare those scores directly with deterministic runs.
-
-## Bounded architecture search
-
-The harness now permits architecture search through a registered model selector instead of free-form model replacement:
-
-- `--model_arch moderate_cnn` keeps the original baseline architecture.
-- `--model_arch moderate_cnn_norm` adds buffer-free normalization layers while staying near the baseline size.
-- `--model_arch moderate_cnn_small_head` keeps the convolutional trunk and uses a smaller classifier head.
-- `--max_model_params 5000000` is the default hard parameter cap.
-
-`job.py` and `client.py` both instantiate the same registered architecture and fail before training if the parameter count exceeds the cap. Treat `model_arch` and `max_model_params` as fixed budget fields inside a campaign. Rank architecture candidates primarily by score, use `runtime_seconds` as a coarse secondary signal, and rerun finalists before trusting small score gaps.
-
-## Baseline algorithm knobs
-
-The current harness covers the NVFlare CIFAR-10 simulation benchmark modes that fit the existing DIFF-upload contract:
-
-- FedAvg: `--aggregator weighted`, `--aggregator fedavg`, or NVFlare's built-in `--aggregator default`.
-- FedProx: keep a FedAvg-style aggregator and set `--fedproxloss_mu <mu>`.
-- FedOpt: use `--aggregator fedavgm` or `--aggregator fedopt` for server SGD momentum over aggregated DIFFs, or `--aggregator fedadam` for a server Adam variant. Tune with `--server_lr`, `--server_momentum`, `--fedopt_beta1`, `--fedopt_beta2`, and `--fedopt_tau`.
-- SCAFFOLD: use `--aggregator scaffold`. This automatically passes `--scaffold` to `client.py`, sends client control deltas in `FLModel.meta["scaffold_c_diff"]`, and sends server global controls back in `FLModel.meta["scaffold_c_global"]`.
-
-SCAFFOLD is an explicit opt-in protocol mode. It still preserves the core model contract (`ParamsType.DIFF`, same model keys, `NUM_STEPS_CURRENT_ROUND`) but it does add SCAFFOLD-specific metadata, so keep SCAFFOLD comparisons labeled separately from strict no-extra-meta baselines.
-
-The first post-baseline calibration should run these algorithm families before broader tuning. Run them in batches of up to `PARALLEL_CANDIDATES` concurrent candidates on the same H100 under the same communication and local-compute budget:
-
-| Step | Description | Extra args |
-| --- | --- | --- |
-| 0 | built-in FedAvg audit | `--aggregator default` |
-| 1 | explicit FedAvg audit | `--aggregator fedavg` |
-| 2 | FedProx light | `--aggregator weighted --fedproxloss_mu 1e-5` |
-| 3 | FedProx medium | `--aggregator weighted --fedproxloss_mu 1e-4` |
-| 4 | FedAvgM NVFlare-style | `--aggregator fedavgm --server_lr 1.0 --server_momentum 0.6` |
-| 5 | FedAvgM accelerated | `--aggregator fedavgm --server_lr 2.0 --server_momentum 0.4` |
-| 6 | FedAdam | `--aggregator fedadam --server_lr 1.0 --fedopt_beta1 0.9 --fedopt_beta2 0.99 --fedopt_tau 1e-3` |
-| 7 | SCAFFOLD metadata mode | `--aggregator scaffold` |
-
-Keep the step order when assembling calibration batches and schedule any unfinished calibration steps before moving to unrelated sweeps. After the sequence is complete, use the ledger summary to pick the family for narrower follow-up runs.
-
-For single-H100 sweeps, use unique `RUN_LOG` and `--name` values for each concurrent candidate, then rank the ledger:
-
-```bash
-"${PYTHON:-python3}" scripts/summarize_results.py results.tsv --status candidate --top "${PARALLEL_CANDIDATES:-4}"
-```
-
-After reviewing the table, finalize the completed batch status:
-
-```bash
-"${PYTHON:-python3}" scripts/finalize_batch_status.py results.tsv --last "${PARALLEL_CANDIDATES:-4}" --keep-best --discard-others
-```
-
-Then run the plateau watchdog before selecting the next sweep:
-
-```bash
-"${PYTHON:-python3}" scripts/plateau_watchdog.py results.tsv
-```
-
-If it prints `recommendation=literature`, switch to the literature loop before launching more candidates. If it prints `recommendation=continue`, keep iterating locally rather than logging another literature row for a normal non-improving batch.
-
-The progress plot reads the `status` column directly. If all successful rows remain `candidate`, the plot will correctly show no kept runs.
-Rows with `status=literature` are shown as vertical markers, with their `runtime_seconds` counted separately from candidate runtime, so long score plateaus can be compared against actual paper-review cycles.
+The progress plot reads the `status` column directly. If all successful rows
+remain `candidate`, the plot will correctly show no kept runs. Rows with
+`status=literature` are shown as vertical markers, with their `runtime_seconds`
+counted separately from candidate runtime, so long score plateaus can be
+compared against actual paper-review cycles.
 
 To generate an autoresearch-style progress image from the ledger:
 
 ```bash
 "${PYTHON:-python3}" scripts/plot_progress.py results.tsv --output progress.png
 ```
+
+## How to adapt Auto-FL to new datasets and tasks
+
+The default task profile in this directory is the compact CIFAR-10/H100
+Auto-FL profile. To adapt the concept to a new dataset, task, model family, or
+running environment, create a task folder that contains the task contract and
+the code needed to run that contract. Keep `program.md`, `scripts/`,
+`templates/`, reporting utilities, plotting, and logging helpers shared at this
+directory level.
+
+Humans select a non-default profile by naming the profile path or task name in
+the initial prompt so the agent reads `program.md` first and the requested task
+profile second. Example prompts:
+
+- "Use `tasks/vlm_med/profile.md` as the active task profile."
+- "Use the medical VLM profile instead of `tasks/cifar10/profile.md`."
+- "Create a new task folder named `tasks/my_task/` with `profile.md` and
+  `requirements.txt`, then use `tasks/my_task/profile.md` for this campaign."
+
+The practical starting point is a working non-FL training scheme for the task.
+Once the dataset loading, model construction, local training step, and
+evaluation metric are implemented, adapt that scheme into the NVFlare
+Client API + Recipe API shape. NVIDIA FLARE's
+[`examples/advanced/qwen3-vl`](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/qwen3-vl)
+is the kind of pattern to follow for a VLM task: keep the task-specific
+training/evaluation logic in the client-side code, define the job wiring in
+task-local `job.py`, expose the exchanged model or adapter state in task-local
+`model.py`, and then let the task profile define the fixed comparison budget.
+
+At minimum, a new task should define:
+
+- `tasks/<task>/profile.md` for the task contract, fixed comparison budget,
+  metric, environment assumptions, and preferred edit surface.
+- `tasks/<task>/requirements.txt` for dependencies specific to the task
+  profile.
+- `tasks/<task>/mutation_schema.yaml` entries for bounded mutation axes that
+  the agent may choose during a campaign.
+- Task-specific `client.py`, `job.py`, `model.py`, `train_utils.py`, and data
+  bridge files when the dataset, training loop, model state, or score
+  extraction differs from another task. Reuse `tasks/shared/custom_aggregators.py`
+  for aggregation logic unless the new task needs a genuinely task-specific
+  protocol.
+
+The shared runner defaults are `TASK_DIR=tasks/cifar10`,
+`JOB_SCRIPT=$TASK_DIR/job.py`, and `CLIENT_CONTRACT_PATH=$TASK_DIR/client.py`.
+New tasks should work through those defaults where possible instead of copying
+the shared `scripts/` directory. The `make full` helper is a CIFAR-10 full-eval
+wrapper; use `scripts/run_iteration.sh` or a task-specific wrapper for other
+profiles.
+
+The important invariant is comparability: every candidate in a campaign should
+use the same sites, rounds, data limits, seed policy, model-exchange state,
+metric, timeout, and final evaluation clients unless the profile explicitly
+changes the experiment contract.
 
 ## Post-run campaign report
 

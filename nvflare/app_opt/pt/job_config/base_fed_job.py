@@ -20,6 +20,7 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
+from nvflare.app_common.widgets.metrics_artifact_writer import MetricsArtifactWriter
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
 from nvflare.job_config.base_fed_job import BaseFedJob as UnifiedBaseFedJob
@@ -68,6 +69,7 @@ class BaseFedJob(UnifiedBaseFedJob):
         model_selector: Optional[FLComponent] = None,
         convert_to_fed_event: Optional[ConvertToFedEvent] = None,
         analytics_receiver: Optional[AnalyticsReceiver] = None,
+        metrics_artifact_writer: Optional[MetricsArtifactWriter] = None,
         model_persistor: Optional[ModelPersistor] = None,
         model_locator: Optional[ModelLocator] = None,
     ):
@@ -81,6 +83,7 @@ class BaseFedJob(UnifiedBaseFedJob):
             model_selector=model_selector,
             convert_to_fed_event=convert_to_fed_event,
             analytics_receiver=analytics_receiver,
+            metrics_artifact_writer=metrics_artifact_writer,
         )
 
         # PyTorch-specific model setup

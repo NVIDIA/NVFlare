@@ -166,6 +166,30 @@ The CC image builder supports any generic workload. For NVFlare, create a Docker
 .. note::
 
    For CC jobs, custom code at runtime is not allowed. All application code must be included in the Docker image.
+   NVFlare checks the component allow-list before loading any components. If your job uses classes that are
+   included in the CVM image but are not yet allowed, add those class paths to ``class_allow_list`` in the site's
+   ``cc_config``. The provisioner extends the generated ``local/resources.json.default`` for that participant before
+   the startup kit is signed and packaged.
+
+   The ``cc_config.class_allow_list`` value is additive: list only the extra classes or package prefixes needed by
+   your CC image. The provisioner keeps the built-in NVFlare allow-list entries from ``resources.json.default`` and
+   appends the CC config entries that are not already present.
+
+   You can put the list directly in the referenced CC config file:
+
+   .. code-block:: yaml
+
+      compute_env: onprem_cvm
+      cc_cpu_mechanism: amd_sev_snp
+      role: client
+
+      class_allow_list:
+        - hello_cyclic.app.custom.trainer.SimpleTrainer
+        - hello_cyclic.
+
+   Use exact class paths or package prefixes ending with ``.``. For example,
+   ``hello_cyclic.app.custom.trainer.SimpleTrainer`` allows one class, and ``hello_cyclic.`` allows classes under
+   that package prefix.
 
 **Build and save the image:**
 
@@ -292,6 +316,13 @@ Each startup kit (e.g., ``server1.tgz``) contains:
      - User data storage (placeholder, can be extended)
    * - ``vmlinuz``
      - Linux kernel
+
+.. note::
+
+   The ``user_config.qcow2`` and ``user_data.qcow2`` drives are not encrypted. When a provisioned NVFlare startup
+   script is launched from ``/user_config``, runtime artifacts such as model checkpoints are written to a namespaced
+   encrypted workspace under ``/vault/workspace``. Set ``NVFL_WORKSPACE`` before launching the script to choose a
+   different encrypted workspace path.
 
 Step 4: User Data
 -----------------
@@ -479,6 +510,9 @@ CC Configuration Parameters
    * - ``cc_issuers``
      - List of authorizers
      - CC attestation token issuers
+   * - ``class_allow_list``
+     - List of class paths
+     - Additive list of extra component classes or package prefixes allowed for non-BYOC CC jobs
    * - ``token_expiration``
      - ``100`` (seconds)
      - Token validity duration (must be < ``check_frequency``)
@@ -574,6 +608,10 @@ Complete Configuration Examples
    cc_cpu_mechanism: amd_sev_snp
    role: client
 
+   class_allow_list:
+     - hello_cyclic.app.custom.trainer.SimpleTrainer
+     - hello_cyclic.
+
    # All drive sizes are in GB
    root_drive_size: 45
    applog_drive_size: 1
@@ -601,53 +639,6 @@ Complete Configuration Examples
 
 Troubleshooting
 ===============
-
-Inspecting QCOW2 Disk Images
------------------------------
-
-To inspect the contents of a QCOW2 disk image (e.g., ``user_config.qcow2``):
-
-**1. Load the NBD kernel module:**
-
-.. code-block:: bash
-
-   sudo modprobe nbd max_part=8
-
-**2. Connect the QCOW2 image:**
-
-.. code-block:: bash
-
-   sudo qemu-nbd --connect=/dev/nbd0 user_config.qcow2
-
-**3. Mount the image:**
-
-.. code-block:: bash
-
-   sudo mount /dev/nbd0 /mnt/user_config
-
-**4. Inspect the contents:**
-
-.. code-block:: bash
-
-   ls /mnt/user_config
-
-For NVFlare startup kits:
-
-.. code-block:: bash
-
-   ls /mnt/user_config/nvflare/
-
-**5. Unmount:**
-
-.. code-block:: bash
-
-   sudo umount /mnt/user_config
-
-**6. Disconnect:**
-
-.. code-block:: bash
-
-   sudo qemu-nbd --disconnect /dev/nbd0
 
 Common Issues
 -------------

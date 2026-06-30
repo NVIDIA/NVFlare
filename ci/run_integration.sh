@@ -19,7 +19,19 @@
 #   BUILD_TYPE: tests to execute, default = numpy
 
 set -ex
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BUILD_TYPE=numpy
+TEST_FOLDER="tests/integration_test"
+PYTHON_BIN=(python)
+PYTEST_ARGS=(-v --log-cli-level=INFO --capture=no)
+XGBOOST_REQUIREMENTS_FILE="${REPO_ROOT}/examples/advanced/xgboost/requirements.txt"
+XGBOOST_FEDERATED_WHEEL_URL="${XGBOOST_FEDERATED_WHEEL_URL:-}"
+
+# CRITICAL: Set gRPC environment variables before ANY imports that might use gRPC.
+# See: https://github.com/grpc/grpc/issues/28557
+export GRPC_POLL_STRATEGY="poll"
+export GRPC_ENABLE_FORK_SUPPORT="False"
 
 if [[ $# -eq 1 ]]; then
     BUILD_TYPE=$1
@@ -45,6 +57,7 @@ remove_pipenv() {
 
 integration_test_tf() {
     echo "Run TF integration test..."
+    local status
     # since running directly in container, point python to python3.12
     ln -sfn /usr/bin/python3.12 /usr/bin/python
     ln -sfn /usr/bin/python3.12 /usr/bin/python3
@@ -54,18 +67,22 @@ integration_test_tf() {
     python3.12 -m pip install -e .[dev]
     python3.12 -m pip install tensorflow[and-cuda]
     export PYTHONPATH=$PWD
-    testFolder="tests/integration_test"
+    PYTHON_BIN=(python3.12)
     clean_up_snapshot_and_job
-    pushd ${testFolder}
-    ./run_integration_tests.sh -m tensorflow
+    pushd ${TEST_FOLDER}
+    set +e
+    run_pytest_mode tensorflow
+    status=$?
+    set -e
     popd
     clean_up_snapshot_and_job
+    return $status
 }
 
 add_dns_entries() {
     echo "adding DNS entries for integration test cases"
     cp /etc/hosts /etc/hosts_bak
-    echo "127.0.0.1 localhost0 localhost1" | tee -a /etc/hosts > /dev/null
+    echo "127.0.0.1 localhost0" | tee -a /etc/hosts > /dev/null
 }
 
 remove_dns_entries() {
@@ -77,21 +94,122 @@ clean_up_snapshot_and_job() {
     rm -rf /tmp/nvflare*
 }
 
+run_pytest() {
+    "${PYTHON_BIN[@]}" -m pytest "${PYTEST_ARGS[@]}" --junitxml=./integration_test.xml "$@"
+}
+
+prepare_cifar10_data() {
+    local test_mode=$1
+    case $test_mode in
+        client_api|client_api_qa|model_controller_api|pytorch|cifar)
+            "${PYTHON_BIN[@]}" tools/prepare_cifar10.py
+            ;;
+    esac
+}
+
+resolve_xgboost_federated_wheel_url() {
+    if [[ -n "${XGBOOST_FEDERATED_WHEEL_URL}" ]]; then
+        echo "${XGBOOST_FEDERATED_WHEEL_URL}"
+        return
+    fi
+
+    local wheel_url
+    wheel_url=$(grep -E '^https://.*xgboost.*\.whl$' "${XGBOOST_REQUIREMENTS_FILE}" | tail -n 1)
+    if [[ -z "${wheel_url}" ]]; then
+        echo "ERROR: could not find federated XGBoost wheel URL in ${XGBOOST_REQUIREMENTS_FILE}" >&2
+        return 1
+    fi
+    echo "${wheel_url}"
+}
+
+install_xgboost_federated_wheel() {
+    local wheel_url
+    wheel_url=$(resolve_xgboost_federated_wheel_url) || return $?
+    echo "Installing federated XGBoost wheel for XGBoost recipe tests..."
+    "${PYTHON_BIN[@]}" -m pip install --force-reinstall "${wheel_url}" || return $?
+    "${PYTHON_BIN[@]}" - <<'PY'
+import xgboost
+import xgboost.federated
+
+print("XGBoost version is " + xgboost.__version__)
+print("xgboost.federated import succeeded")
+PY
+}
+
+run_system_test() {
+    local test_mode=$1
+    local status
+    prepare_cifar10_data "$test_mode" || return $?
+    export NVFLARE_TEST_FRAMEWORK=$test_mode
+    run_pytest system_test.py
+    status=$?
+    unset NVFLARE_TEST_FRAMEWORK
+    return $status
+}
+
+run_tensorflow_test() {
+    local status
+    "${PYTHON_BIN[@]}" -c "import tensorflow; print('TF version is ' + tensorflow.__version__)"
+    status=$?
+    if [[ $status -ne 0 ]]; then
+        return $status
+    fi
+    export NVFLARE_TEST_FRAMEWORK=tensorflow
+    export TF_FORCE_GPU_ALLOW_GROWTH=true
+    run_pytest system_test.py
+    status=$?
+    unset TF_FORCE_GPU_ALLOW_GROWTH
+    unset NVFLARE_TEST_FRAMEWORK
+    return $status
+}
+
+run_pytest_mode() {
+    local test_mode=$1
+    case $test_mode in
+        fast)
+            run_pytest fast
+            ;;
+        slow)
+            install_xgboost_federated_wheel || return $?
+            run_pytest slow
+            ;;
+        auto)
+            echo "The legacy auto example discovery mode is currently disabled; no tests to run."
+            ;;
+        tensorflow)
+            run_tensorflow_test
+            ;;
+        numpy|pytorch|auth|cifar|stats|xgboost|client_api|client_api_qa|model_controller_api)
+            run_system_test "$test_mode"
+            ;;
+        *)
+            echo "ERROR: unknown integration test mode: $test_mode"
+            exit 1
+            ;;
+    esac
+}
+
 integration_test() {
-    echo "Run integration test with backend $1..."
+    echo "Run integration test mode $1..."
+    local status
     init_pipenv
     add_dns_entries
-    testFolder="tests/integration_test"
-    pushd ${testFolder}
-    pipenv run ./run_integration_tests.sh -m "$1"
+    PYTHON_BIN=(pipenv run python)
+    pushd ${TEST_FOLDER}
+    set +e
+    run_pytest_mode "$1"
+    status=$?
+    set -e
     popd
     clean_up_snapshot_and_job
     remove_dns_entries
     remove_pipenv
+    return $status
 }
 
 integration_test_pt() {
-    echo "Run PT integration test with backend $1..."
+    echo "Run PT integration test mode $1..."
+    local status
     ln -sfn /usr/bin/python3.12 /usr/bin/python
     ln -sfn /usr/bin/python3.12 /usr/bin/python3
     # somehow the base container has blinker which should be removed
@@ -101,13 +219,17 @@ integration_test_pt() {
     pip install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu124
     export PYTHONPATH=$PWD
     add_dns_entries
-    testFolder="tests/integration_test"
+    PYTHON_BIN=(python)
     clean_up_snapshot_and_job
-    pushd ${testFolder}
-    ./run_integration_tests.sh -m "$1"
+    pushd ${TEST_FOLDER}
+    set +e
+    run_pytest_mode "$1"
+    status=$?
+    set -e
     popd
     clean_up_snapshot_and_job
     remove_dns_entries
+    return $status
 }
 
 case $BUILD_TYPE in

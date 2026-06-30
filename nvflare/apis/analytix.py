@@ -25,7 +25,7 @@ class LogWriterName(Enum):
     WANDB = "WEIGHTS_AND_BIASES"
 
 
-class TrackConst(object):
+class TrackConst:
     TRACKER_KEY = "tracker_key"
 
     TRACK_KEY = "track_key"
@@ -133,7 +133,7 @@ class AnalyticsData:
             AnalyticsData object
         """
         if not isinstance(dxo, DXO):
-            raise TypeError("expect dxo to be an instance of DXO, but got {}.".format(type(dxo)))
+            raise TypeError(f"expect dxo to be an instance of DXO, but got {type(dxo)}.")
 
         if len(dxo.data) == 0:
             raise ValueError(
@@ -167,22 +167,20 @@ class AnalyticsData:
         **kwargs,
     ):
         if not isinstance(key, str):
-            raise TypeError("expect tag to be an instance of str, but got {}.".format(type(key)))
+            raise TypeError(f"expect tag to be an instance of str, but got {type(key)}.")
         if not isinstance(data_type, AnalyticsDataType):
-            raise TypeError(
-                "expect data_type to be an instance of AnalyticsDataType, but got {}.".format(type(data_type))
-            )
+            raise TypeError(f"expect data_type to be an instance of AnalyticsDataType, but got {type(data_type)}.")
         if kwargs and not isinstance(kwargs, dict):
-            raise TypeError("expect kwargs to be an instance of dict, but got {}.".format(type(kwargs)))
+            raise TypeError(f"expect kwargs to be an instance of dict, but got {type(kwargs)}.")
         step = kwargs.get(TrackConst.GLOBAL_STEP_KEY, None)
         if step:
             if not isinstance(step, int):
-                raise TypeError("expect step to be an instance of int, but got {}.".format(type(step)))
+                raise TypeError(f"expect step to be an instance of int, but got {type(step)}.")
             if step < 0:
-                raise ValueError("expect step to be non-negative int, but got {}.".format(step))
+                raise ValueError(f"expect step to be non-negative int, but got {step}.")
         path = kwargs.get(TrackConst.PATH_KEY, None)
         if path and not isinstance(path, str):
-            raise TypeError("expect path to be an instance of str, but got {}.".format(type(step)))
+            raise TypeError(f"expect path to be an instance of str, but got {type(path)}.")
         if data_type in [AnalyticsDataType.SCALAR, AnalyticsDataType.METRIC] and not (
             isinstance(value, float) or isinstance(value, int)
         ):
@@ -205,7 +203,8 @@ class AnalyticsData:
         cls, sender_data_type: AnalyticsDataType, sender: LogWriterName, receiver: LogWriterName
     ) -> AnalyticsDataType:
 
-        if sender == LogWriterName.TORCH_TB and (receiver == LogWriterName.MLFLOW or sender == LogWriterName.WANDB):
+        # TensorBoard naming → MLflow/W&B naming
+        if sender == LogWriterName.TORCH_TB and (receiver == LogWriterName.MLFLOW or receiver == LogWriterName.WANDB):
             if AnalyticsDataType.SCALAR == sender_data_type:
                 return AnalyticsDataType.METRIC
             elif AnalyticsDataType.SCALARS == sender_data_type:
@@ -213,7 +212,8 @@ class AnalyticsData:
             else:
                 return sender_data_type
 
-        if sender == LogWriterName.MLFLOW and receiver == LogWriterName.TORCH_TB:
+        # MLflow/W&B naming → TensorBoard naming
+        if (sender == LogWriterName.MLFLOW or sender == LogWriterName.WANDB) and receiver == LogWriterName.TORCH_TB:
             if AnalyticsDataType.METRIC == sender_data_type:
                 return AnalyticsDataType.SCALAR
             elif AnalyticsDataType.METRICS == sender_data_type:
@@ -221,8 +221,14 @@ class AnalyticsData:
             else:
                 return sender_data_type
 
-        if sender == LogWriterName.MLFLOW and receiver == LogWriterName.WANDB:
+        # MLflow and W&B share the same METRIC/METRICS naming, so cross-mapping is a pass-through.
+        if (sender == LogWriterName.MLFLOW and receiver == LogWriterName.WANDB) or (
+            sender == LogWriterName.WANDB and receiver == LogWriterName.MLFLOW
+        ):
             return sender_data_type
+
+        # Same sender/receiver, or any combination not covered above: pass through unchanged.
+        return sender_data_type
 
     def __str__(self) -> str:
         return f"AnalyticsData(tag: {self.tag}, value: {self.value}, data_type: {self.data_type}, kwargs: {self.kwargs}, step: {self.step})"

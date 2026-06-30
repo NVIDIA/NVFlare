@@ -21,6 +21,13 @@ on:
   workflow_dispatch:
 
 jobs:
+  license-check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run license check
+        run: python3 ci/check_license_header.py
+
   style-check:
     runs-on: ubuntu-24.04
     steps:
@@ -30,10 +37,12 @@ jobs:
         with:
           python-version: "3.14"
       - name: Run style checks
-        run: ./runtest.sh -s
+        run: ./runtest.sh --torch-backend=cpu -s
 
   unit-tests:
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -45,32 +54,122 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.14"
       - name: Install dependencies
         run: |
-          python3 -m pip install --upgrade pip
-          python3 -m pip install --no-cache-dir -e .[dev]
-          python3 -m pip install --no-cache-dir --no-deps "flwr>=1.16,<1.26"
+          ./runtest.sh --torch-backend=cpu -p
+          uv pip install --system --no-deps "flwr>=1.16,<1.26"
       - name: Run unit test
-        run: ./runtest.sh --numprocesses=auto -u
+        run: ./runtest.sh --skip-install --numprocesses=auto -u
+
+  coverage:
+    runs-on: ubuntu-24.04
+    needs: unit-tests
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.14"
+      - name: Install dependencies
+        run: |
+          ./runtest.sh --torch-backend=cpu -p
+          uv pip install --system --no-deps "flwr>=1.16,<1.26"
+      - name: Run unit test with coverage
+        run: python3 -m pytest --numprocesses=auto -v --cov=nvflare --cov-report xml:cov.xml --dist loadgroup tests/unit_test
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
+        with:
+          files: ./cov.xml
+          flags: unit-tests
+          fail_ci_if_error: false
+          use_oidc: true
+      - name: Add coverage summary
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          def pct(value):
+              return f"{float(value) * 100:.2f}%"
+
+          def ratio(covered, valid):
+              return f"{int(covered):,}/{int(valid):,}"
+
+          def row(name, attrs, rate_key, covered_key, valid_key):
+              rate = pct(attrs.get(rate_key, 0))
+              counts = ratio(attrs.get(covered_key, 0), attrs.get(valid_key, 0))
+              return f"| {name} | {rate} ({counts}) |"
+
+          repo = os.environ.get("GITHUB_REPOSITORY", "")
+          sha = os.environ.get("GITHUB_SHA", "")
+          event_path = os.environ.get("GITHUB_EVENT_PATH")
+          if event_path and Path(event_path).exists():
+              with open(event_path, "r", encoding="utf-8") as f:
+                  event = json.load(f)
+              sha = event.get("pull_request", {}).get("head", {}).get("sha", sha)
+
+          lines = ["### Coverage summary", ""]
+          cov_path = Path("cov.xml")
+          if cov_path.exists():
+              root = ET.parse(cov_path).getroot()
+              lines.extend([
+                  "| Metric | Value |",
+                  "| --- | ---: |",
+                  row("Line coverage", root.attrib, "line-rate", "lines-covered", "lines-valid"),
+              ])
+              if int(root.attrib.get("branches-valid", 0)):
+                  lines.append(
+                      row("Branch coverage", root.attrib, "branch-rate", "branches-covered", "branches-valid")
+                  )
+              if repo and sha:
+                  lines.extend(["", f"[View Codecov report](https://app.codecov.io/gh/{repo}/commit/{sha})"])
+          else:
+              lines.append("Coverage report `cov.xml` was not found.")
+
+          summary = "\n".join(lines) + "\n"
+          summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary_path:
+              with open(summary_path, "a", encoding="utf-8") as f:
+                  f.write(summary)
+          else:
+              print(summary)
+          PY
 
   wheel-build:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-22.04, ubuntu-24.04 ]
-        python-version: [ "3.10", "3.11", "3.12", "3.13", "3.14" ]
+        os: [ ubuntu-24.04 ]
+        python-version: [ "3.11" ]
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.14"
       - name: Install dependencies
         run: |
-          python3 -m pip install --upgrade pip
-          python3 -m pip install --no-cache-dir -e .[dev]
-          python3 -m pip install --no-cache-dir --no-deps "flwr>=1.16,<1.26"
-          python3 -m pip install --no-cache-dir build twine torch torchvision
+          ./runtest.sh --torch-backend=cpu -p
+          uv pip install --system --no-deps "flwr>=1.16,<1.26"
+          uv pip install --system build twine
       - name: Run wheel build
         run: python3 -m build --wheel

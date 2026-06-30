@@ -28,11 +28,11 @@ class FedOpt(FedAvg):
         *args,
         source_model: Union[str, torch.nn.Module],
         optimizer_args: dict = {
-            "class_path": "torch.optim.SGD",
+            "path": "torch.optim.SGD",
             "args": {"lr": 1.0, "momentum": 0.6},
         },
         lr_scheduler_args: dict = {
-            "class_path": "torch.optim.lr_scheduler.CosineAnnealingLR",
+            "path": "torch.optim.lr_scheduler.CosineAnnealingLR",
             "args": {"T_max": 3, "eta_min": 0.9},
         },
         device=None,
@@ -47,8 +47,8 @@ class FedOpt(FedAvg):
 
         Args:
             source_model: component id of torch model object or a valid torch model object
-            optimizer_args: dictionary of optimizer arguments, with keys of 'optimizer_path' and 'args.
-            lr_scheduler_args: dictionary of server-side learning rate scheduler arguments, with keys of 'lr_scheduler_path' and 'args.
+            optimizer_args: dictionary of optimizer arguments, with keys of 'path' and 'args'.
+            lr_scheduler_args: dictionary of server-side learning rate scheduler arguments, with keys of 'path' and 'args'.
             device: specify the device to run server-side optimization, e.g. "cpu" or "cuda:0"
                 (will default to cuda if available and no device is specified).
 
@@ -171,5 +171,6 @@ class FedOpt(FedAvg):
 
         global_model.params = weights
         global_model.meta = aggr_result.meta
+        global_model.metrics = aggr_result.metrics
 
         return global_model

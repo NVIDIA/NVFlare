@@ -16,7 +16,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nvflare.apis.fl_constant import SUBMIT_TOKEN_JOB_DELETED_STATUS
+from nvflare.apis.fl_constant import SUBMIT_TOKEN_JOB_DELETED_STATUS, AdminCommandNames
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.fuel.flare_api.api_spec import (
@@ -220,6 +220,57 @@ def test_do_command_raises_no_connection_for_server_connection_error():
 
     with pytest.raises(NoConnection, match=r"cannot connect to server: ERROR_SERVER_CONNECTION"):
         session._do_command("list_jobs", enforce_meta=False)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        f"{AdminCommandNames.ABORT_JOB} job-1",
+        f"{AdminCommandNames.SHUTDOWN} all",
+    ],
+)
+def test_do_command_retries_idempotent_command_connection_failure(command):
+    session = Session.__new__(Session)
+    session.api = MagicMock()
+    session.api.closed = False
+    session.api.do_command.side_effect = [
+        {
+            ResultKey.STATUS: APIStatus.ERROR_SERVER_CONNECTION,
+            ResultKey.DETAILS: "Server did not respond",
+        },
+        {
+            ResultKey.STATUS: APIStatus.ERROR_SERVER_CONNECTION,
+            ResultKey.DETAILS: "Server did not respond",
+        },
+        {
+            ResultKey.STATUS: APIStatus.SUCCESS,
+            ResultKey.META: {MetaKey.STATUS: MetaStatusValue.OK, MetaKey.INFO: "Command completed."},
+        },
+    ]
+
+    with patch("nvflare.fuel.flare_api.flare_api.time.sleep") as sleep:
+        result = session._do_command(command)
+
+    assert result[ResultKey.STATUS] == APIStatus.SUCCESS
+    assert session.api.do_command.call_count == 3
+    assert [call.args[0] for call in sleep.call_args_list] == [0.5, 1.0]
+
+
+def test_do_command_does_not_retry_submit_job_connection_failure():
+    session = Session.__new__(Session)
+    session.api = MagicMock()
+    session.api.closed = False
+    session.api.do_command.return_value = {
+        ResultKey.STATUS: APIStatus.ERROR_SERVER_CONNECTION,
+        ResultKey.DETAILS: "Server did not respond",
+    }
+
+    with patch("nvflare.fuel.flare_api.flare_api.time.sleep") as sleep:
+        with pytest.raises(NoConnection, match=r"cannot connect to server: ERROR_SERVER_CONNECTION"):
+            session._do_command(f"{AdminCommandNames.SUBMIT_JOB} /tmp/job", enforce_meta=False)
+
+    session.api.do_command.assert_called_once()
+    sleep.assert_not_called()
 
 
 def test_try_connect_maps_transient_communication_failure_to_no_connection():

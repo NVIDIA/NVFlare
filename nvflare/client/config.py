@@ -18,6 +18,12 @@ from enum import Enum
 from typing import Dict, Optional
 
 from nvflare.apis.fl_constant import ConnPropKey, FLMetaKey
+from nvflare.fuel.f3.streaming.download_service import DownloadService
+from nvflare.fuel.f3.streaming.transfer_progress import (
+    DEFAULT_STREAMING_IDLE_TIMEOUT,
+    STREAMING_IDLE_TIMEOUT,
+    check_positive_finite_number,
+)
 from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
@@ -55,6 +61,7 @@ class ConfigKey:
     SUBMIT_RESULT_TIMEOUT = "submit_result_timeout"
     MAX_RESENDS = "max_resends"
     DOWNLOAD_COMPLETE_TIMEOUT = "download_complete_timeout"
+    STREAMING_IDLE_TIMEOUT = STREAMING_IDLE_TIMEOUT
     LAUNCH_ONCE = "launch_once"
 
 
@@ -174,8 +181,9 @@ class ClientConfig:
         """Return the maximum number of pipe send retries for submitting task results.
 
         None means unlimited; the default of 3 bounds the retry window and prevents
-        unbounded ArrayDownloadable accumulation (Root Cause 6).
-        Set via recipe.add_client_config({"max_resends": N}).
+        unbounded large-result resend transactions. In recipe-based external-process
+        jobs, the parent executor writes this value into the Client API config and
+        applies recipe.add_client_config({"max_resends": N}) as a per-job override.
         """
         value = self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.MAX_RESENDS, 3)
         if value is None:
@@ -200,9 +208,36 @@ class ClientConfig:
 
         After send_to_peer() ACKs, the server asynchronously downloads tensors from the subprocess
         DownloadService.  This timeout gates subprocess exit so the process does not disappear before
-        the download completes.  Defaults to 1800 s (30 min) for large-model transfers.
+        the download completes.  Defaults to the DownloadService finished-ref TTL for large-model transfers.
+        Recipe-based external-process jobs can override it with
+        recipe.add_client_config({"download_complete_timeout": N}).
         """
-        return float(self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.DOWNLOAD_COMPLETE_TIMEOUT, 1800.0))
+        return float(
+            self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(
+                ConfigKey.DOWNLOAD_COMPLETE_TIMEOUT, DownloadService.FINISHED_REFS_TTL
+            )
+        )
+
+    def get_streaming_idle_timeout(self) -> Optional[float]:
+        """Return shared idle timeout for streamed task payloads and result uploads.
+
+        ``None`` is an explicit disabled state written by parent executors that
+        opt out of progress-aware waits.
+        """
+
+        value = self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(
+            ConfigKey.STREAMING_IDLE_TIMEOUT, DEFAULT_STREAMING_IDLE_TIMEOUT
+        )
+        if value is None:
+            return None
+        try:
+            timeout = float(value)
+        except (TypeError, ValueError) as e:
+            raise ValueError(f"invalid {ConfigKey.STREAMING_IDLE_TIMEOUT}: {value!r}") from e
+        try:
+            return check_positive_finite_number(ConfigKey.STREAMING_IDLE_TIMEOUT, timeout)
+        except ValueError as e:
+            raise ValueError(f"invalid {ConfigKey.STREAMING_IDLE_TIMEOUT}: {value!r}") from e
 
     def get_submit_result_timeout(self) -> float:
         """Return the timeout (seconds) for the subprocess to wait for CJ to ACK a result message.
@@ -212,8 +247,8 @@ class ClientConfig:
         300 s is returned — large enough for a single-chunk ACK with reverse PASS_THROUGH, and
         a reasonable upper bound for direct (non-PASS_THROUGH) transfers at typical throughputs.
 
-        Changing this value via recipe.add_client_config() sets it for a specific job without
-        touching any process-level defaults.
+        Recipe-based external-process jobs can override it with
+        recipe.add_client_config({"submit_result_timeout": N}) without touching process-level defaults.
         """
         return float(self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.SUBMIT_RESULT_TIMEOUT, 300.0))
 

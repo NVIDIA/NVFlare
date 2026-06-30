@@ -80,7 +80,7 @@ Assumptions
 -----------
 
 - We fully trust the individual who builds the CVM image, as well as the host machine used during the image creation process. This ensures that the CVM is constructed in a secure and controlled environment.
-- We trust the remote trustee service, including its integrated key broker service, to be secure and reliable. The internal protection mechanisms of the trustee service are considered out of scope for this design.
+- We trust the remote trustee service, including its integrated key broker service, to be secure and reliable. This design relies on the trustee service's own protection mechanisms.
 - To verify the integrity and confidentiality of the CVM application's boot process, we assume that CPU-based attestation at boot time is sufficient. Specifically, we rely on a one-time, hardware-backed attestation during CVM startup to establish trust, without requiring ongoing or continuous runtime verification.
 - Ongoing continuous attestation will be handled at the application level (with both GPU and CPU attestation, such as NVFlare).
 
@@ -651,7 +651,6 @@ References
 - Microsoft Secure Boot. Note these links to the above article.
   - https://learn.microsoft.com/en-us/windows-hardware/design/device-experiences/oem-secure-boot
 - SEV-SNP measurement tool: https://github.com/virtee/sev-snp-measure
-
 
 
 

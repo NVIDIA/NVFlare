@@ -387,6 +387,25 @@ class TestClientConfigDownloadCompleteTimeout:
         assert cfg.get_download_complete_timeout() == 1800.0
 
 
+class TestClientConfigStreamingIdleTimeout:
+    def test_invalid_streaming_idle_timeout_names_config_key(self):
+        from nvflare.client.config import ClientConfig, ConfigKey
+
+        cfg = ClientConfig(config={ConfigKey.TASK_EXCHANGE: {ConfigKey.STREAMING_IDLE_TIMEOUT: {"bad": "value"}}})
+
+        with pytest.raises(ValueError, match=ConfigKey.STREAMING_IDLE_TIMEOUT):
+            cfg.get_streaming_idle_timeout()
+
+    @pytest.mark.parametrize("value", [float("nan"), float("inf"), "nan", "inf"])
+    def test_non_finite_streaming_idle_timeout_names_config_key(self, value):
+        from nvflare.client.config import ClientConfig, ConfigKey
+
+        cfg = ClientConfig(config={ConfigKey.TASK_EXCHANGE: {ConfigKey.STREAMING_IDLE_TIMEOUT: value}})
+
+        with pytest.raises(ValueError, match=ConfigKey.STREAMING_IDLE_TIMEOUT):
+            cfg.get_streaming_idle_timeout()
+
+
 # ---------------------------------------------------------------------------
 # M-new: ClientConfig.get_max_resends() — negative value clamping
 # ---------------------------------------------------------------------------
@@ -582,3 +601,12 @@ class TestFlareAgentWithCellPipeDefaults:
         ), "download_complete_timeout parameter must exist on FlareAgentWithCellPipe (H3 fix)"
         default = sig.parameters["download_complete_timeout"].default
         assert default == 1800.0, f"download_complete_timeout default must be 1800.0. Got {default}"
+
+    def test_agent_default_max_resends_is_bounded(self):
+        """Direct FlareAgent and FlareAgentWithCellPipe construction should not default to unlimited resends."""
+        import inspect
+
+        from nvflare.client.flare_agent import FlareAgent, FlareAgentWithCellPipe
+
+        assert inspect.signature(FlareAgent.__init__).parameters["max_resends"].default == 3
+        assert inspect.signature(FlareAgentWithCellPipe.__init__).parameters["max_resends"].default == 3

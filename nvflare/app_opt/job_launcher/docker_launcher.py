@@ -15,6 +15,7 @@ import logging
 import os
 import posixpath
 import re
+import threading
 import time
 from abc import abstractmethod
 
@@ -52,10 +53,24 @@ class DockerStatus:
 
 
 TERMINAL_STATUSES = {DockerStatus.EXITED, DockerStatus.DEAD}
-_WORKSPACE_TMPFS_MODE = 0o555
+# Docker tmpfs mounts are commonly owned by root; use sticky world-writable mode so the
+# non-root job-container user can initialize ephemeral top-level workspace directories.
+_WORKSPACE_TMPFS_MODE = 0o1777
 _RESERVED_WORKSPACE_CHILD_NAMES = {
     WorkspaceConstants.STARTUP_FOLDER_NAME,
     WorkspaceConstants.SITE_FOLDER_NAME,
+}
+_RESERVED_CONTAINER_KWARGS = {
+    "volumes",
+    "mounts",
+    "network",
+    "environment",
+    "command",
+    "name",
+    "detach",
+    "auto_remove",
+    "user",
+    "working_dir",
 }
 
 
@@ -120,6 +135,8 @@ class DockerJobHandle(JobHandleSpec):
         container_name: str,
         docker_client,
         timeout: int = 30,
+        container=None,
+        watch_exit: bool = True,
     ):
         super().__init__()
         self.container_id = container_id
@@ -128,18 +145,81 @@ class DockerJobHandle(JobHandleSpec):
         self.timeout = timeout
         self.terminal_state: JobReturnCode = None  # set once, never cleared
         self.logger = logging.getLogger(self.__class__.__name__)
+        self._state_lock = threading.Lock()
+        self._exit_watch_done = threading.Event()
+        self._exit_watcher = None
+        self._terminating = False
+        if watch_exit and container is not None:
+            self._start_exit_watcher(container)
+
+    def _get_terminal_state(self) -> JobReturnCode:
+        with self._state_lock:
+            return self.terminal_state
+
+    def _set_terminal_state(self, return_code: JobReturnCode):
+        with self._state_lock:
+            if self.terminal_state is None:
+                self.terminal_state = return_code
+
+    def _set_terminating(self):
+        with self._state_lock:
+            self._terminating = True
+
+    def _is_terminating(self) -> bool:
+        with self._state_lock:
+            return self._terminating
+
+    def _start_exit_watcher(self, container):
+        self._exit_watcher = threading.Thread(
+            target=self._watch_container_exit,
+            args=(container,),
+            name=f"docker-job-wait-{self.container_name}",
+            daemon=True,
+        )
+        self._exit_watcher.start()
+
+    def _watch_container_exit(self, container):
+        """Cache the exit code while Docker still has container metadata."""
+        try:
+            wait_result = container.wait()
+            if not isinstance(wait_result, dict):
+                self.logger.warning(f"unexpected wait result for container {self.container_name}: {wait_result}")
+                return
+            exit_code = wait_result.get("StatusCode")
+            if exit_code is None:
+                self.logger.warning(f"wait result for container {self.container_name} did not include StatusCode")
+                return
+            try:
+                exit_code = int(exit_code)
+            except (TypeError, ValueError):
+                self.logger.warning(f"invalid exit code for container {self.container_name}: {exit_code}")
+                return
+            return_code = JobReturnCode.ABORTED if self._is_terminating() else _exit_code_to_return_code(exit_code)
+            self._set_terminal_state(return_code)
+        except docker.errors.NotFound:
+            self.logger.info(
+                f"container {self.container_name} not found while waiting; exit code unavailable, marking aborted"
+            )
+            self._set_terminal_state(JobReturnCode.ABORTED)
+        except docker.errors.APIError as e:
+            self.logger.warning(f"error waiting for container {self.container_name}: {e}")
+        except Exception as e:
+            self.logger.warning(f"unexpected error waiting for container {self.container_name}: {e}")
+        finally:
+            self._exit_watch_done.set()
 
     def _get_container(self):
         """Query Docker for the current container object.
 
-        Returns None if not found (sets terminal_state) or on API error.
+        Returns None if not found or on API error. NotFound sets terminal_state only
+        when no exit watcher can still provide the container's final exit code.
         """
         try:
             return self.docker_client.containers.get(self.container_id)
         except docker.errors.NotFound:
-            self.logger.info(f"container {self.container_name} not found; assuming terminated")
-            if self.terminal_state is None:
-                self.terminal_state = JobReturnCode.ABORTED
+            self.logger.info(f"container {self.container_name} not found")
+            if self._exit_watcher is None or self._exit_watch_done.is_set():
+                self._set_terminal_state(JobReturnCode.ABORTED)
             return None
         except docker.errors.APIError as e:
             self.logger.warning(f"error querying container {self.container_name}: {e}")
@@ -169,34 +249,41 @@ class DockerJobHandle(JobHandleSpec):
 
     def poll(self) -> JobReturnCode:
         """Non-blocking status check. Returns UNKNOWN while still running."""
-        if self.terminal_state is not None:
-            return self.terminal_state
+        terminal_state = self._get_terminal_state()
+        if terminal_state is not None:
+            return terminal_state
         container = self._get_container()
+        terminal_state = self._get_terminal_state()
         if container is None:
-            return self.terminal_state if self.terminal_state is not None else JobReturnCode.UNKNOWN
+            return terminal_state if terminal_state is not None else JobReturnCode.UNKNOWN
         if container.status in TERMINAL_STATUSES:
             rc = self._resolve_terminal_return_code(container)
-            self.terminal_state = rc
+            self._set_terminal_state(rc)
             self._remove_container()
-            return rc
+            return self._get_terminal_state()
         return JobReturnCode.UNKNOWN
 
     def wait(self):
         """Block until the container reaches a terminal state."""
         while True:
-            if self.terminal_state is not None:
+            if self._get_terminal_state() is not None:
                 return
+            if self._exit_watcher is not None and not self._exit_watch_done.is_set():
+                self._exit_watch_done.wait(timeout=1)
+                continue
             container = self._get_container()
             if container is None:
                 return
             if container.status in TERMINAL_STATUSES:
-                self.terminal_state = self._resolve_terminal_return_code(container)
+                self._set_terminal_state(self._resolve_terminal_return_code(container))
                 self._remove_container()
                 return
             time.sleep(1)
 
     def terminate(self):
         """Stop and remove the container. Always sets terminal_state."""
+        if self._get_terminal_state() is None:
+            self._set_terminating()
         try:
             container = self.docker_client.containers.get(self.container_id)
             container.stop(timeout=0)
@@ -209,8 +296,7 @@ class DockerJobHandle(JobHandleSpec):
             self.logger.error(f"unexpected error terminating container {self.container_name}: {e}")
         finally:
             # Always set terminal_state so poll()/wait() return immediately
-            if self.terminal_state is None:
-                self.terminal_state = JobReturnCode.ABORTED
+            self._set_terminal_state(JobReturnCode.ABORTED)
 
     def enter_states(self, states_to_enter: list) -> bool:
         """Poll until the container enters one of the target states.
@@ -223,7 +309,7 @@ class DockerJobHandle(JobHandleSpec):
             states_to_enter = [states_to_enter]
 
         while True:
-            if self.terminal_state is not None:
+            if self._get_terminal_state() is not None:
                 return False
 
             container = self._get_container()
@@ -236,7 +322,7 @@ class DockerJobHandle(JobHandleSpec):
                 return True
 
             if status in TERMINAL_STATUSES:
-                self.terminal_state = self._resolve_terminal_return_code(container)
+                self._set_terminal_state(self._resolve_terminal_return_code(container))
                 self._remove_container()
                 return False
 
@@ -269,7 +355,8 @@ class DockerJobLauncher(JobLauncherSpec):
     Assumptions:
     - Docker network already exists (created by start_docker.sh or site admin).
     - Job containers get an isolated workspace view at /var/tmp/nvflare/workspace:
-      startup/local are read-only; only the current job workspace is read-write.
+      the root is writable ephemeral tmpfs, startup/local are read-only, and only the current
+      job workspace is read-write and persistent on the host.
     - SP/CP container name is known and reachable via Docker DNS on the network.
     - parent_url is derived at runtime from the site name and the port in JOB_PROCESS_ARGS.
     """
@@ -305,8 +392,8 @@ class DockerJobLauncher(JobLauncherSpec):
                                           (underscores, not hyphens).
                                           Example: {"shm_size": "8g", "ipc_mode": "host"}
                                           Note: "volumes", "mounts", "network", "environment", "command",
-                                          "name", "detach", "user", "working_dir" are controlled by the launcher
-                                          and cannot be overridden here.
+                                          "name", "detach", "auto_remove", "user", "working_dir" are controlled
+                                          by the launcher and cannot be overridden here.
             default_job_env: site-level default environment variables injected into every job
                              container launched by this site. Useful for site/runtime-specific
                              settings such as NCCL workarounds. Launcher-controlled variables
@@ -329,18 +416,7 @@ class DockerJobLauncher(JobLauncherSpec):
             raise ValueError("default_python_path must be a non-empty string")
         self.timeout = timeout
         default_job_container_kwargs = default_job_container_kwargs or {}
-        _RESERVED_KWARGS = {
-            "volumes",
-            "mounts",
-            "network",
-            "environment",
-            "command",
-            "name",
-            "detach",
-            "user",
-            "working_dir",
-        }
-        reserved_used = _RESERVED_KWARGS & set(default_job_container_kwargs.keys())
+        reserved_used = _RESERVED_CONTAINER_KWARGS & set(default_job_container_kwargs.keys())
         if reserved_used:
             raise ValueError(
                 f"default_job_container_kwargs must not contain reserved keys: {sorted(reserved_used)}. "
@@ -390,6 +466,11 @@ class DockerJobLauncher(JobLauncherSpec):
         docker_spec = get_job_launcher_spec(job_meta, site_name, "docker")
         job_image = docker_spec.get("image")
         container_name = _sanitize_container_name(f"{site_name}-{job_id}")
+        if job_image is not None and not isinstance(job_image, str):
+            raise RuntimeError(
+                f"launcher_spec docker image for site '{site_name}' must be a string, "
+                f"got {type(job_image).__name__}: {job_image!r}"
+            )
         if not job_image:
             raise RuntimeError(
                 f"DockerJobLauncher is configured for site '{site_name}' but no job image "
@@ -464,19 +545,8 @@ class DockerJobLauncher(JobLauncherSpec):
         _site_rs = (job_meta.get(JobMetaKey.RESOURCE_SPEC.value) or {}).get(site_name) or {}
         _flat_gpus = 0 if any(k in _site_rs for k in ("process", "docker", "k8s")) else _site_rs.get("num_of_gpus", 0)
         num_gpus = docker_spec["num_of_gpus"] if "num_of_gpus" in docker_spec else _flat_gpus
-        _RESERVED_KWARGS = {
-            "volumes",
-            "mounts",
-            "network",
-            "environment",
-            "command",
-            "name",
-            "detach",
-            "user",
-            "working_dir",
-        }
-        _NON_CONTAINER_KEYS = {"num_of_gpus", "image", "python_path"} | _RESERVED_KWARGS
-        reserved_in_spec = _RESERVED_KWARGS & set(docker_spec.keys())
+        _NON_CONTAINER_KEYS = {"num_of_gpus", "image", "python_path"} | _RESERVED_CONTAINER_KWARGS
+        reserved_in_spec = _RESERVED_CONTAINER_KWARGS & set(docker_spec.keys())
         if reserved_in_spec:
             self.logger.warning(
                 f"job {job_id}: launcher_spec['{site_name}']['docker'] contains reserved keys "
@@ -495,8 +565,10 @@ class DockerJobLauncher(JobLauncherSpec):
         if num_gpus and "device_requests" not in job_container_kwargs:
             merged_container_kwargs["device_requests"] = [{"Count": num_gpus, "Capabilities": [["gpu"]]}]
 
-        # Give the job an isolated workspace view: startup/local are read-only,
-        # and only this job's workspace is read-write and persistent on the host.
+        # Give the job an isolated workspace view. The root tmpfs must be writable by the non-root
+        # container user because server job startup may create ephemeral storage dirs such as
+        # snapshot-storage and jobs-storage.
+        # startup/local are read-only, and only this job's workspace is read-write and persistent on the host.
         job_workspace_name = WorkspaceConstants.WORKSPACE_PREFIX + str(job_id)
         host_job_workspace = _safe_workspace_child_path(workspace, job_workspace_name)
         host_startup_dir = _safe_workspace_child_path(
@@ -517,8 +589,8 @@ class DockerJobLauncher(JobLauncherSpec):
         study_data_file = os.path.join(self.WORKSPACE_MOUNT, self.STUDY_DATA_PATH_FILE)
         study = job_meta.get(JobMetaKey.STUDY.value)
         if should_mount_study_data(study):
-            study_data_map = load_study_data_file(study_data_file)
-            data_mounts = resolve_study_dataset_mounts(study_data_map, study, study_data_file)
+            study_data_map = load_study_data_file(study_data_file, logger=self.logger)
+            data_mounts = resolve_study_dataset_mounts(study_data_map, study, study_data_file, logger=self.logger)
             for dataset_mount in data_mounts:
                 self.logger.info(
                     "mounting study '%s' dataset '%s' from %s -> %s",
@@ -569,6 +641,7 @@ class DockerJobLauncher(JobLauncherSpec):
                 name=container_name,
                 network=self.network,
                 detach=True,
+                auto_remove=True,
                 environment=environment if environment else None,
                 mounts=mounts,
                 working_dir=container_job_workspace,
@@ -588,6 +661,8 @@ class DockerJobLauncher(JobLauncherSpec):
             container_name=container_name,
             docker_client=docker_client,
             timeout=self.timeout,
+            container=container,
+            watch_exit=True,
         )
 
         try:

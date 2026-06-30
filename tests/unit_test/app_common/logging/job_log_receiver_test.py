@@ -16,10 +16,12 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import ReservedKey, ReturnCode, StreamCtxKey, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.storage import DataTypes, StorageSpec
 from nvflare.apis.streaming import StreamContextKey
+from nvflare.app_common.logging.constants import LIVE_LOG_TOPIC, Channels
 from nvflare.app_common.logging.job_log_receiver import JobLogReceiver
 from nvflare.app_common.streamers.log_streamer import KEY_FILE_NAME
 
@@ -148,3 +150,90 @@ def test_job_log_receiver_does_not_warn_when_site_allows(tmp_path):
         receiver._on_chunk_received(b"a\n", stream_ctx, fl_ctx)
 
     log_error.assert_not_called()
+
+
+def test_job_log_receiver_does_not_warn_for_empty_error_log_stream(tmp_path):
+    receiver = JobLogReceiver(dest_dir=str(tmp_path))
+    fl_ctx = _make_recv_fl_ctx()
+    stream_ctx = {
+        KEY_FILE_NAME: WorkspaceConstants.ERROR_LOG_FILE_NAME,
+        StreamContextKey.RC: ReturnCode.OK,
+    }
+
+    with patch.object(receiver, "log_warning") as log_warning:
+        receiver._on_stream_done(stream_ctx, fl_ctx)
+
+    log_warning.assert_not_called()
+
+
+def test_job_log_receiver_warns_for_empty_regular_log_stream(tmp_path):
+    receiver = JobLogReceiver(dest_dir=str(tmp_path))
+    fl_ctx = _make_recv_fl_ctx()
+    stream_ctx = {
+        KEY_FILE_NAME: WorkspaceConstants.LOG_FILE_NAME,
+        StreamContextKey.RC: ReturnCode.OK,
+    }
+
+    with patch.object(receiver, "log_warning") as log_warning:
+        receiver._on_stream_done(stream_ctx, fl_ctx)
+
+    log_warning.assert_called_once()
+    assert "No log data received from trusted_client for job trusted_job" in log_warning.call_args.args[1]
+
+
+@pytest.mark.parametrize(
+    "event_type",
+    [EventType.SYSTEM_START, EventType.ABOUT_TO_START_RUN, EventType.START_RUN],
+)
+def test_register_fires_on_run_lifecycle_events(event_type):
+    # Each trigger event must call register_stream_processing so the receiver
+    # gets wired up wherever it happens to live (parent process via
+    # SYSTEM_START, in-process job via ABOUT_TO_START_RUN, or per-job
+    # subprocess via START_RUN — the only event that fires server-side in
+    # ServerRunner.run).
+    receiver = JobLogReceiver()
+    fl_ctx = FLContext()
+
+    with patch("nvflare.app_common.logging.job_log_receiver.LogStreamer.register_stream_processing") as mock_register:
+        receiver._register(event_type, fl_ctx)
+
+    mock_register.assert_called_once()
+    kwargs = mock_register.call_args.kwargs
+    assert kwargs["channel"] == Channels.LOG_STREAMING_CHANNEL
+    assert kwargs["topic"] == LIVE_LOG_TOPIC
+
+
+def test_register_reregisters_on_each_event():
+    # In a per-job server subprocess the active ObjectStreamer is replaced
+    # whenever the engine swaps in a new RunManager. The receiver must
+    # re-register against the new streamer rather than skip on a "registered
+    # once" latch; otherwise the new run_manager's registry is empty and the
+    # first incoming chunk fails with "no stream processing info registered
+    # for log_streaming:live_log".
+    receiver = JobLogReceiver()
+    fl_ctx = FLContext()
+
+    with patch("nvflare.app_common.logging.job_log_receiver.LogStreamer.register_stream_processing") as mock_register:
+        receiver._register(EventType.SYSTEM_START, fl_ctx)
+        receiver._register(EventType.START_RUN, fl_ctx)
+        receiver._register(EventType.START_RUN, fl_ctx)
+
+    assert mock_register.call_count == 3
+
+
+def test_register_event_handlers_cover_server_subprocess_path():
+    # Guard against an accidental regression of PR #4558: dropping START_RUN
+    # from the handler list left server-job subprocesses (where
+    # ABOUT_TO_START_RUN never fires and SYSTEM_START is only fired by the
+    # parent's server_deployer) with no event that would call _register.
+    receiver = JobLogReceiver()
+
+    registered_events = {
+        event_type
+        for event_type, entries in receiver.get_event_handlers().items()
+        if any(handler == receiver._register for handler, _ in entries)
+    }
+
+    assert EventType.START_RUN in registered_events
+    assert EventType.SYSTEM_START in registered_events
+    assert EventType.ABOUT_TO_START_RUN in registered_events

@@ -29,3 +29,10 @@ tests:
   - python ../../examples/advanced/federated-statistics/image_stats/prepare_data.py --input_dir /tmp/nvflare/image_stats/data --output_dir /tmp/nvflare/image_stats/data
   - rm -f ../../examples/advanced/federated-statistics/image_stats/temp_requirements.txt
   test_name: Test example image_stats.
+  validators:
+  - path: tests.integration_test.src.validators.json_stats_result_validator.JsonStatsResultValidator
+    args:
+      relative_path: statistics/image_statistics.json
+      required_paths:
+      - intensity.count
+      - intensity.histogram

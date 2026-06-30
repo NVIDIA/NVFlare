@@ -68,10 +68,18 @@ class BlobStream(Stream):
 
 
 class BlobTask:
-    def __init__(self, future: StreamFuture, stream: Stream):
+    def __init__(self, future: StreamFuture, stream: Stream, max_size: int = 0):
         self.future = future
         self.stream = stream
         self.size = stream.get_size()
+        self.max_size = max_size
+
+        if self.size < 0:
+            raise StreamError(f"Declared blob size cannot be negative: {self.size}")
+
+        if self.max_size > 0 and self.size > self.max_size:
+            raise StreamError(f"Declared blob size {self.size} exceeds configured limit {self.max_size}")
+
         self.pre_allocated = self.size > 0
 
         if self.pre_allocated:
@@ -86,14 +94,72 @@ class BlobTask:
 class BlobHandler:
     def __init__(self, blob_cb: Callable):
         self.blob_cb = blob_cb
-        self.chunk_size = CommConfigurator().get_streaming_chunk_size(STREAM_CHUNK_SIZE)
+        config = CommConfigurator()
+        self.chunk_size = config.get_streaming_chunk_size(STREAM_CHUNK_SIZE)
+        self.max_blob_size = config.get_streaming_max_blob_size()
+
+    @staticmethod
+    def _fail(stream: Stream, future: StreamFuture, error: StreamError):
+        if hasattr(stream, "task"):
+            stream.task.stop(error)
+        else:
+            future.set_exception(error)
+
+    def _store_chunk(self, blob_task: BlobTask, buf: BytesAlike, buf_size: int, thread_id: int) -> bool:
+        length = len(buf)
+        if blob_task.pre_allocated:
+            return self._store_pre_allocated_chunk(blob_task, buf, buf_size, length, thread_id)
+
+        return self._append_dynamic_chunk(blob_task, buf, buf_size, length, thread_id)
+
+    def _store_pre_allocated_chunk(
+        self, blob_task: BlobTask, buf: BytesAlike, buf_size: int, length: int, thread_id: int
+    ) -> bool:
+        remaining = len(blob_task.buffer) - buf_size
+        if length > remaining:
+            log.error(f"{blob_task} Buffer overrun: {thread_id=} {remaining=} {length=} {buf_size=}")
+            self._fail(
+                blob_task.stream,
+                blob_task.future,
+                StreamError(f"Buffer overrun: stream produced more data than declared size {blob_task.size}"),
+            )
+            return False
+
+        blob_task.buffer[buf_size : buf_size + length] = buf
+        return True
+
+    def _append_dynamic_chunk(
+        self, blob_task: BlobTask, buf: BytesAlike, buf_size: int, length: int, thread_id: int
+    ) -> bool:
+        next_size = buf_size + length
+        # read() already pulled this chunk, so rejection can overshoot by one chunk at most.
+        if blob_task.max_size > 0 and next_size > blob_task.max_size:
+            log.error(f"{blob_task} Size limit exceeded: {thread_id=} {next_size=} limit={blob_task.max_size}")
+            error = StreamError(
+                f"Blob received more data than configured limit {blob_task.max_size}: "
+                f"received at least {next_size} bytes"
+            )
+            self._fail(blob_task.stream, blob_task.future, error)
+            return False
+
+        blob_task.buffer.append(buf)
+        return True
 
     def handle_blob_cb(self, future: StreamFuture, stream: Stream, resume: bool, *args, **kwargs) -> int:
 
         if resume:
             log.warning("Resume is not supported, ignored")
 
-        blob_task = BlobTask(future, stream)
+        try:
+            blob_task = BlobTask(future, stream, self.max_blob_size)
+        except StreamError as ex:
+            self._fail(stream, future, ex)
+            return 0
+        except MemoryError as ex:
+            error = StreamError(f"Unable to allocate buffer for declared blob size {stream.get_size()}")
+            error.__cause__ = ex
+            self._fail(stream, future, error)
+            return 0
 
         stream_thread_pool.submit(self._read_stream, blob_task)
         callback_thread_pool.submit(self._run_blob_cb, future, stream, args, kwargs)
@@ -131,30 +197,18 @@ class BlobHandler:
                 if not buf:
                     break
 
-                length = len(buf)
                 try:
-                    if blob_task.pre_allocated:
-                        remaining = len(blob_task.buffer) - buf_size
-                        if length > remaining:
-                            log.error(f"{blob_task} Buffer overrun: {thread_id=} {remaining=} {length=} {buf_size=}")
-                            blob_task.future.set_exception(
-                                StreamError(
-                                    f"Buffer overrun: stream produced more data than declared size {blob_task.size}"
-                                )
-                            )
-                            return
-                        else:
-                            blob_task.buffer[buf_size : buf_size + length] = buf
-                    else:
-                        blob_task.buffer.append(buf)
+                    if not self._store_chunk(blob_task, buf, buf_size, thread_id):
+                        return
                 except Exception as ex:
+                    length = len(buf)
                     log.error(
                         f"{blob_task} memoryview error: {ex} Debug info: "
                         f"{thread_id=} {length=} {buf_size=} {type(buf)=}"
                     )
                     raise ex
 
-                buf_size += length
+                buf_size += len(buf)
 
             if blob_task.size and blob_task.size != buf_size:
                 blob_task.future.set_exception(
@@ -180,7 +234,14 @@ class BlobStreamer:
         self.byte_receiver = byte_receiver
 
     def send(
-        self, channel: str, topic: str, target: str, message: Message, secure: bool, optional: bool
+        self,
+        channel: str,
+        topic: str,
+        target: str,
+        message: Message,
+        secure: bool,
+        optional: bool,
+        reliable: Optional[bool] = None,
     ) -> StreamFuture:
         if message.payload is None:
             message.payload = bytes(0)
@@ -190,7 +251,15 @@ class BlobStreamer:
 
         blob_stream = BlobStream(message.payload, message.headers)
         return self.byte_streamer.send(
-            channel, topic, target, message.headers, blob_stream, STREAM_TYPE_BLOB, secure, optional
+            channel,
+            topic,
+            target,
+            message.headers,
+            blob_stream,
+            STREAM_TYPE_BLOB,
+            secure=secure,
+            optional=optional,
+            reliable=reliable,
         )
 
     def register_blob_callback(self, channel, topic, blob_cb: Callable, *args, **kwargs):

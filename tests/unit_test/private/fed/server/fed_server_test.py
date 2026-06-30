@@ -12,20 +12,86 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from contextlib import nullcontext
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nvflare.apis.fl_constant import RunProcessKey
+from nvflare.apis.fl_constant import ConnPropKey, RunProcessKey
+from nvflare.apis.job_def import JobMetaKey, RunStatus
+from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.shareable import Shareable
+from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
-from nvflare.private.defs import CellMessageHeaderKeys, ClientRegMsgKey, new_cell_message
+from nvflare.private.defs import CellMessageHeaderKeys, ClientRegMsgKey, JobFailureMsgKey, new_cell_message
+from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN
 from nvflare.private.fed.server.fed_server import FederatedServer
 from nvflare.private.fed.server.server_state import DEFAULT_SERVICE_SESSION_ID, HotState
 
 
 class TestFederatedServer:
+    def test_resolve_client_fqcn_for_auth_fails_closed_for_registered_client_with_missing_fqcn(self):
+        server = object.__new__(FederatedServer)
+        client = MagicMock()
+        client.name = "site-a"
+        client.get_fqcn.return_value = None
+        server.client_manager = MagicMock()
+        server.client_manager.clients = {"token-a": client}
+
+        assert server._resolve_client_fqcn_for_auth("site-a", "token-a") == MISSING_CLIENT_FQCN
+
+    def test_create_job_cell_allows_missing_server_config_for_non_secure_cell(self):
+        server = object.__new__(FederatedServer)
+        server.engine = MagicMock()
+
+        with (
+            patch("nvflare.private.fed.server.fed_server.Cell") as cell_cls,
+            patch("nvflare.private.fed.server.fed_server.NetAgent") as net_agent_cls,
+            patch("nvflare.private.fed.server.fed_server.ServerCommandAgent") as command_agent_cls,
+            patch("nvflare.private.fed.server.fed_server.mpm.add_cleanup_cb"),
+        ):
+            cell = MagicMock()
+            cell_cls.return_value = cell
+            net_agent_cls.return_value = MagicMock()
+            command_agent_cls.return_value = MagicMock()
+
+            result = server.create_job_cell("job-1", "tcp://root", "tcp://parent", False, None)
+
+        assert result is cell
+        assert cell_cls.call_args.kwargs["credentials"] == {}
+        assert cell_cls.call_args.kwargs["auth_identity"] is None
+        assert cell_cls.call_args.kwargs["auth_identity_map"] is None
+
+    def test_create_job_cell_uses_auth_identity_from_server_config(self):
+        server = object.__new__(FederatedServer)
+        server.engine = MagicMock()
+        auth_identity_map = {"server": "server-cn"}
+
+        with (
+            patch("nvflare.private.fed.server.fed_server.Cell") as cell_cls,
+            patch("nvflare.private.fed.server.fed_server.NetAgent") as net_agent_cls,
+            patch("nvflare.private.fed.server.fed_server.ServerCommandAgent") as command_agent_cls,
+            patch("nvflare.private.fed.server.fed_server.mpm.add_cleanup_cb"),
+        ):
+            cell_cls.return_value = MagicMock()
+            net_agent_cls.return_value = MagicMock()
+            command_agent_cls.return_value = MagicMock()
+
+            server.create_job_cell(
+                "job-1",
+                "tcp://root",
+                "tcp://parent",
+                False,
+                {
+                    ConnPropKey.AUTH_IDENTITY: "server-cn",
+                    ConnPropKey.AUTH_IDENTITY_MAP: auth_identity_map,
+                },
+            )
+
+        assert cell_cls.call_args.kwargs["auth_identity"] == "server-cn"
+        assert cell_cls.call_args.kwargs["auth_identity_map"] == auth_identity_map
+
     def test_hot_state_defaults_to_non_empty_session_id(self):
         assert HotState().ssid == DEFAULT_SERVICE_SESSION_ID
 
@@ -57,6 +123,24 @@ class TestFederatedServer:
 
             result = server.client_heartbeat(request)
             assert result.get_header(CellMessageHeaderKeys.ABORT_JOBS, []) == expected
+
+    def test_set_job_aborted_marks_runner_without_publishing_status(self):
+        server = object.__new__(FederatedServer)
+        server.logger = MagicMock()
+        server.engine = MagicMock()
+
+        job_manager = MagicMock()
+        server.engine.get_component.return_value = job_manager
+        job_manager.get_job.return_value = MagicMock(meta={JobMetaKey.STATUS: RunStatus.RUNNING})
+
+        fl_ctx = MagicMock()
+        server.engine.new_context.return_value = nullcontext(fl_ctx)
+        server.engine.job_runner.mark_run_aborted.return_value = ""
+
+        server._set_job_aborted("job-1")
+
+        server.engine.job_runner.mark_run_aborted.assert_called_once_with("job-1", fl_ctx)
+        job_manager.set_status.assert_not_called()
 
     def test_sync_client_jobs_legacy_reports_missing_immediately(self):
         with (
@@ -253,6 +337,117 @@ class TestFederatedServer:
             assert result.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
             assert "disabled" in result.get_header(MessageHeaderKey.ERROR)
             assert "token" not in server.client_manager.clients
+
+    @pytest.mark.parametrize("failure_code", [JobReturnCode.ABORTED, ProcessExitCode.UNSAFE_COMPONENT])
+    def test_process_job_failure_stops_run_for_reported_abort_client_failures(self, failure_code):
+        with patch("nvflare.private.fed.server.fed_server.ServerEngine"):
+            server = FederatedServer(
+                project_name="project_name",
+                min_num_clients=1,
+                max_num_clients=10,
+                cmd_modules=None,
+                heart_beat_timeout=600,
+                args=MagicMock(),
+                secure_train=False,
+                snapshot_persistor=MagicMock(),
+            )
+
+            server.client_manager.is_from_authorized_client = MagicMock(return_value=True)
+            fl_ctx = MagicMock()
+            server.engine.new_context.return_value = nullcontext(fl_ctx)
+            server.engine.job_runner.stop_run = MagicMock()
+            server.engine.job_runner.fail_run = MagicMock()
+
+            request = new_cell_message(
+                {
+                    CellMessageHeaderKeys.TOKEN: "token-1",
+                    MessageHeaderKey.ORIGIN: "site-1",
+                },
+                {
+                    JobFailureMsgKey.JOB_ID: "job-1",
+                    JobFailureMsgKey.CODE: failure_code,
+                    JobFailureMsgKey.REASON: "fatal client failure",
+                },
+            )
+
+            server.process_job_failure(request)
+
+            server.engine.job_runner.stop_run.assert_called_once_with("job-1", fl_ctx)
+            server.engine.job_runner.fail_run.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "failure_code",
+        [ProcessExitCode.CONFIG_ERROR, ProcessExitCode.EXCEPTION],
+    )
+    def test_process_job_failure_fails_run_for_reported_exception_client_failures(self, failure_code):
+        with patch("nvflare.private.fed.server.fed_server.ServerEngine"):
+            server = FederatedServer(
+                project_name="project_name",
+                min_num_clients=1,
+                max_num_clients=10,
+                cmd_modules=None,
+                heart_beat_timeout=600,
+                args=MagicMock(),
+                secure_train=False,
+                snapshot_persistor=MagicMock(),
+            )
+
+            server.client_manager.is_from_authorized_client = MagicMock(return_value=True)
+            fl_ctx = MagicMock()
+            server.engine.new_context.return_value = nullcontext(fl_ctx)
+            server.engine.job_runner.stop_run = MagicMock()
+            server.engine.job_runner.fail_run = MagicMock()
+
+            request = new_cell_message(
+                {
+                    CellMessageHeaderKeys.TOKEN: "token-1",
+                    MessageHeaderKey.ORIGIN: "site-1",
+                },
+                {
+                    JobFailureMsgKey.JOB_ID: "job-1",
+                    JobFailureMsgKey.CODE: failure_code,
+                    JobFailureMsgKey.REASON: "fatal client failure",
+                },
+            )
+
+            server.process_job_failure(request)
+
+            server.engine.job_runner.fail_run.assert_called_once_with("job-1", ProcessExitCode.EXCEPTION, fl_ctx)
+            server.engine.job_runner.stop_run.assert_not_called()
+
+    def test_process_job_failure_ignores_generic_launcher_execution_error(self):
+        with patch("nvflare.private.fed.server.fed_server.ServerEngine"):
+            server = FederatedServer(
+                project_name="project_name",
+                min_num_clients=1,
+                max_num_clients=10,
+                cmd_modules=None,
+                heart_beat_timeout=600,
+                args=MagicMock(),
+                secure_train=False,
+                snapshot_persistor=MagicMock(),
+            )
+
+            server.client_manager.is_from_authorized_client = MagicMock(return_value=True)
+            server.engine.job_runner.stop_run = MagicMock()
+            server.engine.job_runner.fail_run = MagicMock()
+
+            request = new_cell_message(
+                {
+                    CellMessageHeaderKeys.TOKEN: "token-1",
+                    MessageHeaderKey.ORIGIN: "site-1",
+                },
+                {
+                    JobFailureMsgKey.JOB_ID: "job-1",
+                    JobFailureMsgKey.CODE: JobReturnCode.EXECUTION_ERROR,
+                    JobFailureMsgKey.REASON: "generic launcher failure",
+                },
+            )
+
+            server.process_job_failure(request)
+
+            server.engine.job_runner.fail_run.assert_not_called()
+            server.engine.job_runner.stop_run.assert_not_called()
 
 
 class TestGetValidatedSiteConfig:

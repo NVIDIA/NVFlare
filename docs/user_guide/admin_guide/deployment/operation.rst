@@ -46,7 +46,7 @@ commands shown as examples of how they may be run with a description.
     download_job,``download_job job_id``,Download folder from the job store containing the job and workspace. Please note that for larger jobs there may be extra delay for workspace creation in the job store (If you try to download the job before that you may not be able to get the workspace data)
     delete_job,``delete_job job_id``,Delete the job from the job store
     cat,``cat server startup/fed_server.json -ns``,Show content of a file (-n: number all output lines; -s: suppress repeated empty output lines)
-    ,``cat clientname startup/docker.sh -bT``,Show content of a file (-b: number nonempty output lines; -T: display TAB characters as ^I)
+    ,``cat clientname startup/start_docker.sh -bT``,Show content of a file (-b: number nonempty output lines; -T: display TAB characters as ^I)
     grep,``grep server "info" -i log.txt``,Search for a pattern in a file (-n: print line number; -i: ignore case)
     head,``head clientname log.txt``,Print the first 10 lines of a file
     ,``head server log.txt -n 15``,Print the first 15 lines of a file (-n: print the first N lines instead of the first 10)
@@ -60,7 +60,6 @@ commands shown as examples of how they may be run with a description.
     ,``configure_site_log client <client-name>... config``,Configure the site log on the target client(s).
     sys_info,``sys_info server``,Get system information
     ,``sys_info client *clientname*``,Get system information. Individual clients can be shutdown by specifying *clientname*.
-    remove_client,``remove_client clientname``,Issue command for server to release client before the 10 minute timeout to allow client to rejoin after manual restart.
     restart,``restart client``,Restarts all of the clients. Individual clients can be restarted by specifying *clientname*.
     ,``restart server``,Restarts the server. Clients will also be restarted. Note that the admin client will need to log in again after the server restarts.
     shutdown,``shutdown client``,Shuts down all of the clients. Individual clients can be shutdown by specifying *clientname*. Please note that this may not be instant but may take time for the command to take effect.

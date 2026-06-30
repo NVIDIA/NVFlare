@@ -1098,6 +1098,8 @@ class TestClientKitAssembly:
         assert cfg["servers"][0]["service"]["scheme"] == "grpc"
         assert cfg["client"]["fqsn"] == "hospital-1"
         assert cfg["servers"][0]["service"]["target"] == "server.example.com:8002"
+        assert "auth_identity" not in cfg["client"]
+        assert "auth_identity_map" not in cfg["client"]
 
     def test_dir_mode_auto_discovery(self, cert_env, tmp_path):
         work = tmp_path / "work"

@@ -25,6 +25,13 @@ Install the dependency
   pip install -r requirements.txt
 ```
 
+> [!IMPORTANT]
+> This `main` branch example uses Flower 1.26+ and the newer Flower SuperLink configuration flow.
+> Use the NVFlare 2.8 release candidate line (`nvflare~=2.8.0rc`), or install NVFlare from this
+> repository if that package is not available from PyPI yet.
+> If you are using released NVFlare 2.7.x, switch to the 2.7 branch or tag of this example and use `flwr>=1.16,<1.26`.
+> NVFlare 2.7.x still uses Flower's legacy `--federation-config` CLI option, which Flower 1.26+ ignores.
+
 ## Code Structure
 
 ``` 
@@ -122,6 +129,41 @@ tensorboard --logdir /tmp/nvflare/hello-flower
 First, check real-world deployment guide: https://nvflare.readthedocs.io/en/main/user_guide/admin_guide/deployment/overview.html. 
 
 You can run the job in a production environment by changing from `SimEnv` to `ProdEnv` in the `job.py` script.
+
+### Production Deployment Note
+
+For production environments where BYOC is restricted, you can use server-predeployed 
+mode by replacing `flower_content` with `flower_app_path` in your job recipe. 
+
+**Important**: The `flower_app_path` must reference admin-predeployed, pre-approved apps 
+only. The path must start with `local/custom/` to ensure the app is controlled by server 
+administrators, not arbitrarily chosen by users:
+
+```python
+# Instead of:
+recipe = FlowerRecipe(
+    name="hello-flower",
+    min_clients=n_clients,
+    flower_content=content_dir,  # Requires BYOC
+    ...
+)
+
+# Use:
+recipe = FlowerRecipe(
+    name="hello-flower",
+    min_clients=n_clients,
+    flower_app_path="local/custom/flwr-pt",  # Admin-predeployed on server, not user supplied code.
+    ...
+)
+```
+
+**Security Model** (when `BYOC disabled` & `flower_predeployed=true`):
+- No user-provided NVFlare custom code is deployed through the job
+- Flower app code is distributed only from server-admin-controlled/pre-approved locations
+- Arbitrary user-chosen `flower_app_path` values are not allowed.
+
+Ensure your site's `authorization.json` grants the `server-predeployed-flwr` permission.
+See the [NVFlare documentation](https://nvflare.readthedocs.io/) for details.
 
 ## Output summary
 

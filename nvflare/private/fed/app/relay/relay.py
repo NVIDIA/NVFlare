@@ -57,6 +57,8 @@ class _ConfigKey:
     PROJECT_NAME = "project_name"
     SERVER_IDENTITY = "server_identity"
     IDENTITY = "identity"
+    AUTH_IDENTITY = "auth_identity"
+    AUTH_IDENTITY_MAP = "auth_identity_map"
     CONNECT_TO = "connect_to"
 
 
@@ -102,6 +104,8 @@ def main(args):
     if not my_identity:
         raise RuntimeError(f"invalid relay config file {args.relay_config}: missing {_ConfigKey.IDENTITY}")
 
+    my_auth_identity = relay_config.get(_ConfigKey.AUTH_IDENTITY, my_identity)
+
     parent = relay_config.get(_ConfigKey.CONNECT_TO)
     if not parent:
         raise RuntimeError(f"invalid relay config file {args.relay_config}: missing {_ConfigKey.CONNECT_TO}")
@@ -117,6 +121,18 @@ def main(args):
     parent_fqcn = parent.get(ConnPropKey.FQCN)
     if not parent_fqcn:
         raise RuntimeError(f"invalid relay config file {args.relay_config}: missing parent.fqcn")
+
+    parent_identity = parent.get(_ConfigKey.AUTH_IDENTITY, parent.get(_ConfigKey.IDENTITY))
+    if not parent_identity:
+        if parent_fqcn == FQCN.ROOT_SERVER:
+            parent_identity = server_identity
+        else:
+            parent_identity = FQCN.split(parent_fqcn)[-1]
+
+    auth_identity_map = {parent_fqcn: parent_identity}
+    configured_identity_map = relay_config.get(_ConfigKey.AUTH_IDENTITY_MAP)
+    if configured_identity_map:
+        auth_identity_map.update(configured_identity_map)
 
     cmd_vars = parse_vars(args.set)
     secure_train = cmd_vars.get("secure_train", False)
@@ -164,6 +180,8 @@ def main(args):
         credentials=credentials,
         create_internal_listener=True,
         parent_url=parent_url,
+        auth_identity=my_auth_identity,
+        auth_identity_map=auth_identity_map,
     )
     NetAgent(cell, agent_closed_cb=monitor.cellnet_stopped)
     cell.start()

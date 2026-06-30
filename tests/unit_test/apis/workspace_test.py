@@ -21,6 +21,12 @@ from nvflare.apis.workspace import Workspace
 
 
 class TestWorkspace:
+    @staticmethod
+    def _make_workspace(root_dir: str):
+        os.makedirs(os.path.join(root_dir, "startup"), exist_ok=True)
+        os.makedirs(os.path.join(root_dir, "local"), exist_ok=True)
+        return Workspace(root_dir)
+
     @pytest.mark.parametrize(
         "root_vars, expected",
         [
@@ -65,3 +71,24 @@ class TestWorkspace:
                 os.environ.pop(n, None)
 
             assert result == expected
+
+    @pytest.mark.parametrize(
+        "job_id",
+        [
+            "../outside",
+            "good/../../outside",
+            "/tmp/outside",
+            "bad\\id",
+            "",
+            None,
+        ],
+    )
+    def test_get_run_dir_rejects_unsafe_job_id(self, job_id):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root_dir = os.path.join(tmp_dir, "config")
+            ws = self._make_workspace(root_dir)
+
+            with pytest.raises(ValueError):
+                ws.get_run_dir(job_id)
+
+            assert not os.path.exists(os.path.join(tmp_dir, "outside"))

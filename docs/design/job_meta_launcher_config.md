@@ -107,7 +107,7 @@ launcher_spec: launcher-specific execution configuration, namespaced by launcher
     }
   }
 }
-In this model, num_of_gpus can remain in resource_spec as the scheduler-facing requirement. Docker and K8s also accept num_of_gpus in launcher_spec for launcher-local runtime configuration, and fall back to flat resource_spec[site] for backward compatibility when the launcher-specific value is absent:
+In this model, num_of_gpus remains in resource_spec as the scheduler-facing requirement. Docker and K8s translate the flat resource_spec[site] value into their runtime-specific GPU request:
 Docker: --gpus=2
 K8s: resources.limits["nvidia.com/gpu"] = 2
 Process: passed as an environment variable or argument
@@ -192,7 +192,7 @@ Recommended: Option 4
 Option 4 is the only option that cleanly separates what resources are required from how the job is launched. That separation gives it the strongest long-term foundation.
 Its main advantages are:
 Clear semantics: resource_spec is scheduler input, launcher_spec is launcher input
-No required duplication of shared resource fields such as num_of_gpus because launchers keep flat resource_spec fallback
+No required duplication of shared resource fields such as num_of_gpus because launchers read the flat resource_spec value
 Better extensibility as new launcher modes or launcher-specific settings are added
 Cleaner validation boundaries between scheduler logic and launcher logic
 Although it introduces a new top-level key, it can still be rolled out in a backward-compatible way by continuing to support the current flat resource_spec format during migration.
@@ -202,7 +202,7 @@ If the immediate priority is to minimize implementation change, Option 1 is a re
 
 Open questions
 Who is the authoritative consumer of resource_spec: the server scheduler, the launcher, or both? This determines whether GPU-related fields must remain there or could move elsewhere.
-For backward compatibility, should launchers continue to read GPU count from legacy flat resource_spec when launcher_spec is absent, or would that introduce too much implicit behavior?
+GPU counts should remain in flat resource_spec so the scheduler and launchers read the same resource requirement.
 Should image be required explicitly for Docker and K8s in launcher_spec, or may a launcher fall back to the CP/SP image when image is absent?
 Is backward compatibility with flat resource_spec a hard requirement, or would a migration guide be sufficient?
 If the default extension is adopted, should it support only shallow per-launcher defaults, or is there a real use case that justifies recursive merging?

@@ -12,19 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Implementation for ``nvflare deploy prepare``."""
+"""Implementation for ``nvflare deploy`` subcommands."""
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
+import os
 import re
 import shlex
 import shutil
 import stat
+import subprocess
 import tempfile
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import yaml
@@ -59,6 +62,7 @@ DOCKER_START_SH = "start_docker.sh"
 
 WORKSPACE_MOUNT_PATH = "/var/tmp/nvflare/workspace"
 WORKSPACE_VOLUME_NAME = "workspace"
+K8S_PARENT_PYTHON_PATH = "/usr/local/bin/python3"
 HELM_TEMPLATES_DIR = Path(__file__).resolve().parent / "templates" / "helm"
 
 PASSTHROUGH_RESOURCE_MANAGER = (
@@ -72,6 +76,7 @@ K8S_SERVER_LAUNCHER = "nvflare.app_opt.job_launcher.k8s_launcher.ServerK8sJobLau
 PROCESS_CLIENT_LAUNCHER = "nvflare.app_common.job_launcher.client_process_launcher.ClientProcessJobLauncher"
 PROCESS_SERVER_LAUNCHER = "nvflare.app_common.job_launcher.server_process_launcher.ServerProcessJobLauncher"
 GPU_RESOURCE_CONSUMER = "nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer"
+K8S_LAUNCHER_PATHS = {K8S_CLIENT_LAUNCHER, K8S_SERVER_LAUNCHER}
 
 LAUNCHER_IDS = {"process_launcher", "docker_launcher", "k8s_launcher"}
 BUILTIN_LAUNCHER_PATHS = {
@@ -108,9 +113,19 @@ STUDY_DATA_TEMPLATE = """# Study data mapping used by Docker and Kubernetes job 
 
 K8S_NAME_PATTERN = re.compile(r"^[a-z]([-a-z0-9]*[a-z0-9])?$")
 K8S_NAMESPACE_PATTERN = re.compile(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
+K8S_SECRET_NAME_PATTERN = re.compile(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$")
 K8S_NAMESPACE_MAX_LENGTH = 63
 K8S_SERVICE_NAME_MAX_LENGTH = 63
+K8S_SECRET_NAME_MAX_LENGTH = 253
 HELM_RELEASE_NAME_MAX_LENGTH = 53
+DEFAULT_K8S_SERVER_SERVICE_NAME = "nvflare-server"
+K8_STAGE_VALUES_KEY = "workspaceConfig"
+K8_STAGE_LOCAL_KEY = "local"
+K8_STAGE_STARTUP_KEY = "startup"
+K8_STAGE_OBJECT_NAME_MAX_LENGTH = 253
+K8_STAGE_OBJECT_SIZE_WARN_BYTES = 900 * 1024
+KUBECTL_ENV_VAR = "KUBECTL"
+K8_STAGE_ALLOWED_KUBECTL_NAMES = {"kubectl", "oc"}
 
 
 @dataclass
@@ -186,6 +201,44 @@ def prepare_deployment(args) -> None:
     output_ok(result)
 
 
+def stage_k8_deployment(args) -> None:
+    kit, namespace, local_configmap, startup_secret = _resolve_k8_stage_inputs(args)
+    _validate_k8_stage_inputs(kit, namespace, local_configmap, startup_secret)
+    kubectl = _resolve_kubectl(args)
+
+    local_bundle = _build_volume_bundle(kit / "local")
+    startup_bundle = _build_volume_bundle(kit / "startup")
+
+    _warn_if_large_k8_object("ConfigMap", local_configmap, local_bundle["encoded_size"])
+    _warn_if_large_k8_object("Secret", startup_secret, startup_bundle["encoded_size"])
+
+    _kubectl_apply(_configmap_manifest(local_configmap, namespace, local_bundle["data"]), kubectl)
+    _kubectl_apply(_secret_manifest(startup_secret, namespace, startup_bundle["data"]), kubectl)
+    _patch_k8_stage_values(
+        kit=kit,
+        local_configmap=local_configmap,
+        local_items=local_bundle["items"],
+        startup_secret=startup_secret,
+        startup_items=startup_bundle["items"],
+    )
+    helm_command = _k8_stage_helm_command(kit, namespace)
+
+    output_ok(
+        {
+            "namespace": namespace,
+            "prepared_kit": str(kit),
+            "local_configmap": local_configmap,
+            "startup_secret": startup_secret,
+            "local_files": len(local_bundle["items"]),
+            "startup_files": len(startup_bundle["items"]),
+            "helm_values": str(kit / HELM_CHART_DIR / "values.yaml"),
+            "kubectl": kubectl,
+            "next_step": "Start the server/client parent pod with the helm_command.",
+            "helm_command": helm_command,
+        }
+    )
+
+
 def _resolve_prepare_inputs(args) -> tuple[Path, str | None, Path]:
     positional_kit = getattr(args, "kit", None)
     flag_kit = getattr(args, "kit_flag", None)
@@ -200,6 +253,154 @@ def _resolve_prepare_inputs(args) -> tuple[Path, str | None, Path]:
     config_arg = getattr(args, "config", None)
     config_path = Path(config_arg).expanduser().resolve() if config_arg else kit / "config.yaml"
     return kit, output_arg, config_path
+
+
+def _resolve_k8_stage_inputs(args) -> tuple[Path, str, str, str]:
+    positional_kit = getattr(args, "kit", None)
+    flag_kit = getattr(args, "kit_flag", None)
+    if positional_kit and flag_kit:
+        _fail("INVALID_ARGS", "Specify the prepared startup kit only once.", "Use either positional kit or --kit.")
+    kit_arg = positional_kit or flag_kit
+    if not kit_arg:
+        _fail(
+            "INVALID_ARGS",
+            "Missing prepared startup kit directory.",
+            "Run nvflare deploy k8 stage <prepared-kit-dir>.",
+        )
+
+    kit = Path(kit_arg).expanduser().resolve()
+    values = _load_k8_stage_values(kit)
+    namespace = getattr(args, "namespace", None) or _read_k8_launcher_namespace(kit) or "default"
+    local_configmap = getattr(args, "local_configmap", None)
+    startup_secret = getattr(args, "startup_secret", None)
+    if not local_configmap or not startup_secret:
+        default_local_configmap, default_startup_secret = _default_k8_stage_resource_names(kit, values)
+        local_configmap = local_configmap or default_local_configmap
+        startup_secret = startup_secret or default_startup_secret
+    return kit, namespace, local_configmap, startup_secret
+
+
+def _validate_k8_stage_inputs(kit: Path, namespace: str, local_configmap: str, startup_secret: str) -> None:
+    if not kit.is_dir():
+        _fail("INVALID_KIT", f"Prepared kit directory does not exist: {kit}", "Provide an existing prepared K8s kit.")
+    for folder in ("local", "startup"):
+        path = kit / folder
+        if not path.is_dir():
+            _fail(
+                "INVALID_KIT",
+                f"Missing prepared kit folder: {path}",
+                "Run nvflare deploy prepare with runtime: k8s before staging.",
+            )
+        if path.is_symlink():
+            _fail(
+                "INVALID_KIT",
+                f"Prepared kit folder must not be a symlink: {path}",
+                "Use a prepared K8s kit whose local/ and startup/ folders are regular directories.",
+            )
+    if not _find_k8s_launcher(kit):
+        _fail(
+            "INVALID_KIT",
+            f"Input folder was not generated for the Kubernetes runtime: {kit}",
+            "Run nvflare deploy prepare with runtime: k8s and pass that prepared output directory to "
+            "nvflare deploy k8 stage.",
+        )
+    if not (kit / HELM_CHART_DIR / "values.yaml").is_file():
+        _fail(
+            "INVALID_KIT",
+            f"Missing Helm values file: {kit / HELM_CHART_DIR / 'values.yaml'}",
+            "Run nvflare deploy prepare with runtime: k8s before staging.",
+        )
+    _validate_k8s_namespace(
+        {"namespace": namespace},
+        "namespace",
+        "deploy k8 stage",
+        error_code="INVALID_ARGS",
+        hint="Use a valid --namespace value.",
+    )
+    _validate_k8s_secret_name(
+        local_configmap,
+        "local ConfigMap name",
+        error_code="INVALID_ARGS",
+        hint="Use a valid --local-configmap value.",
+    )
+    _validate_k8s_secret_name(
+        startup_secret,
+        "startup Secret name",
+        error_code="INVALID_ARGS",
+        hint="Use a valid --startup-secret value.",
+    )
+
+
+def _load_k8_stage_values(kit: Path) -> dict[str, Any]:
+    values_path = kit / HELM_CHART_DIR / "values.yaml"
+    if not values_path.is_file():
+        return {}
+    try:
+        with values_path.open("rt", encoding="utf-8") as f:
+            values = yaml.safe_load(f)
+    except Exception as ex:
+        _fail("INVALID_KIT", f"Failed to parse Helm values: {ex}", "Fix helm_chart/values.yaml.")
+    if not isinstance(values, dict):
+        _fail("INVALID_KIT", "helm_chart/values.yaml must contain a YAML mapping.", "Fix the prepared Helm chart.")
+    return values
+
+
+def _read_k8_launcher_namespace(kit: Path) -> str | None:
+    component = _find_k8s_launcher(kit)
+    if not component:
+        return None
+    args = component.get("args") or {}
+    namespace = args.get("namespace")
+    return namespace if isinstance(namespace, str) and namespace else None
+
+
+def _find_k8s_launcher(kit: Path) -> dict[str, Any] | None:
+    resources_path = kit / "local" / RESOURCES_JSON_DEFAULT
+    if not resources_path.is_file():
+        return None
+    resources = _load_json_file(resources_path, RESOURCES_JSON_DEFAULT)
+    components = resources.get("components", [])
+    if not isinstance(components, list):
+        return None
+    for component in components:
+        if (
+            isinstance(component, dict)
+            and component.get("id") == "k8s_launcher"
+            and component.get("path") in K8S_LAUNCHER_PATHS
+        ):
+            return component
+    return None
+
+
+def _default_k8_stage_resource_names(kit: Path, values: dict[str, Any]) -> tuple[str, str]:
+    raw_name = values.get("siteName") or values.get("name") or kit.name
+    safe_name = _stable_k8s_name(str(raw_name), K8S_SERVICE_NAME_MAX_LENGTH)
+    return (
+        _stable_k8s_name(f"nvflare-local-{safe_name}", K8_STAGE_OBJECT_NAME_MAX_LENGTH),
+        _stable_k8s_name(f"nvflare-startup-{safe_name}", K8_STAGE_OBJECT_NAME_MAX_LENGTH),
+    )
+
+
+def _resolve_kubectl(args) -> str:
+    kubectl = getattr(args, "kubectl", None) or os.environ.get(KUBECTL_ENV_VAR) or "kubectl"
+    if not isinstance(kubectl, str) or not kubectl.strip():
+        _fail("INVALID_ARGS", "Kubernetes CLI command must be a non-empty string.", "Set --kubectl or KUBECTL.")
+    kubectl = kubectl.strip()
+    if kubectl not in K8_STAGE_ALLOWED_KUBECTL_NAMES:
+        _fail(
+            "INVALID_ARGS",
+            f"Kubernetes CLI command must be one of {sorted(K8_STAGE_ALLOWED_KUBECTL_NAMES)}: {kubectl!r}",
+            "Set --kubectl or KUBECTL to kubectl or oc.",
+        )
+    return kubectl
+
+
+def _k8_stage_helm_command(kit: Path, namespace: str) -> str:
+    values = _load_k8_stage_values(kit)
+    raw_name = values.get("siteName") or values.get("name") or kit.name
+    release_name = _k8s_release_name(str(raw_name))
+    chart_dir = kit / HELM_CHART_DIR
+    return _format_command(["helm", "upgrade", "--install", release_name, str(chart_dir), "--namespace", namespace])
 
 
 def _resolve_output_path(kit: Path, output_arg: str | None, runtime: str) -> Path:
@@ -266,21 +467,27 @@ def _prepare_k8s(kit_info: KitInfo, final_output: Path, config: dict[str, Any]) 
     job_launcher = config.get("job_launcher") or {}
     parent_port = parent.get("parent_port", 8102)
     workspace_mount_path = parent.get("workspace_mount_path", WORKSPACE_MOUNT_PATH)
+    server_service_name = config.get("server_service_name", DEFAULT_K8S_SERVER_SERVICE_NAME)
 
     launcher_path = K8S_SERVER_LAUNCHER if kit_info.role == ROLE_SERVER else K8S_CLIENT_LAUNCHER
     launcher_args = {
         "config_file_path": job_launcher.get("config_file_path"),
         "study_data_pvc_file_path": f"{workspace_mount_path}/local/{STUDY_DATA_YAML}",
         "namespace": namespace,
-        "default_python_path": job_launcher.get("default_python_path", "/usr/local/bin/python"),
+        "default_python_path": job_launcher.get("default_python_path", K8S_PARENT_PYTHON_PATH),
+        "workspace_mount_path": workspace_mount_path,
     }
-    if job_launcher.get("pending_timeout") is not None:
+    if "pending_timeout" in job_launcher:
         launcher_args["pending_timeout"] = job_launcher["pending_timeout"]
     if job_launcher.get("job_pod_security_context"):
         launcher_args["security_context"] = job_launcher["job_pod_security_context"]
+    if job_launcher.get("image_pull_secrets") is not None:
+        launcher_args["image_pull_secrets"] = job_launcher["image_pull_secrets"]
+    if "study_job_spec_file_path" in job_launcher:
+        launcher_args["study_job_spec_file_path"] = job_launcher["study_job_spec_file_path"]
 
     _patch_resources(kit_info.kit_dir, "k8s_launcher", launcher_path, launcher_args)
-    _patch_comm_config_for_k8s(kit_info.kit_dir, kit_info.role, kit_info.name, parent_port)
+    _patch_comm_config_for_k8s(kit_info.kit_dir, kit_info.role, kit_info.name, parent_port, server_service_name)
     _ensure_study_data_template(kit_info.kit_dir)
     if kit_info.role == ROLE_SERVER:
         _relocate_server_storage_to_workspace(kit_info.kit_dir, workspace_mount_path)
@@ -343,7 +550,11 @@ def _validate_runtime_config(runtime: str, config: dict[str, Any]) -> None:
                     "Remove keys controlled by DockerJobLauncher.",
                 )
     elif runtime == RUNTIME_K8S:
-        _validate_allowed_keys(config, {"runtime", "namespace", "parent", "job_launcher"}, "k8s config")
+        _validate_allowed_keys(
+            config,
+            {"runtime", "namespace", "server_service_name", "parent", "job_launcher"},
+            "k8s config",
+        )
         parent = _mapping(config.get("parent"), "parent")
         job_launcher = _mapping(config.get("job_launcher", {}), "job_launcher")
         _validate_allowed_keys(
@@ -353,28 +564,43 @@ def _validate_runtime_config(runtime: str, config: dict[str, Any]) -> None:
                 "parent_port",
                 "workspace_pvc",
                 "workspace_mount_path",
+                "python_path",
                 "resources",
                 "pod_security_context",
+                "image_pull_secrets",
             },
             "parent",
         )
         _validate_allowed_keys(
             job_launcher,
-            {"config_file_path", "pending_timeout", "default_python_path", "job_pod_security_context"},
+            {
+                "config_file_path",
+                "pending_timeout",
+                "default_python_path",
+                "job_pod_security_context",
+                "image_pull_secrets",
+                "study_job_spec_file_path",
+            },
             "job_launcher",
         )
         _required_str(parent, "docker_image", "parent")
         if "namespace" in config:
             _validate_k8s_namespace(config, "namespace", "k8s config")
+        if "server_service_name" in config:
+            _validate_k8s_service_name(config, "server_service_name", "k8s config")
         _optional_int(parent, "parent_port", "parent")
         _optional_str(parent, "workspace_pvc", "parent")
         _optional_str(parent, "workspace_mount_path", "parent")
+        _optional_str(parent, "python_path", "parent")
         _optional_mapping(parent, "resources", "parent")
         _optional_mapping(parent, "pod_security_context", "parent")
+        _optional_k8s_secret_name_list(parent, "image_pull_secrets", "parent image pull references")
         _optional_str(job_launcher, "config_file_path", "job_launcher")
         _optional_str(job_launcher, "default_python_path", "job_launcher")
-        _optional_int(job_launcher, "pending_timeout", "job_launcher")
+        _optional_non_negative_int(job_launcher, "pending_timeout", "job_launcher")
         _optional_mapping(job_launcher, "job_pod_security_context", "job_launcher")
+        _optional_k8s_secret_name_list(job_launcher, "image_pull_secrets", "job launcher image pull references")
+        _optional_str(job_launcher, "study_job_spec_file_path", "job_launcher")
 
 
 def _validate_kit(kit_dir: Path) -> KitInfo:
@@ -565,13 +791,19 @@ def _patch_comm_config_for_docker(kit_dir: Path) -> None:
     _write_json(comm_config_path, comm_config)
 
 
-def _patch_comm_config_for_k8s(kit_dir: Path, role: str, site_name: str, parent_port: int) -> None:
+def _patch_comm_config_for_k8s(
+    kit_dir: Path,
+    role: str,
+    site_name: str,
+    parent_port: int,
+    server_service_name: str = DEFAULT_K8S_SERVER_SERVICE_NAME,
+) -> None:
     comm_config_path = kit_dir / "local" / COMM_CONFIG_JSON
     comm_config = _load_or_default_comm_config(comm_config_path)
     resources = _internal_resources(comm_config)
     resources.update(
         {
-            "host": _k8s_parent_service_name(role, site_name),
+            "host": _k8s_parent_service_name(role, site_name, server_service_name),
             "port": parent_port,
             "connection_security": "clear",
         }
@@ -619,9 +851,11 @@ def _remove_start_scripts(kit_dir: Path, keep: set[str]) -> None:
             path.unlink()
 
 
-def _k8s_parent_service_name(role: str, site_name: str) -> str:
+def _k8s_parent_service_name(
+    role: str, site_name: str, server_service_name: str = DEFAULT_K8S_SERVER_SERVICE_NAME
+) -> str:
     if role == ROLE_SERVER:
-        return "nvflare-server"
+        return server_service_name
     return _k8s_service_name(site_name)
 
 
@@ -741,6 +975,8 @@ def _write_helm_chart(kit_info: KitInfo, config: dict[str, Any]) -> Path:
     parent_port = parent.get("parent_port", 8102)
     workspace_pvc = parent.get("workspace_pvc", "nvflws")
     workspace_mount_path = parent.get("workspace_mount_path", WORKSPACE_MOUNT_PATH)
+    parent_python_path = parent.get("python_path") or K8S_PARENT_PYTHON_PATH
+    server_service_name = config.get("server_service_name", DEFAULT_K8S_SERVER_SERVICE_NAME)
     chart_dir = kit_info.kit_dir / HELM_CHART_DIR
     if chart_dir.exists():
         shutil.rmtree(chart_dir)
@@ -755,7 +991,9 @@ def _write_helm_chart(kit_info: KitInfo, config: dict[str, Any]) -> Path:
             parent_port,
             workspace_pvc,
             workspace_mount_path,
+            parent_python_path,
             parent,
+            server_service_name,
         )
         _copy_helm_templates("server", templates_dir)
     else:
@@ -766,6 +1004,7 @@ def _write_helm_chart(kit_info: KitInfo, config: dict[str, Any]) -> Path:
             parent_port,
             workspace_pvc,
             workspace_mount_path,
+            parent_python_path,
             parent,
         )
         _copy_helm_templates("client", templates_dir)
@@ -779,7 +1018,9 @@ def _write_server_helm_chart(
     parent_port: int,
     workspace_pvc: str,
     workspace_mount_path: str,
+    parent_python_path: str,
     parent: dict[str, Any],
+    server_service_name: str,
 ) -> None:
     repo, tag = _split_image(docker_image)
     _write_yaml(
@@ -799,8 +1040,9 @@ def _write_server_helm_chart(
     admin_port = kit_info.admin_port if kit_info.admin_port != fed_learn_port else None
     values = {
         "name": kit_info.name,
-        "serviceName": _k8s_parent_service_name(kit_info.role, kit_info.name),
+        "serviceName": server_service_name,
         "image": {"repository": repo, "tag": tag, "pullPolicy": "IfNotPresent"},
+        "imagePullSecrets": _image_pull_secret_refs(parent),
         "serviceAccount": {"create": True, "annotations": {}, "automountServiceAccountToken": True},
         "podAnnotations": {},
         "rbac": {"create": True},
@@ -811,6 +1053,10 @@ def _write_server_helm_chart(
                 "mountPath": workspace_mount_path,
             }
         },
+        "workspaceConfig": {
+            "local": {"configMapName": None, "items": []},
+            "startup": {"secretName": None, "items": []},
+        },
         "fedLearnPort": fed_learn_port,
         "adminPort": admin_port,
         "parentPort": parent_port,
@@ -819,7 +1065,7 @@ def _write_server_helm_chart(
         "hostPortEnabled": False,
         "tcpConfigMapEnabled": False,
         "service": {"type": "ClusterIP", "loadBalancerIP": None, "annotations": {}},
-        "command": ["/usr/local/bin/python3"],
+        "command": [parent_python_path],
         "args": [
             "-u",
             "-m",
@@ -844,6 +1090,7 @@ def _write_client_helm_chart(
     parent_port: int,
     workspace_pvc: str,
     workspace_mount_path: str,
+    parent_python_path: str,
     parent: dict[str, Any],
 ) -> None:
     repo, tag = _split_image(docker_image)
@@ -865,6 +1112,7 @@ def _write_client_helm_chart(
         "siteName": kit_info.name,
         "serviceName": _k8s_parent_service_name(kit_info.role, kit_info.name),
         "image": {"repository": repo, "tag": tag, "pullPolicy": "Always"},
+        "imagePullSecrets": _image_pull_secret_refs(parent),
         "serviceAccount": {"create": True, "annotations": {}, "automountServiceAccountToken": True},
         "podAnnotations": {},
         "rbac": {"create": True},
@@ -875,11 +1123,15 @@ def _write_client_helm_chart(
                 "mountPath": workspace_mount_path,
             }
         },
+        "workspaceConfig": {
+            "local": {"configMapName": None, "items": []},
+            "startup": {"secretName": None, "items": []},
+        },
         "port": parent_port,
         "service": {"annotations": {}},
         "securityContext": parent.get("pod_security_context") or {},
         "resources": parent.get("resources") or {"requests": {"cpu": "2", "memory": "8Gi"}},
-        "command": ["/usr/local/bin/python3"],
+        "command": [parent_python_path],
         "args": [
             "-u",
             "-m",
@@ -925,6 +1177,10 @@ def _split_image(docker_image: str) -> tuple[str, str]:
     return docker_image, ""
 
 
+def _image_pull_secret_refs(parent: dict[str, Any]) -> list[dict[str, str]]:
+    return [{"name": name} for name in parent.get("image_pull_secrets") or []]
+
+
 def _helm_src(role: str, filename: str) -> Path:
     return HELM_TEMPLATES_DIR / role / filename
 
@@ -947,6 +1203,137 @@ def _relocate_server_storage_to_workspace(kit_dir: Path, workspace_mount_path: s
         if component.get("id") == "job_manager":
             component.setdefault("args", {})["uri_root"] = f"{workspace_mount_path}/jobs-storage"
     _write_resources(local_dir, resources)
+
+
+def _build_volume_bundle(root: Path) -> dict[str, Any]:
+    data = {}
+    items = []
+    encoded_size = 0
+    root_resolved = root.resolve()
+    files = sorted(path for path in root.rglob("*") if path.is_file() or path.is_symlink())
+    if not files:
+        _fail("INVALID_KIT", f"No files found in prepared kit folder: {root}", "Stage a non-empty prepared folder.")
+
+    for index, path in enumerate(files):
+        if path.is_symlink():
+            _fail(
+                "INVALID_KIT",
+                f"Symlinks cannot be staged into Kubernetes volumes: {path}",
+                "Replace it with a file.",
+            )
+        source_path = path.resolve()
+        if not _is_path_relative_to(source_path, root_resolved):
+            _fail(
+                "INVALID_KIT",
+                f"Staged file resolves outside the prepared kit folder: {path}",
+                "Use files contained under local/ or startup/.",
+            )
+        rel_path = path.relative_to(root).as_posix()
+        _validate_k8_volume_item_path(rel_path, path)
+        key = _k8_stage_file_key(index, rel_path)
+        encoded = base64.b64encode(source_path.read_bytes()).decode("ascii")
+        data[key] = encoded
+        encoded_size += len(encoded)
+        items.append({"key": key, "path": rel_path})
+    return {"data": data, "items": items, "encoded_size": encoded_size}
+
+
+def _validate_k8_volume_item_path(rel_path: str, source_path: Path) -> None:
+    path = PurePosixPath(rel_path)
+    if path.is_absolute() or ".." in path.parts or not path.parts:
+        _fail("INVALID_KIT", f"Unsafe staged file path: {source_path}", "Use files contained under local/ or startup/.")
+
+
+def _k8_stage_file_key(index: int, rel_path: str) -> str:
+    digest = hashlib.sha256(rel_path.encode("utf-8")).hexdigest()[:12]
+    safe_name = re.sub(r"[^A-Za-z0-9_.-]", "_", PurePosixPath(rel_path).name) or "file"
+    prefix = f"f{index:04d}-{digest}-"
+    return f"{prefix}{safe_name}"[:253]
+
+
+def _configmap_manifest(name: str, namespace: str, data: dict[str, str]) -> dict[str, Any]:
+    return {
+        "apiVersion": "v1",
+        "kind": "ConfigMap",
+        "metadata": {"name": name, "namespace": namespace},
+        "binaryData": data,
+    }
+
+
+def _secret_manifest(name: str, namespace: str, data: dict[str, str]) -> dict[str, Any]:
+    return {
+        "apiVersion": "v1",
+        "kind": "Secret",
+        "metadata": {"name": name, "namespace": namespace},
+        "type": "Opaque",
+        "data": data,
+    }
+
+
+def _patch_k8_stage_values(
+    kit: Path,
+    local_configmap: str,
+    local_items: list[dict[str, str]],
+    startup_secret: str,
+    startup_items: list[dict[str, str]],
+) -> None:
+    values_path = kit / HELM_CHART_DIR / "values.yaml"
+    values = _load_k8_stage_values(kit)
+    workspace_config = values.setdefault(K8_STAGE_VALUES_KEY, {})
+    workspace_config[K8_STAGE_LOCAL_KEY] = {
+        "configMapName": local_configmap,
+        "items": local_items,
+    }
+    workspace_config[K8_STAGE_STARTUP_KEY] = {
+        "secretName": startup_secret,
+        "items": startup_items,
+    }
+    _write_yaml(values_path, values)
+
+
+def _warn_if_large_k8_object(kind: str, name: str, encoded_size: int) -> None:
+    if encoded_size > K8_STAGE_OBJECT_SIZE_WARN_BYTES:
+        _warn(
+            f"{kind} '{name}' encoded payload is about {encoded_size} bytes; "
+            "Kubernetes objects have size limits, so large local/startup folders may fail to apply."
+        )
+
+
+def _kubectl_apply(manifest: dict[str, Any], kubectl: str) -> subprocess.CompletedProcess:
+    payload = yaml.safe_dump(manifest, default_flow_style=False, sort_keys=False)
+    if kubectl == "oc":
+        return _kubectl(["oc", "apply", "-f", "-"], input_text=payload)
+    return _kubectl(["kubectl", "apply", "-f", "-"], input_text=payload)
+
+
+def _kubectl(cmd: list[str], input_text: str | None = None) -> subprocess.CompletedProcess:
+    try:
+        result = subprocess.run(
+            cmd,
+            input=input_text,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        _fail(
+            "KUBECTL_NOT_FOUND",
+            f"Kubernetes CLI executable could not be started: {cmd[0]}",
+            "Install kubectl or set --kubectl/KUBECTL to a compatible command such as oc.",
+        )
+
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        message = f"Kubernetes command failed: {_format_command(cmd)}"
+        if detail:
+            message = f"{message}\n{detail}"
+        _fail("KUBECTL_FAILED", message, "Check kubectl access, namespace, and resource quotas.")
+    return result
+
+
+def _format_command(cmd: list[str]) -> str:
+    return " ".join(shlex.quote(str(part)) for part in cmd)
 
 
 def _k8s_release_name(name: str) -> str:
@@ -978,18 +1365,65 @@ def _required_str(data: dict[str, Any], key: str, where: str) -> None:
         _fail("INVALID_CONFIG", f"{where}.{key} must be a non-empty string.", "Fix the runtime config.")
 
 
-def _validate_k8s_namespace(data: dict[str, Any], key: str, where: str) -> None:
+def _validate_k8s_namespace(
+    data: dict[str, Any],
+    key: str,
+    where: str,
+    error_code: str = "INVALID_CONFIG",
+    hint: str = "Fix the runtime config.",
+) -> None:
     namespace = data.get(key)
     if not isinstance(namespace, str) or not namespace:
-        _fail("INVALID_CONFIG", f"{where}.{key} must be a non-empty string.", "Fix the runtime config.")
+        _fail(error_code, f"{where}.{key} must be a non-empty string.", hint)
         return
     if len(namespace) > K8S_NAMESPACE_MAX_LENGTH or not K8S_NAMESPACE_PATTERN.fullmatch(namespace):
         _fail(
-            "INVALID_CONFIG",
+            error_code,
             f"{where}.{key} must be a valid Kubernetes namespace (DNS-1123 label): {namespace!r}.",
             "Use lower case alphanumeric characters or '-', start and end with an alphanumeric character, "
             f"and keep length <= {K8S_NAMESPACE_MAX_LENGTH}.",
         )
+
+
+def _validate_k8s_service_name(data: dict[str, Any], key: str, where: str) -> None:
+    service_name = data.get(key)
+    if not isinstance(service_name, str) or not service_name:
+        _fail("INVALID_CONFIG", f"{where}.{key} must be a non-empty string.", "Fix the runtime config.")
+    if len(service_name) > K8S_SERVICE_NAME_MAX_LENGTH or not K8S_NAME_PATTERN.fullmatch(service_name):
+        _fail(
+            "INVALID_CONFIG",
+            f"{where}.{key} must be a valid Kubernetes Service name (DNS-1035 label): {service_name!r}.",
+            "Use lower case alphanumeric characters or '-', start with a letter, end with an alphanumeric character, "
+            f"and keep length <= {K8S_SERVICE_NAME_MAX_LENGTH}.",
+        )
+
+
+def _validate_k8s_secret_name(
+    name: str, label: str, error_code: str = "INVALID_CONFIG", hint: str = "Fix the runtime config."
+) -> None:
+    if (
+        not isinstance(name, str)
+        or not name
+        or len(name) > K8S_SECRET_NAME_MAX_LENGTH
+        or not K8S_SECRET_NAME_PATTERN.fullmatch(name)
+    ):
+        _fail(
+            error_code,
+            f"{label} must contain valid Kubernetes object names.",
+            "Use lower case alphanumeric characters, '-', or '.', start and end with an alphanumeric character, "
+            f"and keep length <= 253. {hint}",
+        )
+
+
+def _optional_k8s_secret_name_list(data: dict[str, Any], key: str, label: str) -> list[str] | None:
+    if key not in data or data[key] is None:
+        return None
+    names = data[key]
+    if not isinstance(names, list):
+        _fail("INVALID_CONFIG", f"{label} must be a list of Kubernetes object names.", "Fix the runtime config.")
+    for name in names:
+        _validate_k8s_secret_name(name, label)
+    return names
 
 
 def _optional_str(data: dict[str, Any], key: str, where: str) -> str | None:
@@ -1014,6 +1448,15 @@ def _optional_int(data: dict[str, Any], key: str, where: str) -> int | None:
     if not isinstance(data[key], int):
         _fail("INVALID_CONFIG", f"{where}.{key} must be an integer.", "Fix the runtime config.")
     return data[key]
+
+
+def _optional_non_negative_int(data: dict[str, Any], key: str, where: str) -> int | None:
+    value = _optional_int(data, key, where)
+    if isinstance(value, bool):
+        _fail("INVALID_CONFIG", f"{where}.{key} must be an integer.", "Fix the runtime config.")
+    if value is not None and value < 0:
+        _fail("INVALID_CONFIG", f"{where}.{key} must be a non-negative integer.", "Fix the runtime config.")
+    return value
 
 
 def _load_json_file(path: Path, label: str) -> dict[str, Any]:

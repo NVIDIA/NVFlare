@@ -51,5 +51,3 @@ Configuration notes:
   locations to job commands that need them.
 - Development-only spellings such as ``--poc.workspace``, ``--poc.startup_kit``,
   and ``--prod.startup_kit`` are not supported compatibility flags.
-
-For startup kit registration and switching details, see :ref:`kit_command`.

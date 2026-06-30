@@ -50,6 +50,18 @@ Low-level communication configuration (comm_config.py):
    * - streaming_ack_wait
      - varies
      - Time to wait for streaming ACK
+   * - streaming_reliable
+     - false
+     - Whether streamed chunks are retried until acknowledged
+   * - streaming_retry_wait
+     - 5.0
+     - Time to wait before retrying an unacknowledged reliable streaming chunk
+   * - streaming_retry_timeout
+     - 60.0
+     - Maximum time to retry an unacknowledged reliable streaming chunk
+   * - streaming_retry_max_pending_bytes
+     - 2 * streaming_window_size
+     - Maximum payload bytes held in memory for reliable streaming retry
 
 
 CoreCell Settings
@@ -255,10 +267,24 @@ FlareAgent for external process integration (flare_agent.py):
      - Timeout for submitting task result to the client training process. 60 s is too short
        for large models; configure via ``add_client_config({"submit_result_timeout": 1800})``.
    * - max_resends
-     - 3
-     - Maximum send retries on failure. Configurable via ``add_client_config({"max_resends": N})``.
+     - None in raw ``FlareAgent``; 3 through Client API job config
+     - Maximum send retries on failure. For ``ClientAPILauncherExecutor`` jobs,
+       the default is the finite value ``3``; ``None`` is rejected at job
+       initialization. Override via ``add_client_config({"max_resends": N})``.
+   * - download_complete_timeout
+     - 1800.0
+     - Time the subprocess waits after result ACK while the server finishes
+       downloading tensors from the subprocess ``DownloadService``. Must not be
+       ``None`` for ``ClientAPILauncherExecutor`` jobs.
 
-**Note**: FlareAgentWithCellPipe uses 30.0s defaults.
+**Note**: Raw ``FlareAgentWithCellPipe`` defaults to 60.0 s for
+``submit_result_timeout`` and unlimited ``max_resends``. When launched through
+``ClientAPILauncherExecutor``, the generated Client API config supplies the
+safer job defaults described above. Recipe-based external-process jobs also
+serialize ``max_resends=3`` in the executor args, so reloaded jobs do not fall
+back to the raw unlimited retry default. Use
+``recipe.add_client_config({"max_resends": N})`` only when a job needs a
+different finite retry budget.
 
 IPC Agent
 ^^^^^^^^^
@@ -526,6 +552,46 @@ The Client API executor extends base timeouts with more conservative defaults
    * - heartbeat_timeout
      - 300.0
      - Extended heartbeat timeout for Client API
+   * - submit_result_timeout
+     - 300.0
+     - Subprocess-side wait for CJ to acknowledge each result message
+   * - max_resends
+     - 3
+     - Maximum retries after the initial result send; ``None`` is rejected
+   * - download_complete_timeout
+     - 1800.0
+     - Time the subprocess remains alive for server-side tensor download completion
+
+For subprocess-mode Client API jobs with large payloads, FLARE validates the
+following at job start:
+
+- ``download_complete_timeout`` must not be ``None``.
+- ``max_resends`` must be a finite non-negative integer. Recipe-based jobs
+  serialize the default value ``3`` in executor args. Use ``0`` to disable
+  retries; do not use ``None`` for unlimited retries.
+
+Values supplied through ``recipe.add_client_config()`` are top-level entries in
+``config_fed_client.json``. For subprocess-mode Client API jobs,
+``ClientAPILauncherExecutor`` applies these overrides before writing the
+subprocess ``client_api_config.json``, so ``submit_result_timeout``,
+``download_complete_timeout``, and ``max_resends`` are seen by both the parent
+client job process and the external training process.
+
+When ``tensor_streaming_per_request_timeout`` or
+``np_streaming_per_request_timeout`` is explicitly configured, FLARE also warns
+if ``PEER_READ_TIMEOUT`` or ``download_complete_timeout`` is shorter than that
+streaming timeout. Set ``PEER_READ_TIMEOUT`` through ``add_client_config`` when
+the parent client job needs a larger pipe-read budget:
+
+.. code-block:: python
+
+   recipe.add_client_config({
+       "tensor_streaming_per_request_timeout": 600,
+       "tensor_min_download_timeout": 600,
+       "PEER_READ_TIMEOUT": 600,
+       "download_complete_timeout": 1800,
+       "max_resends": 3,
+   })
 
 External Pre-Init Override
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -1369,6 +1435,9 @@ Object download transaction timeouts (download_service.py, obj_downloader.py):
      - Timeout for each request to object owner
 
 **Note**: Transaction times out if no activity from any receiver for the specified duration.
+Normally finished download refs are tombstoned temporarily so a late retry from
+the same receiver can receive the original EOF or error status instead of a
+fatal missing-ref response. Timeout and deleted transactions are not tombstoned.
 
 
 Tensor Streaming Timeouts
@@ -1478,6 +1547,22 @@ Framework-level settings for large payload transfers (fl_constant.py:553, comm_c
      - 2097152
      - Chunk size for PyTorch tensor downloads (bytes)
 
+For Client API subprocess jobs, keep these download settings aligned with the
+subprocess pipe settings:
+
+- ``tensor_min_download_timeout`` / ``np_min_download_timeout`` should be at
+  least ``tensor_streaming_per_request_timeout`` /
+  ``np_streaming_per_request_timeout``.
+- ``PEER_READ_TIMEOUT`` should be at least the configured streaming per-request
+  timeout so the parent client job does not resend the task while the subprocess
+  is still downloading a large payload.
+- ``download_complete_timeout`` should be at least the configured streaming
+  per-request timeout and long enough for the server to pull large tensor
+  results from the subprocess after result ACK.
+- ``max_resends`` should stay finite. The recipe default is ``3``; raise it
+  only when the network is expected to recover after a small number of delayed
+  result acknowledgments.
+
 Swarm Learning Large Model Setup
 --------------------------------
 
@@ -1505,7 +1590,9 @@ Recommended timeouts for large models in Swarm Learning:
    # Subprocess-mode timeouts (when launch_external_process=True)
    recipe.add_client_config({
        "submit_result_timeout": 1800,
+       "download_complete_timeout": 1800,
        "tensor_min_download_timeout": 600,
+       "PEER_READ_TIMEOUT": 600,
        "max_resends": 5,
    })
 
@@ -2497,6 +2584,10 @@ comm_config.json (F3/CellNet Layer)
      "subnet_heartbeat_interval": 5,
      "streaming_read_timeout": 300,
      "streaming_ack_interval": 4194304,
+     "streaming_reliable": false,
+     "streaming_retry_wait": 5.0,
+     "streaming_retry_timeout": 60.0,
+     "streaming_retry_max_pending_bytes": 33554432,
      "streaming_chunk_size": 1048576,
      "max_message_size": 1048576
    }

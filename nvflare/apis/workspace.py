@@ -14,9 +14,9 @@
 
 import glob
 import os
-from typing import List, Union
 
 from nvflare.apis.fl_constant import WorkspaceConstants
+from nvflare.apis.utils.format_check import check_job_id
 
 
 class Workspace:
@@ -106,6 +106,22 @@ class Workspace:
         else:
             return None
 
+    @staticmethod
+    def _check_job_id(job_id: str):
+        if job_id is None:
+            raise ValueError("job_id must not be None")
+        job_id = str(job_id)
+        check_job_id(job_id)
+        return job_id
+
+    @staticmethod
+    def _join_under_root(root: str, *parts: str) -> str:
+        root_real = os.path.realpath(root)
+        path = os.path.realpath(os.path.join(root_real, *parts))
+        if os.path.commonpath([root_real, path]) != root_real:
+            raise ValueError(f"path {path} escapes root {root_real}")
+        return path
+
     def _fallback_path(self, file_names: [str]):
         for n in file_names:
             f = self.get_file_path_in_site_config(n)
@@ -127,13 +143,13 @@ class Workspace:
     def get_log_config_file_path(self):
         return self._fallback_path([WorkspaceConstants.LOGGING_CONFIG, WorkspaceConstants.DEFAULT_LOGGING_CONFIG])
 
-    def get_file_path_in_site_config(self, file_basename: Union[str, List[str]]):
+    def get_file_path_in_site_config(self, file_basename: str | list[str]):
         if isinstance(file_basename, str):
             return os.path.join(self.get_site_config_dir(), file_basename)
         elif isinstance(file_basename, list):
             return self._fallback_path(file_basename)
         else:
-            raise ValueError(f"invalid file_basename '{file_basename}': must be str or List[str]")
+            raise ValueError(f"invalid file_basename '{file_basename}': must be str or list[str]")
 
     def get_file_path_in_startup(self, file_basename: str):
         return os.path.join(self.get_startup_kit_dir(), file_basename)
@@ -181,7 +197,8 @@ class Workspace:
 
     def _get_site_root_dir(self, root, job_id=None):
         if job_id:
-            site_root_dir = os.path.join(root, self.site_name, job_id)
+            job_id = self._check_job_id(job_id)
+            site_root_dir = self._join_under_root(root, self.site_name, job_id)
             if not os.path.exists(site_root_dir):
                 os.makedirs(site_root_dir, exist_ok=True)
             return site_root_dir
@@ -200,7 +217,8 @@ class Workspace:
         return self.root_dir
 
     def get_run_dir(self, job_id: str) -> str:
-        return os.path.join(self.root_dir, WorkspaceConstants.WORKSPACE_PREFIX + str(job_id))
+        job_id = self._check_job_id(job_id)
+        return self._join_under_root(self.root_dir, WorkspaceConstants.WORKSPACE_PREFIX + job_id)
 
     def get_app_dir(self, job_id: str) -> str:
         return os.path.join(self.get_run_dir(job_id), WorkspaceConstants.APP_PREFIX + self.site_name)

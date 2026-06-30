@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import sys
+import threading
 from types import ModuleType
 from unittest.mock import MagicMock, patch
 
@@ -266,6 +268,61 @@ class TestDockerJobHandleTerminalState:
         assert rc == JobReturnCode.SUCCESS
         assert h.terminal_state == JobReturnCode.SUCCESS
 
+    def test_wait_watcher_caches_exit_code_before_auto_remove(self):
+        dc = _make_docker_client()
+        dc.containers.get.side_effect = _NotFound()
+        container = MagicMock()
+        container.wait.return_value = {"StatusCode": 0}
+        h = _make_handle(docker_client=dc, container=container, watch_exit=True)
+
+        h.wait()
+
+        assert h.terminal_state == JobReturnCode.SUCCESS
+        assert h.poll() == JobReturnCode.SUCCESS
+
+    def test_auto_removed_container_is_unknown_until_wait_watcher_finishes(self):
+        dc = _make_docker_client()
+        dc.containers.get.side_effect = _NotFound()
+        wait_can_finish = threading.Event()
+
+        def wait_for_exit():
+            assert wait_can_finish.wait(timeout=5)
+            return {"StatusCode": 0}
+
+        container = MagicMock()
+        container.wait.side_effect = wait_for_exit
+        h = _make_handle(docker_client=dc, container=container, watch_exit=True)
+
+        assert h.poll() == JobReturnCode.UNKNOWN
+        assert h.terminal_state is None
+
+        wait_can_finish.set()
+        h.wait()
+        assert h.terminal_state == JobReturnCode.SUCCESS
+
+    @pytest.mark.parametrize("wait_result", [None, {}, {"StatusCode": None}, {"StatusCode": "bad"}])
+    def test_wait_watcher_invalid_result_falls_back_to_container_poll(self, wait_result):
+        dc = _make_docker_client()
+        dc.containers.get.return_value = _make_container("exited", exit_code=0)
+        container = MagicMock()
+        container.wait.return_value = wait_result
+        h = _make_handle(docker_client=dc, container=container)
+
+        h.wait()
+
+        assert h.terminal_state == JobReturnCode.SUCCESS
+
+    def test_wait_watcher_api_error_falls_back_to_container_poll(self):
+        dc = _make_docker_client()
+        dc.containers.get.return_value = _make_container("exited", exit_code=0)
+        container = MagicMock()
+        container.wait.side_effect = _APIError("wait failed")
+        h = _make_handle(docker_client=dc, container=container)
+
+        h.wait()
+
+        assert h.terminal_state == JobReturnCode.SUCCESS
+
 
 # ---------------------------------------------------------------------------
 # DockerJobHandle — terminate
@@ -383,7 +440,18 @@ class TestDockerJobLauncherInit:
         assert launcher.workspace == "/host/ws"
 
     def test_raises_if_default_job_container_kwargs_contains_reserved_key(self):
-        for reserved in ("volumes", "mounts", "network", "environment", "command", "name", "detach"):
+        for reserved in (
+            "volumes",
+            "mounts",
+            "network",
+            "environment",
+            "command",
+            "name",
+            "detach",
+            "auto_remove",
+            "user",
+            "working_dir",
+        ):
             with pytest.raises(ValueError, match="reserved"):
                 _make_launcher(default_job_container_kwargs={reserved: "anything"})
 
@@ -475,6 +543,38 @@ class TestDockerJobLauncherLaunchJob:
         with pytest.raises(RuntimeError, match="no job image was specified"):
             launcher.launch_job(job_meta, fl_ctx)
 
+    @pytest.mark.parametrize(
+        "bad_image,type_name",
+        [
+            # Truthy non-string values.
+            (123, "int"),
+            (1.5, "float"),
+            (True, "bool"),
+            (["nvflare-job", "latest"], "list"),
+            ({"name": "nvflare-job"}, "dict"),
+            # Falsy non-None non-string values — also non-string, so the
+            # isinstance(str) guard fires before the existing falsy-image
+            # branch. Both paths are valid error reports; this set pins the
+            # type-check path so future refactors don't accidentally let
+            # `False` / `0` reach the docker daemon.
+            (False, "bool"),
+            (0, "int"),
+            (0.0, "float"),
+            ([], "list"),
+            ({}, "dict"),
+        ],
+    )
+    def test_launch_raises_if_image_is_not_a_string(self, bad_image, type_name):
+        launcher = _make_launcher()
+        fl_ctx, _ = _make_fl_ctx(identity_name="site-1")
+        job_meta = _make_job_meta(site_name="site-1", docker_spec={"image": bad_image})
+
+        with pytest.raises(
+            RuntimeError,
+            match=rf"launcher_spec docker image for site 'site-1' must be a string, got {type_name}",
+        ):
+            launcher.launch_job(job_meta, fl_ctx)
+
     def test_launch_returns_handle(self):
         launcher = _make_launcher()
         dc = launcher._docker_client
@@ -489,6 +589,7 @@ class TestDockerJobLauncherLaunchJob:
 
         assert handle is not None
         assert isinstance(handle, DockerJobHandle)
+        assert dc.containers.run.call_args[1]["auto_remove"] is True
 
     def test_launch_overrides_parent_url(self):
         """Launcher must derive parent_url from site name + port; localhost must not reach job container."""
@@ -548,7 +649,7 @@ class TestDockerJobLauncherLaunchJob:
             "Source": None,
             "Type": "tmpfs",
             "ReadOnly": False,
-            "tmpfs_mode": 0o555,
+            "tmpfs_mode": 0o1777,
         }
         assert mounts_by_target["/var/tmp/nvflare/workspace/startup"] == {
             "Target": "/var/tmp/nvflare/workspace/startup",
@@ -600,7 +701,7 @@ class TestDockerJobLauncherLaunchJob:
             with patch("nvflare.app_opt.job_launcher.docker_launcher.os.path.exists", return_value=True):
                 launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
 
-        mock_load.assert_called_once_with("/var/tmp/nvflare/workspace/local/study_data.yaml")
+        mock_load.assert_called_once_with("/var/tmp/nvflare/workspace/local/study_data.yaml", logger=launcher.logger)
         call_kwargs = dc.containers.run.call_args[1]
         assert call_kwargs["command"] == [
             "/usr/local/bin/python",
@@ -689,7 +790,7 @@ class TestDockerJobLauncherLaunchJob:
         with patch("nvflare.app_opt.job_launcher.docker_launcher.load_study_data_file", return_value={}) as mock_load:
             launcher.launch_job(_make_job_meta(study="default"), fl_ctx)
 
-        mock_load.assert_called_once_with("/var/tmp/nvflare/workspace/local/study_data.yaml")
+        mock_load.assert_called_once_with("/var/tmp/nvflare/workspace/local/study_data.yaml", logger=launcher.logger)
         mounts_by_target = _mounts_by_target(dc.containers.run.call_args[1]["mounts"])
         assert set(mounts_by_target) == {
             "/var/tmp/nvflare/workspace",
@@ -720,7 +821,7 @@ class TestDockerJobLauncherLaunchJob:
             "ReadOnly": True,
         }
 
-    def test_launch_omits_data_mount_when_study_mapping_is_missing(self):
+    def test_launch_omits_data_mount_when_study_mapping_is_missing(self, caplog):
         launcher = _make_launcher()
         dc = launcher._docker_client
         container = MagicMock()
@@ -730,8 +831,9 @@ class TestDockerJobLauncherLaunchJob:
         study_data = {"other-study": {"training": {"source": "/data/train", "mode": "ro"}}}
 
         fl_ctx, _ = _make_fl_ctx()
-        with patch("nvflare.app_opt.job_launcher.docker_launcher.load_study_data_file", return_value=study_data):
-            launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
+        with caplog.at_level(logging.WARNING):
+            with patch("nvflare.app_opt.job_launcher.docker_launcher.load_study_data_file", return_value=study_data):
+                launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
 
         mounts_by_target = _mounts_by_target(dc.containers.run.call_args[1]["mounts"])
         assert set(mounts_by_target) == {
@@ -740,6 +842,7 @@ class TestDockerJobLauncherLaunchJob:
             "/var/tmp/nvflare/workspace/local",
             "/var/tmp/nvflare/workspace/job-1",
         }
+        assert "has no entry for study 'study-a'" in caplog.text
 
     def test_launch_no_docker_socket_in_job_container(self):
         """Job containers must never receive the Docker socket."""

@@ -106,10 +106,10 @@ JobLogReceiver (server)
 
 :class:`~nvflare.app_common.logging.job_log_receiver.JobLogReceiver` opens a
 destination file per incoming stream and writes chunks as they arrive. It can
-be placed either in **system-level resources** so every job is covered, or
+be placed either in **site-level resources** so every job is covered, or
 in **job-level configuration** to scope the receiver to a single job.
 
-System-level (``resources.json`` on the server, recommended)::
+Site-level (``resources.json`` on the server, recommended)::
 
     {
       "components": [
@@ -156,10 +156,10 @@ moved into the job's workspace run directory alongside the other artifacts.
 If the stream ends with a non-OK return code (e.g. idle timeout), the
 **partial** file is retained at the path above and a warning is logged.
 
-SystemLogStreamer (client, system widget)
------------------------------------------
+SiteLogStreamer (client, site widget)
+-------------------------------------
 
-:class:`~nvflare.app_common.logging.system_log_streamer.SystemLogStreamer` is
+:class:`~nvflare.app_common.logging.site_log_streamer.SiteLogStreamer` is
 a convenience widget that lives in the **client's** ``resources.json`` and
 removes the need to declare a streamer in every job:
 
@@ -168,8 +168,8 @@ removes the need to declare a streamer in every job:
     {
       "components": [
         {
-          "id": "system_log_streamer",
-          "path": "nvflare.app_common.logging.system_log_streamer.SystemLogStreamer",
+          "id": "site_log_streamer",
+          "path": "nvflare.app_common.logging.site_log_streamer.SiteLogStreamer",
           "args": {}
         }
       ]
@@ -182,7 +182,7 @@ it appends one with the configured arguments. The job subprocess then loads
 the modified config and runs ``JobLogStreamer`` as if the user had declared
 it explicitly.
 
-When configured for ``error_log.txt``, ``SystemLogStreamer`` also uploads a
+When configured for ``error_log.txt``, ``SiteLogStreamer`` also uploads a
 post-mortem snapshot from the client parent process on ``JOB_COMPLETED``.
 This guarantees error-log delivery for failures that happen so early in the
 job that ``JobLogStreamer`` never reaches ``START_RUN``.

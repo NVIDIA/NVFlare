@@ -1,0 +1,253 @@
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import os
+import pty
+import re
+import shlex
+import subprocess
+import sys
+import time
+from io import BytesIO
+
+import pytest
+
+from tests.integration_test.src import ProvisionSiteLauncher
+from tests.integration_test.src.constants import PREFLIGHT_CHECK_SCRIPT
+
+INTEGRATION_TEST_ROOT = os.path.dirname(os.path.dirname(__file__))
+
+TEST_CASES = [
+    {
+        "project_yaml": os.path.join(INTEGRATION_TEST_ROOT, "data", "projects", "dummy.yml"),
+        "admin_name": "super@test.org",
+    },
+]
+
+
+SERVER_START_TIME = 15
+
+
+def _parse_preflight_output(output: bytes) -> dict[str, str]:
+    """Parse the preflight check table output into a structured dictionary.
+
+    Args:
+        output: Raw bytes output from the preflight check command
+
+    Returns:
+        Dictionary mapping check names to their status/problems
+
+    Raises:
+        AssertionError: If no valid checks are found in output
+    """
+    checks = {}
+    lines = output.decode("utf-8").splitlines()
+
+    # Pattern to match table rows with check data
+    # Format: | Check name | Status/Problem | How to fix |
+    row_pattern = re.compile(r"^\|\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|$")
+
+    for line in lines:
+        # Skip separator lines and header
+        if line.startswith("|---") or line.startswith("---"):
+            continue
+
+        match = row_pattern.match(line)
+        if match:
+            check_name = match.group(1).strip()
+            status = match.group(2).strip()
+
+            # Skip header row and invalid entries
+            if check_name in ["Checks", ""] or not check_name:
+                continue
+
+            # Basic validation: status should be non-empty
+            if not status:
+                continue
+
+            checks[check_name] = status
+
+    # Ensure we found at least some checks
+    if not checks:
+        raise AssertionError(f"No valid checks found in preflight output. Output:\n{output.decode('utf-8')[:500]}")
+
+    return checks
+
+
+def _verify_checks(actual_checks: dict[str, str], expected_checks: dict[str, str], check_type: str):
+    """Verify that expected checks are present with detailed error messages.
+
+    Preflight output may include additional checks, such as "Check dry run", when
+    earlier required checks pass. Those extra checks are allowed here.
+
+    Args:
+        actual_checks: Dictionary of actual check results
+        expected_checks: Dictionary of expected check results
+        check_type: Type of check being verified (e.g., "server", "client")
+    """
+    # Check if all expected checks are present
+    missing_checks = set(expected_checks.keys()) - set(actual_checks.keys())
+    if missing_checks:
+        raise AssertionError(
+            f"{check_type} preflight check missing expected checks: {missing_checks}\n"
+            f"Expected checks: {list(expected_checks.keys())}\n"
+            f"Actual checks: {list(actual_checks.keys())}"
+        )
+
+    # Verify each check's status
+    failed_checks = []
+    for check_name, expected_status in expected_checks.items():
+        actual_status = actual_checks.get(check_name, "MISSING")
+        if actual_status != expected_status:
+            failed_checks.append({"check": check_name, "expected": expected_status, "actual": actual_status})
+
+    if failed_checks:
+        error_msg = f"{check_type} preflight checks failed:\n"
+        for failed in failed_checks:
+            error_msg += f"  - {failed['check']}: expected '{failed['expected']}', got '{failed['actual']}'\n"
+        raise AssertionError(error_msg)
+
+
+def _raise_preflight_command_error(command: str, returncode: int, output: bytes):
+    output_text = output.decode("utf-8", errors="replace")
+    raise AssertionError(
+        f"Preflight command failed with return code {returncode}: {command}\n" f"Output:\n{output_text}"
+    )
+
+
+def _run_preflight_check_command_in_subprocess(package_path: str, expect_success: bool = True):
+    command = f"{sys.executable} -m {PREFLIGHT_CHECK_SCRIPT} -p {package_path}"
+    print(f"Executing command {command} in subprocess")
+    process = subprocess.run(shlex.split(command), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+    print(f"Preflight command return code: {process.returncode}")
+    if expect_success and process.returncode != 0:
+        _raise_preflight_command_error(command, process.returncode, process.stdout)
+    return process.stdout
+
+
+def _run_preflight_check_command_in_pseudo_terminal(package_path: str, expect_success: bool = True):
+    command = f"{sys.executable} -m {PREFLIGHT_CHECK_SCRIPT} -p {package_path}"
+    print(f"Executing command {command} in pty")
+
+    with BytesIO() as output:
+
+        def read(fd):
+            data = os.read(fd, 1024 * 1024 * 1024)
+            output.write(data)
+            return data
+
+        status = pty.spawn(shlex.split(command), read)
+        returncode = os.waitstatus_to_exitcode(status)
+        print(f"Preflight command return code: {returncode}")
+        if expect_success and returncode != 0:
+            _raise_preflight_command_error(command, returncode, output.getvalue())
+
+        return output.getvalue()
+
+
+def _run_preflight_check_command(package_path: str, method: str = "subprocess", expect_success: bool = True):
+    if method == "subprocess":
+        return _run_preflight_check_command_in_subprocess(package_path, expect_success=expect_success)
+    else:
+        return _run_preflight_check_command_in_pseudo_terminal(package_path, expect_success=expect_success)
+
+
+@pytest.fixture(
+    params=TEST_CASES,
+)
+def setup_system(request):
+    test_config = request.param
+    project_yaml_path = test_config["project_yaml"]
+    admin_name = test_config["admin_name"]
+
+    if not os.path.isfile(project_yaml_path):
+        raise RuntimeError(f"Missing project_yaml at {project_yaml_path}.")
+    site_launcher = ProvisionSiteLauncher(project_yaml=project_yaml_path)
+    workspace_root = site_launcher.prepare_workspace()
+    print(f"Workspace root is {workspace_root}")
+
+    admin_folder_root = os.path.abspath(os.path.join(workspace_root, admin_name))
+
+    return site_launcher, admin_folder_root
+
+
+@pytest.mark.xdist_group(name="preflight_tests_group")
+class TestPreflightCheck:
+    def test_run_check_on_server(self, setup_system):
+        site_launcher, _ = setup_system
+        try:
+            for server_name, server_props in site_launcher.server_properties.items():
+                output = _run_preflight_check_command(package_path=server_props.root_dir)
+                actual_checks = _parse_preflight_output(output)
+
+                expected_checks = {
+                    "Check FL port binding": "PASSED",
+                    "Check admin port binding": "PASSED",
+                    "Check snapshot storage writable": "PASSED",
+                    "Check job storage writable": "PASSED",
+                }
+
+                print(f"Server '{server_name}', expecting checks: {list(expected_checks.keys())}")
+
+                _verify_checks(actual_checks, expected_checks, f"Server '{server_name}'")
+        finally:
+            site_launcher.stop_all_sites()
+            site_launcher.cleanup()
+
+    def test_run_check_on_client(self, setup_system):
+        site_launcher, _ = setup_system
+        try:
+            site_launcher.start_servers()
+            time.sleep(SERVER_START_TIME)
+
+            for client_name, client_props in site_launcher.client_properties.items():
+                output = _run_preflight_check_command(package_path=client_props.root_dir)
+                actual_checks = _parse_preflight_output(output)
+
+                expected_checks = {
+                    "Check server available": "PASSED",
+                }
+
+                print(f"Client '{client_name}', expecting checks: {list(expected_checks.keys())}")
+
+                _verify_checks(actual_checks, expected_checks, f"Client '{client_name}'")
+        except Exception:
+            raise
+        finally:
+            site_launcher.stop_all_sites()
+            site_launcher.cleanup()
+
+    def test_run_check_on_admin_console(self, setup_system):
+        site_launcher, admin_folder_root = setup_system
+        try:
+            site_launcher.start_servers()
+            time.sleep(SERVER_START_TIME)
+
+            # preflight-check on admin console
+            output = _run_preflight_check_command(package_path=admin_folder_root)
+            actual_checks = _parse_preflight_output(output)
+
+            expected_checks = {
+                "Check server available": "PASSED",
+            }
+
+            print(f"Admin console, expecting checks: {list(expected_checks.keys())}")
+
+            # Verify checks match expectations
+            _verify_checks(actual_checks, expected_checks, "Admin console")
+        except Exception:
+            raise
+        finally:
+            site_launcher.stop_all_sites()
+            site_launcher.cleanup()

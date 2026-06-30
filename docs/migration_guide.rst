@@ -6,6 +6,73 @@ Migration Guide
 
 This guide covers API and configuration changes when upgrading between FLARE releases.
 
+Upgrading from 2.7.2 to 2.8.0
+=============================
+
+Python and Removed Legacy Surfaces
+----------------------------------
+
+FLARE 2.8.0 targets Python 3.10 through 3.14. Python 3.9 is no longer listed as
+a supported development target.
+
+The deprecated FLAdminAPI surface has been removed. Use the FLARE API, Recipe
+API, Client API, and ``nvflare`` CLI workflows for new automation.
+
+HA/Overseer code has also been removed from the 2.8 branch.
+
+Client API Subprocess Timeout Validation
+----------------------------------------
+
+Subprocess-mode Client API jobs now validate two large-model safety settings at
+job initialization:
+
+- ``download_complete_timeout`` must not be ``None``. The subprocess must stay
+  alive after ``send_to_peer()`` ACKs so the server can finish downloading
+  tensors from the subprocess ``DownloadService``.
+- ``max_resends`` must not be ``None`` when using ``ClientAPILauncherExecutor``.
+  Unlimited resends can turn one delayed large-model transfer into an unbounded
+  series of replacement download transactions.
+
+If your 2.7.x job explicitly set either value to ``None``, update it before
+running on 2.8.0. Recipe-based external-process jobs already serialize the
+default ``max_resends=3`` in executor args, so the following setting is only
+needed when overriding a previous explicit ``None`` or choosing a different
+retry budget:
+
+.. code-block:: python
+
+   recipe.add_client_config({
+       "download_complete_timeout": 1800,
+       "max_resends": 3,  # finite non-negative integer; 0 disables retries
+   })
+
+For large tensor or NumPy payloads, also keep the related streaming timeouts
+consistent. If you explicitly raise ``tensor_streaming_per_request_timeout`` or
+``np_streaming_per_request_timeout``, set ``PEER_READ_TIMEOUT`` and
+``download_complete_timeout`` to values at least as large as the configured
+streaming per-request timeout, and keep ``tensor_min_download_timeout`` or
+``np_min_download_timeout`` at least as large as the same value.
+
+.. code-block:: python
+
+   recipe.add_client_config({
+       "tensor_streaming_per_request_timeout": 600,
+       "tensor_min_download_timeout": 600,
+       "PEER_READ_TIMEOUT": 600,
+       "download_complete_timeout": 1800,
+       "max_resends": 3,
+   })
+
+Late Retry Handling for Finished Download Refs
+----------------------------------------------
+
+FLARE 2.8.0 makes finished ``DownloadService`` refs retry-safe for the same
+requester. If a client completed a large download but retries because the final
+EOF response was delayed, the server returns the same terminal status instead of
+``INVALID_REQUEST`` / ``no ref found``. This is an internal reliability fix and
+does not require job-code changes, but it is most effective when the subprocess
+timeouts above are configured consistently for very large models.
+
 Upcoming Main-Branch Changes
 ============================
 
@@ -86,9 +153,10 @@ Client Disable Semantics
 ------------------------
 
 ``nvflare system remove-client`` is not exposed as a supported public CLI
-command. The legacy interactive-console ``remove_client`` operation remains a
-registry cleanup operation only; it does not stop the client process, revoke
-credentials, or prevent reconnect.
+command. The legacy interactive-console ``remove_client`` command is hidden
+from normal help and remains a registry cleanup operation only: it releases
+the active token so the client can register again. It does not stop the client
+process, revoke credentials, or prevent reconnect.
 
 Use the new durable access-control commands when the intent is to keep a client
 out of the federation:

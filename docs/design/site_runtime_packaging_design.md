@@ -80,14 +80,14 @@ nvflare package --project-file site-project.yml ...
 ```
 
 with a site-local full project YAML containing one participant and optional
-runtime builders.
+runtime preparation entries.
 
 That approach worked mechanically, but it made runtime preparation depend on
 provisioning concepts:
 
 - the site had to write a project-style YAML even though the startup kit already
   existed
-- runtime choice was expressed through `Builder` classes
+- runtime choice was expressed through provisioning extension classes
 - `nvflare package` had to carry deployment behavior
 - centrally provisioned kits needed cert/key material staged back into package
   input form
@@ -114,9 +114,11 @@ baked into the Docker image.
 For K8s parent pods, generated charts assume the startup kit content is already
 available at the configured workspace mount path, such as through a PVC prepared
 by the site admin. The site admin is responsible for copying startup kit
-material into that storage using their organization's approved process.
-`nvflare deploy prepare` does not create Kubernetes Secret objects or upload
-certificate material to the cluster.
+material into that storage using their organization's approved process, or for
+running `nvflare deploy k8s stage` to stage `local/` as a ConfigMap and
+`startup/` as a Secret before Helm install. `nvflare deploy prepare` itself does
+not create Kubernetes Secret objects or upload certificate material to the
+cluster.
 
 K8s job pods have a different runtime assumption. They are launched
 dynamically by `K8sJobLauncher` after the parent process is already running.
@@ -128,9 +130,11 @@ to manage those runtime job-pod Secrets in the configured namespace.
 
 K8s image registry credentials follow the same boundary. `nvflare deploy
 prepare` should not create registry credentials, manage private registry login,
-or create image pull Secrets. If private registry access is needed, the site or
-cluster should already be configured through its normal Kubernetes/registry
-process.
+or create image pull Secrets. It may render references to existing image pull
+Secrets on generated parent pod charts and write existing image pull Secret
+references into the prepared `K8sJobLauncher` config for dynamically launched
+job pods. If private registry access is needed, the site or cluster should
+create those Secrets through its normal Kubernetes/registry process.
 
 ## Proposed Command
 
@@ -280,9 +284,12 @@ namespace: default
 
 parent:
   docker_image: nvflare-site:latest
+  image_pull_secrets:
+    - registry-credentials
   parent_port: 8102
   workspace_pvc: nvflws
   workspace_mount_path: /var/tmp/nvflare/workspace
+  python_path: /usr/local/bin/python3
   resources:
     requests:
       cpu: "2"
@@ -292,7 +299,9 @@ parent:
 job_launcher:
   config_file_path: null
   pending_timeout: null
-  default_python_path: /usr/local/bin/python
+  default_python_path: /usr/local/bin/python3
+  image_pull_secrets:
+    - job-registry-credentials
   job_pod_security_context: {}
 ```
 
@@ -317,6 +326,13 @@ Supported `parent` keys:
   - Description: image used by the parent server/client pod in the generated
     Helm chart.
 
+- `image_pull_secrets`
+  - Required: no
+  - Default: `[]`
+  - Description: existing Kubernetes Secret names rendered as
+    `imagePullSecrets` on the parent server/client pod in the generated Helm
+    chart. `nvflare deploy prepare` does not create these Secrets.
+
 - `parent_port`
   - Required: no
   - Default: `8102`
@@ -332,7 +348,17 @@ Supported `parent` keys:
 - `workspace_mount_path`
   - Required: no
   - Default: `/var/tmp/nvflare/workspace`
-  - Description: in-container mount path for the workspace PVC.
+  - Description: in-container mount path for the parent workspace PVC. This is
+    also passed to `K8sJobLauncher` so dynamically launched job pods mount the
+    job workspace and startup kit at the same path.
+
+- `python_path`
+  - Required: no
+  - Default: `/usr/local/bin/python3`
+  - Description: Python executable used by the parent server/client pod command
+    in the generated Helm chart. This controls SP/CP parent pods; dynamically
+    launched job pods can still override the job launcher default with
+    `launcher_spec[<site>][k8s].python_path`.
 
 - `resources`
   - Required: no
@@ -356,18 +382,49 @@ Supported `job_launcher` keys:
 - `pending_timeout`
   - Required: no
   - Default: launcher default
-  - Description: timeout for pending job pods.
+  - Description: seconds to wait while the scheduler reports insufficient CPU,
+    memory, or GPU resources for a job pod. Use `0` to fail fast on the first
+    resource-shortage observation, a positive value to wait that many seconds,
+    or `null` to wait indefinitely unless the launcher's broader `timeout` is
+    set.
 
 - `default_python_path`
   - Required: no
-  - Default: `/usr/local/bin/python`
+  - Default: `/usr/local/bin/python3`
   - Description: Default Python executable used in job pods. Individual jobs
-    can override it with `launcher_spec[<site>][k8s].python_path`.
+    can override it with `launcher_spec[<site>][k8s].python_path`. This value
+    does not control the SP/CP parent pod command; use `parent.python_path` for
+    that command.
 
 - `job_pod_security_context`
   - Required: no
   - Default: `{}`
   - Description: job pod security context passed to `K8sJobLauncher`.
+
+- `image_pull_secrets`
+  - Required: no
+  - Default: `[]`
+  - Description: existing Kubernetes Secret names attached as
+    `imagePullSecrets` to every dynamically launched job pod for this prepared
+    site.
+
+- `study_job_spec_file_path`
+  - Required: no
+  - Default: `null`
+  - Description: optional YAML mapping from study name to a Kubernetes Pod YAML
+    template file. When the launched job's study has an entry, `K8sJobLauncher`
+    loads that pod template and overlays NVFlare-owned job fields such as pod
+    name, job container image/command/args, workspace volumes, transfer
+    environment variables, image pull secrets, and resource requests. Relative
+    pod-template paths are resolved from the mapping file directory. Studies
+    without an entry use the built-in pod manifest. If only
+    `study_job_spec_file_path` is set, no study-data PVC mounts are added. If
+    both `study_job_spec_file_path` and `study_data_pvc_file_path` are
+    configured and the job study has entries in both files, the Pod template is
+    used and the study-data PVC entries are added as extra volume mounts with a
+    warning. The launcher always owns the `workspace-job` and `startup-kit`
+    volume names; same-named template volumes and job-container mounts are
+    replaced.
 
 
 ## Docker Runtime Preparation
@@ -423,7 +480,9 @@ Unlike Docker preparation, K8s preparation does not need to generate a
 `startup/start_k8s.sh` script in the first version. NVFlare does not start or
 manage the Kubernetes cluster. The generated Helm chart is the deployment
 artifact, and the site admin applies it to an existing cluster with standard
-K8s/Helm tooling such as `helm install` or `helm upgrade`.
+K8s/Helm tooling such as `helm install` or `helm upgrade`. If the site admin
+uses `nvflare deploy k8s stage`, that staging command is run before the Helm
+install/upgrade command.
 
 ## Runtime Communication Patching
 
@@ -475,49 +534,58 @@ This replaces the separate per-runtime files used previously:
 Both launchers and `workspace_cell_transfer.py` must be updated to use
 `local/study_data.yaml`.
 
-The detailed study data schema follows [Study Dataset Mapping](https://docs.google.com/document/d/1JCKHbjQaDto_SBuTB-wSAaEvfIO8NLA_T2I_u8rf2sQ/edit?tab=t.0#heading=h.s3ol8f3q17a5).
+For the shipped multi-study design and study-scoped behavior, see
+[Multi-Study Support](../user_guide/admin_guide/multi_study_guide.rst). For
+runtime dataset mapping examples, see
+[Docker Job Launcher Design](docker_job_launcher_design.md).
 
 ## Job Python, GPU, and Resource Handling
 
 Job-image-specific settings for Docker and K8s job containers should continue
 to use job launcher metadata instead of deployment-prepare-only configuration
-fields.
+fields. Resource requests, including `num_of_gpus`, stay in `resource_spec` as
+they did before container launchers.
 
 For Docker job containers, `DockerJobLauncher` uses job metadata for settings
-that belong to the selected job image:
+that belong to the selected job image and container runtime:
 
-- `launcher_spec[<site>][docker].num_of_gpus`
+- `launcher_spec[<site>][docker].image`
 - `launcher_spec[<site>][docker].python_path`
-- legacy `resource_spec[<site>][docker].num_of_gpus`
-- legacy flat `resource_spec[<site>].num_of_gpus`
+- `launcher_spec[<site>][docker].shm_size` and similar Docker SDK kwargs
+- `resource_spec[<site>].num_of_gpus`
 - explicit Docker SDK `device_requests` in the Docker launcher spec
 
-`DockerJobLauncher` translates `num_of_gpus` into Docker SDK
-`device_requests`, and job-level settings take precedence over site-level
-defaults. Site-local defaults can still be supplied through
-`default_job_container_kwargs` in `docker.yaml` when needed.
+`DockerJobLauncher` translates `resource_spec[<site>].num_of_gpus` into Docker
+SDK `device_requests`. Job-level launcher settings take precedence over
+site-level defaults supplied through `default_job_container_kwargs` in
+`docker.yaml`.
 `launcher_spec[<site>][docker].python_path` overrides
 `job_launcher.default_python_path` for jobs whose image uses a different Python
 location.
 
 For K8s job pods, `K8sJobLauncher` already supports GPU and basic resource
-limits through job metadata, and it uses the same metadata path for
-image-specific Python overrides:
+limits through job metadata:
 
-- `launcher_spec[<site>][k8s].num_of_gpus`
 - `launcher_spec[<site>][k8s].python_path`
 - `launcher_spec[<site>][k8s].ephemeral_storage`
-- legacy `resource_spec[<site>][k8s].num_of_gpus`
 - `launcher_spec[<site>][k8s].cpu`
 - `launcher_spec[<site>][k8s].memory`
+- `launcher_spec[<site>][k8s].pending_timeout`
+- `resource_spec[<site>].num_of_gpus`
 
-`K8sJobLauncher` maps `num_of_gpus` to the pod container limit
-`nvidia.com/gpu`.
+`K8sJobLauncher` maps `resource_spec[<site>].num_of_gpus` to the pod container
+limit `nvidia.com/gpu`.
 `launcher_spec[<site>][k8s].ephemeral_storage` maps to the job workspace
 `emptyDir.sizeLimit` and the pod container `ephemeral-storage` request/limit.
 `launcher_spec[<site>][k8s].python_path` overrides
 `job_launcher.default_python_path` for jobs whose image uses a different Python
 location.
+`launcher_spec[<site>][k8s].pending_timeout` overrides the site launcher
+default for one job. Set it to `0` for resource-heavy jobs that should fail
+fast when the scheduler cannot place the pod, or to a positive number of
+seconds to wait for CPU, memory, or GPU resources to become available. Other
+detected startup failures, such as image pull, volume, container config, or
+non-resource scheduling problems, fail immediately with `EXCEPTION`.
 
 `nvflare deploy prepare` does not need to invent a separate top-level GPU
 setting for job containers. If the parent server/client container or pod itself
@@ -602,8 +670,9 @@ Shared helpers can handle:
 - reporting next steps
 
 Runtime preparation should not depend on provisioning `Builder` classes or
-`lighter` templates. Docker/K8s deployment preparation should use the deploy
-command rather than requiring a site-local `project.yml` builder entry.
+`lighter` templates. Docker and K8s deployment preparation is owned by
+`nvflare deploy prepare`; startup kits stay runtime-neutral until each site
+runs that command with its local runtime config.
 
 ## Workflow Summary
 

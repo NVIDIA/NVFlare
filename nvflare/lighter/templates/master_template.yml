@@ -66,6 +66,7 @@ readme_fs: |
 local_client_resources: |
   {
     "format_version": 2,
+    "class_allow_list": {~~class_allow_list~~},
     "allow_log_streaming": {~~allow_log_streaming~~},
     "client": {
       "retry_timeout": 30,
@@ -92,8 +93,8 @@ local_client_resources: |
         "args": {}
       },
       {
-          "id": "system_log_streamer",
-          "path": "nvflare.app_common.logging.system_log_streamer.SystemLogStreamer",
+          "id": "site_log_streamer",
+          "path": "nvflare.app_common.logging.site_log_streamer.SiteLogStreamer",
           "args": {
             "log_file_name": "error_log.txt"
           }
@@ -120,7 +121,7 @@ fed_client: |
       "ssl_root_cert": "rootCA.pem",
       "fqsn": "{~~fqsn~~}",
       "is_leaf": {~~is_leaf~~},
-      "connection_security": "{~~conn_sec~~}"
+      "connection_security": "{~~conn_sec~~}"{~~auth_identity_config~~}
     }
   }
 
@@ -185,6 +186,7 @@ sample_privacy: |
 local_server_resources: |
   {
       "format_version": 2,
+      "class_allow_list": {~~class_allow_list~~},
       "servers": [
           {
               "admin_storage": "transfer",
@@ -269,7 +271,7 @@ fed_server: |
             "ssl_private_key": "server.key",
             "ssl_cert": "server.crt",
             "ssl_root_cert": "rootCA.pem",
-            "connection_security": "{~~conn_sec~~}"
+            "connection_security": "{~~conn_sec~~}"{~~auth_identity_config~~}
         }
     ]
   }
@@ -320,7 +322,8 @@ default_authz: |
         "view": "any",
         "operate": "o:site",
         "shell_commands": "o:site",
-        "byoc": "none"
+        "byoc": "none",
+        "server-predeployed-flwr": "none"
       },
       "lead": {
         "submit_job": "any",
@@ -330,7 +333,8 @@ default_authz: |
         "view": "any",
         "operate": "o:site",
         "shell_commands": "o:site",
-        "byoc": "any"
+        "byoc": "any",
+        "server-predeployed-flwr": "none"
       },
       "member": {
         "view": "any"
@@ -351,7 +355,8 @@ cc_authz: |
         "view": "any",
         "operate": "none",
         "shell_commands": "none",
-        "byoc": "none"
+        "byoc": "none",
+        "server-predeployed-flwr": "none"
       },
       "lead": {
         "submit_job": "any",
@@ -361,7 +366,8 @@ cc_authz: |
         "view": "any",
         "operate": "none",
         "shell_commands": "none",
-        "byoc": "none"
+        "byoc": "none",
+        "server-predeployed-flwr": "none"
       },
       "member": {
         "view": "any"
@@ -528,6 +534,20 @@ start_svr_sh: |
 stop_fl_sh: |
   #!/usr/bin/env bash
   DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+  SOURCE_WORKSPACE="$( cd "$DIR/.." >/dev/null 2>&1 && pwd )"
+  if [[ -n "${NVFL_WORKSPACE:-}" ]]; then
+    WORKSPACE="$NVFL_WORKSPACE"
+  elif [[ "$SOURCE_WORKSPACE" == "/user_config" ]]; then
+    WORKSPACE="/vault/workspace"
+  elif [[ "$SOURCE_WORKSPACE" == /user_config/* ]]; then
+    WORKSPACE="/vault/workspace/$(basename "$SOURCE_WORKSPACE")"
+  else
+    WORKSPACE="$SOURCE_WORKSPACE"
+  fi
+  if [[ -z "$WORKSPACE" || "$WORKSPACE" == "/" ]]; then
+    echo "Invalid WORKSPACE: '$WORKSPACE'"
+    exit 1
+  fi
   echo "Please use FL admin console to issue shutdown client command to properly stop this client."
   echo "This stop_fl.sh script can only be used as the last resort to stop this client."
   echo "It will not properly deregister the client to the server."
@@ -537,7 +557,8 @@ stop_fl_sh: |
     y|Y)
       echo
       echo "Shutdown request created.  Wait for local FL process to shutdown."
-      touch $DIR/../shutdown.fl
+      mkdir -p "$WORKSPACE"
+      touch "$WORKSPACE/shutdown.fl"
       ;;
     n|N|*)
       echo
@@ -548,8 +569,72 @@ stop_fl_sh: |
 sub_start_sh: |
   #!/usr/bin/env bash
   DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-  echo "WORKSPACE set to $DIR/.."
-  mkdir -p $DIR/../transfer
+  SOURCE_WORKSPACE="$( cd "$DIR/.." >/dev/null 2>&1 && pwd )"
+  if [[ -n "${NVFL_WORKSPACE:-}" ]]; then
+    WORKSPACE="$NVFL_WORKSPACE"
+  elif [[ "$SOURCE_WORKSPACE" == "/user_config" ]]; then
+    WORKSPACE="/vault/workspace"
+  elif [[ "$SOURCE_WORKSPACE" == /user_config/* ]]; then
+    WORKSPACE="/vault/workspace/$(basename "$SOURCE_WORKSPACE")"
+  else
+    WORKSPACE="$SOURCE_WORKSPACE"
+  fi
+  if [[ -z "$WORKSPACE" || "$WORKSPACE" == "/" ]]; then
+    echo "Invalid WORKSPACE: '$WORKSPACE'"
+    exit 1
+  fi
+
+  while [[ $# -gt 0 ]]
+  do
+    key="$1"
+    case $key in
+      --verify)
+        doVerify=true
+      ;;
+      --once)
+        doOnce=true
+      ;;
+    esac
+    shift
+  done
+
+  check_daemon() {
+    if [[ -f "$WORKSPACE/daemon_pid.fl" ]]; then
+      dpid=`cat "$WORKSPACE/daemon_pid.fl"`
+      kill -0 ${dpid} 2> /dev/null 1>&2
+      if [[ $? -eq 0 ]]; then
+        echo "There seems to be one instance, pid=$dpid, running."
+        echo "If you are sure it's not the case, please kill process $dpid and then remove daemon_pid.fl in $WORKSPACE"
+        exit
+      fi
+      rm -f "$WORKSPACE/daemon_pid.fl"
+    fi
+  }
+
+  KIT_WORKSPACE="$WORKSPACE"
+  if [[ "$WORKSPACE" != "$SOURCE_WORKSPACE" ]]; then
+    check_daemon
+    KIT_WORKSPACE="$WORKSPACE/kit"
+    mkdir -p "$WORKSPACE"
+    rm -rf "$KIT_WORKSPACE"
+    cp -a "$SOURCE_WORKSPACE" "$KIT_WORKSPACE"
+    chmod 700 "$WORKSPACE" "$KIT_WORKSPACE"
+    rm -rf "$WORKSPACE/startup" "$WORKSPACE/local"
+    ln -s "$KIT_WORKSPACE/startup" "$WORKSPACE/startup"
+    ln -s "$KIT_WORKSPACE/local" "$WORKSPACE/local"
+  fi
+
+  if [[ "$doVerify" == "true" ]]; then
+    python3 -m nvflare.tool.verify_startup_kits -f "$KIT_WORKSPACE" -c "$KIT_WORKSPACE/startup/rootCA.pem"
+    verification_status=$?
+    if [[ $verification_status -ne 0 ]]; then
+      echo "verification failed"
+      exit 1
+    fi
+  fi
+
+  echo "WORKSPACE set to $WORKSPACE"
+  mkdir -p "$WORKSPACE/transfer"
   export PYTHONPATH=/local/custom:$PYTHONPATH
   echo "PYTHONPATH is $PYTHONPATH"
 
@@ -573,26 +658,12 @@ sub_start_sh: |
   # Recommended: MALLOC_ARENA_MAX=2 for clients, MALLOC_ARENA_MAX=4 for servers
   export MALLOC_ARENA_MAX=${MALLOC_ARENA_MAX:-4}
 
-  while [[ $# -gt 0 ]]
-  do
-    key="$1"
-    case $key in
-      --verify)
-        doVerify=true
-      ;;
-      --once)
-        doOnce=true
-      ;;
-    esac
-    shift
-  done
-
   SECONDS=0
   lst=-400
   restart_count=0
 
   start_python() {
-    python3 -u -m nvflare.private.fed.app.{~~type~~}.{~~app_name~~} -m $DIR/.. -s fed_{~~type~~}.json --set secure_train=true {~~cln_uid~~} org={~~org_name~~} config_folder={~~config_folder~~}
+    python3 -u -m nvflare.private.fed.app.{~~type~~}.{~~app_name~~} -m "$WORKSPACE" -s fed_{~~type~~}.json --set secure_train=true {~~cln_uid~~} org={~~org_name~~} config_folder={~~config_folder~~}
   }
 
   start_fl() {
@@ -603,21 +674,21 @@ sub_start_sh: |
     fi
     if [[ $(($SECONDS - $lst )) -lt 300 && $restart_count -ge 5 ]]; then
       echo "System is in trouble and unable to start the task!!!!!"
-      rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl $DIR/../daemon_pid.fl
+      rm -f "$WORKSPACE/pid.fl" "$WORKSPACE/shutdown.fl" "$WORKSPACE/restart.fl" "$WORKSPACE/daemon_pid.fl"
       exit
     fi
     lst=$SECONDS
-    (start_python 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl
-    pid=`cat $DIR/../pid.fl`
+    (start_python 2>&1 & echo $! >&3 ) 3>"$WORKSPACE/pid.fl"
+    pid=`cat "$WORKSPACE/pid.fl"`
     echo "new pid ${pid}"
   }
 
   stop_fl() {
-    if [[ ! -f "$DIR/../pid.fl" ]]; then
+    if [[ ! -f "$WORKSPACE/pid.fl" ]]; then
       echo "No pid.fl.  No need to kill process."
       return
     fi
-    pid=`cat $DIR/../pid.fl`
+    pid=`cat "$WORKSPACE/pid.fl"`
     sleep 5
     kill -0 ${pid} 2> /dev/null 1>&2
     if [[ $? -ne 0 ]]; then
@@ -625,50 +696,32 @@ sub_start_sh: |
       return
     fi
     kill -9 $pid
-    rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl 2> /dev/null 1>&2
+    rm -f "$WORKSPACE/pid.fl" "$WORKSPACE/shutdown.fl" "$WORKSPACE/restart.fl" 2> /dev/null 1>&2
   }
-
-  if [[ "$doVerify" == "true" ]]; then
-    python3 -m nvflare.tool.verify_startup_kits -f $DIR/../ -c $DIR/rootCA.pem
-    verification_status=$?
-    if [[ $verification_status -ne 0 ]]; then
-      echo "verification failed"
-      exit 1
-    fi
-  fi
 
   if [[ "$doOnce" == "true" ]]; then
     echo "Start NVFlare directly"
-    rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl 2> /dev/null 1>&2
+    rm -f "$WORKSPACE/pid.fl" "$WORKSPACE/shutdown.fl" "$WORKSPACE/restart.fl" 2> /dev/null 1>&2
     start_python
     exit $?
   fi
 
-  if [[ -f "$DIR/../daemon_pid.fl" ]]; then
-    dpid=`cat $DIR/../daemon_pid.fl`
-    kill -0 ${dpid} 2> /dev/null 1>&2
-    if [[ $? -eq 0 ]]; then
-      echo "There seems to be one instance, pid=$dpid, running."
-      echo "If you are sure it's not the case, please kill process $dpid and then remove daemon_pid.fl in $DIR/.."
-      exit
-    fi
-    rm -f $DIR/../daemon_pid.fl
-  fi
+  check_daemon
 
-  echo $BASHPID > $DIR/../daemon_pid.fl
+  echo $BASHPID > "$WORKSPACE/daemon_pid.fl"
 
   while true
   do
     sleep 5
-    if [[ ! -f "$DIR/../pid.fl" ]]; then
+    if [[ ! -f "$WORKSPACE/pid.fl" ]]; then
       echo "start fl because of no pid.fl"
       start_fl
       continue
     fi
-    pid=`cat $DIR/../pid.fl`
+    pid=`cat "$WORKSPACE/pid.fl"`
     kill -0 ${pid} 2> /dev/null 1>&2
     if [[ $? -ne 0 ]]; then
-      if [[ -f "$DIR/../shutdown.fl" ]]; then
+      if [[ -f "$WORKSPACE/shutdown.fl" ]]; then
         echo "Gracefully shutdown."
         break
       fi
@@ -676,18 +729,18 @@ sub_start_sh: |
       start_fl
       continue
     fi
-    if [[ -f "$DIR/../shutdown.fl" ]]; then
+    if [[ -f "$WORKSPACE/shutdown.fl" ]]; then
       echo "About to shutdown."
       stop_fl
       break
     fi
-    if [[ -f "$DIR/../restart.fl" ]]; then
+    if [[ -f "$WORKSPACE/restart.fl" ]]; then
       echo "About to restart."
       stop_fl
     fi
   done
 
-  rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl $DIR/../daemon_pid.fl
+  rm -f "$WORKSPACE/pid.fl" "$WORKSPACE/shutdown.fl" "$WORKSPACE/restart.fl" "$WORKSPACE/daemon_pid.fl"
 
 docker_cln_sh: |
   #!/usr/bin/env bash
@@ -1023,7 +1076,7 @@ relay_resources_json: |
     "format_version": 2,
     "relay_config": {
       "scheme": "{~~scheme~~}",
-      "identity": "{~~identity~~}",
+      "identity": "{~~identity~~}"{~~auth_identity_config~~},
       "address": "{~~address~~}",
       "fqcn": "{~~fqcn~~}",
       "connection_security": "{~~conn_sec~~}"
@@ -1034,11 +1087,11 @@ fed_relay: |
   {
     "format_version": 2,
     "project_name": "{~~project_name~~}",
-    "identity": "{~~identity~~}",
+    "identity": "{~~identity~~}"{~~auth_identity_config~~},
     "server_identity": "{~~server_identity~~}",
     "connect_to": {
       "scheme": "{~~scheme~~}",
-      "identity": "{~~parent_identity~~}",
+      "identity": "{~~parent_identity~~}"{~~parent_auth_identity_config~~},
       "address": "{~~address~~}",
       "fqcn": "{~~fqcn~~}",
       "connection_security": "{~~conn_sec~~}"

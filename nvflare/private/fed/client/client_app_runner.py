@@ -112,8 +112,9 @@ class ClientAppRunner(Runner):
             args=args,
             kv_list=args.set,
         )
-        if event_handlers:
-            conf.set_component_build_authorizer(authorize_build_component, fl_ctx=fl_ctx, event_handlers=event_handlers)
+        conf.set_component_build_authorizer(
+            authorize_build_component, fl_ctx=fl_ctx, event_handlers=event_handlers or []
+        )
         conf.configure()
 
         runner_config = conf.runner_config

@@ -59,6 +59,33 @@ MODEL_LOCATOR_REGISTRY = {
 }
 
 
+def _validate_per_site_config_shape(config: Any) -> Dict[str, Dict]:
+    if not isinstance(config, dict):
+        raise TypeError(f"config must be a dict, got {type(config).__name__}")
+
+    for site_name, site_config in config.items():
+        if not isinstance(site_name, str):
+            raise TypeError(f"per-site config key must be a str, got {type(site_name).__name__}")
+        if not isinstance(site_config, dict):
+            raise TypeError(f"per-site config for site {site_name!r} must be a dict, got {type(site_config).__name__}")
+
+    return config
+
+
+def set_per_site_config(recipe: Recipe, config: Dict[str, Dict]) -> None:
+    """Set site-keyed configuration on a recipe.
+
+    The helper only validates the generic shape:
+    - top-level keys are site names
+    - values are recipe-specific dictionaries
+
+    Each recipe is responsible for validating and interpreting the fields inside
+    each site's dictionary. The execution environment still controls which
+    clients are present for a run.
+    """
+    recipe.set_per_site_config(_validate_per_site_config_shape(config))
+
+
 def _has_cross_site_eval_workflow(job: FedJob) -> bool:
     """Check if CrossSiteModelEval workflow is already configured on server."""
     from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
@@ -550,40 +577,51 @@ def setup_custom_persistor(*, job, model_persistor=None) -> str:
     return extract_persistor_id(job.to_server(model_persistor, id="persistor"))
 
 
+def _resolve_recipe_model_class_path(recipe_model: Dict[str, Any]) -> str:
+    if "class_path" in recipe_model:
+        key = "class_path"
+    elif "path" in recipe_model:
+        key = "path"
+    else:
+        raise ValueError(
+            "Dict model config must have 'class_path' or 'path' key with fully qualified class path. "
+            f"Got: {recipe_model}"
+        )
+
+    class_path = recipe_model[key]
+    if not isinstance(class_path, str):
+        raise ValueError(f"Dict model config '{key}' must be a string, got: {type(class_path)}")
+    return class_path
+
+
 def validate_dict_model_config(model: Any) -> None:
     """Validate recipe dict model config structure.
 
-    Recipes accept model config with ``class_path`` (fully qualified class name).
-    The job/config layer uses ``path``; recipes use ``class_path`` only.
+    Recipes accept model config with ``class_path`` or the ``path`` alias.
+    The job/config layer uses ``path``.
 
     Args:
         model: Model input to validate.
 
     Raises:
-        ValueError: If dict config is missing 'class_path' or value is not a string.
+        ValueError: If dict config is missing 'class_path'/'path' or value is not a string.
     """
     if isinstance(model, dict):
-        if "class_path" not in model:
-            raise ValueError(
-                "Dict model config must have 'class_path' key with fully qualified class path. " f"Got: {model}"
-            )
-        class_path = model["class_path"]
-        if not isinstance(class_path, str):
-            raise ValueError(f"Dict model config 'class_path' must be a string, got: {type(class_path)}")
+        _resolve_recipe_model_class_path(model)
 
 
 def recipe_model_to_job_model(recipe_model: Dict[str, Any]) -> Dict[str, Any]:
-    """Validate and convert recipe model dict (class_path) to job/config format (path).
+    """Validate and convert recipe model dict to job/config format (path).
 
     Calls :func:`validate_dict_model_config` internally so callers do not need to
-    validate separately. Recipes accept {"class_path": "module.Class", "args": {...}} only.
+    validate separately. Recipes accept {"class_path": "module.Class", "args": {...}}
+    or {"path": "module.Class", "args": {...}}.
     The Job API and config parsing expect {"path": "module.Class", "args": {...}}.
 
     Args:
-        recipe_model: Dict with 'class_path' and optional 'args'.
+        recipe_model: Dict with 'class_path' or 'path' and optional 'args'.
 
     Returns:
         Dict with 'path' and 'args' for use by PTModel, persistors, etc.
     """
-    validate_dict_model_config(recipe_model)
-    return {"path": recipe_model["class_path"], "args": recipe_model.get("args", {})}
+    return {"path": _resolve_recipe_model_class_path(recipe_model), "args": recipe_model.get("args", {})}

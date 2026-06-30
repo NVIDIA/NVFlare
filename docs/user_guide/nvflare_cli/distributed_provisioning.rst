@@ -144,6 +144,46 @@ Client site example:
        type: client
        org: hospital_alpha
 
+If the participant's certificate common name (CN) intentionally differs from
+the FLARE site name, include ``auth_identity`` in the participant definition
+before creating the certificate request. For example, a site named
+``hospital-a`` that authenticates with certificate CN
+``hospital-a.example.com`` should request:
+
+.. code-block:: yaml
+
+   name: hospital_federation
+   description: Site A - Hospital Alpha
+
+   participants:
+     - name: hospital-a
+       type: client
+       org: hospital_alpha
+       auth_identity: hospital-a.example.com
+
+This lets the generated startup kit map the endpoint/FQCN to the expected mTLS
+certificate identity. Do not edit the generated ``startup/fed_client.json`` or
+``startup/fed_server.json`` after packaging if the startup kit contains
+``startup/signature.json``; regenerate the request, approval, and package so
+the signature covers the final configuration.
+
+.. important::
+
+   Endpoint-to-CN binding is enforced when an mTLS transport exposes the
+   authenticated peer CN. Some active-side gRPC connections do not expose the
+   peer CN to the Python driver, so NVFlare accepts those active connections and
+   relies on passive-side endpoint validation plus the normal application-layer
+   authentication checks.
+
+   Admin console cells use per-session endpoint names and authenticate the admin
+   user by certificate/user identity on the admin listener. Keep admin
+   application-layer authentication configured and protected.
+
+   ``auth_identity`` is loaded when a FLARE process starts. After rotating site
+   certificates or changing certificate CNs, regenerate the startup kits as
+   needed and restart the affected FLARE processes so the in-memory identity
+   resolver uses the new certificate identity.
+
 User example:
 
 .. code-block:: yaml
@@ -254,18 +294,18 @@ Project Admin approves the request:
 
 .. code-block:: shell
 
-   nvflare cert approve hospital-a.request.zip --ca-dir ./ca --profile project_profile.yaml
+   nvflare cert approve hospital-a/hospital-a.request.zip --ca-dir ./ca --profile project_profile.yaml
 
-This creates ``hospital-a.signed.zip`` and prints
-``rootca_fingerprint_sha256``. The signed zip already includes ``rootCA.pem``;
-return the signed zip to the Site Admin and share only the fingerprint through
-a trusted out-of-band channel.
+This creates ``hospital-a/hospital-a.signed.zip`` (next to the request zip)
+and prints ``rootca_fingerprint_sha256``. The signed zip already includes
+``rootCA.pem``; return the signed zip to the Site Admin and share only the
+fingerprint through a trusted out-of-band channel.
 
 Site Admin packages the startup kit:
 
 .. code-block:: shell
 
-   nvflare package hospital-a.signed.zip --fingerprint <rootca_fingerprint_sha256>
+   nvflare package hospital-a/hospital-a.signed.zip --fingerprint <rootca_fingerprint_sha256>
 
 The output goes under:
 
@@ -313,13 +353,13 @@ Project Admin approves it:
 
 .. code-block:: shell
 
-   nvflare cert approve alice@hospital-alpha.org.request.zip --ca-dir ./ca --profile project_profile.yaml
+   nvflare cert approve alice@hospital-alpha.org/alice@hospital-alpha.org.request.zip --ca-dir ./ca --profile project_profile.yaml
 
 Requester packages the returned signed zip:
 
 .. code-block:: shell
 
-   nvflare package alice@hospital-alpha.org.signed.zip --fingerprint <rootca_fingerprint_sha256>
+   nvflare package alice@hospital-alpha.org/alice@hospital-alpha.org.signed.zip --fingerprint <rootca_fingerprint_sha256>
 
 The generated user startup kit contains ``startup/fl_admin.sh``.
 
@@ -368,8 +408,8 @@ Then use the same request, approval, and package workflow:
 .. code-block:: shell
 
    nvflare cert request --participant server.yaml
-   nvflare cert approve server1.hospital-central.org.request.zip --ca-dir ./ca --profile project_profile.yaml
-   nvflare package server1.hospital-central.org.signed.zip --fingerprint <rootca_fingerprint_sha256>
+   nvflare cert approve server1.hospital-central.org/server1.hospital-central.org.request.zip --ca-dir ./ca --profile project_profile.yaml
+   nvflare package server1.hospital-central.org/server1.hospital-central.org.signed.zip --fingerprint <rootca_fingerprint_sha256>
 
 The server participant name follows the same validation convention as
 centralized ``project.yaml`` server participants. A DNS name is recommended for
@@ -389,13 +429,15 @@ Requester machine:
 
    nvflare cert request --participant hospital-a.yaml
 
-Transfer this file to the Project Admin:
+Transfer this file to the Project Admin (for example, copy it into the
+Project Admin's working directory as ``hospital-a.request.zip``):
 
 .. code-block:: text
 
    hospital-a/hospital-a.request.zip
 
-Project Admin machine:
+Project Admin machine (file received as ``hospital-a.request.zip`` in the
+working directory):
 
 .. code-block:: shell
 
@@ -407,18 +449,15 @@ Transfer this file back to the requester:
 
    hospital-a.signed.zip
 
-Requester machine:
-
-.. code-block:: shell
-
-   nvflare package hospital-a.signed.zip --fingerprint <rootca_fingerprint_sha256>
-
-If the signed zip is not next to the local request folder and package cannot
-find the folder from local request state, specify it:
+Requester machine (signed zip placed in the working directory, separate from
+the original ``./hospital-a/`` request folder):
 
 .. code-block:: shell
 
    nvflare package hospital-a.signed.zip --request-dir ./hospital-a --fingerprint <rootca_fingerprint_sha256>
+
+``--request-dir`` is required here because the signed zip is no longer next to
+the local request folder.
 
 *****************************
 Root CA Fingerprint Check
@@ -439,8 +478,8 @@ fingerprint:
 
 .. code-block:: shell
 
-   nvflare package hospital-a.signed.zip --fingerprint <rootca_fingerprint_sha256>
-   nvflare package hospital-a.signed.zip \
+   nvflare package hospital-a/hospital-a.signed.zip --fingerprint <rootca_fingerprint_sha256>
+   nvflare package hospital-a/hospital-a.signed.zip \
        --fingerprint <rootca_fingerprint_sha256>
 
 Use ``--fingerprint <rootca_fingerprint_sha256>`` when you have the expected
@@ -449,7 +488,7 @@ verification, omit the fingerprint option:
 
 .. code-block:: shell
 
-   nvflare package hospital-a.signed.zip
+   nvflare package hospital-a/hospital-a.signed.zip
 
 Without either option, packaging still validates the signed zip, metadata,
 certificate chain, and local private-key match, but it does not prompt and does
@@ -582,14 +621,14 @@ Project Admin:
 
    # create project_profile.yaml
    nvflare cert init --profile project_profile.yaml -o ./ca --deploy-version 00
-   nvflare cert approve hospital-a.request.zip --ca-dir ./ca --profile project_profile.yaml
+   nvflare cert approve hospital-a/hospital-a.request.zip --ca-dir ./ca --profile project_profile.yaml
 
 Requester:
 
 .. code-block:: shell
 
    nvflare cert request --participant hospital-a.yaml
-   nvflare package hospital-a.signed.zip --fingerprint <rootca_fingerprint_sha256>
+   nvflare package hospital-a/hospital-a.signed.zip --fingerprint <rootca_fingerprint_sha256>
 
 With explicit locations:
 
@@ -629,6 +668,9 @@ Notes
   NVFlare runtime.
 - Standard distributed provisioning does not generate ``signature.json``.
   Trust is anchored in the signed participant certificate and ``rootCA.pem``.
+  If a custom builder or alternate provisioning mode does generate
+  ``startup/signature.json``, do not modify startup JSON files after packaging;
+  regenerate the kit instead.
 - Custom builders are not part of the approval chain. Any ``builders:`` block
   in the local participant definition is applied at package time on the
   requester's machine. Features requiring coordinated builder configuration

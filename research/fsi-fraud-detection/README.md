@@ -123,8 +123,11 @@ For other ways to install `uv`, see the [official installation guide](https://do
 
 ```bash
 uv venv --python 3.12 --seed
-uv sync --frozen
+uv sync
 ```
+
+The checked-in `uv.lock.txt` is a reference dependency snapshot only. It is not
+used by `uv sync`, which resolves dependencies from `pyproject.toml`.
 
 ## Step 1: Generate Datasets
 

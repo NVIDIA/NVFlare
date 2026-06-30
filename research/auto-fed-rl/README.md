@@ -20,16 +20,16 @@ The code in this directory is released under Apache v2 License.
 ## 1. Set PYTHONPATH
 Set `PYTHONPATH` to include custom files of this example:
 
-We use both the utils from the [CIFAR-10 examples](../../examples/advanced/cifar10) (e.g., pt.learners, and pt.utils)
+We use both the model and data utilities from the [CIFAR-10 examples](../../examples/advanced/cifar10)
 and files under [./src](./src):
 ```
-export PYTHONPATH=${PWD}/../../examples/advanced/cifar10:${PWD}/../../examples/advanced/cifar10/pt/utils:${PWD}/src
+export PYTHONPATH=${PWD}/../../examples/advanced/cifar10/pt/src:${PWD}/src
 ```
 
 ## 2. Download the CIFAR-10 dataset
 To speed up the following experiments, first download the [CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html) dataset:
 ```
-python3 -m pt.utils.cifar10_data_utils
+python3 -m data.cifar10_data_utils
 ```
 
 ## 3. Run simulated FL experiments

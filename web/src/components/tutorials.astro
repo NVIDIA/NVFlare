@@ -66,6 +66,12 @@ const tutorials = [
     link: `https://nvflare.readthedocs.io/en/${gh_branch}/quickstart.html#containerized-deployment-with-docker`,
   },
   {
+    title: "Docker Job Execution",
+    tags: ["int.", "deployment"],
+    description: "End-to-end Docker runtime example using nvflare deploy prepare and per-job Docker containers.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/docker`,
+  },
+  {
     title: "Cloud Deployment",
     tags: ["adv.", "deployment"],
     description:
@@ -85,6 +91,12 @@ const tutorials = [
     description:
       "Utilize the secure provisioning tool for streamlining the process to provision, start, and operate federated learning with a trusted setup.",
     link: `https://nvflare.readthedocs.io/en/${gh_branch}/user_guide/admin_guide/deployment/overview.html`,
+  },
+  {
+    title: "Distributed Provisioning",
+    tags: ["adv.", "deployment"],
+    description: "Participant-managed certificate request and signed package workflow for cross-organization FLARE deployments.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/distributed_provision`,
   },
   {
     title: "Preflight Check",
@@ -153,6 +165,18 @@ const tutorials = [
     tags: ["beg.", "algorithm", "tensorflow", "recipe-api", "client-api", "dl"],
     description: "MNIST classifier using TensorFlow and FedAvg Recipe. Shows how to convert TensorFlow ML code to FL.",
     link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/hello-tf/README.md`
+  },
+  {
+    title: "Hello JAX",
+    tags: ["beg.", "algorithm", "jax", "recipe-api", "client-api", "dl"],
+    description: "MNIST classifier using FedAvg with JAX and Flax as the deep learning training framework.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/hello-jax`,
+  },
+  {
+    title: "Hello Log Streaming",
+    tags: ["beg.", "tools"],
+    description: "Hello-world example showing live job log streaming from FLARE clients to the server while a job is running.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/hello-log-streaming`,
   },
   {
     title: "Job API Examples",
@@ -307,10 +331,34 @@ const tutorials = [
     link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/bionemo`
   },
   {
+    title: "MedGemma Federated Fine-Tuning",
+    tags: ["adv.", "algorithm", "healthcare", "huggingface", "llm"],
+    description: "Federated QLoRA fine-tuning of MedGemma on histopathology images using NVIDIA FLARE.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/medgemma`,
+  },
+  {
+    title: "Qwen3-VL Federated Fine-Tuning",
+    tags: ["adv.", "algorithm", "healthcare", "huggingface", "llm"],
+    description: "Federated fine-tuning of Qwen3-VL vision-language models on medical VQA data.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/qwen3-vl`,
+  },
+  {
+    title: "Codon-FM Federated Fine-Tuning",
+    tags: ["adv.", "algorithm", "healthcare", "huggingface", "dl"],
+    description: "Federated learning example using CodonFM foundation models for codon-aware genomic tasks.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/codon-fm`,
+  },
+  {
     title: "Hierarchical Federated Statistics",
     tags: ["adv.", "algorithm", "analytics"],
     description: "Show to generate hierarchical statistics for data that can be represented as Pandas Data Frame.",
     link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/federated-statistics/hierarchical_stats`
+  },
+  {
+    title: "Feature Election",
+    tags: ["adv.", "algorithm", "analytics", "ml"],
+    description: "Feature Election is a federated feature selection workflow that aggregates client feature scores into a global feature mask without sharing raw data.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/feature_election`,
   },
   {
     title: "TensorFlow Algorithms and Examples",
@@ -341,6 +389,18 @@ const tutorials = [
     tags: ["adv.", "algorithm", "research", "pytorch"],
     description: "Efficient Federated Black-box Prompt Tuning for Large Language Models.",
     link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/research/fed-bpt`
+  },
+  {
+    title: "FedUMM: Federated Unified Multimodal Models",
+    tags: ["adv.", "algorithm", "research", "huggingface", "llm"],
+    description: "Research implementation for federated unified multimodal models using parameter-efficient LoRA adapter federation.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/research/fedumm`,
+  },
+  {
+    title: "Privacy-Preserving Federated Fraud Detection",
+    tags: ["adv.", "algorithm", "research", "finance", "analytics", "dp"],
+    description: "Financial-services fraud detection research example with synthetic transactions, federated training, interpretability, and differential privacy.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/research/fsi-fraud-detection`,
   },
   {
     title: "FedCE",
@@ -504,7 +564,7 @@ const tutorials = [
 const level = ["beg.", "int.", "adv."];
 const tutorial_category = ["algorithm", "tools", "deployment", "research", "highlight"]
 const flare_api = ["client-api", "model-controller", "learner"];
-const framework = ["pytorch", "tensorflow", "lightning", "xgboost", "sklearn", "numpy", "nemo", "monai", "huggingface"];
+const framework = ["pytorch", "tensorflow", "lightning", "xgboost", "sklearn", "numpy", "jax", "nemo", "monai", "huggingface"];
 const application_type = ["ml", "dl", "llm", "analytics"];
 const industry_domain = ["healthcare", "finance"];
 const privacy_algorithm = ["he", "dp"];
@@ -661,9 +721,7 @@ const tag_list = [
       <span class="h-full w-px bg-gray-200"></span>
         <a href="${tutorial.colab_link}" target="_blank" rel="noopener noreferrer" class="flex-1 border border-transparent h-full flex items-center justify-center text-sm font-semibold text-gray-900">
           <div class="flex items-center">
-            <svg class="pb-1 w-6 h-6 me-1.5" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 18 20">
-              <image class="w-6 h-6" href="${GoogleColab.src}" alt="Google Colab logo"></image>
-            </svg>
+            <img class="w-6 h-6 me-1.5" src="${GoogleColab.src}" alt="" loading="lazy">
             <span>Google Colab</span>
           </div>
         </a>`;

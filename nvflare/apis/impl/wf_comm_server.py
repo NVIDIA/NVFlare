@@ -13,6 +13,7 @@
 # limitations under the License.
 import threading
 import time
+from collections import OrderedDict
 from threading import Lock
 from typing import List, Optional, Tuple, Union
 
@@ -40,6 +41,7 @@ from .task_manager import TaskCheckStatus, TaskManager
 _TASK_KEY_ENGINE = "___engine"
 _TASK_KEY_MANAGER = "___mgr"
 _TASK_KEY_DONE = "___done"
+_COMPLETED_CLIENT_TASK_CACHE_SIZE = 10000
 
 
 def _check_positive_int(name, value):
@@ -80,6 +82,12 @@ class _DeadClientStatus:
         self.disconnect_time = None
 
 
+class _CompletedClientTaskInfo:
+    def __init__(self, client_name: str, task_name: str):
+        self.client_name = client_name
+        self.task_name = task_name
+
+
 class WFCommServer(FLComponent, WFCommSpec):
     def __init__(self, task_check_period=0.2):
         """Manage life cycles of tasks and their destinations.
@@ -92,6 +100,7 @@ class WFCommServer(FLComponent, WFCommSpec):
         self._engine = None
         self._tasks = []  # list of standing tasks
         self._client_task_map = {}  # client_task_id => client_task
+        self._completed_client_task_map = OrderedDict()  # client_task_id => _CompletedClientTaskInfo
         self._all_done = False
         self._task_lock = Lock()
         self._task_monitor = threading.Thread(target=self._monitor_tasks, args=(), name="wf_task", daemon=True)
@@ -385,6 +394,23 @@ class WFCommServer(FLComponent, WFCommSpec):
             # task_id is the uuid associated with the client_task
             return self._client_task_map.get(task_id, None)
 
+    def _remember_completed_client_task(self, client_task: ClientTask):
+        if client_task.result_received_time is None:
+            return
+
+        self._completed_client_task_map[client_task.id] = _CompletedClientTaskInfo(
+            client_name=client_task.client.name, task_name=client_task.task.name
+        )
+        self._completed_client_task_map.move_to_end(client_task.id)
+        while len(self._completed_client_task_map) > _COMPLETED_CLIENT_TASK_CACHE_SIZE:
+            self._completed_client_task_map.popitem(last=False)
+
+    def _get_completed_client_task_info(self, task_id: str):
+        completed_client_task = self._completed_client_task_map.get(task_id)
+        if completed_client_task:
+            self._completed_client_task_map.move_to_end(task_id)
+        return completed_client_task
+
     def process_submission(self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext):
         """Called to process a submission from one client.
 
@@ -422,9 +448,18 @@ class WFCommServer(FLComponent, WFCommSpec):
         with self._task_lock:
             # task_id is the uuid associated with the client_task
             client_task = self._client_task_map.get(task_id, None)
+            completed_client_task = self._get_completed_client_task_info(task_id) if client_task is None else None
             self.log_debug(fl_ctx, "Get submission from client task={} id={}".format(client_task, task_id))
 
         if client_task is None:
+            if (
+                completed_client_task
+                and completed_client_task.client_name == client.name
+                and completed_client_task.task_name == task_name
+            ):
+                self.log_info(fl_ctx, "client task result is already received - submission dropped")
+                return
+
             # cannot find a standing task for the submission
             self.log_debug(fl_ctx, "no standing task found for {}:{}".format(task_name, task_id))
 
@@ -439,12 +474,24 @@ class WFCommServer(FLComponent, WFCommSpec):
 
         task = client_task.task
         with task.cb_lock:
+            if client_task.client.name != client.name:
+                self.log_warning(
+                    fl_ctx,
+                    f"submission client mismatch for {task_name}:{task_id} - got {client.name} "
+                    f"but task is assigned to {client_task.client.name}",
+                )
+                return
+
             if task.name != task_name:
                 raise ValueError("client specified task name {} doesn't match {}".format(task_name, task.name))
 
             if task.completion_status is not None:
                 # the task is already finished - drop the result
                 self.log_info(fl_ctx, "task is already finished - submission dropped")
+                return
+
+            if client_task.result_received_time is not None:
+                self.log_info(fl_ctx, "client task result is already received - submission dropped")
                 return
 
             # do client task CB processing outside the lock
@@ -824,6 +871,7 @@ class WFCommServer(FLComponent, WFCommSpec):
             exit_tasks = list(self._tasks)
             self._tasks.clear()
             self._client_task_map.clear()
+            self._completed_client_task_map.clear()
 
         for task in exit_tasks:
             if task.completion_status is None:
@@ -1057,6 +1105,7 @@ class WFCommServer(FLComponent, WFCommSpec):
                 self._tasks.remove(exit_task)
                 for client_task in exit_task.client_tasks:
                     self.logger.debug("Removing client_task with id={}".format(client_task.id))
+                    self._remember_completed_client_task(client_task)
                     self._client_task_map.pop(client_task.id)
 
         # do the task exit processing outside the lock to minimize the locking time

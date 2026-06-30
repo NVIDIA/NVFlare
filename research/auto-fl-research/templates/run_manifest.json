@@ -1,7 +1,7 @@
 {
   "run_name": "example_run",
   "mutation_theme": "optimizer_tuning",
-  "files_changed": ["client.py"],
+  "files_changed": ["tasks/cifar10/client.py"],
   "commands": ["make validate", "make smoke"],
   "status": "not_run",
   "notes": "fill after each mutation"

@@ -1,0 +1,182 @@
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Integration tests for the refactored recipe system.
+
+NOTE: These tests are currently NOT triggered by any automated test suite.
+They test basic recipe workflow with SimEnv and PocEnv.
+
+To run manually:
+    cd tests/integration_test
+    pytest slow/recipe_system_test.py -v
+
+TODO: Decide if these should be added to an existing test category or run in a separate suite.
+"""
+
+import json
+import os
+
+import numpy as np
+
+from nvflare.apis.fl_constant import WorkspaceConstants
+from nvflare.app_common.default_component_policy import DEFAULT_CLASS_ALLOW_LIST
+from nvflare.app_common.np.recipes import NumpyCrossSiteEvalRecipe, NumpyFedAvgRecipe
+from nvflare.recipe import PocEnv, SimEnv
+from nvflare.recipe.utils import add_cross_site_evaluation
+
+INTEGRATION_TEST_ROOT = os.path.dirname(os.path.dirname(__file__))
+REPO_ROOT = os.path.dirname(os.path.dirname(INTEGRATION_TEST_ROOT))
+
+
+class TestRecipeSystemIntegration:
+    """Integration tests for the entire recipe system workflow."""
+
+    @property
+    def client_script_path(self):
+        """Get absolute path to client.py script."""
+        return os.path.join(INTEGRATION_TEST_ROOT, "client.py")
+
+    def test_end_to_end_simulation_workflow(self):
+        """Test complete workflow with simulation environment."""
+        env = SimEnv(num_clients=2, workspace_root="/tmp/test_integration")
+        recipe = NumpyFedAvgRecipe(
+            name="test_integration",
+            min_clients=2,
+            train_script=self.client_script_path,
+            model=np.array([0.0] * 10),
+        )
+        run = recipe.execute(env)
+        assert run.get_job_id() == "test_integration"
+        assert run.get_status() is None
+        assert run.get_result() == "/tmp/test_integration/test_integration"
+
+    def test_end_to_end_poc_workflow(self):
+        """Test complete workflow with POC environment."""
+        env = PocEnv(num_clients=2)
+        recipe = NumpyFedAvgRecipe(
+            name="test_integration",
+            min_clients=2,
+            train_script=self.client_script_path,
+            model=np.array([0.0] * 10),
+        )
+        run = recipe.execute(env)
+        run.get_result()
+        assert run.get_status() == "FINISHED:COMPLETED"
+
+    def test_hello_numpy_cross_val_training_and_cse(self, tmp_path):
+        """End-to-end: training + CSE with hello-numpy-cross-val client (model required; fail-fast on missing params).
+
+        Uses tmp_path for workspace so it works on Windows, sandboxed CI, and custom temp dirs.
+        Requires simulator to bind ports (run with permissions that allow network/socket bind).
+        """
+        examples_dir = os.path.join(REPO_ROOT, "examples", "hello-world", "hello-numpy-cross-val")
+        client_script = os.path.abspath(os.path.join(examples_dir, "client.py"))
+        workspace_root = str(tmp_path / "hello_numpy_cse")
+        env = SimEnv(num_clients=2, workspace_root=workspace_root)
+        recipe = NumpyFedAvgRecipe(
+            name="hello-numpy-train-cse",
+            min_clients=2,
+            num_rounds=2,
+            model=np.array([0.0] * 10),
+            train_script=client_script,
+            train_args="",
+        )
+        add_cross_site_evaluation(recipe)
+        run = recipe.execute(env)
+        assert run.get_job_id() == "hello-numpy-train-cse"
+        result_path = run.get_result()
+        expected_result = os.path.join(env.workspace_root, run.get_job_id())
+        assert result_path == expected_result
+        assert os.path.isdir(result_path)
+
+    def test_hello_numpy_cross_val_cse_only_dummy_validator(self, tmp_path):
+        """End-to-end: CSE-only with no eval_script (NPValidator + submit_model).
+
+        Uses NumpyCrossSiteEvalRecipe without eval_script so clients use the built-in
+        NPValidator, which handles submit_model by returning make_reply(ReturnCode.OK)
+        and validation by returning dummy metrics. Verifies:
+        - Executor is registered for submit_model (no "no executor available" error).
+        - NPValidator submit_model path completes without ValueError (empty FLModel).
+        - Server model is located, validation tasks run, ValidationJsonGenerator writes results.
+        """
+        model_file = tmp_path / "pretrained.npy"
+        np.save(str(model_file), np.array([1.0, 2.0, 3.0]))
+        workspace_root = str(tmp_path / "cse_only_dummy")
+        job_name = "cse-only-dummy"
+        env = SimEnv(num_clients=2, workspace_root=workspace_root)
+        recipe = NumpyCrossSiteEvalRecipe(
+            name=job_name,
+            min_clients=2,
+            initial_ckpt=str(model_file),
+            # No eval_script -> NPValidator on clients (submit_model returns OK)
+        )
+        run = recipe.execute(env)
+        assert run.get_job_id() == job_name
+        result_path = run.get_result()
+        expected_result = os.path.join(env.workspace_root, run.get_job_id())
+        assert result_path == expected_result
+        assert os.path.isdir(result_path)
+        resources_file = os.path.join(
+            result_path, WorkspaceConstants.SITE_FOLDER_NAME, WorkspaceConstants.DEFAULT_RESOURCES_CONFIG
+        )
+        with open(resources_file) as f:
+            resources = json.load(f)
+        assert resources["class_allow_list"] == list(DEFAULT_CLASS_ALLOW_LIST)
+        # CSE writes cross_val_results.json under server/simulate_job/cross_site_val/
+        cse_results_file = os.path.join(
+            result_path, "server", "simulate_job", "cross_site_val", "cross_val_results.json"
+        )
+        assert os.path.isfile(cse_results_file), (
+            f"CSE results file not found at {cse_results_file}; "
+            "submit_model and/or validation path may not have completed."
+        )
+
+    def test_dict_model_config_simulation(self, tmp_path):
+        """Test that dict model config works in simulation (end-to-end validation)."""
+        import sys
+
+        # Skip if PyTorch not available
+        try:
+            import torch  # noqa: F401
+        except ImportError:
+            import pytest
+
+            pytest.skip("PyTorch not available")
+
+        # Add hello-pt example to path for model import
+        examples_dir = os.path.join(REPO_ROOT, "examples", "hello-world", "hello-pt")
+        sys.path.insert(0, examples_dir)
+
+        from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+
+        # Use dict config instead of class instance
+        model_config = {
+            "class_path": "model.SimpleNetwork",
+            "args": {},
+        }
+
+        env = SimEnv(num_clients=2, workspace_root=str(tmp_path / "test_dict_config"))
+        recipe = FedAvgRecipe(
+            name="test_dict_config",
+            min_clients=2,
+            num_rounds=1,
+            model=model_config,
+            train_script=os.path.join(examples_dir, "client.py"),
+            train_args="--synthetic_data --train_size 32 --test_size 16 --batch_size 16 --num_workers 0 --epochs 1",
+        )
+        run = recipe.execute(env)
+
+        # Verify job was created (simulation returns immediately)
+        assert run.get_job_id() == "test_dict_config"
+        assert run.get_result() == os.path.join(env.workspace_root, run.get_job_id())

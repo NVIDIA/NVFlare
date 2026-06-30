@@ -163,6 +163,66 @@ We use our existing training network under ``../hello-world/hello-pt/model.py`` 
    print(f"Min clients: {recipe.min_clients}")
    print(f"Number of rounds: {recipe.num_rounds}")
 
+Metrics Artifacts
+-----------------
+
+Training aggregation recipes write standard metrics artifacts when their server
+workflow reports round-level aggregation metrics. See
+:ref:`recipe_metrics_artifacts` for the schema, security behavior, and artifact
+discovery contract.
+
+Per-Site Configuration
+----------------------
+
+Some recipes accept site-keyed configuration so that each site can use different
+arguments, scripts, data loaders, or validators. For recipes that implement this
+helper contract, use ``set_per_site_config`` to attach the site-keyed input after
+creating the recipe:
+
+.. code-block:: python
+
+   from nvflare.recipe import SimEnv, set_per_site_config
+
+   set_per_site_config(
+       recipe,
+       {
+           "site-1": {"train_args": "--data_path xxx --batch_size 4"},
+           "site-2": {"train_args": "--data_path yyy --batch_size 2"},
+       },
+   )
+
+   env = SimEnv(clients=recipe.configured_sites())
+
+``configured_sites()`` returns the top-level site names from
+``set_per_site_config`` when helper-provided configuration exists. Otherwise, for
+backward compatibility, it returns site names from a recipe's constructor
+``per_site_config`` when available. It does not infer sites from recipe metadata
+such as resource specs, launcher specs, or mandatory clients. It also does not
+mean those sites are currently connected, validate production enrollment, or
+replace the execution environment.
+
+``set_per_site_config`` stores the mapping and calls the recipe's per-site
+configuration hook. It does not by itself create client targets or rebuild an
+already generated job. A recipe must implement the hook for helper-provided
+per-site fields to affect generated app configuration, command-line arguments,
+data loaders, validators, or other recipe behavior.
+
+.. important::
+
+   The second argument to ``set_per_site_config`` is recipe-specific. The helper
+   validates only that it is a dictionary whose top-level keys are site names and
+   whose values are dictionaries. Users must ensure each per-site dictionary uses
+   fields that the selected recipe understands and can convert into generated app
+   configuration, command-line arguments, data loaders, validators, or other
+   recipe-specific settings.
+
+   For example, FedAvg's current per-site support is through the legacy
+   ``FedAvgRecipe(per_site_config=...)`` constructor argument. That constructor
+   path understands per-site values such as ``train_args``, ``train_script``,
+   and ``command``. It does not automatically interpret arbitrary keys such as
+   ``data_path`` or ``batch_size``. For FedAvg, pass those values through
+   ``train_args`` unless your recipe explicitly documents another shape.
+
 Execution Environments
 ----------------------
 

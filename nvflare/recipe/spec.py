@@ -17,6 +17,15 @@ from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from typing import Dict, List, Optional, Union
 
+# Single source of truth for the default export dir. Kept in the current working
+# directory on purpose: an export is a user-requested artifact, so it lands next to
+# where the script ran (discoverable and predictable), and a relative path stays
+# portable across OSes -- unlike a fixed /tmp path, which is non-portable on Windows
+# and collision-prone on shared hosts.
+DEFAULT_EXPORT_DIR = "./fl_job"
+
+_CONSUMED = False
+
 
 def _consume_recipe_args() -> tuple:
     """Strip --export / --export-dir from sys.argv and return (export, export_dir).
@@ -24,10 +33,20 @@ def _consume_recipe_args() -> tuple:
     Called once at module import time so that the caller's argparse never sees
     these flags regardless of the order in which parse_args() and execute() appear
     in job.py.
+
+    Transactional: sys.argv is only mutated if the parse is clean. A malformed
+    (dangling) --export-dir aborts the pass without mutating sys.argv and without
+    enabling export, so a malformed import can neither raise nor silently export.
+    The decision is frozen after the first call so repeated direct calls return the
+    recorded import-time result rather than re-scanning a since-mutated sys.argv.
     """
+    global _CONSUMED
+    if _CONSUMED:
+        return _RECIPE_EXPORT, _RECIPE_EXPORT_DIR
+
     argv = sys.argv[1:]
     export = False
-    export_dir = "./fl_job"
+    export_dir = DEFAULT_EXPORT_DIR
     remaining = []
     i = 0
     while i < len(argv):
@@ -36,7 +55,14 @@ def _consume_recipe_args() -> tuple:
             i += 1
         elif argv[i] == "--export-dir":
             if i + 1 >= len(argv):
-                raise ValueError("--export-dir requires an argument")
+                # Dangling --export-dir with no value: abort the entire pass. Do not
+                # mutate sys.argv and do not enable export. Leaving argv intact lets the
+                # caller's own parser surface the leftover flags; enabling export here
+                # could export to the default dir against the user's intent (e.g. under
+                # parse_known_args()). Freeze the decision so a later direct call returns
+                # it instead of re-scanning a since-mutated sys.argv.
+                _CONSUMED = True
+                return False, DEFAULT_EXPORT_DIR
             export_dir = argv[i + 1]
             i += 2
         elif argv[i].startswith("--export-dir="):
@@ -46,6 +72,7 @@ def _consume_recipe_args() -> tuple:
             remaining.append(argv[i])
             i += 1
     sys.argv[1:] = remaining
+    _CONSUMED = True
     return export, export_dir
 
 
@@ -56,8 +83,8 @@ def _consume_recipe_args() -> tuple:
 _RECIPE_EXPORT, _RECIPE_EXPORT_DIR = _consume_recipe_args()
 
 
-def _peek_recipe_args(argv: Optional[List[str]] = None) -> tuple:
-    """Return the export flags consumed at import time (argv argument is ignored)."""
+def _peek_recipe_args() -> tuple:
+    """Return the export flags consumed at import time."""
     return _RECIPE_EXPORT, _RECIPE_EXPORT_DIR
 
 
@@ -164,6 +191,7 @@ class Recipe(ABC):
             job: the job that implements the recipe.
         """
         self.job = job
+        self._helper_per_site_config = None
 
     def process_env(self, env: ExecEnv):
         """Process environment-specific configuration.
@@ -172,6 +200,37 @@ class Recipe(ABC):
         Script validation is handled by each ExecEnv subclass in deploy().
         """
         pass
+
+    def set_per_site_config(self, config: Dict[str, Dict]) -> None:
+        """Set helper-provided per-site configuration for this recipe.
+
+        The generic helper validates only the site-keyed shape. Recipes that
+        need to map fields into generated app config, command arguments, data
+        loaders, or validators should override ``_apply_per_site_config``.
+        """
+        self._helper_per_site_config = dict(config)
+        self._apply_per_site_config(dict(self._helper_per_site_config))
+
+    def _apply_per_site_config(self, config: Dict[str, Dict]) -> None:
+        """Recipe-specific hook for helper-provided per-site configuration."""
+        pass
+
+    def configured_sites(self) -> List[str]:
+        """Return site keys configured through the helper or legacy constructor config.
+
+        This reports configured site names only. It does not infer sites from job
+        metadata, validate production enrollment, or indicate which clients are
+        connected in the execution environment.
+        """
+        helper_per_site_config = getattr(self, "_helper_per_site_config", None)
+        if helper_per_site_config is not None:
+            return list(helper_per_site_config.keys())
+
+        legacy_per_site_config = getattr(self, "per_site_config", None)
+        if isinstance(legacy_per_site_config, dict):
+            return list(legacy_per_site_config.keys())
+
+        return []
 
     def _snapshot_additional_params(self) -> Dict[str, Dict]:
         snapshot = {}

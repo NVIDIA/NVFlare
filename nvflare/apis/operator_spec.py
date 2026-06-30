@@ -13,7 +13,6 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import Union
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ControllerSpec
@@ -32,7 +31,7 @@ class OperatorSpec(ABC):
         task_data: Shareable,
         abort_signal: Signal,
         fl_ctx: FLContext,
-    ) -> Union[Shareable, None]:
+    ) -> Shareable | None:
         pass
 
     def process_result_of_unknown_task(

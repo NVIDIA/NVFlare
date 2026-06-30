@@ -21,6 +21,7 @@ from cryptography.x509 import Certificate
 
 from nvflare.fuel.f3.cellnet.cell_cipher import SimpleCellCipher
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.identity import CellIdentityResolver, get_cert_common_name_from_pem
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.message import Message
@@ -38,11 +39,18 @@ CERT_REQ_TIMEOUT = 10
 class CredentialManager:
     """Helper class for secure message. It holds the local credentials and certificate cache"""
 
-    def __init__(self, local_endpoint: Endpoint):
+    def __init__(
+        self,
+        local_endpoint: Endpoint,
+        identity_resolver: CellIdentityResolver = None,
+        enforce_identity: bool = False,
+    ):
 
         self.local_endpoint = local_endpoint
         self.cert_cache = {}
         self.lock = threading.Lock()
+        self.identity_resolver = identity_resolver if identity_resolver else CellIdentityResolver(local_endpoint.name)
+        self.enforce_identity = enforce_identity
 
         conn_props = self.local_endpoint.conn_props
         ca_cert_path = conn_props.get(DriverParams.CA_CERT)
@@ -64,32 +72,33 @@ class CredentialManager:
             self.ca_cert = self.read_file(ca_cert_path)
             self.local_cert = self.read_file(local_cert_path)
             self.local_key = self.read_file(local_key_path)
-            self.cell_cipher = SimpleCellCipher(self.get_ca_cert(), self.get_local_key(), self.get_local_cert())
+            self.cell_cipher = SimpleCellCipher(self.get_ca_cert(), self.get_local_key(), self.get_local_cert_chain())
 
         if not self.local_cert:
             log.debug("Certificate is not configured, secure message is not supported")
             self.cell_cipher = None
         else:
-            self.cell_cipher = SimpleCellCipher(self.get_ca_cert(), self.get_local_key(), self.get_local_cert())
+            self.cell_cipher = SimpleCellCipher(self.get_ca_cert(), self.get_local_key(), self.get_local_cert_chain())
 
     def encrypt(self, target_cert: bytes, payload: bytes) -> bytes:
 
         if not self.cell_cipher:
             raise RuntimeError("Secure message not supported, Cell not running in secure mode")
 
-        return self.cell_cipher.encrypt(payload, x509.load_pem_x509_certificate(target_cert))
+        return self.cell_cipher.encrypt(payload, x509.load_pem_x509_certificates(target_cert))
 
     def decrypt(self, origin_cert: bytes, cipher: bytes) -> bytes:
 
         if not self.cell_cipher:
             raise RuntimeError("Secure message not supported, Cell not running in secure mode")
 
-        return self.cell_cipher.decrypt(cipher, x509.load_pem_x509_certificate(origin_cert))
+        return self.cell_cipher.decrypt(cipher, x509.load_pem_x509_certificates(origin_cert))
 
     def get_certificate(self, fqcn: str) -> bytes:
         if not self.cell_cipher:
             raise RuntimeError("This cell doesn't support certificate exchange, not running in secure mode")
-        return self.cert_cache.get(fqcn)
+        with self.lock:
+            return self.cert_cache.get(fqcn)
 
     def create_request(self) -> dict:
         req = {
@@ -98,6 +107,20 @@ class CredentialManager:
         }
 
         return req
+
+    def _cache_cert(self, fqcn: str, cert: bytes):
+        if not cert:
+            raise RuntimeError(f"missing certificate for {fqcn}")
+
+        if self.enforce_identity:
+            cn = get_cert_common_name_from_pem(cert)
+            try:
+                self.identity_resolver.require_match(fqcn, cn, f"certificate for {fqcn}")
+            except ValueError as ex:
+                raise RuntimeError(str(ex))
+
+        with self.lock:
+            self.cert_cache[fqcn] = cert
 
     def process_request(self, request: Message) -> dict:
         origin = request.get_header(MessageHeaderKey.ORIGIN)
@@ -110,7 +133,7 @@ class CredentialManager:
             cert = payload.get(CERT_CONTENT)
 
             # Save cert from requester in the cache
-            self.cert_cache[origin] = cert
+            self._cache_cert(origin, cert)
 
             reply[CERT_CONTENT] = self.local_cert
             reply[CERT_CA_CONTENT] = self.ca_cert
@@ -125,11 +148,14 @@ class CredentialManager:
             raise RuntimeError(f"Request to get certificate from {origin} failed: {error}")
 
         cert = reply.get(CERT_CONTENT)
-        self.cert_cache[origin] = cert
+        self._cache_cert(origin, cert)
         return cert
 
     def get_local_cert(self) -> Certificate:
         return x509.load_pem_x509_certificate(self.local_cert)
+
+    def get_local_cert_chain(self) -> list:
+        return x509.load_pem_x509_certificates(self.local_cert)
 
     def get_local_key(self) -> RSAPrivateKey:
         return serialization.load_pem_private_key(self.local_key, password=None)

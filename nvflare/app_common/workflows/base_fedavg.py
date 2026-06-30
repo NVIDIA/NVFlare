@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List
+import math
+from typing import Any, Dict, List, Optional
 
 from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.app_common.abstract.fl_model import FLModel
@@ -29,6 +30,100 @@ from nvflare.fuel.utils.validation_utils import check_non_negative_int
 from nvflare.security.logging import secure_format_exception
 
 from .model_controller import ModelController
+
+
+def make_fedavg_metrics_aggregation_info(
+    key_metric: Optional[str] = None,
+    key_metric_mode: Optional[str] = None,
+    key_metric_mode_source: Optional[str] = None,
+    weight_key: str = FLMetaKey.NUM_STEPS_CURRENT_ROUND,
+    weight_formula: Optional[str] = None,
+    site_weights: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    aggregation = {
+        "method": "weighted_average",
+        "weight_key": weight_key,
+        "metric_policy": "finite_numeric_metrics_only_per_key_denominator",
+    }
+    if weight_formula:
+        aggregation["weight_formula"] = weight_formula
+
+    info = {
+        "metric_source": "client_reported_flmodel_metrics",
+        "aggregation": aggregation,
+    }
+    if key_metric and key_metric_mode in ("max", "min"):
+        key_metric_info = {"name": key_metric, "mode": key_metric_mode}
+        if key_metric_mode_source:
+            key_metric_info["mode_source"] = key_metric_mode_source
+        info["key_metric"] = key_metric_info
+    if site_weights:
+        info["site_weights"] = site_weights
+    return info
+
+
+def make_key_metric_info_from_stop_condition(stop_cond, stop_condition) -> Optional[Dict[str, Any]]:
+    if not stop_cond or not stop_condition:
+        return None
+    tokens = stop_cond.split(" ")
+    if len(tokens) != 3:
+        return None
+    op = tokens[1]
+    if op in (">", ">="):
+        mode = "max"
+    elif op in ("<", "<="):
+        mode = "min"
+    else:
+        return None
+    return {
+        "name": stop_condition[0],
+        "mode": mode,
+        "mode_source": "derived_from_stop_condition",
+    }
+
+
+def _get_client_name(result: FLModel) -> str:
+    meta = result.meta or {}
+    value = meta.get("client_name", AppConstants.CLIENT_UNKNOWN)
+    return value if isinstance(value, str) and value else AppConstants.CLIENT_UNKNOWN
+
+
+def _get_num_steps_weight(result: FLModel) -> float:
+    meta = result.meta or {}
+    value = meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND)
+    if value is None or isinstance(value, bool):
+        return 1.0
+    try:
+        weight = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return 1.0
+    if not math.isfinite(weight) or weight <= 0:
+        return 1.0
+    return weight
+
+
+def _aggregate_fl_model_metrics(results: List[FLModel]) -> Optional[Dict[str, Any]]:
+    """Aggregate FLModel metrics across results with FedAvg-compatible semantics.
+
+    Metrics are weighted averages of client metric values. For non-linear metrics
+    such as AUROC, this is not the same as computing the metric from pooled
+    predictions across all clients.
+    """
+    aggr_metrics_helper = WeightedAggregationHelper()
+    for _result in results:
+        if _result.metrics is None:
+            return None
+        aggregatable = filter_aggregatable_metrics(_result.metrics)
+        if aggregatable:
+            aggr_metrics_helper.add(
+                data=aggregatable,
+                weight=_get_num_steps_weight(_result),
+                contributor_name=_get_client_name(_result),
+                contribution_round=_result.current_round,
+            )
+
+    aggr_metrics = aggr_metrics_helper.get_result()
+    return aggr_metrics or None
 
 
 class BaseFedAvg(ModelController):
@@ -91,7 +186,7 @@ class BaseFedAvg(ModelController):
         empty_clients = []
         for _result in results:
             if not _result.params:
-                empty_clients.append(_result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN))
+                empty_clients.append(_get_client_name(_result))
 
         if len(empty_clients) > 0:
             raise ValueError(f"Result from client(s) {empty_clients} is empty!")
@@ -109,36 +204,26 @@ class BaseFedAvg(ModelController):
             raise ValueError("received empty results for aggregation.")
 
         aggr_helper = WeightedAggregationHelper()
-        aggr_metrics_helper = WeightedAggregationHelper()
-        all_metrics = True
         for _result in results:
             aggr_helper.add(
                 data=_result.params,
-                weight=_result.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, 1.0),
-                contributor_name=_result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN),
+                weight=_get_num_steps_weight(_result),
+                contributor_name=_get_client_name(_result),
                 contribution_round=_result.current_round,
             )
-            if _result.metrics is None:
-                all_metrics = False
-            if all_metrics:
-                aggregatable = filter_aggregatable_metrics(_result.metrics)
-                if aggregatable:
-                    aggr_metrics_helper.add(
-                        data=aggregatable,
-                        weight=_result.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, 1.0),
-                        contributor_name=_result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN),
-                        contribution_round=_result.current_round,
-                    )
 
         aggr_params = aggr_helper.get_result()
-        aggr_metrics = aggr_metrics_helper.get_result() if all_metrics else None
-        aggr_metrics = aggr_metrics or None
+        aggr_metrics = _aggregate_fl_model_metrics(results)
 
         aggr_result = FLModel(
             params=aggr_params,
             params_type=results[0].params_type,
             metrics=aggr_metrics,
-            meta={"nr_aggregated": len(results), "current_round": results[0].current_round},
+            meta={
+                "nr_aggregated": len(results),
+                "current_round": results[0].current_round,
+                AppConstants.METRICS_AGGREGATION_INFO: make_fedavg_metrics_aggregation_info(),
+            },
         )
         return aggr_result
 
@@ -168,6 +253,7 @@ class BaseFedAvg(ModelController):
             self.panic(error_msg)
             return FLModel()
         self._results = []
+        self._set_metrics_aggregation_info(aggr_result)
 
         self.fire_event_with_data(
             AppEventType.AFTER_AGGREGATION, self.fl_ctx, AppConstants.AGGREGATION_RESULT, aggr_result
@@ -176,6 +262,22 @@ class BaseFedAvg(ModelController):
         self.debug("End aggregation.")
 
         return aggr_result
+
+    def _set_metrics_aggregation_info(self, aggr_result: FLModel):
+        if not isinstance(aggr_result, FLModel):
+            return
+        aggr_result.meta = aggr_result.meta or {}
+        info = aggr_result.meta.get(AppConstants.METRICS_AGGREGATION_INFO)
+        if isinstance(info, dict):
+            info = dict(info)
+        else:
+            info = make_fedavg_metrics_aggregation_info()
+        key_metric_info = make_key_metric_info_from_stop_condition(
+            getattr(self, "stop_cond", None), getattr(self, "stop_condition", None)
+        )
+        if key_metric_info and "key_metric" not in info:
+            info["key_metric"] = key_metric_info
+        aggr_result.meta[AppConstants.METRICS_AGGREGATION_INFO] = info
 
     def update_model(self, model, aggr_result):
         """Called by the `run` routine to update the current global model (self.model) given the aggregated result.
