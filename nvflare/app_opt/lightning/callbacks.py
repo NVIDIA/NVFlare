@@ -45,6 +45,10 @@ class _ScaffoldHandler:
     def active(self) -> bool:
         return self._active
 
+    @property
+    def num_steps(self) -> int:
+        return self._num_steps
+
     def start_round(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", input_model: FLModel):
         meta = input_model.meta or {}
         control_key = AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL
@@ -62,6 +66,16 @@ class _ScaffoldHandler:
             raise RuntimeError(
                 "Automatic Lightning SCAFFOLD support requires automatic optimization. "
                 "For manual optimization, integrate PTScaffoldHelper directly into the training loop."
+            )
+
+        scaler = getattr(trainer, "scaler", None)
+        if scaler is None:
+            scaler = getattr(getattr(trainer, "precision_plugin", None), "scaler", None)
+        if scaler is not None:
+            raise RuntimeError(
+                "Automatic Lightning SCAFFOLD support does not support mixed precision that uses a gradient "
+                "scaler because the scaler can skip optimizer steps. Use precision='32-true' or "
+                "precision='bf16-mixed', or integrate PTScaffoldHelper directly into the training loop."
             )
 
         optimizers = getattr(trainer, "optimizers", None) or []

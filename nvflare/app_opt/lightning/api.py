@@ -55,7 +55,8 @@ def patch(
         When the received model contains SCAFFOLD global controls, ``patch`` automatically
         applies ``PTScaffoldHelper`` around Lightning's optimizer steps and returns the
         required control difference. This supports automatic optimization with one optimizer;
-        manual optimization must integrate ``PTScaffoldHelper`` directly.
+        manual optimization and mixed precision backed by a gradient scaler must integrate
+        ``PTScaffoldHelper`` directly.
 
     Example:
 
@@ -191,9 +192,12 @@ class FLCallback(Callback):
         else:
             fl_meta = {}
         if self._is_training:
+            scaffold_steps = self._scaffold.num_steps if self._scaffold.active else None
             fl_meta.update(self._scaffold.finish_round(pl_module))
             if MetaKey.NUM_STEPS_CURRENT_ROUND not in fl_meta:
-                fl_meta[MetaKey.NUM_STEPS_CURRENT_ROUND] = trainer.estimated_stepping_batches
+                fl_meta[MetaKey.NUM_STEPS_CURRENT_ROUND] = (
+                    scaffold_steps if scaffold_steps is not None else trainer.estimated_stepping_batches
+                )
             model = FLModel(params=pl_module.cpu().state_dict(), meta=fl_meta)
             if self.train_with_evaluation:
                 if self.metrics is None:

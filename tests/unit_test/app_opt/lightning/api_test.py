@@ -268,6 +268,16 @@ def test_scaffold_handler_rejects_manual_optimization():
         _ScaffoldHandler().start_round(_trainer(optimizer), module, _scaffold_model(module))
 
 
+def test_scaffold_handler_rejects_gradient_scaler_mixed_precision():
+    module = SimpleNet()
+    optimizer = torch.optim.SGD(module.parameters(), lr=0.1)
+    trainer = _trainer(optimizer)
+    trainer.scaler = MagicMock()
+
+    with pytest.raises(RuntimeError, match="does not support mixed precision that uses a gradient scaler"):
+        _ScaffoldHandler().start_round(trainer, module, _scaffold_model(module))
+
+
 def test_scaffold_handler_rejects_multiple_optimizers():
     module = SimpleNet()
     optimizer_1 = torch.optim.SGD([module.fc.weight], lr=0.1)
@@ -326,15 +336,17 @@ def test_scaffold_handler_rejects_round_without_optimizer_step():
         handler.finish_round(module)
 
 
-def test_train_end_merges_scaffold_and_user_metadata_without_mutating_module_metadata():
+def test_train_end_uses_scaffold_completed_steps_and_preserves_user_metadata():
     callback = _make_callback()
     callback._is_training = True
+    callback._scaffold._active = True
+    callback._scaffold._num_steps = 3
     callback._scaffold.finish_round = MagicMock(return_value={AlgorithmConstants.SCAFFOLD_CTRL_DIFF: {"fc": 1}})
     callback._send_model = MagicMock()
     callback.reset_state = MagicMock()
     module = SimpleNet()
     module.__fl_meta__ = {"custom": "value"}
-    trainer = SimpleNamespace(estimated_stepping_batches=3)
+    trainer = SimpleNamespace(estimated_stepping_batches=6)
 
     callback.on_train_end(trainer, module)
 
@@ -343,6 +355,37 @@ def test_train_end_merges_scaffold_and_user_metadata_without_mutating_module_met
     assert output_model.meta[MetaKey.NUM_STEPS_CURRENT_ROUND] == 3
     assert output_model.meta[AlgorithmConstants.SCAFFOLD_CTRL_DIFF] == {"fc": 1}
     assert module.__fl_meta__ == {"custom": "value"}
+
+
+def test_train_end_preserves_explicit_user_step_count_for_scaffold():
+    callback = _make_callback()
+    callback._is_training = True
+    callback._scaffold._active = True
+    callback._scaffold._num_steps = 3
+    callback._scaffold.finish_round = MagicMock(return_value={AlgorithmConstants.SCAFFOLD_CTRL_DIFF: {"fc": 1}})
+    callback._send_model = MagicMock()
+    callback.reset_state = MagicMock()
+    module = SimpleNet()
+    module.__fl_meta__ = {MetaKey.NUM_STEPS_CURRENT_ROUND: 5}
+    trainer = SimpleNamespace(estimated_stepping_batches=6)
+
+    callback.on_train_end(trainer, module)
+
+    output_model = callback._send_model.call_args.args[0]
+    assert output_model.meta[MetaKey.NUM_STEPS_CURRENT_ROUND] == 5
+
+
+def test_train_end_fedavg_keeps_estimated_step_count_behavior():
+    callback = _make_callback()
+    callback._is_training = True
+    callback._send_model = MagicMock()
+    callback.reset_state = MagicMock()
+    trainer = SimpleNamespace(estimated_stepping_batches=6)
+
+    callback.on_train_end(trainer, SimpleNet())
+
+    output_model = callback._send_model.call_args.args[0]
+    assert output_model.meta[MetaKey.NUM_STEPS_CURRENT_ROUND] == 6
 
 
 def test_validation_before_fit_does_not_start_scaffold_until_training_starts():
@@ -394,4 +437,5 @@ def test_real_lightning_fit_with_gradient_accumulation_returns_scaffold_controls
 
     output_model = send.call_args.args[0]
     assert AlgorithmConstants.SCAFFOLD_CTRL_DIFF in output_model.meta
+    assert output_model.meta[MetaKey.NUM_STEPS_CURRENT_ROUND] == 2
     assert callback._scaffold._helper.cnt == 2
