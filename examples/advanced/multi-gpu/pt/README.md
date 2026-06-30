@@ -88,6 +88,8 @@ The client script uses the global distributed rank for NVFlare Client API and
 the local rank for CUDA device placement:
 
 ```python
+import os
+
 global_rank = dist.get_rank()
 local_rank = int(os.environ["LOCAL_RANK"])
 

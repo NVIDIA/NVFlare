@@ -27,45 +27,50 @@ def _broadcast_object_from_rank0(obj):
 def main():
     dist.init_process_group(backend="gloo")
 
-    rank = dist.get_rank()
-    world_size = dist.get_world_size()
-    if world_size != 2:
-        raise RuntimeError(f"expected two torchrun ranks, got world_size={world_size}")
+    try:
+        rank = dist.get_rank()
+        world_size = dist.get_world_size()
+        if world_size != 2:
+            raise RuntimeError(f"expected two torchrun ranks, got world_size={world_size}")
 
-    flare.init(rank=rank)
+        flare.init(rank=rank)
 
-    received_model = flare.receive()
-    if rank == 0:
-        if received_model is None:
-            raise RuntimeError("rank 0 expected an FLModel from NVFlare")
-    elif received_model is not None:
-        raise RuntimeError("nonzero rank should not receive directly from NVFlare")
+        received_model = flare.receive()
+        if rank == 0:
+            if received_model is None:
+                raise RuntimeError("rank 0 expected an FLModel from NVFlare")
+        elif received_model is not None:
+            raise RuntimeError("nonzero rank should not receive directly from NVFlare")
 
-    input_model = _broadcast_object_from_rank0(received_model)
-    if input_model is None or input_model.params is None:
-        raise RuntimeError("distributed broadcast did not provide the FLModel to all ranks")
+        input_model = _broadcast_object_from_rank0(received_model)
+        if input_model is None or input_model.params is None:
+            raise RuntimeError("distributed broadcast did not provide the FLModel to all ranks")
 
-    rank_contribution = torch.tensor(float(rank + 1))
-    dist.all_reduce(rank_contribution, op=dist.ReduceOp.SUM)
-    if rank_contribution.item() != 3.0:
-        raise RuntimeError(f"expected rank contribution sum 3.0, got {rank_contribution.item()}")
+        rank_contribution = torch.tensor(float(rank + 1))
+        dist.all_reduce(rank_contribution, op=dist.ReduceOp.SUM)
+        if rank_contribution.item() != 3.0:
+            raise RuntimeError(f"expected rank contribution sum 3.0, got {rank_contribution.item()}")
 
-    params = {name: tensor.detach().clone() + rank_contribution.item() for name, tensor in input_model.params.items()}
-    output_model = flare.FLModel(
-        params=params,
-        metrics={
-            "accuracy": rank_contribution.item(),
-            "torchrun_world_size": world_size,
-        },
-        meta={
-            "NUM_STEPS_CURRENT_ROUND": world_size,
-            "torchrun_rank": rank,
-        },
-    )
+        params = {
+            name: tensor.detach().clone() + rank_contribution.item() for name, tensor in input_model.params.items()
+        }
+        output_model = flare.FLModel(
+            params=params,
+            metrics={
+                "accuracy": rank_contribution.item(),
+                "torchrun_world_size": world_size,
+            },
+            meta={
+                "NUM_STEPS_CURRENT_ROUND": world_size,
+                "torchrun_rank": rank,
+            },
+        )
 
-    if rank == 0:
-        flare.send(output_model)
-    dist.destroy_process_group()
+        if rank == 0:
+            flare.send(output_model)
+        dist.barrier()
+    finally:
+        dist.destroy_process_group()
 
 
 if __name__ == "__main__":
