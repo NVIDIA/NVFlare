@@ -1554,7 +1554,18 @@ def write_state(
     return state
 
 
-def write_progress(path: Path, records: List[RunRecord], mode: str, metric_label: str) -> None:
+def load_progress_plotter():
+    script_path = Path(__file__).with_name("plot_progress.py")
+    spec = importlib.util.spec_from_file_location("nvflare_autofl_plot_progress", script_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load Auto-FL progress plotter from {script_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def write_progress_fallback(path: Path, records: List[RunRecord], mode: str, metric_label: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         from PIL import Image, ImageDraw, ImageFont
@@ -1601,6 +1612,14 @@ def write_progress(path: Path, records: List[RunRecord], mode: str, metric_label
                     draw.line((last_point[0], last_point[1], x, y), fill=(40, 160, 90), width=2)
                 last_point = (x, y)
     image.save(path)
+
+
+def write_progress(path: Path, records: List[RunRecord], mode: str, metric_label: str) -> None:
+    plotter = load_progress_plotter()
+    try:
+        plotter.plot_progress(records, path, mode, metric_label)
+    except (plotter.NoScoredResultsError, plotter.PlotDependencyError):
+        write_progress_fallback(path, records, mode, metric_label)
 
 
 def write_report(path: Path, config: Dict[str, Any], records: List[RunRecord], args: argparse.Namespace) -> None:

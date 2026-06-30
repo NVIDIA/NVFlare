@@ -61,6 +61,7 @@ def _initialize_fake_campaign(runner, tmp_path, monkeypatch, *, target_env="sim"
     config["environment"]["requested"] = target_env
     monkeypatch.setattr(runner, "import_job_config", lambda *args, **kwargs: deepcopy(config))
     monkeypatch.setattr(runner, "job_help", lambda *args, **kwargs: "")
+    monkeypatch.setattr(runner, "write_progress", lambda path, *args: path.write_bytes(b"progress"))
 
     def fake_run(run_def, **kwargs):
         return runner.RunRecord(
