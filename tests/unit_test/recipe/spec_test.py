@@ -556,6 +556,10 @@ class TestRecipeMetaHelper:
         assert recipe.job.job.meta_props["launcher_spec"] == {"site-1": {"docker": {"image": "nvflare:latest"}}}
         assert recipe.job.job.meta_props["mandatory_clients"] == ["site-1"]
 
+    def test_set_recipe_meta_requires_recipe_with_fed_job(self):
+        with pytest.raises(TypeError, match="recipe must provide a FedJob through recipe.job"):
+            set_recipe_meta(object(), JobMetaKey.STUDY, "default")
+
     @pytest.mark.parametrize(
         "key, value, error_type, match",
         [
