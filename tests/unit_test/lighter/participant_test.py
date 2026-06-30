@@ -34,6 +34,40 @@ class TestParticipant:
         with pytest.raises(ValueError):
             _ = Participant(name=invalid_name, org="org", type=type)
 
+    def test_ephemeral_admin_allows_kit_name(self):
+        participant = Participant(
+            name="sso-admin-kit",
+            org=None,
+            type="admin",
+            props={
+                "ephemeral_admin_cert": {
+                    "provider": "step_ca",
+                    "provider_config": {
+                        "ca_url": "https://step-ca.example.com",
+                        "provisioner": "nvflare-admin-oidc",
+                    },
+                },
+            },
+        )
+
+        assert participant.name == "sso-admin-kit"
+        assert not participant.org
+
+    @pytest.mark.parametrize(
+        "props,org,match",
+        [
+            ({"role": "project_admin", "ephemeral_admin_cert": {"provider": "step_ca"}}, None, "must not define role"),
+            ({"ephemeral_admin_cert": {"provider": "step_ca"}}, "org", "must not define org"),
+        ],
+    )
+    def test_ephemeral_admin_rejects_project_time_identity(self, props, org, match):
+        with pytest.raises(ValueError, match=match):
+            _ = Participant(name="sso-admin-kit", org=org, type="admin", props=props)
+
+    def test_static_admin_rejects_kit_name(self):
+        with pytest.raises(ValueError):
+            _ = Participant(name="sso-admin-kit", org="org", type="admin", props={"role": "project_admin"})
+
     @pytest.mark.parametrize(
         "invalid_org",
         [("org-"), ("org@"), ("org!"), ("org~")],

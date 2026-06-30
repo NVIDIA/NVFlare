@@ -23,6 +23,7 @@ type_pattern_mapping = {
     "job_name": r"^[A-Za-z0-9][A-Za-z0-9._-]*$",
     "relay": r"^[A-Za-z0-9-_]+$",
     "admin": r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}$",
+    "admin_kit": r"^[A-Za-z0-9-_]+$",
     "email": r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}$",
     "org": r"^[A-Za-z0-9_]+$",
     "simple_name": r"^[A-Za-z0-9_]+$",

@@ -260,6 +260,14 @@ you will need to modify the corresponding script.  The same applies to the other
 The email to participate this FL project is embedded in the CN field of client certificate, which uniquely identifies
 the participant. As such, please safeguard its private key, client.key.
 
+Some projects use ephemeral admin certificates. In that case, the admin startup
+kit contains ``ephemeral_admin_cert`` in ``fed_admin.json`` instead of static
+``client.crt`` and ``client.key`` files. The admin client obtains a short-lived
+admin certificate and private key from the configured provider when connecting
+to the server, then uses the same certificate login and job-signing flow as a
+static admin kit. The startup kit name can be a generic name such as
+``sso-admin-kit``; the issued certificate contains the real admin identity.
+
 .. attention::
 
    You will need write access in the directory containing the "startup" folder because the "transfer" directory for

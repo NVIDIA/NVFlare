@@ -12,9 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import os
 
+from .check_rule import CHECK_PASSED
 from .client_package_checker import ClientPackageChecker
+from .package_checker import CheckStatus
 from .utils import NVFlareConfig, NVFlareRole
 
 
@@ -27,3 +30,15 @@ class NVFlareConsolePackageChecker(ClientPackageChecker):
 
     def get_dry_run_inputs(self):
         return os.path.basename(os.path.normpath(self.package_path))
+
+    def check_dry_run(self) -> CheckStatus:
+        startup = os.path.join(self.package_path, "startup")
+        try:
+            with open(os.path.join(startup, NVFlareConfig.ADMIN), "r") as f:
+                config = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return super().check_dry_run()
+        if config.get("admin", {}).get("ephemeral_admin_cert"):
+            self.add_report("Check dry run", CHECK_PASSED, "N/A")
+            return CheckStatus.PASS
+        return super().check_dry_run()

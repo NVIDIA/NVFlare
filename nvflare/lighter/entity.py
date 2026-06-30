@@ -238,7 +238,7 @@ class Entity:
 
 
 class Participant(Entity):
-    def __init__(self, type: str, name: str, org: str, props: Optional[dict] = None, project: Entity = None):
+    def __init__(self, type: str, name: str, org: Optional[str], props: Optional[dict] = None, project: Entity = None):
         """Class to represent a participant.
 
         Each participant communicates to other participant.  Therefore, each participant has its
@@ -256,8 +256,11 @@ class Participant(Entity):
         """
         Entity.__init__(self, f"{type}::{name}", name, props, parent=project)
 
+        ephemeral_admin = type == ParticipantType.ADMIN and bool(props and props.get(PropKey.EPHEMERAL_ADMIN_CERT))
         if type in DEFINED_PARTICIPANT_TYPES:
             err, reason = name_check(name, type)
+            if err and ephemeral_admin:
+                err, reason = name_check(name, "admin_kit")
             if err:
                 raise ValueError(reason)
         else:
@@ -266,24 +269,32 @@ class Participant(Entity):
                 raise ValueError(reason)
             print(f"Warning: participant type '{type}' of {name} is not a defined type {DEFINED_PARTICIPANT_TYPES}")
 
-        err, reason = name_check(org, "org")
-        if err:
-            raise ValueError(reason)
+        if ephemeral_admin and org:
+            raise ValueError(f"ephemeral admin '{name}' must not define org; org comes from issued cert")
+        if org:
+            err, reason = name_check(org, "org")
+            if err:
+                raise ValueError(reason)
+        elif not ephemeral_admin:
+            raise ValueError(f"missing participant {PropKey.ORG}")
 
         if type == ParticipantType.ADMIN:
-            if not props:
+            if ephemeral_admin:
+                if props.get(PropKey.ROLE):
+                    raise ValueError(f"ephemeral admin '{name}' must not define role; role comes from issued cert")
+            elif not props:
                 raise ValueError(f"missing role for admin '{name}'")
+            else:
+                role = props.get(PropKey.ROLE)
+                if not role:
+                    raise ValueError(f"missing role for admin '{name}'")
 
-            role = props.get(PropKey.ROLE)
-            if not role:
-                raise ValueError(f"missing role for admin '{name}'")
+                err, reason = name_check(role, "simple_name")
+                if err:
+                    raise ValueError(f"bad role value '{role}' for admin '{name}': {reason}")
 
-            err, reason = name_check(role, "simple_name")
-            if err:
-                raise ValueError(f"bad role value '{role}' for admin '{name}': {reason}")
-
-            if role not in DEFINED_ROLES:
-                print(f"Warning: '{role}' of admin '{name}' is not a defined role {DEFINED_ROLES}")
+                if role not in DEFINED_ROLES:
+                    print(f"Warning: '{role}' of admin '{name}' is not a defined role {DEFINED_ROLES}")
 
         self.type = type
         self.org = org
@@ -374,7 +385,7 @@ def participant_from_dict(participant_def: dict) -> Participant:
 
     name = _must_get(participant_def, PropKey.NAME)
     t = _must_get(participant_def, PropKey.TYPE)
-    org = _must_get(participant_def, PropKey.ORG)
+    org = participant_def.pop(PropKey.ORG, None)
     return Participant(type=t, name=name, org=org, props=participant_def)
 
 

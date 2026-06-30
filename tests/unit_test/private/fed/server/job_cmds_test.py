@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import datetime
 import gc
 import io
 from argparse import Namespace
@@ -154,6 +155,7 @@ class _FakeJobDefManager:
     def __init__(self):
         self.created_meta = None
         self.cloned_meta = None
+        self.content = None
 
     def create(self, meta, uploaded_content, fl_ctx):
         self.created_meta = dict(meta)
@@ -166,6 +168,9 @@ class _FakeJobDefManager:
         result = dict(meta)
         result[JobMetaKey.JOB_ID.value] = "cloned-job-id"
         return result
+
+    def get_content(self, meta, fl_ctx):
+        return self.content
 
 
 class _FakeSubmitTokenJobDefManager:
@@ -1151,6 +1156,47 @@ def test_clone_job_preserves_byoc_flag(monkeypatch):
 
     assert conn.errors == []
     assert engine.job_def_manager.cloned_meta[AppValidationKey.BYOC] is True
+
+
+def test_clone_job_rejects_expired_stored_submitter_cert(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", object)
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+
+    class _ExpiredCert:
+        not_valid_before_utc = now - datetime.timedelta(days=2)
+        not_valid_after_utc = now - datetime.timedelta(days=1)
+
+    monkeypatch.setattr(job_cmds_module, "load_crt_chain_bytes", lambda _data: [_ExpiredCert()])
+
+    source_job = _FakeListedJob(
+        {
+            JobMetaKey.JOB_ID.value: "source-job",
+            JobMetaKey.JOB_NAME.value: "source",
+        }
+    )
+    engine = _FakeEngine()
+    engine.job_def_manager.content = _zip_bytes({f"source/app/{NVFLARE_SUBMITTER_CRT_FILE}": b"expired-cert"})
+    conn = _MockConnection(
+        app_ctx=engine,
+        props={
+            JobCommandModule.JOB: source_job,
+            JobCommandModule.JOB_ID: "source-job",
+            ConnProps.USER_NAME: "submitter",
+            ConnProps.USER_ORG: "org",
+            ConnProps.USER_ROLE: "role",
+        },
+    )
+
+    JobCommandModule().clone_job(conn, ["clone_job", "source-job"])
+
+    assert conn.successes == []
+    assert engine.job_def_manager.cloned_meta is None
+    assert conn.errors
+    msg, meta = conn.errors[0]
+    assert "stored submitter certificate" in msg
+    assert meta[MetaKey.STATUS] == MetaStatusValue.INVALID_JOB_DEFINITION
 
 
 def test_list_jobs_filters_legacy_jobs_into_default_study(monkeypatch):

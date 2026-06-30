@@ -16,6 +16,7 @@ import datetime
 import io
 import json
 import os
+import posixpath
 import shutil
 import threading
 import uuid
@@ -68,6 +69,8 @@ from nvflare.fuel.hci.server.binary_transfer import BinaryTransfer
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.utils.argument_utils import SafeArgumentParser
 from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.lighter.tool_consts import NVFLARE_SUBMITTER_CRT_FILE
+from nvflare.lighter.utils import load_crt_chain_bytes
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
@@ -102,6 +105,45 @@ CLONED_META_KEYS = {
 }
 
 JSON_LOG_FILE_NAME = "log.json"
+
+
+def _cert_time(cert, field_name: str) -> datetime.datetime:
+    value = getattr(cert, f"{field_name}_utc", None)
+    if value is not None:
+        return value
+    return getattr(cert, field_name).replace(tzinfo=datetime.timezone.utc)
+
+
+def _clone_signature_error(job_def_manager, job: Job, fl_ctx) -> str:
+    job_content = job_def_manager.get_content(job.meta, fl_ctx)
+    if not job_content:
+        return ""
+
+    try:
+        zip_file = ZipFile(io.BytesIO(job_content))
+    except BadZipFile:
+        return ""
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    with zip_file:
+        for info in zip_file.infolist():
+            if info.is_dir() or posixpath.basename(info.filename) != NVFLARE_SUBMITTER_CRT_FILE:
+                continue
+
+            try:
+                cert_chain = load_crt_chain_bytes(zip_file.read(info))
+            except Exception:
+                return (
+                    "Cannot clone this job because the stored submitter certificate cannot be inspected. "
+                    "Download and submit the job again so it is signed with a current admin certificate."
+                )
+            cert = cert_chain[0]
+            if now < _cert_time(cert, "not_valid_before") or now >= _cert_time(cert, "not_valid_after"):
+                return (
+                    "Cannot clone this job because the stored submitter certificate is no longer valid. "
+                    "Download and submit the job again so it is signed with a current admin certificate."
+                )
+    return ""
 
 
 def _active_study_from_conn(conn: Connection) -> str:
@@ -1074,6 +1116,11 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
                 )
             with engine.new_context() as fl_ctx:
+                clone_error = _clone_signature_error(job_def_manager, job, fl_ctx)
+                if clone_error:
+                    conn.append_error(clone_error, meta=make_meta(MetaStatusValue.INVALID_JOB_DEFINITION, clone_error))
+                    return
+
                 job_meta = {str(k): job.meta[k] for k in job.meta.keys() & CLONED_META_KEYS}
 
                 # set the submitter info for the new job
