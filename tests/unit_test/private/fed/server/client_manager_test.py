@@ -79,7 +79,7 @@ def test_authenticated_client_stores_org_extracted_from_cert():
         asserter_cert=cert,
         signature=b"fake-signature",
         nonce=fl_ctx.get_prop(InternalFLContextKey.CLIENT_REG_SESSION).nonce,
-        cert_chain=[cert],
+        intermediate_certs=[],
         expected_eku=ExtendedKeyUsageOID.CLIENT_AUTH,
     )
 

@@ -153,11 +153,11 @@ def test_verify_cert_accepts_supported_issuer_key_types(root_key_factory):
     verify_cert(leaf_cert, root_cert.public_key())
 
 
-def test_verify_cert_chain_rejects_empty_chain():
+def test_verify_cert_chain_requires_leaf_cert():
     root_cert, *_ = get_test_certs()
 
-    with pytest.raises(ValueError, match="cert_chain must contain at least one certificate"):
-        lighter_utils.verify_cert_chain([], root_cert)
+    with pytest.raises(ValueError, match="leaf_cert is required"):
+        lighter_utils.verify_cert_chain(None, [], root_cert)
 
 
 def test_cert_to_dict_serial_number_is_hex_string():

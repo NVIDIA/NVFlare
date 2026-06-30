@@ -101,7 +101,7 @@ class LoginModule(CommandModule, CommandFilter):
                 asserted_cn=user_name,
                 signature=signature,
                 nonce="",
-                cert_chain=cert_chain,
+                intermediate_certs=cert_chain[1:],
             )
             self.logger.debug(f"verify common name: {ok=}")
         except Exception as ex:

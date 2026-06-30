@@ -123,12 +123,16 @@ class IdentityVerifier:
         self.root_public_key = self.root_cert.public_key()
 
     def verify_common_name(
-        self, asserted_cn: str, nonce: str, asserter_cert, signature, cert_chain=None, expected_eku=None
+        self, asserted_cn: str, nonce: str, asserter_cert, signature, intermediate_certs=None, expected_eku=None
     ) -> bool:
         # verify asserter_cert
         try:
-            if cert_chain:
-                verify_cert_chain(cert_chain=cert_chain, root_ca_cert=self.root_cert)
+            if intermediate_certs is not None:
+                verify_cert_chain(
+                    leaf_cert=asserter_cert,
+                    intermediate_certs=intermediate_certs,
+                    root_ca_cert=self.root_cert,
+                )
             else:
                 verify_cert(
                     cert_to_be_verified=asserter_cert,

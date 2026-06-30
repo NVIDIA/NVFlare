@@ -275,7 +275,7 @@ def verify_cert(cert_to_be_verified, root_ca_public_key):
     _verify_cert_signature(cert_to_be_verified, root_ca_public_key)
 
 
-def verify_cert_chain(cert_chain, root_ca_cert, now=None):
+def verify_cert_chain(leaf_cert, intermediate_certs, root_ca_cert, now=None):
     """Validate a FLARE certificate chain against the pinned project root.
 
     FLARE uses this helper for admin, site, and server certificates, so leaf
@@ -283,8 +283,8 @@ def verify_cert_chain(cert_chain, root_ca_cert, now=None):
     by cryptography's path verifier, with the project root as the pinned trust
     store and normal CA constraints required for intermediates.
     """
-    if not cert_chain:
-        raise ValueError("cert_chain must contain at least one certificate")
+    if leaf_cert is None:
+        raise ValueError("leaf_cert is required")
     now = now or _utc_now()
     verifier = (
         PolicyBuilder()
@@ -293,7 +293,7 @@ def verify_cert_chain(cert_chain, root_ca_cert, now=None):
         .extension_policies(ca_policy=ExtensionPolicy.webpki_defaults_ca(), ee_policy=ExtensionPolicy.permit_all())
         .build_client_verifier()
     )
-    verifier.verify(cert_chain[0], cert_chain[1:])
+    verifier.verify(leaf_cert, intermediate_certs or [])
 
 
 def _verify_cert_signature(cert, issuer_public_key):
@@ -401,7 +401,11 @@ def verify_folder_signature_and_get_signers(
                     cert_chain = load_crt_chain(os.path.join(root, NVFLARE_SUBMITTER_CRT_FILE))
                     cert = cert_chain[0]
                     public_key = cert.public_key()
-                    verify_cert_chain(cert_chain=cert_chain, root_ca_cert=root_ca_cert)
+                    verify_cert_chain(
+                        leaf_cert=cert,
+                        intermediate_certs=cert_chain[1:],
+                        root_ca_cert=root_ca_cert,
+                    )
                     validate_admin_leaf_cert(cert)
                     signer = _cert_to_submitter(cert)
                 signers[signer] = signer

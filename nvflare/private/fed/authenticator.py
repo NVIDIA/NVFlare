@@ -162,7 +162,7 @@ class Authenticator:
             asserted_cn=server_cn,
             nonce=my_nonce,
             signature=server_signature,
-            cert_chain=server_cert_chain,
+            intermediate_certs=server_cert_chain[1:],
             expected_eku=ExtendedKeyUsageOID.SERVER_AUTH,
         )
 

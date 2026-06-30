@@ -180,7 +180,11 @@ class SimpleCellCipher:
     def _validate_cert_chain(self, cert) -> Certificate:
         cert_chain = _normalize_cert_chain(cert)
         try:
-            verify_cert_chain(cert_chain=cert_chain, root_ca_cert=self._root_ca)
+            verify_cert_chain(
+                leaf_cert=cert_chain[0],
+                intermediate_certs=cert_chain[1:],
+                root_ca_cert=self._root_ca,
+            )
         except Exception as ex:
             raise InvalidCertChain(str(ex)) from ex
 

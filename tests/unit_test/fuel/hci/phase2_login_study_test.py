@@ -43,7 +43,7 @@ class _FakeConnection:
 
 class _FakeVerifier:
     @staticmethod
-    def verify_common_name(asserter_cert, asserted_cn, signature, nonce, cert_chain=None):
+    def verify_common_name(asserter_cert, asserted_cn, signature, nonce, intermediate_certs=None):
         return True
 
 

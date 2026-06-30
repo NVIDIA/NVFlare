@@ -146,6 +146,6 @@ def test_identity_verifier_wraps_invalid_cert_chain(tmp_path):
     verifier = IdentityVerifier(str(root_cert_path))
 
     with pytest.raises(InvalidAsserterCert) as ex_info:
-        verifier.verify_common_name("client", "nonce", client_cert, client_key, cert_chain=[client_cert])
+        verifier.verify_common_name("client", "nonce", client_cert, client_key, intermediate_certs=[])
 
     assert ex_info.value.__cause__ is not None

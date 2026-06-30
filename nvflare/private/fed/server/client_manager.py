@@ -307,7 +307,7 @@ class ClientManager:
                     asserter_cert=asserter_cert,
                     signature=signature,
                     nonce=reg.nonce,
-                    cert_chain=asserter_cert_chain,
+                    intermediate_certs=asserter_cert_chain[1:],
                     expected_eku=ExtendedKeyUsageOID.CLIENT_AUTH,
                 )
             except Exception as ex:
