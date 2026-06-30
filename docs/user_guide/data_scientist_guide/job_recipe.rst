@@ -221,6 +221,74 @@ data loaders, validators, or other recipe behavior.
    ``data_path`` or ``batch_size``. For FedAvg, pass those values through
    ``train_args`` unless your recipe explicitly documents another shape.
 
+Recipe Metadata
+---------------
+
+Use ``set_recipe_meta`` to add generated job metadata from a recipe without
+mutating ``recipe.job.job.meta_props`` directly. The helper sets one
+``JobMetaKey`` metadata entry at a time:
+
+.. code-block:: python
+
+   from nvflare.apis.job_def import JobMetaKey
+   from nvflare.recipe import set_recipe_meta
+
+   set_recipe_meta(
+       recipe,
+       JobMetaKey.STUDY,
+       "default",
+   )
+   set_recipe_meta(
+       recipe,
+       JobMetaKey.RESOURCE_SPEC,
+       {
+           "site-1": {"num_of_gpus": 1, "mem_per_gpu_in_GiB": 4},
+           "site-2": {"num_of_gpus": 1, "mem_per_gpu_in_GiB": 2},
+       },
+   )
+   set_recipe_meta(
+       recipe,
+       JobMetaKey.JOB_LAUNCHER_SPEC,
+       {
+           "site-1": {"docker": {"image": "nvflare-site1:latest"}},
+           "site-2": {"docker": {"image": "nvflare-site2:latest"}},
+       },
+   )
+   set_recipe_meta(
+       recipe,
+       JobMetaKey.MANDATORY_CLIENTS,
+       ["site-1", "site-2"],
+   )
+
+Common metadata fields include:
+
+* ``min_clients``: minimum number of clients required to run the job.
+* ``resource_spec``: per-site resource requirements for generated
+  ``meta.json``.
+* ``launcher_spec``: per-site launcher requirements for generated
+  ``meta.json``.
+* ``mandatory_clients``: required client names, if supported by the workflow.
+* ``scope``: job scope metadata.
+* ``custom_props``: nested custom metadata.
+* ``study``: job study metadata.
+
+The key must be one of ``JobMetaKey.MIN_CLIENTS``,
+``JobMetaKey.MANDATORY_CLIENTS``, ``JobMetaKey.RESOURCE_SPEC``,
+``JobMetaKey.JOB_LAUNCHER_SPEC``, ``JobMetaKey.SCOPE``, ``JobMetaKey.STUDY``,
+or ``JobMetaKey.CUSTOM_PROPS``. Other enum members and raw strings are not
+accepted. The value must be a number, a string, a dictionary, or a list. The
+helper writes the key/value pair through ``meta_props`` and does not mutate
+dedicated recipe or ``FedJobConfig`` fields such as ``min_clients``. If the
+generated ``meta.json`` also contains that key, the ``meta_props`` value is
+written last by the job generator.
+
+If the same key already exists in ``meta_props``, ``set_recipe_meta`` replaces
+that value.
+
+The helper does not validate runtime resource availability, production
+enrollment, or whether sites named in metadata are present for a run. The
+execution environment and deployment still determine which sites are present.
+
 Execution Environments
 ----------------------
 
