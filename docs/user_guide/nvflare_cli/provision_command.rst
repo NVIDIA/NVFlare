@@ -40,6 +40,29 @@ section includes structured guidance such as:
 This keeps JSON output machine-readable while still carrying follow-up
 instructions.
 
+Root CA validity
+================
+
+Centralized provisioning creates a self-signed project root CA that is valid
+for 360 days by default. To select a different initial validity, set the
+positive integer ``root_valid_days`` for ``CertBuilder`` in ``project.yml``:
+
+.. code-block:: yaml
+
+   builders:
+     - path: nvflare.lighter.impl.cert.CertBuilder
+       args:
+         root_valid_days: 3650
+
+This setting only applies when a workspace creates its root. Later runs reuse
+the root in the workspace's ``state`` directory and report its actual
+``NotBefore`` and ``NotAfter`` values. A configured validity that does not
+match the existing root fails clearly. Participant certificates keep their
+normal 360-day validity unless the root expires sooner.
+
+Changing an established root requires a separate multi-root rollover;
+``root_valid_days`` never extends or replaces it.
+
 Certificate Identity Overrides
 ==============================
 
