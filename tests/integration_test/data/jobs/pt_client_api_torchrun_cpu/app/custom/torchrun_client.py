@@ -51,24 +51,20 @@ def main():
         if rank_contribution.item() != 3.0:
             raise RuntimeError(f"expected rank contribution sum 3.0, got {rank_contribution.item()}")
 
-        params = {
-            name: tensor.detach().clone() + rank_contribution.item() for name, tensor in input_model.params.items()
-        }
-        output_model = flare.FLModel(
-            params=params,
-            metrics={
-                "accuracy": rank_contribution.item(),
-                "torchrun_world_size": world_size,
-            },
-            meta={
-                "NUM_STEPS_CURRENT_ROUND": world_size,
-                "torchrun_rank": rank,
-            },
-        )
+        # With launch_once=false the Client API exits the process inside flare.send()
+        # right after the result upload, so all collectives must complete before the
+        # send, and the send must be the last thing rank 0 does.
+        dist.barrier()
 
         if rank == 0:
+            params = {
+                name: tensor.detach().clone() + rank_contribution.item() for name, tensor in input_model.params.items()
+            }
+            output_model = flare.FLModel(
+                params=params,
+                meta={"NUM_STEPS_CURRENT_ROUND": world_size},
+            )
             flare.send(output_model)
-        dist.barrier()
     finally:
         dist.destroy_process_group()
 

@@ -92,8 +92,16 @@ def main():
     flare.init(rank=global_rank)
 
     print(f"flare init DDP global_rank={global_rank}, local_rank={local_rank} initialized on {device}")
-    # (3) gets FLModel from NVFlare
-    while flare.is_running():
+    # (3) gets FLModel from NVFlare.
+    # Only rank 0 talks to NVFlare, so flare.is_running() never turns False on
+    # nonzero ranks — rank 0 must broadcast the running state so all ranks exit
+    # the loop together at job end.
+    while True:
+        running = [flare.is_running() if global_rank == 0 else None]
+        dist.broadcast_object_list(running, src=0)
+        if not running[0]:
+            break
+
         input_model = flare.receive()
         if global_rank == 0:
             print(f"\n[Round={input_model.current_round}, Site={flare.get_site_name()}]")
