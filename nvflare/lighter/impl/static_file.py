@@ -17,6 +17,7 @@ import logging
 import os
 import shutil
 
+from nvflare.app_common.default_component_policy import DEFAULT_CLASS_ALLOW_LIST
 from nvflare.lighter import utils
 from nvflare.lighter.constants import (
     CommConfigArg,
@@ -266,7 +267,11 @@ class StaticFileBuilder(Builder):
         ctx.build_from_template(dest_dir, TemplateSectionKey.LOG_CONFIG, ProvFileName.LOG_CONFIG_DEFAULT, exe=False)
 
         ctx.build_from_template(
-            dest_dir, TemplateSectionKey.LOCAL_SERVER_RESOURCES, ProvFileName.RESOURCES_JSON_DEFAULT, exe=False
+            dest_dir,
+            TemplateSectionKey.LOCAL_SERVER_RESOURCES,
+            ProvFileName.RESOURCES_JSON_DEFAULT,
+            replacement={"class_allow_list": json.dumps(DEFAULT_CLASS_ALLOW_LIST, indent=2)},
+            exe=False,
         )
 
         ctx.build_from_template(
@@ -417,6 +422,7 @@ class StaticFileBuilder(Builder):
             "num_gpus": num_gpus,
             "gpu_mem": gpu_mem,
             "allow_log_streaming": "true" if allow_log_streaming else "false",
+            "class_allow_list": json.dumps(DEFAULT_CLASS_ALLOW_LIST, indent=2),
         }
 
         ctx.build_from_template(

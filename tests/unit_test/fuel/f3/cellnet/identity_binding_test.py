@@ -23,6 +23,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
 from nvflare.apis.fl_constant import ConnectionSecurity
+from nvflare.fuel.f3.cellnet.cell_cipher import InvalidCertChain, SimpleCellCipher
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.credential_manager import CERT_CONTENT, CredentialManager
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessageType, ReturnCode
@@ -36,6 +37,7 @@ from nvflare.fuel.f3.sfm.conn_manager import ConnManager
 from nvflare.fuel.f3.sfm.constants import HandshakeKeys
 from nvflare.fuel.f3.sfm.sfm_conn import SfmConnection
 from nvflare.fuel.utils.constants import Mode
+from nvflare.lighter.utils import Identity, generate_cert, generate_keys
 
 
 class _FakeConnection:
@@ -77,6 +79,33 @@ def _cert_pem(common_name: str):
         .sign(key, hashes.SHA256())
     )
     return cert.public_bytes(serialization.Encoding.PEM)
+
+
+def _make_chained_cell_cipher_cert():
+    root_key, root_pub_key = generate_keys()
+    root_cert = generate_cert(
+        subject=Identity("root"),
+        issuer=Identity("root"),
+        signing_pri_key=root_key,
+        subject_pub_key=root_pub_key,
+        ca=True,
+    )
+    intermediate_key, intermediate_pub_key = generate_keys()
+    intermediate_cert = generate_cert(
+        subject=Identity("intermediate"),
+        issuer=Identity("root"),
+        signing_pri_key=root_key,
+        subject_pub_key=intermediate_pub_key,
+        ca=True,
+    )
+    leaf_key, leaf_pub_key = generate_keys()
+    leaf_cert = generate_cert(
+        subject=Identity("admin@nvidia.com"),
+        issuer=Identity("intermediate"),
+        signing_pri_key=intermediate_key,
+        subject_pub_key=leaf_pub_key,
+    )
+    return root_cert, leaf_key, leaf_cert, intermediate_cert
 
 
 def _conn_manager(local_fqcn="server", identity_map=None):
@@ -432,6 +461,51 @@ def test_mtls_certificate_cache_accepts_configured_auth_identity_for_site_cert_c
 
     assert manager.process_response(message) == cert
     assert manager.cert_cache["site-1.job-123"] == cert
+
+
+def test_cell_cipher_accepts_leaf_certificate_with_intermediate_chain():
+    root_cert, leaf_key, leaf_cert, intermediate_cert = _make_chained_cell_cipher_cert()
+
+    cipher = SimpleCellCipher(root_cert, leaf_key, [leaf_cert, intermediate_cert])
+    encrypted = cipher.encrypt(b"hello", [leaf_cert, intermediate_cert])
+
+    assert cipher.decrypt(encrypted, [leaf_cert, intermediate_cert]) == b"hello"
+
+
+def test_cell_cipher_encrypt_rejects_empty_peer_cert_chain():
+    root_cert, leaf_key, leaf_cert, intermediate_cert = _make_chained_cell_cipher_cert()
+    cipher = SimpleCellCipher(root_cert, leaf_key, [leaf_cert, intermediate_cert])
+
+    with pytest.raises(InvalidCertChain, match="cert chain must contain at least one certificate"):
+        cipher.encrypt(b"hello", [])
+
+
+def test_cell_cipher_encrypt_rejects_untrusted_peer_cert_chain():
+    root_cert, leaf_key, leaf_cert, intermediate_cert = _make_chained_cell_cipher_cert()
+    _other_root_cert, _other_leaf_key, other_leaf_cert, other_intermediate_cert = _make_chained_cell_cipher_cert()
+    cipher = SimpleCellCipher(root_cert, leaf_key, [leaf_cert, intermediate_cert])
+
+    with pytest.raises(InvalidCertChain, match="validation failed"):
+        cipher.encrypt(b"hello", [other_leaf_cert, other_intermediate_cert])
+
+
+def test_cell_cipher_encrypt_validates_peer_chain_only_on_cache_miss(monkeypatch):
+    root_cert, leaf_key, leaf_cert, intermediate_cert = _make_chained_cell_cipher_cert()
+    cipher = SimpleCellCipher(root_cert, leaf_key, [leaf_cert, intermediate_cert])
+    validate_count = 0
+    original_validate = cipher._validate_cert_chain
+
+    def _tracking_validate(cert):
+        nonlocal validate_count
+        validate_count += 1
+        return original_validate(cert)
+
+    monkeypatch.setattr(cipher, "_validate_cert_chain", _tracking_validate)
+
+    cipher.encrypt(b"first", [leaf_cert, intermediate_cert])
+    cipher.encrypt(b"second", [leaf_cert, intermediate_cert])
+
+    assert validate_count == 1
 
 
 def test_certificate_cache_access_uses_lock():
