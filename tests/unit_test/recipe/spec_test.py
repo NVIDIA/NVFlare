@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import tempfile
+from datetime import datetime
 from decimal import Decimal
 
 import pytest
@@ -580,6 +581,27 @@ class TestRecipeMetaHelper:
 
         with pytest.raises(error_type, match=match):
             set_recipe_meta(BasicRecipe(), key, value)
+
+    @pytest.mark.parametrize(
+        "value, error_type",
+        [
+            (float("inf"), ValueError),
+            (float("-inf"), ValueError),
+            (float("nan"), ValueError),
+            ({"score": float("nan")}, ValueError),
+            ({"key": object()}, TypeError),
+            ([datetime.now()], TypeError),
+        ],
+    )
+    def test_set_recipe_meta_rejects_non_json_serializable_values(self, value, error_type):
+        from nvflare.recipe.spec import Recipe
+
+        class BasicRecipe(Recipe):
+            def __init__(self):
+                super().__init__(FedJob(name="test_recipe_meta_json_validation", min_clients=1))
+
+        with pytest.raises(error_type, match="must be JSON-serializable"):
+            set_recipe_meta(BasicRecipe(), JobMetaKey.CUSTOM_PROPS, value)
 
 
 class _DummyExecEnv:

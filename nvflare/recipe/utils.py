@@ -14,6 +14,7 @@
 
 import copy
 import importlib
+import json
 import os
 from typing import Any, Dict, List, Optional
 
@@ -83,6 +84,12 @@ def _validate_recipe_meta_value(key: str, value: Any) -> None:
     if isinstance(value, bool) or not isinstance(value, (int, float, str, dict, list)):
         allowed_types = "int, float, str, dict, or list"
         raise TypeError(f"recipe meta value for key {key!r} must be one of {allowed_types}; got {type(value).__name__}")
+    try:
+        json.dumps(value, allow_nan=False)
+    except TypeError as e:
+        raise TypeError(f"recipe meta value for key {key!r} must be JSON-serializable: {e}") from e
+    except ValueError as e:
+        raise ValueError(f"recipe meta value for key {key!r} must be JSON-serializable: {e}") from e
 
 
 def _get_recipe_job_config(recipe: Recipe) -> FedJobConfig:
@@ -96,7 +103,8 @@ def _get_recipe_job_config(recipe: Recipe) -> FedJobConfig:
 def set_recipe_meta(recipe: Recipe, key: JobMetaKey, value: Any) -> None:
     """Set one generated job metadata value through ``meta_props``.
 
-    The key must be a ``JobMetaKey`` enum member. The value is stored in
+    The key must be a ``JobMetaKey`` enum member. The value must be completely
+    JSON-serializable and cannot contain non-finite floats. It is stored in
     ``meta_props`` and replaces any existing ``meta_props`` value for that key.
     """
     key_str = _normalize_recipe_meta_key(key)
