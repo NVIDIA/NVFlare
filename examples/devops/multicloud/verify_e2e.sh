@@ -49,7 +49,6 @@ TORCH_THREADS=1
 JOB_NAME=""
 JOB_ID=""
 JOB_DONE=0
-ABORT_ON_FAIL=1
 
 usage() {
     cat <<'EOF'
@@ -92,13 +91,23 @@ Options:
   --keep                 Keep local generated job and downloaded results.
   -h, --help             Show this help.
 
+Environment:
+  PYTHON_BIN             Python used to run the E2E helper. Default: python3 next to
+                         the nvflare command, then python3 on PATH. Job generation
+                         needs nvflare importable (plus torch for --job-type cifar10).
+
 Pass criteria:
   - FLARE parent deployments are available before submit.
   - The submitted job reaches a FINISHED/COMPLETED terminal status.
   - Downloaded results include a global model artifact.
   - Logs include one E2E round marker for every requested round.
-  - Logs do not include obvious error markers.
-  - Existing pods do not gain restarts, and pods created during the run have zero restarts.
+  - Logs do not include fatal error markers (tracebacks, execution exceptions);
+    other error-level lines only produce warnings.
+  - Existing pods neither restart nor disappear during the run, and pods created
+    during the run have zero restarts.
+
+On failure the local workspace is kept for triage (submit/wait/download JSON,
+job logs, Kubernetes pod logs, restart snapshots).
 EOF
 }
 
@@ -257,9 +266,23 @@ fi
 [[ -n "${NVFLARE_CMD}" ]] || die "nvflare command not found. Install NVFlare or create .venv/bin/nvflare."
 [[ -x "${NVFLARE_CMD}" ]] || die "nvflare command is not executable: ${NVFLARE_CMD}"
 
-PYTHON_BIN="${PYTHON_BIN:-${PYTHON:-python3}}"
+PYTHON_BIN="${PYTHON_BIN:-${PYTHON:-}}"
+if [[ -z "${PYTHON_BIN}" ]]; then
+    NVFLARE_VENV_PYTHON="$(dirname "${NVFLARE_CMD}")/python3"
+    if [[ -x "${NVFLARE_VENV_PYTHON}" ]]; then
+        PYTHON_BIN="${NVFLARE_VENV_PYTHON}"
+    else
+        PYTHON_BIN="python3"
+    fi
+fi
 "${PYTHON_BIN}" "${E2E_HELPER}" --help >/dev/null 2>&1 \
-    || die "Python dependencies for ${E2E_HELPER} are missing. Install PyYAML in ${PYTHON_BIN} or run from the deploy environment."
+    || die "cannot run ${E2E_HELPER} with ${PYTHON_BIN}. Set PYTHON_BIN to a working python3."
+"${PYTHON_BIN}" -c "import nvflare" >/dev/null 2>&1 \
+    || die "nvflare is not importable in ${PYTHON_BIN}; job generation needs it. Set PYTHON_BIN to a python with NVFlare installed."
+if [[ "${JOB_TYPE}" == "cifar10" ]]; then
+    "${PYTHON_BIN}" -c "import torch" >/dev/null 2>&1 \
+        || die "torch is not importable in ${PYTHON_BIN}; cifar10 job generation builds the initial model. Install torch or use --job-type numpy."
+fi
 
 if [[ -z "${STARTUP_KIT}" ]]; then
     ADMIN_CONFIG="$(
@@ -301,14 +324,17 @@ awk -F '\t' '$1 != "server" {print $2}' "${PARTICIPANTS_TSV}" > "${SELECTED_CLIE
 
 cleanup() {
     local exit_code=$?
-    if [[ "${exit_code}" -ne 0 && -n "${JOB_ID}" && "${JOB_DONE}" != "1" && "${ABORT_ON_FAIL}" == "1" ]]; then
+    if [[ "${exit_code}" -ne 0 && -n "${JOB_ID}" && "${JOB_DONE}" != "1" ]]; then
         log "aborting unfinished job ${JOB_ID}"
         "${NVFLARE_CMD}" job abort "${JOB_ID}" --startup-kit "${STARTUP_KIT}" --study "${STUDY}" --force >/dev/null 2>&1 || true
     fi
-    if [[ "${KEEP}" != "1" && -d "${WORKSPACE}" ]]; then
-        rm -rf "${WORKSPACE}"
-    elif [[ -d "${WORKSPACE}" ]]; then
+    [[ -d "${WORKSPACE}" ]] || return 0
+    if [[ "${KEEP}" == "1" ]]; then
         log "kept workspace: ${WORKSPACE}"
+    elif [[ "${exit_code}" -ne 0 ]]; then
+        log "kept workspace for failure triage: ${WORKSPACE}"
+    else
+        rm -rf "${WORKSPACE}"
     fi
 }
 trap cleanup EXIT

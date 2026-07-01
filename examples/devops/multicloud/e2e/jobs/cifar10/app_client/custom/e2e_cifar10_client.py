@@ -13,8 +13,6 @@
 # limitations under the License.
 
 import argparse
-import hashlib
-import re
 
 import torch
 import torch.nn as nn
@@ -27,12 +25,11 @@ from torch.utils.data import DataLoader, Subset
 import nvflare.client as flare
 
 
-def _site_index(site_name: str, num_clients: int) -> int:
-    matches = re.findall(r"\d+", site_name)
-    if matches:
-        return (int(matches[-1]) - 1) % num_clients
-    digest = hashlib.sha1(site_name.encode("utf-8")).hexdigest()
-    return int(digest[:8], 16) % num_clients
+def _partition(site_name: str, sites_arg: str):
+    sites = [s for s in sites_arg.split(",") if s]
+    if site_name not in sites:
+        raise RuntimeError(f"site {site_name!r} is not listed in --sites {sites}; cannot assign a data partition")
+    return sites.index(site_name), len(sites)
 
 
 def _subset(dataset, site_index: int, num_clients: int, max_samples: int):
@@ -43,6 +40,8 @@ def _subset(dataset, site_index: int, num_clients: int, max_samples: int):
 
 
 def _evaluate(model, loader, criterion):
+    if len(loader) == 0:
+        raise ValueError("evaluation data loader produced no samples; check the DataLoader and dataset subset")
     model.eval()
     total = 0
     correct = 0
@@ -55,8 +54,6 @@ def _evaluate(model, loader, criterion):
             _, predicted = torch.max(outputs, 1)
             total += labels.size(0)
             correct += int((predicted == labels).sum().item())
-    if total == 0:
-        raise ValueError("evaluation data loader produced no samples; check the DataLoader and dataset subset")
     accuracy = correct / total
     avg_loss = loss_sum / total
     return accuracy, avg_loss
@@ -65,7 +62,7 @@ def _evaluate(model, loader, criterion):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-root", required=True)
-    parser.add_argument("--num-clients", type=int, required=True)
+    parser.add_argument("--sites", required=True, help="comma-separated ordered client site names")
     parser.add_argument("--max-train-samples", type=int, default=128)
     parser.add_argument("--max-val-samples", type=int, default=128)
     parser.add_argument("--batch-size", type=int, default=32)
@@ -80,7 +77,7 @@ def main():
 
     flare.init()
     site_name = flare.get_site_name()
-    site_index = _site_index(site_name, args.num_clients)
+    site_index, num_clients = _partition(site_name, args.sites)
     print(f"E2E_DATA site={site_name} root={args.data_root} download={args.download}", flush=True)
 
     train_data = torchvision.datasets.CIFAR10(
@@ -89,8 +86,8 @@ def main():
     val_data = torchvision.datasets.CIFAR10(
         root=args.data_root, train=False, download=args.download, transform=transform
     )
-    train_subset = _subset(train_data, site_index, args.num_clients, args.max_train_samples)
-    val_subset = _subset(val_data, site_index, args.num_clients, args.max_val_samples)
+    train_subset = _subset(train_data, site_index, num_clients, args.max_train_samples)
+    val_subset = _subset(val_data, site_index, num_clients, args.max_val_samples)
     train_loader = DataLoader(train_subset, batch_size=args.batch_size, shuffle=True, num_workers=0)
     val_loader = DataLoader(val_subset, batch_size=args.batch_size, shuffle=False, num_workers=0)
 

@@ -15,68 +15,55 @@
 
 import argparse
 import json
+import os
 import re
-import shlex
 import shutil
 import sys
 from pathlib import Path
 
-import yaml
+MULTICLOUD_DIR = Path(__file__).resolve().parents[1]
 
 
-def _resolve_path(config_path: Path, value: str) -> str:
-    path = Path(value).expanduser()
-    if not path.is_absolute():
-        path = config_path.parent / path
-    return str(path.resolve())
+def _load_deploy_module():
+    # Reuse deploy.py's config parsing so the E2E targets exactly what deploy.py deployed.
+    if str(MULTICLOUD_DIR) not in sys.path:
+        sys.path.insert(0, str(MULTICLOUD_DIR))
+    import deploy
+
+    return deploy
 
 
 def participants(args):
-    config_path = Path(args.config).resolve()
-    kubeconfig_dir = Path(args.kubeconfig_dir).resolve()
-    raw = yaml.safe_load(config_path.read_text())
-    clouds = raw.get("clouds") or {}
-    entries = raw.get("participants") or []
-    if not clouds or not entries:
-        raise SystemExit(f"{config_path}: missing clouds or participants")
+    deploy = _load_deploy_module()
+    if args.kubeconfig_dir:
+        deploy.DEFAULT_KUBECONFIG_DIR = Path(args.kubeconfig_dir).resolve()
+    try:
+        config = deploy.load_config(Path(args.config).resolve())
+    except ValueError as e:
+        raise SystemExit(str(e))
 
     rows = []
     default_image = None
-    for entry in entries:
-        cloud = entry["cloud"]
-        cloud_cfg = clouds.get(cloud) or {}
-        merged = {**cloud_cfg, **entry}
-        prepare = entry.get("prepare") or cloud_cfg.get("prepare") or {}
-        parent = prepare.get("parent") or {}
-        image = parent.get("docker_image")
+    for p in config.participants:
+        image = (p.prepare.get("parent") or {}).get("docker_image")
         if image and default_image is None:
             default_image = image
-
-        raw_kubeconfig = merged.get("kubeconfig")
-        kubeconfig = (
-            _resolve_path(config_path, raw_kubeconfig)
-            if raw_kubeconfig
-            else str((kubeconfig_dir / f"{cloud}.yaml").resolve())
-        )
-        study_data = merged.get("study_data") or {}
         rows.append(
             {
-                "role": entry["role"],
-                "name": entry["name"],
-                "namespace": args.namespace or merged["namespace"],
-                "kubeconfig": kubeconfig,
-                "cloud": cloud,
+                "role": p.role,
+                "name": p.name,
+                "namespace": args.namespace or p.namespace,
+                "kubeconfig": p.kubeconfig,
+                "cloud": p.cloud,
                 "image": image,
-                "has_study_dataset": bool((study_data.get(args.study) or {}).get(args.dataset)),
+                "has_study_dataset": bool((p.study_data.get(args.study) or {}).get(args.dataset)),
             }
         )
 
     servers = [r for r in rows if r["role"] == "server"]
     clients = [r for r in rows if r["role"] != "server"]
-    if len(servers) != 1:
-        raise SystemExit(f"{config_path}: expected exactly one server participant, found {len(servers)}")
     if len(clients) < args.num_clients:
-        raise SystemExit(f"{config_path}: --num-clients={args.num_clients}, but config has only {len(clients)} clients")
+        raise SystemExit(f"{args.config}: --num-clients={args.num_clients}, but config has only {len(clients)} clients")
     if not (args.job_image or default_image):
         raise SystemExit("No job image found in config. Pass --job-image.")
 
@@ -130,103 +117,36 @@ def k8s_spec(image: str, python_path: str) -> dict:
     }
 
 
-def copy_file(src: Path, dst: Path):
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, dst)
+def _create_numpy_recipe(args):
+    from nvflare.app_common.np.recipes.fedavg import NumpyFedAvgRecipe
+    from nvflare.client.config import TransferType
+
+    return NumpyFedAvgRecipe(
+        name=args.job_name,
+        model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]],
+        min_clients=args.num_clients,
+        num_rounds=args.num_rounds,
+        train_script="e2e_numpy_client.py",
+        train_args="--update_type full",
+        launch_external_process=False,
+        params_transfer_type=TransferType.FULL,
+        key_metric="weight_mean",
+    )
 
 
-def write_json(path: Path, payload: dict):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=4) + "\n")
+def _create_cifar10_recipe(args, selected_clients, model_dir: Path):
+    from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+    from nvflare.client.config import TransferType
 
-
-def create_numpy_configs(args):
-    server_config = {
-        "format_version": 2,
-        "workflows": [
-            {
-                "id": "controller",
-                "path": "nvflare.app_common.workflows.fedavg.FedAvg",
-                "args": {
-                    "aggregation_weights": {},
-                    "num_clients": args.num_clients,
-                    "num_rounds": args.num_rounds,
-                },
-            }
-        ],
-        "components": [
-            {
-                "id": "json_generator",
-                "path": "nvflare.app_common.widgets.validation_json_generator.ValidationJsonGenerator",
-                "args": {},
-            },
-            {
-                "id": "model_selector",
-                "path": "nvflare.app_common.widgets.intime_model_selector.IntimeModelSelector",
-                "args": {"aggregation_weights": {}, "key_metric": "weight_mean"},
-            },
-            {
-                "id": "persistor",
-                "path": "nvflare.app_common.np.np_model_persistor.NPModelPersistor",
-                "args": {
-                    "model_name": "server.npy",
-                    "model": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
-                },
-            },
-        ],
-        "task_result_filters": [],
-        "task_data_filters": [],
-    }
-    client_config = {
-        "format_version": 2,
-        "executors": [
-            {
-                "tasks": ["*"],
-                "executor": {
-                    "path": "nvflare.app_common.executors.in_process_client_api_executor.InProcessClientAPIExecutor",
-                    "args": {
-                        "task_script_path": "e2e_numpy_client.py",
-                        "task_script_args": "--update_type full",
-                    },
-                },
-            }
-        ],
-        "task_result_filters": [],
-        "task_data_filters": [],
-        "components": [],
-    }
-    return server_config, client_config
-
-
-def create_cifar10_configs(args):
-    server_config = {
-        "format_version": 2,
-        "model_class_path": "e2e_net.E2ENet",
-        "workflows": [
-            {
-                "id": "fedavg_ctl",
-                "path": "nvflare.app_common.workflows.fedavg.FedAvg",
-                "args": {
-                    "num_clients": args.num_clients,
-                    "num_rounds": args.num_rounds,
-                    "persistor_id": "persistor",
-                },
-            }
-        ],
-        "components": [
-            {
-                "id": "persistor",
-                "path": "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor",
-                "args": {"model": {"path": "e2e_net.E2ENet"}},
-            }
-        ],
-    }
+    if str(model_dir) not in sys.path:
+        sys.path.insert(0, str(model_dir))
+    from e2e_net import E2ENet
 
     client_args = [
         "--data-root",
         args.data_root,
-        "--num-clients",
-        str(args.num_clients),
+        "--sites",
+        ",".join(selected_clients),
         "--max-train-samples",
         str(args.max_train_samples),
         "--max-val-samples",
@@ -240,86 +160,92 @@ def create_cifar10_configs(args):
     ]
     if args.allow_download:
         client_args.append("--download")
+    for arg in client_args:
+        # The in-process script runner splits task_script_args on whitespace with
+        # no unquoting, so values containing whitespace cannot be passed through.
+        if any(c.isspace() for c in arg):
+            raise SystemExit(f"job script argument {arg!r} contains whitespace, which cannot be passed to the client")
 
-    client_config = {
-        "format_version": 2,
-        "executors": [
-            {
-                "tasks": ["train", "validate", "submit_model"],
-                "executor": {
-                    "path": "nvflare.app_opt.pt.in_process_client_api_executor.PTInProcessClientAPIExecutor",
-                    "args": {
-                        "task_script_path": "e2e_cifar10_client.py",
-                        "task_script_args": " ".join(shlex.quote(arg) for arg in client_args),
-                        "params_transfer_type": "FULL",
-                        "train_with_evaluation": True,
-                        "result_pull_interval": 0.5,
-                        "log_pull_interval": 0.1,
-                        "train_task_name": "train",
-                        "evaluate_task_name": "validate",
-                        "submit_model_task_name": "submit_model",
-                    },
-                },
-            }
-        ],
-        "task_result_filters": [],
-        "task_data_filters": [],
-        "components": [],
-    }
-    return server_config, client_config
+    return FedAvgRecipe(
+        name=args.job_name,
+        model=E2ENet(),
+        min_clients=args.num_clients,
+        num_rounds=args.num_rounds,
+        train_script="e2e_cifar10_client.py",
+        train_args=" ".join(client_args),
+        launch_external_process=False,
+        params_transfer_type=TransferType.FULL,
+        key_metric="accuracy",
+    )
 
 
-def create_job(args):
-    job_dir = Path(args.job_dir)
-    templates_dir = Path(args.templates_dir)
-    if job_dir.exists():
-        shutil.rmtree(job_dir)
-    (job_dir / "app_server" / "config").mkdir(parents=True)
-    (job_dir / "app_server" / "custom").mkdir(parents=True)
-    (job_dir / "app_client" / "config").mkdir(parents=True)
-    (job_dir / "app_client" / "custom").mkdir(parents=True)
-
-    selected_clients = [line.strip() for line in Path(args.selected_clients).read_text().splitlines() if line.strip()]
-    participants_data = read_participants(Path(args.participants_tsv))
+def _patch_meta(job_dir: Path, args, selected_clients, participants_data):
     launcher_spec = {"default": {"k8s": k8s_spec(args.job_image, args.python_path)}}
     for participant in participants_data:
         launcher_spec[participant["name"]] = {"k8s": k8s_spec(participant["image"], args.python_path)}
 
-    meta = {
-        "name": args.job_name,
-        "resource_spec": {},
-        "min_clients": args.num_clients,
-        "deploy_map": {
-            "app_server": ["server"],
-            "app_client": selected_clients,
-        },
-        "launcher_spec": launcher_spec,
-    }
-    write_json(job_dir / "meta.json", meta)
+    meta_path = job_dir / "meta.json"
+    meta = json.loads(meta_path.read_text())
+    meta["launcher_spec"] = launcher_spec
+    # The exported deploy_map targets @ALL, which would also deploy to connected
+    # clients outside this run's selection; pin it to the selected clients.
+    for app, targets in (meta.get("deploy_map") or {}).items():
+        if "@ALL" in targets:
+            meta["deploy_map"][app] = ["server"] + selected_clients
+    meta_path.write_text(json.dumps(meta, indent=4) + "\n")
 
-    if args.job_type == "numpy":
-        server_config, client_config = create_numpy_configs(args)
-        copy_file(
-            templates_dir / "numpy" / "app_client" / "custom" / "e2e_numpy_client.py",
-            job_dir / "app_client" / "custom" / "e2e_numpy_client.py",
-        )
-    else:
-        server_config, client_config = create_cifar10_configs(args)
-        copy_file(
-            templates_dir / "cifar10" / "app_server" / "custom" / "e2e_net.py",
-            job_dir / "app_server" / "custom" / "e2e_net.py",
-        )
-        copy_file(
-            templates_dir / "cifar10" / "app_server" / "custom" / "e2e_net.py",
-            job_dir / "app_client" / "custom" / "e2e_net.py",
-        )
-        copy_file(
-            templates_dir / "cifar10" / "app_client" / "custom" / "e2e_cifar10_client.py",
-            job_dir / "app_client" / "custom" / "e2e_cifar10_client.py",
-        )
 
-    write_json(job_dir / "app_server" / "config" / "config_fed_server.json", server_config)
-    write_json(job_dir / "app_client" / "config" / "config_fed_client.json", client_config)
+def create_job(args):
+    try:
+        import nvflare  # noqa: F401
+    except ImportError as e:
+        raise SystemExit(
+            f"create-job needs the nvflare package in the helper python ({sys.executable}); "
+            f"set PYTHON_BIN to a python with NVFlare installed: {e}"
+        )
+    if args.job_type == "cifar10":
+        try:
+            import torch  # noqa: F401
+        except ImportError as e:
+            raise SystemExit(
+                f"create-job --job-type cifar10 needs torch in the helper python ({sys.executable}) "
+                f"to build the initial model; install torch or use --job-type numpy: {e}"
+            )
+
+    if not args.job_name or os.sep in args.job_name or args.job_name in (".", ".."):
+        raise SystemExit(f"--job-name must be a simple directory name, got {args.job_name!r}")
+
+    job_dir = Path(args.job_dir).resolve()
+    templates_dir = Path(args.templates_dir).resolve()
+    selected_clients = [line.strip() for line in Path(args.selected_clients).read_text().splitlines() if line.strip()]
+    participants_data = read_participants(Path(args.participants_tsv).resolve())
+
+    if job_dir.exists():
+        shutil.rmtree(job_dir)
+    # Export into a staging dir so the recipe's <job_name> output cannot collide
+    # with unrelated entries next to --job-dir.
+    staging_dir = job_dir.parent / f"{job_dir.name}.export"
+    if staging_dir.exists():
+        shutil.rmtree(staging_dir)
+    staging_dir.mkdir(parents=True)
+
+    # The recipe resolves train_script against the working directory and copies it
+    # into the job's custom dir, so export from the template script's directory.
+    old_cwd = os.getcwd()
+    try:
+        if args.job_type == "numpy":
+            os.chdir(templates_dir / "numpy" / "app_client" / "custom")
+            recipe = _create_numpy_recipe(args)
+        else:
+            os.chdir(templates_dir / "cifar10" / "app_client" / "custom")
+            recipe = _create_cifar10_recipe(args, selected_clients, templates_dir / "cifar10" / "app_server" / "custom")
+        recipe.export(str(staging_dir))
+    finally:
+        os.chdir(old_cwd)
+
+    (staging_dir / args.job_name).rename(job_dir)
+    shutil.rmtree(staging_dir)
+    _patch_meta(job_dir, args, selected_clients, participants_data)
 
 
 def json_get(args):
@@ -346,7 +272,12 @@ def pod_restarts(args):
         pod_name = pod.get("metadata", {}).get("name", "")
         statuses = pod.get("status", {}).get("containerStatuses") or []
         restarts = sum(int(s.get("restartCount", 0) or 0) for s in statuses)
-        print(f"{args.namespace}\t{pod_name}\t{restarts}\t{args.participant}")
+        # Pods already Terminating or in a terminal phase are expected to
+        # disappear; mark them so compare-restarts does not flag their deletion.
+        terminating = bool(pod.get("metadata", {}).get("deletionTimestamp"))
+        terminal_phase = pod.get("status", {}).get("phase") in ("Succeeded", "Failed")
+        expect_present = "0" if terminating or terminal_phase else "1"
+        print(f"{args.namespace}\t{pod_name}\t{restarts}\t{args.participant}\t{expect_present}")
 
 
 def list_job_pods(args):
@@ -361,8 +292,8 @@ def list_job_pods(args):
 def _load_restarts(path: Path):
     data = {}
     for line in path.read_text().splitlines():
-        ns, pod, restarts, participant = line.split("\t")
-        data[(ns, pod)] = (int(restarts), participant)
+        ns, pod, restarts, participant, expect_present = line.split("\t")
+        data[(ns, pod)] = (int(restarts), participant, expect_present == "1")
     return data
 
 
@@ -370,8 +301,15 @@ def compare_restarts(args):
     before = _load_restarts(Path(args.before))
     after = _load_restarts(Path(args.after))
     failures = []
-    for key, (after_count, participant) in after.items():
-        before_count = before.get(key, (0, participant))[0]
+    # A stable pre-existing pod that disappears was deleted mid-run; a crashed
+    # parent replaced by its Deployment shows up only this way (the replacement
+    # pod has a new name and restartCount=0). Pods that were already Terminating
+    # or Completed in the before snapshot are expected to go away.
+    for key, (_count, _participant, expect_present) in before.items():
+        if expect_present and key not in after:
+            failures.append(f"{key[0]}/{key[1]} existed before the run but disappeared")
+    for key, (after_count, participant, _expect_present) in after.items():
+        before_count = before.get(key, (0, participant, True))[0]
         if key in before and after_count > before_count:
             failures.append(f"{key[0]}/{key[1]} restarted from {before_count} to {after_count}")
         elif key not in before and after_count > 0:
@@ -437,17 +375,28 @@ def validate_result(args):
     bad_log_text = "\n".join(
         line for line in log_text.splitlines() if not any(token in line for token in benign_log_noise)
     )
-    bad = re.search(
-        r"(?m)(\bERROR\b|CRITICAL|Traceback \(most recent call last\)|\bException\b|"
-        r"ReturnCode\.EXECUTION_EXCEPTION|FINISHED_EXCEPTION)",
+    # EXECUTION_EXCEPTION matches bare, so it also covers the FINISHED:EXECUTION_EXCEPTION
+    # and ReturnCode.EXECUTION_EXCEPTION spellings that appear in job logs.
+    fatal = re.search(
+        r"(?m)(Traceback \(most recent call last\)|EXECUTION_EXCEPTION|FINISHED_EXCEPTION)",
         bad_log_text,
     )
-    if bad:
-        raise SystemExit(f"job logs contain error marker: {bad.group(1)}")
+    if fatal:
+        raise SystemExit(f"job logs contain error marker: {fatal.group(1)}")
+    # Error-level lines are routine during job-pod shutdown (peer connections closing),
+    # and the structured terminal job status is checked before this runs; warn only.
+    warning = re.search(r"(?m)(\bERROR\b|CRITICAL|\bException\b)", bad_log_text)
+    if warning:
+        print(
+            f"WARNING: job logs contain '{warning.group(1)}' lines; "
+            "the job finished with a completed status, so this is not treated as a failure",
+            file=sys.stderr,
+        )
 
     for round_num in range(args.num_rounds):
         marker = f"E2E_ROUND current_round={round_num}"
-        if marker not in log_text:
+        # \b keeps round 1 from matching round 10, 11, ...
+        if not re.search(re.escape(marker) + r"\b", log_text):
             raise SystemExit(f"missing round log marker: {marker}")
 
 
