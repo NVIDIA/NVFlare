@@ -462,6 +462,9 @@ class ClientSideController(Executor, TaskController):
                     self.do_learn_task(t.task_name, t.task_data, t.fl_ctx, t.abort_signal)
                 except:
                     self.logger.error(f"exception from do_learn_task: {secure_format_traceback()}")
+                    # report the failure to the server so the job ends with an
+                    # error status instead of FINISHED:COMPLETED
+                    self.update_status(action="do_learn_task", error=ReturnCode.EXECUTION_EXCEPTION)
                 finally:
                     # force garbage collection
                     gc.collect()

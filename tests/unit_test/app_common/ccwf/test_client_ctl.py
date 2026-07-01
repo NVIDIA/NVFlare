@@ -14,6 +14,7 @@
 
 from unittest.mock import MagicMock
 
+from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
@@ -48,3 +49,8 @@ def test_do_learn_logs_exception_from_learn_task():
     ctl.logger.error.assert_called_once()
     assert "exception from do_learn_task" in ctl.logger.error.call_args.args[0]
     assert ctl.learn_task is None
+    # the failure must be recorded so the next status report tells the server
+    # to end the job with an error status instead of FINISHED:COMPLETED
+    assert ctl.current_status.error == ReturnCode.EXECUTION_EXCEPTION
+    report = ctl._get_status_report()
+    assert report is not None and report.error == ReturnCode.EXECUTION_EXCEPTION
