@@ -141,8 +141,10 @@ requiring Git or rerunning candidates:
    Use the NVFlare Auto-FL Report skill.
    Generate the final report for the stopped campaign in ./job.
 
-The skill verifies ``.nvflare/autofl/campaign_state.json`` before finalizing,
-refreshes ``progress.png``, and produces:
+The skill verifies ``.nvflare/autofl/campaign_state.json``, ``results.tsv``, and
+available candidate manifests before finalizing.  A pending candidate must be
+finalized or abandoned through the active Auto-FL skill first.  The report
+helper attempts to refresh ``progress.png`` and produces:
 
 - ``autofl_final_report.md`` for human review;
 - ``autofl_report_summary.json`` for tools and downstream agents;
@@ -150,6 +152,11 @@ refreshes ``progress.png``, and produces:
   after it;
 - best-candidate lineage, inherited code changes, manifests, patch hashes,
   exact commands, artifacts, failures, and reproducibility warnings.
+
+Plotting is optional evidence.  If plotting dependencies are unavailable or
+the existing artifact is not a valid PNG, Markdown and JSON are still written,
+the plot is omitted from Markdown, and
+``artifacts.progress_plot_available=false`` records the degraded state.
 
 The deterministic helper can also be invoked directly by an agent:
 
@@ -161,9 +168,13 @@ The deterministic helper can also be invoked directly by an agent:
 If a process was abruptly interrupted and campaign state still appears active,
 the agent must first independently confirm that execution has stopped.  It may
 then add ``--confirm-interrupted``.  This records the reporting assertion but
-does not mutate campaign state.
+does not mutate campaign state.  It bypasses only stale stop state; it never
+bypasses pending state, ``candidate`` ledger rows, or prepared candidate
+manifests.
 
 The report distinguishes the imported budget in ``autofl.yaml`` from the exact
 arguments that ran.  It warns when the selected candidate changed training
 compute or when multiple candidates were selected against a test-like metric.
 This keeps the final result useful without overstating the evidence.
+The JSON ``best`` field always means a retained baseline or ``keep`` result;
+an unretained scored ``discard`` is exposed separately as ``best_observed``.

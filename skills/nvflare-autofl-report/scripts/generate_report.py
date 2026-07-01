@@ -42,9 +42,11 @@ except ImportError:  # pragma: no cover - NVFlare installs PyYAML
 
 SUMMARY_SCHEMA_VERSION = "nvflare.autofl.report.v1"
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
-COMPARABLE_STATUSES = {"baseline", "keep", "discard", "crash"}
+ATTEMPT_STATUSES = {"candidate", "keep", "discard", "crash"}
+FINALIZED_SCORE_STATUSES = {"baseline", "keep", "discard"}
 RETAINED_STATUSES = {"baseline", "keep"}
 LITERATURE_STATUSES = {"literature", "checkpoint", "event"}
+PENDING_MANIFEST_STATUSES = {"prepared", "ready_for_external_execution"}
 TRAINING_BUDGET_ARGS = {
     "aggregation_epochs",
     "alpha",
@@ -183,14 +185,33 @@ def better(score: Optional[float], incumbent: Optional[float], mode: str) -> boo
     return score > incumbent if mode == "max" else score < incumbent
 
 
-def metric_contract(config: Dict[str, Any], state: Dict[str, Any], args: argparse.Namespace) -> Tuple[str, str, str]:
+def normalize_contract_sections(config: Dict[str, Any]) -> Tuple[Dict[str, Any], List[str]]:
+    normalized = dict(config)
+    warnings = []
+    for section in ("objective", "environment", "budget"):
+        if section not in normalized:
+            continue
+        value = normalized[section]
+        if not isinstance(value, dict):
+            kind = "null" if value is None else type(value).__name__
+            warnings.append(
+                f"autofl.yaml section '{section}' is {kind}, not a mapping; it was treated as an empty section."
+            )
+            normalized[section] = {}
+    return normalized, warnings
+
+
+def metric_contract(
+    config: Dict[str, Any], state: Dict[str, Any], args: argparse.Namespace
+) -> Tuple[str, str, str, str]:
     objective = config.get("objective") if isinstance(config.get("objective"), dict) else {}
     metric = (
         args.metric or objective.get("optimization_metric") or objective.get("metric") or state.get("metric") or "score"
     )
     requested = objective.get("requested_metric") or objective.get("metric") or metric
-    source = objective.get("metric_source") or "not declared"
-    return str(metric), str(requested), str(source)
+    measurement_source = objective.get("metric_source") or "NVFlare metric artifacts"
+    contract_source = objective.get("source") or "not declared"
+    return str(metric), str(requested), str(measurement_source), str(contract_source)
 
 
 def infer_mode(config: Dict[str, Any], state: Dict[str, Any], requested: Optional[str]) -> str:
@@ -223,21 +244,90 @@ def verify_stopped(state_path: Path, confirm_interrupted: bool) -> Tuple[Dict[st
     return state, "user_confirmed_interruption", warnings
 
 
+def is_baseline(record: RunRecord) -> bool:
+    name = record.name.strip().lower()
+    command = record.run_command.lower()
+    return (
+        record.status == "baseline"
+        or name == "baseline"
+        or name.startswith("baseline_")
+        or "--name baseline" in command
+    )
+
+
+def is_finalized_scored_record(record: RunRecord) -> bool:
+    if record.score is None or record.status in {"candidate", "crash"}:
+        return False
+    return is_baseline(record) or record.status in FINALIZED_SCORE_STATUSES
+
+
+def pending_manifest_paths(campaign_root: Path, records: Sequence[RunRecord]) -> List[Path]:
+    candidates_root = campaign_root / ".nvflare" / "autofl" / "candidates"
+    paths = set(candidates_root.glob("*/candidate_manifest.json")) if candidates_root.is_dir() else set()
+    paths.update(
+        resolve_path(campaign_root, record.candidate_manifest) for record in records if record.candidate_manifest
+    )
+    pending = []
+    for path in sorted(paths):
+        if not path.is_file():
+            continue
+        try:
+            manifest = load_json(path)
+        except ValueError:
+            continue
+        if str(manifest.get("status") or "").strip().lower() in PENDING_MANIFEST_STATUSES:
+            pending.append(path)
+    return pending
+
+
+def verify_no_pending_candidates(campaign_root: Path, state: Dict[str, Any], records: Sequence[RunRecord]) -> None:
+    evidence = []
+    pending_count = finite_float(state.get("pending_candidates"))
+    if pending_count is not None and pending_count > 0:
+        evidence.append(f"campaign state reports pending_candidates={state.get('pending_candidates')}")
+    if state.get("pending_candidate_manifest"):
+        evidence.append(f"campaign state names {state['pending_candidate_manifest']}")
+
+    ledger_rows = [record for record in records if record.status == "candidate"]
+    if ledger_rows:
+        rows = ", ".join(f"row {record.index + 1} ({record.name})" for record in ledger_rows[:5])
+        if len(ledger_rows) > 5:
+            rows += f", and {len(ledger_rows) - 5} more"
+        evidence.append(f"results.tsv contains pending candidate rows: {rows}")
+
+    manifests = pending_manifest_paths(campaign_root, records)
+    if manifests:
+        paths = ", ".join(str(path.resolve()) for path in manifests[:3])
+        if len(manifests) > 3:
+            paths += f", and {len(manifests) - 3} more"
+        evidence.append(f"candidate manifests remain prepared for execution: {paths}")
+
+    if evidence:
+        raise ValueError(
+            "cannot finalize while candidate evidence is unfinished; finalize or abandon pending candidates first. "
+            "--confirm-interrupted bypasses only stale campaign stop state, never unfinished candidate evidence. "
+            + " ".join(evidence)
+        )
+
+
 def scored_records(records: Iterable[RunRecord]) -> List[RunRecord]:
-    return [record for record in records if record.status in COMPARABLE_STATUSES and record.score is not None]
+    return [record for record in records if is_finalized_scored_record(record)]
 
 
 def select_baseline(records: Sequence[RunRecord]) -> Optional[RunRecord]:
-    return next((record for record in records if record.status == "baseline" and record.score is not None), None)
+    return next((record for record in records if is_baseline(record) and is_finalized_scored_record(record)), None)
 
 
 def select_best(records: Sequence[RunRecord], mode: str, retained_only: bool = False) -> Optional[RunRecord]:
     candidates = [
         record
         for record in records
-        if record.score is not None
-        and record.status in (RETAINED_STATUSES if retained_only else COMPARABLE_STATUSES)
-        and record.status != "crash"
+        if is_finalized_scored_record(record)
+        and (
+            (is_baseline(record) or record.status in RETAINED_STATUSES)
+            if retained_only
+            else (is_baseline(record) or record.status in FINALIZED_SCORE_STATUSES)
+        )
     ]
     if not candidates:
         return None
@@ -248,7 +338,7 @@ def running_best_milestones(records: Sequence[RunRecord], mode: str, limit: int)
     milestones = []
     incumbent = None
     for record in records:
-        if record.status not in COMPARABLE_STATUSES or not better(record.score, incumbent, mode):
+        if not is_finalized_scored_record(record) or not better(record.score, incumbent, mode):
             continue
         previous = incumbent
         incumbent = record.score
@@ -357,9 +447,11 @@ def literature_outcomes(records: Sequence[RunRecord], mode: str) -> List[Dict[st
         end = event_indices[event_number + 1] if event_number + 1 < len(event_indices) else len(records)
         before = select_best(records[:start], mode)
         attempts = [
-            record for record in records[start + 1 : end] if record.status in COMPARABLE_STATUSES - {"baseline"}
+            record
+            for record in records[start + 1 : end]
+            if record.status in ATTEMPT_STATUSES and not is_baseline(record)
         ]
-        scored = [record for record in attempts if record.score is not None and record.status != "crash"]
+        scored = [record for record in attempts if is_finalized_scored_record(record)]
         segment_best = select_best(scored, mode)
         if segment_best is None:
             outcome = "failed" if attempts else "not_evaluated"
@@ -460,7 +552,8 @@ def comparability_warnings(
             + ". Treat the gain as non-equal-compute unless this was explicitly approved."
         )
 
-    fixed = config.get("budget", {}).get("fixed_training_budget", {}) if config else {}
+    budget = config.get("budget") if isinstance(config.get("budget"), dict) else {}
+    fixed = budget.get("fixed_training_budget", {})
     baseline_options = command_options(baseline.run_command) if baseline else {}
     fixed_mismatches = []
     if isinstance(fixed, dict):
@@ -476,7 +569,9 @@ def comparability_warnings(
             + ")."
         )
 
-    candidate_count = len([record for record in records if record.status in COMPARABLE_STATUSES - {"baseline"}])
+    candidate_count = len(
+        [record for record in records if record.status in ATTEMPT_STATUSES and not is_baseline(record)]
+    )
     metric_text = f"{metric} {metric_source}".lower()
     if candidate_count > 1 and "test" in metric_text:
         warnings.append(
@@ -575,8 +670,8 @@ def format_delta(value: Optional[float]) -> str:
 
 
 def format_runtime(seconds: float) -> str:
-    if seconds < 60:
-        return f"{seconds:.1f}s"
+    if seconds <= 0:
+        return ""
     if seconds < 3600:
         return f"{seconds / 60:.1f}m"
     return f"{seconds / 3600:.2f}h"
@@ -640,7 +735,21 @@ def report_markdown(summary: Dict[str, Any], records: Sequence[RunRecord], max_n
             f"(baseline `{format_score(baseline_score)}`, delta `{format_delta(delta)}`)."
         )
     else:
-        lines.append("No comparable scored result was available.")
+        observed = summary["best_observed"]
+        if observed:
+            lines.append(
+                "No scored result was retained. Best unretained observed result: "
+                f"`{observed['name']}` at "
+                f"`{summary['objective']['optimization_metric']}={format_score(observed['score'])}` "
+                f"with status `{observed['status']}`."
+            )
+        else:
+            lines.append("No finalized scored result was available.")
+    progress_lines = (
+        [f"![Auto-FL progress]({summary['artifacts']['progress_plot']})"]
+        if summary["artifacts"]["progress_plot_available"]
+        else ["Progress plot unavailable; see the validation and comparability warnings below."]
+    )
     lines.extend(
         [
             "",
@@ -652,13 +761,14 @@ def report_markdown(summary: Dict[str, Any], records: Sequence[RunRecord], max_n
             f"- Requested metric: `{summary['objective']['requested_metric']}`",
             f"- Optimization metric: `{summary['objective']['optimization_metric']}`",
             f"- Metric source: `{summary['objective']['metric_source']}`",
+            f"- Metric contract source: `{summary['objective']['metric_contract_source']}`",
             f"- Direction: `{summary['objective']['mode']}`",
             f"- Candidate cap: `{summary['candidate_cap']}`",
             f"- Declared fixed budget: `{json.dumps(summary['declared_fixed_budget'], sort_keys=True)}`",
             "",
             "## Progress",
             "",
-            f"![Auto-FL progress]({summary['artifacts']['progress_plot']})",
+            *progress_lines,
             "",
             "## Optimization Trajectory",
             "",
@@ -702,7 +812,7 @@ def report_markdown(summary: Dict[str, Any], records: Sequence[RunRecord], max_n
             ]
         )
     else:
-        lines.append("No scored candidate provenance was available.")
+        lines.append("No retained scored candidate provenance was available.")
 
     lines.extend(["", "## Literature Review Outcomes", ""])
     if summary["literature_reviews"]:
@@ -715,7 +825,12 @@ def report_markdown(summary: Dict[str, Any], records: Sequence[RunRecord], max_n
         for item in summary["literature_reviews"]:
             evidence_items = []
             for candidate in item["candidate_results"]:
-                result = "crash" if candidate["score"] is None else format_score(candidate["score"])
+                if candidate["status"] == "crash":
+                    result = "crash"
+                elif candidate["status"] == "candidate":
+                    result = "pending"
+                else:
+                    result = format_score(candidate["score"])
                 evidence_items.append(f"{candidate['name']}={result}")
             evidence = "; ".join(evidence_items) or "no candidate recorded"
             lines.append(
@@ -795,6 +910,7 @@ def report_markdown(summary: Dict[str, Any], records: Sequence[RunRecord], max_n
             f"- Results ledger: `{summary['artifacts']['results']}`",
             f"- Campaign state: `{summary['artifacts']['campaign_state']}`",
             f"- Progress plot: `{summary['artifacts']['progress_plot']}`",
+            f"- Progress plot available: `{summary['artifacts']['progress_plot_available']}`",
             f"- Machine-readable summary: `{summary['artifacts']['summary_json']}`",
             f"- Markdown report: `{summary['artifacts']['report']}`",
             "",
@@ -822,13 +938,20 @@ def generate(args: argparse.Namespace) -> Dict[str, Any]:
 
     records = load_results(results_path)
     state, termination_reason, warnings = verify_stopped(state_path, args.confirm_interrupted)
+    verify_no_pending_candidates(root, state, records)
     config = load_config(config_path)
+    config, config_warnings = normalize_contract_sections(config)
+    warnings.extend(config_warnings)
     mode = infer_mode(config, state, args.mode)
-    metric, requested_metric, metric_source = metric_contract(config, state, args)
+    metric, requested_metric, metric_source, metric_contract_source = metric_contract(config, state, args)
     baseline = select_baseline(records)
-    best = select_best(records, mode, retained_only=True) or select_best(records, mode)
+    best = select_best(records, mode, retained_only=True)
     observed_best = select_best(records, mode)
-    if best and observed_best and best.name != observed_best.name:
+    if best is None and observed_best is not None:
+        warnings.append(
+            f"Best observed row {observed_best.name} was not retained; no scored baseline or kept candidate is available."
+        )
+    elif best and observed_best and best.name != observed_best.name:
         warnings.append(
             f"Best observed row {observed_best.name} was not retained; the report identifies retained candidate {best.name}."
         )
@@ -838,20 +961,27 @@ def generate(args: argparse.Namespace) -> Dict[str, Any]:
         progress_path,
         mode,
         metric,
-        Path(args.plotter).expanduser().resolve() if args.plotter else default_plotter_path(),
+        resolve_path(root, args.plotter).resolve() if args.plotter else default_plotter_path(),
     )
     if plot_warning:
         warnings.append(plot_warning)
-    if not is_png(progress_path):
-        raise ValueError(f"progress plot is unavailable after report refresh: {progress_path}")
+    progress_plot_available = is_png(progress_path)
+    if not progress_plot_available:
+        warnings.append(
+            f"Progress plot at {progress_path} is missing or is not a valid PNG; the report was generated without "
+            "embedding it."
+        )
 
     comparison_warnings, changes = comparability_warnings(config, records, baseline, best, metric, metric_source)
     warnings.extend(comparison_warnings)
     status_counts = dict(sorted(Counter(record.status or "unknown" for record in records).items()))
     scored = scored_records(records)
-    candidate_attempts = len([record for record in records if record.status in COMPARABLE_STATUSES - {"baseline"}])
+    candidate_attempts = len(
+        [record for record in records if record.status in ATTEMPT_STATUSES and not is_baseline(record)]
+    )
     environment = config.get("environment") if isinstance(config.get("environment"), dict) else {}
-    fixed_budget = config.get("budget", {}).get("fixed_training_budget", {}) if config else {}
+    budget = config.get("budget") if isinstance(config.get("budget"), dict) else {}
+    fixed_budget = budget.get("fixed_training_budget", {})
     cap = state.get("candidate_cap")
     cap_label = "uncapped" if cap in {None, "", 0} else cap
     summary = {
@@ -866,6 +996,7 @@ def generate(args: argparse.Namespace) -> Dict[str, Any]:
             "requested_metric": requested_metric,
             "optimization_metric": metric,
             "metric_source": metric_source,
+            "metric_contract_source": metric_contract_source,
             "mode": mode,
         },
         "environment": str(environment.get("requested") or state.get("environment") or "not declared"),
@@ -891,6 +1022,7 @@ def generate(args: argparse.Namespace) -> Dict[str, Any]:
             "results": str(results_path.resolve()),
             "campaign_state": str(state_path.resolve()),
             "progress_plot": str(progress_path.resolve()),
+            "progress_plot_available": progress_plot_available,
             "summary_json": str(summary_path.resolve()),
             "report": str(report_path.resolve()),
         },
