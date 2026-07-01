@@ -13,24 +13,9 @@
 # limitations under the License.
 
 from nvflare.lighter.constants import ParticipantType
+from nvflare.lighter.ctx import ProvisionContext
 from nvflare.lighter.entity import Participant, Project
 from nvflare.lighter.impl.cert import CertBuilder
-
-
-class _CertBuilderCtx(dict):
-    def __init__(self, root_dir):
-        super().__init__()
-        self.root_dir = root_dir
-        self.state_dir = root_dir / "state"
-        self.state_dir.mkdir()
-
-    def get_state_dir(self):
-        return str(self.state_dir)
-
-    def get_kit_dir(self, participant):
-        kit_dir = self.root_dir / participant.name / "startup"
-        kit_dir.mkdir(parents=True, exist_ok=True)
-        return str(kit_dir)
 
 
 def test_cert_builder_omits_static_admin_cert_for_ephemeral_cert(tmp_path):
@@ -50,13 +35,15 @@ def test_cert_builder_omits_static_admin_cert_for_ephemeral_cert(tmp_path):
         },
     )
     project = Project(name="project", description="desc", participants=[server, admin])
-    ctx = _CertBuilderCtx(tmp_path)
+    ctx = ProvisionContext(workspace_root_dir=str(tmp_path), project=project)
+    for participant in (server, admin):
+        (tmp_path / "wip" / participant.name / "startup").mkdir(parents=True)
     builder = CertBuilder()
 
     builder.initialize(project, ctx)
     builder.build(project, ctx)
 
-    admin_startup = tmp_path / "sso-admin-kit" / "startup"
+    admin_startup = tmp_path / "wip" / "sso-admin-kit" / "startup"
     assert (admin_startup / "rootCA.pem").is_file()
     assert not (admin_startup / "client.key").exists()
     assert not (admin_startup / "client.crt").exists()
