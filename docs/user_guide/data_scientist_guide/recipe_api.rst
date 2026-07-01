@@ -203,7 +203,7 @@ submitted. ``Run`` exposes:
 ``run.get_status()``
    Return the latest status when available.
 
-``run.get_result(timeout=0.0, cleanup=True)``
+``run.get_result(timeout=0.0, clean_up=True)``
    Wait for the result, cache the final status/result, stop the environment,
    and return the result workspace path when available.
 
