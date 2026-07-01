@@ -153,3 +153,81 @@ class TestAnalytix:
         assert result.tag == "loss"
         assert result.value == 0.5
         assert result.data_type == AnalyticsDataType.METRIC
+
+    def test_scalar_like_value_is_normalized(self):
+        class ScalarLike:
+            shape = ()
+
+            def item(self):
+                return 1.25
+
+        data = AnalyticsData(key="loss", value=ScalarLike(), data_type=AnalyticsDataType.SCALAR)
+
+        assert data.value == 1.25
+        assert isinstance(data.value, float)
+
+    @pytest.mark.parametrize("path", [1, 0])
+    def test_invalid_path_error_reports_path_type(self, path):
+        with pytest.raises(TypeError, match="expect path to be an instance of str, but got <class 'int'>."):
+            AnalyticsData(key="message", value="hello", data_type=AnalyticsDataType.TEXT, path=path)
+
+    @pytest.mark.parametrize("data_type", [AnalyticsDataType.SCALARS, AnalyticsDataType.METRICS])
+    def test_numeric_dict_values_are_normalized(self, data_type):
+        class ScalarLike:
+            shape = ()
+
+            def item(self):
+                return 1.25
+
+        data = AnalyticsData(
+            key="losses",
+            value={"train": ScalarLike(), "valid": 2},
+            data_type=data_type,
+        )
+
+        assert data.value == {"train": 1.25, "valid": 2}
+        assert isinstance(data.value["train"], float)
+
+    @pytest.mark.parametrize("data_type", [AnalyticsDataType.SCALARS, AnalyticsDataType.METRICS])
+    def test_numeric_dict_values_reject_non_scalars(self, data_type):
+        with pytest.raises(
+            TypeError,
+            match="expect all values in 'losses' dict to be numeric scalars, "
+            "but got '<class 'str'>' for key 'train'.",
+        ):
+            AnalyticsData(
+                key="losses",
+                value={"train": "bad_string"},
+                data_type=data_type,
+            )
+
+    def test_numpy_numeric_values_are_normalized(self):
+        np = pytest.importorskip("numpy")
+
+        data = AnalyticsData(key="loss", value=np.float32(1.25), data_type=AnalyticsDataType.SCALAR)
+        dxo = create_analytic_dxo(
+            tag="loss", value=np.asarray(1.25, dtype=np.float32), data_type=AnalyticsDataType.SCALAR
+        )
+        scalars = AnalyticsData(
+            key="losses",
+            value={"train": np.float32(1.25), "valid": np.asarray(2, dtype=np.int32)},
+            data_type=AnalyticsDataType.SCALARS,
+        )
+        metrics = AnalyticsData(
+            key="metrics",
+            value={"train": np.float32(1.25), "valid": np.asarray(2, dtype=np.int32)},
+            data_type=AnalyticsDataType.METRICS,
+        )
+
+        assert data.value == pytest.approx(1.25)
+        assert isinstance(data.value, float)
+        assert dxo.data[TrackConst.TRACK_VALUE] == pytest.approx(1.25)
+        assert isinstance(dxo.data[TrackConst.TRACK_VALUE], float)
+        assert scalars.value["train"] == pytest.approx(1.25)
+        assert scalars.value["valid"] == 2
+        assert isinstance(scalars.value["train"], float)
+        assert isinstance(scalars.value["valid"], int)
+        assert metrics.value["train"] == pytest.approx(1.25)
+        assert metrics.value["valid"] == 2
+        assert isinstance(metrics.value["train"], float)
+        assert isinstance(metrics.value["valid"], int)
