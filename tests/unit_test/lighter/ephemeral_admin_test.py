@@ -119,3 +119,30 @@ def test_provider_specific_config_is_not_validated_by_generic_provisioning_helpe
     )
 
     assert get_admin_ephemeral_cert_config(admin)["provider_config"]["ca_url"] == "https://step-ca.example.com"
+
+
+def test_ephemeral_cert_config_rejects_unknown_provider_name_shape():
+    _project_obj, admin = _project(
+        admin_props={
+            "ephemeral_admin_cert": {
+                "provider": "step-ca",
+                "provider_config": {},
+            }
+        }
+    )
+
+    with pytest.raises(ValueError, match="built-in provider name or module:function path"):
+        get_admin_ephemeral_cert_config(admin)
+
+
+def test_ephemeral_cert_config_accepts_custom_provider_path_without_importing_it():
+    _project_obj, admin = _project(
+        admin_props={
+            "ephemeral_admin_cert": {
+                "provider": "customer.cert_provider:obtain_certificate",
+                "provider_config": {},
+            }
+        }
+    )
+
+    assert get_admin_ephemeral_cert_config(admin)["provider"] == "customer.cert_provider:obtain_certificate"

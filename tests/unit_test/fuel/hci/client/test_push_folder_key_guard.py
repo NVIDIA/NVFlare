@@ -221,7 +221,7 @@ def test_push_folder_refreshes_ephemeral_cert_before_signing(tmp_path):
     api.ensure_client_cert_valid.assert_called_once_with()
 
 
-def test_push_folder_reconnects_when_ephemeral_cert_renewal_drops_cell(tmp_path):
+def test_push_folder_reconnects_when_cell_is_missing_after_failed_renewal_reconnect(tmp_path):
     from nvflare.fuel.hci.client.api_status import APIStatus
 
     upload_dir = str(tmp_path / "upload")
@@ -235,7 +235,7 @@ def test_push_folder_reconnects_when_ephemeral_cert_renewal_drops_cell(tmp_path)
     module = FileTransferModule(upload_dir=upload_dir, download_dir=download_dir)
     args, ctx = _make_push_folder_args_and_ctx(str(key_file), "/path/to/cert.crt", folder_name)
     api = ctx.get_api.return_value
-    api.ensure_client_cert_valid = MagicMock(return_value=True)
+    api.ensure_client_cert_valid = MagicMock(return_value=False)
     api.cell = None
     api.login.return_value = {"status": APIStatus.SUCCESS}
 

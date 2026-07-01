@@ -312,10 +312,10 @@ class FileTransferModule(CommandModule):
         ensure_client_cert_valid = getattr(api, "ensure_client_cert_valid", None)
         if ensure_client_cert_valid:
             try:
-                renewed = ensure_client_cert_valid()
+                ensure_client_cert_valid()
             except Exception as e:
                 return {"status": APIStatus.ERROR_RUNTIME, "details": f"Failed to refresh admin certificate: {e}"}
-            if renewed and getattr(api, "cell", None) is None:
+            if getattr(api, "cell", None) is None:
                 try:
                     api.connect()
                     login_result = api.login()

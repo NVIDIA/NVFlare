@@ -65,24 +65,14 @@ class EphemeralAdminCertFiles:
 
 
 def obtain_ephemeral_admin_cert_files(config: Mapping, root_ca_file: str) -> EphemeralAdminCertFiles:
-    if not isinstance(config, Mapping):
-        raise EphemeralAdminCertError(f"ephemeral_admin_cert must be a mapping but got {type(config)}")
+    config = validate_ephemeral_admin_cert_config(config)
     if not root_ca_file:
         raise EphemeralAdminCertError("root_ca_file is required")
 
     provider = config.get(EPHEMERAL_ADMIN_CERT_PROVIDER_KEY)
-    if not provider:
-        raise EphemeralAdminCertError(f"ephemeral_admin_cert.{EPHEMERAL_ADMIN_CERT_PROVIDER_KEY} is required")
-
-    provider_config = config.get(EPHEMERAL_ADMIN_CERT_PROVIDER_CONFIG_KEY) or {}
-    if not isinstance(provider_config, Mapping):
-        raise EphemeralAdminCertError(
-            f"ephemeral_admin_cert.{EPHEMERAL_ADMIN_CERT_PROVIDER_CONFIG_KEY} must be a mapping"
-        )
-
-    provider_name = str(provider)
-    provider_config = dict(provider_config)
-    renewal_window = _renewal_window(config)
+    provider_name = provider
+    provider_config = config[EPHEMERAL_ADMIN_CERT_PROVIDER_CONFIG_KEY]
+    renewal_window = get_ephemeral_admin_cert_renewal_window(config)
     cache_dir = _cache_base_dir() / _cache_key(
         provider=provider_name, provider_config=provider_config, root_ca_file=root_ca_file
     )
@@ -265,7 +255,7 @@ def _cache_key(provider: str, provider_config: Mapping, root_ca_file: str) -> st
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _renewal_window(config: Mapping) -> float:
+def get_ephemeral_admin_cert_renewal_window(config: Mapping) -> float:
     renewal_window = config.get("renewal_window", 60.0)
     try:
         renewal_window = float(renewal_window)
@@ -276,18 +266,43 @@ def _renewal_window(config: Mapping) -> float:
     return renewal_window
 
 
-def _load_provider(provider: str):
+def validate_ephemeral_admin_cert_config(config: Mapping) -> dict:
+    if not isinstance(config, Mapping):
+        raise EphemeralAdminCertError(f"ephemeral_admin_cert must be a mapping but got {type(config)}")
+
+    result = dict(config)
+    provider = result.get(EPHEMERAL_ADMIN_CERT_PROVIDER_KEY)
+    if not isinstance(provider, str) or not provider:
+        raise EphemeralAdminCertError(f"ephemeral_admin_cert.{EPHEMERAL_ADMIN_CERT_PROVIDER_KEY} is required")
+    _validate_provider_name(provider)
+
+    provider_config = result.get(EPHEMERAL_ADMIN_CERT_PROVIDER_CONFIG_KEY) or {}
+    if not isinstance(provider_config, Mapping):
+        raise EphemeralAdminCertError(
+            f"ephemeral_admin_cert.{EPHEMERAL_ADMIN_CERT_PROVIDER_CONFIG_KEY} must be a mapping"
+        )
+    result[EPHEMERAL_ADMIN_CERT_PROVIDER_CONFIG_KEY] = dict(provider_config)
+    get_ephemeral_admin_cert_renewal_window(result)
+    return result
+
+
+def _validate_provider_name(provider: str):
     provider_path = BUILTIN_EPHEMERAL_ADMIN_CERT_PROVIDERS.get(provider, provider)
     if ":" not in provider_path:
         raise EphemeralAdminCertError(
             f"ephemeral admin cert provider '{provider}' must be a built-in provider name or module:function path"
         )
-
     module_name, func_name = provider_path.split(":", 1)
     if not module_name or not func_name:
         raise EphemeralAdminCertError(
             f"ephemeral admin cert provider '{provider}' must be a built-in provider name or module:function path"
         )
+
+
+def _load_provider(provider: str):
+    provider_path = BUILTIN_EPHEMERAL_ADMIN_CERT_PROVIDERS.get(provider, provider)
+    _validate_provider_name(provider)
+    module_name, func_name = provider_path.split(":", 1)
 
     try:
         module = importlib.import_module(module_name)

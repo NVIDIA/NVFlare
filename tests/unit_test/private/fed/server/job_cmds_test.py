@@ -549,6 +549,56 @@ def test_submit_job_strips_user_supplied_from_hub_site(monkeypatch):
     assert JobMetaKey.FROM_HUB_SITE.value not in engine.job_def_manager.created_meta
 
 
+def test_submit_job_records_submitter_cert_validity(monkeypatch, tmp_path):
+    now = datetime.datetime.now(datetime.timezone.utc)
+
+    class _Cert:
+        not_valid_before_utc = now - datetime.timedelta(minutes=1)
+        not_valid_after_utc = now + datetime.timedelta(hours=1)
+
+    class _Validator:
+        def validate(self, folder_name, zip_file_name):
+            return True, "", {}
+
+    zip_path = tmp_path / "job.zip"
+    with ZipFile(zip_path, "w") as zip_file:
+        zip_file.writestr(f"source/app/{NVFLARE_SUBMITTER_CRT_FILE}", b"cert")
+
+    monkeypatch.setattr(job_cmds_module, "JobMetaValidator", _Validator)
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    monkeypatch.setattr(job_cmds_module, "load_crt_chain_bytes", lambda _data: [_Cert()])
+
+    engine = _FakeEngine()
+    conn = _submit_conn(engine, str(zip_path))
+
+    JobCommandModule().submit_job(conn, ["submit_job", "job_folder"])
+
+    assert conn.errors == []
+    assert engine.job_def_manager.created_meta[JobMetaKey.SUBMITTER_CERT_VALIDITY.value] == {
+        "not_before": _Cert.not_valid_before_utc.timestamp(),
+        "not_after": _Cert.not_valid_after_utc.timestamp(),
+    }
+
+
+def test_submit_job_strips_forged_submitter_cert_validity(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    monkeypatch.setattr(
+        job_cmds_module,
+        "JobMetaValidator",
+        lambda: _FakeJobMetaValidatorWithMeta(
+            {JobMetaKey.SUBMITTER_CERT_VALIDITY.value: {"not_before": 0, "not_after": 9999999999}}
+        ),
+    )
+
+    engine = _FakeEngine()
+    conn = _submit_conn(engine, "job.zip")
+
+    JobCommandModule().submit_job(conn, ["submit_job", "job_folder"])
+
+    assert conn.errors == []
+    assert JobMetaKey.SUBMITTER_CERT_VALIDITY.value not in engine.job_def_manager.created_meta
+
+
 def test_submit_job_defaults_study_when_cmd_props_missing(monkeypatch):
     monkeypatch.setattr(job_cmds_module, "JobMetaValidator", _FakeJobMetaValidator)
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
@@ -1164,20 +1214,18 @@ def test_clone_job_rejects_expired_stored_submitter_cert(monkeypatch):
 
     now = datetime.datetime.now(datetime.timezone.utc)
 
-    class _ExpiredCert:
-        not_valid_before_utc = now - datetime.timedelta(days=2)
-        not_valid_after_utc = now - datetime.timedelta(days=1)
-
-    monkeypatch.setattr(job_cmds_module, "load_crt_chain_bytes", lambda _data: [_ExpiredCert()])
-
     source_job = _FakeListedJob(
         {
             JobMetaKey.JOB_ID.value: "source-job",
             JobMetaKey.JOB_NAME.value: "source",
+            JobMetaKey.SUBMITTER_CERT_VALIDITY.value: {
+                "not_before": (now - datetime.timedelta(days=2)).timestamp(),
+                "not_after": (now - datetime.timedelta(days=1)).timestamp(),
+            },
         }
     )
     engine = _FakeEngine()
-    engine.job_def_manager.content = _zip_bytes({f"source/app/{NVFLARE_SUBMITTER_CRT_FILE}": b"expired-cert"})
+    engine.job_def_manager.get_content = MagicMock(side_effect=AssertionError("clone must not load job content"))
     conn = _MockConnection(
         app_ctx=engine,
         props={
@@ -1197,6 +1245,7 @@ def test_clone_job_rejects_expired_stored_submitter_cert(monkeypatch):
     msg, meta = conn.errors[0]
     assert "stored submitter certificate" in msg
     assert meta[MetaKey.STATUS] == MetaStatusValue.INVALID_JOB_DEFINITION
+    engine.job_def_manager.get_content.assert_not_called()
 
 
 def test_list_jobs_filters_legacy_jobs_into_default_study(monkeypatch):

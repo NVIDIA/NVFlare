@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Mapping, Optional
+from typing import Optional
 
+from nvflare.fuel.sec.ephemeral_admin_cert import validate_ephemeral_admin_cert_config
 from nvflare.lighter.constants import PropKey
 
 
@@ -22,24 +23,7 @@ def get_admin_ephemeral_cert_config(admin) -> Optional[dict]:
     if not config:
         return None
     scope = f"admin {admin.name}.{PropKey.EPHEMERAL_ADMIN_CERT}"
-    if not isinstance(config, Mapping):
-        raise ValueError(f"{scope} must be a mapping but got {type(config)}")
-
-    result = dict(config)
-    provider = result.get("provider")
-    if not provider:
-        raise ValueError(f"{scope}.provider is required")
-
-    provider_config = result.get("provider_config") or {}
-    if not isinstance(provider_config, Mapping):
-        raise ValueError(f"{scope}.provider_config must be a mapping but got {type(provider_config)}")
-    result["provider_config"] = dict(provider_config)
-
-    if "renewal_window" in result:
-        try:
-            renewal_window = float(result["renewal_window"])
-        except (TypeError, ValueError) as ex:
-            raise ValueError(f"{scope}.renewal_window must be a number") from ex
-        if renewal_window <= 0.0:
-            raise ValueError(f"{scope}.renewal_window must be greater than zero")
-    return result
+    try:
+        return validate_ephemeral_admin_cert_config(config)
+    except ValueError as ex:
+        raise ValueError(f"invalid {scope}: {ex}") from ex

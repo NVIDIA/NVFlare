@@ -101,6 +101,7 @@ CLONED_META_KEYS = {
     JobMetaKey.MANDATORY_CLIENTS.value,
     JobMetaKey.DATA_STORAGE_FORMAT.value,
     JobMetaKey.STUDY.value,
+    JobMetaKey.SUBMITTER_CERT_VALIDITY.value,
     AppValidationKey.BYOC,
 }
 
@@ -114,17 +115,14 @@ def _cert_time(cert, field_name: str) -> datetime.datetime:
     return getattr(cert, field_name).replace(tzinfo=datetime.timezone.utc)
 
 
-def _clone_signature_error(job_def_manager, job: Job, fl_ctx) -> str:
-    job_content = job_def_manager.get_content(job.meta, fl_ctx)
-    if not job_content:
-        return ""
-
+def _submitter_cert_validity(zip_file_name: str) -> Optional[dict]:
+    zip_source = io.BytesIO(zip_file_name) if isinstance(zip_file_name, bytes) else zip_file_name
     try:
-        zip_file = ZipFile(io.BytesIO(job_content))
-    except BadZipFile:
-        return ""
+        zip_file = ZipFile(zip_source)
+    except (BadZipFile, OSError):
+        return None
 
-    now = datetime.datetime.now(datetime.timezone.utc)
+    validity = None
     with zip_file:
         for info in zip_file.infolist():
             if info.is_dir() or posixpath.basename(info.filename) != NVFLARE_SUBMITTER_CRT_FILE:
@@ -133,16 +131,41 @@ def _clone_signature_error(job_def_manager, job: Job, fl_ctx) -> str:
             try:
                 cert_chain = load_crt_chain_bytes(zip_file.read(info))
             except Exception:
-                return (
-                    "Cannot clone this job because the stored submitter certificate cannot be inspected. "
-                    "Download and submit the job again so it is signed with a current admin certificate."
-                )
+                return {}
             cert = cert_chain[0]
-            if now < _cert_time(cert, "not_valid_before") or now >= _cert_time(cert, "not_valid_after"):
-                return (
-                    "Cannot clone this job because the stored submitter certificate is no longer valid. "
-                    "Download and submit the job again so it is signed with a current admin certificate."
-                )
+            cert_validity = {
+                "not_before": _cert_time(cert, "not_valid_before").timestamp(),
+                "not_after": _cert_time(cert, "not_valid_after").timestamp(),
+            }
+            if validity is None:
+                validity = cert_validity
+            else:
+                validity["not_before"] = max(validity["not_before"], cert_validity["not_before"])
+                validity["not_after"] = min(validity["not_after"], cert_validity["not_after"])
+    return validity
+
+
+def _clone_signature_error(job: Job) -> str:
+    validity = job.meta.get(JobMetaKey.SUBMITTER_CERT_VALIDITY.value)
+    if validity is None:
+        return ""
+    if not isinstance(validity, dict):
+        validity = {}
+    try:
+        not_before = float(validity["not_before"])
+        not_after = float(validity["not_after"])
+    except (KeyError, TypeError, ValueError):
+        return (
+            "Cannot clone this job because the stored submitter certificate cannot be inspected. "
+            "Download and submit the job again so it is signed with a current admin certificate."
+        )
+
+    now = datetime.datetime.now(datetime.timezone.utc).timestamp()
+    if now < not_before or now >= not_after:
+        return (
+            "Cannot clone this job because the stored submitter certificate is no longer valid. "
+            "Download and submit the job again so it is signed with a current admin certificate."
+        )
     return ""
 
 
@@ -1116,7 +1139,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
                 )
             with engine.new_context() as fl_ctx:
-                clone_error = _clone_signature_error(job_def_manager, job, fl_ctx)
+                clone_error = _clone_signature_error(job)
                 if clone_error:
                     conn.append_error(clone_error, meta=make_meta(MetaStatusValue.INVALID_JOB_DEFINITION, clone_error))
                     return
@@ -1619,6 +1642,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 meta.pop(JobMetaKey.FROM_HUB_SITE.value, None)
                 # Submit-token is server-owned submission metadata. User job metadata must not expose it.
                 meta.pop(SubmitRecordKey.SUBMIT_TOKEN.value, None)
+                meta.pop(JobMetaKey.SUBMITTER_CERT_VALIDITY.value, None)
 
                 job_def_manager = engine.job_def_manager
                 if not isinstance(job_def_manager, JobDefManagerSpec):
@@ -1662,6 +1686,10 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                         block_reason, meta=make_meta(MetaStatusValue.INVALID_JOB_DEFINITION, block_reason)
                     )
                     return
+
+                submitter_cert_validity = _submitter_cert_validity(zip_file_name)
+                if submitter_cert_validity is not None:
+                    meta[JobMetaKey.SUBMITTER_CERT_VALIDITY.value] = submitter_cert_validity
 
                 # set submitter info
                 submitter = self._submitter_from_conn(conn)

@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import pytest
+
+from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.client.api import AdminAPI
 from nvflare.fuel.hci.client.api_spec import AdminConfigKey
 from nvflare.fuel.hci.proto import InternalCommands
@@ -54,6 +57,23 @@ def test_admin_api_hydrates_missing_cert_pair_from_step_ca(monkeypatch, tmp_path
     assert api.ephemeral_admin_cert_files is resolved_files
     assert "subject" not in captured["config"]
     assert captured["root_ca_file"] == "rootCA.pem"
+
+
+def test_admin_api_reports_invalid_ephemeral_renewal_window_as_config_error():
+    with pytest.raises(ConfigError, match="renewal_window must be a number"):
+        AdminAPI(
+            user_name="alice@nvidia.com",
+            admin_config={
+                AdminConfigKey.PROJECT_NAME: "project",
+                AdminConfigKey.CA_CERT: "rootCA.pem",
+                AdminConfigKey.EPHEMERAL_ADMIN_CERT: {
+                    "provider": "step_ca",
+                    "renewal_window": "one minute",
+                    "provider_config": {},
+                },
+            },
+            cmd_modules=[],
+        )
 
 
 def test_admin_api_renews_expiring_ephemeral_cert_and_resets_connection(monkeypatch, tmp_path):
@@ -175,3 +195,86 @@ def test_user_login_builds_command_after_identity_renewal(monkeypatch):
 
     assert captured["command"] == f"{InternalCommands.CERT_LOGIN} bob@nvidia.com"
     assert captured["headers"]["user_name"] == "bob@nvidia.com"
+
+
+def test_user_login_reconnects_when_cell_is_missing_without_another_renewal(monkeypatch):
+    class _FakeIdentityAsserter:
+        cert_data = b"cert"
+
+        def __init__(self, private_key_file, cert_file):
+            pass
+
+        def sign_common_name(self, nonce):
+            return b"signature"
+
+    api = object.__new__(AdminAPI)
+    api.user_name = "alice@nvidia.com"
+    api.client_key = "client.key"
+    api.client_cert = "client.crt"
+    api.study = "default"
+    api.cell = None
+    api.login_result = None
+    connected = []
+
+    api.ensure_client_cert_valid = lambda: False
+
+    def _connect():
+        connected.append(True)
+        api.cell = object()
+
+    def _server_execute(command, reply_processor, headers):
+        api.login_result = "REJECT"
+
+    api.connect = _connect
+    api.server_execute = _server_execute
+    monkeypatch.setattr("nvflare.fuel.hci.client.api.IdentityAsserter", _FakeIdentityAsserter)
+
+    api._user_login()
+
+    assert connected == [True]
+
+
+def test_connect_cleans_up_partial_cell_after_authentication_failure(monkeypatch):
+    class _FakeCell:
+        stopped = False
+
+        def __init__(self, **kwargs):
+            pass
+
+        def register_request_cb(self, **kwargs):
+            pass
+
+        def start(self):
+            pass
+
+        def stop(self):
+            self.stopped = True
+
+    class _FailingAuthenticator:
+        def __init__(self, **kwargs):
+            pass
+
+        def authenticate(self, **kwargs):
+            raise RuntimeError("authentication failed")
+
+    monkeypatch.setattr("nvflare.fuel.hci.client.api.Cell", _FakeCell)
+    monkeypatch.setattr("nvflare.fuel.hci.client.api.NetAgent", lambda cell: None)
+    monkeypatch.setattr("nvflare.fuel.hci.client.api.Authenticator", _FailingAuthenticator)
+
+    api = AdminAPI(
+        user_name="alice@nvidia.com",
+        admin_config={
+            AdminConfigKey.PROJECT_NAME: "project",
+            AdminConfigKey.CA_CERT: "rootCA.pem",
+            AdminConfigKey.CLIENT_CERT: "client.crt",
+            AdminConfigKey.CLIENT_KEY: "client.key",
+        },
+        cmd_modules=[],
+    )
+
+    with pytest.raises(RuntimeError, match="authentication failed"):
+        api.connect()
+
+    assert api.cell is None
+    assert api.aux_runner is None
+    assert api.object_streamer is None

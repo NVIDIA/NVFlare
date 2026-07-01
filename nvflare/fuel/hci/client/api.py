@@ -58,7 +58,11 @@ from nvflare.fuel.hci.proto import (
 from nvflare.fuel.hci.reg import CommandEntry, CommandModule, CommandRegister
 from nvflare.fuel.hci.table import Table
 from nvflare.fuel.sec.authn import set_add_auth_headers_filters
-from nvflare.fuel.sec.ephemeral_admin_cert import obtain_ephemeral_admin_cert_files
+from nvflare.fuel.sec.ephemeral_admin_cert import (
+    get_ephemeral_admin_cert_renewal_window,
+    obtain_ephemeral_admin_cert_files,
+    validate_ephemeral_admin_cert_config,
+)
 from nvflare.fuel.utils.admin_name_utils import new_admin_client_name
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
@@ -300,9 +304,16 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         self.client_key = admin_config.get(AdminConfigKey.CLIENT_KEY)
         self.ephemeral_admin_cert_files = None
         self.ephemeral_admin_cert_config = admin_config.get(AdminConfigKey.EPHEMERAL_ADMIN_CERT)
-        self.ephemeral_admin_cert_renewal_window = float(
-            (self.ephemeral_admin_cert_config or {}).get("renewal_window", 60.0)
-        )
+        try:
+            if self.ephemeral_admin_cert_config:
+                self.ephemeral_admin_cert_config = validate_ephemeral_admin_cert_config(
+                    self.ephemeral_admin_cert_config
+                )
+            self.ephemeral_admin_cert_renewal_window = get_ephemeral_admin_cert_renewal_window(
+                self.ephemeral_admin_cert_config or {}
+            )
+        except ValueError as ex:
+            raise ConfigError(str(ex)) from ex
         self.uid_source = admin_config.get(AdminConfigKey.UID_SOURCE, UidSource.USER_INPUT)
         self.host = admin_config.get(AdminConfigKey.HOST, "localhost")
         self.port = admin_config.get(AdminConfigKey.PORT, 8002)
@@ -405,24 +416,23 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             if renewing:
                 self.fl_ctx_mgr.identity_name = self.user_name
         if renewing:
-            self._reset_cell_for_ephemeral_cert_renewal()
+            self._reset_cell()
         return True
 
-    def _reset_cell_for_ephemeral_cert_renewal(self):
-        # The cell and its auth filters are initialized with the current cert/key
-        # and session token. After renewing an ephemeral admin cert, force the
-        # next login/command path to rebuild the cell with the new identity.
+    def _reset_cell(self):
         self.server_sess_active = False
         self.token = None
         self.login_result = None
-        self.shutdown_streamer()
         try:
-            if self.cell:
-                self.cell.stop()
+            self.shutdown_streamer()
         finally:
-            self.cell = None
-            self.aux_runner = None
-            self.object_streamer = None
+            try:
+                if self.cell:
+                    self.cell.stop()
+            finally:
+                self.cell = None
+                self.aux_runner = None
+                self.object_streamer = None
 
     def new_context(self):
         return self.fl_ctx_mgr.new_context()
@@ -463,71 +473,75 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
 
         self.debug(f"Creating cell: {my_fqcn=} {root_url=} {secure_conn=} {credentials=}")
 
-        self.cell = Cell(
-            fqcn=my_fqcn,
-            root_url=root_url,
-            secure=secure_conn,
-            credentials=credentials,
-            create_internal_listener=False,
-            parent_url=None,
-            auth_identity_map={FQCN.ROOT_SERVER: self.server_identity},
-        )
+        try:
+            self.cell = Cell(
+                fqcn=my_fqcn,
+                root_url=root_url,
+                secure=secure_conn,
+                credentials=credentials,
+                create_internal_listener=False,
+                parent_url=None,
+                auth_identity_map={FQCN.ROOT_SERVER: self.server_identity},
+            )
 
-        self.cell.register_request_cb(
-            channel=CellChannel.HCI,
-            topic="SESSION_EXPIRED",
-            cb=self._handle_session_expired,
-        )
+            self.cell.register_request_cb(
+                channel=CellChannel.HCI,
+                topic="SESSION_EXPIRED",
+                cb=self._handle_session_expired,
+            )
 
-        NetAgent(self.cell)
-        self.cell.start()
+            NetAgent(self.cell)
+            self.cell.start()
 
-        # authenticate
-        authenticator = Authenticator(
-            cell=self.cell,
-            project_name=self.project_name,
-            client_name=self.user_name,
-            client_type=ClientType.ADMIN,
-            expected_sp_identity=self.server_identity,
-            secure_mode=True,  # always True to authenticate the cell endpoint!
-            root_cert_file=self.ca_cert,
-            private_key_file=self.client_key,
-            cert_file=self.client_cert,
-            msg_timeout=self.authenticate_msg_timeout,
-            retry_interval=1.0,
-            timeout=timeout,
-        )
+            # authenticate
+            authenticator = Authenticator(
+                cell=self.cell,
+                project_name=self.project_name,
+                client_name=self.user_name,
+                client_type=ClientType.ADMIN,
+                expected_sp_identity=self.server_identity,
+                secure_mode=True,  # always True to authenticate the cell endpoint!
+                root_cert_file=self.ca_cert,
+                private_key_file=self.client_key,
+                cert_file=self.client_cert,
+                msg_timeout=self.authenticate_msg_timeout,
+                retry_interval=1.0,
+                timeout=timeout,
+            )
 
-        abort_signal = Signal()
-        shared_fl_ctx = FLContext()
-        shared_fl_ctx.set_public_props({ReservedKey.IDENTITY_NAME: self.user_name})
-        token, token_signature, ssid, token_verifier = authenticator.authenticate(
-            shared_fl_ctx=shared_fl_ctx,
-            abort_signal=abort_signal,
-        )
+            abort_signal = Signal()
+            shared_fl_ctx = FLContext()
+            shared_fl_ctx.set_public_props({ReservedKey.IDENTITY_NAME: self.user_name})
+            token, token_signature, ssid, token_verifier = authenticator.authenticate(
+                shared_fl_ctx=shared_fl_ctx,
+                abort_signal=abort_signal,
+            )
 
-        if not isinstance(token_verifier, TokenVerifier):
-            raise RuntimeError(f"expect token_verifier to be TokenVerifier but got {type(token_verifier)}")
+            if not isinstance(token_verifier, TokenVerifier):
+                raise RuntimeError(f"expect token_verifier to be TokenVerifier but got {type(token_verifier)}")
 
-        set_add_auth_headers_filters(self.cell, self.user_name, token, token_signature, ssid)
+            set_add_auth_headers_filters(self.cell, self.user_name, token, token_signature, ssid)
 
-        self.cell.core_cell.add_incoming_filter(
-            channel="*",
-            topic="*",
-            cb=validate_auth_headers,
-            token_verifier=token_verifier,
-            logger=self.logger,
-        )
-        self.debug(f"Successfully authenticated to {self.server_identity}: {token=} {ssid=}")
+            self.cell.core_cell.add_incoming_filter(
+                channel="*",
+                topic="*",
+                cb=validate_auth_headers,
+                token_verifier=token_verifier,
+                logger=self.logger,
+            )
+            self.debug(f"Successfully authenticated to {self.server_identity}: {token=} {ssid=}")
 
-        self.aux_runner = AuxRunner(self)
-        self.object_streamer = ObjectStreamer(self.aux_runner)
+            self.aux_runner = AuxRunner(self)
+            self.object_streamer = ObjectStreamer(self.aux_runner)
 
-        self.cell.register_request_cb(
-            channel=CellChannel.AUX_COMMUNICATION,
-            topic="*",
-            cb=self._handle_aux_message,
-        )
+            self.cell.register_request_cb(
+                channel=CellChannel.AUX_COMMUNICATION,
+                topic="*",
+                cb=self._handle_aux_message,
+            )
+        except Exception:
+            self._reset_cell()
+            raise
 
     def _handle_aux_message(self, request: CellMessage) -> CellMessage:
         assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
@@ -729,8 +743,8 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         Returns:
             A dict of login status and details
         """
-        renewed = self.ensure_client_cert_valid()
-        if renewed and not self.cell:
+        self.ensure_client_cert_valid()
+        if not self.cell:
             self.connect()
         command = f"{InternalCommands.CERT_LOGIN} {self.user_name}"
         id_asserter = IdentityAsserter(private_key_file=self.client_key, cert_file=self.client_cert)

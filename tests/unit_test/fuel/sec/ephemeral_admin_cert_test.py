@@ -397,7 +397,7 @@ def test_ephemeral_admin_cert_cache_serializes_concurrent_acquisition(monkeypatc
         return EphemeralAdminCertFiles(client_key=str(key_src), client_cert=str(cert_src))
 
     monkeypatch.setattr("nvflare.fuel.sec.ephemeral_admin_cert._load_provider", lambda _provider_name: _provider)
-    config = {"provider": "test", "provider_config": {}}
+    config = {"provider": "test.provider:obtain_certificate", "provider_config": {}}
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         first_future = executor.submit(obtain_ephemeral_admin_cert_files, config, str(root_ca_path))

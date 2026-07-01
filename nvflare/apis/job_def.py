@@ -52,6 +52,7 @@ class JobMetaKey(str, Enum):
     SUBMITTER_NAME = "submitter_name"
     SUBMITTER_ORG = "submitter_org"
     SUBMITTER_ROLE = "submitter_role"
+    SUBMITTER_CERT_VALIDITY = "submitter_cert_validity"
     STATUS = "status"
     DATA_STORAGE_FORMAT = "data_storage_format"
     DEPLOY_MAP = "deploy_map"

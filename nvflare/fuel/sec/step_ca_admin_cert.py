@@ -51,18 +51,27 @@ def obtain_step_ca_admin_cert_files(config: Mapping, root_ca_file: str) -> Ephem
     )
 
 
+def validate_step_ca_admin_cert_config(config: Mapping) -> dict:
+    if not isinstance(config, Mapping):
+        raise EphemeralAdminCertError(f"step_ca provider_config must be a mapping but got {type(config)}")
+    result = dict(config)
+    _validate_step_ca_url(str(result.get("ca_url") or ""))
+    if not result.get("provisioner"):
+        raise EphemeralAdminCertError("step_ca provider_config.provisioner is required")
+    _command_timeout(result)
+    return result
+
+
 def _build_step_ca_command(
     config: Mapping,
     root_ca_file: str,
     cert_path: str,
     key_path: str,
 ) -> Sequence[str]:
+    config = validate_step_ca_admin_cert_config(config)
     step_bin = str(config.get("step_bin") or "step")
-    ca_url = str(config.get("ca_url") or "")
-    provisioner = str(config.get("provisioner") or "")
-    _validate_step_ca_url(ca_url)
-    if not provisioner:
-        raise EphemeralAdminCertError("step_ca provider_config.provisioner is required")
+    ca_url = str(config.get("ca_url"))
+    provisioner = str(config.get("provisioner"))
     command = [step_bin, "ca", "certificate", "--ca-url", ca_url, "--root", root_ca_file]
     command.extend(["--provisioner", provisioner])
     command.extend(["--not-after", str(config.get("cert_ttl") or DEFAULT_STEP_CA_CERT_TTL)])
