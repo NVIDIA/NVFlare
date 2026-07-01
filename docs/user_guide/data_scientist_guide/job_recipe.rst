@@ -235,8 +235,8 @@ mutating ``recipe.job.job.meta_props`` directly. The helper sets one
 
    set_recipe_meta(
        recipe,
-       JobMetaKey.STUDY,
-       "default",
+       JobMetaKey.SCOPE,
+       "private",
    )
    set_recipe_meta(
        recipe,
@@ -254,36 +254,47 @@ mutating ``recipe.job.job.meta_props`` directly. The helper sets one
            "site-2": {"docker": {"image": "nvflare-site2:latest"}},
        },
    )
-   set_recipe_meta(
-       recipe,
-       JobMetaKey.MANDATORY_CLIENTS,
-       ["site-1", "site-2"],
-   )
 
-Common metadata fields include:
+The settable keys are exactly the members of
+:data:`nvflare.apis.job_def.USER_SETTABLE_JOB_META_KEYS`; other enum members
+and raw strings are not accepted. Each key has a value shape contract:
 
-* ``min_clients``: minimum number of clients required to run the job.
-* ``resource_spec``: per-site resource requirements for generated
-  ``meta.json``.
-* ``launcher_spec``: per-site launcher requirements for generated
-  ``meta.json``.
-* ``mandatory_clients``: required client names, if supported by the workflow.
-* ``scope``: job scope metadata.
-* ``custom_props``: nested custom metadata.
-* ``study``: job study metadata.
+* ``JobMetaKey.RESOURCE_SPEC`` (``resource_spec``): per-site resource
+  requirements -- a dict keyed by site name with dict values.
+* ``JobMetaKey.JOB_LAUNCHER_SPEC`` (``launcher_spec``): per-site launcher
+  requirements -- a dict keyed by site name with dict values.
+* ``JobMetaKey.SCOPE`` (``scope``): job scope name -- a string.
+* ``JobMetaKey.CUSTOM_PROPS`` (``custom_props``): nested custom metadata -- a
+  dict.
 
-The key must be one of ``JobMetaKey.MIN_CLIENTS``,
-``JobMetaKey.MANDATORY_CLIENTS``, ``JobMetaKey.RESOURCE_SPEC``,
-``JobMetaKey.JOB_LAUNCHER_SPEC``, ``JobMetaKey.SCOPE``, ``JobMetaKey.STUDY``,
-or ``JobMetaKey.CUSTOM_PROPS``. Other enum members and raw strings are not
-accepted. The value must be an integer, a floating-point number, a string, a
-dictionary, or a list; booleans are not accepted. The complete value, including
-all nested dictionary and list contents, must be JSON-serializable. Non-finite
-floating-point values such as ``NaN`` and ``Infinity`` are rejected. The helper
-writes the key/value pair through ``meta_props`` and does not mutate dedicated
-recipe or ``FedJobConfig`` fields such as ``min_clients``. If the generated
-``meta.json`` also contains that key, the ``meta_props`` value is written last
-by the job generator.
+Two groups of keys are intentionally **not** settable through this helper:
+
+* Keys with dedicated ``FedJob`` constructor fields -- ``min_clients`` and
+  ``mandatory_clients``. Set them when constructing the recipe/``FedJob``
+  (e.g. ``FedJob(..., min_clients=2, mandatory_clients=[...])``) so the
+  controller, scheduler, and generated metadata all use the same value;
+  setting them through ``meta_props`` would only change the metadata and
+  diverge from the value the recipe already used to build its controller.
+* ``study``: the server assigns it from the admin session's active study at
+  job submission, so a recipe-set value would be silently overwritten. Select
+  the study through the execution environment instead (e.g.
+  ``PocEnv(study=...)`` or ``ProdEnv(study=...)``, described below).
+
+Dict values, including all nested dictionary and list contents, must be
+JSON-serializable; dictionary keys are coerced to strings as they will appear
+in ``meta.json``, and non-finite floating-point values such as ``NaN`` and
+``Infinity`` are rejected. The helper writes the key/value pair through
+``meta_props``. If the generated ``meta.json`` also contains that key, the
+``meta_props`` value is written last by the job generator.
+
+.. note::
+
+   ``resource_spec`` can also be populated per site via
+   ``recipe.job.job.add_resource_spec(...)``. If you set ``RESOURCE_SPEC``
+   through ``set_recipe_meta``, the ``meta_props`` value replaces those
+   per-site specs in the generated ``meta.json``; a warning is emitted for
+   specs already registered when the helper is called, but specs added
+   afterwards are overridden without one.
 
 If the same key already exists in ``meta_props``, ``set_recipe_meta`` replaces
 that value.

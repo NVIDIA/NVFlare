@@ -16,10 +16,11 @@ import copy
 import importlib
 import json
 import os
+import warnings
 from typing import Any, Dict, List, Optional
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
-from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.job_def import USER_SETTABLE_JOB_META_KEYS, JobMetaKey
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.job_config.api import FedJob
 from nvflare.job_config.fed_job_config import FedJobConfig
@@ -61,41 +62,59 @@ MODEL_LOCATOR_REGISTRY = {
     },
 }
 
-_RECIPE_USER_SETTABLE_META_KEYS = {
-    JobMetaKey.MIN_CLIENTS,
-    JobMetaKey.MANDATORY_CLIENTS,
-    JobMetaKey.RESOURCE_SPEC,
-    JobMetaKey.JOB_LAUNCHER_SPEC,
-    JobMetaKey.SCOPE,
-    JobMetaKey.STUDY,
-    JobMetaKey.CUSTOM_PROPS,
-}
+
+# User-settable keys whose values are dicts keyed by site name with dict values.
+_SITE_KEYED_META_KEYS = frozenset({JobMetaKey.RESOURCE_SPEC, JobMetaKey.JOB_LAUNCHER_SPEC})
 
 
 def _normalize_recipe_meta_key(key: Any) -> str:
     if not isinstance(key, JobMetaKey):
         raise TypeError(f"recipe meta key must be a JobMetaKey, got {type(key).__name__}")
-    if key not in _RECIPE_USER_SETTABLE_META_KEYS:
+    if key not in USER_SETTABLE_JOB_META_KEYS:
         raise ValueError(f"recipe meta key {key.value!r} cannot be set through set_recipe_meta")
     return key.value
 
 
-def _validate_recipe_meta_value(key: str, value: Any) -> None:
-    if isinstance(value, bool) or not isinstance(value, (int, float, str, dict, list)):
-        allowed_types = "int, float, str, dict, or list"
-        raise TypeError(f"recipe meta value for key {key!r} must be one of {allowed_types}; got {type(value).__name__}")
+def _normalize_recipe_meta_value(key: JobMetaKey, key_str: str, value: Any) -> Any:
+    """Validate ``value`` against the key's shape contract and return a
+    JSON-normalized, caller-independent copy.
+
+    Per-key shapes: SCOPE is a plain string; RESOURCE_SPEC and JOB_LAUNCHER_SPEC
+    are dicts keyed by site name with dict values; the remaining user-settable
+    keys (CUSTOM_PROPS) are dicts. Catching shape errors here gives an immediate,
+    contextual error instead of a late failure at server-side submission
+    (JobMetaValidator) or job launch (e.g. PrivacyService scope lookup).
+
+    For dict values, the round-trip through JSON validates nested
+    serializability, rejects non-finite floats, and produces a value with
+    exactly the semantics the generated ``meta.json`` will have (e.g. dict keys
+    coerced to strings) with no aliasing to the caller's object -- so no
+    separate ``deepcopy`` is needed.
+    """
+    if key is JobMetaKey.SCOPE:
+        if not isinstance(value, str):
+            raise TypeError(f"recipe meta value for key {key_str!r} must be a str, got {type(value).__name__}")
+        return value
+    # All other user-settable keys are dict-shaped.
+    if key in _SITE_KEYED_META_KEYS:
+        try:
+            _validate_per_site_config_shape(value)
+        except TypeError as e:
+            raise TypeError(f"recipe meta value for key {key_str!r}: {e}") from None
+    elif not isinstance(value, dict):
+        raise TypeError(f"recipe meta value for key {key_str!r} must be a dict, got {type(value).__name__}")
     try:
-        json.dumps(value, allow_nan=False)
+        return json.loads(json.dumps(value, allow_nan=False))
     except TypeError as e:
-        raise TypeError(f"recipe meta value for key {key!r} must be JSON-serializable: {e}") from e
+        raise TypeError(f"recipe meta value for key {key_str!r} must be JSON-serializable: {e}") from e
     except ValueError as e:
-        raise ValueError(f"recipe meta value for key {key!r} must be JSON-serializable: {e}") from e
+        raise ValueError(f"recipe meta value for key {key_str!r} must be JSON-serializable: {e}") from e
 
 
 def _get_recipe_job_config(recipe: Recipe) -> FedJobConfig:
     job = getattr(recipe, "job", None)
     job_config = getattr(job, "job", None)
-    if job_config is None:
+    if not isinstance(job_config, FedJobConfig):
         raise TypeError("recipe must provide a FedJob through recipe.job")
     return job_config
 
@@ -103,17 +122,42 @@ def _get_recipe_job_config(recipe: Recipe) -> FedJobConfig:
 def set_recipe_meta(recipe: Recipe, key: JobMetaKey, value: Any) -> None:
     """Set one generated job metadata value through ``meta_props``.
 
-    The key must be a ``JobMetaKey`` enum member. The value must be completely
-    JSON-serializable and cannot contain non-finite floats. It is stored in
-    ``meta_props`` and replaces any existing ``meta_props`` value for that key.
+    The key must be one of :data:`nvflare.apis.job_def.USER_SETTABLE_JOB_META_KEYS`.
+    Keys with dedicated ``FedJob`` constructor fields, such as ``MIN_CLIENTS`` and
+    ``MANDATORY_CLIENTS``, are not accepted here -- set those through the
+    recipe/``FedJob`` constructor so the controller, scheduler, and metadata stay
+    in sync. ``STUDY`` is not accepted either: the server assigns the study from
+    the admin session's active study at job submission, so a recipe-set value
+    would be silently overwritten.
+
+    The value shape depends on the key: ``SCOPE`` takes a string;
+    ``RESOURCE_SPEC`` and ``JOB_LAUNCHER_SPEC`` take a dict keyed by site name
+    with dict values; ``CUSTOM_PROPS`` takes a dict. Dict values must be
+    completely JSON-serializable, cannot contain non-finite floats, and have
+    their keys coerced to strings as they will appear in ``meta.json``. The
+    value is stored in ``meta_props`` and replaces any existing ``meta_props``
+    value for that key.
     """
     key_str = _normalize_recipe_meta_key(key)
-    _validate_recipe_meta_value(key_str, value)
+    normalized_value = _normalize_recipe_meta_value(key, key_str, value)
     job_config = _get_recipe_job_config(recipe)
+
+    # RESOURCE_SPEC also has a dedicated FedJobConfig field (populated via
+    # add_resource_spec). meta.json is generated by merging meta_props last, so a
+    # meta_props value silently replaces any per-site specs registered there. Warn
+    # rather than merge, since the two shapes are not guaranteed to be compatible.
+    # Note this check is point-in-time: specs registered after this call are still
+    # overridden at export, without a warning.
+    if key is JobMetaKey.RESOURCE_SPEC and job_config.resource_specs:
+        warnings.warn(
+            "set_recipe_meta(RESOURCE_SPEC, ...) overrides the per-site resource specs registered "
+            "on the FedJob (via add_resource_spec); those specs will not appear in the generated meta.json.",
+            stacklevel=2,
+        )
 
     if job_config.meta_props is None:
         job_config.meta_props = {}
-    job_config.meta_props[key_str] = copy.deepcopy(value)
+    job_config.meta_props[key_str] = normalized_value
 
 
 def _validate_per_site_config_shape(config: Any) -> Dict[str, Dict]:
