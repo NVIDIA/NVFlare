@@ -179,6 +179,19 @@ def _create_cifar10_recipe(args, selected_clients, model_dir: Path):
     )
 
 
+def _strip_metrics_artifact_writer(job_dir: Path):
+    # BaseFedJob injects MetricsArtifactWriter with no opt-out; deployed FLARE
+    # parents may run an older NVFlare without that module, which aborts the job
+    # at config load. The smoke checks do not use metrics artifacts, so drop it.
+    for config_path in job_dir.rglob("config_fed_server.json"):
+        config = json.loads(config_path.read_text())
+        components = config.get("components") or []
+        filtered = [c for c in components if c.get("id") != "metrics_artifact_writer"]
+        if len(filtered) != len(components):
+            config["components"] = filtered
+            config_path.write_text(json.dumps(config, indent=4) + "\n")
+
+
 def _patch_meta(job_dir: Path, args, selected_clients, participants_data):
     launcher_spec = {"default": {"k8s": k8s_spec(args.job_image, args.python_path)}}
     for participant in participants_data:
@@ -245,6 +258,7 @@ def create_job(args):
 
     (staging_dir / args.job_name).rename(job_dir)
     shutil.rmtree(staging_dir)
+    _strip_metrics_artifact_writer(job_dir)
     _patch_meta(job_dir, args, selected_clients, participants_data)
 
 

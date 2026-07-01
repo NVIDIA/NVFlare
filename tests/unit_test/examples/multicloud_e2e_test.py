@@ -102,6 +102,12 @@ def test_create_job_numpy_exports_recipe_job_with_launcher_spec(tmp_path):
     assert executor["args"]["task_script_path"] == "e2e_numpy_client.py"
     assert list(job_dir.rglob("e2e_numpy_client.py"))
 
+    # Older deployed parents cannot load MetricsArtifactWriter; it must be stripped.
+    server_configs = list(job_dir.rglob("config_fed_server.json"))
+    assert len(server_configs) == 1
+    server_components = json.loads(server_configs[0].read_text())["components"]
+    assert all(c["id"] != "metrics_artifact_writer" for c in server_components)
+
 
 def test_json_get_returns_empty_for_missing_intermediate_key(monkeypatch, capsys):
     verify = _load_verify_module()
