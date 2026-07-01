@@ -169,7 +169,7 @@ class CheckServerAvailable(CheckRule):
             server_running = check_socket_server_running(startup=startup, host=host, port=int(port), scheme="tcp")
         elif scheme in ["grpc", "agrpc"]:
             server_running = check_grpc_server_running(startup=startup, host=host, port=int(port))
-        elif scheme in ["http", "https", "tcp", "stcp"]:
+        else:
             server_running = check_socket_server_running(startup=startup, host=host, port=int(port), scheme=scheme)
 
         if not server_running:
