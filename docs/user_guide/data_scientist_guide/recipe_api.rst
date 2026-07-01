@@ -147,13 +147,21 @@ For NVFlare 2.9, the public Recipe configuration surface also includes:
    indicate that sites are connected or replace the execution environment.
 
 ``set_recipe_meta(recipe, key, value)``
-   Set selected generated job metadata by ``JobMetaKey``. Runtime and submission
-   metadata managed by NVFlare internals are not user-settable through this
-   helper.
+   Set selected generated job metadata by ``JobMetaKey``. The accepted keys are
+   exactly the members of
+   :data:`nvflare.apis.job_def.USER_SETTABLE_JOB_META_KEYS`. Not settable
+   through this helper: runtime/submission metadata managed by NVFlare
+   internals, keys with dedicated constructor fields (``min_clients``,
+   ``mandatory_clients``), and ``study``, which the server assigns from the
+   admin session at submission. See the Recipe Metadata section of the Recipe
+   guide for per-key value shapes and examples.
 
 Repeated metadata calls for the same key replace that key's previous helper
-value. Different metadata keys accumulate. Helper-provided values take
-precedence over constructor defaults for the same generated-job surface.
+value. Different metadata keys accumulate. Keys that overlap a dedicated
+constructor field are rejected rather than given precedence; for accepted
+keys, the helper value is what appears in the generated ``meta.json``
+(metadata merges last), and overriding per-site resource specs registered via
+``add_resource_spec`` emits a warning.
 
 Execution Environments
 ----------------------
