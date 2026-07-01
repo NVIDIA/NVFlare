@@ -12,9 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
+
 from nvflare.apis.app_validation import AppValidationKey, AppValidator
 from nvflare.app_opt.flower.defs import Constant as FlowerConstant
 from nvflare.fuel.sec.authz import AuthorizationService, AuthzContext, Person
+from nvflare.utils.job_launcher_utils import get_job_launcher_spec
 
 _RIGHT_BYOC = "byoc"
 _RIGHT_FLOWER_PREDEPLOYED = "server-predeployed-flwr"
@@ -40,6 +43,16 @@ class AppAuthzService(object):
             return err, {}
 
         return "", app_info
+
+    @staticmethod
+    def derive_local_app_info(app_info: dict, job_meta: dict, site_name: str) -> dict:
+        for mode in ("docker", "k8s"):
+            spec = get_job_launcher_spec(job_meta, site_name, mode)
+            if "image" in spec or "python_path" in spec:
+                app_info = copy.deepcopy(app_info)
+                app_info[AppValidationKey.BYOC] = True
+                break
+        return app_info
 
     @staticmethod
     def authorize_app_info(
