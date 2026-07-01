@@ -452,8 +452,11 @@ class RxTask:
         return self.received_offset if self.completed else self.offset
 
     def _send_ack(self, offset, seq):
-        # A completed stream may outlive its target during teardown; ACK delivery no longer affects its result.
-        optional = self.completed
+        # Only a re-ACK at or behind state that was sent successfully is optional. The first final
+        # ACK is still required even though stop() has already marked the receive task completed.
+        with self.ack_lock:
+            already_acked = seq <= self.seq_ack and offset <= self.offset_ack
+        optional = self.completed and already_acked
         log_func = log.debug if optional else log.error
         message = Message()
         message.add_headers(

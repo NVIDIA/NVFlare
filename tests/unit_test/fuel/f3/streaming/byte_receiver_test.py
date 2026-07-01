@@ -276,7 +276,7 @@ def test_reliable_final_chunk_sends_sequence_ack():
 
     ack = cell.fire_and_forget.call_args.args[3]
     assert cell.fire_and_forget.call_args.args[:3] == (STREAM_CHANNEL, STREAM_ACK_TOPIC, "site-1")
-    assert cell.fire_and_forget.call_args.kwargs == {"optional": True}
+    assert cell.fire_and_forget.call_args.kwargs == {"optional": False}
     assert ack.get_header(StreamHeaderKey.SEQUENCE) == 0
     assert ack.get_header(StreamHeaderKey.OFFSET) == 0
 
@@ -422,17 +422,54 @@ def test_send_ack_updates_ack_state_only_on_success():
     assert task.seq_ack == 2
 
 
-def test_completed_ack_send_failure_is_debug_only(caplog):
+def test_failed_final_ack_retries_remain_required(caplog):
     cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={"site-1": "target_unreachable"}))
+    message = _make_chunk("site-1", sid=519, seq=0, data_type=StreamDataType.FINAL, payload=b"", reliable=True)
+    task = RxTask.find_or_create_task(message, cell)
+
+    with caplog.at_level(logging.ERROR, logger="nvflare.fuel.f3.streaming.byte_receiver"):
+        assert task.process_chunk(message) is True
+        assert task.process_chunk(message) is False
+
+    assert task.completed is True
+    assert task.seq_ack == -1
+    assert task.offset_ack == 0
+    assert cell.fire_and_forget.call_count == 2
+    assert all(call.kwargs == {"optional": False} for call in cell.fire_and_forget.call_args_list)
+    assert [record for record in caplog.records if record.levelno >= logging.ERROR]
+    assert "failed to ack seq 0" in caplog.text
+
+
+def test_completed_reack_send_failure_is_debug_only(caplog):
+    cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={}))
     task = RxTask(sid=519, origin="site-1", cell=cell, reliable=True)
     task.completed = True
 
+    assert task._send_ack(offset=10, seq=2) is True
+    assert cell.fire_and_forget.call_args.kwargs == {"optional": False}
+
+    cell.fire_and_forget.return_value = {"site-1": "target_unreachable"}
     with caplog.at_level(logging.DEBUG, logger="nvflare.fuel.f3.streaming.byte_receiver"):
         assert task._send_ack(offset=10, seq=2) is False
 
     assert cell.fire_and_forget.call_args.kwargs == {"optional": True}
     assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
     assert "failed to ack seq 2" in caplog.text
+
+
+def test_completed_reack_exception_is_debug_only(caplog):
+    cell = SimpleNamespace(fire_and_forget=MagicMock(side_effect=RuntimeError("connection closed")))
+    task = RxTask(sid=520, origin="site-1", cell=cell, reliable=True)
+    task.completed = True
+    task.offset_ack = 10
+    task.seq_ack = 2
+
+    with caplog.at_level(logging.DEBUG, logger="nvflare.fuel.f3.streaming.byte_receiver"):
+        assert task._send_ack(offset=10, seq=2) is False
+
+    assert cell.fire_and_forget.call_args.kwargs == {"optional": True}
+    assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
+    assert "connection closed" in caplog.text
 
 
 def test_reliable_completed_task_reacks_duplicate_final_chunk():
@@ -447,10 +484,12 @@ def test_reliable_completed_task_reacks_duplicate_final_chunk():
         assert RxTask.rx_task_map[("site-1", 505)] is task
     assert task.completed is True
     assert cell.fire_and_forget.call_count == 1
+    assert cell.fire_and_forget.call_args.kwargs == {"optional": False}
 
     assert task.process_chunk(message) is False
 
     assert cell.fire_and_forget.call_count == 2
+    assert cell.fire_and_forget.call_args.kwargs == {"optional": True}
     duplicate_ack = cell.fire_and_forget.call_args.args[3]
     assert duplicate_ack.get_header(StreamHeaderKey.SEQUENCE) == 0
     assert duplicate_ack.get_header(StreamHeaderKey.OFFSET) == 0
