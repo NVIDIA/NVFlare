@@ -385,8 +385,9 @@ PyTorch Lightning clients can use the same patched training script for FedAvg an
 
 ``flare.patch`` detects SCAFFOLD global controls, applies ``PTScaffoldHelper`` after each optimizer step,
 and adds the required control difference to the returned ``FLModel``. This automatic path supports Lightning
-automatic optimization with one optimizer whose parameter groups use the same positive learning rate. Manual
-optimization must integrate ``PTScaffoldHelper`` directly.
+automatic optimization with one optimizer whose parameter groups use the same finite, non-negative learning
+rate at each step and have positive total learning-rate exposure per round. Manual optimization must use an
+explicit receive/train/send loop without ``flare.patch`` and integrate ``PTScaffoldHelper`` directly.
 
 **Examples:**
 

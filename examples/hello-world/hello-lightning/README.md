@@ -3,7 +3,7 @@ This example demonstrates how to use NVIDIA FLARE with PyTorch Lightning to trai
 federated averaging (FedAvg) or SCAFFOLD. The same patched client script works with both algorithms.
 
 > **Main branch note:** Automatic Lightning SCAFFOLD support is introduced for NVFlare 2.9.0. Until that
-> package is published, install NVFlare from this repository before installing the remaining requirements.
+> package is published, install NVFlare from this repository and install the remaining dependencies separately.
 
 ## NVIDIA FLARE Installation
 for the complete installation instructions, see [Installation](https://nvflare.readthedocs.io/en/main/installation.html)
@@ -18,7 +18,11 @@ For the current `main` branch, install from the repository root so the automatic
 
 ```
 python -m pip install -e .
+python -m pip install torch torchvision "jsonargparse[signatures]>=4.17.0" pytorch_lightning tensorboard
 ```
+
+The `nvflare~=2.9.0rc` entry in `requirements.txt` intentionally records the first compatible release. After
+NVFlare 2.9.0 is published, `python -m pip install -r requirements.txt` installs the complete environment.
 
 Get the example code from github: 
 ```
@@ -290,7 +294,8 @@ python job.py --algorithm scaffold --num_rounds 2 --batch_size 16
 
 `flare.patch(trainer)` detects the SCAFFOLD controls sent by `ScaffoldRecipe`, applies the required
 `PTScaffoldHelper` updates around optimizer steps, and returns the control difference to the server. This
-automatic path supports Lightning automatic optimization with one optimizer. Manual optimization must call
+automatic path supports Lightning automatic optimization with one optimizer. Manual optimization must use an
+explicit `flare.receive()`/training/`flare.send()` loop without `flare.patch(trainer)` and call
 `PTScaffoldHelper` directly in the client training loop.
 
 output

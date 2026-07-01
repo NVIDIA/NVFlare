@@ -72,7 +72,8 @@ class _ScaffoldHandler:
         if not getattr(pl_module, "automatic_optimization", True):
             raise RuntimeError(
                 "Automatic Lightning SCAFFOLD support requires automatic optimization. "
-                "For manual optimization, integrate PTScaffoldHelper directly into the training loop."
+                "For manual optimization, use an explicit receive/train/send loop without flare.patch() and "
+                "integrate PTScaffoldHelper directly."
             )
 
         scaler = getattr(trainer, "scaler", None)
@@ -82,7 +83,8 @@ class _ScaffoldHandler:
             raise RuntimeError(
                 "Automatic Lightning SCAFFOLD support does not support mixed precision that uses a gradient "
                 "scaler because the scaler can skip optimizer steps. Use precision='32-true' or "
-                "precision='bf16-mixed', or integrate PTScaffoldHelper directly into the training loop."
+                "precision='bf16-mixed', or use an explicit receive/train/send loop without flare.patch() and "
+                "integrate PTScaffoldHelper directly."
             )
 
         optimizers = getattr(trainer, "optimizers", None) or []
@@ -130,10 +132,10 @@ class _ScaffoldHandler:
             )
 
         lr_values = [float(group["lr"]) for group in optimizer.param_groups]
-        if not lr_values or any(not math.isfinite(lr) or lr <= 0.0 for lr in lr_values):
+        if not lr_values or any(not math.isfinite(lr) or lr < 0.0 for lr in lr_values):
             raise RuntimeError(
                 "Automatic Lightning SCAFFOLD support requires every optimizer parameter group "
-                f"to have a finite positive learning rate, but received {lr_values}."
+                f"to have a finite non-negative learning rate, but received {lr_values}."
             )
 
         reference_lr = lr_values[0]
@@ -171,6 +173,11 @@ class _ScaffoldHandler:
         if self._num_steps == 0:
             raise RuntimeError(
                 "Automatic Lightning SCAFFOLD support requires at least one completed optimizer step per round."
+            )
+        if not math.isfinite(self._lr_sum) or self._lr_sum <= 0.0:
+            raise RuntimeError(
+                "Automatic Lightning SCAFFOLD support requires positive total learning-rate exposure per round, "
+                f"but the {self._num_steps} completed optimizer steps summed to {self._lr_sum}."
             )
 
         average_lr = self._lr_sum / self._num_steps

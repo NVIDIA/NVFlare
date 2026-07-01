@@ -62,7 +62,8 @@ class ScaffoldRecipe(Recipe):
     PTScaffoldHelper will cause server-side aggregation to fail. PyTorch Lightning clients
     that call ``nvflare.client.lightning.patch(trainer)`` perform these steps automatically
     when SCAFFOLD metadata is received. Automatic Lightning support requires automatic
-    optimization with one optimizer; manual optimization must integrate PTScaffoldHelper directly.
+    optimization with one optimizer. Manual Lightning optimization must use an explicit
+    receive/train/send loop without ``patch()`` and integrate PTScaffoldHelper directly.
 
     This recipe sets up a complete federated learning workflow with Scaffold controller.
 

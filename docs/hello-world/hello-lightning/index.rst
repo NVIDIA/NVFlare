@@ -9,7 +9,7 @@ federated averaging (FedAvg) or SCAFFOLD. The complete example code can be found
 .. note::
 
    Automatic Lightning SCAFFOLD support is introduced for NVFlare 2.9.0. Until that package is published,
-   install NVFlare from this repository before installing the remaining example requirements.
+   install NVFlare from this repository and install the remaining example dependencies separately.
 
 It is recommended to create a virtual environment and run everything within a virtualenv.
 
@@ -28,7 +28,15 @@ For the current ``main`` branch, install from the repository root so the automat
 .. code-block:: text
 
     python -m pip install -e .
+    python -m pip install torch torchvision "jsonargparse[signatures]>=4.17.0" pytorch_lightning tensorboard
 
+
+The ``nvflare~=2.9.0rc`` entry in ``requirements.txt`` intentionally records the first compatible release.
+After NVFlare 2.9.0 is published, install the complete environment with:
+
+.. code-block:: bash
+
+   python -m pip install -r requirements.txt
 
 get the example code from github:
 
@@ -42,12 +50,6 @@ then navigate to the hello-lightning directory:
 
     git switch <release branch>
     cd examples/hello-world/hello-lightning
-
-Install the dependency
-
-.. code-block:: bash
-
-   pip install -r requirements.txt
 
 Code Structure
 --------------
@@ -294,8 +296,8 @@ FedAvg is the default. The same client can run SCAFFOLD without changing its tra
 
   python job.py --algorithm scaffold --num_rounds 2 --batch_size 16
 
-For manual Lightning optimization, integrate ``PTScaffoldHelper`` directly rather than relying on
-``flare.patch(trainer)``.
+For manual Lightning optimization, use an explicit receive/train/send loop without ``flare.patch(trainer)``
+and integrate ``PTScaffoldHelper`` directly.
 
 
 output

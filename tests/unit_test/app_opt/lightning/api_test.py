@@ -41,6 +41,14 @@ class SimpleNet(nn.Module):
         self.automatic_optimization = True
 
 
+class BatchNormNet(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc = nn.Linear(4, 4)
+        self.bn = nn.BatchNorm1d(4)
+        self.automatic_optimization = True
+
+
 class TinyLightningNet(pl.LightningModule):
     def __init__(self):
         super().__init__()
@@ -250,6 +258,27 @@ def test_scaffold_handler_applies_post_step_update_and_returns_control_diff():
     assert set(result[AlgorithmConstants.SCAFFOLD_CTRL_DIFF]) == set(module.state_dict())
 
 
+def test_scaffold_handler_corrects_parameters_without_modifying_batch_norm_buffers():
+    module = BatchNormNet()
+    optimizer = torch.optim.SGD(module.parameters(), lr=0.1)
+    controls = {key: torch.ones_like(value) for key, value in module.state_dict().items()}
+    handler = _ScaffoldHandler()
+    initial_state = _clone_state_dict(module)
+
+    handler.start_round(_trainer(optimizer), module, _scaffold_model(module, controls))
+    handler.before_optimizer_step(optimizer)
+    handler.after_train_batch(module)
+    result = handler.finish_round(module)
+
+    parameter_keys = {key for key, parameter in module.named_parameters() if parameter.requires_grad}
+    buffer_keys = set(module.state_dict()) - parameter_keys
+    for key in parameter_keys:
+        assert torch.allclose(module.state_dict()[key], initial_state[key] - 0.1)
+    for key in buffer_keys:
+        assert torch.equal(module.state_dict()[key], initial_state[key])
+    assert set(result[AlgorithmConstants.SCAFFOLD_CTRL_DIFF]) == parameter_keys
+
+
 def test_scaffold_handler_uses_average_step_lr_for_terms_update():
     module = SimpleNet()
     optimizer = torch.optim.SGD(module.parameters(), lr=0.1)
@@ -266,6 +295,37 @@ def test_scaffold_handler_uses_average_step_lr_for_terms_update():
         handler.finish_round(module)
 
     assert terms_update.call_args.kwargs["curr_lr"] == pytest.approx(0.15)
+
+
+def test_scaffold_handler_allows_zero_lr_warmup_when_round_has_positive_total_exposure():
+    module = SimpleNet()
+    optimizer = torch.optim.SGD(module.parameters(), lr=0.0)
+    handler = _ScaffoldHandler()
+    handler.start_round(_trainer(optimizer), module, _scaffold_model(module))
+
+    handler.before_optimizer_step(optimizer)
+    handler.after_train_batch(module)
+    optimizer.param_groups[0]["lr"] = 0.2
+    handler.before_optimizer_step(optimizer)
+    handler.after_train_batch(module)
+
+    with patch.object(handler._helper, "terms_update", wraps=handler._helper.terms_update) as terms_update:
+        handler.finish_round(module)
+
+    assert handler._helper.cnt == 2
+    assert terms_update.call_args.kwargs["curr_lr"] == pytest.approx(0.1)
+
+
+def test_scaffold_handler_rejects_round_with_zero_total_lr_exposure():
+    module = SimpleNet()
+    optimizer = torch.optim.SGD(module.parameters(), lr=0.0)
+    handler = _ScaffoldHandler()
+    handler.start_round(_trainer(optimizer), module, _scaffold_model(module))
+    handler.before_optimizer_step(optimizer)
+    handler.after_train_batch(module)
+
+    with pytest.raises(RuntimeError, match="positive total learning-rate exposure"):
+        handler.finish_round(module)
 
 
 def test_scaffold_handler_skips_gradient_accumulation_batches_without_optimizer_step():
@@ -375,6 +435,18 @@ def test_scaffold_handler_rejects_unequal_parameter_group_learning_rates():
         handler.before_optimizer_step(optimizer)
 
 
+@pytest.mark.parametrize("invalid_lr", [-0.1, float("inf"), float("nan")])
+def test_scaffold_handler_rejects_negative_or_non_finite_learning_rate(invalid_lr):
+    module = SimpleNet()
+    optimizer = torch.optim.SGD(module.parameters(), lr=0.1)
+    handler = _ScaffoldHandler()
+    handler.start_round(_trainer(optimizer), module, _scaffold_model(module))
+    optimizer.param_groups[0]["lr"] = invalid_lr
+
+    with pytest.raises(RuntimeError, match="finite non-negative learning rate"):
+        handler.before_optimizer_step(optimizer)
+
+
 def test_scaffold_handler_rejects_missing_control_keys():
     module = SimpleNet()
     optimizer = torch.optim.SGD(module.parameters(), lr=0.1)
@@ -464,6 +536,19 @@ def test_train_end_preserves_explicit_user_step_count_for_scaffold():
     assert output_model.meta[MetaKey.NUM_STEPS_CURRENT_ROUND] == 5
 
 
+def test_train_end_rejects_user_metadata_that_conflicts_with_automatic_algorithm_metadata():
+    callback = _make_callback()
+    callback._is_training = True
+    callback._algorithm_handler.finish_round = MagicMock(
+        return_value=_AlgorithmResult(metadata={AlgorithmConstants.SCAFFOLD_CTRL_DIFF: {"fc": 1}}, num_steps=3)
+    )
+    module = SimpleNet()
+    module.__fl_meta__ = {AlgorithmConstants.SCAFFOLD_CTRL_DIFF: {"manual": 1}}
+
+    with pytest.raises(RuntimeError, match="conflicts with user-provided"):
+        callback.on_train_end(SimpleNamespace(estimated_stepping_batches=3), module)
+
+
 def test_train_end_fedavg_keeps_estimated_step_count_behavior():
     callback = _make_callback()
     callback._is_training = True
@@ -489,6 +574,7 @@ def test_validation_before_fit_reuses_pending_training_model():
     callback.on_validation_start(trainer, module)
     callback._algorithm_handler.start_round.assert_not_called()
     assert callback._pending_train_model is input_model
+    assert callback._pending_train_module is module
 
     callback.on_train_start(trainer, module)
     callback._receive_and_update_model.assert_called_once_with(trainer, module)
@@ -496,6 +582,42 @@ def test_validation_before_fit_reuses_pending_training_model():
         trainer=trainer, pl_module=module, input_model=input_model
     )
     assert callback._pending_train_model is None
+    assert callback._pending_train_module is None
+    assert callback._training_round_started is True
+
+
+def test_validation_before_fit_reapplies_pending_model_to_a_different_module():
+    callback = _make_callback()
+    input_model = _scaffold_model(SimpleNet())
+    callback._receive_and_update_model = MagicMock(return_value=input_model)
+    callback._update_model = MagicMock()
+    callback._algorithm_handler.start_round = MagicMock()
+    callback._is_training = True
+    validation_module = SimpleNet()
+    training_module = SimpleNet()
+    trainer = SimpleNamespace()
+
+    callback.on_validation_start(trainer, validation_module)
+    callback.on_train_start(trainer, training_module)
+
+    callback._receive_and_update_model.assert_called_once_with(trainer, validation_module)
+    callback._update_model.assert_called_once_with(training_module, input_model)
+    callback._algorithm_handler.start_round.assert_called_once_with(
+        trainer=trainer, pl_module=training_module, input_model=input_model
+    )
+
+
+def test_mid_fit_validation_collects_metrics_without_receiving_or_reloading_model():
+    callback = _make_callback()
+    callback._training_round_started = True
+    callback._receive_and_update_model = MagicMock()
+    trainer = SimpleNamespace(callback_metrics={"val_loss": torch.tensor(0.5)})
+
+    callback.on_validation_start(trainer, SimpleNet())
+    callback.on_validation_end(trainer, SimpleNet())
+
+    callback._receive_and_update_model.assert_not_called()
+    assert callback.metrics == {"val_loss": 0.5}
 
 
 def test_real_lightning_fit_with_gradient_accumulation_returns_scaffold_controls():
@@ -573,3 +695,47 @@ def test_real_lightning_train_with_evaluation_reuses_scaffold_model_and_returns_
     assert output_model.metrics["val_loss"] >= 0.0
     assert AlgorithmConstants.SCAFFOLD_CTRL_DIFF in output_model.meta
     assert callback._pending_train_model is None
+
+
+def test_real_lightning_fit_only_reuses_one_received_model_per_round_with_mid_fit_validation():
+    module = TinyLightningNet()
+    global_params = {key: torch.zeros_like(value) for key, value in module.state_dict().items()}
+    input_models = [
+        FLModel(
+            params={key: value.clone() for key, value in global_params.items()},
+            current_round=round_idx,
+            meta={AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL: _zero_controls(module)},
+        )
+        for round_idx in range(2)
+    ]
+    loader = DataLoader(TensorDataset(torch.ones(4, 2), torch.zeros(4, dtype=torch.long)), batch_size=1, shuffle=False)
+
+    with (
+        patch("nvflare.app_opt.lightning.api.init"),
+        patch("nvflare.app_opt.lightning.api.get_config", return_value={}),
+        patch("nvflare.app_opt.lightning.api.receive", side_effect=input_models) as receive,
+        patch("nvflare.app_opt.lightning.api.is_train", return_value=True),
+        patch("nvflare.app_opt.lightning.api.is_evaluate", return_value=False),
+        patch("nvflare.app_opt.lightning.api.is_submit_model", return_value=False),
+        patch("nvflare.app_opt.lightning.api.send") as send,
+        patch("nvflare.app_opt.lightning.api.clear"),
+    ):
+        callback = FLCallback(rank=0)
+        trainer = pl.Trainer(
+            max_epochs=1,
+            callbacks=[callback],
+            logger=False,
+            enable_checkpointing=False,
+            enable_progress_bar=False,
+            enable_model_summary=False,
+            num_sanity_val_steps=0,
+        )
+        trainer.fit(module, train_dataloaders=loader, val_dataloaders=loader)
+        trainer.fit(module, train_dataloaders=loader, val_dataloaders=loader)
+
+    assert receive.call_count == 2
+    assert send.call_count == 2
+    second_output = send.call_args_list[1].args[0]
+    assert any(not torch.equal(second_output.params[key], global_params[key]) for key in global_params)
+    assert set(second_output.meta[AlgorithmConstants.SCAFFOLD_CTRL_DIFF]) == set(dict(module.named_parameters()))
+    assert callback._training_round_started is False

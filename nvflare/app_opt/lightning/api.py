@@ -56,8 +56,9 @@ def patch(
         When the received model contains SCAFFOLD global controls, ``patch`` automatically
         applies ``PTScaffoldHelper`` around Lightning's optimizer steps and returns the
         required control difference. This supports automatic optimization with one optimizer;
-        manual optimization and mixed precision backed by a gradient scaler must integrate
-        ``PTScaffoldHelper`` directly.
+        manual optimization and mixed precision backed by a gradient scaler are not supported
+        by the patched path. Those clients must use an explicit receive/train/send loop and
+        integrate ``PTScaffoldHelper`` directly.
 
     Example:
 
@@ -138,6 +139,8 @@ class FLCallback(Callback):
         self._update_fit_loop = update_fit_loop
         self._algorithm_handler = _AlgorithmHandlerManager()
         self._pending_train_model = None
+        self._pending_train_module = None
+        self._training_round_started = False
 
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -172,16 +175,25 @@ class FLCallback(Callback):
         # resets attributes
         self.metrics = None
         self._pending_train_model = None
+        self._pending_train_module = None
+        self._training_round_started = False
         clear()
 
     def on_train_start(self, trainer, pl_module):
         # Validation may already have received and loaded the training model.
         input_model = self._pending_train_model
+        pending_module = self._pending_train_module
         self._pending_train_model = None
+        self._pending_train_module = None
         if input_model is None:
             input_model = self._receive_and_update_model(trainer, pl_module)
+        elif pending_module is not pl_module:
+            # Reuse the retained FLModel without relying on another cached receive(), but
+            # ensure fit() starts from the global weights when validate() used another module.
+            self._update_model(pl_module, input_model)
         if input_model and self._is_training:
             self._algorithm_handler.start_round(trainer=trainer, pl_module=pl_module, input_model=input_model)
+            self._training_round_started = True
 
     def on_before_optimizer_step(self, trainer, pl_module, optimizer, *args):
         self._algorithm_handler.before_optimizer_step(optimizer)
@@ -199,6 +211,14 @@ class FLCallback(Callback):
             fl_meta = {}
         if self._is_training:
             algorithm_result = self._algorithm_handler.finish_round(pl_module)
+            metadata_conflicts = sorted(set(fl_meta).intersection(algorithm_result.metadata))
+            if metadata_conflicts:
+                raise RuntimeError(
+                    "Lightning automatic algorithm metadata conflicts with user-provided "
+                    f"{FL_META_KEY} keys: {metadata_conflicts}. Remove these reserved keys from {FL_META_KEY}; "
+                    "manual algorithm integration must use an explicit receive/train/send loop without "
+                    "flare.patch()."
+                )
             fl_meta.update(algorithm_result.metadata)
             if MetaKey.NUM_STEPS_CURRENT_ROUND not in fl_meta:
                 fl_meta[MetaKey.NUM_STEPS_CURRENT_ROUND] = (
@@ -223,10 +243,11 @@ class FLCallback(Callback):
         # the metrics will be set.
         # The subsequent validate() calls will not trigger the receive update model.
         # Hence the validate() will be validating the local model.
-        if pl_module and self.metrics is None:
+        if pl_module and self.metrics is None and not self._training_round_started:
             input_model = self._receive_and_update_model(trainer, pl_module)
             if input_model and self._is_training:
                 self._pending_train_model = input_model
+                self._pending_train_module = pl_module
 
     def on_validation_end(self, trainer, pl_module):
         if pl_module and self.metrics is None:
@@ -247,40 +268,44 @@ class FLCallback(Callback):
 
         model = self._receive_model(trainer)
         if model:
-            if model.params:
-                try:
-                    report = inspect_model_params(pl_module.state_dict(), model.params)
-                    if report.shape_mismatches:
-                        raise RuntimeError(report.format_shape_mismatch_error())
-
-                    if not report.matched_keys:
-                        raise RuntimeError(report.format_zero_match_error())
-
-                    params_to_load = model.params
-                    if report.unexpected_keys:
-                        if self._load_state_dict_strict:
-                            raise RuntimeError(report.format_unexpected_keys_error())
-
-                        self.logger.warning(report.format_unexpected_keys_warning())
-                        params_to_load = {key: model.params[key] for key in report.matched_keys}
-
-                    result = pl_module.load_state_dict(params_to_load, strict=self._load_state_dict_strict)
-                    if result is not None:
-                        missing_keys, unexpected_keys = result
-                        if len(missing_keys) > 0:
-                            self.logger.warning(
-                                f"There were missing keys when loading the global state_dict: {missing_keys}"
-                            )
-                        if len(unexpected_keys) > 0:
-                            self.logger.warning(
-                                f"There were unexpected keys when loading the global state_dict: {unexpected_keys}"
-                            )
-                except Exception as e:
-                    self.logger.error(f"Failed to load state dict: {str(e)}")
-                    raise RuntimeError(f"Failed to load model state dict: {str(e)}")
-            if model.current_round is not None:
-                self.current_round = model.current_round
+            self._update_model(pl_module, model)
         return model
+
+    def _update_model(self, pl_module, model: FLModel):
+        """Apply a previously received FLModel to a Lightning module."""
+        if model.params:
+            try:
+                report = inspect_model_params(pl_module.state_dict(), model.params)
+                if report.shape_mismatches:
+                    raise RuntimeError(report.format_shape_mismatch_error())
+
+                if not report.matched_keys:
+                    raise RuntimeError(report.format_zero_match_error())
+
+                params_to_load = model.params
+                if report.unexpected_keys:
+                    if self._load_state_dict_strict:
+                        raise RuntimeError(report.format_unexpected_keys_error())
+
+                    self.logger.warning(report.format_unexpected_keys_warning())
+                    params_to_load = {key: model.params[key] for key in report.matched_keys}
+
+                result = pl_module.load_state_dict(params_to_load, strict=self._load_state_dict_strict)
+                if result is not None:
+                    missing_keys, unexpected_keys = result
+                    if len(missing_keys) > 0:
+                        self.logger.warning(
+                            f"There were missing keys when loading the global state_dict: {missing_keys}"
+                        )
+                    if len(unexpected_keys) > 0:
+                        self.logger.warning(
+                            f"There were unexpected keys when loading the global state_dict: {unexpected_keys}"
+                        )
+            except Exception as e:
+                self.logger.error(f"Failed to load state dict: {str(e)}")
+                raise RuntimeError(f"Failed to load model state dict: {str(e)}")
+        if model.current_round is not None:
+            self.current_round = model.current_round
 
     def _receive_model(self, trainer) -> FLModel:
         """Receives model from NVFlare."""

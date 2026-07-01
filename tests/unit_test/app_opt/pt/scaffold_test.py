@@ -15,6 +15,7 @@
 """Tests for the PyTorch SCAFFOLD helper."""
 
 import copy
+from unittest.mock import patch
 
 import numpy as np
 import pytest
@@ -86,3 +87,46 @@ def test_terms_update_accepts_cpu_state_snapshot(dtype):
     actual = helper.get_delta_controls()["weight"]
     expected = (model_global.state_dict()["weight"] - model.state_dict()["weight"]).to(torch.float32).numpy()
     np.testing.assert_allclose(actual, expected)
+
+
+def test_scaffold_updates_only_trainable_parameters_and_leaves_batch_norm_buffers_to_model_aggregation():
+    model = torch.nn.Sequential(torch.nn.Linear(4, 4), torch.nn.BatchNorm1d(4))
+    model_global = copy.deepcopy(model)
+    helper = PTScaffoldHelper()
+    helper.init(model)
+    c_global_para, c_local_para = helper.get_params()
+
+    model.train()
+    model(torch.randn(8, 4))
+    buffers_after_forward = {key: value.detach().clone() for key, value in model.named_buffers()}
+    with patch.object(model, "load_state_dict", wraps=model.load_state_dict) as load_state_dict:
+        helper.model_update(
+            model=model,
+            curr_lr=0.1,
+            c_global_para=c_global_para,
+            c_local_para=c_local_para,
+        )
+
+    load_state_dict.assert_not_called()
+    for key, value in model.named_buffers():
+        assert torch.equal(value, buffers_after_forward[key])
+
+    helper.terms_update(
+        model=model,
+        curr_lr=0.1,
+        c_global_para=c_global_para,
+        c_local_para=c_local_para,
+        model_global=model_global,
+    )
+
+    delta_controls = helper.get_delta_controls()
+    trainable_keys = {key for key, parameter in model.named_parameters() if parameter.requires_grad}
+    assert set(delta_controls) == trainable_keys
+
+    server_controls = {
+        key: np.zeros_like(value.detach().cpu().numpy()) for key, value in model_global.state_dict().items()
+    }
+    for key, delta in delta_controls.items():
+        server_controls[key] += delta
+    assert server_controls["1.num_batches_tracked"].dtype == np.int64
+    assert server_controls["1.num_batches_tracked"] == 0
