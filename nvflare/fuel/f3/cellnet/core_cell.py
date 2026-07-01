@@ -1179,8 +1179,12 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 if agent:
                     return agent.endpoint
                 # I'm not connected to my FQCN parent: some hierarchical cells
-                # connect to an ancestor or to the root instead. Fall through
-                # to the generic resolution below.
+                # connect to an ancestor or to the root instead (e.g. CellPipe
+                # cells named <site>.<token>_<mode> that connect to the server
+                # root). This fall-through is load-bearing for such cells - see
+                # test_pipe_cell_reaches_peer_through_server_root in
+                # core_cell_routing_test.py. Fall through to the generic
+                # resolution below.
                 self.logger.debug(f"{self.my_info.fqcn}: no connection to parent {parent_fqcn}")
 
         # not the same family, or no direct path within the family

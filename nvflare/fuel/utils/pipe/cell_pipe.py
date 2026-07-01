@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import queue
 import threading
 import time
@@ -22,7 +23,7 @@ from nvflare.fuel.data_event.utils import get_scope_property
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.cell import Message as CellMessage
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
-from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.cellnet.fqcn import FQCN, make_cell_pipe_alias
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.cellnet.utils import make_reply
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
@@ -44,15 +45,28 @@ _HEADER_REQ_ID = _PREFIX + "req_id"
 _HEADER_START_TIME = _PREFIX + "start"
 _HEADER_HB_SEQ = _PREFIX + "hb_seq"
 
+_logger = logging.getLogger(__name__)
+
 
 def _cell_fqcn(mode, site_name, token, parent_fqcn):
     # The FQCN of the cell must be unique in the whole cellnet.
-    # The cell is scoped under the FQCN of the cell it connects to, so its FQCN
-    # parent matches its physical cellnet parent. The runtime token and pipe
-    # mode are kept in one leaf segment to avoid introducing an unconnected
-    # FQCN parent such as <site>.<token>.
+    # The runtime token and pipe mode are kept in one leaf segment to avoid
+    # introducing an unconnected FQCN parent such as <site>.<token>.
+    # When connecting to the site's own CP or to a relay, the FQCN parent is
+    # the actually connected cell, so normal parent routing applies. When
+    # connecting to the server root (e.g. simulator, or pipes configured with
+    # a root url), the cell is named <site>.<leaf> while physically connected
+    # to the root: its FQCN parent <site> is NOT connected, and routing relies
+    # on the fall-through in CoreCell._try_find_ep() that resolves the next
+    # leg through the root when the FQCN parent is absent. That fall-through
+    # is load-bearing for these cells (covered by
+    # test_pipe_cell_reaches_peer_through_server_root in
+    # core_cell_routing_test.py).
     # The two peer pipes on the same site share the same site_name and token,
     # but are differentiated by their modes.
+    if "." in token:
+        raise ValueError(f"invalid CellPipe token '{token}': '.' would split the cell name into extra FQCN segments")
+
     cell_name = f"{token}_{mode}"
     if parent_fqcn == FQCN.ROOT_SERVER:
         prefix = site_name
@@ -60,13 +74,29 @@ def _cell_fqcn(mode, site_name, token, parent_fqcn):
         # connecting to the site's own CP: the site is already the last segment
         prefix = parent_fqcn
     elif parent_fqcn:
-        # connecting to another cell (e.g. a relay): keep the owning site in the
-        # leaf segment so mTLS identity resolution maps the cell to the site.
+        # Connecting to another cell (e.g. a relay): use the alias leaf
+        # <site>_<token>_<mode> so mTLS identity resolution and stream auth map
+        # the cell to the owning site (see parse_cell_pipe_alias). The token is
+        # the alias runtime id and must not contain "_", or the alias would
+        # parse to the wrong owner and the connection/messages would be
+        # rejected. Tokens are normally job ids (UUIDs), so this only affects
+        # custom tokens such as FlareAgentWithCellPipe agent ids.
+        if not token or "_" in token:
+            raise ValueError(
+                f"invalid CellPipe token '{token}': must be non-empty without '_' "
+                f"when connected through another cell ({parent_fqcn})"
+            )
         prefix = parent_fqcn
-        cell_name = f"{site_name}_{cell_name}"
+        cell_name = make_cell_pipe_alias(site_name, token, mode)
     else:
         # Missing parent FQCN: keep the cell under the owning site so routing
         # still has a topology-shaped parent instead of creating <site>.<token>.
+        # No in-tree caller hits this today; warn so a misconfiguration that
+        # produces a correct-looking name is still diagnosable.
+        _logger.warning(
+            f"CellPipe conn props have no parent FQCN; naming cell under site '{site_name}' "
+            f"and relying on root routing"
+        )
         prefix = site_name
     return FQCN.join([prefix, cell_name])
 

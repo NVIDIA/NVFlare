@@ -137,6 +137,26 @@ class TestCellFqcnFormat:
     def test_missing_parent_fqcn_falls_back_to_site_parent(self, parent_fqcn):
         assert _cell_fqcn("active", "site-1", "job-123", parent_fqcn) == "site-1.job-123_active"
 
+    @pytest.mark.parametrize("parent_fqcn", [FQCN.ROOT_SERVER, "site-1", "relay-1", "relay-1.site-1", ""])
+    def test_token_with_dot_is_rejected(self, parent_fqcn):
+        # a "." would split the cell name into extra FQCN segments, recreating
+        # an unconnected FQCN parent
+        with pytest.raises(ValueError):
+            _cell_fqcn("active", "site-1", "my.token", parent_fqcn)
+
+    @pytest.mark.parametrize("token", ["my_token", ""])
+    def test_bad_alias_token_is_rejected_behind_relay(self, token):
+        # behind another cell the token is the alias runtime id, which must be
+        # non-empty and free of "_" or the alias parses to the wrong owner
+        with pytest.raises(ValueError):
+            _cell_fqcn("active", "site-1", token, "relay-1")
+
+    @pytest.mark.parametrize("parent_fqcn", [FQCN.ROOT_SERVER, "site-1", ""])
+    def test_underscore_token_is_allowed_when_not_aliased(self, parent_fqcn):
+        # the simulator uses "simulate_job" as the token; only the alias form
+        # used behind another cell restricts "_"
+        assert _cell_fqcn("active", "site-1", "simulate_job", parent_fqcn) == "site-1.simulate_job_active"
+
 
 # ---------------------------------------------------------------------------
 # Fix 1: CellMessage caching on retries

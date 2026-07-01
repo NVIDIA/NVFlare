@@ -28,7 +28,7 @@ from nvflare.fuel.f3.cellnet.core_cell import make_reply as make_cellnet_reply
 from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
-from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.cellnet.fqcn import FQCN, parse_cell_pipe_alias
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL
@@ -335,20 +335,12 @@ def _origin_matches_fqcn(origin: str, fqcn: str, channel: Optional[str] = None) 
     if origin_parent != fqcn_parent:
         return False
 
+    # parse_cell_pipe_alias parses from the right and rejects "." or "_" in the
+    # runtime id, so a token for "site" can never validate an origin such as
+    # "site_x_<job>_active" when "site_x" is also a valid client FQCN.
     owner = FQCN.split(fqcn)[-1]
-    alias = FQCN.split(origin)[-1]
-    if not alias.startswith(f"{owner}_"):
-        return False
-
-    runtime_id, sep, mode = alias[len(owner) + 1 :].rpartition("_")
-    if not sep or mode not in {"active", "passive"}:
-        return False
-
-    # Deployed CellPipe aliases use the job UUID as the runtime id. Do not allow
-    # FQCN separators or alias separators inside this portion: otherwise a token
-    # for "site" could validate an origin such as "site_x_<job>_active" when
-    # "site_x" is also a valid client FQCN.
-    return bool(runtime_id) and "." not in runtime_id and "_" not in runtime_id
+    parsed = parse_cell_pipe_alias(FQCN.split(origin)[-1])
+    return parsed is not None and parsed[0] == owner
 
 
 def validate_auth_headers(

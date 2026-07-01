@@ -18,7 +18,7 @@ from cryptography import x509
 from cryptography.x509.oid import NameOID
 
 from nvflare.apis.fl_constant import ConnectionSecurity
-from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.cellnet.fqcn import FQCN, parse_cell_pipe_alias
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.drivers.net_utils import SECURE_SCHEMES
 from nvflare.fuel.utils.admin_name_utils import is_valid_admin_client_name
@@ -129,23 +129,9 @@ class CellIdentityResolver:
         # CellPipe cells connected through another cell may use a leaf segment
         # like "site-1_<runtime-id>_active" but authenticate with the owning
         # site's certificate. Older NVFlare versions also used this sibling
-        # alias form. Only the constrained form
-        # <owner>_<runtime_id>_(active|passive) with a non-empty runtime_id that
-        # contains no "." or "_" is treated as an alias: parsing from the right
-        # makes the interpretation unambiguous, so "site-a_x_<uuid>_active" can
-        # only belong to "site-a_x", never to "site-a" with a runtime id of
-        # "x_<uuid>".
-        head, sep, mode = segment.rpartition("_")
-        if not sep or mode not in ("active", "passive"):
-            return None
-
-        # rpartition splits on the last "_", so runtime_id can never contain "_";
-        # only the "." constraint needs an explicit check.
-        owner, sep, runtime_id = head.rpartition("_")
-        if not sep or not owner or not runtime_id or "." in runtime_id:
-            return None
-
-        return owner
+        # alias form. See parse_cell_pipe_alias for the alias grammar.
+        parsed = parse_cell_pipe_alias(segment)
+        return parsed[0] if parsed else None
 
     def resolve(self, fqcn: str) -> Optional[str]:
         if not fqcn:
