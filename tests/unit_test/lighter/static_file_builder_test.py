@@ -17,7 +17,9 @@ from pathlib import Path
 
 import pytest
 
+from nvflare.app_common.default_component_policy import DEFAULT_CLASS_ALLOW_LIST
 from nvflare.lighter.constants import CtxKey
+from nvflare.lighter.ctx import ProvisionContext
 from nvflare.lighter.entity import Participant, Project
 from nvflare.lighter.impl.static_file import StaticFileBuilder
 
@@ -71,6 +73,9 @@ def _extract_class_allow_list(resource_template):
     Parses the embedded JSON array so trailing-dot package prefixes (which
     the previous regex-based extractor silently dropped) are included.
     """
+    resource_template = resource_template.replace(
+        "{~~class_allow_list~~}", json.dumps(DEFAULT_CLASS_ALLOW_LIST, indent=2)
+    )
     list_pos = resource_template.index('"class_allow_list"')
     start = resource_template.index("[", list_pos)
     depth = 0
@@ -141,6 +146,28 @@ class TestStaticFileBuilder:
         registry_path = tmp_path / server.name / "local" / "study_registry.json"
         assert not registry_path.exists()
 
+    def test_build_renders_shared_default_component_policy(self, tmp_path):
+        server = Participant(type="server", name="server", org="org")
+        client = Participant(type="client", name="site-1", org="org")
+        project = Project(
+            name="proj",
+            description="desc",
+            participants=[server, client],
+            props={"api_version": 4},
+        )
+        ctx = ProvisionContext(str(tmp_path), project)
+        ctx.load_templates("master_template.yml")
+        for participant in (server, client):
+            Path(ctx.get_kit_dir(participant)).mkdir(parents=True)
+            Path(ctx.get_local_dir(participant)).mkdir(parents=True)
+
+        StaticFileBuilder().build(project, ctx)
+
+        for participant in (server, client):
+            resources_file = Path(ctx.get_local_dir(participant)) / "resources.json.default"
+            resources = json.loads(resources_file.read_text())
+            assert resources["class_allow_list"] == list(DEFAULT_CLASS_ALLOW_LIST)
+
     def test_auth_identity_config_omits_default_identity_fields(self):
         builder = StaticFileBuilder()
 
@@ -202,91 +229,10 @@ class TestStaticFileBuilder:
         """The provisioned allow list must match the curated component list exactly."""
         template = _load_master_template()
 
-        expected_paths = [
-            "nvflare.app_common.aggregators.collect_and_assemble_model_aggregator.CollectAndAssembleModelAggregator",
-            "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",
-            "nvflare.app_common.ccwf.CrossSiteEvalClientController",
-            "nvflare.app_common.ccwf.CrossSiteEvalServerController",
-            "nvflare.app_common.ccwf.CyclicClientController",
-            "nvflare.app_common.ccwf.CyclicServerController",
-            "nvflare.app_common.ccwf.SwarmClientController",
-            "nvflare.app_common.ccwf.SwarmServerController",
-            "nvflare.app_common.ccwf.comps.cwe_result_printer.CWEResultPrinter",
-            "nvflare.app_common.ccwf.comps.np_file_model_persistor.NPFileModelPersistor",
-            "nvflare.app_common.ccwf.comps.np_trainer.NPTrainer",
-            "nvflare.app_common.ccwf.comps.simple_intime_model_selector.SimpleIntimeModelSelector",
-            "nvflare.app_common.ccwf.comps.simple_model_shareable_generator.SimpleModelShareableGenerator",
-            "nvflare.app_common.ccwf.cse_client_ctl.CrossSiteEvalClientController",
-            "nvflare.app_common.ccwf.cse_server_ctl.CrossSiteEvalServerController",
-            "nvflare.app_common.ccwf.cyclic_client_ctl.CyclicClientController",
-            "nvflare.app_common.ccwf.cyclic_server_ctl.CyclicServerController",
-            "nvflare.app_common.ccwf.swarm_client_ctl.SwarmClientController",
-            "nvflare.app_common.ccwf.swarm_server_ctl.SwarmServerController",
-            "nvflare.app_common.executors.statistics.statistics_executor.StatisticsExecutor",
-            "nvflare.app_common.filters.exclude_vars.ExcludeVars",
-            "nvflare.app_common.filters.percentile_privacy.PercentilePrivacy",
-            "nvflare.app_common.filters.statistics_privacy_filter.StatisticsPrivacyFilter",
-            "nvflare.app_common.filters.svt_privacy.SVTPrivacy",
-            "nvflare.app_common.logging.job_log_receiver.JobLogReceiver",
-            "nvflare.app_common.logging.job_log_streamer.JobLogStreamer",
-            "nvflare.app_common.np.np_formatter.NPFormatter",
-            "nvflare.app_common.np.np_model_locator.NPModelLocator",
-            "nvflare.app_common.np.np_model_persistor.NPModelPersistor",
-            "nvflare.app_common.np.np_trainer.NPTrainer",
-            "nvflare.app_common.np.np_validator.NPValidator",
-            "nvflare.app_common.psi.dh_psi.dh_psi_controller.DhPSIController",
-            "nvflare.app_common.psi.file_psi_writer.FilePSIWriter",
-            "nvflare.app_common.psi.psi_executor.PSIExecutor",
-            "nvflare.app_common.shareablegenerators.full_model_shareable_generator.FullModelShareableGenerator",
-            "nvflare.app_common.statistics.histogram_bins_cleanser.HistogramBinsCleanser",
-            "nvflare.app_common.statistics.json_stats_file_persistor.JsonStatsFileWriter",
-            "nvflare.app_common.statistics.min_count_cleanser.MinCountCleanser",
-            "nvflare.app_common.statistics.min_max_cleanser.AddNoiseToMinMax",
-            "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent",
-            "nvflare.app_common.widgets.event_recorder.ClientEventRecorder",
-            "nvflare.app_common.widgets.event_recorder.ServerEventRecorder",
-            "nvflare.app_common.widgets.intime_model_selector.IntimeModelSelector",
-            "nvflare.app_common.widgets.validation_json_generator.ValidationJsonGenerator",
-            "nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval",
-            "nvflare.app_common.workflows.cyclic_ctl.CyclicController",
-            "nvflare.app_common.workflows.fedavg.FedAvg",
-            "nvflare.app_common.workflows.global_model_eval.GlobalModelEval",
-            "nvflare.app_common.workflows.initialize_global_weights.InitializeGlobalWeights",
-            "nvflare.app_common.workflows.lr.fedavg.FedAvgLR",
-            "nvflare.app_common.workflows.lr.np_persistor.LRModelPersistor",
-            "nvflare.app_common.workflows.scaffold.Scaffold",
-            "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather",
-            "nvflare.app_common.workflows.statistics_controller.StatisticsController",
-            "nvflare.app_opt.he.intime_accumulate_model_aggregator.HEInTimeAccumulateWeightedAggregator",
-            "nvflare.app_opt.he.model_decryptor.HEModelDecryptor",
-            "nvflare.app_opt.he.model_encryptor.HEModelEncryptor",
-            "nvflare.app_opt.he.model_serialize_filter.HEModelSerializeFilter",
-            "nvflare.app_opt.he.model_shareable_generator.HEModelShareableGenerator",
-            "nvflare.app_opt.psi.dh_psi.dh_psi_task_handler.DhPSITaskHandler",
-            "nvflare.app_opt.pt.fedopt.PTFedOptModelShareableGenerator",
-            "nvflare.app_opt.pt.file_model_locator.PTFileModelLocator",
-            "nvflare.app_opt.pt.recipes.fedeval.EvalController",
-            "nvflare.app_opt.sklearn.kmeans_assembler.KMeansAssembler",
-            "nvflare.app_opt.sklearn.svm_assembler.SVMAssembler",
-            "nvflare.app_opt.tf.fedopt_ctl.FedOpt",
-            "nvflare.app_opt.tf.file_model_locator.TFFileModelLocator",
-            "nvflare.app_opt.tracking.mlflow.mlflow_receiver.MLflowReceiver",
-            "nvflare.app_opt.tracking.mlflow.mlflow_writer.MLflowWriter",
-            "nvflare.app_opt.tracking.tb.tb_receiver.TBAnalyticsReceiver",
-            "nvflare.app_opt.tracking.tb.tb_writer.TBWriter",
-            "nvflare.app_opt.tracking.wandb.wandb_receiver.WandBReceiver",
-            "nvflare.app_opt.xgboost.histogram_based.controller.XGBFedController",
-            "nvflare.app_opt.xgboost.histogram_based.executor.FedXGBHistogramExecutor",
-            "nvflare.app_opt.xgboost.histogram_based_v2.csv_data_loader.CSVDataLoader",
-            "nvflare.app_opt.xgboost.histogram_based_v2.fed_controller.XGBFedController",
-            "nvflare.app_opt.xgboost.histogram_based_v2.fed_executor.FedXGBHistogramExecutor",
-            "nvflare.app_opt.xgboost.tree_based.bagging_aggregator.XGBBaggingAggregator",
-            "nvflare.app_opt.xgboost.tree_based.executor.FedXGBTreeExecutor",
-            "nvflare.app_opt.xgboost.tree_based.model_persistor.XGBModelPersistor",
-            "nvflare.app_opt.xgboost.tree_based.shareable_generator.XGBModelShareableGenerator",
-        ]
+        expected_paths = list(DEFAULT_CLASS_ALLOW_LIST)
         for resource_key in ("local_client_resources", "local_server_resources"):
             resource_template = template[resource_key]
+            assert "{~~class_allow_list~~}" in resource_template
             assert _extract_class_allow_list(resource_template) == expected_paths
 
     def test_master_template_class_allow_list_has_no_package_prefixes(self):
