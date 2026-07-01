@@ -22,7 +22,11 @@ when the essential status and score columns remain readable.
 `final_response_allowed=true` is the preferred deterministic proof that a
 campaign may be finalized. For abrupt process termination, the user and agent
 may explicitly confirm interruption. This assertion is report provenance only:
-it must not mutate campaign state.
+it must not mutate campaign state. `--confirm-interrupted` bypasses only stale
+stop state. Finalization is refused when campaign state reports pending work,
+the ledger has a `candidate` row, or an available manifest remains `prepared`
+or `ready_for_external_execution`. Finalize or abandon such candidates before
+generating an authoritative report.
 
 ## Candidate Lineage
 
@@ -36,7 +40,10 @@ manifest is unavailable.
 
 A `literature` row opens a checkpoint. Associate subsequent comparable
 candidate rows with that checkpoint until the next literature row. Compare the
-best score in that segment with the incumbent immediately before the review:
+best finalized `keep` or `discard` score in that segment with the incumbent
+immediately before the review. Pending candidates and crashes are attempts but
+never scored improvements, even if a malformed crash row contains a numeric
+score:
 
 - `helped`: a following candidate improved the incumbent;
 - `matched`: the best following candidate tied the incumbent;
@@ -46,6 +53,20 @@ best score in that segment with the incumbent immediately before the review:
 
 Preserve `[src: ...]` markers from the checkpoint. These are campaign-recorded
 source identifiers, not independently verified citations.
+
+## Result Selection
+
+`best` is strictly the best scored retained result: a baseline or `keep` row.
+`best_observed` may identify a better scored `discard` as unretained evidence.
+`candidate` and `crash` rows are excluded from retained best selection,
+running-best milestones, and literature improvements. Literature tables render
+status first, so scored crashes remain `crash` and unscored discards remain
+`n/a`.
+
+The objective contract records two distinct provenance fields. `metric_source`
+describes where measurements came from and defaults to `NVFlare metric
+artifacts`. `metric_contract_source` records how the importer selected the
+metric, for example `user_request`, `arg:key_metric`, or `default`.
 
 ## Comparability
 
@@ -63,7 +84,15 @@ silently present repeated test-set selection as an unbiased final estimate.
 - **autofl_final_report.md**: human-readable review artifact;
 - `autofl_report_summary.json`: machine-readable summary using schema
   `nvflare.autofl.report.v1`;
-- `progress.png`: refreshed using the `nvflare-autofl` product plotter.
+- `progress.png`: refreshed using the `nvflare-autofl` product plotter when
+  plotting is available.
+
+The JSON summary remains `nvflare.autofl.report.v1` and includes
+`artifacts.progress_plot_available` and
+`objective.metric_contract_source`. Missing plotting dependencies or an
+invalid existing PNG produce warnings and `progress_plot_available=false`, but
+do not suppress the Markdown or JSON report. The invalid or failed plot
+artifact is preserved and is not embedded in Markdown.
 
 Report generation must be independent of Git and must not edit campaign source,
 the ledger, manifests, or state.

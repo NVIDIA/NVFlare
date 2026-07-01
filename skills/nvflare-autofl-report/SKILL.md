@@ -29,7 +29,9 @@ user asks for a status snapshot.
 2. Confirm execution has stopped. Prefer campaign state with
    `final_response_allowed=true`. When a process was abruptly interrupted and
    state is stale, independently confirm no campaign or job process remains,
-   then use `--confirm-interrupted`.
+   then use `--confirm-interrupted`. Before finalizing, confirm that campaign
+   state, `results.tsv`, and available candidate manifests contain no pending
+   candidate. Finalize or abandon pending work through `nvflare-autofl` first.
 3. Generate the deterministic report artifacts:
 
    ```bash
@@ -43,8 +45,12 @@ user asks for a status snapshot.
    literature ideas that helped or failed, reliability caveats, and absolute
    artifact paths.
 
-The helper refreshes `progress.png` by reusing the product Auto-FL plotter. It
-does not modify source, candidate manifests, `results.tsv`, or campaign state.
+The helper attempts to refresh `progress.png` by reusing the product Auto-FL
+plotter. Plotting is optional evidence: if plotting dependencies are missing or
+the artifact is not a valid PNG, the helper preserves the artifact, records a
+warning and `artifacts.progress_plot_available=false`, and still writes the
+Markdown and JSON reports without embedding the broken image. It does not
+modify source, candidate manifests, `results.tsv`, or campaign state.
 
 ## Interrupted Campaigns
 
@@ -57,7 +63,10 @@ python "$CODEX_HOME/skills/nvflare-autofl-report/scripts/generate_report.py" <jo
 ```
 
 This records a reporting-time interruption assertion; it does not rewrite the
-campaign state or pretend the runner finalized cleanly.
+campaign state or pretend the runner finalized cleanly. It bypasses only stale
+stop state. A `candidate` ledger row, pending-candidate state, or a manifest in
+`prepared` or `ready_for_external_execution` status always blocks finalization;
+the agent must finalize or abandon that candidate first.
 
 ## Report Contract
 
@@ -67,7 +76,8 @@ The final report must include:
   environment, cap, and declared fixed budget;
 - baseline, best retained result, score delta, runtime, failures, and status
   counts;
-- running-best trajectory and a refreshed `progress.png`;
+- running-best trajectory and a refreshed `progress.png` when plotting is
+  available, with explicit plot availability in the JSON summary otherwise;
 - best-candidate manifest, patch hash, base-candidate lineage, inherited code
   changes, artifacts, and exact baseline/best commands;
 - every recorded literature checkpoint, cited source markers, candidates
@@ -83,6 +93,9 @@ The report must distinguish imported/declared budget from executed command
 arguments. It must warn when the best candidate changed training compute or
 when repeated selection used a test-like metric. It must not add PR-specific
 sections such as "Product Findings" unless the user explicitly requests them.
+`best` means a scored retained baseline or `keep` row; an unretained scored
+`discard` may appear only as `best_observed`. Candidate and crash rows never
+become retained best results, milestones, or literature improvements.
 
 Read [report-contract.md](references/report-contract.md) when interpreting
 lineage, literature outcomes, budget warnings, or interrupted state.

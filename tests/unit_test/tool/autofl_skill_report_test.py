@@ -36,14 +36,24 @@ RESULT_FIELDS = [
 ]
 
 
-def _load_reporter():
-    repo_root = Path(__file__).parents[3]
-    script_path = repo_root / "skills" / "nvflare-autofl-report" / "scripts" / "generate_report.py"
-    spec = importlib.util.spec_from_file_location("nvflare_autofl_skill_report", script_path)
+def _load_script(name, script_path):
+    spec = importlib.util.spec_from_file_location(name, script_path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def _load_reporter():
+    repo_root = Path(__file__).parents[3]
+    script_path = repo_root / "skills" / "nvflare-autofl-report" / "scripts" / "generate_report.py"
+    return _load_script("nvflare_autofl_skill_report", script_path)
+
+
+def _load_autofl_script(name):
+    repo_root = Path(__file__).parents[3]
+    script_path = repo_root / "skills" / "nvflare-autofl" / "scripts" / f"{name}.py"
+    return _load_script(f"nvflare_autofl_{name}", script_path)
 
 
 def _row(status, name, score="", **kwargs):
@@ -62,6 +72,13 @@ def _row(status, name, score="", **kwargs):
     )
     row.update(kwargs)
     return row
+
+
+def _write_rows(tmp_path, rows):
+    with tmp_path.joinpath("results.tsv").open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=RESULT_FIELDS, delimiter="\t")
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 def _write_campaign(tmp_path, *, active=False, mode="max"):
@@ -120,10 +137,7 @@ def _write_campaign(tmp_path, *, active=False, mode="max"):
             diff_summary="A larger update was unstable.",
         ),
     ]
-    with tmp_path.joinpath("results.tsv").open("w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=RESULT_FIELDS, delimiter="\t")
-        writer.writeheader()
-        writer.writerows(rows)
+    _write_rows(tmp_path, rows)
 
     tmp_path.joinpath("autofl.yaml").write_text(
         "schema_version: nvflare.autofl.config.v1\n"
@@ -186,6 +200,58 @@ def test_confirm_interrupted_reports_without_mutating_state(tmp_path, monkeypatc
     assert state_path.read_bytes() == original_state
 
 
+@pytest.mark.parametrize("score", ["", "0.900000"])
+def test_report_refuses_pending_ledger_rows_even_when_interruption_is_confirmed(tmp_path, monkeypatch, score):
+    reporter = _load_reporter()
+    rows = _write_campaign(tmp_path, active=True)
+    rows.append(_row("candidate", "pending_algo", score, base_candidate="baseline"))
+    _write_rows(tmp_path, rows)
+    monkeypatch.setattr(reporter, "refresh_plot", lambda *args, **kwargs: None)
+
+    with pytest.raises(ValueError, match="finalize or abandon pending candidates"):
+        reporter.generate(reporter.parse_args([str(tmp_path), "--confirm-interrupted"]))
+
+    assert not tmp_path.joinpath("autofl_final_report.md").exists()
+
+
+def test_report_refuses_pending_campaign_state(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    state_path = tmp_path / ".nvflare/autofl/campaign_state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["pending_candidates"] = 1
+    state["pending_candidate_manifest"] = ".nvflare/autofl/candidates/pending/candidate_manifest.json"
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    monkeypatch.setattr(reporter, "refresh_plot", lambda *args, **kwargs: None)
+
+    with pytest.raises(ValueError, match="campaign state reports pending_candidates=1"):
+        reporter.generate(reporter.parse_args([str(tmp_path), "--confirm-interrupted"]))
+
+
+@pytest.mark.parametrize("status", ["prepared", "ready_for_external_execution"])
+def test_report_refuses_pending_candidate_manifests(tmp_path, monkeypatch, status):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    manifest_path = tmp_path / ".nvflare/autofl/candidates/pending/candidate_manifest.json"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text(json.dumps({"status": status}), encoding="utf-8")
+    monkeypatch.setattr(reporter, "refresh_plot", lambda *args, **kwargs: None)
+
+    with pytest.raises(ValueError, match="candidate manifests remain prepared"):
+        reporter.generate(reporter.parse_args([str(tmp_path), "--confirm-interrupted"]))
+
+
+def test_pending_candidate_returns_cli_exit_2(tmp_path, monkeypatch, capsys):
+    reporter = _load_reporter()
+    rows = _write_campaign(tmp_path)
+    rows.append(_row("candidate", "pending_algo"))
+    _write_rows(tmp_path, rows)
+    monkeypatch.setattr(reporter, "refresh_plot", lambda *args, **kwargs: None)
+
+    assert reporter.main([str(tmp_path)]) == 2
+    assert "finalize or abandon pending candidates" in capsys.readouterr().err
+
+
 def test_report_generates_product_artifacts_and_candidate_lineage(tmp_path, monkeypatch):
     reporter = _load_reporter()
     _write_campaign(tmp_path)
@@ -204,6 +270,7 @@ def test_report_generates_product_artifacts_and_candidate_lineage(tmp_path, monk
         "complete": True,
     }
     assert saved_summary["best"]["name"] == "inherited_tuning"
+    assert summary["artifacts"]["progress_plot_available"] is True
     assert "## Executive Summary" in report
     assert "## Literature Review Outcomes" in report
     assert "## Validation And Comparability Notes" in report
@@ -224,6 +291,37 @@ def test_report_synthesizes_literature_against_checkpoint_incumbent(tmp_path, mo
     assert literature[0]["incumbent_score"] == 0.5
     assert literature[0]["best_candidate"] == "inherited_tuning"
     assert literature[0]["delta_from_incumbent"] == pytest.approx(0.15)
+
+
+def test_literature_evidence_preserves_crash_and_blank_discard_status(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    rows = _write_campaign(tmp_path)
+    rows[-1]["score"] = "0.990000"
+    rows.append(_row("discard", "blank_discard", "", diff_summary="No metric artifact was produced."))
+    _write_rows(tmp_path, rows)
+
+    summary = _generate(reporter, tmp_path, monkeypatch)
+    report = tmp_path.joinpath("autofl_final_report.md").read_text(encoding="utf-8")
+
+    assert summary["best"]["name"] == "inherited_tuning"
+    assert summary["best_observed"]["name"] == "inherited_tuning"
+    assert all(item["name"] != "unstable_branch" for item in summary["milestones"])
+    assert "unstable_branch=crash" in report
+    assert "blank_discard=n/a" in report
+
+
+def test_discard_only_campaign_has_observed_but_no_retained_best(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    _write_rows(tmp_path, [_row("discard", "unretained_gain", "0.700000")])
+
+    summary = _generate(reporter, tmp_path, monkeypatch)
+    report = tmp_path.joinpath("autofl_final_report.md").read_text(encoding="utf-8")
+
+    assert summary["best"] is None
+    assert summary["best_observed"]["name"] == "unretained_gain"
+    assert "No scored result was retained" in report
+    assert "Best retained candidate" not in report
 
 
 def test_report_warns_about_executed_budget_and_test_metric(tmp_path, monkeypatch):
@@ -279,6 +377,7 @@ def test_report_keeps_existing_plot_when_refresh_fails(tmp_path, monkeypatch):
 
     assert tmp_path.joinpath("progress.png").read_bytes() == b"\x89PNG\r\n\x1a\nexisting plot"
     assert any("plotter not found" in warning for warning in summary["warnings"])
+    assert summary["artifacts"]["progress_plot_available"] is True
 
 
 def test_report_reads_best_candidate_manifest_when_available(tmp_path, monkeypatch):
@@ -312,14 +411,81 @@ def test_report_reads_best_candidate_manifest_when_available(tmp_path, monkeypat
     assert summary["best_manifest"]["budget_sha256"] == "d" * 64
 
 
-def test_report_requires_a_progress_artifact(tmp_path, monkeypatch):
+@pytest.mark.parametrize("invalid_content", [None, b"not a png"])
+def test_report_degrades_when_progress_artifact_is_unavailable(tmp_path, monkeypatch, invalid_content):
     reporter = _load_reporter()
     _write_campaign(tmp_path)
-    tmp_path.joinpath("progress.png").unlink()
+    progress_path = tmp_path.joinpath("progress.png")
+    if invalid_content is None:
+        progress_path.unlink()
+    else:
+        progress_path.write_bytes(invalid_content)
     monkeypatch.setattr(reporter, "default_plotter_path", lambda: tmp_path / "missing_plotter.py")
 
-    with pytest.raises(ValueError, match="progress plot is unavailable"):
-        reporter.generate(reporter.parse_args([str(tmp_path)]))
+    summary = reporter.generate(reporter.parse_args([str(tmp_path)]))
+    report = tmp_path.joinpath("autofl_final_report.md").read_text(encoding="utf-8")
+
+    assert summary["artifacts"]["progress_plot_available"] is False
+    assert "Progress plot unavailable" in report
+    assert "![Auto-FL progress]" not in report
+    assert tmp_path.joinpath("autofl_report_summary.json").is_file()
+    if invalid_content is not None:
+        assert progress_path.read_bytes() == invalid_content
+
+
+def test_report_normalizes_malformed_optional_contract_sections(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    tmp_path.joinpath("autofl.yaml").write_text(
+        "objective: []\nenvironment: sim\nbudget: null\n",
+        encoding="utf-8",
+    )
+
+    summary = _generate(reporter, tmp_path, monkeypatch)
+    warnings = "\n".join(summary["warnings"])
+
+    assert summary["objective"]["optimization_metric"] == "score"
+    assert summary["objective"]["metric_source"] == "NVFlare metric artifacts"
+    assert summary["environment"] == "not declared"
+    assert summary["declared_fixed_budget"] == {}
+    assert "section 'objective' is list" in warnings
+    assert "section 'environment' is str" in warnings
+    assert "section 'budget' is null" in warnings
+
+
+def test_report_separates_metric_measurement_and_contract_sources(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    tmp_path.joinpath("autofl.yaml").write_text(
+        "objective:\n"
+        "  requested_metric: accuracy\n"
+        "  optimization_metric: test_accuracy\n"
+        "  source: arg:key_metric\n",
+        encoding="utf-8",
+    )
+
+    summary = _generate(reporter, tmp_path, monkeypatch)
+
+    assert summary["objective"]["metric_source"] == "NVFlare metric artifacts"
+    assert summary["objective"]["metric_contract_source"] == "arg:key_metric"
+
+
+def test_relative_plotter_path_resolves_from_campaign_directory(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    plotter_path = tmp_path / "tools/plot_progress.py"
+    plotter_path.parent.mkdir()
+    plotter_path.write_text("# test plotter\n", encoding="utf-8")
+    captured = {}
+
+    def _capture_plotter(*args):
+        captured["path"] = args[-1]
+
+    monkeypatch.setattr(reporter, "refresh_plot", _capture_plotter)
+
+    reporter.generate(reporter.parse_args([str(tmp_path), "--plotter", "tools/plot_progress.py"]))
+
+    assert captured["path"] == plotter_path.resolve()
 
 
 def test_candidate_lineage_marks_cycles_incomplete():
@@ -346,3 +512,40 @@ def test_budget_comparison_accepts_numeric_equivalence():
 
     assert reporter.values_equal("8.0", 8)
     assert not reporter.values_equal("8.1", 8)
+
+
+def test_report_attempt_and_baseline_rules_match_campaign_guard():
+    reporter = _load_reporter()
+    guard = _load_autofl_script("campaign_guard")
+    cases = [
+        {"status": "baseline", "name": "control", "run_command": "python job.py"},
+        {"status": "keep", "name": "baseline", "run_command": "python job.py"},
+        {"status": "discard", "name": "baseline_seed_1", "run_command": "python job.py"},
+        {"status": "discard", "name": "control", "run_command": "python job.py --name baseline"},
+        {"status": "keep", "name": "candidate_1", "run_command": "python job.py"},
+    ]
+
+    assert reporter.ATTEMPT_STATUSES == guard.COMPARABLE_STATUSES
+    for index, case in enumerate(cases):
+        record = reporter.RunRecord(
+            index=index,
+            score=0.5,
+            runtime_seconds=1.0,
+            changed_files="",
+            diff_summary="",
+            artifacts="",
+            failure_reason="",
+            candidate_manifest="",
+            base_candidate="",
+            patch_sha256="",
+            **case,
+        )
+        assert reporter.is_baseline(record) == guard.is_baseline(case)
+
+
+@pytest.mark.parametrize("seconds", [0.0, 45.0, 3599.0, 3600.0])
+def test_report_runtime_format_matches_progress_plotter(seconds):
+    reporter = _load_reporter()
+    plotter = _load_autofl_script("plot_progress")
+
+    assert reporter.format_runtime(seconds) == plotter.format_runtime(seconds)

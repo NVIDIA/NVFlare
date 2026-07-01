@@ -147,7 +147,8 @@ uncapped campaign while state has `final_response_allowed=false`.
 blocker, or independently confirmed interruption.
 
 The report helper consumes `results.tsv`, `autofl.yaml`, campaign state, and
-candidate manifests. It refreshes the shared `progress.png` and writes:
+candidate manifests. It attempts to refresh the shared `progress.png` and
+writes:
 
 - `autofl_final_report.md`, a concise review artifact with executive summary,
   trajectory, best-candidate lineage, exact commands, reliability, and
@@ -158,7 +159,15 @@ candidate manifests. It refreshes the shared `progress.png` and writes:
 The helper does not edit source, ledger, manifests, or campaign state and does
 not require Git. If an abrupt interruption leaves state active, the human must
 confirm interruption after execution is independently checked; the report
-records that assertion without rewriting history.
+records that assertion without rewriting history. This confirmation bypasses
+only stale stop state. Pending state, `candidate` ledger rows, or manifests in
+`prepared`/`ready_for_external_execution` status block finalization until the
+active skill finalizes or abandons them.
+
+Plotting is optional report evidence. A missing plotting dependency or invalid
+PNG does not suppress the Markdown and JSON artifacts: the helper preserves the
+failed artifact, emits a warning, omits the Markdown image, and records
+`artifacts.progress_plot_available=false`.
 
 Literature reporting follows measured evidence rather than agent narrative.
 Each recorded literature checkpoint owns the comparable candidates until the
@@ -166,6 +175,13 @@ next checkpoint. Their best result is compared with the incumbent immediately
 before the review and classified as helped, matched, not confirmed, failed, or
 not evaluated. Recorded `[src: ...]` markers are preserved as campaign
 provenance, not presented as independently verified citations.
+
+The report distinguishes retained and observed evidence. `best` is limited to
+scored baseline and `keep` rows, while `best_observed` may expose an unretained
+scored `discard`. Pending candidates and crashes remain attempt/failure
+evidence and cannot become milestones or literature improvements. The
+objective also separates measurement provenance (`metric_source`) from the
+importer's metric-contract provenance (`metric_contract_source`).
 
 Finally, the report compares the declarative/imported budget with exact
 baseline and best-candidate commands. It highlights changed compute or data
