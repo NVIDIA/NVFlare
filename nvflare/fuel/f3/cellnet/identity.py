@@ -152,13 +152,22 @@ class CellIdentityResolver:
             if identity:
                 return identity
 
-        # This legacy-alias check intentionally precedes _resolve_local_child_identity:
-        # an old-format CellPipe alias cell may connect as a direct child of this
-        # local cell, but it authenticates with the owning site's certificate, not
-        # with a certificate named after the alias segment itself.
-        alias_owner = self._get_cell_pipe_alias_owner(parts[-1]) if parts else None
-        if alias_owner:
-            return self.resolve(alias_owner)
+        # The alias interpretation applies only to the shapes that create an
+        # alias: a legacy (pre-hierarchical-naming) cell whose whole FQCN is
+        # the alias, or a cell connected through this local cell (e.g. a
+        # relay), which is always a direct child of the local cell. Any other
+        # leaf is a plain <token>_<mode> segment whose token may itself
+        # contain "_" (e.g. "site-1.ext_trainer_active"); alias-parsing it
+        # would fabricate a wrong owner such as "ext". This check
+        # intentionally precedes _resolve_local_child_identity: an alias cell
+        # connected as a direct child of this local cell authenticates with
+        # the owning site's certificate, not with a certificate named after
+        # the alias segment itself.
+        is_alias_shape = len(parts) == 1 or (self.local_fqcn and FQCN.get_parent(fqcn) == self.local_fqcn)
+        if is_alias_shape:
+            alias_owner = self._get_cell_pipe_alias_owner(parts[-1])
+            if alias_owner:
+                return self.resolve(alias_owner)
 
         identity = self._resolve_local_child_identity(fqcn)
         if identity:

@@ -137,17 +137,23 @@ class TestCellFqcnFormat:
     def test_missing_parent_fqcn_falls_back_to_site_parent(self, parent_fqcn):
         assert _cell_fqcn("active", "site-1", "job-123", parent_fqcn) == "site-1.job-123_active"
 
-    @pytest.mark.parametrize("parent_fqcn", [FQCN.ROOT_SERVER, "site-1", "relay-1", "relay-1.site-1", ""])
-    def test_token_with_dot_is_rejected(self, parent_fqcn):
+    @pytest.mark.parametrize("parent_fqcn", ["site-1", "relay-1", "relay-1.site-1"])
+    def test_token_with_dot_is_rejected_behind_connected_parent(self, parent_fqcn):
         # a "." would split the cell name into extra FQCN segments, recreating
-        # an unconnected FQCN parent
+        # an unconnected FQCN parent between the connected cell and the pipe
         with pytest.raises(ValueError):
             _cell_fqcn("active", "site-1", "my.token", parent_fqcn)
 
-    @pytest.mark.parametrize("token", ["my_token", ""])
+    @pytest.mark.parametrize("parent_fqcn", [FQCN.ROOT_SERVER, ""])
+    def test_token_with_dot_is_allowed_for_root_connection(self, parent_fqcn):
+        # root-connected cells route via the root fall-through regardless of
+        # phantom segments, so dotted user tokens (e.g. agent ids) keep working
+        assert _cell_fqcn("active", "site-1", "agent.v2", parent_fqcn) == "site-1.agent.v2_active"
+
+    @pytest.mark.parametrize("token", ["my_token", "my.token", ""])
     def test_bad_alias_token_is_rejected_behind_relay(self, token):
         # behind another cell the token is the alias runtime id, which must be
-        # non-empty and free of "_" or the alias parses to the wrong owner
+        # non-empty and free of "_" or "." or the alias parses to the wrong owner
         with pytest.raises(ValueError):
             _cell_fqcn("active", "site-1", token, "relay-1")
 

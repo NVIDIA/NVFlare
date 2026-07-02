@@ -42,12 +42,13 @@ class _FailingClientSideController(ClientSideController):
 def test_do_learn_logs_exception_from_learn_task():
     ctl = _FailingClientSideController()
     ctl.logger = MagicMock()
-    ctl.learn_task = _LearnTask("train", Shareable(), MagicMock())
+    ctl.learn_task = _LearnTask("train", Shareable(), FLContext())
 
     ctl._do_learn()
 
-    ctl.logger.error.assert_called_once()
-    assert "exception from do_learn_task" in ctl.logger.error.call_args.args[0]
+    # log_exception logs the contextualized message, then the traceback
+    assert ctl.logger.error.call_count == 2
+    assert "exception from do_learn_task" in ctl.logger.error.call_args_list[0].args[0]
     assert ctl.learn_task is None
     # the failure must be recorded so the next status report tells the server
     # to end the job with an error status instead of FINISHED:COMPLETED

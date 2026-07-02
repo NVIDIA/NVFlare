@@ -64,26 +64,34 @@ def _cell_fqcn(mode, site_name, token, parent_fqcn):
     # core_cell_routing_test.py).
     # The two peer pipes on the same site share the same site_name and token,
     # but are differentiated by their modes.
-    if "." in token:
-        raise ValueError(f"invalid CellPipe token '{token}': '.' would split the cell name into extra FQCN segments")
-
     cell_name = f"{token}_{mode}"
     if parent_fqcn == FQCN.ROOT_SERVER:
+        # A "." in the token adds phantom FQCN segments, but root-connected
+        # cells route through the root fall-through regardless of depth, so
+        # dotted user-chosen tokens (e.g. agent ids) keep working as they did
+        # before the topology naming.
         prefix = site_name
     elif parent_fqcn and FQCN.split(parent_fqcn)[-1] == site_name:
         # connecting to the site's own CP: the site is already the last segment
+        if "." in token:
+            # a "." would put an unconnected FQCN parent between the CP and
+            # the cell, making the cell unreachable
+            raise ValueError(
+                f"invalid CellPipe token '{token}': '.' would split the cell name into extra FQCN segments"
+            )
         prefix = parent_fqcn
     elif parent_fqcn:
         # Connecting to another cell (e.g. a relay): use the alias leaf
         # <site>_<token>_<mode> so mTLS identity resolution and stream auth map
         # the cell to the owning site (see parse_cell_pipe_alias). The token is
-        # the alias runtime id and must not contain "_", or the alias would
-        # parse to the wrong owner and the connection/messages would be
-        # rejected. Tokens are normally job ids (UUIDs), so this only affects
-        # custom tokens such as FlareAgentWithCellPipe agent ids.
-        if not token or "_" in token:
+        # the alias runtime id and must not contain "_" or ".", or the alias
+        # would parse to the wrong owner (or not parse at all) and the
+        # connection/messages would be rejected. Tokens are normally job ids
+        # (UUIDs), so this only affects custom tokens such as
+        # FlareAgentWithCellPipe agent ids.
+        if not token or "_" in token or "." in token:
             raise ValueError(
-                f"invalid CellPipe token '{token}': must be non-empty without '_' "
+                f"invalid CellPipe token '{token}': must be non-empty without '_' or '.' "
                 f"when connected through another cell ({parent_fqcn})"
             )
         prefix = parent_fqcn
