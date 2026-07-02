@@ -27,6 +27,9 @@ from nvflare.fuel.f3.streaming.transfer_progress import (
 from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
+# The Client API config can carry auth material, so persisted copies must be owner-only.
+CONFIG_FILE_PERMISSION = 0o600
+
 
 class ExchangeFormat(str, Enum):
     RAW = "raw"
@@ -274,7 +277,34 @@ class ClientConfig:
         return self.config.get(FLMetaKey.AUTH_TOKEN_SIGNATURE)
 
     def to_json(self, config_file: str):
-        with open(config_file, "w") as f:
+        # The config may carry live auth material (e.g. AUTH_TOKEN / AUTH_TOKEN_SIGNATURE).
+        # On POSIX it must be readable by the owner only (0600); this is enforced with
+        # fchmod on the open descriptor so it applies whether the file is newly created
+        # or pre-existing (an O_CREAT mode argument only takes effect on creation), and
+        # the write is refused rather than exposing secrets if the mode cannot be set.
+        # O_NOFOLLOW rejects a planted symlink at config_file. On Windows POSIX modes do
+        # not map to NTFS ACLs, so this provides no read protection there — directory
+        # ACLs must be relied on instead.
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        fd = os.open(config_file, flags, CONFIG_FILE_PERMISSION)
+        try:
+            if os.name == "posix":
+                try:
+                    os.fchmod(fd, CONFIG_FILE_PERMISSION)
+                except OSError as e:
+                    # Fail closed: do not write credentials into a file we cannot secure
+                    # (e.g. a pre-existing world-readable file owned by another user).
+                    raise RuntimeError(
+                        f"cannot restrict {config_file} to owner-only ({oct(CONFIG_FILE_PERMISSION)}); "
+                        f"refusing to write Client API config: {e}"
+                    ) from e
+            f = os.fdopen(fd, "w")
+        except BaseException:
+            os.close(fd)
+            raise
+        with f:
             json.dump(self.config, f, indent=2)
 
 
