@@ -91,6 +91,9 @@ class InspectState:
     # decide whether base-framework usage lives inside a superset model class
     # body (e.g. torch calls inside a LightningModule) versus standalone.
     class_body_ranges: dict[str, list[tuple[int, int]]] = field(default_factory=dict)
+    # Cache for _local_files_by_module: built once after the scan populates
+    # file_imports, reused across per-evidence entry-context reachability checks.
+    local_files_by_module_cache: Optional[dict[str, set[str]]] = field(default=None, repr=False, compare=False)
 
 
 def inspect_path(
@@ -666,10 +669,18 @@ def _local_files_by_module(state: InspectState) -> dict[str, set[str]]:
     # resolved per-import by _prefer_shared_packaging_root using the importing
     # file's own packaging root, so neither a stale src/ copy nor a stale
     # root-level copy can steal the actively-imported module in either direction.
+    #
+    # Memoized on the state: entry-context reachability calls this once per
+    # evidence item, and file_imports is fully populated during the scan before
+    # detection runs, so the map is built once instead of O(evidence) times over
+    # the now-uncapped evidence lists.
+    if state.local_files_by_module_cache is not None:
+        return state.local_files_by_module_cache
     files_by_module: dict[str, set[str]] = {}
     for file_path in state.file_imports:
         for module_name in _module_names_for_file(file_path):
             files_by_module.setdefault(module_name, set()).add(file_path)
+    state.local_files_by_module_cache = files_by_module
     return files_by_module
 
 

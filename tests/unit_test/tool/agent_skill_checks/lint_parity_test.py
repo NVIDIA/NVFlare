@@ -93,3 +93,16 @@ def test_known_agent_flag_table_keys_are_valid_command_paths():
     for key, flags in lints_module._KNOWN_AGENT_FLAGS.items():
         assert key in valid_keys, f"_KNOWN_AGENT_FLAGS key '{key}' is not a known agent command path"
         assert "--schema" in flags, f"command '{key}' should allow --schema"
+
+
+def test_runtime_boundary_excluded_dirs_match_packaging_exclusions():
+    # The runtime-boundary lint's excluded dirs and the packaging exclusion set
+    # are hand-mirrored: both name the directories that are stripped from a
+    # shipped skill (evals/, __pycache__). Keep them in sync so the lint never
+    # scans content packaging removes, and packaging never ships content the lint
+    # skips. Packaging also lists byte-code file globs (*.pyc/*.pyo), which are
+    # not directory names and are excluded from this comparison.
+    from nvflare.tool.agent.skill_manifest import SKILL_PACKAGING_EXCLUDE_NAMES
+
+    packaging_dir_names = {name for name in SKILL_PACKAGING_EXCLUDE_NAMES if not name.startswith("*")}
+    assert lints_module._RUNTIME_BOUNDARY_EXCLUDED_DIRS == packaging_dir_names
