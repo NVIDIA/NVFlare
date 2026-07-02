@@ -321,7 +321,7 @@ def test_run_v1_lints_skips_oversized_helper_script_content_checks(tmp_path):
 
 def test_run_v1_lints_reports_missing_fixture_file(tmp_path):
     evals = _default_evals("nvflare-fixture-skill")
-    evals["evals"][0]["files"] = ["evals/files/missing.py"]
+    evals["evals"][0]["files"] = ["files/missing.py"]
     _write_skill(tmp_path / "skills", "nvflare-fixture-skill", evals=evals, write_fixture=False)
 
     result = run_v1_lints(tmp_path / "skills")
@@ -332,9 +332,9 @@ def test_run_v1_lints_reports_missing_fixture_file(tmp_path):
 
 def test_run_v1_lints_fixture_file_check_ignores_symlink_loop(tmp_path):
     evals = _default_evals("nvflare-fixture-skill")
-    evals["evals"][0]["files"] = ["evals/files/input.py"]
-    skill_dir = _write_skill(tmp_path / "skills", "nvflare-fixture-skill", evals=evals, write_fixture=False)
-    files_dir = skill_dir / "evals" / "files"
+    evals["evals"][0]["files"] = ["files/input.py"]
+    _write_skill(tmp_path / "skills", "nvflare-fixture-skill", evals=evals, write_fixture=False)
+    files_dir = tmp_path / "dev_tools" / "agent" / "skill_evals" / "nvflare-fixture-skill" / "files"
     files_dir.mkdir()
     files_dir.joinpath("input.py").write_text("print('hello')\n", encoding="utf-8")
     _symlink_dir_or_skip(files_dir, files_dir / "loop")
@@ -649,8 +649,10 @@ def _write_skill(
         f"{body}",
         encoding="utf-8",
     )
-    evals_dir = skill_dir / "evals"
-    evals_dir.mkdir()
+    # Eval suites live outside the skill tree, one dir per skill name under the
+    # default eval root beside the skills root (dev_tools/agent/skill_evals/).
+    evals_dir = root.parent / "dev_tools" / "agent" / "skill_evals" / name
+    evals_dir.mkdir(parents=True)
     if write_fixture:
         files_dir = evals_dir / "files"
         files_dir.mkdir()
@@ -681,7 +683,7 @@ def _default_evals(name, *, category="conversion", adjacent_negative=True, inclu
                 "id": "positive",
                 "prompt": "Convert PyTorch training code into a FLARE job.",
                 "expected_output": "A validated FLARE job.",
-                "files": ["evals/files/input.py"],
+                "files": ["files/input.py"],
                 "assertions": ["Uses the expected skill."],
                 "nvflare": {
                     "expected_skill": name,

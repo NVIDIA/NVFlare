@@ -30,9 +30,7 @@ from typing import Optional
 import nvflare
 from nvflare.tool.agent.skill_manifest import (
     IGNORED_SKILL_FILE_NAMES,
-    MANIFEST_CONTENT_MODE_RELEASE,
     MANIFEST_FILE_NAME,
-    RELEASE_SKILL_FILE_EXCLUDE_NAMES,
     SHARED_SKILL_REFERENCE_DIR,
     build_skill_manifest,
     load_manifest,
@@ -612,8 +610,8 @@ def _first_symlink_in_tree(root_dir: Path) -> Optional[Path]:
 
 
 def _copy_exclude_names(source: SkillSource) -> set[str]:
-    if source.manifest.get("content_mode") == MANIFEST_CONTENT_MODE_RELEASE:
-        return set(RELEASE_SKILL_FILE_EXCLUDE_NAMES)
+    # Eval/QA content lives outside skills/, so installs only skip byte-code and
+    # caches regardless of source type.
     return set(IGNORED_SKILL_FILE_NAMES)
 
 

@@ -71,7 +71,7 @@ def test_inspector_recommendations_are_available_in_seed_manifest(tmp_path):
 
 
 def test_convert_pytorch_eval_requires_declared_primary_metric_alignment():
-    evals_path = _repo_root() / "skills" / "nvflare-convert-pytorch" / "evals" / "evals.json"
+    evals_path = _repo_root() / "dev_tools" / "agent" / "skill_evals" / "nvflare-convert-pytorch" / "evals.json"
     data = json.loads(evals_path.read_text(encoding="utf-8"))
     case = next(item for item in data["evals"] if item["id"] == "pytorch-convert-basic")
     behaviors = {
@@ -85,7 +85,7 @@ def test_convert_pytorch_eval_requires_declared_primary_metric_alignment():
     assert "reports that scalar as validation evidence" in description
 
 
-def test_seed_bundle_copy_includes_analysis_fixtures_by_default(tmp_path):
+def test_seed_bundle_copy_excludes_eval_suites(tmp_path):
     skills_root = _repo_root() / "skills"
     bundle_root = tmp_path / "bundle"
 
@@ -97,8 +97,9 @@ def test_seed_bundle_copy_includes_analysis_fixtures_by_default(tmp_path):
     _assert_convert_pytorch_payload(bundle_root / "nvflare-convert-pytorch")
     _assert_convert_lightning_payload(bundle_root / "nvflare-convert-lightning")
     _assert_diagnose_runtime_payload(bundle_root / "nvflare-diagnose-job")
-    _assert_analysis_payload_present(bundle_root / "nvflare-diagnose-job")
-    assert bundle_root.joinpath("nvflare-convert-pytorch", "evals", "evals.json").is_file()
+    # Eval suites live in dev_tools/agent/skill_evals/, never in the bundle.
+    _assert_analysis_payload_filtered(bundle_root / "nvflare-diagnose-job")
+    assert not bundle_root.joinpath("nvflare-convert-pytorch", "evals").exists()
 
 
 def test_seed_skills_install_into_codex_and_claude_temp_targets(tmp_path):
@@ -121,8 +122,8 @@ def test_seed_skills_install_into_codex_and_claude_temp_targets(tmp_path):
     _assert_convert_lightning_payload(claude_target / "nvflare-convert-lightning")
     _assert_diagnose_runtime_payload(codex_target / "nvflare-diagnose-job")
     _assert_diagnose_runtime_payload(claude_target / "nvflare-diagnose-job")
-    _assert_analysis_payload_present(codex_target / "nvflare-diagnose-job")
-    _assert_analysis_payload_present(claude_target / "nvflare-diagnose-job")
+    _assert_analysis_payload_filtered(codex_target / "nvflare-diagnose-job")
+    _assert_analysis_payload_filtered(claude_target / "nvflare-diagnose-job")
 
     codex_list = list_skills(agent="codex", target_dir=codex_target, source=source)
     claude_list = list_skills(agent="claude", target_dir=claude_target, source=source)
@@ -133,9 +134,7 @@ def test_seed_skills_install_into_codex_and_claude_temp_targets(tmp_path):
 def test_released_seed_skills_install_without_analysis_fixtures(tmp_path):
     skills_root = _repo_root() / "skills"
     bundle_root = tmp_path / "bundle"
-    manifest = copy_released_skills_to_bundle(
-        skills_root, bundle_root, nvflare_version="2.8.0", include_analysis_files=False
-    )
+    manifest = copy_released_skills_to_bundle(skills_root, bundle_root, nvflare_version="2.8.0")
     source = SkillSource(source_type="wheel", root=bundle_root, manifest=manifest)
     target = tmp_path / "target"
 
@@ -164,11 +163,10 @@ def test_seed_skills_dry_run_selects_all_seed_skills_without_copying(tmp_path):
 
     assert plan["applied"] is False
     assert SEED_SKILLS.issubset({entry["name"] for entry in plan["skills"]})
-    assert any(
-        Path(file_plan["source"]).name == "transfer_progress_timeout.log"
-        for entry in plan["skills"]
-        if entry["name"] == "nvflare-diagnose-job"
-        for file_plan in entry["files"]
+    # Eval fixtures are not part of the shipped skill source, so a dry-run plan
+    # copies only runtime files (SKILL.md, references), never eval logs.
+    assert all(
+        "evals" not in Path(file_plan["source"]).parts for entry in plan["skills"] for file_plan in entry["files"]
     )
     assert not target.exists()
 
@@ -202,11 +200,10 @@ def test_setup_build_py_can_disable_packaged_agent_skills(tmp_path):
 
 
 @pytest.mark.xdist_group(name="setup_py_packaging")
-def test_setup_build_py_release_filters_analysis_fixtures(tmp_path):
+def test_setup_build_py_packages_seed_skills_without_eval_suites(tmp_path):
     repo_root = _repo_root()
     build_lib = tmp_path / "build_lib"
     env = os.environ.copy()
-    env["NVFL_RELEASE"] = "1"
 
     result = subprocess.run(
         [sys.executable, "setup.py", "build_py", "--build-lib", str(build_lib)],
@@ -222,7 +219,7 @@ def test_setup_build_py_release_filters_analysis_fixtures(tmp_path):
     bundle_root = build_lib / "nvflare" / "tool" / "agent" / "bundled_skills"
     manifest = json.loads(bundle_root.joinpath("manifest.json").read_text(encoding="utf-8"))
     assert manifest["source_type"] == "wheel"
-    assert manifest["content_mode"] == "release"
+    assert "content_mode" not in manifest
     assert SEED_SKILLS.issubset({skill["name"] for skill in manifest["skills"]})
     _assert_diagnose_runtime_payload(bundle_root / "nvflare-diagnose-job")
     _assert_analysis_payload_filtered(bundle_root / "nvflare-diagnose-job")
@@ -350,14 +347,8 @@ def _assert_diagnose_runtime_payload(skill_dir: Path) -> None:
     assert skill_dir.joinpath("references", "failure-patterns.md").is_file()
 
 
-def _assert_analysis_payload_present(skill_dir: Path) -> None:
-    assert skill_dir.joinpath("evals", "evals.json").is_file()
-    assert skill_dir.joinpath("evals", "files", "poc_component_not_authorized.log").is_file()
-    assert skill_dir.joinpath("evals", "files", "simulation_import_error.log").is_file()
-    assert skill_dir.joinpath("evals", "files", "transfer_progress_timeout.log").is_file()
-
-
 def _assert_analysis_payload_filtered(skill_dir: Path) -> None:
+    # Eval suites are never packaged into a skill; they live in dev_tools/agent/skill_evals/.
     assert not skill_dir.joinpath("evals").exists()
 
 

@@ -44,7 +44,7 @@ def test_process_metric_lint_requires_process_metrics(tmp_path):
         },
     )
 
-    result = run_v1_lints(tmp_path, checks=["skill-process-metric-lint"])
+    result = run_v1_lints(tmp_path, evals_root=tmp_path / "_skill_evals", checks=["skill-process-metric-lint"])
 
     assert result["status"] == "failed"
     assert result["findings"][0]["code"] == "skill-process-metric-missing"
@@ -78,7 +78,7 @@ def test_process_metric_lint_accepts_process_metrics(tmp_path):
         },
     )
 
-    result = run_v1_lints(tmp_path, checks=["skill-process-metric-lint"])
+    result = run_v1_lints(tmp_path, evals_root=tmp_path / "_skill_evals", checks=["skill-process-metric-lint"])
 
     assert result["status"] == "ok"
     assert result["findings"] == []
@@ -100,7 +100,7 @@ def test_helper_script_json_warning_applies_only_to_python_helpers(tmp_path):
     tests_dir.mkdir()
     tests_dir.joinpath("emit_json_test.txt").write_text("shell helper test placeholder\n", encoding="utf-8")
 
-    result = run_v1_lints(tmp_path, checks=["skill-helper-script-lint"])
+    result = run_v1_lints(tmp_path, evals_root=tmp_path / "_skill_evals", checks=["skill-helper-script-lint"])
 
     assert not any(finding.get("code") == "skill-helper-json-unclear" for finding in result["findings"])
 
@@ -127,7 +127,7 @@ def test_helper_script_json_warning_ignores_python_json_reader(tmp_path):
     tests_dir.mkdir()
     tests_dir.joinpath("read_json_test.txt").write_text("python helper test placeholder\n", encoding="utf-8")
 
-    result = run_v1_lints(tmp_path, checks=["skill-helper-script-lint"])
+    result = run_v1_lints(tmp_path, evals_root=tmp_path / "_skill_evals", checks=["skill-helper-script-lint"])
 
     assert not any(finding.get("code") == "skill-helper-json-unclear" for finding in result["findings"])
 
@@ -137,7 +137,7 @@ def test_trigger_overlap_limit_uses_current_environment(tmp_path, monkeypatch):
     _write_skill(tmp_path, "nvflare-convert-right", {"skill_name": "nvflare-convert-right", "evals": []})
     monkeypatch.setenv("NVFLARE_AGENT_MAX_TRIGGER_OVERLAP_SKILLS", "1")
 
-    result = run_v1_lints(tmp_path, checks=["skill-trigger-overlap-lint"])
+    result = run_v1_lints(tmp_path, evals_root=tmp_path / "_skill_evals", checks=["skill-trigger-overlap-lint"])
 
     assert result["skipped_checks"][0]["id"] == "skill-trigger-overlap-lint"
     assert "limit is 1" in result["skipped_checks"][0]["reason"]
@@ -172,7 +172,7 @@ def test_validate_skills_reuses_loaded_skill_records(tmp_path, monkeypatch):
 
     monkeypatch.setattr(lints, "_load_skill_records", counting_load)
 
-    result = validate_skills(tmp_path, skill_name="nvflare-test-skill")
+    result = validate_skills(tmp_path, evals_root=tmp_path / "_skill_evals", skill_name="nvflare-test-skill")
 
     assert result["requested_skill"] == "nvflare-test-skill"
     assert load_count == 1
@@ -197,7 +197,9 @@ def _write_skill(root, name, evals):
         "Use when testing skill process metrics.\n",
         encoding="utf-8",
     )
-    evals_dir = skill_dir / "evals"
-    evals_dir.mkdir()
+    # Eval suites live outside the skill tree; tests pass evals_root=<root>/_skill_evals
+    # (the leading underscore keeps it from being scanned as a skill dir).
+    evals_dir = root / "_skill_evals" / name
+    evals_dir.mkdir(parents=True)
     evals_dir.joinpath("evals.json").write_text(json.dumps(evals), encoding="utf-8")
     return skill_dir

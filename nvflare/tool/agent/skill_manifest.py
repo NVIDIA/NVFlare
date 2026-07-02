@@ -26,11 +26,10 @@ from typing import Iterable, Optional
 
 MANIFEST_FILE_NAME = "manifest.json"
 MANIFEST_SCHEMA_VERSION = "1"
+# Eval suites and other repo-only QA content live outside skills/ (in
+# dev_tools/agent/skill_evals/), so packaging only needs to skip byte-code and
+# caches. There is no dev-vs-release content split.
 IGNORED_SKILL_FILE_NAMES = {"__pycache__", "*.pyc", "*.pyo"}
-ANALYSIS_ONLY_SKILL_FILE_NAMES = {"evals"}
-RELEASE_SKILL_FILE_EXCLUDE_NAMES = IGNORED_SKILL_FILE_NAMES | ANALYSIS_ONLY_SKILL_FILE_NAMES
-MANIFEST_CONTENT_MODE_DEV = "dev"
-MANIFEST_CONTENT_MODE_RELEASE = "release"
 SHARED_SKILL_REFERENCE_DIR = "_shared"
 HASH_READ_CHUNK_BYTES = 1024 * 1024
 
@@ -68,13 +67,12 @@ def build_skill_manifest(
     *,
     source_type: str,
     nvflare_version: str = "",
-    include_analysis_files: bool = True,
 ) -> dict:
     """Build the released-skill manifest for a skills source root."""
     root = Path(skills_root)
     skills = []
     findings = []
-    source_hash_exclude_names = _source_hash_exclude_names(include_analysis_files)
+    source_hash_exclude_names = set(IGNORED_SKILL_FILE_NAMES)
     if root.is_dir():
         for child in sorted(root.iterdir(), key=lambda p: p.name):
             if _should_skip_skill_dir(child):
@@ -117,7 +115,6 @@ def build_skill_manifest(
     return {
         "schema_version": MANIFEST_SCHEMA_VERSION,
         "source_type": source_type,
-        "content_mode": MANIFEST_CONTENT_MODE_DEV if include_analysis_files else MANIFEST_CONTENT_MODE_RELEASE,
         "nvflare_version": nvflare_version,
         "skills": skills,
         "findings": findings,
@@ -126,12 +123,6 @@ def build_skill_manifest(
 
 def _should_skip_skill_dir(path: Path) -> bool:
     return path.name.startswith(".") or path.name.startswith("_") or not path.is_dir()
-
-
-def _source_hash_exclude_names(include_analysis_files: bool) -> set[str]:
-    if not include_analysis_files:
-        return set(RELEASE_SKILL_FILE_EXCLUDE_NAMES)
-    return set(IGNORED_SKILL_FILE_NAMES)
 
 
 def write_manifest(manifest: dict, manifest_path: Path | str) -> None:
@@ -174,7 +165,6 @@ def copy_released_skills_to_bundle(
     bundle_root: Path | str,
     *,
     nvflare_version: str = "",
-    include_analysis_files: bool = True,
 ) -> dict:
     """Copy valid released skills and write their manifest into a package bundle directory."""
     source_root = Path(skills_root)
@@ -185,9 +175,8 @@ def copy_released_skills_to_bundle(
         source_root,
         source_type="wheel",
         nvflare_version=nvflare_version,
-        include_analysis_files=include_analysis_files,
     )
-    ignore_names = IGNORED_SKILL_FILE_NAMES if include_analysis_files else RELEASE_SKILL_FILE_EXCLUDE_NAMES
+    ignore_names = set(IGNORED_SKILL_FILE_NAMES)
     _copy_shared_references_to_bundle(source_root, target_root, ignore_names=ignore_names)
     for skill in manifest["skills"]:
         shutil.copytree(

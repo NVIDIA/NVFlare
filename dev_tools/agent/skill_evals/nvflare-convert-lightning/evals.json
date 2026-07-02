@@ -6,8 +6,8 @@
       "prompt": "Here is my PyTorch Lightning training code. Convert it to a FLARE federated job, run it with 3 simulated sites using FedAvg for 3 rounds, and show me validation results.",
       "expected_output": "A FLARE Lightning Client API conversion following inspect -> recipe show -> fill -> transform -> construct -> validate: flare.patch(trainer) owns model exchange, standard client.py/job.py/model.py layout, a runnable job.py that constructs the PyTorch FedAvg recipe with explicit class_path model config for 3 simulated sites and 3 rounds, local validation evidence, metric evidence, and an export attempt under /tmp/nvflare/job_config when supported.",
       "files": [
-        "evals/files/hello-lightning/train.py",
-        "evals/files/hello-lightning/model.py"
+        "files/hello-lightning/train.py",
+        "files/hello-lightning/model.py"
       ],
       "assertions": [
         "The agent runs nvflare agent inspect before editing and extracts source facts statically without importing or executing user training modules during planning.",
@@ -143,8 +143,8 @@
       "prompt": "Convert this Lightning training code to a FLARE FedAvg job over 2 simulated sites for 2 rounds. I want validation metrics for the global model each round.",
       "expected_output": "A FLARE Lightning Client API conversion that keeps evaluation inside Lightning: preserves validation_step and the validation dataloader, calls trainer.validate(model, ...) on the received global model before trainer.fit inside the round loop, keeps metrics logged through self.log visible in trainer callback metrics, and does not generate a raw PyTorch model.eval()/torch.no_grad() loop.",
       "files": [
-        "evals/files/hello-lightning/train.py",
-        "evals/files/hello-lightning/model.py"
+        "files/hello-lightning/train.py",
+        "files/hello-lightning/model.py"
       ],
       "assertions": [
         "The agent preserves the source validation_step and validation dataloader.",
@@ -187,8 +187,8 @@
       "prompt": "Convert this PyTorch Lightning training code to a FLARE FedAvg job over 2 sites. The model needs a vocab_size argument built from the data.",
       "expected_output": "A FLARE Lightning Client API conversion that pins one shared vocab_size value for server and client model construction, passes the recipe model as an explicit class_path plus args config rather than a live LightningModule instance, patches the trainer with flare.patch, validates with python job.py when dependencies are available, and reports the shared constructor value and validation evidence.",
       "files": [
-        "evals/files/vocab-lightning/train.py",
-        "evals/files/vocab-lightning/model.py"
+        "files/vocab-lightning/train.py",
+        "files/vocab-lightning/model.py"
       ],
       "assertions": [
         "The agent pins a shared vocab_size for both server recipe model config and client model construction.",
@@ -231,8 +231,8 @@
       "prompt": "My Lightning Trainer uses DDP across multiple GPUs. Federate it with FedAvg and keep multi-GPU training on each site.",
       "expected_output": "The agent treats the DDP evidence as a high-impact runtime decision: it confirms the selected recipe documents an external-process launch parameter with nvflare recipe show before using it, applies the rank-synchronized round loop when the documented external-process path is used, keeps the patched trainer in charge of exchange, and asks or fails closed if the recipe does not document a launch parameter for DDP.",
       "files": [
-        "evals/files/hello-lightning/train.py",
-        "evals/files/hello-lightning/model.py"
+        "files/hello-lightning/train.py",
+        "files/hello-lightning/model.py"
       ],
       "assertions": [
         "The agent observes and reports the DDP/multi-GPU evidence as a high-impact runtime decision.",
@@ -271,8 +271,8 @@
       "prompt": "I just want to evaluate this Lightning checkpoint across 3 sites and collect validation metrics, no training updates.",
       "expected_output": "The agent treats this as evaluation-only, selects the PyTorch FedEval recipe, patches the trainer and runs trainer.validate/test in the round loop without federated training updates, treats the repo-supplied checkpoint as untrusted input requiring safe handling, and reports per-round validation metrics and result paths.",
       "files": [
-        "evals/files/hello-lightning/train.py",
-        "evals/files/hello-lightning/model.py"
+        "files/hello-lightning/train.py",
+        "files/hello-lightning/model.py"
       ],
       "assertions": [
         "The agent selects the PyTorch FedEval recipe for evaluation-only workflows.",

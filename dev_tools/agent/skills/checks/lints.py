@@ -15,10 +15,13 @@
 """Deterministic v1 admission lints for NVFLARE-owned agent skills.
 
 DESIGN INVARIANT -- lint engine independence (do not revert):
-This engine MUST be self-contained over the ``skills/`` tree. It must NOT read
-``docs/design/*.md`` or rely on offline-only catalog metadata. ``SKILL.md`` is a
-runtime artifact loaded by the agent; fields validated here must be runtime or
-public skill metadata, not private lint scratch data.
+This engine reads only the ``skills/`` runtime tree and the repo-local eval
+suites under ``evals_root`` (``dev_tools/agent/skill_evals/``, one dir per skill
+name). It must NOT read ``docs/design/*.md`` or rely on offline-only catalog
+metadata. ``SKILL.md`` is a runtime artifact loaded by the agent; fields
+validated here must be runtime or public skill metadata, not private lint
+scratch data. ``evals_root`` is dev/QA tooling input, distinct from the
+forbidden ``docs_root``.
 
 Concretely:
 - Group skills for ``skill-trigger-overlap-lint`` by deterministic skill-name
@@ -195,6 +198,9 @@ class SkillRecord:
     text: str
     body: str
     evals: list[dict[str, Any]]
+    # Eval content lives outside the shipped skill tree (repo-only QA data).
+    # evals_dir is the skill's eval suite root; evals_path is its evals.json.
+    evals_dir: Path
     evals_path: Path
     evals_error: Optional[str]
 
@@ -207,6 +213,7 @@ class SkillRecord:
 @dataclass
 class LintContext:
     skills_root: Path
+    evals_root: Path
     max_skill_md_lines: int
     records: list[SkillRecord]
     findings: list[LintFinding]
@@ -216,21 +223,30 @@ class LintContext:
 def run_v1_lints(
     skills_root: Path | str = "skills",
     *,
+    evals_root: Path | str | None = None,
     checks: Optional[Iterable[str]] = None,
     max_skill_md_lines: int = SKILL_MD_MAX_LINES,
 ) -> dict[str, Any]:
     """Run deterministic v1 admission lints and return structured findings."""
     result, _records = _run_v1_lints_with_records(
         skills_root,
+        evals_root=evals_root,
         checks=checks,
         max_skill_md_lines=max_skill_md_lines,
     )
     return result
 
 
+def _default_evals_root(skills_root: Path) -> Path:
+    # Eval suites live in a repo-local dev-tools tree, one directory per skill
+    # name, alongside the skills source root (not shipped in installed skills).
+    return skills_root.resolve().parent / "dev_tools" / "agent" / "skill_evals"
+
+
 def _run_v1_lints_with_records(
     skills_root: Path | str = "skills",
     *,
+    evals_root: Path | str | None = None,
     checks: Optional[Iterable[str]] = None,
     max_skill_md_lines: int = SKILL_MD_MAX_LINES,
 ) -> tuple[dict[str, Any], list[SkillRecord]]:
@@ -240,10 +256,12 @@ def _run_v1_lints_with_records(
         raise ValueError(f"unknown agent skill lint check(s): {', '.join(unknown)}")
 
     root = Path(skills_root)
+    evals_root_path = Path(evals_root) if evals_root is not None else _default_evals_root(root)
     findings: list[LintFinding] = []
-    records = _load_skill_records(root, findings)
+    records = _load_skill_records(root, evals_root_path, findings)
     context = LintContext(
         skills_root=root,
+        evals_root=evals_root_path,
         max_skill_md_lines=max_skill_md_lines,
         records=records,
         findings=findings,
@@ -298,12 +316,14 @@ def _run_v1_lints_with_records(
 def validate_skills(
     skills_root: Path | str = "skills",
     *,
+    evals_root: Path | str | None = None,
     skill_name: Optional[str] = None,
     max_skill_md_lines: int = SKILL_MD_MAX_LINES,
 ) -> dict[str, Any]:
     """Compatibility wrapper for callers that validate one skill source root."""
     result, records = _run_v1_lints_with_records(
         skills_root,
+        evals_root=evals_root,
         max_skill_md_lines=max_skill_md_lines,
     )
 
@@ -345,7 +365,7 @@ def _summary_from_counts(severity_counts: Counter, finding_count: int, skill_cou
     }
 
 
-def _load_skill_records(skills_root: Path, findings: list[LintFinding]) -> list[SkillRecord]:
+def _load_skill_records(skills_root: Path, evals_root: Path, findings: list[LintFinding]) -> list[SkillRecord]:
     if not skills_root.exists():
         findings.append(
             _finding(
@@ -381,17 +401,21 @@ def _load_skill_records(skills_root: Path, findings: list[LintFinding]) -> list[
         text = _read_bounded_text(skill_file) if skill_file.is_file() else None
         metadata = _try_parse_frontmatter(skill_file) if text is not None else {}
         text = text or ""
-        evals_path = child / "evals" / "evals.json"
+        skill_name = str(metadata.get("name") or child.name)
+        # Eval suites live outside the shipped skill tree, one dir per skill name.
+        evals_dir = evals_root / skill_name
+        evals_path = evals_dir / "evals.json"
         evals, evals_error = _load_evals(evals_path)
         records.append(
             SkillRecord(
-                name=str(metadata.get("name") or child.name),
+                name=skill_name,
                 skill_dir=child,
                 skill_file=skill_file,
                 metadata=metadata,
                 text=text,
                 body=_skill_body(text),
                 evals=evals,
+                evals_dir=evals_dir,
                 evals_path=evals_path,
                 evals_error=evals_error,
             )
@@ -863,17 +887,17 @@ def _lint_fixtures(context: LintContext) -> None:
                 )
 
             for rel_path in files:
-                fixture_path = record.skill_dir / str(rel_path)
+                fixture_path = record.evals_dir / str(rel_path)
                 resolved_fixture_path = fixture_path.resolve(strict=False)
-                resolved_skill_dir = record.skill_dir.resolve()
-                if not resolved_fixture_path.is_relative_to(resolved_skill_dir):
+                resolved_evals_dir = record.evals_dir.resolve()
+                if not resolved_fixture_path.is_relative_to(resolved_evals_dir):
                     context.findings.append(
                         _finding(
                             "skill-fixture-lint",
                             FINDING_ERROR,
                             record.evals_path,
-                            f"eval fixture path escapes skill directory: {rel_path}",
-                            "Use fixture paths relative to the skill directory.",
+                            f"eval fixture path escapes eval suite directory: {rel_path}",
+                            "Use fixture paths relative to the eval suite directory.",
                             code="skill-fixture-path-escape",
                             skill=record.name,
                         )
@@ -892,15 +916,15 @@ def _lint_fixtures(context: LintContext) -> None:
                         )
                     )
 
-        files_dir = record.skill_dir / "evals" / "files"
-        if _has_files(files_dir) and not _has_fixture_notes(record.skill_dir):
+        files_dir = record.evals_dir / "files"
+        if _has_files(files_dir) and not _has_fixture_notes(record.evals_dir):
             context.findings.append(
                 _finding(
                     "skill-fixture-lint",
                     FINDING_ERROR,
                     files_dir,
                     "eval fixtures are missing source/provenance notes",
-                    "Add evals/README.md, evals/files/README.md, or evals/files/SOURCE.md.",
+                    "Add README.md, files/README.md, or files/SOURCE.md in the eval suite dir.",
                     code="skill-fixture-notes-missing",
                     skill=record.name,
                 )
@@ -1347,11 +1371,11 @@ def _iter_files_no_follow(root: Path) -> Iterable[Path]:
                 yield path
 
 
-def _has_fixture_notes(skill_dir: Path) -> bool:
+def _has_fixture_notes(evals_dir: Path) -> bool:
     note_paths = (
-        skill_dir / "evals" / "README.md",
-        skill_dir / "evals" / "files" / "README.md",
-        skill_dir / "evals" / "files" / "SOURCE.md",
+        evals_dir / "README.md",
+        evals_dir / "files" / "README.md",
+        evals_dir / "files" / "SOURCE.md",
     )
     return any(path.is_file() for path in note_paths)
 
