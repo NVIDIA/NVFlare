@@ -36,7 +36,7 @@ def obtain_step_ca_admin_cert_files(config: Mapping, root_ca_file: str) -> Ephem
         cert_path=cert_path,
         key_path=key_path,
     )
-    command_timeout = _command_timeout(config)
+    command_timeout = float(config.get("command_timeout") or DEFAULT_STEP_CA_COMMAND_TIMEOUT)
 
     try:
         _run_step(command, timeout=command_timeout)
