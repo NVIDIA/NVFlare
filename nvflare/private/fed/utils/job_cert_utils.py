@@ -41,6 +41,14 @@ JOB_KEY_FILE_NAME = "job.key"
 
 JOB_CERT_VALID_DAYS = 30
 
+# leaf notBefore is backdated to tolerate clock skew between the issuing
+# server and the sites that validate the cert seconds later
+JOB_CERT_BACKDATE = datetime.timedelta(minutes=5)
+
+# below this remaining job-CA validity, refuse to issue so jobs fall back to
+# site certificates instead of getting certs that expire mid-run
+JOB_CA_MIN_REMAINING = datetime.timedelta(hours=1)
+
 # keys of the credential dict pushed to clients in the deploy message
 _PROP_CERT = "cert"
 _PROP_KEY = "key"
@@ -78,22 +86,40 @@ def pick_cell_credential(config: dict) -> Tuple[str, str]:
     """Cert/key for a job cell: the per-job credential when present, else the site credential.
 
     Preferring the job credential means the job cell never needs the site's long-lived key.
+    The job credential is used only when both parts are present, so a partial config cannot
+    pair a job cert with the site key.
     """
-    cert = config.get(SecureTrainConst.JOB_CERT) or config[SecureTrainConst.SSL_CERT]
-    key = config.get(SecureTrainConst.JOB_PRIVATE_KEY) or config[SecureTrainConst.PRIVATE_KEY]
-    return cert, key
+    job_cert = config.get(SecureTrainConst.JOB_CERT)
+    job_key = config.get(SecureTrainConst.JOB_PRIVATE_KEY)
+    if job_cert and job_key:
+        return job_cert, job_key
+    return config[SecureTrainConst.SSL_CERT], config[SecureTrainConst.PRIVATE_KEY]
 
 
 def pack_job_cert_header(cert_chain_pem: bytes, key_pem: bytes) -> dict:
     return {_PROP_CERT: cert_chain_pem.decode("ascii"), _PROP_KEY: key_pem.decode("ascii")}
 
 
-def unpack_job_cert_header(header: dict) -> Optional[Tuple[bytes, bytes]]:
+def unpack_job_cert_header(header) -> Optional[Tuple[bytes, bytes]]:
+    """Decode a pushed job credential; None for anything malformed (e.g. version skew)."""
+    if not isinstance(header, dict):
+        return None
     cert_pem = header.get(_PROP_CERT)
     key_pem = header.get(_PROP_KEY)
-    if not (cert_pem and key_pem):
+    if not (isinstance(cert_pem, str) and isinstance(key_pem, str) and cert_pem and key_pem):
         return None
-    return cert_pem.encode("ascii"), key_pem.encode("ascii")
+    try:
+        return cert_pem.encode("ascii"), key_pem.encode("ascii")
+    except UnicodeEncodeError:
+        return None
+
+
+def has_job_id_extension(cert: x509.Certificate) -> bool:
+    try:
+        cert.extensions.get_extension_for_oid(JOB_ID_EXTENSION_OID)
+        return True
+    except x509.ExtensionNotFound:
+        return False
 
 
 def get_job_id_from_cert(cert: x509.Certificate) -> Optional[str]:
@@ -132,7 +158,7 @@ class JobCertIssuer:
             issuer=Identity(self.ca_cn),
             signing_pri_key=self.ca_key,
             subject_pub_key=pub_key,
-            not_valid_before=now,
+            not_valid_before=now - JOB_CERT_BACKDATE,
             not_valid_after=not_valid_after,
             extra_extensions=[(job_id_ext, False)],
         )
@@ -141,7 +167,7 @@ class JobCertIssuer:
 
 
 def load_job_cert_issuer(startup_dir: str) -> Optional[JobCertIssuer]:
-    """Create a JobCertIssuer from the startup kit's job CA, or None if absent or expired.
+    """Create a JobCertIssuer from the startup kit's job CA, or None if absent or near expiry.
 
     The job CA is provisioned only when CertBuilder's enable_job_ca option is on; without it,
     job cells fall back to site certificates.
@@ -153,11 +179,11 @@ def load_job_cert_issuer(startup_dir: str) -> Optional[JobCertIssuer]:
 
     with open(cert_path, "rb") as f:
         ca_cert_pem = f.read()
-    issuer = JobCertIssuer(ca_cert_pem, load_private_key_file(key_path))
-    if issuer.ca_cert.not_valid_after_utc <= datetime.datetime.now(datetime.timezone.utc):
+    ca_cert = load_crt_bytes(ca_cert_pem)
+    if ca_cert.not_valid_after_utc <= datetime.datetime.now(datetime.timezone.utc) + JOB_CA_MIN_REMAINING:
         logger.warning(
-            f"job CA expired at {issuer.ca_cert.not_valid_after_utc.isoformat()}; "
+            f"job CA expires at {ca_cert.not_valid_after_utc.isoformat()}; "
             "job cells will fall back to site certificates"
         )
         return None
-    return issuer
+    return JobCertIssuer(ca_cert_pem, load_private_key_file(key_path))

@@ -79,16 +79,24 @@ re-provisioning; the feature simply stays off.
 ## Runtime Issuance (SP)
 
 A `JobCertIssuer` in the SP process loads `job_ca.crt` / `job_ca.key` from the
-startup kit. If the files are absent the issuer is disabled and the whole
-feature falls back to current behavior.
+startup kit. The issuer is only used in secure mode; it is disabled — and the
+whole feature falls back to current behavior — when the files are absent or
+when the job CA has less than a minimum remaining validity (so jobs never get
+certs that expire mid-run).
 
 During job deployment (`JobRunner._deploy_job`), for each participant the
 issuer generates an RSA keypair and a leaf certificate:
 
-- subject `CN=<site name>` (the participant name, `server` included)
+- the subject CN matches the CN the site's own certificate presents: for the
+  SJ it is read from the server certificate in the startup kit, and for each
+  CJ it is the registered client name (registration enforces that this equals
+  the client cert's CN) — so whatever identity enforcement passed with site
+  certs passes with job certs
 - a job-ID extension identifying the job
-- `notAfter` = deploy time + a bounded validity (default 30 days), clamped to
-  the job CA's own expiry
+- `notBefore` backdated a few minutes to tolerate clock skew between the
+  issuing server and the sites that validate the cert seconds later
+- `notAfter` = issue time + a fixed validity (30 days), clamped to the job
+  CA's own expiry
 
 The issued credential is a PEM bundle: leaf cert followed by `job_ca.crt`
 (so TLS peers can build the chain to the root), plus the private key PEM.
@@ -130,12 +138,16 @@ At job-process startup, the starter configers check the job run directory for
 the process security config under new keys (`job_ssl_cert`,
 `job_ssl_private_key`) alongside — not replacing — the site cert entries.
 
-Only the cell creation paths prefer the job credential:
+Only the cell creation paths prefer the job credential (and only when both the
+cert and the key are present, so a partial config can never pair a job cert
+with the site key):
 
 - `BaseServer.create_job_cell()` uses the job cert/key for the SJ cell when
   configured.
 - `FederatedClientBase._create_cell()` uses the job cert/key for the CJ cell
-  when configured.
+  when configured. The CJ also pins its server-role credential to the job
+  cert; otherwise, on listener-enabled sites, the site's server cert would be
+  back-filled from the startup kit and preferred by message-level crypto.
 
 `ssl_root_cert` remains `rootCA.pem` everywhere. All other consumers of the
 site credential (auth-token verification, identity assertion) are unchanged in

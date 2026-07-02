@@ -27,7 +27,7 @@ from nvflare.lighter.utils import (
     verify_cert_chain,
     verify_content,
 )
-from nvflare.private.fed.utils.job_cert_utils import get_job_id_from_cert
+from nvflare.private.fed.utils.job_cert_utils import has_job_id_extension
 from nvflare.security.logging import secure_format_exception
 
 
@@ -145,7 +145,7 @@ class IdentityVerifier:
 
         # per-job certs are scoped to one job's cells; they must never assert
         # site/admin/server identity (registration, admin login, SP challenge)
-        if get_job_id_from_cert(asserter_cert) is not None:
+        if has_job_id_extension(asserter_cert):
             raise InvalidAsserterCert("job-scoped certificate cannot be used to assert site identity")
 
         # verify signature provided by the asserter

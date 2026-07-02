@@ -38,6 +38,7 @@ from nvflare.apis.job_scheduler_spec import DispatchInfo
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.lighter.constants import CertFileBasename
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
 from nvflare.lighter.utils import verify_folder_signature
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
@@ -46,6 +47,7 @@ from nvflare.private.fed.server.admin import check_client_replies
 from nvflare.private.fed.server.server_state import HotState
 from nvflare.private.fed.utils.app_deployer import AppDeployer
 from nvflare.private.fed.utils.fed_utils import extract_participants, require_signed_jobs, set_message_security_data
+from nvflare.private.fed.utils.identity_utils import get_cn_from_cert, load_cert_file
 from nvflare.private.fed.utils.job_cert_utils import load_job_cert_issuer, pack_job_cert_header, write_job_cert
 from nvflare.security.logging import secure_format_exception
 
@@ -164,7 +166,16 @@ class JobRunner(FLComponent):
         run_number = job.job_id
         fl_ctx.set_prop(FLContextKey.JOB_RUN_NUMBER, run_number)
         workspace = Workspace(root_dir=self.workspace_root, site_name=SiteType.SERVER)
-        job_cert_issuer = load_job_cert_issuer(workspace.get_startup_kit_dir())
+        job_cert_issuer = None
+        if fl_ctx.get_prop(FLContextKey.SECURE_MODE, False):
+            job_cert_issuer = load_job_cert_issuer(workspace.get_startup_kit_dir())
+        if job_cert_issuer:
+            # the SJ cert must present the CN of the site's server cert — that is the identity
+            # peers expect for server FQCNs (fl_ctx.get_identity_name() is the literal "server")
+            server_cert_path = os.path.join(workspace.get_startup_kit_dir(), f"{CertFileBasename.SERVER}.crt")
+            server_cn = get_cn_from_cert(load_cert_file(server_cert_path))
+            cert_pem, key_pem = job_cert_issuer.issue(server_cn, job.job_id)
+            write_job_cert(workspace.get_run_dir(job.job_id), cert_pem, key_pem)
 
         client_deploy_requests = {}
         client_token_to_name = {}
@@ -210,10 +221,6 @@ class JobRunner(FLComponent):
                         deploy_detail.append(f"server: {err}")
                         raise RuntimeError(f"UNSIGNED_JOB_REJECTED: {err}")
 
-                    if job_cert_issuer:
-                        cert_pem, key_pem = job_cert_issuer.issue(fl_ctx.get_identity_name(), job.job_id)
-                        write_job_cert(workspace.get_run_dir(job.job_id), cert_pem, key_pem)
-
                     self.log_info(
                         fl_ctx, f"Application {app_name} deployed to the server for job: {run_number}", fire_event=False
                     )
@@ -236,7 +243,9 @@ class JobRunner(FLComponent):
                     client_token_to_name[c.token] = c.name
                     if job_cert_issuer:
                         # each site must receive only its own job credential, so the
-                        # deploy message becomes per-site (the app bytes stay shared)
+                        # deploy message becomes per-site (the app bytes stay shared);
+                        # c.name equals the CN of the client's registered cert
+                        # (registration enforces CN == client name)
                         cert_pem, key_pem = job_cert_issuer.issue(c.name, job.job_id)
                         client_request = self._make_deploy_message(job, app_data, app_name, fl_ctx)
                         client_request.set_header(RequestHeader.JOB_CERT, pack_job_cert_header(cert_pem, key_pem))

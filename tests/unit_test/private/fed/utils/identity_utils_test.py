@@ -177,6 +177,21 @@ def test_identity_verifier_rejects_job_scoped_cert_chain(tmp_path):
         )
 
 
+def test_identity_verifier_rejects_job_extension_with_non_utf8_value(tmp_path):
+    # rejection must not depend on decoding the extension value
+    job_id_ext = x509.UnrecognizedExtension(JOB_ID_EXTENSION_OID, b"\xff\xfe\xfd")
+    root_cert, _root_key, client_cert, client_key = _make_root_and_client_certs(extra_extensions=[(job_id_ext, False)])
+    root_cert_path = tmp_path / "root.crt"
+    root_cert_path.write_bytes(serialize_cert(root_cert))
+    verifier = IdentityVerifier(str(root_cert_path))
+    signature = sign_content("client" + "nonce", client_key, return_str=False)
+
+    with pytest.raises(InvalidAsserterCert, match="job-scoped"):
+        verifier.verify_common_name(
+            "client", "nonce", client_cert, signature, expected_eku=ExtendedKeyUsageOID.CLIENT_AUTH
+        )
+
+
 def test_identity_verifier_rejects_job_extension_even_when_root_issued(tmp_path):
     # the rejection is keyed on the job-id extension, not the issuer
     job_id_ext = x509.UnrecognizedExtension(JOB_ID_EXTENSION_OID, b"job-123")

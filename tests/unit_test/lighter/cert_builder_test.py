@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import datetime
+import json
 import os
 import stat
 from unittest.mock import patch
@@ -26,7 +27,15 @@ from nvflare.lighter.impl.cert import CertBuilder
 from nvflare.lighter.impl.workspace import WorkspaceBuilder
 from nvflare.lighter.prov_utils import prepare_builders
 from nvflare.lighter.provisioner import Provisioner
-from nvflare.lighter.utils import load_crt, verify_cert
+from nvflare.lighter.utils import (
+    Identity,
+    generate_cert,
+    generate_keys,
+    load_crt,
+    load_private_key,
+    serialize_cert,
+    verify_cert,
+)
 
 
 def _make_project():
@@ -57,12 +66,12 @@ def _provision(workspace, cert_builder):
     return provisioner.provision(_make_project())
 
 
-def _server_cert(workspace):
-    return load_crt(str(workspace / "test-project" / "prod_00" / "server1" / "startup" / "server.crt"))
-
-
 def _kit_dir(workspace, participant_name):
     return workspace / "test-project" / "prod_00" / participant_name / "startup"
+
+
+def _server_cert(workspace):
+    return load_crt(str(_kit_dir(workspace, "server1") / "server.crt"))
 
 
 def test_default_root_validity_is_reported(tmp_path, capsys):
@@ -190,3 +199,34 @@ def test_job_ca_reused_on_reprovision(tmp_path):
 def test_rejects_invalid_enable_job_ca(value):
     with pytest.raises(ValueError, match="enable_job_ca must be a bool"):
         CertBuilder(enable_job_ca=value)
+
+
+def test_expired_job_ca_regenerated_on_reprovision(tmp_path):
+    workspace = tmp_path / "workspace"
+    _provision(workspace, CertBuilder(enable_job_ca=True))
+
+    state_file = next(workspace.glob("**/cert.json"))
+    state = json.loads(state_file.read_text())
+    root_key = load_private_key(state[CtxKey.ROOT_PRI_KEY])
+    subject = "job_ca.test-project"
+    now = datetime.datetime.now(datetime.timezone.utc)
+    _, expired_pub = generate_keys()
+    expired_cert = generate_cert(
+        Identity(subject),
+        Identity("test-project"),
+        root_key,
+        expired_pub,
+        ca=True,
+        ca_path_length=0,
+        not_valid_before=now - datetime.timedelta(days=2),
+        not_valid_after=now - datetime.timedelta(days=1),
+    )
+    state[subject]["cert"] = serialize_cert(expired_cert).decode("ascii")
+    state_file.write_text(json.dumps(state))
+
+    second_ctx = _provision(workspace, CertBuilder(enable_job_ca=True))
+
+    assert not second_ctx.get(CtxKey.BUILD_ERROR)
+    new_cert = load_crt(str(_kit_dir(workspace, "server1") / ProvFileName.JOB_CA_CERT))
+    assert new_cert.serial_number != expired_cert.serial_number
+    assert new_cert.not_valid_after_utc > now

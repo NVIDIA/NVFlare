@@ -30,7 +30,6 @@ from nvflare.lighter.utils import (
     generate_cert,
     generate_keys,
     load_crt_bytes,
-    load_private_key,
     serialize_cert,
     serialize_pri_key,
     write_pri_key_file,
@@ -271,10 +270,7 @@ class CertBuilder(Builder):
         dest_dir = ctx.get_kit_dir(participant)
         with open(os.path.join(dest_dir, f"{base_name}.crt"), "wb") as f:
             f.write(serialize_cert(cert))
-        key_path = os.path.join(dest_dir, f"{base_name}.key")
-        fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "wb") as f:
-            f.write(serialize_pri_key(pri_key))
+        write_pri_key_file(os.path.join(dest_dir, f"{base_name}.key"), serialize_pri_key(pri_key))
 
         if participant.type in [ParticipantType.CLIENT, ParticipantType.RELAY]:
             self._build_internal_listener_cert(participant, ctx)
@@ -322,10 +318,7 @@ class CertBuilder(Builder):
         bn = CertFileBasename.SERVER
         with open(os.path.join(dest_dir, f"{bn}.crt"), "wb") as f:
             f.write(serialize_cert(tmp_cert))
-        key_path_bn = os.path.join(dest_dir, f"{bn}.key")
-        fd = os.open(key_path_bn, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "wb") as f:
-            f.write(serialize_pri_key(tmp_pri_key))
+        write_pri_key_file(os.path.join(dest_dir, f"{bn}.key"), serialize_pri_key(tmp_pri_key))
 
     def build(self, project: Project, ctx: ProvisionContext):
         self._build_root(project.name, subject_org=None)
@@ -360,10 +353,18 @@ class CertBuilder(Builder):
         """
         assert isinstance(self.persistent_state, _CertState)
         subject = f"job_ca.{project.name}"[:MAX_CN_LENGTH]
+        cert_pem = None
+        key_pem = None
         if self.persistent_state.has_subject(subject):
-            cert = load_crt_bytes(self.persistent_state.get_subject_cert(subject).encode("ascii"))
-            pri_key = load_private_key(self.persistent_state.get_subject_pri_key(subject))
-        else:
+            stored_cert_pem = self.persistent_state.get_subject_cert(subject).encode("ascii")
+            stored_cert = load_crt_bytes(stored_cert_pem)
+            if stored_cert.not_valid_after_utc > datetime.datetime.now(datetime.timezone.utc):
+                cert_pem = stored_cert_pem
+                key_pem = self.persistent_state.get_subject_pri_key(subject).encode("ascii")
+            else:
+                ctx.info(f"stored job CA expired at {stored_cert.not_valid_after_utc.isoformat()}; regenerating")
+
+        if cert_pem is None:
             pri_key, pub_key = generate_keys()
             now, not_valid_after = self._bounded_not_valid_after("job CA")
             cert = self._generate_cert(
@@ -377,13 +378,15 @@ class CertBuilder(Builder):
                 not_valid_before=now,
                 not_valid_after=not_valid_after,
             )
-            self.persistent_state.add_subject_cert(subject, serialize_cert(cert).decode("ascii"))
-            self.persistent_state.add_subject_pri_key(subject, serialize_pri_key(pri_key).decode("ascii"))
+            cert_pem = serialize_cert(cert)
+            key_pem = serialize_pri_key(pri_key)
+            self.persistent_state.add_subject_cert(subject, cert_pem.decode("ascii"))
+            self.persistent_state.add_subject_pri_key(subject, key_pem.decode("ascii"))
 
         dest_dir = ctx.get_kit_dir(server)
         with open(os.path.join(dest_dir, ProvFileName.JOB_CA_CERT), "wb") as f:
-            f.write(serialize_cert(cert))
-        write_pri_key_file(os.path.join(dest_dir, ProvFileName.JOB_CA_KEY), serialize_pri_key(pri_key))
+            f.write(cert_pem)
+        write_pri_key_file(os.path.join(dest_dir, ProvFileName.JOB_CA_KEY), key_pem)
 
     def _bounded_not_valid_after(self, subject_desc: str):
         """Validity window for a cert signed by the root: now until DEFAULT_CERT_VALID_DAYS,

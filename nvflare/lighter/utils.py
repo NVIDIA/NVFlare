@@ -169,6 +169,8 @@ def serialize_cert(cert):
 
 def write_pri_key_file(path: str, pri_key_pem: bytes):
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    # os.open's mode only applies on creation; re-tighten in case the file pre-existed
+    os.chmod(path, 0o600)
     with os.fdopen(fd, "wb") as f:
         f.write(pri_key_pem)
 

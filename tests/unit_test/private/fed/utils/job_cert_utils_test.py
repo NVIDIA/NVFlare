@@ -16,10 +16,12 @@ import datetime
 import os
 import stat
 
+import pytest
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
 from cryptography.x509.oid import NameOID
 
+from nvflare.apis.fl_constant import SecureTrainConst
 from nvflare.fuel.f3.cellnet.cell_cipher import SimpleCellCipher
 from nvflare.lighter.constants import ProvFileName
 from nvflare.lighter.utils import (
@@ -31,16 +33,21 @@ from nvflare.lighter.utils import (
     verify_cert_chain,
 )
 from nvflare.private.fed.utils.job_cert_utils import (
+    JOB_CERT_BACKDATE,
     JOB_CERT_FILE_NAME,
+    JOB_CERT_VALID_DAYS,
     JOB_KEY_FILE_NAME,
     find_job_cert,
     get_job_id_from_cert,
     load_job_cert_issuer,
+    pack_job_cert_header,
+    pick_cell_credential,
+    unpack_job_cert_header,
     write_job_cert,
 )
 
 
-def _write_job_ca(startup_dir, ca_valid_days=360, expired=False):
+def _write_job_ca(startup_dir, ca_lifetime=datetime.timedelta(days=360), expired=False):
     os.makedirs(startup_dir, exist_ok=True)
     root_key, root_pub = generate_keys()
     root_cert = generate_cert(Identity("root"), Identity("root"), root_key, root_pub, ca=True)
@@ -51,7 +58,7 @@ def _write_job_ca(startup_dir, ca_valid_days=360, expired=False):
         not_valid_after = now - datetime.timedelta(days=1)
     else:
         not_valid_before = now
-        not_valid_after = now + datetime.timedelta(days=ca_valid_days)
+        not_valid_after = now + ca_lifetime
 
     ca_key, ca_pub = generate_keys()
     ca_cert = generate_cert(
@@ -81,6 +88,11 @@ def test_no_issuer_when_job_ca_expired(tmp_path):
     assert load_job_cert_issuer(str(tmp_path)) is None
 
 
+def test_no_issuer_when_job_ca_near_expiry(tmp_path):
+    _write_job_ca(str(tmp_path), ca_lifetime=datetime.timedelta(minutes=30))
+    assert load_job_cert_issuer(str(tmp_path)) is None
+
+
 def test_issued_cert_chains_to_root_and_carries_job_id(tmp_path):
     root_cert, ca_cert = _write_job_ca(str(tmp_path))
     issuer = load_job_cert_issuer(str(tmp_path))
@@ -95,18 +107,50 @@ def test_issued_cert_chains_to_root_and_carries_job_id(tmp_path):
     verify_cert_chain(leaf_cert=leaf, intermediate_certs=[intermediate], root_ca_cert=root_cert)
     assert leaf.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value == "site-1"
     assert get_job_id_from_cert(leaf) == "job-123"
-    assert leaf.not_valid_after_utc <= leaf.not_valid_before_utc + datetime.timedelta(days=30)
+    expected_lifetime = datetime.timedelta(days=JOB_CERT_VALID_DAYS) + JOB_CERT_BACKDATE
+    assert leaf.not_valid_after_utc - leaf.not_valid_before_utc == expected_lifetime
     assert b"PRIVATE KEY" in key_pem
 
 
 def test_issued_cert_validity_clamped_to_job_ca(tmp_path):
-    _, ca_cert = _write_job_ca(str(tmp_path), ca_valid_days=1)
+    _, ca_cert = _write_job_ca(str(tmp_path), ca_lifetime=datetime.timedelta(days=1))
     issuer = load_job_cert_issuer(str(tmp_path))
 
     cert_pem, _ = issuer.issue("site-1", "job-123")
 
     leaf = x509.load_pem_x509_certificates(cert_pem)[0]
     assert leaf.not_valid_after_utc == ca_cert.not_valid_after_utc.replace(microsecond=0)
+
+
+def test_pick_cell_credential_prefers_complete_job_pair():
+    config = {
+        SecureTrainConst.SSL_CERT: "site.crt",
+        SecureTrainConst.PRIVATE_KEY: "site.key",
+        SecureTrainConst.JOB_CERT: "job.crt",
+        SecureTrainConst.JOB_PRIVATE_KEY: "job.key",
+    }
+    assert pick_cell_credential(config) == ("job.crt", "job.key")
+
+
+def test_pick_cell_credential_ignores_partial_job_pair():
+    config = {
+        SecureTrainConst.SSL_CERT: "site.crt",
+        SecureTrainConst.PRIVATE_KEY: "site.key",
+        SecureTrainConst.JOB_CERT: "job.crt",
+    }
+    assert pick_cell_credential(config) == ("site.crt", "site.key")
+
+
+def test_pack_unpack_job_cert_header_round_trip():
+    header = pack_job_cert_header(b"cert-bytes", b"key-bytes")
+    assert unpack_job_cert_header(header) == (b"cert-bytes", b"key-bytes")
+
+
+@pytest.mark.parametrize(
+    "header", [None, "not-a-dict", b"bytes", 5, {}, {"cert": "x"}, {"key": "y"}, {"cert": "", "key": "k"}]
+)
+def test_unpack_job_cert_header_rejects_malformed(header):
+    assert unpack_job_cert_header(header) is None
 
 
 def test_job_id_absent_from_site_cert():
