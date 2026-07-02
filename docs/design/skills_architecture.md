@@ -50,6 +50,48 @@ executes them. The packaged skills today are:
 The rest of this document details how those skills are authored, validated,
 packaged, installed, and consumed.
 
+## Responsibility Layers (LLM / Skill / Product API)
+
+The core architecture is a separation of responsibilities across three layers.
+This is *who owns what at runtime*, and is distinct from the delivery/lifecycle
+layers (dev-time, build-time, install, runtime) in [System Layers](#system-layers)
+below.
+
+```mermaid
+flowchart TB
+    subgraph LLM["LLM / Agent — interpretation"]
+        direction TB
+        L["Read request; statically inspect source; extract facts; edit code; invoke product commands; report evidence"]
+    end
+    subgraph Skill["Skill — procedure and constraints"]
+        direction TB
+        S["Envelope; fields to extract; commands to call; validation ladder; stop/approval conditions; reporting shape"]
+    end
+    subgraph Product["Product API — authoritative behavior"]
+        direction TB
+        P["Recipe catalog, schema, defaults; argument validation and invariants; job construction, simulation, export; CLI contracts"]
+    end
+
+    LLM -->|follows the procedure in| Skill
+    LLM -->|discovers, validates, executes via| Product
+    Product -->|schema, validation errors, results| LLM
+    Skill -.->|defers schema/validation to, never re-encodes| Product
+
+    style LLM fill:#f8fbff,stroke:#4f7fb8,stroke-width:2px
+    style Skill fill:#fafbfc,stroke:#334155,stroke-width:3px
+    style Product fill:#f4fbf8,stroke:#2f7d68,stroke-width:2px
+```
+
+| Layer | Owns | Must not |
+| --- | --- | --- |
+| LLM / Agent | Natural-language interpretation, source inspection, code edits, running product commands, reporting | Invent product capability that does not exist |
+| Skill | Procedure: envelope, fields to extract, commands to call, validation ladder, stop/approval conditions, reporting shape | Own schema, defaults, or validation; re-encode product behavior as a "shadow API" |
+| Product API | Recipe schema/defaults, validation and invariants, job construction, simulation, export, CLI contracts | — |
+
+The load-bearing rule is the arrow from Skill to Product: the skill *defers*
+schema and validation to the product and never re-encodes them. The engineering
+lints (below) enforce this boundary at admission time.
+
 ## High-Level System View
 
 ```mermaid
@@ -214,7 +256,10 @@ Runtime (installed on the user's machine):
 - Skill install/list logic: `nvflare/tool/agent/skill_manager.py`
 - Agent-facing CLI: `nvflare/tool/agent/agent_cli.py`
 - Command surface metadata: `nvflare/tool/agent/command_registry.py`
-- Static inspection: `nvflare/tool/agent/inspector.py`
+- Static inspection engine: `nvflare/tool/agent/inspector.py` (framework-agnostic
+  AST walk and evidence ranking)
+- Per-framework detectors: `nvflare/tool/agent/frameworks/` (one module per
+  framework; add a framework here, not in the engine)
 - Readiness checks: `nvflare/tool/agent/doctor.py`
 - Implemented skills: `nvflare-orient`, `nvflare-convert-pytorch`, `nvflare-convert-lightning`, and `nvflare-diagnose-job`
 
