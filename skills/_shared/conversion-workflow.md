@@ -231,8 +231,11 @@ class WeightedAggregator(ModelAggregator):
         ...  # clear accumulators between rounds
 ```
 
-Weighted, robust, FedOpt-style, or adapter-aware variants are acceptable when
-they fit this `FLModel` exchange contract. An algorithm that needs new
+A runnable step-weighted example ships at
+`../nvflare-convert-pytorch/references/templates/aggregator.py`; adapt it rather
+than inventing a new structure. Weighted, robust, FedOpt-style, or
+adapter-aware variants are acceptable when they fit this `FLModel` exchange
+contract. An algorithm that needs new
 client/server exchange semantics also needs the matching client transformation
 and validation evidence; otherwise ask in interactive mode or fail closed in
 unattended mode. Generated server-side aggregation code is still custom code:

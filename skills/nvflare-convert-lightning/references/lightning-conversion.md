@@ -86,7 +86,9 @@ Keep evaluation inside Lightning; do not reuse the raw PyTorch
   metric semantics.
 
 This template is self-contained packaged guidance; do not depend on NVFLARE
-repository `examples/` being present in the user's environment.
+repository `examples/` being present in the user's environment. The runnable
+form ships at `templates/lightning_client.py`; adapt it rather than inventing a
+new structure.
 
 ## Preserve Lightning Behavior
 

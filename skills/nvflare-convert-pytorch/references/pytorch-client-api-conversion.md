@@ -116,7 +116,9 @@ without source evidence; when evaluation is required but the source has none,
 ask in interactive mode or fail closed in unattended mode.
 
 This template is self-contained packaged guidance; do not depend on NVFLARE
-repository `examples/` being present in the user's environment.
+repository `examples/` being present in the user's environment. The runnable
+form ships at `templates/client_with_eval.py`; adapt it rather than inventing a
+new structure.
 
 ```python
 def evaluate(model, val_loader, device):
@@ -126,9 +128,10 @@ def evaluate(model, val_loader, device):
         for inputs, labels in val_loader:
             inputs, labels = inputs.to(device), labels.to(device)
             outputs = model(inputs)
-            # compute the source-backed metric; keep the source's
+            # accumulate the source-backed metric; keep the source's
             # metric name and averaging denominator
-            ...
+            metric_sum += source_metric(outputs, labels)
+            total += labels.numel()
     if total == 0:
         raise RuntimeError("evaluation data is empty; cannot report metrics")
     return metric_sum / total
