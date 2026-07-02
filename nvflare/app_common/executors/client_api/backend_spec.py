@@ -76,12 +76,12 @@ class ClientAPIBackendContext:
     heartbeat_timeout: float = 30.0
     task_wait_timeout: Optional[float] = None
     result_wait_timeout: Optional[float] = None
-    # data / params
-    params_exchange_format: str = "numpy"
-    params_transfer_type: str = "FULL"
-    server_expected_format: str = "numpy"
-    from_nvflare_converter_id: Optional[str] = None
-    to_nvflare_converter_id: Optional[str] = None
+    # NOTE: params_exchange_format / params_transfer_type / server_expected_format and the
+    # from/to_nvflare_converter ids are intentionally NOT here. Per FLARE-2698, param
+    # conversion between the framework-agnostic aggregation representation (numpy) and the
+    # framework-native training representation moves out of the executor to send/receive
+    # filters at the client edge; the Client API boundary is pass-through. Transfer type
+    # (FULL/DIFF) stays a Client API concern (model_registry), decided separately.
     # task-name / rank contract (all modes)
     train_task_name: str = "train"
     evaluate_task_name: str = "validate"
