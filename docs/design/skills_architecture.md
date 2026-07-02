@@ -11,6 +11,45 @@ components are the commands and files an end user's agent uses. The skill instal
 CLI is the bridge: it takes validated skill content from the repo or wheel bundle
 and installs it into an agent-specific skill directory.
 
+## What This Is (Core Model)
+
+An **agent skill** is a procedural playbook — a Markdown `SKILL.md` plus
+supporting `references/` — that guides a general coding agent (Codex, Claude,
+etc.) through an NVFLARE workflow such as converting training code into a
+federated job. Skills are guidance, not a runtime library.
+
+The design rests on one principle: **skills own the procedure; the NVFLARE
+product owns the truth.**
+
+- The **skill** tells the agent *how to operate*: what to inspect, which CLI
+  commands to run, what to extract, which files to edit, when to stop, and what
+  evidence to report.
+- The **product API** owns *what is true and executable*: recipe schema and
+  defaults, argument validation, job construction, simulation, and export. The
+  agent discovers this at runtime through commands like
+  `nvflare recipe show --format json` and lets recipe constructors validate.
+
+A skill must never re-encode product behavior in prose — no hand-authored recipe
+schemas, no reimplemented validation, no hidden fact-to-parameter tables. That
+"shadow API" would drift from the product and mislead the agent. When guidance
+would also be needed by a human writing the job by hand, it belongs in the
+product, not the skill.
+
+NVFLARE does **not** run its own agent runtime. It authors, lints, packages,
+installs, and measures skill files; the agent host (Codex/Claude) loads and
+executes them. The packaged skills today are:
+
+- `nvflare-orient` — read-only router that inspects a project and recommends the
+  next skill or workflow;
+- `nvflare-convert-pytorch` and `nvflare-convert-lightning` — convert existing
+  PyTorch / PyTorch Lightning training code into a federated NVFLARE job via the
+  Client API, with local validation and export;
+- `nvflare-diagnose-job` — read-only diagnosis of a failed job from bounded
+  evidence.
+
+The rest of this document details how those skills are authored, validated,
+packaged, installed, and consumed.
+
 ## High-Level System View
 
 ```mermaid
@@ -121,7 +160,7 @@ flowchart TB
 
 ```mermaid
 flowchart TD
-    SkillsRoot["repo-root skills/"] --> SkillDirs["nvflare-orient, nvflare-convert-pytorch, nvflare-diagnose-job, shared references"]
+    SkillsRoot["repo-root skills/"] --> SkillDirs["nvflare-orient, nvflare-convert-pytorch, nvflare-convert-lightning, nvflare-diagnose-job, shared references"]
 
     SkillDirs --> ManifestBuild["build_skill_manifest: frontmatter validation and source hash"]
     ManifestBuild --> Editable["Editable source manifest"]
@@ -145,16 +184,16 @@ flowchart TD
 ```mermaid
 flowchart LR
     Project["User project or NVFLARE artifacts"] --> Orient["nvflare-orient: read-only router"]
-    Project --> Convert["nvflare-convert-pytorch: conversion skill"]
+    Project --> Convert["nvflare-convert-pytorch / nvflare-convert-lightning: conversion skills"]
     Project --> Diagnose["nvflare-diagnose-job: read-only diagnosis"]
 
     Orient --> OrientInspect["Inspect project shape and FLARE readiness"]
     Orient --> OrientDecision["Recommend the next concrete FLARE skill or workflow"]
 
-    Convert --> ConvertInspect["Inspect model, data loading, requirements, and metrics"]
+    Convert --> ConvertInspect["Statically inspect model, data loading, requirements, and metrics"]
     Convert --> RecipeList["Discover recipes with nvflare recipe list/show"]
-    Convert --> ClientAPI["Generate or update client.py, model.py, and job.py"]
-    Convert --> Lifecycle["Validate, export, and report metrics/artifact evidence"]
+    Convert --> ClientAPI["Generate or update client.py, model.py, job.py (+ aggregators.py)"]
+    Convert --> Validate["Validate locally, export, and report metric/artifact evidence"]
 
     Diagnose --> Evidence["Collect bounded logs, configs, and run artifacts"]
     Diagnose --> Patterns["Match packaged failure-pattern references"]
@@ -177,7 +216,7 @@ Runtime (installed on the user's machine):
 - Command surface metadata: `nvflare/tool/agent/command_registry.py`
 - Static inspection: `nvflare/tool/agent/inspector.py`
 - Readiness checks: `nvflare/tool/agent/doctor.py`
-- Implemented skills: `nvflare-orient`, `nvflare-convert-pytorch`, and `nvflare-diagnose-job`
+- Implemented skills: `nvflare-orient`, `nvflare-convert-pytorch`, `nvflare-convert-lightning`, and `nvflare-diagnose-job`
 
 Separate:
 
