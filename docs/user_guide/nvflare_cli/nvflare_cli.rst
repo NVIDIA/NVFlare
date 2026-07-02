@@ -47,6 +47,14 @@ Deprecated commands still exposed in help, such as ``simulator`` and
 ``authz_preview``, are documented only briefly and should not be used for new
 workflows unless you are maintaining an older setup.
 
+Agent-assisted workflows
+========================
+
+The :ref:`NVFlare Auto-FL skill <autofl_skill>` is documented with CLI
+workflows because it uses NVFlare's existing job, POC, production, and
+machine-readable output surfaces.  It is not a separate ``nvflare`` command
+group.
+
 .. toctree::
    :maxdepth: 1
 
@@ -62,5 +70,6 @@ workflows unless you are maintaining an older setup.
    cert_command
    package_command
    recipe_command
+   autofl_skill
    preflight_check
    dashboard_command
