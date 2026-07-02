@@ -51,7 +51,7 @@ def _validate(origin, client_fqcn_resolver, channel=CellChannel.SERVER_COMMAND, 
     )
 
 
-@pytest.mark.parametrize("origin", ["site-a", "site-a.job-1", "site-a.site-a-child.job-1"])
+@pytest.mark.parametrize("origin", ["site-a", "site-a.job-1", "site-a.job-1_active", "site-a.site-a-child.job-1"])
 def test_validate_auth_headers_accepts_token_from_registered_origin(origin):
     # Job and hierarchical child cells under a registered site are still part of that site's trust boundary.
     assert _validate(origin, lambda _client_name, _token: "site-a") is None
@@ -76,6 +76,25 @@ def test_validate_auth_headers_accepts_direct_cell_pipe_stream_alias(origin):
     )
 
 
+@pytest.mark.parametrize(
+    "origin, registered_fqcn",
+    [
+        ("relay-1.site-a_8065f1c4-fd35-47ef-b945-800f4d0d5176_active", "relay-1.site-a"),
+        ("relay-1.site-a_x_8065f1c4-fd35-47ef-b945-800f4d0d5176_passive", "relay-1.site-a_x"),
+    ],
+)
+def test_validate_auth_headers_accepts_relay_cell_pipe_stream_alias(origin, registered_fqcn):
+    assert (
+        _validate(
+            origin,
+            lambda _client_name, _token: registered_fqcn,
+            channel=STREAM_CHANNEL,
+            topic=STREAM_DATA_TOPIC,
+        )
+        is None
+    )
+
+
 def test_validate_auth_headers_rejects_token_from_different_origin():
     reply = _validate("site-b", lambda _client_name, _token: "site-a")
 
@@ -86,6 +105,17 @@ def test_validate_auth_headers_rejects_cell_pipe_alias_for_different_client():
     reply = _validate(
         "site-b_8065f1c4-fd35-47ef-b945-800f4d0d5176_passive",
         lambda _client_name, _token: "site-a",
+        channel=STREAM_CHANNEL,
+        topic=STREAM_DATA_TOPIC,
+    )
+
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.UNAUTHENTICATED
+
+
+def test_validate_auth_headers_rejects_relay_cell_pipe_alias_under_different_parent():
+    reply = _validate(
+        "relay-1.site-a_8065f1c4-fd35-47ef-b945-800f4d0d5176_passive",
+        lambda _client_name, _token: "relay-2.site-a",
         channel=STREAM_CHANNEL,
         topic=STREAM_DATA_TOPIC,
     )

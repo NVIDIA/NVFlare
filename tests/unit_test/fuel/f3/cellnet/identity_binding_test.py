@@ -199,18 +199,30 @@ def test_identity_resolver_rejects_admin_like_endpoint_without_authenticated_ide
         resolver.require_match("_admin_not-a-uuid", "admin@nvidia.com", "connection admin")
 
 
-def test_identity_resolver_maps_hierarchical_cell_pipe_cell_to_owner_identity():
-    # current CellPipe naming: <site>.<token>.<mode> resolves via the FQCN hierarchy
+def test_identity_resolver_maps_topology_cell_pipe_cell_to_owner_identity():
     resolver = CellIdentityResolver(local_fqcn="server", prefix_identity_map={"site-1": "site-1"})
 
-    assert resolver.resolve("site-1.8cb50f16-8158-46f6-a8d7-ec85b1f06c53.active") == "site-1"
-    assert resolver.resolve("site-1.8cb50f16-8158-46f6-a8d7-ec85b1f06c53.passive") == "site-1"
+    assert resolver.resolve("site-1.8cb50f16-8158-46f6-a8d7-ec85b1f06c53_active") == "site-1"
+    assert resolver.resolve("site-1.8cb50f16-8158-46f6-a8d7-ec85b1f06c53_passive") == "site-1"
 
 
-def test_identity_resolver_maps_hierarchical_cell_pipe_cell_behind_relay_to_owner_identity():
+def test_identity_resolver_maps_underscore_token_pipe_cell_to_site_identity():
+    # A root-connected pipe cell may carry "_" in its user-chosen token (e.g.
+    # FlareAgentWithCellPipe agent_id="ext_trainer"). Its leaf looks like an
+    # alias but is not one: with a sparse identity map (provisioning omits
+    # identities equal to the name), the cell must resolve to its site, not to
+    # a fabricated alias owner such as "ext".
+    resolver = CellIdentityResolver(local_fqcn="server")
+
+    assert resolver.resolve("site-1.ext_trainer_active") == "site-1"
+    assert resolver.resolve("site-1.simulate_job_passive") == "site-1"
+
+
+def test_identity_resolver_maps_relay_cell_pipe_cell_to_owner_identity():
     resolver = CellIdentityResolver(local_fqcn="relay-1", exact_identity_map={"relay-1": "relay-1"})
 
-    assert resolver.resolve("relay-1.site-1.job-123.active") == "site-1"
+    assert resolver.resolve("relay-1.site-1_job-123_active") == "site-1"
+    assert resolver.resolve("relay-1.site-1.job-123_active") == "site-1"
 
 
 def test_identity_resolver_maps_legacy_cell_pipe_alias_to_owner_identity():
@@ -284,14 +296,14 @@ def test_mtls_handshake_rejects_spoofed_endpoint_identity():
     assert conn.closed
 
 
-def test_mtls_handshake_accepts_hierarchical_cell_pipe_cell_with_site_cert_identity():
+def test_mtls_handshake_accepts_topology_cell_pipe_cell_with_site_cert_identity():
     manager = _conn_manager(identity_map={"site-1": "site-1"})
     conn = _FakeConnection(peer_cn="site-1")
     sfm_conn = SfmConnection(conn, Endpoint("server"))
 
-    manager.update_endpoint(sfm_conn, {HandshakeKeys.ENDPOINT_NAME: "site-1.job-123.active"})
+    manager.update_endpoint(sfm_conn, {HandshakeKeys.ENDPOINT_NAME: "site-1.job-123_active"})
 
-    assert "site-1.job-123.active" in manager.sfm_endpoints
+    assert "site-1.job-123_active" in manager.sfm_endpoints
     assert not conn.closed
 
 

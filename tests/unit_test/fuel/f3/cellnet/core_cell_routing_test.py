@@ -12,14 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Endpoint resolution for cells whose FQCN parent is not their physical parent.
-
-CellPipe cells are named <site>.<token>.<mode> but physically connect to the
-site's CP, a relay, or the server root rather than to their literal FQCN
-parent (the job cell). _try_find_ep must fall through to generic path
-resolution (target's ancestor chain, then the server root) when the FQCN
-parent is not connected.
-"""
+"""Endpoint resolution for topology-shaped CellPipe FQCNs."""
 
 import logging
 
@@ -42,11 +35,18 @@ def _routing_cell(fqcn, connected):
 
 
 def test_pipe_cell_reaches_peer_through_connected_cp():
-    # The pipe cell connects to the CP ("site-1"), not to its FQCN parent
-    # ("site-1.job-123"); the peer must be routed through the CP.
-    cell = _routing_cell("site-1.job-123.active", ["site-1"])
+    cell = _routing_cell("site-1.job-123_active", ["site-1"])
 
-    ep = cell._try_find_ep("site-1.job-123.passive", None)
+    ep = cell._try_find_ep("site-1.job-123_passive", None)
+
+    assert ep is not None
+    assert ep.name == "site-1"
+
+
+def test_pipe_cell_reaches_server_job_through_connected_cp():
+    cell = _routing_cell("site-1.job-123_active", ["site-1"])
+
+    ep = cell._try_find_ep("server.job-123", None)
 
     assert ep is not None
     assert ep.name == "site-1"
@@ -55,16 +55,16 @@ def test_pipe_cell_reaches_peer_through_connected_cp():
 def test_pipe_cell_reaches_peer_through_server_root():
     # With pipe_connect_type VIA_ROOT the pipe cell connects only to the
     # server root; the same-family peer must be routed through it.
-    cell = _routing_cell("site-1.job-123.active", ["server"])
+    cell = _routing_cell("site-1.job-123_active", ["server"])
 
-    ep = cell._try_find_ep("site-1.job-123.passive", None)
+    ep = cell._try_find_ep("site-1.job-123_passive", None)
 
     assert ep is not None
     assert ep.name == "server"
 
 
 def test_pipe_cell_reaches_site_ancestor_through_connected_cp():
-    cell = _routing_cell("site-1.job-123.active", ["site-1"])
+    cell = _routing_cell("site-1.job-123_active", ["site-1"])
 
     ep = cell._try_find_ep("site-1", None)
 
@@ -83,6 +83,6 @@ def test_same_family_routing_still_prefers_fqcn_parent():
 
 
 def test_pipe_cell_with_no_connection_is_unreachable():
-    cell = _routing_cell("site-1.job-123.active", [])
+    cell = _routing_cell("site-1.job-123_active", [])
 
-    assert cell._try_find_ep("site-1.job-123.passive", None) is None
+    assert cell._try_find_ep("site-1.job-123_passive", None) is None
