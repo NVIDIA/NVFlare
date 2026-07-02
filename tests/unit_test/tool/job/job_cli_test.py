@@ -130,7 +130,6 @@ class TestJobCLI:
         [("/home/user/project", "/home/user/project/subdir", True), (".", ".", True), ("./code", ".", False)],
     )
     def test_is_sub_dir(self, path, directory, expected):
-        print(f"{input=}, {directory=}, {expected=}")
         assert expected == job_cli.is_subdir(path, directory)
 
     def test_log_config_parser_accepts_alias_and_canonical_name(self):

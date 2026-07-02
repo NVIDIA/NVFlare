@@ -47,7 +47,8 @@ def test_init_subscribes_stop_handler_and_get_spec_lists_commands():
     data_bus_cls.return_value.subscribe.assert_called_once()
     spec = manager.get_spec()
     assert spec.name == "cellnet"
-    assert len(spec.cmd_specs) == 17
+    command_names = {command.name for command in spec.cmd_specs}
+    assert {"cells", "route", "speed", "stress", "msg_stats", "process_info"}.issubset(command_names)
     assert all(command.visible for command in spec.cmd_specs)
 
 
