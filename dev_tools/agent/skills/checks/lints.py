@@ -1007,29 +1007,37 @@ def _lint_runtime_boundary(context: LintContext) -> None:
 
 
 def _iter_eval_dirs(skill_dir: Path) -> Iterable[Path]:
-    """Yield every ``evals`` directory at any depth inside a skill.
+    """Yield ``evals`` directories at any depth inside a skill.
 
     Packaging strips directories named ``evals`` at any depth, so nested eval
     content (e.g. ``references/evals/``) is silently omitted from bundles. The
     boundary lint must match that depth so authors are told to relocate it
-    instead of shipping nothing.
+    instead of shipping nothing. Once an excluded runtime directory is reported,
+    its subtree is also outside the shipped boundary and does not need traversal.
     """
     if not skill_dir.is_dir():
         return
     for dirpath, dirnames, _ in os.walk(skill_dir, followlinks=False):
-        dirnames[:] = sorted(name for name in dirnames if not (Path(dirpath) / name).is_symlink())
-        for name in list(dirnames):
+        current_dir = Path(dirpath)
+        next_dirnames = []
+        for name in sorted(dirnames):
+            path = current_dir / name
+            if path.is_symlink():
+                continue
             if name == "evals":
-                yield Path(dirpath) / name
+                yield path
+                continue
+            if name in _RUNTIME_BOUNDARY_EXCLUDED_DIRS:
+                continue
+            next_dirnames.append(name)
+        dirnames[:] = next_dirnames
 
 
 def _iter_packaged_runtime_files(skill_dir: Path) -> Iterable[tuple[Path, str]]:
-    """Yield decoded text files a skill ships as runtime content (minus evals/)."""
+    """Yield decoded text files a skill ships as runtime content."""
     if not skill_dir.is_dir():
         return
-    for path in _iter_files_no_follow(skill_dir):
-        if any(part in _RUNTIME_BOUNDARY_EXCLUDED_DIRS for part in path.relative_to(skill_dir).parts):
-            continue
+    for path in _iter_files_no_follow(skill_dir, excluded_dir_names=_RUNTIME_BOUNDARY_EXCLUDED_DIRS):
         content = _read_runtime_text_file(path)
         if content is not None:
             yield path, content
@@ -1382,13 +1390,17 @@ def _has_files(path: Path) -> bool:
     return path.is_dir() and any(True for _child in _iter_files_no_follow(path))
 
 
-def _iter_files_no_follow(root: Path) -> Iterable[Path]:
+def _iter_files_no_follow(root: Path, *, excluded_dir_names: Iterable[str] = ()) -> Iterable[Path]:
     if root.is_symlink() or not root.is_dir():
         return
+    excluded_dir_names = set(excluded_dir_names)
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
-        dirnames[:] = sorted(name for name in dirnames if not (Path(dirpath) / name).is_symlink())
+        current_dir = Path(dirpath)
+        dirnames[:] = sorted(
+            name for name in dirnames if name not in excluded_dir_names and not (current_dir / name).is_symlink()
+        )
         for filename in sorted(filenames):
-            path = Path(dirpath) / filename
+            path = current_dir / filename
             if path.is_file():
                 yield path
 
