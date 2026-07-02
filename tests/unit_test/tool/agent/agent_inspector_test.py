@@ -17,16 +17,23 @@ import os
 
 import pytest
 
+from nvflare.tool.agent.frameworks.lightning import LightningDetector
 from nvflare.tool.agent.inspector import (
     InspectState,
     _entry_point_imports_file,
     _evidence_score,
+    _FamilyResolver,
     _framework_evidence_tied_to_entry_context,
     _module_names_for_file,
     _resolve_import_from_module,
-    _should_promote_lightning_over_pytorch,
     inspect_path,
 )
+
+
+def _should_promote_lightning_over_pytorch(state):
+    # The PyTorch-family promotion decision now lives in the Lightning detector;
+    # exercise it through the same resolver the engine uses.
+    return LightningDetector().promote_over_family("pytorch", _FamilyResolver(state))
 
 
 def test_inspect_static_only_does_not_execute_user_module(tmp_path):

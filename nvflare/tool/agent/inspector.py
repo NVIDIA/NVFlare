@@ -22,6 +22,8 @@ from pathlib import Path
 from typing import Optional
 
 import nvflare
+from nvflare.tool.agent import frameworks
+from nvflare.tool.agent.frameworks.base import DetectContext
 
 DEFAULT_MAX_FILES = 250
 DEFAULT_MAX_FILE_BYTES = 512 * 1024
@@ -46,64 +48,10 @@ SKIPPED_DIR_NAMES = {
 SENSITIVE_FILE_SUFFIXES = {".key", ".pem", ".p12", ".pfx"}
 SENSITIVE_FILE_NAMES = {"id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"}
 SECRET_NAME_PATTERN = re.compile(r"(api[_-]?key|secret|token|password|passwd|credential|access[_-]?key)", re.I)
-LIGHTNING_FRAMEWORK = "pytorch_lightning"
-LIGHTNING_MODULES = {"pytorch_lightning", "lightning", "lightning.pytorch"}
-LIGHTNING_CLASS_SYMBOLS = {"LightningModule", "LightningDataModule"}
-LIGHTNING_TRAINER_SYMBOLS = {"Trainer"}
-LIGHTNING_SYMBOLS = LIGHTNING_CLASS_SYMBOLS | LIGHTNING_TRAINER_SYMBOLS
-LIGHTNING_PATCH_PARENT_MODULE = "nvflare.client"
-LIGHTNING_PATCH_SUBMODULE = "lightning"
-LIGHTNING_PATCH_MODULE = f"{LIGHTNING_PATCH_PARENT_MODULE}.{LIGHTNING_PATCH_SUBMODULE}"
-PYTORCH_MODULE_SYMBOLS = {"Module"}
-PYTORCH_TRAINING_SYMBOLS = {
-    "Adagrad",
-    "Adam",
-    "AdamW",
-    "BCELoss",
-    "BCEWithLogitsLoss",
-    "CrossEntropyLoss",
-    "DataLoader",
-    "DistributedSampler",
-    "MSELoss",
-    "NLLLoss",
-    "RMSprop",
-    "SGD",
-    "TensorDataset",
-}
 
-FRAMEWORK_IMPORTS = {
-    "torch": "pytorch",
-    "torchvision": "pytorch",
-    "torchaudio": "pytorch",
-    "pytorch_lightning": LIGHTNING_FRAMEWORK,
-    "lightning": LIGHTNING_FRAMEWORK,
-    "tensorflow": "tensorflow",
-    "keras": "tensorflow",
-    "xgboost": "xgboost",
-    "sklearn": "sklearn",
-    "jax": "jax",
-    "flax": "jax",
-    "optax": "jax",
-    "numpy": "numpy",
-}
-FRAMEWORK_SKILLS = {
-    "pytorch": "nvflare-convert-pytorch",
-    "pytorch_lightning": "nvflare-convert-lightning",
-}
-FRAMEWORK_EVIDENCE_WEIGHTS = {
-    "import": 1,
-    "pytorch_call": 2,
-    "pytorch_class": 3,
-    "lightning_class": 3,
-    "lightning_trainer": 3,
-}
-# Future candidate mappings. Keep these inactive until the matching skill
-# directories are implemented, packaged, and covered by admission tests.
-# "tensorflow": "nvflare-convert-tensorflow",
-# "xgboost": "nvflare-convert-xgboost",
-# "sklearn": "nvflare-convert-sklearn",
-# "jax": "nvflare-convert-jax",
-# "numpy": "nvflare-convert-numpy",
+# Framework detection (import roots, symbols, evidence weights, recommended
+# skills, and family/promotion rules) lives in nvflare.tool.agent.frameworks.
+# This engine stays framework-agnostic; add a framework there, not here.
 
 
 @dataclass
@@ -120,7 +68,9 @@ class InspectState:
     framework_evidence: dict[str, list[dict]] = field(default_factory=dict)
     flare_imports: list[dict] = field(default_factory=list)
     flare_calls: set[str] = field(default_factory=set)
-    lightning_patch_calls: set[str] = field(default_factory=set)
+    # framework name -> FLARE conversion-integration call names (e.g. Lightning
+    # flare.patch). Populated by framework detectors; used by _conversion_state.
+    integration_signals: dict[str, set[str]] = field(default_factory=dict)
     file_imports: dict[str, set[str]] = field(default_factory=dict)
     entry_points: list[dict] = field(default_factory=list)
     job_py: Optional[str] = None
@@ -153,9 +103,9 @@ def inspect_path(
     else:
         _inspect_dir(target, state, max_files=max_files, max_file_bytes=max_file_bytes)
 
-    frameworks = _rank_frameworks(state)
-    detected_framework = _detect_primary_framework(state, frameworks)
-    frameworks = _order_frameworks_for_display(frameworks, detected_framework)
+    ranked_frameworks = _rank_frameworks(state)
+    detected_framework = _detect_primary_framework(state, ranked_frameworks)
+    ranked_frameworks = _order_frameworks_for_display(ranked_frameworks, detected_framework)
     conversion_state = _conversion_state(state, detected_framework)
     target_type = _target_type(target, state, detected_framework, conversion_state)
 
@@ -180,7 +130,7 @@ def inspect_path(
             "files_skipped_truncated": state.files_skipped_count > len(state.files_skipped),
             "files_skipped": state.files_skipped,
         },
-        "frameworks": frameworks,
+        "frameworks": ranked_frameworks,
         "entry_points": state.entry_points[:MAX_EVIDENCE_PER_BUCKET],
         "flare_integration": {
             "present": bool(state.flare_imports or state.flare_calls),
@@ -337,32 +287,34 @@ class _PythonInspector(ast.NodeVisitor):
         self.path = path
         self.rel_path = rel_path
         self.state = state
-        self.lightning_aliases: set[str] = set()
-        self.lightning_symbols: dict[str, str] = {}
-        self.lightning_patch_symbols: set[str] = set()
-        self.lightning_patch_modules: set[str] = set()
-        self.torch_aliases: set[str] = set()
-        self.torch_nn_aliases: set[str] = set()
-        self.torch_optim_aliases: set[str] = set()
-        self.torch_data_aliases: set[str] = set()
-        self.pytorch_module_symbols: set[str] = set()
-        self.pytorch_training_symbols: set[str] = set()
+        self._detectors = frameworks.detectors()
+        self._detector_states = {detector.name: detector.new_file_state() for detector in self._detectors}
+        self._ctx = DetectContext(
+            rel_path,
+            self._emit_framework_evidence,
+            self.state.flare_calls.add,
+            self._add_integration_signal,
+        )
+
+    def _emit_framework_evidence(self, framework: str, kind: str, value: str, lineno) -> None:
+        _append_capped(self.state.framework_evidence, framework, _evidence(self.rel_path, lineno, kind, value))
+
+    def _add_integration_signal(self, framework: str, name: str) -> None:
+        self.state.integration_signals.setdefault(framework, set()).add(name)
 
     def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:
             self._record_import(alias.name, node.lineno)
-            self._record_lightning_import_alias(alias)
-            self._record_lightning_patch_module_alias(alias)
-            self._record_pytorch_import_alias(alias)
+            for detector in self._detectors:
+                detector.on_import(alias, self._detector_states[detector.name], self._ctx)
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         module = node.module or ""
         self._record_import(_resolve_import_from_module(self.rel_path, module, node.level), node.lineno)
         self._record_import_from_modules(module, node.level, node.names)
-        self._record_lightning_from_imports(module, node.names)
-        self._record_lightning_patch_imports(module, node.names)
-        self._record_pytorch_from_imports(module, node.names)
+        for detector in self._detectors:
+            detector.on_import_from(module, node.names, self._detector_states[detector.name], self._ctx)
         for alias in node.names:
             if alias.name in {"FedJob", "FLModel", "SimEnv"}:
                 self.state.flare_imports.append(
@@ -373,24 +325,18 @@ class _PythonInspector(ast.NodeVisitor):
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         for base in node.bases:
             base_name = _symbol_name(base)
-            if base_name and self._is_pytorch_class_base(base_name):
-                _append_capped(
-                    self.state.framework_evidence,
-                    "pytorch",
-                    _evidence(self.rel_path, node.lineno, "pytorch_class", base_name),
-                )
-            if base_name and self._is_lightning_class_base(base_name):
-                _append_capped(
-                    self.state.framework_evidence,
-                    LIGHTNING_FRAMEWORK,
-                    _evidence(self.rel_path, node.lineno, "lightning_class", base_name),
-                )
+            if not base_name:
+                continue
+            for detector in self._detectors:
+                detector.on_class_base(base_name, node.lineno, self._detector_states[detector.name], self._ctx)
         self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call) -> None:
         call_name = _call_name(node.func)
         if call_name:
             self._record_call(call_name, node.lineno)
+            for detector in self._detectors:
+                detector.on_call(call_name, node.lineno, self._detector_states[detector.name], self._ctx)
         self.generic_visit(node)
 
     def visit_Assign(self, node: ast.Assign) -> None:
@@ -410,7 +356,7 @@ class _PythonInspector(ast.NodeVisitor):
         if not module:
             return
         self.state.file_imports.setdefault(self.rel_path, set()).add(module)
-        framework = _framework_for_import(module)
+        framework = frameworks.framework_for_import(module)
         if framework:
             _append_capped(
                 self.state.framework_evidence,
@@ -436,22 +382,12 @@ class _PythonInspector(ast.NodeVisitor):
                 continue
             imports.add(f"{resolved_module}.{alias.name}" if resolved_module else alias.name)
 
-    def _record_lightning_import_alias(self, alias: ast.alias) -> None:
-        if alias.name in LIGHTNING_MODULES:
-            self.lightning_aliases.add(alias.asname or alias.name.split(".")[0])
-
-    def _record_lightning_patch_module_alias(self, alias: ast.alias) -> None:
-        if alias.name == LIGHTNING_PATCH_MODULE:
-            # ``import nvflare.client.lightning as flare`` -> ``flare.patch`` is
-            # the canonical conversion call; a plain import keeps the full path.
-            self.lightning_patch_modules.add(alias.asname or alias.name)
-
     def _record_call(self, call_name: str, lineno: int) -> None:
+        # Generic FLARE / distributed / dynamic-dispatch signals only. Ranked
+        # framework activity (pytorch_call, lightning_trainer) and conversion
+        # signals (flare.patch) are recorded by framework detectors via on_call.
         if call_name.startswith("flare.") or call_name.startswith("nvflare."):
             self.state.flare_calls.add(call_name)
-        if call_name in self.lightning_patch_symbols or self._is_lightning_patch_call(call_name):
-            self.state.flare_calls.add(call_name)
-            self.state.lightning_patch_calls.add(call_name)
         if call_name in {"FedJob", "FLModel", "SimEnv"}:
             self.state.flare_calls.add(call_name)
         if call_name == "SimEnv" or call_name.endswith(".SimEnv"):
@@ -466,130 +402,6 @@ class _PythonInspector(ast.NodeVisitor):
             self.state.distributed_patterns.append(_evidence(self.rel_path, lineno, "distributed_call", call_name))
         if call_name.endswith("FSDP") or call_name.endswith("Accelerator"):
             self.state.distributed_patterns.append(_evidence(self.rel_path, lineno, "distributed_call", call_name))
-        if self._is_pytorch_activity_call(call_name):
-            _append_capped(
-                self.state.framework_evidence,
-                "pytorch",
-                _evidence(self.rel_path, lineno, "pytorch_call", call_name),
-            )
-        if self._is_lightning_trainer_call(call_name):
-            _append_capped(
-                self.state.framework_evidence,
-                LIGHTNING_FRAMEWORK,
-                _evidence(self.rel_path, lineno, "lightning_trainer", call_name),
-            )
-
-    def _record_lightning_from_imports(self, module: str, aliases: list[ast.alias]) -> None:
-        if module not in LIGHTNING_MODULES and not any(module.startswith(f"{prefix}.") for prefix in LIGHTNING_MODULES):
-            return
-        for alias in aliases:
-            if alias.name in LIGHTNING_SYMBOLS:
-                self.lightning_symbols[alias.asname or alias.name] = alias.name
-
-    def _record_lightning_patch_imports(self, module: str, aliases: list[ast.alias]) -> None:
-        if module == LIGHTNING_PATCH_MODULE:
-            for alias in aliases:
-                if alias.name == "patch":
-                    self.lightning_patch_symbols.add(alias.asname or alias.name)
-            return
-        # ``from nvflare.client import lightning as flare`` -> ``flare.patch`` is
-        # the module-alias form of the canonical conversion call.
-        if module == LIGHTNING_PATCH_PARENT_MODULE:
-            for alias in aliases:
-                if alias.name == LIGHTNING_PATCH_SUBMODULE:
-                    self.lightning_patch_modules.add(alias.asname or alias.name)
-
-    def _record_pytorch_import_alias(self, alias: ast.alias) -> None:
-        name = alias.name
-        alias_name = alias.asname or name
-        if name == "torch":
-            self.torch_aliases.add(alias_name)
-        elif name == "torch.nn":
-            self.torch_nn_aliases.add(alias_name)
-        elif name == "torch.optim":
-            self.torch_optim_aliases.add(alias_name)
-        elif name == "torch.utils.data":
-            self.torch_data_aliases.add(alias_name)
-
-    def _record_pytorch_from_imports(self, module: str, aliases: list[ast.alias]) -> None:
-        if module == "torch":
-            for alias in aliases:
-                alias_name = alias.asname or alias.name
-                if alias.name == "nn":
-                    self.torch_nn_aliases.add(alias_name)
-                elif alias.name == "optim":
-                    self.torch_optim_aliases.add(alias_name)
-        elif module == "torch.nn":
-            for alias in aliases:
-                alias_name = alias.asname or alias.name
-                if alias.name in PYTORCH_MODULE_SYMBOLS:
-                    self.pytorch_module_symbols.add(alias_name)
-                elif alias.name in PYTORCH_TRAINING_SYMBOLS:
-                    self.pytorch_training_symbols.add(alias_name)
-        elif module == "torch.optim":
-            for alias in aliases:
-                if alias.name in PYTORCH_TRAINING_SYMBOLS:
-                    self.pytorch_training_symbols.add(alias.asname or alias.name)
-        elif module == "torch.utils.data":
-            for alias in aliases:
-                if alias.name in PYTORCH_TRAINING_SYMBOLS:
-                    self.pytorch_training_symbols.add(alias.asname or alias.name)
-
-    def _is_pytorch_class_base(self, base_name: str) -> bool:
-        if base_name in self.pytorch_module_symbols:
-            return True
-        if "." not in base_name:
-            return False
-        prefix, _, symbol = base_name.rpartition(".")
-        if symbol not in PYTORCH_MODULE_SYMBOLS:
-            return False
-        if prefix in self.torch_nn_aliases:
-            return True
-        for alias in self.torch_aliases:
-            if prefix == f"{alias}.nn":
-                return True
-        return False
-
-    def _is_pytorch_activity_call(self, call_name: str) -> bool:
-        if call_name in self.pytorch_training_symbols:
-            return True
-        if "." not in call_name:
-            return False
-        prefix, _, symbol = call_name.rpartition(".")
-        if symbol not in PYTORCH_TRAINING_SYMBOLS:
-            return False
-        if prefix in self.torch_nn_aliases or prefix in self.torch_optim_aliases or prefix in self.torch_data_aliases:
-            return True
-        for alias in self.torch_aliases:
-            if prefix in {f"{alias}.nn", f"{alias}.optim", f"{alias}.utils.data"}:
-                return True
-        return False
-
-    def _is_lightning_class_base(self, base_name: str) -> bool:
-        if self.lightning_symbols.get(base_name) in LIGHTNING_CLASS_SYMBOLS:
-            return True
-        if "." not in base_name:
-            return False
-        prefix, _, symbol = base_name.rpartition(".")
-        return symbol in LIGHTNING_CLASS_SYMBOLS and (
-            prefix in self.lightning_aliases or prefix in LIGHTNING_MODULES or prefix.startswith("lightning.pytorch")
-        )
-
-    def _is_lightning_patch_call(self, call_name: str) -> bool:
-        prefix, _, symbol = call_name.rpartition(".")
-        if symbol != "patch":
-            return False
-        return prefix in self.lightning_patch_modules or prefix == LIGHTNING_PATCH_MODULE
-
-    def _is_lightning_trainer_call(self, call_name: str) -> bool:
-        if self.lightning_symbols.get(call_name) in LIGHTNING_TRAINER_SYMBOLS:
-            return True
-        if "." not in call_name:
-            return False
-        prefix, _, symbol = call_name.rpartition(".")
-        return symbol in LIGHTNING_TRAINER_SYMBOLS and (
-            prefix in self.lightning_aliases or prefix in LIGHTNING_MODULES or prefix.startswith("lightning.pytorch")
-        )
 
     def _inspect_secret_assignment(self, targets: list[ast.AST], value: ast.AST, lineno: Optional[int]) -> None:
         if not isinstance(value, ast.Constant) or not isinstance(value.value, str):
@@ -622,18 +434,6 @@ class _PythonInspector(ast.NodeVisitor):
             )
 
 
-def _framework_for_import(module: str) -> Optional[str]:
-    parts = module.split(".")
-    if not parts:
-        return None
-    first = parts[0]
-    if first == "lightning" and len(parts) > 1 and parts[1] == "pytorch":
-        return "pytorch_lightning"
-    if first == "sklearn":
-        return "sklearn"
-    return FRAMEWORK_IMPORTS.get(first)
-
-
 def _rank_frameworks(state: InspectState) -> list[dict]:
     total = sum(len(evidence) for evidence in state.framework_evidence.values())
     ranked = []
@@ -659,75 +459,39 @@ def _detect_primary_framework(state: InspectState, ranked: list[dict]) -> Option
     if not ranked:
         return None
     primary = ranked[0]["name"]
-    pytorch_family_primary = _resolve_pytorch_lightning_primary(state)
-    if pytorch_family_primary and primary in {"pytorch", LIGHTNING_FRAMEWORK}:
-        return pytorch_family_primary
-    return primary
+    return frameworks.resolve_primary_framework(primary, state.framework_evidence, _FamilyResolver(state))
 
 
-def _resolve_pytorch_lightning_primary(state: InspectState) -> Optional[str]:
-    # Resolve the PyTorch-family conflict whenever both buckets exist: PyTorch
-    # Lightning is a PyTorch superset, but incidental Lightning imports elsewhere
-    # in a plain PyTorch workspace should not hide the PyTorch entry point from
-    # routing. Do not override a stronger framework from another family
-    # (TensorFlow, JAX, etc.) -- those get their own family-conflict handling
-    # when their conversion skills land.
-    if "pytorch" not in state.framework_evidence or LIGHTNING_FRAMEWORK not in state.framework_evidence:
-        return None
-    return LIGHTNING_FRAMEWORK if _should_promote_lightning_over_pytorch(state) else "pytorch"
+class _FamilyResolver:
+    """Adapter giving family-owning detectors the engine's generic helpers.
 
+    A detector that resolves a base/superset family conflict (for example
+    Lightning over PyTorch) reads collected evidence, weighted scores, and
+    entry-context/import-graph checks through this adapter, so the engine holds
+    no framework-specific promotion logic.
+    """
 
-def _should_promote_lightning_over_pytorch(state: InspectState) -> bool:
-    lightning_evidence = state.framework_evidence.get(LIGHTNING_FRAMEWORK, [])
-    pytorch_evidence = state.framework_evidence.get("pytorch", [])
-    if not lightning_evidence or not pytorch_evidence:
-        return False
+    def __init__(self, state: InspectState):
+        self._state = state
 
-    # Base/superset precedence, currently PyTorch/PyTorch Lightning:
-    #   1. Active superset evidence tied to the entry context -> superset.
-    #   2. Any base evidence tied to the entry context -> base.
-    #   3. Entry point or inspected file exists but neither is tied -> base.
-    #   4. Model-only/no-entry contexts use weighted evidence fallback below.
-    active_lightning_evidence = _active_lightning_evidence(lightning_evidence)
-    active_pytorch_evidence = _active_pytorch_evidence(pytorch_evidence)
-    if _framework_evidence_tied_to_entry_context(state, active_lightning_evidence):
-        return True
-    if _framework_evidence_tied_to_entry_context(state, pytorch_evidence):
-        return False
-    if _has_inspected_file_or_entry_point(state):
-        return False
-    # With no evidence tied to the entry context, keep the weighted fallback for
-    # model-only directories that do not expose an entry point. Active Lightning
-    # evidence still beats ordinary torch imports in the same Lightning file,
-    # but unrelated PyTorch imports remain a threshold against incidental
-    # Lightning helpers.
-    active_lightning_score = _evidence_score(active_lightning_evidence)
-    if active_lightning_score == 0:
-        return False
-    active_pytorch_score = _evidence_score(active_pytorch_evidence)
-    if active_pytorch_score == 0 and _has_pytorch_evidence_outside_active_lightning_files(
-        pytorch_evidence, active_lightning_evidence
-    ):
-        if _evidence_score(pytorch_evidence) >= _evidence_score(lightning_evidence):
-            return False
-    if active_lightning_score != active_pytorch_score:
-        return active_lightning_score > active_pytorch_score
-    return _evidence_score(lightning_evidence) > _evidence_score(pytorch_evidence)
+    def evidence(self, framework: str) -> list[dict]:
+        return self._state.framework_evidence.get(framework, [])
 
+    def active_evidence(self, framework: str) -> list[dict]:
+        return [item for item in self.evidence(framework) if frameworks.is_active_evidence(framework, item)]
 
-def _active_lightning_evidence(evidence: list[dict]) -> list[dict]:
-    return [item for item in evidence if _is_active_lightning_evidence(item)]
+    def score(self, evidence: list[dict]) -> int:
+        return _evidence_score(evidence)
 
+    def tied_to_entry_context(self, evidence: list[dict]) -> bool:
+        return _framework_evidence_tied_to_entry_context(self._state, evidence)
 
-def _active_pytorch_evidence(evidence: list[dict]) -> list[dict]:
-    return [item for item in evidence if _is_active_pytorch_evidence(item)]
+    def has_inspected_file_or_entry_point(self) -> bool:
+        return _has_inspected_file_or_entry_point(self._state)
 
-
-def _has_pytorch_evidence_outside_active_lightning_files(
-    pytorch_evidence: list[dict], active_lightning_evidence: list[dict]
-) -> bool:
-    active_lightning_files = {item["file"] for item in active_lightning_evidence}
-    return any(item["file"] not in active_lightning_files for item in pytorch_evidence)
+    def has_evidence_outside_files(self, evidence: list[dict], reference_evidence: list[dict]) -> bool:
+        reference_files = {item["file"] for item in reference_evidence}
+        return any(item["file"] not in reference_files for item in evidence)
 
 
 def _framework_evidence_tied_to_entry_context(state: InspectState, evidence: list[dict]) -> bool:
@@ -748,14 +512,6 @@ def _framework_evidence_tied_to_inspected_file_or_entry_point(state: InspectStat
         return any(item["file"] == inspected_file for item in evidence)
     entry_point_paths = {entry["path"] for entry in state.entry_points}
     return any(item["file"] in entry_point_paths for item in evidence)
-
-
-def _is_active_lightning_evidence(evidence: dict) -> bool:
-    return evidence.get("kind") in {"lightning_class", "lightning_trainer"}
-
-
-def _is_active_pytorch_evidence(evidence: dict) -> bool:
-    return evidence.get("kind") in {"pytorch_class", "pytorch_call"}
 
 
 def _entry_point_imports_file(state: InspectState, evidence_file: str) -> bool:
@@ -918,12 +674,14 @@ def _resolve_import_from_module(importing_file: str, module: str, level: int) ->
 
 
 def _evidence_score(evidence: list[dict]) -> int:
-    return sum(FRAMEWORK_EVIDENCE_WEIGHTS.get(item["kind"], 1) for item in evidence)
+    weights = frameworks.evidence_weights()
+    return sum(weights.get(item["kind"], 1) for item in evidence)
 
 
 def _order_frameworks_for_display(ranked: list[dict], detected_framework: Optional[str]) -> list[dict]:
-    if detected_framework == "pytorch":
-        return _order_pytorch_before_lightning_if_needed(ranked)
+    family_member = frameworks.family_member_of_base(detected_framework)
+    if family_member:
+        return _order_family_base_before_member(ranked, detected_framework, family_member)
 
     # Keep the confidence-ranked order but surface the detected primary framework
     # first so callers reading frameworks[0] stay aligned with the routing
@@ -931,21 +689,24 @@ def _order_frameworks_for_display(ranked: list[dict], detected_framework: Option
     return sorted(ranked, key=lambda item: item["name"] != detected_framework)
 
 
-def _order_pytorch_before_lightning_if_needed(ranked: list[dict]) -> list[dict]:
+def _order_family_base_before_member(ranked: list[dict], base: str, member: str) -> list[dict]:
+    # When the detected primary is a family base (e.g. PyTorch) that also has a
+    # superset member present (PyTorch Lightning), keep the base ahead of the
+    # member so frameworks[0] matches the routing decision.
     names = [item["name"] for item in ranked]
     try:
-        pytorch_index = names.index("pytorch")
-        lightning_index = names.index(LIGHTNING_FRAMEWORK)
+        base_index = names.index(base)
+        member_index = names.index(member)
     except ValueError:
         return ranked
 
-    if pytorch_index < lightning_index:
+    if base_index < member_index:
         return ranked
 
     ordered = list(ranked)
-    pytorch = ordered.pop(pytorch_index)
-    lightning_index = next(index for index, item in enumerate(ordered) if item["name"] == LIGHTNING_FRAMEWORK)
-    ordered.insert(lightning_index, pytorch)
+    base_item = ordered.pop(base_index)
+    member_index = next(index for index, item in enumerate(ordered) if item["name"] == member)
+    ordered.insert(member_index, base_item)
     return ordered
 
 
@@ -954,7 +715,7 @@ def _conversion_state(state: InspectState, detected_framework: Optional[str]) ->
         return "exported_job"
     if state.job_py or state.sim_env_used:
         return "flare_job"
-    if _has_lightning_client_api_completion(state):
+    if _has_conversion_integration(state):
         return "client_api_converted"
     if {"flare.receive", "flare.send"} <= state.flare_calls or "FLModel" in state.flare_calls:
         return "client_api_converted"
@@ -965,12 +726,13 @@ def _conversion_state(state: InspectState, detected_framework: Optional[str]) ->
     return "unknown"
 
 
-def _has_lightning_client_api_completion(state: InspectState) -> bool:
-    # An nvflare.client.lightning ``patch(trainer)`` call is the definitive
-    # Lightning conversion signal even without explicit ``flare.send`` because
-    # the patched trainer performs the result exchange. Do not require static
-    # Trainer-constructor evidence here: wrappers and factories can hide it.
-    return bool(state.lightning_patch_calls and state.flare_imports)
+def _has_conversion_integration(state: InspectState) -> bool:
+    # A framework conversion-integration signal (e.g. an nvflare.client.lightning
+    # ``patch(trainer)`` call) is a definitive conversion signal even without an
+    # explicit ``flare.send``, because the framework's callback performs the
+    # result exchange. Detectors record these signals via on_call; do not
+    # require static constructor evidence here (wrappers/factories can hide it).
+    return bool(state.integration_signals and state.flare_imports)
 
 
 def _target_type(path: Path, state: InspectState, detected_framework: Optional[str], conversion_state: str) -> str:
@@ -984,19 +746,17 @@ def _target_type(path: Path, state: InspectState, detected_framework: Optional[s
         return "flare_job_source"
     if detected_framework and conversion_state in {"partial_client_api", "client_api_converted"}:
         return "mixed_workspace"
-    if _is_mixed_pytorch_lightning_workspace(state, detected_framework):
+    if _is_mixed_family_workspace(state, detected_framework):
         return "mixed_workspace"
     if detected_framework:
         return "training_repository"
     return "unknown_target"
 
 
-def _is_mixed_pytorch_lightning_workspace(state: InspectState, detected_framework: Optional[str]) -> bool:
-    return (
-        detected_framework == "pytorch"
-        and "pytorch" in state.framework_evidence
-        and LIGHTNING_FRAMEWORK in state.framework_evidence
-    )
+def _is_mixed_family_workspace(state: InspectState, detected_framework: Optional[str]) -> bool:
+    # A family base (e.g. PyTorch) detected alongside its superset member
+    # (PyTorch Lightning) in the evidence is a mixed workspace.
+    return bool(frameworks.family_base_has_member(detected_framework, state.framework_evidence))
 
 
 def _add_entry_point(path: Path, rel_path: str, tree: ast.Module, state: InspectState) -> None:
@@ -1030,7 +790,7 @@ def _skill_selection(detected_framework: Optional[str], conversion_state: str, s
         # handled with product APIs directly, so no skill is recommended.
         pass
     elif detected_framework and conversion_state == "not_converted":
-        skill = FRAMEWORK_SKILLS.get(detected_framework)
+        skill = frameworks.recommended_skill_for(detected_framework)
         if skill:
             recommended.append(skill)
     if state.findings or state.files_skipped:
@@ -1054,7 +814,7 @@ def _recommended_next_commands(
     elif state.job_py and state.export_support:
         commands.append("python job.py --export --export-dir <job-dir>")
     elif detected_framework and conversion_state == "not_converted":
-        skill = FRAMEWORK_SKILLS.get(detected_framework)
+        skill = frameworks.recommended_skill_for(detected_framework)
         if skill:
             commands.append(f"Use the {skill} skill before editing.")
     return commands
