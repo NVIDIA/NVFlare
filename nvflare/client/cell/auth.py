@@ -56,6 +56,12 @@ DEFAULT_NONCE_BYTES = 16
 
 # Minimum accepted length (hex chars) for a caller-supplied token: 16 bytes of entropy.
 MIN_TOKEN_HEX_CHARS = 32
+# Minimum bytes of entropy accepted by the token/nonce generators (128-bit floor).
+_MIN_ENTROPY_BYTES = 16
+# The HELLO proof is a SHA-256 HMAC hex digest, so its length is fixed. A presented proof of
+# any other length cannot match and is rejected up front (avoids HMAC/compare work on an
+# arbitrarily long attacker-supplied string).
+PROOF_HEX_LEN = hashlib.sha256().digest_size * 2  # 64
 
 
 @dataclasses.dataclass(frozen=True)
@@ -93,12 +99,23 @@ def generate_session_token(num_bytes: int = DEFAULT_TOKEN_BYTES) -> str:
     Returns:
         The token as a hex string. The raw token must be held only in memory; anything
         persisted must store only its digest (see token_digest).
+
+    Raises:
+        ValueError: if num_bytes is below the 128-bit entropy floor (_MIN_ENTROPY_BYTES).
     """
+    if num_bytes < _MIN_ENTROPY_BYTES:
+        raise ValueError(f"num_bytes must be >= {_MIN_ENTROPY_BYTES} (128-bit floor) but got {num_bytes}")
     return secrets.token_hex(num_bytes)
 
 
 def generate_nonce(num_bytes: int = DEFAULT_NONCE_BYTES) -> str:
-    """Generate a new single-use challenge nonce as a hex string."""
+    """Generate a new single-use challenge nonce as a hex string.
+
+    Raises:
+        ValueError: if num_bytes is below the 128-bit entropy floor (_MIN_ENTROPY_BYTES).
+    """
+    if num_bytes < _MIN_ENTROPY_BYTES:
+        raise ValueError(f"num_bytes must be >= {_MIN_ENTROPY_BYTES} (128-bit floor) but got {num_bytes}")
     return secrets.token_hex(num_bytes)
 
 
@@ -160,18 +177,23 @@ def verify_hello_proof(token: str, nonce: str, scope: TokenScope, proof: str) ->
         proof: the presented proof (hex string).
 
     Returns:
-        True if the proof is valid for (token, nonce, scope). Never raises for a
-        malformed/attacker-supplied proof: a non-str, empty, or non-ASCII proof returns False.
+        True if the proof is valid for (token, nonce, scope). Never raises for
+        malformed/attacker-supplied input: a non-str, wrong-length, or non-ASCII proof returns
+        False, and a non-str token/nonce (e.g. a None token from a config miss on the one-round
+        path) returns False rather than raising.
     """
-    if not isinstance(proof, str) or not proof:
+    # A valid proof is always a SHA-256 hex digest of fixed length; reject any other length up
+    # front so an arbitrarily long attacker-supplied proof cannot force HMAC/compare work.
+    if not isinstance(proof, str) or len(proof) != PROOF_HEX_LEN:
         return False
     try:
         expected = compute_hello_proof(token, nonce, scope)
         # Encode both operands to bytes before compare_digest: hmac.compare_digest raises
         # TypeError on a non-ASCII str, so a non-ASCII (attacker-supplied) proof would raise
         # instead of failing. Comparing bytes makes any malformed proof simply mismatch.
+        # AttributeError covers a non-str token/nonce (e.g. .encode on None) on the one-round path.
         return hmac.compare_digest(expected.encode("utf-8"), proof.encode("utf-8"))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, AttributeError):
         return False
 
 

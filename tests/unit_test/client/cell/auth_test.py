@@ -60,6 +60,17 @@ class TestTokenAndDigest:
         nonces = {generate_nonce() for _ in range(100)}
         assert len(nonces) == 100
 
+    def test_generators_reject_below_entropy_floor(self):
+        # public primitives must not mint an empty/weak token or nonce
+        for bad in (0, -1, 8, 15):
+            with pytest.raises(ValueError):
+                generate_session_token(bad)
+            with pytest.raises(ValueError):
+                generate_nonce(bad)
+        # the floor itself is accepted
+        assert len(generate_session_token(16)) == 32
+        assert len(generate_nonce(16)) == 32
+
 
 class TestHelloProof:
     def test_proof_round_trip(self):
@@ -116,6 +127,28 @@ class TestHelloProof:
         assert not verify_hello_proof(token, nonce, scope, "")
         assert not verify_hello_proof(token, nonce, scope, None)
 
+    def test_wrong_length_proof_rejected(self):
+        # a valid proof is a fixed-length SHA-256 hex digest; any other length is rejected
+        # up front (no HMAC/compare work on an arbitrarily long attacker string)
+        from nvflare.client.cell.auth import PROOF_HEX_LEN
+
+        token = generate_session_token()
+        nonce = generate_nonce()
+        scope = _make_scope()
+        assert PROOF_HEX_LEN == 64
+        assert not verify_hello_proof(token, nonce, scope, "ab")  # too short
+        assert not verify_hello_proof(token, nonce, scope, "a" * (PROOF_HEX_LEN - 1))
+        assert not verify_hello_proof(token, nonce, scope, "a" * (PROOF_HEX_LEN + 1))
+        assert not verify_hello_proof(token, nonce, scope, "a" * 100_000)  # huge
+
+    def test_non_str_token_or_nonce_returns_false_without_raising(self):
+        # the one-round path calls verify_hello_proof directly; a None token/nonce (e.g. a
+        # config miss) must return False, not raise AttributeError
+        scope = _make_scope()
+        proof = "a" * 64
+        assert verify_hello_proof(None, generate_nonce(), scope, proof) is False
+        assert verify_hello_proof(generate_session_token(), None, scope, proof) is False
+
     def test_serialization_is_unambiguous_across_field_boundaries(self):
         # shifting bytes between adjacent fields must not produce the same proof
         token = generate_session_token()
@@ -126,11 +159,12 @@ class TestHelloProof:
 
     def test_non_ascii_proof_returns_false_without_raising(self):
         # hmac.compare_digest raises TypeError on a non-ASCII str; verify must return False.
+        # Use a 64-char proof so it passes the length check and actually reaches compare_digest.
         token = generate_session_token()
         nonce = generate_nonce()
         scope = _make_scope()
-        assert verify_hello_proof(token, nonce, scope, "deadbeefÿ") is False
-        assert verify_hello_proof(token, nonce, scope, "中文") is False
+        assert verify_hello_proof(token, nonce, scope, "a" * 63 + "ÿ") is False
+        assert verify_hello_proof(token, nonce, scope, "中" * 32) is False
 
     def test_cross_typed_scope_produces_different_proof_and_fails(self):
         # protocol_version=1 (int) and protocol_version="1" (str) must not be interchangeable.

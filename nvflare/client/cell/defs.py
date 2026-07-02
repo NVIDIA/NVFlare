@@ -48,6 +48,10 @@ class Topic:
     HELLO_CHALLENGE = "client_api.hello_challenge"
     HELLO_PROOF = "client_api.hello_proof"
     HELLO_ACCEPTED = "client_api.hello_accepted"
+    # Distinct from ERROR (a protocol/transport error): HELLO_REJECTED is a clean, semantic
+    # auth/handshake refusal (bad proof, wrong scope, consumed/expired nonce, single-session),
+    # so TE-3/AT-2 state machines can tell a recoverable auth failure from a protocol fault.
+    HELLO_REJECTED = "client_api.hello_rejected"
 
     # Per task (every round)
     TASK_READY = "client_api.task_ready"
