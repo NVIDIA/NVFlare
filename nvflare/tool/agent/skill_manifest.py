@@ -94,6 +94,10 @@ def build_skill_manifest(
                 )
                 continue
             metadata = dict(result.metadata)
+            # NVFLARE custom fields live under the agentskills.io `metadata` map;
+            # name/description remain top level. Validation (result.ok above)
+            # guarantees the required sub-map fields are present for valid skills.
+            sub = metadata.get("metadata") if isinstance(metadata.get("metadata"), dict) else {}
             try:
                 source_hash = skill_tree_hash(child, exclude_names=source_hash_exclude_names)
             except (OSError, ValueError) as exc:
@@ -106,11 +110,11 @@ def build_skill_manifest(
             skills.append(
                 {
                     "name": metadata["name"],
-                    "skill_version": metadata.get("skill_version", "0.0.0"),
-                    "min_flare_version": metadata["min_flare_version"],
-                    "max_flare_version": metadata.get("max_flare_version"),
-                    "blast_radius": metadata["blast_radius"],
-                    "category": metadata.get("category"),
+                    "skill_version": sub.get("skill_version", "0.0.0"),
+                    "min_flare_version": sub["min_flare_version"],
+                    "max_flare_version": sub.get("max_flare_version"),
+                    "blast_radius": sub["blast_radius"],
+                    "category": sub.get("category"),
                     "source_hash": source_hash,
                     "relative_path": child.name,
                 }

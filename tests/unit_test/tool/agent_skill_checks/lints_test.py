@@ -679,14 +679,15 @@ def _write_skill(
 ):
     skill_dir = root / name
     skill_dir.mkdir(parents=True)
-    status_line = f"status: {status}\n" if status else ""
+    status_line = f"  status: {status}\n" if status else ""
     skill_dir.joinpath("SKILL.md").write_text(
         "---\n"
         f"name: {name}\n"
         f"description: {description}\n"
-        'min_flare_version: "2.8.0"\n'
-        "blast_radius: edits_files\n"
-        f"category: {category}\n"
+        "metadata:\n"
+        '  min_flare_version: "2.8.0"\n'
+        "  blast_radius: edits_files\n"
+        f"  category: {category}\n"
         f"{status_line}"
         "---\n"
         "\n"

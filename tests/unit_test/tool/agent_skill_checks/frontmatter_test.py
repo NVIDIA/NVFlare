@@ -22,11 +22,56 @@ CHECKS_PARENT = Path(__file__).resolve().parents[4] / "dev_tools" / "agent" / "s
 sys.path.insert(0, str(CHECKS_PARENT))
 
 from checks.frontmatter import (  # noqa: E402
+    SPEC_TOP_LEVEL_FIELDS,
     SkillFrontmatterError,
     parse_skill_frontmatter,
+    should_skip_skill_dir,
     validate_skill_dir,
     validate_skills_root,
 )
+
+REPO_ROOT = Path(__file__).resolve().parents[4]
+SKILLS_ROOT = REPO_ROOT / "skills"
+
+
+def test_shipped_skills_frontmatter_is_agentskills_spec_compliant():
+    # Every shipped skill must keep only agentskills.io top-level keys; NVFLARE
+    # custom fields (min_flare_version, blast_radius, category, ...) live under
+    # `metadata:`. Locks in the spec alignment so a top-level custom field can't
+    # silently regress.
+    skill_dirs = [d for d in sorted(SKILLS_ROOT.iterdir()) if not should_skip_skill_dir(d)]
+    assert skill_dirs, "no shipped skills found"
+    for skill_dir in skill_dirs:
+        metadata = parse_skill_frontmatter(skill_dir / "SKILL.md")
+        extra = set(metadata) - SPEC_TOP_LEVEL_FIELDS
+        assert not extra, f"{skill_dir.name}: non-spec top-level frontmatter keys {sorted(extra)}"
+        assert isinstance(metadata.get("metadata"), dict)
+        assert "min_flare_version" in metadata["metadata"]
+        assert "blast_radius" in metadata["metadata"]
+        assert validate_skill_dir(skill_dir).ok
+
+
+def test_validate_skill_dir_rejects_top_level_custom_field(tmp_path):
+    # A custom field left at the top level (not nested under metadata) is flagged.
+    skill_dir = tmp_path / "nvflare-top-level-custom"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: nvflare-top-level-custom\n"
+        "description: Fixture.\n"
+        'min_flare_version: "2.8.0"\n'
+        "metadata:\n"
+        "  blast_radius: read_only\n"
+        "  category: Test\n"
+        "---\n\n# Skill\n",
+        encoding="utf-8",
+    )
+
+    result = validate_skill_dir(skill_dir)
+
+    assert not result.ok
+    assert "skill-frontmatter-field-unsupported" in {issue.code for issue in result.issues}
+
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -36,9 +81,9 @@ def test_parse_skill_frontmatter_reads_required_fields():
 
     assert metadata["name"] == "nvflare-example-skill"
     assert metadata["description"] == "Example fixture skill used by frontmatter validator tests."
-    assert metadata["min_flare_version"] == "2.8.0"
-    assert metadata["blast_radius"] == "read_only"
-    assert metadata["category"] == "Test"
+    assert metadata["metadata"]["min_flare_version"] == "2.8.0"
+    assert metadata["metadata"]["blast_radius"] == "read_only"
+    assert metadata["metadata"]["category"] == "Test"
 
 
 def test_parse_skill_frontmatter_accepts_utf8_bom(tmp_path):
@@ -113,9 +158,10 @@ def test_validate_skill_dir_reports_wrong_type_fields(tmp_path):
         "---\n"
         "name: nvflare-wrong-type\n"
         "description: Wrong type fixture.\n"
-        "min_flare_version: 2.8\n"
-        "blast_radius: read_only\n"
-        "category: Test\n"
+        "metadata:\n"
+        "  min_flare_version: 2.8\n"
+        "  blast_radius: read_only\n"
+        "  category: Test\n"
         "---\n"
         "\n"
         "# Wrong Type\n",
@@ -156,7 +202,7 @@ def test_validate_skill_dir_accepts_category_frontmatter(tmp_path):
     result = validate_skill_dir(skill_dir)
 
     assert result.ok
-    assert result.metadata["category"] == "Test"
+    assert result.metadata["metadata"]["category"] == "Test"
     assert result.issues == ()
 
 
@@ -288,14 +334,15 @@ def test_validate_skills_root_reports_missing_root(tmp_path):
 def _write_skill(tmp_path, skill_name, *, name=None, blast_radius="read_only", category="Test", status=None):
     skill_dir = tmp_path / skill_name
     skill_dir.mkdir()
-    category_line = f"category: {category}\n" if category is not None else ""
-    status_line = f"status: {status}\n" if status is not None else ""
+    category_line = f"  category: {category}\n" if category is not None else ""
+    status_line = f"  status: {status}\n" if status is not None else ""
     skill_dir.joinpath("SKILL.md").write_text(
         "---\n"
         f"name: {name or skill_name}\n"
         "description: Test skill fixture.\n"
-        'min_flare_version: "2.8.0"\n'
-        f"blast_radius: {blast_radius}\n"
+        "metadata:\n"
+        '  min_flare_version: "2.8.0"\n'
+        f"  blast_radius: {blast_radius}\n"
         f"{category_line}"
         f"{status_line}"
         "---\n"

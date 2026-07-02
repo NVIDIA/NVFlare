@@ -1,10 +1,11 @@
 ---
 name: nvflare-diagnose-job
 description: "Diagnose failed, stalled, or suspicious NVFLARE jobs in simulation, POC, or production by collecting bounded evidence and mapping failure patterns to recovery actions."
-min_flare_version: "2.8.0"
-blast_radius: read_only
-category: Troubleshooting
-skill_version: "0.1.0"
+metadata:
+  min_flare_version: "2.8.0"
+  blast_radius: read_only
+  category: Troubleshooting
+  skill_version: "0.1.0"
 ---
 
 # NVFLARE Diagnose Job
