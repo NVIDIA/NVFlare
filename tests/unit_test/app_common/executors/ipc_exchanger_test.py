@@ -110,12 +110,13 @@ def test_monitor_connects_on_heartbeat_and_stops_cleanly():
     def stop_after_sleep(_):
         exchanger.is_done = True
 
-    with patch("nvflare.app_common.executors.ipc_exchanger.time.time", side_effect=[2.0, 2.1, 2.2]):
-        with patch("nvflare.app_common.executors.ipc_exchanger.time.sleep", side_effect=stop_after_sleep):
-            exchanger._monitor()
+    with patch("nvflare.app_common.executors.ipc_exchanger.time") as clock:
+        clock.time.return_value = 2.0
+        clock.sleep.side_effect = stop_after_sleep
+        exchanger._monitor()
 
     assert exchanger.is_connected
-    assert exchanger.last_agent_ack_time == 2.1
+    assert exchanger.last_agent_ack_time == 2.0
 
 
 def test_monitor_panics_when_agent_heartbeat_expires():
@@ -131,7 +132,8 @@ def test_monitor_panics_when_agent_heartbeat_expires():
     exchanger.last_agent_ack_time = 0.0
     exchanger.is_connected = True
 
-    with patch("nvflare.app_common.executors.ipc_exchanger.time.time", side_effect=[10.0, 10.0]):
+    with patch("nvflare.app_common.executors.ipc_exchanger.time") as clock:
+        clock.time.return_value = 10.0
         exchanger._monitor()
 
     assert exchanger.is_done
