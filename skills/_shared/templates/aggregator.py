@@ -44,6 +44,16 @@ def _step_weight(model: FLModel) -> float:
     return weight if math.isfinite(weight) and weight > 0 else 1.0
 
 
+def _materialize(value):
+    # Disk-offloaded params (enable_tensor_disk_offload=True) may arrive as lazy
+    # references rather than in-memory tensors. materialize() loads the tensor
+    # from disk before the weighted-sum math, mirroring nvflare's
+    # WeightedAggregationHelper.add(); a plain tensor has no materialize() and is
+    # returned unchanged.
+    materialize_fn = getattr(value, "materialize", None)
+    return materialize_fn() if callable(materialize_fn) else value
+
+
 class WeightedAggregator(ModelAggregator):
     """Average client updates weighted by each client's local step count."""
 
@@ -63,6 +73,7 @@ class WeightedAggregator(ModelAggregator):
         weight = _step_weight(model)
         self._params_type = model.params_type
         for key, value in model.params.items():
+            value = _materialize(value)
             if key in self._weighted_sum:
                 self._weighted_sum[key] = self._weighted_sum[key] + value * weight
                 self._key_weight[key] += weight

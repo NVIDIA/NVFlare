@@ -166,47 +166,44 @@ class LightningDetector(FrameworkDetector):
         active_lightning_evidence = resolver.active_evidence(self.name)
         active_pytorch_evidence = resolver.active_evidence(family_base)
 
-        # torch.optim/losses/dataloaders used *inside* a file that already holds
-        # active Lightning evidence are part of the Lightning model, not
-        # standalone base usage. Only active PyTorch evidence in files with no
-        # active Lightning evidence competes as genuine base usage; otherwise a
-        # realistic LightningModule (which always calls torch APIs) would be
-        # mis-scored as a PyTorch-dominant workspace.
-        pytorch_evidence_outside_active_lightning_files = resolver.evidence_outside_files(
-            pytorch_evidence, active_lightning_evidence
-        )
-        # Standalone base usage is active PyTorch that is NOT inside a Lightning
-        # model class body. Using class-body containment (rather than whole-file)
-        # keeps torch.optim/losses/dataloaders written inside a LightningModule
-        # attributed to Lightning, while a sibling plain-torch model or
-        # module-level training code co-located with a stray Lightning class still
-        # counts as genuine base usage.
+        # An active Lightning model reachable from the entry context means the
+        # project is a Lightning project -> route to the superset. torch used to
+        # build or train that model (optimizers, losses, dataloaders, and helper
+        # nn.Module submodules composed by the LightningModule) does not demote
+        # it, so a realistic Lightning repo is not mis-scored as PyTorch-dominant.
+        #
+        # DESIGN DECISION (do not re-add a "standalone torch dominates -> base"
+        # guard here): a reachable LightningModule wins even when co-located with
+        # dominant plain-torch code. This deliberately favors the common case
+        # (real Lightning projects that compose torch submodules and heavy torch
+        # usage) over the rare edge of a stray/empty leftover LightningModule in a
+        # torch-only repo. Routing that rare edge to the Lightning skill is
+        # low-harm (the conversion still works); mis-routing real Lightning repos
+        # to the PyTorch skill is not. The stray-leftover case is intentionally
+        # accepted, not a bug to "fix" by demoting reachable Lightning.
+        if resolver.tied_to_entry_context(active_lightning_evidence):
+            return True
+        # Any PyTorch evidence (not only active) tied to the entry context keeps
+        # the base framework primary when Lightning is not reachable there.
+        if resolver.tied_to_entry_context(pytorch_evidence):
+            return False
+
+        # Neither bucket is tied to the entry context: fall back to weighted
+        # evidence. torch used *inside* a Lightning model class body is Lightning's,
+        # so only active PyTorch outside those bodies competes as standalone base
+        # usage; a sibling plain-torch model or module-level training code
+        # co-located with a stray Lightning class still counts as genuine base use.
         active_lightning_class_evidence = [
             item for item in active_lightning_evidence if item.get("kind") == "lightning_class"
         ]
         standalone_active_pytorch_evidence = resolver.evidence_outside_class_bodies(
             active_pytorch_evidence, active_lightning_class_evidence
         )
+        pytorch_evidence_outside_active_lightning_files = resolver.evidence_outside_files(
+            pytorch_evidence, active_lightning_evidence
+        )
         active_lightning_score = resolver.score(active_lightning_evidence)
         standalone_active_pytorch_score = resolver.score(standalone_active_pytorch_evidence)
-
-        if resolver.tied_to_entry_context(active_lightning_evidence):
-            # A Lightning model reachable from the entry context means Lightning,
-            # UNLESS a stray Lightning class is co-located in an entry-point file
-            # with dominant standalone torch (a plain-torch project that happens to
-            # keep a leftover LightningModule). In that case fall through to the
-            # base handling below rather than flipping the project to Lightning.
-            standalone_dominates = (
-                resolver.tied_to_entry_context(standalone_active_pytorch_evidence)
-                and standalone_active_pytorch_score > active_lightning_score
-            )
-            if not standalone_dominates:
-                return True
-        # Any PyTorch evidence (not only active) tied to the entry context keeps
-        # the base framework primary, matching the pre-refactor behavior.
-        elif resolver.tied_to_entry_context(pytorch_evidence):
-            return False
-
         lightning_score = resolver.score(lightning_evidence)
         pytorch_score_outside_active_lightning_files = resolver.score(pytorch_evidence_outside_active_lightning_files)
         if resolver.has_inspected_file_or_entry_point() and standalone_active_pytorch_evidence:

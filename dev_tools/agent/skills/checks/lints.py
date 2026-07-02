@@ -53,9 +53,21 @@ from pathlib import Path
 from typing import Any, Iterable, Optional
 
 try:
-    from .frontmatter import SKILL_FILE_NAME, parse_skill_frontmatter, should_skip_skill_dir, validate_skill_dir
+    from .frontmatter import (
+        PUBLIC_EXEMPT_STATUS,
+        SKILL_FILE_NAME,
+        parse_skill_frontmatter,
+        should_skip_skill_dir,
+        validate_skill_dir,
+    )
 except ImportError:
-    from frontmatter import SKILL_FILE_NAME, parse_skill_frontmatter, should_skip_skill_dir, validate_skill_dir
+    from frontmatter import (
+        PUBLIC_EXEMPT_STATUS,
+        SKILL_FILE_NAME,
+        parse_skill_frontmatter,
+        should_skip_skill_dir,
+        validate_skill_dir,
+    )
 
 V1_LINT_IDS = (
     "skill-frontmatter-lint",
@@ -91,7 +103,6 @@ SKILL_MD_ADVISORY_WORDS = 2000
 MAX_SKILL_TEXT_FILE_BYTES = 512 * 1024
 DEFAULT_MAX_TRIGGER_OVERLAP_SKILLS = 200
 
-_PUBLIC_EXEMPT_STATUS = {"draft", "internal", "private"}
 _SIZE_EXCEPTION_MARKERS = (
     "nvflare-lint: allow skill-md-size-lint",
     "skill-md-size-lint: approved-exception",
@@ -207,7 +218,7 @@ class SkillRecord:
     @property
     def public(self) -> bool:
         status = str(self.metadata.get("status", "public")).strip().lower()
-        return status not in _PUBLIC_EXEMPT_STATUS
+        return status not in PUBLIC_EXEMPT_STATUS
 
 
 @dataclass

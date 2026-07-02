@@ -100,6 +100,37 @@ def test_custom_aggregator_template_step_weighted_average():
     assert result.params["w"][0] == pytest.approx(3.5)
 
 
+def test_custom_aggregator_template_materializes_lazy_disk_offload_refs():
+    # With enable_tensor_disk_offload=True, params can arrive as lazy references
+    # exposing materialize() instead of in-memory arrays. The template must
+    # materialize before the weighted-sum math rather than doing value * weight
+    # on the ref (which would raise TypeError).
+    import numpy as np
+
+    from nvflare.apis.dxo import MetaKey
+    from nvflare.app_common.abstract.fl_model import FLModel
+
+    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    aggregator = module.WeightedAggregator()
+
+    class _LazyRef:
+        def __init__(self, array):
+            self._array = array
+
+        def materialize(self):
+            return self._array
+
+        def __mul__(self, other):  # pragma: no cover - must never be reached
+            raise TypeError("lazy ref must be materialized before weighted math")
+
+    aggregator.accept_model(FLModel(params={"w": _LazyRef(np.array([2.0]))}, meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 1}))
+    aggregator.accept_model(FLModel(params={"w": _LazyRef(np.array([4.0]))}, meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 3}))
+    result = aggregator.aggregate_model()
+
+    # (2*1 + 4*3) / (1 + 3) = 3.5, computed on the materialized arrays.
+    assert result.params["w"][0] == pytest.approx(3.5)
+
+
 def test_custom_aggregator_template_averages_per_key_with_mismatched_keys():
     # A parameter present in only one client is averaged over just that client's
     # weight (not diluted), and a key missing from the first client does not
