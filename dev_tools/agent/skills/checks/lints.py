@@ -1006,17 +1006,12 @@ def _iter_packaged_runtime_files(skill_dir: Path) -> Iterable[tuple[Path, str]]:
     """Yield decoded text files a skill ships as runtime content (minus evals/)."""
     if not skill_dir.is_dir():
         return
-    for dirpath, dirnames, filenames in os.walk(skill_dir, followlinks=False):
-        dirnames[:] = sorted(
-            name
-            for name in dirnames
-            if name not in _RUNTIME_BOUNDARY_EXCLUDED_DIRS and not (Path(dirpath) / name).is_symlink()
-        )
-        for filename in sorted(filenames):
-            path = Path(dirpath) / filename
-            content = _read_runtime_text_file(path)
-            if content is not None:
-                yield path, content
+    for path in _iter_files_no_follow(skill_dir):
+        if any(part in _RUNTIME_BOUNDARY_EXCLUDED_DIRS for part in path.relative_to(skill_dir).parts):
+            continue
+        content = _read_runtime_text_file(path)
+        if content is not None:
+            yield path, content
 
 
 def _iter_shared_runtime_files(skills_root: Path) -> Iterable[tuple[Path, str]]:
@@ -1029,19 +1024,11 @@ def _iter_shared_runtime_files(skills_root: Path) -> Iterable[tuple[Path, str]]:
 
 
 def _read_runtime_text_file(path: Path) -> Optional[str]:
-    if path.is_symlink() or not path.is_file():
+    # Runtime-scan-specific guards (skip symlinked files and non-text suffixes),
+    # then defer the size-cap + bounded read to the shared reader.
+    if path.is_symlink() or path.suffix.lower() not in _RUNTIME_TEXT_SUFFIXES:
         return None
-    if path.suffix.lower() not in _RUNTIME_TEXT_SUFFIXES:
-        return None
-    try:
-        if path.stat().st_size > MAX_SKILL_TEXT_FILE_BYTES:
-            return None
-    except OSError:
-        return None
-    try:
-        return path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return None
+    return _read_bounded_text(path)
 
 
 def _scan_runtime_boundary(context: LintContext, file_path: Path, text: str, *, skill: Optional[str]) -> None:
