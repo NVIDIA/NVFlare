@@ -734,6 +734,34 @@ def test_inspect_incidental_numpy_entry_does_not_suppress_dynamically_loaded_pyt
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
 
 
+def test_inspect_tied_numpy_entry_fallback_prefers_dynamically_loaded_pytorch(tmp_path):
+    # A single incidental numpy import and a single dynamically-loaded torch
+    # import tie on confidence. The fallback must not route to numpy just
+    # because it sorts alphabetically before pytorch.
+    (tmp_path / "main.py").write_text(
+        "import importlib\n"
+        "import numpy as np\n"
+        "def main():\n"
+        "    importlib.import_module('pkg.net')\n"
+        "    return np.array([1])\n"
+        "if __name__ == '__main__':\n"
+        "    main()\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "pkg" / "net.py").write_text("import torch\n", encoding="utf-8")
+
+    data = inspect_path(tmp_path)
+
+    assert {framework["name"]: framework["confidence"] for framework in data["frameworks"]} == {
+        "numpy": 0.7,
+        "pytorch": 0.7,
+    }
+    assert data["skill_selection"]["detected_framework"] == "pytorch"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
+
+
 def test_inspect_reverse_src_layout_prefers_importing_files_packaging_root(tmp_path):
     # Reverse of the stale-src-copy case: entry and real code live under src/,
     # and a stale copy sits at the root. The import from src/pkg/main.py must

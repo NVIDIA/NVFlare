@@ -485,11 +485,15 @@ def _primary_by_confidence_and_entry_context(state: InspectState, ranked: list[d
     # A numerical utility (numpy) is skipped here: an incidental `import numpy`
     # in the entry must not win over a real convertible framework whose code is
     # loaded dynamically or lives outside the entry file. Utilities are still
-    # ranked and reported; they just never become the entry-context primary.
+    # ranked and reported; they just never become the entry-context primary or
+    # fallback primary while a non-utility framework exists.
     for item in ranked:
         if item["name"] in frameworks.UTILITY_FRAMEWORKS:
             continue
         if _framework_evidence_tied_to_entry_context(state, state.framework_evidence.get(item["name"], [])):
+            return item["name"]
+    for item in ranked:
+        if item["name"] not in frameworks.UTILITY_FRAMEWORKS:
             return item["name"]
     return ranked[0]["name"]
 
