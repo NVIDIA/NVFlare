@@ -67,6 +67,7 @@ from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.binary_transfer import BinaryTransfer
 from nvflare.fuel.hci.server.constants import ConnProps
+from nvflare.fuel.sec.ephemeral_admin_cert import cert_time
 from nvflare.fuel.utils.argument_utils import SafeArgumentParser
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.lighter.tool_consts import NVFLARE_SUBMITTER_CRT_FILE
@@ -108,13 +109,6 @@ CLONED_META_KEYS = {
 JSON_LOG_FILE_NAME = "log.json"
 
 
-def _cert_time(cert, field_name: str) -> datetime.datetime:
-    value = getattr(cert, f"{field_name}_utc", None)
-    if value is not None:
-        return value
-    return getattr(cert, field_name).replace(tzinfo=datetime.timezone.utc)
-
-
 def _submitter_cert_validity(zip_file_name: str) -> Optional[dict]:
     zip_source = io.BytesIO(zip_file_name) if isinstance(zip_file_name, bytes) else zip_file_name
     try:
@@ -134,8 +128,8 @@ def _submitter_cert_validity(zip_file_name: str) -> Optional[dict]:
                 return {}
             cert = cert_chain[0]
             cert_validity = {
-                "not_before": _cert_time(cert, "not_valid_before").timestamp(),
-                "not_after": _cert_time(cert, "not_valid_after").timestamp(),
+                "not_before": cert_time(cert, "not_valid_before").timestamp(),
+                "not_after": cert_time(cert, "not_valid_after").timestamp(),
             }
             if validity is None:
                 validity = cert_validity

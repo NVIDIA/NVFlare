@@ -55,7 +55,10 @@ def validate_step_ca_admin_cert_config(config: Mapping) -> dict:
     if not isinstance(config, Mapping):
         raise EphemeralAdminCertError(f"step_ca provider_config must be a mapping but got {type(config)}")
     result = dict(config)
-    _validate_step_ca_url(str(result.get("ca_url") or ""))
+    ca_url = result.get("ca_url")
+    if not ca_url:
+        raise EphemeralAdminCertError("step_ca provider_config.ca_url is required")
+    _validate_step_ca_url(str(ca_url))
     if not result.get("provisioner"):
         raise EphemeralAdminCertError("step_ca provider_config.provisioner is required")
     _command_timeout(result)

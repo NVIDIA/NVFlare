@@ -28,7 +28,11 @@ from nvflare.fuel.sec.ephemeral_admin_cert import (
     obtain_ephemeral_admin_cert_files,
     validate_ephemeral_admin_cert_files,
 )
-from nvflare.fuel.sec.step_ca_admin_cert import DEFAULT_STEP_CA_REQUEST_NAME, obtain_step_ca_admin_cert_files
+from nvflare.fuel.sec.step_ca_admin_cert import (
+    DEFAULT_STEP_CA_REQUEST_NAME,
+    obtain_step_ca_admin_cert_files,
+    validate_step_ca_admin_cert_config,
+)
 from nvflare.lighter.tool_consts import NVFLARE_SUBMITTER_CRT_FILE
 from nvflare.lighter.utils import (
     Identity,
@@ -457,6 +461,11 @@ def test_step_ca_source_requires_explicit_provisioner(monkeypatch, tmp_path):
             config={"ca_url": "https://step-ca.example.com", "step_bin": str(fake_step)},
             root_ca_file=str(root_ca_path),
         )
+
+
+def test_step_ca_source_requires_ca_url():
+    with pytest.raises(EphemeralAdminCertError, match="ca_url is required"):
+        validate_step_ca_admin_cert_config({"provisioner": "nvflare-admin-oidc"})
 
 
 def test_step_ca_source_times_out_step_command(monkeypatch, tmp_path):
