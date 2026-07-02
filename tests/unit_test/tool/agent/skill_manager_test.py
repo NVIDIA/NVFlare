@@ -230,9 +230,9 @@ def test_install_skills_installs_all_by_default(tmp_path):
     assert install_manifest["name"] == "nvflare-test-skill"
 
 
-def test_install_skills_copies_runtime_content_excluding_caches(tmp_path):
-    # Eval/QA content lives outside skills/, so installs copy all runtime content
-    # (SKILL.md, references) and exclude only byte-code caches, for any source.
+def test_install_skills_copies_runtime_content_excluding_caches_and_evals(tmp_path):
+    # Runtime installs copy SKILL.md and references, but fail closed on cache
+    # files and any stray eval suite that belongs under dev_tools/agent/skill_evals/.
     root = tmp_path / "skills"
     skill_dir = _write_skill(root, "nvflare-test-skill")
     skill_dir.joinpath("references").mkdir()
@@ -240,6 +240,9 @@ def test_install_skills_copies_runtime_content_excluding_caches(tmp_path):
     cache_dir = skill_dir.joinpath("__pycache__")
     cache_dir.mkdir()
     cache_dir.joinpath("stale.pyc").write_text("cached\n", encoding="utf-8")
+    evals_dir = skill_dir.joinpath("evals")
+    evals_dir.mkdir()
+    evals_dir.joinpath("evals.json").write_text("{}\n", encoding="utf-8")
     source = SkillSource(
         source_type="wheel",
         root=root,
@@ -247,13 +250,19 @@ def test_install_skills_copies_runtime_content_excluding_caches(tmp_path):
     )
     target = tmp_path / "target"
 
+    dry_run_plan = install_skills(agent="codex", target_dir=target, source=source, dry_run=True)
     plan = install_skills(agent="codex", target_dir=target, source=source)
 
+    assert all(
+        "__pycache__" not in Path(file_plan["source"]).parts and "evals" not in Path(file_plan["source"]).parts
+        for file_plan in dry_run_plan["skills"][0]["files"]
+    )
     installed = target / "nvflare-test-skill"
     assert plan["applied"] is True
     assert installed.joinpath("SKILL.md").is_file()
     assert installed.joinpath("references", "notes.md").is_file()
     assert not installed.joinpath("__pycache__").exists()
+    assert not installed.joinpath("evals").exists()
     assert (
         skill_tree_hash(installed, exclude_names={INSTALL_MANIFEST_FILE_NAME})
         == source.manifest["skills"][0]["source_hash"]
