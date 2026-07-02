@@ -162,7 +162,7 @@ _KNOWN_AGENT_SKILLS_COMMANDS = {"install", "list"}
 _PLANNED_AGENT_SKILLS_COMMANDS = set()
 _KNOWN_AGENT_FLAGS = {
     "agent": {"--format", "--schema"},
-    "agent doctor": {"--format", "--online", "--schema", "--startup-kit", "--project", "--org"},
+    "agent doctor": {"--format", "--schema"},
     "agent info": {"--format", "--schema"},
     "agent inspect": {"--format", "--redact", "--schema"},
     "agent skills": {"--format", "--schema"},

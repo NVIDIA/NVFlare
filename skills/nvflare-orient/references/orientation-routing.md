@@ -7,8 +7,8 @@ turn project evidence and user intent into one narrow next action.
 
 - `nvflare agent inspect <path> --format json` for framework, FLARE usage,
   conversion state, safety findings, and recommended skills.
-- `nvflare agent doctor --format json` for local CLI, skill bundle, startup-kit,
-  POC, and optional online readiness.
+- `nvflare agent doctor --format json` for local CLI command surface, installed
+  skill bundle, and ML framework dependency readiness.
 - User-provided target files, job folders, logs, or stated deployment context.
 
 ## Routing Rules
