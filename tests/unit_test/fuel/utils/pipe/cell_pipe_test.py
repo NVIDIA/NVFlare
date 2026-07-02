@@ -150,12 +150,26 @@ class TestCellFqcnFormat:
         # phantom segments, so dotted user tokens (e.g. agent ids) keep working
         assert _cell_fqcn("active", "site-1", "agent.v2", parent_fqcn) == "site-1.agent.v2_active"
 
-    @pytest.mark.parametrize("token", ["my_token", "my.token", ""])
+    @pytest.mark.parametrize("token", ["my_token", "my.token"])
     def test_bad_alias_token_is_rejected_behind_relay(self, token):
         # behind another cell the token is the alias runtime id, which must be
-        # non-empty and free of "_" or "." or the alias parses to the wrong owner
+        # free of "_" or "." or the alias parses to the wrong owner
         with pytest.raises(ValueError):
             _cell_fqcn("active", "site-1", token, "relay-1")
+
+    @pytest.mark.parametrize(
+        "parent_fqcn,expected",
+        [
+            (FQCN.ROOT_SERVER, "site-1.default_active"),
+            ("site-1", "site-1.default_active"),
+            ("relay-1", "relay-1.site-1_default_active"),
+            ("", "site-1.default_active"),
+        ],
+    )
+    def test_empty_token_falls_back_to_default(self, parent_fqcn, expected):
+        # the configured token (e.g. "{JOB_ID}") may resolve to an empty string
+        # when no job id is available; the cell must not be named <site>._<mode>
+        assert _cell_fqcn("active", "site-1", "", parent_fqcn) == expected
 
     @pytest.mark.parametrize("parent_fqcn", [FQCN.ROOT_SERVER, "site-1", ""])
     def test_underscore_token_is_allowed_when_not_aliased(self, parent_fqcn):

@@ -47,6 +47,9 @@ _HEADER_HB_SEQ = _PREFIX + "hb_seq"
 
 _logger = logging.getLogger(__name__)
 
+# used in place of an empty token (e.g. when "{JOB_ID}" resolves to nothing)
+_EMPTY_TOKEN_FALLBACK = "default"
+
 
 def _cell_fqcn(mode, site_name, token, parent_fqcn):
     # The FQCN of the cell must be unique in the whole cellnet.
@@ -64,6 +67,14 @@ def _cell_fqcn(mode, site_name, token, parent_fqcn):
     # core_cell_routing_test.py).
     # The two peer pipes on the same site share the same site_name and token,
     # but are differentiated by their modes.
+    if not token:
+        # The configured token (e.g. "{JOB_ID}") may resolve to an empty
+        # string when no job id is available. Use a fixed fallback so the
+        # cell is not named "<site>._<mode>". Both ends of a pipe pair derive
+        # their own and the peer's name from the same inputs, so they agree
+        # on the fallback.
+        token = _EMPTY_TOKEN_FALLBACK
+
     cell_name = f"{token}_{mode}"
     if parent_fqcn == FQCN.ROOT_SERVER:
         # A "." in the token adds phantom FQCN segments, but root-connected
@@ -282,6 +293,12 @@ class CellPipe(Pipe):
         check_str("token", token)
         check_str("site_name", site_name)
         check_str("workspace_dir", workspace_dir)
+
+        if not token:
+            self.logger.warning(
+                f"CellPipe token is empty (no job id available?): "
+                f"using '{_EMPTY_TOKEN_FALLBACK}' as the cell name token"
+            )
 
         # determine the endpoint for this pipe to connect to
         root_conn_props = get_scope_property(site_name, ConnPropKey.ROOT_CONN_PROPS)
