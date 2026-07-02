@@ -169,13 +169,6 @@ class JobRunner(FLComponent):
         job_cert_issuer = None
         if fl_ctx.get_prop(FLContextKey.SECURE_MODE, False):
             job_cert_issuer = load_job_cert_issuer(workspace.get_startup_kit_dir())
-        if job_cert_issuer:
-            # the SJ cert must present the CN of the site's server cert — that is the identity
-            # peers expect for server FQCNs (fl_ctx.get_identity_name() is the literal "server")
-            server_cert_path = os.path.join(workspace.get_startup_kit_dir(), f"{CertFileBasename.SERVER}.crt")
-            server_cn = get_cn_from_cert(load_cert_file(server_cert_path))
-            cert_pem, key_pem = job_cert_issuer.issue(server_cn, job.job_id)
-            write_job_cert(workspace.get_run_dir(job.job_id), cert_pem, key_pem)
 
         client_deploy_requests = {}
         client_token_to_name = {}
@@ -260,6 +253,16 @@ class JobRunner(FLComponent):
                     f"App {app_name} to be deployed to the clients: {display_sites} for run: {run_number}",
                     fire_event=False,
                 )
+
+        if job_cert_issuer:
+            # write the SJ credential only after all apps are deployed: AppDeployer wipes the
+            # run dir. The SJ cert must present the CN of the site's server cert — that is the
+            # identity peers expect for server FQCNs (fl_ctx.get_identity_name() is the literal
+            # "server")
+            server_cert_path = os.path.join(workspace.get_startup_kit_dir(), f"{CertFileBasename.SERVER}.crt")
+            server_cn = get_cn_from_cert(load_cert_file(server_cert_path))
+            cert_pem, key_pem = job_cert_issuer.issue(server_cn, job.job_id)
+            write_job_cert(workspace.get_run_dir(job.job_id), cert_pem, key_pem)
 
         abort_job = False
         failed_clients = []
