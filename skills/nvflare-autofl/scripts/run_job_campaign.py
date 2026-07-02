@@ -995,9 +995,10 @@ def extract_score(artifact_root: Path, metrics: Sequence[str] | str) -> Optional
         except Exception:
             continue
     for metric in metric_order:
-        number_patterns = [rf"{re.escape(metric)}[^0-9+\-.]+([+-]?[0-9]+(?:\.[0-9]+)?)"]
+        number = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
+        number_patterns = [rf"{re.escape(metric)}[^0-9+\-.]+({number})"]
         if metric == "accuracy":
-            number_patterns.append(r"Accuracy of the network[^0-9+\-.]+([+-]?[0-9]+(?:\.[0-9]+)?)")
+            number_patterns.append(rf"Accuracy of the network[^0-9+\-.]+({number})")
         for text in texts:
             for pattern in number_patterns:
                 matches = re.findall(pattern, text, flags=re.IGNORECASE)
@@ -1899,15 +1900,29 @@ def restore_campaign_settings(args: argparse.Namespace, metadata: Dict[str, Any]
 
 def campaign_timeout(args: argparse.Namespace, schema: Dict[str, Any]) -> Tuple[int, int]:
     budget = comparison_budget(schema)
-    budget_timeout = budget.get("run_timeout_seconds")
-    timeout = max(args.timeout, int(budget_timeout)) if budget_timeout is not None else args.timeout
-    budget_no_progress_timeout = budget.get("simulator_no_progress_timeout_seconds")
+    budget_timeout = parse_timeout_setting(budget.get("run_timeout_seconds"), "run_timeout_seconds")
+    timeout = max(args.timeout, budget_timeout) if budget_timeout is not None else args.timeout
+    budget_no_progress_timeout = parse_timeout_setting(
+        budget.get("simulator_no_progress_timeout_seconds"), "simulator_no_progress_timeout_seconds"
+    )
     no_progress_timeout = (
-        int(budget_no_progress_timeout)
-        if budget_no_progress_timeout is not None
-        else args.simulator_no_progress_timeout
+        budget_no_progress_timeout if budget_no_progress_timeout is not None else args.simulator_no_progress_timeout
     )
     return timeout, no_progress_timeout
+
+
+def parse_timeout_setting(value: Any, name: str) -> Optional[int]:
+    if value is None:
+        return None
+    if isinstance(value, bool) or (isinstance(value, float) and not value.is_integer()):
+        raise ValueError(f"{name} must be a non-negative integer")
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as e:
+        raise ValueError(f"{name} must be a non-negative integer") from e
+    if parsed < 0:
+        raise ValueError(f"{name} must be a non-negative integer")
+    return parsed
 
 
 def import_job_config(

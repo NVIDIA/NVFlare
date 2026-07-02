@@ -157,6 +157,13 @@ def test_metric_order_precedes_artifact_file_order(tmp_path):
     assert runner.extract_score(tmp_path, ["test_accuracy", "accuracy"]) == 0.8
 
 
+def test_text_metric_extraction_supports_scientific_notation(tmp_path):
+    runner = _load_runner()
+    tmp_path.joinpath("log_fl.txt").write_text("validation_loss: 1.25e-4\n", encoding="utf-8")
+
+    assert runner.extract_score(tmp_path, ["validation_loss"]) == pytest.approx(0.000125)
+
+
 def test_runner_applies_schema_metric_contract():
     runner = _load_runner()
     config = {
@@ -202,6 +209,27 @@ def test_comparison_budget_suppresses_duplicate_imported_fixed_budget_args():
 
     args = SimpleNamespace(base_args="", prefer_synthetic=False, synthetic_train_size=1, synthetic_test_size=1)
     assert runner.build_base_args(args, help_text, schema) == ["--n_clients", "8", "--num_rounds", "20"]
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("run_timeout_seconds", [120]),
+        ("run_timeout_seconds", {"seconds": 120}),
+        ("simulator_no_progress_timeout_seconds", [120]),
+        ("simulator_no_progress_timeout_seconds", {"seconds": 120}),
+        ("run_timeout_seconds", -1),
+        ("run_timeout_seconds", True),
+        ("run_timeout_seconds", 1.5),
+    ],
+)
+def test_campaign_timeout_rejects_malformed_schema_values(field, value):
+    runner = _load_runner()
+    args = SimpleNamespace(timeout=900, simulator_no_progress_timeout=240)
+    schema = {"comparison_budget_args": {"default_candidate_budget": {field: value}}}
+
+    with pytest.raises(ValueError, match=f"{field} must be a non-negative integer"):
+        runner.campaign_timeout(args, schema)
 
 
 def test_run_streams_output_before_timeout(tmp_path):
