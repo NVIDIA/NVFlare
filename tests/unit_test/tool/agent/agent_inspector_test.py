@@ -1289,6 +1289,36 @@ def test_lightning_routing_fallback_keeps_pytorch_import_threshold_for_unrelated
     assert not _should_promote_lightning_over_pytorch(state)
 
 
+def test_inspect_unrelated_entry_ignores_pytorch_calls_inside_lightning_module(tmp_path):
+    (tmp_path / "main.py").write_text(
+        "def main():\n" "    return 'unrelated entry point'\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "helper.py").write_text("import torch\n", encoding="utf-8")
+    (tmp_path / "lit.py").write_text(
+        "import torch\n"
+        "import pytorch_lightning as pl\n"
+        "\n"
+        "class LitModel(pl.LightningModule):\n"
+        "    def configure_optimizers(self):\n"
+        "        return torch.optim.SGD(self.parameters(), lr=0.1)\n"
+        "\n"
+        "    def training_step(self, batch, batch_idx):\n"
+        "        loss = torch.nn.CrossEntropyLoss()\n"
+        "        return loss\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    framework_names = [framework["name"] for framework in data["frameworks"]]
+    assert framework_names[0] == "pytorch_lightning"
+    assert "pytorch" in framework_names
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
+    pytorch_evidence = next(framework["evidence"] for framework in data["frameworks"] if framework["name"] == "pytorch")
+    assert any(item["file"] == "lit.py" and item["kind"] == "pytorch_call" for item in pytorch_evidence)
+
+
 def test_inspect_lightning_script_with_many_torch_imports_recommends_lightning(tmp_path):
     # A normal Lightning script imports several torch symbols, so PyTorch import
     # evidence outnumbers Lightning symbols. Lightning still wins.

@@ -178,6 +178,9 @@ class LightningDetector(FrameworkDetector):
         # active Lightning evidence competes as genuine base usage; otherwise a
         # realistic LightningModule (which always calls torch APIs) would be
         # mis-scored as a PyTorch-dominant workspace.
+        pytorch_evidence_outside_active_lightning_files = resolver.evidence_outside_files(
+            pytorch_evidence, active_lightning_evidence
+        )
         standalone_active_pytorch_evidence = resolver.evidence_outside_files(
             active_pytorch_evidence, active_lightning_evidence
         )
@@ -187,10 +190,8 @@ class LightningDetector(FrameworkDetector):
             return False
         if active_lightning_score == 0:
             return False
-        if standalone_active_pytorch_score == 0 and resolver.has_evidence_outside_files(
-            pytorch_evidence, active_lightning_evidence
-        ):
-            if resolver.score(pytorch_evidence) >= resolver.score(lightning_evidence):
+        if standalone_active_pytorch_score == 0 and pytorch_evidence_outside_active_lightning_files:
+            if resolver.score(pytorch_evidence_outside_active_lightning_files) >= resolver.score(lightning_evidence):
                 return False
         if active_lightning_score != standalone_active_pytorch_score:
             return active_lightning_score > standalone_active_pytorch_score
