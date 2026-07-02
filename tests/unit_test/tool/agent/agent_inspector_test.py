@@ -670,16 +670,15 @@ def test_inspect_src_layout_model_imported_by_root_entry_still_resolves(tmp_path
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
 
 
-def test_inspect_stray_lightning_class_co_located_with_dominant_torch_keeps_pytorch(tmp_path):
-    # A leftover empty `class LegacyLit(pl.LightningModule): pass` co-located with
-    # a dominant plain-torch model and training code (in a file that is itself an
-    # entry point via a top-level function) must not flip the project to
-    # Lightning. torch used outside the Lightning class body is standalone base
-    # usage; the stray Lightning class does not dominate.
-    (tmp_path / "run.py").write_text(
-        "import json\nif __name__ == '__main__':\n    print(json.dumps({}))\n",
-        encoding="utf-8",
-    )
+def test_inspect_reachable_lightning_class_wins_over_co_located_torch(tmp_path):
+    # DESIGN DECISION: a LightningModule reachable from the entry context routes
+    # to the Lightning skill even when co-located with dominant plain-torch code.
+    # This deliberately favors the common case (real Lightning projects compose
+    # torch models/submodules) over the rare stray-leftover-LightningModule edge,
+    # which is low-harm (a Lightning conversion still works). Mis-routing a real
+    # Lightning repo to the PyTorch skill would be worse. See the rationale in
+    # LightningDetector.promote_over_family. (Previously this asserted PyTorch;
+    # the guard that produced that was intentionally removed.)
     (tmp_path / "model.py").write_text(
         "import torch\n"
         "import torch.nn as nn\n"
@@ -703,7 +702,97 @@ def test_inspect_stray_lightning_class_co_located_with_dominant_torch_keeps_pyto
 
     data = inspect_path(tmp_path)
 
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
+
+
+def test_inspect_reachable_active_torch_model_beats_import_only_sklearn_entry(tmp_path):
+    # #4: when the entry reaches BOTH import-only sklearn and an ACTIVE torch
+    # model, prefer the framework with real (active) evidence -> recommend the
+    # PyTorch conversion rather than abstaining on the sklearn imports.
+    (tmp_path / "train.py").write_text(
+        "from sklearn.linear_model import LogisticRegression\n"
+        "from sklearn.model_selection import train_test_split\n"
+        "from sklearn.metrics import accuracy_score\n"
+        "from net import Net\n"
+        "def main():\n"
+        "    LogisticRegression()\n"
+        "    Net()\n"
+        "if __name__ == '__main__':\n"
+        "    main()\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "net.py").write_text(
+        "import torch.nn as nn\nclass Net(nn.Module):\n    def forward(self, x):\n        return x\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    assert data["skill_selection"]["detected_framework"] == "pytorch"
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
+
+
+def test_inspect_import_only_sklearn_entry_still_wins_when_torch_unreachable(tmp_path):
+    # #4 control (preserves the earlier sklearn-entry decision): when the torch
+    # helper is NOT reachable from the entry, the entry-owned sklearn stays
+    # primary and no conversion skill is recommended.
+    (tmp_path / "train.py").write_text(
+        "from sklearn.linear_model import LogisticRegression\n"
+        "from sklearn.model_selection import train_test_split\n"
+        "def main():\n"
+        "    LogisticRegression()\n"
+        "if __name__ == '__main__':\n"
+        "    main()\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "data.py").write_text(
+        "import torch\nfrom torch.utils.data import DataLoader\ndef loader(ds):\n    return DataLoader(ds)\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    assert data["skill_selection"]["detected_framework"] == "sklearn"
+    assert data["skill_selection"]["recommended_skills"] == []
+
+
+def test_inspect_frameworks_list_leads_with_detected_primary(tmp_path):
+    # #5: frameworks[0] must match detected_framework even when a non-detected
+    # framework has higher raw confidence (here incidental Lightning imports
+    # outrank the entry-tied active PyTorch model by count).
+    (tmp_path / "train.py").write_text(
+        "import torch\nimport torch.nn as nn\nclass Net(nn.Module):\n    pass\n"
+        "def main():\n    Net()\nif __name__ == '__main__':\n    main()\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "unused.py").write_text(
+        "import pytorch_lightning\nimport pytorch_lightning.callbacks\nimport pytorch_lightning.loggers\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    detected = data["skill_selection"]["detected_framework"]
+    assert detected == "pytorch"
+    assert data["frameworks"][0]["name"] == detected
+
+
+def test_inspect_ranks_on_full_evidence_beyond_display_cap(tmp_path):
+    # #3: framework ranking uses the true evidence count, not the display cap of
+    # 12. A file with more torch imports than a competing framework's imports
+    # ranks PyTorch higher even when both exceed the display cap; the displayed
+    # evidence list stays capped.
+    torch_imports = "".join(f"import torch.pkg{i}\n" for i in range(20))
+    sklearn_imports = "".join(f"import sklearn.pkg{i}\n" for i in range(13))
+    (tmp_path / "a.py").write_text(torch_imports, encoding="utf-8")
+    (tmp_path / "b.py").write_text(sklearn_imports, encoding="utf-8")
+
+    data = inspect_path(tmp_path)
+
+    confidence = {fw["name"]: fw["confidence"] for fw in data["frameworks"]}
+    assert confidence["pytorch"] > confidence["sklearn"]  # 20 vs 13, not a 12-capped tie
+    for fw in data["frameworks"]:
+        assert len(fw["evidence"]) <= 12  # display still bounded
 
 
 def test_inspect_incidental_numpy_entry_does_not_suppress_dynamically_loaded_pytorch(tmp_path):

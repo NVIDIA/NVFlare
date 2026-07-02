@@ -28,6 +28,10 @@ from nvflare.tool.agent.frameworks.base import DetectContext
 DEFAULT_MAX_FILES = 250
 DEFAULT_MAX_FILE_BYTES = 512 * 1024
 MAX_EVIDENCE_PER_BUCKET = 12
+# Backstop for evidence collected per framework bucket. Far above the display
+# cap so ranking/detection uses true counts; only a memory guard for pathological
+# inputs, not a routing-relevant threshold.
+MAX_EVIDENCE_COLLECT = 10000
 # Packaging root dirs whose leading segment is not part of the import path
 # (PyPA src-layout), so `src/pkg/mod.py` is importable as `pkg.mod`.
 _PACKAGE_ROOT_DIR_NAMES = {"src"}
@@ -304,7 +308,7 @@ class _PythonInspector(ast.NodeVisitor):
         )
 
     def _emit_framework_evidence(self, framework: str, kind: str, value: str, lineno) -> None:
-        _append_capped(self.state.framework_evidence, framework, _evidence(self.rel_path, lineno, kind, value))
+        _append_evidence(self.state.framework_evidence, framework, _evidence(self.rel_path, lineno, kind, value))
 
     def _add_integration_signal(self, framework: str, name: str) -> None:
         self.state.integration_signals.setdefault(framework, set()).add(name)
@@ -367,7 +371,7 @@ class _PythonInspector(ast.NodeVisitor):
         self.state.file_imports.setdefault(self.rel_path, set()).add(module)
         framework = frameworks.framework_for_import(module)
         if framework:
-            _append_capped(
+            _append_evidence(
                 self.state.framework_evidence,
                 framework,
                 _evidence(self.rel_path, lineno, "import", module),
@@ -487,11 +491,40 @@ def _primary_by_confidence_and_entry_context(state: InspectState, ranked: list[d
     # loaded dynamically or lives outside the entry file. Utilities are still
     # ranked and reported; they just never become the entry-context primary or
     # fallback primary while a non-utility framework exists.
+    #
+    # Selection order:
+    #   1. Highest-confidence non-utility framework with ACTIVE evidence tied to
+    #      the entry context (a real model/usage the entry actually reaches).
+    #   2. Else highest-confidence non-utility framework with ANY evidence tied
+    #      to the entry context (an import-only entry framework such as sklearn
+    #      when no active framework is reachable there).
+    #   3. Else highest-confidence non-utility framework; a utility wins only
+    #      when it is the sole detected framework.
+    # Step 1 before step 2 means an actively-used torch model reachable from the
+    # entry outranks import-only entry evidence, without demoting a genuinely
+    # entry-owned import-only framework when nothing active is reachable.
+    #
+    # DESIGN DECISION (do not revert to a pure entry-context or pure count rule):
+    # this two-step order is the agreed reconciliation of two review positions.
+    #   - When the entry reaches an ACTIVE convertible model (e.g. a torch
+    #     nn.Module) alongside import-only sklearn, route to the active framework
+    #     (recommend a conversion) rather than abstaining on the sklearn import.
+    #   - When the torch model is NOT reachable from the entry (a stray helper),
+    #     the entry-owned import-only framework still wins (sklearn -> abstain),
+    #     preserving the earlier sklearn-entry fix. Both hold simultaneously.
     for item in ranked:
-        if item["name"] in frameworks.UTILITY_FRAMEWORKS:
+        name = item["name"]
+        if name in frameworks.UTILITY_FRAMEWORKS:
             continue
-        if _framework_evidence_tied_to_entry_context(state, state.framework_evidence.get(item["name"], [])):
-            return item["name"]
+        active = [e for e in state.framework_evidence.get(name, []) if frameworks.is_active_evidence(name, e)]
+        if active and _framework_evidence_tied_to_entry_context(state, active):
+            return name
+    for item in ranked:
+        name = item["name"]
+        if name in frameworks.UTILITY_FRAMEWORKS:
+            continue
+        if _framework_evidence_tied_to_entry_context(state, state.framework_evidence.get(name, [])):
+            return name
     for item in ranked:
         if item["name"] not in frameworks.UTILITY_FRAMEWORKS:
             return item["name"]
@@ -784,35 +817,14 @@ def _evidence_score(evidence: list[dict]) -> int:
 
 
 def _order_frameworks_for_display(ranked: list[dict], detected_framework: Optional[str]) -> list[dict]:
-    family_member = frameworks.family_member_of_base(detected_framework)
-    if family_member:
-        return _order_family_base_before_member(ranked, detected_framework, family_member)
-
-    # Keep the confidence-ranked order but surface the detected primary framework
-    # first so callers reading frameworks[0] stay aligned with the routing
-    # decision. sorted() is stable, so non-primary frameworks keep their order.
+    # Surface the detected primary framework first so callers reading
+    # frameworks[0] always stay aligned with the routing decision, including the
+    # family case (a PyTorch base detected while a higher-confidence Lightning
+    # member is present). sorted() is stable, so every other framework keeps its
+    # confidence-ranked order. When nothing was detected, the order is unchanged.
+    if not detected_framework:
+        return ranked
     return sorted(ranked, key=lambda item: item["name"] != detected_framework)
-
-
-def _order_family_base_before_member(ranked: list[dict], base: str, member: str) -> list[dict]:
-    # When the detected primary is a family base (e.g. PyTorch) that also has a
-    # superset member present (PyTorch Lightning), keep the base ahead of the
-    # member so frameworks[0] matches the routing decision.
-    names = [item["name"] for item in ranked]
-    try:
-        base_index = names.index(base)
-        member_index = names.index(member)
-    except ValueError:
-        return ranked
-
-    if base_index < member_index:
-        return ranked
-
-    ordered = list(ranked)
-    base_item = ordered.pop(base_index)
-    member_index = next(index for index, item in enumerate(ordered) if item["name"] == member)
-    ordered.insert(member_index, base_item)
-    return ordered
 
 
 def _conversion_state(state: InspectState, detected_framework: Optional[str]) -> str:
@@ -1004,9 +1016,13 @@ def _evidence(file_path: str, line: Optional[int], kind: str, value: str) -> dic
     return {"file": file_path, "line": line, "kind": kind, "value": value}
 
 
-def _append_capped(target: dict[str, list[dict]], key: str, value: dict) -> None:
+def _append_evidence(target: dict[str, list[dict]], key: str, value: dict) -> None:
+    # Collect up to a generous backstop so framework ranking/detection sees the
+    # true evidence counts. Display is truncated to MAX_EVIDENCE_PER_BUCKET
+    # separately (see _rank_frameworks); capping at collection time would skew the
+    # count-based confidence and let a file's first 12 imports decide routing.
     bucket = target.setdefault(key, [])
-    if len(bucket) < MAX_EVIDENCE_PER_BUCKET:
+    if len(bucket) < MAX_EVIDENCE_COLLECT:
         bucket.append(value)
 
 

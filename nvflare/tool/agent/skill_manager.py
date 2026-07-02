@@ -247,7 +247,7 @@ def _install_plan(
             "files": (
                 []
                 if source_symlink
-                else _files_to_copy(source_skill_dir, target_skill_dir, exclude_names=_copy_exclude_names(source))
+                else _files_to_copy(source_skill_dir, target_skill_dir, exclude_names=_copy_exclude_names())
             ),
             "version_delta": "new",
         }
@@ -365,7 +365,7 @@ def _sync_shared_references(source: SkillSource, target: Path) -> None:
     source_shared = source.root / SHARED_SKILL_REFERENCE_DIR
     if not source_shared.is_dir():
         return
-    exclude_names = _copy_exclude_names(source)
+    exclude_names = _copy_exclude_names()
     source_hash = skill_tree_hash(source_shared, exclude_names=exclude_names)
     target_shared = target / SHARED_SKILL_REFERENCE_DIR
     plan_entry = {"name": SHARED_SKILL_REFERENCE_DIR, "source_hash": source_hash}
@@ -506,7 +506,7 @@ def _stage_skill(
     symlink = _first_symlink_in_tree(source_dir)
     if symlink:
         raise ValueError(f"skill source must not contain symlinks: {symlink.relative_to(source_dir).as_posix()}")
-    shutil.copytree(source_dir, staged_dir, ignore=shutil.ignore_patterns(*_copy_exclude_names(source)))
+    shutil.copytree(source_dir, staged_dir, ignore=shutil.ignore_patterns(*_copy_exclude_names()))
     manifest = {
         "schema_version": "1",
         "managed_by": "nvflare",
@@ -609,7 +609,7 @@ def _first_symlink_in_tree(root_dir: Path) -> Optional[Path]:
     return None
 
 
-def _copy_exclude_names(source: SkillSource) -> set[str]:
+def _copy_exclude_names() -> set[str]:
     # Copy runtime content only, excluding byte-code caches and (fail-closed) any
     # stray eval suite dir, which must live in dev_tools/agent/skill_evals/.
     return set(SKILL_PACKAGING_EXCLUDE_NAMES)
