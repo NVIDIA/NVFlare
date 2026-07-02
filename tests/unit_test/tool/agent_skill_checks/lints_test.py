@@ -130,7 +130,7 @@ def test_load_evals_rejects_oversized_evals_json(tmp_path):
     evals, error = lints_module._load_evals(evals_path)
 
     assert evals == []
-    assert error == f"evals/evals.json exceeds size limit ({MAX_SKILL_TEXT_FILE_BYTES} bytes)"
+    assert error == f"evals.json exceeds size limit ({MAX_SKILL_TEXT_FILE_BYTES} bytes)"
 
 
 def test_line_for_field_does_not_read_oversized_skill_md(tmp_path):
