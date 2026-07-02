@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposal / design note.
+Proposal / design note. Epic: **FLARE-2698** (Client API and 3rd party integration refactoring, fix version 2.9.0).
 
 Revision 2 (2026-07-01): incorporates review feedback — universal session setup, owner-death and receive-side contracts, forward-path payload lifecycle, cleanup policy definition, receiver-confirmed terminal outcome, per-receiver transfer budgets, configuration surface, attach auth hardening, and a re-sequenced migration plan.
 
@@ -550,11 +550,6 @@ ClientAPIExecutor(
     # session / protocol
     heartbeat_interval=5.0, heartbeat_timeout=30.0,   # out-of-process only
     task_wait_timeout=..., result_wait_timeout=...,
-    # data
-    params_exchange_format="pytorch" | "numpy" | "raw",
-    params_transfer_type="FULL" | "DIFF",
-    server_expected_format=...,
-    from_nvflare_converter_id=..., to_nvflare_converter_id=...,
     # task-name mapping — powers flare.is_train()/is_evaluate()/is_submit_model()
     train_task_name="train", evaluate_task_name="validate",
     submit_model_task_name="submit_model", train_with_evaluation=False,
@@ -572,6 +567,20 @@ silently dropped. `task_script_path`/`task_script_args` (the in_process trainer
 entry point), the task-name mapping, and the memory knobs are carried forward from
 today's InProcessClientAPIExecutor/ScriptRunner so existing jobs map without loss.
 
+**No parameter converters on the executor (per FLARE-2698).** The `params_exchange_format`,
+`params_transfer_type`, `server_expected_format`, and `from/to_nvflare_converter_id` arguments
+of the legacy executors are intentionally absent. Conversion between the framework-agnostic
+aggregation representation (numpy) and the framework-native training representation
+(`torch.Tensor`, Keras weights) moves out of the executor into **send/receive filters at the
+client edge** — the same DXO-transformation mechanism NVFlare already uses (e.g. the PT
+quantizer/dequantizer filters). The intermediate layers (executor, Cell) pass through
+untransformed. Recipes/ScriptRunner auto-wire the framework's conversion filter (as the *last*
+task-data filter and *first* task-result filter, so privacy/DP/HE filters still operate on
+numpy). Because these filters run client-side on task receipt, `flare.receive()` still hands the
+training script native tensors — the ergonomic is preserved, the executor surface is not.
+Transfer type (FULL/DIFF) is a separate axis handled by the Client API's model_registry, not a
+converter; it is decided independently of this removal.
+
 Example client job config (external_process):
 
 ```json
@@ -581,14 +590,13 @@ Example client job config (external_process):
     "path": "nvflare.app_common.executors.client_api_executor.ClientAPIExecutor",
     "args": {
       "execution_mode": "external_process",
-      "command": "python custom/train.py",
-      "params_exchange_format": "pytorch"
+      "command": "torchrun --nproc_per_node=2 custom/train.py"
     }
   }
 }
 ```
 
-One executor component, no pipes, no launcher, no MetricRelay: LOG messages arrive on the session's Cell connection and the executor's Cell backend converts them into `fed.analytix_log_stats` analytics events on the CJ side (the role MetricRelay plays today for ex-process, and the in-process executor's log callback plays for in-process). ExternalConfigurator's job — writing the trainer bootstrap config — moves into the external_process backend's launch step. Framework-specific behavior (PT/TF exchange formats) is expressed through `params_exchange_format`/converters rather than executor subclasses; ScriptRunner keeps selecting the right defaults per framework.
+One executor component, no pipes, no launcher, no MetricRelay: LOG messages arrive on the session's Cell connection and the executor's Cell backend converts them into `fed.analytix_log_stats` analytics events on the CJ side (the role MetricRelay plays today for ex-process, and the in-process executor's log callback plays for in-process). ExternalConfigurator's job — writing the trainer bootstrap config — moves into the external_process backend's launch step.
 
 **Legacy knob disposition (summary):**
 
@@ -604,7 +612,8 @@ One executor component, no pipes, no launcher, no MetricRelay: LOG messages arri
 | MetricRelay, metric pipe | dropped — LOG on the session connection; executor fires analytics events |
 | SubprocessLauncher | internal process runner (not public surface) |
 | ExternalConfigurator | folded into external_process launch (bootstrap config) |
-| params_exchange_format / transfer_type / converters | kept, same meaning |
+| params_exchange_format / server_expected_format / from_nvflare_converter_id / to_nvflare_converter_id | removed from executor (FLARE-2698) — conversion moves to send/receive filters at the client edge |
+| params_transfer_type (FULL/DIFF) | not a converter — stays a Client API concern (model_registry); decided separately |
 | task_script_path / task_script_args | kept (in_process trainer entry point) |
 | train_task_name / evaluate_task_name / submit_model_task_name / train_with_evaluation | kept — power flare.is_train()/is_evaluate()/is_submit_model() |
 | memory_gc_rounds / cuda_empty_cache | kept, same meaning |

@@ -1,8 +1,8 @@
 # Client API Execution Modes — 2.9 Implementation Plan
 
-Companion to `client_api_execution_modes.md` (design). Decomposes the design's 8-step Migration Plan into **36 PRs** with dependencies, sizes, and a release cut line. Scoped against the codebase post-2.8.0; granularity calibrated against the repo's merged-PR history (2026-07-01, see Calibration below).
+Companion to `client_api_execution_modes.md` (design). Tracks Epic **FLARE-2698** (Client API and 3rd party integration refactoring, 2.9.0). Decomposes the design's 8-step Migration Plan into **37 PRs** with dependencies, sizes, and a release cut line. Scoped against the codebase post-2.8.0; granularity calibrated against the repo's merged-PR history (2026-07-01, see Calibration below).
 
-Size guide: **S** <300 changed LOC, **M** 300–800, **L** 800–2000. Total: 6 S / 18 M / 12 L, no XL.
+Size guide: **S** <300 changed LOC, **M** 300–800, **L** 800–2000.
 
 ## Granularity calibration
 
@@ -52,6 +52,7 @@ Tracks: **F3** payload layer · **EX** executor/ScriptRunner · **TE** trainer e
 | TE-4 TrainerCellSession task/result contracts (receive queue + TASK_READY idempotency + TASK_FAILED; RESULT_READY flow + terminal-outcome blocking + fan-out drain/shutdown gating) | TE | L | TE-3; F3-4 via a narrow stubbed wait-protocol interface. Merged from two Ms: same class, same owner, no independent consumer of either half. Guard: split fan-out drain back out if the diff passes ~1800 LOC |
 | EP-3 Launch-scoped token, CJ-side HELLO acceptance, and executor-side session-scoped message enforcement (both modes) | EP | M | TE-1. Enforcement (accept trainer messages only from the bound session) lives here — it is a P0 security control closing the live IPCAgent any-sender gap and must not ride in the P2 attach track |
 | EX-4 ScriptRunner `execution_mode` param + launch_external_process mapping | EX | M | EX-2/3. Convert ~22 internal recipe call sites in the same PR |
+| EX-5 Converter→filter migration (FLARE-2698 bullet 2) | EX | M | EX-3, EP-4. Replace executor-owned ParamsConverters with PT/TF send+receive conversion filters at the client edge (last task-data / first task-result filter); recipes auto-wire per framework; Client API boundary passes through (RAW). Removes params_exchange_format/server_expected_format/converter-id from the surface (already excluded from EX-2's freeze). Transfer type FULL/DIFF stays in model_registry, decided separately |
 | CC-1 CCWF transfer-declaration plumbing (receiver sets, stage windows, aux passthrough) | CC | M | F3-3. Declaration-only; absent headers preserve today's defaults — its behavior-neutrality is what de-risks the CC track |
 | CT-8 Session observability (state-transition logs + StatsPoolManager view) | CT | M | EX-2; extends as backends land |
 
