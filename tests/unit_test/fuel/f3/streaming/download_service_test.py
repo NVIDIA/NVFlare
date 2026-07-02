@@ -13,8 +13,7 @@
 # limitations under the License.
 
 import threading
-import weakref
-from typing import Any, Tuple
+from typing import Any
 from unittest.mock import Mock, patch
 
 import pytest
@@ -24,57 +23,22 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.streaming.download_service import (
     Consumer,
-    Downloadable,
     DownloadService,
     DownloadStatus,
     ProduceRC,
     TransactionDoneStatus,
 )
 from nvflare.fuel.utils.network_utils import get_open_ports
+from tests.unit_test.fuel.f3.streaming.download_test_utils import (
+    MockDownloadable,
+    make_isolated_download_service,
+    run_monitor_once,
+)
 
-
-class MockDownloadable(Downloadable):
-    """Mock downloadable for testing."""
-
-    def __init__(self, data_chunks: list, fail_on_chunk: int = -1):
-        super().__init__(data_chunks)
-        self.data_chunks = data_chunks
-        self.fail_on_chunk = fail_on_chunk
-        self.current_chunk = 0
-        self.downloaded_to_one_calls = []
-        self.downloaded_to_all_called = False
-        self.downloaded_to_all_call_count = 0
-        self.transaction_done_calls = []
-        self.tx_id = None
-        self.ref_id = None
-
-    def set_transaction(self, tx_id: str, ref_id: str):
-        self.tx_id = tx_id
-        self.ref_id = ref_id
-
-    def produce(self, state: dict, requester: str) -> Tuple[str, Any, dict]:
-        if not state:
-            chunk_idx = 0
-        else:
-            chunk_idx = state.get("chunk_idx", 0)
-
-        if self.fail_on_chunk >= 0 and chunk_idx == self.fail_on_chunk:
-            return ProduceRC.ERROR, None, {}
-
-        if chunk_idx >= len(self.data_chunks):
-            return ProduceRC.EOF, None, {}
-
-        return ProduceRC.OK, self.data_chunks[chunk_idx], {"chunk_idx": chunk_idx + 1}
-
-    def downloaded_to_one(self, to_receiver: str, status: str):
-        self.downloaded_to_one_calls.append((to_receiver, status))
-
-    def downloaded_to_all(self):
-        self.downloaded_to_all_called = True
-        self.downloaded_to_all_call_count += 1
-
-    def transaction_done(self, transaction_id: str, status: str):
-        self.transaction_done_calls.append((transaction_id, status))
+# local aliases: the helpers moved to download_test_utils so isolated-service
+# state stays defined in one place
+_make_isolated_download_service = make_isolated_download_service
+_run_monitor_once = run_monitor_once
 
 
 class MockConsumer(Consumer):
@@ -103,51 +67,11 @@ class MockConsumer(Consumer):
         self.failure_reason = reason
 
 
-def _make_isolated_download_service():
-    class IsolatedDownloadService(DownloadService):
-        _tx_table = {}
-        _ref_table = {}
-        _finished_refs = {}
-        _logger = Mock()
-        _tx_lock = threading.Lock()
-        _initialized_cells = weakref.WeakKeyDictionary()
-
-    return IsolatedDownloadService
-
-
 def _make_download_request(ref_id: str, requester: str, state: dict = None):
     payload = {"ref_id": ref_id}
     if state is not None:
         payload["state"] = state
     return new_cell_message(headers={MessageHeaderKey.ORIGIN: requester}, payload=payload)
-
-
-def _run_monitor_once(service_cls, now):
-    from nvflare.fuel.f3.streaming import download_service as download_service_module
-
-    class MonitorIterationDone(Exception):
-        pass
-
-    monitor_thread = threading.current_thread()
-    real_time = download_service_module.time.time
-    real_sleep = download_service_module.time.sleep
-
-    def test_thread_time():
-        if threading.current_thread() is monitor_thread:
-            return now
-        return real_time()
-
-    def test_thread_sleep(seconds):
-        if threading.current_thread() is monitor_thread:
-            raise MonitorIterationDone
-        real_sleep(seconds)
-
-    with (
-        patch.object(download_service_module.time, "time", side_effect=test_thread_time),
-        patch.object(download_service_module.time, "sleep", side_effect=test_thread_sleep),
-    ):
-        with pytest.raises(MonitorIterationDone):
-            service_cls._monitor_tx()
 
 
 class TestDownloadService:
