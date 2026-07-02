@@ -13,26 +13,28 @@
 # limitations under the License.
 """Session-token auth primitives for the Client API control protocol.
 
-Implements the attach auth contract of the Client API Execution Modes design
-(docs/design/client_api_execution_modes.md, "Appendix B: Attach Topology and Auth"):
+Implements the token/proof primitives of the Client API Execution Modes design
+(docs/design/client_api_execution_modes.md, "Control Protocol" HELLO handshake and
+"Appendix B: Attach Topology and Auth"):
 
-- The executor generates a high-entropy session token per attach id / launch. The raw token
-  is held only in memory for the session lifetime; anything persisted stores only its digest.
-- Token proof is challenge-response, not bearer presentation: HELLO -> HELLO_CHALLENGE (nonce)
-  -> HELLO_PROOF (HMAC keyed by the token over the nonce and the full token scope). The raw
-  token never crosses the wire, so observing attach traffic does not permit replay.
-- The token is scoped to (job id, site name, attach id, target FQCN, trainer FQCN, rank
-  policy, protocol version), is single-session by default, and expires if the trainer does
-  not attach before attach_timeout.
-- Two proof paths share the same HMAC primitive:
-    * The interactive HELLO_CHALLENGE / HELLO_PROOF path goes through SessionTokenManager,
-      which issues a self-generated single-use nonce (issue_nonce) and verifies the proof
-      against it (verify_proof).
-    * The one-round variant (Appendix B) folds the proof into HELLO, computed over an
-      executor nonce delivered in the bootstrap config combined with a trainer-supplied
-      nonce. This path does NOT go through SessionTokenManager.verify_proof (there is no
-      self-issued nonce); it uses the module-level verify_hello_proof directly over a
-      combined nonce (see combine_nonces).
+- Token/nonce generation and the persistable digest: the raw token is held only in memory;
+  anything persisted stores only its digest (token_digest).
+- The HELLO proof is challenge-response, not bearer presentation: the proof is an HMAC keyed
+  by the token over a challenge nonce and the full token scope, so the raw token never crosses
+  the wire and an observed proof is useless for any other nonce/scope (compute_hello_proof /
+  verify_hello_proof).
+- TokenScope binds a token to (job id, site name, attach id, target FQCN, trainer FQCN, rank
+  policy, protocol version).
+- One-round variant (Appendix B, for local/confidential channels such as an external_process
+  trainer on localhost): the proof is computed over an executor nonce combined with a
+  trainer-supplied nonce (combine_nonces) and verified with the module-level verify_hello_proof.
+
+Scope note: this module is the shared, stateless proof toolkit consumed by external_process
+(EP-3) and attach (AT-2). The stateful, executor-side session manager -- single-use nonce
+issuance, attach-window expiry, single-session enforcement, invalidation -- is an attach-mode
+requirement (NVFlare does not own the trainer process there) and lands with the attach backend
+(AT-2), not here. external_process launches the trainer itself on localhost and needs only the
+lightweight launch-token proof these functions provide.
 
 This module is part of interface freeze #1. It is a pure library: no Cell/cellnet imports,
 no file I/O, no logging side effects.
@@ -42,10 +44,6 @@ import dataclasses
 import hashlib
 import hmac
 import secrets
-import threading
-import time
-from collections import OrderedDict
-from typing import Callable, Optional
 
 from .defs import PROTOCOL_VERSION
 
@@ -190,198 +188,3 @@ def combine_nonces(executor_nonce: str, trainer_nonce: str) -> str:
     if not isinstance(executor_nonce, str) or not isinstance(trainer_nonce, str):
         raise TypeError("executor_nonce and trainer_nonce must both be str")
     return f"{len(executor_nonce)}:{executor_nonce}:{trainer_nonce}"
-
-
-class SessionTokenManager:
-    """Executor-side manager for one session token and its challenge-response verification.
-
-    Holds the raw token in memory for the session lifetime (plus its digest for anything
-    persisted), issues single-use challenge nonces, and verifies HELLO_PROOF messages while
-    enforcing the auth contract:
-
-    - a nonce is consumed by its first verification attempt (success or failure), so a
-      captured proof cannot be replayed and a consumed nonce cannot be reused;
-    - the presented scope must equal the expected scope exactly;
-    - the token expires if no session is established within attach_timeout of creation;
-    - the token is single-session: while a session is active, further attach attempts are
-      rejected;
-    - after invalidate(), all verification fails permanently (reconnect requires a fresh
-      token through a new manager);
-    - issue_nonce() refuses (raises RuntimeError) once the manager is invalidated, expired, or
-      a session is active, and the set of outstanding pending nonces is bounded by
-      MAX_PENDING_NONCES (oldest evicted first) so a HELLO flood cannot grow memory without
-      bound.
-
-    Binding the accepted session to the peer's FQCN (recording/enforcing the bound peer) is
-    intentionally out of scope here and handled separately (see AT-2).
-
-    The clock is injectable for testability; it must be a monotonic seconds counter.
-    Thread-safe.
-    """
-
-    # Upper bound on outstanding (issued-but-unconsumed) nonces; oldest are evicted past this.
-    MAX_PENDING_NONCES = 1024
-
-    def __init__(
-        self,
-        scope: TokenScope,
-        attach_timeout: Optional[float] = None,
-        token: Optional[str] = None,
-        clock: Callable[[], float] = time.monotonic,
-    ):
-        """Create a manager for one session token.
-
-        Args:
-            scope: the scope the token is bound to.
-            attach_timeout: seconds from creation within which the trainer must attach;
-                None means no attach expiry.
-            token: the raw token to manage; a new high-entropy token is generated if None.
-            clock: monotonic seconds source (injectable for tests).
-        """
-        if attach_timeout is not None and attach_timeout <= 0:
-            raise ValueError(f"attach_timeout must be positive but got {attach_timeout}")
-        if not isinstance(scope, TokenScope):
-            raise TypeError(f"scope must be TokenScope but got {type(scope)}")
-        if token is not None:
-            if not isinstance(token, str):
-                raise TypeError(f"token must be str but got {type(token)}")
-            if len(token) < MIN_TOKEN_HEX_CHARS:
-                raise ValueError(
-                    f"token must have at least {MIN_TOKEN_HEX_CHARS} chars "
-                    f"(>= 16 bytes of entropy) but got {len(token)}"
-                )
-
-        self._scope = scope
-        self._token = token if token else generate_session_token()
-        self._digest = token_digest(self._token)
-        self._attach_timeout = attach_timeout
-        self._clock = clock
-        self._created_at = clock()
-        # Insertion-ordered map nonce -> issued_at, so the oldest pending nonce is evictable
-        # in O(1) when the cap is exceeded, and each nonce carries an issuance time for TTL.
-        self._pending_nonces = OrderedDict()
-        self._session_active = False
-        self._invalidated = False
-        self._lock = threading.Lock()
-
-    @property
-    def token(self) -> str:
-        """The raw session token (in-memory only; never persist or send on the wire)."""
-        return self._token
-
-    @property
-    def digest(self) -> str:
-        """The persistable SHA-256 hex digest of the token."""
-        return self._digest
-
-    @property
-    def scope(self) -> TokenScope:
-        """The scope this token is bound to."""
-        return self._scope
-
-    @property
-    def session_active(self) -> bool:
-        """Whether a session is currently bound to this token."""
-        with self._lock:
-            return self._session_active
-
-    @property
-    def invalidated(self) -> bool:
-        """Whether this token has been explicitly invalidated."""
-        with self._lock:
-            return self._invalidated
-
-    def is_expired(self) -> bool:
-        """Whether the attach window has closed without a session being established."""
-        with self._lock:
-            return self._is_expired()
-
-    def _is_expired(self) -> bool:
-        if self._attach_timeout is None or self._session_active:
-            return False
-        return (self._clock() - self._created_at) > self._attach_timeout
-
-    def issue_nonce(self) -> str:
-        """Issue a fresh single-use challenge nonce for HELLO_CHALLENGE.
-
-        Refuses to issue once the manager is no longer in the pre-attach state, so a stale or
-        flooded caller cannot accumulate nonces after the session has been settled:
-
-        Raises:
-            RuntimeError: if the token has been invalidated, the attach window has expired, or
-                a session is already active.
-
-        The number of outstanding (issued-but-unconsumed) nonces is capped at
-        MAX_PENDING_NONCES; issuing past the cap evicts the oldest pending nonce so a HELLO
-        flood cannot grow memory without bound.
-        """
-        with self._lock:
-            if self._invalidated:
-                raise RuntimeError("cannot issue nonce: session token has been invalidated")
-            if self._session_active:
-                raise RuntimeError("cannot issue nonce: a session is already active")
-            if self._is_expired():
-                raise RuntimeError("cannot issue nonce: attach window has expired")
-            nonce = generate_nonce()
-            self._pending_nonces[nonce] = self._clock()
-            # bound memory: evict oldest outstanding nonces once the cap is exceeded
-            while len(self._pending_nonces) > self.MAX_PENDING_NONCES:
-                self._pending_nonces.popitem(last=False)
-            return nonce
-
-    def verify_proof(self, nonce: str, scope: TokenScope, proof: str) -> bool:
-        """Verify a HELLO_PROOF attach attempt; on success the session becomes active.
-
-        The nonce is consumed by this call whether or not verification succeeds. The proof is
-        verified against the manager's EXPECTED scope (self._scope), not the caller-supplied
-        scope: a wrong presented scope therefore yields a proof mismatch in constant time
-        (hmac.compare_digest) rather than leaking, via a short-circuiting tuple compare, which
-        scope field mismatched -- and the accepted proof is bound to the scope the executor
-        expects. (Recording/enforcing the bound peer FQCN is out of scope here; see AT-2.)
-
-        Args:
-            nonce: the challenge nonce the proof claims to answer; must have been issued by
-                issue_nonce() and not yet consumed.
-            scope: the scope presented by the attaching trainer.
-            proof: the presented proof (hex string).
-
-        Returns:
-            True only if the nonce is valid and unconsumed, the token is not invalidated or
-            expired, no session is already active, the proof verifies against the expected
-            scope, and (redundantly) the presented scope equals the expected scope.
-        """
-        if not isinstance(nonce, str):
-            return False
-        with self._lock:
-            # single-use: consumed by any verification attempt (success or failure)
-            issued = self._pending_nonces.pop(nonce, None) is not None
-
-            if self._invalidated:
-                return False
-            if not issued:
-                return False
-            # An old nonce cannot be redeemed after the attach window: _is_expired() covers
-            # it (a nonce's issue time is >= the manager's creation time under a monotonic
-            # clock, so the manager-level window always trips first) -- no separate per-nonce
-            # TTL is needed while no session is active.
-            if self._is_expired():
-                return False
-            if self._session_active:
-                # single-session: reject further attach attempts while a session is active
-                return False
-            # constant-time proof check bound to the EXPECTED scope
-            if not verify_hello_proof(self._token, nonce, self._scope, proof):
-                return False
-            # redundant defense-in-depth guard (the proof is already bound to self._scope)
-            if scope != self._scope:
-                return False
-
-            self._session_active = True
-            return True
-
-    def invalidate(self) -> None:
-        """Invalidate the token and session permanently; all future verification fails."""
-        with self._lock:
-            self._invalidated = True
-            self._session_active = False
-            self._pending_nonces.clear()
