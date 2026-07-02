@@ -34,7 +34,7 @@ IGNORED_SKILL_FILE_NAMES = {"__pycache__", "*.pyc", "*.pyo"}
 # in dev_tools/agent/skill_evals/; fail closed so a stray skills/<skill>/evals/
 # cannot be bundled or installed and re-expose grading-oracle data.
 SKILL_PACKAGING_EXCLUDE_NAMES = IGNORED_SKILL_FILE_NAMES | {"evals"}
-SHARED_SKILL_REFERENCE_DIR = "_shared"
+SHARED_SKILL_REFERENCE_DIR = "nvflare-shared"
 HASH_READ_CHUNK_BYTES = 1024 * 1024
 
 
@@ -130,7 +130,15 @@ def build_skill_manifest(
 
 
 def _should_skip_skill_dir(path: Path) -> bool:
-    return path.name.startswith(".") or path.name.startswith("_") or not path.is_dir()
+    # nvflare-shared is a real (spec-validated) skill dir, but it is shared
+    # content copied into every install by _copy_shared_references_to_bundle, not
+    # a user-selectable skill, so keep it out of the selectable skills manifest.
+    return (
+        path.name.startswith(".")
+        or path.name.startswith("_")
+        or path.name == SHARED_SKILL_REFERENCE_DIR
+        or not path.is_dir()
+    )
 
 
 def write_manifest(manifest: dict, manifest_path: Path | str) -> None:

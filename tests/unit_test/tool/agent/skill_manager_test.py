@@ -310,7 +310,7 @@ def test_install_skills_preserves_modified_shared_references(tmp_path):
     source = _skill_source(tmp_path, shared_heading="Shared v1")
     target = tmp_path / "target"
     install_skills(agent="codex", target_dir=target, source=source)
-    shared_file = target / "_shared" / "conversion-workflow.md"
+    shared_file = target / "nvflare-shared" / "references" / "conversion-workflow.md"
     shared_file.write_text("# User Edit\n", encoding="utf-8")
 
     updated_source = _skill_source(tmp_path, shared_heading="Shared v2")
@@ -319,10 +319,10 @@ def test_install_skills_preserves_modified_shared_references(tmp_path):
     assert plan["applied"] is False
     assert plan["errors"] == [
         {
-            "skill": "_shared",
+            "skill": "nvflare-shared",
             "code": "skill_install_failed",
             "type": "FileExistsError",
-            "message": f"shared reference target has local modifications: {target / '_shared'}",
+            "message": f"shared reference target has local modifications: {target / 'nvflare-shared'}",
         }
     ]
     assert shared_file.read_text(encoding="utf-8") == "# User Edit\n"
@@ -337,7 +337,9 @@ def test_install_skills_updates_unmodified_shared_references(tmp_path):
     plan = install_skills(agent="codex", target_dir=target, source=updated_source)
 
     assert plan["applied"] is True
-    assert "# Shared v2" in (target / "_shared" / "conversion-workflow.md").read_text(encoding="utf-8")
+    assert "# Shared v2" in (target / "nvflare-shared" / "references" / "conversion-workflow.md").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_install_skills_preserves_modified_managed_install(tmp_path):
@@ -1023,7 +1025,7 @@ def _write_skill(root, name, heading="Test Skill"):
 
 
 def _write_shared_reference(root, heading):
-    shared_dir = root / "_shared"
+    shared_dir = root / "nvflare-shared" / "references"
     shared_dir.mkdir(parents=True, exist_ok=True)
     shared_dir.joinpath("conversion-workflow.md").write_text(f"# {heading}\n", encoding="utf-8")
     return shared_dir

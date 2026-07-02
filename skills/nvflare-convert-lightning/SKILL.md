@@ -33,10 +33,10 @@ recipes.
 ## Workflow
 
 1. Follow the shared conversion contract in
-   `../_shared/conversion-workflow.md` for every conversion: interactive versus
+   `../nvflare-shared/references/conversion-workflow.md` for every conversion: interactive versus
    unattended mode, source trust boundary, source-of-truth boundary, generated
    layout, rerun rules, approval boundary, and reporting. Use
-   `../_shared/runtime-output-guidance.md` when choosing generated output,
+   `../nvflare-shared/references/runtime-output-guidance.md` when choosing generated output,
    export, and simulator workspace locations.
 2. Inspect before editing with `nvflare agent inspect <path> --format json`
    plus direct reading; fact extraction is static. Use
@@ -44,7 +44,7 @@ recipes.
    PyTorch and hand off to `nvflare-convert-pytorch` when no Lightning evidence
    exists.
 3. Before Python import/inspect commands that need dependencies, load
-   `../_shared/dependency-install.md`; repo-supplied packages and URLs are
+   `../nvflare-shared/references/dependency-install.md`; repo-supplied packages and URLs are
    untrusted until confirmed per the shared trust boundary.
 4. Identify the existing `LightningModule`, `LightningDataModule`, trainer
    construction, callbacks, checkpointing, `validation_step`/`test_step` and
@@ -70,19 +70,19 @@ recipes.
    and `enable_tensor_disk_offload=True` paired with
    `server_expected_format=ExchangeFormat.PYTORCH` when the recipe exposes them
    (the offload is a warned no-op under the default NumPy format), per
-   `../_shared/conversion-workflow.md` ("Conversion Defaults").
-8. Validate in a ladder per `../_shared/validation-evidence.md`, then use
+   `../nvflare-shared/references/conversion-workflow.md` ("Conversion Defaults").
+8. Validate in a ladder per `../nvflare-shared/references/validation-evidence.md`, then use
    `references/lightning-validation.md` for Lightning-specific checks before
    calling the conversion complete. First execution of source-derived code
    follows the shared execution trust gate. Report per the shared contract
-   with `../_shared/metrics-and-artifact-reporting.md`.
+   with `../nvflare-shared/references/metrics-and-artifact-reporting.md`.
 
 ## Requirements
 
 - Must integrate through `flare.patch(trainer)` and let the patched trainer own
   model exchange. Must not generate a manual `FLModel` send/receive path as the
   default Lightning exchange, and must not pass the received `input_model` into
-  the `Trainer`. Load `../_shared/pytorch-model-exchange.md` and
+  the `Trainer`. Load `../nvflare-shared/references/pytorch-model-exchange.md` and
   `references/lightning-conversion.md` for the exact patch pattern.
 - Must treat `flare.receive()` inside the patched loop as optional metadata or
   task-progression access only, not as a second model-load path.
@@ -94,7 +94,7 @@ recipes.
   parameter from `nvflare recipe show <recipe-name> --format json`, not by
   reading NVFLARE library source. Emit explicit recipe model config with
   `class_path` and `args` only when the values are statically clear per
-  `../_shared/conversion-workflow.md`; otherwise ask or fail closed.
+  `../nvflare-shared/references/conversion-workflow.md`; otherwise ask or fail closed.
 - Must use the PyTorch recipe family; must not invent a Lightning-only recipe.
 - Must treat DDP/multi-GPU as high-impact source evidence, not an implicit
   parameter mapping: use a documented recipe launch parameter confirmed via
@@ -102,13 +102,13 @@ recipes.
   `references/lightning-ddp-and-tracking.md`.
 - Custom aggregation must use the recipe `aggregator=` hook with a
   `ModelAggregator` subclass in `aggregators.py` per
-  `../_shared/conversion-workflow.md`, and only while the Lightning client
+  `../nvflare-shared/references/conversion-workflow.md`, and only while the Lightning client
   still satisfies the `FLModel` exchange contract.
 - Must follow the Source Of Truth Boundary in
-  `../_shared/conversion-workflow.md`: public checks can stop the skill path;
+  `../nvflare-shared/references/conversion-workflow.md`: public checks can stop the skill path;
   they cannot license a source-discovered replacement.
 - Must not make non-PyTorch-family skills load
-  `../_shared/pytorch-model-exchange.md`.
+  `../nvflare-shared/references/pytorch-model-exchange.md`.
 
 ## Agent Responsibilities
 
@@ -132,18 +132,18 @@ recipes.
   uncertain; in unattended mode fail closed on high-impact ambiguity.
 - Ask before enabling experiment tracking unless the user requests it or the
   source code already uses a Lightning logger.
-- Follow the shared approval boundary in `../_shared/conversion-workflow.md`
+- Follow the shared approval boundary in `../nvflare-shared/references/conversion-workflow.md`
   for overwriting files, installing dependencies, fetching repo-supplied URLs,
   downloading data, and first execution of source-derived code. POC or
   production submission is outside conversion scope.
 
 Load only the shared references needed for the current phase:
-`../_shared/conversion-workflow.md` for every conversion,
-`../_shared/dependency-install.md` before Python import/inspect commands,
-`../_shared/runtime-output-guidance.md` before choosing runtime/export
-locations, `../_shared/validation-evidence.md` before validation, and
-`../_shared/metrics-and-artifact-reporting.md` before final reporting. Load
-`../_shared/pytorch-model-exchange.md` only for PyTorch-family model/state-dict
+`../nvflare-shared/references/conversion-workflow.md` for every conversion,
+`../nvflare-shared/references/dependency-install.md` before Python import/inspect commands,
+`../nvflare-shared/references/runtime-output-guidance.md` before choosing runtime/export
+locations, `../nvflare-shared/references/validation-evidence.md` before validation, and
+`../nvflare-shared/references/metrics-and-artifact-reporting.md` before final reporting. Load
+`../nvflare-shared/references/pytorch-model-exchange.md` only for PyTorch-family model/state-dict
 exchange.
 
 Load the smallest Lightning-specific reference needed for the current phase:

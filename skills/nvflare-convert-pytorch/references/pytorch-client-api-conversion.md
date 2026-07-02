@@ -2,7 +2,7 @@
 
 This reference covers standard PyTorch training loops that already have a
 `torch.nn.Module`, optimizer, data loaders, and metrics. Load
-`../../_shared/pytorch-model-exchange.md` for PyTorch-family state-dict and
+`../../nvflare-shared/references/pytorch-model-exchange.md` for PyTorch-family state-dict and
 tensor payload rules before changing model exchange code.
 
 ## Canonical Path
@@ -18,7 +18,7 @@ Use this path for plain PyTorch conversion:
 5. Validate with `python job.py`, inspect terminal evidence, then export.
 
 Follow the Source Of Truth Boundary in
-`../../_shared/conversion-workflow.md`: public checks can stop the skill path;
+`../../nvflare-shared/references/conversion-workflow.md`: public checks can stop the skill path;
 they cannot license a source-discovered replacement.
 
 ## Conversion Pattern
@@ -57,13 +57,13 @@ For PyTorch conversions, the job source should normally contain:
   point;
 - `model.py`: copied, wrapped, or imported model definition when needed;
 - `aggregators.py`: only when the conversion includes custom aggregation (see
-  `../../_shared/conversion-workflow.md`, "Custom Aggregation");
+  `../../nvflare-shared/references/conversion-workflow.md`, "Custom Aggregation");
 - `prepare_data.py` / `download_data.py`: only when the conversion generates
   data setup code;
 - `requirements.txt` or a small requirements file only when dependencies differ
   from the source project.
 
-Use `../../_shared/runtime-output-guidance.md` for runtime workspaces, exported
+Use `../../nvflare-shared/references/runtime-output-guidance.md` for runtime workspaces, exported
 job directories, and validation output locations.
 
 Avoid names such as `fl_train.py` for the generated FLARE Client API entry
@@ -84,7 +84,7 @@ make those values explicit in both places.
 
 Do not pass a live `nn.Module` instance as the recipe model input; generate the
 explicit `{"class_path": ..., "args": ...}` config per
-`../../_shared/conversion-workflow.md` ("Recipe Model Config"). Derive required
+`../../nvflare-shared/references/conversion-workflow.md` ("Recipe Model Config"). Derive required
 constructor values from the source code, dataset metadata, vocab/config
 generation, checkpoint metadata, or CLI args before writing `job.py`, then pass
 them explicitly through the recipe model config and the client model
@@ -119,7 +119,7 @@ ask in interactive mode or fail closed in unattended mode.
 
 This template is self-contained packaged guidance; do not depend on NVFLARE
 repository `examples/` being present in the user's environment. The runnable
-form ships at `templates/client_with_eval.py`; adapt it rather than inventing a
+form ships at `assets/client_with_eval.py`; adapt it rather than inventing a
 new structure.
 
 ```python
@@ -172,7 +172,7 @@ it.
 - For checkpoints, preserve user checkpoint semantics and document what is
   federated versus site-local.
 - For metrics, send scalar summaries in the `metrics` field. Use
-  `../../_shared/metrics-and-artifact-reporting.md` for generic final metrics,
+  `../../nvflare-shared/references/metrics-and-artifact-reporting.md` for generic final metrics,
   round metrics, model artifact paths, and missing-evidence reporting.
 
 ## Job Pattern Reference

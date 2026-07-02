@@ -1,8 +1,8 @@
 # PyTorch Job Validation Notes
 
-Use `../../_shared/validation-evidence.md` for generic validation status,
+Use `../../nvflare-shared/references/validation-evidence.md` for generic validation status,
 commands, blockers, and evidence reporting. Use
-`../../_shared/metrics-and-artifact-reporting.md` for final metrics, round
+`../../nvflare-shared/references/metrics-and-artifact-reporting.md` for final metrics, round
 metrics, model artifact paths, and missing-evidence reporting. This file only
 covers PyTorch-specific validation checks.
 

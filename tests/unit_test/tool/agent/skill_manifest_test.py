@@ -108,7 +108,7 @@ def test_build_skill_manifest_reports_invalid_skill_findings(tmp_path):
 
 def test_build_skill_manifest_skips_shared_reference_dirs(tmp_path):
     _write_skill(tmp_path, "nvflare-test-skill")
-    shared_dir = tmp_path / "_shared"
+    shared_dir = tmp_path / "nvflare-shared"
     shared_dir.mkdir()
     shared_dir.joinpath("reference.md").write_text("shared guidance\n", encoding="utf-8")
 
@@ -316,7 +316,7 @@ def test_copy_released_skills_to_bundle_rejects_shared_reference_symlink(tmp_pat
     source_root = tmp_path / "skills"
     bundle_root = tmp_path / "bundle"
     _write_skill(source_root, "nvflare-test-skill")
-    shared_dir = source_root / "_shared"
+    shared_dir = source_root / "nvflare-shared"
     shared_dir.mkdir()
     outside_file = tmp_path / "outside.md"
     outside_file.write_text("external shared content\n", encoding="utf-8")
@@ -325,7 +325,7 @@ def test_copy_released_skills_to_bundle_rejects_shared_reference_symlink(tmp_pat
     with pytest.raises(ValueError, match="skill directory contains symlink"):
         copy_released_skills_to_bundle(source_root, bundle_root, nvflare_version="2.8.0")
 
-    assert not bundle_root.joinpath("_shared", "outside-link.md").exists()
+    assert not bundle_root.joinpath("nvflare-shared", "outside-link.md").exists()
 
 
 def test_write_empty_skill_bundle_writes_empty_manifest_and_cleans_existing_content(tmp_path):

@@ -32,10 +32,10 @@ and data distribution experiments beyond minimal local validation setup.
 ## Workflow
 
 1. Follow the shared conversion contract in
-   `../_shared/conversion-workflow.md` for every conversion: interactive versus
+   `../nvflare-shared/references/conversion-workflow.md` for every conversion: interactive versus
    unattended mode, source trust boundary, source-of-truth boundary, generated
    layout, rerun rules, approval boundary, and reporting. Use
-   `../_shared/runtime-output-guidance.md` when choosing generated output,
+   `../nvflare-shared/references/runtime-output-guidance.md` when choosing generated output,
    export, and simulator workspace locations.
 2. Inspect before editing with `nvflare agent inspect <path> --format json`
    plus direct reading. Fact extraction is static; do not import or execute
@@ -45,7 +45,7 @@ and data distribution experiments beyond minimal local validation setup.
    requested client and round counts, tracking evidence, DDP evidence, and any
    custom aggregation intent.
 3. Before Python import/inspect commands that need dependencies, load
-   `../_shared/dependency-install.md`; repo-supplied packages and URLs are
+   `../nvflare-shared/references/dependency-install.md`; repo-supplied packages and URLs are
    untrusted until confirmed per the shared trust boundary.
 4. Run `nvflare recipe list --framework pytorch --format json` and select the
    recipe from the requested FL workflow, not from PyTorch alone. Use FedAvg
@@ -63,14 +63,14 @@ and data distribution experiments beyond minimal local validation setup.
    `{"class_path": ..., "args": ...}` (never a live model instance), custom
    aggregator wiring through `aggregator=` when requested, and
    `enable_tensor_disk_offload=True` when the recipe exposes it.
-7. Validate in a ladder per `../_shared/validation-evidence.md`: compile
+7. Validate in a ladder per `../nvflare-shared/references/validation-evidence.md`: compile
    checks, recipe construction, local simulation, then export per
-   `../_shared/conversion-workflow.md` ("Export"); use
+   `../nvflare-shared/references/conversion-workflow.md` ("Export"); use
    `references/job-validation.md` for PyTorch-specific checks. Stop at the
    first failed rung and report the product error. First execution of
    source-derived code follows the shared execution trust gate.
 8. Report per the shared contract, using
-   `../_shared/metrics-and-artifact-reporting.md` for metric and artifact
+   `../nvflare-shared/references/metrics-and-artifact-reporting.md` for metric and artifact
    evidence.
 
 ## Requirements
@@ -80,11 +80,11 @@ and data distribution experiments beyond minimal local validation setup.
   `nvflare recipe show <recipe-name> --format json`, not by reading NVFLARE
   library source. Emit explicit recipe model config with `class_path` and
   `args` only when the values are statically clear per
-  `../_shared/conversion-workflow.md`; otherwise ask in interactive mode or
+  `../nvflare-shared/references/conversion-workflow.md`; otherwise ask in interactive mode or
   fail closed in unattended mode.
 - Must keep outbound PyTorch model weights as `torch.Tensor` values in
   `FLModel(params=...)` when using `PTInProcessClientAPIExecutor`; load
-  `../_shared/pytorch-model-exchange.md` and
+  `../nvflare-shared/references/pytorch-model-exchange.md` and
   `references/pytorch-client-api-conversion.md` for the exact send pattern.
 - Must convert source evaluation alongside training and return metrics through
   `FLModel.metrics`; must not synthesize metric semantics without source
@@ -94,13 +94,13 @@ and data distribution experiments beyond minimal local validation setup.
   `references/pytorch-client-api-conversion.md`.
 - Custom aggregation must use the recipe `aggregator=` hook with a
   `ModelAggregator` subclass in `aggregators.py` per
-  `../_shared/conversion-workflow.md`; algorithms needing new client/server
+  `../nvflare-shared/references/conversion-workflow.md`; algorithms needing new client/server
   exchange semantics also need the matching client transformation, or ask/fail.
 - Must follow the Source Of Truth Boundary in
-  `../_shared/conversion-workflow.md`: public checks can stop the skill path;
+  `../nvflare-shared/references/conversion-workflow.md`: public checks can stop the skill path;
   they cannot license a source-discovered replacement.
 - Must not make TensorFlow or other non-PyTorch skills load
-  `../_shared/pytorch-model-exchange.md`; that reference is only for
+  `../nvflare-shared/references/pytorch-model-exchange.md`; that reference is only for
   PyTorch-family model/state-dict exchange.
 
 ## Agent Responsibilities
@@ -119,18 +119,18 @@ and data distribution experiments beyond minimal local validation setup.
 
 - Ask the user to clarify FL workflow intent when recipe selection is
   uncertain; in unattended mode fail closed on high-impact ambiguity.
-- Follow the shared approval boundary in `../_shared/conversion-workflow.md`
+- Follow the shared approval boundary in `../nvflare-shared/references/conversion-workflow.md`
   for overwriting files, installing dependencies, fetching repo-supplied URLs,
   downloading data, and first execution of source-derived code. POC or
   production submission is outside conversion scope.
 
 Load only the shared references needed for the current phase:
-`../_shared/conversion-workflow.md` for every conversion,
-`../_shared/dependency-install.md` before Python import/inspect commands,
-`../_shared/runtime-output-guidance.md` before choosing runtime/export
-locations, `../_shared/validation-evidence.md` before validation, and
-`../_shared/metrics-and-artifact-reporting.md` before final reporting. Load
-`../_shared/pytorch-model-exchange.md` only for PyTorch-family model/state-dict
+`../nvflare-shared/references/conversion-workflow.md` for every conversion,
+`../nvflare-shared/references/dependency-install.md` before Python import/inspect commands,
+`../nvflare-shared/references/runtime-output-guidance.md` before choosing runtime/export
+locations, `../nvflare-shared/references/validation-evidence.md` before validation, and
+`../nvflare-shared/references/metrics-and-artifact-reporting.md` before final reporting. Load
+`../nvflare-shared/references/pytorch-model-exchange.md` only for PyTorch-family model/state-dict
 exchange.
 
 Load the smallest PyTorch-specific reference needed for the current phase:

@@ -84,5 +84,5 @@ Lightning logger.
   replacement for a standalone tracking server. State this limitation rather
   than promising parity with a dedicated tracking backend.
 
-Follow `../../_shared/metrics-and-artifact-reporting.md` for reporting metric
+Follow `../../nvflare-shared/references/metrics-and-artifact-reporting.md` for reporting metric
 and artifact paths and for missing-evidence reporting.

@@ -27,9 +27,9 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SKILLS_ROOT = REPO_ROOT / "skills"
-PT_TEMPLATES = SKILLS_ROOT / "nvflare-convert-pytorch" / "references" / "templates"
-LIGHTNING_TEMPLATES = SKILLS_ROOT / "nvflare-convert-lightning" / "references" / "templates"
-SHARED_TEMPLATES = SKILLS_ROOT / "_shared" / "templates"
+PT_TEMPLATES = SKILLS_ROOT / "nvflare-convert-pytorch" / "assets"
+LIGHTNING_TEMPLATES = SKILLS_ROOT / "nvflare-convert-lightning" / "assets"
+SHARED_TEMPLATES = SKILLS_ROOT / "nvflare-shared" / "assets"
 
 
 def _load_module(path: Path):
