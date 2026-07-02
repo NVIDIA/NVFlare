@@ -234,9 +234,9 @@ Behavior notes:
 The CLI prints a human-readable table in text mode and also emits the machine-
 readable result envelope.
 
-The successful ``nvflare recipe list --format json`` response is the recipe
-catalog JSON contract, sometimes referred to as ``catalog.json``. It is
-described by the
+The JSON that ``nvflare recipe list --format json`` prints has a stable,
+documented structure that scripts and tools can rely on. It is described by
+the
 :download:`recipe catalog JSON schema <../../schemas/recipe_catalog.schema.json>`.
 
 Example JSON response:

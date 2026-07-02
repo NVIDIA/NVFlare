@@ -160,8 +160,10 @@ Repeated metadata calls for the same key replace that key's previous helper
 value. Different metadata keys accumulate. Keys that overlap a dedicated
 constructor field are rejected rather than given precedence; for accepted
 keys, the helper value is what appears in the generated ``meta.json``
-(metadata merges last), and overriding per-site resource specs registered via
-``add_resource_spec`` emits a warning.
+(metadata merges last). When ``RESOURCE_SPEC`` overrides per-site resource
+specs on the generated job, a warning is emitted for specs already registered
+when the helper is called, but specs added afterwards are overridden without
+one.
 
 Execution Environments
 ----------------------
@@ -188,7 +190,7 @@ here for anyone implementing an execution environment.
 ``stop(clean_up=False) -> None``
    Stop environment resources and optionally clean up temporary workspaces.
 
-This environment contract is primarily for environment implementers. User code
+These methods are primarily for environment implementers. User code
 should prefer ``recipe.execute(env)`` over calling an environment directly.
 
 Run Handles
@@ -233,10 +235,11 @@ helper for the repeated pattern.
 Recipe Catalog JSON
 -------------------
 
-``nvflare recipe list --format json`` returns a machine-readable recipe catalog
-JSON document. This is the ``catalog.json`` contract for recipe discovery. The
-successful response shape is described by
-:download:`recipe_catalog.schema.json <../../schemas/recipe_catalog.schema.json>`.
+``nvflare recipe list --format json`` returns a machine-readable list of the
+available recipes. The structure of a successful response is stable and
+described by
+:download:`recipe_catalog.schema.json <../../schemas/recipe_catalog.schema.json>`;
+tools that discover recipes can rely on the fields documented there.
 
 ``nvflare recipe list --schema`` describes the command-line arguments for the
 command. It is not the same as the catalog output schema.
