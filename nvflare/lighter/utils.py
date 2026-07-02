@@ -167,6 +167,12 @@ def serialize_cert(cert):
     return cert.public_bytes(serialization.Encoding.PEM)
 
 
+def write_pri_key_file(path: str, pri_key_pem: bytes):
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "wb") as f:
+        f.write(pri_key_pem)
+
+
 def generate_keys():
     pri_key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
     pub_key = pri_key.public_key()

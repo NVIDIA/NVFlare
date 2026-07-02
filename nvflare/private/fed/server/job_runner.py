@@ -46,7 +46,7 @@ from nvflare.private.fed.server.admin import check_client_replies
 from nvflare.private.fed.server.server_state import HotState
 from nvflare.private.fed.utils.app_deployer import AppDeployer
 from nvflare.private.fed.utils.fed_utils import extract_participants, require_signed_jobs, set_message_security_data
-from nvflare.private.fed.utils.job_cert_utils import PROP_CERT, PROP_KEY, JobCertIssuer, write_job_cert
+from nvflare.private.fed.utils.job_cert_utils import load_job_cert_issuer, pack_job_cert_header, write_job_cert
 from nvflare.security.logging import secure_format_exception
 
 WORKSPACE_SAVE_RETRY_GRACE_TIME = 60
@@ -164,7 +164,7 @@ class JobRunner(FLComponent):
         run_number = job.job_id
         fl_ctx.set_prop(FLContextKey.JOB_RUN_NUMBER, run_number)
         workspace = Workspace(root_dir=self.workspace_root, site_name=SiteType.SERVER)
-        job_cert_issuer = JobCertIssuer(workspace.get_startup_kit_dir())
+        job_cert_issuer = load_job_cert_issuer(workspace.get_startup_kit_dir())
 
         client_deploy_requests = {}
         client_token_to_name = {}
@@ -210,7 +210,7 @@ class JobRunner(FLComponent):
                         deploy_detail.append(f"server: {err}")
                         raise RuntimeError(f"UNSIGNED_JOB_REJECTED: {err}")
 
-                    if job_cert_issuer.enabled:
+                    if job_cert_issuer:
                         cert_pem, key_pem = job_cert_issuer.issue(fl_ctx.get_identity_name(), job.job_id)
                         write_job_cert(workspace.get_run_dir(job.job_id), cert_pem, key_pem)
 
@@ -224,7 +224,7 @@ class JobRunner(FLComponent):
 
             if client_sites:
                 self.fire_event(EventType.DEPLOY_JOB_TO_CLIENT, fl_ctx)
-                message = self._make_deploy_message(job, app_data, app_name, fl_ctx)
+                shared_message = None if job_cert_issuer else self._make_deploy_message(job, app_data, app_name, fl_ctx)
                 clients, invalid_inputs = engine.validate_targets(client_sites)
 
                 if invalid_inputs:
@@ -234,16 +234,14 @@ class JobRunner(FLComponent):
                 for c in clients:
                     assert isinstance(c, Client)
                     client_token_to_name[c.token] = c.name
-                    client_request = message
-                    if job_cert_issuer.enabled:
+                    if job_cert_issuer:
                         # each site must receive only its own job credential, so the
                         # deploy message becomes per-site (the app bytes stay shared)
                         cert_pem, key_pem = job_cert_issuer.issue(c.name, job.job_id)
                         client_request = self._make_deploy_message(job, app_data, app_name, fl_ctx)
-                        client_request.set_header(
-                            RequestHeader.JOB_CERT,
-                            {PROP_CERT: cert_pem.decode("ascii"), PROP_KEY: key_pem.decode("ascii")},
-                        )
+                        client_request.set_header(RequestHeader.JOB_CERT, pack_job_cert_header(cert_pem, key_pem))
+                    else:
+                        client_request = shared_message
                     client_deploy_requests[c.token] = client_request
                     client_token_to_reply[c.token] = None
 

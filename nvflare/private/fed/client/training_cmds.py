@@ -29,7 +29,7 @@ from nvflare.private.defs import RequestHeader, ScopeInfoKey, TrainingTopic
 from nvflare.private.fed.client.admin import RequestProcessor
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
 from nvflare.private.fed.utils.fed_utils import get_scope_info, require_signed_jobs
-from nvflare.private.fed.utils.job_cert_utils import PROP_CERT, PROP_KEY, write_job_cert
+from nvflare.private.fed.utils.job_cert_utils import unpack_job_cert_header, write_job_cert
 from nvflare.security.logging import secure_format_exception
 
 logger = logging.getLogger(__name__)
@@ -140,11 +140,9 @@ class DeployProcessor(RequestProcessor):
 
         job_cert = req.get_header(RequestHeader.JOB_CERT)
         if job_cert:
-            cert_pem = job_cert.get(PROP_CERT)
-            key_pem = job_cert.get(PROP_KEY)
-            if cert_pem and key_pem:
-                workspace = Workspace(root_dir=engine.args.workspace, site_name=client_name)
-                write_job_cert(workspace.get_run_dir(job_id), cert_pem.encode("ascii"), key_pem.encode("ascii"))
+            creds = unpack_job_cert_header(job_cert)
+            if creds:
+                write_job_cert(workspace.get_run_dir(job_id), *creds)
             else:
                 logger.warning("ignoring incomplete job cert for job %s; job cell will use site certificates", job_id)
 

@@ -30,6 +30,7 @@ from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.private.fed.utils.job_cert_utils import pick_cell_credential
 from nvflare.security.logging import secure_format_exception
 
 from .client_status import ClientStatus
@@ -202,12 +203,7 @@ class FederatedClientBase:
 
         if self.secure_train:
             root_cert = self.client_args[SecureTrainConst.SSL_ROOT_CERT]
-            ssl_cert = self.client_args[SecureTrainConst.SSL_CERT]
-            private_key = self.client_args[SecureTrainConst.PRIVATE_KEY]
-            if self.args.job_id:
-                # CJ prefers the per-job credential so the job cell never needs the site's long-lived key
-                ssl_cert = self.client_args.get(SecureTrainConst.JOB_CERT) or ssl_cert
-                private_key = self.client_args.get(SecureTrainConst.JOB_PRIVATE_KEY) or private_key
+            ssl_cert, private_key = pick_cell_credential(self.client_args)
 
             credentials = {
                 DriverParams.CA_CERT.value: root_cert,

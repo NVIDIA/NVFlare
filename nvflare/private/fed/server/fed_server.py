@@ -77,6 +77,7 @@ from nvflare.private.fed.server.cred_keeper import CredKeeper
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.server.server_runner import ServerRunner
 from nvflare.private.fed.utils.identity_utils import TokenVerifier
+from nvflare.private.fed.utils.job_cert_utils import pick_cell_credential
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.fed_event import ServerFedEventRunner
 
@@ -632,11 +633,7 @@ class FederatedServer(BaseServer):
         my_fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
         if secure_train:
             root_cert = server_config[SecureTrainConst.SSL_ROOT_CERT]
-            # prefer the per-job credential so the job cell never needs the site's long-lived key
-            ssl_cert = server_config.get(SecureTrainConst.JOB_CERT) or server_config[SecureTrainConst.SSL_CERT]
-            private_key = (
-                server_config.get(SecureTrainConst.JOB_PRIVATE_KEY) or server_config[SecureTrainConst.PRIVATE_KEY]
-            )
+            ssl_cert, private_key = pick_cell_credential(server_config)
 
             credentials = {
                 DriverParams.CA_CERT.value: root_cert,

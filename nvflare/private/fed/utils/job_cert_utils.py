@@ -13,16 +13,27 @@
 # limitations under the License.
 
 import datetime
+import logging
 import os
 from typing import Optional, Tuple
 
 from cryptography import x509
-from cryptography.hazmat.primitives import serialization
 from cryptography.x509.oid import NameOID
 
-from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.apis.fl_constant import SecureTrainConst
 from nvflare.lighter.constants import ProvFileName
-from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
+from nvflare.lighter.utils import (
+    Identity,
+    generate_cert,
+    generate_keys,
+    load_crt_bytes,
+    load_private_key_file,
+    serialize_cert,
+    serialize_pri_key,
+    write_pri_key_file,
+)
+
+logger = logging.getLogger(__name__)
 
 JOB_CERT_DIR_NAME = "job_cert"
 JOB_CERT_FILE_NAME = "job.crt"
@@ -31,8 +42,8 @@ JOB_KEY_FILE_NAME = "job.key"
 JOB_CERT_VALID_DAYS = 30
 
 # keys of the credential dict pushed to clients in the deploy message
-PROP_CERT = "cert"
-PROP_KEY = "key"
+_PROP_CERT = "cert"
+_PROP_KEY = "key"
 
 # Private extension under NVIDIA's IANA enterprise arc (1.3.6.1.4.1.5703),
 # carrying the job ID a per-job certificate is bound to.
@@ -44,10 +55,7 @@ def write_job_cert(run_dir: str, cert_chain_pem: bytes, key_pem: bytes):
     os.makedirs(cert_dir, exist_ok=True)
     with open(os.path.join(cert_dir, JOB_CERT_FILE_NAME), "wb") as f:
         f.write(cert_chain_pem)
-    key_path = os.path.join(cert_dir, JOB_KEY_FILE_NAME)
-    fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "wb") as f:
-        f.write(key_pem)
+    write_pri_key_file(os.path.join(cert_dir, JOB_KEY_FILE_NAME), key_pem)
 
 
 def find_job_cert(run_dir: str) -> Optional[Tuple[str, str]]:
@@ -56,6 +64,36 @@ def find_job_cert(run_dir: str) -> Optional[Tuple[str, str]]:
     if os.path.isfile(cert_path) and os.path.isfile(key_path):
         return cert_path, key_path
     return None
+
+
+def job_cert_config_entries(run_dir: str) -> Optional[dict]:
+    """Security config entries pointing at the job credential, or None if the job has none."""
+    paths = find_job_cert(run_dir)
+    if not paths:
+        return None
+    return {SecureTrainConst.JOB_CERT: paths[0], SecureTrainConst.JOB_PRIVATE_KEY: paths[1]}
+
+
+def pick_cell_credential(config: dict) -> Tuple[str, str]:
+    """Cert/key for a job cell: the per-job credential when present, else the site credential.
+
+    Preferring the job credential means the job cell never needs the site's long-lived key.
+    """
+    cert = config.get(SecureTrainConst.JOB_CERT) or config[SecureTrainConst.SSL_CERT]
+    key = config.get(SecureTrainConst.JOB_PRIVATE_KEY) or config[SecureTrainConst.PRIVATE_KEY]
+    return cert, key
+
+
+def pack_job_cert_header(cert_chain_pem: bytes, key_pem: bytes) -> dict:
+    return {_PROP_CERT: cert_chain_pem.decode("ascii"), _PROP_KEY: key_pem.decode("ascii")}
+
+
+def unpack_job_cert_header(header: dict) -> Optional[Tuple[bytes, bytes]]:
+    cert_pem = header.get(_PROP_CERT)
+    key_pem = header.get(_PROP_KEY)
+    if not (cert_pem and key_pem):
+        return None
+    return cert_pem.encode("ascii"), key_pem.encode("ascii")
 
 
 def get_job_id_from_cert(cert: x509.Certificate) -> Optional[str]:
@@ -69,51 +107,25 @@ def get_job_id_from_cert(cert: x509.Certificate) -> Optional[str]:
 class JobCertIssuer:
     """Issues short-lived per-job certificates signed by the provisioned job CA.
 
-    The issuer only runs in the server parent process. It is enabled when the server startup kit
-    contains job_ca.crt/job_ca.key (provisioned with CertBuilder's enable_job_ca option); otherwise
-    job cells fall back to site certificates.
+    Only the server parent process issues job certs. Use load_job_cert_issuer() to create one
+    from a startup kit.
     """
 
-    def __init__(self, startup_dir: str):
-        self.logger = get_obj_logger(self)
-        self.enabled = False
-        self.ca_cert_pem = None
-        self.ca_cert = None
-        self.ca_key = None
-        self.ca_cn = None
-
-        cert_path = os.path.join(startup_dir, ProvFileName.JOB_CA_CERT)
-        key_path = os.path.join(startup_dir, ProvFileName.JOB_CA_KEY)
-        if not (os.path.isfile(cert_path) and os.path.isfile(key_path)):
-            return
-
-        with open(cert_path, "rb") as f:
-            self.ca_cert_pem = f.read()
-        self.ca_cert = x509.load_pem_x509_certificate(self.ca_cert_pem)
-        with open(key_path, "rb") as f:
-            self.ca_key = serialization.load_pem_private_key(f.read(), password=None)
+    def __init__(self, ca_cert_pem: bytes, ca_key):
+        self.ca_cert_pem = ca_cert_pem
+        self.ca_cert = load_crt_bytes(ca_cert_pem)
+        self.ca_key = ca_key
         self.ca_cn = self.ca_cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
 
-        if self.ca_cert.not_valid_after_utc <= datetime.datetime.now(datetime.timezone.utc):
-            self.logger.warning(
-                f"job CA expired at {self.ca_cert.not_valid_after_utc.isoformat()}; "
-                "job cells will fall back to site certificates"
-            )
-            return
-        self.enabled = True
-
-    def issue(self, site_name: str, job_id: str, valid_days: int = JOB_CERT_VALID_DAYS) -> Tuple[bytes, bytes]:
+    def issue(self, site_name: str, job_id: str) -> Tuple[bytes, bytes]:
         """Issue a per-job credential for one site.
 
         Returns:
             (cert_chain_pem, key_pem): leaf cert followed by the job CA cert, and the private key.
         """
-        if not self.enabled:
-            raise RuntimeError("job cert issuer is not enabled")
-
         pri_key, pub_key = generate_keys()
         now = datetime.datetime.now(datetime.timezone.utc)
-        not_valid_after = min(now + datetime.timedelta(days=valid_days), self.ca_cert.not_valid_after_utc)
+        not_valid_after = min(now + datetime.timedelta(days=JOB_CERT_VALID_DAYS), self.ca_cert.not_valid_after_utc)
         job_id_ext = x509.UnrecognizedExtension(JOB_ID_EXTENSION_OID, job_id.encode("utf-8"))
         cert = generate_cert(
             subject=Identity(site_name),
@@ -126,3 +138,26 @@ class JobCertIssuer:
         )
         cert_chain_pem = serialize_cert(cert) + self.ca_cert_pem
         return cert_chain_pem, serialize_pri_key(pri_key)
+
+
+def load_job_cert_issuer(startup_dir: str) -> Optional[JobCertIssuer]:
+    """Create a JobCertIssuer from the startup kit's job CA, or None if absent or expired.
+
+    The job CA is provisioned only when CertBuilder's enable_job_ca option is on; without it,
+    job cells fall back to site certificates.
+    """
+    cert_path = os.path.join(startup_dir, ProvFileName.JOB_CA_CERT)
+    key_path = os.path.join(startup_dir, ProvFileName.JOB_CA_KEY)
+    if not (os.path.isfile(cert_path) and os.path.isfile(key_path)):
+        return None
+
+    with open(cert_path, "rb") as f:
+        ca_cert_pem = f.read()
+    issuer = JobCertIssuer(ca_cert_pem, load_private_key_file(key_path))
+    if issuer.ca_cert.not_valid_after_utc <= datetime.datetime.now(datetime.timezone.utc):
+        logger.warning(
+            f"job CA expired at {issuer.ca_cert.not_valid_after_utc.isoformat()}; "
+            "job cells will fall back to site certificates"
+        )
+        return None
+    return issuer
