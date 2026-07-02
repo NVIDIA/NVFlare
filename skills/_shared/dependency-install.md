@@ -3,16 +3,28 @@
 Use this reference before Python import checks, recipe inspection that imports
 framework modules, generated job validation, export, or simulation.
 
+## Supply-Chain Gate
+
+Repo-supplied `requirements*.txt` files, package names, and index URLs are
+untrusted supply-chain input per `conversion-workflow.md` (Source Trust
+Boundary and Approval Boundary). Installing them is approval-gated in
+interactive mode; in unattended mode, install only into the isolated validation
+environment. Prefer pinned versions, and use checksums when available. Do not
+add or follow package indexes configured by the source repo without user
+confirmation.
+
 ## Rule
 
-If the source project has applicable `requirements*.txt` files, install them
-into the same active Python environment that runs `nvflare` before running
-Python commands that import NVFLARE, framework modules, recipe classes, or
-generated client/model code.
+Once the install is approved or the isolated environment is in place: if the
+source project has applicable `requirements*.txt` files, install them into the
+same active Python environment that runs `nvflare` before running Python
+commands that import NVFLARE, framework modules, recipe classes, or generated
+client/model code.
 
 Do this before probing imports with Python. Avoid first discovering missing
 framework dependencies through failed import checks when a requirements file is
-already present.
+already present. Import probes of user modules are themselves source-derived
+execution and follow the execution trust gate in `conversion-workflow.md`.
 
 ## Installer Choice
 

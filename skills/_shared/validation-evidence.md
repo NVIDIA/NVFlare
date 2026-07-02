@@ -15,7 +15,7 @@ Use this reference before declaring a generated or exported NVFLARE job valid.
 ## Terminal Simulation Evidence
 
 Run the final validation in the foreground and let it finish in the same step
-(see `nvflare-job-lifecycle.md`, "Final Validation Run Must Finish Before You
+(see `conversion-workflow.md`, "Final Validation Run Must Finish Before You
 Finalize"). Do not report local simulation or job validation as successful while
 `python job.py`, simulator, or another generated run command is still running.
 
@@ -39,6 +39,10 @@ current command status, log evidence, and artifact evidence. Do not describe a
 timed-out or still-running simulation as done.
 
 ## Preflight Before Full Simulation
+
+Preflight steps that import or instantiate user modules are source-derived
+execution and follow the execution trust gate in `conversion-workflow.md`
+(Source Trust Boundary); they are not exempt because they are cheap.
 
 Before spending time on full simulation, run cheap checks when applicable:
 

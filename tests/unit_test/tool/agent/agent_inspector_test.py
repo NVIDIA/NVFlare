@@ -1221,7 +1221,7 @@ def test_inspect_exported_job_priority_over_lightning_routing(tmp_path):
     assert data["frameworks"][0]["name"] == "pytorch_lightning"
     assert data["conversion_state"] == "exported_job"
     assert data["target_type"] == "exported_submit_ready_flare_job"
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-job-lifecycle"]
+    assert data["skill_selection"]["recommended_skills"] == []
 
 
 def test_inspect_directory_reports_inspected_target_path(tmp_path):

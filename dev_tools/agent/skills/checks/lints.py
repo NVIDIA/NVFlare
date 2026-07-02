@@ -65,6 +65,7 @@ V1_LINT_IDS = (
     "skill-command-drift-lint",
     "skill-helper-script-lint",
     "skill-fixture-lint",
+    "skill-runtime-boundary-lint",
 )
 
 LINT_SKILL_FRONTMATTER = "skill-frontmatter-lint"
@@ -77,6 +78,7 @@ LINT_SKILL_PROCESS_METRIC = "skill-process-metric-lint"
 LINT_SKILL_COMMAND_DRIFT = "skill-command-drift-lint"
 LINT_SKILL_HELPER_SCRIPT = "skill-helper-script-lint"
 LINT_SKILL_FIXTURE = "skill-fixture-lint"
+LINT_SKILL_RUNTIME_BOUNDARY = "skill-runtime-boundary-lint"
 
 FINDING_ERROR = "error"
 FINDING_WARNING = "warning"
@@ -273,6 +275,7 @@ def _run_v1_lints_with_records(
         "skill-command-drift-lint": _lint_command_drift,
         "skill-helper-script-lint": _lint_helper_scripts,
         "skill-fixture-lint": _lint_fixtures,
+        "skill-runtime-boundary-lint": _lint_runtime_boundary,
     }
 
     for check in selected:
@@ -900,6 +903,139 @@ def _lint_fixtures(context: LintContext) -> None:
                     "Add evals/README.md, evals/files/README.md, or evals/files/SOURCE.md.",
                     code="skill-fixture-notes-missing",
                     skill=record.name,
+                )
+            )
+
+
+_DESIGN_DOC_REF_RE = re.compile(r"docs[\\/]+design[\\/]", re.IGNORECASE)
+_EVALUATOR_HOOK_RE = re.compile(
+    r"(?:"
+    r"\bevals?/"
+    r"|\bevals\.json\b"
+    r"|\beval\s+cases?\b"
+    r"|\beval\s+fixtures?\b"
+    r"|\bevaluator\b"
+    r"|\bbenchmark"
+    r"|\beval\s+(?:suite|harness)\b"  # evaluator harness references
+    r"|\bgrader\b"  # eval grader references
+    r"|\beval\s*=\s*\w"  # eval-mode toggles such as eval=on
+    r"|--eval\b"  # evaluator harness flags such as --eval / --eval-only
+    r"|(?-i:\b[A-Z][A-Z0-9_]*_EVAL[A-Z0-9_]*\b)"  # env vars such as NVFLARE_SKILL_EVAL
+    r")",
+    re.IGNORECASE,
+)
+# Content directories that release packaging strips or that are not shipped as
+# runtime guidance. Mirrors nvflare release packaging exclusions without
+# importing product code (keeps this lint engine self-contained over skills/).
+_RUNTIME_BOUNDARY_EXCLUDED_DIRS = {"evals", "__pycache__"}
+_RUNTIME_TEXT_SUFFIXES = {
+    ".md",
+    ".txt",
+    ".rst",
+    ".py",
+    ".sh",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".cfg",
+    ".ini",
+    ".j2",
+    ".jinja",
+    ".jinja2",
+    "",
+}
+
+
+def _lint_runtime_boundary(context: LintContext) -> None:
+    """Packaged runtime skill content must stay inside the runtime boundary.
+
+    Runtime content is everything a skill ships except repo-only ``evals/``
+    (which release packaging strips). It must not reference ``docs/design/``
+    documents as operational guidance and must not contain evaluator hooks or
+    benchmark-harness-only instructions. The scan covers what packaging ships,
+    so it iterates every skill record (public and non-public) and every shared
+    reference directory, not only ``SKILL.md`` and ``.md`` references.
+    """
+    for record in context.records:
+        for file_path, text in _iter_packaged_runtime_files(record.skill_dir):
+            _scan_runtime_boundary(context, file_path, text, skill=record.name)
+    for file_path, text in _iter_shared_runtime_files(context.skills_root):
+        _scan_runtime_boundary(context, file_path, text, skill=None)
+
+
+def _iter_packaged_runtime_files(skill_dir: Path) -> Iterable[tuple[Path, str]]:
+    """Yield decoded text files a skill ships as runtime content (minus evals/)."""
+    if not skill_dir.is_dir():
+        return
+    for dirpath, dirnames, filenames in os.walk(skill_dir, followlinks=False):
+        dirnames[:] = sorted(
+            name
+            for name in dirnames
+            if name not in _RUNTIME_BOUNDARY_EXCLUDED_DIRS and not (Path(dirpath) / name).is_symlink()
+        )
+        for filename in sorted(filenames):
+            path = Path(dirpath) / filename
+            content = _read_runtime_text_file(path)
+            if content is not None:
+                yield path, content
+
+
+def _iter_shared_runtime_files(skills_root: Path) -> Iterable[tuple[Path, str]]:
+    if not skills_root.is_dir():
+        return
+    for child in sorted(skills_root.iterdir(), key=lambda p: p.name):
+        if not child.is_dir() or child.is_symlink() or not child.name.startswith("_"):
+            continue
+        yield from _iter_packaged_runtime_files(child)
+
+
+def _read_runtime_text_file(path: Path) -> Optional[str]:
+    if path.is_symlink() or not path.is_file():
+        return None
+    if path.suffix.lower() not in _RUNTIME_TEXT_SUFFIXES:
+        return None
+    try:
+        if path.stat().st_size > MAX_SKILL_TEXT_FILE_BYTES:
+            return None
+    except OSError:
+        return None
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+
+
+def _scan_runtime_boundary(context: LintContext, file_path: Path, text: str, *, skill: Optional[str]) -> None:
+    for line_no, line in enumerate(text.splitlines(), start=1):
+        if _DESIGN_DOC_REF_RE.search(line):
+            context.findings.append(
+                _finding(
+                    LINT_SKILL_RUNTIME_BOUNDARY,
+                    FINDING_ERROR,
+                    file_path,
+                    "packaged runtime skill content references docs/design/ documents",
+                    "Copy the runtime-relevant rule into SKILL.md/reference content or product docs; "
+                    "design docs are authoring and review inputs.",
+                    code="skill-runtime-design-doc-ref",
+                    skill=skill,
+                    line=line_no,
+                    global_finding=skill is None,
+                )
+            )
+        if _EVALUATOR_HOOK_RE.search(line):
+            context.findings.append(
+                _finding(
+                    LINT_SKILL_RUNTIME_BOUNDARY,
+                    FINDING_ERROR,
+                    file_path,
+                    "packaged runtime skill content contains evaluator or benchmark-harness instructions",
+                    "Keep evaluator hooks and benchmark instructions in repo-only evals/ content, "
+                    "not in SKILL.md, references/, scripts/, or shared references.",
+                    code="skill-runtime-evaluator-hook",
+                    skill=skill,
+                    line=line_no,
+                    global_finding=skill is None,
                 )
             )
 

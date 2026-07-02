@@ -184,13 +184,13 @@
     {
       "id": "diagnose-negative-healthy-job-lifecycle",
       "prompt": "Monitor my healthy running job and download the final model when it completes.",
-      "expected_output": "The diagnosis skill should not trigger because the request is normal job lifecycle management, not failure diagnosis.",
+      "expected_output": "The diagnosis skill should not trigger because the request is normal job lifecycle management, not failure diagnosis. No lifecycle skill exists; the agent handles lifecycle requests with product APIs directly.",
       "files": [],
       "assertions": [
         "The selected skill is not nvflare-diagnose-job."
       ],
       "nvflare": {
-        "expected_skill": "nvflare-job-lifecycle",
+        "expected_skill": null,
         "negative_for": "nvflare-diagnose-job"
       }
     },
