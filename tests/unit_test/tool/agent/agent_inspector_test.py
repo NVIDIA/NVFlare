@@ -568,6 +568,27 @@ def test_inspect_dominant_lightning_module_with_unrelated_entry_routes_to_lightn
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
 
 
+def test_inspect_torch_ops_inside_lightning_module_with_unrelated_entry_routes_to_lightning(tmp_path):
+    # torch.optim/losses/dataloaders inside a LightningModule file are not
+    # standalone PyTorch usage, so an unrelated entry point must not force the
+    # PyTorch base.
+    (tmp_path / "litmodel.py").write_text(
+        "import torch\nimport lightning.pytorch as pl\nfrom torch.optim import SGD\n"
+        "class LitNet(pl.LightningModule):\n"
+        "    def configure_optimizers(self):\n"
+        "        return SGD(self.parameters(), lr=0.1)\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "run.py").write_text(
+        "import json\nif __name__ == '__main__':\n    print(json.dumps({}))\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
+
+
 def test_inspect_split_file_lightning_model_imported_by_entry_point_recommends_lightning(tmp_path):
     (tmp_path / "train.py").write_text(
         "import torch\n" "from model import LitModel\n" "\n" "def main():\n" "    return LitModel()\n",

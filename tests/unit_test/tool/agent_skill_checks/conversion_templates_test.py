@@ -54,6 +54,22 @@ def test_pytorch_eval_template_computes_metric_against_toy_model():
     assert 0.0 <= metric <= 1.0
 
 
+def test_pytorch_eval_template_restores_training_mode():
+    # evaluate() must not leave the model in eval mode, or a later training round
+    # would run with dropout/batchnorm disabled.
+    torch = pytest.importorskip("torch")
+    module = _load_module(PT_TEMPLATES / "client_with_eval.py")
+
+    model = torch.nn.Linear(4, 2)
+    model.train()
+    features = torch.randn(4, 4)
+    labels = torch.randint(0, 2, (4,))
+
+    module.evaluate(model, [(features, labels)], device="cpu")
+
+    assert model.training is True
+
+
 def test_pytorch_eval_template_fails_closed_on_empty_data():
     pytest.importorskip("torch")
     module = _load_module(PT_TEMPLATES / "client_with_eval.py")
@@ -103,6 +119,27 @@ def test_custom_aggregator_template_averages_per_key_with_mismatched_keys():
     # shared: (2*1 + 4*3)/(1+3) = 3.5 ; only_b: 9 present only in client B -> 9.0
     assert result.params["shared"][0] == pytest.approx(3.5)
     assert result.params["only_b"][0] == pytest.approx(9.0)
+
+
+@pytest.mark.parametrize("bad_steps", [-5, 0, float("nan"), float("inf"), "abc", True, None])
+def test_custom_aggregator_template_falls_back_to_unit_weight_for_bad_step_counts(bad_steps):
+    # Negative / non-finite / non-numeric / bool / missing step metadata must
+    # fall back to weight 1.0 (never corrupt or crash the weighted average).
+    import numpy as np
+
+    from nvflare.apis.dxo import MetaKey
+    from nvflare.app_common.abstract.fl_model import FLModel
+
+    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    aggregator = module.WeightedAggregator()
+
+    meta = {} if bad_steps is None else {MetaKey.NUM_STEPS_CURRENT_ROUND: bad_steps}
+    aggregator.accept_model(FLModel(params={"w": np.array([2.0])}, meta=meta))
+    aggregator.accept_model(FLModel(params={"w": np.array([4.0])}, meta=meta))
+    result = aggregator.aggregate_model()
+
+    # Both weights coerced to 1.0 -> plain mean (2 + 4) / 2 = 3.0.
+    assert result.params["w"][0] == pytest.approx(3.0)
 
 
 def test_custom_aggregator_template_resets_between_rounds():
@@ -190,7 +227,14 @@ def test_lightning_template_eval_only_mode_skips_training():
 
 
 class _DummyModel:
+    training = True
+
     def eval(self):
+        self.training = False
+        return self
+
+    def train(self, mode=True):
+        self.training = mode
         return self
 
     def __call__(self, *_args, **_kwargs):  # pragma: no cover - never reached on empty loader

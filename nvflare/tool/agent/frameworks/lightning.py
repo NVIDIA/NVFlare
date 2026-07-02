@@ -157,10 +157,11 @@ class LightningDetector(FrameworkDetector):
         # Base/superset precedence:
         #   1. Active superset evidence tied to the entry context -> superset.
         #   2. Any base evidence tied to the entry context -> base.
-        #   3. Entry point/inspected file exists and the base has genuine active
-        #      usage (a real model/optimizer, not a bare import) but neither is
-        #      tied -> base. A bare base import must not let an unrelated entry
-        #      point hide a clearly dominant superset in a non-entry module.
+        #   3. Entry point/inspected file exists and there is *standalone* active
+        #      base usage (active PyTorch evidence in a file that has no active
+        #      Lightning evidence) but neither is tied -> base. torch.optim/losses/
+        #      dataloaders inside a LightningModule file are not standalone use,
+        #      so an unrelated entry point cannot hide a dominant superset.
         #   4. Model-only/no-entry contexts use weighted evidence fallback.
         active_lightning_evidence = resolver.active_evidence(self.name)
         active_pytorch_evidence = resolver.active_evidence(family_base)
@@ -173,7 +174,10 @@ class LightningDetector(FrameworkDetector):
 
         active_lightning_score = resolver.score(active_lightning_evidence)
         active_pytorch_score = resolver.score(active_pytorch_evidence)
-        if resolver.has_inspected_file_or_entry_point() and active_pytorch_score > 0:
+        standalone_active_pytorch = resolver.has_evidence_outside_files(
+            active_pytorch_evidence, active_lightning_evidence
+        )
+        if resolver.has_inspected_file_or_entry_point() and standalone_active_pytorch:
             return False
         if active_lightning_score == 0:
             return False

@@ -131,7 +131,14 @@ def test_recipe_show_json_contract(monkeypatch, capsys):
     by_name = {p["name"]: p for p in detail["parameters"]}
     # Parameters the packaged conversion skills reference by name must remain
     # discoverable; renaming any of these breaks the shipped skill guidance.
-    for skill_referenced in ("model", "min_clients", "num_rounds", "aggregator", "enable_tensor_disk_offload"):
+    for skill_referenced in (
+        "model",
+        "min_clients",
+        "num_rounds",
+        "aggregator",
+        "enable_tensor_disk_offload",
+        "server_expected_format",
+    ):
         assert skill_referenced in by_name, f"fedavg-pt no longer exposes '{skill_referenced}'"
     # required/default discovery is what "audit constructor args" depends on; the
     # field must be a usable boolean flag (its value per recipe may change).
