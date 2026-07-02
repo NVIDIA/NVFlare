@@ -452,7 +452,8 @@ Edit the project.yml configuration file to meet your project requirements:
     - "api_version" should be set to 3 or 4. Version 4 adds support for multi-study configuration (see :ref:`multi_study_guide`)
     - "name" is used to identify this project.
     - "participants" describes the different parties in the FL system, distinguished by type. For all participants, "name"
-      should be unique, and "org" should be defined in AuthPolicyBuilder. The "name" of the server should
+      should be unique. ``org`` is required except for ephemeral admin kit entries, whose organization comes from the
+      issued certificate. The "name" of the server should
       be in the format of a fully qualified domain name. It is possible to use a unique hostname rather than FQDN, with
       the IP mapped to the hostname by having it added to ``/etc/hosts``:
 
@@ -461,9 +462,77 @@ Edit the project.yml configuration file to meet your project requirements:
             - "fed_learn_port" is the port number for communication between the FL server and FL clients
             - "admin_port" is the port number for communication between the FL server and FL administration client
         - Type "client" describes the FL clients, with one "org" and "name" for each client as well as "enable_byoc" settings.
-        - Type "admin" describes the admin clients with the name being a unique email. The role must be one of "project_admin", "org_admin", "lead" and "member".
+        - Type "admin" describes the admin clients. For traditional static
+          admin certificates, the name must be a unique email. For ephemeral
+          admin certificate startup kits, the name may be a unique kit name
+          such as ``sso-admin-kit`` because the real admin identity comes from
+          the short-lived certificate issued after login. Static admins must
+          define ``org`` and a role of "project_admin", "org_admin", "lead" or
+          "member". Ephemeral admin kit entries omit ``org`` and ``role``;
+          those values come from the issued certificate.
     - "builders" contains all of the builders and the args to be passed into each. See the details in docstrings of the :ref:`bundled_builders`.
     - "studies" (optional, requires ``api_version: 4``): defines named studies with per-study site enrollment and admin role mappings. See :ref:`multi_study_guide` for the full schema and examples.
+
+Ephemeral admin certificate configuration
+=========================================
+
+Use ephemeral admin certificates when admin users should authenticate through an
+external certificate provider instead of receiving long-lived private keys in
+their startup kits. Server and client startup kits are unchanged.
+
+The built-in ``step_ca`` provider delegates OIDC login and short-lived
+certificate issuance to step-ca. FLARE only stores the provider configuration in
+the generated admin startup kit and then validates the returned certificate
+before using it. The admin machine must have the ``step`` CLI installed.
+
+Example configuration:
+
+.. code-block:: yaml
+
+  participants:
+    - name: static-admin@example.com
+      type: admin
+      org: nvidia
+      role: project_admin
+
+    - name: sso-admin-kit
+      type: admin
+      ephemeral_admin_cert:
+        provider: step_ca
+        renewal_window: 60
+        provider_config:
+          ca_url: https://step-ca.example.com
+          provisioner: nvflare-admin-oidc
+          cert_ttl: 24h
+          command_timeout: 300
+
+Only admin participants with ``ephemeral_admin_cert`` receive SSO-backed startup
+kits. The generated ``sso-admin-kit`` startup kit contains
+``ephemeral_admin_cert`` in ``fed_admin.json`` and omits static admin
+``client.crt`` and ``client.key``. Traditional admin participants still receive
+static admin certificate material. The admin client invokes the configured
+provider when the cached certificate is missing, invalid, expired, or close to
+expiry. Cached certificate material is stored under
+``~/.nvflare/ephemeral_admin_certs`` and can be removed manually if a fresh SSO
+login is required. The returned certificate must chain to ``rootCA.pem``, match
+its private key, contain a valid FLARE organization and admin role, and be valid
+for the current time. If ``cert_ttl`` is omitted, the built-in ``step_ca``
+provider requests ``24h``.
+
+The certificate provider must map authenticated IdP claims to one allowed
+``(organization, role)`` pair. For example, an IdP role such as
+``nvflare-demo-example-project_admin`` can map to organization ``example`` and
+role ``project_admin``. Perform this mapping in the step-ca X.509 template (or
+in the IdP), using exact allowlisted values. Do not accept organization and role
+as independent user-controlled claims. If several allowed roles for the same
+organization are present, select the highest privilege; fail closed if the
+organization is ambiguous.
+
+Custom certificate providers can be configured with
+``provider: module:function``. The function receives ``provider_config`` and
+``root_ca_file`` and returns paths for the admin certificate and key.
+FLARE performs the same certificate validation for custom providers as it does
+for ``step_ca``.
 
 .. _project_yml:
 

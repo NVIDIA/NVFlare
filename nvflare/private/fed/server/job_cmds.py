@@ -16,6 +16,7 @@ import datetime
 import io
 import json
 import os
+import posixpath
 import shutil
 import threading
 import uuid
@@ -66,8 +67,11 @@ from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.binary_transfer import BinaryTransfer
 from nvflare.fuel.hci.server.constants import ConnProps
+from nvflare.fuel.sec.ephemeral_admin_cert import cert_time
 from nvflare.fuel.utils.argument_utils import SafeArgumentParser
 from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.lighter.tool_consts import NVFLARE_SUBMITTER_CRT_FILE
+from nvflare.lighter.utils import load_crt_chain_bytes
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
@@ -98,10 +102,65 @@ CLONED_META_KEYS = {
     JobMetaKey.MANDATORY_CLIENTS.value,
     JobMetaKey.DATA_STORAGE_FORMAT.value,
     JobMetaKey.STUDY.value,
+    JobMetaKey.SUBMITTER_CERT_VALIDITY.value,
     AppValidationKey.BYOC,
 }
 
 JSON_LOG_FILE_NAME = "log.json"
+
+
+def _submitter_cert_validity(zip_file_name: str) -> Optional[dict]:
+    zip_source = io.BytesIO(zip_file_name) if isinstance(zip_file_name, bytes) else zip_file_name
+    try:
+        zip_file = ZipFile(zip_source)
+    except (BadZipFile, OSError):
+        return None
+
+    validity = None
+    with zip_file:
+        for info in zip_file.infolist():
+            if info.is_dir() or posixpath.basename(info.filename) != NVFLARE_SUBMITTER_CRT_FILE:
+                continue
+
+            try:
+                cert_chain = load_crt_chain_bytes(zip_file.read(info))
+            except Exception:
+                return {}
+            cert = cert_chain[0]
+            cert_validity = {
+                "not_before": cert_time(cert, "not_valid_before").timestamp(),
+                "not_after": cert_time(cert, "not_valid_after").timestamp(),
+            }
+            if validity is None:
+                validity = cert_validity
+            else:
+                validity["not_before"] = max(validity["not_before"], cert_validity["not_before"])
+                validity["not_after"] = min(validity["not_after"], cert_validity["not_after"])
+    return validity
+
+
+def _clone_signature_error(job: Job) -> str:
+    validity = job.meta.get(JobMetaKey.SUBMITTER_CERT_VALIDITY.value)
+    if validity is None:
+        return ""
+    if not isinstance(validity, dict):
+        validity = {}
+    try:
+        not_before = float(validity["not_before"])
+        not_after = float(validity["not_after"])
+    except (KeyError, TypeError, ValueError):
+        return (
+            "Cannot clone this job because the stored submitter certificate cannot be inspected. "
+            "Download and submit the job again so it is signed with a current admin certificate."
+        )
+
+    now = datetime.datetime.now(datetime.timezone.utc).timestamp()
+    if now < not_before or now >= not_after:
+        return (
+            "Cannot clone this job because the stored submitter certificate is no longer valid. "
+            "Download and submit the job again so it is signed with a current admin certificate."
+        )
+    return ""
 
 
 def _active_study_from_conn(conn: Connection) -> str:
@@ -132,6 +191,7 @@ def _create_submit_job_cmd_parser():
     parser = SafeArgumentParser(prog=AdminCommandNames.SUBMIT_JOB)
     parser.add_argument("folder_name", help="Uploaded job folder name")
     parser.add_argument("--submit-token", dest="submit_token", help="retry-safe submit token")
+    parser.add_argument("--ephemeral-admin-cert", action="store_true")
     return parser
 
 
@@ -1074,6 +1134,11 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
                 )
             with engine.new_context() as fl_ctx:
+                clone_error = _clone_signature_error(job)
+                if clone_error:
+                    conn.append_error(clone_error, meta=make_meta(MetaStatusValue.INVALID_JOB_DEFINITION, clone_error))
+                    return
+
                 job_meta = {str(k): job.meta[k] for k in job.meta.keys() & CLONED_META_KEYS}
 
                 # set the submitter info for the new job
@@ -1548,6 +1613,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             parsed_args = parser.parse_args(args[1:])
             folder_name = parsed_args.folder_name
             submit_token = validate_submit_token(parsed_args.submit_token)
+            ephemeral_admin_cert = parsed_args.ephemeral_admin_cert
         except ValueError as e:
             conn.append_error(str(e), meta=make_meta(MetaStatusValue.SYNTAX_ERROR, str(e)))
             return
@@ -1572,6 +1638,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 meta.pop(JobMetaKey.FROM_HUB_SITE.value, None)
                 # Submit-token is server-owned submission metadata. User job metadata must not expose it.
                 meta.pop(SubmitRecordKey.SUBMIT_TOKEN.value, None)
+                meta.pop(JobMetaKey.SUBMITTER_CERT_VALIDITY.value, None)
 
                 job_def_manager = engine.job_def_manager
                 if not isinstance(job_def_manager, JobDefManagerSpec):
@@ -1615,6 +1682,11 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                         block_reason, meta=make_meta(MetaStatusValue.INVALID_JOB_DEFINITION, block_reason)
                     )
                     return
+
+                if ephemeral_admin_cert:
+                    submitter_cert_validity = _submitter_cert_validity(zip_file_name)
+                    if submitter_cert_validity is not None:
+                        meta[JobMetaKey.SUBMITTER_CERT_VALIDITY.value] = submitter_cert_validity
 
                 # set submitter info
                 submitter = self._submitter_from_conn(conn)

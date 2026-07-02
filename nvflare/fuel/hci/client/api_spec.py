@@ -218,6 +218,7 @@ class AdminConfigKey:
     CONNECTION_SECURITY = "connection_security"
     CLIENT_KEY = "client_key"
     CLIENT_CERT = "client_cert"
+    EPHEMERAL_ADMIN_CERT = "ephemeral_admin_cert"
     CA_CERT = "ca_cert"
     HOST = "host"
     PORT = "port"

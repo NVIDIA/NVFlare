@@ -30,6 +30,7 @@ from nvflare.lighter.constants import (
     TemplateSectionKey,
 )
 from nvflare.lighter.entity import Participant
+from nvflare.lighter.ephemeral_admin import get_admin_ephemeral_cert_config
 from nvflare.lighter.spec import Builder, Project, ProvisionContext
 
 _logger = logging.getLogger(__name__)
@@ -633,7 +634,8 @@ class StaticFileBuilder(Builder):
         if not conn_sec:
             conn_sec = ConnSecurity.MTLS
 
-        uid_source = "user_input"
+        ephemeral_admin_cert = get_admin_ephemeral_cert_config(admin)
+        uid_source = "cert" if ephemeral_admin_cert else "user_input"
         provision_mode = ctx.get_provision_mode()
         if provision_mode == ProvisionMode.POC:
             uid_source = "cert"
@@ -644,7 +646,7 @@ class StaticFileBuilder(Builder):
 
         replacement_dict = {
             "project_name": project.name,
-            "username": "" if provision_mode == ProvisionMode.POC else admin.name,
+            "username": "" if provision_mode == ProvisionMode.POC or ephemeral_admin_cert else admin.name,
             "server_identity": self._get_auth_identity(server),
             "scheme": self.scheme,
             "conn_sec": conn_sec,
@@ -657,6 +659,8 @@ class StaticFileBuilder(Builder):
             temp_section=TemplateSectionKey.FED_ADMIN,
             file_name=ProvFileName.FED_ADMIN_JSON,
             replacement=replacement_dict,
+            content_modify_cb=_modify_fed_admin_config,
+            ephemeral_admin_cert=ephemeral_admin_cert,
         )
 
         # create default resources in local
@@ -1033,6 +1037,20 @@ def _remove_undefined_port(section: str) -> str:
     else:
         # no change
         return section
+
+
+def _modify_fed_admin_config(section: str, ephemeral_admin_cert=None) -> str:
+    if not ephemeral_admin_cert:
+        return section
+
+    admin_config = json.loads(section)
+    admin = admin_config.get("admin", {})
+    admin.pop("client_key", None)
+    admin.pop("client_cert", None)
+    admin["username"] = ""
+    admin["uid_source"] = "cert"
+    admin[PropKey.EPHEMERAL_ADMIN_CERT] = dict(ephemeral_admin_cert)
+    return json.dumps(admin_config, indent=2)
 
 
 def check_parent(c: Participant, path: list):

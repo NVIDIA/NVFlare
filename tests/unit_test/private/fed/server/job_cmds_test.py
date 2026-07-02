@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import datetime
 import gc
 import io
 from argparse import Namespace
@@ -154,6 +155,7 @@ class _FakeJobDefManager:
     def __init__(self):
         self.created_meta = None
         self.cloned_meta = None
+        self.content = None
 
     def create(self, meta, uploaded_content, fl_ctx):
         self.created_meta = dict(meta)
@@ -166,6 +168,9 @@ class _FakeJobDefManager:
         result = dict(meta)
         result[JobMetaKey.JOB_ID.value] = "cloned-job-id"
         return result
+
+    def get_content(self, meta, fl_ctx):
+        return self.content
 
 
 class _FakeSubmitTokenJobDefManager:
@@ -542,6 +547,63 @@ def test_submit_job_strips_user_supplied_from_hub_site(monkeypatch):
 
     assert conn.errors == []
     assert JobMetaKey.FROM_HUB_SITE.value not in engine.job_def_manager.created_meta
+
+
+@pytest.mark.parametrize("ephemeral_admin_cert", [False, True])
+def test_submit_job_records_only_ephemeral_submitter_cert_validity(monkeypatch, tmp_path, ephemeral_admin_cert):
+    now = datetime.datetime.now(datetime.timezone.utc)
+
+    class _Cert:
+        not_valid_before_utc = now - datetime.timedelta(minutes=1)
+        not_valid_after_utc = now + datetime.timedelta(hours=1)
+
+    class _Validator:
+        def validate(self, folder_name, zip_file_name):
+            return True, "", {}
+
+    zip_path = tmp_path / "job.zip"
+    with ZipFile(zip_path, "w") as zip_file:
+        zip_file.writestr(f"source/app/{NVFLARE_SUBMITTER_CRT_FILE}", b"cert")
+
+    monkeypatch.setattr(job_cmds_module, "JobMetaValidator", _Validator)
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    monkeypatch.setattr(job_cmds_module, "load_crt_chain_bytes", lambda _data: [_Cert()])
+
+    engine = _FakeEngine()
+    conn = _submit_conn(engine, str(zip_path))
+
+    args = ["submit_job", "job_folder"]
+    if ephemeral_admin_cert:
+        args.append("--ephemeral-admin-cert")
+    JobCommandModule().submit_job(conn, args)
+
+    assert conn.errors == []
+    if ephemeral_admin_cert:
+        assert engine.job_def_manager.created_meta[JobMetaKey.SUBMITTER_CERT_VALIDITY.value] == {
+            "not_before": _Cert.not_valid_before_utc.timestamp(),
+            "not_after": _Cert.not_valid_after_utc.timestamp(),
+        }
+    else:
+        assert JobMetaKey.SUBMITTER_CERT_VALIDITY.value not in engine.job_def_manager.created_meta
+
+
+def test_submit_job_strips_forged_submitter_cert_validity(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    monkeypatch.setattr(
+        job_cmds_module,
+        "JobMetaValidator",
+        lambda: _FakeJobMetaValidatorWithMeta(
+            {JobMetaKey.SUBMITTER_CERT_VALIDITY.value: {"not_before": 0, "not_after": 9999999999}}
+        ),
+    )
+
+    engine = _FakeEngine()
+    conn = _submit_conn(engine, "job.zip")
+
+    JobCommandModule().submit_job(conn, ["submit_job", "job_folder"])
+
+    assert conn.errors == []
+    assert JobMetaKey.SUBMITTER_CERT_VALIDITY.value not in engine.job_def_manager.created_meta
 
 
 def test_submit_job_defaults_study_when_cmd_props_missing(monkeypatch):
@@ -1151,6 +1213,46 @@ def test_clone_job_preserves_byoc_flag(monkeypatch):
 
     assert conn.errors == []
     assert engine.job_def_manager.cloned_meta[AppValidationKey.BYOC] is True
+
+
+def test_clone_job_rejects_expired_stored_submitter_cert(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", object)
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+
+    source_job = _FakeListedJob(
+        {
+            JobMetaKey.JOB_ID.value: "source-job",
+            JobMetaKey.JOB_NAME.value: "source",
+            JobMetaKey.SUBMITTER_CERT_VALIDITY.value: {
+                "not_before": (now - datetime.timedelta(days=2)).timestamp(),
+                "not_after": (now - datetime.timedelta(days=1)).timestamp(),
+            },
+        }
+    )
+    engine = _FakeEngine()
+    engine.job_def_manager.get_content = MagicMock(side_effect=AssertionError("clone must not load job content"))
+    conn = _MockConnection(
+        app_ctx=engine,
+        props={
+            JobCommandModule.JOB: source_job,
+            JobCommandModule.JOB_ID: "source-job",
+            ConnProps.USER_NAME: "submitter",
+            ConnProps.USER_ORG: "org",
+            ConnProps.USER_ROLE: "role",
+        },
+    )
+
+    JobCommandModule().clone_job(conn, ["clone_job", "source-job"])
+
+    assert conn.successes == []
+    assert engine.job_def_manager.cloned_meta is None
+    assert conn.errors
+    msg, meta = conn.errors[0]
+    assert "stored submitter certificate" in msg
+    assert meta[MetaKey.STATUS] == MetaStatusValue.INVALID_JOB_DEFINITION
+    engine.job_def_manager.get_content.assert_not_called()
 
 
 def test_list_jobs_filters_legacy_jobs_into_default_study(monkeypatch):
