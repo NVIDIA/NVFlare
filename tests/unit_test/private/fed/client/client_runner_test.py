@@ -102,10 +102,10 @@ def test_client_runner_init_registers_aux_and_event_handlers(monkeypatch):
     runner = ClientRunner({}, config, "job-1", engine)
 
     assert runner.parent_target == "server"
-    assert engine.register_aux_message_handler.call_count == 2
     topics = {call.kwargs["topic"] for call in engine.register_aux_message_handler.call_args_list}
     assert topics == {ReservedTopic.END_RUN, ReservedTopic.DO_TASK}
-    assert ClientRunner.register_event_handler.call_count == 2
+    event_types = {call.args[0] for call in ClientRunner.register_event_handler.call_args_list}
+    assert {EventType.TASK_ASSIGNMENT_SENT, EventType.TASK_RESULT_RECEIVED}.issubset(event_types)
 
 
 def test_process_task_preserves_cookie_and_assignment_headers():

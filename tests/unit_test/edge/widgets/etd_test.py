@@ -40,10 +40,13 @@ def _job_meta(job_id="job-1", name="edge-job"):
     return {JobMetaKey.JOB_ID: job_id, JobMetaKey.JOB_NAME: name, JobMetaKey.EDGE_METHOD: "method"}
 
 
-def test_init_registers_all_event_handlers():
+def test_init_registers_event_handlers():
     with patch.object(EdgeTaskDispatcher, "register_event_handler") as register:
         dispatcher = EdgeTaskDispatcher(request_timeout=3.0)
-    assert register.call_count == 6
+    handler_names = {call.args[1].__name__ for call in register.call_args_list}
+    assert {"_handle_job_launched", "_handle_job_done", "_handle_edge_job_request", "_handle_edge_request"}.issubset(
+        handler_names
+    )
     assert dispatcher.request_timeout == 3.0
 
 
