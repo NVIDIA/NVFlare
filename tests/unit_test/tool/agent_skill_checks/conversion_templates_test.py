@@ -128,7 +128,17 @@ def test_custom_aggregator_template_averages_per_key_with_mismatched_keys():
 
 @pytest.mark.parametrize(
     "bad_steps",
-    [-5, 0, float("nan"), float("inf"), "abc", True, None, pytest.param(_FloatOverflow(), id="overflow")],
+    [
+        -5,
+        0,
+        float("nan"),
+        float("inf"),
+        "abc",
+        True,
+        None,
+        pytest.param(10**10000, id="oversized-int"),
+        pytest.param(_FloatOverflow(), id="overflow"),
+    ],
 )
 def test_custom_aggregator_template_falls_back_to_unit_weight_for_bad_step_counts(bad_steps):
     # Negative / non-finite / non-numeric / bool / missing / overflowing step
