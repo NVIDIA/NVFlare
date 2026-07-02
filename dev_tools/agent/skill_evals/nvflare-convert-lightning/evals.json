@@ -185,25 +185,26 @@
     {
       "id": "lightning-data-derived-required-arg",
       "prompt": "Convert this PyTorch Lightning training code to a FLARE FedAvg job over 2 sites. The model needs a vocab_size argument built from the data.",
-      "expected_output": "A FLARE Lightning Client API conversion that pins one shared vocab_size value for server and client model construction, passes the recipe model as an explicit class_path plus args config rather than a live LightningModule instance, patches the trainer with flare.patch, validates with python job.py when dependencies are available, and reports the shared constructor value and validation evidence.",
+      "expected_output": "A FLARE Lightning Client API conversion that pins one shared vocabulary mapping (an identical tokenizer / token-to-ID assignment, not only an equal vocab_size) for server and client model construction and validates that the mapping is identical across sites, for example with a stable hash, so averaged embedding rows stay semantically aligned; passes the recipe model as an explicit class_path plus args config rather than a live LightningModule instance; patches the trainer with flare.patch; validates with python job.py when dependencies are available; and reports the shared vocabulary identity and validation evidence. If the identical mapping cannot be built without pooling private data, the agent uses a fixed supplied tokenizer or surfaces the approval/blocker instead of pinning only the size.",
       "files": [
         "files/vocab-lightning/train.py",
         "files/vocab-lightning/model.py"
       ],
       "assertions": [
-        "The agent pins a shared vocab_size for both server recipe model config and client model construction.",
+        "The agent requires one identical tokenizer/vocabulary mapping (shared token IDs) across server and clients, not merely an equal vocab_size, so averaging an embedding row combines the same token at every site.",
+        "The agent validates that the vocabulary mapping is identical across sites, for example via a stable hash, rather than assuming equal sizes imply equal token IDs.",
         "The agent passes the recipe model as explicit class_path plus args, not as a live LightningModule instance.",
-        "The agent treats the data-derived vocab_size as statically clear only because the source makes it deterministic and shared; otherwise it asks or fails closed.",
+        "The agent treats the data-derived vocabulary as statically clear only when the source makes the mapping deterministic and shared; otherwise it uses a fixed supplied tokenizer or surfaces the approval/blocker instead of pinning only the size.",
         "The agent integrates through flare.patch(trainer).",
         "The agent runs python job.py for local validation when dependencies are available.",
-        "The agent reports the shared vocab_size value and any validation blockers."
+        "The agent reports the shared vocabulary identity and any validation blockers."
       ],
       "nvflare": {
         "expected_skill": "nvflare-convert-lightning",
         "mandatory_behavior": [
           {
             "id": "pin-data-derived-arg",
-            "description": "pins a data-derived constructor argument such as vocab_size to one shared value for server and client model construction"
+            "description": "pins a data-derived constructor argument to one shared value AND, for a vocabulary, an identical shared token-ID mapping (not only an equal vocab_size) for server and client model construction"
           },
           {
             "id": "explicit-model-config-with-args",
@@ -269,16 +270,17 @@
     {
       "id": "lightning-eval-only",
       "prompt": "I just want to evaluate this Lightning checkpoint across 3 sites and collect validation metrics, no training updates.",
-      "expected_output": "The agent treats this as evaluation-only, selects the PyTorch FedEval recipe, patches the trainer and runs trainer.validate/test in the round loop without federated training updates, treats the repo-supplied checkpoint as untrusted input requiring safe handling, and reports per-round validation metrics and result paths.",
+      "expected_output": "The agent treats this as evaluation-only and selects the PyTorch FedEval recipe, passing the repo-supplied checkpoint as the required eval_ckpt. It patches the trainer and runs a single trainer.validate(model) on the received global model (FedEval sends one validate task per site, not a training round loop, not trainer.fit, and not trainer.test), treats the supplied checkpoint as untrusted input requiring safe handling, and reports one-shot per-site validation metrics and result paths.",
       "files": [
         "files/hello-lightning/train.py",
         "files/hello-lightning/model.py"
       ],
       "assertions": [
-        "The agent selects the PyTorch FedEval recipe for evaluation-only workflows.",
-        "The agent patches the trainer and runs validate/test without federated training updates.",
+        "The agent selects the PyTorch FedEval recipe for evaluation-only workflows and passes the repo-supplied checkpoint as the required eval_ckpt.",
+        "The agent patches the trainer and runs a single trainer.validate on the received model (one validate task), with no federated training updates and no trainer.fit.",
+        "The agent does not rely on trainer.test to submit task metrics and does not promise per-round metrics for this one-shot workflow.",
         "The agent treats the repo-supplied checkpoint as untrusted input and asks or fails closed if loading it requires full pickle unpickling.",
-        "The agent reports validation metrics and result paths."
+        "The agent reports one-shot per-site validation metrics and result paths."
       ],
       "nvflare": {
         "expected_skill": "nvflare-convert-lightning",

@@ -40,6 +40,8 @@ class LitTextCNN(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         tokens, labels = batch
+        if labels.numel() == 0:
+            raise ValueError("empty validation batch; check per-site data partitioning")
         loss = F.cross_entropy(self(tokens), labels)
         self.log("val_loss", loss)
 
