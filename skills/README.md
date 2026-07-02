@@ -45,7 +45,8 @@ metadata:
 ```
 
 The skill name above is illustrative; actual skill directories use their
-published skill names.
+published skill names. Do not place NVFLARE custom fields at the top level;
+the skill validator rejects them unless they are nested under `metadata:`.
 
 Public skills must include `category` under `metadata:` as product-facing
 runtime metadata. Draft, internal, and private skills (`metadata.status`) may
