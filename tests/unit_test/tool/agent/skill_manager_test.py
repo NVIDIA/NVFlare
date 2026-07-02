@@ -230,11 +230,16 @@ def test_install_skills_installs_all_by_default(tmp_path):
     assert install_manifest["name"] == "nvflare-test-skill"
 
 
-def test_install_skills_keeps_analysis_files_for_dev_wheel_source(tmp_path):
+def test_install_skills_copies_runtime_content_excluding_caches(tmp_path):
+    # Eval/QA content lives outside skills/, so installs copy all runtime content
+    # (SKILL.md, references) and exclude only byte-code caches, for any source.
     root = tmp_path / "skills"
     skill_dir = _write_skill(root, "nvflare-test-skill")
-    skill_dir.joinpath("evals").mkdir()
-    skill_dir.joinpath("evals", "evals.json").write_text("{}\n", encoding="utf-8")
+    skill_dir.joinpath("references").mkdir()
+    skill_dir.joinpath("references", "notes.md").write_text("reference\n", encoding="utf-8")
+    cache_dir = skill_dir.joinpath("__pycache__")
+    cache_dir.mkdir()
+    cache_dir.joinpath("stale.pyc").write_text("cached\n", encoding="utf-8")
     source = SkillSource(
         source_type="wheel",
         root=root,
@@ -247,31 +252,8 @@ def test_install_skills_keeps_analysis_files_for_dev_wheel_source(tmp_path):
     installed = target / "nvflare-test-skill"
     assert plan["applied"] is True
     assert installed.joinpath("SKILL.md").is_file()
-    assert installed.joinpath("evals", "evals.json").is_file()
-    assert (
-        skill_tree_hash(installed, exclude_names={INSTALL_MANIFEST_FILE_NAME})
-        == source.manifest["skills"][0]["source_hash"]
-    )
-
-
-def test_install_skills_filters_analysis_files_for_release_source(tmp_path):
-    root = tmp_path / "skills"
-    skill_dir = _write_skill(root, "nvflare-test-skill")
-    skill_dir.joinpath("evals").mkdir()
-    skill_dir.joinpath("evals", "evals.json").write_text("{}\n", encoding="utf-8")
-    source = SkillSource(
-        source_type="wheel",
-        root=root,
-        manifest=build_skill_manifest(root, source_type="wheel", nvflare_version="2.8.0", include_analysis_files=False),
-    )
-    target = tmp_path / "target"
-
-    plan = install_skills(agent="codex", target_dir=target, source=source)
-
-    installed = target / "nvflare-test-skill"
-    assert plan["applied"] is True
-    assert installed.joinpath("SKILL.md").is_file()
-    assert not installed.joinpath("evals").exists()
+    assert installed.joinpath("references", "notes.md").is_file()
+    assert not installed.joinpath("__pycache__").exists()
     assert (
         skill_tree_hash(installed, exclude_names={INSTALL_MANIFEST_FILE_NAME})
         == source.manifest["skills"][0]["source_hash"]

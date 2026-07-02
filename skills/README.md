@@ -2,17 +2,24 @@
 
 This directory contains NVFLARE-owned agent skills for supported coding agents.
 
-Each skill lives in its own directory with a `SKILL.md` file. Skills may also
-include supporting references and evaluation fixtures:
+Each skill lives in its own directory with a `SKILL.md` file and its supporting
+references. This directory ships as runtime content only:
 
 ```text
 skills/
   nvflare-your-skill/
     SKILL.md
     references/
-    evals/
-      evals.json
-      files/
+```
+
+Eval suites (grading-oracle data, not runtime guidance) live outside this tree,
+one directory per skill name, and are never packaged into installed skills:
+
+```text
+dev_tools/agent/skill_evals/
+  nvflare-your-skill/
+    evals.json
+    files/
 ```
 
 Directories whose names start with `_`, such as `_shared/`, are reference-only
