@@ -533,18 +533,32 @@ ClientAPIExecutor(
     command="python train.py ...",          # or "torchrun ...", "deepspeed ..."
     launch_once=True,                        # launch per job (default) vs per task
     launch_timeout=..., shutdown_timeout=..., stop_grace_period=...,
+    # in_process only — the trainer script NVFlare runs in the CJ process
+    task_script_path=..., task_script_args=...,
     # session / protocol
-    heartbeat_interval=5.0, heartbeat_timeout=30.0,
+    heartbeat_interval=5.0, heartbeat_timeout=30.0,   # out-of-process only
     task_wait_timeout=..., result_wait_timeout=...,
     # data
     params_exchange_format="pytorch" | "numpy" | "raw",
     params_transfer_type="FULL" | "DIFF",
     server_expected_format=...,
     from_nvflare_converter_id=..., to_nvflare_converter_id=...,
+    # task-name mapping — powers flare.is_train()/is_evaluate()/is_submit_model()
+    train_task_name="train", evaluate_task_name="validate",
+    submit_model_task_name="submit_model", train_with_evaluation=False,
+    # memory management (carried forward from ScriptRunner)
+    memory_gc_rounds=0, cuda_empty_cache=False,
     # attach only
     attach_timeout=..., allow_reconnect=False,
 )
 ```
+
+Mode-scoped arguments are validated at construction: an argument set for a mode
+that ignores it (e.g. `command` in in_process, `heartbeat_interval` in in_process,
+`attach_timeout` outside attach) is rejected with a clear error rather than
+silently dropped. `task_script_path`/`task_script_args` (the in_process trainer
+entry point), the task-name mapping, and the memory knobs are carried forward from
+today's InProcessClientAPIExecutor/ScriptRunner so existing jobs map without loss.
 
 Example client job config (external_process):
 
@@ -579,6 +593,9 @@ One executor component, no pipes, no launcher, no MetricRelay: LOG messages arri
 | SubprocessLauncher | internal process runner (not public surface) |
 | ExternalConfigurator | folded into external_process launch (bootstrap config) |
 | params_exchange_format / transfer_type / converters | kept, same meaning |
+| task_script_path / task_script_args | kept (in_process trainer entry point) |
+| train_task_name / evaluate_task_name / submit_model_task_name / train_with_evaluation | kept — power flare.is_train()/is_evaluate()/is_submit_model() |
+| memory_gc_rounds / cuda_empty_cache | kept, same meaning |
 
 ### Observability
 

@@ -38,7 +38,7 @@ Tracks: **F3** payload layer · **EX** executor/ScriptRunner · **TE** trainer e
 | PR | Track | Size | Depends |
 |---|---|---|---|
 | F3-2 Receiver-confirmed completion + retry-aware accounting | F3 | M | F3-1. The version-skew wire change — lands as early as possible for maximum soak; capability-flag gated, both skews interop-tested |
-| F3-3 Per-(transfer, receiver) acquire/idle budgets | F3 | M | F3-1. Unconditional per-receiver activity tracking |
+| F3-3 Per-(transfer, receiver) acquire/idle budgets | F3 | M | F3-1. Unconditional per-receiver activity tracking. Must also settle the quorum surface for fan-out: workflows with min_responses-style policy (k-of-N receivers suffices) need either an optional min_receivers on the transaction/facade or a documented pattern of evaluating TransferOutcome.refs against their own threshold — `completed` stays the strict all-receivers certificate either way |
 | F3-4 Awaitable producer transfer facade + PAYLOAD_ACQUIRED (via existing progress_cb) | F3 | M | F3-1. Must CHAIN existing DOWNLOAD_COMPLETE_CB, not replace |
 | EX-3 in_process backend (consolidate InProcessClientAPIExecutor) | EX | L | EX-2. Behavior-parity bar: "nothing user-visible" |
 | TE-3 TrainerCellSession engine (handshake, heartbeat, owner-death, trainer-side authenticated teardown) | TE | L | TE-1, TE-2. Injectable clock + kill hook; AT owner co-reviews the teardown-auth tests |
