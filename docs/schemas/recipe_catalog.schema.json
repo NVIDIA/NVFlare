@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://nvflare.readthedocs.io/schemas/recipe_catalog.schema.json",
   "title": "NVFlare Recipe Catalog JSON",
-  "description": "Successful catalog.json response emitted by `nvflare recipe list --format json`.",
+  "description": "Successful response emitted by `nvflare recipe list --format json`.",
   "type": "object",
   "required": [
     "schema_version",
