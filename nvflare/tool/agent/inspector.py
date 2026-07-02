@@ -466,17 +466,18 @@ def _detect_primary_framework(state: InspectState, ranked: list[dict]) -> Option
 
 
 def _primary_by_confidence_and_entry_context(state: InspectState, ranked: list[dict]) -> str:
-    # Frameworks are ranked by (confidence, name); a pure alphabetical tie-break
-    # would let e.g. an incidental torch utility beat the framework the entry
-    # point actually uses. When the top confidence is tied, prefer a framework
-    # whose evidence is tied to the entry context (imported/inspected file)
-    # before falling back to the alphabetical order.
-    top_confidence = ranked[0]["confidence"]
-    tied = [item["name"] for item in ranked if item["confidence"] == top_confidence]
-    if len(tied) > 1:
-        for name in tied:
-            if _framework_evidence_tied_to_entry_context(state, state.framework_evidence.get(name, [])):
-                return name
+    # Frameworks are ranked by (confidence, name), which is count-based and blind
+    # to reachability: an incidental torch/sklearn utility in an unreachable
+    # helper file can outrank the framework the entry point actually uses. When
+    # any framework's evidence is tied to the entry context (the inspected file
+    # or a file reachable from an entry point), prefer the highest-confidence
+    # such framework over a higher-count-but-unreachable one. Same-family
+    # (base/superset) promotion is resolved afterward by
+    # resolve_primary_framework. Fall back to the raw ranking only when nothing
+    # is reachable (e.g. a model-only directory with no entry point).
+    for item in ranked:
+        if _framework_evidence_tied_to_entry_context(state, state.framework_evidence.get(item["name"], [])):
+            return item["name"]
     return ranked[0]["name"]
 
 
@@ -537,29 +538,33 @@ def _framework_evidence_tied_to_inspected_file_or_entry_point(state: InspectStat
 
 
 def _entry_point_imports_file(state: InspectState, evidence_file: str) -> bool:
-    evidence_modules = _module_names_for_file(evidence_file)
-    if not evidence_modules:
+    if not _module_names_for_file(evidence_file):
         return False
     local_files_by_module = _local_files_by_module(state)
     for entry_point in state.entry_points:
-        if _imports_reach_modules(
+        if _imports_reach_file(
             state,
             entry_point["path"],
             state.file_imports.get(entry_point["path"], set()),
-            evidence_modules,
+            evidence_file,
             local_files_by_module,
         ):
             return True
     return False
 
 
-def _imports_reach_modules(
+def _imports_reach_file(
     state: InspectState,
     importing_file: str,
     imports: set[str],
-    target_modules: set[str],
+    target_file: str,
     local_files_by_module: dict[str, set[str]],
 ) -> bool:
+    # Match on the resolved file, not on module names: a stale src-layout copy
+    # (src/mypkg/loop.py) shares the stripped module name "mypkg.loop" with a
+    # root-level mypkg/loop.py, so name-based matching would let the entry point
+    # "reach" the never-imported copy. _local_files_by_module resolves the shared
+    # name to the root file only, and comparing files keeps them distinct.
     pending_imports = [(importing_file, import_name) for import_name in imports]
     seen_imports = set()
     seen_files = set()
@@ -573,7 +578,7 @@ def _imports_reach_modules(
             if imported_file in seen_files:
                 continue
             seen_files.add(imported_file)
-            if target_modules.intersection(_module_names_for_file(imported_file)):
+            if imported_file == target_file:
                 return True
             pending_imports.extend(
                 (imported_file, nested_import) for nested_import in state.file_imports.get(imported_file, set())
@@ -583,8 +588,22 @@ def _imports_reach_modules(
 
 def _local_files_by_module(state: InspectState) -> dict[str, set[str]]:
     files_by_module: dict[str, set[str]] = {}
+    exact_modules: set[str] = set()
+    stripped_candidates: list[tuple[str, str]] = []
     for file_path in state.file_imports:
+        exact_name = _exact_module_name_for_file(file_path)
         for module_name in _module_names_for_file(file_path):
+            if module_name == exact_name:
+                files_by_module.setdefault(module_name, set()).add(file_path)
+                exact_modules.add(module_name)
+            else:
+                stripped_candidates.append((module_name, file_path))
+    # A src-layout stripped name (mypkg.loop from src/mypkg/loop.py) only wins the
+    # module path when no root-level file already owns it; otherwise a stale copy
+    # under src/ would steal entry-tied credit from the actually-imported
+    # root-level module of the same name.
+    for module_name, file_path in stripped_candidates:
+        if module_name not in exact_modules:
             files_by_module.setdefault(module_name, set()).add(file_path)
     return files_by_module
 
@@ -663,12 +682,24 @@ def _is_package_module_file(file_path: str) -> bool:
     return Path(file_path).name == "__init__.py"
 
 
-def _module_names_for_file(file_path: str) -> set[str]:
+def _file_module_parts(file_path: str) -> Optional[tuple[str, ...]]:
     if not file_path.endswith(".py"):
-        return set()
+        return None
     path = Path(file_path)
     parts = path.parent.parts if path.name == "__init__.py" else path.with_suffix("").parts
     if not parts or any(part in {"", ".", ".."} for part in parts):
+        return None
+    return parts
+
+
+def _exact_module_name_for_file(file_path: str) -> Optional[str]:
+    parts = _file_module_parts(file_path)
+    return ".".join(parts) if parts else None
+
+
+def _module_names_for_file(file_path: str) -> set[str]:
+    parts = _file_module_parts(file_path)
+    if not parts:
         return set()
     names = {".".join(parts)}
     # src-layout: a file under a packaging root (src/) is imported by its

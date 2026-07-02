@@ -594,6 +594,81 @@ def test_inspect_cross_family_confidence_tie_prefers_entry_context_framework(tmp
     assert data["frameworks"][0]["name"] == "sklearn"
 
 
+def test_inspect_higher_count_unreachable_torch_helper_does_not_beat_sklearn_entry(tmp_path):
+    # Count-based confidence can rank an unreachable torch helper above the
+    # sklearn the entry point actually uses. Reachability must win: the torch
+    # helper is never imported from the entry point, so the sklearn-dominant repo
+    # stays on sklearn and abstains from a (wrong) PyTorch recommendation.
+    (tmp_path / "train.py").write_text(
+        "from sklearn.linear_model import LogisticRegression\n"
+        "from sklearn.model_selection import train_test_split\n"
+        "def main():\n"
+        "    LogisticRegression()\n"
+        "if __name__ == '__main__':\n"
+        "    main()\n",
+        encoding="utf-8",
+    )
+    # data.py is never imported by the entry point but has more torch evidence
+    # (import + submodule import + call) than sklearn's two imports.
+    (tmp_path / "data.py").write_text(
+        "import torch\nfrom torch.utils.data import DataLoader\ndef loader(ds):\n    return DataLoader(ds)\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    assert data["frameworks"][0]["name"] == "pytorch"  # higher raw count
+    assert data["skill_selection"]["detected_framework"] == "sklearn"  # but entry-tied wins
+    assert data["skill_selection"]["recommended_skills"] == []
+
+
+def test_inspect_stale_src_layout_copy_does_not_steal_entry_reachability(tmp_path):
+    # A src-layout copy (src/mypkg/loop.py) shares the stripped module name
+    # "mypkg.loop" with an actively imported root-level mypkg/loop.py. The stale
+    # copy (Lightning) must not be scored as entry-reachable via the shared name;
+    # the entry point imports the root PyTorch module, so routing stays PyTorch.
+    (tmp_path / "train.py").write_text(
+        "from mypkg.loop import run\nif __name__ == '__main__':\n    run()\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "mypkg").mkdir()
+    (tmp_path / "mypkg" / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "mypkg" / "loop.py").write_text(
+        "import torch\nimport torch.nn as nn\nclass Net(nn.Module):\n    pass\ndef run():\n    return Net()\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "src" / "mypkg").mkdir(parents=True)
+    (tmp_path / "src" / "mypkg" / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "src" / "mypkg" / "loop.py").write_text(
+        "import lightning.pytorch as pl\nclass Lit(pl.LightningModule):\n    pass\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
+
+
+def test_inspect_src_layout_model_imported_by_root_entry_still_resolves(tmp_path):
+    # Guard the src-layout fix does not over-correct: with no root-level
+    # collision, an entry point that imports mypkg.loop must still reach the
+    # src/mypkg/loop.py Lightning model and route to Lightning.
+    (tmp_path / "train.py").write_text(
+        "from mypkg.loop import Lit\nif __name__ == '__main__':\n    Lit()\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "src" / "mypkg").mkdir(parents=True)
+    (tmp_path / "src" / "mypkg" / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "src" / "mypkg" / "loop.py").write_text(
+        "import lightning.pytorch as pl\nclass Lit(pl.LightningModule):\n    pass\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
+
+
 def test_inspect_stray_lightning_import_is_mixed_framework_not_flare_mixed_workspace(tmp_path):
     # A plain PyTorch repo with a stray, unused `import pytorch_lightning` is a
     # mixed-framework workspace, not the FLARE conversion "mixed_workspace".

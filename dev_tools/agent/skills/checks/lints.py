@@ -539,8 +539,9 @@ def _lint_trigger(context: LintContext) -> None:
                     "skill-trigger-lint",
                     FINDING_ERROR,
                     record.evals_path,
-                    "evals/evals.json is required for public skill trigger checks",
-                    "Add guide-compatible evals/evals.json with positive and adjacent negative trigger evals.",
+                    "evals.json (under dev_tools/agent/skill_evals/<skill>/) is required for public skill trigger checks",
+                    "Add a guide-compatible evals.json under the eval root "
+                    "(dev_tools/agent/skill_evals/<skill>/) with positive and adjacent negative trigger evals.",
                     code="skill-evals-missing",
                     skill=record.name,
                 )
@@ -639,7 +640,7 @@ def _lint_global_negative(context: LintContext) -> None:
                     "skill-global-negative-lint",
                     FINDING_ERROR,
                     record.evals_path,
-                    "evals/evals.json is required for global negative coverage",
+                    "evals.json (under dev_tools/agent/skill_evals/<skill>/) is required for global negative coverage",
                     "Add at least one eval representing an unrelated prompt that should trigger no FLARE skill.",
                     code="skill-evals-missing",
                     skill=record.name,
@@ -677,7 +678,8 @@ def _lint_policy_coverage(context: LintContext) -> None:
                             FINDING_ERROR,
                             file_path,
                             "normative rule has no measurable behavior ID, helper test, or checklist coverage",
-                            "Map required/prohibited behavior to evals/evals.json nvflare behavior IDs or tests.",
+                            "Map required/prohibited behavior to eval-root "
+                            "(dev_tools/agent/skill_evals/<skill>/evals.json) nvflare behavior IDs or tests.",
                             code="skill-policy-coverage-missing",
                             skill=record.name,
                             line=line_no,
@@ -700,7 +702,7 @@ def _lint_process_metrics(context: LintContext) -> None:
                     LINT_SKILL_PROCESS_METRIC,
                     FINDING_ERROR,
                     record.evals_path,
-                    "evals/evals.json is required for process-metric coverage",
+                    "evals.json (under dev_tools/agent/skill_evals/<skill>/) is required for process-metric coverage",
                     "Add process metric contracts under nvflare.process_metrics.",
                     code="skill-evals-missing",
                     skill=record.name,
@@ -880,7 +882,8 @@ def _lint_fixtures(context: LintContext) -> None:
                         FINDING_ERROR,
                         record.evals_path,
                         f"eval '{item.get('id', '<missing>')}' describes file editing without input fixtures",
-                        "Add deterministic input files under evals/files/ and reference them from the eval.",
+                        "Add deterministic input files under the eval root "
+                        "(dev_tools/agent/skill_evals/<skill>/files/) and reference them from the eval.",
                         code="skill-fixture-input-missing",
                         skill=record.name,
                     )
@@ -910,7 +913,8 @@ def _lint_fixtures(context: LintContext) -> None:
                             FINDING_ERROR,
                             record.evals_path,
                             f"eval fixture does not exist: {rel_path}",
-                            "Place deterministic fixtures under evals/files/ and reference existing files.",
+                            "Place deterministic fixtures under the eval root "
+                            "(dev_tools/agent/skill_evals/<skill>/files/) and reference existing files.",
                             code="skill-fixture-file-missing",
                             skill=record.name,
                         )
@@ -983,12 +987,12 @@ def _lint_runtime_boundary(context: LintContext) -> None:
     reference directory, not only ``SKILL.md`` and ``.md`` references.
     """
     for record in context.records:
-        if (record.skill_dir / "evals").is_dir():
+        for eval_dir in _iter_eval_dirs(record.skill_dir):
             context.findings.append(
                 _finding(
                     LINT_SKILL_RUNTIME_BOUNDARY,
                     FINDING_ERROR,
-                    record.skill_dir / "evals",
+                    eval_dir,
                     "eval suite must not live inside a shipped skill directory",
                     "Move the eval suite to the eval root (dev_tools/agent/skill_evals/<skill>/); "
                     "grading-oracle data must not ship in installed skills.",
@@ -1000,6 +1004,23 @@ def _lint_runtime_boundary(context: LintContext) -> None:
             _scan_runtime_boundary(context, file_path, text, skill=record.name)
     for file_path, text in _iter_shared_runtime_files(context.skills_root):
         _scan_runtime_boundary(context, file_path, text, skill=None)
+
+
+def _iter_eval_dirs(skill_dir: Path) -> Iterable[Path]:
+    """Yield every ``evals`` directory at any depth inside a skill.
+
+    Packaging strips directories named ``evals`` at any depth, so nested eval
+    content (e.g. ``references/evals/``) is silently omitted from bundles. The
+    boundary lint must match that depth so authors are told to relocate it
+    instead of shipping nothing.
+    """
+    if not skill_dir.is_dir():
+        return
+    for dirpath, dirnames, _ in os.walk(skill_dir, followlinks=False):
+        dirnames[:] = sorted(name for name in dirnames if not (Path(dirpath) / name).is_symlink())
+        for name in list(dirnames):
+            if name == "evals":
+                yield Path(dirpath) / name
 
 
 def _iter_packaged_runtime_files(skill_dir: Path) -> Iterable[tuple[Path, str]]:
