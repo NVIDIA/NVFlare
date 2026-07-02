@@ -43,6 +43,23 @@ while True:
 As with single-process training, the patched trainer owns model exchange. Do not
 pass `input_model` into `Trainer` methods and do not add a manual `flare.send`.
 
+### DDP validation metrics are not delivered to the server by default
+
+DDP requires the external-process launch (`launch_external_process=True`), which
+runs the script under `PTClientAPILauncherExecutor`. That executor defaults to
+`train_with_evaluation=False`, and the recipe's `ScriptRunner` does not expose a
+switch to change it, so the pre-`fit` `trainer.validate(...)` metrics are **not**
+attached to the training result. The `validate` call above still runs locally
+(useful for local logging), but server-side model selection and per-round metric
+reporting do **not** receive those metrics under the default DDP path.
+
+Do not promise per-round server-side validation metrics for a DDP conversion.
+Report this as a recipe limitation, and only claim server-side round metrics when
+the user opts into an advanced, non-`ScriptRunner` configuration that constructs
+the launcher executor with `train_with_evaluation=True`. Otherwise surface the
+limitation (or a blocker in unattended mode) instead of promising metrics the
+default recipe path cannot deliver.
+
 ## GPU/CPU Fallback
 
 - Keep the user's `accelerator`/`devices` settings; do not silently force CPU.
