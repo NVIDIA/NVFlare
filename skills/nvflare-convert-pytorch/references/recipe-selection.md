@@ -86,10 +86,11 @@ small and portable:
 
 ```python
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.client.config import ExchangeFormat
 from nvflare.recipe.sim_env import SimEnv
 
 model_args = {"input_size": input_size, "num_classes": num_classes}
-recipe_model = {"path": "model.ModelClass", "args": model_args}
+recipe_model = {"class_path": "model.ModelClass", "args": model_args}
 
 recipe = FedAvgRecipe(
     name=job_name,
@@ -98,6 +99,8 @@ recipe = FedAvgRecipe(
     model=recipe_model,
     train_script="client.py",
     train_args=train_args,
+    server_expected_format=ExchangeFormat.PYTORCH,
+    enable_tensor_disk_offload=True,
 )
 
 env = SimEnv(num_clients=num_clients, workspace_root=workspace_root)
@@ -108,16 +111,15 @@ Prefer a recipe model dict with the same constructor arguments used by the
 client-side model:
 
 ```python
-model={"path": "model.ModelClass", "args": model_args}
+model={"class_path": "model.ModelClass", "args": model_args}
 ```
 
-The exported job/config uses `path`. If a local recipe API still requires
-`class_path`, use that key at recipe construction time, but do not prefer it
-when `path` is accepted.
-Some export paths serialize only the class path if given a live model instance,
-which can drop required constructor values. Use explicit model config with
-`path` or `class_path` plus `args`, then verify export preserves the required
-model arguments.
+Prefer `class_path` at recipe construction time; `path` is the normalized key
+used in exported job config, and recipes accept it as an alias. Set
+`enable_tensor_disk_offload=True` when the selected recipe exposes it, paired
+with `server_expected_format=ExchangeFormat.PYTORCH`, per
+`../../nvflare-shared/references/conversion-workflow.md` ("Conversion Defaults") and
+`../../nvflare-shared/references/pytorch-model-exchange.md`.
 
 The server-side recipe model and the client-side training model must construct
 the same architecture. If the model constructor needs dimensions, class counts,
@@ -157,7 +159,8 @@ topology-specific workflow:
 - supply parameters marked `"required": true`;
 - leave optional parameters at defaults unless the user request, source code, or
   validation result requires them;
-- keep generated source names and runtime locations consistent with this skill;
+- keep generated source names consistent with this skill and runtime locations
+  consistent with `../../nvflare-shared/references/runtime-output-guidance.md`;
 - keep shared generated files on all clients unless the recipe semantics or user
   request require site-specific roles, scripts, arguments, or launch settings;
 - ask before choosing when recipe intent or topology is ambiguous.
@@ -170,5 +173,5 @@ and report any missing user input before validation.
 ## Export Behavior
 
 Export handling is shared across algorithms and frameworks. Follow
-`../../_shared/nvflare-job-lifecycle.md` for `--export`, `--export-dir`, and
+`../../nvflare-shared/references/conversion-workflow.md` for `--export`, `--export-dir`, and
 local command-line parser behavior.

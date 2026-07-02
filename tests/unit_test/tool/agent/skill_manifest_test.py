@@ -23,9 +23,6 @@ import pytest
 
 from nvflare.tool.agent import bundled_skills, skill_manifest
 from nvflare.tool.agent.skill_manifest import (
-    MANIFEST_CONTENT_MODE_DEV,
-    MANIFEST_CONTENT_MODE_RELEASE,
-    RELEASE_SKILL_FILE_EXCLUDE_NAMES,
     SkillManifestError,
     build_skill_manifest,
     copy_released_skills_to_bundle,
@@ -51,30 +48,26 @@ def test_build_skill_manifest_includes_valid_skill(tmp_path):
             "min_flare_version": "2.8.0",
             "max_flare_version": None,
             "blast_radius": "read_only",
+            "category": "Test",
             "source_hash": skill_tree_hash(skill_dir),
             "relative_path": "nvflare-test-skill",
         }
     ]
 
 
-def test_build_skill_manifest_hashes_release_runtime_payload_only_when_requested(tmp_path):
+def test_build_skill_manifest_hash_is_stable_across_source_type(tmp_path):
+    # Eval/QA content lives outside skills/, so there is no dev-vs-release
+    # content split: the source hash and manifest are identical regardless of
+    # source type, and no content_mode field is emitted.
     skill_dir = _write_skill(tmp_path, "nvflare-test-skill")
-    skill_dir.joinpath("BENCHMARK.md").write_text("# Benchmark notes\n", encoding="utf-8")
-    skill_dir.joinpath("evals").mkdir()
-    skill_dir.joinpath("evals", "evals.json").write_text("{}\n", encoding="utf-8")
 
     editable = build_skill_manifest(tmp_path, source_type="editable", nvflare_version="2.8.0")
     wheel = build_skill_manifest(tmp_path, source_type="wheel", nvflare_version="2.8.0")
-    release = build_skill_manifest(tmp_path, source_type="wheel", nvflare_version="2.8.0", include_analysis_files=False)
 
+    assert "content_mode" not in editable
+    assert "content_mode" not in wheel
     assert editable["skills"][0]["source_hash"] == skill_tree_hash(skill_dir)
-    assert wheel["content_mode"] == MANIFEST_CONTENT_MODE_DEV
-    assert wheel["skills"][0]["source_hash"] == skill_tree_hash(skill_dir)
-    assert release["content_mode"] == MANIFEST_CONTENT_MODE_RELEASE
-    assert release["skills"][0]["source_hash"] == skill_tree_hash(
-        skill_dir, exclude_names=RELEASE_SKILL_FILE_EXCLUDE_NAMES
-    )
-    assert editable["skills"][0]["source_hash"] != release["skills"][0]["source_hash"]
+    assert editable["skills"][0]["source_hash"] == wheel["skills"][0]["source_hash"]
 
 
 def test_skill_tree_hash_changes_when_skill_content_changes(tmp_path):
@@ -115,7 +108,7 @@ def test_build_skill_manifest_reports_invalid_skill_findings(tmp_path):
 
 def test_build_skill_manifest_skips_shared_reference_dirs(tmp_path):
     _write_skill(tmp_path, "nvflare-test-skill")
-    shared_dir = tmp_path / "_shared"
+    shared_dir = tmp_path / "nvflare-shared"
     shared_dir.mkdir()
     shared_dir.joinpath("reference.md").write_text("shared guidance\n", encoding="utf-8")
 
@@ -251,50 +244,35 @@ def test_load_frontmatter_module_does_not_cache_failed_fallback_module(monkeypat
     assert module_name not in sys.modules
 
 
-def test_copy_released_skills_to_bundle_keeps_analysis_files_by_default(tmp_path):
+def test_copy_released_skills_to_bundle_excludes_stray_eval_dir(tmp_path):
+    # Fail-closed: a stray skills/<skill>/evals/ must never be bundled, so
+    # grading-oracle data cannot re-enter installed skills.
     source_root = tmp_path / "skills"
     bundle_root = tmp_path / "bundle"
     skill_dir = _write_skill(source_root, "nvflare-test-skill")
-    skill_dir.joinpath("BENCHMARK.md").write_text("# Analysis-only benchmark notes\n", encoding="utf-8")
     skill_dir.joinpath("evals").mkdir()
     skill_dir.joinpath("evals", "evals.json").write_text("{}\n", encoding="utf-8")
+
+    copy_released_skills_to_bundle(source_root, bundle_root, nvflare_version="2.8.0")
+
+    assert bundle_root.joinpath("nvflare-test-skill", "SKILL.md").is_file()
+    assert not bundle_root.joinpath("nvflare-test-skill", "evals").exists()
+
+
+def test_copy_released_skills_to_bundle_copies_runtime_content(tmp_path):
+    source_root = tmp_path / "skills"
+    bundle_root = tmp_path / "bundle"
+    _write_skill(source_root, "nvflare-test-skill")
 
     manifest = copy_released_skills_to_bundle(source_root, bundle_root, nvflare_version="2.8.0")
 
     assert bundle_root.joinpath("manifest.json").is_file()
     assert bundle_root.joinpath("nvflare-test-skill", "SKILL.md").is_file()
-    assert bundle_root.joinpath("nvflare-test-skill", "BENCHMARK.md").is_file()
-    assert bundle_root.joinpath("nvflare-test-skill", "evals", "evals.json").is_file()
     saved_manifest = json.loads(bundle_root.joinpath("manifest.json").read_text(encoding="utf-8"))
     assert saved_manifest == manifest
-    assert saved_manifest["content_mode"] == MANIFEST_CONTENT_MODE_DEV
+    assert "content_mode" not in saved_manifest
     assert saved_manifest["skills"][0]["name"] == "nvflare-test-skill"
     assert saved_manifest["skills"][0]["source_hash"] == skill_tree_hash(bundle_root / "nvflare-test-skill")
-
-
-def test_copy_released_skills_to_bundle_filters_analysis_files_for_release_mode(tmp_path):
-    source_root = tmp_path / "skills"
-    bundle_root = tmp_path / "bundle"
-    skill_dir = _write_skill(source_root, "nvflare-test-skill")
-    skill_dir.joinpath("BENCHMARK.md").write_text("# Analysis-only benchmark notes\n", encoding="utf-8")
-    skill_dir.joinpath("evals").mkdir()
-    skill_dir.joinpath("evals", "evals.json").write_text("{}\n", encoding="utf-8")
-
-    manifest = copy_released_skills_to_bundle(
-        source_root, bundle_root, nvflare_version="2.8.0", include_analysis_files=False
-    )
-
-    assert bundle_root.joinpath("manifest.json").is_file()
-    assert bundle_root.joinpath("nvflare-test-skill", "SKILL.md").is_file()
-    assert not bundle_root.joinpath("nvflare-test-skill", "BENCHMARK.md").exists()
-    assert not bundle_root.joinpath("nvflare-test-skill", "evals").exists()
-    saved_manifest = json.loads(bundle_root.joinpath("manifest.json").read_text(encoding="utf-8"))
-    assert saved_manifest == manifest
-    assert saved_manifest["content_mode"] == MANIFEST_CONTENT_MODE_RELEASE
-    assert saved_manifest["skills"][0]["name"] == "nvflare-test-skill"
-    assert saved_manifest["skills"][0]["source_hash"] == skill_tree_hash(
-        bundle_root / "nvflare-test-skill", exclude_names=RELEASE_SKILL_FILE_EXCLUDE_NAMES
-    )
 
 
 def test_copy_released_skills_to_bundle_cleans_existing_bundle_content(tmp_path):
@@ -338,7 +316,7 @@ def test_copy_released_skills_to_bundle_rejects_shared_reference_symlink(tmp_pat
     source_root = tmp_path / "skills"
     bundle_root = tmp_path / "bundle"
     _write_skill(source_root, "nvflare-test-skill")
-    shared_dir = source_root / "_shared"
+    shared_dir = source_root / "nvflare-shared"
     shared_dir.mkdir()
     outside_file = tmp_path / "outside.md"
     outside_file.write_text("external shared content\n", encoding="utf-8")
@@ -347,7 +325,7 @@ def test_copy_released_skills_to_bundle_rejects_shared_reference_symlink(tmp_pat
     with pytest.raises(ValueError, match="skill directory contains symlink"):
         copy_released_skills_to_bundle(source_root, bundle_root, nvflare_version="2.8.0")
 
-    assert not bundle_root.joinpath("_shared", "outside-link.md").exists()
+    assert not bundle_root.joinpath("nvflare-shared", "outside-link.md").exists()
 
 
 def test_write_empty_skill_bundle_writes_empty_manifest_and_cleans_existing_content(tmp_path):
@@ -406,8 +384,10 @@ def _write_skill(root, name):
         "---\n"
         f"name: {name}\n"
         "description: Test skill fixture.\n"
-        'min_flare_version: "2.8.0"\n'
-        "blast_radius: read_only\n"
+        "metadata:\n"
+        '  min_flare_version: "2.8.0"\n'
+        "  blast_radius: read_only\n"
+        "  category: Test\n"
         "---\n"
         "\n"
         "# Test Skill\n",

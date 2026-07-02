@@ -29,11 +29,9 @@ from typing import Optional
 
 import nvflare
 from nvflare.tool.agent.skill_manifest import (
-    IGNORED_SKILL_FILE_NAMES,
-    MANIFEST_CONTENT_MODE_RELEASE,
     MANIFEST_FILE_NAME,
-    RELEASE_SKILL_FILE_EXCLUDE_NAMES,
     SHARED_SKILL_REFERENCE_DIR,
+    SKILL_PACKAGING_EXCLUDE_NAMES,
     build_skill_manifest,
     load_manifest,
     skill_tree_hash,
@@ -172,6 +170,7 @@ def list_skills(*, agent: str, target_dir: Optional[Path | str] = None, source: 
     errors = []
     available = source.manifest.get("skills", [])
     available_names = {skill["name"] for skill in available}
+    available_category = {skill["name"]: skill.get("category") for skill in available}
 
     if target.is_dir():
         try:
@@ -195,11 +194,13 @@ def list_skills(*, agent: str, target_dir: Optional[Path | str] = None, source: 
                 continue
             install_manifest = _read_install_manifest(child)
             if install_manifest and install_manifest.get("managed_by") == "nvflare":
+                installed_name = install_manifest.get("name", child.name)
                 installed.append(
                     {
-                        "name": install_manifest.get("name", child.name),
+                        "name": installed_name,
                         "skill_version": install_manifest.get("skill_version"),
                         "source_hash": install_manifest.get("source_hash"),
+                        "category": available_category.get(installed_name),
                         "target_path": str(child),
                         "source_type": install_manifest.get("source_type"),
                     }
@@ -246,7 +247,7 @@ def _install_plan(
             "files": (
                 []
                 if source_symlink
-                else _files_to_copy(source_skill_dir, target_skill_dir, exclude_names=_copy_exclude_names(source))
+                else _files_to_copy(source_skill_dir, target_skill_dir, exclude_names=_copy_exclude_names())
             ),
             "version_delta": "new",
         }
@@ -364,7 +365,7 @@ def _sync_shared_references(source: SkillSource, target: Path) -> None:
     source_shared = source.root / SHARED_SKILL_REFERENCE_DIR
     if not source_shared.is_dir():
         return
-    exclude_names = _copy_exclude_names(source)
+    exclude_names = _copy_exclude_names()
     source_hash = skill_tree_hash(source_shared, exclude_names=exclude_names)
     target_shared = target / SHARED_SKILL_REFERENCE_DIR
     plan_entry = {"name": SHARED_SKILL_REFERENCE_DIR, "source_hash": source_hash}
@@ -505,7 +506,7 @@ def _stage_skill(
     symlink = _first_symlink_in_tree(source_dir)
     if symlink:
         raise ValueError(f"skill source must not contain symlinks: {symlink.relative_to(source_dir).as_posix()}")
-    shutil.copytree(source_dir, staged_dir, ignore=shutil.ignore_patterns(*_copy_exclude_names(source)))
+    shutil.copytree(source_dir, staged_dir, ignore=shutil.ignore_patterns(*_copy_exclude_names()))
     manifest = {
         "schema_version": "1",
         "managed_by": "nvflare",
@@ -608,10 +609,10 @@ def _first_symlink_in_tree(root_dir: Path) -> Optional[Path]:
     return None
 
 
-def _copy_exclude_names(source: SkillSource) -> set[str]:
-    if source.manifest.get("content_mode") == MANIFEST_CONTENT_MODE_RELEASE:
-        return set(RELEASE_SKILL_FILE_EXCLUDE_NAMES)
-    return set(IGNORED_SKILL_FILE_NAMES)
+def _copy_exclude_names() -> set[str]:
+    # Copy runtime content only, excluding byte-code caches and (fail-closed) any
+    # stray eval suite dir, which must live in dev_tools/agent/skill_evals/.
+    return set(SKILL_PACKAGING_EXCLUDE_NAMES)
 
 
 def _files_to_copy(source_dir: Path, target_dir: Path, *, exclude_names: set[str]) -> list[dict]:

@@ -24,7 +24,16 @@ import yaml
 
 SKILL_FILE_NAME = "SKILL.md"
 YAML_ANCHOR_OR_ALIAS_RE = re.compile(r"(^|[:\s\[{,])([&*])[A-Za-z0-9_-]+(?=\s|$|[,}\]])")
-REQUIRED_FRONTMATTER_FIELDS = ("name", "description", "min_flare_version", "blast_radius")
+# agentskills.io allows only name/description/license/compatibility/metadata/
+# allowed-tools at the top level; NVFLARE's custom fields live under the spec
+# `metadata` map, validated via skill_metadata().
+REQUIRED_FRONTMATTER_FIELDS = ("name", "description")
+REQUIRED_METADATA_FIELDS = ("min_flare_version", "blast_radius")
+REQUIRED_PUBLIC_METADATA_FIELDS = ("category",)
+# The only frontmatter keys agentskills.io permits at the top level. Everything
+# else (NVFLARE custom fields) must be nested under `metadata`.
+SPEC_TOP_LEVEL_FIELDS = frozenset({"name", "description", "license", "compatibility", "metadata", "allowed-tools"})
+PUBLIC_EXEMPT_STATUS = {"draft", "internal", "private"}
 VALID_BLAST_RADIUS = frozenset(
     {
         "read_only",
@@ -56,6 +65,17 @@ class SkillValidationResult:
 
 class SkillFrontmatterError(ValueError):
     """Raised when SKILL.md frontmatter cannot be parsed."""
+
+
+def skill_metadata(metadata: Mapping[str, Any]) -> dict:
+    """Return the spec ``metadata`` sub-map where NVFLARE custom fields live.
+
+    Custom keys (min_flare_version, blast_radius, category, skill_version,
+    status, ...) are nested under the agentskills.io ``metadata`` map rather than
+    at the top level. Returns an empty dict when absent or malformed.
+    """
+    value = metadata.get("metadata")
+    return value if isinstance(value, dict) else {}
 
 
 def parse_skill_frontmatter(skill_file: Path | str) -> dict[str, Any]:
@@ -116,8 +136,14 @@ def validate_skill_dir(skill_dir: Path | str) -> SkillValidationResult:
         return SkillValidationResult(str(path), metadata, tuple(issues))
 
     _validate_required_fields(metadata, skill_file, issues)
+    _validate_supported_top_level_fields(metadata, skill_file, issues)
+    _validate_metadata_is_mapping(metadata, skill_file, issues)
+    sub = skill_metadata(metadata)
+    _validate_required_fields(sub, skill_file, issues, fields=REQUIRED_METADATA_FIELDS, container="metadata")
+    if _is_public_skill(metadata):
+        _validate_required_fields(sub, skill_file, issues, fields=REQUIRED_PUBLIC_METADATA_FIELDS, container="metadata")
     _validate_name_matches_directory(metadata.get("name"), path, skill_file, issues)
-    _validate_blast_radius(metadata.get("blast_radius"), skill_file, issues)
+    _validate_blast_radius(sub.get("blast_radius"), skill_file, issues)
 
     return SkillValidationResult(str(path), metadata, tuple(issues))
 
@@ -149,22 +175,60 @@ def _find_closing_delimiter(lines: list[str]) -> Optional[int]:
 
 
 def _validate_required_fields(
-    metadata: Mapping[str, Any], skill_file: Path, issues: list[SkillValidationIssue]
+    metadata: Mapping[str, Any],
+    skill_file: Path,
+    issues: list[SkillValidationIssue],
+    *,
+    fields: tuple[str, ...] = REQUIRED_FRONTMATTER_FIELDS,
+    container: Optional[str] = None,
 ) -> None:
-    for field in REQUIRED_FRONTMATTER_FIELDS:
+    label = f"{container} field" if container else "frontmatter field"
+    for field in fields:
         value = metadata.get(field)
         if value is None or (isinstance(value, str) and not value.strip()):
-            issues.append(
-                _issue("skill-frontmatter-field-required", f"frontmatter field '{field}' is required", skill_file)
-            )
+            issues.append(_issue("skill-frontmatter-field-required", f"{label} '{field}' is required", skill_file))
         elif not isinstance(value, str):
             issues.append(
                 _issue(
                     "skill-frontmatter-field-type",
-                    f"frontmatter field '{field}' must be a non-empty string; " f"got {type(value).__name__}={value!r}",
+                    f"{label} '{field}' must be a non-empty string; got {type(value).__name__}={value!r}",
                     skill_file,
                 )
             )
+
+
+def _validate_supported_top_level_fields(
+    metadata: Mapping[str, Any], skill_file: Path, issues: list[SkillValidationIssue]
+) -> None:
+    for key in metadata:
+        if key not in SPEC_TOP_LEVEL_FIELDS:
+            issues.append(
+                _issue(
+                    "skill-frontmatter-field-unsupported",
+                    f"unsupported top-level frontmatter field '{key}'; nest custom fields under 'metadata:' "
+                    f"(agentskills.io allows only {', '.join(sorted(SPEC_TOP_LEVEL_FIELDS))} at the top level)",
+                    skill_file,
+                )
+            )
+
+
+def _validate_metadata_is_mapping(
+    metadata: Mapping[str, Any], skill_file: Path, issues: list[SkillValidationIssue]
+) -> None:
+    value = metadata.get("metadata")
+    if value is not None and not isinstance(value, dict):
+        issues.append(
+            _issue(
+                "skill-frontmatter-metadata-type",
+                f"frontmatter 'metadata' must be a mapping; got {type(value).__name__}={value!r}",
+                skill_file,
+            )
+        )
+
+
+def _is_public_skill(metadata: Mapping[str, Any]) -> bool:
+    status = str(skill_metadata(metadata).get("status", "public")).strip().lower()
+    return status not in PUBLIC_EXEMPT_STATUS
 
 
 def _validate_name_matches_directory(

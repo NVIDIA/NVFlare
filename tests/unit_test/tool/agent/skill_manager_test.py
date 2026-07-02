@@ -230,12 +230,19 @@ def test_install_skills_installs_all_by_default(tmp_path):
     assert install_manifest["name"] == "nvflare-test-skill"
 
 
-def test_install_skills_keeps_analysis_files_for_dev_wheel_source(tmp_path):
+def test_install_skills_copies_runtime_content_excluding_caches_and_evals(tmp_path):
+    # Runtime installs copy SKILL.md and references, but fail closed on cache
+    # files and any stray eval suite that belongs under dev_tools/agent/skill_evals/.
     root = tmp_path / "skills"
     skill_dir = _write_skill(root, "nvflare-test-skill")
-    skill_dir.joinpath("BENCHMARK.md").write_text("# Benchmark-only notes\n", encoding="utf-8")
-    skill_dir.joinpath("evals").mkdir()
-    skill_dir.joinpath("evals", "evals.json").write_text("{}\n", encoding="utf-8")
+    skill_dir.joinpath("references").mkdir()
+    skill_dir.joinpath("references", "notes.md").write_text("reference\n", encoding="utf-8")
+    cache_dir = skill_dir.joinpath("__pycache__")
+    cache_dir.mkdir()
+    cache_dir.joinpath("stale.pyc").write_text("cached\n", encoding="utf-8")
+    evals_dir = skill_dir.joinpath("evals")
+    evals_dir.mkdir()
+    evals_dir.joinpath("evals.json").write_text("{}\n", encoding="utf-8")
     source = SkillSource(
         source_type="wheel",
         root=root,
@@ -243,38 +250,18 @@ def test_install_skills_keeps_analysis_files_for_dev_wheel_source(tmp_path):
     )
     target = tmp_path / "target"
 
+    dry_run_plan = install_skills(agent="codex", target_dir=target, source=source, dry_run=True)
     plan = install_skills(agent="codex", target_dir=target, source=source)
 
+    assert all(
+        "__pycache__" not in Path(file_plan["source"]).parts and "evals" not in Path(file_plan["source"]).parts
+        for file_plan in dry_run_plan["skills"][0]["files"]
+    )
     installed = target / "nvflare-test-skill"
     assert plan["applied"] is True
     assert installed.joinpath("SKILL.md").is_file()
-    assert installed.joinpath("BENCHMARK.md").is_file()
-    assert installed.joinpath("evals", "evals.json").is_file()
-    assert (
-        skill_tree_hash(installed, exclude_names={INSTALL_MANIFEST_FILE_NAME})
-        == source.manifest["skills"][0]["source_hash"]
-    )
-
-
-def test_install_skills_filters_analysis_files_for_release_source(tmp_path):
-    root = tmp_path / "skills"
-    skill_dir = _write_skill(root, "nvflare-test-skill")
-    skill_dir.joinpath("BENCHMARK.md").write_text("# Benchmark-only notes\n", encoding="utf-8")
-    skill_dir.joinpath("evals").mkdir()
-    skill_dir.joinpath("evals", "evals.json").write_text("{}\n", encoding="utf-8")
-    source = SkillSource(
-        source_type="wheel",
-        root=root,
-        manifest=build_skill_manifest(root, source_type="wheel", nvflare_version="2.8.0", include_analysis_files=False),
-    )
-    target = tmp_path / "target"
-
-    plan = install_skills(agent="codex", target_dir=target, source=source)
-
-    installed = target / "nvflare-test-skill"
-    assert plan["applied"] is True
-    assert installed.joinpath("SKILL.md").is_file()
-    assert not installed.joinpath("BENCHMARK.md").exists()
+    assert installed.joinpath("references", "notes.md").is_file()
+    assert not installed.joinpath("__pycache__").exists()
     assert not installed.joinpath("evals").exists()
     assert (
         skill_tree_hash(installed, exclude_names={INSTALL_MANIFEST_FILE_NAME})
@@ -323,7 +310,7 @@ def test_install_skills_preserves_modified_shared_references(tmp_path):
     source = _skill_source(tmp_path, shared_heading="Shared v1")
     target = tmp_path / "target"
     install_skills(agent="codex", target_dir=target, source=source)
-    shared_file = target / "_shared" / "nvflare-job-lifecycle.md"
+    shared_file = target / "nvflare-shared" / "references" / "conversion-workflow.md"
     shared_file.write_text("# User Edit\n", encoding="utf-8")
 
     updated_source = _skill_source(tmp_path, shared_heading="Shared v2")
@@ -332,10 +319,10 @@ def test_install_skills_preserves_modified_shared_references(tmp_path):
     assert plan["applied"] is False
     assert plan["errors"] == [
         {
-            "skill": "_shared",
+            "skill": "nvflare-shared",
             "code": "skill_install_failed",
             "type": "FileExistsError",
-            "message": f"shared reference target has local modifications: {target / '_shared'}",
+            "message": f"shared reference target has local modifications: {target / 'nvflare-shared'}",
         }
     ]
     assert shared_file.read_text(encoding="utf-8") == "# User Edit\n"
@@ -350,7 +337,9 @@ def test_install_skills_updates_unmodified_shared_references(tmp_path):
     plan = install_skills(agent="codex", target_dir=target, source=updated_source)
 
     assert plan["applied"] is True
-    assert "# Shared v2" in (target / "_shared" / "nvflare-job-lifecycle.md").read_text(encoding="utf-8")
+    assert "# Shared v2" in (target / "nvflare-shared" / "references" / "conversion-workflow.md").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_install_skills_preserves_modified_managed_install(tmp_path):
@@ -1023,8 +1012,10 @@ def _write_skill(root, name, heading="Test Skill"):
         "---\n"
         f"name: {name}\n"
         "description: Test skill fixture.\n"
-        'min_flare_version: "2.8.0"\n'
-        "blast_radius: read_only\n"
+        "metadata:\n"
+        '  min_flare_version: "2.8.0"\n'
+        "  blast_radius: read_only\n"
+        "  category: Test\n"
         "---\n"
         "\n"
         f"# {heading}\n",
@@ -1034,7 +1025,7 @@ def _write_skill(root, name, heading="Test Skill"):
 
 
 def _write_shared_reference(root, heading):
-    shared_dir = root / "_shared"
+    shared_dir = root / "nvflare-shared" / "references"
     shared_dir.mkdir(parents=True, exist_ok=True)
-    shared_dir.joinpath("nvflare-job-lifecycle.md").write_text(f"# {heading}\n", encoding="utf-8")
+    shared_dir.joinpath("conversion-workflow.md").write_text(f"# {heading}\n", encoding="utf-8")
     return shared_dir

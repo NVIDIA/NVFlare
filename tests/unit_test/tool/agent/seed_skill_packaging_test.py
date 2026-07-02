@@ -23,12 +23,14 @@ from pathlib import Path
 
 import pytest
 
+from nvflare.tool.agent.inspector import inspect_path
 from nvflare.tool.agent.skill_manager import SkillSource, install_skills, list_skills
 from nvflare.tool.agent.skill_manifest import build_skill_manifest, copy_released_skills_to_bundle
 
 SEED_SKILLS = {
     "nvflare-orient",
     "nvflare-convert-pytorch",
+    "nvflare-convert-lightning",
     "nvflare-diagnose-job",
 }
 
@@ -41,12 +43,35 @@ def test_seed_skill_manifest_includes_public_skills_and_skips_shared_references(
     names = {skill["name"] for skill in manifest["skills"]}
     assert manifest["findings"] == []
     assert SEED_SKILLS.issubset(names)
-    assert "_shared" not in names
-    assert all(skill["relative_path"] != "_shared" for skill in manifest["skills"])
+    assert "nvflare-shared" not in names
+    assert all(skill["relative_path"] != "nvflare-shared" for skill in manifest["skills"])
+
+
+def test_inspector_recommendations_are_available_in_seed_manifest(tmp_path):
+    skills_root = _repo_root() / "skills"
+    manifest = build_skill_manifest(skills_root, source_type="editable", nvflare_version="2.8.0")
+    available_names = {skill["name"] for skill in manifest["skills"]}
+
+    cases = {
+        "pytorch": ("import torch\n", ["nvflare-convert-pytorch"]),
+        "lightning": (
+            "import pytorch_lightning as pl\n\nclass Net(pl.LightningModule):\n    pass\n",
+            ["nvflare-convert-lightning"],
+        ),
+    }
+    for name, (source, expected_skills) in cases.items():
+        script = tmp_path / f"{name}.py"
+        script.write_text(source, encoding="utf-8")
+
+        data = inspect_path(script)
+
+        recommended_skills = data["skill_selection"]["recommended_skills"]
+        assert recommended_skills == expected_skills
+        assert set(recommended_skills) <= available_names
 
 
 def test_convert_pytorch_eval_requires_declared_primary_metric_alignment():
-    evals_path = _repo_root() / "skills" / "nvflare-convert-pytorch" / "evals" / "evals.json"
+    evals_path = _repo_root() / "dev_tools" / "agent" / "skill_evals" / "nvflare-convert-pytorch" / "evals.json"
     data = json.loads(evals_path.read_text(encoding="utf-8"))
     case = next(item for item in data["evals"] if item["id"] == "pytorch-convert-basic")
     behaviors = {
@@ -60,7 +85,7 @@ def test_convert_pytorch_eval_requires_declared_primary_metric_alignment():
     assert "reports that scalar as validation evidence" in description
 
 
-def test_seed_bundle_copy_includes_analysis_fixtures_by_default(tmp_path):
+def test_seed_bundle_copy_excludes_eval_suites(tmp_path):
     skills_root = _repo_root() / "skills"
     bundle_root = tmp_path / "bundle"
 
@@ -68,12 +93,13 @@ def test_seed_bundle_copy_includes_analysis_fixtures_by_default(tmp_path):
 
     names = {skill["name"] for skill in manifest["skills"]}
     assert SEED_SKILLS.issubset(names)
-    assert (bundle_root / "_shared" / "nvflare-job-lifecycle.md").is_file()
+    assert (bundle_root / "nvflare-shared" / "references" / "conversion-workflow.md").is_file()
     _assert_convert_pytorch_payload(bundle_root / "nvflare-convert-pytorch")
+    _assert_convert_lightning_payload(bundle_root / "nvflare-convert-lightning")
     _assert_diagnose_runtime_payload(bundle_root / "nvflare-diagnose-job")
-    _assert_analysis_payload_present(bundle_root / "nvflare-diagnose-job")
-    assert bundle_root.joinpath("nvflare-convert-pytorch", "BENCHMARK.md").is_file()
-    assert bundle_root.joinpath("nvflare-convert-pytorch", "evals", "evals.json").is_file()
+    # Eval suites live in dev_tools/agent/skill_evals/, never in the bundle.
+    _assert_analysis_payload_filtered(bundle_root / "nvflare-diagnose-job")
+    assert not bundle_root.joinpath("nvflare-convert-pytorch", "evals").exists()
 
 
 def test_seed_skills_install_into_codex_and_claude_temp_targets(tmp_path):
@@ -88,14 +114,16 @@ def test_seed_skills_install_into_codex_and_claude_temp_targets(tmp_path):
     assert claude_plan["applied"] is True
     assert SEED_SKILLS.issubset({entry["name"] for entry in codex_plan["skills"]})
     assert SEED_SKILLS.issubset({entry["name"] for entry in claude_plan["skills"]})
-    assert codex_target.joinpath("_shared", "nvflare-job-lifecycle.md").is_file()
-    assert claude_target.joinpath("_shared", "nvflare-job-lifecycle.md").is_file()
+    assert codex_target.joinpath("nvflare-shared", "references", "conversion-workflow.md").is_file()
+    assert claude_target.joinpath("nvflare-shared", "references", "conversion-workflow.md").is_file()
     _assert_convert_pytorch_payload(codex_target / "nvflare-convert-pytorch")
     _assert_convert_pytorch_payload(claude_target / "nvflare-convert-pytorch")
+    _assert_convert_lightning_payload(codex_target / "nvflare-convert-lightning")
+    _assert_convert_lightning_payload(claude_target / "nvflare-convert-lightning")
     _assert_diagnose_runtime_payload(codex_target / "nvflare-diagnose-job")
     _assert_diagnose_runtime_payload(claude_target / "nvflare-diagnose-job")
-    _assert_analysis_payload_present(codex_target / "nvflare-diagnose-job")
-    _assert_analysis_payload_present(claude_target / "nvflare-diagnose-job")
+    _assert_analysis_payload_filtered(codex_target / "nvflare-diagnose-job")
+    _assert_analysis_payload_filtered(claude_target / "nvflare-diagnose-job")
 
     codex_list = list_skills(agent="codex", target_dir=codex_target, source=source)
     claude_list = list_skills(agent="claude", target_dir=claude_target, source=source)
@@ -106,9 +134,7 @@ def test_seed_skills_install_into_codex_and_claude_temp_targets(tmp_path):
 def test_released_seed_skills_install_without_analysis_fixtures(tmp_path):
     skills_root = _repo_root() / "skills"
     bundle_root = tmp_path / "bundle"
-    manifest = copy_released_skills_to_bundle(
-        skills_root, bundle_root, nvflare_version="2.8.0", include_analysis_files=False
-    )
+    manifest = copy_released_skills_to_bundle(skills_root, bundle_root, nvflare_version="2.8.0")
     source = SkillSource(source_type="wheel", root=bundle_root, manifest=manifest)
     target = tmp_path / "target"
 
@@ -125,6 +151,7 @@ def test_released_seed_skills_install_without_analysis_fixtures(tmp_path):
     _assert_diagnose_runtime_payload(target / "nvflare-diagnose-job")
     _assert_analysis_payload_filtered(target / "nvflare-diagnose-job")
     _assert_analysis_payload_filtered(target / "nvflare-convert-pytorch")
+    _assert_analysis_payload_filtered(target / "nvflare-convert-lightning")
     _assert_runtime_markdown_references_resolve(target)
 
 
@@ -136,11 +163,10 @@ def test_seed_skills_dry_run_selects_all_seed_skills_without_copying(tmp_path):
 
     assert plan["applied"] is False
     assert SEED_SKILLS.issubset({entry["name"] for entry in plan["skills"]})
-    assert any(
-        Path(file_plan["source"]).name == "transfer_progress_timeout.log"
-        for entry in plan["skills"]
-        if entry["name"] == "nvflare-diagnose-job"
-        for file_plan in entry["files"]
+    # Eval fixtures are not part of the shipped skill source, so a dry-run plan
+    # copies only runtime files (SKILL.md, references), never eval logs.
+    assert all(
+        "evals" not in Path(file_plan["source"]).parts for entry in plan["skills"] for file_plan in entry["files"]
     )
     assert not target.exists()
 
@@ -174,11 +200,10 @@ def test_setup_build_py_can_disable_packaged_agent_skills(tmp_path):
 
 
 @pytest.mark.xdist_group(name="setup_py_packaging")
-def test_setup_build_py_release_filters_analysis_fixtures(tmp_path):
+def test_setup_build_py_packages_seed_skills_without_eval_suites(tmp_path):
     repo_root = _repo_root()
     build_lib = tmp_path / "build_lib"
     env = os.environ.copy()
-    env["NVFL_RELEASE"] = "1"
 
     result = subprocess.run(
         [sys.executable, "setup.py", "build_py", "--build-lib", str(build_lib)],
@@ -194,11 +219,12 @@ def test_setup_build_py_release_filters_analysis_fixtures(tmp_path):
     bundle_root = build_lib / "nvflare" / "tool" / "agent" / "bundled_skills"
     manifest = json.loads(bundle_root.joinpath("manifest.json").read_text(encoding="utf-8"))
     assert manifest["source_type"] == "wheel"
-    assert manifest["content_mode"] == "release"
+    assert "content_mode" not in manifest
     assert SEED_SKILLS.issubset({skill["name"] for skill in manifest["skills"]})
     _assert_diagnose_runtime_payload(bundle_root / "nvflare-diagnose-job")
     _assert_analysis_payload_filtered(bundle_root / "nvflare-diagnose-job")
     _assert_analysis_payload_filtered(bundle_root / "nvflare-convert-pytorch")
+    _assert_analysis_payload_filtered(bundle_root / "nvflare-convert-lightning")
     _assert_runtime_markdown_references_resolve(bundle_root)
 
     target = tmp_path / "target"
@@ -277,8 +303,42 @@ def _assert_convert_pytorch_payload(skill_dir: Path) -> None:
             skill_dir / "references" / "pytorch-client-api-conversion.md",
         ]
     )
-    assert "nvflare-job-lifecycle.md" in packaged_text
-    assert "Must not require `rg` to be installed" in packaged_text
+    assert "conversion-workflow.md" in packaged_text
+
+    # Runnable templates the references promise must actually ship (not be
+    # silently stripped by a future packaging change).
+    assert skill_dir.joinpath("assets", "client_with_eval.py").is_file()
+
+    shared_conversion = skill_dir.parent / "nvflare-shared" / "references" / "conversion-workflow.md"
+    assert shared_conversion.is_file()
+    assert "Do not require `rg` to be installed" in shared_conversion.read_text(encoding="utf-8")
+    # Shared custom-aggregation template must ship so a Lightning-only install
+    # can still adapt it.
+    assert skill_dir.parent.joinpath("nvflare-shared", "assets", "aggregator.py").is_file()
+
+
+def _assert_convert_lightning_payload(skill_dir: Path) -> None:
+    assert skill_dir.joinpath("SKILL.md").is_file()
+    assert skill_dir.joinpath("references", "lightning-detection.md").is_file()
+    assert skill_dir.joinpath("references", "lightning-conversion.md").is_file()
+    assert skill_dir.joinpath("references", "lightning-validation.md").is_file()
+    assert skill_dir.joinpath("references", "lightning-ddp-and-tracking.md").is_file()
+
+    packaged_text = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in [
+            skill_dir / "SKILL.md",
+            skill_dir / "references" / "lightning-conversion.md",
+        ]
+    )
+    assert "flare.patch(trainer)" in packaged_text
+    assert "conversion-workflow.md" in packaged_text
+
+    # Runnable Lightning template the reference promises must actually ship.
+    assert skill_dir.joinpath("assets", "lightning_client.py").is_file()
+
+    shared_conversion = skill_dir.parent / "nvflare-shared" / "references" / "conversion-workflow.md"
+    assert shared_conversion.is_file()
 
 
 def _assert_diagnose_runtime_payload(skill_dir: Path) -> None:
@@ -287,15 +347,8 @@ def _assert_diagnose_runtime_payload(skill_dir: Path) -> None:
     assert skill_dir.joinpath("references", "failure-patterns.md").is_file()
 
 
-def _assert_analysis_payload_present(skill_dir: Path) -> None:
-    assert skill_dir.joinpath("evals", "evals.json").is_file()
-    assert skill_dir.joinpath("evals", "files", "poc_component_not_authorized.log").is_file()
-    assert skill_dir.joinpath("evals", "files", "simulation_import_error.log").is_file()
-    assert skill_dir.joinpath("evals", "files", "transfer_progress_timeout.log").is_file()
-
-
 def _assert_analysis_payload_filtered(skill_dir: Path) -> None:
-    assert not skill_dir.joinpath("BENCHMARK.md").exists()
+    # Eval suites are never packaged into a skill; they live in dev_tools/agent/skill_evals/.
     assert not skill_dir.joinpath("evals").exists()
 
 
@@ -303,7 +356,7 @@ def _assert_runtime_markdown_references_resolve(root: Path) -> None:
     missing = []
     for markdown_path in sorted(root.rglob("*.md")):
         rel_parts = markdown_path.relative_to(root).parts
-        if "evals" in rel_parts or markdown_path.name == "BENCHMARK.md":
+        if "evals" in rel_parts:
             continue
         text = markdown_path.read_text(encoding="utf-8")
         for ref in sorted(set(re.findall(r"`([^`]+\.md)`", text))):

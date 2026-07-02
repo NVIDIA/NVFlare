@@ -12,7 +12,36 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Deterministic v1 admission lints for NVFLARE-owned agent skills."""
+"""Deterministic v1 admission lints for NVFLARE-owned agent skills.
+
+DESIGN INVARIANT -- lint engine independence (do not revert):
+This engine reads only the ``skills/`` runtime tree and the repo-local eval
+suites under ``evals_root`` (``dev_tools/agent/skill_evals/``, one dir per skill
+name). It must NOT read ``docs/design/*.md`` or rely on offline-only catalog
+metadata. ``SKILL.md`` is a runtime artifact loaded by the agent; fields
+validated here must be runtime or public skill metadata, not private lint
+scratch data. ``evals_root`` is dev/QA tooling input, distinct from the
+forbidden ``docs_root``.
+
+Concretely:
+- Group skills for ``skill-trigger-overlap-lint`` by deterministic skill-name
+  families (see ``_trigger_overlap_group``), not by frontmatter ``category``
+  values or by a product-catalog table parsed from design docs.
+- ``category`` is valid public SKILL.md metadata for publishable skills; it is
+  not a trigger-overlap grouping source or a docs-catalog sync key for this
+  engine.
+- Do not add a ``docs_root`` parameter or a ``--docs-root`` flag back to this
+  engine, and do not re-introduce ``skill-catalog-category-lint`` /
+  ``agent-doc-crosslink-lint`` here.
+- Catalog/publication sync (skill listed in the human product catalog) is a
+  docs concern: put it in a SEPARATE docs check, not in this skill engine.
+
+Rationale and history: docs/design/skills_architecture.md "Lint engine
+independence". A prior change coupled this engine to design docs and made
+catalog synchronization part of the skill lint runner; that coupling was
+reverted on purpose. Keep category validation local to SKILL.md frontmatter, and
+keep docs/catalog synchronization in separate docs tooling.
+"""
 
 import json
 import os
@@ -24,37 +53,49 @@ from pathlib import Path
 from typing import Any, Iterable, Optional
 
 try:
-    from .frontmatter import SKILL_FILE_NAME, parse_skill_frontmatter, should_skip_skill_dir, validate_skill_dir
+    from .frontmatter import (
+        PUBLIC_EXEMPT_STATUS,
+        SKILL_FILE_NAME,
+        parse_skill_frontmatter,
+        should_skip_skill_dir,
+        skill_metadata,
+        validate_skill_dir,
+    )
 except ImportError:
-    from frontmatter import SKILL_FILE_NAME, parse_skill_frontmatter, should_skip_skill_dir, validate_skill_dir
+    from frontmatter import (
+        PUBLIC_EXEMPT_STATUS,
+        SKILL_FILE_NAME,
+        parse_skill_frontmatter,
+        should_skip_skill_dir,
+        skill_metadata,
+        validate_skill_dir,
+    )
 
 V1_LINT_IDS = (
     "skill-frontmatter-lint",
     "skill-md-size-lint",
     "skill-trigger-lint",
     "skill-trigger-overlap-lint",
-    "skill-catalog-category-lint",
     "skill-global-negative-lint",
     "skill-policy-coverage-lint",
     "skill-process-metric-lint",
     "skill-command-drift-lint",
     "skill-helper-script-lint",
     "skill-fixture-lint",
-    "agent-doc-crosslink-lint",
+    "skill-runtime-boundary-lint",
 )
 
 LINT_SKILL_FRONTMATTER = "skill-frontmatter-lint"
 LINT_SKILL_MD_SIZE = "skill-md-size-lint"
 LINT_SKILL_TRIGGER = "skill-trigger-lint"
 LINT_SKILL_TRIGGER_OVERLAP = "skill-trigger-overlap-lint"
-LINT_SKILL_CATALOG_CATEGORY = "skill-catalog-category-lint"
 LINT_SKILL_GLOBAL_NEGATIVE = "skill-global-negative-lint"
 LINT_SKILL_POLICY_COVERAGE = "skill-policy-coverage-lint"
 LINT_SKILL_PROCESS_METRIC = "skill-process-metric-lint"
 LINT_SKILL_COMMAND_DRIFT = "skill-command-drift-lint"
 LINT_SKILL_HELPER_SCRIPT = "skill-helper-script-lint"
 LINT_SKILL_FIXTURE = "skill-fixture-lint"
-LINT_AGENT_DOC_CROSSLINK = "agent-doc-crosslink-lint"
+LINT_SKILL_RUNTIME_BOUNDARY = "skill-runtime-boundary-lint"
 
 FINDING_ERROR = "error"
 FINDING_WARNING = "warning"
@@ -64,7 +105,6 @@ SKILL_MD_ADVISORY_WORDS = 2000
 MAX_SKILL_TEXT_FILE_BYTES = 512 * 1024
 DEFAULT_MAX_TRIGGER_OVERLAP_SKILLS = 200
 
-_PUBLIC_EXEMPT_STATUS = {"draft", "internal", "private"}
 _SIZE_EXCEPTION_MARKERS = (
     "nvflare-lint: allow skill-md-size-lint",
     "skill-md-size-lint: approved-exception",
@@ -80,7 +120,6 @@ _TRIGGER_TERMS = (
 )
 _BOUNDARY_TERMS = ("do not use", "do-not-use", "use boundary", "boundary", "negative")
 _NORMATIVE_RE = re.compile(r"\b(must|must not|required|prohibited|approval)\b", re.IGNORECASE)
-_MARKDOWN_LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 _BACKTICK_NVFLARE_RE = re.compile(r"`(nvflare(?:\s+[^`]+)?)`")
 _SAFE_COMMAND_TOKEN_RE = re.compile(r"^(?:--?[A-Za-z0-9][\w-]*(?:=[^\s`;&|]+)?|[A-Za-z0-9_./:=+@%,-]+|<[^>\n]+>)$")
 _SIGNIFICANT_TOKEN_RE = re.compile(r"[a-z][a-z0-9_-]{2,}")
@@ -123,21 +162,13 @@ _KNOWN_AGENT_SKILLS_COMMANDS = {"install", "list"}
 _PLANNED_AGENT_SKILLS_COMMANDS = set()
 _KNOWN_AGENT_FLAGS = {
     "agent": {"--format", "--schema"},
-    "agent doctor": {"--format", "--online", "--schema", "--startup-kit", "--project", "--org"},
+    "agent doctor": {"--format", "--schema"},
     "agent info": {"--format", "--schema"},
     "agent inspect": {"--format", "--redact", "--schema"},
     "agent skills": {"--format", "--schema"},
     "agent skills install": {"--agent", "--dry-run", "--format", "--schema", "--skill", "--target"},
     "agent skills list": {"--agent", "--format", "--schema", "--target"},
 }
-_DOC_FILES = (
-    "skills_architecture.md",
-    "agent_implementation_plan.md",
-    "agent_integration.md",
-    "agent_skill_authoring.md",
-    "agent_skill_evaluation.md",
-    "agent_skills_deferred_roadmap.md",
-)
 
 
 @dataclass(frozen=True)
@@ -180,19 +211,22 @@ class SkillRecord:
     text: str
     body: str
     evals: list[dict[str, Any]]
+    # Eval content lives outside the shipped skill tree (repo-only QA data).
+    # evals_dir is the skill's eval suite root; evals_path is its evals.json.
+    evals_dir: Path
     evals_path: Path
     evals_error: Optional[str]
 
     @property
     def public(self) -> bool:
-        status = str(self.metadata.get("status", "public")).strip().lower()
-        return status not in _PUBLIC_EXEMPT_STATUS
+        status = str(skill_metadata(self.metadata).get("status", "public")).strip().lower()
+        return status not in PUBLIC_EXEMPT_STATUS
 
 
 @dataclass
 class LintContext:
     skills_root: Path
-    docs_root: Optional[Path]
+    evals_root: Path
     max_skill_md_lines: int
     records: list[SkillRecord]
     findings: list[LintFinding]
@@ -202,24 +236,30 @@ class LintContext:
 def run_v1_lints(
     skills_root: Path | str = "skills",
     *,
-    docs_root: Path | str | None = None,
+    evals_root: Path | str | None = None,
     checks: Optional[Iterable[str]] = None,
     max_skill_md_lines: int = SKILL_MD_MAX_LINES,
 ) -> dict[str, Any]:
     """Run deterministic v1 admission lints and return structured findings."""
     result, _records = _run_v1_lints_with_records(
         skills_root,
-        docs_root=docs_root,
+        evals_root=evals_root,
         checks=checks,
         max_skill_md_lines=max_skill_md_lines,
     )
     return result
 
 
+def _default_evals_root(skills_root: Path) -> Path:
+    # Eval suites live in a repo-local dev-tools tree, one directory per skill
+    # name, alongside the skills source root (not shipped in installed skills).
+    return skills_root.resolve().parent / "dev_tools" / "agent" / "skill_evals"
+
+
 def _run_v1_lints_with_records(
     skills_root: Path | str = "skills",
     *,
-    docs_root: Path | str | None = None,
+    evals_root: Path | str | None = None,
     checks: Optional[Iterable[str]] = None,
     max_skill_md_lines: int = SKILL_MD_MAX_LINES,
 ) -> tuple[dict[str, Any], list[SkillRecord]]:
@@ -229,12 +269,12 @@ def _run_v1_lints_with_records(
         raise ValueError(f"unknown agent skill lint check(s): {', '.join(unknown)}")
 
     root = Path(skills_root)
-    resolved_docs_root = _resolve_docs_root(docs_root)
+    evals_root_path = Path(evals_root) if evals_root is not None else _default_evals_root(root)
     findings: list[LintFinding] = []
-    records = _load_skill_records(root, findings)
+    records = _load_skill_records(root, evals_root_path, findings)
     context = LintContext(
         skills_root=root,
-        docs_root=resolved_docs_root,
+        evals_root=evals_root_path,
         max_skill_md_lines=max_skill_md_lines,
         records=records,
         findings=findings,
@@ -249,7 +289,6 @@ def _run_v1_lints_with_records(
             "status": status,
             "passed": status == "ok",
             "skills_root": str(root),
-            "docs_root": str(resolved_docs_root) if resolved_docs_root is not None else None,
             "checks": list(selected),
             "skipped_checks": context.skipped_checks,
             "summary": summary,
@@ -261,14 +300,13 @@ def _run_v1_lints_with_records(
         "skill-md-size-lint": _lint_md_size,
         "skill-trigger-lint": _lint_trigger,
         "skill-trigger-overlap-lint": _lint_trigger_overlap,
-        "skill-catalog-category-lint": _lint_catalog_category,
         "skill-global-negative-lint": _lint_global_negative,
         "skill-policy-coverage-lint": _lint_policy_coverage,
         "skill-process-metric-lint": _lint_process_metrics,
         "skill-command-drift-lint": _lint_command_drift,
         "skill-helper-script-lint": _lint_helper_scripts,
         "skill-fixture-lint": _lint_fixtures,
-        "agent-doc-crosslink-lint": _lint_doc_crosslinks,
+        "skill-runtime-boundary-lint": _lint_runtime_boundary,
     }
 
     for check in selected:
@@ -281,7 +319,6 @@ def _run_v1_lints_with_records(
         "status": status,
         "passed": status == "ok",
         "skills_root": str(root),
-        "docs_root": str(resolved_docs_root) if resolved_docs_root is not None else None,
         "checks": list(selected),
         "skipped_checks": context.skipped_checks,
         "summary": summary,
@@ -292,14 +329,14 @@ def _run_v1_lints_with_records(
 def validate_skills(
     skills_root: Path | str = "skills",
     *,
+    evals_root: Path | str | None = None,
     skill_name: Optional[str] = None,
-    docs_root: Path | str | None = None,
     max_skill_md_lines: int = SKILL_MD_MAX_LINES,
 ) -> dict[str, Any]:
     """Compatibility wrapper for callers that validate one skill source root."""
     result, records = _run_v1_lints_with_records(
         skills_root,
-        docs_root=docs_root,
+        evals_root=evals_root,
         max_skill_md_lines=max_skill_md_lines,
     )
 
@@ -341,7 +378,7 @@ def _summary_from_counts(severity_counts: Counter, finding_count: int, skill_cou
     }
 
 
-def _load_skill_records(skills_root: Path, findings: list[LintFinding]) -> list[SkillRecord]:
+def _load_skill_records(skills_root: Path, evals_root: Path, findings: list[LintFinding]) -> list[SkillRecord]:
     if not skills_root.exists():
         findings.append(
             _finding(
@@ -377,17 +414,21 @@ def _load_skill_records(skills_root: Path, findings: list[LintFinding]) -> list[
         text = _read_bounded_text(skill_file) if skill_file.is_file() else None
         metadata = _try_parse_frontmatter(skill_file) if text is not None else {}
         text = text or ""
-        evals_path = child / "evals" / "evals.json"
+        skill_name = str(metadata.get("name") or child.name)
+        # Eval suites live outside the shipped skill tree, one dir per skill name.
+        evals_dir = evals_root / skill_name
+        evals_path = evals_dir / "evals.json"
         evals, evals_error = _load_evals(evals_path)
         records.append(
             SkillRecord(
-                name=str(metadata.get("name") or child.name),
+                name=skill_name,
                 skill_dir=child,
                 skill_file=skill_file,
                 metadata=metadata,
                 text=text,
                 body=_skill_body(text),
                 evals=evals,
+                evals_dir=evals_dir,
                 evals_path=evals_path,
                 evals_error=evals_error,
             )
@@ -511,8 +552,9 @@ def _lint_trigger(context: LintContext) -> None:
                     "skill-trigger-lint",
                     FINDING_ERROR,
                     record.evals_path,
-                    "evals/evals.json is required for public skill trigger checks",
-                    "Add guide-compatible evals/evals.json with positive and adjacent negative trigger evals.",
+                    "evals.json (under dev_tools/agent/skill_evals/<skill>/) is required for public skill trigger checks",
+                    "Add a guide-compatible evals.json under the eval root "
+                    "(dev_tools/agent/skill_evals/<skill>/) with positive and adjacent negative trigger evals.",
                     code="skill-evals-missing",
                     skill=record.name,
                 )
@@ -545,28 +587,18 @@ def _lint_trigger(context: LintContext) -> None:
 
 
 def _lint_trigger_overlap(context: LintContext) -> None:
-    if context.docs_root is None or not context.docs_root.is_dir():
-        _skip(context, "skill-trigger-overlap-lint", "docs root is not available")
-        return
-
-    category_map = _category_map(context)
-    if not category_map:
-        _skip(context, "skill-trigger-overlap-lint", "catalog categories are not available")
-        return
-
     grouped: dict[str, list[SkillRecord]] = defaultdict(list)
     for record in _public_records(context.records):
-        category = category_map.get(record.name)
-        if category:
-            grouped[category].append(record)
+        group = _trigger_overlap_group(record.name)
+        grouped[group].append(record)
 
     max_trigger_overlap_skills = _max_trigger_overlap_skills()
-    for category, records in grouped.items():
+    for group, records in grouped.items():
         if len(records) > max_trigger_overlap_skills:
             _skip(
                 context,
                 "skill-trigger-overlap-lint",
-                f"category {category!r} has {len(records)} skills; limit is {max_trigger_overlap_skills}",
+                f"group {group!r} has {len(records)} skills; limit is {max_trigger_overlap_skills}",
             )
             continue
         token_cache = {record.name: _trigger_tokens(record) for record in records}
@@ -581,12 +613,22 @@ def _lint_trigger_overlap(context: LintContext) -> None:
                         "skill-trigger-overlap-lint",
                         FINDING_ERROR,
                         left.skill_file,
-                        f"same-category skills '{left.name}' and '{right.name}' have overlapping trigger language",
+                        f"same trigger-group skills '{left.name}' and '{right.name}' have overlapping trigger language",
                         "Add use/do-not-use boundaries and adjacent negative evals covering the overlap.",
                         code="skill-trigger-overlap",
                         skill=left.name,
                     )
                 )
+
+
+def _trigger_overlap_group(skill_name: str) -> str:
+    normalized = skill_name.strip().lower()
+    if normalized.startswith("nvflare-"):
+        normalized = normalized[len("nvflare-") :]
+    family = normalized.split("-", maxsplit=1)[0].strip()
+    if family:
+        return f"nvflare-{family}"
+    return skill_name.strip().lower() or skill_name
 
 
 def _max_trigger_overlap_skills() -> int:
@@ -600,90 +642,6 @@ def _max_trigger_overlap_skills() -> int:
     return parsed if parsed > 0 else DEFAULT_MAX_TRIGGER_OVERLAP_SKILLS
 
 
-def _lint_catalog_category(context: LintContext) -> None:
-    docs_root = context.docs_root
-    if docs_root is None or not docs_root.is_dir():
-        _skip(context, "skill-catalog-category-lint", "docs root is not available")
-        return
-
-    catalog_path = docs_root / "agent_integration.md"
-    if not catalog_path.is_file():
-        _skip(context, "skill-catalog-category-lint", "product skill catalog is not available")
-        return
-
-    product = _parse_product_catalog(catalog_path)
-    conversion = _parse_conversion_table(docs_root / "agent_skill_authoring.md")
-    if not product:
-        context.findings.append(
-            _finding(
-                "skill-catalog-category-lint",
-                FINDING_ERROR,
-                catalog_path,
-                "product skill catalog could not be parsed",
-                "Keep the catalog markdown table headed by Category, Skill, Tier, and Purpose.",
-                code="skill-catalog-unparseable",
-                global_finding=True,
-            )
-        )
-        return
-
-    for record in _public_records(context.records):
-        if record.name not in product:
-            context.findings.append(
-                _finding(
-                    "skill-catalog-category-lint",
-                    FINDING_ERROR,
-                    record.skill_file,
-                    f"public skill '{record.name}' is missing from the product skill catalog",
-                    "Add the skill to agent_integration.md or mark it draft/internal.",
-                    code="skill-catalog-entry-missing",
-                    skill=record.name,
-                )
-            )
-
-    for skill, conversion_tier in conversion.items():
-        product_row = product.get(skill)
-        if product_row is None:
-            context.findings.append(
-                _finding(
-                    "skill-catalog-category-lint",
-                    FINDING_ERROR,
-                    docs_root / "agent_skill_authoring.md",
-                    f"conversion-family skill '{skill}' is missing from the product catalog",
-                    "Keep conversion-family rows and the product catalog in sync.",
-                    code="conversion-skill-catalog-missing",
-                    skill=skill,
-                )
-            )
-            continue
-        if product_row["category"] != "Conversion":
-            context.findings.append(
-                _finding(
-                    "skill-catalog-category-lint",
-                    FINDING_ERROR,
-                    docs_root / "agent_integration.md",
-                    f"conversion-family skill '{skill}' has category '{product_row['category']}'",
-                    "Conversion-family skills should use the Conversion category for overlap checks.",
-                    code="conversion-skill-category-mismatch",
-                    skill=skill,
-                )
-            )
-        product_tier = _strip_backticks(product_row["tier"])
-        conversion_tier = _strip_backticks(conversion_tier)
-        if conversion_tier and product_tier and conversion_tier != product_tier:
-            context.findings.append(
-                _finding(
-                    "skill-catalog-category-lint",
-                    FINDING_ERROR,
-                    docs_root / "agent_integration.md",
-                    f"skill '{skill}' tier differs between catalog and conversion-family table",
-                    "Use one tier consistently across the authoring and integration docs.",
-                    code="skill-catalog-tier-mismatch",
-                    skill=skill,
-                )
-            )
-
-
 def _lint_global_negative(context: LintContext) -> None:
     for record in _public_records(context.records):
         if record.evals_error:
@@ -695,7 +653,7 @@ def _lint_global_negative(context: LintContext) -> None:
                     "skill-global-negative-lint",
                     FINDING_ERROR,
                     record.evals_path,
-                    "evals/evals.json is required for global negative coverage",
+                    "evals.json (under dev_tools/agent/skill_evals/<skill>/) is required for global negative coverage",
                     "Add at least one eval representing an unrelated prompt that should trigger no FLARE skill.",
                     code="skill-evals-missing",
                     skill=record.name,
@@ -733,7 +691,8 @@ def _lint_policy_coverage(context: LintContext) -> None:
                             FINDING_ERROR,
                             file_path,
                             "normative rule has no measurable behavior ID, helper test, or checklist coverage",
-                            "Map required/prohibited behavior to evals/evals.json nvflare behavior IDs or tests.",
+                            "Map required/prohibited behavior to eval-root "
+                            "(dev_tools/agent/skill_evals/<skill>/evals.json) nvflare behavior IDs or tests.",
                             code="skill-policy-coverage-missing",
                             skill=record.name,
                             line=line_no,
@@ -756,7 +715,7 @@ def _lint_process_metrics(context: LintContext) -> None:
                     LINT_SKILL_PROCESS_METRIC,
                     FINDING_ERROR,
                     record.evals_path,
-                    "evals/evals.json is required for process-metric coverage",
+                    "evals.json (under dev_tools/agent/skill_evals/<skill>/) is required for process-metric coverage",
                     "Add process metric contracts under nvflare.process_metrics.",
                     code="skill-evals-missing",
                     skill=record.name,
@@ -936,24 +895,25 @@ def _lint_fixtures(context: LintContext) -> None:
                         FINDING_ERROR,
                         record.evals_path,
                         f"eval '{item.get('id', '<missing>')}' describes file editing without input fixtures",
-                        "Add deterministic input files under evals/files/ and reference them from the eval.",
+                        "Add deterministic input files under the eval root "
+                        "(dev_tools/agent/skill_evals/<skill>/files/) and reference them from the eval.",
                         code="skill-fixture-input-missing",
                         skill=record.name,
                     )
                 )
 
             for rel_path in files:
-                fixture_path = record.skill_dir / str(rel_path)
+                fixture_path = record.evals_dir / str(rel_path)
                 resolved_fixture_path = fixture_path.resolve(strict=False)
-                resolved_skill_dir = record.skill_dir.resolve()
-                if not resolved_fixture_path.is_relative_to(resolved_skill_dir):
+                resolved_evals_dir = record.evals_dir.resolve()
+                if not resolved_fixture_path.is_relative_to(resolved_evals_dir):
                     context.findings.append(
                         _finding(
                             "skill-fixture-lint",
                             FINDING_ERROR,
                             record.evals_path,
-                            f"eval fixture path escapes skill directory: {rel_path}",
-                            "Use fixture paths relative to the skill directory.",
+                            f"eval fixture path escapes eval suite directory: {rel_path}",
+                            "Use fixture paths relative to the eval suite directory.",
                             code="skill-fixture-path-escape",
                             skill=record.name,
                         )
@@ -966,125 +926,174 @@ def _lint_fixtures(context: LintContext) -> None:
                             FINDING_ERROR,
                             record.evals_path,
                             f"eval fixture does not exist: {rel_path}",
-                            "Place deterministic fixtures under evals/files/ and reference existing files.",
+                            "Place deterministic fixtures under the eval root "
+                            "(dev_tools/agent/skill_evals/<skill>/files/) and reference existing files.",
                             code="skill-fixture-file-missing",
                             skill=record.name,
                         )
                     )
 
-        files_dir = record.skill_dir / "evals" / "files"
-        if _has_files(files_dir) and not _has_fixture_notes(record.skill_dir):
+        files_dir = record.evals_dir / "files"
+        if _has_files(files_dir) and not _has_fixture_notes(record.evals_dir):
             context.findings.append(
                 _finding(
                     "skill-fixture-lint",
                     FINDING_ERROR,
                     files_dir,
                     "eval fixtures are missing source/provenance notes",
-                    "Add evals/README.md, evals/files/README.md, or evals/files/SOURCE.md.",
+                    "Add README.md, files/README.md, or files/SOURCE.md in the eval suite dir.",
                     code="skill-fixture-notes-missing",
                     skill=record.name,
                 )
             )
 
 
-def _lint_doc_crosslinks(context: LintContext) -> None:
-    docs_root = context.docs_root
-    if docs_root is None or not docs_root.is_dir():
-        _skip(context, "agent-doc-crosslink-lint", "docs root is not available")
-        return
+_DESIGN_DOC_REF_RE = re.compile(r"docs[\\/]+design\b", re.IGNORECASE)
+_EVALUATOR_HOOK_RE = re.compile(
+    r"(?:"
+    r"\bevals?/"
+    r"|\bevals\.json\b"
+    r"|\beval\s+cases?\b"
+    r"|\beval\s+fixtures?\b"
+    r"|\bevaluator\b"
+    r"|\bbenchmark[ -]?harness\b"  # benchmark-harness instructions (not "benchmark dataset")
+    r"|\beval\s+(?:suite|harness)\b"  # evaluator harness references
+    r"|\bgrader\b"  # eval grader references
+    r"|\beval\s*=\s*\w"  # eval-mode toggles such as eval=on
+    r"|--eval\b"  # evaluator harness flags such as --eval / --eval-only
+    r"|(?-i:\b[A-Z][A-Z0-9_]*_EVAL(?![A-Z])[A-Z0-9_]*\b)"  # env vars such as NVFLARE_SKILL_EVAL, not DEFAULT_EVALUATION
+    r")",
+    re.IGNORECASE,
+)
+# Content directories that release packaging strips or that are not shipped as
+# runtime guidance. Mirrors nvflare release packaging exclusions without
+# importing product code (keeps this lint engine self-contained over skills/).
+_RUNTIME_BOUNDARY_EXCLUDED_DIRS = {"evals", "__pycache__"}
+_RUNTIME_TEXT_SUFFIXES = {
+    ".md",
+    ".txt",
+    ".rst",
+    ".py",
+    ".sh",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".cfg",
+    ".ini",
+    ".j2",
+    ".jinja",
+    ".jinja2",
+    "",
+}
 
-    text_by_path = {
-        doc_path: text
-        for doc_path in _iter_existing_doc_files(docs_root)
-        if (text := _read_bounded_text(doc_path)) is not None
-    }
-    anchors_by_path = {doc_path.resolve(): _markdown_anchors(text) for doc_path, text in text_by_path.items()}
 
-    def anchors_for_path(path: Path) -> set[str]:
-        resolved = path.resolve()
-        if resolved not in anchors_by_path and path.suffix.lower() in {".md", ".markdown"} and path.is_file():
-            text = _read_bounded_text(path)
-            if text is not None:
-                anchors_by_path[resolved] = _markdown_anchors(text)
-        return anchors_by_path.get(resolved, set())
+def _lint_runtime_boundary(context: LintContext) -> None:
+    """Packaged runtime skill content must stay inside the runtime boundary.
 
-    for doc_path, text in text_by_path.items():
-        for line_no, href in _iter_markdown_links(text):
-            if href.startswith(("http://", "https://", "mailto:")):
-                continue
-            target, _, anchor = href.partition("#")
-            target_path = (doc_path.parent / target).resolve() if target else doc_path.resolve()
-            if target and not target_path.exists():
-                context.findings.append(
-                    _finding(
-                        "agent-doc-crosslink-lint",
-                        FINDING_ERROR,
-                        doc_path,
-                        f"markdown link target does not exist: {href}",
-                        "Update the link or restore the referenced design document.",
-                        code="agent-doc-link-missing",
-                        line=line_no,
-                    )
-                )
-                continue
-            if anchor:
-                if _normalize_anchor(anchor) not in anchors_for_path(target_path):
-                    context.findings.append(
-                        _finding(
-                            "agent-doc-crosslink-lint",
-                            FINDING_ERROR,
-                            doc_path,
-                            f"markdown link anchor does not exist: {href}",
-                            "Update the link anchor to match the target heading.",
-                            code="agent-doc-anchor-missing",
-                            line=line_no,
-                        )
-                    )
-
-    eval_doc = docs_root / "agent_skill_evaluation.md"
-    if eval_doc.is_file():
-        text = text_by_path.get(eval_doc)
-        if text is not None:
-            for lint_id in V1_LINT_IDS:
-                if f"`{lint_id}`" not in text:
-                    context.findings.append(
-                        _finding(
-                            "agent-doc-crosslink-lint",
-                            FINDING_ERROR,
-                            eval_doc,
-                            f"lint id '{lint_id}' is missing from the canonical evaluation doc",
-                            "Keep agent_skill_evaluation.md#v1-engineering-lints as the canonical lint table.",
-                            code="agent-doc-lint-id-missing",
-                        )
-                    )
-
-    for doc_path, text in text_by_path.items():
-        if doc_path.name == "agent_skills_deferred_roadmap.md":
-            continue
-        for line_no, command in _extract_nvflare_commands(text):
-            if not command.startswith("nvflare agent"):
-                continue
-            message = _command_drift_message(command, check_flags=False, allow_planned=True)
-            if message is None:
-                continue
+    Runtime content is everything a skill ships. It must not contain an
+    ``evals/`` suite (grading-oracle data belongs in the repo-only eval root,
+    not inside a shipped skill), must not reference ``docs/design/`` documents
+    as operational guidance, and must not contain evaluator hooks or
+    benchmark-harness-only instructions. The scan covers what packaging ships,
+    so it iterates every skill record (public and non-public) and every shared
+    reference directory, not only ``SKILL.md`` and ``.md`` references.
+    """
+    for record in context.records:
+        for eval_dir in _iter_eval_dirs(record.skill_dir):
             context.findings.append(
                 _finding(
-                    "agent-doc-crosslink-lint",
+                    LINT_SKILL_RUNTIME_BOUNDARY,
                     FINDING_ERROR,
-                    doc_path,
-                    f"agent command reference is stale: {message}",
-                    "Update the design doc command reference or the agent CLI command surface.",
-                    code="agent-doc-command-reference-stale",
-                    line=line_no,
+                    eval_dir,
+                    "eval suite must not live inside a shipped skill directory",
+                    "Move the eval suite to the eval root (dev_tools/agent/skill_evals/<skill>/); "
+                    "grading-oracle data must not ship in installed skills.",
+                    code="skill-runtime-eval-dir-in-skill",
+                    skill=record.name,
                 )
             )
+        for file_path, text in _iter_packaged_runtime_files(record.skill_dir):
+            _scan_runtime_boundary(context, file_path, text, skill=record.name)
 
 
-def _resolve_docs_root(docs_root: Path | str | None) -> Optional[Path]:
-    if docs_root is not None:
-        return Path(docs_root)
-    candidate = Path.cwd() / "docs" / "design"
-    return candidate if (candidate / "skills_architecture.md").is_file() else None
+def _iter_eval_dirs(skill_dir: Path) -> Iterable[Path]:
+    """Yield ``evals`` directories at any depth inside a skill.
+
+    Packaging strips directories named ``evals`` at any depth, so nested eval
+    content (e.g. ``references/evals/``) is silently omitted from bundles. The
+    boundary lint must match that depth so authors are told to relocate it
+    instead of shipping nothing. Once an excluded runtime directory is reported,
+    its subtree is also outside the shipped boundary and does not need traversal.
+    """
+    if not skill_dir.is_dir():
+        return
+    for dirpath, dirnames, _ in os.walk(skill_dir, followlinks=False):
+        current_dir = Path(dirpath)
+        next_dirnames = []
+        for name in sorted(dirnames):
+            path = current_dir / name
+            if path.is_symlink():
+                continue
+            if name == "evals":
+                yield path
+                continue
+            if name in _RUNTIME_BOUNDARY_EXCLUDED_DIRS:
+                continue
+            next_dirnames.append(name)
+        dirnames[:] = next_dirnames
+
+
+def _iter_packaged_runtime_files(skill_dir: Path) -> Iterable[tuple[Path, str]]:
+    """Yield decoded text files a skill ships as runtime content."""
+    if not skill_dir.is_dir():
+        return
+    for path in _iter_files_no_follow(skill_dir, excluded_dir_names=_RUNTIME_BOUNDARY_EXCLUDED_DIRS):
+        content = _read_runtime_text_file(path)
+        if content is not None:
+            yield path, content
+
+
+def _read_runtime_text_file(path: Path) -> Optional[str]:
+    # Runtime-scan-specific guards (skip symlinked files and non-text suffixes),
+    # then defer the size-cap + bounded read to the shared reader.
+    if path.is_symlink() or path.suffix.lower() not in _RUNTIME_TEXT_SUFFIXES:
+        return None
+    return _read_bounded_text(path)
+
+
+def _scan_runtime_boundary(context: LintContext, file_path: Path, text: str, *, skill: Optional[str]) -> None:
+    for line_no, line in enumerate(text.splitlines(), start=1):
+        if _DESIGN_DOC_REF_RE.search(line):
+            context.findings.append(
+                _finding(
+                    LINT_SKILL_RUNTIME_BOUNDARY,
+                    FINDING_ERROR,
+                    file_path,
+                    "packaged runtime skill content references docs/design/ documents",
+                    "Copy the runtime-relevant rule into SKILL.md/reference content or product docs; "
+                    "design docs are authoring and review inputs.",
+                    code="skill-runtime-design-doc-ref",
+                    skill=skill,
+                    line=line_no,
+                    global_finding=skill is None,
+                )
+            )
+        if _EVALUATOR_HOOK_RE.search(line):
+            context.findings.append(
+                _finding(
+                    LINT_SKILL_RUNTIME_BOUNDARY,
+                    FINDING_ERROR,
+                    file_path,
+                    "packaged runtime skill content contains evaluator or benchmark-harness instructions",
+                    "Keep evaluator hooks and benchmark instructions in repo-only evals/ content, "
+                    "not in SKILL.md, references/, scripts/, or shared references.",
+                    code="skill-runtime-evaluator-hook",
+                    skill=skill,
+                    line=line_no,
+                    global_finding=skill is None,
+                )
+            )
 
 
 def _try_parse_frontmatter(skill_file: Path) -> dict[str, Any]:
@@ -1108,22 +1117,22 @@ def _load_evals(evals_path: Path) -> tuple[list[dict[str, Any]], Optional[str]]:
     if not evals_path.is_file():
         return [], None
     if _is_oversized_text_file(evals_path):
-        return [], f"evals/evals.json exceeds size limit ({MAX_SKILL_TEXT_FILE_BYTES} bytes)"
+        return [], f"evals.json exceeds size limit ({MAX_SKILL_TEXT_FILE_BYTES} bytes)"
     try:
         raw = json.loads(evals_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as e:
-        return [], f"failed to parse evals/evals.json: {e}"
+        return [], f"failed to parse evals.json: {e}"
     if isinstance(raw, dict):
         items = raw.get("evals", [])
     elif isinstance(raw, list):
         items = raw
     else:
-        return [], "evals/evals.json must be an object with an evals list or a list"
+        return [], "evals.json must be an object with an evals list or a list"
     if not isinstance(items, list):
-        return [], "evals/evals.json field 'evals' must be a list"
+        return [], "evals.json field 'evals' must be a list"
     evals = [item for item in items if isinstance(item, dict)]
     if len(evals) != len(items):
-        return evals, "each evals/evals.json entry must be an object"
+        return evals, "each evals.json entry must be an object"
     return evals, None
 
 
@@ -1133,7 +1142,7 @@ def _add_evals_error(context: LintContext, lint_id: str, record: SkillRecord) ->
             lint_id,
             FINDING_ERROR,
             record.evals_path,
-            record.evals_error or "evals/evals.json is invalid",
+            record.evals_error or "evals.json is invalid",
             "Use guide-compatible JSON with an evals list.",
             code="skill-evals-invalid",
             skill=record.name,
@@ -1248,63 +1257,6 @@ def _has_adjacent_negative_pair(left: SkillRecord, right: SkillRecord) -> bool:
 def _negative_for_neighbor(item: dict[str, Any], skill_name: str, neighbor_name: str) -> bool:
     nvflare = _nvflare_ext(item)
     return nvflare.get("negative_for") == skill_name and nvflare.get("expected_skill") == neighbor_name
-
-
-def _category_map(context: LintContext) -> dict[str, str]:
-    if context.docs_root is None or not context.docs_root.is_dir():
-        return {}
-    product = _parse_product_catalog(context.docs_root / "agent_integration.md")
-    return {skill: row["category"] for skill, row in product.items()}
-
-
-def _parse_product_catalog(path: Path) -> dict[str, dict[str, str]]:
-    text = _read_bounded_text(path)
-    if text is None:
-        return {}
-    rows = {}
-    in_table = False
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("| Category | Skill | Tier | Purpose |"):
-            in_table = True
-            continue
-        if not in_table:
-            continue
-        if not stripped.startswith("|"):
-            break
-        if set(stripped.replace("|", "").replace("-", "").replace(" ", "")) == set():
-            continue
-        columns = [column.strip() for column in stripped.strip("|").split("|")]
-        if len(columns) < 4 or columns[0] == "Category":
-            continue
-        skill = _strip_backticks(columns[1])
-        if skill:
-            rows[skill] = {"category": columns[0], "tier": columns[2]}
-    return rows
-
-
-def _parse_conversion_table(path: Path) -> dict[str, str]:
-    text = _read_bounded_text(path)
-    if text is None:
-        return {}
-    rows = {}
-    in_table = False
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("| Code Family | Skill | Scope | Current Repo Evidence | Tier |"):
-            in_table = True
-            continue
-        if not in_table:
-            continue
-        if not stripped.startswith("|"):
-            break
-        columns = [column.strip() for column in stripped.strip("|").split("|")]
-        if len(columns) < 5 or columns[0] == "Code Family" or columns[0].startswith("---"):
-            continue
-        skill = _strip_backticks(columns[1])
-        if skill:
-            rows[skill] = columns[4]
-    return rows
 
 
 def _strip_backticks(value: str) -> str:
@@ -1440,22 +1392,26 @@ def _has_files(path: Path) -> bool:
     return path.is_dir() and any(True for _child in _iter_files_no_follow(path))
 
 
-def _iter_files_no_follow(root: Path) -> Iterable[Path]:
+def _iter_files_no_follow(root: Path, *, excluded_dir_names: Iterable[str] = ()) -> Iterable[Path]:
     if root.is_symlink() or not root.is_dir():
         return
+    excluded_dir_names = set(excluded_dir_names)
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
-        dirnames[:] = sorted(name for name in dirnames if not (Path(dirpath) / name).is_symlink())
+        current_dir = Path(dirpath)
+        dirnames[:] = sorted(
+            name for name in dirnames if name not in excluded_dir_names and not (current_dir / name).is_symlink()
+        )
         for filename in sorted(filenames):
-            path = Path(dirpath) / filename
+            path = current_dir / filename
             if path.is_file():
                 yield path
 
 
-def _has_fixture_notes(skill_dir: Path) -> bool:
+def _has_fixture_notes(evals_dir: Path) -> bool:
     note_paths = (
-        skill_dir / "evals" / "README.md",
-        skill_dir / "evals" / "files" / "README.md",
-        skill_dir / "evals" / "files" / "SOURCE.md",
+        evals_dir / "README.md",
+        evals_dir / "files" / "README.md",
+        evals_dir / "files" / "SOURCE.md",
     )
     return any(path.is_file() for path in note_paths)
 
@@ -1487,46 +1443,18 @@ def _has_bounded_size_exception(path: Path) -> bool:
     return _has_size_exception(prefix.decode("utf-8", errors="replace"))
 
 
-def _iter_existing_doc_files(docs_root: Path) -> Iterable[Path]:
-    for name in _DOC_FILES:
-        path = docs_root / name
-        if path.is_file():
-            yield path
-
-
-def _iter_markdown_links(text: str) -> Iterable[tuple[int, str]]:
-    for line_no, line in enumerate(text.splitlines(), start=1):
-        for match in _MARKDOWN_LINK_RE.finditer(line):
-            yield line_no, match.group(1).strip()
-
-
-def _markdown_anchors(text: str) -> set[str]:
-    anchors = set()
-    for line in text.splitlines():
-        if not line.startswith("#"):
-            continue
-        heading = line.lstrip("#").strip()
-        if heading:
-            anchors.add(_normalize_anchor(heading))
-    return anchors
-
-
-def _normalize_anchor(value: str) -> str:
-    value = value.strip().lower()
-    value = re.sub(r"`([^`]+)`", r"\1", value)
-    value = re.sub(r"[^a-z0-9 _-]", "", value)
-    value = value.replace(" ", "-")
-    value = re.sub(r"-+", "-", value)
-    return value.strip("-")
-
-
 def _line_for_frontmatter_issue(skill_file: Path, code: str, message: str) -> Optional[int]:
     if code == "skill-frontmatter-field-required":
         match = re.search(r"field '([^']+)'", message)
         if match:
             return _line_for_field(skill_file, match.group(1))
-    if code in {"skill-name-directory-mismatch", "skill-blast-radius-invalid", "skill-frontmatter-field-type"}:
-        for field in ("name", "blast_radius", "description", "min_flare_version"):
+    if code in {
+        "skill-name-directory-mismatch",
+        "skill-blast-radius-invalid",
+        "skill-frontmatter-field-type",
+        "skill-frontmatter-field-unsupported",
+    }:
+        for field in ("name", "blast_radius", "description", "min_flare_version", "category"):
             if field in message:
                 return _line_for_field(skill_file, field)
     return 1 if skill_file.is_file() else None

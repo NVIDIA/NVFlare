@@ -1,9 +1,11 @@
 ---
 name: nvflare-orient
 description: "Route ambiguous NVFLARE requests by inspecting the local project, checking readiness, and recommending the next specific FLARE workflow skill without editing files."
-min_flare_version: "2.8.0"
-blast_radius: read_only
-skill_version: "0.1.0"
+metadata:
+  min_flare_version: "2.8.0"
+  blast_radius: read_only
+  category: Orientation
+  skill_version: "0.1.0"
 ---
 
 # NVFLARE Orient

@@ -6,7 +6,7 @@
       "prompt": "My POC job abc123 finished with FINISHED:EXECUTION_EXCEPTION. Diagnose why it failed.",
       "expected_output": "The agent treats the request as POC/production mode, collects bounded job and system evidence through NVFLARE CLI commands, matches ComponentNotAuthorized to a configuration recovery path, and reports confidence plus next action.",
       "files": [
-        "evals/files/poc_component_not_authorized.log"
+        "files/poc_component_not_authorized.log"
       ],
       "assertions": [
         "The agent identifies POC/production mode from the job ID and POC wording.",
@@ -86,7 +86,7 @@
       "prompt": "My simulation run failed when I ran python job.py. Diagnose this local log.",
       "expected_output": "The agent treats the request as simulation mode, uses local artifacts rather than job/system CLI, matches the import error, and reports the missing dependency as a code/environment packaging issue.",
       "files": [
-        "evals/files/simulation_import_error.log"
+        "files/simulation_import_error.log"
       ],
       "assertions": [
         "The agent identifies simulation mode from python job.py and local log wording.",
@@ -119,7 +119,7 @@
       "prompt": "Job abc123 timed out in production, but some client logs are missing or permission denied. Diagnose what you can.",
       "expected_output": "The agent marks the diagnosis as partial, reports PARTIAL_LOG_VISIBILITY, avoids a confident root-cause claim, and gives bounded follow-up evidence to collect.",
       "files": [
-        "evals/files/partial_log_visibility.json"
+        "files/partial_log_visibility.json"
       ],
       "assertions": [
         "The agent reports missing or denied site logs as partial evidence.",
@@ -147,7 +147,7 @@
       "prompt": "A production job saw peer_read_timeout while streaming a large model, but later logs still show stream progress and completion. Diagnose the failure category.",
       "expected_output": "The agent matches the timeout-with-progress case to TRANSFER_PROGRESS_TIMEOUT, reports RETRYABLE rather than ENVIRONMENT_FAILURE, and recommends checking progress-aware streaming evidence before escalating.",
       "files": [
-        "evals/files/transfer_progress_timeout.log"
+        "files/transfer_progress_timeout.log"
       ],
       "assertions": [
         "The agent recognizes peer_read_timeout with active streaming progress as a transient transfer-congestion candidate.",
@@ -184,13 +184,13 @@
     {
       "id": "diagnose-negative-healthy-job-lifecycle",
       "prompt": "Monitor my healthy running job and download the final model when it completes.",
-      "expected_output": "The diagnosis skill should not trigger because the request is normal job lifecycle management, not failure diagnosis.",
+      "expected_output": "The diagnosis skill should not trigger because the request is normal job lifecycle management, not failure diagnosis. No lifecycle skill exists; the agent handles lifecycle requests with product APIs directly.",
       "files": [],
       "assertions": [
         "The selected skill is not nvflare-diagnose-job."
       ],
       "nvflare": {
-        "expected_skill": "nvflare-job-lifecycle",
+        "expected_skill": null,
         "negative_for": "nvflare-diagnose-job"
       }
     },

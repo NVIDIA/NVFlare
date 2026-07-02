@@ -704,6 +704,49 @@ def test_agent_inspect_json_reports_static_framework_evidence(capsys, tmp_path):
     assert payload["data"]["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
 
 
+def test_agent_inspect_json_reports_lightning_evidence_and_recommends_lightning_skill(capsys, tmp_path):
+    script = tmp_path / "train_lightning.py"
+    script.write_text(
+        "from lightning.pytorch import LightningModule, Trainer\n"
+        "\n"
+        "class Net(LightningModule):\n"
+        "    pass\n"
+        "\n"
+        "trainer = Trainer(max_epochs=1)\n",
+        encoding="utf-8",
+    )
+
+    exit_code = _run_main(["nvflare", "agent", "inspect", str(script), "--format", "json"])
+
+    assert exit_code == 0
+    payload = _load_single_stdout_json(capsys.readouterr())
+    _assert_envelope_shape(payload, "ok")
+    assert payload["data"]["frameworks"][0]["name"] == "pytorch_lightning"
+    assert payload["data"]["conversion_state"] == "not_converted"
+    assert payload["data"]["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
+
+
+def test_agent_inspect_json_classifies_aliased_lightning_patch_import_as_converted(capsys, tmp_path):
+    script = tmp_path / "client_lightning.py"
+    script.write_text(
+        "import lightning as L\n"
+        "from nvflare.client.lightning import patch as flare_patch\n"
+        "\n"
+        "trainer = L.Trainer(max_epochs=1)\n"
+        "flare_patch(trainer)\n",
+        encoding="utf-8",
+    )
+
+    exit_code = _run_main(["nvflare", "agent", "inspect", str(script), "--format", "json"])
+
+    assert exit_code == 0
+    payload = _load_single_stdout_json(capsys.readouterr())
+    _assert_envelope_shape(payload, "ok")
+    assert payload["data"]["frameworks"][0]["name"] == "pytorch_lightning"
+    assert payload["data"]["flare_integration"]["calls"] == ["flare_patch"]
+    assert payload["data"]["conversion_state"] == "client_api_converted"
+
+
 def test_agent_inspect_missing_path_is_structured_json_error(capsys, tmp_path):
     exit_code = _run_main(["nvflare", "agent", "inspect", str(tmp_path / "missing"), "--format", "json"])
 
@@ -735,19 +778,18 @@ def test_agent_doctor_json_reports_local_readiness(capsys, monkeypatch, tmp_path
 
     assert exit_code == 0
     payload = _load_single_stdout_json(capsys.readouterr())
-    _assert_envelope_shape(payload, "ok")
+    assert payload["status"] in {"ok", "attention"}
     assert payload["data"]["nvflare"]["import_ok"] is True
-    assert payload["data"]["online"] == {"enabled": False, "status": "not_requested"}
-    assert any(finding["code"] == "STARTUP_KIT_NOT_CONFIGURED" for finding in payload["data"]["findings"])
+    # Deployment/POC readiness is out of the conversion-only scope.
+    assert "online" not in payload["data"]
+    assert "startup_kits" not in payload["data"]
+    assert "poc" not in payload["data"]
     assert not home.joinpath(".nvflare", "config.conf").exists()
 
 
 def test_agent_doctor_human_output_is_summarized(capsys, monkeypatch, tmp_path):
     home = tmp_path / "home"
-    poc_workspace = tmp_path / "poc"
-    poc_workspace.mkdir()
     monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv("NVFLARE_POC_WORKSPACE", str(poc_workspace))
     monkeypatch.delenv("NVFLARE_STARTUP_KIT_DIR", raising=False)
 
     exit_code = _run_main(["nvflare", "agent", "doctor"])
@@ -756,11 +798,10 @@ def test_agent_doctor_human_output_is_summarized(capsys, monkeypatch, tmp_path):
     captured = capsys.readouterr()
     assert captured.err == ""
     assert "NVFLARE Agent Doctor" in captured.out
-    assert "status: attention" in captured.out
-    assert "startup kits: 0/0 valid (active: none)" in captured.out
-    assert "findings (1):" in captured.out
-    assert "STARTUP_KIT_NOT_CONFIGURED" in captured.out
-    assert "startup_kits:" not in captured.out
+    # Deployment/POC sections are not part of the conversion-scoped doctor.
+    assert "startup kits:" not in captured.out
+    assert "poc:" not in captured.out
+    assert "online:" not in captured.out
     assert "{'import_ok':" not in captured.out
 
 
@@ -772,7 +813,8 @@ def test_agent_doctor_schema_exits_zero(capsys):
     assert schema["command"] == "nvflare agent doctor"
     assert schema["mutating"] is False
     assert schema["output_modes"] == ["json"]
-    assert any(arg["name"] == "--online" for arg in schema["args"])
+    # --online (and startup-kit selection) were removed with the deployment checks.
+    assert not any(arg["name"] == "--online" for arg in schema["args"])
 
 
 def _patch_skill_source(
@@ -804,8 +846,10 @@ def _write_skill(root, name, *, with_behavior=False, with_compound_trigger=False
         "---\n"
         f"name: {name}\n"
         "description: Test skill fixture.\n"
-        'min_flare_version: "2.8.0"\n'
-        "blast_radius: read_only\n"
+        "metadata:\n"
+        '  min_flare_version: "2.8.0"\n'
+        "  blast_radius: read_only\n"
+        "  category: Test\n"
         "---\n"
         "\n"
         "# Test Skill\n",

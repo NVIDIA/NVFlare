@@ -22,10 +22,19 @@ from pathlib import Path
 from typing import Optional
 
 import nvflare
+from nvflare.tool.agent import frameworks
+from nvflare.tool.agent.frameworks.base import DetectContext
 
 DEFAULT_MAX_FILES = 250
 DEFAULT_MAX_FILE_BYTES = 512 * 1024
 MAX_EVIDENCE_PER_BUCKET = 12
+# Backstop for evidence collected per framework bucket. Far above the display
+# cap so ranking/detection uses true counts; only a memory guard for pathological
+# inputs, not a routing-relevant threshold.
+MAX_EVIDENCE_COLLECT = 10000
+# Packaging root dirs whose leading segment is not part of the import path
+# (PyPA src-layout), so `src/pkg/mod.py` is importable as `pkg.mod`.
+_PACKAGE_ROOT_DIR_NAMES = {"src"}
 
 PYTHON_SUFFIXES = {".py"}
 SKIPPED_DIR_NAMES = {
@@ -47,32 +56,9 @@ SENSITIVE_FILE_SUFFIXES = {".key", ".pem", ".p12", ".pfx"}
 SENSITIVE_FILE_NAMES = {"id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"}
 SECRET_NAME_PATTERN = re.compile(r"(api[_-]?key|secret|token|password|passwd|credential|access[_-]?key)", re.I)
 
-FRAMEWORK_IMPORTS = {
-    "torch": "pytorch",
-    "torchvision": "pytorch",
-    "torchaudio": "pytorch",
-    "pytorch_lightning": "pytorch_lightning",
-    "lightning": "pytorch_lightning",
-    "tensorflow": "tensorflow",
-    "keras": "tensorflow",
-    "xgboost": "xgboost",
-    "sklearn": "sklearn",
-    "jax": "jax",
-    "flax": "jax",
-    "optax": "jax",
-    "numpy": "numpy",
-}
-FRAMEWORK_SKILLS = {
-    "pytorch": "nvflare-convert-pytorch",
-}
-# Future candidate mappings. Keep these inactive until the matching skill
-# directories are implemented, packaged, and covered by admission tests.
-# "pytorch_lightning": "nvflare-convert-lightning",
-# "tensorflow": "nvflare-convert-tensorflow",
-# "xgboost": "nvflare-convert-xgboost",
-# "sklearn": "nvflare-convert-sklearn",
-# "jax": "nvflare-convert-jax",
-# "numpy": "nvflare-convert-numpy",
+# Framework detection (import roots, symbols, evidence weights, recommended
+# skills, and family/promotion rules) lives in nvflare.tool.agent.frameworks.
+# This engine stays framework-agnostic; add a framework there, not here.
 
 
 @dataclass
@@ -89,6 +75,10 @@ class InspectState:
     framework_evidence: dict[str, list[dict]] = field(default_factory=dict)
     flare_imports: list[dict] = field(default_factory=list)
     flare_calls: set[str] = field(default_factory=set)
+    # framework name -> FLARE conversion-integration call names (e.g. Lightning
+    # flare.patch). Populated by framework detectors; used by _conversion_state.
+    integration_signals: dict[str, set[str]] = field(default_factory=dict)
+    file_imports: dict[str, set[str]] = field(default_factory=dict)
     entry_points: list[dict] = field(default_factory=list)
     job_py: Optional[str] = None
     sim_env_used: bool = False
@@ -97,6 +87,10 @@ class InspectState:
     distributed_patterns: list[dict] = field(default_factory=list)
     dynamic_patterns: list[dict] = field(default_factory=list)
     absolute_path_findings: list[dict] = field(default_factory=list)
+    # file -> list of (start_line, end_line) for every class definition. Used to
+    # decide whether base-framework usage lives inside a superset model class
+    # body (e.g. torch calls inside a LightningModule) versus standalone.
+    class_body_ranges: dict[str, list[tuple[int, int]]] = field(default_factory=dict)
 
 
 def inspect_path(
@@ -120,8 +114,9 @@ def inspect_path(
     else:
         _inspect_dir(target, state, max_files=max_files, max_file_bytes=max_file_bytes)
 
-    frameworks = _rank_frameworks(state)
-    detected_framework = frameworks[0]["name"] if frameworks else None
+    ranked_frameworks = _rank_frameworks(state)
+    detected_framework = _detect_primary_framework(state, ranked_frameworks)
+    ranked_frameworks = _order_frameworks_for_display(ranked_frameworks, detected_framework)
     conversion_state = _conversion_state(state, detected_framework)
     target_type = _target_type(target, state, detected_framework, conversion_state)
 
@@ -146,7 +141,7 @@ def inspect_path(
             "files_skipped_truncated": state.files_skipped_count > len(state.files_skipped),
             "files_skipped": state.files_skipped,
         },
-        "frameworks": frameworks,
+        "frameworks": ranked_frameworks,
         "entry_points": state.entry_points[:MAX_EVIDENCE_PER_BUCKET],
         "flare_integration": {
             "present": bool(state.flare_imports or state.flare_calls),
@@ -303,15 +298,34 @@ class _PythonInspector(ast.NodeVisitor):
         self.path = path
         self.rel_path = rel_path
         self.state = state
+        self._detectors = frameworks.detectors()
+        self._detector_states = {detector.name: detector.new_file_state() for detector in self._detectors}
+        self._ctx = DetectContext(
+            rel_path,
+            self._emit_framework_evidence,
+            self.state.flare_calls.add,
+            self._add_integration_signal,
+        )
+
+    def _emit_framework_evidence(self, framework: str, kind: str, value: str, lineno) -> None:
+        _append_evidence(self.state.framework_evidence, framework, _evidence(self.rel_path, lineno, kind, value))
+
+    def _add_integration_signal(self, framework: str, name: str) -> None:
+        self.state.integration_signals.setdefault(framework, set()).add(name)
 
     def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:
             self._record_import(alias.name, node.lineno)
+            for detector in self._detectors:
+                detector.on_import(alias, self._detector_states[detector.name], self._ctx)
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         module = node.module or ""
-        self._record_import(module, node.lineno)
+        self._record_import(_resolve_import_from_module(self.rel_path, module, node.level), node.lineno)
+        self._record_import_from_modules(module, node.level, node.names)
+        for detector in self._detectors:
+            detector.on_import_from(module, node.names, self._detector_states[detector.name], self._ctx)
         for alias in node.names:
             if alias.name in {"FedJob", "FLModel", "SimEnv"}:
                 self.state.flare_imports.append(
@@ -319,10 +333,23 @@ class _PythonInspector(ast.NodeVisitor):
                 )
         self.generic_visit(node)
 
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        end_lineno = getattr(node, "end_lineno", None) or node.lineno
+        self.state.class_body_ranges.setdefault(self.rel_path, []).append((node.lineno, end_lineno))
+        for base in node.bases:
+            base_name = _symbol_name(base)
+            if not base_name:
+                continue
+            for detector in self._detectors:
+                detector.on_class_base(base_name, node.lineno, self._detector_states[detector.name], self._ctx)
+        self.generic_visit(node)
+
     def visit_Call(self, node: ast.Call) -> None:
         call_name = _call_name(node.func)
         if call_name:
             self._record_call(call_name, node.lineno)
+            for detector in self._detectors:
+                detector.on_call(call_name, node.lineno, self._detector_states[detector.name], self._ctx)
         self.generic_visit(node)
 
     def visit_Assign(self, node: ast.Assign) -> None:
@@ -341,9 +368,10 @@ class _PythonInspector(ast.NodeVisitor):
     def _record_import(self, module: str, lineno: int) -> None:
         if not module:
             return
-        framework = _framework_for_import(module)
+        self.state.file_imports.setdefault(self.rel_path, set()).add(module)
+        framework = frameworks.framework_for_import(module)
         if framework:
-            _append_capped(
+            _append_evidence(
                 self.state.framework_evidence,
                 framework,
                 _evidence(self.rel_path, lineno, "import", module),
@@ -357,7 +385,20 @@ class _PythonInspector(ast.NodeVisitor):
         if module == "accelerate" or module.startswith("accelerate."):
             self.state.distributed_patterns.append(_evidence(self.rel_path, lineno, "accelerate_import", module))
 
+    def _record_import_from_modules(self, module: str, level: int, aliases: list[ast.alias]) -> None:
+        resolved_module = _resolve_import_from_module(self.rel_path, module, level)
+        imports = self.state.file_imports.setdefault(self.rel_path, set())
+        if resolved_module:
+            imports.add(resolved_module)
+        for alias in aliases:
+            if alias.name == "*":
+                continue
+            imports.add(f"{resolved_module}.{alias.name}" if resolved_module else alias.name)
+
     def _record_call(self, call_name: str, lineno: int) -> None:
+        # Generic FLARE / distributed / dynamic-dispatch signals only. Ranked
+        # framework activity (pytorch_call, lightning_trainer) and conversion
+        # signals (flare.patch) are recorded by framework detectors via on_call.
         if call_name.startswith("flare.") or call_name.startswith("nvflare."):
             self.state.flare_calls.add(call_name)
         if call_name in {"FedJob", "FLModel", "SimEnv"}:
@@ -406,18 +447,6 @@ class _PythonInspector(ast.NodeVisitor):
             )
 
 
-def _framework_for_import(module: str) -> Optional[str]:
-    parts = module.split(".")
-    if not parts:
-        return None
-    first = parts[0]
-    if first == "lightning" and len(parts) > 1 and parts[1] == "pytorch":
-        return "pytorch_lightning"
-    if first == "sklearn":
-        return "sklearn"
-    return FRAMEWORK_IMPORTS.get(first)
-
-
 def _rank_frameworks(state: InspectState) -> list[dict]:
     total = sum(len(evidence) for evidence in state.framework_evidence.values())
     ranked = []
@@ -439,11 +468,372 @@ def _rank_frameworks(state: InspectState) -> list[dict]:
     return sorted(ranked, key=lambda item: (-item["confidence"], item["name"]))
 
 
+def _detect_primary_framework(state: InspectState, ranked: list[dict]) -> Optional[str]:
+    if not ranked:
+        return None
+    primary = _primary_by_confidence_and_entry_context(state, ranked)
+    return frameworks.resolve_primary_framework(primary, state.framework_evidence, _FamilyResolver(state))
+
+
+def _primary_by_confidence_and_entry_context(state: InspectState, ranked: list[dict]) -> str:
+    # Frameworks are ranked by (confidence, name), which is count-based and blind
+    # to reachability: an incidental torch/sklearn utility in an unreachable
+    # helper file can outrank the framework the entry point actually uses. When
+    # any framework's evidence is tied to the entry context (the inspected file
+    # or a file reachable from an entry point), prefer the highest-confidence
+    # such framework over a higher-count-but-unreachable one. Same-family
+    # (base/superset) promotion is resolved afterward by
+    # resolve_primary_framework. Fall back to the raw ranking only when nothing
+    # is reachable (e.g. a model-only directory with no entry point).
+    #
+    # A numerical utility (numpy) is skipped here: an incidental `import numpy`
+    # in the entry must not win over a real convertible framework whose code is
+    # loaded dynamically or lives outside the entry file. Utilities are still
+    # ranked and reported; they just never become the entry-context primary or
+    # fallback primary while a non-utility framework exists.
+    #
+    # Selection order:
+    #   1. Highest-confidence non-utility framework with ACTIVE evidence tied to
+    #      the entry context (a real model/usage the entry actually reaches).
+    #   2. Else highest-confidence non-utility framework with ANY evidence tied
+    #      to the entry context (an import-only entry framework such as sklearn
+    #      when no active framework is reachable there).
+    #   3. Else highest-confidence non-utility framework; a utility wins only
+    #      when it is the sole detected framework.
+    # Step 1 before step 2 means an actively-used torch model reachable from the
+    # entry outranks import-only entry evidence, without demoting a genuinely
+    # entry-owned import-only framework when nothing active is reachable.
+    #
+    # DESIGN DECISION (do not revert to a pure entry-context or pure count rule):
+    # this two-step order is the agreed reconciliation of two review positions.
+    #   - When the entry reaches an ACTIVE convertible model (e.g. a torch
+    #     nn.Module) alongside import-only sklearn, route to the active framework
+    #     (recommend a conversion) rather than abstaining on the sklearn import.
+    #   - When the torch model is NOT reachable from the entry (a stray helper),
+    #     the entry-owned import-only framework still wins (sklearn -> abstain),
+    #     preserving the earlier sklearn-entry fix. Both hold simultaneously.
+    for item in ranked:
+        name = item["name"]
+        if name in frameworks.UTILITY_FRAMEWORKS:
+            continue
+        active = [e for e in state.framework_evidence.get(name, []) if frameworks.is_active_evidence(name, e)]
+        if active and _framework_evidence_tied_to_entry_context(state, active):
+            return name
+    for item in ranked:
+        name = item["name"]
+        if name in frameworks.UTILITY_FRAMEWORKS:
+            continue
+        if _framework_evidence_tied_to_entry_context(state, state.framework_evidence.get(name, [])):
+            return name
+    for item in ranked:
+        if item["name"] not in frameworks.UTILITY_FRAMEWORKS:
+            return item["name"]
+    return ranked[0]["name"]
+
+
+class _FamilyResolver:
+    """Adapter giving family-owning detectors the engine's generic helpers.
+
+    A detector that resolves a base/superset family conflict (for example
+    Lightning over PyTorch) reads collected evidence, weighted scores, and
+    entry-context/import-graph checks through this adapter, so the engine holds
+    no framework-specific promotion logic.
+    """
+
+    def __init__(self, state: InspectState):
+        self._state = state
+
+    def evidence(self, framework: str) -> list[dict]:
+        return self._state.framework_evidence.get(framework, [])
+
+    def active_evidence(self, framework: str) -> list[dict]:
+        return [item for item in self.evidence(framework) if frameworks.is_active_evidence(framework, item)]
+
+    def score(self, evidence: list[dict]) -> int:
+        return _evidence_score(evidence)
+
+    def tied_to_entry_context(self, evidence: list[dict]) -> bool:
+        return _framework_evidence_tied_to_entry_context(self._state, evidence)
+
+    def has_inspected_file_or_entry_point(self) -> bool:
+        return _has_inspected_file_or_entry_point(self._state)
+
+    def has_evidence_outside_files(self, evidence: list[dict], reference_evidence: list[dict]) -> bool:
+        reference_files = {item["file"] for item in reference_evidence}
+        return any(item["file"] not in reference_files for item in evidence)
+
+    def evidence_outside_files(self, evidence: list[dict], reference_evidence: list[dict]) -> list[dict]:
+        reference_files = {item["file"] for item in reference_evidence}
+        return [item for item in evidence if item["file"] not in reference_files]
+
+    def evidence_outside_class_bodies(self, evidence: list[dict], class_evidence: list[dict]) -> list[dict]:
+        # Exclude items whose (file, line) falls within the body of a class named
+        # in ``class_evidence`` (matched by that class's definition line). Lets a
+        # family member (Lightning) claim base-framework (torch) calls inside its
+        # model class bodies without absorbing torch used in a sibling class or at
+        # module level in the same file.
+        ranges_by_file: dict[str, list[tuple[int, int]]] = {}
+        for item in class_evidence:
+            file_path = item["file"]
+            def_line = item.get("line")
+            for start, end in self._state.class_body_ranges.get(file_path, []):
+                if start == def_line:
+                    ranges_by_file.setdefault(file_path, []).append((start, end))
+        return [
+            item for item in evidence if not _line_within_ranges(item.get("line"), ranges_by_file.get(item["file"]))
+        ]
+
+
+def _line_within_ranges(line: Optional[int], ranges: Optional[list[tuple[int, int]]]) -> bool:
+    if line is None or not ranges:
+        return False
+    return any(start <= line <= end for start, end in ranges)
+
+
+def _framework_evidence_tied_to_entry_context(state: InspectState, evidence: list[dict]) -> bool:
+    if _framework_evidence_tied_to_inspected_file_or_entry_point(state, evidence):
+        return True
+    if state.root.is_file():
+        return False
+    return any(_entry_point_imports_file(state, item["file"]) for item in evidence)
+
+
+def _has_inspected_file_or_entry_point(state: InspectState) -> bool:
+    return state.root.is_file() or bool(state.entry_points)
+
+
+def _framework_evidence_tied_to_inspected_file_or_entry_point(state: InspectState, evidence: list[dict]) -> bool:
+    if state.root.is_file():
+        inspected_file = _display_path(state.root, state.root, state.redact)
+        return any(item["file"] == inspected_file for item in evidence)
+    entry_point_paths = {entry["path"] for entry in state.entry_points}
+    return any(item["file"] in entry_point_paths for item in evidence)
+
+
+def _entry_point_imports_file(state: InspectState, evidence_file: str) -> bool:
+    if not _module_names_for_file(evidence_file):
+        return False
+    local_files_by_module = _local_files_by_module(state)
+    for entry_point in state.entry_points:
+        if _imports_reach_file(
+            state,
+            entry_point["path"],
+            state.file_imports.get(entry_point["path"], set()),
+            evidence_file,
+            local_files_by_module,
+        ):
+            return True
+    return False
+
+
+def _imports_reach_file(
+    state: InspectState,
+    importing_file: str,
+    imports: set[str],
+    target_file: str,
+    local_files_by_module: dict[str, set[str]],
+) -> bool:
+    # Match on the resolved file, not on module names: a stale src-layout copy
+    # (src/mypkg/loop.py) shares the stripped module name "mypkg.loop" with a
+    # root-level mypkg/loop.py, so name-based matching would let the entry point
+    # "reach" the never-imported copy. _local_files_by_module resolves the shared
+    # name to the root file only, and comparing files keeps them distinct.
+    pending_imports = [(importing_file, import_name) for import_name in imports]
+    seen_imports = set()
+    seen_files = set()
+    while pending_imports:
+        source_file, import_name = pending_imports.pop()
+        import_key = (source_file, import_name)
+        if import_key in seen_imports:
+            continue
+        seen_imports.add(import_key)
+        for imported_file in _local_files_for_import(import_name, source_file, local_files_by_module):
+            if imported_file in seen_files:
+                continue
+            seen_files.add(imported_file)
+            if imported_file == target_file:
+                return True
+            pending_imports.extend(
+                (imported_file, nested_import) for nested_import in state.file_imports.get(imported_file, set())
+            )
+    return False
+
+
+def _local_files_by_module(state: InspectState) -> dict[str, set[str]]:
+    # Register every candidate module name for a file, including the src-layout
+    # root-stripped name (mypkg.loop from src/mypkg/loop.py). When a name is
+    # claimed by both a root-level file and a src/ copy, the collision is
+    # resolved per-import by _prefer_shared_packaging_root using the importing
+    # file's own packaging root, so neither a stale src/ copy nor a stale
+    # root-level copy can steal the actively-imported module in either direction.
+    files_by_module: dict[str, set[str]] = {}
+    for file_path in state.file_imports:
+        for module_name in _module_names_for_file(file_path):
+            files_by_module.setdefault(module_name, set()).add(file_path)
+    return files_by_module
+
+
+def _packaging_root_of(file_path: str) -> str:
+    parts = Path(file_path).parts
+    if parts and parts[0] in _PACKAGE_ROOT_DIR_NAMES:
+        return parts[0]
+    return ""
+
+
+def _prefer_shared_packaging_root(files: set[str], importing_file: str) -> set[str]:
+    # When an import resolves to copies in different packaging roots (a root-level
+    # file and a src/ copy of the same module path), prefer the copy sharing the
+    # importing file's packaging root. Fall back to all matches when none share
+    # it (e.g. a root-level entry importing a src-layout package).
+    if len(files) <= 1:
+        return files
+    importing_root = _packaging_root_of(importing_file)
+    same_root = {file_path for file_path in files if _packaging_root_of(file_path) == importing_root}
+    return same_root or files
+
+
+def _local_files_for_import(
+    import_name: str, importing_file: str, local_files_by_module: dict[str, set[str]]
+) -> set[str]:
+    files = set()
+    exact_candidates = _exact_module_candidates_for_import(import_name, importing_file, local_files_by_module)
+    resolved_modules = set()
+    for module_name in exact_candidates:
+        module_files = local_files_by_module.get(module_name, set())
+        if module_files:
+            resolved_modules.add(module_name)
+            files.update(module_files)
+    # Only follow a package's ``__init__.py`` once the full imported module path resolves to a
+    # local file. Otherwise an external absolute import (e.g. ``import lightning.pytorch``) whose
+    # leading segment happens to match an unrelated local package (a top-level ``lightning/``)
+    # would resolve that package's ``__init__.py`` and incorrectly promote it.
+    if not files:
+        return files
+    for module_name in _package_module_prefix_candidates_for_resolved(resolved_modules, exact_candidates):
+        files.update(
+            file_path
+            for file_path in local_files_by_module.get(module_name, set())
+            if _is_package_module_file(file_path)
+        )
+    return _prefer_shared_packaging_root(files, importing_file)
+
+
+def _exact_module_candidates_for_import(
+    import_name: str, importing_file: str, local_files_by_module: dict[str, set[str]]
+) -> set[str]:
+    candidates = {import_name} if import_name else set()
+    context_prefix = _import_context_prefix(importing_file)
+    if context_prefix:
+        for module_name in list(candidates):
+            prefixed = f"{context_prefix}.{module_name}"
+            # Single-segment imports always take the importing file's context prefix so a sibling
+            # module (``from block import ...`` next to the script) resolves. Dotted imports only
+            # take it when the full context-prefixed module resolves to a local file. This keeps
+            # nested local dotted imports reachable (``from layers.block import ...`` in
+            # ``models/train.py`` resolving ``models/layers/block.py``) without promoting an
+            # external absolute import (``import lightning.pytorch``) onto an unrelated local
+            # package.
+            if _is_single_segment_import(module_name) or prefixed in local_files_by_module:
+                candidates.add(prefixed)
+    return candidates
+
+
+def _package_module_prefix_candidates_for_resolved(resolved_modules: set[str], exact_candidates: set[str]) -> set[str]:
+    # Package-prefix candidates let us follow the __init__.py of a package whose full path
+    # resolves locally (e.g. ``import pkg.sub`` reaching ``pkg/__init__.py``). Derive the prefixes
+    # from the exact module candidates that actually resolved to local files, not from the raw
+    # import name. A context-resolved import (``from layers.block import ...`` in ``models/train.py``
+    # resolving ``models.layers.block``) must follow ``models.layers`` prefixes, not the raw
+    # ``layers`` segment that could match an unrelated top-level ``layers/`` package. The exact
+    # candidates are excluded so we only follow parent packages, not the fully resolved module file.
+    candidates: set[str] = set()
+    for module_name in resolved_modules:
+        candidates.update(_module_name_prefixes(module_name))
+    candidates.difference_update(exact_candidates)
+    return candidates
+
+
+def _is_single_segment_import(import_name: str) -> bool:
+    return bool(import_name) and "." not in import_name
+
+
+def _module_name_prefixes(module_name: str) -> set[str]:
+    parts = [part for part in module_name.split(".") if part]
+    return {".".join(parts[:index]) for index in range(1, len(parts) + 1)}
+
+
+def _is_package_module_file(file_path: str) -> bool:
+    return Path(file_path).name == "__init__.py"
+
+
+def _file_module_parts(file_path: str) -> Optional[tuple[str, ...]]:
+    if not file_path.endswith(".py"):
+        return None
+    path = Path(file_path)
+    parts = path.parent.parts if path.name == "__init__.py" else path.with_suffix("").parts
+    if not parts or any(part in {"", ".", ".."} for part in parts):
+        return None
+    return parts
+
+
+def _module_names_for_file(file_path: str) -> set[str]:
+    parts = _file_module_parts(file_path)
+    if not parts:
+        return set()
+    names = {".".join(parts)}
+    # src-layout: a file under a packaging root (src/) is imported by its
+    # package path without the root, so an entry point's `import mypkg.loop`
+    # reaches src/mypkg/loop.py. Offer the root-stripped module name too.
+    if len(parts) > 1 and parts[0] in _PACKAGE_ROOT_DIR_NAMES:
+        names.add(".".join(parts[1:]))
+    return names
+
+
+def _import_context_prefix(file_path: str) -> str:
+    if not file_path.endswith(".py"):
+        return ""
+    path = Path(file_path)
+    parts = path.parent.parts
+    if any(part in {"", ".", ".."} for part in parts):
+        return ""
+    return ".".join(parts)
+
+
+def _resolve_import_from_module(importing_file: str, module: str, level: int) -> str:
+    if level <= 0:
+        return module
+    path = Path(importing_file)
+    package_parts = path.parent.parts if path.name != "__init__.py" else path.parent.parts
+    keep = max(0, len(package_parts) - level + 1)
+    parts = list(package_parts[:keep])
+    if module:
+        parts.extend(module.split("."))
+    return ".".join(part for part in parts if part)
+
+
+def _evidence_score(evidence: list[dict]) -> int:
+    weights = frameworks.evidence_weights()
+    return sum(weights.get(item["kind"], 1) for item in evidence)
+
+
+def _order_frameworks_for_display(ranked: list[dict], detected_framework: Optional[str]) -> list[dict]:
+    # Surface the detected primary framework first so callers reading
+    # frameworks[0] always stay aligned with the routing decision, including the
+    # family case (a PyTorch base detected while a higher-confidence Lightning
+    # member is present). sorted() is stable, so every other framework keeps its
+    # confidence-ranked order. When nothing was detected, the order is unchanged.
+    if not detected_framework:
+        return ranked
+    return sorted(ranked, key=lambda item: item["name"] != detected_framework)
+
+
 def _conversion_state(state: InspectState, detected_framework: Optional[str]) -> str:
     if state.exported_job_markers:
         return "exported_job"
     if state.job_py or state.sim_env_used:
         return "flare_job"
+    if _has_conversion_integration(state):
+        return "client_api_converted"
     if {"flare.receive", "flare.send"} <= state.flare_calls or "FLModel" in state.flare_calls:
         return "client_api_converted"
     if state.flare_imports or state.flare_calls:
@@ -451,6 +841,15 @@ def _conversion_state(state: InspectState, detected_framework: Optional[str]) ->
     if detected_framework:
         return "not_converted"
     return "unknown"
+
+
+def _has_conversion_integration(state: InspectState) -> bool:
+    # A framework conversion-integration signal (e.g. an nvflare.client.lightning
+    # ``patch(trainer)`` call) is a definitive conversion signal even without an
+    # explicit ``flare.send``, because the framework's callback performs the
+    # result exchange. Detectors record these signals via on_call; do not
+    # require static constructor evidence here (wrappers/factories can hide it).
+    return bool(state.integration_signals and state.flare_imports)
 
 
 def _target_type(path: Path, state: InspectState, detected_framework: Optional[str], conversion_state: str) -> str:
@@ -464,9 +863,21 @@ def _target_type(path: Path, state: InspectState, detected_framework: Optional[s
         return "flare_job_source"
     if detected_framework and conversion_state in {"partial_client_api", "client_api_converted"}:
         return "mixed_workspace"
+    if _is_mixed_family_workspace(state, detected_framework):
+        # Distinct from the FLARE conversion "mixed_workspace": this means two
+        # frameworks of the same family (e.g. PyTorch + PyTorch Lightning) are
+        # present, not that a partial FLARE conversion exists.
+        return "mixed_framework_workspace"
     if detected_framework:
         return "training_repository"
     return "unknown_target"
+
+
+def _is_mixed_family_workspace(state: InspectState, detected_framework: Optional[str]) -> bool:
+    # A family base (e.g. PyTorch) detected alongside its superset member
+    # (PyTorch Lightning) in the evidence. Reported with a distinct target_type
+    # so it is not conflated with the FLARE conversion "mixed_workspace".
+    return bool(frameworks.family_base_has_member(detected_framework, state.framework_evidence))
 
 
 def _add_entry_point(path: Path, rel_path: str, tree: ast.Module, state: InspectState) -> None:
@@ -496,9 +907,11 @@ def _is_main_guard(node: ast.If) -> bool:
 def _skill_selection(detected_framework: Optional[str], conversion_state: str, state: InspectState) -> dict:
     recommended = []
     if conversion_state == "exported_job":
-        recommended.append("nvflare-job-lifecycle")
+        # Lifecycle skills are out of scope and not planned; exported jobs are
+        # handled with product APIs directly, so no skill is recommended.
+        pass
     elif detected_framework and conversion_state == "not_converted":
-        skill = FRAMEWORK_SKILLS.get(detected_framework)
+        skill = frameworks.recommended_skill_for(detected_framework)
         if skill:
             recommended.append(skill)
     if state.findings or state.files_skipped:
@@ -522,7 +935,9 @@ def _recommended_next_commands(
     elif state.job_py and state.export_support:
         commands.append("python job.py --export --export-dir <job-dir>")
     elif detected_framework and conversion_state == "not_converted":
-        commands.append("Use the matching nvflare-convert-* skill before editing.")
+        skill = frameworks.recommended_skill_for(detected_framework)
+        if skill:
+            commands.append(f"Use the {skill} skill before editing.")
     return commands
 
 
@@ -601,9 +1016,13 @@ def _evidence(file_path: str, line: Optional[int], kind: str, value: str) -> dic
     return {"file": file_path, "line": line, "kind": kind, "value": value}
 
 
-def _append_capped(target: dict[str, list[dict]], key: str, value: dict) -> None:
+def _append_evidence(target: dict[str, list[dict]], key: str, value: dict) -> None:
+    # Collect up to a generous backstop so framework ranking/detection sees the
+    # true evidence counts. Display is truncated to MAX_EVIDENCE_PER_BUCKET
+    # separately (see _rank_frameworks); capping at collection time would skew the
+    # count-based confidence and let a file's first 12 imports decide routing.
     bucket = target.setdefault(key, [])
-    if len(bucket) < MAX_EVIDENCE_PER_BUCKET:
+    if len(bucket) < MAX_EVIDENCE_COLLECT:
         bucket.append(value)
 
 
@@ -614,6 +1033,12 @@ def _call_name(node: ast.AST) -> Optional[str]:
         prefix = _call_name(node.value)
         return f"{prefix}.{node.attr}" if prefix else node.attr
     return None
+
+
+def _symbol_name(node: ast.AST) -> Optional[str]:
+    if isinstance(node, ast.Subscript):
+        return _call_name(node.value)
+    return _call_name(node)
 
 
 def _target_name(node: ast.AST) -> Optional[str]:

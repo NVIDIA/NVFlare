@@ -24,9 +24,6 @@ sys.path.insert(0, str(CHECKS_PARENT))
 from checks import lints as lints_module  # noqa: E402
 from checks.lints import (  # noqa: E402
     MAX_SKILL_TEXT_FILE_BYTES,
-    V1_LINT_IDS,
-    _parse_conversion_table,
-    _parse_product_catalog,
     _run_v1_lints_with_records,
     run_v1_lints,
     validate_skills,
@@ -36,22 +33,20 @@ LINT_SKILL_FRONTMATTER = "skill-frontmatter-lint"
 LINT_SKILL_MD_SIZE = "skill-md-size-lint"
 LINT_SKILL_TRIGGER = "skill-trigger-lint"
 LINT_SKILL_TRIGGER_OVERLAP = "skill-trigger-overlap-lint"
-LINT_SKILL_CATALOG_CATEGORY = "skill-catalog-category-lint"
 LINT_SKILL_GLOBAL_NEGATIVE = "skill-global-negative-lint"
 LINT_SKILL_POLICY_COVERAGE = "skill-policy-coverage-lint"
 LINT_SKILL_PROCESS_METRIC = "skill-process-metric-lint"
 LINT_SKILL_COMMAND_DRIFT = "skill-command-drift-lint"
 LINT_SKILL_HELPER_SCRIPT = "skill-helper-script-lint"
 LINT_SKILL_FIXTURE = "skill-fixture-lint"
-LINT_AGENT_DOC_CROSSLINK = "agent-doc-crosslink-lint"
+LINT_SKILL_RUNTIME_BOUNDARY = "skill-runtime-boundary-lint"
 REQUIRED_FINDING_FIELDS = {"id", "severity", "file", "message", "hint"}
 
 
 def test_run_v1_lints_passes_complete_skill(tmp_path):
     _write_skill(tmp_path / "skills", "nvflare-valid-skill")
-    docs_root = _write_design_docs(tmp_path, ["nvflare-valid-skill"])
 
-    result = run_v1_lints(tmp_path / "skills", docs_root=docs_root)
+    result = run_v1_lints(tmp_path / "skills")
 
     assert result["status"] == "ok"
     assert result["findings"] == []
@@ -62,22 +57,20 @@ def test_run_v1_lints_passes_complete_skill(tmp_path):
         LINT_SKILL_MD_SIZE,
         LINT_SKILL_TRIGGER,
         LINT_SKILL_TRIGGER_OVERLAP,
-        LINT_SKILL_CATALOG_CATEGORY,
         LINT_SKILL_GLOBAL_NEGATIVE,
         LINT_SKILL_POLICY_COVERAGE,
         LINT_SKILL_PROCESS_METRIC,
         LINT_SKILL_COMMAND_DRIFT,
         LINT_SKILL_HELPER_SCRIPT,
         LINT_SKILL_FIXTURE,
-        LINT_AGENT_DOC_CROSSLINK,
+        LINT_SKILL_RUNTIME_BOUNDARY,
     }
 
 
 def test_run_v1_lints_reports_frontmatter_prefix(tmp_path):
     _write_skill(tmp_path / "skills", "example-skill")
-    docs_root = _write_design_docs(tmp_path, ["example-skill"], category="Orient")
 
-    result = run_v1_lints(tmp_path / "skills", docs_root=docs_root)
+    result = run_v1_lints(tmp_path / "skills")
 
     assert _has_finding(result, LINT_SKILL_FRONTMATTER, "skill-name-prefix-required")
     _assert_structured_findings(result)
@@ -85,9 +78,17 @@ def test_run_v1_lints_reports_frontmatter_prefix(tmp_path):
 
 def test_run_v1_lints_allows_internal_skill_without_nvflare_prefix(tmp_path):
     _write_skill(tmp_path / "skills", "example-skill", status="internal")
-    docs_root = _write_design_docs(tmp_path, ["example-skill"], category="Orient")
 
-    result = run_v1_lints(tmp_path / "skills", docs_root=docs_root, checks=[LINT_SKILL_FRONTMATTER])
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_FRONTMATTER])
+
+    assert result["status"] == "ok"
+    assert result["findings"] == []
+
+
+def test_run_v1_lints_accepts_public_category_frontmatter(tmp_path):
+    _write_skill(tmp_path / "skills", "nvflare-category-skill", category="diagnosis")
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_FRONTMATTER])
 
     assert result["status"] == "ok"
     assert result["findings"] == []
@@ -96,9 +97,8 @@ def test_run_v1_lints_allows_internal_skill_without_nvflare_prefix(tmp_path):
 def test_run_v1_lints_reports_skill_md_size(tmp_path):
     body = "\n".join(f"line {i}" for i in range(205))
     _write_skill(tmp_path / "skills", "nvflare-large-skill", body=body)
-    docs_root = _write_design_docs(tmp_path, ["nvflare-large-skill"])
 
-    result = run_v1_lints(tmp_path / "skills", docs_root=docs_root)
+    result = run_v1_lints(tmp_path / "skills")
 
     assert _has_finding(result, LINT_SKILL_MD_SIZE, "skill-md-too-large")
     _assert_structured_findings(result)
@@ -130,7 +130,7 @@ def test_load_evals_rejects_oversized_evals_json(tmp_path):
     evals, error = lints_module._load_evals(evals_path)
 
     assert evals == []
-    assert error == f"evals/evals.json exceeds size limit ({MAX_SKILL_TEXT_FILE_BYTES} bytes)"
+    assert error == f"evals.json exceeds size limit ({MAX_SKILL_TEXT_FILE_BYTES} bytes)"
 
 
 def test_line_for_field_does_not_read_oversized_skill_md(tmp_path):
@@ -143,9 +143,8 @@ def test_line_for_field_does_not_read_oversized_skill_md(tmp_path):
 
 def test_run_v1_lints_reports_missing_trigger_evals(tmp_path):
     _write_skill(tmp_path / "skills", "nvflare-trigger-skill", evals={"evals": []})
-    docs_root = _write_design_docs(tmp_path, ["nvflare-trigger-skill"])
 
-    result = run_v1_lints(tmp_path / "skills", docs_root=docs_root)
+    result = run_v1_lints(tmp_path / "skills")
 
     assert _has_finding(result, LINT_SKILL_TRIGGER, "skill-positive-trigger-eval-missing")
     assert _has_finding(result, LINT_SKILL_TRIGGER, "skill-adjacent-negative-eval-missing")
@@ -153,40 +152,60 @@ def test_run_v1_lints_reports_missing_trigger_evals(tmp_path):
     _assert_structured_findings(result)
 
 
-def test_run_v1_lints_reports_missing_catalog_entry(tmp_path):
-    _write_skill(tmp_path / "skills", "nvflare-one-skill")
-    _write_skill(tmp_path / "skills", "nvflare-two-skill")
-    docs_root = _write_design_docs(tmp_path, ["nvflare-one-skill"])
-
-    result = run_v1_lints(tmp_path / "skills", docs_root=docs_root)
-
-    assert _has_finding(result, LINT_SKILL_CATALOG_CATEGORY, "skill-catalog-entry-missing")
-    _assert_structured_findings(result)
-
-
 def test_run_v1_lints_reports_trigger_overlap_without_negative_boundary(tmp_path):
-    evals_one = _default_evals("nvflare-one-skill", adjacent_negative=False)
-    evals_two = _default_evals("nvflare-two-skill", adjacent_negative=False)
+    evals_one = _default_evals("nvflare-convert-one", adjacent_negative=False)
+    evals_two = _default_evals("nvflare-convert-two", adjacent_negative=False)
     _write_skill(
         tmp_path / "skills",
-        "nvflare-one-skill",
+        "nvflare-convert-one",
         description="Convert PyTorch training code to FLARE.",
         body="Use when converting PyTorch training code.\n",
         evals=evals_one,
     )
     _write_skill(
         tmp_path / "skills",
-        "nvflare-two-skill",
+        "nvflare-convert-two",
         description="Convert PyTorch training code to FLARE.",
         body="Use when converting PyTorch training code.\n",
         evals=evals_two,
     )
-    docs_root = _write_design_docs(tmp_path, ["nvflare-one-skill", "nvflare-two-skill"])
 
-    result = run_v1_lints(tmp_path / "skills", docs_root=docs_root)
+    result = run_v1_lints(tmp_path / "skills")
 
     assert _has_finding(result, LINT_SKILL_TRIGGER_OVERLAP, "skill-trigger-overlap")
     _assert_structured_findings(result)
+
+
+def test_run_v1_lints_reports_non_convert_trigger_overlap_from_name_family(tmp_path):
+    evals_one = _default_evals("nvflare-route-one", adjacent_negative=False)
+    evals_two = _default_evals("nvflare-route-two", adjacent_negative=False)
+    _write_skill(
+        tmp_path / "skills",
+        "nvflare-route-one",
+        description="Route ambiguous FLARE project requests using inspect and readiness evidence.",
+        body="Use when routing ambiguous FLARE project requests with inspect evidence.\n",
+        evals=evals_one,
+    )
+    _write_skill(
+        tmp_path / "skills",
+        "nvflare-route-two",
+        description="Route ambiguous FLARE project requests using inspect and readiness evidence.",
+        body="Use when routing ambiguous FLARE project requests with inspect evidence.\n",
+        evals=evals_two,
+    )
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_TRIGGER_OVERLAP])
+
+    assert _has_finding(result, LINT_SKILL_TRIGGER_OVERLAP, "skill-trigger-overlap")
+    _assert_structured_findings(result)
+
+
+@pytest.mark.parametrize("lint_id", ["skill-catalog-category-lint", "agent-doc-crosslink-lint"])
+def test_run_v1_lints_rejects_retired_design_doc_lints(tmp_path, lint_id):
+    _write_skill(tmp_path / "skills", "nvflare-valid-skill")
+
+    with pytest.raises(ValueError, match=lint_id):
+        run_v1_lints(tmp_path / "skills", checks=[lint_id])
 
 
 def test_run_v1_lints_reports_policy_without_behavior_ids(tmp_path):
@@ -194,9 +213,8 @@ def test_run_v1_lints_reports_policy_without_behavior_ids(tmp_path):
     _write_skill(
         tmp_path / "skills", "nvflare-policy-skill", body="The agent must validate before submit.\n", evals=evals
     )
-    docs_root = _write_design_docs(tmp_path, ["nvflare-policy-skill"])
 
-    result = run_v1_lints(tmp_path / "skills", docs_root=docs_root)
+    result = run_v1_lints(tmp_path / "skills")
 
     assert _has_finding(result, LINT_SKILL_POLICY_COVERAGE, "skill-policy-coverage-missing")
     _assert_structured_findings(result)
@@ -204,9 +222,8 @@ def test_run_v1_lints_reports_policy_without_behavior_ids(tmp_path):
 
 def test_run_v1_lints_reports_unknown_nvflare_command(tmp_path):
     _write_skill(tmp_path / "skills", "nvflare-command-skill", body="Run `nvflare unknown --format json`.\n")
-    docs_root = _write_design_docs(tmp_path, ["nvflare-command-skill"])
 
-    result = run_v1_lints(tmp_path / "skills", docs_root=docs_root)
+    result = run_v1_lints(tmp_path / "skills")
 
     assert _has_finding(result, LINT_SKILL_COMMAND_DRIFT, "skill-command-drift")
     finding = _finding(result, LINT_SKILL_COMMAND_DRIFT, "skill-command-drift")
@@ -220,9 +237,8 @@ def test_run_v1_lints_reports_command_drift_before_unsafe_token(tmp_path):
         "nvflare-command-skill",
         body="Run `nvflare agent unknown $HOME/skills`.\n",
     )
-    docs_root = _write_design_docs(tmp_path, ["nvflare-command-skill"])
 
-    result = run_v1_lints(tmp_path / "skills", docs_root=docs_root, checks=[LINT_SKILL_COMMAND_DRIFT])
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_COMMAND_DRIFT])
 
     assert _has_finding(result, LINT_SKILL_COMMAND_DRIFT, "skill-command-drift")
     finding = _finding(result, LINT_SKILL_COMMAND_DRIFT, "skill-command-drift")
@@ -236,9 +252,8 @@ def test_run_v1_lints_parses_quoted_nvflare_command_with_shlex(tmp_path):
         "nvflare-command-skill",
         body='Run `nvflare agent skills install --skill "nvflare-valid-skill" --target /tmp/skills`.\n',
     )
-    docs_root = _write_design_docs(tmp_path, ["nvflare-command-skill"])
 
-    result = run_v1_lints(tmp_path / "skills", docs_root=docs_root, checks=[LINT_SKILL_COMMAND_DRIFT])
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_COMMAND_DRIFT])
 
     assert result["status"] == "ok"
     assert result["findings"] == []
@@ -246,18 +261,17 @@ def test_run_v1_lints_parses_quoted_nvflare_command_with_shlex(tmp_path):
 
 def test_run_v1_lints_skips_trigger_overlap_when_skill_count_exceeds_cap(monkeypatch, tmp_path):
     monkeypatch.setenv("NVFLARE_AGENT_MAX_TRIGGER_OVERLAP_SKILLS", "1")
-    _write_skill(tmp_path / "skills", "nvflare-one-skill")
-    _write_skill(tmp_path / "skills", "nvflare-two-skill")
-    docs_root = _write_design_docs(tmp_path, ["nvflare-one-skill", "nvflare-two-skill"])
+    _write_skill(tmp_path / "skills", "nvflare-convert-one")
+    _write_skill(tmp_path / "skills", "nvflare-convert-two")
 
-    result = run_v1_lints(tmp_path / "skills", docs_root=docs_root, checks=[LINT_SKILL_TRIGGER_OVERLAP])
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_TRIGGER_OVERLAP])
 
     assert result["status"] == "ok"
     assert result["findings"] == []
     assert result["skipped_checks"] == [
         {
             "id": LINT_SKILL_TRIGGER_OVERLAP,
-            "reason": "category 'Conversion' has 2 skills; limit is 1",
+            "reason": "group 'nvflare-convert' has 2 skills; limit is 1",
         }
     ]
 
@@ -267,9 +281,8 @@ def test_run_v1_lints_reports_helper_script_without_test(tmp_path):
     scripts_dir = skill_dir / "scripts"
     scripts_dir.mkdir()
     scripts_dir.joinpath("helper.py").write_text("print('{}')\n", encoding="utf-8")
-    docs_root = _write_design_docs(tmp_path, ["nvflare-helper-skill"])
 
-    result = run_v1_lints(tmp_path / "skills", docs_root=docs_root)
+    result = run_v1_lints(tmp_path / "skills")
 
     assert _has_finding(result, LINT_SKILL_HELPER_SCRIPT, "skill-helper-tests-missing")
     _assert_structured_findings(result)
@@ -281,9 +294,8 @@ def test_run_v1_lints_helper_script_ignores_symlink_loop(tmp_path):
     scripts_dir.mkdir()
     scripts_dir.joinpath("helper.py").write_text("print('{}')\n", encoding="utf-8")
     _symlink_dir_or_skip(scripts_dir, scripts_dir / "loop")
-    docs_root = _write_design_docs(tmp_path, ["nvflare-helper-skill"])
 
-    result = run_v1_lints(tmp_path / "skills", docs_root=docs_root, checks=[LINT_SKILL_HELPER_SCRIPT])
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_HELPER_SCRIPT])
 
     assert _has_finding(result, LINT_SKILL_HELPER_SCRIPT, "skill-helper-tests-missing")
     _assert_structured_findings(result)
@@ -300,9 +312,8 @@ def test_run_v1_lints_skips_oversized_helper_script_content_checks(tmp_path):
     tests_dir = skill_dir / "tests"
     tests_dir.mkdir()
     tests_dir.joinpath("helper_test.txt").write_text("helper test placeholder\n", encoding="utf-8")
-    docs_root = _write_design_docs(tmp_path, ["nvflare-helper-skill"])
 
-    result = run_v1_lints(tmp_path / "skills", docs_root=docs_root, checks=[LINT_SKILL_HELPER_SCRIPT])
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_HELPER_SCRIPT])
 
     assert result["status"] == "ok"
     assert result["findings"] == []
@@ -310,11 +321,10 @@ def test_run_v1_lints_skips_oversized_helper_script_content_checks(tmp_path):
 
 def test_run_v1_lints_reports_missing_fixture_file(tmp_path):
     evals = _default_evals("nvflare-fixture-skill")
-    evals["evals"][0]["files"] = ["evals/files/missing.py"]
+    evals["evals"][0]["files"] = ["files/missing.py"]
     _write_skill(tmp_path / "skills", "nvflare-fixture-skill", evals=evals, write_fixture=False)
-    docs_root = _write_design_docs(tmp_path, ["nvflare-fixture-skill"])
 
-    result = run_v1_lints(tmp_path / "skills", docs_root=docs_root)
+    result = run_v1_lints(tmp_path / "skills")
 
     assert _has_finding(result, LINT_SKILL_FIXTURE, "skill-fixture-file-missing")
     _assert_structured_findings(result)
@@ -322,15 +332,14 @@ def test_run_v1_lints_reports_missing_fixture_file(tmp_path):
 
 def test_run_v1_lints_fixture_file_check_ignores_symlink_loop(tmp_path):
     evals = _default_evals("nvflare-fixture-skill")
-    evals["evals"][0]["files"] = ["evals/files/input.py"]
-    skill_dir = _write_skill(tmp_path / "skills", "nvflare-fixture-skill", evals=evals, write_fixture=False)
-    files_dir = skill_dir / "evals" / "files"
+    evals["evals"][0]["files"] = ["files/input.py"]
+    _write_skill(tmp_path / "skills", "nvflare-fixture-skill", evals=evals, write_fixture=False)
+    files_dir = tmp_path / "dev_tools" / "agent" / "skill_evals" / "nvflare-fixture-skill" / "files"
     files_dir.mkdir()
     files_dir.joinpath("input.py").write_text("print('hello')\n", encoding="utf-8")
     _symlink_dir_or_skip(files_dir, files_dir / "loop")
-    docs_root = _write_design_docs(tmp_path, ["nvflare-fixture-skill"])
 
-    result = run_v1_lints(tmp_path / "skills", docs_root=docs_root, checks=[LINT_SKILL_FIXTURE])
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_FIXTURE])
 
     assert _has_finding(result, LINT_SKILL_FIXTURE, "skill-fixture-notes-missing")
     _assert_structured_findings(result)
@@ -352,9 +361,8 @@ def test_run_v1_lints_does_not_require_fixtures_for_conceptual_file_mentions(tmp
         "nvflare": {"category": "conversion"},
     }
     _write_skill(tmp_path / "skills", "nvflare-fixture-skill", evals=evals, write_fixture=False)
-    docs_root = _write_design_docs(tmp_path, ["nvflare-fixture-skill"])
 
-    result = run_v1_lints(tmp_path / "skills", docs_root=docs_root, checks=[LINT_SKILL_FIXTURE])
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_FIXTURE])
 
     assert result["status"] == "ok"
     assert result["findings"] == []
@@ -366,9 +374,8 @@ def test_run_v1_lints_reference_text_scan_ignores_symlink_loop(tmp_path):
     references_dir.mkdir()
     references_dir.joinpath("guide.md").write_text("Run `nvflare unknown --format json`.\n", encoding="utf-8")
     _symlink_dir_or_skip(references_dir, references_dir / "loop")
-    docs_root = _write_design_docs(tmp_path, ["nvflare-command-skill"])
 
-    result = run_v1_lints(tmp_path / "skills", docs_root=docs_root, checks=[LINT_SKILL_COMMAND_DRIFT])
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_COMMAND_DRIFT])
 
     assert _has_finding(result, LINT_SKILL_COMMAND_DRIFT, "skill-command-drift")
     _assert_structured_findings(result)
@@ -378,49 +385,18 @@ def test_run_v1_lints_rejects_fixture_paths_that_escape_skill_dir(tmp_path):
     evals = _default_evals("nvflare-fixture-skill")
     evals["evals"][0]["files"] = ["../outside.py"]
     _write_skill(tmp_path / "skills", "nvflare-fixture-skill", evals=evals)
-    docs_root = _write_design_docs(tmp_path, ["nvflare-fixture-skill"])
 
-    result = run_v1_lints(tmp_path / "skills", docs_root=docs_root, checks=[LINT_SKILL_FIXTURE])
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_FIXTURE])
 
     assert _has_finding(result, LINT_SKILL_FIXTURE, "skill-fixture-path-escape")
     _assert_structured_findings(result)
 
 
-def test_run_v1_lints_reports_broken_doc_crosslink(tmp_path):
-    _write_skill(tmp_path / "skills", "nvflare-doc-skill")
-    docs_root = _write_design_docs(tmp_path, ["nvflare-doc-skill"])
-    docs_root.joinpath("agent_integration.md").write_text(
-        docs_root.joinpath("agent_integration.md").read_text(encoding="utf-8")
-        + "\n[missing](missing.md)\n[bad anchor](agent_integration.md#nope)\n",
-        encoding="utf-8",
-    )
-
-    result = run_v1_lints(tmp_path / "skills", docs_root=docs_root)
-
-    assert _has_finding(result, LINT_AGENT_DOC_CROSSLINK, "agent-doc-link-missing")
-    assert _has_finding(result, LINT_AGENT_DOC_CROSSLINK, "agent-doc-anchor-missing")
-    _assert_structured_findings(result)
-
-
-def test_run_v1_lints_checks_current_skills_architecture_doc(tmp_path):
-    _write_skill(tmp_path / "skills", "nvflare-doc-skill")
-    docs_root = _write_design_docs(tmp_path, ["nvflare-doc-skill"])
-    docs_root.joinpath("skills_architecture.md").write_text(
-        "# Skills Architecture\n\n[missing](missing.md)\n",
-        encoding="utf-8",
-    )
-
-    result = run_v1_lints(tmp_path / "skills", docs_root=docs_root, checks=[LINT_AGENT_DOC_CROSSLINK])
-
-    assert _has_finding(result, LINT_AGENT_DOC_CROSSLINK, "agent-doc-link-missing")
-
-
 def test_run_v1_lints_supports_check_selection(tmp_path):
     _write_skill(tmp_path / "skills", "nvflare-valid-skill")
     _write_skill(tmp_path / "skills", "nvflare-other-skill", evals={"evals": []})
-    docs_root = _write_design_docs(tmp_path, ["nvflare-valid-skill", "nvflare-other-skill"])
 
-    result = run_v1_lints(tmp_path / "skills", docs_root=docs_root, checks=[LINT_SKILL_FRONTMATTER])
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_FRONTMATTER])
 
     assert result["status"] == "ok"
     assert result["checks"] == [LINT_SKILL_FRONTMATTER]
@@ -432,60 +408,19 @@ def test_run_v1_lints_skips_shared_reference_dirs(tmp_path):
     shared_dir = tmp_path / "skills" / "_shared"
     shared_dir.mkdir()
     shared_dir.joinpath("reference.md").write_text("shared guidance\n", encoding="utf-8")
-    docs_root = _write_design_docs(tmp_path, ["nvflare-valid-skill"])
 
-    result = run_v1_lints(tmp_path / "skills", docs_root=docs_root)
+    result = run_v1_lints(tmp_path / "skills")
 
     assert result["status"] == "ok"
     assert result["summary"]["skill_count"] == 1
     assert result["findings"] == []
 
 
-def test_run_v1_lints_records_doc_dependent_overlap_skip(tmp_path):
-    _write_skill(tmp_path / "skills", "nvflare-valid-skill")
-
-    result = run_v1_lints(
-        tmp_path / "skills",
-        docs_root=tmp_path / "missing-docs",
-        checks=[LINT_SKILL_TRIGGER_OVERLAP],
-    )
-
-    assert result["status"] == "ok"
-    assert result["skipped_checks"] == [{"id": LINT_SKILL_TRIGGER_OVERLAP, "reason": "docs root is not available"}]
-
-
-def test_run_v1_lints_doc_crosslinks_skip_oversized_doc(tmp_path):
-    _write_skill(tmp_path / "skills", "nvflare-valid-skill")
-    docs_root = _write_design_docs(tmp_path, ["nvflare-valid-skill"])
-    doc_path = docs_root / "agent_implementation_plan.md"
-    doc_path.write_text("[Broken](missing.md)\n", encoding="utf-8")
-    with doc_path.open("ab") as stream:
-        stream.truncate(MAX_SKILL_TEXT_FILE_BYTES + 1)
-
-    result = run_v1_lints(tmp_path / "skills", docs_root=docs_root, checks=[LINT_AGENT_DOC_CROSSLINK])
-
-    assert result["status"] == "ok"
-    assert result["findings"] == []
-
-
-def test_catalog_parsers_skip_oversized_docs(tmp_path):
-    docs_root = _write_design_docs(tmp_path, ["nvflare-valid-skill"])
-    product_doc = docs_root / "agent_integration.md"
-    conversion_doc = docs_root / "agent_skill_authoring.md"
-    for doc_path in (product_doc, conversion_doc):
-        with doc_path.open("ab") as stream:
-            stream.truncate(MAX_SKILL_TEXT_FILE_BYTES + 1)
-
-    assert _parse_product_catalog(product_doc) == {}
-    assert _parse_conversion_table(conversion_doc) == {}
-
-
 def test_validate_skills_filters_summary_to_requested_skill(tmp_path):
     _write_skill(tmp_path / "skills", "nvflare-valid-skill")
     _write_skill(tmp_path / "skills", "nvflare-other-skill", evals={"evals": []})
-    docs_root = _write_design_docs(tmp_path, ["nvflare-valid-skill", "nvflare-other-skill"])
 
-    result = validate_skills(tmp_path / "skills", skill_name="nvflare-valid-skill", docs_root=docs_root)
+    result = validate_skills(tmp_path / "skills", skill_name="nvflare-valid-skill")
 
     assert result["status"] == "ok"
     assert result["requested_skill"] == "nvflare-valid-skill"
@@ -493,24 +428,8 @@ def test_validate_skills_filters_summary_to_requested_skill(tmp_path):
     assert result["findings"] == []
 
 
-def test_validate_skills_excludes_unattributed_doc_findings_for_requested_skill(tmp_path):
-    _write_skill(tmp_path / "skills", "nvflare-valid-skill")
-    docs_root = _write_design_docs(tmp_path, ["nvflare-valid-skill"])
-    docs_root.joinpath("agent_implementation_plan.md").write_text(
-        "# Agent Implementation Plan\n\n[Missing](missing.md)\n",
-        encoding="utf-8",
-    )
-
-    all_result = run_v1_lints(tmp_path / "skills", docs_root=docs_root)
-    requested_result = validate_skills(tmp_path / "skills", skill_name="nvflare-valid-skill", docs_root=docs_root)
-
-    assert _has_finding(all_result, LINT_AGENT_DOC_CROSSLINK, "agent-doc-link-missing")
-    assert requested_result["status"] == "ok"
-    assert requested_result["findings"] == []
-
-
 def test_validate_skills_keeps_global_findings_for_requested_skill(tmp_path):
-    result = validate_skills(tmp_path / "missing-skills", skill_name="nvflare-valid-skill", docs_root=tmp_path / "docs")
+    result = validate_skills(tmp_path / "missing-skills", skill_name="nvflare-valid-skill")
 
     assert result["status"] == "failed"
     assert result["summary"]["error_count"] == 1
@@ -521,19 +440,233 @@ def test_validate_skills_keeps_global_findings_for_requested_skill(tmp_path):
 
 def test_validate_skills_uses_requested_size_limit_without_mutating_default(tmp_path):
     _write_skill(tmp_path / "skills", "nvflare-valid-skill")
-    docs_root = _write_design_docs(tmp_path, ["nvflare-valid-skill"])
 
     limited = validate_skills(
         tmp_path / "skills",
         skill_name="nvflare-valid-skill",
-        docs_root=docs_root,
         max_skill_md_lines=2,
     )
-    default = run_v1_lints(tmp_path / "skills", docs_root=docs_root, checks=[LINT_SKILL_MD_SIZE])
+    default = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_MD_SIZE])
 
     assert _has_finding(limited, LINT_SKILL_MD_SIZE, "skill-md-too-large")
     assert default["status"] == "ok"
     assert default["findings"] == []
+
+
+def test_run_v1_lints_reports_design_doc_reference_in_runtime_content(tmp_path):
+    skill_dir = _write_skill(tmp_path / "skills", "nvflare-valid-skill")
+    references = skill_dir / "references"
+    references.mkdir()
+    references.joinpath("workflow.md").write_text(
+        "Follow the operating model in docs/design/agent_skill_operating_model.md.\n",
+        encoding="utf-8",
+    )
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_RUNTIME_BOUNDARY])
+
+    assert _has_finding(result, LINT_SKILL_RUNTIME_BOUNDARY, "skill-runtime-design-doc-ref")
+    _assert_structured_findings(result)
+
+
+def test_run_v1_lints_reports_evaluator_hook_in_skill_md(tmp_path):
+    _write_skill(
+        tmp_path / "skills",
+        "nvflare-valid-skill",
+        body=(
+            "Use when converting PyTorch training code.\n"
+            "Do not use for Kubernetes deployment.\n"
+            "After a failure, add or update the eval case in evals/evals.json.\n"
+        ),
+    )
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_RUNTIME_BOUNDARY])
+
+    assert _has_finding(result, LINT_SKILL_RUNTIME_BOUNDARY, "skill-runtime-evaluator-hook")
+
+
+@pytest.mark.parametrize(
+    "hook_line",
+    [
+        "Set NVFLARE_SKILL_EVAL=on before running.",
+        "Enable with eval=on in the config.",
+        "Run the conversion with the --eval flag.",
+        "Export NVFLARE_EVAL_MODE=1 for the grader.",
+        "Only relevant to the eval harness, not the runtime agent.",
+    ],
+)
+def test_run_v1_lints_reports_evaluator_hook_spellings(tmp_path, hook_line):
+    _write_skill(
+        tmp_path / "skills",
+        "nvflare-valid-skill",
+        body=(
+            "Use when converting PyTorch training code.\n" "Do not use for Kubernetes deployment.\n" f"{hook_line}\n"
+        ),
+    )
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_RUNTIME_BOUNDARY])
+
+    assert _has_finding(result, LINT_SKILL_RUNTIME_BOUNDARY, "skill-runtime-evaluator-hook")
+
+
+def test_run_v1_lints_reports_design_doc_reference_without_trailing_separator(tmp_path):
+    skill_dir = _write_skill(tmp_path / "skills", "nvflare-valid-skill")
+    references = skill_dir / "references"
+    references.mkdir()
+    references.joinpath("workflow.md").write_text(
+        "See the docs/design directory for the operating-model policy.\n",
+        encoding="utf-8",
+    )
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_RUNTIME_BOUNDARY])
+
+    assert _has_finding(result, LINT_SKILL_RUNTIME_BOUNDARY, "skill-runtime-design-doc-ref")
+
+
+@pytest.mark.parametrize(
+    "safe_line",
+    [
+        "Keep the source project's benchmark dataset loading.",
+        "Report the DEFAULT_EVALUATION_METRIC from the source.",
+        "Consult docs/designer notes if present.",
+    ],
+)
+def test_run_v1_lints_does_not_flag_legitimate_runtime_words(tmp_path, safe_line):
+    _write_skill(
+        tmp_path / "skills",
+        "nvflare-valid-skill",
+        body=("Use when converting PyTorch training code.\nDo not use for Kubernetes deployment.\n" f"{safe_line}\n"),
+    )
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_RUNTIME_BOUNDARY])
+
+    assert result["findings"] == []
+
+
+def test_run_v1_lints_flags_eval_dir_inside_skill(tmp_path):
+    # A stray evals/ suite inside a shipped skill dir must be flagged; eval
+    # suites belong in the repo-only eval root.
+    skill_dir = _write_skill(tmp_path / "skills", "nvflare-valid-skill")
+    stray_evals = skill_dir / "evals"
+    stray_evals.mkdir()
+    stray_evals.joinpath("evals.json").write_text("{}\n", encoding="utf-8")
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_RUNTIME_BOUNDARY])
+
+    assert _has_finding(result, LINT_SKILL_RUNTIME_BOUNDARY, "skill-runtime-eval-dir-in-skill")
+
+
+def test_run_v1_lints_flags_nested_eval_dir_inside_skill(tmp_path):
+    # Packaging strips directories named "evals" at any depth, so a nested
+    # references/evals/ suite is silently omitted from bundles. The lint must
+    # match that depth and flag it, not only the top-level evals/ dir.
+    skill_dir = _write_skill(tmp_path / "skills", "nvflare-nested-eval-skill")
+    nested_evals = skill_dir / "references" / "evals"
+    nested_evals.mkdir(parents=True)
+    nested_evals.joinpath("howto.md").write_text("# fixture notes\n", encoding="utf-8")
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_RUNTIME_BOUNDARY])
+
+    assert _has_finding(result, LINT_SKILL_RUNTIME_BOUNDARY, "skill-runtime-eval-dir-in-skill")
+
+
+def test_iter_files_no_follow_prunes_excluded_dirs(tmp_path):
+    root = tmp_path / "runtime"
+    root.joinpath("references").mkdir(parents=True)
+    root.joinpath("references", "guide.md").write_text("runtime guide\n", encoding="utf-8")
+    root.joinpath("evals", "fixtures").mkdir(parents=True)
+    root.joinpath("evals", "fixtures", "case.md").write_text("fixture\n", encoding="utf-8")
+    root.joinpath("__pycache__", "nested").mkdir(parents=True)
+    root.joinpath("__pycache__", "nested", "cached.py").write_text("cached\n", encoding="utf-8")
+
+    files = {
+        path.relative_to(root).as_posix()
+        for path in lints_module._iter_files_no_follow(root, excluded_dir_names={"evals", "__pycache__"})
+    }
+
+    assert files == {"references/guide.md"}
+
+
+def test_run_v1_lints_scans_non_public_skill_runtime_content(tmp_path):
+    _write_skill(
+        tmp_path / "skills",
+        "nvflare-draft-skill",
+        status="draft",
+        body=(
+            "Use when converting PyTorch training code.\n"
+            "Do not use for Kubernetes deployment.\n"
+            "See docs/design/agent_skill_operating_model.md for the policy.\n"
+        ),
+    )
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_RUNTIME_BOUNDARY])
+
+    assert _has_finding(result, LINT_SKILL_RUNTIME_BOUNDARY, "skill-runtime-design-doc-ref")
+
+
+def test_run_v1_lints_scans_non_markdown_runtime_files(tmp_path):
+    skill_dir = _write_skill(tmp_path / "skills", "nvflare-valid-skill")
+    references = skill_dir / "references"
+    references.mkdir()
+    references.joinpath("helper.py").write_text(
+        "# see docs/design/agent_skill_operating_model.md\nprint('ok')\n",
+        encoding="utf-8",
+    )
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_RUNTIME_BOUNDARY])
+
+    assert _has_finding(result, LINT_SKILL_RUNTIME_BOUNDARY, "skill-runtime-design-doc-ref")
+
+
+def test_run_v1_lints_reports_benchmark_instruction_in_scripts(tmp_path):
+    skill_dir = _write_skill(tmp_path / "skills", "nvflare-valid-skill")
+    scripts_dir = skill_dir / "scripts"
+    scripts_dir.mkdir()
+    scripts_dir.joinpath("helper.py").write_text(
+        "# record results for the benchmark harness\nprint('ok')\n",
+        encoding="utf-8",
+    )
+    skill_dir.joinpath("tests").mkdir()
+    skill_dir.joinpath("tests", "helper_test.py").write_text("def test_ok():\n    pass\n", encoding="utf-8")
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_RUNTIME_BOUNDARY])
+
+    assert _has_finding(result, LINT_SKILL_RUNTIME_BOUNDARY, "skill-runtime-evaluator-hook")
+
+
+def test_run_v1_lints_reports_design_doc_reference_in_shared_skill(tmp_path):
+    # nvflare-shared is an internal (non-triggered) skill referenced by the other
+    # skills; its runtime content is scanned like any other skill record, so a
+    # design-doc reference in it is flagged and attributed to nvflare-shared.
+    root = tmp_path / "skills"
+    _write_skill(root, "nvflare-valid-skill")
+    _write_skill(
+        root,
+        "nvflare-shared",
+        status="internal",
+        body="See docs/design/agent_skill_operating_model.md for the policy.\n",
+    )
+
+    result = run_v1_lints(root, checks=[LINT_SKILL_RUNTIME_BOUNDARY])
+
+    findings = [f for f in result["findings"] if f.get("code") == "skill-runtime-design-doc-ref"]
+    assert findings and any(f.get("skill") == "nvflare-shared" for f in findings)
+
+
+def test_run_v1_lints_allows_evaluation_language_in_runtime_content(tmp_path):
+    _write_skill(
+        tmp_path / "skills",
+        "nvflare-valid-skill",
+        body=(
+            "Use when converting PyTorch training code.\n"
+            "Do not use for Kubernetes deployment.\n"
+            "Convert the evaluation loop and report metrics from trainer.validate().\n"
+            "When the task is evaluate-only, select the FedEval recipe and evaluate the model.\n"
+        ),
+    )
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_RUNTIME_BOUNDARY])
+
+    assert result["findings"] == []
 
 
 def _write_skill(
@@ -549,21 +682,25 @@ def _write_skill(
 ):
     skill_dir = root / name
     skill_dir.mkdir(parents=True)
-    status_line = f"status: {status}\n" if status else ""
+    status_line = f"  status: {status}\n" if status else ""
     skill_dir.joinpath("SKILL.md").write_text(
         "---\n"
         f"name: {name}\n"
         f"description: {description}\n"
-        'min_flare_version: "2.8.0"\n'
-        "blast_radius: edits_files\n"
+        "metadata:\n"
+        '  min_flare_version: "2.8.0"\n'
+        "  blast_radius: edits_files\n"
+        f"  category: {category}\n"
         f"{status_line}"
         "---\n"
         "\n"
         f"{body}",
         encoding="utf-8",
     )
-    evals_dir = skill_dir / "evals"
-    evals_dir.mkdir()
+    # Eval suites live outside the skill tree, one dir per skill name under the
+    # default eval root beside the skills root (dev_tools/agent/skill_evals/).
+    evals_dir = root.parent / "dev_tools" / "agent" / "skill_evals" / name
+    evals_dir.mkdir(parents=True)
     if write_fixture:
         files_dir = evals_dir / "files"
         files_dir.mkdir()
@@ -577,52 +714,6 @@ def _write_skill(
         encoding="utf-8",
     )
     return skill_dir
-
-
-def _write_design_docs(tmp_path, skills, *, category="Conversion", tier="bundle"):
-    docs_root = tmp_path / "docs"
-    docs_root.mkdir(exist_ok=True)
-    catalog_rows = "\n".join(f"| {category} | `{skill}` | {tier} | Test skill. |" for skill in skills)
-    conversion_rows = "\n".join(f"| PyTorch | `{skill}` | Test scope. | Test fixture. | {tier} |" for skill in skills)
-    lint_rows = "\n".join(f"| `{lint_id}` | Test lint definition. |" for lint_id in V1_LINT_IDS)
-
-    docs_root.joinpath("agent_integration.md").write_text(
-        "# Agent Integration\n\n"
-        "## Product Skill Catalog\n\n"
-        "| Category | Skill | Tier | Purpose |\n"
-        "| --- | --- | --- | --- |\n"
-        f"{catalog_rows}\n",
-        encoding="utf-8",
-    )
-    docs_root.joinpath("agent_skill_authoring.md").write_text(
-        "# Agent Skill Authoring\n\n"
-        "## Conversion Skill Families\n\n"
-        "| Code Family | Skill | Scope | Current Repo Evidence | Tier |\n"
-        "| --- | --- | --- | --- | --- |\n"
-        f"{conversion_rows}\n",
-        encoding="utf-8",
-    )
-    docs_root.joinpath("agent_skill_evaluation.md").write_text(
-        "# Agent Skill Evaluation\n\n"
-        "## V1 Engineering Lints\n\n"
-        "| Check | Definition |\n"
-        "| --- | --- |\n"
-        f"{lint_rows}\n",
-        encoding="utf-8",
-    )
-    docs_root.joinpath("agent_implementation_plan.md").write_text(
-        "# Agent Implementation Plan\n\n" "[V1 Engineering Lints](agent_skill_evaluation.md#v1-engineering-lints)\n",
-        encoding="utf-8",
-    )
-    docs_root.joinpath("agent_skills_deferred_roadmap.md").write_text(
-        "# Agent Skills Deferred Roadmap\n",
-        encoding="utf-8",
-    )
-    docs_root.joinpath("skills_architecture.md").write_text(
-        "# Skills Architecture\n\n" "[V1 Engineering Lints](agent_skill_evaluation.md#v1-engineering-lints)\n",
-        encoding="utf-8",
-    )
-    return docs_root
 
 
 def _symlink_dir_or_skip(target, link):
@@ -640,7 +731,7 @@ def _default_evals(name, *, category="conversion", adjacent_negative=True, inclu
                 "id": "positive",
                 "prompt": "Convert PyTorch training code into a FLARE job.",
                 "expected_output": "A validated FLARE job.",
-                "files": ["evals/files/input.py"],
+                "files": ["files/input.py"],
                 "assertions": ["Uses the expected skill."],
                 "nvflare": {
                     "expected_skill": name,
