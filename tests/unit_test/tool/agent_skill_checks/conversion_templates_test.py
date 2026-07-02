@@ -39,6 +39,11 @@ def _load_module(path: Path):
     return module
 
 
+class _FloatOverflow:
+    def __float__(self):
+        raise OverflowError("step count too large")
+
+
 def test_pytorch_eval_template_computes_metric_against_toy_model():
     torch = pytest.importorskip("torch")
     module = _load_module(PT_TEMPLATES / "client_with_eval.py")
@@ -121,10 +126,13 @@ def test_custom_aggregator_template_averages_per_key_with_mismatched_keys():
     assert result.params["only_b"][0] == pytest.approx(9.0)
 
 
-@pytest.mark.parametrize("bad_steps", [-5, 0, float("nan"), float("inf"), "abc", True, None])
+@pytest.mark.parametrize(
+    "bad_steps",
+    [-5, 0, float("nan"), float("inf"), "abc", True, None, pytest.param(_FloatOverflow(), id="overflow")],
+)
 def test_custom_aggregator_template_falls_back_to_unit_weight_for_bad_step_counts(bad_steps):
-    # Negative / non-finite / non-numeric / bool / missing step metadata must
-    # fall back to weight 1.0 (never corrupt or crash the weighted average).
+    # Negative / non-finite / non-numeric / bool / missing / overflowing step
+    # metadata must fall back to weight 1.0 (never corrupt or crash the average).
     import numpy as np
 
     from nvflare.apis.dxo import MetaKey

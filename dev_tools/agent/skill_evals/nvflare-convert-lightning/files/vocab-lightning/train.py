@@ -17,7 +17,6 @@ import torch
 from model import LitTextCNN
 from torch.utils.data import DataLoader, TensorDataset
 
-
 TEXTS = [
     "federated learning protects local data",
     "secure aggregation keeps updates private",
