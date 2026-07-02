@@ -569,6 +569,23 @@ def test_run_v1_lints_flags_nested_eval_dir_inside_skill(tmp_path):
     assert _has_finding(result, LINT_SKILL_RUNTIME_BOUNDARY, "skill-runtime-eval-dir-in-skill")
 
 
+def test_iter_files_no_follow_prunes_excluded_dirs(tmp_path):
+    root = tmp_path / "runtime"
+    root.joinpath("references").mkdir(parents=True)
+    root.joinpath("references", "guide.md").write_text("runtime guide\n", encoding="utf-8")
+    root.joinpath("evals", "fixtures").mkdir(parents=True)
+    root.joinpath("evals", "fixtures", "case.md").write_text("fixture\n", encoding="utf-8")
+    root.joinpath("__pycache__", "nested").mkdir(parents=True)
+    root.joinpath("__pycache__", "nested", "cached.py").write_text("cached\n", encoding="utf-8")
+
+    files = {
+        path.relative_to(root).as_posix()
+        for path in lints_module._iter_files_no_follow(root, excluded_dir_names={"evals", "__pycache__"})
+    }
+
+    assert files == {"references/guide.md"}
+
+
 def test_run_v1_lints_scans_non_public_skill_runtime_content(tmp_path):
     _write_skill(
         tmp_path / "skills",
