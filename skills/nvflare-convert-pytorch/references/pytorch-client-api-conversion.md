@@ -103,7 +103,7 @@ ask in interactive mode or fail closed in unattended mode.
 
 This template is self-contained packaged guidance; do not depend on NVFLARE
 repository `examples/` being present in the user's environment. The runnable
-form ships at `assets/client_with_eval.py`; adapt it rather than inventing a
+form ships at `../assets/client_with_eval.py`; adapt it rather than inventing a
 new structure.
 
 ```python

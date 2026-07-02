@@ -51,7 +51,7 @@ For evaluation-only / FedEval conversions, run `trainer.validate(...)` (the
 patched trainer sends the validation metrics) and **do not call
 `trainer.fit(...)`** — training was not requested, and fitting after the metrics
 are sent can train an unwanted round or block the task. The packaged
-`assets/lightning_client.py` `main(..., evaluate_only=True)` skips `fit`.
+`../assets/lightning_client.py` `main(..., evaluate_only=True)` skips `fit`.
 
 ## Patch Ownership Rules
 
@@ -92,7 +92,7 @@ Keep evaluation inside Lightning; do not reuse the raw PyTorch
 
 This template is self-contained packaged guidance; do not depend on NVFLARE
 repository `examples/` being present in the user's environment. The runnable
-form ships at `assets/lightning_client.py`; adapt it rather than inventing a
+form ships at `../assets/lightning_client.py`; adapt it rather than inventing a
 new structure.
 
 ## Preserve Lightning Behavior

@@ -359,7 +359,9 @@ def _assert_runtime_markdown_references_resolve(root: Path) -> None:
         if "evals" in rel_parts:
             continue
         text = markdown_path.read_text(encoding="utf-8")
-        for ref in sorted(set(re.findall(r"`([^`]+\.md)`", text))):
+        refs = set(re.findall(r"`([^`]+\.md)`", text))
+        refs.update(re.findall(r"`([^`]*assets/[^`]+\.py)`", text))
+        for ref in sorted(refs):
             ref_path = Path(ref)
             if ref_path.is_absolute():
                 continue
