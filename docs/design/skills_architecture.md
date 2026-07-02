@@ -147,9 +147,10 @@ is a deliberate invariant, not an accident of the current code:
 - Separate the two input surfaces by check type: **runtime-boundary checks**
   validate shippable artifacts only (`skills/`, `SKILL.md`, `references/`,
   `skills/_shared/`) and reject embedded `evals/` directories, while
-  **trigger, process-metric, and fixture checks** deliberately consume the
-  repo-only eval suites under `evals_root` to verify positive/negative trigger
-  coverage and fixtures. Eval suites are never shipped in the wheel.
+  **trigger, coverage, process-metric, and fixture checks** deliberately consume
+  the repo-only eval suites under `evals_root` to verify positive/negative
+  trigger coverage, global-negative coverage, policy coverage behavior IDs, and
+  fixtures. Eval suites are never shipped in the wheel.
 - `SKILL.md` is a **runtime artifact** loaded by the agent. Frontmatter fields
   must be runtime or public skill metadata. Do not add offline-lint-only fields
   to its frontmatter.
