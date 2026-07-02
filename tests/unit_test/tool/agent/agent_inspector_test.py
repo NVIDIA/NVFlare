@@ -611,12 +611,20 @@ def test_inspect_stray_lightning_import_is_mixed_framework_not_flare_mixed_works
 
 
 def test_inspect_torch_ops_inside_lightning_module_with_unrelated_entry_routes_to_lightning(tmp_path):
-    # torch.optim/losses/dataloaders inside a LightningModule file are not
-    # standalone PyTorch usage, so an unrelated entry point must not force the
-    # PyTorch base.
+    # A realistic LightningModule calls several torch APIs (optimizer, loss,
+    # dataloader). Those live in the same file as the active Lightning evidence,
+    # so they are Lightning code, not standalone PyTorch usage. Even though the
+    # raw torch-call count exceeds the single LightningModule class, an unrelated
+    # entry point must not let that in-Lightning torch usage force the PyTorch
+    # base and misroute a genuine Lightning repo.
     (tmp_path / "litmodel.py").write_text(
-        "import torch\nimport lightning.pytorch as pl\nfrom torch.optim import SGD\n"
+        "import torch\nimport lightning.pytorch as pl\n"
+        "from torch.optim import SGD\nfrom torch.utils.data import DataLoader\n"
         "class LitNet(pl.LightningModule):\n"
+        "    def train_dataloader(self):\n"
+        "        return DataLoader([])\n"
+        "    def training_step(self, batch, batch_idx):\n"
+        "        return torch.nn.functional.cross_entropy(batch, batch)\n"
         "    def configure_optimizers(self):\n"
         "        return SGD(self.parameters(), lr=0.1)\n",
         encoding="utf-8",
