@@ -35,6 +35,13 @@ so the design's Configuration Surface can be synced separately:
   ``train_with_evaluation`` - power the rank-contract APIs flare.is_train()/is_evaluate()/
   is_submit_model().
 - ``memory_gc_rounds`` / ``cuda_empty_cache`` - periodic GC / CUDA cache management
+
+Deliberately excluded (per FLARE-2698): ``params_exchange_format`` / ``params_transfer_type`` /
+``server_expected_format`` / ``from_nvflare_converter_id`` / ``to_nvflare_converter_id``. Param
+conversion moves from executor-owned ParamsConverters to send/receive filters at the client
+edge (the intermediate layers pass through), so these are not frozen into this surface. The
+transfer type (FULL/DIFF) remains a Client API concern (model_registry) and is decided
+separately from the converter removal.
   (public on ScriptRunner and both legacy executors).
 """
 
@@ -53,7 +60,6 @@ from nvflare.apis.utils.analytix_utils import send_analytic_dxo
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendContext, ClientAPIBackendSpec
 from nvflare.app_common.widgets.convert_to_fed_event import FED_EVENT_PREFIX
-from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
 
@@ -106,11 +112,6 @@ class ClientAPIExecutor(Executor):
         heartbeat_timeout: float = _DEFAULT_HEARTBEAT_TIMEOUT,
         task_wait_timeout: Optional[float] = None,
         result_wait_timeout: Optional[float] = None,
-        params_exchange_format: str = ExchangeFormat.NUMPY,
-        params_transfer_type: str = TransferType.FULL,
-        server_expected_format: str = ExchangeFormat.NUMPY,
-        from_nvflare_converter_id: Optional[str] = None,
-        to_nvflare_converter_id: Optional[str] = None,
         train_task_name: str = AppConstants.TASK_TRAIN,
         evaluate_task_name: str = AppConstants.TASK_VALIDATION,
         submit_model_task_name: str = AppConstants.TASK_SUBMIT_MODEL,
@@ -156,15 +157,6 @@ class ClientAPIExecutor(Executor):
             result_wait_timeout (Optional[float]): Control-side bound for retrieving the task
                 result. Payload transfer completion is governed by the shared transfer layer,
                 not by this value. None means no timeout.
-            params_exchange_format (str): Format to exchange parameters with the training
-                script, e.g. "pytorch", "numpy", "raw" (see ExchangeFormat).
-            params_transfer_type (str): "FULL" (whole model) or "DIFF" (difference only).
-            server_expected_format (str): Format to exchange parameters between server and
-                client (see ExchangeFormat).
-            from_nvflare_converter_id (Optional[str]): Component id of the ParamsConverter
-                applied to task data sent from the NVFlare controller side to the trainer side.
-            to_nvflare_converter_id (Optional[str]): Component id of the ParamsConverter
-                applied to results sent from the trainer side to the NVFlare controller side.
             train_task_name (str): Task name treated as "train" by flare.is_train() (rank
                 contract). Defaults to AppConstants.TASK_TRAIN.
             evaluate_task_name (str): Task name treated as "evaluate" by flare.is_evaluate().
@@ -259,11 +251,6 @@ class ClientAPIExecutor(Executor):
         self._heartbeat_timeout = heartbeat_timeout
         self._task_wait_timeout = task_wait_timeout
         self._result_wait_timeout = result_wait_timeout
-        self._params_exchange_format = params_exchange_format
-        self._params_transfer_type = params_transfer_type
-        self._server_expected_format = server_expected_format
-        self._from_nvflare_converter_id = from_nvflare_converter_id
-        self._to_nvflare_converter_id = to_nvflare_converter_id
         self._train_task_name = train_task_name
         self._evaluate_task_name = evaluate_task_name
         self._submit_model_task_name = submit_model_task_name
@@ -423,11 +410,6 @@ class ClientAPIExecutor(Executor):
             heartbeat_timeout=self._heartbeat_timeout,
             task_wait_timeout=self._task_wait_timeout,
             result_wait_timeout=self._result_wait_timeout,
-            params_exchange_format=self._params_exchange_format,
-            params_transfer_type=self._params_transfer_type,
-            server_expected_format=self._server_expected_format,
-            from_nvflare_converter_id=self._from_nvflare_converter_id,
-            to_nvflare_converter_id=self._to_nvflare_converter_id,
             train_task_name=self._train_task_name,
             evaluate_task_name=self._evaluate_task_name,
             submit_model_task_name=self._submit_model_task_name,

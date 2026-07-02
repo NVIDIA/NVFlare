@@ -41,7 +41,6 @@ from nvflare.app_common.executors.client_api_executor import (
     ClientAPIExecutor,
     ExecutionMode,
 )
-from nvflare.client.config import ExchangeFormat, TransferType
 
 # The frozen V1 constructor surface (design: "Configuration Surface" in
 # docs/design/client_api_execution_modes.md, plus the load-bearing args added beyond that list -
@@ -60,11 +59,6 @@ FROZEN_CONSTRUCTOR_PARAMS = [
     "heartbeat_timeout",
     "task_wait_timeout",
     "result_wait_timeout",
-    "params_exchange_format",
-    "params_transfer_type",
-    "server_expected_format",
-    "from_nvflare_converter_id",
-    "to_nvflare_converter_id",
     "train_task_name",
     "evaluate_task_name",
     "submit_model_task_name",
@@ -159,11 +153,6 @@ class TestConstructorValidation:
             heartbeat_timeout=20.0,
             task_wait_timeout=300.0,
             result_wait_timeout=600.0,
-            params_exchange_format=ExchangeFormat.PYTORCH,
-            params_transfer_type=TransferType.DIFF,
-            server_expected_format=ExchangeFormat.NUMPY,
-            from_nvflare_converter_id="from_converter",
-            to_nvflare_converter_id="to_converter",
             train_task_name="my_train",
             evaluate_task_name="my_eval",
             submit_model_task_name="my_submit",
@@ -173,8 +162,6 @@ class TestConstructorValidation:
         )
         assert executor._command == "torchrun --nproc_per_node=2 custom/train.py"
         assert executor._launch_once is False
-        assert executor._params_exchange_format == ExchangeFormat.PYTORCH
-        assert executor._params_transfer_type == TransferType.DIFF
         assert executor._train_task_name == "my_train"
         assert executor._evaluate_task_name == "my_eval"
         assert executor._submit_model_task_name == "my_submit"
@@ -551,11 +538,6 @@ class TestSurfaceFreeze:
             "heartbeat_timeout": 30.0,
             "task_wait_timeout": None,
             "result_wait_timeout": None,
-            "params_exchange_format": ExchangeFormat.NUMPY,
-            "params_transfer_type": TransferType.FULL,
-            "server_expected_format": ExchangeFormat.NUMPY,
-            "from_nvflare_converter_id": None,
-            "to_nvflare_converter_id": None,
             "train_task_name": AppConstants.TASK_TRAIN,
             "evaluate_task_name": AppConstants.TASK_VALIDATION,
             "submit_model_task_name": AppConstants.TASK_SUBMIT_MODEL,
