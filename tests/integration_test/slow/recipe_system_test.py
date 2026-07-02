@@ -30,67 +30,13 @@ import os
 import numpy as np
 
 from nvflare.apis.fl_constant import WorkspaceConstants
+from nvflare.app_common.default_component_policy import DEFAULT_CLASS_ALLOW_LIST
 from nvflare.app_common.np.recipes import NumpyCrossSiteEvalRecipe, NumpyFedAvgRecipe
 from nvflare.recipe import PocEnv, SimEnv
 from nvflare.recipe.utils import add_cross_site_evaluation
 
 INTEGRATION_TEST_ROOT = os.path.dirname(os.path.dirname(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(INTEGRATION_TEST_ROOT))
-CSE_ONLY_DUMMY_VALIDATOR_ALLOW_LIST = [
-    "nvflare.app_common.np.np_model_locator.NPModelLocator",
-    "nvflare.app_common.np.np_validator.NPValidator",
-    "nvflare.app_common.widgets.validation_json_generator.ValidationJsonGenerator",
-    "nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval",
-]
-
-
-def _write_simulator_resources(workspace_root: str, class_allow_list: list[str]):
-    local_dir = os.path.join(workspace_root, WorkspaceConstants.SITE_FOLDER_NAME)
-    os.makedirs(local_dir, exist_ok=True)
-    with open(os.path.join(local_dir, WorkspaceConstants.RESOURCES_CONFIG), "w") as f:
-        json.dump(
-            {
-                "format_version": 2,
-                "class_allow_list": class_allow_list,
-            },
-            f,
-            indent=4,
-        )
-
-
-def _collect_component_paths(element):
-    paths = set()
-    if isinstance(element, dict):
-        component_path = element.get("path")
-        if component_path is None:
-            component_path = element.get("class_path")
-        if isinstance(component_path, str):
-            paths.add(component_path)
-        for value in element.values():
-            paths.update(_collect_component_paths(value))
-    elif isinstance(element, list):
-        for value in element:
-            paths.update(_collect_component_paths(value))
-    return paths
-
-
-def _assert_allow_list_matches_exported_job(recipe, export_root, job_name: str, class_allow_list: list[str]):
-    recipe.export(str(export_root))
-    job_root = os.path.join(export_root, job_name)
-    actual_paths = set()
-    for root, _, files in os.walk(job_root):
-        for file_name in files:
-            if file_name not in ("config_fed_server.json", "config_fed_client.json"):
-                continue
-            with open(os.path.join(root, file_name)) as f:
-                actual_paths.update(_collect_component_paths(json.load(f)))
-
-    expected_paths = set(class_allow_list)
-    missing = expected_paths - actual_paths
-    extra = actual_paths - expected_paths
-    assert (
-        actual_paths == expected_paths
-    ), f"Allow-list mismatch for job '{job_name}': missing from config={missing}, extra in config={extra}"
 
 
 class TestRecipeSystemIntegration:
@@ -168,10 +114,6 @@ class TestRecipeSystemIntegration:
         np.save(str(model_file), np.array([1.0, 2.0, 3.0]))
         workspace_root = str(tmp_path / "cse_only_dummy")
         job_name = "cse-only-dummy"
-        _write_simulator_resources(
-            os.path.join(workspace_root, job_name),
-            CSE_ONLY_DUMMY_VALIDATOR_ALLOW_LIST,
-        )
         env = SimEnv(num_clients=2, workspace_root=workspace_root)
         recipe = NumpyCrossSiteEvalRecipe(
             name=job_name,
@@ -179,18 +121,18 @@ class TestRecipeSystemIntegration:
             initial_ckpt=str(model_file),
             # No eval_script -> NPValidator on clients (submit_model returns OK)
         )
-        _assert_allow_list_matches_exported_job(
-            recipe,
-            tmp_path / "cse_only_dummy_export",
-            job_name,
-            CSE_ONLY_DUMMY_VALIDATOR_ALLOW_LIST,
-        )
         run = recipe.execute(env)
         assert run.get_job_id() == job_name
         result_path = run.get_result()
         expected_result = os.path.join(env.workspace_root, run.get_job_id())
         assert result_path == expected_result
         assert os.path.isdir(result_path)
+        resources_file = os.path.join(
+            result_path, WorkspaceConstants.SITE_FOLDER_NAME, WorkspaceConstants.DEFAULT_RESOURCES_CONFIG
+        )
+        with open(resources_file) as f:
+            resources = json.load(f)
+        assert resources["class_allow_list"] == list(DEFAULT_CLASS_ALLOW_LIST)
         # CSE writes cross_val_results.json under server/simulate_job/cross_site_val/
         cse_results_file = os.path.join(
             result_path, "server", "simulate_job", "cross_site_val", "cross_val_results.json"

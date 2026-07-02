@@ -83,6 +83,27 @@ class JobMetaKey(str, Enum):
         return self.value
 
 
+# Job metadata keys a recipe author may set through nvflare.recipe.set_recipe_meta().
+# This is the single source of truth for that classification; keep it next to JobMetaKey
+# so it is updated alongside the enum (and can be consulted by JobMetaValidator).
+#
+# Only pure-metadata keys that the server honors as submitted are listed. Intentionally excluded:
+# - Keys with dedicated, validated FedJob constructor fields (e.g. MIN_CLIENTS,
+#   MANDATORY_CLIENTS): setting them through meta_props would diverge from the value the
+#   recipe already used to build its controller/scheduler config. Set those through the
+#   recipe/FedJob constructor.
+# - STUDY: the server assigns it from the admin session's active study at job submission,
+#   so a recipe-set value would be silently overwritten.
+USER_SETTABLE_JOB_META_KEYS = frozenset(
+    {
+        JobMetaKey.RESOURCE_SPEC,
+        JobMetaKey.JOB_LAUNCHER_SPEC,
+        JobMetaKey.SCOPE,
+        JobMetaKey.CUSTOM_PROPS,
+    }
+)
+
+
 class SubmitRecordState(str, Enum):
     CREATING = "creating"
     CREATED = "created"
