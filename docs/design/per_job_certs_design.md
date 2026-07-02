@@ -29,7 +29,6 @@ Non-goals of this phase (see Future Work):
 
 - Removing site keys from job workspaces / container bundles. The mechanism
   introduced here is the prerequisite for that hardening.
-- Issuer-based authorization (rejecting job certs presented at site scope).
 - Certificate revocation. Short validity plus job-workspace teardown bound the
   exposure window instead.
 
@@ -145,6 +144,20 @@ this phase.
 If the job credential is absent — feature disabled, old server, non-secure
 mode, simulator — cell creation uses the site certs exactly as today.
 
+## Site-Scope Rejection
+
+A job cert is a valid `CN=<site>` certificate chaining to the project root, so
+without an extra check a leaked job key could be replayed at site scope for its
+validity window — most notably to register a rogue CP (client registration
+accepts a caller-supplied cert chain). All site-scope identity assertions
+funnel through `IdentityVerifier.verify_common_name()` (client registration,
+admin login, and the client's verification of the server), and no job cell
+ever legitimately asserts identity there. `verify_common_name()` therefore
+rejects any certificate carrying the job-ID extension. The rejection is keyed
+on the extension, not the issuer, so it holds regardless of which CA issued
+the certificate (this also keeps future HA setups with multiple job CAs
+simple).
+
 ## Compatibility
 
 | Deployment | Behavior |
@@ -156,17 +169,19 @@ mode, simulator — cell creation uses the site certs exactly as today.
 
 ## Future Work
 
-1. **Issuer-based enforcement (the security payoff).** Accept certificates
-   issued by the job CA only for job-scoped FQCNs whose job ID matches the
-   certificate's job-ID extension, and require root-issued certificates at site
-   scope. Until this lands, a leaked job cert is still a valid `CN=<site>`
-   certificate while unexpired.
+1. **Job-FQCN binding in cellnet.** Site-scope rejection is implemented (see
+   above). The remaining enforcement is at the cellnet message-crypto layer:
+   accept a peer cert carrying a job-ID extension only from an FQCN whose job
+   suffix matches, preventing one job's leaked key from impersonating another
+   job's cell. Deferred until the sub-worker/workspace redesign settles the
+   process and FQCN layout.
 2. **Site-key isolation.** Stop shipping `client.key` / `server.key` into job
    workspaces, workspace-transfer bundles, and job-pod Secrets once job cells
-   no longer need them.
+   no longer need them. The CP registration auth token and its signature,
+   currently passed to job processes on the command line, belong on the same
+   list.
 3. **CSR mode.** Optional variant where CP generates the keypair and sends a
    CSR, so private keys never transit SP→CP.
-4. **Renewal** for jobs that outlive the certificate validity.
 
 ## Unresolved Questions
 
