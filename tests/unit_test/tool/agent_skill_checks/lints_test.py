@@ -542,6 +542,19 @@ def test_run_v1_lints_does_not_flag_legitimate_runtime_words(tmp_path, safe_line
     assert result["findings"] == []
 
 
+def test_run_v1_lints_flags_eval_dir_inside_skill(tmp_path):
+    # A stray evals/ suite inside a shipped skill dir must be flagged; eval
+    # suites belong in the repo-only eval root.
+    skill_dir = _write_skill(tmp_path / "skills", "nvflare-valid-skill")
+    stray_evals = skill_dir / "evals"
+    stray_evals.mkdir()
+    stray_evals.joinpath("evals.json").write_text("{}\n", encoding="utf-8")
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_RUNTIME_BOUNDARY])
+
+    assert _has_finding(result, LINT_SKILL_RUNTIME_BOUNDARY, "skill-runtime-eval-dir-in-skill")
+
+
 def test_run_v1_lints_scans_non_public_skill_runtime_content(tmp_path):
     _write_skill(
         tmp_path / "skills",

@@ -30,6 +30,10 @@ MANIFEST_SCHEMA_VERSION = "1"
 # dev_tools/agent/skill_evals/), so packaging only needs to skip byte-code and
 # caches. There is no dev-vs-release content split.
 IGNORED_SKILL_FILE_NAMES = {"__pycache__", "*.pyc", "*.pyo"}
+# Names that must never ship inside a skill even if present. Eval suites belong
+# in dev_tools/agent/skill_evals/; fail closed so a stray skills/<skill>/evals/
+# cannot be bundled or installed and re-expose grading-oracle data.
+SKILL_PACKAGING_EXCLUDE_NAMES = IGNORED_SKILL_FILE_NAMES | {"evals"}
 SHARED_SKILL_REFERENCE_DIR = "_shared"
 HASH_READ_CHUNK_BYTES = 1024 * 1024
 
@@ -72,7 +76,7 @@ def build_skill_manifest(
     root = Path(skills_root)
     skills = []
     findings = []
-    source_hash_exclude_names = set(IGNORED_SKILL_FILE_NAMES)
+    source_hash_exclude_names = set(SKILL_PACKAGING_EXCLUDE_NAMES)
     if root.is_dir():
         for child in sorted(root.iterdir(), key=lambda p: p.name):
             if _should_skip_skill_dir(child):
@@ -176,7 +180,7 @@ def copy_released_skills_to_bundle(
         source_type="wheel",
         nvflare_version=nvflare_version,
     )
-    ignore_names = set(IGNORED_SKILL_FILE_NAMES)
+    ignore_names = set(SKILL_PACKAGING_EXCLUDE_NAMES)
     _copy_shared_references_to_bundle(source_root, target_root, ignore_names=ignore_names)
     for skill in manifest["skills"]:
         shutil.copytree(
