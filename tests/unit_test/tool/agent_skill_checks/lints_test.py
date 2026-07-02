@@ -555,6 +555,20 @@ def test_run_v1_lints_flags_eval_dir_inside_skill(tmp_path):
     assert _has_finding(result, LINT_SKILL_RUNTIME_BOUNDARY, "skill-runtime-eval-dir-in-skill")
 
 
+def test_run_v1_lints_flags_nested_eval_dir_inside_skill(tmp_path):
+    # Packaging strips directories named "evals" at any depth, so a nested
+    # references/evals/ suite is silently omitted from bundles. The lint must
+    # match that depth and flag it, not only the top-level evals/ dir.
+    skill_dir = _write_skill(tmp_path / "skills", "nvflare-nested-eval-skill")
+    nested_evals = skill_dir / "references" / "evals"
+    nested_evals.mkdir(parents=True)
+    nested_evals.joinpath("howto.md").write_text("# fixture notes\n", encoding="utf-8")
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_RUNTIME_BOUNDARY])
+
+    assert _has_finding(result, LINT_SKILL_RUNTIME_BOUNDARY, "skill-runtime-eval-dir-in-skill")
+
+
 def test_run_v1_lints_scans_non_public_skill_runtime_content(tmp_path):
     _write_skill(
         tmp_path / "skills",
