@@ -34,18 +34,24 @@ def evaluate(model, val_loader, device="cpu"):
 
     Replace the accuracy computation with the source project's metric while
     keeping its averaging denominator. Fails closed on empty evaluation data
-    instead of reporting a metric from zero samples.
+    instead of reporting a metric from zero samples. Restores the model's prior
+    train/eval mode so a later train_one_round() is not left with dropout and
+    batchnorm disabled.
     """
+    was_training = model.training
     model.eval()
     correct = 0
     total = 0
-    with torch.no_grad():
-        for features, labels in val_loader:
-            features = features.to(device)
-            labels = labels.to(device)
-            predictions = model(features).argmax(dim=1)
-            correct += (predictions == labels).sum().item()
-            total += labels.numel()
+    try:
+        with torch.no_grad():
+            for features, labels in val_loader:
+                features = features.to(device)
+                labels = labels.to(device)
+                predictions = model(features).argmax(dim=1)
+                correct += (predictions == labels).sum().item()
+                total += labels.numel()
+    finally:
+        model.train(was_training)
     if total == 0:
         raise RuntimeError("evaluation data is empty; cannot report metrics")
     return correct / total

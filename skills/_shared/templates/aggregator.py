@@ -22,9 +22,26 @@ algorithm table, and it fits the standard ``FLModel`` exchange contract, so it
 needs no client-side change beyond sending step-count metadata.
 """
 
+import math
+
 from nvflare.apis.dxo import MetaKey
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
+
+
+def _step_weight(model: FLModel) -> float:
+    # Mirror the product's base_fedavg._get_num_steps_weight: use the client's
+    # step count only when it is a finite positive number; otherwise fall back
+    # to 1.0. Reject bool (a bool is an int in Python) and non-numeric/None, and
+    # never let negative or non-finite metadata corrupt the weighted average.
+    value = (model.meta or {}).get(MetaKey.NUM_STEPS_CURRENT_ROUND)
+    if isinstance(value, bool) or value is None:
+        return 1.0
+    try:
+        weight = float(value)
+    except (TypeError, ValueError):
+        return 1.0
+    return weight if math.isfinite(weight) and weight > 0 else 1.0
 
 
 class WeightedAggregator(ModelAggregator):
@@ -43,9 +60,7 @@ class WeightedAggregator(ModelAggregator):
         self._params_type = None
 
     def accept_model(self, model: FLModel):
-        # Coerce missing/non-positive step counts to weight 1.0, matching the
-        # product's own base_fedavg._get_num_steps_weight behavior.
-        weight = float(model.meta.get(MetaKey.NUM_STEPS_CURRENT_ROUND, 1) or 1)
+        weight = _step_weight(model)
         self._params_type = model.params_type
         for key, value in model.params.items():
             if key in self._weighted_sum:
