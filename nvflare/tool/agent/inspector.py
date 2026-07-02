@@ -461,8 +461,23 @@ def _rank_frameworks(state: InspectState) -> list[dict]:
 def _detect_primary_framework(state: InspectState, ranked: list[dict]) -> Optional[str]:
     if not ranked:
         return None
-    primary = ranked[0]["name"]
+    primary = _primary_by_confidence_and_entry_context(state, ranked)
     return frameworks.resolve_primary_framework(primary, state.framework_evidence, _FamilyResolver(state))
+
+
+def _primary_by_confidence_and_entry_context(state: InspectState, ranked: list[dict]) -> str:
+    # Frameworks are ranked by (confidence, name); a pure alphabetical tie-break
+    # would let e.g. an incidental torch utility beat the framework the entry
+    # point actually uses. When the top confidence is tied, prefer a framework
+    # whose evidence is tied to the entry context (imported/inspected file)
+    # before falling back to the alphabetical order.
+    top_confidence = ranked[0]["confidence"]
+    tied = [item["name"] for item in ranked if item["confidence"] == top_confidence]
+    if len(tied) > 1:
+        for name in tied:
+            if _framework_evidence_tied_to_entry_context(state, state.framework_evidence.get(name, [])):
+                return name
+    return ranked[0]["name"]
 
 
 class _FamilyResolver:
@@ -756,7 +771,10 @@ def _target_type(path: Path, state: InspectState, detected_framework: Optional[s
     if detected_framework and conversion_state in {"partial_client_api", "client_api_converted"}:
         return "mixed_workspace"
     if _is_mixed_family_workspace(state, detected_framework):
-        return "mixed_workspace"
+        # Distinct from the FLARE conversion "mixed_workspace": this means two
+        # frameworks of the same family (e.g. PyTorch + PyTorch Lightning) are
+        # present, not that a partial FLARE conversion exists.
+        return "mixed_framework_workspace"
     if detected_framework:
         return "training_repository"
     return "unknown_target"
@@ -764,7 +782,8 @@ def _target_type(path: Path, state: InspectState, detected_framework: Optional[s
 
 def _is_mixed_family_workspace(state: InspectState, detected_framework: Optional[str]) -> bool:
     # A family base (e.g. PyTorch) detected alongside its superset member
-    # (PyTorch Lightning) in the evidence is a mixed workspace.
+    # (PyTorch Lightning) in the evidence. Reported with a distinct target_type
+    # so it is not conflated with the FLARE conversion "mixed_workspace".
     return bool(frameworks.family_base_has_member(detected_framework, state.framework_evidence))
 
 

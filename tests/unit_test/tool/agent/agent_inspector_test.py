@@ -352,7 +352,7 @@ def test_inspect_mixed_pytorch_workspace_with_incidental_lightning_keeps_pytorch
     assert "pytorch_lightning" in framework_names
     assert framework_by_name["pytorch_lightning"]["confidence"] > framework_by_name["pytorch"]["confidence"]
     assert len(framework_by_name["pytorch_lightning"]["evidence"]) > len(framework_by_name["pytorch"]["evidence"])
-    assert data["target_type"] == "mixed_workspace"
+    assert data["target_type"] == "mixed_framework_workspace"
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
 
 
@@ -384,7 +384,7 @@ def test_inspect_incidental_lightning_does_not_demote_ranked_pytorch(tmp_path):
 
     framework_names = [framework["name"] for framework in data["frameworks"]]
     assert framework_names[:3] == ["pytorch", "xgboost", "pytorch_lightning"]
-    assert data["target_type"] == "mixed_workspace"
+    assert data["target_type"] == "mixed_framework_workspace"
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
 
 
@@ -411,7 +411,7 @@ def test_inspect_unrelated_active_lightning_helper_does_not_outweigh_pytorch_ent
     assert framework_names[0] == "pytorch"
     assert "pytorch_lightning" in framework_names
     assert "pytorch" in framework_names
-    assert data["target_type"] == "mixed_workspace"
+    assert data["target_type"] == "mixed_framework_workspace"
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
 
 
@@ -430,7 +430,7 @@ def test_inspect_sparse_pytorch_entry_with_lightning_helper_class_keeps_pytorch(
     framework_names = [framework["name"] for framework in data["frameworks"]]
     assert framework_names[0] == "pytorch"
     assert "pytorch_lightning" in framework_names
-    assert data["target_type"] == "mixed_workspace"
+    assert data["target_type"] == "mixed_framework_workspace"
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
 
 
@@ -454,7 +454,7 @@ def test_inspect_pytorch_entry_import_with_unrelated_active_lightning_helper_kee
     framework_names = [framework["name"] for framework in data["frameworks"]]
     assert framework_names[0] == "pytorch"
     assert "pytorch_lightning" in framework_names
-    assert data["target_type"] == "mixed_workspace"
+    assert data["target_type"] == "mixed_framework_workspace"
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
 
 
@@ -482,7 +482,7 @@ def test_inspect_entry_point_blocks_unreachable_active_lightning_helper_from_fal
     framework_names = [framework["name"] for framework in data["frameworks"]]
     assert framework_names[0] == "pytorch"
     assert "pytorch_lightning" in framework_names
-    assert data["target_type"] == "mixed_workspace"
+    assert data["target_type"] == "mixed_framework_workspace"
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
 
 
@@ -568,6 +568,48 @@ def test_inspect_dominant_lightning_module_with_unrelated_entry_routes_to_lightn
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
 
 
+def test_inspect_cross_family_confidence_tie_prefers_entry_context_framework(tmp_path):
+    # sklearn entry point + a torch utility can tie on evidence count; a pure
+    # alphabetical tie-break would pick pytorch and recommend the PyTorch skill.
+    # The framework whose evidence is tied to the entry point (sklearn) wins, so
+    # no conversion skill is recommended for the sklearn-dominant repo.
+    (tmp_path / "train.py").write_text(
+        "from sklearn.linear_model import LogisticRegression\n"
+        "from sklearn.model_selection import train_test_split\n"
+        "from sklearn.metrics import accuracy_score\n"
+        "def main():\n"
+        "    LogisticRegression()\n"
+        "if __name__ == '__main__':\n"
+        "    main()\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "util.py").write_text(
+        "import torch\nfrom torch.utils.data import DataLoader\ndef loader(ds):\n    return DataLoader(ds)\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    assert data["skill_selection"]["recommended_skills"] == []
+    assert data["frameworks"][0]["name"] == "sklearn"
+
+
+def test_inspect_stray_lightning_import_is_mixed_framework_not_flare_mixed_workspace(tmp_path):
+    # A plain PyTorch repo with a stray, unused `import pytorch_lightning` is a
+    # mixed-framework workspace, not the FLARE conversion "mixed_workspace".
+    (tmp_path / "train.py").write_text(
+        "import torch\nimport torch.nn as nn\nclass Net(nn.Module):\n    pass\n"
+        "def main():\n    Net()\nif __name__ == '__main__':\n    main()\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "misc.py").write_text("import pytorch_lightning\n", encoding="utf-8")
+
+    data = inspect_path(tmp_path)
+
+    assert data["target_type"] == "mixed_framework_workspace"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
+
+
 def test_inspect_torch_ops_inside_lightning_module_with_unrelated_entry_routes_to_lightning(tmp_path):
     # torch.optim/losses/dataloaders inside a LightningModule file are not
     # standalone PyTorch usage, so an unrelated entry point must not force the
@@ -631,7 +673,7 @@ def test_inspect_split_file_pytorch_model_with_unrelated_lightning_helper_keeps_
     framework_names = [framework["name"] for framework in data["frameworks"]]
     assert framework_names[0] == "pytorch"
     assert "pytorch_lightning" in framework_names
-    assert data["target_type"] == "mixed_workspace"
+    assert data["target_type"] == "mixed_framework_workspace"
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
 
 
