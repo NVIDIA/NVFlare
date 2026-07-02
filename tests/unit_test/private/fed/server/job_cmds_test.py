@@ -549,7 +549,8 @@ def test_submit_job_strips_user_supplied_from_hub_site(monkeypatch):
     assert JobMetaKey.FROM_HUB_SITE.value not in engine.job_def_manager.created_meta
 
 
-def test_submit_job_records_submitter_cert_validity(monkeypatch, tmp_path):
+@pytest.mark.parametrize("ephemeral_admin_cert", [False, True])
+def test_submit_job_records_only_ephemeral_submitter_cert_validity(monkeypatch, tmp_path, ephemeral_admin_cert):
     now = datetime.datetime.now(datetime.timezone.utc)
 
     class _Cert:
@@ -571,13 +572,19 @@ def test_submit_job_records_submitter_cert_validity(monkeypatch, tmp_path):
     engine = _FakeEngine()
     conn = _submit_conn(engine, str(zip_path))
 
-    JobCommandModule().submit_job(conn, ["submit_job", "job_folder"])
+    args = ["submit_job", "job_folder"]
+    if ephemeral_admin_cert:
+        args.append("--ephemeral-admin-cert")
+    JobCommandModule().submit_job(conn, args)
 
     assert conn.errors == []
-    assert engine.job_def_manager.created_meta[JobMetaKey.SUBMITTER_CERT_VALIDITY.value] == {
-        "not_before": _Cert.not_valid_before_utc.timestamp(),
-        "not_after": _Cert.not_valid_after_utc.timestamp(),
-    }
+    if ephemeral_admin_cert:
+        assert engine.job_def_manager.created_meta[JobMetaKey.SUBMITTER_CERT_VALIDITY.value] == {
+            "not_before": _Cert.not_valid_before_utc.timestamp(),
+            "not_after": _Cert.not_valid_after_utc.timestamp(),
+        }
+    else:
+        assert JobMetaKey.SUBMITTER_CERT_VALIDITY.value not in engine.job_def_manager.created_meta
 
 
 def test_submit_job_strips_forged_submitter_cert_validity(monkeypatch):

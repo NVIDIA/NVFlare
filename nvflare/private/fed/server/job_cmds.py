@@ -197,6 +197,7 @@ def _create_submit_job_cmd_parser():
     parser = SafeArgumentParser(prog=AdminCommandNames.SUBMIT_JOB)
     parser.add_argument("folder_name", help="Uploaded job folder name")
     parser.add_argument("--submit-token", dest="submit_token", help="retry-safe submit token")
+    parser.add_argument("--ephemeral-admin-cert", action="store_true")
     return parser
 
 
@@ -1618,6 +1619,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             parsed_args = parser.parse_args(args[1:])
             folder_name = parsed_args.folder_name
             submit_token = validate_submit_token(parsed_args.submit_token)
+            ephemeral_admin_cert = parsed_args.ephemeral_admin_cert
         except ValueError as e:
             conn.append_error(str(e), meta=make_meta(MetaStatusValue.SYNTAX_ERROR, str(e)))
             return
@@ -1687,9 +1689,10 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     )
                     return
 
-                submitter_cert_validity = _submitter_cert_validity(zip_file_name)
-                if submitter_cert_validity is not None:
-                    meta[JobMetaKey.SUBMITTER_CERT_VALIDITY.value] = submitter_cert_validity
+                if ephemeral_admin_cert:
+                    submitter_cert_validity = _submitter_cert_validity(zip_file_name)
+                    if submitter_cert_validity is not None:
+                        meta[JobMetaKey.SUBMITTER_CERT_VALIDITY.value] = submitter_cert_validity
 
                 # set submitter info
                 submitter = self._submitter_from_conn(conn)

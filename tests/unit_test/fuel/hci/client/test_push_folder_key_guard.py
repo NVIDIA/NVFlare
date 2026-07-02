@@ -45,6 +45,7 @@ def _make_push_folder_args_and_ctx(key_path, cert_path, folder_name="test_job"):
     api = MagicMock()
     api.client_key = key_path
     api.client_cert = cert_path
+    api.ephemeral_admin_cert_config = None
 
     ctx = MagicMock()
     ctx.get_command_entry.return_value = _make_cmd_entry()
@@ -209,16 +210,18 @@ def test_push_folder_refreshes_ephemeral_cert_before_signing(tmp_path):
     args, ctx = _make_push_folder_args_and_ctx(str(key_file), "/path/to/cert.crt", folder_name)
     api = ctx.get_api.return_value
     api.ensure_client_cert_valid = MagicMock()
+    api.ephemeral_admin_cert_config = {"provider": "step_ca"}
 
     with (
         patch("nvflare.fuel.hci.client.file_transfer.load_private_key_file", return_value=MagicMock()),
         patch("nvflare.fuel.hci.client.file_transfer.sign_folders"),
         patch("nvflare.fuel.hci.client.file_transfer.zip_directory_to_file"),
-        patch.object(api, "server_execute", return_value={}),
+        patch.object(api, "server_execute", return_value={}) as server_execute,
     ):
         module.push_folder(args, ctx)
 
     api.ensure_client_cert_valid.assert_called_once_with()
+    assert server_execute.call_args.args[0] == "admin.push_folder test_job --ephemeral-admin-cert"
 
 
 def test_push_folder_reconnects_when_cell_is_missing_after_failed_renewal_reconnect(tmp_path):

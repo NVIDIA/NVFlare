@@ -342,6 +342,8 @@ class FileTransferModule(CommandModule):
 
         folder_name = split_path(full_path)[1]
         parts = [cmd_entry.full_command_name(), folder_name]
+        if getattr(api, "ephemeral_admin_cert_config", None):
+            parts.append("--ephemeral-admin-cert")
         parts.extend(submit_args)
         command = join_args(parts)
         sender = _FileSender(out_file)
