@@ -120,6 +120,6 @@ def _validate_step_ca_url(url: str):
     parsed = urlparse(url)
     if parsed.scheme == "https" and parsed.netloc:
         return
-    if parsed.scheme == "http" and parsed.hostname in {"127.0.0.1", "localhost"}:
+    if parsed.scheme == "http" and parsed.hostname in {"127.0.0.1", "::1", "localhost"}:
         return
     raise EphemeralAdminCertError("step_ca provider_config.ca_url must use https; http is only allowed for localhost")

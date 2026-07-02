@@ -468,6 +468,12 @@ def test_step_ca_source_requires_ca_url():
         validate_step_ca_admin_cert_config({"provisioner": "nvflare-admin-oidc"})
 
 
+def test_step_ca_source_accepts_ipv6_loopback_http():
+    config = {"ca_url": "http://[::1]:9000", "provisioner": "nvflare-admin-oidc"}
+
+    assert validate_step_ca_admin_cert_config(config) == config
+
+
 def test_step_ca_source_times_out_step_command(monkeypatch, tmp_path):
     _ca_key, _ca_cert, root_ca_path = _make_root_ca(tmp_path)
     fake_step = _fake_step(monkeypatch, tmp_path, sleep=2)
