@@ -19,9 +19,8 @@ Use this path for Lightning conversion:
    `recipe.execute(SimEnv(...))`.
 5. Validate with `python job.py`, inspect terminal evidence, then export.
 
-Follow the Source Of Truth Boundary in
-`../../nvflare-shared/references/conversion-workflow.md`: public checks can stop the skill path;
-they cannot license a source-discovered replacement.
+Follow the shared Source Of Truth Boundary in
+`../../nvflare-shared/references/conversion-workflow.md`.
 
 ## Conversion Pattern
 
@@ -128,37 +127,29 @@ computed.
 
 ## Model Construction Consistency
 
-Follow the shared state-dict and constructor rules in
-`../../nvflare-shared/references/pytorch-model-exchange.md`. The Lightning-specific point is that
-the exchanged unit is the whole `LightningModule` managed by the patched
-trainer, so construct the identical `LightningModule` on the server through the
-recipe `model` config and on the client in `client.py`, not just the inner
-`torch.nn.Module`. Express shared arguments with a `model_args` dict, an
-explicit `{"class_path": "model.LitClass", "args": model_args}` recipe model
-config (prefer `class_path`; `path` is the normalized job-config key), or
-explicit `train_args`. Do not pass a live `LightningModule` instance as the
-recipe model input; when constructor args are not statically clear per
-`../../nvflare-shared/references/conversion-workflow.md`, ask in interactive mode or fail closed
-in unattended mode.
+Follow the shared model-config and construction-consistency rule in
+`../../nvflare-shared/references/conversion-workflow.md` ("Recipe Model Config"):
+same class and constructor args on server and client, explicit
+`{"class_path": ..., "args": ...}` config (no live instance), and
+derive-or-ask/fail-closed for required values.
+
+Lightning-specific delta: the exchanged unit is the whole `LightningModule`
+managed by the patched trainer, so construct the identical `LightningModule` on
+the server (via the recipe `model` config) and on the client in `client.py`, not
+just the inner `torch.nn.Module`. Express shared arguments as a `model_args`
+dict in the recipe model config (prefer `class_path`; `path` is the normalized
+job-config key).
 
 ## Source Layout
 
-Generated Lightning job source should normally contain:
-
-- `client.py`: Lightning Client API entry point that patches the trainer;
-- `job.py`: recipe or FedJob builder, simulation entry point, and export entry
-  point;
-- `model.py`: the `LightningModule` (and `LightningDataModule`) definition when
-  a new file is needed;
-- `aggregators.py`: only when the conversion includes custom aggregation (see
-  `../../nvflare-shared/references/conversion-workflow.md`, "Custom Aggregation");
-- `prepare_data.py` / `download_data.py`: only when the conversion generates
-  data setup code;
-- `requirements.txt` only when dependencies differ from the source project.
-
-Avoid ad hoc names such as `fl_train.py` unless the user requests them. Use
-`../../nvflare-shared/references/runtime-output-guidance.md` for runtime workspaces, exported job
-directories, and validation output locations.
+Use the canonical FLARE source layout defined in
+`../../nvflare-shared/references/conversion-workflow.md` ("Generated Job Layout").
+Lightning-specific delta: `client.py` patches the trainer as the model-exchange
+path, and `model.py` holds the `LightningModule` (and `LightningDataModule`)
+definition when a new file is needed. Avoid ad hoc names such as `fl_train.py`
+unless the user requests them, and use
+`../../nvflare-shared/references/runtime-output-guidance.md` for runtime
+workspaces, exported job directories, and validation output locations.
 
 ## Recipe Reuse
 

@@ -64,19 +64,19 @@ Cyclic recipes, use the local catalog and
 
 - Use `fedavg-pt` for standard horizontal federated training where clients train
   the same PyTorch model locally and the server aggregates model weights or
-  weight diffs across rounds.
-- Use `fedavg-he-pt` when the user asks for FedAvg with homomorphic encryption.
-- Use `fedprox-pt` when the user asks for FedProx or proximal loss behavior.
-- Use `fedopt-pt` when the user asks for server-side optimizer variants such as
-  FedAdam, FedYogi, or FedAdagrad behavior.
-- Use `scaffold-pt` when the user asks for SCAFFOLD-style control variates or
-  client-drift mitigation.
-- Use `cyclic-pt` when the user asks for sequential client-to-client model
-  transfer rather than server aggregation.
-- Use `swarm-pt` when the user asks for swarm learning or peer/client-parent
-  aggregation topology.
+  weight diffs across rounds. This is the default fast path.
 - Use `fedeval-pt` for evaluation-only jobs that send a checkpoint to sites and
   collect metrics without local training updates.
+- For any other algorithm or topology, do not assume a recipe name: select the
+  catalog recipe whose metadata (algorithm, aggregation, topology) matches the
+  request, confirmed with `nvflare recipe list --framework pytorch --format json`
+  and `nvflare recipe show <recipe> --format json`. The installed catalog is the
+  source of truth. Current names are examples to verify against the catalog, not
+  an authoritative mapping: `fedavg-he-pt` (FedAvg with homomorphic encryption),
+  `fedprox-pt` (FedProx / proximal loss), `fedopt-pt` (server-side optimizer
+  variants such as FedAdam / FedYogi / FedAdagrad), `scaffold-pt` (SCAFFOLD
+  control variates / client-drift mitigation), `cyclic-pt` (sequential
+  client-to-client transfer), `swarm-pt` (swarm / peer aggregation topology).
 - Ask the user before choosing when the requested FL workflow is not clear.
 
 ## Standard FedAvg Fast Path

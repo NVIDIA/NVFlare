@@ -183,6 +183,16 @@ conversion-time values derived from available source or config metadata that
 render as JSON-like args. Data-derived architecture values are acceptable only
 when the source makes them deterministic and shared across server and clients,
 such as a pinned `vocab_size` from source-provided vocabulary metadata.
+
+The server-side initial model and the client-side model must be constructed with
+the same class and the same constructor arguments. Derive any required
+constructor values (input dimension, vocabulary size, number of classes, hidden
+size, dropout, and similar) from the source code, dataset metadata, checkpoint
+metadata, or CLI args, and make them explicit in both the recipe model config
+and the client model-construction path. If they are not statically clear, ask in
+interactive mode or fail closed in unattended mode. Framework references state
+only their compatibility delta (PyTorch state-dict shapes, Lightning whole
+`LightningModule`).
 Factories, lambdas, partials, dynamic `**kwargs`, environment lookups, runtime
 config files unavailable during conversion, private site-local data,
 checkpoint-inferred architecture, and side-effectful code execution are not
@@ -320,11 +330,9 @@ draft, never run in a non-isolated unattended environment.
 - Run the final `python job.py` validation in the **foreground** and let it run
   to completion in the same step. Do not choose background execution for the
   final validation run.
-- A conversion is **not complete** until you have observed terminal completion
-  evidence (process exit code, server log reaching a Finished state, and a
-  metrics artifact such as `metrics_summary.json`, or a concrete explanation
-  for why metrics are unavailable). See `validation-evidence.md` for the exact
-  evidence contract.
+- A conversion is **not complete** until you have observed the terminal
+  completion evidence defined in `validation-evidence.md` (the exact evidence
+  contract lives there; do not restate it here).
 - Never emit a pending-status message as your final answer. Phrases like
   "the simulation is running in the background", "I'll be notified when it
   completes", "standing by", or "I'll wait" are **not** valid final answers:

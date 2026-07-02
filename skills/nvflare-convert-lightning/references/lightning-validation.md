@@ -12,17 +12,16 @@ covers Lightning-specific validation checks.
    using `uv pip` when available, before importing the user's Lightning code.
 2. Run local SimEnv validation with `python job.py`; follow
    `../../nvflare-shared/references/runtime-output-guidance.md` for workspace location.
-3. Run the final validation in the foreground to completion and confirm terminal
-   evidence before finalizing, per `../../nvflare-shared/references/conversion-workflow.md`
-   ("Final Validation Run Must Finish Before You Finalize") and
-   `../../nvflare-shared/references/validation-evidence.md`. Lightning-specific timing: the patched
-   `Trainer` start, callback setup, and logger flush make Lightning runs slower
-   than plain PyTorch, and DDP/multi-GPU jobs launch external processes (see
-   `lightning-ddp-and-tracking.md`) whose completion must also be observed before
-   you report success. Allow more wall-clock for the foreground run accordingly;
-   scheduled wakeups or progress logs are not success evidence. If the run times
-   out, report it as blocked or timed out with the current server/client log
-   evidence.
+3. Run the final validation to completion per the shared contract
+   (`../../nvflare-shared/references/conversion-workflow.md` hard-stop and
+   `../../nvflare-shared/references/validation-evidence.md` evidence contract).
+   Lightning-specific delta: the patched `Trainer` start, callback setup, and
+   logger flush make Lightning runs slower than plain PyTorch, and DDP/multi-GPU
+   jobs launch external processes (see `lightning-ddp-and-tracking.md`) whose
+   completion must also be observed before you report success. Allow more
+   wall-clock for the foreground run accordingly; scheduled wakeups or progress
+   logs are not success evidence. If the run times out, report it as blocked or
+   timed out with the current server/client log evidence.
 4. Validate export per `../../nvflare-shared/references/conversion-workflow.md` ("Export") when
    export is in scope.
 5. Report the declared primary/global metric scalar when one exists.

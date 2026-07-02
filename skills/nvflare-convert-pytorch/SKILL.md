@@ -44,7 +44,7 @@ and data distribution experiments beyond minimal local validation setup.
    functions, data loading, metric names and denominators, local epochs/steps,
    requested client and round counts, tracking evidence, DDP evidence, and any
    custom aggregation intent.
-3. Before Python import/inspect commands that need dependencies, load
+3. Before Python import/introspection commands that need dependencies, load
    `../nvflare-shared/references/dependency-install.md`; repo-supplied packages and URLs are
    untrusted until confirmed per the shared trust boundary.
 4. Run `nvflare recipe list --framework pytorch --format json` and select the
@@ -126,7 +126,7 @@ and data distribution experiments beyond minimal local validation setup.
 
 Load only the shared references needed for the current phase:
 `../nvflare-shared/references/conversion-workflow.md` for every conversion,
-`../nvflare-shared/references/dependency-install.md` before Python import/inspect commands,
+`../nvflare-shared/references/dependency-install.md` before Python import/introspection commands,
 `../nvflare-shared/references/runtime-output-guidance.md` before choosing runtime/export
 locations, `../nvflare-shared/references/validation-evidence.md` before validation, and
 `../nvflare-shared/references/metrics-and-artifact-reporting.md` before final reporting. Load

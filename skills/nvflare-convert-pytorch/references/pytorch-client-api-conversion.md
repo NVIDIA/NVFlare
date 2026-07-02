@@ -17,9 +17,8 @@ Use this path for plain PyTorch conversion:
    `recipe.execute(SimEnv(...))`.
 5. Validate with `python job.py`, inspect terminal evidence, then export.
 
-Follow the Source Of Truth Boundary in
-`../../nvflare-shared/references/conversion-workflow.md`: public checks can stop the skill path;
-they cannot license a source-discovered replacement.
+Follow the shared Source Of Truth Boundary in
+`../../nvflare-shared/references/conversion-workflow.md`.
 
 ## Conversion Pattern
 
@@ -50,24 +49,13 @@ Do not convert outbound weights to NumPy before sending.
 
 ## Source Layout
 
-For PyTorch conversions, the job source should normally contain:
-
-- `client.py`: FLARE Client API entry point;
-- `job.py`: recipe or FedJob builder, simulation entry point, and export entry
-  point;
-- `model.py`: copied, wrapped, or imported model definition when needed;
-- `aggregators.py`: only when the conversion includes custom aggregation (see
-  `../../nvflare-shared/references/conversion-workflow.md`, "Custom Aggregation");
-- `prepare_data.py` / `download_data.py`: only when the conversion generates
-  data setup code;
-- `requirements.txt` or a small requirements file only when dependencies differ
-  from the source project.
-
-Use `../../nvflare-shared/references/runtime-output-guidance.md` for runtime workspaces, exported
-job directories, and validation output locations.
-
-Avoid names such as `fl_train.py` for the generated FLARE Client API entry
-point unless the user explicitly requests that naming.
+Use the canonical FLARE source layout defined in
+`../../nvflare-shared/references/conversion-workflow.md` ("Generated Job Layout"):
+`client.py`, `model.py`, `job.py`, and the optional `aggregators.py`, data-setup,
+and requirements files. Avoid ad hoc entry-point names such as `fl_train.py`
+unless the user explicitly requests that naming, and use
+`../../nvflare-shared/references/runtime-output-guidance.md` for runtime
+workspaces, exported job directories, and validation output locations.
 
 For standard FedAvg, package shared generated files for all clients. Do not
 replace all-client deployment with explicit per-site deployment unless the
@@ -76,20 +64,16 @@ data-split settings, or launch behavior.
 
 ## Model Construction Consistency
 
-The model created by `job.py` for the server-side initial model and the model
-created by `client.py` before `load_state_dict` must have matching constructor
-arguments and state-dict shapes. When the original model needs arguments such as
-input dimension, vocabulary size, number of classes, hidden size, or dropout,
-make those values explicit in both places.
+Follow the shared model-config and construction-consistency rule in
+`../../nvflare-shared/references/conversion-workflow.md` ("Recipe Model Config"):
+same class and constructor args on server and client, explicit
+`{"class_path": ..., "args": ...}` config (no live `nn.Module` instance), and
+derive-or-ask/fail-closed for required values.
 
-Do not pass a live `nn.Module` instance as the recipe model input; generate the
-explicit `{"class_path": ..., "args": ...}` config per
-`../../nvflare-shared/references/conversion-workflow.md` ("Recipe Model Config"). Derive required
-constructor values from the source code, dataset metadata, vocab/config
-generation, checkpoint metadata, or CLI args before writing `job.py`, then pass
-them explicitly through the recipe model config and the client model
-construction path. If they are not statically clear, ask in interactive mode or
-fail closed in unattended mode.
+PyTorch-specific delta: the client loads `input_model.params` into the model
+with `load_state_dict`, so the server-initial model and the client model must
+have matching state-dict shapes (same parameter names and tensor shapes), not
+only matching constructor args.
 
 Acceptable patterns include:
 
