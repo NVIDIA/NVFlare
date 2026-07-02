@@ -12,16 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import os
 import tempfile
+from datetime import datetime
+from decimal import Decimal
 from unittest.mock import MagicMock
 
 import pytest
 
+from nvflare.apis.job_def import JobMetaKey
+from nvflare.job_config.api import FedJob
+from nvflare.recipe.spec import Recipe
 from nvflare.recipe.utils import (
     extract_persistor_id,
     prepare_initial_ckpt,
     resolve_initial_ckpt,
+    set_recipe_meta,
     setup_custom_persistor,
     validate_ckpt,
 )
@@ -235,6 +242,195 @@ class TestRecipePackageExports:
         from nvflare.recipe import add_cross_site_evaluation
 
         assert callable(add_cross_site_evaluation)
+
+    def test_set_per_site_config_importable_from_recipe(self):
+        """set_per_site_config must be importable from the top-level nvflare.recipe package."""
+        from nvflare.recipe import set_per_site_config
+
+        assert callable(set_per_site_config)
+
+    def test_set_recipe_meta_importable_from_recipe(self):
+        """set_recipe_meta must be importable from the top-level nvflare.recipe package."""
+        from nvflare.recipe import set_recipe_meta
+
+        assert callable(set_recipe_meta)
+
+
+class TestRecipeMetaHelper:
+    """Test generic helper-provided recipe metadata."""
+
+    def _make_recipe(self, name, **fed_job_kwargs):
+        return Recipe(FedJob(name=name, **fed_job_kwargs))
+
+    def _export_meta(self, recipe, tmp_path):
+        recipe.job.export_job(str(tmp_path))
+        with open(tmp_path / recipe.job.name / "meta.json") as f:
+            return json.load(f)
+
+    def test_set_recipe_meta_sets_recognized_top_level_meta_props(self, tmp_path):
+        recipe = self._make_recipe("test_recipe_meta", min_clients=1, meta_props={"owner": "alice"})
+        recipe.job.to_server({"server_arg": True})
+
+        resource_spec = {
+            "site-1": {"num_of_gpus": 1, "mem_per_gpu_in_GiB": 4},
+            "site-2": {"num_of_gpus": 1, "mem_per_gpu_in_GiB": 2},
+        }
+        launcher_spec = {
+            "site-1": {"docker": {"image": "nvflare-site1:latest"}},
+            "site-2": {"docker": {"image": "nvflare-site2:latest"}},
+        }
+
+        set_recipe_meta(recipe, JobMetaKey.RESOURCE_SPEC, resource_spec)
+        set_recipe_meta(recipe, JobMetaKey.JOB_LAUNCHER_SPEC, launcher_spec)
+        set_recipe_meta(recipe, JobMetaKey.SCOPE, "private")
+        set_recipe_meta(recipe, JobMetaKey.CUSTOM_PROPS, {"team": "research"})
+
+        job_config = recipe.job.job
+        # Dedicated FedJobConfig fields are untouched by the helper.
+        assert job_config.min_clients == 1
+        assert job_config.mandatory_clients is None
+        assert job_config.resource_specs == {}
+        assert job_config.meta_props == {
+            "owner": "alice",
+            "resource_spec": resource_spec,
+            "launcher_spec": launcher_spec,
+            "scope": "private",
+            "custom_props": {"team": "research"},
+        }
+
+        exported_meta = self._export_meta(recipe, tmp_path)
+        assert exported_meta["min_clients"] == 1
+        assert exported_meta["resource_spec"] == resource_spec
+        assert exported_meta["launcher_spec"] == launcher_spec
+        assert exported_meta["scope"] == "private"
+        assert exported_meta["custom_props"] == {"team": "research"}
+        assert exported_meta["owner"] == "alice"
+
+    def test_set_recipe_meta_warns_and_overrides_registered_resource_specs(self, tmp_path):
+        recipe = self._make_recipe("test_recipe_meta_resource_conflict", min_clients=2)
+        recipe.job.job.add_resource_spec("base-site", {"num_of_gpus": 0})
+        recipe.job.to_server({"server_arg": True})
+
+        resource_spec = {"site-1": {"num_of_gpus": 1}}
+        with pytest.warns(UserWarning, match="overrides the per-site resource specs"):
+            set_recipe_meta(recipe, JobMetaKey.RESOURCE_SPEC, resource_spec)
+
+        assert recipe.job.job.meta_props["resource_spec"] == resource_spec
+        # The dedicated FedJobConfig field is never mutated by the helper.
+        assert recipe.job.job.resource_specs == {"base-site": {"num_of_gpus": 0}}
+
+        # meta_props is merged last, so the registered per-site spec is overridden.
+        exported_meta = self._export_meta(recipe, tmp_path)
+        assert exported_meta["resource_spec"] == resource_spec
+
+    def test_set_recipe_meta_replaces_different_value_from_existing_meta_props(self):
+        recipe = self._make_recipe("test_recipe_meta_props_conflict", min_clients=1, meta_props={"scope": "a"})
+        original_meta_props = recipe.job.job.meta_props
+        set_recipe_meta(recipe, JobMetaKey.SCOPE, "b")
+
+        assert recipe.job.job.meta_props is original_meta_props
+        assert recipe.job.job.meta_props["scope"] == "b"
+
+    def test_set_recipe_meta_allows_existing_meta_props_that_differ_from_generated_values(self):
+        recipe = self._make_recipe("test_recipe_meta_generated_conflict", min_clients=2, meta_props={"min_clients": 5})
+        set_recipe_meta(recipe, JobMetaKey.SCOPE, "private")
+
+        assert recipe.job.job.meta_props["min_clients"] == 5
+        assert recipe.job.job.meta_props["scope"] == "private"
+
+    @pytest.mark.parametrize(
+        "key",
+        [
+            JobMetaKey.DEPLOY_MAP,
+            JobMetaKey.JOB_NAME,
+            # Keys with dedicated FedJob constructor fields are rejected to keep a single
+            # source of truth (set them via FedJob(min_clients=..., mandatory_clients=...)).
+            JobMetaKey.MIN_CLIENTS,
+            JobMetaKey.MANDATORY_CLIENTS,
+            # STUDY is rejected because the server assigns it from the admin session's
+            # active study at job submission, silently overwriting a recipe-set value.
+            JobMetaKey.STUDY,
+        ],
+    )
+    def test_set_recipe_meta_rejects_non_user_settable_keys(self, key):
+        recipe = self._make_recipe("test_recipe_meta_restricted_key", min_clients=1)
+        with pytest.raises(ValueError, match=rf"{key.value}.*cannot be set through set_recipe_meta"):
+            set_recipe_meta(recipe, key, "value")
+
+    def test_set_recipe_meta_stores_caller_independent_copy(self):
+        recipe = self._make_recipe("test_recipe_meta_copy", min_clients=1)
+        launcher_spec = {"site-1": {"docker": {"image": "nvflare:latest"}}}
+        custom_props = {"clients": ["site-1"]}
+
+        set_recipe_meta(recipe, JobMetaKey.JOB_LAUNCHER_SPEC, launcher_spec)
+        set_recipe_meta(recipe, JobMetaKey.CUSTOM_PROPS, custom_props)
+        launcher_spec["site-1"]["docker"]["image"] = "changed"
+        custom_props["clients"].append("site-2")
+
+        assert recipe.job.job.meta_props["launcher_spec"] == {"site-1": {"docker": {"image": "nvflare:latest"}}}
+        assert recipe.job.job.meta_props["custom_props"] == {"clients": ["site-1"]}
+
+    def test_set_recipe_meta_accepts_nested_booleans(self):
+        recipe = self._make_recipe("test_recipe_meta_nested_bool", min_clients=1)
+        set_recipe_meta(recipe, JobMetaKey.CUSTOM_PROPS, {"enabled": True, "flags": [False, True]})
+
+        assert recipe.job.job.meta_props["custom_props"] == {"enabled": True, "flags": [False, True]}
+
+    def test_set_recipe_meta_normalizes_non_string_dict_keys(self):
+        recipe = self._make_recipe("test_recipe_meta_key_coercion", min_clients=1)
+        set_recipe_meta(recipe, JobMetaKey.CUSTOM_PROPS, {1: "a"})
+
+        # Stored value matches what meta.json will contain (keys coerced to strings),
+        # so in-process consumers and reloaded-meta consumers agree.
+        assert recipe.job.job.meta_props["custom_props"] == {"1": "a"}
+
+    def test_set_recipe_meta_requires_recipe_with_fed_job(self):
+        with pytest.raises(TypeError, match="recipe must provide a FedJob through recipe.job"):
+            set_recipe_meta(object(), JobMetaKey.SCOPE, "private")
+
+    def test_set_recipe_meta_rejects_wrong_typed_job_config(self):
+        from types import SimpleNamespace
+
+        recipe = SimpleNamespace(job=SimpleNamespace(job=object()))
+        with pytest.raises(TypeError, match="recipe must provide a FedJob through recipe.job"):
+            set_recipe_meta(recipe, JobMetaKey.SCOPE, "private")
+
+    @pytest.mark.parametrize(
+        "key, value, error_type, match",
+        [
+            (1, "value", TypeError, "key must be a JobMetaKey"),
+            ("scope", "private", TypeError, "key must be a JobMetaKey"),
+            (JobMetaKey.SCOPE, True, TypeError, "must be a str"),
+            (JobMetaKey.SCOPE, None, TypeError, "must be a str"),
+            (JobMetaKey.SCOPE, {"site-1": "public"}, TypeError, "must be a str"),
+            (JobMetaKey.CUSTOM_PROPS, "not-a-dict", TypeError, "must be a dict"),
+            (JobMetaKey.CUSTOM_PROPS, [1, 2], TypeError, "must be a dict"),
+            (JobMetaKey.CUSTOM_PROPS, Decimal("1.5"), TypeError, "must be a dict"),
+            (JobMetaKey.RESOURCE_SPEC, "2gpus", TypeError, "resource_spec.*must be a dict"),
+            (JobMetaKey.RESOURCE_SPEC, {"site-1": "2gpus"}, TypeError, "site.*must be a dict"),
+            (JobMetaKey.RESOURCE_SPEC, {1: {"num_of_gpus": 1}}, TypeError, "must be a str"),
+            (JobMetaKey.JOB_LAUNCHER_SPEC, {"site-1": ["docker"]}, TypeError, "site.*must be a dict"),
+        ],
+    )
+    def test_set_recipe_meta_validates_key_and_value_shapes(self, key, value, error_type, match):
+        recipe = self._make_recipe("test_recipe_meta_validation", min_clients=1)
+        with pytest.raises(error_type, match=match):
+            set_recipe_meta(recipe, key, value)
+
+    @pytest.mark.parametrize(
+        "value, error_type",
+        [
+            ({"score": float("inf")}, ValueError),
+            ({"score": float("-inf")}, ValueError),
+            ({"score": float("nan")}, ValueError),
+            ({"key": object()}, TypeError),
+            ({"when": [datetime.now()]}, TypeError),
+        ],
+    )
+    def test_set_recipe_meta_rejects_non_json_serializable_values(self, value, error_type):
+        recipe = self._make_recipe("test_recipe_meta_json_validation", min_clients=1)
+        with pytest.raises(error_type, match="must be JSON-serializable"):
+            set_recipe_meta(recipe, JobMetaKey.CUSTOM_PROPS, value)
 
 
 class TestCrossSiteEvalIdempotency:
