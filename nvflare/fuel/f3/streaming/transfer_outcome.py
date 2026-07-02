@@ -21,10 +21,12 @@ distinction between "every expected receiver succeeded" and "the transaction mer
 terminated". This module provides that distinction additively: TransactionDoneStatus
 values and the transaction_done_cb contract are unchanged.
 
-Receiver truth wins over termination mechanics: a transaction whose expected receivers
-all succeeded resolves COMPLETED even if it was terminated by routine cleanup
-(delete_transaction) or a late timeout. Everything else fails closed — including a
-FINISHED transaction with no objects (a mid-assembly race must not certify success).
+Receiver truth wins over known termination mechanics: a transaction whose expected
+receivers all succeeded resolves COMPLETED even if it was terminated by routine
+cleanup (delete_transaction) or a late timeout. Everything else fails closed —
+including a FINISHED transaction with no objects (a mid-assembly race must not
+certify success) and any unknown/future termination status (validated before
+receiver truth is considered).
 
 Outcome status values reuse the TransferProgressState terminal vocabulary
 (completed / failed / aborted) rather than introducing another status set.
@@ -136,19 +138,28 @@ def _all_receivers_succeeded(num_receivers: int, refs: List[RefOutcome]) -> bool
     return True
 
 
+_KNOWN_DONE_STATUSES = (
+    TransactionDoneStatus.FINISHED,
+    TransactionDoneStatus.TIMEOUT,
+    TransactionDoneStatus.DELETED,
+)
+
+
 def compute_transfer_outcome(
     tx_id: str,
     done_status: str,
     num_receivers: int,
     refs: List[RefOutcome],
-    timestamp: float = None,
+    timestamp: Optional[float] = None,
 ) -> TransferOutcome:
     """Compute the aggregate terminal outcome for a terminated transaction.
 
-    Receiver truth wins: if every expected receiver of every ref succeeded, the
-    outcome is COMPLETED regardless of how the transaction terminated (FINISHED,
-    or routine cleanup via DELETED, or a late TIMEOUT). Otherwise the outcome
-    fails closed based on the termination cause.
+    The termination status is validated first: an unknown/future done_status fails
+    closed even if every receiver succeeded. For known statuses, receiver truth
+    wins: if every expected receiver of every ref succeeded, the outcome is
+    COMPLETED regardless of how the transaction terminated (FINISHED, or routine
+    cleanup via DELETED, or a late TIMEOUT). Otherwise the outcome fails closed
+    based on the termination cause.
 
     Args:
         tx_id: ID of the terminated transaction.
@@ -162,13 +173,16 @@ def compute_transfer_outcome(
     if timestamp is None:
         timestamp = time.time()
 
-    if _all_receivers_succeeded(num_receivers, refs):
+    if done_status not in _KNOWN_DONE_STATUSES:
+        status, reason = TransferProgressState.FAILED, TransferOutcomeReason.UNKNOWN_DONE_STATUS
+    elif _all_receivers_succeeded(num_receivers, refs):
         status, reason = TransferProgressState.COMPLETED, TransferOutcomeReason.ALL_RECEIVERS_SUCCEEDED
     elif done_status == TransactionDoneStatus.DELETED:
         status, reason = TransferProgressState.ABORTED, TransferOutcomeReason.DELETED
     elif done_status == TransactionDoneStatus.TIMEOUT:
         status, reason = TransferProgressState.FAILED, TransferOutcomeReason.TIMEOUT
-    elif done_status == TransactionDoneStatus.FINISHED:
+    else:
+        # FINISHED without full receiver success
         if num_receivers <= 0:
             # unknown receiver count: all-receivers-success can never be certified
             status, reason = TransferProgressState.FAILED, TransferOutcomeReason.UNKNOWN_RECEIVER_COUNT
@@ -177,8 +191,6 @@ def compute_transfer_outcome(
             status, reason = TransferProgressState.FAILED, TransferOutcomeReason.NO_OBJECTS
         else:
             status, reason = TransferProgressState.FAILED, TransferOutcomeReason.RECEIVER_FAILED
-    else:
-        status, reason = TransferProgressState.FAILED, TransferOutcomeReason.UNKNOWN_DONE_STATUS
 
     return TransferOutcome(
         tx_id=tx_id,

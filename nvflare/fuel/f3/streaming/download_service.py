@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import functools
 import threading
 import time
 import uuid
@@ -393,7 +394,10 @@ class _Transaction:
 
         Args:
             timeout: amount of time since last activity
-            num_receivers: number of receivers. 0 means unlimited.
+            num_receivers: number of receivers. 0 means unknown/unbounded: such a
+                transaction is never certified finished (is_finished() returns False) —
+                it terminates via timeout or deletion, and its aggregate outcome can
+                never be COMPLETED (all-receivers-success cannot be certified).
             tx_id: if provided, use it; otherwise create one
             outcome_cb: called with the aggregate TransferOutcome after transaction_done_cb fires
         """
@@ -579,7 +583,8 @@ class _Transaction:
 class TransactionInfo:
     """This structure contains public info of a transaction:
     timeout value of the transaction;
-    number of receivers that objects in the transaction will be downloaded to. 0 means unknown.
+    number of receivers that objects in the transaction will be downloaded to. 0 means unknown/unbounded
+    (the transaction is never certified finished and terminates via timeout or deletion);
     objects that are added to the transaction.
     """
 
@@ -602,6 +607,10 @@ class DownloadService:
     # time so producers can query the aggregate result after termination. Guarded by
     # its own lock so outcome polling never contends with the chunk-serving _tx_lock.
     _tx_outcomes = {}
+    # Current live incarnation per tx_id (registered by new_transaction), so a
+    # transaction that terminates concurrently with a same-id retry cannot record
+    # its outcome over the new incarnation. Guarded by _outcome_lock.
+    _tx_incarnations = {}
     _outcome_lock = threading.Lock()
     _accept_outcomes = True
     TX_OUTCOME_TTL = 1800.0
@@ -660,8 +669,11 @@ class DownloadService:
         with cls._tx_lock:
             cls._tx_table[tx.tid] = tx
         with cls._outcome_lock:
-            # a reused explicit tx_id must not surface the previous incarnation's outcome
+            # a reused explicit tx_id must not surface the previous incarnation's
+            # outcome: purge any recorded outcome and register this incarnation as
+            # current so a concurrently-terminating older incarnation cannot record
             cls._tx_outcomes.pop(tx.tid, None)
+            cls._tx_incarnations[tx.tid] = tx
         return tx.tid
 
     @classmethod
@@ -694,7 +706,7 @@ class DownloadService:
                 cls._delete_tx(tx)
 
         if tx:
-            tx.transaction_done(TransactionDoneStatus.DELETED, on_outcome=cls._record_outcome)
+            tx.transaction_done(TransactionDoneStatus.DELETED, on_outcome=functools.partial(cls._record_outcome, tx=tx))
 
     @classmethod
     def shutdown(cls):
@@ -714,6 +726,7 @@ class DownloadService:
             # and drop recorded outcomes; recording re-enables on next _initialize
             cls._accept_outcomes = False
             cls._tx_outcomes.clear()
+            cls._tx_incarnations.clear()
 
         with cls._init_lock:
             # Shutdown resets callback-registration state even when a cell is still
@@ -732,13 +745,20 @@ class DownloadService:
         for r in tx.snapshot_refs():
             cls._ref_table.pop(r.rid, None)
             if tombstone_finished_refs:
-                cls._finished_refs[r.rid] = _FinishedRef(dict(r.receiver_statuses), now)
+                cls._finished_refs[r.rid] = _FinishedRef(r.snapshot_receiver_statuses(), now)
             else:
                 cls._finished_refs.pop(r.rid, None)
 
     @classmethod
-    def _record_outcome(cls, outcome: TransferOutcome):
+    def _record_outcome(cls, outcome: TransferOutcome, tx: Optional[_Transaction] = None):
         with cls._outcome_lock:
+            current = cls._tx_incarnations.get(outcome.tx_id)
+            if tx is not None and current is not None and current is not tx:
+                # a newer incarnation of this tx_id (a retry) registered while this
+                # transaction was terminating; its outcome must not shadow the live one
+                return
+            if current is tx:
+                cls._tx_incarnations.pop(outcome.tx_id, None)
             if not cls._accept_outcomes:
                 return
             cls._tx_outcomes[outcome.tx_id] = outcome
@@ -760,12 +780,10 @@ class DownloadService:
     @classmethod
     def _expire_outcomes(cls, now: float):
         with cls._outcome_lock:
-            # insertion order follows recording time, so stop at the first live record
-            expired = []
-            for tid, outcome in cls._tx_outcomes.items():
-                if not outcome.expired(now, cls.TX_OUTCOME_TTL):
-                    break
-                expired.append(tid)
+            # full scan: concurrent recorders (monitor + delete_transaction) can insert
+            # slightly out of timestamp order, so an early-break is not safe; the scan
+            # is one float comparison per record
+            expired = [tid for tid, outcome in cls._tx_outcomes.items() if outcome.expired(now, cls.TX_OUTCOME_TTL)]
             for tid in expired:
                 cls._tx_outcomes.pop(tid, None)
 
@@ -917,10 +935,14 @@ class DownloadService:
             cls._expire_outcomes(now)
 
             for tx in expired_tx:
-                tx.transaction_done(TransactionDoneStatus.TIMEOUT, on_outcome=cls._record_outcome)
+                tx.transaction_done(
+                    TransactionDoneStatus.TIMEOUT, on_outcome=functools.partial(cls._record_outcome, tx=tx)
+                )
 
             for tx in finished_tx:
-                tx.transaction_done(TransactionDoneStatus.FINISHED, on_outcome=cls._record_outcome)
+                tx.transaction_done(
+                    TransactionDoneStatus.FINISHED, on_outcome=functools.partial(cls._record_outcome, tx=tx)
+                )
 
             time.sleep(5.0)
 

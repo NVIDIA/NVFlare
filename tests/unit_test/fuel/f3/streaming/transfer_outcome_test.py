@@ -115,6 +115,14 @@ class TestComputeTransferOutcome:
         assert outcome.reason == TransferOutcomeReason.UNKNOWN_DONE_STATUS
         assert outcome.done_status == "bogus"
 
+    def test_unknown_done_status_with_successful_receivers_still_fails_closed(self):
+        # status validation precedes receiver truth: an unknown/future termination
+        # status must not certify success even when every receiver succeeded
+        refs = self._refs([{"r1": DownloadStatus.SUCCESS}])
+        outcome = compute_transfer_outcome("T1", "future-status", 1, refs, 100.0)
+        assert outcome.status == TransferProgressState.FAILED
+        assert outcome.reason == TransferOutcomeReason.UNKNOWN_DONE_STATUS
+
     def test_outcome_is_frozen(self):
         outcome = compute_transfer_outcome("T1", TransactionDoneStatus.DELETED, 1, [], 100.0)
         with pytest.raises(dataclasses.FrozenInstanceError):
@@ -288,6 +296,34 @@ class TestServiceOutcomeTable:
             assert second == "TX-REUSE"
             # the stale terminal outcome of the previous incarnation is purged
             assert service.get_transaction_outcome("TX-REUSE") is None
+        finally:
+            service.shutdown()
+
+    def test_stale_incarnation_cannot_record_over_live_retry(self):
+        # the record-after-purge race: termination removes the old tx from _tx_table,
+        # a retry registers the same tx_id, THEN the old incarnation records its
+        # outcome — it must not shadow the live retry
+        from functools import partial
+        from unittest.mock import Mock
+
+        service = make_isolated_download_service()
+        service._tx_monitor = Mock()  # suppress real monitor thread start
+        cell = Mock()
+        try:
+            service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-RACE")
+            with service._tx_lock:
+                old_tx = service._tx_table.pop("TX-RACE")  # termination step 1, as the monitor does
+
+            # the retry registers the same id before the old incarnation records
+            service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-RACE")
+
+            # the old incarnation now finishes terminating and tries to record
+            old_tx.transaction_done(
+                TransactionDoneStatus.DELETED, on_outcome=partial(service._record_outcome, tx=old_tx)
+            )
+
+            # the live retry is unaffected: no stale terminal outcome surfaces
+            assert service.get_transaction_outcome("TX-RACE") is None
         finally:
             service.shutdown()
 
