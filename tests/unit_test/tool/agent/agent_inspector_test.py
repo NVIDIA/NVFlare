@@ -617,8 +617,9 @@ def test_inspect_higher_count_unreachable_torch_helper_does_not_beat_sklearn_ent
 
     data = inspect_path(tmp_path)
 
-    assert data["frameworks"][0]["name"] == "pytorch"  # higher raw count
-    assert data["skill_selection"]["detected_framework"] == "sklearn"  # but entry-tied wins
+    confidence = {fw["name"]: fw["confidence"] for fw in data["frameworks"]}
+    assert confidence["pytorch"] > confidence["sklearn"]  # torch helper has the higher raw count
+    assert data["skill_selection"]["detected_framework"] == "sklearn"  # but entry-tied sklearn wins
     assert data["skill_selection"]["recommended_skills"] == []
 
 
