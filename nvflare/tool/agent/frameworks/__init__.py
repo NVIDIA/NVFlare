@@ -28,6 +28,7 @@ change.
 from .base import DetectContext, FrameworkDetector
 from .registry import (
     IMPORT_ONLY_ROOTS,
+    UTILITY_FRAMEWORKS,
     detectors,
     evidence_weights,
     family_base_has_member,
@@ -42,6 +43,7 @@ __all__ = [
     "DetectContext",
     "FrameworkDetector",
     "IMPORT_ONLY_ROOTS",
+    "UTILITY_FRAMEWORKS",
     "detectors",
     "evidence_weights",
     "family_base_has_member",
