@@ -58,4 +58,8 @@ builders:
       # to different url.
       # download_job_url: http://download.server.com/
   - path: nvflare.lighter.impl.cert.CertBuilder
+    # root_valid_days applies only when this workspace creates its root CA for the first time.
+    # The default is 360 days. For example, use the following to create a 10-year root:
+    # args:
+    #   root_valid_days: 3650
   - path: nvflare.lighter.impl.signature.SignatureBuilder
