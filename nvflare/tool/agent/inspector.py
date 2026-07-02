@@ -28,6 +28,9 @@ from nvflare.tool.agent.frameworks.base import DetectContext
 DEFAULT_MAX_FILES = 250
 DEFAULT_MAX_FILE_BYTES = 512 * 1024
 MAX_EVIDENCE_PER_BUCKET = 12
+# Packaging root dirs whose leading segment is not part of the import path
+# (PyPA src-layout), so `src/pkg/mod.py` is importable as `pkg.mod`.
+_PACKAGE_ROOT_DIR_NAMES = {"src"}
 
 PYTHON_SUFFIXES = {".py"}
 SKIPPED_DIR_NAMES = {
@@ -648,7 +651,13 @@ def _module_names_for_file(file_path: str) -> set[str]:
     parts = path.parent.parts if path.name == "__init__.py" else path.with_suffix("").parts
     if not parts or any(part in {"", ".", ".."} for part in parts):
         return set()
-    return {".".join(parts)}
+    names = {".".join(parts)}
+    # src-layout: a file under a packaging root (src/) is imported by its
+    # package path without the root, so an entry point's `import mypkg.loop`
+    # reaches src/mypkg/loop.py. Offer the root-stripped module name too.
+    if len(parts) > 1 and parts[0] in _PACKAGE_ROOT_DIR_NAMES:
+        names.add(".".join(parts[1:]))
+    return names
 
 
 def _import_context_prefix(file_path: str) -> str:

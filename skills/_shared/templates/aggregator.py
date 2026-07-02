@@ -35,8 +35,11 @@ class WeightedAggregator(ModelAggregator):
         self.reset_stats()
 
     def reset_stats(self):
-        self._weighted_sum = None
-        self._total_weight = 0.0
+        self._weighted_sum = {}
+        # Per-key weight so a parameter present in only some clients is averaged
+        # over just those clients (not diluted by the full round weight), and a
+        # key missing from the first client does not raise KeyError.
+        self._key_weight = {}
         self._params_type = None
 
     def accept_model(self, model: FLModel):
@@ -44,17 +47,18 @@ class WeightedAggregator(ModelAggregator):
         # product's own base_fedavg._get_num_steps_weight behavior.
         weight = float(model.meta.get(MetaKey.NUM_STEPS_CURRENT_ROUND, 1) or 1)
         self._params_type = model.params_type
-        if self._weighted_sum is None:
-            self._weighted_sum = {key: value * weight for key, value in model.params.items()}
-        else:
-            for key, value in model.params.items():
+        for key, value in model.params.items():
+            if key in self._weighted_sum:
                 self._weighted_sum[key] = self._weighted_sum[key] + value * weight
-        self._total_weight += weight
+                self._key_weight[key] += weight
+            else:
+                self._weighted_sum[key] = value * weight
+                self._key_weight[key] = weight
 
     def aggregate_model(self) -> FLModel:
-        if not self._total_weight:
+        if not self._weighted_sum:
             raise RuntimeError("no client models accepted this round")
-        averaged = {key: value / self._total_weight for key, value in self._weighted_sum.items()}
+        averaged = {key: self._weighted_sum[key] / self._key_weight[key] for key in self._weighted_sum}
         result = FLModel(params=averaged, params_type=self._params_type)
         self.reset_stats()
         return result

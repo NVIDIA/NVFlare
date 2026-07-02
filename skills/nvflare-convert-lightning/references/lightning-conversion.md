@@ -48,6 +48,12 @@ while flare.is_running():
     trainer.test(ckpt_path="best", datamodule=datamodule)  # when test evidence is requested/available
 ```
 
+For evaluation-only / FedEval conversions, run `trainer.validate(...)` (the
+patched trainer sends the validation metrics) and **do not call
+`trainer.fit(...)`** — training was not requested, and fitting after the metrics
+are sent can train an unwanted round or block the task. The packaged
+`templates/lightning_client.py` `main(..., evaluate_only=True)` skips `fit`.
+
 ## Patch Ownership Rules
 
 - `flare.patch(trainer)` installs callbacks that receive the global model into
