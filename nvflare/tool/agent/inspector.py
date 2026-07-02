@@ -511,6 +511,10 @@ class _FamilyResolver:
         reference_files = {item["file"] for item in reference_evidence}
         return any(item["file"] not in reference_files for item in evidence)
 
+    def evidence_outside_files(self, evidence: list[dict], reference_evidence: list[dict]) -> list[dict]:
+        reference_files = {item["file"] for item in reference_evidence}
+        return [item for item in evidence if item["file"] not in reference_files]
+
 
 def _framework_evidence_tied_to_entry_context(state: InspectState, evidence: list[dict]) -> bool:
     if _framework_evidence_tied_to_inspected_file_or_entry_point(state, evidence):

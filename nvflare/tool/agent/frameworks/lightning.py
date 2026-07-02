@@ -172,20 +172,26 @@ class LightningDetector(FrameworkDetector):
         if resolver.tied_to_entry_context(pytorch_evidence):
             return False
 
-        active_lightning_score = resolver.score(active_lightning_evidence)
-        active_pytorch_score = resolver.score(active_pytorch_evidence)
-        standalone_active_pytorch = resolver.has_evidence_outside_files(
+        # torch.optim/losses/dataloaders used *inside* a file that already holds
+        # active Lightning evidence are part of the Lightning model, not
+        # standalone base usage. Only active PyTorch evidence in files with no
+        # active Lightning evidence competes as genuine base usage; otherwise a
+        # realistic LightningModule (which always calls torch APIs) would be
+        # mis-scored as a PyTorch-dominant workspace.
+        standalone_active_pytorch_evidence = resolver.evidence_outside_files(
             active_pytorch_evidence, active_lightning_evidence
         )
-        if resolver.has_inspected_file_or_entry_point() and standalone_active_pytorch:
+        active_lightning_score = resolver.score(active_lightning_evidence)
+        standalone_active_pytorch_score = resolver.score(standalone_active_pytorch_evidence)
+        if resolver.has_inspected_file_or_entry_point() and standalone_active_pytorch_evidence:
             return False
         if active_lightning_score == 0:
             return False
-        if active_pytorch_score == 0 and resolver.has_evidence_outside_files(
+        if standalone_active_pytorch_score == 0 and resolver.has_evidence_outside_files(
             pytorch_evidence, active_lightning_evidence
         ):
             if resolver.score(pytorch_evidence) >= resolver.score(lightning_evidence):
                 return False
-        if active_lightning_score != active_pytorch_score:
-            return active_lightning_score > active_pytorch_score
+        if active_lightning_score != standalone_active_pytorch_score:
+            return active_lightning_score > standalone_active_pytorch_score
         return resolver.score(lightning_evidence) > resolver.score(pytorch_evidence)
