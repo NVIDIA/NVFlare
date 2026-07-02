@@ -102,6 +102,8 @@ def test_guard_routes_plateau_to_literature_without_finalizing():
     assert state["next_action"] == "run_literature_loop"
     assert state["final_response_allowed"] is False
     assert state["best_score"] == 0.85
+    assert state["required_exploration"] == "source_backed_server_aggregation"
+    assert "server aggregation candidate" in state["agent_instruction"]
     assert "Do not produce a final answer" in state["agent_instruction"]
 
 

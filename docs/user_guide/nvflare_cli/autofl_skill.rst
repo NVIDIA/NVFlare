@@ -71,6 +71,11 @@ things from ``autofl.yaml``:
   Python modules it may add under the job root, and environment or policy
   boundaries.
 
+If ``mutation_schema.yaml`` declares ``preferred_targets``, initialization adds
+existing targets under the job root to both allowed-edit lists. Missing,
+symlinked, reserved, or out-of-workspace targets remain visible as unresolved
+items instead of being silently enabled.
+
 This makes the workflow feel native and reproducible: NVFlare owns the truth of
 the campaign settings and execution surfaces; the agent owns exploration within
 explicit constraints.
@@ -109,6 +114,14 @@ fixed-budget drift, executes the candidate, updates ``results.tsv`` and
 best.  Built-in tunable candidates are available through the helper's
 ``suggest`` action only as optional seeds; the agent remains free to implement
 new algorithms.
+
+New algorithms include server aggregation logic. The agent may create a Python
+aggregator module or edit an allowed existing one and register it through
+``job.py``; it is not limited to the job's existing FedAvg, FedAvgM, FedAdam,
+FedOpt, or SCAFFOLD choices. After a literature-triggered plateau, the workflow
+requires at least one source-backed server aggregation candidate under the same
+comparison budget, unless the job contract is incompatible and that reason is
+recorded in the literature event.
 
 The helper's ``status`` action rescans pending manifests, stop files, the
 candidate cap, and the ledger before refreshing the authoritative

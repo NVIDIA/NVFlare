@@ -1168,6 +1168,58 @@ def load_mutation_schema(cwd: Path) -> Dict[str, Any]:
     return read_yaml(path)
 
 
+def apply_mutation_schema_contract(config: Dict[str, Any], schema: Dict[str, Any], workspace: Path) -> Dict[str, Any]:
+    preferred_targets = schema.get("preferred_targets")
+    if preferred_targets is None:
+        return config
+    if not isinstance(preferred_targets, list) or not all(isinstance(value, str) for value in preferred_targets):
+        raise ValueError("mutation_schema.yaml preferred_targets must be a list of paths")
+
+    job = config.setdefault("job", {})
+    trust_contract = config.setdefault("trust_contract", {})
+    job_paths = job.setdefault("allowed_edit_paths", [])
+    trust_paths = trust_contract.setdefault("allowed_edit_paths", [])
+    if not isinstance(job_paths, list) or not isinstance(trust_paths, list):
+        raise ValueError("autofl.yaml allowed_edit_paths must be lists")
+
+    resolved_targets = []
+    unresolved_targets = []
+    for target in preferred_targets:
+        try:
+            relative = safe_relative_path(workspace, target)
+        except ValueError as e:
+            unresolved_targets.append(_schema_target_issue(target, str(e)))
+            continue
+        path = workspace / relative
+        if path.is_symlink():
+            unresolved_targets.append(_schema_target_issue(target, "preferred target is a symlink"))
+            continue
+        if not path.is_file():
+            unresolved_targets.append(
+                _schema_target_issue(target, "preferred target is not an existing file under the job workspace")
+            )
+            continue
+        resolved_targets.append(relative)
+        for values in (job_paths, trust_paths):
+            if relative not in values:
+                values.append(relative)
+
+    job["preferred_targets"] = resolved_targets
+    trust_contract["preferred_targets"] = list(resolved_targets)
+    if unresolved_targets:
+        unresolved = config.setdefault("unresolved", [])
+        trust_unresolved = trust_contract.setdefault("unresolved", [])
+        if not isinstance(unresolved, list) or not isinstance(trust_unresolved, list):
+            raise ValueError("autofl.yaml unresolved fields must be lists")
+        unresolved.extend(unresolved_targets)
+        trust_unresolved.extend(dict(item) for item in unresolved_targets)
+    return config
+
+
+def _schema_target_issue(target: str, reason: str) -> Dict[str, str]:
+    return {"field": "mutation_schema.preferred_targets", "reason": f"{target}: {reason}"}
+
+
 def comparison_budget(schema: Dict[str, Any]) -> Dict[str, Any]:
     comparison = schema.get("comparison_budget_args")
     if not isinstance(comparison, dict):
@@ -1840,6 +1892,7 @@ def campaign_summary(
             "candidate_cap",
             "candidate_cap_source",
             "agent_instruction",
+            "required_exploration",
         ]:
             if key in state_payload:
                 payload[key] = state_payload[key]
@@ -1992,6 +2045,7 @@ def refresh_campaign_artifacts(
     pending_manifest: Optional[Path] = None,
     next_action: Optional[str] = None,
     reason: Optional[str] = None,
+    required_exploration: Optional[str] = None,
 ) -> Dict[str, Any]:
     pending_manifests = pending_candidate_manifests(paths["workspace"])
     if pending_manifest is not None and pending_manifest not in pending_manifests:
@@ -2017,6 +2071,12 @@ def refresh_campaign_artifacts(
         state["next_action"] = next_action
         state["reason"] = reason or next_action
         state["agent_instruction"] = f"Do not produce a final answer. Execute `{next_action}` for this campaign."
+    if required_exploration:
+        state["required_exploration"] = required_exploration
+        state["agent_instruction"] = (
+            f"{state['agent_instruction']} Prepare and evaluate at least one source-backed server aggregation "
+            "candidate when compatible with the job contract; otherwise record why it is incompatible."
+        )
     state.update(
         {
             "best_candidate": metadata.get("best_candidate"),
@@ -2116,6 +2176,7 @@ def initialize_campaign(args: argparse.Namespace, job: Path) -> int:
     timeout, _ = campaign_timeout(args, schema)
     config = import_job_config(args, job, paths["autofl_yaml"], paths["output_root"] / "import.log", timeout)
     config = apply_metric_contract(config, args.metric, schema)
+    config = apply_mutation_schema_contract(config, schema, workspace)
     config.setdefault("job", {})["allowed_create_patterns"] = list(ALLOWED_CREATE_PATTERNS)
     config.setdefault("trust_contract", {})["allowed_create_patterns"] = list(ALLOWED_CREATE_PATTERNS)
     write_yaml(paths["autofl_yaml"], config)
@@ -2644,6 +2705,7 @@ def record_external_result(args: argparse.Namespace, job: Path) -> int:
             metadata,
             next_action="propose_candidate",
             reason="literature_review_recorded",
+            required_exploration="source_backed_server_aggregation",
         )
         print_campaign_result(paths, records, state, literature_event=name)
         return 0

@@ -47,7 +47,9 @@ Common next actions:
   repairing runtime permissions; do not count it as a candidate.
 - `run_literature_loop`: run a short source-backed literature pass, record a
   non-scored `literature` row when a ledger is available, then launch the next
-  compatible same-budget candidates.
+  compatible same-budget candidates. Include at least one source-backed server
+  aggregation candidate; if that is incompatible with the job contract,
+  record the reason in the literature event.
 - `final_report`: generate final artifacts only after the runner permits a final
   response.
 
@@ -59,6 +61,11 @@ compatible candidate batch next. If no non-duplicate safe local axis remains,
 switch mode rather than stopping: broaden the search within `autofl.yaml`, run a
 literature-inspired proposal pass, implement a compatible algorithm change, or
 request deterministic tunable suggestions as seeds.
+
+Server aggregation is an open code-search surface. The agent may create a new
+Python aggregator module, edit an existing allowed aggregator module, and
+register it through `job.py`; it must not limit exploration to the job's
+pre-existing FedAvg, FedAvgM, FedAdam, FedOpt, or SCAFFOLD options.
 
 ## Simulator Recovery
 

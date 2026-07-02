@@ -129,6 +129,92 @@ def test_candidate_plan_skips_out_of_bounds_learning_rate():
     assert "--lr 0.2" not in candidate_commands
 
 
+def test_initialize_merges_existing_mutation_schema_preferred_targets_into_autofl(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job = tmp_path / "job.py"
+    job.write_text("print('job')\n", encoding="utf-8")
+    tmp_path.joinpath("client.py").write_text("print('client')\n", encoding="utf-8")
+    tmp_path.joinpath("custom_aggregators.py").write_text("class CustomAggregator:\n    pass\n", encoding="utf-8")
+    tmp_path.joinpath("mutation_schema.yaml").write_text(
+        "preferred_targets:\n  - client.py\n  - custom_aggregators.py\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(runner, "import_job_config", lambda *args, **kwargs: deepcopy(_campaign_config()))
+    monkeypatch.setattr(runner, "job_help", lambda *args, **kwargs: "")
+    monkeypatch.setattr(runner, "write_progress", lambda path, *args: path.write_bytes(b"progress"))
+    monkeypatch.setattr(
+        runner,
+        "run_job",
+        lambda run_def, **kwargs: runner.RunRecord(
+            run_def.status,
+            run_def.name,
+            0.5,
+            1.0,
+            "none",
+            run_def.description,
+            "python job.py",
+            "/tmp/baseline",
+        ),
+    )
+
+    assert runner.main(["initialize", str(job), "--no-prefer-synthetic"]) == 0
+
+    config = runner.read_yaml(tmp_path / "autofl.yaml")
+    assert "custom_aggregators.py" in config["job"]["allowed_edit_paths"]
+    assert "custom_aggregators.py" in config["trust_contract"]["allowed_edit_paths"]
+    assert config["job"]["preferred_targets"] == ["client.py", "custom_aggregators.py"]
+    assert config["trust_contract"]["preferred_targets"] == ["client.py", "custom_aggregators.py"]
+
+    assert (
+        runner.main(
+            [
+                "prepare",
+                str(job),
+                "--name",
+                "new_server_aggregator",
+                "--hypothesis",
+                "implement source-backed server aggregation",
+            ]
+        )
+        == 0
+    )
+    draft = tmp_path / ".nvflare/autofl/candidates/new_server_aggregator/source/custom_aggregators.py"
+    draft.write_text("class CustomAggregator:\n    improved = True\n", encoding="utf-8")
+    monkeypatch.setattr(
+        runner,
+        "run_job",
+        lambda run_def, **kwargs: runner.RunRecord(
+            "candidate",
+            run_def.name,
+            0.8,
+            1.0,
+            "none",
+            run_def.description,
+            "python job.py",
+            "/tmp/candidate",
+        ),
+    )
+
+    assert runner.main(["evaluate", str(job)]) == 0
+    assert "improved = True" in tmp_path.joinpath("custom_aggregators.py").read_text(encoding="utf-8")
+
+
+def test_missing_or_escaping_preferred_targets_remain_unresolved(tmp_path):
+    runner = _load_runner()
+    config = deepcopy(_campaign_config())
+    schema = {"preferred_targets": ["missing_aggregator.py", "../shared/custom_aggregators.py"]}
+
+    updated = runner.apply_mutation_schema_contract(config, schema, tmp_path)
+
+    assert "missing_aggregator.py" not in updated["job"]["allowed_edit_paths"]
+    assert "../shared/custom_aggregators.py" not in updated["job"]["allowed_edit_paths"]
+    unresolved_reasons = [
+        item["reason"] for item in updated["unresolved"] if item["field"] == "mutation_schema.preferred_targets"
+    ]
+    assert any(reason.startswith("missing_aggregator.py:") for reason in unresolved_reasons)
+    assert any(reason.startswith("../shared/custom_aggregators.py:") for reason in unresolved_reasons)
+
+
 def test_runner_prefers_explicit_test_accuracy_alias(tmp_path):
     runner = _load_runner()
     result_path = tmp_path / "cross_val_results.json"
@@ -975,6 +1061,8 @@ def test_record_literature_checkpoint_returns_to_agent_proposal(tmp_path, monkey
     assert records[-1].diff_summary == "reviewed adaptive federated optimization"
     state = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_text(encoding="utf-8"))
     assert state["next_action"] == "propose_candidate"
+    assert state["required_exploration"] == "source_backed_server_aggregation"
+    assert "server aggregation candidate" in state["agent_instruction"]
 
 
 def test_external_candidate_uses_standard_job_result_recording(tmp_path, monkeypatch):

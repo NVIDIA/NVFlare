@@ -47,6 +47,8 @@ layer:
   scripts.
 - Fixed-budget constraints that must remain comparable across candidates.
 - Allowed edit paths and files that are out of scope for the agent.
+- Existing preferred source targets declared by task-local
+  `mutation_schema.yaml`, once they resolve inside the job workspace.
 - Allowed creation patterns for new Python modules under the job root.
 - Artifact, ledger, and report locations for the campaign.
 - Provenance and unresolved fields that need user review before safe execution.
@@ -102,12 +104,19 @@ Every import result includes:
 The skill must present editable, unresolved, and allowed sections before it runs
 candidates. This is the core product guardrail: NVFlare makes the campaign
 reviewable and reproducible; the agent makes it interactive and exploratory.
+During campaign initialization, the runner merges existing, workspace-local
+`mutation_schema.yaml` `preferred_targets` into both allowed-edit lists. Missing,
+symlinked, reserved, or out-of-workspace targets remain unresolved rather than
+being silently authorized.
 
 ## Candidate Contract
 
 The agent, rather than the deterministic runner, owns search policy. It may
 change tunables, edit the imported job's allowed source files, or implement new
-algorithms as Python modules. Each attempt starts from the retained best source
+client and server algorithms as Python modules. This includes creating or
+editing server aggregator modules and registering them through `job.py`; the
+agent is not limited to pre-enumerated FedAvg, FedAvgM, FedAdam, FedOpt, or
+SCAFFOLD choices. Each attempt starts from the retained best source
 in `.nvflare/autofl/candidates/<id>/source` and has a generated
 `candidate_manifest.json` containing its hypothesis, base candidate, run
 arguments, changed files, source and budget hashes, patch hash, artifacts, and
@@ -124,6 +133,10 @@ standard NVFlare job lifecycle.
 The built-in parameter candidates are suggestion seeds only. They are returned
 as machine-readable hypotheses and arguments when requested, but are not the
 default search loop and are never executed without agent selection.
+After each literature-triggered plateau, campaign state requests at least one
+source-backed server aggregation candidate under the same comparison budget.
+When the job contract makes that impossible, the agent records the reason in
+the literature event instead of silently omitting aggregation exploration.
 
 ## Execution Model
 

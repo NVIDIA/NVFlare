@@ -103,6 +103,10 @@ specific fields before running candidates.
 - Edit existing files only through candidate drafts and within
   `job.allowed_edit_paths`. New Python modules may match
   `job.allowed_create_patterns` under the job root.
+- Use existing `mutation_schema.yaml` `preferred_targets` only after the runner
+  reflects them in both allowed-edit lists; surface unresolved targets.
+- You may create and register new Python server aggregators through `job.py`;
+  do not limit exploration to existing FedAvg/FedAvgM/FedAdam/FedOpt/SCAFFOLD choices.
 - Preserve `budget.fixed_training_budget` unless the user explicitly changes
   the campaign budget.
 - If the environment provides `PYTHON`, `VIRTUAL_ENV`, or a venv on `PATH`,
@@ -129,7 +133,8 @@ specific fields before running candidates.
 
 1. Inspect `autofl.yaml`, current best source, prior manifests, and results.
 2. Form a concrete hypothesis. Use literature, framework knowledge, source
-   edits, new algorithms, or a fallback tunable suggestion as appropriate.
+   edits, new client or server algorithms, or a fallback tunable suggestion as
+   appropriate.
 3. Prepare a candidate, edit its draft, and evaluate its manifest.
 4. Let the helper validate paths and fixed-budget comparability, compute the
    patch hash, execute or materialize it, extract metrics, and keep or restore.
@@ -157,9 +162,8 @@ an explicit candidate budget, continue the campaign until manually interrupted
 or blocked. Do not stop after the first baseline, first batch, first successful
 candidate, first kept improvement, first local commit, or first plateau
 checkpoint. Do not stop after a first sweep of tunables; broaden into
-agent-authored code or literature-derived algorithm candidates. Progress
-reports in uncapped mode must not be
-phrased as "should I continue?" decisions; the answer is continue unless the
+agent-authored code or literature-derived algorithm candidates. Uncapped progress
+reports must not ask whether to continue; continue unless the
 user explicitly interrupts or the code-owned state permits finalization.
 Do not invent a replacement campaign or new objective after a recoverable
 failure. Keep the current campaign identity and artifacts coherent unless the
@@ -180,6 +184,8 @@ Use `campaign_guard.py` only for read-only ledger diagnostics; it never updates
 authoritative campaign state.
 After a source-backed review, record it with the helper's `record --literature
 --hypothesis "<sources and decision>"` action before preparing its candidate.
+After every literature-triggered plateau, evaluate at least one source-backed
+server aggregation candidate, or record why the job contract is incompatible.
 
 ## Stop Handling
 

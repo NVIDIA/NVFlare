@@ -258,7 +258,8 @@ def guard_state_for_rows(
     elif next_action == "run_literature_loop":
         instruction = (
             "Do not produce a final answer. Run the literature loop, record a literature event, "
-            "then launch source-backed candidates under the same comparison budget."
+            "then launch source-backed candidates under the same comparison budget. Include at least one "
+            "server aggregation candidate when compatible with the job contract; otherwise record why it is incompatible."
         )
     else:
         instruction = "Do not produce a final answer. Propose and prepare the next same-budget candidate now."
@@ -279,6 +280,7 @@ def guard_state_for_rows(
         "best_score": best_score(rows, mode),
         "stop_files": stop_file_hits,
         "plateau": plateau,
+        "required_exploration": "source_backed_server_aggregation" if next_action == "run_literature_loop" else None,
         "agent_instruction": instruction,
     }
 
