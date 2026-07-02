@@ -778,7 +778,8 @@ def test_agent_doctor_json_reports_local_readiness(capsys, monkeypatch, tmp_path
 
     assert exit_code == 0
     payload = _load_single_stdout_json(capsys.readouterr())
-    assert payload["status"] in {"ok", "attention"}
+    _assert_envelope_shape(payload, "ok")
+    assert payload["data"]["status"] in {"ok", "attention"}
     assert payload["data"]["nvflare"]["import_ok"] is True
     # Deployment/POC readiness is out of the conversion-only scope.
     assert "online" not in payload["data"]

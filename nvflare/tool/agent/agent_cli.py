@@ -285,7 +285,7 @@ def _handle_agent_doctor_cmd(args, handle_schema_flag, output_error_message, out
         data,
         code="OK",
         message="NVFLARE agent doctor completed.",
-        hint="Resolve warning/error findings before production or online workflows.",
+        hint="Resolve warning/error findings before conversion or agent skill workflows.",
     )
 
 
