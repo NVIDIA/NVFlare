@@ -137,6 +137,18 @@ What actually changes relative to today's InProcessClientAPIExecutor: nothing us
 
 Starts and owns an external trainer process tree.
 
+**Why this mode exists.** The primary driver is multi-GPU / multi-process training —
+torchrun, Deepspeed, Horovod, `mpirun`. NVFlare deliberately does not reimplement
+inter-rank communication or the elastic-launch machinery those tools already provide;
+instead it shells out to them (`subprocess.Popen("torchrun train.py ...")`) and talks to
+**only rank 0** over Cell, which shares the model with the other ranks through the training
+framework's own collectives (see the Rank Contract). Two design consequences follow directly
+from this: NVFlare launches and owns the local process tree (so a bare launch-scoped token
+over the localhost connection it created is sufficient authentication — full challenge-response
+is an attach-mode concern, see Appendix B), and per-task trainer launch stays out of
+JobLauncherSpec (see Alternatives Considered) because the launcher NVFlare invokes *is* the
+distributed launcher.
+
 Responsibilities:
 
 - prepare Client API bootstrap config (including a launch-scoped session token; see Session Setup)
@@ -716,7 +728,9 @@ Two CCWF-specific policies still need to be set (not new transport):
 
 **Keep Pipe As The Main Abstraction.** This preserves current behavior, but it keeps control-plane lifecycle coupled to payload transfer and Pipe ACK semantics. It also leaves users exposed to FlareAgent, TaskExchanger, CellPipe, and FilePipe. Decision: reject as the future recommended path. Keep temporarily for compatibility.
 
-**Extend JobLauncher To Launch Training Code.** JobLauncherSpec already launches CJ/SJ job runtime processes. Reusing it to also launch per-task trainer code would blur two lifecycle layers and make Docker/K8s/SLURM placement harder to reason about. Decision: reject for this design. Keep JobLauncherSpec focused on job runtime launch.
+**Extend JobLauncher To Launch Training Code.** JobLauncherSpec already launches CJ/SJ job runtime processes. Reusing it to also launch per-task trainer code would blur two lifecycle layers and make Docker/K8s/SLURM placement harder to reason about. It is also the wrong shape for the mode's primary use: external_process exists to shell out to a distributed launcher (torchrun/Deepspeed/Horovod/`mpirun`) so NVFlare does not reimplement inter-rank comm — the command NVFlare runs *is* the trainer launcher, and NVFlare only talks to rank 0. Decision: reject for this design. Keep JobLauncherSpec focused on job runtime launch; external_process owns the trainer command via its internal process runner.
+
+**Authenticate The Trainer With Transport-Layer mTLS Instead Of A Session Token.** Rather than an app-layer HELLO token/proof, the trainer cell could present a site-issued client certificate and let CellNet's existing mTLS + FQCN↔CN binding authenticate it for free — reusing proven crypto with no new auth code. Rejected as the default because it breaks the ergonomic that motivates external_process and attach: external trainers (torchrun subprocesses, AV systems, SLURM jobs) are not provisioned NVFlare participants and today's IPCAgent/CellPipe ad-hoc cells deliberately load only the root CA (no client identity). Requiring per-trainer cert issuance/rotation just to run `flare.init()` pushes PKI management onto every trainer and every ephemeral launch. Decision: use a bootstrap-delivered session token, scoped by mode — a bare launch-scoped token over the localhost connection NVFlare itself created for external_process, and challenge-response with single-session/expiry for attach (Appendix B), where the trainer is started by an untrusted party over a possibly-remote channel. Deployments that *do* provision trainer certs may still run over mTLS; the token contract is layered above whatever transport security exists, not a replacement for it. (A leaked token is only replayable by a party that can also reach the cell — see the transport/threat discussion — which is why the token strength is scaled to how NVFlare obtains and delivers it per mode.)
 
 **Expose A General Client API Launcher.** A general launcher abstraction would recreate the same ambiguity that exists today between LauncherExecutor, SubprocessLauncher, and JobLauncherSpec. The external_process backend only needs an internal process runner. Attach mode only needs an optional start/poll/cancel helper. Decision: reject. Do not expose a general Client API Launcher extension point. If attach mode ever needs to start the trainer, that is a narrow optional start/poll/cancel hook (Future Enhancements), not a general launcher.
 

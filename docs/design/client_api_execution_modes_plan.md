@@ -26,7 +26,7 @@ Tracks: **F3** payload layer · **EX** executor/ScriptRunner · **TE** trainer e
 |---|---|---|---|
 | PR-0 Land design doc + this implementation plan in docs/design/ | all | S | **Lands first, merges fast** — the design is already approved; this just puts the reference material in-repo so every subsequent PR links it. Interface-freeze sign-offs happen on TE-1/EX-2/F3-1 themselves |
 | F3-1 Aggregate all-receivers terminal transfer outcome | F3 | M | Interface freeze #3. Purely additive next to FINISHED/TIMEOUT/DELETED |
-| TE-1 Protocol defs + session-token/HMAC proof helpers | TE+AT | S | Interface freeze #1 (one module for both tracks) |
+| TE-1 Protocol defs + stateless session-token/HMAC proof helpers | TE+AT | S | Interface freeze #1. Pure toolkit: defs vocabulary + TokenScope + generate/digest + compute/verify_hello_proof + combine_nonces. The stateful executor-side SessionTokenManager (single-use nonce issuance, attach-window expiry, single-session enforcement) is an attach-only need and moves to AT-2 — external_process uses only the lightweight launch-token proof over localhost |
 | EX-2 ClientAPIExecutor skeleton + backend spec + analytics-event ownership | EX | M | Interface freeze #2 |
 | TE-2 Bootstrap config schema + NVFLARE_CLIENT_API_CONFIG resolution | TE | M | Additive ConfigKeys; consumes EP-1's 0600 writer. Kept separate from TE-1: touches legacy-shared `client/config.py`, different revert profile |
 | EP-1 0600 permissions for Client API config files | EP | S | Fixes live exposure in today's `client_api_config.json`; standalone + backportable by design |
@@ -74,7 +74,7 @@ Tracks: **F3** payload layer · **EX** executor/ScriptRunner · **TE** trainer e
 | CC-3 Cyclic onto the transfer contract | CC | S | CC-1, EP-4. Kept out of CC-1 (would drag the behavior-neutral foundation behind EP-4) and out of CC-2 (swarm revert must not drag cyclic); shared broadcast_final_result declaration coordinates behind the CC-1 helper |
 | CC-4 CSE / broadcast-best fan-out (N receivers, per-receiver budgets) | CC | L | CC-1/2, TE-4 fan-out drain |
 | CC-5 Re-enable CCWF tensor disk offload (terminal-outcome-gated cleanup) | CC | M | CC-2/4. Deliberately last in track; flag experimental in 2.9 |
-| AT-2 Attach session manager backend (CJ side) + attach-side session enforcement | AT | L | TE-1, EX-2, TE-3, EP-3 (consumes its session-manager module — same machinery, P0/P2 boundary kept) |
+| AT-2 Attach session manager backend (CJ side) + attach-side session enforcement | AT | L | TE-1, EX-2, TE-3, EP-3. Includes the stateful `SessionTokenManager` (single-use nonce issuance, attach-window expiry, single-session, invalidation) built on TE-1's stateless proof helpers — deferred here from TE-1 since challenge-response state is an attach-only need |
 | AT-3 Trainer-side attach flow (bootstrap config, ad-hoc cell, HELLO proof) | AT | M | AT-2, TE-5. Connects via CP parent_url (ad-hoc listeners default-disabled) |
 | CT-5 Rank-contract example updates (multi-gpu/pt, pt-ddp-docker) + SLURM batch-artifact example | CT | M | EP-4. multi-gpu/pt violates the rank contract today; qwen3-vl is the reference |
 
