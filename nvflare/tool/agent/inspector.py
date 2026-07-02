@@ -83,6 +83,10 @@ class InspectState:
     distributed_patterns: list[dict] = field(default_factory=list)
     dynamic_patterns: list[dict] = field(default_factory=list)
     absolute_path_findings: list[dict] = field(default_factory=list)
+    # file -> list of (start_line, end_line) for every class definition. Used to
+    # decide whether base-framework usage lives inside a superset model class
+    # body (e.g. torch calls inside a LightningModule) versus standalone.
+    class_body_ranges: dict[str, list[tuple[int, int]]] = field(default_factory=dict)
 
 
 def inspect_path(
@@ -326,6 +330,8 @@ class _PythonInspector(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        end_lineno = getattr(node, "end_lineno", None) or node.lineno
+        self.state.class_body_ranges.setdefault(self.rel_path, []).append((node.lineno, end_lineno))
         for base in node.bases:
             base_name = _symbol_name(base)
             if not base_name:
@@ -475,7 +481,14 @@ def _primary_by_confidence_and_entry_context(state: InspectState, ranked: list[d
     # (base/superset) promotion is resolved afterward by
     # resolve_primary_framework. Fall back to the raw ranking only when nothing
     # is reachable (e.g. a model-only directory with no entry point).
+    #
+    # A numerical utility (numpy) is skipped here: an incidental `import numpy`
+    # in the entry must not win over a real convertible framework whose code is
+    # loaded dynamically or lives outside the entry file. Utilities are still
+    # ranked and reported; they just never become the entry-context primary.
     for item in ranked:
+        if item["name"] in frameworks.UTILITY_FRAMEWORKS:
+            continue
         if _framework_evidence_tied_to_entry_context(state, state.framework_evidence.get(item["name"], [])):
             return item["name"]
     return ranked[0]["name"]
@@ -515,6 +528,29 @@ class _FamilyResolver:
     def evidence_outside_files(self, evidence: list[dict], reference_evidence: list[dict]) -> list[dict]:
         reference_files = {item["file"] for item in reference_evidence}
         return [item for item in evidence if item["file"] not in reference_files]
+
+    def evidence_outside_class_bodies(self, evidence: list[dict], class_evidence: list[dict]) -> list[dict]:
+        # Exclude items whose (file, line) falls within the body of a class named
+        # in ``class_evidence`` (matched by that class's definition line). Lets a
+        # family member (Lightning) claim base-framework (torch) calls inside its
+        # model class bodies without absorbing torch used in a sibling class or at
+        # module level in the same file.
+        ranges_by_file: dict[str, list[tuple[int, int]]] = {}
+        for item in class_evidence:
+            file_path = item["file"]
+            def_line = item.get("line")
+            for start, end in self._state.class_body_ranges.get(file_path, []):
+                if start == def_line:
+                    ranges_by_file.setdefault(file_path, []).append((start, end))
+        return [
+            item for item in evidence if not _line_within_ranges(item.get("line"), ranges_by_file.get(item["file"]))
+        ]
+
+
+def _line_within_ranges(line: Optional[int], ranges: Optional[list[tuple[int, int]]]) -> bool:
+    if line is None or not ranges:
+        return False
+    return any(start <= line <= end for start, end in ranges)
 
 
 def _framework_evidence_tied_to_entry_context(state: InspectState, evidence: list[dict]) -> bool:
@@ -587,25 +623,36 @@ def _imports_reach_file(
 
 
 def _local_files_by_module(state: InspectState) -> dict[str, set[str]]:
+    # Register every candidate module name for a file, including the src-layout
+    # root-stripped name (mypkg.loop from src/mypkg/loop.py). When a name is
+    # claimed by both a root-level file and a src/ copy, the collision is
+    # resolved per-import by _prefer_shared_packaging_root using the importing
+    # file's own packaging root, so neither a stale src/ copy nor a stale
+    # root-level copy can steal the actively-imported module in either direction.
     files_by_module: dict[str, set[str]] = {}
-    exact_modules: set[str] = set()
-    stripped_candidates: list[tuple[str, str]] = []
     for file_path in state.file_imports:
-        exact_name = _exact_module_name_for_file(file_path)
         for module_name in _module_names_for_file(file_path):
-            if module_name == exact_name:
-                files_by_module.setdefault(module_name, set()).add(file_path)
-                exact_modules.add(module_name)
-            else:
-                stripped_candidates.append((module_name, file_path))
-    # A src-layout stripped name (mypkg.loop from src/mypkg/loop.py) only wins the
-    # module path when no root-level file already owns it; otherwise a stale copy
-    # under src/ would steal entry-tied credit from the actually-imported
-    # root-level module of the same name.
-    for module_name, file_path in stripped_candidates:
-        if module_name not in exact_modules:
             files_by_module.setdefault(module_name, set()).add(file_path)
     return files_by_module
+
+
+def _packaging_root_of(file_path: str) -> str:
+    parts = Path(file_path).parts
+    if parts and parts[0] in _PACKAGE_ROOT_DIR_NAMES:
+        return parts[0]
+    return ""
+
+
+def _prefer_shared_packaging_root(files: set[str], importing_file: str) -> set[str]:
+    # When an import resolves to copies in different packaging roots (a root-level
+    # file and a src/ copy of the same module path), prefer the copy sharing the
+    # importing file's packaging root. Fall back to all matches when none share
+    # it (e.g. a root-level entry importing a src-layout package).
+    if len(files) <= 1:
+        return files
+    importing_root = _packaging_root_of(importing_file)
+    same_root = {file_path for file_path in files if _packaging_root_of(file_path) == importing_root}
+    return same_root or files
 
 
 def _local_files_for_import(
@@ -631,7 +678,7 @@ def _local_files_for_import(
             for file_path in local_files_by_module.get(module_name, set())
             if _is_package_module_file(file_path)
         )
-    return files
+    return _prefer_shared_packaging_root(files, importing_file)
 
 
 def _exact_module_candidates_for_import(
@@ -690,11 +737,6 @@ def _file_module_parts(file_path: str) -> Optional[tuple[str, ...]]:
     if not parts or any(part in {"", ".", ".."} for part in parts):
         return None
     return parts
-
-
-def _exact_module_name_for_file(file_path: str) -> Optional[str]:
-    parts = _file_module_parts(file_path)
-    return ".".join(parts) if parts else None
 
 
 def _module_names_for_file(file_path: str) -> set[str]:

@@ -670,6 +670,97 @@ def test_inspect_src_layout_model_imported_by_root_entry_still_resolves(tmp_path
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
 
 
+def test_inspect_stray_lightning_class_co_located_with_dominant_torch_keeps_pytorch(tmp_path):
+    # A leftover empty `class LegacyLit(pl.LightningModule): pass` co-located with
+    # a dominant plain-torch model and training code (in a file that is itself an
+    # entry point via a top-level function) must not flip the project to
+    # Lightning. torch used outside the Lightning class body is standalone base
+    # usage; the stray Lightning class does not dominate.
+    (tmp_path / "run.py").write_text(
+        "import json\nif __name__ == '__main__':\n    print(json.dumps({}))\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "model.py").write_text(
+        "import torch\n"
+        "import torch.nn as nn\n"
+        "import pytorch_lightning as pl\n"
+        "class LegacyLit(pl.LightningModule):\n"
+        "    pass\n"
+        "class Net(nn.Module):\n"
+        "    def __init__(self):\n"
+        "        super().__init__()\n"
+        "        self.fc = nn.Linear(4, 2)\n"
+        "    def forward(self, x):\n"
+        "        return self.fc(x)\n"
+        "def train():\n"
+        "    net = Net()\n"
+        "    opt = torch.optim.SGD(net.parameters(), lr=0.1)\n"
+        "    loss = torch.nn.CrossEntropyLoss()\n"
+        "    loader = torch.utils.data.DataLoader([])\n"
+        "    return net, opt, loss, loader\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
+
+
+def test_inspect_incidental_numpy_entry_does_not_suppress_dynamically_loaded_pytorch(tmp_path):
+    # An incidental `import numpy` in the entry must not win primary-framework
+    # selection over the real PyTorch code, even when that code is loaded
+    # dynamically (no static import chain) and lives in a non-entry-point
+    # submodule. numpy is a numerical utility, not the training framework.
+    (tmp_path / "main.py").write_text(
+        "import numpy as np\n"
+        "import importlib\n"
+        "def main():\n"
+        "    importlib.import_module('pkg.net')\n"
+        "    return np.array([1])\n"
+        "if __name__ == '__main__':\n"
+        "    main()\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "pkg" / "net.py").write_text(
+        "import torch\nimport torch.nn as nn\nNET = torch.nn.Linear(4, 2)\nOPT = torch.optim.SGD(NET.parameters(), lr=0.1)\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    assert data["skill_selection"]["detected_framework"] == "pytorch"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
+
+
+def test_inspect_reverse_src_layout_prefers_importing_files_packaging_root(tmp_path):
+    # Reverse of the stale-src-copy case: entry and real code live under src/,
+    # and a stale copy sits at the root. The import from src/pkg/main.py must
+    # resolve to the src/ copy (sharing its packaging root), not the stale
+    # root-level copy, so routing follows the real (src/) PyTorch code.
+    (tmp_path / "src" / "pkg").mkdir(parents=True)
+    (tmp_path / "src" / "pkg" / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "src" / "pkg" / "main.py").write_text(
+        "from pkg.loop import run\nif __name__ == '__main__':\n    run()\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "src" / "pkg" / "loop.py").write_text(
+        "import torch\nimport torch.nn as nn\nclass Net(nn.Module):\n    pass\ndef run():\n    return Net()\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "pkg" / "loop.py").write_text(
+        "import lightning.pytorch as pl\nclass Lit(pl.LightningModule):\n    pass\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
+
+
 def test_inspect_stray_lightning_import_is_mixed_framework_not_flare_mixed_workspace(tmp_path):
     # A plain PyTorch repo with a stray, unused `import pytorch_lightning` is a
     # mixed-framework workspace, not the FLARE conversion "mixed_workspace".

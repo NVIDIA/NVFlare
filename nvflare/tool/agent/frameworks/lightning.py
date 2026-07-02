@@ -165,12 +165,6 @@ class LightningDetector(FrameworkDetector):
         #   4. Model-only/no-entry contexts use weighted evidence fallback.
         active_lightning_evidence = resolver.active_evidence(self.name)
         active_pytorch_evidence = resolver.active_evidence(family_base)
-        if resolver.tied_to_entry_context(active_lightning_evidence):
-            return True
-        # Any PyTorch evidence (not only active) tied to the entry context keeps
-        # the base framework primary, matching the pre-refactor behavior.
-        if resolver.tied_to_entry_context(pytorch_evidence):
-            return False
 
         # torch.optim/losses/dataloaders used *inside* a file that already holds
         # active Lightning evidence are part of the Lightning model, not
@@ -181,13 +175,40 @@ class LightningDetector(FrameworkDetector):
         pytorch_evidence_outside_active_lightning_files = resolver.evidence_outside_files(
             pytorch_evidence, active_lightning_evidence
         )
-        standalone_active_pytorch_evidence = resolver.evidence_outside_files(
-            active_pytorch_evidence, active_lightning_evidence
+        # Standalone base usage is active PyTorch that is NOT inside a Lightning
+        # model class body. Using class-body containment (rather than whole-file)
+        # keeps torch.optim/losses/dataloaders written inside a LightningModule
+        # attributed to Lightning, while a sibling plain-torch model or
+        # module-level training code co-located with a stray Lightning class still
+        # counts as genuine base usage.
+        active_lightning_class_evidence = [
+            item for item in active_lightning_evidence if item.get("kind") == "lightning_class"
+        ]
+        standalone_active_pytorch_evidence = resolver.evidence_outside_class_bodies(
+            active_pytorch_evidence, active_lightning_class_evidence
         )
-        lightning_score = resolver.score(lightning_evidence)
-        pytorch_score_outside_active_lightning_files = resolver.score(pytorch_evidence_outside_active_lightning_files)
         active_lightning_score = resolver.score(active_lightning_evidence)
         standalone_active_pytorch_score = resolver.score(standalone_active_pytorch_evidence)
+
+        if resolver.tied_to_entry_context(active_lightning_evidence):
+            # A Lightning model reachable from the entry context means Lightning,
+            # UNLESS a stray Lightning class is co-located in an entry-point file
+            # with dominant standalone torch (a plain-torch project that happens to
+            # keep a leftover LightningModule). In that case fall through to the
+            # base handling below rather than flipping the project to Lightning.
+            standalone_dominates = (
+                resolver.tied_to_entry_context(standalone_active_pytorch_evidence)
+                and standalone_active_pytorch_score > active_lightning_score
+            )
+            if not standalone_dominates:
+                return True
+        # Any PyTorch evidence (not only active) tied to the entry context keeps
+        # the base framework primary, matching the pre-refactor behavior.
+        elif resolver.tied_to_entry_context(pytorch_evidence):
+            return False
+
+        lightning_score = resolver.score(lightning_evidence)
+        pytorch_score_outside_active_lightning_files = resolver.score(pytorch_evidence_outside_active_lightning_files)
         if resolver.has_inspected_file_or_entry_point() and standalone_active_pytorch_evidence:
             return False
         if active_lightning_score == 0:

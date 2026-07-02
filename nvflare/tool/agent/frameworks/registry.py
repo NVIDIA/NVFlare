@@ -46,6 +46,14 @@ IMPORT_ONLY_ROOTS: dict[str, str] = {
     "numpy": "numpy",
 }
 
+# Numerical/array utilities that are used by virtually every ML framework rather
+# than being the primary training framework. Their mere presence (typically an
+# incidental import) must not win primary-framework selection over a real
+# convertible framework whose code is loaded dynamically or lives outside the
+# entry file. These are still ranked/reported, just never promoted as the
+# entry-context primary.
+UTILITY_FRAMEWORKS: frozenset[str] = frozenset({"numpy"})
+
 # Aggregated top-level-module -> framework map (detectors + import-only).
 _IMPORT_ROOTS: dict[str, str] = dict(IMPORT_ONLY_ROOTS)
 for _detector in _DETECTORS:
