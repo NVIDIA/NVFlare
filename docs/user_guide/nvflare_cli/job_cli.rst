@@ -512,30 +512,26 @@ stored as ``<client_name>/log.txt`` or ``<client_name>/log.json`` depending on
 the configured log streamer; after the job workspace is archived, the same files
 are read from the stored job ``workspace`` artifact.
 
-To enable client job log streaming in a portable job, add the job-level log
-streamer and receiver components to the job definition:
+To enable client job log streaming in a portable recipe job, use the Recipe log
+streaming helper:
 
 .. code-block:: python
 
-   from nvflare.app_common.logging.job_log_receiver import JobLogReceiver
-   from nvflare.app_common.logging.job_log_streamer import JobLogStreamer
+   # Streams each client's log.json to the server.
+   recipe.enable_log_streaming()
 
-   # Tails each client's job log.txt and streams it to the server.
-   recipe.job.to_clients(JobLogStreamer())
-
-   # Receives streamed log chunks on the server and stores them with the job.
-   recipe.job.to_server(JobLogReceiver())
+   # Or stream a text log file instead.
+   recipe.enable_log_streaming("log.txt")
 
 System-level logging configuration in ``resources.json.default`` is separate
 from this job-level opt-in. Some deployments may configure a server-side
-``JobLogReceiver`` globally, but including both components in the job makes the
-job self-contained across POC and production deployments.
+log receiver globally, but using the Recipe helper makes the job self-contained
+across POC and production deployments.
 
-To stream structured JSON logs instead, configure the streamer with
-``JobLogStreamer(log_file_name="log.json")``. ``nvflare job logs --format json``
-uses ``log.json`` when available and falls back to ``log.txt`` otherwise. Human
-output prints readable text; if only ``log.json`` is available, the CLI renders
-the JSON log records as text for display.
+``nvflare job logs --format json`` uses ``log.json`` when available and falls
+back to ``log.txt`` otherwise. Human output prints readable text; if only
+``log.json`` is available, the CLI renders the JSON log records as text for
+display.
 
 The ``examples/hello-world/hello-log-streaming`` example shows this pattern.
 
