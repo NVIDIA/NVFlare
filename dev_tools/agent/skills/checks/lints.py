@@ -907,7 +907,7 @@ def _lint_fixtures(context: LintContext) -> None:
             )
 
 
-_DESIGN_DOC_REF_RE = re.compile(r"docs[\\/]+design[\\/]", re.IGNORECASE)
+_DESIGN_DOC_REF_RE = re.compile(r"docs[\\/]+design\b", re.IGNORECASE)
 _EVALUATOR_HOOK_RE = re.compile(
     r"(?:"
     r"\bevals?/"
@@ -915,12 +915,12 @@ _EVALUATOR_HOOK_RE = re.compile(
     r"|\beval\s+cases?\b"
     r"|\beval\s+fixtures?\b"
     r"|\bevaluator\b"
-    r"|\bbenchmark"
+    r"|\bbenchmark[ -]?harness\b"  # benchmark-harness instructions (not "benchmark dataset")
     r"|\beval\s+(?:suite|harness)\b"  # evaluator harness references
     r"|\bgrader\b"  # eval grader references
     r"|\beval\s*=\s*\w"  # eval-mode toggles such as eval=on
     r"|--eval\b"  # evaluator harness flags such as --eval / --eval-only
-    r"|(?-i:\b[A-Z][A-Z0-9_]*_EVAL[A-Z0-9_]*\b)"  # env vars such as NVFLARE_SKILL_EVAL
+    r"|(?-i:\b[A-Z][A-Z0-9_]*_EVAL(?![A-Z])[A-Z0-9_]*\b)"  # env vars such as NVFLARE_SKILL_EVAL, not DEFAULT_EVALUATION
     r")",
     re.IGNORECASE,
 )

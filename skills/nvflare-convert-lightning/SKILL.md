@@ -66,7 +66,10 @@ recipes.
 7. Add or update `job.py` with the selected recipe: explicit model config
    `{"class_path": ..., "args": ...}` (never a live `LightningModule`
    instance), custom aggregator wiring through `aggregator=` when requested,
-   and `enable_tensor_disk_offload=True` when the recipe exposes it.
+   and `enable_tensor_disk_offload=True` paired with
+   `server_expected_format=ExchangeFormat.PYTORCH` when the recipe exposes them
+   (the offload is a warned no-op under the default NumPy format), per
+   `../_shared/conversion-workflow.md` ("Conversion Defaults").
 8. Validate in a ladder per `../_shared/validation-evidence.md`, then use
    `references/lightning-validation.md` for Lightning-specific checks before
    calling the conversion complete. First execution of source-derived code

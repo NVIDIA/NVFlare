@@ -29,6 +29,7 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 SKILLS_ROOT = REPO_ROOT / "skills"
 PT_TEMPLATES = SKILLS_ROOT / "nvflare-convert-pytorch" / "references" / "templates"
 LIGHTNING_TEMPLATES = SKILLS_ROOT / "nvflare-convert-lightning" / "references" / "templates"
+SHARED_TEMPLATES = SKILLS_ROOT / "_shared" / "templates"
 
 
 def _load_module(path: Path):
@@ -67,7 +68,7 @@ def test_custom_aggregator_template_step_weighted_average():
     from nvflare.apis.dxo import MetaKey
     from nvflare.app_common.abstract.fl_model import FLModel
 
-    module = _load_module(PT_TEMPLATES / "aggregator.py")
+    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
     aggregator = module.WeightedAggregator()
 
     aggregator.accept_model(FLModel(params={"w": np.array([2.0])}, meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 1}))
@@ -83,7 +84,7 @@ def test_custom_aggregator_template_resets_between_rounds():
 
     from nvflare.app_common.abstract.fl_model import FLModel
 
-    module = _load_module(PT_TEMPLATES / "aggregator.py")
+    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
     aggregator = module.WeightedAggregator()
 
     aggregator.accept_model(FLModel(params={"w": np.array([1.0])}))

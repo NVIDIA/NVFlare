@@ -215,6 +215,19 @@ A generated custom aggregator must:
 - use `FLModel.meta` such as `NUM_STEPS_CURRENT_ROUND` when weighting needs
   client contribution metadata.
 
+When the aggregator weights by client contribution, the client must send that
+metadata; the plain Client API does not populate it automatically. Include it
+in the sent model's meta, for example:
+
+```python
+from nvflare.apis.dxo import MetaKey
+
+flare.send(flare.FLModel(params=params, meta={MetaKey.NUM_STEPS_CURRENT_ROUND: num_steps}))
+```
+
+Without this send, a step-weighted aggregator silently degrades to an unweighted
+mean (missing metadata defaults to weight 1).
+
 ```python
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
@@ -231,9 +244,8 @@ class WeightedAggregator(ModelAggregator):
         ...  # clear accumulators between rounds
 ```
 
-A runnable step-weighted example ships at
-`../nvflare-convert-pytorch/references/templates/aggregator.py`; adapt it rather
-than inventing a new structure. Weighted, robust, FedOpt-style, or
+A runnable step-weighted example ships alongside this reference at
+`templates/aggregator.py`; adapt it rather than inventing a new structure. Weighted, robust, FedOpt-style, or
 adapter-aware variants are acceptable when they fit this `FLModel` exchange
 contract. An algorithm that needs new
 client/server exchange semantics also needs the matching client transformation

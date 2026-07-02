@@ -508,6 +508,40 @@ def test_run_v1_lints_reports_evaluator_hook_spellings(tmp_path, hook_line):
     assert _has_finding(result, LINT_SKILL_RUNTIME_BOUNDARY, "skill-runtime-evaluator-hook")
 
 
+def test_run_v1_lints_reports_design_doc_reference_without_trailing_separator(tmp_path):
+    skill_dir = _write_skill(tmp_path / "skills", "nvflare-valid-skill")
+    references = skill_dir / "references"
+    references.mkdir()
+    references.joinpath("workflow.md").write_text(
+        "See the docs/design directory for the operating-model policy.\n",
+        encoding="utf-8",
+    )
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_RUNTIME_BOUNDARY])
+
+    assert _has_finding(result, LINT_SKILL_RUNTIME_BOUNDARY, "skill-runtime-design-doc-ref")
+
+
+@pytest.mark.parametrize(
+    "safe_line",
+    [
+        "Keep the source project's benchmark dataset loading.",
+        "Report the DEFAULT_EVALUATION_METRIC from the source.",
+        "Consult docs/designer notes if present.",
+    ],
+)
+def test_run_v1_lints_does_not_flag_legitimate_runtime_words(tmp_path, safe_line):
+    _write_skill(
+        tmp_path / "skills",
+        "nvflare-valid-skill",
+        body=("Use when converting PyTorch training code.\nDo not use for Kubernetes deployment.\n" f"{safe_line}\n"),
+    )
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_RUNTIME_BOUNDARY])
+
+    assert result["findings"] == []
+
+
 def test_run_v1_lints_scans_non_public_skill_runtime_content(tmp_path):
     _write_skill(
         tmp_path / "skills",
