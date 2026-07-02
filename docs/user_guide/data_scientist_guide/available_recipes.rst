@@ -369,9 +369,30 @@ PyTorch SCAFFOLD
     env = SimEnv(num_clients=2)
     run = recipe.execute(env)
 
+PyTorch Lightning clients can use the same patched training script for FedAvg and SCAFFOLD:
+
+.. code-block:: python
+
+    import nvflare.client.lightning as flare
+    from pytorch_lightning import Trainer
+
+    trainer = Trainer(max_epochs=1)
+    flare.patch(trainer)
+
+    while flare.is_running():
+        flare.receive()
+        trainer.fit(model, datamodule=data_module)
+
+``flare.patch`` detects SCAFFOLD global controls, applies ``PTScaffoldHelper`` after each optimizer step,
+and adds the required control difference to the returned ``FLModel``. This automatic path supports Lightning
+automatic optimization with one optimizer whose parameter groups use the same finite, non-negative learning
+rate at each step and have positive total learning-rate exposure per round. Manual optimization must use an
+explicit receive/train/send loop without ``flare.patch`` and integrate ``PTScaffoldHelper`` directly.
+
 **Examples:**
 
 - `examples/advanced/cifar10/pt/cifar10-sim/cifar10_scaffold <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/cifar10/pt/cifar10-sim/cifar10_scaffold>`_
+- `examples/hello-world/hello-lightning <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-lightning>`_
 
 TensorFlow SCAFFOLD
 -------------------

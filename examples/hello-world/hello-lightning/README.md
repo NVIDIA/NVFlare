@@ -1,18 +1,35 @@
 # Hello Pytorch Lightning
-This example demonstrates how to use NVIDIA FLARE with PyTorch lightning to train an image classifier using federated averaging (FedAvg).The complete example code can be found in the`hello-pt directory <examples/hello-world/hello-lightning/>`_. It is recommended to create a virtual environment and run everything within a virtualenv.
+This example demonstrates how to use NVIDIA FLARE with PyTorch Lightning to train an image classifier using
+federated averaging (FedAvg) or SCAFFOLD. The same patched client script works with both algorithms.
+
+> **Main branch note:** Automatic Lightning SCAFFOLD support is introduced for NVFlare 2.9.0. Until that
+> package is published, install NVFlare from this repository and install the remaining dependencies separately.
 
 ## NVIDIA FLARE Installation
 for the complete installation instructions, see [Installation](https://nvflare.readthedocs.io/en/main/installation.html)
+
+For a released branch:
+
 ```
 pip install nvflare
 ```
+
+For the current `main` branch, install from the repository root so the automatic SCAFFOLD support is available:
+
+```
+python -m pip install -e .
+python -m pip install torch torchvision "jsonargparse[signatures]>=4.17.0" pytorch_lightning tensorboard
+```
+
+The `nvflare~=2.9.0rc` entry in `requirements.txt` intentionally records the first compatible release. After
+NVFlare 2.9.0 is published, `python -m pip install -r requirements.txt` installs the complete environment.
 
 Get the example code from github: 
 ```
     git clone https://github.com/NVIDIA/NVFlare.git
 ```
 
-then navigate to the hello-pt directory:
+then navigate to the hello-lightning directory:
 
 ```
     git switch <release branch>
@@ -268,6 +285,18 @@ Use the following command in your terminal to start the job with the specified n
 ```
 python job.py --num_rounds 2 --batch_size 16
 ```
+
+FedAvg is the default. To run the same Lightning client with SCAFFOLD:
+
+```
+python job.py --algorithm scaffold --num_rounds 2 --batch_size 16
+```
+
+`flare.patch(trainer)` detects the SCAFFOLD controls sent by `ScaffoldRecipe`, applies the required
+`PTScaffoldHelper` updates around optimizer steps, and returns the control difference to the server. This
+automatic path supports Lightning automatic optimization with one optimizer. Manual optimization must use an
+explicit `flare.receive()`/training/`flare.send()` loop without `flare.patch(trainer)` and call
+`PTScaffoldHelper` directly in the client training loop.
 
 output
 

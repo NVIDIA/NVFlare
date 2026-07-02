@@ -59,6 +59,9 @@ class PTScaffoldHelper(object):
     SCAFFOLD-related functions are based on https://github.com/Xtra-Computing/NIID-Bench.
     See also Li et al. "Federated Learning on Non-IID Data Silos: An Experimental Study"
     (https://arxiv.org/abs/2102.02079).
+
+    Control corrections and deltas apply only to trainable named parameters. Model buffers
+    remain part of the regular model update and are not returned as control deltas.
     """
 
     def __init__(self):
@@ -95,10 +98,14 @@ class PTScaffoldHelper(object):
     def model_update(self, model, curr_lr, c_global_para, c_local_para):
         # Update model using scaffold controls
         # See https://github.com/Xtra-Computing/NIID-Bench/blob/main/experiments.py#L391
-        net_para = model.state_dict()
-        for key in net_para:
-            net_para[key] = net_para[key] - curr_lr * (c_global_para[key] - c_local_para[key])
-        model.load_state_dict(net_para)
+        # SCAFFOLD controls apply to trainable parameters only. Model buffers such as
+        # BatchNorm running statistics remain part of the regular model update.
+        with torch.no_grad():
+            for key, parameter in model.named_parameters():
+                if not parameter.requires_grad:
+                    continue
+                parameter.add_(c_global_para[key], alpha=-curr_lr)
+                parameter.add_(c_local_para[key], alpha=curr_lr)
 
         self.cnt += 1
 
@@ -107,17 +114,20 @@ class PTScaffoldHelper(object):
         # See https://github.com/Xtra-Computing/NIID-Bench/blob/main/experiments.py#L403
 
         c_new_para = self.c_local.state_dict()
-        self.c_delta_para = copy.deepcopy(self.c_local.state_dict())
+        self.c_delta_para = {}
         global_model_para = model_global.state_dict()
-        net_para = model.state_dict()
-        for key in net_para:
-            c_new_para[key] = (
-                c_new_para[key] - c_global_para[key] + (global_model_para[key] - net_para[key]) / (self.cnt * curr_lr)
-            )
-            c_delta = (c_new_para[key] - c_local_para[key]).cpu()
-            if c_delta.dtype == torch.bfloat16:
-                c_delta = c_delta.to(torch.float32)
-            self.c_delta_para[key] = c_delta.numpy()
+        with torch.no_grad():
+            for key, parameter in model.named_parameters():
+                if not parameter.requires_grad:
+                    continue
+                global_value = global_model_para[key].to(parameter)
+                c_new_para[key] = (
+                    c_new_para[key] - c_global_para[key] + (global_value - parameter) / (self.cnt * curr_lr)
+                )
+                c_delta = (c_new_para[key] - c_local_para[key]).cpu()
+                if c_delta.dtype == torch.bfloat16:
+                    c_delta = c_delta.to(torch.float32)
+                self.c_delta_para[key] = c_delta.numpy()
         self.c_local.load_state_dict(c_new_para)
 
     def load_global_controls(self, weights):

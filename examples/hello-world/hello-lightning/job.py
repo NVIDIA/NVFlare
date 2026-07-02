@@ -18,6 +18,7 @@ import torchvision.datasets as datasets
 from model import LitNet
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.app_opt.pt.recipes.scaffold import ScaffoldRecipe
 from nvflare.recipe.sim_env import SimEnv
 
 DATASET_ROOT = "/tmp/nvflare/data"
@@ -28,6 +29,7 @@ def define_parser():
     parser.add_argument("--n_clients", type=int, default=2)
     parser.add_argument("--num_rounds", type=int, default=2)
     parser.add_argument("--batch_size", type=int, default=24)
+    parser.add_argument("--algorithm", choices=("fedavg", "scaffold"), default="fedavg")
 
     return parser.parse_args()
 
@@ -43,8 +45,10 @@ def main():
     n_clients = args.n_clients
     num_rounds = args.num_rounds
     batch_size = args.batch_size
+    recipe_class = FedAvgRecipe if args.algorithm == "fedavg" else ScaffoldRecipe
 
-    recipe = FedAvgRecipe(
+    recipe = recipe_class(
+        name=f"hello-lightning-{args.algorithm}",
         min_clients=n_clients,
         num_rounds=num_rounds,
         # Model can be specified as class instance or dict config:
