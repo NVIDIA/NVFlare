@@ -486,6 +486,88 @@ def test_inspect_entry_point_blocks_unreachable_active_lightning_helper_from_fal
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
 
 
+def _lightning_module_and_trainer(alias):
+    return (
+        f"class Net({alias}.LightningModule):\n"
+        "    def configure_optimizers(self):\n"
+        "        return None\n"
+        "def main():\n"
+        f"    {alias}.Trainer(max_epochs=1).fit(Net())\n"
+        "if __name__ == '__main__':\n"
+        "    main()\n"
+    )
+
+
+def test_inspect_from_lightning_import_pytorch_alias_routes_to_lightning(tmp_path):
+    # `from lightning import pytorch as pl` (Lightning 2.x form) alongside torch.
+    (tmp_path / "train.py").write_text(
+        "import torch\nimport torch.nn as nn\nfrom lightning import pytorch as pl\n"
+        + _lightning_module_and_trainer("pl"),
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
+
+
+def test_inspect_bare_lightning_alias_pytorch_submodule_routes_to_lightning(tmp_path):
+    # `import lightning as L` then `L.pytorch.LightningModule` / `L.pytorch.Trainer`.
+    (tmp_path / "train.py").write_text(
+        "import torch\nimport lightning as L\n"
+        "class Net(L.pytorch.LightningModule):\n"
+        "    def configure_optimizers(self):\n"
+        "        return None\n"
+        "def main():\n"
+        "    L.pytorch.Trainer(max_epochs=1).fit(Net())\n"
+        "if __name__ == '__main__':\n"
+        "    main()\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
+
+
+def test_inspect_src_layout_lightning_reachable_from_entry_routes_to_lightning(tmp_path):
+    # PyPA src-layout: entry imports mypkg.loop; the module lives at src/mypkg/loop.py.
+    (tmp_path / "src" / "mypkg").mkdir(parents=True)
+    (tmp_path / "src" / "mypkg" / "loop.py").write_text(
+        "import lightning.pytorch as pl\n" + _lightning_module_and_trainer("pl"),
+        encoding="utf-8",
+    )
+    (tmp_path / "train.py").write_text(
+        "import torch\nimport torch.nn as nn\nfrom mypkg.loop import Net\n"
+        "def main():\n    return Net()\nif __name__ == '__main__':\n    main()\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
+
+
+def test_inspect_dominant_lightning_module_with_unrelated_entry_routes_to_lightning(tmp_path):
+    # Lightning model in a non-entry module + a torch import (no active torch use)
+    # + an unrelated entry point must not default to the PyTorch base.
+    (tmp_path / "litmodel.py").write_text(
+        "import torch\nimport lightning.pytorch as pl\n"
+        "class LitNet(pl.LightningModule):\n"
+        "    def configure_optimizers(self):\n"
+        "        return None\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "run.py").write_text(
+        "import json\nif __name__ == '__main__':\n    print(json.dumps({}))\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
+
+
 def test_inspect_split_file_lightning_model_imported_by_entry_point_recommends_lightning(tmp_path):
     (tmp_path / "train.py").write_text(
         "import torch\n" "from model import LitModel\n" "\n" "def main():\n" "    return LitModel()\n",

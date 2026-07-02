@@ -79,6 +79,32 @@ def test_custom_aggregator_template_step_weighted_average():
     assert result.params["w"][0] == pytest.approx(3.5)
 
 
+def test_custom_aggregator_template_averages_per_key_with_mismatched_keys():
+    # A parameter present in only one client is averaged over just that client's
+    # weight (not diluted), and a key missing from the first client does not
+    # raise KeyError.
+    import numpy as np
+
+    from nvflare.apis.dxo import MetaKey
+    from nvflare.app_common.abstract.fl_model import FLModel
+
+    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    aggregator = module.WeightedAggregator()
+
+    aggregator.accept_model(FLModel(params={"shared": np.array([2.0])}, meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 1}))
+    aggregator.accept_model(
+        FLModel(
+            params={"shared": np.array([4.0]), "only_b": np.array([9.0])},
+            meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 3},
+        )
+    )
+    result = aggregator.aggregate_model()
+
+    # shared: (2*1 + 4*3)/(1+3) = 3.5 ; only_b: 9 present only in client B -> 9.0
+    assert result.params["shared"][0] == pytest.approx(3.5)
+    assert result.params["only_b"][0] == pytest.approx(9.0)
+
+
 def test_custom_aggregator_template_resets_between_rounds():
     import numpy as np
 
@@ -125,6 +151,42 @@ def test_lightning_eval_template_reports_validation_metric():
     metrics = module.validate_global_model(trainer, ToyLightning(), dataloaders=loader)
 
     assert "val_loss" in metrics
+
+
+def test_lightning_template_eval_only_mode_skips_training():
+    # FedEval / evaluation-only: main(evaluate_only=True) must validate but never
+    # call trainer.fit, so a converted eval-only job does not train.
+    module = _load_module(LIGHTNING_TEMPLATES / "lightning_client.py")
+
+    calls = []
+
+    class _FakeTrainer:
+        callback_metrics = {"val_loss": 0.1}
+
+        def validate(self, *a, **k):
+            calls.append("validate")
+
+        def fit(self, *a, **k):
+            calls.append("fit")
+
+    fake = _FakeTrainer()
+    import types
+
+    fake_flare = types.SimpleNamespace(
+        patch=lambda trainer: None,
+        receive=lambda: None,
+        _running=[True, False],
+        is_running=lambda: fake_flare._running.pop(0) if fake_flare._running else False,
+    )
+    module.flare = fake_flare  # patch the module-level flare handle
+
+    try:
+        module.main(model=object(), datamodule=object(), trainer_factory=lambda: fake, evaluate_only=True)
+    finally:
+        pass
+
+    assert "validate" in calls
+    assert "fit" not in calls
 
 
 class _DummyModel:

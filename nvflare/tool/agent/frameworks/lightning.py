@@ -39,7 +39,11 @@ LIGHTNING_PATCH_MODULE = f"{LIGHTNING_PATCH_PARENT_MODULE}.{LIGHTNING_PATCH_SUBM
 
 @dataclass
 class _LightningFileState:
-    aliases: set = field(default_factory=set)
+    # alias name -> resolved Lightning module it points at ("lightning",
+    # "lightning.pytorch", or "pytorch_lightning"). "lightning" is the bare
+    # package whose symbols live under ``.pytorch``; the others expose symbols
+    # directly.
+    aliases: dict = field(default_factory=dict)
     symbols: dict = field(default_factory=dict)
     patch_symbols: set = field(default_factory=set)
     patch_modules: set = field(default_factory=set)
@@ -57,7 +61,9 @@ class LightningDetector(FrameworkDetector):
 
     def on_import(self, alias: ast.alias, file_state: _LightningFileState, ctx: DetectContext) -> None:
         if alias.name in LIGHTNING_MODULES:
-            file_state.aliases.add(alias.asname or alias.name.split(".")[0])
+            # ``import lightning.pytorch as pl`` -> pl points at lightning.pytorch;
+            # ``import lightning as L`` -> L points at the bare lightning package.
+            file_state.aliases[alias.asname or alias.name] = alias.name
         if alias.name == LIGHTNING_PATCH_MODULE:
             # ``import nvflare.client.lightning as flare`` -> ``flare.patch`` is
             # the canonical conversion call; a plain import keeps the full path.
@@ -68,6 +74,10 @@ class LightningDetector(FrameworkDetector):
             for alias in aliases:
                 if alias.name in LIGHTNING_SYMBOLS:
                     file_state.symbols[alias.asname or alias.name] = alias.name
+                elif f"{module}.{alias.name}" in LIGHTNING_MODULES:
+                    # ``from lightning import pytorch as pl`` -> pl points at the
+                    # lightning.pytorch module that exposes LightningModule/Trainer.
+                    file_state.aliases[alias.asname or alias.name] = f"{module}.{alias.name}"
         if module == LIGHTNING_PATCH_MODULE:
             for alias in aliases:
                 if alias.name == "patch":
@@ -98,15 +108,26 @@ class LightningDetector(FrameworkDetector):
         return evidence.get("kind") in {"lightning_class", "lightning_trainer"}
 
     @staticmethod
-    def _is_lightning_class_base(base_name: str, file_state: _LightningFileState) -> bool:
+    def _prefix_exposes_lightning_symbols(prefix: str, file_state: _LightningFileState) -> bool:
+        # A module prefix exposes LightningModule/Trainer when it is (an alias of)
+        # a Lightning module -- ``lightning`` re-exports them at the top level, so
+        # a bare ``lightning`` alias counts too -- or the ``.pytorch`` submodule of
+        # a bare ``lightning`` alias (``import lightning as L`` -> ``L.pytorch``).
+        if file_state.aliases.get(prefix) in LIGHTNING_MODULES:
+            return True
+        if prefix in LIGHTNING_MODULES or prefix.startswith("lightning.pytorch"):
+            return True
+        head, _, rest = prefix.partition(".")
+        return rest == "pytorch" and file_state.aliases.get(head) == "lightning"
+
+    @classmethod
+    def _is_lightning_class_base(cls, base_name: str, file_state: _LightningFileState) -> bool:
         if file_state.symbols.get(base_name) in LIGHTNING_CLASS_SYMBOLS:
             return True
         if "." not in base_name:
             return False
         prefix, _, symbol = base_name.rpartition(".")
-        return symbol in LIGHTNING_CLASS_SYMBOLS and (
-            prefix in file_state.aliases or prefix in LIGHTNING_MODULES or prefix.startswith("lightning.pytorch")
-        )
+        return symbol in LIGHTNING_CLASS_SYMBOLS and cls._prefix_exposes_lightning_symbols(prefix, file_state)
 
     @staticmethod
     def _is_lightning_patch_call(call_name: str, file_state: _LightningFileState) -> bool:
@@ -115,16 +136,14 @@ class LightningDetector(FrameworkDetector):
             return False
         return prefix in file_state.patch_modules or prefix == LIGHTNING_PATCH_MODULE
 
-    @staticmethod
-    def _is_lightning_trainer_call(call_name: str, file_state: _LightningFileState) -> bool:
+    @classmethod
+    def _is_lightning_trainer_call(cls, call_name: str, file_state: _LightningFileState) -> bool:
         if file_state.symbols.get(call_name) in LIGHTNING_TRAINER_SYMBOLS:
             return True
         if "." not in call_name:
             return False
         prefix, _, symbol = call_name.rpartition(".")
-        return symbol in LIGHTNING_TRAINER_SYMBOLS and (
-            prefix in file_state.aliases or prefix in LIGHTNING_MODULES or prefix.startswith("lightning.pytorch")
-        )
+        return symbol in LIGHTNING_TRAINER_SYMBOLS and cls._prefix_exposes_lightning_symbols(prefix, file_state)
 
     def promote_over_family(self, family_base: str, resolver) -> bool:
         # PyTorch Lightning is a PyTorch superset. Resolve the conflict whenever
@@ -138,7 +157,10 @@ class LightningDetector(FrameworkDetector):
         # Base/superset precedence:
         #   1. Active superset evidence tied to the entry context -> superset.
         #   2. Any base evidence tied to the entry context -> base.
-        #   3. Entry point or inspected file exists but neither is tied -> base.
+        #   3. Entry point/inspected file exists and the base has genuine active
+        #      usage (a real model/optimizer, not a bare import) but neither is
+        #      tied -> base. A bare base import must not let an unrelated entry
+        #      point hide a clearly dominant superset in a non-entry module.
         #   4. Model-only/no-entry contexts use weighted evidence fallback.
         active_lightning_evidence = resolver.active_evidence(self.name)
         active_pytorch_evidence = resolver.active_evidence(family_base)
@@ -148,13 +170,13 @@ class LightningDetector(FrameworkDetector):
         # the base framework primary, matching the pre-refactor behavior.
         if resolver.tied_to_entry_context(pytorch_evidence):
             return False
-        if resolver.has_inspected_file_or_entry_point():
-            return False
 
         active_lightning_score = resolver.score(active_lightning_evidence)
+        active_pytorch_score = resolver.score(active_pytorch_evidence)
+        if resolver.has_inspected_file_or_entry_point() and active_pytorch_score > 0:
+            return False
         if active_lightning_score == 0:
             return False
-        active_pytorch_score = resolver.score(active_pytorch_evidence)
         if active_pytorch_score == 0 and resolver.has_evidence_outside_files(
             pytorch_evidence, active_lightning_evidence
         ):

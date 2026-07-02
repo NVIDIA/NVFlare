@@ -42,10 +42,13 @@ def validate_global_model(trainer, model, datamodule=None, dataloaders=None):
     return dict(trainer.callback_metrics)
 
 
-def main(model, datamodule, trainer_factory):
+def main(model, datamodule, trainer_factory, evaluate_only=False):
     """Lightning Client API round loop with validate-before-fit.
 
-    ``trainer_factory`` constructs the source project's ``Trainer``.
+    ``trainer_factory`` constructs the source project's ``Trainer``. Set
+    ``evaluate_only=True`` for FedEval / evaluation-only conversions: the round
+    runs ``trainer.validate`` so the patched trainer sends validation metrics,
+    and skips local training. Do not call ``trainer.fit`` in that mode.
     """
     trainer = trainer_factory()
     flare.patch(trainer)
@@ -55,4 +58,6 @@ def main(model, datamodule, trainer_factory):
         # patched trainer loads the global model internally.
         flare.receive()
         validate_global_model(trainer, model, datamodule=datamodule)
+        if evaluate_only:
+            continue
         trainer.fit(model, datamodule=datamodule)
