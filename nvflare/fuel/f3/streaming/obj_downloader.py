@@ -27,6 +27,7 @@ class ObjectDownloader:
         transaction_done_cb=None,
         progress_cb=None,
         progress_interval: float = 30.0,
+        outcome_cb=None,
         **cb_kwargs,
     ):
         """Constructor of ObjectDownloader.
@@ -40,6 +41,9 @@ class ObjectDownloader:
             transaction_done_cb: the callback to be called when the transaction is done.
             progress_cb: optional callback for source-side per-ref/per-receiver progress.
             progress_interval: minimum seconds between active progress callback events for advancing counters.
+            outcome_cb: optional callback called with the aggregate TransferOutcome after transaction_done_cb.
+                Unlike the transaction done status, the outcome distinguishes all-receivers-success (COMPLETED)
+                from termination with a receiver failure (FAILED). Signature: outcome_cb(outcome: TransferOutcome).
             **cb_kwargs: kwargs to be passed to transaction_done_cb.
 
         Notes: the CB signature is:
@@ -62,6 +66,7 @@ class ObjectDownloader:
             transaction_done_cb=transaction_done_cb,
             progress_cb=progress_cb,
             progress_interval=progress_interval,
+            outcome_cb=outcome_cb,
             **cb_kwargs,
         )
 
