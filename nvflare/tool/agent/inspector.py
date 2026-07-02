@@ -1026,7 +1026,9 @@ def _is_main_guard(node: ast.If) -> bool:
 def _skill_selection(detected_framework: Optional[str], conversion_state: str, state: InspectState) -> dict:
     recommended = []
     if conversion_state == "exported_job":
-        recommended.append("nvflare-job-lifecycle")
+        # Lifecycle skills are out of scope and not planned; exported jobs are
+        # handled with product APIs directly, so no skill is recommended.
+        pass
     elif detected_framework and conversion_state == "not_converted":
         skill = FRAMEWORK_SKILLS.get(detected_framework)
         if skill:

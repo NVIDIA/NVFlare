@@ -93,7 +93,7 @@ def test_seed_bundle_copy_includes_analysis_fixtures_by_default(tmp_path):
 
     names = {skill["name"] for skill in manifest["skills"]}
     assert SEED_SKILLS.issubset(names)
-    assert (bundle_root / "_shared" / "nvflare-job-lifecycle.md").is_file()
+    assert (bundle_root / "_shared" / "conversion-workflow.md").is_file()
     _assert_convert_pytorch_payload(bundle_root / "nvflare-convert-pytorch")
     _assert_convert_lightning_payload(bundle_root / "nvflare-convert-lightning")
     _assert_diagnose_runtime_payload(bundle_root / "nvflare-diagnose-job")
@@ -113,8 +113,8 @@ def test_seed_skills_install_into_codex_and_claude_temp_targets(tmp_path):
     assert claude_plan["applied"] is True
     assert SEED_SKILLS.issubset({entry["name"] for entry in codex_plan["skills"]})
     assert SEED_SKILLS.issubset({entry["name"] for entry in claude_plan["skills"]})
-    assert codex_target.joinpath("_shared", "nvflare-job-lifecycle.md").is_file()
-    assert claude_target.joinpath("_shared", "nvflare-job-lifecycle.md").is_file()
+    assert codex_target.joinpath("_shared", "conversion-workflow.md").is_file()
+    assert claude_target.joinpath("_shared", "conversion-workflow.md").is_file()
     _assert_convert_pytorch_payload(codex_target / "nvflare-convert-pytorch")
     _assert_convert_pytorch_payload(claude_target / "nvflare-convert-pytorch")
     _assert_convert_lightning_payload(codex_target / "nvflare-convert-lightning")
@@ -306,11 +306,11 @@ def _assert_convert_pytorch_payload(skill_dir: Path) -> None:
             skill_dir / "references" / "pytorch-client-api-conversion.md",
         ]
     )
-    assert "nvflare-job-lifecycle.md" in packaged_text
+    assert "conversion-workflow.md" in packaged_text
 
-    shared_lifecycle = skill_dir.parent / "_shared" / "nvflare-job-lifecycle.md"
-    assert shared_lifecycle.is_file()
-    assert "Do not require `rg` to be installed" in shared_lifecycle.read_text(encoding="utf-8")
+    shared_conversion = skill_dir.parent / "_shared" / "conversion-workflow.md"
+    assert shared_conversion.is_file()
+    assert "Do not require `rg` to be installed" in shared_conversion.read_text(encoding="utf-8")
 
 
 def _assert_convert_lightning_payload(skill_dir: Path) -> None:
@@ -328,10 +328,10 @@ def _assert_convert_lightning_payload(skill_dir: Path) -> None:
         ]
     )
     assert "flare.patch(trainer)" in packaged_text
-    assert "nvflare-job-lifecycle.md" in packaged_text
+    assert "conversion-workflow.md" in packaged_text
 
-    shared_lifecycle = skill_dir.parent / "_shared" / "nvflare-job-lifecycle.md"
-    assert shared_lifecycle.is_file()
+    shared_conversion = skill_dir.parent / "_shared" / "conversion-workflow.md"
+    assert shared_conversion.is_file()
 
 
 def _assert_diagnose_runtime_payload(skill_dir: Path) -> None:

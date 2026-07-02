@@ -18,7 +18,7 @@ Use this path for plain PyTorch conversion:
 5. Validate with `python job.py`, inspect terminal evidence, then export.
 
 Follow the Source Of Truth Boundary in
-`../../_shared/nvflare-job-lifecycle.md`: public checks can stop the skill path;
+`../../_shared/conversion-workflow.md`: public checks can stop the skill path;
 they cannot license a source-discovered replacement.
 
 ## Conversion Pattern
@@ -54,6 +54,10 @@ For PyTorch conversions, the job source should normally contain:
 - `job.py`: recipe or FedJob builder, simulation entry point, and export entry
   point;
 - `model.py`: copied, wrapped, or imported model definition when needed;
+- `aggregators.py`: only when the conversion includes custom aggregation (see
+  `../../_shared/conversion-workflow.md`, "Custom Aggregation");
+- `prepare_data.py` / `download_data.py`: only when the conversion generates
+  data setup code;
 - `requirements.txt` or a small requirements file only when dependencies differ
   from the source project.
 
@@ -76,18 +80,21 @@ arguments and state-dict shapes. When the original model needs arguments such as
 input dimension, vocabulary size, number of classes, hidden size, or dropout,
 make those values explicit in both places.
 
-Do not rely on exporting a live `nn.Module` instance when the model constructor
-has required arguments. Derive required constructor values from the source code,
-dataset metadata, vocab/config generation, checkpoint metadata, or CLI args
-before writing `job.py`, then pass them explicitly through the recipe model
-config and the client model construction path.
+Do not pass a live `nn.Module` instance as the recipe model input; generate the
+explicit `{"class_path": ..., "args": ...}` config per
+`../../_shared/conversion-workflow.md` ("Recipe Model Config"). Derive required
+constructor values from the source code, dataset metadata, vocab/config
+generation, checkpoint metadata, or CLI args before writing `job.py`, then pass
+them explicitly through the recipe model config and the client model
+construction path. If they are not statically clear, ask in interactive mode or
+fail closed in unattended mode.
 
 Acceptable patterns include:
 
 - a shared `model_args` dict imported by both `job.py` and `client.py`;
 - an explicit recipe model config such as
-  `{"path": "model.ModelClass", "args": model_args}` or
-  `{"class_path": "model.ModelClass", "args": model_args}`;
+  `{"class_path": "model.ModelClass", "args": model_args}` (prefer
+  `class_path`; `path` is the normalized job-config key);
 - a small JSON/config file read by both sides;
 - explicit CLI arguments passed through recipe `train_args` and parsed by
   `client.py`, with the same values used in `job.py`.
@@ -98,10 +105,58 @@ and checking that `load_state_dict` can accept the initial parameters. Treat a
 state-dict key or tensor-shape mismatch as a conversion bug, not as a reason to
 change the model architecture without user approval.
 
-## Evaluation Branch
+## Paired Evaluation Template
 
-When the task is evaluation-only, use `flare.is_evaluate()` to send metrics
-without local training.
+Training and evaluation are a pair: every converted training loop that has
+source evaluation evidence must also convert that evaluation, and its metrics
+must reach the server through `FLModel.metrics`. Adapt the user's existing
+evaluation code into this template. Do not synthesize metric semantics,
+validation loaders, label mappings, or averaging denominators from scratch
+without source evidence; when evaluation is required but the source has none,
+ask in interactive mode or fail closed in unattended mode.
+
+This template is self-contained packaged guidance; do not depend on NVFLARE
+repository `examples/` being present in the user's environment.
+
+```python
+def evaluate(model, val_loader, device):
+    model.eval()
+    total, metric_sum = 0, 0.0
+    with torch.no_grad():
+        for inputs, labels in val_loader:
+            inputs, labels = inputs.to(device), labels.to(device)
+            outputs = model(inputs)
+            # compute the source-backed metric; keep the source's
+            # metric name and averaging denominator
+            ...
+    if total == 0:
+        raise RuntimeError("evaluation data is empty; cannot report metrics")
+    return metric_sum / total
+
+input_model = flare.receive()
+model.load_state_dict(input_model.params)
+model.to(device)
+
+# evaluate the received global model first so the server can do model selection
+global_metric = evaluate(model, val_loader, device)
+
+# ... local training on the user's existing loop ...
+
+params = {k: v.detach().cpu() for k, v in model.state_dict().items()}
+flare.send(flare.FLModel(params=params, metrics={metric_name: global_metric}))
+```
+
+When the task is evaluation-only or cross-site evaluation, use
+`flare.is_evaluate()` to send `flare.FLModel(metrics=...)` without local
+training and without params.
+
+## Checkpoint Loading Safety
+
+Generated code that loads PyTorch checkpoint files must use safe weight-only
+loading: `torch.load(..., weights_only=True)`. A checkpoint that requires full
+pickle unpickling or custom executable deserialization is not statically safe;
+ask in interactive mode or fail closed in unattended mode instead of loading
+it.
 
 ## Scope Boundaries
 

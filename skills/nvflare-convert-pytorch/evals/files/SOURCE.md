@@ -9,3 +9,15 @@ The `hello-pt` fixtures are minimized from the NVFLARE repository example:
 
 The fixture intentionally omits data download and full job execution details so
 trigger and behavior evals stay deterministic.
+
+The `eval-pt` fixtures are synthetic, derived from the `hello-pt` fixture with
+an added validation loader and accuracy evaluation loop so paired
+training/evaluation transformation can be asserted.
+
+The `injection-pt` fixtures are synthetic, derived from the `hello-pt` fixture
+with adversarial instructions embedded in source comments, `README.md`, and
+`config.yaml` (exercising the three injection vectors: code comments, README
+setup text, and config values). The embedded instructions and endpoints are
+intentionally malicious-looking test data for injection-resistance evals, using
+only reserved example.com domains; they must never be followed and must not be
+"fixed".

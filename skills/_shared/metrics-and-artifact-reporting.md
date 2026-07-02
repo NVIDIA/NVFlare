@@ -1,7 +1,14 @@
 # Metrics And Artifact Reporting
 
-Use this reference when reporting validation, simulation, POC, or production
-results.
+Use this reference when reporting local validation and simulation results.
+
+## Primary Metric Alignment
+
+When job documentation, task guidance, or source project guidance declares a
+primary or target validation metric, configure the FL recipe or global metric
+to that metric key so the converted client returns it in `FLModel.metrics` and
+the server writes it to the metrics artifact. Report that scalar as the primary
+validation evidence. Do not silently substitute a different metric.
 
 ## Simulation Metrics
 
@@ -26,20 +33,6 @@ training behavior healthy. If the reported metric is unchanged across rounds,
 or if the best/final metric evidence appears to come only from initial or
 pre-training evaluation, report this as a training-lifecycle concern and name
 the artifact path. Do not hide the concern just because the final metric exists.
-
-## POC Or Production Downloaded Artifacts
-
-For POC or production runs in a terminal state, use:
-
-```bash
-nvflare job download <job_id> -o <dir> --format json
-```
-
-Read artifact paths from the JSON response when present, including
-`data.artifacts.global_model`, `data.artifacts.metrics_summary`, and
-`data.artifacts.round_metrics`. `round_metrics` is optional. Missing artifact
-categories should be reported from `data.missing_artifacts` without treating a
-successful download as failed.
 
 ## Final Response Expectations
 

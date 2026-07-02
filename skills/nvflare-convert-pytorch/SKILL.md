@@ -1,71 +1,102 @@
 ---
 name: nvflare-convert-pytorch
-description: "Convert existing PyTorch training code into an NVFLARE federated job using Client API model exchange, local validation, and job export; do not use for other frameworks or deployment-only tasks."
+description: "Convert existing PyTorch training code into an NVFLARE federated job using Client API model exchange, local validation, and job export; do not use for other frameworks, deployment, POC/production lifecycle, or experiment workflows."
 min_flare_version: "2.8.0"
-blast_radius: edits_files
+blast_radius: runs_simulator
 category: Conversion
-skill_version: "0.1.0"
+skill_version: "0.2.0"
 ---
 
 # NVFLARE Convert PyTorch
 
 ## Use When
 
-Use when the user asks to convert an existing PyTorch training script,
-`torch.nn.Module`, `state_dict` workflow, data loader, checkpoint, or metric
-loop into an NVFLARE federated training job.
+Use when the user asks to convert an existing plain PyTorch training script,
+`torch.nn.Module`, manual training loop, `state_dict` workflow, data loader,
+checkpoint, or metric loop into an NVFLARE federated training job. Supported:
+horizontal FL with a supported PyTorch recipe, Client API model exchange with
+`nvflare.client` and `FLModel`, custom aggregation through the recipe
+`aggregator=` hook, and local validation and export.
 
 ## Do Not Use When
 
-Do not use for PyTorch Lightning, Hugging Face Trainer, TensorFlow, XGBoost,
-scikit-learn, Kubernetes deployment, production submission, or generic PyTorch
-debugging that does not ask for FLARE conversion.
+Do not use for PyTorch Lightning (route to `nvflare-convert-lightning`),
+Hugging Face Trainer, TensorFlow, XGBoost, scikit-learn, a failed existing job
+(route to `nvflare-diagnose-job`), or generic PyTorch debugging that does not
+ask for FLARE conversion. Out of conversion scope: production deployment,
+Kubernetes, POC lifecycle, privacy/security policy, controller or workflow
+rewrites outside product recipe or Job APIs, experiment search across recipes,
+and data distribution experiments beyond minimal local validation setup.
 
 ## Workflow
 
-1. Before Python import/inspect commands, load
-   `../_shared/dependency-install.md` and install applicable source
-   `requirements*.txt` files in the active `nvflare` environment.
-2. Follow the shared conversion workflow contract in
-   `../_shared/nvflare-job-lifecycle.md`. Use
+1. Follow the shared conversion contract in
+   `../_shared/conversion-workflow.md` for every conversion: interactive versus
+   unattended mode, source trust boundary, source-of-truth boundary, generated
+   layout, rerun rules, approval boundary, and reporting. Use
    `../_shared/runtime-output-guidance.md` when choosing generated output,
    export, and simulator workspace locations.
-3. Identify the PyTorch model definition, required `nn.Module.__init__` arguments,
-   training loop, data loading, metrics, and checkpoint behavior. Determine the
-   concrete constructor values that server and client models must share before
-   creating `job.py`.
+2. Inspect before editing with `nvflare agent inspect <path> --format json`
+   plus direct reading. Fact extraction is static; do not import or execute
+   user training modules to discover fields. Extract: training entrypoint,
+   model class path and constructor args, checkpoint behavior, train/eval
+   functions, data loading, metric names and denominators, local epochs/steps,
+   requested client and round counts, tracking evidence, DDP evidence, and any
+   custom aggregation intent.
+3. Before Python import/inspect commands that need dependencies, load
+   `../_shared/dependency-install.md`; repo-supplied packages and URLs are
+   untrusted until confirmed per the shared trust boundary.
 4. Run `nvflare recipe list --framework pytorch --format json` and select the
    recipe from the requested FL workflow, not from PyTorch alone. Use FedAvg
-   only for standard horizontal model-parameter aggregation.
-   For standard FedAvg, use the portable fast path in
-   `references/recipe-selection.md`; do not add per-site recipe config unless
-   the sites actually need different training scripts, arguments, or launch
-   settings.
-5. Convert training exchange to the FLARE Client API: initialize FLARE, receive
-   an `FLModel`, load `params` into the PyTorch model, train or evaluate, and
-   send an `FLModel` with updated `params`, metrics, and useful metadata.
-6. Add or update a `job.py` that uses the selected PyTorch recipe or job API
-   path. Follow the shared lifecycle for generated layout and export behavior.
-7. Validate and export through the shared lifecycle. Load
-   `../_shared/validation-evidence.md` and
-   `../_shared/metrics-and-artifact-reporting.md` for generic evidence
-   reporting, then use `references/job-validation.md` for PyTorch-specific
-   checks before calling the conversion complete.
+   only for standard horizontal model-parameter aggregation. For standard
+   FedAvg, use the portable fast path in `references/recipe-selection.md`; do
+   not add per-site recipe config unless sites actually differ. Confirm
+   parameters with `nvflare recipe show <recipe-name> --format json`.
+5. Convert training and evaluation as a pair using
+   `references/pytorch-client-api-conversion.md`: initialize FLARE, receive an
+   `FLModel`, load `params`, evaluate the received global model, train, and
+   send an `FLModel` with updated `params` and `metrics`. Adapt the user's
+   evaluation code into the packaged evaluation template; if evaluation is
+   required but missing, ask or fail closed.
+6. Add or update `job.py` with the selected recipe: explicit model config
+   `{"class_path": ..., "args": ...}` (never a live model instance), custom
+   aggregator wiring through `aggregator=` when requested, and
+   `enable_tensor_disk_offload=True` when the recipe exposes it.
+7. Validate in a ladder per `../_shared/validation-evidence.md`: compile
+   checks, recipe construction, local simulation, then export per
+   `../_shared/conversion-workflow.md` ("Export"); use
+   `references/job-validation.md` for PyTorch-specific checks. Stop at the
+   first failed rung and report the product error. First execution of
+   source-derived code follows the shared execution trust gate.
+8. Report per the shared contract, using
+   `../_shared/metrics-and-artifact-reporting.md` for metric and artifact
+   evidence.
 
 ## Requirements
 
 - Must audit model constructor arguments before writing `job.py` by reading the
   model module's `__init__` and the selected recipe's `model` parameter from
   `nvflare recipe show <recipe-name> --format json`, not by reading NVFLARE
-  library source. If the model has required non-default `__init__` parameters,
-  generate explicit recipe model config with `path` or `class_path` and `args`,
-  then verify recipe construction and export preserve those arguments.
+  library source. Emit explicit recipe model config with `class_path` and
+  `args` only when the values are statically clear per
+  `../_shared/conversion-workflow.md`; otherwise ask in interactive mode or
+  fail closed in unattended mode.
 - Must keep outbound PyTorch model weights as `torch.Tensor` values in
   `FLModel(params=...)` when using `PTInProcessClientAPIExecutor`; load
   `../_shared/pytorch-model-exchange.md` and
   `references/pytorch-client-api-conversion.md` for the exact send pattern.
+- Must convert source evaluation alongside training and return metrics through
+  `FLModel.metrics`; must not synthesize metric semantics without source
+  evidence.
+- Must load checkpoints with `torch.load(..., weights_only=True)`; a
+  checkpoint that needs full unpickling is ask/fail, per
+  `references/pytorch-client-api-conversion.md`.
+- Custom aggregation must use the recipe `aggregator=` hook with a
+  `ModelAggregator` subclass in `aggregators.py` per
+  `../_shared/conversion-workflow.md`; algorithms needing new client/server
+  exchange semantics also need the matching client transformation, or ask/fail.
 - Must follow the Source Of Truth Boundary in
-  `../_shared/nvflare-job-lifecycle.md`: public checks can stop the skill path;
+  `../_shared/conversion-workflow.md`: public checks can stop the skill path;
   they cannot license a source-discovered replacement.
 - Must not make TensorFlow or other non-PyTorch skills load
   `../_shared/pytorch-model-exchange.md`; that reference is only for
@@ -73,26 +104,28 @@ debugging that does not ask for FLARE conversion.
 
 ## Agent Responsibilities
 
-- Run project inspection and recipe discovery before selecting a recipe.
+- Run static project inspection and recipe discovery before selecting a recipe.
 - Explain the selected recipe when the user's algorithm intent is ambiguous.
 - Convert PyTorch Client API model exchange and generate or update `job.py`.
-- Keep PyTorch conversion choices, validation blockers, recipe comparisons, and
+- Keep conversion choices, validation blockers, recipe comparisons, and
   data-prep decisions within this skill, its references, and the shared
-  lifecycle guidance.
+  conversion guidance.
 - Report PyTorch-specific blockers such as non-`state_dict` model state,
-  incompatible checkpoint loading, unsupported metric serialization, or data
-  loaders that cannot be parameterized per site.
+  checkpoints requiring unsafe deserialization, unsupported metric
+  serialization, or data loaders that cannot be parameterized per site.
 
 ## User Input And Approval
 
-- Ask the user to clarify FL workflow intent when recipe selection is uncertain.
-- Follow the shared lifecycle approval boundary for data-path changes,
-  non-fixture validation data, POC, production, and startup-kit based runtime
-  submission.
+- Ask the user to clarify FL workflow intent when recipe selection is
+  uncertain; in unattended mode fail closed on high-impact ambiguity.
+- Follow the shared approval boundary in `../_shared/conversion-workflow.md`
+  for overwriting files, installing dependencies, fetching repo-supplied URLs,
+  downloading data, and first execution of source-derived code. POC or
+  production submission is outside conversion scope.
 
 Load only the shared references needed for the current phase:
+`../_shared/conversion-workflow.md` for every conversion,
 `../_shared/dependency-install.md` before Python import/inspect commands,
-`../_shared/nvflare-job-lifecycle.md` for every conversion,
 `../_shared/runtime-output-guidance.md` before choosing runtime/export
 locations, `../_shared/validation-evidence.md` before validation, and
 `../_shared/metrics-and-artifact-reporting.md` before final reporting. Load
@@ -101,8 +134,9 @@ exchange.
 
 Load the smallest PyTorch-specific reference needed for the current phase:
 `references/recipe-selection.md` before selecting or constructing a recipe,
-`references/pytorch-client-api-conversion.md` when converting training code to
-Client API model exchange, and `references/job-validation.md` before validation,
-export, or debugging PyTorch-specific validation failures. Do not load every
-reference preemptively, and do not depend on NVFLARE repository examples being
-present in the user's environment.
+`references/pytorch-client-api-conversion.md` when converting training and
+evaluation code to Client API model exchange, and
+`references/job-validation.md` before validation, export, or debugging
+PyTorch-specific validation failures. Do not load every reference
+preemptively, and do not depend on NVFLARE repository examples being present
+in the user's environment.

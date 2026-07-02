@@ -13,7 +13,7 @@ covers Lightning-specific validation checks.
 2. Run local SimEnv validation with `python job.py`; follow
    `../../_shared/runtime-output-guidance.md` for workspace location.
 3. Run the final validation in the foreground to completion and confirm terminal
-   evidence before finalizing, per `../../_shared/nvflare-job-lifecycle.md`
+   evidence before finalizing, per `../../_shared/conversion-workflow.md`
    ("Final Validation Run Must Finish Before You Finalize") and
    `../../_shared/validation-evidence.md`. Lightning-specific timing: the patched
    `Trainer` start, callback setup, and logger flush make Lightning runs slower
@@ -23,7 +23,8 @@ covers Lightning-specific validation checks.
    scheduled wakeups or progress logs are not success evidence. If the run times
    out, report it as blocked or timed out with the current server/client log
    evidence.
-4. Validate export through the shared lifecycle when export is in scope.
+4. Validate export per `../../_shared/conversion-workflow.md` ("Export") when
+   export is in scope.
 5. Report the declared primary/global metric scalar when one exists.
 
 ## Lightning-Specific Checks

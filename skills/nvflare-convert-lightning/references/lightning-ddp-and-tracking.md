@@ -5,11 +5,19 @@ work. Single-GPU or single-process Lightning training does not need it.
 
 ## DDP Execution Model
 
-Lightning DDP and multi-GPU training spawns multiple worker processes. Do not
-run distributed workers inside an in-process executor. Use external process
-launch such as `launch_external_process=True` on the selected PyTorch recipe so
-each site launches its own distributed training process. This external-process
-rule is shared PyTorch-family guidance.
+DDP or multi-GPU evidence in the source is a high-impact runtime decision, not
+an automatic parameter mapping. Do not encode "DDP detected implies
+`launch_external_process=True`" as an implicit rule.
+
+Lightning DDP and multi-GPU training spawns multiple worker processes, and
+distributed workers must not run inside an in-process executor. When the
+source shows DDP/multi-GPU training, confirm the selected recipe documents an
+external-process launch parameter (for example `launch_external_process` on
+the PyTorch recipes) with `nvflare recipe show <recipe-name> --format json`.
+Use that parameter only when the recipe documents it or the user explicitly
+requests the documented setting; otherwise ask in interactive mode or fail
+closed in unattended mode, reporting the DDP evidence and the missing product
+surface.
 
 ## Rank-Synchronized Round Loop
 

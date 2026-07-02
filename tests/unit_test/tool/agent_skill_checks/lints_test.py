@@ -39,6 +39,7 @@ LINT_SKILL_PROCESS_METRIC = "skill-process-metric-lint"
 LINT_SKILL_COMMAND_DRIFT = "skill-command-drift-lint"
 LINT_SKILL_HELPER_SCRIPT = "skill-helper-script-lint"
 LINT_SKILL_FIXTURE = "skill-fixture-lint"
+LINT_SKILL_RUNTIME_BOUNDARY = "skill-runtime-boundary-lint"
 REQUIRED_FINDING_FIELDS = {"id", "severity", "file", "message", "hint"}
 
 
@@ -62,6 +63,7 @@ def test_run_v1_lints_passes_complete_skill(tmp_path):
         LINT_SKILL_COMMAND_DRIFT,
         LINT_SKILL_HELPER_SCRIPT,
         LINT_SKILL_FIXTURE,
+        LINT_SKILL_RUNTIME_BOUNDARY,
     }
 
 
@@ -449,6 +451,141 @@ def test_validate_skills_uses_requested_size_limit_without_mutating_default(tmp_
     assert _has_finding(limited, LINT_SKILL_MD_SIZE, "skill-md-too-large")
     assert default["status"] == "ok"
     assert default["findings"] == []
+
+
+def test_run_v1_lints_reports_design_doc_reference_in_runtime_content(tmp_path):
+    skill_dir = _write_skill(tmp_path / "skills", "nvflare-valid-skill")
+    references = skill_dir / "references"
+    references.mkdir()
+    references.joinpath("workflow.md").write_text(
+        "Follow the operating model in docs/design/agent_skill_operating_model.md.\n",
+        encoding="utf-8",
+    )
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_RUNTIME_BOUNDARY])
+
+    assert _has_finding(result, LINT_SKILL_RUNTIME_BOUNDARY, "skill-runtime-design-doc-ref")
+    _assert_structured_findings(result)
+
+
+def test_run_v1_lints_reports_evaluator_hook_in_skill_md(tmp_path):
+    _write_skill(
+        tmp_path / "skills",
+        "nvflare-valid-skill",
+        body=(
+            "Use when converting PyTorch training code.\n"
+            "Do not use for Kubernetes deployment.\n"
+            "After a failure, add or update the eval case in evals/evals.json.\n"
+        ),
+    )
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_RUNTIME_BOUNDARY])
+
+    assert _has_finding(result, LINT_SKILL_RUNTIME_BOUNDARY, "skill-runtime-evaluator-hook")
+
+
+@pytest.mark.parametrize(
+    "hook_line",
+    [
+        "Set NVFLARE_SKILL_EVAL=on before running.",
+        "Enable with eval=on in the config.",
+        "Run the conversion with the --eval flag.",
+        "Export NVFLARE_EVAL_MODE=1 for the grader.",
+        "Only relevant to the eval harness, not the runtime agent.",
+    ],
+)
+def test_run_v1_lints_reports_evaluator_hook_spellings(tmp_path, hook_line):
+    _write_skill(
+        tmp_path / "skills",
+        "nvflare-valid-skill",
+        body=(
+            "Use when converting PyTorch training code.\n" "Do not use for Kubernetes deployment.\n" f"{hook_line}\n"
+        ),
+    )
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_RUNTIME_BOUNDARY])
+
+    assert _has_finding(result, LINT_SKILL_RUNTIME_BOUNDARY, "skill-runtime-evaluator-hook")
+
+
+def test_run_v1_lints_scans_non_public_skill_runtime_content(tmp_path):
+    _write_skill(
+        tmp_path / "skills",
+        "nvflare-draft-skill",
+        status="draft",
+        body=(
+            "Use when converting PyTorch training code.\n"
+            "Do not use for Kubernetes deployment.\n"
+            "See docs/design/agent_skill_operating_model.md for the policy.\n"
+        ),
+    )
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_RUNTIME_BOUNDARY])
+
+    assert _has_finding(result, LINT_SKILL_RUNTIME_BOUNDARY, "skill-runtime-design-doc-ref")
+
+
+def test_run_v1_lints_scans_non_markdown_runtime_files(tmp_path):
+    skill_dir = _write_skill(tmp_path / "skills", "nvflare-valid-skill")
+    references = skill_dir / "references"
+    references.mkdir()
+    references.joinpath("helper.py").write_text(
+        "# see docs/design/agent_skill_operating_model.md\nprint('ok')\n",
+        encoding="utf-8",
+    )
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_RUNTIME_BOUNDARY])
+
+    assert _has_finding(result, LINT_SKILL_RUNTIME_BOUNDARY, "skill-runtime-design-doc-ref")
+
+
+def test_run_v1_lints_reports_benchmark_instruction_in_scripts(tmp_path):
+    skill_dir = _write_skill(tmp_path / "skills", "nvflare-valid-skill")
+    scripts_dir = skill_dir / "scripts"
+    scripts_dir.mkdir()
+    scripts_dir.joinpath("helper.py").write_text(
+        "# record results for the benchmark harness\nprint('ok')\n",
+        encoding="utf-8",
+    )
+    skill_dir.joinpath("tests").mkdir()
+    skill_dir.joinpath("tests", "helper_test.py").write_text("def test_ok():\n    pass\n", encoding="utf-8")
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_RUNTIME_BOUNDARY])
+
+    assert _has_finding(result, LINT_SKILL_RUNTIME_BOUNDARY, "skill-runtime-evaluator-hook")
+
+
+def test_run_v1_lints_reports_design_doc_reference_in_shared_content(tmp_path):
+    root = tmp_path / "skills"
+    _write_skill(root, "nvflare-valid-skill")
+    shared = root / "_shared"
+    shared.mkdir()
+    shared.joinpath("conversion-workflow.md").write_text(
+        "See docs/design/agent_skill_operating_model.md for the policy.\n",
+        encoding="utf-8",
+    )
+
+    result = run_v1_lints(root, checks=[LINT_SKILL_RUNTIME_BOUNDARY])
+
+    findings = [f for f in result["findings"] if f.get("code") == "skill-runtime-design-doc-ref"]
+    assert findings and findings[0].get("global") is True
+
+
+def test_run_v1_lints_allows_evaluation_language_in_runtime_content(tmp_path):
+    _write_skill(
+        tmp_path / "skills",
+        "nvflare-valid-skill",
+        body=(
+            "Use when converting PyTorch training code.\n"
+            "Do not use for Kubernetes deployment.\n"
+            "Convert the evaluation loop and report metrics from trainer.validate().\n"
+            "When the task is evaluate-only, select the FedEval recipe and evaluate the model.\n"
+        ),
+    )
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_RUNTIME_BOUNDARY])
+
+    assert result["findings"] == []
 
 
 def _write_skill(
