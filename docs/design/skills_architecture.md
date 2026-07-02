@@ -135,12 +135,21 @@ flowchart TB
 ## Lint Engine Independence (Design Invariant)
 
 The engineering lint tool (`dev_tools/agent/skills/checks/lints.py`) is
-**self-contained over the `skills/` tree**. This is a deliberate invariant, not
-an accident of the current code:
+**independent of `docs/design/` and offline catalog docs**. Its intentional
+inputs are the runtime `skills/` tree and the repo-only eval suites under
+`dev_tools/agent/skill_evals/<skill>/` (via `evals_root` / `--evals-root`). This
+is a deliberate invariant, not an accident of the current code:
 
 - The lint engine MUST NOT read `docs/design/*.md`. Those are human planning
-  docs; the admission engine validates shippable skill artifacts only. There is
-  no `docs_root` parameter and no `--docs-root` flag.
+  docs; there is no `docs_root` parameter and no `--docs-root` flag. It MAY read
+  the repo-only eval suites under `evals_root` — those are dev/QA tooling input,
+  explicitly distinct from the forbidden `docs_root`.
+- Separate the two input surfaces by check type: **runtime-boundary checks**
+  validate shippable artifacts only (`skills/`, `SKILL.md`, `references/`,
+  `skills/_shared/`) and reject embedded `evals/` directories, while
+  **trigger, process-metric, and fixture checks** deliberately consume the
+  repo-only eval suites under `evals_root` to verify positive/negative trigger
+  coverage and fixtures. Eval suites are never shipped in the wheel.
 - `SKILL.md` is a **runtime artifact** loaded by the agent. Frontmatter fields
   must be runtime or public skill metadata. Do not add offline-lint-only fields
   to its frontmatter.
