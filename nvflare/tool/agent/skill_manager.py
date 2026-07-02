@@ -29,9 +29,9 @@ from typing import Optional
 
 import nvflare
 from nvflare.tool.agent.skill_manifest import (
-    IGNORED_SKILL_FILE_NAMES,
     MANIFEST_FILE_NAME,
     SHARED_SKILL_REFERENCE_DIR,
+    SKILL_PACKAGING_EXCLUDE_NAMES,
     build_skill_manifest,
     load_manifest,
     skill_tree_hash,
@@ -610,9 +610,9 @@ def _first_symlink_in_tree(root_dir: Path) -> Optional[Path]:
 
 
 def _copy_exclude_names(source: SkillSource) -> set[str]:
-    # Eval/QA content lives outside skills/, so installs only skip byte-code and
-    # caches regardless of source type.
-    return set(IGNORED_SKILL_FILE_NAMES)
+    # Copy runtime content only, excluding byte-code caches and (fail-closed) any
+    # stray eval suite dir, which must live in dev_tools/agent/skill_evals/.
+    return set(SKILL_PACKAGING_EXCLUDE_NAMES)
 
 
 def _files_to_copy(source_dir: Path, target_dir: Path, *, exclude_names: set[str]) -> list[dict]:

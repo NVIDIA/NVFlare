@@ -974,14 +974,28 @@ _RUNTIME_TEXT_SUFFIXES = {
 def _lint_runtime_boundary(context: LintContext) -> None:
     """Packaged runtime skill content must stay inside the runtime boundary.
 
-    Runtime content is everything a skill ships except repo-only ``evals/``
-    (which release packaging strips). It must not reference ``docs/design/``
-    documents as operational guidance and must not contain evaluator hooks or
+    Runtime content is everything a skill ships. It must not contain an
+    ``evals/`` suite (grading-oracle data belongs in the repo-only eval root,
+    not inside a shipped skill), must not reference ``docs/design/`` documents
+    as operational guidance, and must not contain evaluator hooks or
     benchmark-harness-only instructions. The scan covers what packaging ships,
     so it iterates every skill record (public and non-public) and every shared
     reference directory, not only ``SKILL.md`` and ``.md`` references.
     """
     for record in context.records:
+        if (record.skill_dir / "evals").is_dir():
+            context.findings.append(
+                _finding(
+                    LINT_SKILL_RUNTIME_BOUNDARY,
+                    FINDING_ERROR,
+                    record.skill_dir / "evals",
+                    "eval suite must not live inside a shipped skill directory",
+                    "Move the eval suite to the eval root (dev_tools/agent/skill_evals/<skill>/); "
+                    "grading-oracle data must not ship in installed skills.",
+                    code="skill-runtime-eval-dir-in-skill",
+                    skill=record.name,
+                )
+            )
         for file_path, text in _iter_packaged_runtime_files(record.skill_dir):
             _scan_runtime_boundary(context, file_path, text, skill=record.name)
     for file_path, text in _iter_shared_runtime_files(context.skills_root):

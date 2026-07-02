@@ -244,6 +244,21 @@ def test_load_frontmatter_module_does_not_cache_failed_fallback_module(monkeypat
     assert module_name not in sys.modules
 
 
+def test_copy_released_skills_to_bundle_excludes_stray_eval_dir(tmp_path):
+    # Fail-closed: a stray skills/<skill>/evals/ must never be bundled, so
+    # grading-oracle data cannot re-enter installed skills.
+    source_root = tmp_path / "skills"
+    bundle_root = tmp_path / "bundle"
+    skill_dir = _write_skill(source_root, "nvflare-test-skill")
+    skill_dir.joinpath("evals").mkdir()
+    skill_dir.joinpath("evals", "evals.json").write_text("{}\n", encoding="utf-8")
+
+    copy_released_skills_to_bundle(source_root, bundle_root, nvflare_version="2.8.0")
+
+    assert bundle_root.joinpath("nvflare-test-skill", "SKILL.md").is_file()
+    assert not bundle_root.joinpath("nvflare-test-skill", "evals").exists()
+
+
 def test_copy_released_skills_to_bundle_copies_runtime_content(tmp_path):
     source_root = tmp_path / "skills"
     bundle_root = tmp_path / "bundle"
