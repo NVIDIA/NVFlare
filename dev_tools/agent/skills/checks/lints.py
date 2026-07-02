@@ -58,6 +58,7 @@ try:
         SKILL_FILE_NAME,
         parse_skill_frontmatter,
         should_skip_skill_dir,
+        skill_metadata,
         validate_skill_dir,
     )
 except ImportError:
@@ -66,6 +67,7 @@ except ImportError:
         SKILL_FILE_NAME,
         parse_skill_frontmatter,
         should_skip_skill_dir,
+        skill_metadata,
         validate_skill_dir,
     )
 
@@ -217,7 +219,7 @@ class SkillRecord:
 
     @property
     def public(self) -> bool:
-        status = str(self.metadata.get("status", "public")).strip().lower()
+        status = str(skill_metadata(self.metadata).get("status", "public")).strip().lower()
         return status not in PUBLIC_EXEMPT_STATUS
 
 

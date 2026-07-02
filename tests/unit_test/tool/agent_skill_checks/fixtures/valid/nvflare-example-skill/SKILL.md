@@ -1,9 +1,10 @@
 ---
 name: nvflare-example-skill
 description: Example fixture skill used by frontmatter validator tests.
-min_flare_version: "2.8.0"
-blast_radius: read_only
-category: Test
+metadata:
+  min_flare_version: "2.8.0"
+  blast_radius: read_only
+  category: Test
 ---
 
 # Example Skill
