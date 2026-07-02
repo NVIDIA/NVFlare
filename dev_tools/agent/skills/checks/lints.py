@@ -1107,22 +1107,22 @@ def _load_evals(evals_path: Path) -> tuple[list[dict[str, Any]], Optional[str]]:
     if not evals_path.is_file():
         return [], None
     if _is_oversized_text_file(evals_path):
-        return [], f"evals/evals.json exceeds size limit ({MAX_SKILL_TEXT_FILE_BYTES} bytes)"
+        return [], f"evals.json exceeds size limit ({MAX_SKILL_TEXT_FILE_BYTES} bytes)"
     try:
         raw = json.loads(evals_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as e:
-        return [], f"failed to parse evals/evals.json: {e}"
+        return [], f"failed to parse evals.json: {e}"
     if isinstance(raw, dict):
         items = raw.get("evals", [])
     elif isinstance(raw, list):
         items = raw
     else:
-        return [], "evals/evals.json must be an object with an evals list or a list"
+        return [], "evals.json must be an object with an evals list or a list"
     if not isinstance(items, list):
-        return [], "evals/evals.json field 'evals' must be a list"
+        return [], "evals.json field 'evals' must be a list"
     evals = [item for item in items if isinstance(item, dict)]
     if len(evals) != len(items):
-        return evals, "each evals/evals.json entry must be an object"
+        return evals, "each evals.json entry must be an object"
     return evals, None
 
 
@@ -1132,7 +1132,7 @@ def _add_evals_error(context: LintContext, lint_id: str, record: SkillRecord) ->
             lint_id,
             FINDING_ERROR,
             record.evals_path,
-            record.evals_error or "evals/evals.json is invalid",
+            record.evals_error or "evals.json is invalid",
             "Use guide-compatible JSON with an evals list.",
             code="skill-evals-invalid",
             skill=record.name,
