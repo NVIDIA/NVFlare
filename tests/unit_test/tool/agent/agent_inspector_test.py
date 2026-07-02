@@ -1319,6 +1319,47 @@ def test_inspect_unrelated_entry_ignores_pytorch_calls_inside_lightning_module(t
     assert any(item["file"] == "lit.py" and item["kind"] == "pytorch_call" for item in pytorch_evidence)
 
 
+def test_inspect_lightning_fallback_ignores_in_module_torch_calls_for_outside_import(tmp_path):
+    # No entry point: active Lightning and standalone PyTorch tie, so the final
+    # weighted fallback must not count torch calls from inside the Lightning file.
+    (tmp_path / "litmodel.py").write_text(
+        "import torch\n"
+        "import lightning\n"
+        "import pytorch_lightning as pl\n"
+        "from pytorch_lightning.callbacks import ModelCheckpoint\n"
+        "\n"
+        "class LitModel(pl.LightningModule):\n"
+        "    def configure_optimizers(self):\n"
+        "        return torch.optim.SGD(self.parameters(), lr=0.1)\n"
+        "\n"
+        "    def train_dataloader(self):\n"
+        "        return torch.utils.data.DataLoader([])\n"
+        "\n"
+        "    def training_step(self, batch, batch_idx):\n"
+        "        loss_fn = torch.nn.CrossEntropyLoss()\n"
+        "        return loss_fn(batch[0], batch[1])\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "torch_import_only.py").write_text("import torch\n", encoding="utf-8")
+    (tmp_path / "base_model.py").write_text(
+        "import torch\n" "\n" "class Net(torch.nn.Module):\n" "    pass\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    framework_names = [framework["name"] for framework in data["frameworks"]]
+    assert framework_names[0] == "pytorch_lightning"
+    assert "pytorch" in framework_names
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
+    pytorch_evidence = next(framework["evidence"] for framework in data["frameworks"] if framework["name"] == "pytorch")
+    assert any(
+        item["file"] == "torch_import_only.py" and item["kind"] == "import" and item["value"] == "torch"
+        for item in pytorch_evidence
+    )
+    assert sum(1 for item in pytorch_evidence if item["file"] == "litmodel.py" and item["kind"] == "pytorch_call") >= 3
+
+
 def test_inspect_lightning_script_with_many_torch_imports_recommends_lightning(tmp_path):
     # A normal Lightning script imports several torch symbols, so PyTorch import
     # evidence outnumbers Lightning symbols. Lightning still wins.
