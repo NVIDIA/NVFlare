@@ -193,3 +193,11 @@ tmp/
 tests/memory_profile/**/*.dat
 /HEAD
 uv.lock
+
+# Local-only agent skill design docs (human reference; not shipped in the PR).
+# Only docs/design/skills_architecture.md is tracked; keep the rest out so a
+# stray `git add -A` cannot re-track them.
+docs/design/agent_skill_authoring.md
+docs/design/agent_skill_evaluation.md
+docs/design/agent_skill_operating_model.md
+docs/design/export_arg_fidelity.md
