@@ -184,6 +184,8 @@ class LightningDetector(FrameworkDetector):
         standalone_active_pytorch_evidence = resolver.evidence_outside_files(
             active_pytorch_evidence, active_lightning_evidence
         )
+        lightning_score = resolver.score(lightning_evidence)
+        pytorch_score_outside_active_lightning_files = resolver.score(pytorch_evidence_outside_active_lightning_files)
         active_lightning_score = resolver.score(active_lightning_evidence)
         standalone_active_pytorch_score = resolver.score(standalone_active_pytorch_evidence)
         if resolver.has_inspected_file_or_entry_point() and standalone_active_pytorch_evidence:
@@ -191,8 +193,8 @@ class LightningDetector(FrameworkDetector):
         if active_lightning_score == 0:
             return False
         if standalone_active_pytorch_score == 0 and pytorch_evidence_outside_active_lightning_files:
-            if resolver.score(pytorch_evidence_outside_active_lightning_files) >= resolver.score(lightning_evidence):
+            if pytorch_score_outside_active_lightning_files >= lightning_score:
                 return False
         if active_lightning_score != standalone_active_pytorch_score:
             return active_lightning_score > standalone_active_pytorch_score
-        return resolver.score(lightning_evidence) > resolver.score(pytorch_evidence)
+        return lightning_score > pytorch_score_outside_active_lightning_files
