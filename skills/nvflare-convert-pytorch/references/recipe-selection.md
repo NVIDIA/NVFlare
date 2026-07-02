@@ -118,8 +118,8 @@ Prefer `class_path` at recipe construction time; `path` is the normalized key
 used in exported job config, and recipes accept it as an alias. Set
 `enable_tensor_disk_offload=True` when the selected recipe exposes it, paired
 with `server_expected_format=ExchangeFormat.PYTORCH`, per
-`../../_shared/conversion-workflow.md` ("Conversion Defaults") and
-`../../_shared/pytorch-model-exchange.md`.
+`../../nvflare-shared/references/conversion-workflow.md` ("Conversion Defaults") and
+`../../nvflare-shared/references/pytorch-model-exchange.md`.
 
 The server-side recipe model and the client-side training model must construct
 the same architecture. If the model constructor needs dimensions, class counts,
@@ -160,7 +160,7 @@ topology-specific workflow:
 - leave optional parameters at defaults unless the user request, source code, or
   validation result requires them;
 - keep generated source names consistent with this skill and runtime locations
-  consistent with `../../_shared/runtime-output-guidance.md`;
+  consistent with `../../nvflare-shared/references/runtime-output-guidance.md`;
 - keep shared generated files on all clients unless the recipe semantics or user
   request require site-specific roles, scripts, arguments, or launch settings;
 - ask before choosing when recipe intent or topology is ambiguous.
@@ -173,5 +173,5 @@ and report any missing user input before validation.
 ## Export Behavior
 
 Export handling is shared across algorithms and frameworks. Follow
-`../../_shared/conversion-workflow.md` for `--export`, `--export-dir`, and
+`../../nvflare-shared/references/conversion-workflow.md` for `--export`, `--export-dir`, and
 local command-line parser behavior.

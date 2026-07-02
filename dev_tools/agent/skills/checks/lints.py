@@ -1015,8 +1015,6 @@ def _lint_runtime_boundary(context: LintContext) -> None:
             )
         for file_path, text in _iter_packaged_runtime_files(record.skill_dir):
             _scan_runtime_boundary(context, file_path, text, skill=record.name)
-    for file_path, text in _iter_shared_runtime_files(context.skills_root):
-        _scan_runtime_boundary(context, file_path, text, skill=None)
 
 
 def _iter_eval_dirs(skill_dir: Path) -> Iterable[Path]:
@@ -1054,15 +1052,6 @@ def _iter_packaged_runtime_files(skill_dir: Path) -> Iterable[tuple[Path, str]]:
         content = _read_runtime_text_file(path)
         if content is not None:
             yield path, content
-
-
-def _iter_shared_runtime_files(skills_root: Path) -> Iterable[tuple[Path, str]]:
-    if not skills_root.is_dir():
-        return
-    for child in sorted(skills_root.iterdir(), key=lambda p: p.name):
-        if not child.is_dir() or child.is_symlink() or not child.name.startswith("_"):
-            continue
-        yield from _iter_packaged_runtime_files(child)
 
 
 def _read_runtime_text_file(path: Path) -> Optional[str]:

@@ -43,8 +43,8 @@ def test_seed_skill_manifest_includes_public_skills_and_skips_shared_references(
     names = {skill["name"] for skill in manifest["skills"]}
     assert manifest["findings"] == []
     assert SEED_SKILLS.issubset(names)
-    assert "_shared" not in names
-    assert all(skill["relative_path"] != "_shared" for skill in manifest["skills"])
+    assert "nvflare-shared" not in names
+    assert all(skill["relative_path"] != "nvflare-shared" for skill in manifest["skills"])
 
 
 def test_inspector_recommendations_are_available_in_seed_manifest(tmp_path):
@@ -93,7 +93,7 @@ def test_seed_bundle_copy_excludes_eval_suites(tmp_path):
 
     names = {skill["name"] for skill in manifest["skills"]}
     assert SEED_SKILLS.issubset(names)
-    assert (bundle_root / "_shared" / "conversion-workflow.md").is_file()
+    assert (bundle_root / "nvflare-shared" / "references" / "conversion-workflow.md").is_file()
     _assert_convert_pytorch_payload(bundle_root / "nvflare-convert-pytorch")
     _assert_convert_lightning_payload(bundle_root / "nvflare-convert-lightning")
     _assert_diagnose_runtime_payload(bundle_root / "nvflare-diagnose-job")
@@ -114,8 +114,8 @@ def test_seed_skills_install_into_codex_and_claude_temp_targets(tmp_path):
     assert claude_plan["applied"] is True
     assert SEED_SKILLS.issubset({entry["name"] for entry in codex_plan["skills"]})
     assert SEED_SKILLS.issubset({entry["name"] for entry in claude_plan["skills"]})
-    assert codex_target.joinpath("_shared", "conversion-workflow.md").is_file()
-    assert claude_target.joinpath("_shared", "conversion-workflow.md").is_file()
+    assert codex_target.joinpath("nvflare-shared", "references", "conversion-workflow.md").is_file()
+    assert claude_target.joinpath("nvflare-shared", "references", "conversion-workflow.md").is_file()
     _assert_convert_pytorch_payload(codex_target / "nvflare-convert-pytorch")
     _assert_convert_pytorch_payload(claude_target / "nvflare-convert-pytorch")
     _assert_convert_lightning_payload(codex_target / "nvflare-convert-lightning")
@@ -307,14 +307,14 @@ def _assert_convert_pytorch_payload(skill_dir: Path) -> None:
 
     # Runnable templates the references promise must actually ship (not be
     # silently stripped by a future packaging change).
-    assert skill_dir.joinpath("references", "templates", "client_with_eval.py").is_file()
+    assert skill_dir.joinpath("assets", "client_with_eval.py").is_file()
 
-    shared_conversion = skill_dir.parent / "_shared" / "conversion-workflow.md"
+    shared_conversion = skill_dir.parent / "nvflare-shared" / "references" / "conversion-workflow.md"
     assert shared_conversion.is_file()
     assert "Do not require `rg` to be installed" in shared_conversion.read_text(encoding="utf-8")
     # Shared custom-aggregation template must ship so a Lightning-only install
     # can still adapt it.
-    assert skill_dir.parent.joinpath("_shared", "templates", "aggregator.py").is_file()
+    assert skill_dir.parent.joinpath("nvflare-shared", "assets", "aggregator.py").is_file()
 
 
 def _assert_convert_lightning_payload(skill_dir: Path) -> None:
@@ -335,9 +335,9 @@ def _assert_convert_lightning_payload(skill_dir: Path) -> None:
     assert "conversion-workflow.md" in packaged_text
 
     # Runnable Lightning template the reference promises must actually ship.
-    assert skill_dir.joinpath("references", "templates", "lightning_client.py").is_file()
+    assert skill_dir.joinpath("assets", "lightning_client.py").is_file()
 
-    shared_conversion = skill_dir.parent / "_shared" / "conversion-workflow.md"
+    shared_conversion = skill_dir.parent / "nvflare-shared" / "references" / "conversion-workflow.md"
     assert shared_conversion.is_file()
 
 

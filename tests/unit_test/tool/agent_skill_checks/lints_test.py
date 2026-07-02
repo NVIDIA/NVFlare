@@ -633,20 +633,23 @@ def test_run_v1_lints_reports_benchmark_instruction_in_scripts(tmp_path):
     assert _has_finding(result, LINT_SKILL_RUNTIME_BOUNDARY, "skill-runtime-evaluator-hook")
 
 
-def test_run_v1_lints_reports_design_doc_reference_in_shared_content(tmp_path):
+def test_run_v1_lints_reports_design_doc_reference_in_shared_skill(tmp_path):
+    # nvflare-shared is an internal (non-triggered) skill referenced by the other
+    # skills; its runtime content is scanned like any other skill record, so a
+    # design-doc reference in it is flagged and attributed to nvflare-shared.
     root = tmp_path / "skills"
     _write_skill(root, "nvflare-valid-skill")
-    shared = root / "_shared"
-    shared.mkdir()
-    shared.joinpath("conversion-workflow.md").write_text(
-        "See docs/design/agent_skill_operating_model.md for the policy.\n",
-        encoding="utf-8",
+    _write_skill(
+        root,
+        "nvflare-shared",
+        status="internal",
+        body="See docs/design/agent_skill_operating_model.md for the policy.\n",
     )
 
     result = run_v1_lints(root, checks=[LINT_SKILL_RUNTIME_BOUNDARY])
 
     findings = [f for f in result["findings"] if f.get("code") == "skill-runtime-design-doc-ref"]
-    assert findings and findings[0].get("global") is True
+    assert findings and any(f.get("skill") == "nvflare-shared" for f in findings)
 
 
 def test_run_v1_lints_allows_evaluation_language_in_runtime_content(tmp_path):

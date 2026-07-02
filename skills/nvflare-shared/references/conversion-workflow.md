@@ -245,7 +245,7 @@ class WeightedAggregator(ModelAggregator):
 ```
 
 A runnable step-weighted example ships alongside this reference at
-`templates/aggregator.py`; adapt it rather than inventing a new structure. Weighted, robust, FedOpt-style, or
+`../assets/aggregator.py`; adapt it rather than inventing a new structure. Weighted, robust, FedOpt-style, or
 adapter-aware variants are acceptable when they fit this `FLModel` exchange
 contract. An algorithm that needs new
 client/server exchange semantics also needs the matching client transformation

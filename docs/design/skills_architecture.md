@@ -146,7 +146,8 @@ is a deliberate invariant, not an accident of the current code:
   explicitly distinct from the forbidden `docs_root`.
 - Separate the two input surfaces by check type: **runtime-boundary checks**
   validate shippable artifacts only (`skills/`, `SKILL.md`, `references/`,
-  `skills/_shared/`) and reject embedded `evals/` directories, while
+  `assets/`, and the internal `skills/nvflare-shared/` skill) and reject embedded
+  `evals/` directories, while
   **trigger, coverage, process-metric, and fixture checks** deliberately consume
   the repo-only eval suites under `evals_root` to verify positive/negative
   trigger coverage, global-negative coverage, policy coverage behavior IDs, and
@@ -212,7 +213,7 @@ flowchart TB
 
 ```mermaid
 flowchart TD
-    SkillsRoot["repo-root skills/"] --> SkillDirs["nvflare-orient, nvflare-convert-pytorch, nvflare-convert-lightning, nvflare-diagnose-job, shared references"]
+    SkillsRoot["repo-root skills/"] --> SkillDirs["nvflare-orient, nvflare-convert-pytorch, nvflare-convert-lightning, nvflare-diagnose-job, nvflare-shared (internal)"]
 
     SkillDirs --> ManifestBuild["build_skill_manifest: frontmatter validation and source hash"]
     ManifestBuild --> Editable["Editable source manifest"]

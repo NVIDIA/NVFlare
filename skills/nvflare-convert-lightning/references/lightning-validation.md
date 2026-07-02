@@ -1,21 +1,21 @@
 # Lightning Job Validation Notes
 
-Use `../../_shared/validation-evidence.md` for generic validation status,
+Use `../../nvflare-shared/references/validation-evidence.md` for generic validation status,
 commands, blockers, and evidence reporting. Use
-`../../_shared/metrics-and-artifact-reporting.md` for final metrics, round
+`../../nvflare-shared/references/metrics-and-artifact-reporting.md` for final metrics, round
 metrics, model artifact paths, and missing-evidence reporting. This file only
 covers Lightning-specific validation checks.
 
 ## Validate In Order
 
-1. Install dependencies first through `../../_shared/dependency-install.md`,
+1. Install dependencies first through `../../nvflare-shared/references/dependency-install.md`,
    using `uv pip` when available, before importing the user's Lightning code.
 2. Run local SimEnv validation with `python job.py`; follow
-   `../../_shared/runtime-output-guidance.md` for workspace location.
+   `../../nvflare-shared/references/runtime-output-guidance.md` for workspace location.
 3. Run the final validation in the foreground to completion and confirm terminal
-   evidence before finalizing, per `../../_shared/conversion-workflow.md`
+   evidence before finalizing, per `../../nvflare-shared/references/conversion-workflow.md`
    ("Final Validation Run Must Finish Before You Finalize") and
-   `../../_shared/validation-evidence.md`. Lightning-specific timing: the patched
+   `../../nvflare-shared/references/validation-evidence.md`. Lightning-specific timing: the patched
    `Trainer` start, callback setup, and logger flush make Lightning runs slower
    than plain PyTorch, and DDP/multi-GPU jobs launch external processes (see
    `lightning-ddp-and-tracking.md`) whose completion must also be observed before
@@ -23,7 +23,7 @@ covers Lightning-specific validation checks.
    scheduled wakeups or progress logs are not success evidence. If the run times
    out, report it as blocked or timed out with the current server/client log
    evidence.
-4. Validate export per `../../_shared/conversion-workflow.md` ("Export") when
+4. Validate export per `../../nvflare-shared/references/conversion-workflow.md` ("Export") when
    export is in scope.
 5. Report the declared primary/global metric scalar when one exists.
 
