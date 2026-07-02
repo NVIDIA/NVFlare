@@ -632,8 +632,11 @@ class FederatedServer(BaseServer):
         my_fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
         if secure_train:
             root_cert = server_config[SecureTrainConst.SSL_ROOT_CERT]
-            ssl_cert = server_config[SecureTrainConst.SSL_CERT]
-            private_key = server_config[SecureTrainConst.PRIVATE_KEY]
+            # prefer the per-job credential so the job cell never needs the site's long-lived key
+            ssl_cert = server_config.get(SecureTrainConst.JOB_CERT) or server_config[SecureTrainConst.SSL_CERT]
+            private_key = (
+                server_config.get(SecureTrainConst.JOB_PRIVATE_KEY) or server_config[SecureTrainConst.PRIVATE_KEY]
+            )
 
             credentials = {
                 DriverParams.CA_CERT.value: root_cert,

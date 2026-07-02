@@ -20,7 +20,14 @@ import re
 import sys
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import ConnectionSecurity, ConnPropKey, FilterKey, SiteType, SystemConfigs
+from nvflare.apis.fl_constant import (
+    ConnectionSecurity,
+    ConnPropKey,
+    FilterKey,
+    SecureTrainConst,
+    SiteType,
+    SystemConfigs,
+)
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.data_event.utils import set_scope_property
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
@@ -30,6 +37,7 @@ from nvflare.fuel.utils.json_scanner import Node
 from nvflare.fuel.utils.url_utils import make_url
 from nvflare.fuel.utils.wfconf import ConfigContext, ConfigError
 from nvflare.private.defs import ClientRegMsgKey, SSLConstants
+from nvflare.private.fed.utils.job_cert_utils import find_job_cert
 from nvflare.private.fed.utils.site_config import project_site_config
 from nvflare.private.json_configer import JsonConfigurator
 from nvflare.private.privacy_manager import PrivacyManager, Scope
@@ -114,6 +122,12 @@ class FLServerStarterConfiger(JsonConfigurator):
                     )
         except Exception:
             raise ValueError(f"Server config error: '{self.server_config_file_names}'")
+
+        if self.args.job_id:
+            job_cert_paths = find_job_cert(self.workspace.get_run_dir(self.args.job_id))
+            if job_cert_paths:
+                for server in self.config_data["servers"]:
+                    server[SecureTrainConst.JOB_CERT], server[SecureTrainConst.JOB_PRIVATE_KEY] = job_cert_paths
 
     def build_component(self, config_dict):
         t = super().build_component(config_dict)
@@ -403,6 +417,12 @@ class FLClientStarterConfiger(JsonConfigurator):
 
         except Exception:
             raise ValueError(f"Client config error: '{self.client_config_file_names}'")
+
+        if self.args.job_id:
+            job_cert_paths = find_job_cert(self.workspace.get_run_dir(self.args.job_id))
+            if job_cert_paths:
+                client = self.config_data["client"]
+                client[SecureTrainConst.JOB_CERT], client[SecureTrainConst.JOB_PRIVATE_KEY] = job_cert_paths
 
     def finalize_config(self, config_ctx: ConfigContext):
         """Finalize the config process.

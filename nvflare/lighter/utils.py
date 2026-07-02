@@ -83,6 +83,7 @@ def generate_cert(
     not_valid_before=None,
     not_valid_after=None,
     extra_extensions=None,
+    ca_path_length=None,
 ):
     now = not_valid_before or datetime.datetime.now(datetime.timezone.utc)
     cert_not_valid_after = not_valid_after or now + datetime.timedelta(days=valid_days)
@@ -109,7 +110,9 @@ def generate_cert(
     )
 
     if ca:
-        builder = builder.add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True).add_extension(
+        builder = builder.add_extension(
+            x509.BasicConstraints(ca=True, path_length=ca_path_length), critical=True
+        ).add_extension(
             x509.KeyUsage(
                 digital_signature=True,
                 content_commitment=False,

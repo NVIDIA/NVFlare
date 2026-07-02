@@ -1,0 +1,168 @@
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import datetime
+import os
+import stat
+
+from cryptography import x509
+from cryptography.hazmat.primitives import serialization
+from cryptography.x509.oid import NameOID
+
+from nvflare.fuel.f3.cellnet.cell_cipher import SimpleCellCipher
+from nvflare.lighter.constants import ProvFileName
+from nvflare.lighter.utils import (
+    Identity,
+    generate_cert,
+    generate_keys,
+    serialize_cert,
+    serialize_pri_key,
+    verify_cert_chain,
+)
+from nvflare.private.fed.utils.job_cert_utils import (
+    JOB_CERT_FILE_NAME,
+    JOB_KEY_FILE_NAME,
+    JobCertIssuer,
+    find_job_cert,
+    get_job_id_from_cert,
+    write_job_cert,
+)
+
+
+def _write_job_ca(startup_dir, ca_valid_days=360, expired=False):
+    os.makedirs(startup_dir, exist_ok=True)
+    root_key, root_pub = generate_keys()
+    root_cert = generate_cert(Identity("root"), Identity("root"), root_key, root_pub, ca=True)
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if expired:
+        not_valid_before = now - datetime.timedelta(days=2)
+        not_valid_after = now - datetime.timedelta(days=1)
+    else:
+        not_valid_before = now
+        not_valid_after = now + datetime.timedelta(days=ca_valid_days)
+
+    ca_key, ca_pub = generate_keys()
+    ca_cert = generate_cert(
+        Identity("job_ca.test"),
+        Identity("root"),
+        root_key,
+        ca_pub,
+        ca=True,
+        ca_path_length=0,
+        not_valid_before=not_valid_before,
+        not_valid_after=not_valid_after,
+    )
+
+    with open(os.path.join(startup_dir, ProvFileName.JOB_CA_CERT), "wb") as f:
+        f.write(serialize_cert(ca_cert))
+    with open(os.path.join(startup_dir, ProvFileName.JOB_CA_KEY), "wb") as f:
+        f.write(serialize_pri_key(ca_key))
+    return root_cert, ca_cert
+
+
+def test_issuer_disabled_without_job_ca(tmp_path):
+    issuer = JobCertIssuer(str(tmp_path))
+    assert not issuer.enabled
+
+
+def test_issuer_disabled_when_job_ca_expired(tmp_path):
+    _write_job_ca(str(tmp_path), expired=True)
+    issuer = JobCertIssuer(str(tmp_path))
+    assert not issuer.enabled
+
+
+def test_issued_cert_chains_to_root_and_carries_job_id(tmp_path):
+    root_cert, ca_cert = _write_job_ca(str(tmp_path))
+    issuer = JobCertIssuer(str(tmp_path))
+    assert issuer.enabled
+
+    cert_pem, key_pem = issuer.issue("site-1", "job-123")
+
+    chain = x509.load_pem_x509_certificates(cert_pem)
+    assert len(chain) == 2
+    leaf, intermediate = chain
+    assert intermediate == ca_cert
+    verify_cert_chain(leaf_cert=leaf, intermediate_certs=[intermediate], root_ca_cert=root_cert)
+    assert leaf.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value == "site-1"
+    assert get_job_id_from_cert(leaf) == "job-123"
+    assert leaf.not_valid_after_utc <= leaf.not_valid_before_utc + datetime.timedelta(days=30)
+    assert b"PRIVATE KEY" in key_pem
+
+
+def test_issued_cert_validity_clamped_to_job_ca(tmp_path):
+    _, ca_cert = _write_job_ca(str(tmp_path), ca_valid_days=1)
+    issuer = JobCertIssuer(str(tmp_path))
+
+    cert_pem, _ = issuer.issue("site-1", "job-123")
+
+    leaf = x509.load_pem_x509_certificates(cert_pem)[0]
+    assert leaf.not_valid_after_utc == ca_cert.not_valid_after_utc.replace(microsecond=0)
+
+
+def test_job_id_absent_from_site_cert():
+    root_key, root_pub = generate_keys()
+    root_cert = generate_cert(Identity("root"), Identity("root"), root_key, root_pub, ca=True)
+    assert get_job_id_from_cert(root_cert) is None
+
+
+def test_write_and_find_job_cert(tmp_path):
+    run_dir = str(tmp_path / "run_1")
+    assert find_job_cert(run_dir) is None
+
+    write_job_cert(run_dir, b"cert-bytes", b"key-bytes")
+
+    found = find_job_cert(run_dir)
+    assert found is not None
+    cert_path, key_path = found
+    assert cert_path.endswith(JOB_CERT_FILE_NAME)
+    assert key_path.endswith(JOB_KEY_FILE_NAME)
+    with open(cert_path, "rb") as f:
+        assert f.read() == b"cert-bytes"
+    assert stat.S_IMODE(os.stat(key_path).st_mode) == 0o600
+
+
+def test_write_job_cert_overwrite(tmp_path):
+    run_dir = str(tmp_path / "run_1")
+    write_job_cert(run_dir, b"cert-1", b"key-1")
+
+    write_job_cert(run_dir, b"cert-2", b"key-2")
+
+    cert_path, key_path = find_job_cert(run_dir)
+    with open(cert_path, "rb") as f:
+        assert f.read() == b"cert-2"
+    with open(key_path, "rb") as f:
+        assert f.read() == b"key-2"
+
+
+def test_cell_cipher_works_with_job_cert_chains(tmp_path):
+    root_cert, _ = _write_job_ca(str(tmp_path))
+    issuer = JobCertIssuer(str(tmp_path))
+
+    sj_cert_pem, sj_key_pem = issuer.issue("server", "job-123")
+    cj_cert_pem, cj_key_pem = issuer.issue("site-1", "job-123")
+
+    sj_cipher = SimpleCellCipher(
+        root_cert,
+        serialization.load_pem_private_key(sj_key_pem, password=None),
+        x509.load_pem_x509_certificates(sj_cert_pem),
+    )
+    cj_cipher = SimpleCellCipher(
+        root_cert,
+        serialization.load_pem_private_key(cj_key_pem, password=None),
+        x509.load_pem_x509_certificates(cj_cert_pem),
+    )
+
+    cipher_text = sj_cipher.encrypt(b"task data", x509.load_pem_x509_certificates(cj_cert_pem))
+    assert cj_cipher.decrypt(cipher_text, x509.load_pem_x509_certificates(sj_cert_pem)) == b"task data"

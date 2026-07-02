@@ -204,6 +204,10 @@ class FederatedClientBase:
             root_cert = self.client_args[SecureTrainConst.SSL_ROOT_CERT]
             ssl_cert = self.client_args[SecureTrainConst.SSL_CERT]
             private_key = self.client_args[SecureTrainConst.PRIVATE_KEY]
+            if self.args.job_id:
+                # CJ prefers the per-job credential so the job cell never needs the site's long-lived key
+                ssl_cert = self.client_args.get(SecureTrainConst.JOB_CERT) or ssl_cert
+                private_key = self.client_args.get(SecureTrainConst.JOB_PRIVATE_KEY) or private_key
 
             credentials = {
                 DriverParams.CA_CERT.value: root_cert,

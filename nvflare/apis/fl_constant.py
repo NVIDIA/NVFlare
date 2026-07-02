@@ -486,6 +486,9 @@ class SecureTrainConst:
     SSL_ROOT_CERT = "ssl_root_cert"
     SSL_CERT = "ssl_cert"
     PRIVATE_KEY = "ssl_private_key"
+    # per-job credential for job cells; set only in job processes when the job cert exists
+    JOB_CERT = "job_ssl_cert"
+    JOB_PRIVATE_KEY = "job_ssl_private_key"
 
 
 class FLMetaKey:

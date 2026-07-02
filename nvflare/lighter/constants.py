@@ -191,6 +191,8 @@ class ProvFileName:
     AWS_START_SH = "aws_start.sh"
     EDGE_RESOURCES_JSON = "edge__p_resources.json"
     START_ALL_SH = "start_all.sh"
+    JOB_CA_CERT = "job_ca.crt"
+    JOB_CA_KEY = "job_ca.key"
 
 
 class CertFileBasename:
