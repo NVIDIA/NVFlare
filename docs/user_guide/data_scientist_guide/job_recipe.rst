@@ -221,6 +221,88 @@ data loaders, validators, or other recipe behavior.
    ``data_path`` or ``batch_size``. For FedAvg, pass those values through
    ``train_args`` unless your recipe explicitly documents another shape.
 
+Recipe Metadata
+---------------
+
+Use ``set_recipe_meta`` to add generated job metadata from a recipe without
+mutating ``recipe.job.job.meta_props`` directly. The helper sets one
+``JobMetaKey`` metadata entry at a time:
+
+.. code-block:: python
+
+   from nvflare.apis.job_def import JobMetaKey
+   from nvflare.recipe import set_recipe_meta
+
+   set_recipe_meta(
+       recipe,
+       JobMetaKey.SCOPE,
+       "private",
+   )
+   set_recipe_meta(
+       recipe,
+       JobMetaKey.RESOURCE_SPEC,
+       {
+           "site-1": {"num_of_gpus": 1, "mem_per_gpu_in_GiB": 4},
+           "site-2": {"num_of_gpus": 1, "mem_per_gpu_in_GiB": 2},
+       },
+   )
+   set_recipe_meta(
+       recipe,
+       JobMetaKey.JOB_LAUNCHER_SPEC,
+       {
+           "site-1": {"docker": {"image": "nvflare-site1:latest"}},
+           "site-2": {"docker": {"image": "nvflare-site2:latest"}},
+       },
+   )
+
+The settable keys are exactly the members of
+:data:`nvflare.apis.job_def.USER_SETTABLE_JOB_META_KEYS`; other enum members
+and raw strings are not accepted. Each key has a value shape contract:
+
+* ``JobMetaKey.RESOURCE_SPEC`` (``resource_spec``): per-site resource
+  requirements -- a dict keyed by site name with dict values.
+* ``JobMetaKey.JOB_LAUNCHER_SPEC`` (``launcher_spec``): per-site launcher
+  requirements -- a dict keyed by site name with dict values.
+* ``JobMetaKey.SCOPE`` (``scope``): job scope name -- a string.
+* ``JobMetaKey.CUSTOM_PROPS`` (``custom_props``): nested custom metadata -- a
+  dict.
+
+Two groups of keys are intentionally **not** settable through this helper:
+
+* Keys with dedicated ``FedJob`` constructor fields -- ``min_clients`` and
+  ``mandatory_clients``. Set them when constructing the recipe/``FedJob``
+  (e.g. ``FedJob(..., min_clients=2, mandatory_clients=[...])``) so the
+  controller, scheduler, and generated metadata all use the same value;
+  setting them through ``meta_props`` would only change the metadata and
+  diverge from the value the recipe already used to build its controller.
+* ``study``: the server assigns it from the admin session's active study at
+  job submission, so a recipe-set value would be silently overwritten. Select
+  the study through the execution environment instead (e.g.
+  ``PocEnv(study=...)`` or ``ProdEnv(study=...)``, described below).
+
+Dict values, including all nested dictionary and list contents, must be
+JSON-serializable; dictionary keys are coerced to strings as they will appear
+in ``meta.json``, and non-finite floating-point values such as ``NaN`` and
+``Infinity`` are rejected. The helper writes the key/value pair through
+``meta_props``. If the generated ``meta.json`` also contains that key, the
+``meta_props`` value is written last by the job generator.
+
+.. note::
+
+   ``resource_spec`` can also be populated per site via
+   ``recipe.job.job.add_resource_spec(...)``. If you set ``RESOURCE_SPEC``
+   through ``set_recipe_meta``, the ``meta_props`` value replaces those
+   per-site specs in the generated ``meta.json``; a warning is emitted for
+   specs already registered when the helper is called, but specs added
+   afterwards are overridden without one.
+
+If the same key already exists in ``meta_props``, ``set_recipe_meta`` replaces
+that value.
+
+The helper does not validate runtime resource availability, production
+enrollment, or whether sites named in metadata are present for a run. The
+execution environment and deployment still determine which sites are present.
+
 Execution Environments
 ----------------------
 
