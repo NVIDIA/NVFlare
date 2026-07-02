@@ -39,7 +39,7 @@ def _step_weight(model: FLModel) -> float:
         return 1.0
     try:
         weight = float(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return 1.0
     return weight if math.isfinite(weight) and weight > 0 else 1.0
 
