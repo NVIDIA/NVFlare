@@ -159,16 +159,25 @@ mode, simulator — cell creation uses the site certs exactly as today.
 ## Site-Scope Rejection
 
 A job cert is a valid `CN=<site>` certificate chaining to the project root, so
-without an extra check a leaked job key could be replayed at site scope for its
-validity window — most notably to register a rogue CP (client registration
-accepts a caller-supplied cert chain). All site-scope identity assertions
-funnel through `IdentityVerifier.verify_common_name()` (client registration,
-admin login, and the client's verification of the server), and no job cell
-ever legitimately asserts identity there. `verify_common_name()` therefore
-rejects any certificate carrying the job-ID extension. The rejection is keyed
-on the extension, not the issuer, so it holds regardless of which CA issued
-the certificate (this also keeps future HA setups with multiple job CAs
-simple).
+without extra checks job credentials could be replayed at site scope — most
+notably to register a rogue CP (client registration accepts a caller-supplied
+cert chain). All site-scope identity assertions funnel through
+`IdentityVerifier.verify_common_name()` (client registration, admin login, and
+the client's verification of the server), and no job cell ever legitimately
+asserts identity there. Two rejections cover two distinct threats:
+
+1. **Leaked job leaf key**: any certificate carrying the job-ID extension is
+   rejected. This is keyed on the extension, not the issuer, so it holds
+   regardless of which CA issued the certificate (which also keeps future HA
+   setups with multiple job CAs simple).
+2. **Stolen job CA key**: an attacker holding `job_ca.key` can mint a clean
+   site-named leaf *without* the extension. The job CA certificate therefore
+   carries a root-signed marker extension, and any presented chain containing
+   a marked CA is rejected. The attacker cannot strip the marker (the job CA
+   cert is signed by the root) and cannot validate without presenting it.
+
+With both checks, compromise of the job CA key no longer escalates to site or
+admin identity; its blast radius is job cells only.
 
 ## Compatibility
 

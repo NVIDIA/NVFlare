@@ -19,7 +19,7 @@ from cryptography.x509.oid import ExtendedKeyUsageOID
 from nvflare.lighter.impl.cert import serialize_cert
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, sign_content
 from nvflare.private.fed.utils.identity_utils import IdentityVerifier, InvalidAsserterCert, get_parent_site_name
-from nvflare.private.fed.utils.job_cert_utils import JOB_ID_EXTENSION_OID
+from nvflare.private.fed.utils.job_cert_utils import JOB_CA_MARKER_OID, JOB_ID_EXTENSION_OID
 
 
 class TestIdentityUtils:
@@ -167,6 +167,51 @@ def test_identity_verifier_rejects_job_scoped_cert_chain(tmp_path):
     signature = sign_content("client" + "nonce", leaf_key, return_str=False)
 
     with pytest.raises(InvalidAsserterCert, match="job-scoped"):
+        verifier.verify_common_name(
+            "client",
+            "nonce",
+            leaf_cert,
+            signature,
+            intermediate_certs=[job_ca_cert],
+            expected_eku=ExtendedKeyUsageOID.CLIENT_AUTH,
+        )
+
+
+def test_identity_verifier_rejects_leaf_minted_by_job_ca_without_extension(tmp_path):
+    # stolen job-CA-key attack: mint a clean site cert with NO job-id extension;
+    # rejection must key on the root-signed marker in the presented chain
+    root_key, root_pub_key = generate_keys()
+    root_cert = generate_cert(
+        subject=Identity("root", "nvidia"),
+        issuer=Identity("root", "nvidia"),
+        signing_pri_key=root_key,
+        subject_pub_key=root_pub_key,
+        ca=True,
+    )
+    marker = x509.UnrecognizedExtension(JOB_CA_MARKER_OID, b"job_ca")
+    job_ca_key, job_ca_pub_key = generate_keys()
+    job_ca_cert = generate_cert(
+        subject=Identity("job_ca.test", "nvidia"),
+        issuer=Identity("root", "nvidia"),
+        signing_pri_key=root_key,
+        subject_pub_key=job_ca_pub_key,
+        ca=True,
+        ca_path_length=0,
+        extra_extensions=[(marker, False)],
+    )
+    leaf_key, leaf_pub_key = generate_keys()
+    leaf_cert = generate_cert(
+        subject=Identity("client", "nvidia"),
+        issuer=Identity("job_ca.test", "nvidia"),
+        signing_pri_key=job_ca_key,
+        subject_pub_key=leaf_pub_key,
+    )
+    root_cert_path = tmp_path / "root.crt"
+    root_cert_path.write_bytes(serialize_cert(root_cert))
+    verifier = IdentityVerifier(str(root_cert_path))
+    signature = sign_content("client" + "nonce", leaf_key, return_str=False)
+
+    with pytest.raises(InvalidAsserterCert, match="issued by the job CA"):
         verifier.verify_common_name(
             "client",
             "nonce",

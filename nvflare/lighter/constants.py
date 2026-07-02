@@ -200,6 +200,16 @@ class CertFileBasename:
     SERVER = "server"
 
 
+class CertExtensionOID:
+    """Private extensions under NVIDIA's IANA enterprise arc (1.3.6.1.4.1.5703)."""
+
+    # on job leaf certs: the job ID the certificate is bound to
+    JOB_ID = "1.3.6.1.4.1.5703.300.1"
+    # on the job CA cert: marks certs it issues as job-scoped, so site-scope
+    # verification can reject them by issuer even without the job-ID extension
+    JOB_CA_MARKER = "1.3.6.1.4.1.5703.300.2"
+
+
 class CommConfigArg:
     SCHEME = "scheme"
     HOST = "host"

@@ -21,7 +21,7 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.x509.oid import NameOID
 
-from nvflare.lighter.constants import CertFileBasename, CtxKey, ParticipantType, PropKey, ProvFileName
+from nvflare.lighter.constants import CertExtensionOID, CertFileBasename, CtxKey, ParticipantType, PropKey, ProvFileName
 from nvflare.lighter.ctx import ProvisionContext
 from nvflare.lighter.entity import Participant, Project
 from nvflare.lighter.spec import Builder
@@ -367,6 +367,9 @@ class CertBuilder(Builder):
         if cert_pem is None:
             pri_key, pub_key = generate_keys()
             now, not_valid_after = self._bounded_not_valid_after("job CA")
+            # the marker lets site-scope verification reject anything this CA issues by
+            # issuer, even a cert minted without the job-ID extension by a stolen CA key
+            marker = x509.UnrecognizedExtension(x509.ObjectIdentifier(CertExtensionOID.JOB_CA_MARKER), b"job_ca")
             cert = self._generate_cert(
                 subject,
                 None,
@@ -377,6 +380,7 @@ class CertBuilder(Builder):
                 ca_path_length=0,
                 not_valid_before=now,
                 not_valid_after=not_valid_after,
+                extra_extensions=[(marker, False)],
             )
             cert_pem = serialize_cert(cert)
             key_pem = serialize_pri_key(pri_key)

@@ -33,12 +33,14 @@ from nvflare.lighter.utils import (
     verify_cert_chain,
 )
 from nvflare.private.fed.utils.job_cert_utils import (
+    JOB_CA_MARKER_OID,
     JOB_CERT_BACKDATE,
     JOB_CERT_FILE_NAME,
     JOB_CERT_VALID_DAYS,
     JOB_KEY_FILE_NAME,
     find_job_cert,
     get_job_id_from_cert,
+    has_job_ca_marker,
     load_job_cert_issuer,
     pack_job_cert_header,
     pick_cell_credential,
@@ -61,6 +63,7 @@ def _write_job_ca(startup_dir, ca_lifetime=datetime.timedelta(days=360), expired
         not_valid_after = now + ca_lifetime
 
     ca_key, ca_pub = generate_keys()
+    marker = x509.UnrecognizedExtension(JOB_CA_MARKER_OID, b"job_ca")
     ca_cert = generate_cert(
         Identity("job_ca.test"),
         Identity("root"),
@@ -70,6 +73,7 @@ def _write_job_ca(startup_dir, ca_lifetime=datetime.timedelta(days=360), expired
         ca_path_length=0,
         not_valid_before=not_valid_before,
         not_valid_after=not_valid_after,
+        extra_extensions=[(marker, False)],
     )
 
     with open(os.path.join(startup_dir, ProvFileName.JOB_CA_CERT), "wb") as f:
@@ -107,6 +111,7 @@ def test_issued_cert_chains_to_root_and_carries_job_id(tmp_path):
     verify_cert_chain(leaf_cert=leaf, intermediate_certs=[intermediate], root_ca_cert=root_cert)
     assert leaf.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value == "site-1"
     assert get_job_id_from_cert(leaf) == "job-123"
+    assert has_job_ca_marker(intermediate) and not has_job_ca_marker(leaf)
     expected_lifetime = datetime.timedelta(days=JOB_CERT_VALID_DAYS) + JOB_CERT_BACKDATE
     assert leaf.not_valid_after_utc - leaf.not_valid_before_utc == expected_lifetime
     assert b"PRIVATE KEY" in key_pem

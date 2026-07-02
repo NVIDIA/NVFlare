@@ -21,7 +21,7 @@ from cryptography import x509
 from cryptography.x509.oid import NameOID
 
 from nvflare.apis.fl_constant import SecureTrainConst
-from nvflare.lighter.constants import ProvFileName
+from nvflare.lighter.constants import CertExtensionOID, ProvFileName
 from nvflare.lighter.utils import (
     Identity,
     generate_cert,
@@ -53,9 +53,8 @@ JOB_CA_MIN_REMAINING = datetime.timedelta(hours=1)
 _PROP_CERT = "cert"
 _PROP_KEY = "key"
 
-# Private extension under NVIDIA's IANA enterprise arc (1.3.6.1.4.1.5703),
-# carrying the job ID a per-job certificate is bound to.
-JOB_ID_EXTENSION_OID = x509.ObjectIdentifier("1.3.6.1.4.1.5703.300.1")
+JOB_ID_EXTENSION_OID = x509.ObjectIdentifier(CertExtensionOID.JOB_ID)
+JOB_CA_MARKER_OID = x509.ObjectIdentifier(CertExtensionOID.JOB_CA_MARKER)
 
 
 def write_job_cert(run_dir: str, cert_chain_pem: bytes, key_pem: bytes):
@@ -117,6 +116,14 @@ def unpack_job_cert_header(header) -> Optional[Tuple[bytes, bytes]]:
 def has_job_id_extension(cert: x509.Certificate) -> bool:
     try:
         cert.extensions.get_extension_for_oid(JOB_ID_EXTENSION_OID)
+        return True
+    except x509.ExtensionNotFound:
+        return False
+
+
+def has_job_ca_marker(cert: x509.Certificate) -> bool:
+    try:
+        cert.extensions.get_extension_for_oid(JOB_CA_MARKER_OID)
         return True
     except x509.ExtensionNotFound:
         return False

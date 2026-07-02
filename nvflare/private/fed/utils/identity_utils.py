@@ -27,7 +27,7 @@ from nvflare.lighter.utils import (
     verify_cert_chain,
     verify_content,
 )
-from nvflare.private.fed.utils.job_cert_utils import has_job_id_extension
+from nvflare.private.fed.utils.job_cert_utils import has_job_ca_marker, has_job_id_extension
 from nvflare.security.logging import secure_format_exception
 
 
@@ -144,9 +144,15 @@ class IdentityVerifier:
             raise InvalidAsserterCert(str(ex)) from ex
 
         # per-job certs are scoped to one job's cells; they must never assert
-        # site/admin/server identity (registration, admin login, SP challenge)
+        # site/admin/server identity (registration, admin login, SP challenge).
+        # Check both the leaf's job-id extension and the chain's job-CA marker:
+        # a stolen job CA key can mint leaves without the extension, but cannot
+        # strip the root-signed marker off the job CA cert it must present
         if has_job_id_extension(asserter_cert):
             raise InvalidAsserterCert("job-scoped certificate cannot be used to assert site identity")
+        for chain_cert in (asserter_cert, *(intermediate_certs or ())):
+            if has_job_ca_marker(chain_cert):
+                raise InvalidAsserterCert("certificate issued by the job CA cannot assert site identity")
 
         # verify signature provided by the asserter
         asserter_public_key = asserter_cert.public_key()
