@@ -109,6 +109,16 @@ def test_load_results_uses_productized_ledger_fields(tmp_path):
     assert plotter.normalize_records(records) == records
 
 
+def test_zero_score_label_uses_the_actual_score():
+    plotter = _load_plotter()
+    record = _record(plotter, 1, 0.0)
+
+    offset, _, vertical_alignment = plotter.label_placement(0, record, (0.0, 2.0), (-1.0, 0.1))
+
+    assert offset[1] < 0
+    assert vertical_alignment == "top"
+
+
 def test_rich_progress_plot_renders_png(tmp_path):
     pytest.importorskip("matplotlib")
     plotter = _load_plotter()

@@ -13,12 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Own the product Auto-FL campaign continuation decision.
+"""Diagnose the product Auto-FL campaign continuation decision.
 
 The skill runner executes candidates and writes ``results.tsv``. This guard
-turns that ledger into a machine-readable campaign state so a live coding agent
-does not decide completion, plateau handling, or literature-mode transitions by
-itself.
+turns that ledger into a machine-readable decision. The campaign runner is the
+only writer of authoritative campaign state.
 """
 
 from __future__ import annotations
@@ -34,9 +33,9 @@ from typing import Any, Dict, List, Optional, Tuple
 DEFAULT_HARD_CRASH_THRESHOLD = 6
 DEFAULT_MIN_DELTA = 0.0005
 DEFAULT_PLATEAU_THRESHOLD = 8
-DEFAULT_STATE_PATH = ".nvflare/autofl/campaign_state.json"
 DEFAULT_STOP_FILES = ("STOP_AUTOFL", ".nvflare/autofl/STOP")
-COMPARABLE_STATUSES = {"candidate", "keep", "discard", "crash"}
+ATTEMPT_STATUSES = {"candidate", "keep", "discard", "crash"}
+SCORED_ATTEMPT_STATUSES = {"keep", "discard"}
 LITERATURE_EVENT_STATUSES = {"event", "literature", "checkpoint"}
 
 
@@ -86,7 +85,7 @@ def is_literature_event(row: Dict[str, str]) -> bool:
 
 
 def comparable_attempts(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
-    return [row for row in rows if normalize_status(row) in COMPARABLE_STATUSES and not is_baseline(row)]
+    return [row for row in rows if normalize_status(row) in ATTEMPT_STATUSES and not is_baseline(row)]
 
 
 def pending_candidates(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
@@ -96,7 +95,7 @@ def pending_candidates(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
 def scored_attempts_with_index(rows: List[Dict[str, str]]) -> List[Tuple[int, Dict[str, str], float]]:
     scored = []
     for idx, row in enumerate(rows):
-        if normalize_status(row) not in COMPARABLE_STATUSES or is_baseline(row):
+        if normalize_status(row) not in SCORED_ATTEMPT_STATUSES or is_baseline(row):
             continue
         score = parse_score(row.get("score", ""))
         if score is not None:
@@ -115,7 +114,9 @@ def better(new_score: float, old_score: Optional[float], mode: str, min_delta: f
 def best_score(rows: List[Dict[str, str]], mode: str) -> Optional[float]:
     best = None
     for row in rows:
-        if normalize_status(row) not in COMPARABLE_STATUSES and not is_baseline(row):
+        status = normalize_status(row)
+        retained = status == "keep" or (is_baseline(row) and status not in ATTEMPT_STATUSES)
+        if not retained:
             continue
         score = parse_score(row.get("score", ""))
         if score is None:
@@ -126,14 +127,17 @@ def best_score(rows: List[Dict[str, str]], mode: str) -> Optional[float]:
 
 
 def plateau_status(rows: List[Dict[str, str]], threshold: int, min_delta: float, mode: str) -> Dict[str, Any]:
-    scored = []
+    retained = []
     for idx, row in enumerate(rows):
-        if normalize_status(row) not in COMPARABLE_STATUSES and not is_baseline(row):
+        status = normalize_status(row)
+        is_retained = status == "keep" or (is_baseline(row) and status not in ATTEMPT_STATUSES)
+        if not is_retained:
             continue
         score = parse_score(row.get("score", ""))
         if score is not None:
-            scored.append((idx, row, score))
-    if threshold <= 0 or not scored:
+            retained.append((idx, row, score))
+    scored_attempts = scored_attempts_with_index(rows)
+    if threshold <= 0 or not retained:
         return {
             "available": True,
             "recommendation": "continue",
@@ -146,7 +150,7 @@ def plateau_status(rows: List[Dict[str, str]], threshold: int, min_delta: float,
     best_row_idx = -1
     best_scored_idx = -1
     best_name = ""
-    for scored_idx, (row_idx, row, score) in enumerate(scored):
+    for scored_idx, (row_idx, row, score) in enumerate(retained):
         if better(score, best, mode, min_delta):
             best = score
             best_row_idx = row_idx
@@ -155,7 +159,7 @@ def plateau_status(rows: List[Dict[str, str]], threshold: int, min_delta: float,
 
     last_literature_idx = max((idx for idx, row in enumerate(rows) if is_literature_event(row)), default=-1)
     reset_row_idx = max(best_row_idx, last_literature_idx)
-    scored_since_reset = sum(1 for row_idx, _, _ in scored if row_idx > reset_row_idx)
+    scored_since_reset = sum(1 for row_idx, _, _ in scored_attempts if row_idx > reset_row_idx)
     recommendation = "literature" if scored_since_reset >= threshold else "continue"
     return {
         "available": True,
@@ -210,6 +214,7 @@ def guard_state_for_rows(
     min_delta: float = DEFAULT_MIN_DELTA,
     hard_crash_threshold: int = DEFAULT_HARD_CRASH_THRESHOLD,
     mode: str = "max",
+    pending_manifest_count: int = 0,
 ) -> Dict[str, Any]:
     attempts = comparable_attempts(rows)
     pending = pending_candidates(rows)
@@ -223,9 +228,10 @@ def guard_state_for_rows(
     next_action = "propose_candidate"
     final_response_allowed = False
 
-    if pending:
+    pending_count = len(pending) + pending_manifest_count
+    if pending_count:
         reason = "pending_candidates"
-        next_action = "finalize_pending_candidates"
+        next_action = "edit_candidate"
     elif stop_file_hits:
         decision = "stop"
         reason = "manual_stop_file"
@@ -246,11 +252,9 @@ def guard_state_for_rows(
         next_action = "run_literature_loop"
 
     if final_response_allowed:
-        instruction = "Final report is allowed because the campaign guard reached a stop condition."
-    elif next_action == "finalize_pending_candidates":
-        instruction = (
-            "Do not produce a final answer. Finalize reviewed candidate rows, refresh artifacts, then rerun the guard."
-        )
+        instruction = "Final report is allowed because authoritative campaign state reached a stop condition."
+    elif next_action == "edit_candidate":
+        instruction = "Do not produce a final answer. Finish the pending candidate, then run the runner status action."
     elif next_action == "run_literature_loop":
         instruction = (
             "Do not produce a final answer. Run the literature loop, record a literature event, "
@@ -270,7 +274,7 @@ def guard_state_for_rows(
         "candidate_cap": cap,
         "candidate_cap_source": cap_source,
         "candidate_attempts": len(attempts),
-        "pending_candidates": len(pending),
+        "pending_candidates": pending_count,
         "scored_attempts": len(scored_attempts_with_index(rows)),
         "best_score": best_score(rows, mode),
         "stop_files": stop_file_hits,
@@ -288,6 +292,7 @@ def guard_state(
     min_delta: float = DEFAULT_MIN_DELTA,
     hard_crash_threshold: int = DEFAULT_HARD_CRASH_THRESHOLD,
     mode: str = "max",
+    pending_manifest_count: int = 0,
 ) -> Dict[str, Any]:
     return guard_state_for_rows(
         load_rows(results_path),
@@ -298,14 +303,8 @@ def guard_state(
         min_delta=min_delta,
         hard_crash_threshold=hard_crash_threshold,
         mode=mode,
+        pending_manifest_count=pending_manifest_count,
     )
-
-
-def write_state(path: Path, state: Dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_suffix(path.suffix + ".tmp")
-    tmp_path.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    tmp_path.replace(path)
 
 
 def print_text(state: Dict[str, Any]) -> None:
@@ -333,9 +332,8 @@ def print_text(state: Dict[str, Any]) -> None:
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("results", nargs="?", default="results.tsv")
-    parser.add_argument("--state", default=DEFAULT_STATE_PATH)
     parser.add_argument("--max-candidates", type=parse_max_candidates_arg)
-    parser.add_argument("--stop-file", action="append", default=list(DEFAULT_STOP_FILES))
+    parser.add_argument("--stop-file", action="append")
     parser.add_argument("--plateau-threshold", type=int, default=DEFAULT_PLATEAU_THRESHOLD)
     parser.add_argument("--min-delta", type=float, default=DEFAULT_MIN_DELTA)
     parser.add_argument("--hard-crash-threshold", type=int, default=DEFAULT_HARD_CRASH_THRESHOLD)
@@ -348,16 +346,20 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.min_delta < 0:
         raise ValueError("--min-delta must be non-negative")
 
+    results_path = Path(args.results).resolve()
+    stop_files = args.stop_file if args.stop_file is not None else list(DEFAULT_STOP_FILES)
+    resolved_stop_files = [
+        str(path if path.is_absolute() else results_path.parent / path) for path in map(Path, stop_files)
+    ]
     state = guard_state(
-        Path(args.results),
+        results_path,
         max_candidates=args.max_candidates,
-        stop_files=args.stop_file,
+        stop_files=resolved_stop_files,
         plateau_threshold=args.plateau_threshold,
         min_delta=args.min_delta,
         hard_crash_threshold=args.hard_crash_threshold,
         mode=args.mode,
     )
-    write_state(Path(args.state), state)
     if args.format == "json":
         print(json.dumps(state, sort_keys=True))
     else:

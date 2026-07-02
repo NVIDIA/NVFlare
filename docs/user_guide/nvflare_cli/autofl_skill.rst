@@ -47,9 +47,15 @@ The skill first imports the job without executing user code:
        --max-candidates 8 \
        --output autofl.yaml
 
-The importer parses supported Recipe and FedJob patterns with Python AST
-inspection.  It extracts campaign-relevant settings into ``autofl.yaml`` and
-marks unknown or dynamic fields as unresolved instead of guessing.
+The importer parses supported Recipe patterns and NVFlare-distributed ``*Job``
+classes with Python AST inspection, including direct imports, aliases, and
+module aliases. It can resolve one unambiguous
+``ScriptRunner(script=...)`` when a FedJob constructor has no train-script
+argument. It extracts campaign-relevant settings into ``autofl.yaml`` and
+marks local job subclasses, ambiguous scripts, and dynamic fields as unresolved
+instead of guessing. The helper leaves ``autofl.yaml`` available for review but
+refuses baseline execution while the job surface or fixed comparison budget is
+safety-critical and unresolved.
 
 Trust Contract
 ==============
@@ -104,6 +110,13 @@ best.  Built-in tunable candidates are available through the helper's
 ``suggest`` action only as optional seeds; the agent remains free to implement
 new algorithms.
 
+The helper's ``status`` action rescans pending manifests, stop files, the
+candidate cap, and the ledger before refreshing the authoritative
+``.nvflare/autofl/campaign_state.json``. The standalone ``campaign_guard.py``
+is a read-only diagnostic and never writes campaign state. Pending candidate
+work must be evaluated or abandoned before cap exhaustion or a stop file can
+permit final reporting.
+
 The workflow then uses existing NVFlare execution surfaces:
 
 - Simulation jobs run through the job's configured ``SimEnv``.
@@ -118,7 +131,9 @@ Supported First Version
 
 The first version is intentionally narrow:
 
-- Supported job surfaces: NVFlare Recipe constructors and FedJob-style scripts.
+- Supported job surfaces: NVFlare Recipe constructors and imported
+  NVFlare-distributed classes ending in ``Job``. Generic ``Job`` and local or
+  non-NVFlare subclasses remain unresolved.
 - Supported import fields: objective metric, fixed budget fields, environment,
   train script, allowed edit paths, and common argparse tunables.
 - Unsupported or ambiguous custom Python is preserved as unresolved review

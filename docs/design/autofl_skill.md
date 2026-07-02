@@ -58,12 +58,16 @@ override campaign knobs explicitly.
 ## Deterministic Import
 
 The importer parses Python source with `ast`; it does not import or execute
-user code.  It supports known Recipe and FedJob-style patterns first and focuses
+user code. It resolves direct imports, import aliases, and module aliases for
+known Recipe surfaces and NVFlare-distributed classes whose names end in
+`Job`. The generic API `Job`, local subclasses, and non-NVFlare subclasses stay
+explicitly unresolved. The importer focuses
 on campaign-relevant settings rather than duplicating the full exported job:
 
 - Recipe/FedJob constructor and class import.
 - `SimEnv`, `PocEnv`, and `ProdEnv` references.
-- `train_script` resolution for literal and argparse-derived values.
+- `train_script` resolution for literal and argparse-derived values, or for one
+  unambiguous NVFlare `ScriptRunner(script=...)` call.
 - Objective metric from user request, `key_metric`, or explicit unresolved
   default.
 - Fixed-budget fields such as rounds, clients, and candidate budget.
@@ -79,6 +83,9 @@ config inspection as a validation aid when available.
 
 Unsupported or dynamic fields are carried forward as unresolved review items
 instead of being guessed by the importer or the agent.
+The runner writes this reviewable `autofl.yaml` before admission and refuses to
+start a baseline when the job surface or fixed comparison budget remains
+safety-critical and unresolved.
 
 ## Trust Contract
 
@@ -134,6 +141,12 @@ The skill uses existing NVFlare execution surfaces:
 Production is a valid optimization environment. The best candidate may later be
 submitted or reused through the standard NVFlare job lifecycle; no separate
 promotion command is needed.
+
+The runner is the sole writer of `.nvflare/autofl/campaign_state.json`. Its
+`status` action rescans the ledger, pending manifests, stop files, and cap before
+refreshing state. The standalone campaign guard is a read-only diagnostic and
+cannot overwrite runner metadata. Pending prepared or externally ready
+candidates take precedence over stop files, cap exhaustion, and final reporting.
 
 ## Review Questions
 

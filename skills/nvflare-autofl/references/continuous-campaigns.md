@@ -25,21 +25,31 @@ child process remain active, keep waiting.
 
 ## Campaign Guards
 
-The product runner writes `.nvflare/autofl/campaign_state.json` through
-`scripts/campaign_guard.py`; read that state before any final response. This
-product state is authoritative. If it has `final_response_allowed=false`,
-execute `next_action` immediately; the skill text is only the interaction layer.
+The product runner is the sole writer of
+`.nvflare/autofl/campaign_state.json`; read that state before any final
+response. `scripts/campaign_guard.py` is a read-only ledger diagnostic. To
+rescan pending manifests, stop files, caps, and the ledger and refresh
+authoritative state, run the runner's `status` action. If state has
+`final_response_allowed=false`, execute `next_action` immediately; the skill
+text is only the interaction layer.
 
 Common next actions:
 
-- `edit_candidate` or `evaluate_candidate`: finish the pending candidate draft.
+- `repair_baseline`: fix the deterministic import, execution, or metric issue,
+  then retry initialization.
+- `edit_candidate`: finish the pending candidate draft, then invoke the runner's
+  `evaluate` lifecycle action.
 - `propose_candidate`: form a hypothesis, prepare its manifest, and edit the
   returned candidate source directory.
 - `submit_baseline` or `submit_candidate`: use the standard POC/production job
   lifecycle, then call `record` with its job ID and artifacts.
+- `rerun_with_escalated_execution`: retry the same lifecycle action after
+  repairing runtime permissions; do not count it as a candidate.
 - `run_literature_loop`: run a short source-backed literature pass, record a
   non-scored `literature` row when a ledger is available, then launch the next
   compatible same-budget candidates.
+- `final_report`: generate final artifacts only after the runner permits a final
+  response.
 
 After every finalized batch, run the available plateau or progress watchdog when
 the task provides one. If it recommends `continue`, refresh `progress.png` and

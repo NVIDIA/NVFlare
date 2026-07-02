@@ -142,12 +142,19 @@ class DeterministicJobImporter:
         index = _ImportIndex.from_tree(tree, source_text)
         job_call = index.first_job_call()
         env_call = index.first_env_call()
-        train_script = self._resolve_train_script(source_path, job_call, index.parser_args, source_text)
+        train_script = self._resolve_train_script(source_path, job_call, index, source_text)
         train_args = _collect_argparse_args_from_file(train_script) if train_script else {}
         unresolved: List[Dict[str, str]] = []
 
         if not job_call:
-            unresolved.append(_unresolved("job.surface", "no supported Recipe or FedJob constructor was found"))
+            unsupported = index.first_unsupported_job_call()
+            reason = "no supported Recipe or NVFlare FedJob constructor was found"
+            if unsupported:
+                reason = (
+                    f"constructor {unsupported.full_name} is a local or non-NVFlare Job subclass; "
+                    "its contract cannot be imported deterministically"
+                )
+            unresolved.append(_unresolved("job.surface", reason))
         if not train_script:
             unresolved.append(_unresolved("job.train_script", "no train_script was found or resolved"))
 
@@ -177,7 +184,7 @@ class DeterministicJobImporter:
                 job_payload.update(
                     {
                         "recipe": job_call.name,
-                        "recipe_class": index.imports.get(job_call.name, job_call.full_name),
+                        "recipe_class": job_call.full_name,
                         "recipe_args": call_args,
                     }
                 )
@@ -185,7 +192,7 @@ class DeterministicJobImporter:
                 job_payload.update(
                     {
                         "fed_job": job_call.name,
-                        "fed_job_class": index.imports.get(job_call.name, job_call.full_name),
+                        "fed_job_class": job_call.full_name,
                         "fed_job_args": call_args,
                     }
                 )
@@ -268,21 +275,31 @@ class DeterministicJobImporter:
         self,
         source_path: Path,
         job_call: Optional[CallInfo],
-        parser_args: Dict[str, ArgSpec],
+        index: "_ImportIndex",
         source_text: str,
     ) -> Optional[Path]:
         if not job_call:
-            return _existing_path(source_path.parent / "client.py")
+            return None
 
         train_script_node = job_call.keywords.get("train_script")
-        if not train_script_node:
-            return _existing_path(source_path.parent / "client.py")
+        if train_script_node:
+            resolved = _resolve_value(train_script_node, job_call.assignments, index.parser_args, source_text)
+            value = resolved.value
+            if isinstance(value, str) and _is_resolved_path_string(resolved):
+                return _existing_path((source_path.parent / value).resolve())
+            return None
 
-        resolved = _resolve_value(train_script_node, job_call.assignments, parser_args, source_text)
-        value = resolved.value
-        if isinstance(value, str) and _is_resolved_path_string(resolved):
-            return _existing_path((source_path.parent / value).resolve())
-        return None
+        script_paths = set()
+        for runner_call in index.script_runner_calls:
+            script_node = runner_call.keywords.get("script")
+            if not script_node:
+                continue
+            resolved = _resolve_value(script_node, runner_call.assignments, index.parser_args, source_text)
+            if isinstance(resolved.value, str) and _is_resolved_path_string(resolved):
+                path = _existing_path((source_path.parent / resolved.value).resolve())
+                if path:
+                    script_paths.add(path)
+        return next(iter(script_paths)) if len(script_paths) == 1 else None
 
     def _resolve_metric(
         self,
@@ -329,6 +346,14 @@ class DeterministicJobImporter:
                         unresolved.append(_unresolved(f"budget.fixed_training_budget.{output_key}", resolved.source))
                     else:
                         fixed_training_budget[output_key] = resolved.value
+            if "n_clients" in job_call.keywords:
+                resolved = _resolve_value(
+                    job_call.keywords["n_clients"], job_call.assignments, parser_args, source_text
+                )
+                if resolved.unresolved:
+                    unresolved.append(_unresolved("budget.fixed_training_budget.num_clients", resolved.source))
+                else:
+                    fixed_training_budget["num_clients"] = resolved.value
 
         if env_call and env_call.name == "SimEnv" and "num_clients" in env_call.keywords:
             resolved = _resolve_value(env_call.keywords["num_clients"], env_call.assignments, parser_args, source_text)
@@ -467,6 +492,8 @@ class _ImportIndex(ast.NodeVisitor):
         self._local_assignments_stack: List[Dict[str, ast.AST]] = []
         self._function_stack: List[str] = []
         self.job_calls: List[CallInfo] = []
+        self.unsupported_job_calls: List[CallInfo] = []
+        self.script_runner_calls: List[CallInfo] = []
         self.env_calls: List[CallInfo] = []
 
     @classmethod
@@ -480,6 +507,9 @@ class _ImportIndex(ast.NodeVisitor):
 
     def first_env_call(self) -> Optional[CallInfo]:
         return self.env_calls[0] if self.env_calls else None
+
+    def first_unsupported_job_call(self) -> Optional[CallInfo]:
+        return self.unsupported_job_calls[0] if self.unsupported_job_calls else None
 
     def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:
@@ -515,21 +545,39 @@ class _ImportIndex(ast.NodeVisitor):
             if arg_spec:
                 self.parser_args[arg_spec.name] = arg_spec
 
-        short_name = call_name.split(".")[-1]
-        if _is_supported_job_call_name(short_name) or short_name in SUPPORTED_ENV_NAMES:
+        resolved_name = self._resolve_import_path(call_name)
+        short_name = resolved_name.split(".")[-1]
+        is_supported_job = _is_supported_job_call(short_name, resolved_name)
+        is_environment = short_name in SUPPORTED_ENV_NAMES
+        is_script_runner = short_name == "ScriptRunner" and resolved_name.startswith("nvflare.")
+        is_unsupported_job = short_name.endswith("Job") and not is_supported_job and short_name != "Job"
+        if is_supported_job or is_environment or is_script_runner or is_unsupported_job:
             call_info = CallInfo(
                 name=short_name,
-                full_name=call_name,
+                full_name=resolved_name,
                 keywords={keyword.arg: keyword.value for keyword in node.keywords if keyword.arg},
                 assignments=self._resolution_assignments(),
                 source=_source_segment(self.source_text, node),
                 function_name=self._function_stack[-1] if self._function_stack else None,
             )
-            if short_name in SUPPORTED_ENV_NAMES:
+            if is_environment:
                 self.env_calls.append(call_info)
-            else:
+            elif is_script_runner:
+                self.script_runner_calls.append(call_info)
+            elif is_supported_job:
                 self.job_calls.append(call_info)
+            else:
+                self.unsupported_job_calls.append(call_info)
         self.generic_visit(node)
+
+    def _resolve_import_path(self, call_name: str) -> str:
+        if not call_name:
+            return call_name
+        root, separator, remainder = call_name.partition(".")
+        imported = self.imports.get(root)
+        if not imported:
+            return call_name
+        return f"{imported}.{remainder}" if separator else imported
 
     def _current_assignments(self) -> Dict[str, ast.AST]:
         if self._local_assignments_stack:
@@ -714,8 +762,10 @@ def _is_argparse_add_argument_call(call_name: str) -> bool:
     return call_name.endswith(".add_argument")
 
 
-def _is_supported_job_call_name(name: str) -> bool:
-    return name.endswith("Recipe") or name in {"BaseFedJob", "FedJob"}
+def _is_supported_job_call(name: str, resolved_name: str) -> bool:
+    if name.endswith("Recipe"):
+        return True
+    return resolved_name.startswith("nvflare.") and name.endswith("Job") and name != "Job"
 
 
 def _is_recipe_call(call_info: CallInfo) -> bool:

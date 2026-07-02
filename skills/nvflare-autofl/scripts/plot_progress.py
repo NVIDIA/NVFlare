@@ -247,7 +247,8 @@ def label_placement(
     x_span = max(x_limits[1] - x_limits[0], 1.0)
     y_span = max(y_limits[1] - y_limits[0], 1e-9)
     x_fraction = (record.index - x_limits[0]) / x_span
-    y_fraction = ((record.score or y_limits[0]) - y_limits[0]) / y_span
+    score = record.score if record.score is not None else y_limits[0]
+    y_fraction = (score - y_limits[0]) / y_span
     near_right = x_fraction > 0.72
     near_top = y_fraction > 0.78
     x_offset = -10 if near_right else 10

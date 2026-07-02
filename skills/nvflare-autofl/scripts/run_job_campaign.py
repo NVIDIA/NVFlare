@@ -23,19 +23,21 @@ discarded candidates, and records reproducible campaign state and artifacts.
 from __future__ import annotations
 
 import argparse
+import codecs
 import csv
 import difflib
 import hashlib
 import importlib.util
 import json
 import os
+import queue
 import re
-import selectors
 import shlex
 import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -65,6 +67,7 @@ RESULT_FIELDS = [
 ]
 
 CANDIDATE_MANIFEST_SCHEMA_VERSION = "nvflare.autofl.candidate.v1"
+CANDIDATE_MANIFEST_STATUSES = {"prepared", "ready_for_external_execution", "keep", "discard", "crash", "abandoned"}
 CAMPAIGN_METADATA_SCHEMA_VERSION = "nvflare.autofl.campaign.v1"
 CAMPAIGN_METADATA_PATH = ".nvflare/autofl/campaign.json"
 CANDIDATE_ROOT = ".nvflare/autofl/candidates"
@@ -396,21 +399,35 @@ def run(
             cwd=str(cwd),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
+            text=False,
+            bufsize=0,
             start_new_session=os.name != "nt",
         )
         assert process.stdout is not None
-        selector = selectors.DefaultSelector()
-        selector.register(process.stdout, selectors.EVENT_READ)
+        output_queue: queue.Queue[Optional[bytes]] = queue.Queue()
+
+        def read_output() -> None:
+            try:
+                while True:
+                    chunk = process.stdout.read(65536)
+                    if not chunk:
+                        break
+                    output_queue.put(chunk)
+            finally:
+                output_queue.put(None)
+
+        reader = threading.Thread(target=read_output, name="autofl-process-output", daemon=True)
+        reader.start()
+        decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+        output_finished = False
         timed_out = False
         stall_message = ""
-        while True:
+        while not output_finished or process.poll() is None:
             now = time.monotonic()
-            if timeout and now - started > timeout:
+            if not timed_out and timeout and now - started > timeout:
                 timed_out = True
                 terminate_process(process)
-            if simulator_stall_roots and now >= next_stall_check:
+            if not timed_out and not stall_message and simulator_stall_roots and now >= next_stall_check:
                 stall_message = simulator_stall_message(simulator_stall_roots) or ""
                 next_stall_check = now + stall_check_interval
                 if stall_message:
@@ -451,21 +468,24 @@ def run(
                         )
                         terminate_process(process)
                     last_progress_check = now
-            events = selector.select(timeout=0.2)
-            for key, _ in events:
-                chunk = key.fileobj.readline()
-                if chunk:
-                    chunks.append(chunk)
-                    log_file.write(chunk)
-                    log_file.flush()
-            if process.poll() is not None:
-                remainder = process.stdout.read()
-                if remainder:
-                    chunks.append(remainder)
-                    log_file.write(remainder)
-                    log_file.flush()
-                break
-        selector.close()
+            try:
+                raw_chunk = output_queue.get(timeout=0.2)
+            except queue.Empty:
+                continue
+            if raw_chunk is None:
+                output_finished = True
+                continue
+            chunk = decoder.decode(raw_chunk)
+            if chunk:
+                chunks.append(chunk)
+                log_file.write(chunk)
+                log_file.flush()
+        reader.join(timeout=1)
+        remainder = decoder.decode(b"", final=True)
+        if remainder:
+            chunks.append(remainder)
+            log_file.write(remainder)
+            log_file.flush()
         if timed_out:
             timeout_msg = f"\nTIMEOUT after {timeout}s\n"
             chunks.append(timeout_msg)
@@ -705,14 +725,21 @@ def candidate_manifest_path(workspace: Path, candidate_id: str) -> Path:
     return workspace / CANDIDATE_ROOT / candidate_id / "candidate_manifest.json"
 
 
-def load_candidate_manifest(path: Path) -> Dict[str, Any]:
-    manifest = read_json(path)
+def validate_candidate_manifest_identity(path: Path, manifest: Dict[str, Any]) -> str:
     if manifest.get("schema_version") != CANDIDATE_MANIFEST_SCHEMA_VERSION:
         raise ValueError(f"unsupported candidate manifest schema in {path}")
     candidate_id = validate_candidate_id(str(manifest.get("candidate_id") or ""))
     expected = candidate_manifest_path(Path(str(manifest.get("workspace_root") or "")), candidate_id).resolve()
     if path.resolve() != expected:
         raise ValueError("candidate manifest path does not match its workspace and candidate ID")
+    if manifest.get("status") not in CANDIDATE_MANIFEST_STATUSES:
+        raise ValueError(f"candidate {candidate_id} has an invalid manifest status")
+    return candidate_id
+
+
+def load_candidate_manifest(path: Path) -> Dict[str, Any]:
+    manifest = read_json(path)
+    candidate_id = validate_candidate_manifest_identity(path, manifest)
     if manifest.get("status") not in {"prepared", "ready_for_external_execution"}:
         raise ValueError(f"candidate {candidate_id} is not pending evaluation")
     return manifest
@@ -830,7 +857,7 @@ def resolve_stop_files(cwd: Path, values: Optional[Sequence[str]]) -> List[str]:
     return [str(resolve_output_path(cwd, value)) for value in stop_files]
 
 
-def extract_result_dir(output: str) -> Optional[Path]:
+def extract_result_dir(output: str, cwd: Optional[Path] = None) -> Optional[Path]:
     patterns = [
         r"Result can be found in\s*:\s*(?P<path>\S+)",
         r"Results:\s*(?P<path>\S+)",
@@ -839,7 +866,10 @@ def extract_result_dir(output: str) -> Optional[Path]:
     for pattern in patterns:
         match = re.search(pattern, output)
         if match:
-            return Path(match.group("path")).expanduser()
+            path = Path(match.group("path")).expanduser()
+            if not path.is_absolute() and cwd is not None:
+                path = cwd / path
+            return path.resolve()
     return None
 
 
@@ -939,31 +969,47 @@ def metric_from_list(items: Any, metric: str) -> Optional[float]:
 
 def extract_score(artifact_root: Path, metrics: Sequence[str] | str) -> Optional[float]:
     metric_order = normalize_metric_order(metrics)
-    metric_files = list(artifact_root.glob("**/metrics_summary.json")) + list(
+    metric_files = sorted(artifact_root.glob("**/metrics_summary.json")) + sorted(
         artifact_root.glob("**/cross_val_results.json")
     )
+    payloads = []
     for path in metric_files:
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except Exception:
             continue
-        score = find_metric_value(payload, metric_order)
-        if score is not None:
-            return score
+        payloads.append(payload)
+    for metric in metric_order:
+        for payload in payloads:
+            score = find_metric_value(payload, [metric])
+            if score is not None:
+                return score
 
-    number_patterns = [rf"{re.escape(metric)}[^0-9+\-.]+([+-]?[0-9]+(?:\.[0-9]+)?)" for metric in metric_order]
-    if "accuracy" in metric_order:
-        number_patterns.append(r"Accuracy of the network[^0-9+\-.]+([+-]?[0-9]+(?:\.[0-9]+)?)")
-    for path in artifact_root.glob("**/*.log"):
+    text_artifacts = []
+    for name in ("run.log", "log.txt", "log_fl.txt", "error_log.txt"):
+        text_artifacts.extend(sorted(artifact_root.glob(f"**/{name}")))
+    texts = []
+    for path in text_artifacts:
         try:
-            text = path.read_text(encoding="utf-8", errors="replace")
+            texts.append(path.read_text(encoding="utf-8", errors="replace"))
         except Exception:
             continue
-        for pattern in number_patterns:
-            matches = re.findall(pattern, text, flags=re.IGNORECASE)
-            if matches:
-                return float(matches[-1])
+    for metric in metric_order:
+        number_patterns = [rf"{re.escape(metric)}[^0-9+\-.]+([+-]?[0-9]+(?:\.[0-9]+)?)"]
+        if metric == "accuracy":
+            number_patterns.append(r"Accuracy of the network[^0-9+\-.]+([+-]?[0-9]+(?:\.[0-9]+)?)")
+        for text in texts:
+            for pattern in number_patterns:
+                matches = re.findall(pattern, text, flags=re.IGNORECASE)
+                if matches:
+                    return float(matches[-1])
     return None
+
+
+def metric_search_description(artifact_root: Path, metrics: Sequence[str] | str) -> str:
+    names = ["metrics_summary.json", "cross_val_results.json", "run.log", "log.txt", "log_fl.txt", "error_log.txt"]
+    searched = [str(path) for name in names for path in sorted(artifact_root.glob(f"**/{name}"))]
+    return f"metrics={normalize_metric_order(metrics)!r}; searched={searched or [str(artifact_root)]!r}"
 
 
 def is_sandbox_socket_failure(output: str) -> bool:
@@ -971,7 +1017,7 @@ def is_sandbox_socket_failure(output: str) -> bool:
     return (
         "permissionerror" in text
         and ("operation not permitted" in text or "[errno 1]" in text)
-        and ("socket" in text or "sock" in text)
+        and ("socket" in text or "sock" in text or "get_open_ports" in text or ".bind(" in text)
     )
 
 
@@ -986,7 +1032,6 @@ def collect_artifacts(result_dir: Optional[Path], output_root: Path, name: str, 
         shutil.rmtree(dest)
     if result_dir and result_dir.exists():
         shutil.copytree(result_dir, dest)
-        shutil.rmtree(result_dir, ignore_errors=True)
     else:
         dest.mkdir(parents=True, exist_ok=True)
     if log_path.resolve() != run_log.resolve():
@@ -1006,8 +1051,12 @@ def job_help(python: str, job: Path, cwd: Path) -> str:
     return process.stdout
 
 
+def supported_long_flags(help_text: str) -> set[str]:
+    return set(re.findall(r"(?<![\w-])(--[A-Za-z][A-Za-z0-9_-]*)", help_text))
+
+
 def supports_flag(help_text: str, flag: str) -> bool:
-    return flag in help_text
+    return flag in supported_long_flags(help_text)
 
 
 def mutable_arg_specs(schema: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
@@ -1020,6 +1069,14 @@ def candidate_arg_values(candidate_args: Sequence[str]) -> Dict[str, Any]:
     idx = 0
     while idx < len(candidate_args):
         raw = candidate_args[idx]
+        if raw.startswith("--") and not re.match(r"^--[A-Za-z][A-Za-z0-9_-]*(?:=.*)?$", raw):
+            raise ValueError(f"invalid canonical long option: {raw!r}")
+        if (
+            raw.startswith("-")
+            and not raw.startswith("--")
+            and not re.match(r"^-(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$", raw)
+        ):
+            raise ValueError(f"candidate run arguments require canonical long options, not {raw!r}")
         if not raw.startswith("--"):
             idx += 1
             continue
@@ -1086,9 +1143,20 @@ def candidate_preserves_fixed_args(
     fixed_names = set(fixed_within_campaign(schema))
     fixed_budget = config.get("budget", {}).get("fixed_training_budget", {}) or {}
     fixed_names.update(FIXED_BUDGET_TO_CLI[field] for field in fixed_budget if field in FIXED_BUDGET_TO_CLI)
-    changed = sorted(fixed_names.intersection(values))
+    normalized_fixed_names = {name.replace("-", "_") for name in fixed_names}
+    changed = sorted(normalized_fixed_names.intersection(values))
     if changed:
         return False, f"candidate run arguments change fixed-budget fields: {', '.join(changed)}"
+    for raw in candidate_args:
+        if not raw.startswith("--"):
+            continue
+        supplied = raw[2:].split("=", 1)[0].replace("-", "_")
+        abbreviated = sorted(name for name in normalized_fixed_names if name.startswith(supplied) and name != supplied)
+        if abbreviated:
+            return False, (
+                f"candidate run argument {raw!r} is a strict prefix of fixed-budget option(s): "
+                f"{', '.join('--' + name for name in abbreviated)}"
+            )
     return True, ""
 
 
@@ -1341,11 +1409,35 @@ def candidate_plan(
     return uncapped()
 
 
-def remove_known_result_dir(config: Dict[str, Any]) -> None:
-    recipe_args = config.get("job", {}).get("recipe_args", {}) or {}
-    name = recipe_args.get("name", {}).get("value") if isinstance(recipe_args.get("name"), dict) else None
-    if isinstance(name, str) and name:
-        shutil.rmtree(Path("/tmp/nvflare/simulation") / name, ignore_errors=True)
+def imported_job_names(config: Dict[str, Any]) -> List[str]:
+    names = []
+    job_config = config.get("job", {})
+    if not isinstance(job_config, dict):
+        return names
+    for key in ("recipe_args", "fed_job_args"):
+        arguments = job_config.get(key)
+        if not isinstance(arguments, dict):
+            continue
+        name = arguments.get("name")
+        value = name.get("value") if isinstance(name, dict) else name
+        if isinstance(name, dict) and name.get("confidence") != "high":
+            continue
+        if isinstance(value, str) and value and value not in names:
+            names.append(value)
+    return names
+
+
+def expected_simulator_roots(config: Dict[str, Any], injected_name: Optional[str]) -> List[Path]:
+    names = ([injected_name] if injected_name else []) + imported_job_names(config)
+    roots = []
+    simulator_base = Path("/tmp/nvflare/simulation")
+    for name in names:
+        if Path(name).name != name or name in {".", ".."}:
+            raise ValueError(f"unsafe simulator job name: {name!r}")
+        root = simulator_base / name
+        if root not in roots:
+            roots.append(root)
+    return roots
 
 
 def run_job(
@@ -1365,23 +1457,29 @@ def run_job(
 ) -> RunRecord:
     log_path = output_root / run_def.name / "run.log"
     run_name = f"autofl_{run_def.name}"
-    simulator_root = Path("/tmp/nvflare/simulation") / run_name
     name_args = ["--name", run_name] if supports_flag(help_text, "--name") else []
+    simulator_roots = expected_simulator_roots(config, run_name if name_args else None)
     command = [python, str(job), *fixed_args, *base_args, *name_args, *run_def.args]
     run_def.command = command
-    remove_known_result_dir(config)
-    if name_args:
+    for simulator_root in simulator_roots:
         shutil.rmtree(simulator_root, ignore_errors=True)
     rc, stdout, runtime = run_allow_timeout(
         command,
         cwd,
         timeout,
         log_path,
-        simulator_stall_roots=[simulator_root],
+        simulator_stall_roots=simulator_roots,
         simulator_no_progress_timeout=simulator_no_progress_timeout,
     )
     run_def.runtime_seconds = runtime
-    result_dir = extract_result_dir(stdout) or (simulator_root if simulator_root.exists() else None)
+    printed_result_dir = extract_result_dir(stdout, cwd)
+    existing_roots = [root.resolve() for root in simulator_roots if root.exists()]
+    result_dir = printed_result_dir if printed_result_dir and printed_result_dir.exists() else None
+    injected_root = (Path("/tmp/nvflare/simulation") / run_name).resolve() if name_args else None
+    if result_dir is None and injected_root in existing_roots:
+        result_dir = injected_root
+    if result_dir is None and len(existing_roots) == 1:
+        result_dir = existing_roots[0]
     artifact_dir = collect_artifacts(result_dir, output_root, run_def.name, log_path)
     run_def.artifacts = str(artifact_dir)
 
@@ -1398,11 +1496,18 @@ def run_job(
         else:
             run_def.status = "crash"
             run_def.failure_reason = f"exit_code={rc}"
+    elif result_dir is None:
+        run_def.status = "crash"
+        run_def.failure_reason = (
+            "job exited successfully but no deterministic NVFlare result directory was resolved; "
+            "expose a literal job name or print the result path"
+        )
     else:
-        score = extract_score(artifact_dir, metrics)
+        artifact_root = artifact_dir.parent
+        score = extract_score(artifact_root, metrics)
         if score is None:
             run_def.status = "crash"
-            run_def.failure_reason = f"metrics '{', '.join(metrics)}' not found"
+            run_def.failure_reason = f"matching metric not found; {metric_search_description(artifact_root, metrics)}"
         else:
             run_def.score = score
 
@@ -1489,9 +1594,16 @@ def write_state(
     plateau_min_delta: float = DEFAULT_PLATEAU_MIN_DELTA,
     hard_crash_threshold: int = DEFAULT_HARD_CRASH_THRESHOLD,
     manual_stop: bool = False,
+    pending_manifest_count: int = 0,
 ) -> Dict[str, Any]:
     guard = load_campaign_guard()
-    attempts = len([r for r in records if r.status in {"keep", "discard", "crash"}])
+    attempts = len(
+        [
+            record
+            for record in records
+            if record.status in {"candidate", "keep", "discard", "crash"} and not is_baseline_record(record)
+        ]
+    )
     if manual_stop:
         state = guard.guard_state(
             results_path,
@@ -1501,7 +1613,11 @@ def write_state(
             min_delta=plateau_min_delta,
             hard_crash_threshold=hard_crash_threshold,
             mode=mode,
+            pending_manifest_count=pending_manifest_count,
         )
+        if state.get("pending_candidates"):
+            write_json(path, state)
+            return state
         state.update(
             {
                 "candidate_attempts": attempts,
@@ -1524,6 +1640,7 @@ def write_state(
             min_delta=plateau_min_delta,
             hard_crash_threshold=hard_crash_threshold,
             mode=mode,
+            pending_manifest_count=pending_manifest_count,
         )
         state.update(
             {
@@ -1549,6 +1666,7 @@ def write_state(
         min_delta=plateau_min_delta,
         hard_crash_threshold=hard_crash_threshold,
         mode=mode,
+        pending_manifest_count=pending_manifest_count,
     )
     write_json(path, state)
     return state
@@ -1675,7 +1793,24 @@ def write_report(path: Path, config: Dict[str, Any], records: List[RunRecord], a
 
 
 def candidate_attempts(records: List[RunRecord]) -> int:
-    return len([r for r in records if r.status in {"keep", "discard", "crash"}])
+    return len(
+        [
+            record
+            for record in records
+            if record.status in {"candidate", "keep", "discard", "crash"} and not is_baseline_record(record)
+        ]
+    )
+
+
+def is_baseline_record(record: RunRecord) -> bool:
+    name = record.name.strip().lower()
+    command = record.run_command.lower()
+    return (
+        record.status == "baseline"
+        or name == "baseline"
+        or name.startswith("baseline_")
+        or "--name baseline" in command
+    )
 
 
 def campaign_summary(
@@ -1738,6 +1873,7 @@ CAMPAIGN_SETTING_NAMES = (
     "plateau_threshold",
     "plateau_min_delta",
     "hard_crash_threshold",
+    "stop_file",
     "base_args",
     "timeout",
     "simulator_no_progress_timeout",
@@ -1803,6 +1939,26 @@ def import_job_config(
     return read_yaml(output)
 
 
+def campaign_admission_errors(config: Dict[str, Any]) -> List[str]:
+    errors = []
+    support = config.get("import", {}).get("support", {})
+    if not isinstance(support, dict) or support.get("status") != "supported":
+        errors.append("job surface is not deterministically supported")
+    fixed_budget = config.get("budget", {}).get("fixed_training_budget")
+    if not isinstance(fixed_budget, dict) or not fixed_budget:
+        errors.append("fixed comparison budget is unresolved")
+    unresolved = config.get("unresolved", [])
+    if isinstance(unresolved, list):
+        critical_fields = []
+        for item in unresolved:
+            field = item.get("field", "") if isinstance(item, dict) else ""
+            if field.startswith("budget.fixed_training_budget"):
+                critical_fields.append(field)
+        if critical_fields:
+            errors.append(f"safety-critical fields are unresolved: {', '.join(sorted(set(critical_fields)))}")
+    return errors
+
+
 def best_retained_record(records: Sequence[RunRecord], mode: str) -> Optional[RunRecord]:
     best = None
     for record in records:
@@ -1822,6 +1978,9 @@ def refresh_campaign_artifacts(
     next_action: Optional[str] = None,
     reason: Optional[str] = None,
 ) -> Dict[str, Any]:
+    pending_manifests = pending_candidate_manifests(paths["workspace"])
+    if pending_manifest is not None and pending_manifest not in pending_manifests:
+        pending_manifests.append(pending_manifest)
     write_results(paths["results"], records)
     state = write_state(
         paths["state"],
@@ -1833,7 +1992,12 @@ def refresh_campaign_artifacts(
         plateau_threshold=args.plateau_threshold,
         plateau_min_delta=args.plateau_min_delta,
         hard_crash_threshold=args.hard_crash_threshold,
+        pending_manifest_count=len(pending_manifests),
     )
+    if pending_manifests and next_action is None:
+        pending_status = read_json(pending_manifests[0]).get("status")
+        next_action = "submit_candidate" if pending_status == "ready_for_external_execution" else "edit_candidate"
+        reason = "pending_candidates"
     if not state.get("final_response_allowed") and next_action:
         state["next_action"] = next_action
         state["reason"] = reason or next_action
@@ -1842,7 +2006,7 @@ def refresh_campaign_artifacts(
         {
             "best_candidate": metadata.get("best_candidate"),
             "best_source_sha256": metadata.get("best_source_sha256"),
-            "pending_candidate_manifest": str(pending_manifest.resolve()) if pending_manifest else None,
+            "pending_candidate_manifest": str(pending_manifests[0].resolve()) if pending_manifests else None,
         }
     )
     write_json(paths["state"], state)
@@ -1873,11 +2037,12 @@ def execute_sim_baseline(
     paths: Dict[str, Path],
     config: Dict[str, Any],
     schema: Dict[str, Any],
+    name: str = "baseline",
 ) -> RunRecord:
     timeout, no_progress_timeout = campaign_timeout(args, schema)
     help_text = job_help(args.python, job, job.parent)
     return run_job(
-        JobRun(name="baseline", args=[], description="baseline", status="baseline"),
+        JobRun(name=name, args=[], description="baseline", status="baseline"),
         python=args.python,
         job=job,
         cwd=job.parent,
@@ -1904,9 +2069,19 @@ def initialize_campaign(args: argparse.Namespace, job: Path) -> int:
             record.status == "baseline" and record.score is not None for record in records
         ):
             config = read_yaml(paths["autofl_yaml"])
-            baseline = execute_sim_baseline(args, job, paths, config, load_mutation_schema(workspace))
-            records = [baseline]
+            retry_number = sum(is_baseline_record(record) for record in records) + 1
+            baseline = execute_sim_baseline(
+                args,
+                job,
+                paths,
+                config,
+                load_mutation_schema(workspace),
+                name=f"baseline_retry_{retry_number}",
+            )
+            records.append(baseline)
             metadata["best_score"] = baseline.score
+            if baseline.score is not None:
+                metadata["best_candidate"] = baseline.name
             metadata["updated_at"] = utc_now()
             write_json(metadata_path, metadata)
             next_action = "propose_candidate" if baseline.score is not None else "repair_baseline"
@@ -1929,6 +2104,12 @@ def initialize_campaign(args: argparse.Namespace, job: Path) -> int:
     config.setdefault("job", {})["allowed_create_patterns"] = list(ALLOWED_CREATE_PATTERNS)
     config.setdefault("trust_contract", {})["allowed_create_patterns"] = list(ALLOWED_CREATE_PATTERNS)
     write_yaml(paths["autofl_yaml"], config)
+    admission_errors = campaign_admission_errors(config)
+    if admission_errors:
+        raise ValueError(
+            f"autofl.yaml was generated at {paths['autofl_yaml']}, but baseline execution is unsafe: "
+            f"{'; '.join(admission_errors)}. Resolve these fields and initialize again."
+        )
     snapshot_files = create_best_snapshot(workspace, config, paths["snapshot_root"])
     metadata = {
         "schema_version": CAMPAIGN_METADATA_SCHEMA_VERSION,
@@ -1972,10 +2153,9 @@ def pending_candidate_manifests(workspace: Path) -> List[Path]:
     if not root.exists():
         return pending
     for path in sorted(root.glob("*/candidate_manifest.json")):
-        try:
-            status = read_json(path).get("status")
-        except ValueError:
-            continue
+        manifest = read_json(path)
+        validate_candidate_manifest_identity(path, manifest)
+        status = manifest.get("status")
         if status in {"prepared", "ready_for_external_execution"}:
             pending.append(path)
     return pending
@@ -2271,7 +2451,7 @@ def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
         if fixed_budget_hash(candidate_config) != metadata.get("fixed_budget_sha256"):
             raise ValueError("candidate changes budget.fixed_training_budget")
         candidate_config = candidate_campaign_config(candidate_config, config, args, schema)
-    except Exception:
+    except BaseException:
         restore_best_source(workspace, best_source, best_files, changed)
         raise
 
@@ -2548,7 +2728,9 @@ def show_campaign_status(args: argparse.Namespace, job: Path) -> int:
     restore_campaign_settings(args, metadata)
     paths = campaign_paths(args, job)
     records = load_results(paths["results"])
-    print_campaign_result(paths, records, read_json(paths["state"]), campaign=metadata)
+    config = read_yaml(paths["autofl_yaml"])
+    state = refresh_campaign_artifacts(args, paths, config, records, metadata)
+    print_campaign_result(paths, records, state, campaign=metadata)
     return 0
 
 

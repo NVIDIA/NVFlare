@@ -37,7 +37,7 @@ def _load_runner():
 def _campaign_config():
     return {
         "schema_version": "nvflare.autofl.config.v1",
-        "import": {"source_sha256": "a" * 64},
+        "import": {"source_sha256": "a" * 64, "support": {"status": "supported"}},
         "job": {"allowed_edit_paths": ["job.py", "client.py"]},
         "objective": {
             "metric": "accuracy",
@@ -99,6 +99,21 @@ def test_candidate_run_args_cannot_override_fixed_budget():
     assert runner.candidate_preserves_fixed_args(["--lr", "0.01"], config, {}) == (True, "")
     assert runner.candidate_preserves_fixed_args(["--num_rounds=2"], config, {})[0] is False
     assert runner.candidate_preserves_fixed_args(["--n-clients", "4"], config, {})[0] is False
+    assert runner.candidate_preserves_fixed_args(["--num_round", "2"], config, {})[0] is False
+    with pytest.raises(ValueError, match="canonical long options"):
+        runner.candidate_preserves_fixed_args(["-r", "2"], config, {})
+    assert runner.candidate_preserves_fixed_args(["--temperature", "-1.5"], config, {}) == (True, "")
+    assert runner.candidate_preserves_fixed_args(["--new-algorithm", "fednova"], config, {}) == (True, "")
+
+
+def test_supported_flags_are_exact_help_tokens():
+    runner = _load_runner()
+    help_text = "usage: job.py [--num_rounds NUM_ROUNDS] [--name NAME]"
+
+    assert runner.supports_flag(help_text, "--num_rounds")
+    assert runner.supports_flag(help_text, "--name")
+    assert not runner.supports_flag(help_text, "--num_round")
+    assert not runner.supports_flag(help_text, "--round")
 
 
 def test_candidate_plan_skips_out_of_bounds_learning_rate():
@@ -130,6 +145,14 @@ def test_runner_prefers_explicit_test_accuracy_alias(tmp_path):
         ),
         encoding="utf-8",
     )
+
+    assert runner.extract_score(tmp_path, ["test_accuracy", "accuracy"]) == 0.8
+
+
+def test_metric_order_precedes_artifact_file_order(tmp_path):
+    runner = _load_runner()
+    tmp_path.joinpath("metrics_summary.json").write_text(json.dumps({"accuracy": 0.7}), encoding="utf-8")
+    tmp_path.joinpath("cross_val_results.json").write_text(json.dumps({"test_accuracy": 0.8}), encoding="utf-8")
 
     assert runner.extract_score(tmp_path, ["test_accuracy", "accuracy"]) == 0.8
 
@@ -201,6 +224,130 @@ def test_run_streams_output_before_timeout(tmp_path):
     assert "started" in output
     assert "started" in log_text
     assert "TIMEOUT after 1s" in log_text
+
+
+def test_run_streams_partial_line_before_timeout(tmp_path):
+    runner = _load_runner()
+    log_path = tmp_path / "run.log"
+
+    rc, output, runtime = runner.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys, time; sys.stdout.write('partial output'); sys.stdout.flush(); time.sleep(30)",
+        ],
+        tmp_path,
+        timeout=1,
+        log_path=log_path,
+    )
+
+    assert rc == 124
+    assert runtime < 5
+    assert "partial output" in output
+    assert "partial output" in log_path.read_text(encoding="utf-8")
+
+
+def test_metric_extraction_prefers_structured_artifacts_then_known_text_logs(tmp_path):
+    runner = _load_runner()
+    nested = tmp_path / "server"
+    nested.mkdir()
+    nested.joinpath("metrics_summary.json").write_text(json.dumps({"accuracy": 0.7}), encoding="utf-8")
+    nested.joinpath("cross_val_results.json").write_text(json.dumps({"accuracy": 0.8}), encoding="utf-8")
+    nested.joinpath("log_fl.txt").write_text("accuracy: 0.9\n", encoding="utf-8")
+    tmp_path.joinpath("run.log").write_text("accuracy: 0.95\n", encoding="utf-8")
+
+    assert runner.extract_score(tmp_path, ["accuracy"]) == 0.7
+    nested.joinpath("metrics_summary.json").unlink()
+    assert runner.extract_score(tmp_path, ["accuracy"]) == 0.8
+    nested.joinpath("cross_val_results.json").unlink()
+    assert runner.extract_score(tmp_path, ["accuracy"]) == 0.95
+
+
+def test_result_paths_and_static_job_names_are_resolved_deterministically(tmp_path):
+    runner = _load_runner()
+    relative = tmp_path / "relative-result"
+    relative.mkdir()
+    config = {
+        "job": {
+            "recipe_args": {"name": {"value": "recipe-name", "confidence": "high"}},
+            "fed_job_args": {"name": {"value": "fed-job-name", "confidence": "high"}},
+        }
+    }
+
+    assert runner.extract_result_dir("Result can be found in : relative-result", tmp_path) == relative.resolve()
+    assert runner.imported_job_names(config) == ["recipe-name", "fed-job-name"]
+    assert runner.expected_simulator_roots(config, "injected") == [
+        Path("/tmp/nvflare/simulation/injected"),
+        Path("/tmp/nvflare/simulation/recipe-name"),
+        Path("/tmp/nvflare/simulation/fed-job-name"),
+    ]
+    config["job"]["recipe_args"]["name"]["confidence"] = "low"
+    assert runner.imported_job_names(config) == ["fed-job-name"]
+    with pytest.raises(ValueError, match="unsafe simulator job name"):
+        runner.expected_simulator_roots({}, "../other-run")
+
+
+def test_success_without_deterministic_result_root_is_actionable_failure(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job = tmp_path / "job.py"
+    job.write_text("print('done')\n", encoding="utf-8")
+    monkeypatch.setattr(runner, "run_allow_timeout", lambda *args, **kwargs: (0, "done\n", 0.1))
+
+    record = runner.run_job(
+        runner.JobRun("candidate", [], "candidate"),
+        python=sys.executable,
+        job=job,
+        cwd=tmp_path,
+        help_text="",
+        fixed_args=[],
+        base_args=[],
+        output_root=tmp_path / "runs",
+        timeout=10,
+        simulator_no_progress_timeout=0,
+        metrics=["accuracy"],
+        config={"job": {}},
+    )
+
+    assert record.status == "crash"
+    assert "no deterministic NVFlare result directory" in record.failure_reason
+
+
+def test_run_job_collects_relative_result_and_standard_nvflare_text_metric(tmp_path):
+    runner = _load_runner()
+    job = tmp_path / "job.py"
+    job.write_text(
+        """
+from pathlib import Path
+
+result = Path("relative-result")
+server = result / "server"
+server.mkdir(parents=True, exist_ok=True)
+server.joinpath("log.txt").write_text("accuracy: 0.76\\n")
+print("Result can be found in : relative-result")
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    record = runner.run_job(
+        runner.JobRun("candidate", [], "candidate"),
+        python=sys.executable,
+        job=job,
+        cwd=tmp_path,
+        help_text="",
+        fixed_args=[],
+        base_args=[],
+        output_root=tmp_path / "runs",
+        timeout=10,
+        simulator_no_progress_timeout=0,
+        metrics=["accuracy"],
+        config={"job": {}},
+    )
+
+    assert record.status == "candidate"
+    assert record.score == pytest.approx(0.76)
+    assert tmp_path.joinpath("runs/candidate/simulation/server/log.txt").is_file()
+    assert tmp_path.joinpath("runs/candidate/run.log").is_file()
+    assert tmp_path.joinpath("relative-result").is_dir()
 
 
 def test_run_stops_on_nvflare_simulator_stall_log(tmp_path):
@@ -396,6 +543,16 @@ def test_runner_state_marks_infrastructure_retry_non_final(tmp_path):
     assert state["final_response_allowed"] is False
 
 
+def test_baseline_crash_is_not_counted_as_candidate_attempt():
+    runner = _load_runner()
+    records = [runner.RunRecord("crash", "baseline", None, 1.0, "none", "baseline", "python job.py", "/tmp/baseline")]
+
+    assert runner.candidate_attempts(records) == 0
+    assert runner.is_sandbox_socket_failure(
+        "PermissionError: [Errno 1] Operation not permitted in get_open_ports while calling s.bind(('', 0))"
+    )
+
+
 def test_code_candidate_keeps_improvement_and_restores_discard_without_git(tmp_path, monkeypatch):
     runner = _load_runner()
     job, client, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
@@ -539,6 +696,24 @@ def test_candidate_job_help_failure_restores_workspace(tmp_path, monkeypatch):
     assert client.read_text(encoding="utf-8") == "ALGORITHM = 'baseline'\n"
 
 
+def test_keyboard_interrupt_during_candidate_import_restores_workspace(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, client, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    assert runner.main(["prepare", str(job), "--name", "interrupt", "--hypothesis", "change code"]) == 0
+    draft = tmp_path / ".nvflare" / "autofl" / "candidates" / "interrupt" / "source"
+    draft.joinpath("client.py").write_text("ALGORITHM = 'candidate'\n", encoding="utf-8")
+
+    def interrupt_import(*args, **kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(runner, "import_job_config", interrupt_import)
+    args = runner.parse_args(["evaluate", str(job)])
+    with pytest.raises(KeyboardInterrupt):
+        runner.evaluate_candidate(args, job)
+
+    assert client.read_text(encoding="utf-8") == "ALGORITHM = 'baseline'\n"
+
+
 def test_candidate_finalization_failure_rolls_back_workspace_and_campaign_files(tmp_path, monkeypatch):
     runner = _load_runner()
     job, client, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
@@ -673,6 +848,52 @@ def test_abandon_candidate_clears_pending_draft_without_touching_best(tmp_path, 
     assert state["pending_candidate_manifest"] is None
 
 
+def test_status_rescans_pending_manifests_before_writing_state(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    assert runner.main(["prepare", str(job), "--name", "pending", "--hypothesis", "change code"]) == 0
+    state_path = tmp_path / ".nvflare" / "autofl" / "campaign_state.json"
+    state_path.write_text('{"final_response_allowed": true}\n', encoding="utf-8")
+
+    assert runner.main(["status", str(job)]) == 0
+
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert state["reason"] == "pending_candidates"
+    assert state["next_action"] == "edit_candidate"
+    assert state["final_response_allowed"] is False
+    assert state["pending_candidate_manifest"].endswith("pending/candidate_manifest.json")
+
+
+def test_status_refuses_malformed_candidate_manifest(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    assert runner.main(["prepare", str(job), "--name", "malformed", "--hypothesis", "change code"]) == 0
+    manifest = tmp_path / ".nvflare" / "autofl" / "candidates" / "malformed" / "candidate_manifest.json"
+    manifest.write_text("not json\n", encoding="utf-8")
+
+    assert runner.main(["status", str(job)]) == 2
+
+
+def test_status_uses_persisted_custom_stop_file_in_job_directory(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    metadata_path = tmp_path / ".nvflare" / "autofl" / "campaign.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata["settings"]["stop_file"] = ["CUSTOM_STOP"]
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+    tmp_path.joinpath("STOP_AUTOFL").touch()
+
+    assert runner.main(["status", str(job)]) == 0
+    default_state = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_text(encoding="utf-8"))
+    assert default_state["reason"] == "continue"
+
+    tmp_path.joinpath("CUSTOM_STOP").touch()
+    assert runner.main(["status", str(job)]) == 0
+    custom_state = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_text(encoding="utf-8"))
+    assert custom_state["reason"] == "manual_stop_file"
+    assert custom_state["final_response_allowed"] is True
+
+
 def test_initialize_retries_an_unscored_baseline(tmp_path, monkeypatch):
     runner = _load_runner()
     job = tmp_path / "job.py"
@@ -685,7 +906,7 @@ def test_initialize_retries_an_unscored_baseline(tmp_path, monkeypatch):
     def fake_run(run_def, **kwargs):
         return runner.RunRecord(
             "baseline",
-            "baseline",
+            run_def.name,
             next(scores),
             1.0,
             "none",
@@ -699,7 +920,10 @@ def test_initialize_retries_an_unscored_baseline(tmp_path, monkeypatch):
     assert runner.main(command) == 1
     assert runner.main(command) == 0
     records = runner.load_results(tmp_path / "results.tsv")
-    assert [(record.status, record.score) for record in records] == [("baseline", 0.5)]
+    assert [(record.status, record.score) for record in records] == [("baseline", None), ("baseline", 0.5)]
+    assert [record.name for record in records] == ["baseline", "baseline_retry_2"]
+    metadata = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign.json").read_text(encoding="utf-8"))
+    assert metadata["best_candidate"] == "baseline_retry_2"
 
 
 def test_record_literature_checkpoint_returns_to_agent_proposal(tmp_path, monkeypatch):
@@ -737,6 +961,10 @@ def test_external_candidate_uses_standard_job_result_recording(tmp_path, monkeyp
 
     manifest_path = tmp_path / ".nvflare" / "autofl" / "candidates" / "prod_algo" / "candidate_manifest.json"
     assert json.loads(manifest_path.read_text(encoding="utf-8"))["status"] == "ready_for_external_execution"
+    assert (
+        json.loads(tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_text(encoding="utf-8"))["next_action"]
+        == "submit_candidate"
+    )
     assert (
         runner.main(
             [
@@ -792,6 +1020,36 @@ def test_import_job_config_forwards_minimization_mode(tmp_path, monkeypatch):
 
     mode_index = captured["command"].index("--mode")
     assert captured["command"][mode_index + 1] == "min"
+
+
+@pytest.mark.parametrize(
+    "config,expected",
+    [
+        (
+            {
+                "import": {"support": {"status": "partial"}},
+                "budget": {"fixed_training_budget": {"num_rounds": 1}},
+            },
+            "job surface",
+        ),
+        (
+            {"import": {"support": {"status": "supported"}}, "budget": {}},
+            "fixed comparison budget",
+        ),
+        (
+            {
+                "import": {"support": {"status": "supported"}},
+                "budget": {"fixed_training_budget": {"num_rounds": 1}},
+                "unresolved": [{"field": "budget.fixed_training_budget.num_clients", "reason": "dynamic"}],
+            },
+            "safety-critical fields",
+        ),
+    ],
+)
+def test_campaign_admission_rejects_unresolved_safety_contract(config, expected):
+    runner = _load_runner()
+
+    assert expected in "; ".join(runner.campaign_admission_errors(config))
 
 
 def test_cli_lifecycle_runs_agent_code_candidate_end_to_end(tmp_path):

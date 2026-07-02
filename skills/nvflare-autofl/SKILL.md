@@ -173,9 +173,11 @@ infrastructure-only retries. Count a real candidate crash after execution
 starts. State must report `candidate_cap_source=explicit` or `uncapped`.
 
 Treat plateau as a decision checkpoint, not an automatic stop. Summarize the
-plateau in the running report, refresh `progress.png`, run the campaign guard or
-read the runner's `.nvflare/autofl/campaign_state.json`, choose the returned
+plateau in the running report, refresh `progress.png`, run the runner's `status`
+action to refresh `.nvflare/autofl/campaign_state.json`, choose the returned
 next mode, and continue unless the state reports `final_response_allowed=true`.
+Use `campaign_guard.py` only for read-only ledger diagnostics; it never updates
+authoritative campaign state.
 After a source-backed review, record it with the helper's `record --literature
 --hypothesis "<sources and decision>"` action before preparing its candidate.
 

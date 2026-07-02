@@ -87,7 +87,7 @@ def test_guard_continues_uncapped_before_plateau():
     assert state["candidate_cap"] is None
     assert state["candidate_cap_source"] == "uncapped"
     assert state["candidate_attempts"] == 2
-    assert state["best_score"] == 0.851
+    assert state["best_score"] == 0.85
 
 
 def test_guard_routes_plateau_to_literature_without_finalizing():
@@ -152,11 +152,12 @@ def test_guard_ignores_ambient_candidate_cap(monkeypatch):
     assert state["final_response_allowed"] is False
 
 
-def test_guard_cli_writes_campaign_state_json(tmp_path):
+def test_guard_cli_is_diagnostic_only(tmp_path):
     repo_root = Path(__file__).parents[3]
     guard_path = repo_root / "skills" / "nvflare-autofl" / "scripts" / "campaign_guard.py"
     results_path = tmp_path / "results.tsv"
     state_path = tmp_path / "state.json"
+    state_path.write_text('{"authoritative": true}\n', encoding="utf-8")
     _write_results(
         results_path,
         [
@@ -171,8 +172,6 @@ def test_guard_cli_writes_campaign_state_json(tmp_path):
             sys.executable,
             str(guard_path),
             str(results_path),
-            "--state",
-            str(state_path),
             "--plateau-threshold",
             "2",
             "--format",
@@ -184,5 +183,94 @@ def test_guard_cli_writes_campaign_state_json(tmp_path):
     )
 
     payload = json.loads(proc.stdout)
-    assert json.loads(state_path.read_text(encoding="utf-8")) == payload
+    assert json.loads(state_path.read_text(encoding="utf-8")) == {"authoritative": True}
     assert payload["next_action"] == "run_literature_loop"
+
+
+def test_guard_resolves_default_and_custom_stop_files_from_results_directory(tmp_path):
+    repo_root = Path(__file__).parents[3]
+    guard_path = repo_root / "skills" / "nvflare-autofl" / "scripts" / "campaign_guard.py"
+    results_path = tmp_path / "results.tsv"
+    _write_results(results_path, [_row("baseline", "baseline", "0.85")])
+    tmp_path.joinpath("STOP_AUTOFL").touch()
+
+    default_proc = subprocess.run(
+        [sys.executable, str(guard_path), str(results_path), "--format", "json"],
+        cwd=repo_root,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    custom_proc = subprocess.run(
+        [
+            sys.executable,
+            str(guard_path),
+            str(results_path),
+            "--stop-file",
+            "CUSTOM_STOP",
+            "--format",
+            "json",
+        ],
+        cwd=repo_root,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    assert json.loads(default_proc.stdout)["reason"] == "manual_stop_file"
+    assert json.loads(custom_proc.stdout)["reason"] == "continue"
+
+
+def test_numeric_crashes_and_pending_candidates_do_not_change_retained_best_or_plateau():
+    guard = _load_guard()
+    rows = [
+        _row("baseline", "baseline", "0.85"),
+        _row("crash", "crashed_candidate", "0.99"),
+        _row("candidate", "pending_candidate", "0.98"),
+        _row("discard", "discarded_candidate", "0.84"),
+    ]
+
+    state = guard.guard_state_for_rows(rows, plateau_threshold=1)
+
+    assert state["best_score"] == 0.85
+    assert state["scored_attempts"] == 1
+    assert state["plateau"]["scored_since_reset"] == 1
+    assert state["reason"] == "pending_candidates"
+    assert state["next_action"] == "edit_candidate"
+
+
+def test_pending_manifest_takes_precedence_over_cap_and_stop_file(tmp_path):
+    guard = _load_guard()
+    stop_file = tmp_path / "STOP_AUTOFL"
+    stop_file.touch()
+    rows = [_row("baseline", "baseline", "0.85"), _row("discard", "candidate_1", "0.84")]
+
+    state = guard.guard_state_for_rows(
+        rows,
+        max_candidates=1,
+        stop_files=[str(stop_file)],
+        pending_manifest_count=1,
+    )
+
+    assert state["decision"] == "continue"
+    assert state["reason"] == "pending_candidates"
+    assert state["final_response_allowed"] is False
+
+
+def test_continuous_campaign_reference_documents_only_emitted_actions():
+    repo_root = Path(__file__).parents[3]
+    reference = repo_root / "skills" / "nvflare-autofl" / "references" / "continuous-campaigns.md"
+    text = reference.read_text(encoding="utf-8")
+    actions = {
+        "repair_baseline",
+        "edit_candidate",
+        "propose_candidate",
+        "submit_baseline",
+        "submit_candidate",
+        "rerun_with_escalated_execution",
+        "run_literature_loop",
+        "final_report",
+    }
+
+    assert all(f"`{action}`" in text for action in actions)
+    assert "`evaluate_candidate`" not in text

@@ -364,6 +364,121 @@ if __name__ == "__main__":
     assert "budget.fixed_training_budget" in unresolved_fields
 
 
+def test_import_resolves_nvflare_fed_job_alias_and_script_runner(tmp_path):
+    (tmp_path / "train.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+from nvflare.app_common.workflows.fedavg import FedAvgJob as ImportedJob
+from nvflare.app_common.executors.script_runner import ScriptRunner as Runner
+
+
+def main():
+    job = ImportedJob(name="fedavg-alias", n_clients=8, min_clients=4, num_rounds=10, key_metric="AUC")
+    runner = Runner(script="train.py")
+    return job, runner
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert config["import"]["support"]["status"] == "supported"
+    assert config["job"]["fed_job"] == "FedAvgJob"
+    assert config["job"]["fed_job_class"] == "nvflare.app_common.workflows.fedavg.FedAvgJob"
+    assert config["job"]["train_script"] == "train.py"
+    assert config["objective"] == _objective("AUC", source="literal")
+    assert config["budget"]["fixed_training_budget"] == {
+        "num_rounds": 10,
+        "min_clients": 4,
+        "num_clients": 8,
+    }
+
+
+def test_import_resolves_module_aliases_for_nvflare_job_subclasses(tmp_path):
+    (tmp_path / "train.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+import nvflare.app_common.workflows as workflows
+import nvflare.app_common.executors.script_runner as runner_module
+
+
+def main():
+    job = workflows.CCWFJob(name="ccwf", n_clients=3, min_clients=2, num_rounds=4)
+    runner = runner_module.ScriptRunner(script="train.py")
+    return job, runner
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert config["job"]["fed_job"] == "CCWFJob"
+    assert config["job"]["fed_job_class"] == "nvflare.app_common.workflows.CCWFJob"
+    assert config["job"]["train_script"] == "train.py"
+    assert config["budget"]["fixed_training_budget"]["num_clients"] == 3
+
+
+def test_import_recognizes_future_nvflare_job_subclasses_but_not_generic_or_local_jobs(tmp_path):
+    (tmp_path / "train.py").write_text("print('train')\n", encoding="utf-8")
+    stats_job = tmp_path / "stats_job.py"
+    stats_job.write_text(
+        """
+from nvflare.app_common.workflows import StatsJob
+from nvflare.app_common.executors.script_runner import ScriptRunner
+
+StatsJob(name="stats", n_clients=2, min_clients=2, num_rounds=1)
+ScriptRunner(script="train.py")
+""".lstrip(),
+        encoding="utf-8",
+    )
+    assert import_job_to_autofl_config(str(stats_job), workspace_root=str(tmp_path))["job"]["fed_job"] == "StatsJob"
+
+    local_job = tmp_path / "local_job.py"
+    local_job.write_text(
+        """
+class CustomJob:
+    pass
+
+CustomJob()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    local_config = import_job_to_autofl_config(str(local_job), workspace_root=str(tmp_path))
+    assert local_config["import"]["support"]["status"] == "partial"
+    assert "local or non-NVFlare Job subclass" in next(
+        item["reason"] for item in local_config["unresolved"] if item["field"] == "job.surface"
+    )
+
+    generic_job = tmp_path / "generic_job.py"
+    generic_job.write_text("from nvflare.apis.job_def import Job\nJob()\n", encoding="utf-8")
+    generic_config = import_job_to_autofl_config(str(generic_job), workspace_root=str(tmp_path))
+    assert generic_config["import"]["support"]["status"] == "partial"
+
+
+def test_import_leaves_multiple_script_runners_unresolved(tmp_path):
+    for name in ("train_a.py", "train_b.py"):
+        tmp_path.joinpath(name).write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+from nvflare.app_common.workflows import EdgeJob
+from nvflare.app_common.executors.script_runner import ScriptRunner
+
+EdgeJob(name="edge", n_clients=2, num_rounds=1)
+ScriptRunner(script="train_a.py")
+ScriptRunner(script="train_b.py")
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert "train_script" not in config["job"]
+    assert {"field": "job.train_script", "reason": "no train_script was found or resolved"} in config["unresolved"]
+
+
 def test_main_returns_clean_error_for_missing_job(tmp_path, capsys):
     output_path = tmp_path / "autofl.yaml"
 
