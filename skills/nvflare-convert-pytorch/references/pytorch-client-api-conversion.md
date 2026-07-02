@@ -29,8 +29,10 @@ they cannot license a source-discovered replacement.
 - Call `flare.receive()` to get the incoming `FLModel`.
 - Load `input_model.params` into the PyTorch model with `load_state_dict`.
 - Train or evaluate using the user's existing data loader and optimizer.
-- Send `flare.FLModel(params=model.cpu().state_dict(), metrics=..., meta=...)`
-  with `flare.send(...)`.
+- Send the trained weights without mutating the in-place model:
+  `params = {k: v.detach().cpu() for k, v in model.state_dict().items()}` then
+  `flare.send(flare.FLModel(params=params, metrics=..., meta=...))`. Do not call
+  `model.cpu()`, which moves the persistent model off the training device.
 
 ## PyTorch Parameter Payload Type
 

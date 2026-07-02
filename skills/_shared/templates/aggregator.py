@@ -40,6 +40,8 @@ class WeightedAggregator(ModelAggregator):
         self._params_type = None
 
     def accept_model(self, model: FLModel):
+        # Coerce missing/non-positive step counts to weight 1.0, matching the
+        # product's own base_fedavg._get_num_steps_weight behavior.
         weight = float(model.meta.get(MetaKey.NUM_STEPS_CURRENT_ROUND, 1) or 1)
         self._params_type = model.params_type
         if self._weighted_sum is None:

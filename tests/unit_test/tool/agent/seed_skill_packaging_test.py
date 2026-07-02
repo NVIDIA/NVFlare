@@ -308,9 +308,16 @@ def _assert_convert_pytorch_payload(skill_dir: Path) -> None:
     )
     assert "conversion-workflow.md" in packaged_text
 
+    # Runnable templates the references promise must actually ship (not be
+    # silently stripped by a future packaging change).
+    assert skill_dir.joinpath("references", "templates", "client_with_eval.py").is_file()
+
     shared_conversion = skill_dir.parent / "_shared" / "conversion-workflow.md"
     assert shared_conversion.is_file()
     assert "Do not require `rg` to be installed" in shared_conversion.read_text(encoding="utf-8")
+    # Shared custom-aggregation template must ship so a Lightning-only install
+    # can still adapt it.
+    assert skill_dir.parent.joinpath("_shared", "templates", "aggregator.py").is_file()
 
 
 def _assert_convert_lightning_payload(skill_dir: Path) -> None:
@@ -329,6 +336,9 @@ def _assert_convert_lightning_payload(skill_dir: Path) -> None:
     )
     assert "flare.patch(trainer)" in packaged_text
     assert "conversion-workflow.md" in packaged_text
+
+    # Runnable Lightning template the reference promises must actually ship.
+    assert skill_dir.joinpath("references", "templates", "lightning_client.py").is_file()
 
     shared_conversion = skill_dir.parent / "_shared" / "conversion-workflow.md"
     assert shared_conversion.is_file()

@@ -84,6 +84,25 @@ def test_recipe_list_json_contract(monkeypatch, capsys):
         assert not missing, f"recipe list entry missing contract fields: {missing}"
 
 
+def test_recipe_list_json_contract_real_catalog(monkeypatch, capsys):
+    # Golden test against the real installed catalog: protects the actual
+    # skill-facing surface, not just a mocked entry shape.
+    pytest.importorskip("torch")
+    from nvflare.tool.recipe.recipe_cli import cmd_recipe_list
+
+    _json_mode(monkeypatch)
+
+    cmd_recipe_list(Namespace(framework="pytorch", filters=None))
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "ok"
+    assert isinstance(payload["data"], list) and payload["data"], "no pytorch recipes in installed catalog"
+    for entry in payload["data"]:
+        missing = RECIPE_LIST_ENTRY_CONTRACT - entry.keys()
+        assert not missing, f"real recipe list entry missing contract fields: {missing}"
+    assert any(entry["name"] == "fedavg-pt" for entry in payload["data"])
+
+
 def test_recipe_show_json_contract(monkeypatch, capsys):
     # Golden test against the real fedavg-pt recipe: the conversion skills read
     # this exact surface when auditing model/constructor args and choosing
@@ -93,10 +112,10 @@ def test_recipe_show_json_contract(monkeypatch, capsys):
 
     _json_mode(monkeypatch)
 
-    try:
-        cmd_recipe_show(Namespace(name="fedavg-pt"))
-    except SystemExit:
-        pytest.skip("fedavg-pt recipe not installed in this environment")
+    # With torch installed, fedavg-pt must be showable. A SystemExit here means
+    # the recipe was renamed or its registration broke — exactly the contract
+    # break this golden test exists to catch, so let it fail rather than skip.
+    cmd_recipe_show(Namespace(name="fedavg-pt"))
 
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "ok"
@@ -160,5 +179,7 @@ def test_agent_inspect_exported_job_recommends_no_skill(tmp_path):
 
     data = inspect_path(tmp_path)
 
-    if data["conversion_state"] == "exported_job":
-        assert data["skill_selection"]["recommended_skills"] == []
+    # Assert the classification unconditionally so the contract cannot pass
+    # vacuously if exported-job detection drifts.
+    assert data["conversion_state"] == "exported_job"
+    assert data["skill_selection"]["recommended_skills"] == []
