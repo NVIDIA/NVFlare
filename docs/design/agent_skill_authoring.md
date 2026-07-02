@@ -57,9 +57,9 @@ Principles:
   examples, command details, troubleshooting catalogs, and framework-specific
   deep dives should live in `references/` and be loaded only when needed.
 - Learn from experience. Each skill should carry known failure cases and drift
-  notes in `evals/` or references. Repeated failures should become new tests,
-  diagnosis patterns, guardrails, or reference guidance instead of one-off
-  prompt edits.
+  notes in `dev_tools/agent/skill_evals/<skill>/` or references. Repeated
+  failures should become new tests, diagnosis patterns, guardrails, or
+  reference guidance instead of one-off prompt edits.
 - Make work observable and independently checked. Agent workflows should produce
   command logs, artifact manifests, findings, and benchmark reports. Evaluation
   should include an independent critique or grading step rather than relying on

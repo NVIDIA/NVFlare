@@ -27,8 +27,8 @@ from typing import Iterable, Optional
 MANIFEST_FILE_NAME = "manifest.json"
 MANIFEST_SCHEMA_VERSION = "1"
 # Eval suites and other repo-only QA content live outside skills/ (in
-# dev_tools/agent/skill_evals/), so packaging only needs to skip byte-code and
-# caches. There is no dev-vs-release content split.
+# dev_tools/agent/skill_evals/). Runtime packaging still excludes cache files
+# and fails closed on any stray eval suite directory.
 IGNORED_SKILL_FILE_NAMES = {"__pycache__", "*.pyc", "*.pyo"}
 # Names that must never ship inside a skill even if present. Eval suites belong
 # in dev_tools/agent/skill_evals/; fail closed so a stray skills/<skill>/evals/
