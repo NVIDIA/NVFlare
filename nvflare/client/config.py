@@ -14,6 +14,7 @@
 
 import json
 import os
+import tempfile
 from enum import Enum
 from typing import Dict, Optional
 
@@ -278,34 +279,35 @@ class ClientConfig:
 
     def to_json(self, config_file: str):
         # The config may carry live auth material (e.g. AUTH_TOKEN / AUTH_TOKEN_SIGNATURE).
-        # On POSIX it must be readable by the owner only (0600); this is enforced with
-        # fchmod on the open descriptor so it applies whether the file is newly created
-        # or pre-existing (an O_CREAT mode argument only takes effect on creation), and
-        # the write is refused rather than exposing secrets if the mode cannot be set.
-        # O_NOFOLLOW rejects a planted symlink at config_file. On Windows POSIX modes do
-        # not map to NTFS ACLs, so this provides no read protection there — directory
-        # ACLs must be relied on instead.
-        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
-        if hasattr(os, "O_NOFOLLOW"):
-            flags |= os.O_NOFOLLOW
-        fd = os.open(config_file, flags, CONFIG_FILE_PERMISSION)
+        # On POSIX it must be readable by the owner only (0600). Write atomically via a
+        # sibling temp file that is secured (fchmod 0600) before any content is written,
+        # then rename into place: on failure the original file is never touched (no
+        # truncation/data loss), and a planted symlink at config_file is replaced by a
+        # regular owner-only file rather than being written through to its target. On
+        # Windows POSIX modes do not map to NTFS ACLs, so read protection there relies on
+        # directory ACLs; the atomic replace still holds.
+        config_dir = os.path.dirname(os.path.abspath(config_file))
+        fd, tmp_path = tempfile.mkstemp(dir=config_dir, prefix=".client_api_config-", suffix=".tmp")
+        fd_owned = True  # cleared once os.fdopen takes ownership of the descriptor
         try:
             if os.name == "posix":
-                try:
-                    os.fchmod(fd, CONFIG_FILE_PERMISSION)
-                except OSError as e:
-                    # Fail closed: do not write credentials into a file we cannot secure
-                    # (e.g. a pre-existing world-readable file owned by another user).
-                    raise RuntimeError(
-                        f"cannot restrict {config_file} to owner-only ({oct(CONFIG_FILE_PERMISSION)}); "
-                        f"refusing to write Client API config: {e}"
-                    ) from e
-            f = os.fdopen(fd, "w")
+                # mkstemp already creates 0600, but set it explicitly to be robust.
+                os.fchmod(fd, CONFIG_FILE_PERMISSION)
+            with os.fdopen(fd, "w") as f:
+                fd_owned = False  # the fdopen wrapper now owns and will close fd
+                json.dump(self.config, f, indent=2)
+            os.replace(tmp_path, config_file)
         except BaseException:
-            os.close(fd)
+            # Best-effort cleanup; never leave the temp file behind and never touch the
+            # original config_file on failure.
+            if fd_owned:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
             raise
-        with f:
-            json.dump(self.config, f, indent=2)
 
 
 def from_file(config_file: str):

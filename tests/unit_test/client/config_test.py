@@ -73,38 +73,48 @@ class TestConfigFilePermissions:
 
         assert _mode(config_file) == CONFIG_FILE_PERMISSION
 
-    def test_to_json_fails_closed_when_permission_cannot_be_set(self, tmp_path, monkeypatch):
-        # If the file cannot be secured (e.g. pre-existing, owned by another user),
-        # the write must be refused rather than writing the token into an exposed file.
+    def test_to_json_fails_closed_and_preserves_original_when_cannot_secure(self, tmp_path, monkeypatch):
+        # If the temp file cannot be secured (e.g. fchmod denied), the write must be
+        # refused AND the pre-existing config left intact (the atomic temp+rename never
+        # touches the original on failure — no truncation/data loss).
         config_file = str(tmp_path / "client_api_config.json")
         with open(config_file, "w") as f:
             f.write('{"SITE_NAME": "site-1"}')
-        os.chmod(config_file, 0o644)
 
         def deny_fchmod(fd, mode):
             raise PermissionError("not owner")
 
         monkeypatch.setattr(os, "fchmod", deny_fchmod)
 
-        with pytest.raises(RuntimeError, match="owner-only"):
+        with pytest.raises(PermissionError):
             ClientConfig({"AUTH_TOKEN": "secret"}).to_json(config_file)
 
-        # the secret must not have been written
+        # the secret must not have been written, and the original content must survive
         with open(config_file) as f:
-            assert "secret" not in f.read()
+            content = f.read()
+        assert "secret" not in content
+        assert "SITE_NAME" in content
+        # no temp file left behind
+        assert not any(name.startswith(".client_api_config-") for name in os.listdir(tmp_path))
 
-    @pytest.mark.skipif(not hasattr(os, "O_NOFOLLOW"), reason="O_NOFOLLOW required")
-    def test_to_json_rejects_symlink_target(self, tmp_path, restore_umask):
+    @pytest.mark.skipif(not hasattr(os, "O_NOFOLLOW"), reason="POSIX symlink semantics required")
+    def test_to_json_does_not_write_through_symlink(self, tmp_path, restore_umask):
+        # A planted symlink at the config path must not be written through to its target;
+        # the atomic replace swaps the symlink for a regular owner-only file instead.
         target = tmp_path / "victim.txt"
         target.write_text("important")
         link = str(tmp_path / "client_api_config.json")
         os.symlink(str(target), link)
 
-        with pytest.raises(OSError):
-            ClientConfig({"AUTH_TOKEN": "secret"}).to_json(link)
+        ClientConfig({"AUTH_TOKEN": "secret"}).to_json(link)
 
-        # the symlink target must be untouched
+        # the symlink target is never written through
         assert target.read_text() == "important"
+        # the config path is now a regular, owner-only file holding the config
+        assert not os.path.islink(link)
+        assert _mode(link) == CONFIG_FILE_PERMISSION
+        with open(link) as f:
+            assert "secret" in f.read()
 
 
 class TestConfigFileContent:
