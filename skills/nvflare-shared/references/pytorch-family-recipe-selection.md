@@ -120,7 +120,7 @@ and report any missing user input before validation.
 This reference covers recipe discovery, algorithm choice, and selection rules.
 For the framework-specific `job.py` construction — the fast-path recipe code,
 model config, portable imports, per-site deployment, and execution mode — follow
-the loading skill's own recipe reference (`recipe-selection.md` for plain
-PyTorch; the Lightning conversion reference for Lightning). Export handling is
+the loading skill's own recipe reference (the recipe-selection reference for
+plain PyTorch; the Lightning conversion reference for Lightning). Export handling is
 shared: follow `conversion-workflow.md` for `--export`, `--export-dir`, and
 local command-line parser behavior.
