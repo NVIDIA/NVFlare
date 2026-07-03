@@ -21,7 +21,9 @@ global model is evaluated first so the server can do model selection, and the
 metric is returned through ``FLModel.metrics``.
 
 ``evaluate`` is a pure function so a generated conversion can be validated
-against a toy model and loader without a running FLARE server.
+against a toy model and loader without a running FLARE server. The main loop
+builds model and training state once before FLARE rounds; each round only loads
+received weights into that persistent state.
 """
 
 import torch
@@ -57,19 +59,23 @@ def evaluate(model, val_loader, device="cpu"):
     return correct / total
 
 
-def main(model_factory, train_one_round, val_loader, device="cpu", metric_name="accuracy"):
+def main(model_factory, train_setup_factory, train_one_round, val_loader, device="cpu", metric_name="accuracy"):
     """Client API round loop with global-model evaluation before local training.
 
     ``model_factory`` constructs the model with the same constructor args the
-    recipe uses; ``train_one_round`` runs the source training loop on the model.
+    recipe uses. ``train_setup_factory`` constructs stateful training objects
+    such as the optimizer, loss, scheduler, and training data loader once for
+    the persistent model. ``train_one_round`` runs the source training loop
+    using that prebuilt state.
     """
-    flare.init()
-    # Build the model once before the round loop; each round loads the received
-    # global weights into this persistent model rather than rebuilding it. Any
-    # optimizer, loss, and data loaders should likewise be built once (here or in
-    # train_one_round's setup) and reused across rounds.
+    # Build all persistent objects before the FLARE round loop. Each round
+    # should only load received weights into this state, evaluate, train, and
+    # send the updated state dict.
     model = model_factory()
     model.to(device)
+    train_state = train_setup_factory(model, device)
+
+    flare.init()
     while flare.is_running():
         input_model = flare.receive()
         model.load_state_dict(input_model.params)
@@ -81,7 +87,7 @@ def main(model_factory, train_one_round, val_loader, device="cpu", metric_name="
             flare.send(flare.FLModel(metrics={metric_name: global_metric}))
             continue
 
-        train_one_round(model)
+        train_one_round(model, train_state)
 
         params = {k: v.detach().cpu() for k, v in model.state_dict().items()}
         flare.send(flare.FLModel(params=params, metrics={metric_name: global_metric}))

@@ -107,7 +107,8 @@ ask in interactive mode or fail closed in unattended mode.
 This template is self-contained packaged guidance; do not depend on NVFLARE
 repository `examples/` being present in the user's environment. The runnable
 form ships at `../assets/client_with_eval.py`; adapt it rather than inventing a
-new structure.
+new structure. It includes a setup hook for optimizer, loss, scheduler, and
+data-loader state so generated code has a concrete pre-loop setup location.
 
 ```python
 def evaluate(model, val_loader, device):
@@ -125,17 +126,27 @@ def evaluate(model, val_loader, device):
         raise RuntimeError("evaluation data is empty; cannot report metrics")
     return metric_sum / total
 
-input_model = flare.receive()
-model.load_state_dict(input_model.params)
+model = model_factory()
 model.to(device)
+train_state = train_setup_factory(model, device)
+val_loader = build_val_loader()
 
-# evaluate the received global model first so the server can do model selection
-global_metric = evaluate(model, val_loader, device)
+flare.init()
+while flare.is_running():
+    input_model = flare.receive()
+    model.load_state_dict(input_model.params)
 
-# ... local training on the user's existing loop ...
+    # evaluate the received global model first so the server can do model selection
+    global_metric = evaluate(model, val_loader, device)
 
-params = {k: v.detach().cpu() for k, v in model.state_dict().items()}
-flare.send(flare.FLModel(params=params, metrics={metric_name: global_metric}))
+    if flare.is_evaluate():
+        flare.send(flare.FLModel(metrics={metric_name: global_metric}))
+        continue
+
+    train_one_round(model, train_state)
+
+    params = {k: v.detach().cpu() for k, v in model.state_dict().items()}
+    flare.send(flare.FLModel(params=params, metrics={metric_name: global_metric}))
 ```
 
 The round `FLModel.metrics` is this pre-training evaluation of the received
