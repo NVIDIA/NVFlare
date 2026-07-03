@@ -76,11 +76,14 @@ Cyclic recipes, use the local catalog and
 - For any other algorithm or privacy requirement, do not assume a recipe name:
   select the catalog recipe whose metadata matches the request, confirmed with
   `nvflare recipe list --framework pytorch --format json` and
-  `nvflare recipe show <recipe> --format json`. Match on the catalog fields the
-  CLI actually exposes: `algorithm`, `aggregation`, `state_exchange`, `privacy`,
-  and `privacy_compatible`. Do not match on `topology`; use topology wording in
-  the request as intent that maps to exposed catalog fields, recipe semantics,
-  or required role parameters.
+  `nvflare recipe show <recipe> --format json`. Match on the catalog fields
+  `recipe list` exposes on every entry: `algorithm`, `aggregation`,
+  `state_exchange`, and `privacy` (these are also the `--filter` keys).
+  `privacy_compatible` is present only on recipes that declare it (such as HE
+  recipes) and is not a `--filter` key; confirm it with `recipe show` on the
+  candidate recipe. Do not match on `topology`; use topology wording in the
+  request as intent that maps to exposed catalog fields, recipe semantics, or
+  required role parameters.
 - Homomorphic encryption (HE) / encrypted aggregation is NOT supported by the
   conversion skills, and it is safety-critical not to fake it. HE recipes such as
   `fedavg-he-pt` (`FedAvgRecipeWithHE`) reject `SimEnv` and require a provisioned

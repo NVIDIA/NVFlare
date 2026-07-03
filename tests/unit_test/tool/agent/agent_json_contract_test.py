@@ -31,7 +31,11 @@ import pytest
 
 # Fields the packaged conversion skills read from each JSON output. Renaming or
 # dropping any of these breaks a shipped skill's documented workflow.
-RECIPE_LIST_ENTRY_CONTRACT = {"name", "framework"}
+# Every `recipe list` entry carries these; the skill recipe-selection guidance
+# matches recipes on algorithm/aggregation/state_exchange/privacy, so a dropped
+# or renamed field must fail CI. privacy_compatible is intentionally excluded: it
+# is emitted only on recipes that declare it (e.g. HE), not on every entry.
+RECIPE_LIST_ENTRY_CONTRACT = {"name", "framework", "algorithm", "aggregation", "state_exchange", "privacy"}
 RECIPE_SHOW_DETAIL_CONTRACT = {"name", "framework", "parameters"}
 RECIPE_SHOW_PARAMETER_CONTRACT = {"name", "type", "required", "default"}
 AGENT_INSPECT_TOP_CONTRACT = {"frameworks", "conversion_state", "skill_selection", "schema_version", "static_only"}
