@@ -64,11 +64,15 @@ def main(model_factory, train_one_round, val_loader, device="cpu", metric_name="
     recipe uses; ``train_one_round`` runs the source training loop on the model.
     """
     flare.init()
+    # Build the model once before the round loop; each round loads the received
+    # global weights into this persistent model rather than rebuilding it. Any
+    # optimizer, loss, and data loaders should likewise be built once (here or in
+    # train_one_round's setup) and reused across rounds.
+    model = model_factory()
+    model.to(device)
     while flare.is_running():
         input_model = flare.receive()
-        model = model_factory()
         model.load_state_dict(input_model.params)
-        model.to(device)
 
         # Evaluate the received global model first for server-side model selection.
         global_metric = evaluate(model, val_loader, device)
