@@ -442,7 +442,7 @@ elif [[ "${cmd}" == "unit_tests" ]]; then
         target="tests/unit_test"
     fi
 
-    cmd="python3 -m pytest --numprocesses=${pytest_numprocesses} "
+    cmd="python3 -m pytest --numprocesses=${pytest_numprocesses} --dist loadgroup "
 
     if [ "${coverage_report}" == true ]; then
         cmd="${cmd} --cov=${target} --cov-report html:cov_html --cov-report xml:cov.xml"

@@ -199,11 +199,12 @@ def _egg_info_isolation_args(tmp_path):
     # bdist_wheel, the default build/ tree) are shared at the repo root and
     # reused across invocations and sessions, which made the tests order-
     # dependent (a rotating one failing in the combined suite). Redirecting
-    # egg-info here — plus an isolated --build-base for bdist_wheel below —
-    # keeps each subprocess build hermetic.
+    # egg-info here, plus isolated --build-base/--bdist-dir paths for
+    # bdist_wheel below, keeps each subprocess build hermetic.
     egg_base = tmp_path / "egg-info-base"
     egg_base.mkdir(exist_ok=True)
-    return ["egg_info", "--egg-base", str(egg_base)]
+    egg_base_arg = os.path.relpath(egg_base, _repo_root())
+    return ["egg_info", "--egg-base", egg_base_arg]
 
 
 @pytest.mark.xdist_group(name="setup_py_packaging")
@@ -277,6 +278,7 @@ def test_setup_bdist_wheel_no_skills_build_has_distinct_filename(tmp_path, _clea
         pytest.skip("bdist_wheel command is not installed in this test environment")
 
     repo_root = _repo_root()
+    bdist_dir = tmp_path / "bdist"
     dist_dir = tmp_path / "dist"
     env = os.environ.copy()
     env["NVFLARE_PACKAGE_AGENT_SKILLS"] = "0"
@@ -290,6 +292,8 @@ def test_setup_bdist_wheel_no_skills_build_has_distinct_filename(tmp_path, _clea
             "--build-base",
             str(tmp_path / "setup-build"),
             "bdist_wheel",
+            "--bdist-dir",
+            str(bdist_dir),
             "--dist-dir",
             str(dist_dir),
         ],
