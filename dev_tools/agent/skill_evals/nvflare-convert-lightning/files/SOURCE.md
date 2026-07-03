@@ -18,6 +18,12 @@ client model construction path. Passing a live `LightningModule` instance with
 required args can serialize without those args and fail server-side
 reconstruction in the model persistor.
 
+The `external-data-lightning` fixtures are synthetic, derived from the
+`hello-lightning` fixture with a `LightningDataModule` whose default data
+directory is `/data/nvflare/lightning-tabular`. The path is intentionally
+external to the repository and run workspace so configurable data-path behavior
+is asserted only when the source provides an external dataset location.
+
 The `hello-lightning` fixture's `LitNet` includes `validation_step` with
 `self.log("val_loss", ...)` and the training entry point builds a validation
 dataloader, so evaluation-focused evals can assert Lightning-native evaluation

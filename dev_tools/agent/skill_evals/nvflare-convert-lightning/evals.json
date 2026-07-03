@@ -24,9 +24,8 @@
         "The agent keeps simulation workspaces, exported job folders, and generated runtime outputs under /tmp/nvflare unless the user gives another location.",
         "The agent preserves existing Lightning callbacks, loggers, and checkpoint behavior.",
         "The agent runs python job.py for local validation in the foreground to completion when dependencies are available.",
-        "The generated client constructs the model, datamodule/data loaders, and trainer once before the flare round loop rather than inside it; loss stays where the source defines it, such as functional loss inside training_step.",
+        "The generated client constructs the model, datamodule/data loaders, and trainer once before the flare round loop rather than inside it; no separate client-side loss object is required when the source defines loss inside LightningModule methods.",
         "The agent preserves the source accelerator/devices selection and does not shortcut GPU training to CPU or add a hard GPU requirement, validating on CPU or a reduced device count only as a reported limitation.",
-        "When the source loads data from an external path or directory, the agent passes that location as a configurable train_args or per_site_config value rather than a hardcoded absolute path, and does not point at data inside the nvflare run workspace; this does not apply when the source builds synthetic in-memory data.",
         "The agent reports recipe choice, extracted source facts, validation status, export status, metric or result evidence, exact result paths, and remaining blockers."
       ],
       "nvflare": {
@@ -78,15 +77,11 @@
           },
           {
             "id": "setup-outside-round-loop",
-            "description": "constructs the model, datamodule/data loaders, and trainer once before the flare round loop, not inside it, and reuses them each round (loss stays wherever the source defines it, such as functional loss inside training_step)"
+            "description": "constructs the model, datamodule/data loaders, and trainer once before the flare round loop, not inside it, and reuses them each round; source-defined LightningModule loss code can remain inside training_step or validation_step"
           },
           {
             "id": "preserve-device-intent",
             "description": "preserves the source accelerator/devices selection; does not shortcut GPU training to CPU or add a hard GPU requirement, and validates on CPU or a reduced device count only as a reported limitation"
-          },
-          {
-            "id": "configurable-data-path",
-            "description": "when the source loads data from an external file or directory, passes that data location as a configurable train_args or per_site_config value rather than a path hardcoded in client.py, pointing at the original dataset and not at data inside the nvflare run workspace (not applicable when the source builds synthetic in-memory data)"
           },
           {
             "id": "report-validation-evidence",
@@ -153,6 +148,41 @@
           {
             "id": "validation_evidence_completeness",
             "description": "whether the final answer reports validation commands, statuses, the declared primary/global metric scalar when applicable, result evidence, and exact artifact paths"
+          }
+        ]
+      }
+    },
+    {
+      "id": "lightning-convert-external-data-path",
+      "prompt": "Convert this PyTorch Lightning training code to a FLARE FedAvg job over 3 simulated sites for 3 rounds. The source reads train.csv and val.csv from /data/nvflare/lightning-tabular; keep that dataset directory configurable for each site.",
+      "expected_output": "A FLARE Lightning Client API conversion that keeps flare.patch(trainer) in charge of model exchange and preserves the source external data directory as a train_args or per_site_config value, leaves the generated client free of fixed absolute data-path literals except configurable defaults, points at the original external dataset location rather than an nvflare run workspace path, and reports validation evidence.",
+      "files": [
+        "files/external-data-lightning/train.py",
+        "files/external-data-lightning/model.py"
+      ],
+      "assertions": [
+        "The agent detects that the LightningDataModule reads train and validation data from an external directory rather than synthetic in-memory data.",
+        "The generated job passes the original data directory through configurable train_args or per_site_config values so sites can override it.",
+        "The generated client does not embed the absolute data directory as a fixed non-configurable literal.",
+        "The generated configuration points at the original external dataset location and not at data inside the nvflare run workspace.",
+        "The agent preserves Lightning-native trainer patching and data module semantics while adapting the workflow."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-lightning",
+        "mandatory_behavior": [
+          {
+            "id": "configurable-data-path",
+            "description": "when the source loads data from an external file or directory, passes that data location as a configurable train_args or per_site_config value rather than a path hardcoded in client.py, pointing at the original dataset and not at data inside the nvflare run workspace"
+          },
+          {
+            "id": "use-lightning-patched-trainer",
+            "description": "Lightning conversion uses flare.patch(trainer) and the Lightning callback path for model exchange"
+          }
+        ],
+        "prohibited_behavior": [
+          {
+            "id": "no-hardcoded-absolute-data-path",
+            "description": "does not embed an absolute data path as a fixed non-configurable literal in generated client code and does not point at data inside the nvflare run workspace"
           }
         ]
       }

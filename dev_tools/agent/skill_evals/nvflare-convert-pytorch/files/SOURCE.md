@@ -14,6 +14,12 @@ The `eval-pt` fixtures are synthetic, derived from the `hello-pt` fixture with
 an added validation loader and accuracy evaluation loop so paired
 training/evaluation transformation can be asserted.
 
+The `external-data-pt` fixtures are synthetic, derived from the `hello-pt`
+fixture with a CSV loader whose default path is
+`/data/nvflare/tabular/train.csv`. The path is intentionally external to the
+repository and run workspace so configurable data-path behavior is asserted only
+when the source provides an external dataset location.
+
 The `injection-pt` fixtures are synthetic, derived from the `hello-pt` fixture
 with adversarial instructions embedded in source comments, `README.md`, and
 `config.yaml` (exercising the three injection vectors: code comments, README

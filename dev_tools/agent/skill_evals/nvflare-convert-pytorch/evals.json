@@ -25,7 +25,6 @@
         "The agent runs python job.py for local validation in the foreground to completion when dependencies are available.",
         "The generated client builds the model, optimizer, loss, and data loaders once before the flare round loop rather than inside it.",
         "The agent preserves the source device selection and does not shortcut GPU training to CPU or add a hard GPU requirement, validating on CPU only as a reported limitation.",
-        "When the source loads data from an external path or directory, the agent passes that location as a configurable train_args or per_site_config value rather than a hardcoded absolute path, and does not point at data inside the nvflare run workspace; this does not apply when the source builds synthetic in-memory data.",
         "When job documentation, task guidance, or source project guidance declares a primary or target validation metric, the agent configures the FL recipe/global metric to that metric and reports that scalar.",
         "The agent reports recipe choice, extracted source facts, validation status, export status, metric or result evidence, exact result paths, and remaining blockers.",
         "The agent does not submit to POC or production."
@@ -92,10 +91,6 @@
           {
             "id": "preserve-device-intent",
             "description": "preserves the source device selection (CPU, GPU, or conditional); does not shortcut GPU training to CPU or add a hard GPU requirement, and validates on CPU only as a reported limitation"
-          },
-          {
-            "id": "configurable-data-path",
-            "description": "when the source loads data from an external file or directory, passes that data location as a configurable train_args or per_site_config value rather than a path hardcoded in client.py, pointing at the original dataset and not at data inside the nvflare run workspace (not applicable when the source builds synthetic in-memory data)"
           },
           {
             "id": "report-validation-evidence",
@@ -166,6 +161,37 @@
           {
             "id": "conversion_quality",
             "description": "reviewer-rated 1-5 quality of the converted FLARE job, considering structure, API choices, validation evidence, and artifact placement"
+          }
+        ]
+      }
+    },
+    {
+      "id": "pytorch-convert-external-data-path",
+      "prompt": "Convert this PyTorch training code to a FLARE FedAvg job over 3 simulated sites for 3 rounds. The source reads training rows from /data/nvflare/tabular/train.csv; keep that dataset location configurable for each site.",
+      "expected_output": "A FLARE-compatible PyTorch Client API conversion that preserves the source CSV data-loading path as a train_args or per_site_config value, keeps the generated client free of fixed absolute data-path literals except configurable defaults, points at the original external dataset location rather than an nvflare run workspace path, and still follows the standard recipe construction, validation, and reporting flow.",
+      "files": [
+        "files/external-data-pt/train.py",
+        "files/external-data-pt/model.py"
+      ],
+      "assertions": [
+        "The agent detects that the source data loader reads from an external CSV path rather than synthetic in-memory data.",
+        "The generated job passes the original data path through configurable train_args or per_site_config values so sites can override it.",
+        "The generated client does not embed the absolute data path as a fixed non-configurable literal.",
+        "The generated configuration points at the original external dataset location and not at data inside the nvflare run workspace.",
+        "The agent preserves the source CSV feature and label loading semantics while adapting the training loop."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-pytorch",
+        "mandatory_behavior": [
+          {
+            "id": "configurable-data-path",
+            "description": "when the source loads data from an external file or directory, passes that data location as a configurable train_args or per_site_config value rather than a path hardcoded in client.py, pointing at the original dataset and not at data inside the nvflare run workspace"
+          }
+        ],
+        "prohibited_behavior": [
+          {
+            "id": "no-hardcoded-absolute-data-path",
+            "description": "does not embed an absolute data path as a fixed non-configurable literal in generated client code and does not point at data inside the nvflare run workspace"
           }
         ]
       }
