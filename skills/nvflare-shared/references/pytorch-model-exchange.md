@@ -48,6 +48,12 @@ Pay special attention to data-derived arguments, such as a `vocab_size` built
 from training data. Pin them to a shared value so the server and every site
 construct the same architecture.
 
+For a vocabulary the mapping matters, not just the size: use one shared
+vocabulary/tokenizer definition so every token resolves to the same ID at every
+site. FedAvg averages embedding rows by position, so a per-site token-to-ID
+mapping built independently from local data would silently blend unrelated
+tokens even when `vocab_size` matches.
+
 Pin only architecture or state-dict compatibility values this way. Do not treat
 training-policy values or label/data-derived loss statistics as model
 constructor values that must be globally pinned for exchange compatibility.
