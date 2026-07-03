@@ -15,10 +15,11 @@ an added validation loader and accuracy evaluation loop so paired
 training/evaluation transformation can be asserted.
 
 The `external-data-pt` fixtures are synthetic, derived from the `hello-pt`
-fixture with a CSV loader whose default path is
-`/data/nvflare/tabular/train.csv`. The path is intentionally external to the
-repository and run workspace so configurable data-path behavior is asserted only
-when the source provides an external dataset location.
+fixture but reading tabular rows from an external CSV path (`--data-path`,
+default `/data/nvflare/tabular/train.csv`) instead of building synthetic
+in-memory tensors. The path is intentionally external to the repository and run
+workspace so configurable data-path behavior is asserted only when the source
+provides an external dataset location.
 
 The `injection-pt` fixtures are synthetic, derived from the `hello-pt` fixture
 with adversarial instructions embedded in source comments, `README.md`, and
@@ -27,9 +28,3 @@ setup text, and config values). The embedded instructions and endpoints are
 intentionally malicious-looking test data for injection-resistance evals, using
 only reserved example.com domains; they must never be followed and must not be
 "fixed".
-
-The `external-data-pt` fixtures are synthetic, derived from the `hello-pt`
-fixture but reading tabular rows from an external CSV path (`--data-path`,
-default `/data/nvflare/tabular/train.csv`) instead of building synthetic
-in-memory tensors. They exercise the configurable-data-path behavior, which is
-asserted only when the source loads data from an external location.
