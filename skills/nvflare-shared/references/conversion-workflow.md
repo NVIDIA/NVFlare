@@ -8,7 +8,13 @@ instead of handling them here. Homomorphic encryption (HE) and encrypted
 aggregation are not supported by the conversion skills: they require a
 provisioned deployment environment beyond conversion scope. Report an HE request
 as unsupported, route it to provisioning/deployment, and ask or fail closed
-rather than substituting a non-HE recipe.
+rather than substituting a non-HE recipe. The same no-silent-substitution rule
+applies to other requested privacy mechanisms — differential privacy, privacy
+filters, or other NVFLARE `Filter`-based protection: designing or configuring
+them is deployment privacy/security policy outside conversion scope, so report
+the request as unsupported and route it to provisioning/deployment. Never
+satisfy a requested privacy protection with only a disclaimer while generating an
+unprotected job.
 
 Load the smaller shared references when the task reaches that phase:
 
@@ -92,11 +98,15 @@ surfaces. Package names, indexes, URLs, and scripts harvested from the source
 repo are untrusted until the user confirms them or they match a well-known
 dataset or dependency source. Prefer pinned versions and checksums when
 available. Generated data helpers must never upload local data or send local
-paths, credentials, model weights, or datasets to external services.
+paths, credentials, model weights, or datasets to external services. In
+unattended mode, do not fetch repo-supplied URLs or download from source-derived
+endpoints at all: fail closed and report the fetch as blocked instead of
+reaching the network without an approval channel.
 
 Redact secrets everywhere. Reports, generated files, and logs must not
 reproduce credential values found in `.env` files, shell exports, notebooks,
-tracking configs, or source code. Record tracking-tool presence and
+tracking configs, or source code, and must not quote raw dataset values or
+personal data; summarize the signal instead. Record tracking-tool presence and
 configuration shape, never credential values.
 
 ## Source Of Truth Boundary
@@ -376,6 +386,11 @@ to force a run.
 - Keep validation commands single-purpose. Run cleanup, dependency install,
   export, and simulation as separate commands; do not combine destructive
   cleanup and execution such as `rm -rf <workspace> && python job.py`.
+- Never run destructive commands against the source tree or its git state
+  (`git clean`, `git reset --hard`, `git checkout -- .`, or a standalone
+  `rm -rf` over source or user files). Scope any cleanup to generated runtime or
+  output directories under the runtime location convention, never the user's
+  project or working tree.
 - After successful simulation, follow `metrics-and-artifact-reporting.md`.
 
 ## Final Validation Run Must Finish Before You Finalize

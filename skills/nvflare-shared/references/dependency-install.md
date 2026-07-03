@@ -13,6 +13,24 @@ environment. Prefer pinned versions, and use checksums when available. Do not
 add or follow package indexes configured by the source repo without user
 confirmation.
 
+Before asking for install approval, read the dependency files and disclose any
+elevated-risk directives so the approval is informed rather than blanket:
+`--index-url` / `--extra-index-url` / `--find-links` (alternate package
+sources), `-e` and VCS or URL requirements (`git+`, `http(s)://`, local paths),
+and unpinned packages. Surface those specific lines in the approval prompt.
+
+Watch for typosquatting: cross-check each requested package name against the
+modules the source actually imports (from `nvflare agent inspect` and static
+reading). Flag a dependency that no source module imports, or whose name is a
+near-miss of a well-known package, and ask before installing it.
+
+Install into a dedicated virtual environment, not a shared or system
+environment, in every mode. Interactive installs otherwise run in the same
+environment that runs `nvflare`, so one approved typosquatted or URL-pinned
+package can compromise the host; a dedicated venv contains that blast radius. In
+unattended mode this isolation is mandatory (clean venv or container); in
+interactive mode recommend it and note the risk when the user declines.
+
 ## Rule
 
 Once the install is approved or the isolated environment is in place: if the
