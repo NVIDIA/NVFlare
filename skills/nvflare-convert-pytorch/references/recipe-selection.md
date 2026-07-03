@@ -173,12 +173,19 @@ Match the recipe's execution mode to the source project's process model:
   `torch.distributed.run`, `DistributedDataParallel`, or an explicit user request
   for multi-GPU — needs the external-process executor: set
   `launch_external_process=True`, because distributed workers cannot run inside
-  the in-process executor.
+  the in-process executor. Also preserve the source launch model by setting the
+  recipe's documented launch command or launcher parameter, such as
+  `command="torchrun ..."` when the source requires `torchrun` or
+  multi-process arguments. Do not rely on the recipe's default external command
+  when the source project needs distributed launch arguments.
 
 Confirm the selected recipe exposes `launch_external_process` with
-`nvflare recipe show <recipe> --format json` before setting it; if it does not,
-report the gap and ask or fail closed rather than assuming. This section is for
-plain PyTorch conversions; Lightning conversions follow their own DDP guidance.
+`nvflare recipe show <recipe> --format json` before setting it. For distributed
+launches, also confirm the recipe exposes a documented `command`, `launcher`, or
+equivalent launch-argument surface that can express the source launch command;
+if either surface is missing, report the gap and ask or fail closed rather than
+assuming or silently dropping the source launch model. This section is for plain
+PyTorch conversions; Lightning conversions follow their own DDP guidance.
 
 ## Non-FedAvg Recipe Rules
 
