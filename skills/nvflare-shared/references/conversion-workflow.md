@@ -8,7 +8,9 @@ handling them here.
 
 Load the smaller shared references when the task reaches that phase:
 
-- `dependency-install.md` before Python import or inspect commands;
+- `dependency-install.md` before Python import/introspection commands that load
+  user or framework modules (not `nvflare agent inspect`, which stays a static
+  discovery surface and needs no dependency install);
 - `runtime-output-guidance.md` before choosing generated source, export, or
   runtime workspace locations;
 - `validation-evidence.md` before validation and final conversion acceptance;

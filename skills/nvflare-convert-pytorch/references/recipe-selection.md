@@ -58,7 +58,7 @@ For deeper background, see the algorithm papers for
 [SCAFFOLD](https://proceedings.mlr.press/v119/karimireddy20a.html), and
 [Swarm Learning](https://www.nature.com/articles/s41586-021-03583-3). For
 Cyclic recipes, use the local catalog and
-`nvflare recipe show cyclic-pt --format json`.
+`nvflare recipe show <selected-cyclic-recipe> --format json`.
 
 ## Selection Rules
 
