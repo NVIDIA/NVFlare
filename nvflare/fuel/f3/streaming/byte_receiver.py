@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
+import math
 import threading
 from collections import deque
 from typing import Callable, Deque, Dict, Optional, Tuple
@@ -52,6 +53,14 @@ COUNTER_NAME_RECEIVED = "received"
 RESULT_DATA = 0
 RESULT_NO_DATA = 1
 RESULT_EOS = 2
+
+
+def _abbrev(value, limit: int = 64) -> str:
+    # for logging peer-controlled header values, which can be arbitrarily large
+    text = repr(value)
+    if len(text) > limit:
+        text = f"{text[:limit]}...({len(text)} chars)"
+    return text
 
 
 class RxTask:
@@ -217,19 +226,27 @@ class RxTask:
             # completed tasks in memory indefinitely.
             try:
                 # int headers beyond the float range raise OverflowError;
-                # equivalent strings round-trip to inf and hit the clamp below
+                # equivalent strings round-trip to inf and are non-finite
                 requested_ttl = float(retry_timeout) + float(retry_wait)
             except (TypeError, ValueError, OverflowError):
+                requested_ttl = None
+            if requested_ttl is None or not math.isfinite(requested_ttl):
+                # NaN must not reach the max() below: max(a, nan) is
+                # order-dependent, so non-finite values are rejected outright
                 log.warning(
                     f"{self} ignoring invalid retry window headers from {self.origin}: "
-                    f"{retry_timeout!r}/{retry_wait!r}"
+                    f"{_abbrev(retry_timeout)}/{_abbrev(retry_wait)}"
                 )
             else:
                 if requested_ttl > MAX_COMPLETED_TASK_TTL:
-                    log.warning(
-                        f"{self} clamping retry window requested by {self.origin} "
-                        f"from {requested_ttl}s to {MAX_COMPLETED_TASK_TTL}s"
-                    )
+                    if requested_ttl > self.completed_task_ttl:
+                        # warn only when the cap actually lowers the effective
+                        # window; otherwise the local config already governs
+                        log.warning(
+                            f"{self} retry window requested by {self.origin} ({requested_ttl}s) "
+                            f"exceeds the {MAX_COMPLETED_TASK_TTL}s cap; raise streaming_retry_timeout "
+                            f"on this site if a longer window is needed"
+                        )
                     requested_ttl = MAX_COMPLETED_TASK_TTL
                 self.completed_task_ttl = max(self.completed_task_ttl, requested_ttl)
 
