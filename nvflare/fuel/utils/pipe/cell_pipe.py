@@ -23,7 +23,7 @@ from nvflare.fuel.data_event.utils import get_scope_property
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.cell import Message as CellMessage
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
-from nvflare.fuel.f3.cellnet.fqcn import FQCN, make_cell_pipe_alias
+from nvflare.fuel.f3.cellnet.fqcn import CELL_PIPE_LEAF_PREFIX, FQCN, make_cell_pipe_alias
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.cellnet.utils import make_reply
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
@@ -67,13 +67,17 @@ def _cell_fqcn(mode, site_name, token, parent_fqcn):
     if not token:
         # The configured token (e.g. "{JOB_ID}") resolved to an empty string.
         # An empty token cannot uniquely name the cell (all such pipes on the
-        # site would collide on "<site>._<mode>"), so fail fast. A generated
-        # fallback is not an option: the two ends of a pipe pair derive each
-        # other's names independently, so any per-process unique value would
-        # break the pair's rendezvous.
+        # site would collide), so fail fast. A generated fallback is not an
+        # option: the two ends of a pipe pair derive each other's names
+        # independently, so any per-process unique value would break the
+        # pair's rendezvous.
         raise ValueError("invalid CellPipe token: token must be a non-empty string")
+    if token.startswith("alias-"):
+        # a plain leaf "cellpipe-alias-..._<mode>" would collide with the
+        # relay alias namespace and could parse to a fabricated owner
+        raise ValueError(f"invalid CellPipe token '{token}': the 'alias-' prefix is reserved for alias cell names")
 
-    cell_name = f"{token}_{mode}"
+    cell_name = f"{CELL_PIPE_LEAF_PREFIX}{token}_{mode}"
     if parent_fqcn == FQCN.ROOT_SERVER:
         # A "." in the token adds phantom FQCN segments, but root-connected
         # cells route through the root fall-through regardless of depth, so
@@ -91,13 +95,13 @@ def _cell_fqcn(mode, site_name, token, parent_fqcn):
         prefix = parent_fqcn
     elif parent_fqcn:
         # Connecting to another cell (e.g. a relay): use the alias leaf
-        # <site>_<token>_<mode> so mTLS identity resolution and stream auth map
-        # the cell to the owning site (see parse_cell_pipe_alias). The token is
-        # the alias runtime id and must not contain "_" or ".", or the alias
-        # would parse to the wrong owner (or not parse at all) and the
-        # connection/messages would be rejected. Tokens are normally job ids
-        # (UUIDs), so this only affects custom tokens such as
-        # FlareAgentWithCellPipe agent ids.
+        # cellpipe-alias-<site>_<token>_<mode> so mTLS identity resolution and
+        # stream auth map the cell to the owning site (see
+        # parse_cell_pipe_alias). The token is the alias runtime id and must
+        # not contain "_" or ".", or the alias would parse to the wrong owner
+        # (or not parse at all) and the connection/messages would be rejected.
+        # Tokens are normally job ids (UUIDs), so this only affects custom
+        # tokens such as FlareAgentWithCellPipe agent ids.
         if "_" in token or "." in token:
             raise ValueError(
                 f"invalid CellPipe token '{token}': must not contain '_' or '.' "

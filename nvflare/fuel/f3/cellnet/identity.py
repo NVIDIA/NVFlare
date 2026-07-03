@@ -18,7 +18,7 @@ from cryptography import x509
 from cryptography.x509.oid import NameOID
 
 from nvflare.apis.fl_constant import ConnectionSecurity
-from nvflare.fuel.f3.cellnet.fqcn import FQCN, parse_cell_pipe_alias
+from nvflare.fuel.f3.cellnet.fqcn import CELL_PIPE_ALIAS_PREFIX, CELL_PIPE_LEAF_PREFIX, FQCN, parse_cell_pipe_alias
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.drivers.net_utils import SECURE_SCHEMES
 from nvflare.fuel.utils.admin_name_utils import is_valid_admin_client_name
@@ -126,10 +126,11 @@ class CellIdentityResolver:
 
     @staticmethod
     def _get_cell_pipe_alias_owner(segment: str) -> Optional[str]:
-        # CellPipe cells connected through another cell may use a leaf segment
-        # like "site-1_<runtime-id>_active" but authenticate with the owning
-        # site's certificate. Older NVFlare versions also used this sibling
-        # alias form. See parse_cell_pipe_alias for the alias grammar.
+        # CellPipe cells connected through another cell use an alias leaf like
+        # "cellpipe-alias-site-1_<runtime-id>_active" but authenticate with
+        # the owning site's certificate. Older NVFlare versions used the bare
+        # sibling form "site-1_<runtime-id>_active" as the whole FQCN. See
+        # parse_cell_pipe_alias for the alias grammar.
         parsed = parse_cell_pipe_alias(segment)
         return parsed[0] if parsed else None
 
@@ -152,22 +153,29 @@ class CellIdentityResolver:
             if identity:
                 return identity
 
-        # The alias interpretation applies only to the shapes that create an
-        # alias: a legacy (pre-hierarchical-naming) cell whose whole FQCN is
-        # the alias, or a cell connected through this local cell (e.g. a
-        # relay), which is always a direct child of the local cell. Any other
-        # leaf is a plain <token>_<mode> segment whose token may itself
-        # contain "_" (e.g. "site-1.ext_trainer_active"); alias-parsing it
-        # would fabricate a wrong owner such as "ext". This check
-        # intentionally precedes _resolve_local_child_identity: an alias cell
-        # connected as a direct child of this local cell authenticates with
-        # the owning site's certificate, not with a certificate named after
-        # the alias segment itself.
-        is_alias_shape = len(parts) == 1 or (self.local_fqcn and FQCN.get_parent(fqcn) == self.local_fqcn)
-        if is_alias_shape:
-            alias_owner = self._get_cell_pipe_alias_owner(parts[-1])
+        # The alias interpretation applies to the two shapes that carry an
+        # alias: the explicitly marked leaf "cellpipe-alias-..." at any depth,
+        # or a legacy (pre-2.8 flat naming) cell whose whole FQCN is the bare
+        # alias. An unmarked "<token>_<mode>"-shaped leaf inside a longer FQCN
+        # is never an alias - its token may itself contain "_" (e.g.
+        # "site-1.cellpipe-ext_trainer_active"), and alias-parsing it would
+        # fabricate a wrong owner such as "ext". This check intentionally
+        # precedes _resolve_local_child_identity: an alias cell connected as a
+        # direct child of this local cell authenticates with the owning site's
+        # certificate, not with a certificate named after the alias segment.
+        leaf = parts[-1]
+        if leaf.startswith(CELL_PIPE_ALIAS_PREFIX) or len(parts) == 1:
+            alias_owner = self._get_cell_pipe_alias_owner(leaf)
             if alias_owner:
                 return self.resolve(alias_owner)
+
+        # A plain CellPipe leaf ("cellpipe-<token>_<mode>") authenticates with
+        # the identity of the cell it is named under, so resolve its parent.
+        # This must also precede _resolve_local_child_identity: a CP resolving
+        # its own pipe child expects the site's identity, not one named after
+        # the leaf segment.
+        if len(parts) > 1 and leaf.startswith(CELL_PIPE_LEAF_PREFIX):
+            return self.resolve(FQCN.join(parts[:-1]))
 
         identity = self._resolve_local_child_identity(fqcn)
         if identity:

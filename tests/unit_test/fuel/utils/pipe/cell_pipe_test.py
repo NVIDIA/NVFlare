@@ -117,25 +117,25 @@ class TestCellFqcnFormat:
     and mode in one leaf segment so the FQCN parent matches the topology."""
 
     def test_connect_to_root_server(self):
-        assert _cell_fqcn("active", "site-1", "job-123", FQCN.ROOT_SERVER) == "site-1.job-123_active"
+        assert _cell_fqcn("active", "site-1", "job-123", FQCN.ROOT_SERVER) == "site-1.cellpipe-job-123_active"
 
     def test_connect_to_own_cp(self):
-        assert _cell_fqcn("passive", "site-1", "job-123", "site-1") == "site-1.job-123_passive"
+        assert _cell_fqcn("passive", "site-1", "job-123", "site-1") == "site-1.cellpipe-job-123_passive"
 
     def test_connect_to_relay(self):
         # The passive and active pipes for a given pair are built from the same
         # root_url, so they share the same parent FQCN. Relay and CP-behind-relay
         # names can differ because they describe different physical parents.
-        assert _cell_fqcn("active", "site-1", "job-123", "relay-1") == "relay-1.site-1_job-123_active"
-        assert _cell_fqcn("passive", "site-1", "job-123", "relay-1") == "relay-1.site-1_job-123_passive"
+        assert _cell_fqcn("active", "site-1", "job-123", "relay-1") == "relay-1.cellpipe-alias-site-1_job-123_active"
+        assert _cell_fqcn("passive", "site-1", "job-123", "relay-1") == "relay-1.cellpipe-alias-site-1_job-123_passive"
 
     def test_connect_to_cp_behind_relay(self):
-        assert _cell_fqcn("active", "site-1", "job-123", "relay-1.site-1") == "relay-1.site-1.job-123_active"
-        assert _cell_fqcn("passive", "site-1", "job-123", "relay-1.site-1") == "relay-1.site-1.job-123_passive"
+        assert _cell_fqcn("active", "site-1", "job-123", "relay-1.site-1") == "relay-1.site-1.cellpipe-job-123_active"
+        assert _cell_fqcn("passive", "site-1", "job-123", "relay-1.site-1") == "relay-1.site-1.cellpipe-job-123_passive"
 
     @pytest.mark.parametrize("parent_fqcn", ["", None])
     def test_missing_parent_fqcn_falls_back_to_site_parent(self, parent_fqcn):
-        assert _cell_fqcn("active", "site-1", "job-123", parent_fqcn) == "site-1.job-123_active"
+        assert _cell_fqcn("active", "site-1", "job-123", parent_fqcn) == "site-1.cellpipe-job-123_active"
 
     @pytest.mark.parametrize("parent_fqcn", ["site-1", "relay-1", "relay-1.site-1"])
     def test_token_with_dot_is_rejected_behind_connected_parent(self, parent_fqcn):
@@ -148,7 +148,7 @@ class TestCellFqcnFormat:
     def test_token_with_dot_is_allowed_for_root_connection(self, parent_fqcn):
         # root-connected cells route via the root fall-through regardless of
         # phantom segments, so dotted user tokens (e.g. agent ids) keep working
-        assert _cell_fqcn("active", "site-1", "agent.v2", parent_fqcn) == "site-1.agent.v2_active"
+        assert _cell_fqcn("active", "site-1", "agent.v2", parent_fqcn) == "site-1.cellpipe-agent.v2_active"
 
     @pytest.mark.parametrize("token", ["my_token", "my.token"])
     def test_bad_alias_token_is_rejected_behind_relay(self, token):
@@ -160,17 +160,24 @@ class TestCellFqcnFormat:
     @pytest.mark.parametrize("parent_fqcn", [FQCN.ROOT_SERVER, "site-1", "relay-1", ""])
     def test_empty_token_is_rejected(self, parent_fqcn):
         # an empty token (e.g. "{JOB_ID}" resolving to nothing) cannot uniquely
-        # name the cell: all such pipes on a site would collide on <site>._<mode>,
-        # and both pipe ends derive names independently so no generated fallback
-        # can keep the pair in agreement
+        # name the cell: all such pipes on a site would collide, and both pipe
+        # ends derive names independently so no generated fallback can keep
+        # the pair in agreement
         with pytest.raises(ValueError):
             _cell_fqcn("active", "site-1", "", parent_fqcn)
+
+    @pytest.mark.parametrize("parent_fqcn", [FQCN.ROOT_SERVER, "site-1", "relay-1", ""])
+    def test_reserved_alias_token_prefix_is_rejected(self, parent_fqcn):
+        # a token starting with "alias-" would make the plain leaf
+        # "cellpipe-alias-..." collide with the relay alias namespace
+        with pytest.raises(ValueError):
+            _cell_fqcn("active", "site-1", "alias-x_y", parent_fqcn)
 
     @pytest.mark.parametrize("parent_fqcn", [FQCN.ROOT_SERVER, "site-1", ""])
     def test_underscore_token_is_allowed_when_not_aliased(self, parent_fqcn):
         # the simulator uses "simulate_job" as the token; only the alias form
         # used behind another cell restricts "_"
-        assert _cell_fqcn("active", "site-1", "simulate_job", parent_fqcn) == "site-1.simulate_job_active"
+        assert _cell_fqcn("active", "site-1", "simulate_job", parent_fqcn) == "site-1.cellpipe-simulate_job_active"
 
 
 # ---------------------------------------------------------------------------
