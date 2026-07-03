@@ -189,8 +189,13 @@ class LightningDetector(FrameworkDetector):
             return False
 
         # Neither bucket is tied to the entry context: fall back to weighted
-        # evidence. torch used *inside* a Lightning model class body is Lightning's,
-        # so only active PyTorch outside those bodies competes as standalone base
+        # evidence. No active Lightning model at all means the base framework
+        # stays primary.
+        if not active_lightning_evidence:
+            return False
+
+        # torch used *inside* a Lightning model class body is Lightning's, so
+        # only active PyTorch outside those bodies competes as standalone base
         # usage; a sibling plain-torch model or module-level training code
         # co-located with a stray Lightning class still counts as genuine base use.
         active_lightning_class_evidence = [
@@ -199,20 +204,17 @@ class LightningDetector(FrameworkDetector):
         standalone_active_pytorch_evidence = resolver.evidence_outside_class_bodies(
             active_pytorch_evidence, active_lightning_class_evidence
         )
+        if standalone_active_pytorch_evidence:
+            if resolver.has_inspected_file_or_entry_point():
+                return False
+            active_lightning_score = resolver.score(active_lightning_evidence)
+            standalone_active_pytorch_score = resolver.score(standalone_active_pytorch_evidence)
+            if active_lightning_score != standalone_active_pytorch_score:
+                return active_lightning_score > standalone_active_pytorch_score
+
+        # Active scores tied (or no standalone base usage): compare the full
+        # Lightning bucket against PyTorch evidence outside active-Lightning files.
         pytorch_evidence_outside_active_lightning_files = resolver.evidence_outside_files(
             pytorch_evidence, active_lightning_evidence
         )
-        active_lightning_score = resolver.score(active_lightning_evidence)
-        standalone_active_pytorch_score = resolver.score(standalone_active_pytorch_evidence)
-        lightning_score = resolver.score(lightning_evidence)
-        pytorch_score_outside_active_lightning_files = resolver.score(pytorch_evidence_outside_active_lightning_files)
-        if resolver.has_inspected_file_or_entry_point() and standalone_active_pytorch_evidence:
-            return False
-        if active_lightning_score == 0:
-            return False
-        if standalone_active_pytorch_score == 0 and pytorch_evidence_outside_active_lightning_files:
-            if pytorch_score_outside_active_lightning_files >= lightning_score:
-                return False
-        if active_lightning_score != standalone_active_pytorch_score:
-            return active_lightning_score > standalone_active_pytorch_score
-        return lightning_score > pytorch_score_outside_active_lightning_files
+        return resolver.score(lightning_evidence) > resolver.score(pytorch_evidence_outside_active_lightning_files)
