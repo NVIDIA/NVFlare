@@ -185,26 +185,25 @@
     {
       "id": "lightning-data-derived-required-arg",
       "prompt": "Convert this PyTorch Lightning training code to a FLARE FedAvg job over 2 sites. The model needs a vocab_size argument built from the data.",
-      "expected_output": "A FLARE Lightning Client API conversion that pins one shared vocabulary mapping (an identical tokenizer / token-to-ID assignment, not only an equal vocab_size) for server and client model construction and validates that the mapping is identical across sites, for example with a stable hash, so averaged embedding rows stay semantically aligned; passes the recipe model as an explicit class_path plus args config rather than a live LightningModule instance; patches the trainer with flare.patch; validates with python job.py when dependencies are available; and reports the shared vocabulary identity and validation evidence. If the identical mapping cannot be built without pooling private data, the agent uses a fixed supplied tokenizer or surfaces the approval/blocker instead of pinning only the size.",
+      "expected_output": "A FLARE Lightning Client API conversion that extracts the data-derived vocab_size statically and pins it as one value in the explicit class_path plus args recipe model config used by both server and client, so every site constructs the same architecture; passes the recipe model as an explicit class_path plus args config rather than a live LightningModule instance; patches the trainer with flare.patch; validates with python job.py when dependencies are available; and reports the pinned constructor value and validation evidence. If the vocab_size is not statically determinable from the source or supplied metadata, the agent asks in interactive mode or fails closed rather than guessing it or computing it per site.",
       "files": [
         "files/vocab-lightning/train.py",
         "files/vocab-lightning/model.py"
       ],
       "assertions": [
-        "The agent requires one identical tokenizer/vocabulary mapping (shared token IDs) across server and clients, not merely an equal vocab_size, so averaging an embedding row combines the same token at every site.",
-        "The agent validates that the vocabulary mapping is identical across sites, for example via a stable hash, rather than assuming equal sizes imply equal token IDs.",
+        "The agent extracts the data-derived vocab_size statically and pins it as one value in the shared recipe model config used by both server and client, rather than computing it per site.",
         "The agent passes the recipe model as explicit class_path plus args, not as a live LightningModule instance.",
-        "The agent treats the data-derived vocabulary as statically clear only when the source makes the mapping deterministic and shared; otherwise it uses a fixed supplied tokenizer or surfaces the approval/blocker instead of pinning only the size.",
+        "The agent treats the data-derived vocab_size as statically clear only when the source or supplied metadata makes it deterministic; otherwise it asks or fails closed instead of guessing.",
         "The agent integrates through flare.patch(trainer).",
         "The agent runs python job.py for local validation when dependencies are available.",
-        "The agent reports the shared vocabulary identity and any validation blockers."
+        "The agent reports the pinned constructor value and any validation blockers."
       ],
       "nvflare": {
         "expected_skill": "nvflare-convert-lightning",
         "mandatory_behavior": [
           {
             "id": "pin-data-derived-arg",
-            "description": "pins a data-derived constructor argument to one shared value AND, for a vocabulary, an identical shared token-ID mapping (not only an equal vocab_size) for server and client model construction"
+            "description": "extracts a data-derived constructor argument (such as vocab_size) statically and pins it to one shared value for server and client model construction, rather than computing it per site"
           },
           {
             "id": "explicit-model-config-with-args",
