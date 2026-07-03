@@ -159,6 +159,21 @@ write the generated FLARE job into a separate output directory instead of
 inventing a different FLARE layout. Use `runtime-output-guidance.md` for
 generated source, runtime workspace, and export directory placement.
 
+## Setup Outside The Round Loop
+
+Construct expensive or stateful objects — the model, optimizer, loss function,
+datasets and data loaders, tokenizer, and any one-time data download or
+preparation — once, before the federated round loop, never inside it. Each
+round reuses those objects: receive the global model, load its weights into the
+existing model, train or evaluate with the existing optimizer, loss, and data
+loaders, then send. Rebuilding the model or optimizer, or re-downloading or
+re-preparing data, every round is a conversion-quality defect: it wastes work,
+discards optimizer and scheduler state across rounds, and can make the data
+inconsistent between rounds.
+
+This applies to every framework (PyTorch, Lightning, TensorFlow, Hugging Face);
+the framework references show the concrete placement.
+
 ## Recipe Model Config
 
 When a recipe needs a model, generate the explicit model config form:
@@ -309,6 +324,24 @@ Report the split policy, seed, site count, and any reason stratification was
 not used. Treat private data movement as part of the approval boundary: do not
 copy private site data into generated artifacts unless the user explicitly
 asks.
+
+## Data Location
+
+Pass the data location into the generated client as a configurable value — a
+`train_args` argument (or `per_site_config` when sites need different paths) —
+never a path hardcoded inside `client.py`. Keep it site-overridable so the
+conversion ports to real multi-site deployment, where each site's data lives at
+a different location. Point at the original dataset, not at a copy inside the
+NVFLARE run workspace: that workspace path is run-specific and disappears
+between runs.
+
+An absolute path is acceptable only as the runtime-supplied value or default of
+that configurable argument — for example, in single-machine simulation every
+site can resolve to the same default. A hardcoded absolute path baked into the
+generated code, or a path that points into the run workspace, is a
+conversion-quality defect. Preserve the user's data paths, but expose them as
+this configurable argument rather than embedding them, and report that real
+deployment requires each site to set its own data location.
 
 ## Execution Environment And Local Validation
 

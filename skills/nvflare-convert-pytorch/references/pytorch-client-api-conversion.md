@@ -23,6 +23,9 @@ Follow the shared Source Of Truth Boundary in
 ## Conversion Pattern
 
 - Import `nvflare.client as flare`.
+- Build the model, optimizer, loss, and data loaders once before the loop, not
+  inside it, per the shared "Setup Outside The Round Loop" rule in
+  `../../nvflare-shared/references/conversion-workflow.md`.
 - Call `flare.init()` before the training loop that participates in FLARE.
 - Loop while `flare.is_running()`.
 - Call `flare.receive()` to get the incoming `FLModel`.

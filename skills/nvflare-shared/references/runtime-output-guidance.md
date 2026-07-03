@@ -27,8 +27,10 @@ retry after a denial.
 If the source root is read-only, read code and data from it but write nothing
 into it. Generate job source to a writable directory: a user-provided path when
 available, otherwise `/tmp/nvflare/job_config/<job_name>/src/`. Point the job at
-the original data by absolute path, for example through `train_args`, and report
-both the read-only source root and generated job source location.
+the original data through a configurable `train_args` value rather than a path
+hardcoded in the generated code — see the "Data Location" rule in
+`conversion-workflow.md` — and report both the read-only source root and the
+generated job source location.
 
 ## Runtime And Export Outputs
 
