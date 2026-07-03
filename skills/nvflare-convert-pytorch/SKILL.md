@@ -41,10 +41,11 @@ ask for FLARE conversion. Out of conversion scope: production deployment,
 Kubernetes, POC lifecycle, deployment privacy/security policy design, controller
 or workflow rewrites outside product recipe or Job APIs, experiment search across
 recipes, and data distribution experiments beyond minimal local validation setup.
-Homomorphic encryption (HE) and encrypted aggregation are not supported: they
-require provisioning beyond conversion scope, so report an HE request as
-unsupported and route it to provisioning/deployment rather than substituting a
-non-HE recipe.
+Privacy-protection requests — homomorphic encryption (HE) / encrypted
+aggregation, differential privacy, and privacy filters — are not supported:
+they require provisioning or deployment policy beyond conversion scope, so
+report such a request as unsupported and route it to provisioning/deployment
+rather than substituting an unprotected recipe or adding only a disclaimer.
 
 ## Workflow
 

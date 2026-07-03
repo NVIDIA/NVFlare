@@ -42,10 +42,12 @@ or generic Lightning debugging that does not ask for FLARE conversion. Out of
 conversion scope: production deployment, Kubernetes, POC lifecycle, deployment
 privacy/security policy design, custom distributed launch policies not
 expressible by product APIs, experiment tracking redesign, and experiment search
-across recipes. Homomorphic encryption (HE) and encrypted aggregation are not
-supported: they require provisioning beyond conversion scope, so report an HE
-request as unsupported and route it to provisioning/deployment rather than
-substituting a non-HE recipe.
+across recipes. Privacy-protection requests — homomorphic encryption (HE) /
+encrypted aggregation, differential privacy, and privacy filters — are not
+supported: they require provisioning or deployment policy beyond conversion
+scope, so report such a request as unsupported and route it to
+provisioning/deployment rather than substituting an unprotected recipe or
+adding only a disclaimer.
 
 ## Workflow
 

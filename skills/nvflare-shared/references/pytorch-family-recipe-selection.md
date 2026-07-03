@@ -73,7 +73,7 @@ Cyclic recipes, use the local catalog and
   across rounds. This is the default fast path.
 - Use `fedeval-pt` for evaluation-only jobs that send a checkpoint to sites and
   collect metrics without local training updates.
-- For any other algorithm or privacy requirement, do not assume a recipe name:
+- For any other algorithm requirement, do not assume a recipe name:
   select the catalog recipe whose metadata matches the request, confirmed with
   `nvflare recipe list --framework pytorch --format json` and
   `nvflare recipe show <recipe> --format json`. Match on the catalog fields
@@ -94,6 +94,12 @@ Cyclic recipes, use the local catalog and
   or fail closed (unattended). Do not generate an HE `job.py`, and never silently
   substitute a non-HE recipe such as `fedavg-pt` to make the request or a
   simulation pass — that would drop the encryption requirement.
+- The same rule covers every other privacy-protection request: differential
+  privacy, privacy filters, and other NVFLARE `Filter`-based protection are NOT
+  supported by the conversion skills either (see `conversion-workflow.md`). Do
+  not treat a privacy request as recipe selection: report it as unsupported,
+  route it to provisioning/deployment, and ask or fail closed rather than
+  generating an unprotected job with only a disclaimer.
 - Current names are examples to verify against the catalog, not an authoritative
   mapping: `fedprox-pt` (FedProx / proximal loss), `fedopt-pt` (server-side optimizer
   variants such as FedAdam / FedYogi / FedAdagrad), `scaffold-pt` (SCAFFOLD
