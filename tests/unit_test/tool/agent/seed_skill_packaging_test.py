@@ -171,15 +171,50 @@ def test_seed_skills_dry_run_selects_all_seed_skills_without_copying(tmp_path):
     assert not target.exists()
 
 
+@pytest.fixture
+def _clean_repo_build_state():
+    # The setup.py-build tests shell out with cwd=repo_root. Even with isolated
+    # --build-lib/--dist-dir/--egg-base/--build-base, setuptools' mtime-based
+    # incremental copy and egg-info regeneration made results order/timing
+    # dependent when the three grouped builds ran in one session. Guarantee a
+    # clean shared slate before (and after) each so they are deterministic.
+    import shutil
+
+    repo = _repo_root()
+
+    def _clean():
+        shutil.rmtree(repo / "build", ignore_errors=True)
+        for egg in repo.glob("*.egg-info"):
+            shutil.rmtree(egg, ignore_errors=True)
+
+    _clean()
+    yield
+    _clean()
+
+
+def _egg_info_isolation_args(tmp_path):
+    # Route setuptools' shared *.egg-info under tmp_path. These tests run
+    # setup.py in a subprocess with cwd=repo_root and isolate only the build
+    # OUTPUT (--build-lib/--dist-dir); the intermediate egg-info (and, for
+    # bdist_wheel, the default build/ tree) are shared at the repo root and
+    # reused across invocations and sessions, which made the tests order-
+    # dependent (a rotating one failing in the combined suite). Redirecting
+    # egg-info here — plus an isolated --build-base for bdist_wheel below —
+    # keeps each subprocess build hermetic.
+    egg_base = tmp_path / "egg-info-base"
+    egg_base.mkdir(exist_ok=True)
+    return ["egg_info", "--egg-base", str(egg_base)]
+
+
 @pytest.mark.xdist_group(name="setup_py_packaging")
-def test_setup_build_py_can_disable_packaged_agent_skills(tmp_path):
+def test_setup_build_py_can_disable_packaged_agent_skills(tmp_path, _clean_repo_build_state):
     repo_root = _repo_root()
     build_lib = tmp_path / "build_lib"
     env = os.environ.copy()
     env["NVFLARE_PACKAGE_AGENT_SKILLS"] = "0"
 
     result = subprocess.run(
-        [sys.executable, "setup.py", "build_py", "--build-lib", str(build_lib)],
+        [sys.executable, "setup.py", *_egg_info_isolation_args(tmp_path), "build_py", "--build-lib", str(build_lib)],
         cwd=repo_root,
         env=env,
         stdout=subprocess.PIPE,
@@ -200,13 +235,13 @@ def test_setup_build_py_can_disable_packaged_agent_skills(tmp_path):
 
 
 @pytest.mark.xdist_group(name="setup_py_packaging")
-def test_setup_build_py_packages_seed_skills_without_eval_suites(tmp_path):
+def test_setup_build_py_packages_seed_skills_without_eval_suites(tmp_path, _clean_repo_build_state):
     repo_root = _repo_root()
     build_lib = tmp_path / "build_lib"
     env = os.environ.copy()
 
     result = subprocess.run(
-        [sys.executable, "setup.py", "build_py", "--build-lib", str(build_lib)],
+        [sys.executable, "setup.py", *_egg_info_isolation_args(tmp_path), "build_py", "--build-lib", str(build_lib)],
         cwd=repo_root,
         env=env,
         stdout=subprocess.PIPE,
@@ -237,7 +272,7 @@ def test_setup_build_py_packages_seed_skills_without_eval_suites(tmp_path):
 
 
 @pytest.mark.xdist_group(name="setup_py_packaging")
-def test_setup_bdist_wheel_no_skills_build_has_distinct_filename(tmp_path):
+def test_setup_bdist_wheel_no_skills_build_has_distinct_filename(tmp_path, _clean_repo_build_state):
     if not _bdist_wheel_available():
         pytest.skip("bdist_wheel command is not installed in this test environment")
 
@@ -247,7 +282,17 @@ def test_setup_bdist_wheel_no_skills_build_has_distinct_filename(tmp_path):
     env["NVFLARE_PACKAGE_AGENT_SKILLS"] = "0"
 
     result = subprocess.run(
-        [sys.executable, "setup.py", "bdist_wheel", "--dist-dir", str(dist_dir)],
+        [
+            sys.executable,
+            "setup.py",
+            *_egg_info_isolation_args(tmp_path),
+            "build",
+            "--build-base",
+            str(tmp_path / "setup-build"),
+            "bdist_wheel",
+            "--dist-dir",
+            str(dist_dir),
+        ],
         cwd=repo_root,
         env=env,
         stdout=subprocess.PIPE,
