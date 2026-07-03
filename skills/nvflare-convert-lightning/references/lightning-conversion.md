@@ -164,7 +164,11 @@ evaluation-only.
 The generated `job.py` should use the selected recipe's public parameters from
 `recipe show`, construct the model through explicit `class_path` (or `path`) plus
 `args` when constructor arguments are required, and call
-`recipe.execute(SimEnv(...))`. Do not replace this with ad hoc SDK-internal
-APIs based on local source or docstring inspection. Follow
+`recipe.execute(SimEnv(...))`. Exception: HE recipes reject `SimEnv` and require
+provisioned `PocEnv`/`ProdEnv`, which are outside conversion scope — follow the
+HE rule in
+`../../nvflare-shared/references/pytorch-family-recipe-selection.md` and ask or
+fail closed instead of generating a SimEnv call. Do not replace this with ad
+hoc SDK-internal APIs based on local source or docstring inspection. Follow
 `../../nvflare-shared/references/conversion-workflow.md` for export and
 command-line behavior.

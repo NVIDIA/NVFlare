@@ -357,7 +357,10 @@ recipe.execute(env)
 ```
 
 `PocEnv` and `ProdEnv` are outside conversion scope; do not generate or run
-them from a conversion skill.
+them from a conversion skill. A recipe that rejects `SimEnv` (for example an HE
+recipe, which requires provisioned startup kits) therefore cannot be validated
+locally: follow the selecting reference's ask/fail-closed rule and report the
+job as unvalidated instead of switching recipes or environments to force a run.
 
 - Use `python job.py` for local recipe or SimEnv validation when supported.
 - Prefer synthetic data flags or small fixtures when the original dataset is

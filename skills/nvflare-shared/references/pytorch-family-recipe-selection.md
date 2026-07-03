@@ -85,6 +85,15 @@ Cyclic recipes, use the local catalog and
   map an HE request to a `privacy: []` recipe such as `fedavg-pt`; when no
   catalog recipe matches the requested privacy, ask or fail closed rather than
   dropping the encryption requirement.
+- HE recipes cannot be validated locally by a conversion skill: `fedavg-he-pt`
+  (`FedAvgRecipeWithHE`) rejects `SimEnv` because HE needs provisioned startup
+  kits (`HEBuilder`) and a `PocEnv`/`ProdEnv`, and those environments are
+  outside conversion scope per `conversion-workflow.md`. For an HE request, do
+  not generate a `job.py` that calls `recipe.execute(SimEnv(...))`, and do not
+  swap to a non-HE recipe to make simulation pass. Ask the user or fail closed:
+  deliver the generated sources (and an exported job if export is in scope),
+  report the job as unvalidated, and state that running it requires HE
+  provisioning with `PocEnv`/`ProdEnv`.
 - Current names are examples to verify against the catalog, not an authoritative
   mapping: `fedavg-he-pt` (FedAvg, `privacy: [homomorphic_encryption]`,
   `privacy_compatible: [homomorphic_encryption]`),
