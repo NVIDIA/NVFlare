@@ -28,12 +28,26 @@ YAML_ANCHOR_OR_ALIAS_RE = re.compile(r"(^|[:\s\[{,])([&*])[A-Za-z0-9_-]+(?=\s|$|
 # allowed-tools at the top level; NVFLARE's custom fields live under the spec
 # `metadata` map, validated via skill_metadata().
 REQUIRED_FRONTMATTER_FIELDS = ("name", "description")
-REQUIRED_METADATA_FIELDS = ("min_flare_version", "blast_radius")
+# `author` (name plus NVIDIA email inside the spec `metadata` map) is required
+# by the company skills guideline (NVCARPS).
+REQUIRED_METADATA_FIELDS = ("author", "min_flare_version", "blast_radius")
 REQUIRED_PUBLIC_METADATA_FIELDS = ("category",)
-# The only frontmatter keys agentskills.io permits at the top level. Everything
-# else (NVFLARE custom fields) must be nested under `metadata`.
-SPEC_TOP_LEVEL_FIELDS = frozenset({"name", "description", "license", "compatibility", "metadata", "allowed-tools"})
+# The only frontmatter keys agentskills.io permits at the top level, plus
+# `title`, an optional display-name field the company skills guideline
+# (NVCARPS) allows at the top level. Everything else (NVFLARE custom fields)
+# must be nested under `metadata`.
+SPEC_TOP_LEVEL_FIELDS = frozenset(
+    {"name", "title", "description", "license", "compatibility", "metadata", "allowed-tools"}
+)
 PUBLIC_EXEMPT_STATUS = {"draft", "internal", "private"}
+# Company skills guideline (NVCARPS) constraints, enforced on top of the
+# NVFLARE-specific checks: name charset/length, description and compatibility
+# length caps, and the SKILL.md main-file length rule.
+SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+MAX_NAME_LENGTH = 64
+MAX_DESCRIPTION_LENGTH = 1024
+MAX_COMPATIBILITY_LENGTH = 500
+MAX_SKILL_MD_LINES = 500
 VALID_BLAST_RADIUS = frozenset(
     {
         "read_only",
@@ -144,6 +158,8 @@ def validate_skill_dir(skill_dir: Path | str) -> SkillValidationResult:
         _validate_required_fields(sub, skill_file, issues, fields=REQUIRED_PUBLIC_METADATA_FIELDS, container="metadata")
     _validate_name_matches_directory(metadata.get("name"), path, skill_file, issues)
     _validate_blast_radius(sub.get("blast_radius"), skill_file, issues)
+    _validate_spec_constraints(metadata, skill_file, issues)
+    _validate_skill_md_length(skill_file, issues)
 
     return SkillValidationResult(str(path), metadata, tuple(issues))
 
@@ -250,6 +266,60 @@ def _validate_blast_radius(radius: Any, skill_file: Path, issues: list[SkillVali
             _issue(
                 "skill-blast-radius-invalid",
                 f"blast_radius must be one of: {', '.join(sorted(VALID_BLAST_RADIUS))}",
+                skill_file,
+            )
+        )
+
+
+def _validate_spec_constraints(
+    metadata: Mapping[str, Any], skill_file: Path, issues: list[SkillValidationIssue]
+) -> None:
+    """Enforce the company skills guideline (NVCARPS) field constraints."""
+    name = metadata.get("name")
+    if isinstance(name, str) and name.strip():
+        if len(name) > MAX_NAME_LENGTH or not SKILL_NAME_RE.match(name):
+            issues.append(
+                _issue(
+                    "skill-frontmatter-name-invalid",
+                    f"frontmatter field 'name' must be 1-{MAX_NAME_LENGTH} chars, lowercase alphanumeric plus "
+                    f"hyphens, with no leading/trailing/consecutive hyphens; got {name!r}",
+                    skill_file,
+                )
+            )
+    description = metadata.get("description")
+    if isinstance(description, str) and len(description) > MAX_DESCRIPTION_LENGTH:
+        issues.append(
+            _issue(
+                "skill-frontmatter-description-too-long",
+                f"frontmatter field 'description' must be at most {MAX_DESCRIPTION_LENGTH} characters; "
+                f"got {len(description)}",
+                skill_file,
+            )
+        )
+    compatibility = metadata.get("compatibility")
+    if isinstance(compatibility, str) and len(compatibility) > MAX_COMPATIBILITY_LENGTH:
+        issues.append(
+            _issue(
+                "skill-frontmatter-compatibility-too-long",
+                f"frontmatter field 'compatibility' must be at most {MAX_COMPATIBILITY_LENGTH} characters; "
+                f"got {len(compatibility)}",
+                skill_file,
+            )
+        )
+
+
+def _validate_skill_md_length(skill_file: Path, issues: list[SkillValidationIssue]) -> None:
+    """Enforce the company guideline that the main SKILL.md stays under 500 lines."""
+    try:
+        line_count = len(skill_file.read_text(encoding="utf-8-sig").splitlines())
+    except OSError:
+        return  # unreadable SKILL.md is already reported as skill-md-unreadable
+    if line_count > MAX_SKILL_MD_LINES:
+        issues.append(
+            _issue(
+                "skill-md-too-long",
+                f"SKILL.md has {line_count} lines; keep the main file under {MAX_SKILL_MD_LINES} lines and move "
+                "detailed content into references/",
                 skill_file,
             )
         )

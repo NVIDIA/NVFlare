@@ -138,6 +138,8 @@ def test_validate_skill_dir_reports_missing_required_fields(tmp_path):
         "---\n"
         "name: nvflare-missing-fields\n"
         "description: Missing required fields.\n"
+        "metadata:\n"
+        '  author: "Test Author <test-author@nvidia.com>"\n'
         "---\n"
         "\n"
         "# Missing Fields\n",
@@ -159,6 +161,7 @@ def test_validate_skill_dir_reports_wrong_type_fields(tmp_path):
         "name: nvflare-wrong-type\n"
         "description: Wrong type fixture.\n"
         "metadata:\n"
+        '  author: "Test Author <test-author@nvidia.com>"\n'
         "  min_flare_version: 2.8\n"
         "  blast_radius: read_only\n"
         "  category: Test\n"
@@ -341,6 +344,7 @@ def _write_skill(tmp_path, skill_name, *, name=None, blast_radius="read_only", c
         f"name: {name or skill_name}\n"
         "description: Test skill fixture.\n"
         "metadata:\n"
+        '  author: "Test Author <test-author@nvidia.com>"\n'
         '  min_flare_version: "2.8.0"\n'
         f"  blast_radius: {blast_radius}\n"
         f"{category_line}"
@@ -355,3 +359,124 @@ def _write_skill(tmp_path, skill_name, *, name=None, blast_radius="read_only", c
 
 def _issue_codes(result):
     return {issue.code for issue in result.issues}
+
+
+def test_validate_skill_dir_rejects_invalid_name_charset(tmp_path):
+    # Company (NVCARPS) name constraints: lowercase alphanumeric + hyphens, no
+    # leading/trailing/consecutive hyphens, at most 64 chars.
+    for bad_name in ("nvflare--double", "nvflare-Upper", "nvflare-trailing-", "-nvflare-leading"):
+        skill_dir = _write_skill(tmp_path, bad_name)
+        result = validate_skill_dir(skill_dir)
+        assert "skill-frontmatter-name-invalid" in _issue_codes(result), bad_name
+
+
+def test_validate_skill_dir_rejects_name_over_64_chars(tmp_path):
+    long_name = "nvflare-" + "a" * 64
+    skill_dir = _write_skill(tmp_path, long_name)
+
+    result = validate_skill_dir(skill_dir)
+
+    assert "skill-frontmatter-name-invalid" in _issue_codes(result)
+
+
+def test_validate_skill_dir_rejects_description_over_1024_chars(tmp_path):
+    skill_dir = tmp_path / "nvflare-long-description"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: nvflare-long-description\n"
+        f"description: {'x' * 1025}\n"
+        "metadata:\n"
+        '  author: "Test Author <test-author@nvidia.com>"\n'
+        '  min_flare_version: "2.8.0"\n'
+        "  blast_radius: read_only\n"
+        "  category: Test\n"
+        "---\n\n# Skill\n",
+        encoding="utf-8",
+    )
+
+    result = validate_skill_dir(skill_dir)
+
+    assert "skill-frontmatter-description-too-long" in _issue_codes(result)
+
+
+def test_validate_skill_dir_rejects_compatibility_over_500_chars(tmp_path):
+    skill_dir = tmp_path / "nvflare-long-compat"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: nvflare-long-compat\n"
+        "description: Test skill fixture.\n"
+        f"compatibility: {'y' * 501}\n"
+        "metadata:\n"
+        '  author: "Test Author <test-author@nvidia.com>"\n'
+        '  min_flare_version: "2.8.0"\n'
+        "  blast_radius: read_only\n"
+        "  category: Test\n"
+        "---\n\n# Skill\n",
+        encoding="utf-8",
+    )
+
+    result = validate_skill_dir(skill_dir)
+
+    assert "skill-frontmatter-compatibility-too-long" in _issue_codes(result)
+
+
+def test_validate_skill_dir_rejects_skill_md_over_500_lines(tmp_path):
+    skill_dir = _write_skill(tmp_path, "nvflare-long-body")
+    skill_file = skill_dir / "SKILL.md"
+    skill_file.write_text(
+        skill_file.read_text(encoding="utf-8") + ("filler line\n" * 500),
+        encoding="utf-8",
+    )
+
+    result = validate_skill_dir(skill_dir)
+
+    assert "skill-md-too-long" in _issue_codes(result)
+
+
+def test_validate_skill_dir_requires_author_in_metadata(tmp_path):
+    # Company (NVCARPS) requirement: metadata.author is mandatory.
+    skill_dir = tmp_path / "nvflare-no-author"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: nvflare-no-author\n"
+        "description: Test skill fixture.\n"
+        "metadata:\n"
+        '  min_flare_version: "2.8.0"\n'
+        "  blast_radius: read_only\n"
+        "  category: Test\n"
+        "---\n\n# Skill\n",
+        encoding="utf-8",
+    )
+
+    result = validate_skill_dir(skill_dir)
+
+    assert not result.ok
+    assert any(
+        issue.code == "skill-frontmatter-field-required" and "'author'" in issue.message for issue in result.issues
+    )
+
+
+def test_validate_skill_dir_accepts_optional_title(tmp_path):
+    # NVCARPS allows an optional top-level display title.
+    skill_dir = tmp_path / "nvflare-with-title"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: nvflare-with-title\n"
+        'title: "NVFLARE With Title"\n'
+        "description: Test skill fixture.\n"
+        "metadata:\n"
+        '  author: "Test Author <test-author@nvidia.com>"\n'
+        '  min_flare_version: "2.8.0"\n'
+        "  blast_radius: read_only\n"
+        "  category: Test\n"
+        "---\n\n# Skill\n",
+        encoding="utf-8",
+    )
+
+    result = validate_skill_dir(skill_dir)
+
+    assert result.ok, result.issues

@@ -688,6 +688,7 @@ def _write_skill(
         f"name: {name}\n"
         f"description: {description}\n"
         "metadata:\n"
+        '  author: "Test Author <test-author@nvidia.com>"\n'
         '  min_flare_version: "2.8.0"\n'
         "  blast_radius: edits_files\n"
         f"  category: {category}\n"

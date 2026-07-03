@@ -848,6 +848,7 @@ def _write_skill(root, name, *, with_behavior=False, with_compound_trigger=False
         f"name: {name}\n"
         "description: Test skill fixture.\n"
         "metadata:\n"
+        '  author: "Test Author <test-author@nvidia.com>"\n'
         '  min_flare_version: "2.8.0"\n'
         "  blast_radius: read_only\n"
         "  category: Test\n"
