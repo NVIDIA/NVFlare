@@ -24,9 +24,9 @@
         "The agent keeps simulation workspaces, exported job folders, and generated runtime outputs under /tmp/nvflare unless the user gives another location.",
         "The agent preserves existing Lightning callbacks, loggers, and checkpoint behavior.",
         "The agent runs python job.py for local validation in the foreground to completion when dependencies are available.",
-        "The generated client constructs the model, datamodule/data loaders, loss, and trainer once before the flare round loop rather than inside it.",
+        "The generated client constructs the model, datamodule/data loaders, and trainer once before the flare round loop rather than inside it; loss stays where the source defines it, such as functional loss inside training_step.",
         "The agent preserves the source accelerator/devices selection and does not shortcut GPU training to CPU or add a hard GPU requirement, validating on CPU or a reduced device count only as a reported limitation.",
-        "The agent passes the data location as a configurable train_args or per_site_config value rather than a hardcoded absolute path, and does not point at data inside the nvflare run workspace.",
+        "When the source loads data from an external path or directory, the agent passes that location as a configurable train_args or per_site_config value rather than a hardcoded absolute path, and does not point at data inside the nvflare run workspace; this does not apply when the source builds synthetic in-memory data.",
         "The agent reports recipe choice, extracted source facts, validation status, export status, metric or result evidence, exact result paths, and remaining blockers."
       ],
       "nvflare": {
@@ -78,7 +78,7 @@
           },
           {
             "id": "setup-outside-round-loop",
-            "description": "constructs the model, datamodule/data loaders, loss, and trainer once before the flare round loop, not inside it, and reuses them each round"
+            "description": "constructs the model, datamodule/data loaders, and trainer once before the flare round loop, not inside it, and reuses them each round (loss stays wherever the source defines it, such as functional loss inside training_step)"
           },
           {
             "id": "preserve-device-intent",
@@ -86,7 +86,7 @@
           },
           {
             "id": "configurable-data-path",
-            "description": "passes the data location as a configurable train_args or per_site_config value rather than a path hardcoded in client.py, pointing at the original dataset and not at data inside the nvflare run workspace"
+            "description": "when the source loads data from an external file or directory, passes that data location as a configurable train_args or per_site_config value rather than a path hardcoded in client.py, pointing at the original dataset and not at data inside the nvflare run workspace (not applicable when the source builds synthetic in-memory data)"
           },
           {
             "id": "report-validation-evidence",
