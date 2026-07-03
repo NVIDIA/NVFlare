@@ -117,7 +117,7 @@
           },
           {
             "id": "no-hardcoded-absolute-data-path",
-            "description": "does not hardcode an absolute data path in generated client code and does not point at data inside the nvflare run workspace"
+            "description": "does not embed an absolute data path as a fixed non-configurable literal in generated client code (an absolute path used only as the default of a configurable train_args/per_site_config argument is allowed), and does not point at data inside the nvflare run workspace"
           },
           {
             "id": "no-source-discovered-strategy-override",
