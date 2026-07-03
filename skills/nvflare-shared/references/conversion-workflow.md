@@ -446,5 +446,8 @@ aggregation choice if any, assumptions, commands run, validation results,
 export location if produced, execution isolation or approval status, redacted
 security-relevant findings, and blockers. State that the generated
 local-validation job carries no deployment-reviewed privacy or security policy
-(no differential privacy, homomorphic encryption, access control, or production
-approval) unless a separate workflow explicitly added one.
+(no differential privacy, access control, or production approval) unless a
+separate workflow explicitly added one. If the conversion configured a
+recipe-level privacy feature, such as an HE-capable recipe selected for an
+explicit encryption request, report that feature as configured but note it is
+not a deployment-reviewed privacy or security policy.

@@ -22,6 +22,8 @@ selected or invoked on its own.
 - `references/dependency-install.md` — safe dependency install guidance.
 - `references/pytorch-model-exchange.md` — PyTorch-family model/state-dict
   exchange details.
+- `references/pytorch-family-recipe-selection.md` — PyTorch-family recipe
+  discovery, algorithm guide, and catalog-based selection rules.
 - `references/runtime-output-guidance.md` — runtime/export output locations.
 - `references/metrics-and-artifact-reporting.md` — metric and artifact reporting.
 - `assets/aggregator.py` — the custom weighted-aggregator template.
