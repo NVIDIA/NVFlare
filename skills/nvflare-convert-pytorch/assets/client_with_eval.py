@@ -22,8 +22,8 @@ metric is returned through ``FLModel.metrics``.
 
 ``evaluate`` is a pure function so a generated conversion can be validated
 against a toy model and loader without a running FLARE server. The main loop
-builds model and training state once before FLARE rounds; each round only loads
-received weights into that persistent state.
+initializes FLARE, then builds model and training state once before FLARE
+rounds; each round only loads received weights into that persistent state.
 """
 
 import torch
@@ -65,17 +65,17 @@ def main(model_factory, train_setup_factory, train_one_round, val_loader, device
     ``model_factory`` constructs the model with the same constructor args the
     recipe uses. ``train_setup_factory`` constructs stateful training objects
     such as the optimizer, loss, scheduler, and training data loader once for
-    the persistent model. ``train_one_round`` runs the source training loop
-    using that prebuilt state.
+    the persistent model, after Client API context is available.
+    ``train_one_round`` runs the source training loop using that prebuilt state.
     """
     # Build all persistent objects before the FLARE round loop. Each round
     # should only load received weights into this state, evaluate, train, and
     # send the updated state dict.
     model = model_factory()
     model.to(device)
+    flare.init()
     train_state = train_setup_factory(model, device)
 
-    flare.init()
     while flare.is_running():
         input_model = flare.receive()
         model.load_state_dict(input_model.params)

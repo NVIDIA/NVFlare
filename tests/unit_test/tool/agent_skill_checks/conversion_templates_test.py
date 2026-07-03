@@ -20,6 +20,7 @@ toy models so template rot is caught here rather than only in expensive,
 nondeterministic LLM evals.
 """
 
+import ast
 import importlib.util
 from pathlib import Path
 
@@ -81,6 +82,35 @@ def test_pytorch_eval_template_fails_closed_on_empty_data():
 
     with pytest.raises(RuntimeError):
         module.evaluate(_DummyModel(), [], device="cpu")
+
+
+def test_pytorch_eval_template_initializes_flare_before_training_setup():
+    source = (PT_TEMPLATES / "client_with_eval.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    main_func = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "main")
+
+    init_line = None
+    setup_line = None
+    loop_line = None
+    for node in ast.walk(main_func):
+        if isinstance(node, ast.While):
+            loop_line = node.lineno
+        if not isinstance(node, ast.Call):
+            continue
+        if (
+            isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "flare"
+            and node.func.attr == "init"
+        ):
+            init_line = node.lineno
+        if isinstance(node.func, ast.Name) and node.func.id == "train_setup_factory":
+            setup_line = node.lineno
+
+    assert init_line is not None
+    assert setup_line is not None
+    assert loop_line is not None
+    assert init_line < setup_line < loop_line
 
 
 def test_custom_aggregator_template_step_weighted_average():

@@ -26,7 +26,9 @@ Follow the shared Source Of Truth Boundary in
 - Build the model, optimizer, loss, and data loaders once before the loop, not
   inside it, per the shared "Setup Outside The Round Loop" rule in
   `../../nvflare-shared/references/conversion-workflow.md`.
-- Call `flare.init()` before the training loop that participates in FLARE.
+- Call `flare.init()` before setup hooks that need Client API context, such as
+  `flare.get_config()` or `flare.get_site_name()`, while still keeping setup
+  outside the federated round loop.
 - Loop while `flare.is_running()`.
 - Call `flare.receive()` to get the incoming `FLModel`.
 - Load `input_model.params` into the PyTorch model with `load_state_dict`.
@@ -128,10 +130,11 @@ def evaluate(model, val_loader, device):
 
 model = model_factory()
 model.to(device)
+
+flare.init()
 train_state = train_setup_factory(model, device)
 val_loader = build_val_loader()
 
-flare.init()
 while flare.is_running():
     input_model = flare.receive()
     model.load_state_dict(input_model.params)
