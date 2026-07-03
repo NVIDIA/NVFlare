@@ -16,7 +16,6 @@
 
 import argparse
 import json
-from pathlib import Path
 
 try:
     from .lints import run_v1_lints
@@ -41,8 +40,8 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         result = run_v1_lints(
-            Path(args.skills_root),
-            evals_root=Path(args.evals_root) if args.evals_root else None,
+            args.skills_root,
+            evals_root=args.evals_root or None,
             checks=args.check,
         )
     except ValueError as e:

@@ -49,6 +49,7 @@ import re
 import shlex
 from collections import Counter, defaultdict
 from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
@@ -56,6 +57,7 @@ try:
     from .frontmatter import (
         PUBLIC_EXEMPT_STATUS,
         SKILL_FILE_NAME,
+        SkillValidationResult,
         parse_skill_frontmatter,
         should_skip_skill_dir,
         skill_metadata,
@@ -65,25 +67,12 @@ except ImportError:
     from frontmatter import (
         PUBLIC_EXEMPT_STATUS,
         SKILL_FILE_NAME,
+        SkillValidationResult,
         parse_skill_frontmatter,
         should_skip_skill_dir,
         skill_metadata,
         validate_skill_dir,
     )
-
-V1_LINT_IDS = (
-    "skill-frontmatter-lint",
-    "skill-md-size-lint",
-    "skill-trigger-lint",
-    "skill-trigger-overlap-lint",
-    "skill-global-negative-lint",
-    "skill-policy-coverage-lint",
-    "skill-process-metric-lint",
-    "skill-command-drift-lint",
-    "skill-helper-script-lint",
-    "skill-fixture-lint",
-    "skill-runtime-boundary-lint",
-)
 
 LINT_SKILL_FRONTMATTER = "skill-frontmatter-lint"
 LINT_SKILL_MD_SIZE = "skill-md-size-lint"
@@ -215,11 +204,18 @@ class SkillRecord:
     evals_dir: Path
     evals_path: Path
     evals_error: Optional[str]
+    # Structural validation result computed once at record-load time so lints
+    # do not re-run validate_skill_dir (and its frontmatter parse) per check.
+    validation: SkillValidationResult
 
     @property
     def public(self) -> bool:
         status = str(skill_metadata(self.metadata).get("status", "public")).strip().lower()
         return status not in PUBLIC_EXEMPT_STATUS
+
+    @cached_property
+    def has_helper_tests(self) -> bool:
+        return _skill_has_helper_tests(self.skill_dir)
 
 
 @dataclass
@@ -280,38 +276,11 @@ def _run_v1_lints_with_records(
         skipped_checks=[],
     )
     root_error_codes = {"skills-root-missing", "skills-root-not-directory"}
-    if any(finding.global_finding and finding.code in root_error_codes for finding in findings):
-        summary = _summary_from_lint_findings(context.findings, len(records))
-        status = "failed" if summary["error_count"] else "ok"
-        return {
-            "schema_version": "1",
-            "status": status,
-            "passed": status == "ok",
-            "skills_root": str(root),
-            "checks": list(selected),
-            "skipped_checks": context.skipped_checks,
-            "summary": summary,
-            "findings": [finding.as_dict() for finding in context.findings],
-        }, records
+    if not any(finding.global_finding and finding.code in root_error_codes for finding in findings):
+        for check in selected:
+            _LINT_FUNCTIONS[check](context)
 
-    lint_functions = {
-        "skill-frontmatter-lint": _lint_frontmatter,
-        "skill-md-size-lint": _lint_md_size,
-        "skill-trigger-lint": _lint_trigger,
-        "skill-trigger-overlap-lint": _lint_trigger_overlap,
-        "skill-global-negative-lint": _lint_global_negative,
-        "skill-policy-coverage-lint": _lint_policy_coverage,
-        "skill-process-metric-lint": _lint_process_metrics,
-        "skill-command-drift-lint": _lint_command_drift,
-        "skill-helper-script-lint": _lint_helper_scripts,
-        "skill-fixture-lint": _lint_fixtures,
-        "skill-runtime-boundary-lint": _lint_runtime_boundary,
-    }
-
-    for check in selected:
-        lint_functions[check](context)
-
-    summary = _summary_from_lint_findings(context.findings, len(records))
+    summary = _summary_from_severities((finding.severity for finding in context.findings), len(records))
     status = "failed" if summary["error_count"] else "ok"
     return {
         "schema_version": "1",
@@ -344,7 +313,10 @@ def validate_skills(
         result["findings"] = [
             finding for finding in result["findings"] if _finding_matches_requested_skill(finding, skill_name)
         ]
-        result["summary"] = _summary_from_findings(result["findings"], _matching_skill_count(records, skill_name))
+        result["summary"] = _summary_from_severities(
+            (finding.get("severity", FINDING_ERROR) for finding in result["findings"]),
+            _matching_skill_count(records, skill_name),
+        )
         result["status"] = "failed" if result["summary"]["error_count"] else "ok"
         result["passed"] = result["status"] == "ok"
     else:
@@ -352,9 +324,15 @@ def validate_skills(
     return result
 
 
-def _summary_from_findings(findings: list[dict[str, Any]], skill_count: int) -> dict[str, int]:
-    severity_counts = Counter(finding.get("severity", FINDING_ERROR) for finding in findings)
-    return _summary_from_counts(severity_counts, len(findings), skill_count)
+def _summary_from_severities(severities: Iterable[str], skill_count: int) -> dict[str, int]:
+    severity_counts = Counter(severities)
+    return {
+        "skill_count": skill_count,
+        "finding_count": sum(severity_counts.values()),
+        "error_count": severity_counts.get(FINDING_ERROR, 0),
+        "warning_count": severity_counts.get(FINDING_WARNING, 0),
+        "info_count": severity_counts.get(FINDING_INFO, 0),
+    }
 
 
 def _finding_matches_requested_skill(finding: dict[str, Any], skill_name: str) -> bool:
@@ -362,26 +340,11 @@ def _finding_matches_requested_skill(finding: dict[str, Any], skill_name: str) -
     return finding_skill == skill_name or (finding_skill is None and finding.get("global") is True)
 
 
-def _summary_from_lint_findings(findings: list[LintFinding], skill_count: int) -> dict[str, int]:
-    severity_counts = Counter(finding.severity for finding in findings)
-    return _summary_from_counts(severity_counts, len(findings), skill_count)
-
-
-def _summary_from_counts(severity_counts: Counter, finding_count: int, skill_count: int) -> dict[str, int]:
-    return {
-        "skill_count": skill_count,
-        "finding_count": finding_count,
-        "error_count": severity_counts.get(FINDING_ERROR, 0),
-        "warning_count": severity_counts.get(FINDING_WARNING, 0),
-        "info_count": severity_counts.get(FINDING_INFO, 0),
-    }
-
-
 def _load_skill_records(skills_root: Path, evals_root: Path, findings: list[LintFinding]) -> list[SkillRecord]:
     if not skills_root.exists():
         findings.append(
             _finding(
-                "skill-frontmatter-lint",
+                LINT_SKILL_FRONTMATTER,
                 FINDING_ERROR,
                 skills_root,
                 "skills root does not exist",
@@ -394,7 +357,7 @@ def _load_skill_records(skills_root: Path, evals_root: Path, findings: list[Lint
     if not skills_root.is_dir():
         findings.append(
             _finding(
-                "skill-frontmatter-lint",
+                LINT_SKILL_FRONTMATTER,
                 FINDING_ERROR,
                 skills_root,
                 "skills root is not a directory",
@@ -430,6 +393,7 @@ def _load_skill_records(skills_root: Path, evals_root: Path, findings: list[Lint
                 evals_dir=evals_dir,
                 evals_path=evals_path,
                 evals_error=evals_error,
+                validation=validate_skill_dir(child),
             )
         )
     return records
@@ -441,11 +405,10 @@ def _matching_skill_count(records: list[SkillRecord], skill_name: str) -> int:
 
 def _lint_frontmatter(context: LintContext) -> None:
     for record in context.records:
-        result = validate_skill_dir(record.skill_dir)
-        for issue in result.issues:
+        for issue in record.validation.issues:
             context.findings.append(
                 _finding(
-                    "skill-frontmatter-lint",
+                    LINT_SKILL_FRONTMATTER,
                     FINDING_ERROR,
                     Path(issue.path),
                     issue.message,
@@ -459,7 +422,7 @@ def _lint_frontmatter(context: LintContext) -> None:
         if record.public and _has_valid_name(record.metadata) and not record.name.startswith("nvflare-"):
             context.findings.append(
                 _finding(
-                    "skill-frontmatter-lint",
+                    LINT_SKILL_FRONTMATTER,
                     FINDING_ERROR,
                     record.skill_file,
                     f"public NVFLARE skill name '{record.name}' must start with 'nvflare-'",
@@ -485,7 +448,7 @@ def _lint_md_size(context: LintContext) -> None:
                 continue
             context.findings.append(
                 _finding(
-                    "skill-md-size-lint",
+                    LINT_SKILL_MD_SIZE,
                     FINDING_ERROR,
                     record.skill_file,
                     f"SKILL.md exceeds the readable size limit of {MAX_SKILL_TEXT_FILE_BYTES} bytes",
@@ -501,7 +464,7 @@ def _lint_md_size(context: LintContext) -> None:
         if len(lines) > max_lines and not _has_size_exception(record.text):
             context.findings.append(
                 _finding(
-                    "skill-md-size-lint",
+                    LINT_SKILL_MD_SIZE,
                     FINDING_ERROR,
                     record.skill_file,
                     f"SKILL.md has {len(lines)} lines; v1 hard limit is {max_lines}",
@@ -515,7 +478,7 @@ def _lint_md_size(context: LintContext) -> None:
         if word_count > SKILL_MD_ADVISORY_WORDS:
             context.findings.append(
                 _finding(
-                    "skill-md-size-lint",
+                    LINT_SKILL_MD_SIZE,
                     FINDING_INFO,
                     record.skill_file,
                     f"SKILL.md has about {word_count} whitespace-delimited tokens",
@@ -532,7 +495,7 @@ def _lint_trigger(context: LintContext) -> None:
         if not any(term in searchable for term in _TRIGGER_TERMS):
             context.findings.append(
                 _finding(
-                    "skill-trigger-lint",
+                    LINT_SKILL_TRIGGER,
                     FINDING_ERROR,
                     record.skill_file,
                     "skill is missing trigger or use-boundary text",
@@ -542,27 +505,19 @@ def _lint_trigger(context: LintContext) -> None:
                 )
             )
 
-        if record.evals_error:
-            _add_evals_error(context, "skill-trigger-lint", record)
-            continue
-        if not record.evals_path.is_file():
-            context.findings.append(
-                _finding(
-                    "skill-trigger-lint",
-                    FINDING_ERROR,
-                    record.evals_path,
-                    "evals.json (under dev_tools/agent/skill_evals/<skill>/) is required for public skill trigger checks",
-                    "Add a guide-compatible evals.json under the eval root "
-                    "(dev_tools/agent/skill_evals/<skill>/) with positive and adjacent negative trigger evals.",
-                    code="skill-evals-missing",
-                    skill=record.name,
-                )
-            )
+        if not _evals_available(
+            context,
+            LINT_SKILL_TRIGGER,
+            record,
+            "evals.json (under dev_tools/agent/skill_evals/<skill>/) is required for public skill trigger checks",
+            "Add a guide-compatible evals.json under the eval root "
+            "(dev_tools/agent/skill_evals/<skill>/) with positive and adjacent negative trigger evals.",
+        ):
             continue
         if not any(_is_positive_eval(item, record.name) for item in record.evals):
             context.findings.append(
                 _finding(
-                    "skill-trigger-lint",
+                    LINT_SKILL_TRIGGER,
                     FINDING_ERROR,
                     record.evals_path,
                     "missing positive trigger eval for this skill",
@@ -574,7 +529,7 @@ def _lint_trigger(context: LintContext) -> None:
         if not any(_is_adjacent_negative_eval(item, record.name) for item in record.evals):
             context.findings.append(
                 _finding(
-                    "skill-trigger-lint",
+                    LINT_SKILL_TRIGGER,
                     FINDING_ERROR,
                     record.evals_path,
                     "missing adjacent negative trigger eval for this skill",
@@ -596,7 +551,7 @@ def _lint_trigger_overlap(context: LintContext) -> None:
         if len(records) > max_trigger_overlap_skills:
             _skip(
                 context,
-                "skill-trigger-overlap-lint",
+                LINT_SKILL_TRIGGER_OVERLAP,
                 f"group {group!r} has {len(records)} skills; limit is {max_trigger_overlap_skills}",
             )
             continue
@@ -609,7 +564,7 @@ def _lint_trigger_overlap(context: LintContext) -> None:
                     continue
                 context.findings.append(
                     _finding(
-                        "skill-trigger-overlap-lint",
+                        LINT_SKILL_TRIGGER_OVERLAP,
                         FINDING_ERROR,
                         left.skill_file,
                         f"same trigger-group skills '{left.name}' and '{right.name}' have overlapping trigger language",
@@ -643,26 +598,18 @@ def _max_trigger_overlap_skills() -> int:
 
 def _lint_global_negative(context: LintContext) -> None:
     for record in _public_records(context.records):
-        if record.evals_error:
-            _add_evals_error(context, "skill-global-negative-lint", record)
-            continue
-        if not record.evals_path.is_file():
-            context.findings.append(
-                _finding(
-                    "skill-global-negative-lint",
-                    FINDING_ERROR,
-                    record.evals_path,
-                    "evals.json (under dev_tools/agent/skill_evals/<skill>/) is required for global negative coverage",
-                    "Add at least one eval representing an unrelated prompt that should trigger no FLARE skill.",
-                    code="skill-evals-missing",
-                    skill=record.name,
-                )
-            )
+        if not _evals_available(
+            context,
+            LINT_SKILL_GLOBAL_NEGATIVE,
+            record,
+            "evals.json (under dev_tools/agent/skill_evals/<skill>/) is required for global negative coverage",
+            "Add at least one eval representing an unrelated prompt that should trigger no FLARE skill.",
+        ):
             continue
         if not any(_is_global_negative_eval(item) for item in record.evals):
             context.findings.append(
                 _finding(
-                    "skill-global-negative-lint",
+                    LINT_SKILL_GLOBAL_NEGATIVE,
                     FINDING_ERROR,
                     record.evals_path,
                     "missing global negative eval",
@@ -676,7 +623,7 @@ def _lint_global_negative(context: LintContext) -> None:
 def _lint_policy_coverage(context: LintContext) -> None:
     for record in _public_records(context.records):
         has_behavior_ids = any(_behavior_id_count(item) for item in record.evals)
-        has_helper_tests = _skill_has_helper_tests(record.skill_dir)
+        has_helper_tests = record.has_helper_tests
         has_checklist = _skill_text_contains(record.skill_dir, "checklist")
         if has_behavior_ids or has_helper_tests or has_checklist:
             continue
@@ -686,7 +633,7 @@ def _lint_policy_coverage(context: LintContext) -> None:
                 if _NORMATIVE_RE.search(line):
                     context.findings.append(
                         _finding(
-                            "skill-policy-coverage-lint",
+                            LINT_SKILL_POLICY_COVERAGE,
                             FINDING_ERROR,
                             file_path,
                             "normative rule has no measurable behavior ID, helper test, or checklist coverage",
@@ -705,21 +652,13 @@ def _lint_policy_coverage(context: LintContext) -> None:
 
 def _lint_process_metrics(context: LintContext) -> None:
     for record in _public_records(context.records):
-        if record.evals_error:
-            _add_evals_error(context, LINT_SKILL_PROCESS_METRIC, record)
-            continue
-        if not record.evals_path.is_file():
-            context.findings.append(
-                _finding(
-                    LINT_SKILL_PROCESS_METRIC,
-                    FINDING_ERROR,
-                    record.evals_path,
-                    "evals.json (under dev_tools/agent/skill_evals/<skill>/) is required for process-metric coverage",
-                    "Add process metric contracts under nvflare.process_metrics.",
-                    code="skill-evals-missing",
-                    skill=record.name,
-                )
-            )
+        if not _evals_available(
+            context,
+            LINT_SKILL_PROCESS_METRIC,
+            record,
+            "evals.json (under dev_tools/agent/skill_evals/<skill>/) is required for process-metric coverage",
+            "Add process metric contracts under nvflare.process_metrics.",
+        ):
             continue
 
         process_metrics = []
@@ -793,7 +732,7 @@ def _lint_command_drift(context: LintContext) -> None:
                     continue
                 context.findings.append(
                     _finding(
-                        "skill-command-drift-lint",
+                        LINT_SKILL_COMMAND_DRIFT,
                         FINDING_ERROR,
                         file_path,
                         message,
@@ -811,10 +750,10 @@ def _lint_helper_scripts(context: LintContext) -> None:
         if not scripts_dir.is_dir():
             continue
         script_files = list(_iter_files_no_follow(scripts_dir))
-        if script_files and not _skill_has_helper_tests(record.skill_dir):
+        if script_files and not record.has_helper_tests:
             context.findings.append(
                 _finding(
-                    "skill-helper-script-lint",
+                    LINT_SKILL_HELPER_SCRIPT,
                     FINDING_ERROR,
                     scripts_dir,
                     "helper scripts are shipped without tests",
@@ -835,7 +774,7 @@ def _lint_helper_scripts(context: LintContext) -> None:
             if "promoted_to:" in lowered or "_promoted_to:" in lowered:
                 context.findings.append(
                     _finding(
-                        "skill-helper-script-lint",
+                        LINT_SKILL_HELPER_SCRIPT,
                         FINDING_ERROR,
                         script,
                         "helper script is marked as promoted to a product CLI command",
@@ -850,7 +789,7 @@ def _lint_helper_scripts(context: LintContext) -> None:
             if script.suffix == ".py" and declares_json_output and "json.dumps" not in text and "json.dump" not in text:
                 context.findings.append(
                     _finding(
-                        "skill-helper-script-lint",
+                        LINT_SKILL_HELPER_SCRIPT,
                         FINDING_WARNING,
                         script,
                         "script mentions JSON but does not appear to write JSON with the json module",
@@ -864,7 +803,7 @@ def _lint_helper_scripts(context: LintContext) -> None:
 def _lint_fixtures(context: LintContext) -> None:
     for record in _public_records(context.records):
         if record.evals_error:
-            _add_evals_error(context, "skill-fixture-lint", record)
+            _add_evals_error(context, LINT_SKILL_FIXTURE, record)
             continue
         if not record.evals_path.is_file():
             continue
@@ -876,7 +815,7 @@ def _lint_fixtures(context: LintContext) -> None:
             if not isinstance(files, list):
                 context.findings.append(
                     _finding(
-                        "skill-fixture-lint",
+                        LINT_SKILL_FIXTURE,
                         FINDING_ERROR,
                         record.evals_path,
                         f"eval '{item.get('id', '<missing>')}' files field must be a list",
@@ -890,7 +829,7 @@ def _lint_fixtures(context: LintContext) -> None:
             if _eval_mentions_file_editing(item) and not files:
                 context.findings.append(
                     _finding(
-                        "skill-fixture-lint",
+                        LINT_SKILL_FIXTURE,
                         FINDING_ERROR,
                         record.evals_path,
                         f"eval '{item.get('id', '<missing>')}' describes file editing without input fixtures",
@@ -908,7 +847,7 @@ def _lint_fixtures(context: LintContext) -> None:
                 if not resolved_fixture_path.is_relative_to(resolved_evals_dir):
                     context.findings.append(
                         _finding(
-                            "skill-fixture-lint",
+                            LINT_SKILL_FIXTURE,
                             FINDING_ERROR,
                             record.evals_path,
                             f"eval fixture path escapes eval suite directory: {rel_path}",
@@ -921,7 +860,7 @@ def _lint_fixtures(context: LintContext) -> None:
                 if not fixture_path.is_file():
                     context.findings.append(
                         _finding(
-                            "skill-fixture-lint",
+                            LINT_SKILL_FIXTURE,
                             FINDING_ERROR,
                             record.evals_path,
                             f"eval fixture does not exist: {rel_path}",
@@ -936,7 +875,7 @@ def _lint_fixtures(context: LintContext) -> None:
         if _has_files(files_dir) and not _has_fixture_notes(record.evals_dir):
             context.findings.append(
                 _finding(
-                    "skill-fixture-lint",
+                    LINT_SKILL_FIXTURE,
                     FINDING_ERROR,
                     files_dir,
                     "eval fixtures are missing source/provenance notes",
@@ -1016,6 +955,26 @@ def _lint_runtime_boundary(context: LintContext) -> None:
             _scan_runtime_boundary(context, file_path, text, skill=record.name)
 
 
+# Canonical lint registry: single source of truth for lint IDs, their run
+# order, and their implementations. V1_LINT_IDS and _LINT_FUNCTIONS derive
+# from it; do not maintain separate lists.
+_LINT_REGISTRY = (
+    (LINT_SKILL_FRONTMATTER, _lint_frontmatter),
+    (LINT_SKILL_MD_SIZE, _lint_md_size),
+    (LINT_SKILL_TRIGGER, _lint_trigger),
+    (LINT_SKILL_TRIGGER_OVERLAP, _lint_trigger_overlap),
+    (LINT_SKILL_GLOBAL_NEGATIVE, _lint_global_negative),
+    (LINT_SKILL_POLICY_COVERAGE, _lint_policy_coverage),
+    (LINT_SKILL_PROCESS_METRIC, _lint_process_metrics),
+    (LINT_SKILL_COMMAND_DRIFT, _lint_command_drift),
+    (LINT_SKILL_HELPER_SCRIPT, _lint_helper_scripts),
+    (LINT_SKILL_FIXTURE, _lint_fixtures),
+    (LINT_SKILL_RUNTIME_BOUNDARY, _lint_runtime_boundary),
+)
+V1_LINT_IDS = tuple(lint_id for lint_id, _ in _LINT_REGISTRY)
+_LINT_FUNCTIONS = dict(_LINT_REGISTRY)
+
+
 def _iter_eval_dirs(skill_dir: Path) -> Iterable[Path]:
     """Yield ``evals`` directories at any depth inside a skill.
 
@@ -1027,20 +986,11 @@ def _iter_eval_dirs(skill_dir: Path) -> Iterable[Path]:
     """
     if not skill_dir.is_dir():
         return
-    for dirpath, dirnames, _ in os.walk(skill_dir, followlinks=False):
-        current_dir = Path(dirpath)
-        next_dirnames = []
-        for name in sorted(dirnames):
-            path = current_dir / name
-            if path.is_symlink():
-                continue
-            if name == "evals":
-                yield path
-                continue
-            if name in _RUNTIME_BOUNDARY_EXCLUDED_DIRS:
-                continue
-            next_dirnames.append(name)
-        dirnames[:] = next_dirnames
+    excluded = _RUNTIME_BOUNDARY_EXCLUDED_DIRS - {"evals"}
+    for current_dir, dir_names, _file_names in _walk_no_follow(skill_dir, excluded):
+        if "evals" in dir_names:
+            yield current_dir / "evals"
+            dir_names.remove("evals")
 
 
 def _iter_packaged_runtime_files(skill_dir: Path) -> Iterable[tuple[Path, str]]:
@@ -1149,6 +1099,29 @@ def _add_evals_error(context: LintContext, lint_id: str, record: SkillRecord) ->
     )
 
 
+def _evals_available(
+    context: LintContext, lint_id: str, record: SkillRecord, missing_message: str, missing_hint: str
+) -> bool:
+    """Report invalid or missing evals.json for one lint; True when evals are usable."""
+    if record.evals_error:
+        _add_evals_error(context, lint_id, record)
+        return False
+    if not record.evals_path.is_file():
+        context.findings.append(
+            _finding(
+                lint_id,
+                FINDING_ERROR,
+                record.evals_path,
+                missing_message,
+                missing_hint,
+                code="skill-evals-missing",
+                skill=record.name,
+            )
+        )
+        return False
+    return True
+
+
 def _public_records(records: list[SkillRecord]) -> list[SkillRecord]:
     return [record for record in records if record.public]
 
@@ -1221,10 +1194,9 @@ def _eval_text(item: dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
-def _records_overlap(left: SkillRecord, right: SkillRecord, token_cache: dict[str, set[str]] | None = None) -> bool:
-    token_cache = token_cache or {}
-    left_tokens = token_cache[left.name] if left.name in token_cache else _trigger_tokens(left)
-    right_tokens = token_cache[right.name] if right.name in token_cache else _trigger_tokens(right)
+def _records_overlap(left: SkillRecord, right: SkillRecord, token_cache: dict[str, set[str]]) -> bool:
+    left_tokens = token_cache[left.name]
+    right_tokens = token_cache[right.name]
     if not left_tokens or not right_tokens:
         return False
     shared = left_tokens.intersection(right_tokens)
@@ -1389,16 +1361,29 @@ def _has_files(path: Path) -> bool:
     return path.is_dir() and any(True for _child in _iter_files_no_follow(path))
 
 
-def _iter_files_no_follow(root: Path, *, excluded_dir_names: Iterable[str] = ()) -> Iterable[Path]:
-    if root.is_symlink() or not root.is_dir():
-        return
+def _walk_no_follow(
+    root: Path, excluded_dir_names: Iterable[str] = frozenset()
+) -> Iterable[tuple[Path, list[str], list[str]]]:
+    """Deterministic os.walk that never follows symlinks and prunes excluded dirs.
+
+    Yields ``(current_dir_path, dir_names, file_names)`` with both name lists
+    sorted; ``dir_names`` is the live pruned list, so callers may remove entries
+    to stop descent into those directories.
+    """
     excluded_dir_names = set(excluded_dir_names)
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
         current_dir = Path(dirpath)
         dirnames[:] = sorted(
             name for name in dirnames if name not in excluded_dir_names and not (current_dir / name).is_symlink()
         )
-        for filename in sorted(filenames):
+        yield current_dir, dirnames, sorted(filenames)
+
+
+def _iter_files_no_follow(root: Path, *, excluded_dir_names: Iterable[str] = ()) -> Iterable[Path]:
+    if root.is_symlink() or not root.is_dir():
+        return
+    for current_dir, _dir_names, file_names in _walk_no_follow(root, excluded_dir_names):
+        for filename in file_names:
             path = current_dir / filename
             if path.is_file():
                 yield path
@@ -1478,26 +1463,6 @@ def _skip(context: LintContext, check: str, reason: str) -> None:
     context.skipped_checks.append({"id": check, "reason": reason})
 
 
-def _finding(
-    lint_id: str,
-    severity: str,
-    path: Path,
-    message: str,
-    hint: str,
-    *,
-    line: Optional[int] = None,
-    code: Optional[str] = None,
-    skill: Optional[str] = None,
-    global_finding: bool = False,
-) -> LintFinding:
-    return LintFinding(
-        id=lint_id,
-        severity=severity,
-        file=str(path),
-        line=line,
-        message=message,
-        hint=hint,
-        code=code,
-        skill=skill,
-        global_finding=global_finding,
-    )
+def _finding(lint_id: str, severity: str, path: Path, message: str, hint: str, **kwargs: Any) -> LintFinding:
+    """Build a LintFinding, converting the path to the string ``file`` field."""
+    return LintFinding(id=lint_id, severity=severity, file=str(path), message=message, hint=hint, **kwargs)
