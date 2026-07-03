@@ -96,9 +96,12 @@ recipes.
   `class_path` and `args` only when the values are statically clear per
   `../nvflare-shared/references/conversion-workflow.md`; otherwise ask or fail closed.
 - Must use the PyTorch recipe family; must not invent a Lightning-only recipe.
-- Must treat DDP/multi-GPU as high-impact source evidence, not an implicit
-  parameter mapping: use a documented recipe launch parameter confirmed via
-  `recipe show` or an explicit user request, otherwise ask or fail closed. See
+- Must treat DDP/multi-GPU as high-impact source evidence. When the source
+  uses a DDP-family strategy, confirm the selected recipe exposes
+  `launch_external_process` via `recipe show`, then set
+  `launch_external_process=True`; if the recipe does not expose it, ask or fail
+  closed. For single-process DataParallel (`dp`), leave
+  `launch_external_process` unset so the recipe stays in-process. See
   `references/lightning-ddp-and-tracking.md`.
 - Custom aggregation must use the recipe `aggregator=` hook with a
   `ModelAggregator` subclass in `aggregators.py` per
