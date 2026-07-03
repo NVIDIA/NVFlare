@@ -216,8 +216,10 @@ class RxTask:
             # clamp it so a bad value cannot crash the chunk handler or pin
             # completed tasks in memory indefinitely.
             try:
+                # int headers beyond the float range raise OverflowError;
+                # equivalent strings round-trip to inf and hit the clamp below
                 requested_ttl = float(retry_timeout) + float(retry_wait)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
                 log.warning(
                     f"{self} ignoring invalid retry window headers from {self.origin}: "
                     f"{retry_timeout!r}/{retry_wait!r}"

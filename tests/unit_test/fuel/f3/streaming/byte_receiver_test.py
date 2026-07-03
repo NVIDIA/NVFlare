@@ -668,3 +668,45 @@ def test_invalid_sender_retry_window_is_ignored(monkeypatch):
     task.process_chunk(message)
 
     assert task.completed_task_ttl == 2.0
+
+
+def test_overflowing_sender_retry_window_is_ignored(monkeypatch):
+    monkeypatch.setattr(CommConfigurator, "get_streaming_retry_timeout", lambda self, default: 1.0)
+    monkeypatch.setattr(CommConfigurator, "get_streaming_retry_wait", lambda self, default: 1.0)
+    cell = SimpleNamespace()
+    message = _make_chunk(
+        "site-1",
+        sid=536,
+        seq=0,
+        data_type=StreamDataType.CHUNK,
+        payload=b"x",
+        reliable=True,
+        retry_wait=10**400,  # int beyond float range: float() raises OverflowError
+        retry_timeout=10**400,
+    )
+    task = RxTask.find_or_create_task(message, cell)
+
+    task.process_chunk(message)
+
+    assert task.completed_task_ttl == 2.0
+
+
+def test_infinite_sender_retry_window_is_clamped(monkeypatch):
+    monkeypatch.setattr(CommConfigurator, "get_streaming_retry_timeout", lambda self, default: 1.0)
+    monkeypatch.setattr(CommConfigurator, "get_streaming_retry_wait", lambda self, default: 1.0)
+    cell = SimpleNamespace()
+    message = _make_chunk(
+        "site-1",
+        sid=537,
+        seq=0,
+        data_type=StreamDataType.CHUNK,
+        payload=b"x",
+        reliable=True,
+        retry_wait="1e400",  # string beyond float range: rounds to inf
+        retry_timeout="1e400",
+    )
+    task = RxTask.find_or_create_task(message, cell)
+
+    task.process_chunk(message)
+
+    assert task.completed_task_ttl == MAX_COMPLETED_TASK_TTL
