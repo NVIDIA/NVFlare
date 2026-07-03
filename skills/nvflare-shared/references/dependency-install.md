@@ -17,27 +17,36 @@ Before asking for install approval, read the dependency files and disclose any
 elevated-risk directives so the approval is informed rather than blanket:
 `--index-url` / `--extra-index-url` / `--find-links` (alternate package
 sources), `-e` and VCS or URL requirements (`git+`, `http(s)://`, local paths),
-and unpinned packages. Surface those specific lines in the approval prompt.
+and unpinned packages. Describe each such directive in the approval prompt by
+directive type, package name, source host, and the risk it carries — never by
+quoting the raw line. Requirement lines can embed credentials: strip userinfo
+(`user:token@`), query strings, and fragments from every URL before disclosure,
+per the redaction rule in `conversion-workflow.md`. Note that a credential was
+present and redacted; do not reproduce its value in prompts, reports, or logs.
 
 Watch for typosquatting: cross-check each requested package name against the
 modules the source actually imports (from `nvflare agent inspect` and static
 reading). Flag a dependency that no source module imports, or whose name is a
 near-miss of a well-known package, and ask before installing it.
 
-Install into a dedicated virtual environment, not a shared or system
-environment, in every mode. Interactive installs otherwise run in the same
-environment that runs `nvflare`, so one approved typosquatted or URL-pinned
-package can compromise the host; a dedicated venv contains that blast radius. In
-unattended mode this isolation is mandatory (clean venv or container); in
-interactive mode recommend it and note the risk when the user declines.
+Install into a dedicated validation environment (a clean venv or container),
+not a shared or system environment, in every mode. Installing source
+requirements into a shared host environment means one approved typosquatted or
+URL-pinned package can compromise the host; a dedicated environment contains
+that blast radius. In unattended mode this isolation is mandatory; in
+interactive mode recommend it and note the risk when the user declines. When
+the user declines isolation and directs the install into a shared environment,
+that shared environment becomes the validation environment for the rules below.
 
 ## Rule
 
 Once the install is approved or the isolated environment is in place: if the
 source project has applicable `requirements*.txt` files, install them into the
-same active Python environment that runs `nvflare` before running Python
-commands that import NVFLARE, framework modules, recipe classes, or generated
-client/model code.
+dedicated validation environment before running Python commands that import
+NVFLARE, framework modules, recipe classes, or generated client/model code.
+Install `nvflare` into that same environment if it is not already present, and
+run `nvflare` commands, import probes, export, and simulation from it — not
+from a separate shared or system environment.
 
 Do this before probing imports with Python. Avoid first discovering missing
 framework dependencies through failed import checks when a requirements file is
@@ -46,14 +55,15 @@ execution and follow the execution trust gate in `conversion-workflow.md`.
 
 ## Installer Choice
 
-- Prefer `uv pip install -r <file>` when `uv` is available and the active
-  virtual environment is the `nvflare` environment.
-- If the `nvflare` interpreter is not the active environment, use
-  `uv pip install --python <python> -r <file>` with the Python interpreter
-  behind `nvflare`.
-- If `uv` is unavailable, use `<python> -m pip install -r <file>`.
-- Do not use `uv pip install --system` when `nvflare` is installed in a virtual
-  environment; it can install dependencies into the wrong Python.
+- Prefer `uv pip install -r <file>` when `uv` is available and the dedicated
+  validation environment is the active virtual environment.
+- If the validation environment is not active, use
+  `uv pip install --python <python> -r <file>` with the validation
+  environment's Python interpreter.
+- If `uv` is unavailable, use `<python> -m pip install -r <file>` with the
+  validation environment's interpreter.
+- Do not use `uv pip install --system`; it installs into the system Python and
+  defeats the isolation requirement.
 
 When an import still fails after installation, verify which interpreter
 received the packages before rerunning the failed check.
