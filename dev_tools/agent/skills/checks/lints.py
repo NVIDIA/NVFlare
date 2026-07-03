@@ -204,14 +204,18 @@ class SkillRecord:
     evals_dir: Path
     evals_path: Path
     evals_error: Optional[str]
-    # Structural validation result computed once at record-load time so lints
-    # do not re-run validate_skill_dir (and its frontmatter parse) per check.
-    validation: SkillValidationResult
 
     @property
     def public(self) -> bool:
         status = str(skill_metadata(self.metadata).get("status", "public")).strip().lower()
         return status not in PUBLIC_EXEMPT_STATUS
+
+    @cached_property
+    def validation(self) -> SkillValidationResult:
+        # Computed lazily (once) so scoped runs that never consume it — e.g.
+        # checks=[skill-md-size-lint] — keep the loader's bounded-read behavior
+        # instead of validate_skill_dir's unbounded SKILL.md parse.
+        return validate_skill_dir(self.skill_dir)
 
     @cached_property
     def has_helper_tests(self) -> bool:
@@ -393,7 +397,6 @@ def _load_skill_records(skills_root: Path, evals_root: Path, findings: list[Lint
                 evals_dir=evals_dir,
                 evals_path=evals_path,
                 evals_error=evals_error,
-                validation=validate_skill_dir(child),
             )
         )
     return records
