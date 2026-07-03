@@ -153,14 +153,18 @@ workspaces, exported job directories, and validation output locations.
 
 ## Recipe Reuse
 
-Lightning reuses the PyTorch recipe family. Select the recipe from the user's FL
-intent with `nvflare recipe list --framework pytorch --format json` and
-`nvflare recipe show <recipe-name> --format json`. Use FedAvg for standard
-horizontal training and FedEval for evaluation-only. Follow
-`../../nvflare-shared/references/conversion-workflow.md` for export and command-line behavior.
+Lightning reuses the PyTorch recipe family. Follow
+`../../nvflare-shared/references/pytorch-family-recipe-selection.md` for recipe
+discovery, the algorithm guide, catalog-based selection rules, and HE/privacy
+safety — the same catalog and rules apply to Lightning, including non-FedAvg
+workflows such as FedOpt, FedProx, SCAFFOLD, Cyclic, Swarm, and HE/encrypted
+aggregation. Use FedAvg for standard horizontal training and FedEval for
+evaluation-only.
 
 The generated `job.py` should use the selected recipe's public parameters from
 `recipe show`, construct the model through explicit `class_path` (or `path`) plus
 `args` when constructor arguments are required, and call
 `recipe.execute(SimEnv(...))`. Do not replace this with ad hoc SDK-internal
-APIs based on local source or docstring inspection.
+APIs based on local source or docstring inspection. Follow
+`../../nvflare-shared/references/conversion-workflow.md` for export and
+command-line behavior.

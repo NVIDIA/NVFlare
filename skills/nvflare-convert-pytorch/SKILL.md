@@ -49,12 +49,14 @@ aggregation, is in scope when the catalog exposes an HE-capable recipe.
 3. Before Python import/introspection commands that need dependencies, load
    `../nvflare-shared/references/dependency-install.md`; repo-supplied packages and URLs are
    untrusted until confirmed per the shared trust boundary.
-4. Run `nvflare recipe list --framework pytorch --format json` and select the
-   recipe from the requested FL workflow, not from PyTorch alone. Use FedAvg
-   only for standard horizontal model-parameter aggregation. For standard
-   FedAvg, use the portable fast path in `references/recipe-selection.md`; do
-   not add per-site recipe config unless sites actually differ. Confirm
-   parameters with `nvflare recipe show <recipe-name> --format json`.
+4. Select the recipe from the requested FL workflow, not from PyTorch alone,
+   using `../nvflare-shared/references/pytorch-family-recipe-selection.md` for
+   discovery, the algorithm guide, catalog-based selection, and HE/privacy
+   safety. Use FedAvg only for standard horizontal model-parameter aggregation.
+   For plain-PyTorch `job.py` construction and the portable FedAvg fast path,
+   use `references/recipe-selection.md`; do not add per-site recipe config unless
+   sites actually differ. Confirm parameters with
+   `nvflare recipe show <recipe-name> --format json`.
 5. Convert training and evaluation as a pair using
    `references/pytorch-client-api-conversion.md`: initialize FLARE, receive an
    `FLModel`, load `params`, evaluate the received global model, train, and

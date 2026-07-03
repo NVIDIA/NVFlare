@@ -53,12 +53,11 @@ recipe.
    dataloaders, metrics, logger usage, DDP/multi-GPU evidence, and any custom
    aggregation intent. Determine the concrete model constructor values that
    server and client models must share before creating `job.py`.
-5. Reuse PyTorch recipe discovery; Lightning is a PyTorch-family training
-   framework, not a separate recipe family. Run
-   `nvflare recipe list --framework pytorch --format json`, select the recipe
-   from the requested FL workflow, and confirm parameters with
-   `nvflare recipe show <recipe-name> --format json`. Use FedAvg for standard
-   horizontal training and FedEval for evaluation-only.
+5. Reuse the PyTorch recipe family; Lightning is not a separate recipe family.
+   Follow `../nvflare-shared/references/pytorch-family-recipe-selection.md` for
+   recipe discovery, the algorithm guide, catalog-based selection, and HE/privacy
+   safety (FedAvg, FedOpt, FedProx, SCAFFOLD, Cyclic, Swarm, FedEval, HE). Use
+   FedAvg for standard horizontal training and FedEval for evaluation-only.
 6. Convert the training entry point to the Lightning Client API: build the
    `Trainer`, call `flare.patch(trainer)`, and let the patched trainer own
    model load/send through its callbacks. Keep evaluation inside Lightning per
