@@ -161,6 +161,25 @@ For non-FedAvg workflows, use the matching recipe from the catalog and keep the
 PyTorch Client API exchange aligned with that recipe's expected task names,
 metadata, and parameter format.
 
+## Execution Mode (In-Process vs External)
+
+Match the recipe's execution mode to the source project's process model:
+
+- Single-process training — CPU or a single GPU with no distributed launch —
+  runs in-process; leave `launch_external_process` unset so the recipe applies
+  its own default (the in-process Client API). Do not force it on for
+  single-process training.
+- Multi-process / multi-GPU evidence — `torch.distributed` / DDP, `torchrun` or
+  `torch.distributed.run`, `DistributedDataParallel`, or an explicit user request
+  for multi-GPU — needs the external-process executor: set
+  `launch_external_process=True`, because distributed workers cannot run inside
+  the in-process executor.
+
+Confirm the selected recipe exposes `launch_external_process` with
+`nvflare recipe show <recipe> --format json` before setting it; if it does not,
+report the gap and ask or fail closed rather than assuming. This section is for
+plain PyTorch conversions; Lightning conversions follow their own DDP guidance.
+
 ## Non-FedAvg Recipe Rules
 
 The FedAvg fast path is not a universal PyTorch job template. When the user asks

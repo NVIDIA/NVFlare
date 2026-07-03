@@ -200,6 +200,13 @@ config files unavailable during conversion, private site-local data,
 checkpoint-inferred architecture, and side-effectful code execution are not
 statically clear: ask in interactive mode or fail closed in unattended mode.
 
+A pretrained or initial model supplied as a checkpoint path still uses the
+explicit `{"class_path": ..., "args": ...}` model config, never a live,
+weight-loaded model instance. Pass the checkpoint path to the product surface
+that consumes it (for example the recipe's initial-model or `eval_ckpt` input),
+and load its weights through safe weight-only loading where the framework
+supports it.
+
 ## Conversion Defaults
 
 Set `enable_tensor_disk_offload=True` in generated recipe invocations whenever
@@ -210,6 +217,13 @@ only: when the recipe also exposes `server_expected_format`, pair it with
 `server_expected_format=ExchangeFormat.PYTORCH` (the PyTorch-family preference
 in `pytorch-model-exchange.md`); with a NumPy exchange format the parameter is
 a warned no-op.
+
+Device placement follows the source project: CPU source training stays on CPU,
+GPU source training stays on GPU, and a source that selects the device
+dynamically (`cuda` if available else CPU) keeps that same conditional
+selection. Do not add a hard GPU requirement the source did not have. When the
+validation environment has no GPU, validate on CPU or a reduced device count and
+report the limitation instead of forcing a device or changing training intent.
 
 ## Custom Aggregation
 
