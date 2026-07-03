@@ -28,9 +28,10 @@ or generic Lightning debugging that does not ask for FLARE conversion. Out of
 conversion scope: production deployment, Kubernetes, POC lifecycle, deployment
 privacy/security policy design, custom distributed launch policies not
 expressible by product APIs, experiment tracking redesign, and experiment search
-across recipes. Honoring an explicit recipe-level privacy request, such as
-HE/encrypted aggregation, is in scope when the catalog exposes an HE-capable
-recipe.
+across recipes. Homomorphic encryption (HE) and encrypted aggregation are not
+supported: they require provisioning beyond conversion scope, so report an HE
+request as unsupported and route it to provisioning/deployment rather than
+substituting a non-HE recipe.
 
 ## Workflow
 
@@ -55,9 +56,10 @@ recipe.
    server and client models must share before creating `job.py`.
 5. Reuse the PyTorch recipe family; Lightning is not a separate recipe family.
    Follow `../nvflare-shared/references/pytorch-family-recipe-selection.md` for
-   recipe discovery, the algorithm guide, catalog-based selection, and HE/privacy
-   safety (FedAvg, FedOpt, FedProx, SCAFFOLD, Cyclic, Swarm, FedEval, HE). Use
-   FedAvg for standard horizontal training and FedEval for evaluation-only.
+   recipe discovery, the algorithm guide, catalog-based selection, and the
+   HE-not-supported rule (FedAvg, FedOpt, FedProx, SCAFFOLD, Cyclic, Swarm,
+   FedEval). Use FedAvg for standard horizontal training and FedEval for
+   evaluation-only.
 6. Convert the training entry point to the Lightning Client API: build the
    `Trainer`, call `flare.patch(trainer)`, and let the patched trainer own
    model load/send through its callbacks. Keep evaluation inside Lightning per

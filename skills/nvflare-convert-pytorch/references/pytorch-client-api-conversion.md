@@ -17,12 +17,12 @@ Use this path for plain PyTorch conversion:
    `recipe.execute(SimEnv(...))`.
 5. Validate with `python job.py`, inspect terminal evidence, then export.
 
-HE exception for steps 4–5: HE recipes reject `SimEnv` and require provisioned
-`PocEnv`/`ProdEnv`, which are outside conversion scope. Follow the HE rule in
-`../../nvflare-shared/references/pytorch-family-recipe-selection.md` — ask or
-fail closed instead of generating or running a SimEnv call, deliver the
-generated sources (and an exported job when export is in scope), and report the
-job as unvalidated.
+HE is not supported (steps 4–5): homomorphic-encryption recipes reject `SimEnv`
+and require provisioned `PocEnv`/`ProdEnv`, which are outside conversion scope.
+Follow the HE-not-supported rule in
+`../../nvflare-shared/references/pytorch-family-recipe-selection.md`: report HE
+as unsupported, route it to provisioning/deployment, and ask or fail closed
+instead of generating or running an HE `job.py`.
 
 Follow the shared Source Of Truth Boundary in
 `../../nvflare-shared/references/conversion-workflow.md`.

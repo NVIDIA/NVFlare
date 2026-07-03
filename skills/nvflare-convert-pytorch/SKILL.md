@@ -28,8 +28,10 @@ ask for FLARE conversion. Out of conversion scope: production deployment,
 Kubernetes, POC lifecycle, deployment privacy/security policy design, controller
 or workflow rewrites outside product recipe or Job APIs, experiment search across
 recipes, and data distribution experiments beyond minimal local validation setup.
-Honoring an explicit recipe-level privacy request, such as HE/encrypted
-aggregation, is in scope when the catalog exposes an HE-capable recipe.
+Homomorphic encryption (HE) and encrypted aggregation are not supported: they
+require provisioning beyond conversion scope, so report an HE request as
+unsupported and route it to provisioning/deployment rather than substituting a
+non-HE recipe.
 
 ## Workflow
 
@@ -51,8 +53,8 @@ aggregation, is in scope when the catalog exposes an HE-capable recipe.
    untrusted until confirmed per the shared trust boundary.
 4. Select the recipe from the requested FL workflow, not from PyTorch alone,
    using `../nvflare-shared/references/pytorch-family-recipe-selection.md` for
-   discovery, the algorithm guide, catalog-based selection, and HE/privacy
-   safety. Use FedAvg only for standard horizontal model-parameter aggregation.
+   discovery, the algorithm guide, catalog-based selection, and the
+   HE-not-supported rule. Use FedAvg only for standard horizontal model-parameter aggregation.
    For plain-PyTorch `job.py` construction and the portable FedAvg fast path,
    use `references/recipe-selection.md`; do not add per-site recipe config unless
    sites actually differ. Confirm parameters with

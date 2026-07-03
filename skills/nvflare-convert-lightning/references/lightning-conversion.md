@@ -19,12 +19,12 @@ Use this path for Lightning conversion:
    `recipe.execute(SimEnv(...))`.
 5. Validate with `python job.py`, inspect terminal evidence, then export.
 
-HE exception for steps 4–5: HE recipes reject `SimEnv` and require provisioned
-`PocEnv`/`ProdEnv`, which are outside conversion scope. Follow the HE rule in
-`../../nvflare-shared/references/pytorch-family-recipe-selection.md` — ask or
-fail closed instead of generating or running a SimEnv call, deliver the
-generated sources (and an exported job when export is in scope), and report the
-job as unvalidated.
+HE is not supported (steps 4–5): homomorphic-encryption recipes reject `SimEnv`
+and require provisioned `PocEnv`/`ProdEnv`, which are outside conversion scope.
+Follow the HE-not-supported rule in
+`../../nvflare-shared/references/pytorch-family-recipe-selection.md`: report HE
+as unsupported, route it to provisioning/deployment, and ask or fail closed
+instead of generating or running an HE `job.py`.
 
 Follow the shared Source Of Truth Boundary in
 `../../nvflare-shared/references/conversion-workflow.md`.
@@ -162,20 +162,21 @@ workspaces, exported job directories, and validation output locations.
 
 Lightning reuses the PyTorch recipe family. Follow
 `../../nvflare-shared/references/pytorch-family-recipe-selection.md` for recipe
-discovery, the algorithm guide, catalog-based selection rules, and HE/privacy
-safety — the same catalog and rules apply to Lightning, including non-FedAvg
-workflows such as FedOpt, FedProx, SCAFFOLD, Cyclic, Swarm, and HE/encrypted
-aggregation. Use FedAvg for standard horizontal training and FedEval for
+discovery, the algorithm guide, catalog-based selection rules, and the
+HE-not-supported rule — the same catalog and rules apply to Lightning, including
+non-FedAvg workflows such as FedOpt, FedProx, SCAFFOLD, Cyclic, Swarm, and
+FedEval. Use FedAvg for standard horizontal training and FedEval for
 evaluation-only.
 
 The generated `job.py` should use the selected recipe's public parameters from
 `recipe show`, construct the model through explicit `class_path` (or `path`) plus
 `args` when constructor arguments are required, and call
-`recipe.execute(SimEnv(...))`. Exception: HE recipes reject `SimEnv` and require
-provisioned `PocEnv`/`ProdEnv`, which are outside conversion scope — follow the
-HE rule in
-`../../nvflare-shared/references/pytorch-family-recipe-selection.md` and ask or
-fail closed instead of generating a SimEnv call. Do not replace this with ad
+`recipe.execute(SimEnv(...))`. HE is not supported: homomorphic-encryption
+recipes reject `SimEnv` and require provisioned `PocEnv`/`ProdEnv` outside
+conversion scope — follow the HE-not-supported rule in
+`../../nvflare-shared/references/pytorch-family-recipe-selection.md` (report
+unsupported, route to provisioning/deployment, ask or fail closed; do not
+generate an HE job). Do not replace this with ad
 hoc SDK-internal APIs based on local source or docstring inspection. Follow
 `../../nvflare-shared/references/conversion-workflow.md` for export and
 command-line behavior.

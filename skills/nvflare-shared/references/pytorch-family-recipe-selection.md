@@ -37,8 +37,11 @@ plain language before editing `job.py`:
 - FedAvg: the default starting point for most horizontal FL jobs. Each site
   trains locally, sends model weights or updates, and the server averages them.
   Use this when the user simply asks to federate normal training.
-- FedAvg with HE: FedAvg plus homomorphic encryption support for protected
-  aggregation. Use only when the user asks for HE or encrypted aggregation.
+- FedAvg with HE: homomorphic encryption for protected aggregation is NOT
+  supported by the conversion skills — it needs a provisioned deployment
+  environment beyond conversion scope (see the HE rule in Selection Rules). If
+  the user asks for HE or encrypted aggregation, report it as unsupported and
+  route to provisioning/deployment.
 - FedProx: FedAvg-style training with a proximal term in the client loss to
   improve stability when site data or compute behavior is very different.
 - FedOpt: server-side optimizer variants such as FedAdam, FedYogi, or FedAdagrad.
@@ -78,26 +81,18 @@ Cyclic recipes, use the local catalog and
   and `privacy_compatible`. Do not match on `topology`; use topology wording in
   the request as intent that maps to exposed catalog fields, recipe semantics,
   or required role parameters.
-- Privacy is safety-critical: a homomorphic-encryption request must select a
-  recipe whose `privacy` includes `homomorphic_encryption` (for example
-  `fedavg-he-pt`), or a recipe whose `privacy_compatible` includes
-  `homomorphic_encryption` only when the generated job also configures HE. Never
-  map an HE request to a `privacy: []` recipe such as `fedavg-pt`; when no
-  catalog recipe matches the requested privacy, ask or fail closed rather than
-  dropping the encryption requirement.
-- HE recipes cannot be validated locally by a conversion skill: `fedavg-he-pt`
-  (`FedAvgRecipeWithHE`) rejects `SimEnv` because HE needs provisioned startup
-  kits (`HEBuilder`) and a `PocEnv`/`ProdEnv`, and those environments are
-  outside conversion scope per `conversion-workflow.md`. For an HE request, do
-  not generate a `job.py` that calls `recipe.execute(SimEnv(...))`, and do not
-  swap to a non-HE recipe to make simulation pass. Ask the user or fail closed:
-  deliver the generated sources (and an exported job if export is in scope),
-  report the job as unvalidated, and state that running it requires HE
-  provisioning with `PocEnv`/`ProdEnv`.
+- Homomorphic encryption (HE) / encrypted aggregation is NOT supported by the
+  conversion skills, and it is safety-critical not to fake it. HE recipes such as
+  `fedavg-he-pt` (`FedAvgRecipeWithHE`) reject `SimEnv` and require a provisioned
+  deployment environment (`HEBuilder` startup kits with `PocEnv`/`ProdEnv`),
+  which is outside conversion scope per `conversion-workflow.md`. When the user
+  requests HE or encrypted aggregation, state that HE is not supported by
+  conversion, route the request to provisioning/deployment, and ask (interactive)
+  or fail closed (unattended). Do not generate an HE `job.py`, and never silently
+  substitute a non-HE recipe such as `fedavg-pt` to make the request or a
+  simulation pass — that would drop the encryption requirement.
 - Current names are examples to verify against the catalog, not an authoritative
-  mapping: `fedavg-he-pt` (FedAvg, `privacy: [homomorphic_encryption]`,
-  `privacy_compatible: [homomorphic_encryption]`),
-  `fedprox-pt` (FedProx / proximal loss), `fedopt-pt` (server-side optimizer
+  mapping: `fedprox-pt` (FedProx / proximal loss), `fedopt-pt` (server-side optimizer
   variants such as FedAdam / FedYogi / FedAdagrad), `scaffold-pt` (SCAFFOLD
   control variates / client-drift mitigation), `cyclic-pt` (sequential
   client-to-client transfer), `swarm-pt` (swarm / peer aggregation topology).
@@ -106,8 +101,9 @@ Cyclic recipes, use the local catalog and
 ## Non-FedAvg Recipe Rules
 
 The FedAvg fast path is not a universal job template. When the user asks for
-FedOpt, FedProx, SCAFFOLD, Cyclic, Swarm Learning, FedEval, encryption, or a
-topology-specific workflow:
+FedOpt, FedProx, SCAFFOLD, Cyclic, Swarm Learning, FedEval, or a
+topology-specific workflow (HE / encrypted aggregation is not supported — see the
+HE rule in Selection Rules):
 
 - use `nvflare recipe show <recipe-name> --format json` for the selected recipe;
 - supply parameters marked `"required": true`;

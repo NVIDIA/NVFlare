@@ -12,13 +12,13 @@ covers Lightning-specific validation checks.
    using `uv pip` when available, before importing the user's Lightning code.
 2. Run local SimEnv validation with `python job.py`; follow
    `../../nvflare-shared/references/runtime-output-guidance.md` for workspace location.
-   Exception: a recipe that rejects `SimEnv` (for example an HE recipe, which
-   requires provisioned `PocEnv`/`ProdEnv`) cannot be validated locally — skip
-   SimEnv validation and the final validation run, and report the job as
-   unvalidated per the HE rule in
+   HE is not supported: homomorphic-encryption recipes reject `SimEnv` and
+   require provisioned `PocEnv`/`ProdEnv` outside conversion scope, so an HE
+   request is refused before this step — report it as unsupported and route to
+   provisioning/deployment per the HE-not-supported rule in
    `../../nvflare-shared/references/pytorch-family-recipe-selection.md` and
-   `../../nvflare-shared/references/conversion-workflow.md`; export validation
-   (step 4) still applies when export is in scope.
+   `../../nvflare-shared/references/conversion-workflow.md`, rather than
+   generating an HE job to validate here.
 3. Run the final validation to completion per the shared contract
    (`../../nvflare-shared/references/conversion-workflow.md` hard-stop and
    `../../nvflare-shared/references/validation-evidence.md` evidence contract).

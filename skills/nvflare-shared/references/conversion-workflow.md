@@ -4,10 +4,11 @@ Use this reference for framework-agnostic conversion, validation, and export
 behavior. It covers conversion only. POC and production lifecycle, deployment,
 privacy/security policy design, and experiment workflows are outside conversion
 scope; route explicit user requests for them to the user or another workflow
-instead of handling them here. Honoring explicit recipe-level privacy intent,
-such as an HE or encrypted-aggregation request, is in scope when the recipe
-catalog exposes an HE-capable recipe; designing deployment privacy or security
-policy is not.
+instead of handling them here. Homomorphic encryption (HE) and encrypted
+aggregation are not supported by the conversion skills: they require a
+provisioned deployment environment beyond conversion scope. Report an HE request
+as unsupported, route it to provisioning/deployment, and ask or fail closed
+rather than substituting a non-HE recipe.
 
 Load the smaller shared references when the task reaches that phase:
 
@@ -357,10 +358,12 @@ recipe.execute(env)
 ```
 
 `PocEnv` and `ProdEnv` are outside conversion scope; do not generate or run
-them from a conversion skill. A recipe that rejects `SimEnv` (for example an HE
-recipe, which requires provisioned startup kits) therefore cannot be validated
-locally: follow the selecting reference's ask/fail-closed rule and report the
-job as unvalidated instead of switching recipes or environments to force a run.
+them from a conversion skill. Homomorphic-encryption recipes reject `SimEnv` and
+require those provisioned environments, so HE is not supported by conversion —
+see the HE rule in `pytorch-family-recipe-selection.md`. If any other selected
+recipe rejects `SimEnv`, follow the selecting reference's ask/fail-closed rule
+and report the job as unvalidated instead of switching recipes or environments
+to force a run.
 
 - Use `python job.py` for local recipe or SimEnv validation when supported.
 - Prefer synthetic data flags or small fixtures when the original dataset is
@@ -450,7 +453,7 @@ export location if produced, execution isolation or approval status, redacted
 security-relevant findings, and blockers. State that the generated
 local-validation job carries no deployment-reviewed privacy or security policy
 (no differential privacy, access control, or production approval) unless a
-separate workflow explicitly added one. If the conversion configured a
-recipe-level privacy feature, such as an HE-capable recipe selected for an
-explicit encryption request, report that feature as configured but note it is
-not a deployment-reviewed privacy or security policy.
+separate workflow explicitly added one. If the user requested homomorphic
+encryption or encrypted aggregation, report that it is not supported by
+conversion and was routed to provisioning/deployment (no HE job was generated),
+per the HE rule in `pytorch-family-recipe-selection.md`.

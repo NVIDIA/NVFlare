@@ -6,9 +6,10 @@ state-exchange, privacy, and site-role requirements.
 
 ## Recipe Discovery, Algorithms, And Selection
 
-Recipe discovery, the algorithm guide (FedAvg, HE, FedProx, FedOpt, SCAFFOLD,
-Cyclic, Swarm, FedEval), catalog-based selection rules, HE/privacy safety, and
-non-FedAvg recipe rules are shared across the PyTorch recipe family. Follow
+Recipe discovery, the algorithm guide (FedAvg, FedProx, FedOpt, SCAFFOLD,
+Cyclic, Swarm, FedEval), catalog-based selection rules, the HE-not-supported
+rule, and non-FedAvg recipe rules are shared across the PyTorch recipe family.
+Follow
 `../../nvflare-shared/references/pytorch-family-recipe-selection.md` for all of
 them before constructing `job.py`. This file covers only the plain-PyTorch
 `job.py` construction details.
