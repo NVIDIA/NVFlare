@@ -452,6 +452,12 @@ class RxTask:
         return self.received_offset if self.completed else self.offset
 
     def _send_ack(self, offset, seq):
+        # Only a re-ACK at or behind state that was sent successfully is optional. The first final
+        # ACK is still required even though stop() has already marked the receive task completed.
+        with self.ack_lock:
+            already_acked = seq <= self.seq_ack and offset <= self.offset_ack
+        optional = self.completed and already_acked
+        log_func = log.debug if optional else log.error
         message = Message()
         message.add_headers(
             {
@@ -462,15 +468,17 @@ class RxTask:
             }
         )
         try:
-            errors = self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_ACK_TOPIC, self.origin, message)
+            errors = self.cell.fire_and_forget(
+                STREAM_CHANNEL, STREAM_ACK_TOPIC, self.origin, message, optional=optional
+            )
         except Exception as ex:
-            log.error(f"{self} failed to ack seq {seq} to {self.origin}: {ex}")
+            log_func(f"{self} failed to ack seq {seq} to {self.origin}: {ex}")
             return False
         else:
             errors = errors or {}
             error = errors.get(self.origin)
             if error:
-                log.error(f"{self} failed to ack seq {seq} to {self.origin}: {error}")
+                log_func(f"{self} failed to ack seq {seq} to {self.origin}: {error}")
                 return False
 
         with self.ack_lock:
