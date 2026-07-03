@@ -1,8 +1,8 @@
 # PyTorch Recipe Selection
 
 PyTorch identifies the training framework; it does not determine the federated
-workflow. Choose the recipe from the user's FL intent, topology, and aggregation
-requirements.
+workflow. Choose the recipe from the user's FL intent and aggregation,
+state-exchange, privacy, and site-role requirements.
 
 ## Discover Recipes
 
@@ -13,8 +13,8 @@ nvflare recipe list --framework pytorch --format json
 ```
 
 Use the returned recipe metadata as the source of truth for recipe names,
-modules, classes, algorithms, aggregation mode, state exchange, privacy metadata,
-and optional dependencies.
+modules, classes, algorithms, aggregation mode, state exchange, privacy and
+privacy-compatibility metadata, and optional dependencies.
 
 After selecting a candidate recipe, inspect its parameters:
 
@@ -71,15 +71,20 @@ Cyclic recipes, use the local catalog and
   select the catalog recipe whose metadata matches the request, confirmed with
   `nvflare recipe list --framework pytorch --format json` and
   `nvflare recipe show <recipe> --format json`. Match on the catalog fields the
-  CLI actually exposes — `algorithm`, `aggregation`, `state_exchange`, and
-  `privacy` — with the installed catalog as the source of truth.
+  CLI actually exposes: `algorithm`, `aggregation`, `state_exchange`, `privacy`,
+  and `privacy_compatible`. Do not match on `topology`; use topology wording in
+  the request as intent that maps to exposed catalog fields, recipe semantics,
+  or required role parameters.
 - Privacy is safety-critical: a homomorphic-encryption request must select a
   recipe whose `privacy` includes `homomorphic_encryption` (for example
-  `fedavg-he-pt`). Never map an HE request to a `privacy: []` recipe such as
-  `fedavg-pt`; when no catalog recipe matches the requested privacy, ask or fail
-  closed rather than dropping the encryption requirement.
+  `fedavg-he-pt`), or a recipe whose `privacy_compatible` includes
+  `homomorphic_encryption` only when the generated job also configures HE. Never
+  map an HE request to a `privacy: []` recipe such as `fedavg-pt`; when no
+  catalog recipe matches the requested privacy, ask or fail closed rather than
+  dropping the encryption requirement.
 - Current names are examples to verify against the catalog, not an authoritative
-  mapping: `fedavg-he-pt` (FedAvg, `privacy: [homomorphic_encryption]`),
+  mapping: `fedavg-he-pt` (FedAvg, `privacy: [homomorphic_encryption]`,
+  `privacy_compatible: [homomorphic_encryption]`),
   `fedprox-pt` (FedProx / proximal loss), `fedopt-pt` (server-side optimizer
   variants such as FedAdam / FedYogi / FedAdagrad), `scaffold-pt` (SCAFFOLD
   control variates / client-drift mitigation), `cyclic-pt` (sequential
