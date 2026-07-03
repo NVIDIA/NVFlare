@@ -89,8 +89,8 @@
             "description": "builds the model, optimizer, loss, and data loaders once before the flare round loop, not inside it, and reuses them each round"
           },
           {
-            "id": "preserve-device-intent",
-            "description": "preserves the source device selection (CPU, GPU, or conditional); does not shortcut GPU training to CPU or add a hard GPU requirement, and validates on CPU only as a reported limitation"
+            "id": "device-selection-respects-availability",
+            "description": "training selects CUDA when torch.cuda.is_available() and falls back to CPU; must not hard-code CPU when the source used GPU-when-available, and CPU-only validation is reported as a validation-environment limitation"
           },
           {
             "id": "report-validation-evidence",

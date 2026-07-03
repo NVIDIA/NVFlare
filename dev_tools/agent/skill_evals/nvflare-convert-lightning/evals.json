@@ -80,8 +80,8 @@
             "description": "constructs the model, datamodule/data loaders, and trainer once before the flare round loop, not inside it, and reuses them each round; source-defined LightningModule loss code can remain inside training_step or validation_step"
           },
           {
-            "id": "preserve-device-intent",
-            "description": "preserves the source accelerator/devices selection; does not shortcut GPU training to CPU or add a hard GPU requirement, and validates on CPU or a reduced device count only as a reported limitation"
+            "id": "device-selection-respects-availability",
+            "description": "training selects CUDA/GPU acceleration when torch.cuda.is_available() and falls back to CPU; must not hard-code CPU when the source used GPU-when-available, and CPU or reduced-device validation is reported as a validation-environment limitation"
           },
           {
             "id": "report-validation-evidence",
