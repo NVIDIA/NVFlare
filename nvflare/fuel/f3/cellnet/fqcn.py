@@ -26,6 +26,23 @@ class FQCN(FQN):
 # cell to the owning site for mTLS identity resolution and stream message
 # authentication. Both directions of the grammar live here so they cannot
 # drift apart.
+#
+# CellPipe cell-name schemes, in historical order:
+#   1. flat (pre-2.7): the whole FQCN is "<site>_<token>_<mode>", a root-level
+#      sibling of the site cell.
+#   2. hierarchical (#4801, never released): "<site>.<token>.<mode>". Replaced
+#      because the extra segments created unconnected FQCN parents that broke
+#      routing (NVBug 6371056).
+#   3. topology (current): the token and mode form one leaf segment under the
+#      FQCN of the cell the pipe actually connects to,
+#      "<parent>.<token>_<mode>", or the alias leaf
+#      "<relay_fqcn>.<owner>_<token>_<mode>" when connected through another
+#      cell.
+# Mixed-version notes: scheme-1 aliases are still accepted by identity
+# resolution and stream auth (see parse_cell_pipe_alias callers), but the two
+# ends of one pipe pair must run the same scheme - each end derives the peer's
+# name from its own code, so a CJ and a training subprocess on different
+# schemes fail with "peer FQCN mismatch".
 CELL_PIPE_ALIAS_MODES = ("active", "passive")
 
 

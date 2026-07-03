@@ -400,6 +400,19 @@ Compatibility and Migration Notes
 - The deprecated FLAdminAPI surface has been removed. Use the FLARE API,
   Recipe environments, and ``nvflare`` CLI workflows for new automation.
 - HA/Overseer code has been removed from the 2.8 branch.
+- CellPipe cell names now keep the runtime token and pipe mode in one FQCN
+  leaf segment (for example ``site-1.<job-id>_active``) so a pipe cell's FQCN
+  parent matches the cell it actually connects to. As part of this change,
+  CellPipe validates tokens at construction: tokens must be non-empty, may not
+  contain ``.`` when the pipe connects to the site's own CP or a relay, and
+  may not contain ``_`` or ``.`` when connected through a relay. Custom
+  ``FlareAgentWithCellPipe`` agent ids that violate these rules now fail fast
+  with a ``ValueError`` instead of producing unroutable cell names.
+- Both ends of a CellPipe pair derive each other's cell names independently,
+  so a Client Job process and an external training process must run the same
+  NVFlare naming scheme. A training environment pinned to an older NVFlare
+  fails with "peer FQCN mismatch" when paired with a 2.8 CJ; align the
+  training environment's NVFlare version with the site's.
 
 See the :ref:`migration_guide` for additional API and configuration migration
 notes.

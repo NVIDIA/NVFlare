@@ -218,6 +218,19 @@ def test_identity_resolver_maps_underscore_token_pipe_cell_to_site_identity():
     assert resolver.resolve("site-1.simulate_job_passive") == "site-1"
 
 
+def test_identity_resolver_cp_alias_parses_own_underscore_token_child():
+    # Known seam, pinned deliberately: at the CP itself, a direct pipe child
+    # with an underscore token has the same leaf shape as a relay alias, so
+    # the resolver parses a fabricated owner ("simulate") - the name alone
+    # cannot distinguish the two. The failure mode is fail-closed (a site-1
+    # certificate is rejected against the fabricated owner), and CP-connected
+    # pipes use non-mTLS internal listeners in practice, so this parity-level
+    # behavior is documented rather than special-cased.
+    resolver = CellIdentityResolver(local_fqcn="site-1")
+
+    assert resolver.resolve("site-1.simulate_job_active") == "simulate"
+
+
 def test_identity_resolver_maps_relay_cell_pipe_cell_to_owner_identity():
     resolver = CellIdentityResolver(local_fqcn="relay-1", exact_identity_map={"relay-1": "relay-1"})
 
