@@ -24,6 +24,9 @@
         "The agent keeps simulation workspaces, exported job folders, and generated runtime outputs under /tmp/nvflare unless the user gives another location.",
         "The agent preserves existing Lightning callbacks, loggers, and checkpoint behavior.",
         "The agent runs python job.py for local validation in the foreground to completion when dependencies are available.",
+        "The generated client constructs the model, datamodule/data loaders, loss, and trainer once before the flare round loop rather than inside it.",
+        "The agent preserves the source accelerator/devices selection and does not shortcut GPU training to CPU or add a hard GPU requirement, validating on CPU or a reduced device count only as a reported limitation.",
+        "The agent passes the data location as a configurable train_args or per_site_config value rather than a hardcoded absolute path, and does not point at data inside the nvflare run workspace.",
         "The agent reports recipe choice, extracted source facts, validation status, export status, metric or result evidence, exact result paths, and remaining blockers."
       ],
       "nvflare": {
@@ -74,6 +77,18 @@
             "description": "runs local job validation in the foreground to completion when dependencies are available"
           },
           {
+            "id": "setup-outside-round-loop",
+            "description": "constructs the model, datamodule/data loaders, loss, and trainer once before the flare round loop, not inside it, and reuses them each round"
+          },
+          {
+            "id": "preserve-device-intent",
+            "description": "preserves the source accelerator/devices selection; does not shortcut GPU training to CPU or add a hard GPU requirement, and validates on CPU or a reduced device count only as a reported limitation"
+          },
+          {
+            "id": "configurable-data-path",
+            "description": "passes the data location as a configurable train_args or per_site_config value rather than a path hardcoded in client.py, pointing at the original dataset and not at data inside the nvflare run workspace"
+          },
+          {
             "id": "report-validation-evidence",
             "description": "reports recipe choice, extracted source facts, validation command status, export status, metric or result evidence, exact result paths, and remaining blockers"
           }
@@ -106,6 +121,10 @@
           {
             "id": "no-cli-wrapper-python",
             "description": "does not generate Python solely to wrap NVFLARE CLI operations or scrape human CLI output"
+          },
+          {
+            "id": "no-hardcoded-absolute-data-path",
+            "description": "does not hardcode an absolute data path in generated client code and does not point at data inside the nvflare run workspace"
           }
         ],
         "optional_behavior": [
