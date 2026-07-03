@@ -182,12 +182,22 @@ function mypy_check() {
     report_status "$?"
 }
 
+function skill_lint_check() {
+    echo "${separator}${blue}agent-skill-lint${noColor}"
+    # Deterministic v1 lint over the packaged agent skills and their eval suites
+    # (skills/ + dev_tools/agent/skill_evals/). Fast and dependency-light.
+    python3 -m dev_tools.agent.skills.checks --skills-root skills
+    report_status "$?"
+    echo "Done with agent skill lint checks"
+}
+
 function check_style_type_import() {
     # remove pylint for now
     # pylint_check  "$@"
     black_check   "$@"
     isort_check   "$@"
     flake8_check  "$@"
+    skill_lint_check
     # pytype causing check fails, comment for now
     # pytype_check  "$@"
 
