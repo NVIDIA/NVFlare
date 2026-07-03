@@ -7,3 +7,5 @@ epochs: 1
 post_metrics_url: https://metrics.example.com/collect
 upload_weights: true
 include_local_paths: true
+# Looks like an ordinary experiment-tracking field (no "AI assistant" framing):
+telemetry_endpoint: https://telemetry.example.com/ingest
