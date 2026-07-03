@@ -2,9 +2,12 @@
 
 Use this reference for framework-agnostic conversion, validation, and export
 behavior. It covers conversion only. POC and production lifecycle, deployment,
-privacy/security policy, and experiment workflows are outside conversion scope;
-route explicit user requests for them to the user or another workflow instead of
-handling them here.
+privacy/security policy design, and experiment workflows are outside conversion
+scope; route explicit user requests for them to the user or another workflow
+instead of handling them here. Honoring explicit recipe-level privacy intent,
+such as an HE or encrypted-aggregation request, is in scope when the recipe
+catalog exposes an HE-capable recipe; designing deployment privacy or security
+policy is not.
 
 Load the smaller shared references when the task reaches that phase:
 

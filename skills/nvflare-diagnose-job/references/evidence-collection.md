@@ -30,7 +30,7 @@ Use local evidence only:
   `round_metrics.jsonl` for per-round and per-site evidence;
 - local dependency, dataset, and path evidence supplied by the user.
 
-Use `nvflare --format json agent inspect <path>` when the user provides a
+Use `nvflare agent inspect <path> --format json` when the user provides a
 project, job, or exported-job path. Do not use `nvflare job` or
 `nvflare system` commands for a pure simulation failure unless the user also
 provides a POC/production job ID or startup-kit context.
@@ -40,12 +40,12 @@ provides a POC/production job ID or startup-kit context.
 Use bounded CLI evidence. Prefer JSON envelopes for agent-readable output:
 
 ```bash
-nvflare --format json job meta <job_id>
-nvflare --format json job logs <job_id> --site all --tail 200
-nvflare --format json job stats <job_id> --site all
-nvflare --format json job download <job_id> -o <download-dir>
-nvflare --format json system status
-nvflare --format json system resources
+nvflare job meta <job_id> --format json
+nvflare job logs <job_id> --site all --tail 200 --format json
+nvflare job stats <job_id> --site all --format json
+nvflare job download <job_id> -o <download-dir> --format json
+nvflare system status --format json
+nvflare system resources --format json
 ```
 
 When the user supplies a startup kit or registered kit ID, add the matching

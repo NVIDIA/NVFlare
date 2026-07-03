@@ -46,6 +46,10 @@ while True:
 
 As with single-process training, the patched trainer owns model exchange. Do not
 pass `input_model` into `Trainer` methods and do not add a manual `flare.send`.
+The `flare.receive()` above only exposes round/task metadata and progression; it
+is not model exchange, so calling it on every rank is safe. Rank-0-only
+communication with the FL server is handled by the patched trainer, not by
+guarding `flare.receive()`.
 
 ### DDP validation metrics are not delivered to the server by default
 

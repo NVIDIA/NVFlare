@@ -14,10 +14,10 @@ Use this reference before declaring a generated or exported NVFLARE job valid.
 
 ## Terminal Simulation Evidence
 
-Run the final validation in the foreground and let it finish in the same step
-(see `conversion-workflow.md`, "Final Validation Run Must Finish Before You
-Finalize"). Do not report local simulation or job validation as successful while
-`python job.py`, simulator, or another generated run command is still running.
+The hard rule — the final validation must run in the foreground and finish in the
+same step before you report success — lives in `conversion-workflow.md` ("Final
+Validation Run Must Finish Before You Finalize"). This section covers the success
+evidence to collect once it finishes.
 
 Prefer foreground execution for the final run. Do not depend on a background
 task notifying you after your final answer: in a non-interactive run the task

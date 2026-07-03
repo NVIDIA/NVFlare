@@ -25,9 +25,11 @@ Do not use for PyTorch Lightning (route to `nvflare-convert-lightning`),
 Hugging Face Trainer, TensorFlow, XGBoost, scikit-learn, a failed existing job
 (route to `nvflare-diagnose-job`), or generic PyTorch debugging that does not
 ask for FLARE conversion. Out of conversion scope: production deployment,
-Kubernetes, POC lifecycle, privacy/security policy, controller or workflow
-rewrites outside product recipe or Job APIs, experiment search across recipes,
-and data distribution experiments beyond minimal local validation setup.
+Kubernetes, POC lifecycle, deployment privacy/security policy design, controller
+or workflow rewrites outside product recipe or Job APIs, experiment search across
+recipes, and data distribution experiments beyond minimal local validation setup.
+Honoring an explicit recipe-level privacy request, such as HE/encrypted
+aggregation, is in scope when the catalog exposes an HE-capable recipe.
 
 ## Workflow
 
