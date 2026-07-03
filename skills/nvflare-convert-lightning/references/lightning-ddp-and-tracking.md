@@ -27,7 +27,8 @@ product surface.
 
 Under DDP, only rank 0 communicates with the FL server, so all ranks must agree
 on whether to continue. Broadcast `flare.is_running()` from rank 0 before each
-round:
+round, and let the patched trainer callback receive and broadcast the model
+during `validate`/`fit`:
 
 ```python
 flare.patch(trainer)
@@ -38,18 +39,33 @@ while True:
     if not is_running:
         break
 
-    input_model = flare.receive()  # optional, only when round/task metadata is needed
     trainer.validate(model, datamodule=datamodule)
     trainer.fit(model, datamodule=datamodule)
     trainer.test(ckpt_path="best", datamodule=datamodule)  # when test evidence is requested/available
 ```
 
+Do not insert an unguarded `flare.receive()` on every rank for metadata. Outside
+the patched callback, rank 0 can fetch the cached `FLModel`; non-zero ranks do
+not get the task/model object. If user code outside the patched trainer needs
+round/task metadata on all ranks, derive a small serializable value on rank 0 and
+broadcast that value before using it:
+
+```python
+round_info = {}
+if trainer.global_rank == 0:
+    input_model = flare.receive()
+    round_info = {
+        "current_round": input_model.current_round if input_model else None,
+        "meta": dict(input_model.meta or {}) if input_model and input_model.meta else {},
+    }
+round_info = trainer.strategy.broadcast(round_info, src=0)
+```
+
 As with single-process training, the patched trainer owns model exchange. Do not
 pass `input_model` into `Trainer` methods and do not add a manual `flare.send`.
-The `flare.receive()` above only exposes round/task metadata and progression; it
-is not model exchange, so calling it on every rank is safe. Rank-0-only
-communication with the FL server is handled by the patched trainer, not by
-guarding `flare.receive()`.
+In DDP, rank-0 communication with the FL server is either handled by the patched
+callback path or by explicit rank-0 guarded metadata code like the snippet above;
+non-zero ranks should read broadcast values, not `input_model`.
 
 ### DDP validation metrics are not delivered to the server by default
 
