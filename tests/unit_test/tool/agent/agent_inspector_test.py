@@ -125,174 +125,143 @@ def test_inspect_detects_top_level_lightning_alias_and_from_import(tmp_path):
     assert any(item["kind"] == "lightning_trainer" and item["value"] == "Trainer" for item in evidence)
 
 
-def test_inspect_classifies_lightning_patched_trainer_as_client_api_converted(tmp_path):
-    script = tmp_path / "client.py"
-    script.write_text(
+# Lightning-patch conversion-state cases: each writes one trainer script that
+# differs only in the import/patch-call spelling and must be classified as
+# client_api_converted. Fields: source, expected_call, exact_calls (assert
+# calls == [expected_call] instead of membership), and check_framework
+# (assert frameworks[0] is pytorch_lightning).
+_LIGHTNING_PATCH_CONVERTED_CASES = [
+    pytest.param(
         "import lightning as L\n"
         "import nvflare.client.lightning as flare\n"
         "\n"
         "trainer = L.Trainer(max_epochs=1)\n"
         "flare.patch(trainer)\n"
         "trainer.fit(model, datamodule=data)\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(script)
-
-    assert data["frameworks"][0]["name"] == "pytorch_lightning"
-    assert data["flare_integration"]["calls"] == ["flare.patch"]
-    assert data["conversion_state"] == "client_api_converted"
-
-
-def test_inspect_classifies_imported_lightning_patch_as_client_api_converted(tmp_path):
-    script = tmp_path / "client.py"
-    script.write_text(
+        "flare.patch",
+        True,
+        True,
+        id="classifies_lightning_patched_trainer_as_client_api_converted",
+    ),
+    pytest.param(
         "import lightning as L\n"
         "from nvflare.client.lightning import patch\n"
         "\n"
         "trainer = L.Trainer(max_epochs=1)\n"
         "patch(trainer)\n"
         "trainer.fit(model, datamodule=data)\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(script)
-
-    assert data["frameworks"][0]["name"] == "pytorch_lightning"
-    assert data["flare_integration"]["calls"] == ["patch"]
-    assert data["conversion_state"] == "client_api_converted"
-
-
-def test_inspect_classifies_aliased_lightning_patch_import_as_client_api_converted(tmp_path):
-    script = tmp_path / "client.py"
-    script.write_text(
+        "patch",
+        True,
+        True,
+        id="classifies_imported_lightning_patch_as_client_api_converted",
+    ),
+    pytest.param(
         "import lightning as L\n"
         "from nvflare.client.lightning import patch as flare_patch\n"
         "\n"
         "trainer = L.Trainer(max_epochs=1)\n"
         "flare_patch(trainer)\n"
         "trainer.fit(model, datamodule=data)\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(script)
-
-    assert data["frameworks"][0]["name"] == "pytorch_lightning"
-    assert data["flare_integration"]["calls"] == ["flare_patch"]
-    assert data["conversion_state"] == "client_api_converted"
-
-
-def test_inspect_classifies_aliased_lightning_patch_module_as_client_api_converted(tmp_path):
-    script = tmp_path / "client.py"
-    script.write_text(
+        "flare_patch",
+        True,
+        True,
+        id="classifies_aliased_lightning_patch_import_as_client_api_converted",
+    ),
+    pytest.param(
         "import lightning as L\n"
         "import nvflare.client.lightning as nfl\n"
         "\n"
         "trainer = L.Trainer(max_epochs=1)\n"
         "nfl.patch(trainer)\n"
         "trainer.fit(model, datamodule=data)\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(script)
-
-    assert data["frameworks"][0]["name"] == "pytorch_lightning"
-    assert "nfl.patch" in data["flare_integration"]["calls"]
-    assert data["conversion_state"] == "client_api_converted"
-
-
-def test_inspect_classifies_fully_qualified_lightning_patch_as_client_api_converted(tmp_path):
-    script = tmp_path / "client.py"
-    script.write_text(
+        "nfl.patch",
+        False,
+        True,
+        id="classifies_aliased_lightning_patch_module_as_client_api_converted",
+    ),
+    pytest.param(
         "import lightning as L\n"
         "import nvflare.client.lightning\n"
         "\n"
         "trainer = L.Trainer(max_epochs=1)\n"
         "nvflare.client.lightning.patch(trainer)\n"
         "trainer.fit(model, datamodule=data)\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(script)
-
-    assert data["frameworks"][0]["name"] == "pytorch_lightning"
-    assert "nvflare.client.lightning.patch" in data["flare_integration"]["calls"]
-    assert data["conversion_state"] == "client_api_converted"
-
-
-def test_inspect_classifies_fully_qualified_lightning_patch_for_wrapper_trainer_as_converted(tmp_path):
-    script = tmp_path / "client.py"
-    script.write_text(
+        "nvflare.client.lightning.patch",
+        False,
+        True,
+        id="classifies_fully_qualified_lightning_patch_as_client_api_converted",
+    ),
+    pytest.param(
         "from nemo import lightning as nl\n"
         "import nvflare.client.lightning\n"
         "\n"
         "trainer = nl.Trainer(max_steps=10)\n"
         "nvflare.client.lightning.patch(trainer)\n"
         "trainer.fit(model)\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(script)
-
-    assert "nvflare.client.lightning.patch" in data["flare_integration"]["calls"]
-    assert data["conversion_state"] == "client_api_converted"
-
-
-def test_inspect_classifies_from_import_lightning_module_alias_as_client_api_converted(tmp_path):
-    script = tmp_path / "client.py"
-    script.write_text(
+        "nvflare.client.lightning.patch",
+        False,
+        False,
+        id="classifies_fully_qualified_lightning_patch_for_wrapper_trainer_as_converted",
+    ),
+    pytest.param(
         "import lightning as L\n"
         "from nvflare.client import lightning as flare\n"
         "\n"
         "trainer = L.Trainer(max_epochs=1)\n"
         "flare.patch(trainer)\n"
         "trainer.fit(model, datamodule=data)\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(script)
-
-    assert data["frameworks"][0]["name"] == "pytorch_lightning"
-    assert "flare.patch" in data["flare_integration"]["calls"]
-    assert data["conversion_state"] == "client_api_converted"
-
-
-def test_inspect_classifies_from_import_lightning_module_as_client_api_converted(tmp_path):
-    script = tmp_path / "client.py"
-    script.write_text(
+        "flare.patch",
+        False,
+        True,
+        id="classifies_from_import_lightning_module_alias_as_client_api_converted",
+    ),
+    pytest.param(
         "import lightning as L\n"
         "from nvflare.client import lightning\n"
         "\n"
         "trainer = L.Trainer(max_epochs=1)\n"
         "lightning.patch(trainer)\n"
         "trainer.fit(model, datamodule=data)\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(script)
-
-    assert data["frameworks"][0]["name"] == "pytorch_lightning"
-    assert "lightning.patch" in data["flare_integration"]["calls"]
-    assert data["conversion_state"] == "client_api_converted"
-
-
-def test_inspect_classifies_wrapper_trainer_lightning_patch_as_client_api_converted(tmp_path):
+        "lightning.patch",
+        False,
+        True,
+        id="classifies_from_import_lightning_module_as_client_api_converted",
+    ),
     # nemo.lightning-style wrapper: the trainer is built via ``nl.Trainer`` which
     # is not a recognized Lightning constructor, but ``flare.patch(trainer)`` is
     # still the definitive conversion signal.
-    script = tmp_path / "client.py"
-    script.write_text(
+    pytest.param(
         "from nemo import lightning as nl\n"
         "import nvflare.client.lightning as flare\n"
         "\n"
         "trainer = nl.Trainer(max_steps=10)\n"
         "flare.patch(trainer, restore_state=False)\n"
         "trainer.fit(model)\n",
-        encoding="utf-8",
-    )
+        None,
+        False,
+        False,
+        id="classifies_wrapper_trainer_lightning_patch_as_client_api_converted",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("source", "expected_call", "exact_calls", "check_framework"), _LIGHTNING_PATCH_CONVERTED_CASES
+)
+def test_inspect_classifies_lightning_patch_as_client_api_converted(
+    tmp_path, source, expected_call, exact_calls, check_framework
+):
+    script = tmp_path / "client.py"
+    script.write_text(source, encoding="utf-8")
 
     data = inspect_path(script)
 
+    if check_framework:
+        assert data["frameworks"][0]["name"] == "pytorch_lightning"
+    if exact_calls:
+        assert data["flare_integration"]["calls"] == [expected_call]
+    elif expected_call is not None:
+        assert expected_call in data["flare_integration"]["calls"]
     assert data["conversion_state"] == "client_api_converted"
 
 
@@ -388,101 +357,164 @@ def test_inspect_incidental_lightning_does_not_demote_ranked_pytorch(tmp_path):
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
 
 
-def test_inspect_unrelated_active_lightning_helper_does_not_outweigh_pytorch_entry_point(tmp_path):
+# PyTorch workspaces with an unrelated or unreachable Lightning helper must
+# keep PyTorch routing. Fields: files (relative path -> content) and
+# expect_mixed_target (assert target_type == "mixed_framework_workspace",
+# only where the original case asserted it).
+_KEEPS_PYTORCH_DESPITE_LIGHTNING_HELPER_CASES = [
     # Active PyTorch evidence tied to the entry point keeps unrelated Lightning
     # helpers from taking over routing just because they have more active evidence.
-    (tmp_path / "train.py").write_text(
-        "import torch\n" "\n" "class Net(torch.nn.Module):\n" "    pass\n" "\n" "def train():\n" "    return Net()\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "lit_helper.py").write_text(
-        "import pytorch_lightning as pl\n"
-        "\n"
-        "class Helper(pl.LightningModule):\n"
-        "    pass\n"
-        "\n"
-        "trainer = pl.Trainer(max_epochs=1)\n",
-        encoding="utf-8",
-    )
+    pytest.param(
+        {
+            "train.py": (
+                "import torch\n"
+                "\n"
+                "class Net(torch.nn.Module):\n"
+                "    pass\n"
+                "\n"
+                "def train():\n"
+                "    return Net()\n"
+            ),
+            "lit_helper.py": (
+                "import pytorch_lightning as pl\n"
+                "\n"
+                "class Helper(pl.LightningModule):\n"
+                "    pass\n"
+                "\n"
+                "trainer = pl.Trainer(max_epochs=1)\n"
+            ),
+        },
+        True,
+        id="unrelated_active_lightning_helper_does_not_outweigh_pytorch_entry_point",
+    ),
+    pytest.param(
+        {
+            "train.py": "import torch\n" "\n" "class Net(torch.nn.Module):\n" "    pass\n",
+            "lit_helper.py": (
+                "import pytorch_lightning as pl\n" "\n" "class Helper(pl.LightningModule):\n" "    pass\n"
+            ),
+        },
+        True,
+        id="sparse_pytorch_entry_with_lightning_helper_class_keeps_pytorch",
+    ),
+    pytest.param(
+        {
+            "train.py": "import torch\n" "\n" "def main():\n" "    return None\n",
+            "lit_helper.py": (
+                "import pytorch_lightning as pl\n"
+                "\n"
+                "class Helper(pl.LightningModule):\n"
+                "    pass\n"
+                "\n"
+                "trainer = pl.Trainer(max_epochs=1)\n"
+            ),
+        },
+        True,
+        id="pytorch_entry_import_with_unrelated_active_lightning_helper_keeps_pytorch",
+    ),
+    pytest.param(
+        {
+            "train.py": "def main():\n" "    return None\n",
+            "model.py": "import torch\n" "\n" "class Net(torch.nn.Module):\n" "    pass\n",
+            "lit_helper.py": (
+                "import pytorch_lightning as pl\n"
+                "\n"
+                "class Helper(pl.LightningModule):\n"
+                "    pass\n"
+                "\n"
+                "trainer = pl.Trainer(max_epochs=1)\n"
+            ),
+        },
+        True,
+        id="entry_point_blocks_unreachable_active_lightning_helper_from_fallback",
+    ),
+    pytest.param(
+        {
+            "models/train.py": (
+                "import lightning.pytorch\n"
+                "import torch\n"
+                "from torch.utils.data import DataLoader\n"
+                "\n"
+                "def train():\n"
+                "    return DataLoader([])\n"
+            ),
+            "models/lightning.py": (
+                "import pytorch_lightning as pl\n" "\n" "class Helper(pl.LightningModule):\n" "    pass\n"
+            ),
+        },
+        False,
+        id="external_lightning_import_does_not_reach_local_lightning_file",
+    ),
+    pytest.param(
+        {
+            "models/train.py": (
+                "import lightning.pytorch\n"
+                "import torch\n"
+                "from torch.utils.data import DataLoader\n"
+                "\n"
+                "def train():\n"
+                "    return DataLoader([])\n"
+            ),
+            "models/lightning/__init__.py": (
+                "import pytorch_lightning as pl\n" "\n" "class Helper(pl.LightningModule):\n" "    pass\n"
+            ),
+        },
+        False,
+        id="external_lightning_import_does_not_reach_local_lightning_package",
+    ),
+    pytest.param(
+        {
+            "train.py": (
+                "import lightning.pytorch\n"
+                "import torch\n"
+                "from torch.utils.data import DataLoader\n"
+                "\n"
+                "def train():\n"
+                "    return DataLoader([])\n"
+            ),
+            "lightning/__init__.py": (
+                "import pytorch_lightning as pl\n" "\n" "class Helper(pl.LightningModule):\n" "    pass\n"
+            ),
+        },
+        False,
+        id="external_lightning_import_does_not_reach_top_level_lightning_package",
+    ),
+    pytest.param(
+        {
+            "experiment.py": (
+                "import torch\n"
+                "import torch.nn\n"
+                "import torch.optim\n"
+                "import torch.utils.data\n"
+                "import torchaudio\n"
+                "import torchvision\n"
+                "\n"
+                "DEFAULT_EPOCHS = 1\n"
+            ),
+            "lightning_helper.py": (
+                "import pytorch_lightning as pl\n" "\n" "class Helper(pl.LightningModule):\n" "    pass\n"
+            ),
+        },
+        False,
+        id="unrelated_lightning_helper_does_not_beat_pytorch_import_heavy_workspace",
+    ),
+]
+
+
+@pytest.mark.parametrize(("files", "expect_mixed_target"), _KEEPS_PYTORCH_DESPITE_LIGHTNING_HELPER_CASES)
+def test_inspect_keeps_pytorch_despite_lightning_helper(tmp_path, files, expect_mixed_target):
+    for rel_path, content in files.items():
+        path = tmp_path / rel_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
 
     data = inspect_path(tmp_path)
 
     framework_names = [framework["name"] for framework in data["frameworks"]]
     assert framework_names[0] == "pytorch"
     assert "pytorch_lightning" in framework_names
-    assert "pytorch" in framework_names
-    assert data["target_type"] == "mixed_framework_workspace"
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
-
-
-def test_inspect_sparse_pytorch_entry_with_lightning_helper_class_keeps_pytorch(tmp_path):
-    (tmp_path / "train.py").write_text(
-        "import torch\n" "\n" "class Net(torch.nn.Module):\n" "    pass\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "lit_helper.py").write_text(
-        "import pytorch_lightning as pl\n" "\n" "class Helper(pl.LightningModule):\n" "    pass\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(tmp_path)
-
-    framework_names = [framework["name"] for framework in data["frameworks"]]
-    assert framework_names[0] == "pytorch"
-    assert "pytorch_lightning" in framework_names
-    assert data["target_type"] == "mixed_framework_workspace"
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
-
-
-def test_inspect_pytorch_entry_import_with_unrelated_active_lightning_helper_keeps_pytorch(tmp_path):
-    (tmp_path / "train.py").write_text(
-        "import torch\n" "\n" "def main():\n" "    return None\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "lit_helper.py").write_text(
-        "import pytorch_lightning as pl\n"
-        "\n"
-        "class Helper(pl.LightningModule):\n"
-        "    pass\n"
-        "\n"
-        "trainer = pl.Trainer(max_epochs=1)\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(tmp_path)
-
-    framework_names = [framework["name"] for framework in data["frameworks"]]
-    assert framework_names[0] == "pytorch"
-    assert "pytorch_lightning" in framework_names
-    assert data["target_type"] == "mixed_framework_workspace"
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
-
-
-def test_inspect_entry_point_blocks_unreachable_active_lightning_helper_from_fallback(tmp_path):
-    (tmp_path / "train.py").write_text(
-        "def main():\n" "    return None\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "model.py").write_text(
-        "import torch\n" "\n" "class Net(torch.nn.Module):\n" "    pass\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "lit_helper.py").write_text(
-        "import pytorch_lightning as pl\n"
-        "\n"
-        "class Helper(pl.LightningModule):\n"
-        "    pass\n"
-        "\n"
-        "trainer = pl.Trainer(max_epochs=1)\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(tmp_path)
-
-    framework_names = [framework["name"] for framework in data["frameworks"]]
-    assert framework_names[0] == "pytorch"
-    assert "pytorch_lightning" in framework_names
-    assert data["target_type"] == "mixed_framework_workspace"
+    if expect_mixed_target:
+        assert data["target_type"] == "mixed_framework_workspace"
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
 
 
@@ -498,74 +530,251 @@ def _lightning_module_and_trainer(alias):
     )
 
 
-def test_inspect_from_lightning_import_pytorch_alias_routes_to_lightning(tmp_path):
+# Workspaces where the Lightning code is reachable from (or dominates) the
+# entry context, so routing goes to the Lightning skill. Fields: files
+# (relative path -> content), target (relative path passed to inspect_path,
+# or None for the workspace root), and evidence_file (when set, assert a
+# lightning_class evidence item from that file on the primary framework).
+_ROUTES_TO_LIGHTNING_CASES = [
     # `from lightning import pytorch as pl` (Lightning 2.x form) alongside torch.
-    (tmp_path / "train.py").write_text(
-        "import torch\nimport torch.nn as nn\nfrom lightning import pytorch as pl\n"
-        + _lightning_module_and_trainer("pl"),
-        encoding="utf-8",
-    )
-
-    data = inspect_path(tmp_path)
-
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
-
-
-def test_inspect_bare_lightning_alias_pytorch_submodule_routes_to_lightning(tmp_path):
+    pytest.param(
+        {
+            "train.py": "import torch\nimport torch.nn as nn\nfrom lightning import pytorch as pl\n"
+            + _lightning_module_and_trainer("pl"),
+        },
+        None,
+        None,
+        id="from_lightning_import_pytorch_alias_routes_to_lightning",
+    ),
     # `import lightning as L` then `L.pytorch.LightningModule` / `L.pytorch.Trainer`.
-    (tmp_path / "train.py").write_text(
-        "import torch\nimport lightning as L\n"
-        "class Net(L.pytorch.LightningModule):\n"
-        "    def configure_optimizers(self):\n"
-        "        return None\n"
-        "def main():\n"
-        "    L.pytorch.Trainer(max_epochs=1).fit(Net())\n"
-        "if __name__ == '__main__':\n"
-        "    main()\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(tmp_path)
-
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
-
-
-def test_inspect_src_layout_lightning_reachable_from_entry_routes_to_lightning(tmp_path):
+    pytest.param(
+        {
+            "train.py": (
+                "import torch\nimport lightning as L\n"
+                "class Net(L.pytorch.LightningModule):\n"
+                "    def configure_optimizers(self):\n"
+                "        return None\n"
+                "def main():\n"
+                "    L.pytorch.Trainer(max_epochs=1).fit(Net())\n"
+                "if __name__ == '__main__':\n"
+                "    main()\n"
+            ),
+        },
+        None,
+        None,
+        id="bare_lightning_alias_pytorch_submodule_routes_to_lightning",
+    ),
     # PyPA src-layout: entry imports mypkg.loop; the module lives at src/mypkg/loop.py.
-    (tmp_path / "src" / "mypkg").mkdir(parents=True)
-    (tmp_path / "src" / "mypkg" / "loop.py").write_text(
-        "import lightning.pytorch as pl\n" + _lightning_module_and_trainer("pl"),
-        encoding="utf-8",
-    )
-    (tmp_path / "train.py").write_text(
-        "import torch\nimport torch.nn as nn\nfrom mypkg.loop import Net\n"
-        "def main():\n    return Net()\nif __name__ == '__main__':\n    main()\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(tmp_path)
-
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
-
-
-def test_inspect_dominant_lightning_module_with_unrelated_entry_routes_to_lightning(tmp_path):
+    pytest.param(
+        {
+            "src/mypkg/loop.py": "import lightning.pytorch as pl\n" + _lightning_module_and_trainer("pl"),
+            "train.py": (
+                "import torch\nimport torch.nn as nn\nfrom mypkg.loop import Net\n"
+                "def main():\n    return Net()\nif __name__ == '__main__':\n    main()\n"
+            ),
+        },
+        None,
+        None,
+        id="src_layout_lightning_reachable_from_entry_routes_to_lightning",
+    ),
     # Lightning model in a non-entry module + a torch import (no active torch use)
     # + an unrelated entry point must not default to the PyTorch base.
-    (tmp_path / "litmodel.py").write_text(
-        "import torch\nimport lightning.pytorch as pl\n"
-        "class LitNet(pl.LightningModule):\n"
-        "    def configure_optimizers(self):\n"
-        "        return None\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "run.py").write_text(
-        "import json\nif __name__ == '__main__':\n    print(json.dumps({}))\n",
-        encoding="utf-8",
-    )
+    pytest.param(
+        {
+            "litmodel.py": (
+                "import torch\nimport lightning.pytorch as pl\n"
+                "class LitNet(pl.LightningModule):\n"
+                "    def configure_optimizers(self):\n"
+                "        return None\n"
+            ),
+            "run.py": "import json\nif __name__ == '__main__':\n    print(json.dumps({}))\n",
+        },
+        None,
+        None,
+        id="dominant_lightning_module_with_unrelated_entry_routes_to_lightning",
+    ),
+    pytest.param(
+        {
+            "train.py": "import torch\n" "from model import LitModel\n" "\n" "def main():\n" "    return LitModel()\n",
+            "model.py": "import pytorch_lightning as pl\n" "\n" "class LitModel(pl.LightningModule):\n" "    pass\n",
+        },
+        None,
+        None,
+        id="split_file_lightning_model_imported_by_entry_point_recommends_lightning",
+    ),
+    pytest.param(
+        {
+            "train.py": "import torch\n" "from models import LitModel\n" "\n" "def main():\n" "    return LitModel()\n",
+            "models/__init__.py": (
+                "import pytorch_lightning as pl\n" "\n" "class LitModel(pl.LightningModule):\n" "    pass\n"
+            ),
+        },
+        None,
+        None,
+        id="package_lightning_model_imported_by_entry_point_recommends_lightning",
+    ),
+    pytest.param(
+        {
+            "train.py": "import torch\n" "from models import LitModel\n" "\n" "def main():\n" "    return LitModel()\n",
+            "models/__init__.py": "from .model import LitModel\n",
+            "models/model.py": (
+                "import pytorch_lightning as pl\n" "\n" "class LitModel(pl.LightningModule):\n" "    pass\n"
+            ),
+        },
+        None,
+        None,
+        id="package_reexported_lightning_model_with_torch_entry_import_recommends_lightning",
+    ),
+    pytest.param(
+        {
+            "train.py": (
+                "import torch\n"
+                "from torch.utils.data import DataLoader\n"
+                "from models import LitModel\n"
+                "\n"
+                "def main():\n"
+                "    loader = DataLoader([])\n"
+                "    return LitModel(), loader\n"
+            ),
+            "models/__init__.py": "from .model import LitModel\n",
+            "models/model.py": (
+                "import pytorch_lightning as pl\n" "\n" "class LitModel(pl.LightningModule):\n" "    pass\n"
+            ),
+        },
+        None,
+        None,
+        id="package_reexported_lightning_model_with_active_pytorch_entry_recommends_lightning",
+    ),
+    pytest.param(
+        {
+            "models/__init__.py": "",
+            "train.py": (
+                "import torch\n"
+                "from torch.utils.data import DataLoader\n"
+                "from models import lightning_model\n"
+                "\n"
+                "def main():\n"
+                "    loader = DataLoader([])\n"
+                "    return lightning_model.LitModel(), loader\n"
+            ),
+            "models/lightning_model.py": (
+                "import pytorch_lightning as pl\n" "\n" "class LitModel(pl.LightningModule):\n" "    pass\n"
+            ),
+        },
+        None,
+        "models/lightning_model.py",
+        id="package_lightning_submodule_imported_by_entry_point_recommends_lightning",
+    ),
+    pytest.param(
+        {
+            "train.py": "import torch\n" "from models import *\n" "\n" "def main():\n" "    return LitModel()\n",
+            "models/__init__.py": (
+                "import pytorch_lightning as pl\n" "\n" "class LitModel(pl.LightningModule):\n" "    pass\n"
+            ),
+        },
+        None,
+        None,
+        id="package_star_import_can_reach_lightning_model",
+    ),
+    pytest.param(
+        {
+            "models/__init__.py": "",
+            "models/train.py": (
+                "import torch\n"
+                "from torch.utils.data import DataLoader\n"
+                "from . import model\n"
+                "\n"
+                "def main():\n"
+                "    loader = DataLoader([])\n"
+                "    return model.LitModel(), loader\n"
+            ),
+            "models/model.py": (
+                "import pytorch_lightning as pl\n" "\n" "class LitModel(pl.LightningModule):\n" "    pass\n"
+            ),
+        },
+        None,
+        "models/model.py",
+        id="relative_package_lightning_submodule_imported_by_entry_point_recommends_lightning",
+    ),
+    # A normal Lightning script imports several torch symbols, so PyTorch import
+    # evidence outnumbers Lightning symbols. Lightning still wins.
+    pytest.param(
+        {
+            "train.py": (
+                "import torch\n"
+                "from torch import nn\n"
+                "from torch.utils.data import DataLoader\n"
+                "import pytorch_lightning as pl\n"
+                "\n"
+                "class Net(pl.LightningModule):\n"
+                "    pass\n"
+                "\n"
+                "trainer = pl.Trainer(max_epochs=1)\n"
+            ),
+        },
+        "train.py",
+        None,
+        id="lightning_script_with_many_torch_imports_recommends_lightning",
+    ),
+    pytest.param(
+        {
+            "train.py": (
+                "import torch\n"
+                "from torch import nn\n"
+                "from torch.utils.data import DataLoader\n"
+                "import pytorch_lightning as pl\n"
+                "\n"
+                "class Net(pl.LightningModule):\n"
+                "    pass\n"
+            ),
+        },
+        "train.py",
+        None,
+        id="lightning_module_with_many_torch_imports_recommends_lightning",
+    ),
+    pytest.param(
+        {
+            "model.py": (
+                "import torch\n"
+                "import torch.nn as nn\n"
+                "import torch.optim as optim\n"
+                "import torchaudio\n"
+                "import torchvision\n"
+                "from torch import nn\n"
+                "from torch.nn import functional as F\n"
+                "from torch.optim import Adam\n"
+                "from torch.utils.data import DataLoader\n"
+                "import pytorch_lightning as pl\n"
+                "\n"
+                "class LitModel(pl.LightningModule):\n"
+                "    pass\n"
+            ),
+        },
+        None,
+        None,
+        id="lightning_model_file_with_many_torch_imports_recommends_lightning",
+    ),
+]
 
-    data = inspect_path(tmp_path)
 
+@pytest.mark.parametrize(("files", "target", "evidence_file"), _ROUTES_TO_LIGHTNING_CASES)
+def test_inspect_routes_to_lightning(tmp_path, files, target, evidence_file):
+    for rel_path, content in files.items():
+        path = tmp_path / rel_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+
+    data = inspect_path(tmp_path / target if target else tmp_path)
+
+    framework_names = [framework["name"] for framework in data["frameworks"]]
+    assert framework_names[0] == "pytorch_lightning"
+    assert "pytorch" in framework_names
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
+    if evidence_file is not None:
+        assert any(
+            item["file"] == evidence_file and item["kind"] == "lightning_class"
+            for item in data["frameworks"][0]["evidence"]
+        )
 
 
 def test_inspect_cross_family_confidence_tie_prefers_entry_context_framework(tmp_path):
@@ -923,24 +1132,6 @@ def test_inspect_torch_ops_inside_lightning_module_with_unrelated_entry_routes_t
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
 
 
-def test_inspect_split_file_lightning_model_imported_by_entry_point_recommends_lightning(tmp_path):
-    (tmp_path / "train.py").write_text(
-        "import torch\n" "from model import LitModel\n" "\n" "def main():\n" "    return LitModel()\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "model.py").write_text(
-        "import pytorch_lightning as pl\n" "\n" "class LitModel(pl.LightningModule):\n" "    pass\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(tmp_path)
-
-    framework_names = [framework["name"] for framework in data["frameworks"]]
-    assert framework_names[0] == "pytorch_lightning"
-    assert "pytorch" in framework_names
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
-
-
 def test_inspect_split_file_pytorch_model_with_unrelated_lightning_helper_keeps_pytorch(tmp_path):
     (tmp_path / "train.py").write_text(
         "from model import Net\n" "\n" "def main():\n" "    return Net()\n",
@@ -981,58 +1172,6 @@ def test_inspect_top_level_model_import_does_not_reach_nested_model_file(tmp_pat
         encoding="utf-8",
     )
     (helpers / "model.py").write_text(
-        "import pytorch_lightning as pl\n" "\n" "class Helper(pl.LightningModule):\n" "    pass\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(tmp_path)
-
-    framework_names = [framework["name"] for framework in data["frameworks"]]
-    assert framework_names[0] == "pytorch"
-    assert "pytorch_lightning" in framework_names
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
-
-
-def test_inspect_external_lightning_import_does_not_reach_local_lightning_file(tmp_path):
-    package = tmp_path / "models"
-    package.mkdir()
-    (package / "train.py").write_text(
-        "import lightning.pytorch\n"
-        "import torch\n"
-        "from torch.utils.data import DataLoader\n"
-        "\n"
-        "def train():\n"
-        "    return DataLoader([])\n",
-        encoding="utf-8",
-    )
-    (package / "lightning.py").write_text(
-        "import pytorch_lightning as pl\n" "\n" "class Helper(pl.LightningModule):\n" "    pass\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(tmp_path)
-
-    framework_names = [framework["name"] for framework in data["frameworks"]]
-    assert framework_names[0] == "pytorch"
-    assert "pytorch_lightning" in framework_names
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
-
-
-def test_inspect_external_lightning_import_does_not_reach_local_lightning_package(tmp_path):
-    package = tmp_path / "models"
-    package.mkdir()
-    (package / "train.py").write_text(
-        "import lightning.pytorch\n"
-        "import torch\n"
-        "from torch.utils.data import DataLoader\n"
-        "\n"
-        "def train():\n"
-        "    return DataLoader([])\n",
-        encoding="utf-8",
-    )
-    lightning_package = package / "lightning"
-    lightning_package.mkdir()
-    (lightning_package / "__init__.py").write_text(
         "import pytorch_lightning as pl\n" "\n" "class Helper(pl.LightningModule):\n" "    pass\n",
         encoding="utf-8",
     )
@@ -1089,31 +1228,6 @@ def test_inspect_external_lightning_import_does_not_promote_shadowing_lightning_
     # The helper genuinely carries more raw evidence; routing still stays on
     # PyTorch because the helper is unreachable from the entry point.
     assert len(framework_by_name["pytorch_lightning"]["evidence"]) > len(framework_by_name["pytorch"]["evidence"])
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
-
-
-def test_inspect_external_lightning_import_does_not_reach_top_level_lightning_package(tmp_path):
-    (tmp_path / "train.py").write_text(
-        "import lightning.pytorch\n"
-        "import torch\n"
-        "from torch.utils.data import DataLoader\n"
-        "\n"
-        "def train():\n"
-        "    return DataLoader([])\n",
-        encoding="utf-8",
-    )
-    lightning_package = tmp_path / "lightning"
-    lightning_package.mkdir()
-    (lightning_package / "__init__.py").write_text(
-        "import pytorch_lightning as pl\n" "\n" "class Helper(pl.LightningModule):\n" "    pass\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(tmp_path)
-
-    framework_names = [framework["name"] for framework in data["frameworks"]]
-    assert framework_names[0] == "pytorch"
-    assert "pytorch_lightning" in framework_names
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
 
 
@@ -1258,154 +1372,6 @@ def test_inspect_split_file_lightning_trainer_helper_beats_pytorch_entry_point(t
     assert framework_names[0] == "pytorch_lightning"
     assert "pytorch" in framework_names
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
-
-
-def test_inspect_package_lightning_model_imported_by_entry_point_recommends_lightning(tmp_path):
-    package = tmp_path / "models"
-    package.mkdir()
-    (tmp_path / "train.py").write_text(
-        "import torch\n" "from models import LitModel\n" "\n" "def main():\n" "    return LitModel()\n",
-        encoding="utf-8",
-    )
-    (package / "__init__.py").write_text(
-        "import pytorch_lightning as pl\n" "\n" "class LitModel(pl.LightningModule):\n" "    pass\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(tmp_path)
-
-    framework_names = [framework["name"] for framework in data["frameworks"]]
-    assert framework_names[0] == "pytorch_lightning"
-    assert "pytorch" in framework_names
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
-
-
-def test_inspect_package_reexported_lightning_model_with_torch_entry_import_recommends_lightning(tmp_path):
-    package = tmp_path / "models"
-    package.mkdir()
-    (tmp_path / "train.py").write_text(
-        "import torch\n" "from models import LitModel\n" "\n" "def main():\n" "    return LitModel()\n",
-        encoding="utf-8",
-    )
-    (package / "__init__.py").write_text("from .model import LitModel\n", encoding="utf-8")
-    (package / "model.py").write_text(
-        "import pytorch_lightning as pl\n" "\n" "class LitModel(pl.LightningModule):\n" "    pass\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(tmp_path)
-
-    framework_names = [framework["name"] for framework in data["frameworks"]]
-    assert framework_names[0] == "pytorch_lightning"
-    assert "pytorch" in framework_names
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
-
-
-def test_inspect_package_reexported_lightning_model_with_active_pytorch_entry_recommends_lightning(tmp_path):
-    package = tmp_path / "models"
-    package.mkdir()
-    (tmp_path / "train.py").write_text(
-        "import torch\n"
-        "from torch.utils.data import DataLoader\n"
-        "from models import LitModel\n"
-        "\n"
-        "def main():\n"
-        "    loader = DataLoader([])\n"
-        "    return LitModel(), loader\n",
-        encoding="utf-8",
-    )
-    (package / "__init__.py").write_text("from .model import LitModel\n", encoding="utf-8")
-    (package / "model.py").write_text(
-        "import pytorch_lightning as pl\n" "\n" "class LitModel(pl.LightningModule):\n" "    pass\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(tmp_path)
-
-    framework_names = [framework["name"] for framework in data["frameworks"]]
-    assert framework_names[0] == "pytorch_lightning"
-    assert "pytorch" in framework_names
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
-
-
-def test_inspect_package_lightning_submodule_imported_by_entry_point_recommends_lightning(tmp_path):
-    package = tmp_path / "models"
-    package.mkdir()
-    (package / "__init__.py").write_text("", encoding="utf-8")
-    (tmp_path / "train.py").write_text(
-        "import torch\n"
-        "from torch.utils.data import DataLoader\n"
-        "from models import lightning_model\n"
-        "\n"
-        "def main():\n"
-        "    loader = DataLoader([])\n"
-        "    return lightning_model.LitModel(), loader\n",
-        encoding="utf-8",
-    )
-    (package / "lightning_model.py").write_text(
-        "import pytorch_lightning as pl\n" "\n" "class LitModel(pl.LightningModule):\n" "    pass\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(tmp_path)
-
-    framework_names = [framework["name"] for framework in data["frameworks"]]
-    assert framework_names[0] == "pytorch_lightning"
-    assert "pytorch" in framework_names
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
-    lightning_evidence = data["frameworks"][0]["evidence"]
-    assert any(
-        item["file"] == "models/lightning_model.py" and item["kind"] == "lightning_class" for item in lightning_evidence
-    )
-
-
-def test_inspect_package_star_import_can_reach_lightning_model(tmp_path):
-    package = tmp_path / "models"
-    package.mkdir()
-    (tmp_path / "train.py").write_text(
-        "import torch\n" "from models import *\n" "\n" "def main():\n" "    return LitModel()\n",
-        encoding="utf-8",
-    )
-    (package / "__init__.py").write_text(
-        "import pytorch_lightning as pl\n" "\n" "class LitModel(pl.LightningModule):\n" "    pass\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(tmp_path)
-
-    framework_names = [framework["name"] for framework in data["frameworks"]]
-    assert framework_names[0] == "pytorch_lightning"
-    assert "pytorch" in framework_names
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
-
-
-def test_inspect_relative_package_lightning_submodule_imported_by_entry_point_recommends_lightning(tmp_path):
-    package = tmp_path / "models"
-    package.mkdir()
-    (package / "__init__.py").write_text("", encoding="utf-8")
-    (package / "train.py").write_text(
-        "import torch\n"
-        "from torch.utils.data import DataLoader\n"
-        "from . import model\n"
-        "\n"
-        "def main():\n"
-        "    loader = DataLoader([])\n"
-        "    return model.LitModel(), loader\n",
-        encoding="utf-8",
-    )
-    (package / "model.py").write_text(
-        "import pytorch_lightning as pl\n" "\n" "class LitModel(pl.LightningModule):\n" "    pass\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(tmp_path)
-
-    framework_names = [framework["name"] for framework in data["frameworks"]]
-    assert framework_names[0] == "pytorch_lightning"
-    assert "pytorch" in framework_names
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
-    lightning_evidence = data["frameworks"][0]["evidence"]
-    assert any(item["file"] == "models/model.py" and item["kind"] == "lightning_class" for item in lightning_evidence)
 
 
 def test_inspect_unqualified_lightning_symbol_without_from_import_stays_import_only(tmp_path):
@@ -1566,104 +1532,6 @@ def test_inspect_lightning_fallback_ignores_in_module_torch_calls_for_outside_im
         for item in pytorch_evidence
     )
     assert sum(1 for item in pytorch_evidence if item["file"] == "litmodel.py" and item["kind"] == "pytorch_call") >= 3
-
-
-def test_inspect_lightning_script_with_many_torch_imports_recommends_lightning(tmp_path):
-    # A normal Lightning script imports several torch symbols, so PyTorch import
-    # evidence outnumbers Lightning symbols. Lightning still wins.
-    script = tmp_path / "train.py"
-    script.write_text(
-        "import torch\n"
-        "from torch import nn\n"
-        "from torch.utils.data import DataLoader\n"
-        "import pytorch_lightning as pl\n"
-        "\n"
-        "class Net(pl.LightningModule):\n"
-        "    pass\n"
-        "\n"
-        "trainer = pl.Trainer(max_epochs=1)\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(script)
-
-    framework_names = [framework["name"] for framework in data["frameworks"]]
-    assert framework_names[0] == "pytorch_lightning"
-    assert "pytorch" in framework_names
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
-
-
-def test_inspect_lightning_module_with_many_torch_imports_recommends_lightning(tmp_path):
-    script = tmp_path / "train.py"
-    script.write_text(
-        "import torch\n"
-        "from torch import nn\n"
-        "from torch.utils.data import DataLoader\n"
-        "import pytorch_lightning as pl\n"
-        "\n"
-        "class Net(pl.LightningModule):\n"
-        "    pass\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(script)
-
-    framework_names = [framework["name"] for framework in data["frameworks"]]
-    assert framework_names[0] == "pytorch_lightning"
-    assert "pytorch" in framework_names
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
-
-
-def test_inspect_lightning_model_file_with_many_torch_imports_recommends_lightning(tmp_path):
-    script = tmp_path / "model.py"
-    script.write_text(
-        "import torch\n"
-        "import torch.nn as nn\n"
-        "import torch.optim as optim\n"
-        "import torchaudio\n"
-        "import torchvision\n"
-        "from torch import nn\n"
-        "from torch.nn import functional as F\n"
-        "from torch.optim import Adam\n"
-        "from torch.utils.data import DataLoader\n"
-        "import pytorch_lightning as pl\n"
-        "\n"
-        "class LitModel(pl.LightningModule):\n"
-        "    pass\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(tmp_path)
-
-    framework_names = [framework["name"] for framework in data["frameworks"]]
-    assert framework_names[0] == "pytorch_lightning"
-    assert "pytorch" in framework_names
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
-
-
-def test_inspect_unrelated_lightning_helper_does_not_beat_pytorch_import_heavy_workspace(tmp_path):
-    (tmp_path / "experiment.py").write_text(
-        "import torch\n"
-        "import torch.nn\n"
-        "import torch.optim\n"
-        "import torch.utils.data\n"
-        "import torchaudio\n"
-        "import torchvision\n"
-        "\n"
-        "DEFAULT_EPOCHS = 1\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "lightning_helper.py").write_text(
-        "import pytorch_lightning as pl\n" "\n" "class Helper(pl.LightningModule):\n" "    pass\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(tmp_path)
-
-    framework_names = [framework["name"] for framework in data["frameworks"]]
-    assert framework_names[0] == "pytorch"
-    assert "pytorch_lightning" in framework_names
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
 
 
 @pytest.mark.parametrize(
