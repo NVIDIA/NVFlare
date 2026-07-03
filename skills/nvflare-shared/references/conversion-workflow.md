@@ -381,8 +381,12 @@ to force a run.
 - Before Python import checks, export, or simulation, follow
   `dependency-install.md`.
 - Treat missing dependencies as blockers only when no applicable dependency
-  file exists, install fails, system/GPU resources are unavailable, or required
-  approval or network access is unavailable.
+  file exists, install fails, system/GPU resources are unavailable, or (in
+  interactive mode) required approval is not given, or network access is
+  unavailable. A dependency covered by an applicable `requirements*.txt` is not
+  a blocker in unattended mode: install it into the isolated validation
+  environment per `dependency-install.md` and proceed, instead of running a
+  command you already know will fail.
 - Keep validation commands single-purpose. Run cleanup, dependency install,
   export, and simulation as separate commands; do not combine destructive
   cleanup and execution such as `rm -rf <workspace> && python job.py`.

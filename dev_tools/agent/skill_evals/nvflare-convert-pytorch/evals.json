@@ -22,7 +22,7 @@
         "The agent sets enable_tensor_disk_offload=True when the selected recipe exposes it.",
         "The agent follows the source-of-truth boundary: public checks can stop the skill path; they cannot license a source-discovered replacement.",
         "The agent keeps simulation workspaces, exported job folders, and generated runtime outputs under /tmp/nvflare unless the user gives another location.",
-        "The agent runs python job.py for local validation in the foreground to completion when dependencies are available.",
+        "The agent runs python job.py for local validation in the foreground to completion, installing applicable requirements*.txt into the validation environment first per dependency-install.md instead of treating missing-but-installable dependencies as a blocker.",
         "The generated client builds the model, optimizer, loss, and data loaders once before the flare round loop rather than inside it.",
         "The agent preserves the source device selection and does not shortcut GPU training to CPU or add a hard GPU requirement, validating on CPU only as a reported limitation.",
         "When job documentation, task guidance, or source project guidance declares a primary or target validation metric, the agent configures the FL recipe/global metric to that metric and reports that scalar.",
@@ -78,7 +78,7 @@
           },
           {
             "id": "local-validation",
-            "description": "runs local job validation in the foreground to completion when dependencies are available"
+            "description": "runs local job validation in the foreground to completion, installing applicable requirements*.txt into the validation environment first per dependency-install.md instead of treating missing-but-installable dependencies as a blocker"
           },
           {
             "id": "align-primary-metric",
@@ -331,7 +331,7 @@
           },
           {
             "id": "local-validation",
-            "description": "reruns local validation after the scoped job update when dependencies are available"
+            "description": "reruns local validation after the scoped job update, installing applicable requirements first per dependency-install.md"
           }
         ]
       }

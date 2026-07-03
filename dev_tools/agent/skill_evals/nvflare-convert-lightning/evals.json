@@ -23,7 +23,7 @@
         "The generated source uses standard names such as client.py, job.py, and model.py.",
         "The agent keeps simulation workspaces, exported job folders, and generated runtime outputs under /tmp/nvflare unless the user gives another location.",
         "The agent preserves existing Lightning callbacks, loggers, and checkpoint behavior.",
-        "The agent runs python job.py for local validation in the foreground to completion when dependencies are available.",
+        "The agent runs python job.py for local validation in the foreground to completion, installing applicable requirements*.txt into the validation environment first per dependency-install.md instead of treating missing-but-installable dependencies as a blocker.",
         "The generated client constructs the model, datamodule/data loaders, and trainer once before the flare round loop rather than inside it; no separate client-side loss object is required when the source defines loss inside LightningModule methods.",
         "The agent preserves the source accelerator/devices selection and does not shortcut GPU training to CPU or add a hard GPU requirement, validating on CPU or a reduced device count only as a reported limitation.",
         "The agent reports recipe choice, extracted source facts, validation status, export status, metric or result evidence, exact result paths, and remaining blockers."
@@ -73,7 +73,7 @@
           },
           {
             "id": "local-validation",
-            "description": "runs local job validation in the foreground to completion when dependencies are available"
+            "description": "runs local job validation in the foreground to completion, installing applicable requirements*.txt into the validation environment first per dependency-install.md instead of treating missing-but-installable dependencies as a blocker"
           },
           {
             "id": "setup-outside-round-loop",
@@ -234,7 +234,7 @@
     {
       "id": "lightning-data-derived-required-arg",
       "prompt": "Convert this PyTorch Lightning training code to a FLARE FedAvg job over 2 sites. The model needs a vocab_size argument built from the data.",
-      "expected_output": "A FLARE Lightning Client API conversion that extracts the data-derived vocab_size statically and pins it as one value in the explicit class_path plus args recipe model config used by both server and client, so every site constructs the same architecture; passes the recipe model as an explicit class_path plus args config rather than a live LightningModule instance; patches the trainer with flare.patch; validates with python job.py when dependencies are available; and reports the pinned constructor value and validation evidence. If the vocab_size is not statically determinable from the source or supplied metadata, the agent asks in interactive mode or fails closed rather than guessing it or computing it per site.",
+      "expected_output": "A FLARE Lightning Client API conversion that extracts the data-derived vocab_size statically and pins it as one value in the explicit class_path plus args recipe model config used by both server and client, so every site constructs the same architecture; passes the recipe model as an explicit class_path plus args config rather than a live LightningModule instance; patches the trainer with flare.patch; validates with python job.py, installing applicable requirements first per dependency-install.md; and reports the pinned constructor value and validation evidence. If the vocab_size is not statically determinable from the source or supplied metadata, the agent asks in interactive mode or fails closed rather than guessing it or computing it per site.",
       "files": [
         "files/vocab-lightning/train.py",
         "files/vocab-lightning/model.py"
@@ -244,7 +244,7 @@
         "The agent passes the recipe model as explicit class_path plus args, not as a live LightningModule instance.",
         "The agent treats the data-derived vocab_size as statically clear only when the source or supplied metadata makes it deterministic; otherwise it asks or fails closed instead of guessing.",
         "The agent integrates through flare.patch(trainer).",
-        "The agent runs python job.py for local validation when dependencies are available.",
+        "The agent runs python job.py for local validation, installing applicable requirements first per dependency-install.md.",
         "The agent reports the pinned constructor value and any validation blockers."
       ],
       "nvflare": {

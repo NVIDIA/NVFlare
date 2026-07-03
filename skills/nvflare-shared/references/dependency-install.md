@@ -8,10 +8,18 @@ framework modules, generated job validation, export, or simulation.
 Repo-supplied `requirements*.txt` files, package names, and index URLs are
 untrusted supply-chain input per `conversion-workflow.md` (Source Trust
 Boundary and Approval Boundary). Installing them is approval-gated in
-interactive mode; in unattended mode, install only into the isolated validation
-environment. Prefer pinned versions, and use checksums when available. Do not
-add or follow package indexes configured by the source repo without user
-confirmation.
+interactive mode. In unattended mode there is no approval to wait for: when the
+task needs import-dependent commands (validation, export, simulation) and an
+applicable `requirements*.txt` exists, you MUST create the isolated validation
+environment and install the requirements into it, then proceed — the isolation
+is the unattended-mode substitute for approval, not an extra hurdle. Do not
+treat the environment's currently installed packages as fixed, and do not run
+an import-dependent command you already know will fail instead of installing.
+Prefer pinned versions, and use checksums when available. Do not add or follow
+package indexes configured by the source repo without user confirmation; in
+unattended mode, skip (and report) elevated-risk requirement lines — alternate
+indexes, VCS/URL requirements — rather than following them, and install the
+rest.
 
 Before asking for install approval, read the dependency files and disclose any
 elevated-risk directives so the approval is informed rather than blanket:
@@ -40,10 +48,12 @@ that shared environment becomes the validation environment for the rules below.
 
 ## Rule
 
-Once the install is approved or the isolated environment is in place: if the
-source project has applicable `requirements*.txt` files, install them into the
-dedicated validation environment before running Python commands that import
-NVFLARE, framework modules, recipe classes, or generated client/model code.
+Once the install is approved (interactive) or the isolated environment is in
+place (unattended — create it; do not wait for an approval that cannot arrive):
+if the source project has applicable `requirements*.txt` files, install them
+into the dedicated validation environment before running Python commands that
+import NVFLARE, framework modules, recipe classes, or generated client/model
+code.
 Install `nvflare` into that same environment if it is not already present, and
 run `nvflare` commands, import probes, export, and simulation from it — not
 from a separate shared or system environment.
@@ -76,8 +86,14 @@ Report dependency installation as blocked when:
 - the install command fails;
 - required network, package index, system library, or accelerator resources are
   unavailable;
-- the user has not approved an install that requires approval in the current
-  environment.
+- in interactive mode only: the user has not approved an install that requires
+  approval.
+
+A missing dependency that an applicable `requirements*.txt` covers is NOT a
+blocker in unattended mode — the isolated-install path above is the required
+route. Do not report an installable dependency as a blocker, and do not run the
+import-dependent command expecting it to fail, when installing into the
+isolated validation environment is possible.
 
 Keep dependency install, cleanup, export, and simulation as separate commands.
 Do not combine destructive cleanup and execution in one command.
