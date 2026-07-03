@@ -26,14 +26,11 @@ from typing import Iterable, Optional
 
 MANIFEST_FILE_NAME = "manifest.json"
 MANIFEST_SCHEMA_VERSION = "1"
-# Eval suites and other repo-only QA content live outside skills/ (in
-# dev_tools/agent/skill_evals/). Runtime packaging still excludes cache files
-# and fails closed on any stray eval suite directory.
-IGNORED_SKILL_FILE_NAMES = {"__pycache__", "*.pyc", "*.pyo"}
-# Names that must never ship inside a skill even if present. Eval suites belong
-# in dev_tools/agent/skill_evals/; fail closed so a stray skills/<skill>/evals/
-# cannot be bundled or installed and re-expose grading-oracle data.
-SKILL_PACKAGING_EXCLUDE_NAMES = IGNORED_SKILL_FILE_NAMES | {"evals"}
+# Names that must never ship inside a skill even if present: byte-code caches,
+# and eval suites, which belong in dev_tools/agent/skill_evals/ — fail closed so
+# a stray skills/<skill>/evals/ cannot be bundled or installed and re-expose
+# grading-oracle data.
+SKILL_PACKAGING_EXCLUDE_NAMES = frozenset({"__pycache__", "*.pyc", "*.pyo", "evals"})
 SHARED_SKILL_REFERENCE_DIR = "nvflare-shared"
 HASH_READ_CHUNK_BYTES = 1024 * 1024
 

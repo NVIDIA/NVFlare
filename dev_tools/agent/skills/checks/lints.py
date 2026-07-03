@@ -159,7 +159,6 @@ _KNOWN_NVFLARE_ROOT_COMMANDS = {
 }
 _KNOWN_AGENT_COMMANDS = {"doctor", "info", "inspect", "skills"}
 _KNOWN_AGENT_SKILLS_COMMANDS = {"install", "list"}
-_PLANNED_AGENT_SKILLS_COMMANDS = set()
 _KNOWN_AGENT_FLAGS = {
     "agent": {"--format", "--schema"},
     "agent doctor": {"--format", "--schema"},
@@ -1285,7 +1284,7 @@ def _trim_command(text: str) -> str:
     return text
 
 
-def _command_drift_message(command: str, *, check_flags: bool = True, allow_planned: bool = False) -> Optional[str]:
+def _command_drift_message(command: str) -> Optional[str]:
     tokens = _command_tokens(command)
     if not tokens or tokens[0] != "nvflare":
         return None
@@ -1303,17 +1302,15 @@ def _command_drift_message(command: str, *, check_flags: bool = True, allow_plan
     if len(positional) >= 3 and positional[1] == "skills":
         skills_command = positional[2]
         if skills_command not in _KNOWN_AGENT_SKILLS_COMMANDS:
-            if not allow_planned or skills_command not in _PLANNED_AGENT_SKILLS_COMMANDS:
-                return f"unknown nvflare agent skills command '{skills_command}' in '{command}'"
+            return f"unknown nvflare agent skills command '{skills_command}' in '{command}'"
 
     command_key = " ".join(positional[:3] if len(positional) >= 3 and positional[1] == "skills" else positional[:2])
     allowed_flags = _KNOWN_AGENT_FLAGS.get(command_key, _KNOWN_AGENT_FLAGS.get(root, set()))
-    if check_flags:
-        for token in tokens:
-            if token.startswith("--"):
-                flag = token.split("=", 1)[0]
-                if flag not in allowed_flags:
-                    return f"unknown flag '{flag}' for 'nvflare {command_key}' in '{command}'"
+    for token in tokens:
+        if token.startswith("--"):
+            flag = token.split("=", 1)[0]
+            if flag not in allowed_flags:
+                return f"unknown flag '{flag}' for 'nvflare {command_key}' in '{command}'"
     return None
 
 

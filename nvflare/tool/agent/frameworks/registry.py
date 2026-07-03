@@ -122,21 +122,6 @@ def resolve_primary_framework(primary: str, evidence_by_framework: dict, resolve
     return primary
 
 
-def family_member_of_base(base: Optional[str]) -> Optional[str]:
-    """Return the family member whose base family is ``base`` (e.g. base ``pytorch`` -> ``pytorch_lightning``).
-
-    Assumes at most one member per base (the current PyTorch family). If a base
-    ever gains a second superset member, ordering and mixed-workspace detection
-    would need to handle multiple members instead of the first match.
-    """
-    if base is None:
-        return None
-    for member in _family_member_detectors():
-        if member.family == base:
-            return member.name
-    return None
-
-
 def family_base_has_member(base: Optional[str], evidence_by_framework: dict) -> Optional[str]:
     """If ``base`` is a family base with a member present in evidence, return the member name."""
     if base is None:

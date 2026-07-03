@@ -46,18 +46,11 @@ def test_recommended_skill_for():
     assert frameworks.recommended_skill_for(None) is None
 
 
-def test_family_member_of_base():
-    assert frameworks.family_member_of_base("pytorch") == "pytorch_lightning"
-    assert frameworks.family_member_of_base("pytorch_lightning") is None
-    assert frameworks.family_member_of_base(None) is None
-
-
 def _emit_collector():
     evidence = []
     flare_calls = []
     signals = []
     ctx = DetectContext(
-        "train.py",
         lambda fw, kind, value, lineno: evidence.append((fw, kind, value)),
         flare_calls.append,
         lambda fw, name: signals.append((fw, name)),

@@ -304,7 +304,6 @@ class _PythonInspector(ast.NodeVisitor):
         self._detectors = frameworks.detectors()
         self._detector_states = {detector.name: detector.new_file_state() for detector in self._detectors}
         self._ctx = DetectContext(
-            rel_path,
             self._emit_framework_evidence,
             self.state.flare_calls.add,
             self._add_integration_signal,
@@ -414,9 +413,7 @@ class _PythonInspector(ast.NodeVisitor):
             self.state.dynamic_patterns.append(_evidence(self.rel_path, lineno, "dynamic_dispatch", call_name))
         if call_name == "torch.compile":
             self.state.dynamic_patterns.append(_evidence(self.rel_path, lineno, "torch_compile", call_name))
-        if call_name.endswith("DistributedDataParallel") or call_name.endswith("DataParallel"):
-            self.state.distributed_patterns.append(_evidence(self.rel_path, lineno, "distributed_call", call_name))
-        if call_name.endswith("FSDP") or call_name.endswith("Accelerator"):
+        if call_name.endswith(("DataParallel", "FSDP", "Accelerator")):
             self.state.distributed_patterns.append(_evidence(self.rel_path, lineno, "distributed_call", call_name))
 
     def _inspect_secret_assignment(self, targets: list[ast.AST], value: ast.AST, lineno: Optional[int]) -> None:
@@ -559,11 +556,7 @@ class _FamilyResolver:
         return _framework_evidence_tied_to_entry_context(self._state, evidence)
 
     def has_inspected_file_or_entry_point(self) -> bool:
-        return _has_inspected_file_or_entry_point(self._state)
-
-    def has_evidence_outside_files(self, evidence: list[dict], reference_evidence: list[dict]) -> bool:
-        reference_files = {item["file"] for item in reference_evidence}
-        return any(item["file"] not in reference_files for item in evidence)
+        return self._state.root.is_file() or bool(self._state.entry_points)
 
     def evidence_outside_files(self, evidence: list[dict], reference_evidence: list[dict]) -> list[dict]:
         reference_files = {item["file"] for item in reference_evidence}
@@ -599,10 +592,6 @@ def _framework_evidence_tied_to_entry_context(state: InspectState, evidence: lis
     if state.root.is_file():
         return False
     return any(_entry_point_imports_file(state, item["file"]) for item in evidence)
-
-
-def _has_inspected_file_or_entry_point(state: InspectState) -> bool:
-    return state.root.is_file() or bool(state.entry_points)
 
 
 def _framework_evidence_tied_to_inspected_file_or_entry_point(state: InspectState, evidence: list[dict]) -> bool:
@@ -813,8 +802,8 @@ def _import_context_prefix(file_path: str) -> str:
 def _resolve_import_from_module(importing_file: str, module: str, level: int) -> str:
     if level <= 0:
         return module
-    path = Path(importing_file)
-    package_parts = path.parent.parts if path.name != "__init__.py" else path.parent.parts
+    # The same keep-formula is correct for both plain modules and __init__.py.
+    package_parts = Path(importing_file).parent.parts
     keep = max(0, len(package_parts) - level + 1)
     parts = list(package_parts[:keep])
     if module:
@@ -874,21 +863,15 @@ def _target_type(path: Path, state: InspectState, detected_framework: Optional[s
         return "flare_job_source"
     if detected_framework and conversion_state in {"partial_client_api", "client_api_converted"}:
         return "mixed_workspace"
-    if _is_mixed_family_workspace(state, detected_framework):
-        # Distinct from the FLARE conversion "mixed_workspace": this means two
-        # frameworks of the same family (e.g. PyTorch + PyTorch Lightning) are
-        # present, not that a partial FLARE conversion exists.
+    if frameworks.family_base_has_member(detected_framework, state.framework_evidence):
+        # A family base (e.g. PyTorch) detected alongside its superset member
+        # (PyTorch Lightning). Distinct from the FLARE conversion
+        # "mixed_workspace": two frameworks of the same family are present, not
+        # a partial FLARE conversion.
         return "mixed_framework_workspace"
     if detected_framework:
         return "training_repository"
     return "unknown_target"
-
-
-def _is_mixed_family_workspace(state: InspectState, detected_framework: Optional[str]) -> bool:
-    # A family base (e.g. PyTorch) detected alongside its superset member
-    # (PyTorch Lightning) in the evidence. Reported with a distinct target_type
-    # so it is not conflated with the FLARE conversion "mixed_workspace".
-    return bool(frameworks.family_base_has_member(detected_framework, state.framework_evidence))
 
 
 def _add_entry_point(path: Path, rel_path: str, tree: ast.Module, state: InspectState) -> None:

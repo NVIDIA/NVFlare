@@ -34,8 +34,7 @@ class DetectContext:
     the engine owns how those signals are stored and ranked.
     """
 
-    def __init__(self, rel_path: str, emit_evidence, add_flare_call, add_integration_signal):
-        self.rel_path = rel_path
+    def __init__(self, emit_evidence, add_flare_call, add_integration_signal):
         self._emit_evidence = emit_evidence
         self._add_flare_call = add_flare_call
         self._add_integration_signal = add_integration_signal
