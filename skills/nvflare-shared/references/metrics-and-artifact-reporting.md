@@ -10,6 +10,17 @@ to that metric key so the converted client returns it in `FLModel.metrics` and
 the server writes it to the metrics artifact. Report that scalar as the primary
 validation evidence. Do not silently substitute a different metric.
 
+## Received-Model Metric Ownership
+
+The per-round `FLModel.metrics` a training client sends must be the evaluation
+of the global model it received that round, computed before local training, so
+the server's model selector scores the intended snapshot. Do not send
+post-training local metrics as the round metric; keep those in local logs named
+`local_train_*`.
+
+The last per-round client metric describes the last received global model, not
+the final server-aggregated model; do not report it as the final model's result.
+
 ## Simulation Metrics
 
 After successful simulation, inspect the server workspace and logs for metrics

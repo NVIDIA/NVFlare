@@ -135,6 +135,11 @@ params = {k: v.detach().cpu() for k, v in model.state_dict().items()}
 flare.send(flare.FLModel(params=params, metrics={metric_name: global_metric}))
 ```
 
+The round `FLModel.metrics` is this pre-training evaluation of the received
+global model, not a post-training metric — see
+`../../nvflare-shared/references/metrics-and-artifact-reporting.md`
+("Received-Model Metric Ownership").
+
 When the task is evaluation-only or cross-site evaluation, use
 `flare.is_evaluate()` to send `flare.FLModel(metrics=...)` without local
 training and without params.
