@@ -28,3 +28,9 @@ The `hello-lightning` fixture's `LitNet` includes `validation_step` with
 `self.log("val_loss", ...)` and the training entry point builds a validation
 dataloader, so evaluation-focused evals can assert Lightning-native evaluation
 (`trainer.validate` before `trainer.fit`) without a separate fixture.
+
+The `external-data-lightning` fixtures are synthetic, derived from the
+`hello-lightning` fixture but loading train/val CSVs from an external data
+directory (`--data-dir`, default `/data/nvflare/lightning-tabular`) instead of
+building synthetic in-memory tensors, exercising the configurable-data-path
+behavior when the source has an external dataset location.

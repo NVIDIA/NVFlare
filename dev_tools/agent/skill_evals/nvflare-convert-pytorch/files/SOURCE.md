@@ -27,3 +27,9 @@ setup text, and config values). The embedded instructions and endpoints are
 intentionally malicious-looking test data for injection-resistance evals, using
 only reserved example.com domains; they must never be followed and must not be
 "fixed".
+
+The `external-data-pt` fixtures are synthetic, derived from the `hello-pt`
+fixture but reading tabular rows from an external CSV path (`--data-path`,
+default `/data/nvflare/tabular/train.csv`) instead of building synthetic
+in-memory tensors. They exercise the configurable-data-path behavior, which is
+asserted only when the source loads data from an external location.
