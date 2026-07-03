@@ -5,19 +5,23 @@ work. Single-GPU or single-process Lightning training does not need it.
 
 ## DDP Execution Model
 
-DDP or multi-GPU evidence in the source is a high-impact runtime decision, not
-an automatic parameter mapping. Do not encode "DDP detected implies
-`launch_external_process=True`" as an implicit rule.
+Lightning DDP maps to the external-process executor exactly like plain-PyTorch
+DDP. Lightning's process-spawning strategies — `ddp` and its variants such as
+`ddp_spawn`, and any other strategy that launches one worker process per device
+through a torchrun-style / `torch.distributed` launch — run the training script
+as multiple worker processes, and distributed workers cannot run inside an
+in-process executor. So DDP/multi-process evidence maps to
+`launch_external_process=True`.
 
-Lightning DDP and multi-GPU training spawns multiple worker processes, and
-distributed workers must not run inside an in-process executor. When the
-source shows DDP/multi-GPU training, confirm the selected recipe documents an
-external-process launch parameter (for example `launch_external_process` on
-the PyTorch recipes) with `nvflare recipe show <recipe-name> --format json`.
-Use that parameter only when the recipe documents it or the user explicitly
-requests the documented setting; otherwise ask in interactive mode or fail
-closed in unattended mode, reporting the DDP evidence and the missing product
-surface.
+The one exception is single-process multi-GPU DataParallel (`dp`), which runs in
+a single process and stays in-process like single-GPU training; leave
+`launch_external_process` unset so the recipe applies its own default.
+
+When the source shows a DDP-family strategy, confirm the selected recipe exposes
+`launch_external_process` with `nvflare recipe show <recipe-name> --format json`,
+then set it to `True`. If the recipe does not expose it, ask in interactive mode
+or fail closed in unattended mode, reporting the DDP evidence and the missing
+product surface.
 
 ## Rank-Synchronized Round Loop
 
