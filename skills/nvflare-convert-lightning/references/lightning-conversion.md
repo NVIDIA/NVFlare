@@ -13,7 +13,8 @@ for normal Lightning training.
 Use this path for Lightning conversion:
 
 1. Confirm Lightning routing with `nvflare agent inspect`.
-2. Select a PyTorch-family recipe with `nvflare recipe list/show`.
+2. Select a PyTorch-family recipe with `nvflare recipe list`, then inspect it
+   with `nvflare recipe show <recipe-name>`.
 3. Generate `client.py` with `flare.patch(trainer)` as the model exchange path.
 4. Generate `job.py` that builds the selected recipe and calls
    `recipe.execute(SimEnv(...))`.

@@ -227,9 +227,10 @@ flowchart TD
 
     FindSource --> Install["nvflare agent skills install"]
     Install --> Target["Agent target skill dir"]
-    Target --> InstallManifest[".nvflare_skill_install.json with managed_by, source_hash, skill_version"]
+    Target --> InstallManifest[".nvflare_skill_install.json with source_hash, installed_hash, skill_version, optional shared_source_hash"]
+    Install --> SharedSnapshot["immutable hidden .nvflare-shared / content-hash snapshot; no SKILL.md"]
 
-    Install --> Safety["symlink checks, lock dir, atomic staging, backup on replace, local modification detection"]
+    Install --> Safety["manifest/path validation, no-follow copy, staged hash verification, private target, lock, atomic publish, backup, local modification detection"]
 ```
 
 ## What The Skills Actually Do

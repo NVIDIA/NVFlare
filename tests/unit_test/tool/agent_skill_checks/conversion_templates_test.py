@@ -141,7 +141,6 @@ def test_custom_aggregator_template_materializes_lazy_disk_offload_refs():
     from nvflare.app_common.abstract.fl_model import FLModel
 
     module = _load_module(SHARED_TEMPLATES / "aggregator.py")
-    aggregator = module.WeightedAggregator()
 
     class _LazyRef:
         def __init__(self, array):
@@ -153,6 +152,11 @@ def test_custom_aggregator_template_materializes_lazy_disk_offload_refs():
         def __mul__(self, other):  # pragma: no cover - must never be reached
             raise TypeError("lazy ref must be materialized before weighted math")
 
+    # Production accepts NVFlare's concrete disk-offload ref type. Inject this
+    # test double explicitly so arbitrary objects with a materialize() method
+    # are never trusted by duck typing.
+    aggregator = module.WeightedAggregator(trusted_lazy_types=(_LazyRef,))
+
     aggregator.accept_model(FLModel(params={"w": _LazyRef(np.array([2.0]))}, meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 1}))
     aggregator.accept_model(FLModel(params={"w": _LazyRef(np.array([4.0]))}, meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 3}))
     result = aggregator.aggregate_model()
@@ -161,10 +165,9 @@ def test_custom_aggregator_template_materializes_lazy_disk_offload_refs():
     assert result.params["w"][0] == pytest.approx(3.5)
 
 
-def test_custom_aggregator_template_averages_per_key_with_mismatched_keys():
-    # A parameter present in only one client is averaged over just that client's
-    # weight (not diluted), and a key missing from the first client does not
-    # raise KeyError.
+def test_custom_aggregator_template_rejects_mismatched_parameter_schema():
+    # Missing or additional keys usually mean incompatible model definitions.
+    # Fail the round instead of silently producing a hybrid global model.
     import numpy as np
 
     from nvflare.apis.dxo import MetaKey
@@ -174,17 +177,404 @@ def test_custom_aggregator_template_averages_per_key_with_mismatched_keys():
     aggregator = module.WeightedAggregator()
 
     aggregator.accept_model(FLModel(params={"shared": np.array([2.0])}, meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 1}))
+    with pytest.raises(ValueError, match="schema"):
+        aggregator.accept_model(
+            FLModel(
+                params={"shared": np.array([4.0]), "only_b": np.array([9.0])},
+                meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 3},
+            )
+        )
+
+    # A rejected client does not partially mutate the accumulator.
+    assert aggregator.aggregate_model().params["shared"][0] == pytest.approx(2.0)
+
+
+def test_custom_aggregator_template_preserves_weighted_metrics():
+    import numpy as np
+
+    from nvflare.apis.dxo import MetaKey
+    from nvflare.app_common.abstract.fl_model import FLModel
+
+    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    aggregator = module.WeightedAggregator()
+
     aggregator.accept_model(
         FLModel(
-            params={"shared": np.array([4.0]), "only_b": np.array([9.0])},
+            params={"w": np.array([2.0])},
+            metrics={"accuracy": 0.5},
+            meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+        )
+    )
+    aggregator.accept_model(
+        FLModel(
+            params={"w": np.array([4.0])},
+            metrics={"accuracy": 1.0},
             meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 3},
         )
     )
+
     result = aggregator.aggregate_model()
 
-    # shared: (2*1 + 4*3)/(1+3) = 3.5 ; only_b: 9 present only in client B -> 9.0
-    assert result.params["shared"][0] == pytest.approx(3.5)
-    assert result.params["only_b"][0] == pytest.approx(9.0)
+    assert result.metrics == {"accuracy": pytest.approx(0.875)}
+
+
+def test_custom_aggregator_accepts_ordered_state_dict_parameters():
+    from collections import OrderedDict
+
+    import numpy as np
+
+    from nvflare.app_common.abstract.fl_model import FLModel
+
+    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    aggregator = module.WeightedAggregator()
+    aggregator.accept_model(FLModel(params=OrderedDict([("w", np.array([2.0]))])))
+
+    assert aggregator.aggregate_model().params["w"][0] == pytest.approx(2.0)
+
+
+def test_custom_aggregator_template_disables_metrics_if_any_client_omits_them():
+    import numpy as np
+
+    from nvflare.app_common.abstract.fl_model import FLModel
+
+    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    aggregator = module.WeightedAggregator()
+
+    aggregator.accept_model(FLModel(params={"w": np.array([2.0])}, metrics={"accuracy": 0.5}))
+    aggregator.accept_model(FLModel(params={"w": np.array([4.0])}, metrics=None))
+
+    assert aggregator.aggregate_model().metrics is None
+
+
+def test_custom_aggregator_template_rejects_untrusted_materializer_without_calling_it():
+    import numpy as np
+
+    from nvflare.app_common.abstract.fl_model import FLModel
+
+    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    aggregator = module.WeightedAggregator(trusted_lazy_types=())
+    called = False
+
+    class _UntrustedRef:
+        def materialize(self):
+            nonlocal called
+            called = True
+            return np.array([2.0])
+
+    with pytest.raises(TypeError, match="unsupported numeric type"):
+        aggregator.accept_model(FLModel(params={"w": _UntrustedRef()}))
+
+    assert called is False
+
+
+def test_custom_aggregator_template_does_not_probe_untrusted_materialize_attribute():
+    from nvflare.app_common.abstract.fl_model import FLModel
+
+    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    aggregator = module.WeightedAggregator(trusted_lazy_types=())
+    probed = False
+
+    class _AttributeTrap:
+        def __getattribute__(self, name):
+            nonlocal probed
+            if name == "materialize":
+                probed = True
+                raise AssertionError("untrusted attribute must not be probed")
+            return super().__getattribute__(name)
+
+    with pytest.raises(TypeError, match="unsupported numeric type"):
+        aggregator.accept_model(FLModel(params={"w": _AttributeTrap()}))
+
+    assert probed is False
+
+
+def test_custom_aggregator_template_rejects_spoofed_numeric_module_without_arithmetic():
+    from nvflare.app_common.abstract.fl_model import FLModel
+
+    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    aggregator = module.WeightedAggregator()
+    multiplied = False
+
+    class _SpoofedArray:
+        __module__ = "numpy"
+
+        def __mul__(self, other):
+            nonlocal multiplied
+            multiplied = True
+            return self
+
+    with pytest.raises(TypeError, match="unsupported numeric type"):
+        aggregator.accept_model(FLModel(params={"w": _SpoofedArray()}))
+
+    assert multiplied is False
+
+
+def test_custom_aggregator_template_rejects_numeric_subclasses_without_dispatch():
+    import numpy as np
+
+    from nvflare.app_common.abstract.fl_model import FLModel
+
+    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    aggregator = module.WeightedAggregator()
+    dispatched = False
+
+    class _ArraySubclass(np.ndarray):
+        def __array_ufunc__(self, *args, **kwargs):
+            nonlocal dispatched
+            dispatched = True
+            return super().__array_ufunc__(*args, **kwargs)
+
+    value = np.array([1.0]).view(_ArraySubclass)
+    with pytest.raises(TypeError, match="unsupported numeric type"):
+        aggregator.accept_model(FLModel(params={"w": value}))
+
+    assert dispatched is False
+
+
+def test_custom_aggregator_template_bounds_parameter_bytes_and_metric_keys():
+    import numpy as np
+
+    from nvflare.app_common.abstract.fl_model import FLModel
+
+    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    byte_bounded = module.WeightedAggregator(max_param_bytes=8)
+    with pytest.raises(ValueError, match="parameter byte size"):
+        byte_bounded.accept_model(FLModel(params={"w": np.array([1.0, 2.0], dtype=np.float64)}))
+
+    metric_bounded = module.WeightedAggregator(max_metric_keys=1)
+    with pytest.raises(ValueError, match="metric key count"):
+        metric_bounded.accept_model(FLModel(params={"w": np.array([1.0])}, metrics={"accuracy": 0.5, "loss": 1.0}))
+
+    union_bounded = module.WeightedAggregator(max_metric_keys=1)
+    union_bounded.accept_model(FLModel(params={"w": np.array([1.0])}, metrics={"accuracy": 0.5}))
+    with pytest.raises(ValueError, match="metric key union"):
+        union_bounded.accept_model(FLModel(params={"w": np.array([2.0])}, metrics={"loss": 1.0}))
+
+
+def test_custom_aggregator_preflights_production_lazy_ref_before_materializing(monkeypatch, tmp_path):
+    from nvflare.app_common.abstract.fl_model import FLModel
+    from nvflare.app_opt.pt import lazy_tensor_dict
+    from nvflare.app_opt.pt.lazy_tensor_dict import LazyTensorRef, _TempDirRef
+
+    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    loaded = False
+
+    class FakeSlice:
+        @staticmethod
+        def get_shape():
+            return [4]
+
+        @staticmethod
+        def get_dtype():
+            return "F32"
+
+    class FakeSafeOpen:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            return None
+
+        @staticmethod
+        def get_slice(key):
+            assert key == "w"
+            return FakeSlice()
+
+        @staticmethod
+        def get_tensor(key):
+            nonlocal loaded
+            loaded = True
+            raise AssertionError("oversized lazy tensor must not be materialized")
+
+    monkeypatch.setattr(lazy_tensor_dict, "safe_open", lambda *args, **kwargs: FakeSafeOpen())
+    temp_dir = tmp_path / "offload"
+    temp_dir.mkdir()
+    ref = LazyTensorRef(
+        file_path=str(temp_dir / "unused.safetensors"),
+        key="w",
+        temp_ref=_TempDirRef(str(temp_dir)),
+    )
+    aggregator = module.WeightedAggregator(max_param_bytes=15)
+
+    with pytest.raises(ValueError, match="lazy tensor byte size"):
+        aggregator.accept_model(FLModel(params={"w": ref}))
+
+    assert loaded is False
+    assert aggregator._accepted_count == 0
+
+
+def test_custom_aggregator_bounds_promoted_parameter_contribution():
+    import numpy as np
+
+    from nvflare.app_common.abstract.fl_model import FLModel
+
+    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    aggregator = module.WeightedAggregator(max_param_bytes=4)
+
+    # The input is four bytes, but multiplying int8 values by a float weight
+    # promotes the contribution to a 32-byte float64 array.
+    with pytest.raises(ValueError, match="weighted parameter contribution byte size"):
+        aggregator.accept_model(FLModel(params={"w": np.array([1, 2, 3, 4], dtype=np.int8)}))
+
+    assert aggregator._accepted_count == 0
+    assert aggregator._weighted_sum == {}
+
+
+def test_custom_aggregator_rejects_oversized_input_before_finiteness_scan(monkeypatch):
+    import numpy as np
+
+    from nvflare.app_common.abstract.fl_model import FLModel
+
+    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    aggregator = module.WeightedAggregator(max_param_bytes=1)
+    called = False
+    original_isfinite = np.isfinite
+
+    def recording_isfinite(value):
+        nonlocal called
+        called = True
+        return original_isfinite(value)
+
+    monkeypatch.setattr(np, "isfinite", recording_isfinite)
+    with pytest.raises(ValueError, match="parameter byte size"):
+        aggregator.accept_model(FLModel(params={"w": np.array([1.0], dtype=np.float64)}))
+
+    assert called is False
+    assert aggregator._accepted_count == 0
+
+
+def test_custom_aggregator_detaches_torch_updates_and_bounds_schema_device_layout():
+    import torch
+
+    from nvflare.app_common.abstract.fl_model import FLModel
+
+    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    aggregator = module.WeightedAggregator()
+    aggregator.accept_model(FLModel(params={"w": torch.tensor([1.0], requires_grad=True)}))
+    aggregator.accept_model(FLModel(params={"w": torch.tensor([3.0], requires_grad=True)}))
+
+    assert aggregator._weighted_sum["w"].grad_fn is None
+    result = aggregator.aggregate_model()
+    assert result.params["w"].grad_fn is None
+    assert result.params["w"].item() == pytest.approx(2.0)
+
+    device_aggregator = module.WeightedAggregator()
+    device_aggregator.accept_model(FLModel(params={"w": torch.ones(1)}))
+    with pytest.raises(ValueError, match="schema"):
+        device_aggregator.accept_model(FLModel(params={"w": torch.ones(1, device="meta")}))
+
+    layout_aggregator = module.WeightedAggregator()
+    layout_aggregator.accept_model(FLModel(params={"w": torch.ones(1)}))
+    sparse = torch.sparse_coo_tensor(indices=torch.tensor([[0]]), values=torch.tensor([1.0]), size=(1,))
+    with pytest.raises(ValueError, match="schema"):
+        layout_aggregator.accept_model(FLModel(params={"w": sparse}))
+
+
+@pytest.mark.parametrize("dtype", ["datetime64[D]", "timedelta64[D]"])
+def test_custom_aggregator_rejects_non_numeric_numpy_dtypes(dtype):
+    import numpy as np
+
+    from nvflare.app_common.abstract.fl_model import FLModel
+
+    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    aggregator = module.WeightedAggregator()
+    value = np.array(["2026-01-01" if dtype.startswith("datetime") else 1], dtype=dtype)
+
+    with pytest.raises(TypeError, match="unsupported NumPy dtype"):
+        aggregator.accept_model(FLModel(params={"w": value}))
+
+    assert aggregator._accepted_count == 0
+
+
+def test_custom_aggregator_checks_accumulator_and_result_sizes(monkeypatch):
+    import numpy as np
+
+    from nvflare.app_common.abstract.fl_model import FLModel
+
+    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    aggregator = module.WeightedAggregator(max_param_bytes=16)
+    original_value_nbytes = module._value_nbytes
+    calls = 0
+
+    def oversized_third_value(value):
+        nonlocal calls
+        calls += 1
+        # Raw value, contribution, then accumulator are checked in order.
+        return 17 if calls == 3 else original_value_nbytes(value)
+
+    monkeypatch.setattr(module, "_value_nbytes", oversized_third_value)
+    with pytest.raises(ValueError, match="parameter accumulator byte size"):
+        aggregator.accept_model(FLModel(params={"w": np.array([1.0], dtype=np.float64)}))
+    assert aggregator._accepted_count == 0
+
+    monkeypatch.setattr(module, "_value_nbytes", original_value_nbytes)
+    aggregator.accept_model(FLModel(params={"w": np.array([1.0], dtype=np.float64)}))
+    monkeypatch.setattr(module, "_value_nbytes", lambda value: 17)
+    with pytest.raises(ValueError, match="aggregated parameter result byte size"):
+        aggregator.aggregate_model()
+
+
+def test_custom_aggregator_rejects_numpy_object_dtype_without_element_dispatch():
+    import numpy as np
+
+    from nvflare.app_common.abstract.fl_model import FLModel
+
+    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    aggregator = module.WeightedAggregator()
+    dispatched = []
+
+    class ElementTrap:
+        def __float__(self):
+            dispatched.append("float")
+            raise AssertionError("object element must not be converted")
+
+        def __mul__(self, other):
+            dispatched.append("mul")
+            raise AssertionError("object element arithmetic must not run")
+
+        def __rmul__(self, other):
+            dispatched.append("rmul")
+            raise AssertionError("object element arithmetic must not run")
+
+    value = np.empty(1, dtype=object)
+    value[0] = ElementTrap()
+
+    with pytest.raises(TypeError, match="NumPy object dtype"):
+        aggregator.accept_model(FLModel(params={"w": value}))
+
+    assert dispatched == []
+    assert aggregator._accepted_count == 0
+
+
+def test_custom_aggregator_template_rejects_shape_or_dtype_drift():
+    import numpy as np
+
+    from nvflare.app_common.abstract.fl_model import FLModel
+
+    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+
+    shape_aggregator = module.WeightedAggregator()
+    shape_aggregator.accept_model(FLModel(params={"w": np.array([1.0], dtype=np.float32)}))
+    with pytest.raises(ValueError, match="schema"):
+        shape_aggregator.accept_model(FLModel(params={"w": np.array([1.0, 2.0], dtype=np.float32)}))
+
+    dtype_aggregator = module.WeightedAggregator()
+    dtype_aggregator.accept_model(FLModel(params={"w": np.array([1.0], dtype=np.float32)}))
+    with pytest.raises(ValueError, match="schema"):
+        dtype_aggregator.accept_model(FLModel(params={"w": np.array([1.0], dtype=np.float64)}))
+
+
+def test_custom_aggregator_template_rejects_excessive_finite_step_weight():
+    import numpy as np
+
+    from nvflare.apis.dxo import MetaKey
+    from nvflare.app_common.abstract.fl_model import FLModel
+
+    module = _load_module(SHARED_TEMPLATES / "aggregator.py")
+    aggregator = module.WeightedAggregator(max_step_weight=100.0)
+
+    with pytest.raises(ValueError, match="exceeds configured maximum"):
+        aggregator.accept_model(FLModel(params={"w": np.array([2.0])}, meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 101.0}))
 
 
 @pytest.mark.parametrize(

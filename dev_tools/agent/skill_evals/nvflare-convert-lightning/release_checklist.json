@@ -1,0 +1,15 @@
+{
+  "schema_version": "1",
+  "items": [
+    {
+      "id": "no-cross-family-pytorch-model-exchange-reference",
+      "description": "Non-PyTorch-family skills must not load nvflare-shared/references/pytorch-model-exchange.md.",
+      "evidence_expected": "A bounded static reference scan shows that only PyTorch-family conversion skills reference the PyTorch model-exchange guidance.",
+      "verification": {
+        "kind": "pytest",
+        "path": "tests/unit_test/tool/agent_skill_checks/policy_evidence_test.py",
+        "evidence_id": "no-cross-family-pytorch-model-exchange-reference"
+      }
+    }
+  ]
+}

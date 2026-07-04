@@ -781,10 +781,9 @@ def test_agent_doctor_json_reports_local_readiness(capsys, monkeypatch, tmp_path
     _assert_envelope_shape(payload, "ok")
     assert payload["data"]["status"] in {"ok", "attention"}
     assert payload["data"]["nvflare"]["import_ok"] is True
-    # Deployment/POC readiness is out of the conversion-only scope.
-    assert "online" not in payload["data"]
-    assert "startup_kits" not in payload["data"]
-    assert "poc" not in payload["data"]
+    assert payload["data"]["schema_version"] == "1"
+    assert payload["data"]["online"] == {"enabled": False, "status": "not_requested"}
+    assert {"commands", "optional_dependencies", "skills", "startup_kits", "poc"} <= set(payload["data"])
     assert not home.joinpath(".nvflare", "config.conf").exists()
 
 
@@ -799,10 +798,10 @@ def test_agent_doctor_human_output_is_summarized(capsys, monkeypatch, tmp_path):
     captured = capsys.readouterr()
     assert captured.err == ""
     assert "NVFLARE Agent Doctor" in captured.out
-    # Deployment/POC sections are not part of the conversion-scoped doctor.
-    assert "startup kits:" not in captured.out
-    assert "poc:" not in captured.out
-    assert "online:" not in captured.out
+    assert "startup kits:" in captured.out
+    assert "optional dependencies:" in captured.out
+    assert "poc:" in captured.out
+    assert "online: not_requested" in captured.out
     assert "{'import_ok':" not in captured.out
 
 
@@ -814,8 +813,8 @@ def test_agent_doctor_schema_exits_zero(capsys):
     assert schema["command"] == "nvflare agent doctor"
     assert schema["mutating"] is False
     assert schema["output_modes"] == ["json"]
-    # --online (and startup-kit selection) were removed with the deployment checks.
-    assert not any(arg["name"] == "--online" for arg in schema["args"])
+    arg_names = {arg["name"] for arg in schema["args"]}
+    assert {"--online", "--kit-id", "--startup-kit"} <= arg_names
 
 
 def _patch_skill_source(

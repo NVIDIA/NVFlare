@@ -43,13 +43,18 @@ reverted on purpose. Keep category validation local to SKILL.md frontmatter, and
 keep docs/catalog synchronization in separate docs tooling.
 """
 
+import ast
+import errno
 import json
 import os
 import re
 import shlex
+import stat
+import subprocess
+import sys
 from collections import Counter, defaultdict
 from dataclasses import dataclass
-from functools import cached_property
+from functools import cached_property, lru_cache
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
@@ -94,6 +99,13 @@ SKILL_MD_ADVISORY_WORDS = 2000
 MAX_SKILL_TEXT_FILE_BYTES = 512 * 1024
 DEFAULT_MAX_TRIGGER_OVERLAP_SKILLS = 200
 
+_READ_MISSING = "missing"
+_READ_SYMLINK = "symlink"
+_READ_NOT_REGULAR = "not-regular"
+_READ_TOO_LARGE = "too-large"
+_READ_CHANGED = "changed-during-read"
+_READ_UNREADABLE = "unreadable"
+
 _SIZE_EXCEPTION_MARKERS = (
     "nvflare-lint: allow skill-md-size-lint",
     "skill-md-size-lint: approved-exception",
@@ -108,7 +120,74 @@ _TRIGGER_TERMS = (
     "boundary",
 )
 _BOUNDARY_TERMS = ("do not use", "do-not-use", "use boundary", "boundary", "negative")
-_NORMATIVE_RE = re.compile(r"\b(must|must not|required|prohibited|approval)\b", re.IGNORECASE)
+_NORMATIVE_RE = re.compile(
+    r"\b(?:must(?:\s+not)?|never|required|prohibited|do\s+not)\b"
+    r"|\b(?:ask|requires?|requiring)\b[^.;\n]{0,80}\bapproval\b"
+    r"|\bwithout\b[^.;\n]{0,60}\bapproval\b"
+    r"|\bfollow\b[^.;\n]{0,80}\bapproval\s+boundary\b",
+    re.IGNORECASE,
+)
+_TABLE_NORMATIVE_RE = re.compile(r"\b(?:must(?:\s+not)?|never|prohibited|do\s+not)\b", re.IGNORECASE)
+_POLICY_TOKEN_RE = re.compile(r"[a-z][a-z0-9]*")
+_POLICY_NEGATIVE_MODAL_RE = re.compile(
+    r"\b(?:must\s+not|must\s+avoid|never|prohibited)\b"
+    r"|\bmust\s+keep\b[^.;\n]{0,80}\bread[- ]only\b"
+    r"|\bmust\s+treat\b[^.;\n]{0,80}\bunverified\b"
+    r"|\bdo\s+not\b",
+    re.I,
+)
+_POLICY_REQUIRED_MODAL_RE = re.compile(r"\b(?:must|required)\b", re.I)
+_POLICY_TEST_EVIDENCE_VARIABLE = "NVFLARE_POLICY_TEST_EVIDENCE"
+_POLICY_POLARITIES = {"required", "prohibited"}
+_POLICY_CONFLICTING_ACTIONS = (
+    frozenset({"accept", "reject"}),
+    frozenset({"allow", "deny"}),
+    frozenset({"copy", "delet"}),
+    frozenset({"download", "upload"}),
+    frozenset({"enabl", "disabl"}),
+    frozenset({"encrypt", "delet"}),
+    frozenset({"includ", "exclud"}),
+    frozenset({"install", "uninstall"}),
+    frozenset({"preserv", "remov"}),
+    frozenset({"read", "writ"}),
+    frozenset({"start", "stop"}),
+    frozenset({"submit", "cancel"}),
+)
+_POLICY_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "approval",
+    "as",
+    "be",
+    "before",
+    "by",
+    "do",
+    "does",
+    "for",
+    "from",
+    "in",
+    "into",
+    "is",
+    "it",
+    "keep",
+    "must",
+    "never",
+    "not",
+    "of",
+    "or",
+    "prohibited",
+    "required",
+    "rule",
+    "that",
+    "the",
+    "their",
+    "this",
+    "to",
+    "use",
+    "when",
+    "with",
+}
 _BACKTICK_NVFLARE_RE = re.compile(r"`(nvflare(?:\s+[^`]+)?)`")
 _SAFE_COMMAND_TOKEN_RE = re.compile(r"^(?:--?[A-Za-z0-9][\w-]*(?:=[^\s`;&|]+)?|[A-Za-z0-9_./:=+@%,-]+|<[^>\n]+>)$")
 _SIGNIFICANT_TOKEN_RE = re.compile(r"[a-z][a-z0-9_-]{2,}")
@@ -150,7 +229,7 @@ _KNOWN_AGENT_COMMANDS = {"doctor", "info", "inspect", "skills"}
 _KNOWN_AGENT_SKILLS_COMMANDS = {"install", "list"}
 _KNOWN_AGENT_FLAGS = {
     "agent": {"--format", "--schema"},
-    "agent doctor": {"--format", "--schema"},
+    "agent doctor": {"--format", "--kit-id", "--online", "--schema", "--startup-kit"},
     "agent info": {"--format", "--schema"},
     "agent inspect": {"--format", "--redact", "--schema"},
     "agent skills": {"--format", "--schema"},
@@ -188,6 +267,14 @@ class LintFinding:
         if self.global_finding:
             data["global"] = True
         return data
+
+
+@dataclass(frozen=True)
+class _PolicyCoverageEvidence:
+    text: str
+    polarity: str
+    source: str
+    evidence_id: Optional[str] = None
 
 
 @dataclass
@@ -279,7 +366,7 @@ def _run_v1_lints_with_records(
         findings=findings,
         skipped_checks=[],
     )
-    root_error_codes = {"skills-root-missing", "skills-root-not-directory"}
+    root_error_codes = {"skills-root-missing", "skills-root-not-directory", "skills-root-symlink-not-allowed"}
     if not any(finding.global_finding and finding.code in root_error_codes for finding in findings):
         for check in selected:
             _LINT_FUNCTIONS[check](context)
@@ -345,6 +432,19 @@ def _finding_matches_requested_skill(finding: dict[str, Any], skill_name: str) -
 
 
 def _load_skill_records(skills_root: Path, evals_root: Path, findings: list[LintFinding]) -> list[SkillRecord]:
+    if skills_root.is_symlink():
+        findings.append(
+            _finding(
+                LINT_SKILL_FRONTMATTER,
+                FINDING_ERROR,
+                skills_root,
+                "skills root must not be a symlink",
+                "Pass --skills-root pointing directly at the repository skills/ directory.",
+                code="skills-root-symlink-not-allowed",
+                global_finding=True,
+            )
+        )
+        return []
     if not skills_root.exists():
         findings.append(
             _finding(
@@ -377,14 +477,17 @@ def _load_skill_records(skills_root: Path, evals_root: Path, findings: list[Lint
         if should_skip_skill_dir(child):
             continue
         skill_file = child / SKILL_FILE_NAME
-        text = _read_bounded_text(skill_file) if skill_file.is_file() else None
+        text = _read_bounded_text(skill_file)
         metadata = _try_parse_frontmatter(skill_file) if text is not None else {}
         text = text or ""
         skill_name = str(metadata.get("name") or child.name)
         # Eval suites live outside the shipped skill tree, one dir per skill name.
         evals_dir = evals_root / skill_name
         evals_path = evals_dir / "evals.json"
-        evals, evals_error = _load_evals(evals_path)
+        if evals_dir.is_symlink():
+            evals, evals_error = [], "eval suite directory must not be a symlink"
+        else:
+            evals, evals_error = _load_evals(evals_path)
         records.append(
             SkillRecord(
                 name=skill_name,
@@ -444,9 +547,24 @@ def _has_valid_name(metadata: dict[str, Any]) -> bool:
 
 def _lint_md_size(context: LintContext) -> None:
     for record in context.records:
-        if not record.skill_file.is_file():
+        _text, read_error = _read_bounded_regular_text(record.skill_file)
+        if read_error in {_READ_MISSING, _READ_UNREADABLE}:
             continue
-        if _is_oversized_text_file(record.skill_file):
+        if read_error in {_READ_SYMLINK, _READ_NOT_REGULAR, _READ_CHANGED}:
+            context.findings.append(
+                _finding(
+                    LINT_SKILL_MD_SIZE,
+                    FINDING_ERROR,
+                    record.skill_file,
+                    "SKILL.md must be a stable regular file, not a symlink or special file",
+                    "Replace SKILL.md with a regular file inside the skill directory.",
+                    code="skill-md-unsafe-file",
+                    skill=record.name,
+                    line=1,
+                )
+            )
+            continue
+        if read_error == _READ_TOO_LARGE:
             if _has_bounded_size_exception(record.skill_file):
                 continue
             context.findings.append(
@@ -624,33 +742,64 @@ def _lint_global_negative(context: LintContext) -> None:
 
 
 def _lint_policy_coverage(context: LintContext) -> None:
-    for record in _public_records(context.records):
-        has_behavior_ids = any(_behavior_id_count(item) for item in record.evals)
-        has_helper_tests = record.has_helper_tests
-        has_checklist = _skill_text_contains(record.skill_dir, "checklist")
-        if has_behavior_ids or has_helper_tests or has_checklist:
-            continue
+    policy_records = _policy_records(context.records)
+    evidence_by_record: dict[str, list[_PolicyCoverageEvidence]] = {}
+    checklist_errors: dict[str, str] = {}
+    repo_root = context.skills_root.resolve().parent
 
-        for file_path, text in _iter_skill_text_files(record.skill_dir):
-            for line_no, line in enumerate(text.splitlines(), start=1):
-                if _NORMATIVE_RE.search(line):
-                    context.findings.append(
-                        _finding(
-                            LINT_SKILL_POLICY_COVERAGE,
-                            FINDING_ERROR,
-                            file_path,
-                            "normative rule has no measurable behavior ID, helper test, or checklist coverage",
-                            "Map required/prohibited behavior to eval-root "
-                            "(dev_tools/agent/skill_evals/<skill>/evals.json) nvflare behavior IDs or tests.",
-                            code="skill-policy-coverage-missing",
-                            skill=record.name,
-                            line=line_no,
-                        )
-                    )
-                    break
-            else:
+    for record in context.records:
+        evidence = _behavior_coverage(record.evals)
+        evidence.extend(_helper_test_coverage(record.skill_dir))
+        checklist_coverage, checklist_error = _release_checklist_coverage(
+            record.evals_dir / "release_checklist.json",
+            record=record,
+            repo_root=repo_root,
+        )
+        evidence.extend(checklist_coverage)
+        evidence_by_record[record.name] = evidence
+        if checklist_error:
+            checklist_errors[record.name] = checklist_error
+
+    reported_checklist_errors: set[str] = set()
+    for record in policy_records:
+        consumers = _policy_consumers(record, context.records)
+        evidence_records = _unique_records([record, *consumers])
+        coverage = [item for source in evidence_records for item in evidence_by_record.get(source.name, [])]
+
+        for source in evidence_records:
+            checklist_error = checklist_errors.get(source.name)
+            if not checklist_error or source.name in reported_checklist_errors:
                 continue
-            break
+            reported_checklist_errors.add(source.name)
+            context.findings.append(
+                _finding(
+                    LINT_SKILL_POLICY_COVERAGE,
+                    FINDING_ERROR,
+                    source.evals_dir / "release_checklist.json",
+                    checklist_error,
+                    "Use schema_version '1' and make every checklist item resolve to a concrete eval behavior or "
+                    "an executable NVFLARE_POLICY_TEST_EVIDENCE marker.",
+                    code="skill-policy-checklist-invalid",
+                    skill=source.name,
+                )
+            )
+
+        for file_path, line_no, rule in _normative_rules(record.skill_dir):
+            if any(_policy_coverage_matches(rule, candidate) for candidate in coverage):
+                continue
+            context.findings.append(
+                _finding(
+                    LINT_SKILL_POLICY_COVERAGE,
+                    FINDING_ERROR,
+                    file_path,
+                    f"normative rule has no matching measurable coverage: {_short_rule(rule)!r}",
+                    "Add a polarity-matching mandatory/prohibited runtime behavior, an executable helper-test "
+                    "evidence marker, or a checklist item that resolves to one of those concrete verifiers.",
+                    code="skill-policy-coverage-missing",
+                    skill=record.name,
+                    line=line_no,
+                )
+            )
 
 
 def _lint_process_metrics(context: LintContext) -> None:
@@ -729,8 +878,8 @@ def _lint_process_metrics(context: LintContext) -> None:
 def _lint_command_drift(context: LintContext) -> None:
     for record in _public_records(context.records):
         for file_path, text in _iter_skill_text_files(record.skill_dir, include_scripts=True):
-            for line_no, command in _extract_nvflare_commands(text):
-                message = _command_drift_message(command)
+            for line_no, command, require_complete in _extract_nvflare_commands(text):
+                message = _command_drift_message(command, require_complete=require_complete)
                 if message is None:
                     continue
                 context.findings.append(
@@ -767,12 +916,9 @@ def _lint_helper_scripts(context: LintContext) -> None:
             )
 
         for script in script_files:
-            try:
-                if script.stat().st_size > MAX_SKILL_TEXT_FILE_BYTES:
-                    continue
-            except OSError:
+            text = _read_bounded_text(script)
+            if text is None:
                 continue
-            text = script.read_text(encoding="utf-8", errors="replace")
             lowered = text.lower()
             if "promoted_to:" in lowered or "_promoted_to:" in lowered:
                 context.findings.append(
@@ -860,16 +1006,27 @@ def _lint_fixtures(context: LintContext) -> None:
                         )
                     )
                     continue
-                if not fixture_path.is_file():
+                unsafe_fixture = _path_has_symlink_component(record.evals_dir, Path(str(rel_path)))
+                if unsafe_fixture or not _is_regular_file(fixture_path):
+                    code = (
+                        "skill-fixture-file-unsafe"
+                        if unsafe_fixture or fixture_path.exists() or fixture_path.is_symlink()
+                        else "skill-fixture-file-missing"
+                    )
+                    message = (
+                        f"eval fixture must be a regular non-symlink file: {rel_path}"
+                        if code == "skill-fixture-file-unsafe"
+                        else f"eval fixture does not exist: {rel_path}"
+                    )
                     context.findings.append(
                         _finding(
                             LINT_SKILL_FIXTURE,
                             FINDING_ERROR,
                             record.evals_path,
-                            f"eval fixture does not exist: {rel_path}",
+                            message,
                             "Place deterministic fixtures under the eval root "
                             "(dev_tools/agent/skill_evals/<skill>/files/) and reference existing files.",
-                            code="skill-fixture-file-missing",
+                            code=code,
                             skill=record.name,
                         )
                     )
@@ -1066,12 +1223,17 @@ def _skill_body(text: str) -> str:
 
 
 def _load_evals(evals_path: Path) -> tuple[list[dict[str, Any]], Optional[str]]:
-    if not evals_path.is_file():
+    text, read_error = _read_bounded_regular_text(evals_path, encoding="utf-8", errors="strict")
+    if read_error == _READ_MISSING:
         return [], None
-    if _is_oversized_text_file(evals_path):
+    if read_error == _READ_TOO_LARGE:
         return [], f"evals.json exceeds size limit ({MAX_SKILL_TEXT_FILE_BYTES} bytes)"
+    if read_error in {_READ_SYMLINK, _READ_NOT_REGULAR, _READ_CHANGED}:
+        return [], "evals.json must be a stable regular file, not a symlink or special file"
+    if read_error or text is None:
+        return [], "evals.json could not be read as bounded UTF-8 text"
     try:
-        raw = json.loads(evals_path.read_text(encoding="utf-8"))
+        raw = json.loads(text)
     except json.JSONDecodeError as e:
         return [], f"failed to parse evals.json: {e}"
     if isinstance(raw, dict):
@@ -1183,6 +1345,502 @@ def _behavior_id_count(item: dict[str, Any]) -> int:
     return count
 
 
+def _policy_records(records: list[SkillRecord]) -> list[SkillRecord]:
+    """Return public skills plus internal policy sources consumed by them."""
+
+    public = _public_records(records)
+    result = list(public)
+    for record in records:
+        if record.public:
+            continue
+        if any(_record_references_skill(consumer, record.name) for consumer in public):
+            result.append(record)
+    return result
+
+
+def _policy_consumers(record: SkillRecord, records: list[SkillRecord]) -> list[SkillRecord]:
+    if record.public:
+        return []
+    return [candidate for candidate in _public_records(records) if _record_references_skill(candidate, record.name)]
+
+
+def _record_references_skill(record: SkillRecord, referenced_skill: str) -> bool:
+    pattern = re.compile(rf"(?:^|[/\\]){re.escape(referenced_skill)}(?:[/\\]|$)")
+    return any(pattern.search(text) for _path, text in _iter_skill_text_files(record.skill_dir))
+
+
+def _unique_records(records: list[SkillRecord]) -> list[SkillRecord]:
+    result = []
+    seen = set()
+    for record in records:
+        if record.name not in seen:
+            seen.add(record.name)
+            result.append(record)
+    return result
+
+
+def _behavior_coverage(evals: list[dict[str, Any]]) -> list[_PolicyCoverageEvidence]:
+    coverage: list[_PolicyCoverageEvidence] = []
+    for item in evals:
+        case_id = item.get("id")
+        if not all(
+            isinstance(value, str) and value.strip()
+            for value in (case_id, item.get("prompt"), item.get("expected_output"))
+        ):
+            continue
+        nvflare = _nvflare_ext(item)
+        for key, polarity in (
+            ("mandatory_behavior", "required"),
+            ("prohibited_behavior", "prohibited"),
+        ):
+            values = nvflare.get(key, [])
+            if not isinstance(values, list):
+                continue
+            for value in values:
+                if not isinstance(value, dict):
+                    continue
+                behavior_id = value.get("id")
+                description = value.get("description")
+                if not all(isinstance(part, str) and part.strip() for part in (behavior_id, description)):
+                    continue
+                coverage.append(
+                    _PolicyCoverageEvidence(
+                        text=f"{behavior_id.strip()} {description.strip()}",
+                        polarity=polarity,
+                        source=f"eval:{case_id}:{key}:{behavior_id}",
+                        evidence_id=behavior_id,
+                    )
+                )
+        negative_for = nvflare.get("negative_for")
+        if isinstance(negative_for, str) and negative_for.strip():
+            coverage.append(
+                _PolicyCoverageEvidence(
+                    text=f"{case_id} {item['prompt']} {item['expected_output']}",
+                    polarity="prohibited",
+                    source=f"eval:{case_id}:negative_for:{negative_for}",
+                    evidence_id=f"negative-for-{negative_for}",
+                )
+            )
+    return coverage
+
+
+def _helper_test_coverage(skill_dir: Path) -> list[_PolicyCoverageEvidence]:
+    coverage: list[_PolicyCoverageEvidence] = []
+    tests_dir = skill_dir / "tests"
+    candidates = (
+        [path for path in _iter_files_no_follow(tests_dir) if _is_pytest_module(path)] if tests_dir.is_dir() else []
+    )
+    candidates.extend(
+        path for path in _iter_files_no_follow(skill_dir) if _is_pytest_module(path) and path not in candidates
+    )
+    for path in candidates:
+        text = _read_bounded_text(path)
+        if text is not None:
+            coverage.extend(_policy_test_evidence(path, text))
+    return coverage
+
+
+def _policy_test_evidence(path: Path, text: str) -> list[_PolicyCoverageEvidence]:
+    """Load explicit evidence markers that point at executable test functions.
+
+    Arbitrary test source, comments, docstrings, and function names are not
+    coverage. A module must declare ``NVFLARE_POLICY_TEST_EVIDENCE`` entries and
+    each entry must resolve to a test function containing an assertion.
+    """
+
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError):
+        return []
+
+    for node in tree.body:
+        if not isinstance(node, (ast.Assign, ast.AnnAssign)):
+            continue
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        value = node.value
+        if (
+            value is not None
+            and any(isinstance(target, ast.Name) and target.id == "pytestmark" for target in targets)
+            and _node_has_skip_marker(value)
+        ):
+            return []
+
+    functions = {
+        node.name: node
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_")
+    }
+    declarations = []
+    for node in tree.body:
+        value = None
+        if isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == _POLICY_TEST_EVIDENCE_VARIABLE for target in node.targets
+        ):
+            value = node.value
+        elif (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == _POLICY_TEST_EVIDENCE_VARIABLE
+        ):
+            value = node.value
+        if value is not None:
+            try:
+                declarations = ast.literal_eval(value)
+            except (ValueError, TypeError, SyntaxError):
+                return []
+            break
+    if not isinstance(declarations, list):
+        return []
+
+    result = []
+    for entry in declarations:
+        if not isinstance(entry, dict):
+            continue
+        evidence_id = entry.get("id")
+        description = entry.get("description")
+        polarity = entry.get("polarity")
+        test_name = entry.get("test")
+        if not all(isinstance(value, str) and value.strip() for value in (evidence_id, description, test_name)):
+            continue
+        if polarity not in _POLICY_POLARITIES:
+            continue
+        test_node = functions.get(test_name)
+        if test_node is None or not _test_function_has_assertion(test_node):
+            continue
+        result.append(
+            _PolicyCoverageEvidence(
+                text=f"{evidence_id} {description} {test_name}",
+                polarity=polarity,
+                source=f"pytest:{path}:{test_name}",
+                evidence_id=evidence_id,
+            )
+        )
+    return result
+
+
+def _test_function_has_assertion(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    if any(_node_has_skip_marker(decorator) for decorator in node.decorator_list):
+        return False
+    if any(isinstance(child, ast.Call) and _is_skip_function(child.func) for child in ast.walk(node)):
+        return False
+
+    for statement in node.body:
+        if isinstance(statement, (ast.Return, ast.Raise)):
+            return False
+        if isinstance(statement, ast.Assert):
+            return not (isinstance(statement.test, ast.Constant) and bool(statement.test.value))
+        if isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call):
+            if _is_assertion_call(statement.value):
+                return True
+        if isinstance(statement, (ast.With, ast.AsyncWith)):
+            if any(
+                isinstance(item.context_expr, ast.Call) and _call_name(item.context_expr.func) == "raises"
+                for item in statement.items
+            ):
+                return True
+        if isinstance(statement, ast.If):
+            constant = _constant_truth(statement.test)
+            if constant is not None:
+                branch = statement.body if constant else statement.orelse
+                if _test_statements_have_direct_assertion(branch):
+                    return True
+    return False
+
+
+def _test_statements_have_direct_assertion(statements: list[ast.stmt]) -> bool:
+    wrapper = ast.FunctionDef(
+        name="test_evidence",
+        args=ast.arguments(posonlyargs=[], args=[], kwonlyargs=[], kw_defaults=[], defaults=[]),
+        body=statements,
+        decorator_list=[],
+    )
+    return _test_function_has_assertion(wrapper)
+
+
+def _node_has_skip_marker(node: ast.AST) -> bool:
+    return any(
+        (isinstance(child, ast.Call) and _is_skip_function(child.func))
+        or (isinstance(child, ast.Attribute) and child.attr in {"skip", "skipif", "xfail"})
+        for child in ast.walk(node)
+    )
+
+
+def _is_skip_function(function: ast.AST) -> bool:
+    return _call_name(function) in {"skip", "skipif", "xfail"}
+
+
+def _call_name(function: ast.AST) -> Optional[str]:
+    if isinstance(function, ast.Name):
+        return function.id
+    if isinstance(function, ast.Attribute):
+        return function.attr
+    return None
+
+
+def _is_assertion_call(call: ast.Call) -> bool:
+    name = _call_name(call.func)
+    if name == "raises":
+        return True
+    if not name or not name.startswith("assert"):
+        return False
+    if name == "assertTrue" and call.args and isinstance(call.args[0], ast.Constant):
+        return not bool(call.args[0].value)
+    if name == "assertFalse" and call.args and isinstance(call.args[0], ast.Constant):
+        return bool(call.args[0].value)
+    return True
+
+
+def _is_pytest_module(path: Path) -> bool:
+    return path.suffix == ".py" and (path.name.startswith("test_") or path.name.endswith("_test.py"))
+
+
+def _release_checklist_coverage(
+    path: Path,
+    *,
+    record: SkillRecord,
+    repo_root: Path,
+) -> tuple[list[_PolicyCoverageEvidence], Optional[str]]:
+    text, read_error = _read_bounded_regular_text(path, encoding="utf-8", errors="strict")
+    if read_error == _READ_MISSING:
+        return [], None
+    if read_error == _READ_TOO_LARGE:
+        return [], f"release_checklist.json exceeds size limit ({MAX_SKILL_TEXT_FILE_BYTES} bytes)"
+    if read_error is not None or text is None:
+        return [], "release_checklist.json must be a bounded regular non-symlink UTF-8 file"
+    try:
+        raw = json.loads(text)
+    except json.JSONDecodeError as e:
+        return [], f"failed to parse release_checklist.json: {e}"
+    if not isinstance(raw, dict) or str(raw.get("schema_version")) != "1":
+        return [], "release_checklist.json must be an object with schema_version '1'"
+    items = raw.get("items")
+    if not isinstance(items, list):
+        return [], "release_checklist.json field 'items' must be a list"
+
+    coverage: list[_PolicyCoverageEvidence] = []
+    item_ids = set()
+    for index, item in enumerate(items):
+        if not isinstance(item, dict):
+            return [], f"release_checklist.json item {index} must be an object"
+        values = [item.get("id"), item.get("description"), item.get("evidence_expected")]
+        if not all(isinstance(value, str) and value.strip() for value in values):
+            return [], (
+                f"release_checklist.json item {index} must contain non-empty id, description, and evidence_expected"
+            )
+        item_id = item["id"].strip()
+        if item_id in item_ids:
+            return [], f"release_checklist.json contains duplicate item id {item_id!r}"
+        item_ids.add(item_id)
+        verification = item.get("verification")
+        if not isinstance(verification, dict):
+            return [], f"release_checklist.json item {index} must contain a verification object"
+        evidence, error = _resolve_checklist_verification(
+            item_id,
+            verification,
+            record=record,
+            repo_root=repo_root,
+        )
+        if error:
+            return [], f"release_checklist.json item {index} verification is invalid: {error}"
+        coverage.append(evidence)
+    return coverage, None
+
+
+def _resolve_checklist_verification(
+    checklist_id: str,
+    verification: dict[str, Any],
+    *,
+    record: SkillRecord,
+    repo_root: Path,
+) -> tuple[Optional[_PolicyCoverageEvidence], Optional[str]]:
+    kind = verification.get("kind")
+    if kind == "eval_behavior":
+        case_id = verification.get("case_id")
+        category = verification.get("category")
+        behavior_id = verification.get("behavior_id")
+        if category not in {"mandatory_behavior", "prohibited_behavior"}:
+            return None, "eval_behavior category must be mandatory_behavior or prohibited_behavior"
+        if not all(isinstance(value, str) and value.strip() for value in (case_id, behavior_id)):
+            return None, "eval_behavior requires non-empty case_id and behavior_id"
+        candidates = [
+            evidence
+            for evidence in _behavior_coverage(record.evals)
+            if evidence.source == f"eval:{case_id}:{category}:{behavior_id}"
+        ]
+        if len(candidates) != 1:
+            return None, f"could not resolve exactly one {category} {behavior_id!r} in eval {case_id!r}"
+        return candidates[0], None
+
+    if kind == "pytest":
+        relative_path = verification.get("path")
+        evidence_id = verification.get("evidence_id")
+        if not all(isinstance(value, str) and value.strip() for value in (relative_path, evidence_id)):
+            return None, "pytest verification requires non-empty path and evidence_id"
+        relative = Path(relative_path)
+        if relative.is_absolute() or ".." in relative.parts:
+            return None, "pytest path must stay relative to the repository root"
+        if not relative.parts or relative.parts[0] != "tests" or not _is_pytest_module(relative):
+            return None, "pytest path must name a collected test_*.py or *_test.py module under tests/"
+        test_path = repo_root / relative
+        if _path_has_symlink_component(repo_root, relative):
+            return None, "pytest path must not contain symlinks"
+        test_text, read_error = _read_bounded_regular_text(test_path, encoding="utf-8", errors="strict")
+        if read_error is not None or test_text is None:
+            return None, "pytest path must be a bounded regular UTF-8 file"
+        candidates = [
+            evidence for evidence in _policy_test_evidence(test_path, test_text) if evidence.evidence_id == evidence_id
+        ]
+        if len(candidates) != 1:
+            return None, f"could not resolve exactly one executable pytest evidence id {evidence_id!r}"
+        return candidates[0], None
+
+    return None, f"unsupported verification kind {kind!r} for checklist item {checklist_id!r}"
+
+
+def _normative_rules(skill_dir: Path) -> Iterable[tuple[Path, int, str]]:
+    for file_path, text in _iter_skill_text_files(skill_dir):
+        lines = text.splitlines()
+        index = 0
+        in_fence = False
+        while index < len(lines):
+            stripped = lines[index].strip()
+            if stripped.startswith("```") or stripped.startswith("~~~"):
+                in_fence = not in_fence
+                index += 1
+                continue
+            if in_fence or not stripped or stripped.startswith("#"):
+                index += 1
+                continue
+
+            line_no = index + 1
+            table_line = stripped.startswith("|")
+            block = [_markdown_table_text(stripped) if table_line else stripped]
+            index += 1
+            while not table_line and index < len(lines):
+                continuation = lines[index].strip()
+                if (
+                    not continuation
+                    or continuation.startswith(("#", "|", "```", "~~~"))
+                    or re.match(r"^(?:[-*+]\s+|\d+[.)]\s+)", continuation)
+                ):
+                    break
+                block.append(continuation)
+                index += 1
+            block_text = " ".join(block)
+            search_text = _normative_search_text(block_text)
+            if not (_TABLE_NORMATIVE_RE if table_line else _NORMATIVE_RE).search(search_text):
+                continue
+            for rule in _split_normative_clauses(block_text):
+                if _is_policy_maintenance_directive(rule):
+                    continue
+                yield file_path, line_no, rule
+
+
+def _markdown_table_text(line: str) -> str:
+    cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+    if cells and all(re.fullmatch(r":?-{3,}:?", cell) for cell in cells):
+        return ""
+    return " ".join(cell for cell in cells if cell)
+
+
+def _is_policy_maintenance_directive(rule: str) -> bool:
+    lowered = _normative_search_text(rule).lower()
+    return bool(
+        re.search(r"\bdo\s+not\s+(?:encode|maintain|restate)\b", lowered)
+        and re.search(r"\b(?:this\s+reference|here)\b", lowered)
+    )
+
+
+def _split_normative_clauses(block: str) -> list[str]:
+    return [
+        sentence.strip()
+        for sentence in re.split(r"(?<=[.;])\s+", block)
+        if _NORMATIVE_RE.search(_normative_search_text(sentence))
+    ]
+
+
+def _normative_search_text(text: str) -> str:
+    """Remove quoted labels/code so policy words there do not create rules."""
+
+    return re.sub(r"`[^`]*`|\"[^\"]*\"|'[^']*'", " ", text)
+
+
+def _policy_coverage_matches(rule: str, candidate: _PolicyCoverageEvidence) -> bool:
+    rule_polarity = _policy_rule_polarity(rule)
+    if rule_polarity != "neutral" and rule_polarity != candidate.polarity:
+        return False
+    rule_tokens = _policy_tokens(rule)
+    candidate_tokens = _policy_tokens(candidate.text)
+    if not rule_tokens or not candidate_tokens:
+        return False
+    if _policy_actions_conflict(rule_tokens, candidate_tokens):
+        return False
+    shared = rule_tokens.intersection(candidate_tokens)
+    required_shared = 1 if len(rule_tokens) == 1 else 2
+    return len(shared) >= 3 or (
+        len(shared) >= required_shared and len(shared) / min(len(rule_tokens), len(candidate_tokens)) >= 0.4
+    )
+
+
+def _policy_actions_conflict(rule_tokens: set[str], candidate_tokens: set[str]) -> bool:
+    return any(
+        bool(actions & rule_tokens)
+        and bool(actions & candidate_tokens)
+        and (actions & rule_tokens) != (actions & candidate_tokens)
+        for actions in _POLICY_CONFLICTING_ACTIONS
+    )
+
+
+def _policy_rule_polarity(rule: str) -> str:
+    negative = _POLICY_NEGATIVE_MODAL_RE.search(rule)
+    required = _POLICY_REQUIRED_MODAL_RE.search(rule)
+    if negative:
+        return "prohibited"
+    if required:
+        return "required"
+    # Approval-only clauses often describe a gate rather than one direction of
+    # behavior. They still need concrete evidence, but either a required gate or
+    # a prohibited unapproved action may implement it.
+    return "neutral"
+
+
+def _policy_tokens(text: str) -> set[str]:
+    normalized = text.lower().replace("read-only", "read only no mutation").replace("_", " ").replace("-", " ")
+    return {
+        stemmed
+        for token in _POLICY_TOKEN_RE.findall(normalized)
+        if token not in _POLICY_STOPWORDS
+        for stemmed in [_policy_stem(token)]
+        if len(stemmed) >= 3
+    }
+
+
+def _policy_stem(token: str) -> str:
+    if token == "uses":
+        return "use"
+    for suffix, replacement in (
+        ("ation", ""),
+        ("ments", ""),
+        ("ment", ""),
+        ("ing", ""),
+        ("ied", "y"),
+        ("ies", "y"),
+        ("ed", ""),
+        ("es", ""),
+        ("s", ""),
+    ):
+        if token.endswith(suffix) and len(token) - len(suffix) >= 4:
+            token = token[: -len(suffix)] + replacement
+            break
+    if token.endswith("e") and len(token) > 4:
+        token = token[:-1]
+    return token
+
+
+def _short_rule(rule: str, max_length: int = 120) -> str:
+    return rule if len(rule) <= max_length else rule[: max_length - 3].rstrip() + "..."
+
+
 def _process_metrics(item: dict[str, Any]) -> list[Any]:
     nvflare = _nvflare_ext(item)
     metrics = nvflare.get("process_metrics", [])
@@ -1237,18 +1895,34 @@ def _strip_backticks(value: str) -> str:
     return value.strip().strip("`")
 
 
-def _extract_nvflare_commands(text: str) -> list[tuple[int, str]]:
+def _extract_nvflare_commands(text: str) -> list[tuple[int, str, bool]]:
     commands = []
     for line_no, line in enumerate(text.splitlines(), start=1):
         matches = list(_BACKTICK_NVFLARE_RE.finditer(line))
         if matches:
-            commands.extend((line_no, match.group(1).strip()) for match in matches)
+            commands.extend(
+                (line_no, match.group(1).strip(), _command_is_invocation(line, match.start(), match.end()))
+                for match in matches
+            )
             continue
         index = line.find("nvflare ")
         if index == -1:
             continue
-        commands.append((line_no, _trim_command(line[index:])))
+        commands.append((line_no, _trim_command(line[index:]), _command_is_invocation(line, index, len(line))))
     return commands
+
+
+def _command_is_invocation(line: str, command_start: int, command_end: int) -> bool:
+    prefix = line[:command_start].strip().lower()
+    if not prefix or re.fullmatch(r"(?:[-*+]\s*|\d+[.)]\s*)", prefix):
+        suffix = line[command_end:].strip()
+        return not re.search(r"[a-z]", suffix, re.IGNORECASE)
+    return bool(
+        re.search(
+            r"\b(?:run|execute|invoke)(?:\s+(?:this|the|following|command|it)){0,4}\s*:?\s*$",
+            prefix,
+        )
+    )
 
 
 def _trim_command(text: str) -> str:
@@ -1259,61 +1933,396 @@ def _trim_command(text: str) -> str:
     return text
 
 
-def _command_drift_message(command: str) -> Optional[str]:
-    tokens = _command_tokens(command)
+def _command_drift_message(command: str, *, require_complete: bool = True) -> Optional[str]:
+    tokens, token_error = _command_tokens(command)
     if not tokens or tokens[0] != "nvflare":
-        return None
-    positional = [token for token in tokens[1:] if not token.startswith("-") and not _looks_like_value(token)]
-    if not positional:
-        return None
-    root = positional[0]
-    if root not in _KNOWN_NVFLARE_ROOT_COMMANDS:
-        return f"unknown nvflare command root '{root}' in '{command}'"
-    if root != "agent":
+        return token_error
+    try:
+        parser = _nvflare_cli_parser_spec()
+    except Exception as e:
+        return f"could not load the NVFLARE CLI parser while validating '{command}': {type(e).__name__}: {e}"
+    parser_error = _validate_command_against_parser(tokens, command, parser, require_complete=require_complete)
+    return parser_error or token_error
+
+
+_CLI_PARSER_SPEC_SCRIPT = r"""
+import argparse
+import json
+
+from nvflare.cli import parse_args
+
+
+def encode_nargs(value):
+    if value is None or isinstance(value, int):
+        return value
+    return str(value)
+
+
+def action_spec(action):
+    choices = action.choices
+    if choices is not None:
+        try:
+            choices = [str(value) for value in choices]
+        except TypeError:
+            choices = None
+    return {
+        "dest": action.dest,
+        "nargs": encode_nargs(action.nargs),
+        "required": bool(getattr(action, "required", False)),
+        "choices": choices,
+        "action_type": type(action).__name__,
+        "value_type": action.type.__name__ if action.type in (int, float, str) else None,
+    }
+
+
+def parser_spec(parser):
+    options = {}
+    positionals = []
+    subcommands = {}
+    subcommands_required = False
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            subcommands_required = bool(getattr(action, "required", False))
+            subcommands = {name: parser_spec(child) for name, child in action.choices.items()}
+            continue
+        spec = action_spec(action)
+        if action.option_strings:
+            for option in action.option_strings:
+                options[option] = spec
+        else:
+            positionals.append(spec)
+    mutex_groups = []
+    for group in parser._mutually_exclusive_groups:
+        destinations = [action.dest for action in group._group_actions]
+        mutex_groups.append({"required": bool(group.required), "destinations": destinations})
+    return {
+        "options": options,
+        "positionals": positionals,
+        "subcommands": subcommands,
+        "subcommands_required": subcommands_required,
+        "mutex_groups": mutex_groups,
+    }
+
+
+root, _args, _subcommands = parse_args("nvflare")
+print(json.dumps(parser_spec(root), sort_keys=True))
+"""
+
+
+@lru_cache(maxsize=1)
+def _nvflare_cli_parser_spec() -> dict[str, Any]:
+    """Serialize the real parser in an isolated process without touching ``sys.argv``.
+
+    ``nvflare.cli.parse_args`` currently takes its argv only from process-global
+    state. The child starts with an empty command line naturally, builds the real
+    parser, and returns action metadata. No handler runs; the lint process never
+    mutates its own argv or CLI parser globals.
+    """
+
+    completed = subprocess.run(
+        [sys.executable, "-c", _CLI_PARSER_SPEC_SCRIPT],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip() or f"exit code {completed.returncode}"
+        raise RuntimeError(f"NVFLARE CLI parser subprocess failed: {detail}")
+    lines = [line for line in completed.stdout.splitlines() if line.strip()]
+    if not lines:
+        raise RuntimeError("NVFLARE CLI parser subprocess produced no schema")
+    try:
+        spec = json.loads(lines[-1])
+    except json.JSONDecodeError as e:
+        raise RuntimeError("NVFLARE CLI parser subprocess produced invalid JSON") from e
+    if not isinstance(spec, dict):
+        raise RuntimeError("NVFLARE CLI parser subprocess produced an invalid schema")
+    return spec
+
+
+def _validate_command_against_parser(
+    tokens: list[str],
+    command: str,
+    root_parser: dict[str, Any],
+    *,
+    require_complete: bool,
+) -> Optional[str]:
+    parser = root_parser
+    command_path: list[str] = []
+    global_options = root_parser.get("options", {})
+    contexts: list[tuple[tuple[str, ...], dict[str, Any]]] = [((), root_parser)]
+    seen_options: dict[tuple[str, ...], set[str]] = defaultdict(set)
+    positional_tokens: list[str] = []
+    schema_mode = any(_split_option(token)[0] == "--schema" for token in tokens[1:] if token.startswith("-"))
+    allow_incomplete = schema_mode or not require_complete
+    index = 1
+
+    while index < len(tokens):
+        token = tokens[index]
+        if token.startswith("-"):
+            flag, inline_value = _split_option(token)
+            local_options = parser.get("options", {})
+            action = local_options.get(flag) or global_options.get(flag)
+            if action is None:
+                display_path = " ".join(["nvflare", *command_path])
+                return f"unknown flag '{flag}' for '{display_path}' in '{command}'"
+            if action.get("action_type") == "_HelpAction":
+                return None
+            owner = tuple(command_path) if flag in local_options else ()
+            seen_options[owner].add(action.get("dest", flag))
+            index, error = _consume_option_values(
+                tokens,
+                index,
+                action,
+                inline_value,
+                parser,
+                root_parser,
+                command,
+                flag,
+            )
+            if error:
+                return error
+            continue
+
+        subcommands = parser.get("subcommands", {})
+        if subcommands:
+            positional_error = _validate_positionals(
+                parser,
+                positional_tokens,
+                command_path,
+                command,
+                allow_incomplete,
+            )
+            if positional_error:
+                return positional_error
+            positional_tokens = []
+            if token not in subcommands:
+                if not command_path:
+                    return f"unknown nvflare command root '{token}' in '{command}'"
+                if command_path == ["agent"]:
+                    return f"unknown nvflare agent command '{token}' in '{command}'"
+                if command_path == ["agent", "skills"]:
+                    return f"unknown nvflare agent skills command '{token}' in '{command}'"
+                display_path = " ".join(["nvflare", *command_path])
+                return f"unknown subcommand '{token}' for '{display_path}' in '{command}'"
+            parser = subcommands[token]
+            command_path.append(token)
+            contexts.append((tuple(command_path), parser))
+            index += 1
+            continue
+
+        positional_tokens.append(token)
+        index += 1
+
+    if parser.get("subcommands_required") and not allow_incomplete:
+        display_path = " ".join(["nvflare", *command_path])
+        return f"missing required subcommand for '{display_path}' in '{command}'"
+    positional_error = _validate_positionals(
+        parser,
+        positional_tokens,
+        command_path,
+        command,
+        allow_incomplete,
+    )
+    if positional_error:
+        return positional_error
+    return _validate_required_options(contexts, seen_options, command, allow_incomplete)
+
+
+def _split_option(token: str) -> tuple[str, Optional[str]]:
+    if token.startswith("--") and "=" in token:
+        return tuple(token.split("=", 1))
+    return token, None
+
+
+def _consume_option_values(
+    tokens: list[str],
+    index: int,
+    action: dict[str, Any],
+    inline_value: Optional[str],
+    parser: dict[str, Any],
+    root_parser: dict[str, Any],
+    command: str,
+    flag: str,
+) -> tuple[int, Optional[str]]:
+    nargs = action.get("nargs")
+    if nargs == 0:
+        if inline_value is not None:
+            return index + 1, f"flag '{flag}' does not accept a value in '{command}'"
+        return index + 1, None
+
+    values = [inline_value] if inline_value is not None else []
+    cursor = index + 1
+    if isinstance(nargs, int) or nargs in (None, 1):
+        required = nargs if isinstance(nargs, int) else 1
+        while len(values) < required and cursor < len(tokens):
+            if _token_starts_option(tokens[cursor], parser, root_parser):
+                break
+            values.append(tokens[cursor])
+            cursor += 1
+        if len(values) != required:
+            return cursor, f"flag '{flag}' requires {required} value(s) in '{command}'"
+    elif nargs == "?":
+        if not values and cursor < len(tokens) and not _token_starts_option(tokens[cursor], parser, root_parser):
+            values.append(tokens[cursor])
+            cursor += 1
+    else:
+        minimum = 1 if nargs == "+" else 0
+        while cursor < len(tokens) and not _token_starts_option(tokens[cursor], parser, root_parser):
+            values.append(tokens[cursor])
+            cursor += 1
+        if len(values) < minimum:
+            return cursor, f"flag '{flag}' requires at least one value in '{command}'"
+
+    choices = action.get("choices")
+    value_type = action.get("value_type")
+    invalid_type = next((value for value in values if not _value_matches_cli_type(value, value_type)), None)
+    if invalid_type is not None:
+        return cursor, f"invalid value {invalid_type!r} for flag '{flag}': expected {value_type} in '{command}'"
+    if choices is not None:
+        invalid = next((value for value in values if str(value) not in choices), None)
+        if invalid is not None:
+            return cursor, f"invalid value {invalid!r} for flag '{flag}' in '{command}'"
+    return cursor, None
+
+
+def _value_matches_cli_type(value: Any, value_type: Optional[str]) -> bool:
+    if value_type in (None, "str"):
+        return True
+    converter = {"int": int, "float": float}.get(value_type)
+    if converter is None:
+        return True
+    try:
+        converter(value)
+    except (TypeError, ValueError, OverflowError):
+        return False
+    return True
+
+
+def _token_starts_option(token: str, parser: dict[str, Any], root_parser: dict[str, Any]) -> bool:
+    if not token.startswith("-"):
+        return False
+    flag, _inline = _split_option(token)
+    return flag in parser.get("options", {}) or flag in root_parser.get("options", {}) or token.startswith("--")
+
+
+def _validate_positionals(
+    parser: dict[str, Any],
+    values: list[str],
+    command_path: list[str],
+    command: str,
+    schema_mode: bool,
+) -> Optional[str]:
+    actions = parser.get("positionals", [])
+    if schema_mode:
+        actions = [dict(action, required=False, nargs="?") for action in actions]
+    if _positionals_match(actions, values):
         return None
 
-    if len(positional) >= 2 and positional[1] not in _KNOWN_AGENT_COMMANDS:
-        return f"unknown nvflare agent command '{positional[1]}' in '{command}'"
-    if len(positional) >= 3 and positional[1] == "skills":
-        skills_command = positional[2]
-        if skills_command not in _KNOWN_AGENT_SKILLS_COMMANDS:
-            return f"unknown nvflare agent skills command '{skills_command}' in '{command}'"
+    display_path = " ".join(["nvflare", *command_path])
+    minimum = sum(_positional_minimum(action) for action in actions)
+    maximum_values = [_positional_maximum(action) for action in actions]
+    maximum = None if any(value is None for value in maximum_values) else sum(maximum_values)
+    if len(values) < minimum:
+        missing = next(
+            (action.get("dest", "value") for action in actions if _positional_minimum(action) > 0),
+            "value",
+        )
+        return f"missing required positional argument '{missing}' for '{display_path}' in '{command}'"
+    if maximum is not None and len(values) > maximum:
+        return f"unexpected positional argument {values[maximum]!r} for '{display_path}' in '{command}'"
+    return f"invalid positional arguments for '{display_path}' in '{command}'"
 
-    command_key = " ".join(positional[:3] if len(positional) >= 3 and positional[1] == "skills" else positional[:2])
-    allowed_flags = _KNOWN_AGENT_FLAGS.get(command_key, _KNOWN_AGENT_FLAGS.get(root, set()))
-    for token in tokens:
-        if token.startswith("--"):
-            flag = token.split("=", 1)[0]
-            if flag not in allowed_flags:
-                return f"unknown flag '{flag}' for 'nvflare {command_key}' in '{command}'"
+
+def _positionals_match(actions: list[dict[str, Any]], values: list[str]) -> bool:
+    @lru_cache(maxsize=None)
+    def matches(action_index: int, value_index: int) -> bool:
+        if action_index == len(actions):
+            return value_index == len(values)
+        action = actions[action_index]
+        minimum = _positional_minimum(action)
+        maximum = _positional_maximum(action)
+        available = len(values) - value_index
+        upper = available if maximum is None else min(maximum, available)
+        for count in range(minimum, upper + 1):
+            selected = values[value_index : value_index + count]
+            choices = action.get("choices")
+            if choices is not None and any(value not in choices for value in selected):
+                continue
+            if matches(action_index + 1, value_index + count):
+                return True
+        return False
+
+    return matches(0, 0)
+
+
+def _positional_minimum(action: dict[str, Any]) -> int:
+    nargs = action.get("nargs")
+    if isinstance(nargs, int):
+        return nargs
+    if nargs in (None, 1):
+        return 1
+    return 1 if nargs == "+" else 0
+
+
+def _positional_maximum(action: dict[str, Any]) -> Optional[int]:
+    nargs = action.get("nargs")
+    if isinstance(nargs, int):
+        return nargs
+    if nargs in (None, 1, "?"):
+        return 1
     return None
 
 
-def _command_tokens(command: str) -> list[str]:
+def _validate_required_options(
+    contexts: list[tuple[tuple[str, ...], dict[str, Any]]],
+    seen_options: dict[tuple[str, ...], set[str]],
+    command: str,
+    schema_mode: bool,
+) -> Optional[str]:
+    for path, parser in contexts:
+        seen = seen_options.get(path, set())
+        if not schema_mode:
+            required = {action.get("dest") for action in parser.get("options", {}).values() if action.get("required")}
+            missing = sorted(value for value in required if value and value not in seen)
+            if missing:
+                display_path = " ".join(["nvflare", *path])
+                return f"missing required option '{missing[0]}' for '{display_path}' in '{command}'"
+        for group in parser.get("mutex_groups", []):
+            selected = set(group.get("destinations", [])) & seen
+            if len(selected) > 1:
+                return f"mutually exclusive options {sorted(selected)} are combined in '{command}'"
+            if group.get("required") and not selected and not schema_mode:
+                display_path = " ".join(["nvflare", *path])
+                return f"one mutually exclusive option is required for '{display_path}' in '{command}'"
+    return None
+
+
+def _command_tokens(command: str) -> tuple[list[str], Optional[str]]:
     try:
         tokens = shlex.split(command)
-    except ValueError:
-        return []
+    except ValueError as e:
+        return [], f"could not parse nvflare command {command!r}: {e}"
     try:
         start = tokens.index("nvflare")
     except ValueError:
-        return []
+        return [], None
     command_tokens = []
     for token in tokens[start:]:
         if token in {"&&", "|", ";"}:
             break
         if not _safe_command_token(token):
-            break
+            return command_tokens, f"unsupported shell token {token!r} in nvflare command '{command}'"
         command_tokens.append(token)
-    return command_tokens
+    return command_tokens, None
 
 
 def _safe_command_token(token: str) -> bool:
-    return bool(_SAFE_COMMAND_TOKEN_RE.match(token))
-
-
-def _looks_like_value(token: str) -> bool:
-    return token.startswith("<") or "/" in token or token in {"on", "off", "json", "jsonl", "human"}
+    # ``shlex`` tokenization does not expand shell variables/command
+    # substitutions. Reject dollar syntax explicitly, including when attached
+    # to an otherwise-valid ``--option=value`` token.
+    return "$" not in token and bool(_SAFE_COMMAND_TOKEN_RE.match(token))
 
 
 def _skill_has_helper_tests(skill_dir: Path) -> bool:
@@ -1340,13 +2349,9 @@ def _iter_skill_text_files(skill_dir: Path, *, include_scripts: bool = False) ->
         if scripts_dir.is_dir():
             candidates.extend(_iter_files_no_follow(scripts_dir))
     for path in candidates:
-        if path.is_file():
-            try:
-                if path.stat().st_size > MAX_SKILL_TEXT_FILE_BYTES:
-                    continue
-            except OSError:
-                continue
-            yield path, path.read_text(encoding="utf-8", errors="replace")
+        text = _read_bounded_text(path)
+        if text is not None:
+            yield path, text
 
 
 def _eval_mentions_file_editing(item: dict[str, Any]) -> bool:
@@ -1388,7 +2393,7 @@ def _iter_files_no_follow(root: Path, *, excluded_dir_names: Iterable[str] = ())
     for current_dir, _dir_names, file_names in _walk_no_follow(root, excluded_dir_names):
         for filename in file_names:
             path = current_dir / filename
-            if path.is_file():
+            if _is_regular_file(path):
                 yield path
 
 
@@ -1398,32 +2403,128 @@ def _has_fixture_notes(evals_dir: Path) -> bool:
         evals_dir / "files" / "README.md",
         evals_dir / "files" / "SOURCE.md",
     )
-    return any(path.is_file() for path in note_paths)
+    return any(_is_regular_file(path) for path in note_paths)
+
+
+def _path_has_symlink_component(base: Path, relative_path: Path) -> bool:
+    current = base
+    if current.is_symlink():
+        return True
+    for part in relative_path.parts:
+        if part in {"", ".", ".."}:
+            continue
+        current = current / part
+        if current.is_symlink():
+            return True
+    return False
+
+
+def _is_regular_file(path: Path) -> bool:
+    """Check the directory entry itself, never a symlink target."""
+
+    try:
+        return stat.S_ISREG(path.lstat().st_mode)
+    except OSError:
+        return False
+
+
+def _read_bounded_regular_text(
+    path: Path,
+    *,
+    max_bytes: int = MAX_SKILL_TEXT_FILE_BYTES,
+    encoding: str = "utf-8",
+    errors: str = "replace",
+) -> tuple[Optional[str], Optional[str]]:
+    data, error = _read_bounded_regular_bytes(path, max_bytes=max_bytes)
+    if error is not None or data is None:
+        return None, error
+    try:
+        return data.decode(encoding, errors=errors), None
+    except UnicodeDecodeError:
+        return None, _READ_UNREADABLE
+
+
+def _read_bounded_regular_bytes(
+    path: Path,
+    *,
+    max_bytes: int,
+    allow_truncation: bool = False,
+) -> tuple[Optional[bytes], Optional[str]]:
+    """Read a stable regular file through one bounded, no-follow descriptor.
+
+    ``O_NONBLOCK`` prevents a malicious FIFO from hanging before ``fstat`` can
+    reject it. ``O_NOFOLLOW`` rejects a final symlink, and comparing the initial
+    ``lstat`` identity with ``fstat`` closes the size-check/open replacement
+    race. The descriptor read is capped even when a pseudo-file reports size 0.
+    """
+
+    try:
+        before = path.lstat()
+    except FileNotFoundError:
+        return None, _READ_MISSING
+    except OSError:
+        return None, _READ_UNREADABLE
+    if stat.S_ISLNK(before.st_mode):
+        return None, _READ_SYMLINK
+    if not stat.S_ISREG(before.st_mode):
+        return None, _READ_NOT_REGULAR
+    if before.st_size > max_bytes and not allow_truncation:
+        return None, _READ_TOO_LARGE
+
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as e:
+        if e.errno == errno.ENOENT:
+            return None, _READ_MISSING
+        if e.errno in {errno.ELOOP, getattr(errno, "EMLINK", errno.ELOOP)}:
+            return None, _READ_SYMLINK
+        return None, _READ_UNREADABLE
+
+    try:
+        opened = os.fstat(descriptor)
+        if not stat.S_ISREG(opened.st_mode):
+            return None, _READ_NOT_REGULAR
+        if (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino):
+            return None, _READ_CHANGED
+        if opened.st_size > max_bytes and not allow_truncation:
+            return None, _READ_TOO_LARGE
+
+        read_limit = max_bytes if allow_truncation else max_bytes + 1
+        chunks: list[bytes] = []
+        bytes_read = 0
+        while bytes_read < read_limit:
+            chunk = os.read(descriptor, min(64 * 1024, read_limit - bytes_read))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            bytes_read += len(chunk)
+        data = b"".join(chunks)
+        if not allow_truncation and len(data) > max_bytes:
+            return None, _READ_TOO_LARGE
+        return data, None
+    except OSError:
+        return None, _READ_UNREADABLE
+    finally:
+        os.close(descriptor)
 
 
 def _read_bounded_text(path: Path) -> Optional[str]:
-    if not path.is_file():
-        return None
-    if _is_oversized_text_file(path):
-        return None
-    try:
-        return path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return None
+    text, error = _read_bounded_regular_text(path)
+    return text if error is None else None
 
 
 def _is_oversized_text_file(path: Path) -> bool:
     try:
-        return path.is_file() and path.stat().st_size > MAX_SKILL_TEXT_FILE_BYTES
+        file_stat = path.lstat()
+        return stat.S_ISREG(file_stat.st_mode) and file_stat.st_size > MAX_SKILL_TEXT_FILE_BYTES
     except OSError:
         return False
 
 
 def _has_bounded_size_exception(path: Path) -> bool:
-    try:
-        with path.open("rb") as stream:
-            prefix = stream.read(16 * 1024)
-    except OSError:
+    prefix, error = _read_bounded_regular_bytes(path, max_bytes=16 * 1024, allow_truncation=True)
+    if error is not None or prefix is None:
         return False
     return _has_size_exception(prefix.decode("utf-8", errors="replace"))
 
@@ -1442,16 +2543,17 @@ def _line_for_frontmatter_issue(skill_file: Path, code: str, message: str) -> Op
         for field in ("name", "blast_radius", "description", "min_flare_version", "category"):
             if field in message:
                 return _line_for_field(skill_file, field)
-    return 1 if skill_file.is_file() else None
+    return 1 if _is_regular_file(skill_file) else None
 
 
 def _line_for_field(skill_file: Path, field: str) -> Optional[int]:
-    if not skill_file.is_file():
+    text, error = _read_bounded_regular_text(skill_file, encoding="utf-8-sig", errors="replace")
+    if error == _READ_MISSING:
         return None
-    if _is_oversized_text_file(skill_file):
+    if error is not None or text is None:
         return 1
     prefix = f"{field}:"
-    for line_no, line in enumerate(skill_file.read_text(encoding="utf-8-sig", errors="replace").splitlines(), start=1):
+    for line_no, line in enumerate(text.splitlines(), start=1):
         if line.strip().startswith(prefix):
             return line_no
     return 1

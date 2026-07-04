@@ -15,8 +15,12 @@
 """Static read-only inspection for agent workflows."""
 
 import ast
+import copy
+import errno
 import os
 import re
+import stat
+from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -28,13 +32,39 @@ from nvflare.tool.agent.frameworks.base import DetectContext
 DEFAULT_MAX_FILES = 250
 DEFAULT_MAX_FILE_BYTES = 512 * 1024
 MAX_EVIDENCE_PER_BUCKET = 12
+# Internal complexity budgets complement the public file/byte limits without
+# changing the v1 JSON contract. They bound inputs that contain very broad or
+# deeply nested directory trees and syntactically dense Python files.
+MAX_DIRECTORIES_VISITED = 1000
+MAX_DIRECTORY_ENTRIES = 10000
+MAX_DIRECTORY_DEPTH = 32
+MAX_AST_NODES = 50000
+MAX_IMPORTS_PER_FILE = 1000
+MAX_REACHABILITY_EDGES = 10000
+MAX_REACHABILITY_DEPTH = 64
 # Backstop for evidence collected per framework bucket. Far above the display
-# cap so ranking/detection uses true counts; only a memory guard for pathological
-# inputs, not a routing-relevant threshold.
+# cap so ordinary ranking/detection uses the complete weighted evidence; inputs
+# that reach this pathological guard are reported as truncated.
 MAX_EVIDENCE_COLLECT = 10000
 # Packaging root dirs whose leading segment is not part of the import path
 # (PyPA src-layout), so `src/pkg/mod.py` is importable as `pkg.mod`.
 _PACKAGE_ROOT_DIR_NAMES = {"src"}
+
+_INCOMPLETE_SKIP_CODES = {
+    "AST_NODE_LIMIT_REACHED",
+    "DIRECTORY_DEPTH_LIMIT_REACHED",
+    "DIRECTORY_ENTRY_LIMIT_REACHED",
+    "DIRECTORY_LIMIT_REACHED",
+    "DIRECTORY_NOT_SCANNED_FILE_LIMIT",
+    "FILE_LIMIT_REACHED",
+    "FILE_TOO_LARGE",
+    "IMPORT_GRAPH_LIMIT_REACHED",
+    "NON_REGULAR_FILE",
+    "NON_UTF8_FILE",
+    "PYTHON_PARSE_ERROR",
+    "UNREADABLE_DIRECTORY",
+    "UNREADABLE_FILE",
+}
 
 PYTHON_SUFFIXES = {".py"}
 SKIPPED_DIR_NAMES = {
@@ -66,6 +96,8 @@ class InspectState:
     root: Path
     redact: bool
     entries_visited: int = 0
+    directories_visited: int = 0
+    directories_discovered: int = 0
     files_considered: int = 0
     files_scanned: int = 0
     bytes_scanned: int = 0
@@ -80,6 +112,11 @@ class InspectState:
     integration_signals: dict[str, set[str]] = field(default_factory=dict)
     file_imports: dict[str, set[str]] = field(default_factory=dict)
     entry_points: list[dict] = field(default_factory=list)
+    # Routing considers only the strongest launch candidates. Keeping the
+    # priority outside the public entry-point dictionaries preserves the JSON
+    # schema while preventing generic helper functions from becoming roots when
+    # a real main guard or conventional launch script exists.
+    entry_point_priorities: dict[str, int] = field(default_factory=dict)
     job_py: Optional[str] = None
     sim_env_used: bool = False
     export_support: bool = False
@@ -92,8 +129,22 @@ class InspectState:
     # body (e.g. torch calls inside a LightningModule) versus standalone.
     class_body_ranges: dict[str, list[tuple[int, int]]] = field(default_factory=dict)
     # Cache for _local_files_by_module: built once after the scan populates
-    # file_imports, reused across per-evidence entry-context reachability checks.
+    # file_imports, reused by the reachability cache.
     local_files_by_module_cache: Optional[dict[str, set[str]]] = field(default=None, repr=False, compare=False)
+    # Union of files reachable from the preferred entry points. Framework
+    # selection asks about many evidence items, so compute the import graph once
+    # rather than traversing it once per item.
+    reachable_files_cache: Optional[set[str]] = field(default=None, repr=False, compare=False)
+    import_limit_reported: set[str] = field(default_factory=set, repr=False, compare=False)
+    evidence_limit_reported: set[str] = field(default_factory=set, repr=False, compare=False)
+    evidence_indices_by_weight: dict[str, dict[int, deque[int]]] = field(
+        default_factory=dict, repr=False, compare=False
+    )
+    reachability_limit_reported: bool = field(default=False, repr=False, compare=False)
+    bucket_observed_counts: dict[str, int] = field(default_factory=dict, repr=False, compare=False)
+    bucket_collected_counts: dict[str, int] = field(default_factory=dict, repr=False, compare=False)
+    truncated_buckets: set[str] = field(default_factory=set, repr=False, compare=False)
+    incomplete_reasons: set[str] = field(default_factory=set, repr=False, compare=False)
 
 
 def inspect_path(
@@ -122,6 +173,7 @@ def inspect_path(
     ranked_frameworks = _order_frameworks_for_display(ranked_frameworks, detected_framework)
     conversion_state = _conversion_state(state, detected_framework)
     target_type = _target_type(target, state, detected_framework, conversion_state)
+    displayed_findings = _findings_for_output(state)
 
     return {
         "schema_version": "1",
@@ -130,13 +182,36 @@ def inspect_path(
         "target_type": target_type,
         "static_only": True,
         "redaction": "on" if redact else "off",
+        "completeness": {
+            "complete": not state.incomplete_reasons,
+            "reasons": sorted(state.incomplete_reasons),
+            "truncated_buckets": sorted(state.truncated_buckets),
+            "output_truncated_buckets": _output_truncated_buckets(state),
+            "bucket_counts": {
+                name: {
+                    "observed": count,
+                    "collected": state.bucket_collected_counts.get(name, 0),
+                }
+                for name, count in sorted(state.bucket_observed_counts.items())
+            },
+        },
         "limits": {
             "max_files": max_files,
             "max_file_bytes": max_file_bytes,
             "max_evidence_per_bucket": MAX_EVIDENCE_PER_BUCKET,
+            "max_evidence_collected_per_bucket": MAX_EVIDENCE_COLLECT,
+            "max_directories": MAX_DIRECTORIES_VISITED,
+            "max_directory_entries": MAX_DIRECTORY_ENTRIES,
+            "max_directory_depth": MAX_DIRECTORY_DEPTH,
+            "max_ast_nodes_per_file": MAX_AST_NODES,
+            "max_imports_per_file": MAX_IMPORTS_PER_FILE,
+            "max_reachability_edges": MAX_REACHABILITY_EDGES,
+            "max_reachability_depth": MAX_REACHABILITY_DEPTH,
         },
         "scan": {
             "entries_visited": state.entries_visited,
+            "directories_discovered": state.directories_discovered,
+            "directories_visited": state.directories_visited,
             "files_considered": state.files_considered,
             "files_scanned": state.files_scanned,
             "bytes_scanned": state.bytes_scanned,
@@ -149,7 +224,7 @@ def inspect_path(
         "flare_integration": {
             "present": bool(state.flare_imports or state.flare_calls),
             "imports": state.flare_imports[:MAX_EVIDENCE_PER_BUCKET],
-            "calls": sorted(state.flare_calls),
+            "calls": sorted(state.flare_calls)[:MAX_EVIDENCE_PER_BUCKET],
         },
         "conversion_state": conversion_state,
         "job": {
@@ -163,7 +238,7 @@ def inspect_path(
             "dynamic": state.dynamic_patterns[:MAX_EVIDENCE_PER_BUCKET],
             "absolute_data_paths": state.absolute_path_findings[:MAX_EVIDENCE_PER_BUCKET],
         },
-        "findings": state.findings[:MAX_EVIDENCE_PER_BUCKET],
+        "findings": displayed_findings,
         "skill_selection": _skill_selection(detected_framework, conversion_state, state),
         "recommended_next_commands": _recommended_next_commands(detected_framework, conversion_state, state),
     }
@@ -171,12 +246,39 @@ def inspect_path(
 
 def _inspect_dir(root: Path, state: InspectState, *, max_files: int, max_file_bytes: int) -> None:
     stack = [root]
+    state.directories_discovered = 1
     while stack:
         directory = stack.pop()
+        if state.directories_visited >= MAX_DIRECTORIES_VISITED:
+            _add_skip(
+                state,
+                _skip_entry(
+                    directory,
+                    state,
+                    "DIRECTORY_LIMIT_REACHED",
+                    "directory traversal limit reached",
+                ),
+            )
+            return
+        state.directories_visited += 1
         try:
-            children = sorted(directory.iterdir(), key=lambda p: p.name)
+            children, entries_truncated = _bounded_directory_children(directory)
         except OSError as e:
             _add_skip(state, _skip_entry(directory, state, "UNREADABLE_DIRECTORY", "could not read directory", e))
+            continue
+
+        if entries_truncated:
+            _add_skip(
+                state,
+                _skip_entry(
+                    directory,
+                    state,
+                    "DIRECTORY_ENTRY_LIMIT_REACHED",
+                    "directory entry limit reached; remaining entries were not inspected",
+                ),
+            )
+            # The filesystem does not guarantee directory iteration order. Do
+            # not derive routing evidence from an arbitrary bounded prefix.
             continue
 
         for index, child in enumerate(children):
@@ -187,6 +289,29 @@ def _inspect_dir(root: Path, state: InspectState, *, max_files: int, max_file_by
                 if _should_skip_dir(child, root):
                     _add_skip(state, _skip_entry(child, state, "DIRECTORY_SKIPPED", "directory skipped"))
                     continue
+                if _directory_depth(child, root) > MAX_DIRECTORY_DEPTH:
+                    _add_skip(
+                        state,
+                        _skip_entry(
+                            child,
+                            state,
+                            "DIRECTORY_DEPTH_LIMIT_REACHED",
+                            "directory depth limit reached",
+                        ),
+                    )
+                    continue
+                if state.directories_discovered >= MAX_DIRECTORIES_VISITED:
+                    _add_skip(
+                        state,
+                        _skip_entry(
+                            child,
+                            state,
+                            "DIRECTORY_LIMIT_REACHED",
+                            "directory discovery limit reached",
+                        ),
+                    )
+                    continue
+                state.directories_discovered += 1
                 stack.append(child)
                 continue
             if state.entries_visited >= max_files:
@@ -194,13 +319,37 @@ def _inspect_dir(root: Path, state: InspectState, *, max_files: int, max_file_by
                 _record_unvisited_directories_due_to_file_limit(state, root, stack, children[index + 1 :])
                 return
             state.entries_visited += 1
-            if not child.is_file():
+            if not child.is_file() and child.suffix not in PYTHON_SUFFIXES:
                 continue
             _inspect_file(child, state, max_file_bytes)
             if state.entries_visited >= max_files:
                 _record_next_file_due_to_file_limit(state, children[index + 1 :])
                 _record_unvisited_directories_due_to_file_limit(state, root, stack, children[index + 1 :])
                 return
+
+
+def _bounded_directory_children(directory: Path) -> tuple[list[Path], bool]:
+    """Read at most the per-directory entry budget.
+
+    ``sorted(directory.iterdir())`` first materializes every entry, which makes
+    the nominal file cap ineffective against a directory containing millions of
+    subdirectories. Consume one sentinel beyond the budget, then sort only the
+    bounded prefix for stable processing within that prefix.
+    """
+    children = []
+    entries_truncated = False
+    for child in directory.iterdir():
+        if len(children) >= MAX_DIRECTORY_ENTRIES:
+            return [], True
+        children.append(child)
+    return sorted(children, key=lambda path: path.name), entries_truncated
+
+
+def _directory_depth(path: Path, root: Path) -> int:
+    try:
+        return len(path.relative_to(root).parts)
+    except ValueError:
+        return MAX_DIRECTORY_DEPTH + 1
 
 
 def _record_unvisited_directories_due_to_file_limit(
@@ -243,6 +392,67 @@ def _record_next_file_due_to_file_limit(state: InspectState, remaining_children:
         return
 
 
+@dataclass(frozen=True)
+class _BoundedTextRead:
+    text: Optional[str]
+    byte_count: int = 0
+    code: Optional[str] = None
+    message: Optional[str] = None
+    error: Optional[Exception] = None
+
+
+def _read_bounded_regular_text(path: Path, max_file_bytes: int) -> _BoundedTextRead:
+    """Read one regular file through one no-follow, nonblocking descriptor."""
+
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as e:
+        if e.errno in {errno.ELOOP, getattr(errno, "EMLINK", errno.ELOOP)}:
+            return _BoundedTextRead(None, code="SYMLINK_SKIPPED", message="symlink was not followed", error=e)
+        return _BoundedTextRead(None, code="UNREADABLE_FILE", message="could not open file", error=e)
+
+    try:
+        opened = os.fstat(descriptor)
+        if not stat.S_ISREG(opened.st_mode):
+            return _BoundedTextRead(
+                None,
+                code="NON_REGULAR_FILE",
+                message="path is not a regular file",
+            )
+        if max_file_bytes < 0 or opened.st_size > max_file_bytes:
+            return _BoundedTextRead(
+                None,
+                code="FILE_TOO_LARGE",
+                message="file exceeds static inspection cap",
+            )
+
+        chunks = []
+        byte_count = 0
+        read_limit = max_file_bytes + 1
+        while byte_count < read_limit:
+            chunk = os.read(descriptor, min(64 * 1024, read_limit - byte_count))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            byte_count += len(chunk)
+        data = b"".join(chunks)
+        if len(data) > max_file_bytes:
+            return _BoundedTextRead(
+                None,
+                code="FILE_TOO_LARGE",
+                message="file exceeds static inspection cap",
+            )
+        try:
+            return _BoundedTextRead(data.decode("utf-8"), byte_count=len(data))
+        except UnicodeDecodeError:
+            return _BoundedTextRead(None, code="NON_UTF8_FILE", message="file is not UTF-8 text")
+    except OSError as e:
+        return _BoundedTextRead(None, code="UNREADABLE_FILE", message="could not read file", error=e)
+    finally:
+        os.close(descriptor)
+
+
 def _inspect_file(path: Path, state: InspectState, max_file_bytes: int) -> None:
     state.files_considered += 1
     rel_path = _display_path(path, state.root, state.redact)
@@ -250,50 +460,63 @@ def _inspect_file(path: Path, state: InspectState, max_file_bytes: int) -> None:
         _add_skip(state, _skip_entry(path, state, "SENSITIVE_FILE_SKIPPED", "sensitive file skipped"))
         return
     if _is_exported_job_marker(path):
-        state.exported_job_markers.append(rel_path)
+        _append_bounded_list(state, "exported_job_markers", state.exported_job_markers, rel_path)
     if path.suffix not in PYTHON_SUFFIXES:
         return
 
-    try:
-        size = path.stat().st_size
-    except OSError as e:
-        _add_skip(state, _skip_entry(path, state, "UNREADABLE_FILE", "could not stat file", e))
+    read_result = _read_bounded_regular_text(path, max_file_bytes)
+    if read_result.code:
+        _add_skip(
+            state,
+            _skip_entry(path, state, read_result.code, read_result.message or "could not read file", read_result.error),
+        )
         return
-    if size > max_file_bytes:
-        _add_skip(state, _skip_entry(path, state, "FILE_TOO_LARGE", "file exceeds static inspection cap"))
-        return
-
-    try:
-        text = path.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
-        _add_skip(state, _skip_entry(path, state, "NON_UTF8_FILE", "file is not UTF-8 text"))
-        return
-    except OSError as e:
-        _add_skip(state, _skip_entry(path, state, "UNREADABLE_FILE", "could not read file", e))
-        return
+    text = read_result.text or ""
 
     state.files_scanned += 1
-    state.bytes_scanned += size
+    state.bytes_scanned += read_result.byte_count
     if path.name == "job.py":
         state.job_py = rel_path
 
     try:
         tree = ast.parse(text, filename=str(path))
     except SyntaxError as e:
-        state.findings.append(
+        _mark_incomplete(state, "PYTHON_PARSE_ERROR")
+        _append_finding(
+            state,
             {
                 "code": "PYTHON_PARSE_ERROR",
                 "severity": "warning",
                 "file": rel_path,
                 "line": e.lineno,
                 "message": "Python file could not be parsed statically.",
-            }
+            },
+        )
+        return
+
+    if _ast_node_limit_exceeded(tree):
+        _add_skip(
+            state,
+            _skip_entry(
+                path,
+                state,
+                "AST_NODE_LIMIT_REACHED",
+                "Python AST exceeds the static inspection node limit",
+            ),
         )
         return
 
     visitor = _PythonInspector(path, rel_path, state)
+    visitor.collect_module_bindings(tree)
     visitor.visit(tree)
     _add_entry_point(path, rel_path, tree, state)
+
+
+def _ast_node_limit_exceeded(tree: ast.AST) -> bool:
+    for index, _node in enumerate(ast.walk(tree), start=1):
+        if index > MAX_AST_NODES:
+            return True
+    return False
 
 
 class _PythonInspector(ast.NodeVisitor):
@@ -303,48 +526,120 @@ class _PythonInspector(ast.NodeVisitor):
         self.state = state
         self._detectors = frameworks.detectors()
         self._detector_states = {detector.name: detector.new_file_state() for detector in self._detectors}
+        self._scope_kind = "module"
+        self._class_enclosing_states: list[dict] = []
         self._ctx = DetectContext(
             self._emit_framework_evidence,
-            self.state.flare_calls.add,
+            self._add_flare_call,
             self._add_integration_signal,
         )
 
+    def collect_module_bindings(self, tree: ast.Module) -> None:
+        """Collect module-scope imports before inspecting uses.
+
+        Function bodies may validly reference a global imported later in the
+        module because the function is called only after module initialization.
+        A single source-order pass misses those uses. The binding pre-pass skips
+        nested scopes, then the normal visitor records evidence and handles
+        scope-local imports in source order as before.
+        """
+        _ModuleImportBindingCollector(self).visit(tree)
+
     def _emit_framework_evidence(self, framework: str, kind: str, value: str, lineno) -> None:
-        _append_evidence(self.state.framework_evidence, framework, _evidence(self.rel_path, lineno, kind, value))
+        _append_framework_evidence(self.state, framework, _evidence(self.rel_path, lineno, kind, value))
 
     def _add_integration_signal(self, framework: str, name: str) -> None:
-        self.state.integration_signals.setdefault(framework, set()).add(name)
+        _add_bounded_set(
+            self.state,
+            "integration_signals",
+            self.state.integration_signals.setdefault(framework, set()),
+            name,
+        )
+
+    def _add_flare_call(self, call_name: str) -> None:
+        _add_bounded_set(self.state, "flare_calls", self.state.flare_calls, call_name)
 
     def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:
-            self._record_import(alias.name, node.lineno)
-            for detector in self._detectors:
-                detector.on_import(alias, self._detector_states[detector.name], self._ctx)
+            self._record_import(alias.name, node.lineno, classify=not self._is_local_absolute_import(alias.name))
+            self._bind_import(alias)
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         module = node.module or ""
-        self._record_import(_resolve_import_from_module(self.rel_path, module, node.level), node.lineno)
+        resolved_module = _resolve_import_from_module(self.rel_path, module, node.level)
+        classify = node.level == 0 and not self._is_local_absolute_import(module)
+        self._record_import(resolved_module, node.lineno, classify=classify)
         self._record_import_from_modules(module, node.level, node.names)
-        for detector in self._detectors:
-            detector.on_import_from(module, node.names, self._detector_states[detector.name], self._ctx)
+        self._bind_import_from(module, node.level, node.names)
         for alias in node.names:
-            if alias.name in {"FedJob", "FLModel", "SimEnv"}:
-                self.state.flare_imports.append(
-                    _evidence(self.rel_path, node.lineno, "from_import", f"{module}.{alias.name}")
+            if node.level == 0 and alias.name in {"FedJob", "FLModel", "SimEnv"}:
+                _append_bounded_list(
+                    self.state,
+                    "flare_imports",
+                    self.state.flare_imports,
+                    _evidence(self.rel_path, node.lineno, "from_import", f"{module}.{alias.name}"),
                 )
         self.generic_visit(node)
 
+    def _bind_import(self, alias: ast.alias) -> None:
+        if self._is_local_absolute_import(alias.name):
+            return
+        for detector in self._detectors:
+            detector.on_import(alias, self._detector_states[detector.name], self._ctx)
+
+    def _bind_import_from(self, module: str, level: int, aliases: list[ast.alias]) -> None:
+        # A relative import is local by definition. Passing its raw spelling
+        # (``from .lightning import Trainer`` -> ``lightning``) to a detector
+        # would falsely bind a local symbol as the external framework.
+        if level or self._is_local_absolute_import(module):
+            return
+        for detector in self._detectors:
+            detector.on_import_from(module, aliases, self._detector_states[detector.name], self._ctx)
+
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         end_lineno = getattr(node, "end_lineno", None) or node.lineno
-        self.state.class_body_ranges.setdefault(self.rel_path, []).append((node.lineno, end_lineno))
+        _append_class_body_range(self.state, self.rel_path, (node.lineno, end_lineno))
         for base in node.bases:
             base_name = _symbol_name(base)
             if not base_name:
                 continue
             for detector in self._detectors:
                 detector.on_class_base(base_name, node.lineno, self._detector_states[detector.name], self._ctx)
-        self.generic_visit(node)
+        self._visit_binding_scope(node, "class")
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._visit_binding_scope(node, "function")
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._visit_binding_scope(node, "function")
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        self._visit_binding_scope(node, "function")
+
+    def _lexically_visible_states(self) -> dict:
+        if self._scope_kind == "class" and self._class_enclosing_states:
+            return self._class_enclosing_states[-1]
+        return self._detector_states
+
+    def _visit_binding_scope(self, node: ast.AST, scope_kind: str) -> None:
+        enclosing_states = self._lexically_visible_states()
+        previous_states = self._detector_states
+        previous_kind = self._scope_kind
+        self._detector_states = copy.deepcopy(enclosing_states)
+        self._scope_kind = scope_kind
+        if scope_kind == "class":
+            self._class_enclosing_states.append(enclosing_states)
+        try:
+            self.generic_visit(node)
+        finally:
+            if scope_kind == "class":
+                self._class_enclosing_states.pop()
+            self._detector_states = previous_states
+            self._scope_kind = previous_kind
+
+    def _is_local_absolute_import(self, module: str) -> bool:
+        return _local_absolute_import_root_exists(self.state, self.rel_path, module)
 
     def visit_Call(self, node: ast.Call) -> None:
         call_name = _call_name(node.func)
@@ -367,54 +662,114 @@ class _PythonInspector(ast.NodeVisitor):
             self._inspect_string_literal(node.value, getattr(node, "lineno", None))
         self.generic_visit(node)
 
-    def _record_import(self, module: str, lineno: int) -> None:
+    def _record_import(self, module: str, lineno: int, *, classify: bool = True) -> None:
         if not module:
             return
-        self.state.file_imports.setdefault(self.rel_path, set()).add(module)
+        self._add_file_import(module)
+        if not classify:
+            return
         framework = frameworks.framework_for_import(module)
         if framework:
-            _append_evidence(
-                self.state.framework_evidence,
-                framework,
+            _append_framework_evidence(self.state, framework, _evidence(self.rel_path, lineno, "import", module))
+        if module == "nvflare" or module.startswith("nvflare."):
+            _append_bounded_list(
+                self.state,
+                "flare_imports",
+                self.state.flare_imports,
                 _evidence(self.rel_path, lineno, "import", module),
             )
-        if module == "nvflare" or module.startswith("nvflare."):
-            self.state.flare_imports.append(_evidence(self.rel_path, lineno, "import", module))
         if module in {"hydra", "omegaconf"} or module.startswith(("hydra.", "omegaconf.")):
-            self.state.dynamic_patterns.append(_evidence(self.rel_path, lineno, "dynamic_config", module))
+            _append_bounded_list(
+                self.state,
+                "dynamic_patterns",
+                self.state.dynamic_patterns,
+                _evidence(self.rel_path, lineno, "dynamic_config", module),
+            )
         if module == "torch.distributed" or module.startswith("torch.distributed."):
-            self.state.distributed_patterns.append(_evidence(self.rel_path, lineno, "distributed_import", module))
+            _append_bounded_list(
+                self.state,
+                "distributed_patterns",
+                self.state.distributed_patterns,
+                _evidence(self.rel_path, lineno, "distributed_import", module),
+            )
         if module == "accelerate" or module.startswith("accelerate."):
-            self.state.distributed_patterns.append(_evidence(self.rel_path, lineno, "accelerate_import", module))
+            _append_bounded_list(
+                self.state,
+                "distributed_patterns",
+                self.state.distributed_patterns,
+                _evidence(self.rel_path, lineno, "accelerate_import", module),
+            )
 
     def _record_import_from_modules(self, module: str, level: int, aliases: list[ast.alias]) -> None:
         resolved_module = _resolve_import_from_module(self.rel_path, module, level)
-        imports = self.state.file_imports.setdefault(self.rel_path, set())
         if resolved_module:
-            imports.add(resolved_module)
+            self._add_file_import(resolved_module)
         for alias in aliases:
             if alias.name == "*":
                 continue
-            imports.add(f"{resolved_module}.{alias.name}" if resolved_module else alias.name)
+            self._add_file_import(f"{resolved_module}.{alias.name}" if resolved_module else alias.name)
+
+    def _add_file_import(self, module: str) -> None:
+        imports = self.state.file_imports.setdefault(self.rel_path, set())
+        if module in imports:
+            _observe_bucket(self.state, "file_imports", collected=False)
+            return
+        total_imports = self.state.bucket_collected_counts.get("file_imports", 0)
+        limit_key = "*" if total_imports >= MAX_EVIDENCE_COLLECT else self.rel_path
+        if total_imports >= MAX_EVIDENCE_COLLECT or len(imports) >= MAX_IMPORTS_PER_FILE:
+            _observe_bucket(self.state, "file_imports", collected=False)
+            if limit_key not in self.state.import_limit_reported:
+                self.state.import_limit_reported.add(limit_key)
+                _mark_bucket_truncated(self.state, "file_imports")
+                _add_limit_finding(
+                    self.state,
+                    "IMPORT_GRAPH_LIMIT_REACHED",
+                    None if limit_key == "*" else self.rel_path,
+                    (
+                        "Import-graph collection reached the global limit."
+                        if limit_key == "*"
+                        else "Import-graph collection was truncated for this file."
+                    ),
+                )
+            return
+        imports.add(module)
+        _observe_bucket(self.state, "file_imports", collected=True)
+        self.state.local_files_by_module_cache = None
+        self.state.reachable_files_cache = None
 
     def _record_call(self, call_name: str, lineno: int) -> None:
         # Generic FLARE / distributed / dynamic-dispatch signals only. Ranked
         # framework activity (pytorch_call, lightning_trainer) and conversion
         # signals (flare.patch) are recorded by framework detectors via on_call.
         if call_name.startswith("flare.") or call_name.startswith("nvflare."):
-            self.state.flare_calls.add(call_name)
+            self._add_flare_call(call_name)
         if call_name in {"FedJob", "FLModel", "SimEnv"}:
-            self.state.flare_calls.add(call_name)
+            self._add_flare_call(call_name)
         if call_name == "SimEnv" or call_name.endswith(".SimEnv"):
             self.state.sim_env_used = True
         if call_name.endswith(".export"):
             self.state.export_support = True
         if call_name in {"importlib.import_module", "__import__", "getattr"}:
-            self.state.dynamic_patterns.append(_evidence(self.rel_path, lineno, "dynamic_dispatch", call_name))
+            _append_bounded_list(
+                self.state,
+                "dynamic_patterns",
+                self.state.dynamic_patterns,
+                _evidence(self.rel_path, lineno, "dynamic_dispatch", call_name),
+            )
         if call_name == "torch.compile":
-            self.state.dynamic_patterns.append(_evidence(self.rel_path, lineno, "torch_compile", call_name))
+            _append_bounded_list(
+                self.state,
+                "dynamic_patterns",
+                self.state.dynamic_patterns,
+                _evidence(self.rel_path, lineno, "torch_compile", call_name),
+            )
         if call_name.endswith(("DataParallel", "FSDP", "Accelerator")):
-            self.state.distributed_patterns.append(_evidence(self.rel_path, lineno, "distributed_call", call_name))
+            _append_bounded_list(
+                self.state,
+                "distributed_patterns",
+                self.state.distributed_patterns,
+                _evidence(self.rel_path, lineno, "distributed_call", call_name),
+            )
 
     def _inspect_secret_assignment(self, targets: list[ast.AST], value: ast.AST, lineno: Optional[int]) -> None:
         if not isinstance(value, ast.Constant) or not isinstance(value.value, str):
@@ -422,7 +777,8 @@ class _PythonInspector(ast.NodeVisitor):
         for target in targets:
             name = _target_name(target)
             if name and SECRET_NAME_PATTERN.search(name):
-                self.state.findings.append(
+                _append_finding(
+                    self.state,
                     {
                         "code": "SECRET_LITERAL_REDACTED",
                         "severity": "warning",
@@ -430,12 +786,15 @@ class _PythonInspector(ast.NodeVisitor):
                         "line": lineno,
                         "name": name,
                         "value": "<REDACTED>" if self.state.redact else value.value,
-                    }
+                    },
                 )
 
     def _inspect_string_literal(self, value: str, lineno: Optional[int]) -> None:
         if _looks_like_absolute_path(value):
-            self.state.absolute_path_findings.append(
+            _append_bounded_list(
+                self.state,
+                "absolute_path_findings",
+                self.state.absolute_path_findings,
                 {
                     "code": "ABSOLUTE_DATA_PATH",
                     "severity": "warning",
@@ -443,29 +802,65 @@ class _PythonInspector(ast.NodeVisitor):
                     "line": lineno,
                     "pattern_type": "absolute_path_literal",
                     "value": _redact_literal(value, self.state.redact),
-                }
+                },
             )
 
 
+class _ModuleImportBindingCollector(ast.NodeVisitor):
+    """Pre-bind module-scope imports without recording duplicate evidence."""
+
+    def __init__(self, inspector: _PythonInspector):
+        self._inspector = inspector
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for alias in node.names:
+            self._inspector._bind_import(alias)
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        self._inspector._bind_import_from(node.module or "", node.level, node.names)
+
+    # Imports inside these scopes are not module globals. The main inspection
+    # pass still visits them in source order, preserving existing local-binding
+    # detection without leaking them into earlier sibling functions.
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        pass
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        pass
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        pass
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        pass
+
+
 def _rank_frameworks(state: InspectState) -> list[dict]:
-    total = sum(len(evidence) for evidence in state.framework_evidence.values())
-    ranked = []
+    scores = {framework: _evidence_score(evidence) for framework, evidence in state.framework_evidence.items()}
+    total_score = sum(scores.values())
+    ranked_with_scores = []
     for framework, evidence in state.framework_evidence.items():
-        count = len(evidence)
+        score = scores[framework]
         confidence = 0.0
-        if total:
+        if total_score:
             # Any static import evidence should register clearly, but cap below
-            # certainty because import presence alone does not prove active use.
-            confidence = min(0.99, 0.45 + (count / total) * 0.5)
-        ranked.append(
-            {
-                "name": framework,
-                "confidence": round(confidence, 2),
-                "evidence": evidence[:MAX_EVIDENCE_PER_BUCKET],
-                "contradicting_evidence": [],
-            }
+            # certainty because static evidence alone does not prove active use.
+            # Detector-declared weights ensure an active model/class or trainer
+            # call is stronger than the same number of incidental imports.
+            confidence = min(0.99, 0.45 + (score / total_score) * 0.5)
+        ranked_with_scores.append(
+            (
+                score,
+                {
+                    "name": framework,
+                    "confidence": round(confidence, 2),
+                    "evidence": evidence[:MAX_EVIDENCE_PER_BUCKET],
+                    "contradicting_evidence": [],
+                },
+            )
         )
-    return sorted(ranked, key=lambda item: (-item["confidence"], item["name"]))
+    ranked_with_scores.sort(key=lambda scored: (-scored[0], scored[1]["name"]))
+    return [item for _score, item in ranked_with_scores]
 
 
 def _detect_primary_framework(state: InspectState, ranked: list[dict]) -> Optional[str]:
@@ -476,7 +871,7 @@ def _detect_primary_framework(state: InspectState, ranked: list[dict]) -> Option
 
 
 def _primary_by_confidence_and_entry_context(state: InspectState, ranked: list[dict]) -> str:
-    # Frameworks are ranked by (confidence, name), which is count-based and blind
+    # Frameworks are ranked by (weighted confidence, name), which is blind
     # to reachability: an incidental torch/sklearn utility in an unreachable
     # helper file can outrank the framework the entry point actually uses. When
     # any framework's evidence is tied to the entry context (the inspected file
@@ -504,7 +899,7 @@ def _primary_by_confidence_and_entry_context(state: InspectState, ranked: list[d
     # entry outranks import-only entry evidence, without demoting a genuinely
     # entry-owned import-only framework when nothing active is reachable.
     #
-    # DESIGN DECISION (do not revert to a pure entry-context or pure count rule):
+    # DESIGN DECISION (do not revert to a pure entry-context or pure score rule):
     # this two-step order is the agreed reconciliation of two review positions.
     #   - When the entry reaches an ACTIVE convertible model (e.g. a torch
     #     nn.Module) alongside import-only sklearn, route to the active framework
@@ -598,57 +993,73 @@ def _framework_evidence_tied_to_inspected_file_or_entry_point(state: InspectStat
     if state.root.is_file():
         inspected_file = _display_path(state.root, state.root, state.redact)
         return any(item["file"] == inspected_file for item in evidence)
-    entry_point_paths = {entry["path"] for entry in state.entry_points}
+    entry_point_paths = {entry["path"] for entry in _preferred_entry_points(state)}
     return any(item["file"] in entry_point_paths for item in evidence)
 
 
 def _entry_point_imports_file(state: InspectState, evidence_file: str) -> bool:
     if not _module_names_for_file(evidence_file):
         return False
+    return evidence_file in _reachable_files_from_entry_points(state)
+
+
+def _preferred_entry_points(state: InspectState) -> list[dict]:
+    if not state.entry_points:
+        return []
+    highest_priority = max(state.entry_point_priorities.get(item["path"], 0) for item in state.entry_points)
+    return [
+        item for item in state.entry_points if state.entry_point_priorities.get(item["path"], 0) == highest_priority
+    ]
+
+
+def _reachable_files_from_entry_points(state: InspectState) -> set[str]:
+    if state.reachable_files_cache is not None:
+        return state.reachable_files_cache
+
+    # Match on resolved files, not only module names: root and src-layout copies
+    # may share a module name, and _local_files_for_import applies the importing
+    # file's packaging-root context before returning concrete file paths.
     local_files_by_module = _local_files_by_module(state)
-    for entry_point in state.entry_points:
-        if _imports_reach_file(
-            state,
-            entry_point["path"],
-            state.file_imports.get(entry_point["path"], set()),
-            evidence_file,
-            local_files_by_module,
-        ):
-            return True
-    return False
+    pending = deque((entry["path"], 0) for entry in _preferred_entry_points(state))
+    expanded_files = set()
+    reachable_files = set()
+    edges_visited = 0
+    truncated = False
 
-
-def _imports_reach_file(
-    state: InspectState,
-    importing_file: str,
-    imports: set[str],
-    target_file: str,
-    local_files_by_module: dict[str, set[str]],
-) -> bool:
-    # Match on the resolved file, not on module names: a stale src-layout copy
-    # (src/mypkg/loop.py) shares the stripped module name "mypkg.loop" with a
-    # root-level mypkg/loop.py, so name-based matching would let the entry point
-    # "reach" the never-imported copy. _local_files_by_module resolves the shared
-    # name to the root file only, and comparing files keeps them distinct.
-    pending_imports = [(importing_file, import_name) for import_name in imports]
-    seen_imports = set()
-    seen_files = set()
-    while pending_imports:
-        source_file, import_name = pending_imports.pop()
-        import_key = (source_file, import_name)
-        if import_key in seen_imports:
+    while pending and not truncated:
+        importing_file, depth = pending.popleft()
+        if importing_file in expanded_files:
             continue
-        seen_imports.add(import_key)
-        for imported_file in _local_files_for_import(import_name, source_file, local_files_by_module):
-            if imported_file in seen_files:
-                continue
-            seen_files.add(imported_file)
-            if imported_file == target_file:
-                return True
-            pending_imports.extend(
-                (imported_file, nested_import) for nested_import in state.file_imports.get(imported_file, set())
-            )
-    return False
+        expanded_files.add(importing_file)
+        imports = state.file_imports.get(importing_file, set())
+        if depth >= MAX_REACHABILITY_DEPTH:
+            if any(
+                _local_files_for_import(import_name, importing_file, local_files_by_module) for import_name in imports
+            ):
+                truncated = True
+            continue
+        for import_name in sorted(imports):
+            for imported_file in sorted(_local_files_for_import(import_name, importing_file, local_files_by_module)):
+                edges_visited += 1
+                if edges_visited > MAX_REACHABILITY_EDGES:
+                    truncated = True
+                    break
+                if imported_file not in reachable_files:
+                    reachable_files.add(imported_file)
+                    pending.append((imported_file, depth + 1))
+            if truncated:
+                break
+
+    if truncated and not state.reachability_limit_reported:
+        state.reachability_limit_reported = True
+        _add_limit_finding(
+            state,
+            "IMPORT_REACHABILITY_LIMIT_REACHED",
+            None,
+            "Entry-point import reachability was truncated by a complexity limit.",
+        )
+    state.reachable_files_cache = reachable_files
+    return reachable_files
 
 
 def _local_files_by_module(state: InspectState) -> dict[str, set[str]]:
@@ -811,6 +1222,31 @@ def _resolve_import_from_module(importing_file: str, module: str, level: int) ->
     return ".".join(part for part in parts if part)
 
 
+def _local_absolute_import_root_exists(state: InspectState, importing_file: str, module: str) -> bool:
+    """Return whether an absolute import root is shadowed by project content."""
+
+    if not module:
+        return False
+    import_root = module.split(".", 1)[0]
+    project_root = state.root if state.root.is_dir() else state.root.parent
+    importing_parent = project_root / Path(importing_file).parent
+    bases = {project_root, importing_parent, project_root / "src"}
+    for base in bases:
+        candidates = (base / f"{import_root}.py", base / import_root)
+        for candidate in candidates:
+            try:
+                candidate_stat = candidate.lstat()
+            except OSError:
+                continue
+            if (
+                stat.S_ISREG(candidate_stat.st_mode)
+                or stat.S_ISDIR(candidate_stat.st_mode)
+                or stat.S_ISLNK(candidate_stat.st_mode)
+            ):
+                return True
+    return False
+
+
 def _evidence_score(evidence: list[dict]) -> int:
     weights = frameworks.evidence_weights()
     return sum(weights.get(item["kind"], 1) for item in evidence)
@@ -877,30 +1313,51 @@ def _target_type(path: Path, state: InspectState, detected_framework: Optional[s
 def _add_entry_point(path: Path, rel_path: str, tree: ast.Module, state: InspectState) -> None:
     functions = [node.name for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))]
     main_guard = any(_is_main_guard(node) for node in tree.body if isinstance(node, ast.If))
-    likely = path.name in {"client.py", "server.py", "train.py", "trainer.py", "main.py", "job.py"} or main_guard
-    if likely or any(name in {"main", "train", "fit", "evaluate"} for name in functions):
-        state.entry_points.append(
+    conventional_name = path.name in {"client.py", "server.py", "train.py", "trainer.py", "main.py", "job.py"}
+    has_main_function = "main" in functions
+    if main_guard or conventional_name or has_main_function:
+        if _append_bounded_list(
+            state,
+            "entry_points",
+            state.entry_points,
             {
                 "path": rel_path,
                 "kind": "python_script",
                 "functions": functions[:MAX_EVIDENCE_PER_BUCKET],
                 "main_guard": main_guard,
-            }
-        )
+            },
+        ):
+            if main_guard or conventional_name:
+                priority = 3
+            else:
+                priority = 2
+            state.entry_point_priorities[rel_path] = priority
+            state.reachable_files_cache = None
 
 
 def _is_main_guard(node: ast.If) -> bool:
-    left = getattr(node.test, "left", None)
-    comparators = getattr(node.test, "comparators", [])
-    if not isinstance(left, ast.Name) or left.id != "__name__" or not comparators:
+    if not isinstance(node.test, ast.Compare) or len(node.test.ops) != 1 or not isinstance(node.test.ops[0], ast.Eq):
         return False
-    value = comparators[0]
-    return isinstance(value, ast.Constant) and value.value == "__main__"
+    if len(node.test.comparators) != 1:
+        return False
+    left = node.test.left
+    right = node.test.comparators[0]
+    return (_is_name_symbol(left) and _is_main_literal(right)) or (_is_main_literal(left) and _is_name_symbol(right))
+
+
+def _is_name_symbol(node: ast.AST) -> bool:
+    return isinstance(node, ast.Name) and node.id == "__name__"
+
+
+def _is_main_literal(node: ast.AST) -> bool:
+    return isinstance(node, ast.Constant) and node.value == "__main__"
 
 
 def _skill_selection(detected_framework: Optional[str], conversion_state: str, state: InspectState) -> dict:
     recommended = []
-    if conversion_state == "exported_job":
+    if state.incomplete_reasons:
+        recommended.append("nvflare-orient")
+    elif conversion_state == "exported_job":
         # Lifecycle skills are out of scope and not planned; exported jobs are
         # handled with product APIs directly, so no skill is recommended.
         pass
@@ -908,7 +1365,7 @@ def _skill_selection(detected_framework: Optional[str], conversion_state: str, s
         skill = frameworks.recommended_skill_for(detected_framework)
         if skill:
             recommended.append(skill)
-    if state.findings or state.files_skipped:
+    if (state.findings or state.files_skipped) and "nvflare-orient" not in recommended:
         recommended.append("nvflare-orient")
 
     return {
@@ -916,7 +1373,7 @@ def _skill_selection(detected_framework: Optional[str], conversion_state: str, s
         "conversion_state": conversion_state,
         "exported_job": conversion_state == "exported_job",
         "recommended_skills": recommended,
-        "safety_findings": [finding["code"] for finding in state.findings[:MAX_EVIDENCE_PER_BUCKET]],
+        "safety_findings": [finding["code"] for finding in _findings_for_output(state)],
     }
 
 
@@ -924,6 +1381,8 @@ def _recommended_next_commands(
     detected_framework: Optional[str], conversion_state: str, state: InspectState
 ) -> list[str]:
     commands = ["nvflare agent doctor --format json"]
+    if state.incomplete_reasons:
+        return commands
     if conversion_state == "exported_job":
         commands.append("nvflare job submit <job-folder> --format json")
     elif state.job_py and state.export_support:
@@ -951,10 +1410,136 @@ def _record_symlink_skip(path: Path, state: InspectState) -> None:
     )
 
 
+def _findings_for_output(state: InspectState) -> list[dict]:
+    indexed = list(enumerate(state.findings))
+    indexed.sort(
+        key=lambda item: (
+            0 if "LIMIT" in str(item[1].get("code", "")) else 1,
+            item[0],
+        )
+    )
+    return [finding for _index, finding in indexed[:MAX_EVIDENCE_PER_BUCKET]]
+
+
+def _output_truncated_buckets(state: InspectState) -> list[str]:
+    bucket_sizes = {
+        "absolute_path_findings": len(state.absolute_path_findings),
+        "distributed_patterns": len(state.distributed_patterns),
+        "dynamic_patterns": len(state.dynamic_patterns),
+        "entry_points": len(state.entry_points),
+        "exported_job_markers": len(state.exported_job_markers),
+        "findings": len(state.findings),
+        "flare_calls": len(state.flare_calls),
+        "flare_imports": len(state.flare_imports),
+        "files_skipped": len(state.files_skipped),
+    }
+    for framework, evidence in state.framework_evidence.items():
+        bucket_sizes[f"framework_evidence:{framework}"] = len(evidence)
+    truncated = set(state.truncated_buckets)
+    truncated.update(name for name, size in bucket_sizes.items() if size > MAX_EVIDENCE_PER_BUCKET)
+    if state.files_skipped_count > len(state.files_skipped):
+        truncated.add("files_skipped")
+    return sorted(truncated)
+
+
+def _mark_incomplete(state: InspectState, reason: str) -> None:
+    state.incomplete_reasons.add(reason)
+
+
+def _observe_bucket(state: InspectState, bucket_name: str, *, collected: bool) -> None:
+    state.bucket_observed_counts[bucket_name] = state.bucket_observed_counts.get(bucket_name, 0) + 1
+    if collected:
+        state.bucket_collected_counts[bucket_name] = state.bucket_collected_counts.get(bucket_name, 0) + 1
+
+
+def _mark_bucket_truncated(state: InspectState, bucket_name: str) -> bool:
+    first = bucket_name not in state.truncated_buckets
+    state.truncated_buckets.add(bucket_name)
+    _mark_incomplete(state, f"EVIDENCE_BUCKET_LIMIT_REACHED:{bucket_name}")
+    return first
+
+
+def _append_bounded_list(
+    state: InspectState,
+    bucket_name: str,
+    bucket: list,
+    value,
+    *,
+    limit: Optional[int] = None,
+) -> bool:
+    limit = MAX_EVIDENCE_COLLECT if limit is None else limit
+    if len(bucket) < limit:
+        bucket.append(value)
+        _observe_bucket(state, bucket_name, collected=True)
+        return True
+    _observe_bucket(state, bucket_name, collected=False)
+    if _mark_bucket_truncated(state, bucket_name) and bucket_name != "findings":
+        _add_limit_finding(
+            state,
+            "EVIDENCE_BUCKET_LIMIT_REACHED",
+            None,
+            f"Evidence collection was truncated for {bucket_name}.",
+        )
+    return False
+
+
+def _add_bounded_set(
+    state: InspectState,
+    bucket_name: str,
+    bucket: set,
+    value,
+    *,
+    limit: Optional[int] = None,
+) -> bool:
+    limit = MAX_EVIDENCE_COLLECT if limit is None else limit
+    if value in bucket:
+        _observe_bucket(state, bucket_name, collected=False)
+        return True
+    if len(bucket) < limit:
+        bucket.add(value)
+        _observe_bucket(state, bucket_name, collected=True)
+        return True
+    _observe_bucket(state, bucket_name, collected=False)
+    if _mark_bucket_truncated(state, bucket_name):
+        _add_limit_finding(
+            state,
+            "EVIDENCE_BUCKET_LIMIT_REACHED",
+            None,
+            f"Evidence collection was truncated for {bucket_name}.",
+        )
+    return False
+
+
+def _append_finding(state: InspectState, finding: dict) -> None:
+    _append_bounded_list(state, "findings", state.findings, finding)
+
+
+def _append_class_body_range(state: InspectState, file_path: str, value: tuple[int, int]) -> None:
+    collected = state.bucket_collected_counts.get("class_body_ranges", 0)
+    if collected >= MAX_EVIDENCE_COLLECT:
+        _observe_bucket(state, "class_body_ranges", collected=False)
+        if _mark_bucket_truncated(state, "class_body_ranges"):
+            _add_limit_finding(
+                state,
+                "EVIDENCE_BUCKET_LIMIT_REACHED",
+                file_path,
+                "Class-body range collection was truncated.",
+            )
+        return
+    state.class_body_ranges.setdefault(file_path, []).append(value)
+    _observe_bucket(state, "class_body_ranges", collected=True)
+
+
 def _add_skip(state: InspectState, entry: dict) -> None:
     state.files_skipped_count += 1
+    code = entry.get("code")
+    if code in _INCOMPLETE_SKIP_CODES:
+        _mark_incomplete(state, code)
     if len(state.files_skipped) < MAX_EVIDENCE_PER_BUCKET:
         state.files_skipped.append(entry)
+        _observe_bucket(state, "files_skipped", collected=True)
+    else:
+        _observe_bucket(state, "files_skipped", collected=False)
 
 
 def _skip_entry(path: Path, state: InspectState, code: str, message: str, error: Exception = None) -> dict:
@@ -1010,14 +1595,47 @@ def _evidence(file_path: str, line: Optional[int], kind: str, value: str) -> dic
     return {"file": file_path, "line": line, "kind": kind, "value": value}
 
 
-def _append_evidence(target: dict[str, list[dict]], key: str, value: dict) -> None:
-    # Collect up to a generous backstop so framework ranking/detection sees the
-    # true evidence counts. Display is truncated to MAX_EVIDENCE_PER_BUCKET
-    # separately (see _rank_frameworks); capping at collection time would skew the
-    # count-based confidence and let a file's first 12 imports decide routing.
-    bucket = target.setdefault(key, [])
+def _append_framework_evidence(state: InspectState, framework: str, value: dict) -> None:
+    bucket = state.framework_evidence.setdefault(framework, [])
+    bucket_name = f"framework_evidence:{framework}"
+    weights = frameworks.evidence_weights()
+    incoming_weight = weights.get(value.get("kind"), 1)
+    indices_by_weight = state.evidence_indices_by_weight.setdefault(framework, {})
     if len(bucket) < MAX_EVIDENCE_COLLECT:
         bucket.append(value)
+        _observe_bucket(state, bucket_name, collected=True)
+        indices_by_weight.setdefault(incoming_weight, deque()).append(len(bucket) - 1)
+        return
+    _observe_bucket(state, bucket_name, collected=False)
+    lowest_weight = min(weight for weight, indices in indices_by_weight.items() if indices)
+    if incoming_weight > lowest_weight:
+        # Keep the strongest bounded evidence. In a pathological file with ten
+        # thousand imports followed by a real model class, the cap must not erase
+        # the active signal that determines routing.
+        lowest_index = indices_by_weight[lowest_weight].popleft()
+        bucket[lowest_index] = value
+        indices_by_weight.setdefault(incoming_weight, deque()).append(lowest_index)
+    if framework not in state.evidence_limit_reported:
+        state.evidence_limit_reported.add(framework)
+        _mark_bucket_truncated(state, bucket_name)
+        _add_limit_finding(
+            state,
+            "FRAMEWORK_EVIDENCE_LIMIT_REACHED",
+            value.get("file"),
+            f"Framework evidence collection was truncated for {framework}.",
+        )
+
+
+def _add_limit_finding(state: InspectState, code: str, file_path: Optional[str], message: str) -> None:
+    _mark_incomplete(state, code)
+    finding = {
+        "code": code,
+        "severity": "warning",
+        "message": message,
+    }
+    if file_path is not None:
+        finding["file"] = file_path
+    _append_finding(state, finding)
 
 
 def _call_name(node: ast.AST) -> Optional[str]:

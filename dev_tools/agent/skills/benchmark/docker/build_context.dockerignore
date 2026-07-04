@@ -1,0 +1,16 @@
+*
+!Dockerfile
+!docker_scripts/
+!docker_scripts/**
+!config/
+!config/**
+config/**/__pycache__/
+config/**/*.pyc
+!skills/
+!skills/**
+skills/**/__pycache__/
+skills/**/*.pyc
+!dist/
+!dist/**
+!sdk_skills/
+!sdk_skills/**
