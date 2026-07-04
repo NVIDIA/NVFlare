@@ -279,35 +279,6 @@ def test_parse_skill_frontmatter_rejects_yaml_anchors_and_aliases(tmp_path):
         parse_skill_frontmatter(skill_file)
 
 
-def test_parse_skill_frontmatter_rejects_symlink(tmp_path):
-    target = tmp_path / "target.md"
-    target.write_text("---\nname: nvflare-link\ndescription: Link.\n---\n", encoding="utf-8")
-    skill_file = tmp_path / "SKILL.md"
-    try:
-        skill_file.symlink_to(target)
-    except (NotImplementedError, OSError) as e:
-        pytest.skip(f"file symlink is not available in this environment: {e}")
-
-    with pytest.raises(SkillFrontmatterError, match="must not be a symlink"):
-        parse_skill_frontmatter(skill_file)
-
-
-@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="FIFO is not available on this platform")
-def test_validate_skill_dir_rejects_special_file_without_opening_it(tmp_path):
-    skill_dir = _write_skill(tmp_path, "nvflare-special-file")
-    os.mkfifo(skill_dir / "references.fifo")
-
-    result = validate_skill_dir(skill_dir)
-
-    assert "skill-special-file-not-allowed" in _issue_codes(result)
-
-
-@pytest.mark.skipif(not Path("/dev/zero").exists(), reason="/dev/zero is not available on this platform")
-def test_parse_skill_frontmatter_rejects_character_device_without_reading_it():
-    with pytest.raises(SkillFrontmatterError, match="must be a regular file"):
-        parse_skill_frontmatter(Path("/dev/zero"))
-
-
 def test_validate_skill_dir_reports_missing_directory(tmp_path):
     result = validate_skill_dir(tmp_path / "nvflare-missing-directory")
 

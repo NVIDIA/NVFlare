@@ -5,27 +5,30 @@ work. Single-GPU or single-process Lightning training does not need it.
 
 ## DDP Execution Model
 
-Treat Lightning DDP/multi-process evidence as a high-impact runtime fact, not
-as a skill-owned mapping to a recipe argument. Run
-`nvflare recipe show <recipe-name> --format json` and inspect the public
-parameter descriptions or capability metadata for an option explicitly
-documented for the detected Lightning launch model. The presence of an
-external-process-looking parameter name alone is insufficient evidence.
+Lightning DDP maps to the external-process executor exactly like plain-PyTorch
+DDP. Lightning's process-spawning strategies — `ddp` and its variants such as
+`ddp_spawn`, and any other strategy that launches one worker process per device
+through a torchrun-style / `torch.distributed` launch — run the training script
+as multiple worker processes, and distributed workers cannot run inside an
+in-process executor. So DDP/multi-process evidence maps to
+`launch_external_process=True`.
 
-Use the documented value only when that public contract establishes the
-mapping. If the recipe does not expose such a capability, or its public
-description is ambiguous, ask in interactive mode or fail closed in unattended
-mode and report the source DDP evidence plus the missing product surface. Apply
-the same public-contract check to single-process multi-GPU strategies; do not
-encode a `dp` exception table in this reference.
+The one exception is single-process multi-GPU DataParallel (`dp`), which runs in
+a single process and stays in-process like single-GPU training; leave
+`launch_external_process` unset so the recipe applies its own default.
+
+When the source shows a DDP-family strategy, confirm the selected recipe exposes
+`launch_external_process` with `nvflare recipe show <recipe-name> --format json`,
+then set it to `True`. If the recipe does not expose it, ask in interactive mode
+or fail closed in unattended mode, reporting the DDP evidence and the missing
+product surface.
 
 ## Rank-Synchronized Round Loop
 
-When the product-documented path launches multiple ranks and defines rank 0 as
-the FL server communicator, all ranks must agree on whether to continue.
-Broadcast `flare.is_running()` from rank 0 before each round, and let the
-patched trainer callback receive and broadcast the model during
-`validate`/`fit`:
+Under DDP, only rank 0 communicates with the FL server, so all ranks must agree
+on whether to continue. Broadcast `flare.is_running()` from rank 0 before each
+round, and let the patched trainer callback receive and broadcast the model
+during `validate`/`fit`:
 
 ```python
 flare.patch(trainer)
@@ -64,15 +67,22 @@ In DDP, rank-0 communication with the FL server is either handled by the patched
 callback path or by explicit rank-0 guarded metadata code like the snippet above;
 non-zero ranks should read broadcast values, not `input_model`.
 
-### DDP validation metric capability
+### DDP validation metrics are not delivered to the server by default
 
-Do not infer server-side metric delivery from a local `trainer.validate(...)`
-call or from executor internals. Check the recipe's public capability metadata
-and validation evidence for the selected launch path. Claim server-side
-per-round metrics only when that public surface and an observed validation
-artifact establish delivery; otherwise report local metrics separately and
-surface server-side delivery as an unverified limitation (or a blocker when the
-request requires it in unattended mode).
+DDP requires the external-process launch (`launch_external_process=True`), which
+runs the script under `PTClientAPILauncherExecutor`. That executor defaults to
+`train_with_evaluation=False`, and the recipe's `ScriptRunner` does not expose a
+switch to change it, so the pre-`fit` `trainer.validate(...)` metrics are **not**
+attached to the training result. The `validate` call above still runs locally
+(useful for local logging), but server-side model selection and per-round metric
+reporting do **not** receive those metrics under the default DDP path.
+
+Do not promise per-round server-side validation metrics for a DDP conversion.
+Report this as a recipe limitation, and only claim server-side round metrics when
+the user opts into an advanced, non-`ScriptRunner` configuration that constructs
+the launcher executor with `train_with_evaluation=True`. Otherwise surface the
+limitation (or a blocker in unattended mode) instead of promising metrics the
+default recipe path cannot deliver.
 
 ## GPU/CPU Fallback
 
@@ -83,17 +93,11 @@ request requires it in unattended mode).
 
 ## Experiment Tracking
 
-Enable remote tracking only when the user explicitly asks for it or explicitly
-approves the external effects and destinations. Existing source logger or
-callback configuration is evidence of intent, not approval.
+Enable tracking only when the user asks for it or the source code already uses a
+Lightning logger.
 
-- Preserve local-only loggers such as a local `TensorBoardLogger` when their
-  output stays in the recorded private run directory.
-- Treat remote `MLFlowLogger`, WandB/Comet-style clients, upload callbacks, and
-  custom or unknown loggers as network-capable. Keep them disabled during
-  validation unless the user explicitly approves them. In unattended mode,
-  disable them and retain denied network egress; if the trainer cannot run
-  without them, report validation as blocked rather than opening egress.
+- Preserve existing Lightning loggers such as `TensorBoardLogger` or
+  `MLFlowLogger`.
 - Hand metrics to FLARE through `add_experiment_tracking` or the FLARE client
   logger when the workflow needs server-side or streamed tracking. The canonical
   client-facing shortcut is `flare.logger()` (with

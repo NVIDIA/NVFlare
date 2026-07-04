@@ -1,15 +1,20 @@
-# Agent-skill lint
+# Git hooks
 
-Do not configure Git to execute hooks from a tracked worktree directory.
-Tracked hook code changes when branches are checked out and would then run with
-the developer's credentials.
-
-Run the deterministic agent-skill lint directly when changing skills or evals:
+Repo-managed git hooks. Enable them once per clone:
 
 ```bash
-python -m dev_tools.agent.skills.checks --skills-root skills
+git config core.hooksPath .githooks
 ```
 
-The lint also runs in `./runtest.sh -s` and in the pre-merge CI unit tests
-(`tests/unit_test/tool/agent_skill_checks/seed_skills_test.py`). Keep those
-trusted style/CI gates as the enforcement points.
+## `pre-push`
+
+Runs the deterministic agent-skill lint
+(`python -m dev_tools.agent.skills.checks --skills-root skills`) and blocks the
+push if it finds anything, so the agent skills checked into GitHub stay clean.
+It covers `skills/` and the eval suites under `dev_tools/agent/skill_evals/`.
+
+The same lint also runs in `./runtest.sh -s` and in the pre-merge CI unit tests
+(`tests/unit_test/tool/agent_skill_checks/seed_skills_test.py`), so this hook is
+a fast local pre-push gate rather than the only enforcement.
+
+Emergency bypass: `git push --no-verify`.

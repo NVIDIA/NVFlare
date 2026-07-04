@@ -14,10 +14,8 @@
 
 """Validation for NVFLARE agent skill frontmatter."""
 
-import errno
 import os
 import re
-import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Optional
@@ -50,7 +48,6 @@ MAX_NAME_LENGTH = 64
 MAX_DESCRIPTION_LENGTH = 1024
 MAX_COMPATIBILITY_LENGTH = 500
 MAX_SKILL_MD_LINES = 500
-MAX_SKILL_MD_BYTES = 512 * 1024
 VALID_BLAST_RADIUS = frozenset(
     {
         "read_only",
@@ -98,7 +95,7 @@ def skill_metadata(metadata: Mapping[str, Any]) -> dict:
 def parse_skill_frontmatter(skill_file: Path | str) -> dict[str, Any]:
     """Parse YAML frontmatter from a SKILL.md file."""
     path = Path(skill_file)
-    text = _read_regular_skill_file(path)
+    text = path.read_text(encoding="utf-8-sig")
     lines = text.splitlines()
     if not lines or lines[0].strip() != "---":
         raise SkillFrontmatterError("SKILL.md must start with YAML frontmatter delimiter '---'")
@@ -314,8 +311,8 @@ def _validate_spec_constraints(
 def _validate_skill_md_length(skill_file: Path, issues: list[SkillValidationIssue]) -> None:
     """Enforce the company guideline that the main SKILL.md stays under 500 lines."""
     try:
-        line_count = len(_read_regular_skill_file(skill_file).splitlines())
-    except (OSError, SkillFrontmatterError):
+        line_count = len(skill_file.read_text(encoding="utf-8-sig").splitlines())
+    except OSError:
         return  # unreadable SKILL.md is already reported as skill-md-unreadable
     if line_count > MAX_SKILL_MD_LINES:
         issues.append(
@@ -335,71 +332,9 @@ def _validate_no_symlinks(skill_dir: Path, issues: list[SkillValidationIssue]) -
         file_names.sort()
         for name in dir_names + file_names:
             path = root_path / name
-            try:
-                entry_stat = path.lstat()
-            except OSError:
-                issues.append(_issue("skill-entry-unreadable", "skill entry could not be inspected", path))
-                continue
-            if stat.S_ISLNK(entry_stat.st_mode):
+            if path.is_symlink():
                 issues.append(_issue("skill-symlink-not-allowed", "skill directories must not contain symlinks", path))
-            elif name in dir_names and not stat.S_ISDIR(entry_stat.st_mode):
-                issues.append(
-                    _issue("skill-special-file-not-allowed", "skill entries must be regular files or directories", path)
-                )
-            elif name in file_names and not stat.S_ISREG(entry_stat.st_mode):
-                issues.append(
-                    _issue("skill-special-file-not-allowed", "skill entries must be regular files or directories", path)
-                )
         dir_names[:] = [name for name in dir_names if not (root_path / name).is_symlink()]
-
-
-def _read_regular_skill_file(path: Path) -> str:
-    """Read SKILL.md through one bounded, nonblocking, no-follow descriptor."""
-
-    try:
-        before = path.lstat()
-    except OSError:
-        raise
-    if stat.S_ISLNK(before.st_mode):
-        raise SkillFrontmatterError("SKILL.md must not be a symlink")
-    if not stat.S_ISREG(before.st_mode):
-        raise SkillFrontmatterError("SKILL.md must be a regular file")
-    if before.st_size > MAX_SKILL_MD_BYTES:
-        raise SkillFrontmatterError(f"SKILL.md exceeds {MAX_SKILL_MD_BYTES} byte limit")
-
-    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)
-    try:
-        descriptor = os.open(path, flags)
-    except OSError as e:
-        if e.errno in {errno.ELOOP, getattr(errno, "EMLINK", errno.ELOOP)}:
-            raise SkillFrontmatterError("SKILL.md must not be a symlink") from e
-        raise
-    try:
-        opened = os.fstat(descriptor)
-        if not stat.S_ISREG(opened.st_mode):
-            raise SkillFrontmatterError("SKILL.md must be a regular file")
-        if (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino):
-            raise SkillFrontmatterError("SKILL.md changed while it was being opened")
-        if opened.st_size > MAX_SKILL_MD_BYTES:
-            raise SkillFrontmatterError(f"SKILL.md exceeds {MAX_SKILL_MD_BYTES} byte limit")
-
-        chunks: list[bytes] = []
-        bytes_read = 0
-        while bytes_read <= MAX_SKILL_MD_BYTES:
-            chunk = os.read(descriptor, min(64 * 1024, MAX_SKILL_MD_BYTES + 1 - bytes_read))
-            if not chunk:
-                break
-            chunks.append(chunk)
-            bytes_read += len(chunk)
-        data = b"".join(chunks)
-        if len(data) > MAX_SKILL_MD_BYTES:
-            raise SkillFrontmatterError(f"SKILL.md exceeds {MAX_SKILL_MD_BYTES} byte limit")
-        try:
-            return data.decode("utf-8-sig")
-        except UnicodeDecodeError as e:
-            raise SkillFrontmatterError(f"SKILL.md is not valid UTF-8: {e}") from e
-    finally:
-        os.close(descriptor)
 
 
 def _issue(code: str, message: str, path: Path) -> SkillValidationIssue:

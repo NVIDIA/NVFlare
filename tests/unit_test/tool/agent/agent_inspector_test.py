@@ -17,7 +17,6 @@ import os
 
 import pytest
 
-from nvflare.tool.agent import inspector as inspector_module
 from nvflare.tool.agent.frameworks.lightning import LightningDetector
 from nvflare.tool.agent.inspector import (
     InspectState,
@@ -124,73 +123,6 @@ def test_inspect_detects_top_level_lightning_alias_and_from_import(tmp_path):
     assert any(item["kind"] == "lightning_class" and item["value"] == "LightningModule" for item in evidence)
     assert any(item["kind"] == "lightning_trainer" and item["value"] == "L.Trainer" for item in evidence)
     assert any(item["kind"] == "lightning_trainer" and item["value"] == "Trainer" for item in evidence)
-
-
-def test_inspect_does_not_treat_relative_local_lightning_import_as_framework(tmp_path):
-    package = tmp_path / "package"
-    package.mkdir()
-    (package / "__init__.py").write_text("", encoding="utf-8")
-    (package / "lightning.py").write_text(
-        "class Trainer:\n" "    pass\n",
-        encoding="utf-8",
-    )
-    (package / "train.py").write_text(
-        "from .lightning import Trainer\n" "\n" "def main():\n" "    return Trainer()\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(tmp_path)
-
-    assert data["frameworks"] == []
-    assert data["skill_selection"]["detected_framework"] is None
-
-
-def test_inspect_prebinds_module_import_declared_after_function(tmp_path):
-    script = tmp_path / "train.py"
-    script.write_text(
-        "def build_trainer():\n" "    return Trainer(max_epochs=1)\n" "\n" "from lightning.pytorch import Trainer\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(script)
-
-    evidence = data["frameworks"][0]["evidence"]
-    assert data["frameworks"][0]["name"] == "pytorch_lightning"
-    assert any(item["kind"] == "lightning_trainer" and item["value"] == "Trainer" for item in evidence)
-
-
-def test_inspect_keeps_function_local_import_bindings_in_their_lexical_scope(tmp_path):
-    script = tmp_path / "train.py"
-    script.write_text(
-        "import torch\n"
-        "class Net(torch.nn.Module):\n"
-        "    pass\n"
-        "def optional_lightning():\n"
-        "    from lightning import Trainer\n"
-        "    return Trainer\n"
-        "def main(Trainer):\n"
-        "    return Net(), Trainer()\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(script)
-
-    evidence = {item["name"]: item["evidence"] for item in data["frameworks"]}
-    assert data["skill_selection"]["detected_framework"] == "pytorch"
-    assert not any(item["kind"] == "lightning_trainer" for item in evidence["pytorch_lightning"])
-
-
-def test_inspect_treats_absolute_import_shadowed_by_local_module_as_local(tmp_path):
-    (tmp_path / "lightning.py").write_text("class Trainer:\n    pass\n", encoding="utf-8")
-    (tmp_path / "train.py").write_text(
-        "from lightning import Trainer\n" "def main():\n" "    return Trainer()\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(tmp_path)
-
-    assert data["frameworks"] == []
-    assert data["skill_selection"]["detected_framework"] is None
 
 
 # Lightning-patch conversion-state cases: each writes one trainer script that
@@ -368,9 +300,8 @@ def test_inspect_keeps_plain_pytorch_routing_separate_from_lightning(tmp_path):
 
 def test_inspect_mixed_pytorch_workspace_with_incidental_lightning_keeps_pytorch(tmp_path):
     # A plain PyTorch entry point plus incidental Lightning imports should
-    # surface the mixed workspace without hiding the PyTorch training script.
-    # The active PyTorch class also has more weighted evidence than the three
-    # incidental Lightning imports.
+    # surface the mixed workspace without hiding the PyTorch training script,
+    # even when the helper has more raw Lightning import evidence.
     (tmp_path / "train.py").write_text(
         "import torch\n" "\n" "class Net(torch.nn.Module):\n" "    pass\n" "\n" "def main():\n" "    model = Net()\n",
         encoding="utf-8",
@@ -388,7 +319,7 @@ def test_inspect_mixed_pytorch_workspace_with_incidental_lightning_keeps_pytorch
     framework_by_name = {framework["name"]: framework for framework in data["frameworks"]}
     assert framework_names[0] == "pytorch"
     assert "pytorch_lightning" in framework_names
-    assert framework_by_name["pytorch"]["confidence"] > framework_by_name["pytorch_lightning"]["confidence"]
+    assert framework_by_name["pytorch_lightning"]["confidence"] > framework_by_name["pytorch"]["confidence"]
     assert len(framework_by_name["pytorch_lightning"]["evidence"]) > len(framework_by_name["pytorch"]["evidence"])
     assert data["target_type"] == "mixed_framework_workspace"
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
@@ -872,94 +803,6 @@ def test_inspect_cross_family_confidence_tie_prefers_entry_context_framework(tmp
     assert data["frameworks"][0]["name"] == "sklearn"
 
 
-def test_inspect_weighted_active_model_outranks_more_incidental_imports(tmp_path):
-    (tmp_path / "model.py").write_text(
-        "from torch import nn\n" "\n" "class Net(nn.Module):\n" "    pass\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "optional_sklearn.py").write_text(
-        "import sklearn\n" "import sklearn.metrics\n" "import sklearn.preprocessing\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(tmp_path)
-
-    confidence = {item["name"]: item["confidence"] for item in data["frameworks"]}
-    assert confidence["pytorch"] > confidence["sklearn"]
-    assert data["skill_selection"]["detected_framework"] == "pytorch"
-
-
-def test_inspect_sorts_frameworks_by_raw_score_before_rounding_confidence(tmp_path):
-    state = InspectState(root=tmp_path, redact=True)
-    state.framework_evidence = {
-        "xgboost": [{"kind": "import"}] * 501,
-        "sklearn": [{"kind": "import"}] * 500,
-    }
-
-    ranked = inspector_module._rank_frameworks(state)
-
-    assert [item["confidence"] for item in ranked] == [0.7, 0.7]
-    assert [item["name"] for item in ranked] == ["xgboost", "sklearn"]
-
-
-def test_inspect_does_not_use_generic_train_helper_as_the_only_entry_root(tmp_path):
-    (tmp_path / "helper.py").write_text(
-        "import sklearn\n" "def train():\n" "    return None\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "model.py").write_text(
-        "import torch\n" "class Net(torch.nn.Module):\n" "    pass\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(tmp_path)
-
-    assert data["entry_points"] == []
-    assert data["skill_selection"]["detected_framework"] == "pytorch"
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
-
-
-def test_inspect_main_guard_requires_equality_and_accepts_symmetric_form(tmp_path):
-    (tmp_path / "decoy.py").write_text(
-        "import sklearn\n" "if __name__ != '__main__':\n" "    pass\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "app.py").write_text(
-        "import torch\n" "if '__main__' == __name__:\n" "    pass\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(tmp_path)
-
-    assert [item["path"] for item in data["entry_points"]] == ["app.py"]
-    assert data["entry_points"][0]["main_guard"] is True
-    assert data["skill_selection"]["detected_framework"] == "pytorch"
-
-
-@pytest.mark.parametrize(
-    ("entry_name", "entry_source"),
-    [
-        (
-            "main.py",
-            "import sklearn\n" "def main():\n" "    return None\n" "if __name__ == '__main__':\n" "    main()\n",
-        ),
-        ("train.py", "import sklearn\nRUN_TRAINING = True\n"),
-    ],
-    ids=["main-guard", "conventional-launch-file"],
-)
-def test_inspect_helper_train_function_does_not_become_preferred_entry(tmp_path, entry_name, entry_source):
-    (tmp_path / entry_name).write_text(entry_source, encoding="utf-8")
-    (tmp_path / "helper.py").write_text(
-        "import torch\n" "\n" "class Net(torch.nn.Module):\n" "    pass\n" "\n" "def train():\n" "    return Net()\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(tmp_path)
-
-    assert data["skill_selection"]["detected_framework"] == "sklearn"
-    assert data["skill_selection"]["recommended_skills"] == []
-
-
 def test_inspect_higher_count_unreachable_torch_helper_does_not_beat_sklearn_entry(tmp_path):
     # Count-based confidence can rank an unreachable torch helper above the
     # sklearn the entry point actually uses. Reachability must win: the torch
@@ -984,7 +827,7 @@ def test_inspect_higher_count_unreachable_torch_helper_does_not_beat_sklearn_ent
     data = inspect_path(tmp_path)
 
     confidence = {fw["name"]: fw["confidence"] for fw in data["frameworks"]}
-    assert confidence["pytorch"] > confidence["sklearn"]  # active torch evidence has the higher score
+    assert confidence["pytorch"] > confidence["sklearn"]  # torch helper has the higher raw count
     assert data["skill_selection"]["detected_framework"] == "sklearn"  # but entry-tied sklearn wins
     assert data["skill_selection"]["recommended_skills"] == []
 
@@ -1062,11 +905,7 @@ def test_inspect_reachable_lightning_class_wins_over_co_located_torch(tmp_path):
         "    opt = torch.optim.SGD(net.parameters(), lr=0.1)\n"
         "    loss = torch.nn.CrossEntropyLoss()\n"
         "    loader = torch.utils.data.DataLoader([])\n"
-        "    return net, opt, loss, loader\n"
-        "def main():\n"
-        "    return train()\n"
-        "if __name__ == '__main__':\n"
-        "    main()\n",
+        "    return net, opt, loss, loader\n",
         encoding="utf-8",
     )
 
@@ -1128,37 +967,30 @@ def test_inspect_import_only_sklearn_entry_still_wins_when_torch_unreachable(tmp
 
 def test_inspect_frameworks_list_leads_with_detected_primary(tmp_path):
     # #5: frameworks[0] must match detected_framework even when a non-detected
-    # framework has higher weighted confidence (here incidental Lightning
-    # imports outrank the entry-tied active PyTorch model).
+    # framework has higher raw confidence (here incidental Lightning imports
+    # outrank the entry-tied active PyTorch model by count).
     (tmp_path / "train.py").write_text(
         "import torch\nimport torch.nn as nn\nclass Net(nn.Module):\n    pass\n"
         "def main():\n    Net()\nif __name__ == '__main__':\n    main()\n",
         encoding="utf-8",
     )
     (tmp_path / "unused.py").write_text(
-        "import pytorch_lightning\n"
-        "import pytorch_lightning.callbacks\n"
-        "import pytorch_lightning.loggers\n"
-        "import pytorch_lightning.strategies\n"
-        "import pytorch_lightning.utilities\n"
-        "import pytorch_lightning.callbacks.progress\n",
+        "import pytorch_lightning\nimport pytorch_lightning.callbacks\nimport pytorch_lightning.loggers\n",
         encoding="utf-8",
     )
 
     data = inspect_path(tmp_path)
 
     detected = data["skill_selection"]["detected_framework"]
-    confidence = {item["name"]: item["confidence"] for item in data["frameworks"]}
     assert detected == "pytorch"
-    assert confidence["pytorch_lightning"] > confidence["pytorch"]
     assert data["frameworks"][0]["name"] == detected
 
 
 def test_inspect_ranks_on_full_evidence_beyond_display_cap(tmp_path):
-    # #3: weighted framework ranking uses all collected evidence, not the display
-    # cap of 12. A file with more torch imports than a competing framework's
-    # imports ranks PyTorch higher even when both exceed the display cap; the
-    # displayed evidence list stays capped.
+    # #3: framework ranking uses the true evidence count, not the display cap of
+    # 12. A file with more torch imports than a competing framework's imports
+    # ranks PyTorch higher even when both exceed the display cap; the displayed
+    # evidence list stays capped.
     torch_imports = "".join(f"import torch.pkg{i}\n" for i in range(20))
     sklearn_imports = "".join(f"import sklearn.pkg{i}\n" for i in range(13))
     (tmp_path / "a.py").write_text(torch_imports, encoding="utf-8")
@@ -1599,33 +1431,6 @@ def test_lightning_routing_helper_defensive_branches(tmp_path):
     assert _evidence_score([{"kind": "unknown"}]) == 1
 
 
-def test_entry_point_reachability_is_cached_across_evidence_checks(tmp_path, monkeypatch):
-    state = InspectState(root=tmp_path, redact=True)
-    state.entry_points.append({"path": "main.py", "kind": "python_script", "functions": ["main"], "main_guard": True})
-    state.entry_point_priorities["main.py"] = 3
-    state.file_imports = {
-        "main.py": {"model"},
-        "model.py": {"layers"},
-        "layers.py": set(),
-    }
-    calls = 0
-    original = inspector_module._local_files_for_import
-
-    def counting_local_files_for_import(*args, **kwargs):
-        nonlocal calls
-        calls += 1
-        return original(*args, **kwargs)
-
-    monkeypatch.setattr(inspector_module, "_local_files_for_import", counting_local_files_for_import)
-    evidence = [{"file": "layers.py", "line": 1, "kind": "pytorch_class", "value": "nn.Module"}]
-
-    for _ in range(100):
-        assert _framework_evidence_tied_to_entry_context(state, evidence)
-
-    assert calls == 2
-    assert state.reachable_files_cache == {"model.py", "layers.py"}
-
-
 def test_lightning_routing_fallback_prefers_active_lightning_over_pytorch_imports(tmp_path):
     state = InspectState(root=tmp_path, redact=True)
     state.framework_evidence["pytorch_lightning"] = [
@@ -2027,166 +1832,3 @@ def test_inspect_file_limit_counts_non_python_entries(tmp_path):
     assert data["scan"]["files_skipped"] == [
         {"code": "FILE_LIMIT_REACHED", "path": "metadata_03.json", "message": "file scan limit reached"}
     ]
-
-
-def test_inspect_bounds_directory_count(tmp_path, monkeypatch):
-    monkeypatch.setattr(inspector_module, "MAX_DIRECTORIES_VISITED", 1)
-    nested = tmp_path / "nested"
-    nested.mkdir()
-    (nested / "train.py").write_text("import torch\n", encoding="utf-8")
-
-    data = inspect_path(tmp_path)
-
-    assert data["scan"]["files_scanned"] == 0
-    assert data["scan"]["directories_discovered"] == 1
-    assert any(item["code"] == "DIRECTORY_LIMIT_REACHED" for item in data["scan"]["files_skipped"])
-
-
-def test_inspect_bounds_entries_per_directory(tmp_path, monkeypatch):
-    monkeypatch.setattr(inspector_module, "MAX_DIRECTORY_ENTRIES", 2)
-    for index in range(3):
-        (tmp_path / f"module_{index}.py").write_text("", encoding="utf-8")
-
-    data = inspect_path(tmp_path)
-
-    assert data["scan"]["entries_visited"] == 0
-    assert data["completeness"]["complete"] is False
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-orient"]
-    assert any(item["code"] == "DIRECTORY_ENTRY_LIMIT_REACHED" for item in data["scan"]["files_skipped"])
-
-
-def test_inspect_directory_entry_cap_is_deterministic_across_creation_order(tmp_path, monkeypatch):
-    monkeypatch.setattr(inspector_module, "MAX_DIRECTORY_ENTRIES", 2)
-    contents = {"a.py": "", "m.py": "", "z.py": "import torch\n"}
-    roots = [tmp_path / "forward", tmp_path / "reverse"]
-    orders = [list(contents), list(reversed(contents))]
-    results = []
-    for root, order in zip(roots, orders):
-        root.mkdir()
-        for name in order:
-            root.joinpath(name).write_text(contents[name], encoding="utf-8")
-        results.append(inspect_path(root))
-
-    assert [result["frameworks"] for result in results] == [[], []]
-    assert results[0]["scan"] == results[1]["scan"]
-    assert results[0]["completeness"] == results[1]["completeness"]
-    assert results[0]["skill_selection"] == results[1]["skill_selection"]
-
-
-def test_inspect_bounds_directory_depth(tmp_path, monkeypatch):
-    monkeypatch.setattr(inspector_module, "MAX_DIRECTORY_DEPTH", 1)
-    nested = tmp_path / "level_one" / "level_two"
-    nested.mkdir(parents=True)
-    (nested / "train.py").write_text("import torch\n", encoding="utf-8")
-
-    data = inspect_path(tmp_path)
-
-    assert data["scan"]["files_scanned"] == 0
-    assert any(item["code"] == "DIRECTORY_DEPTH_LIMIT_REACHED" for item in data["scan"]["files_skipped"])
-
-
-def test_inspect_bounds_ast_nodes(tmp_path, monkeypatch):
-    monkeypatch.setattr(inspector_module, "MAX_AST_NODES", 4)
-    script = tmp_path / "train.py"
-    script.write_text("import torch\ndef train():\n    return torch.tensor(1)\n", encoding="utf-8")
-
-    data = inspect_path(script)
-
-    assert data["frameworks"] == []
-    assert any(item["code"] == "AST_NODE_LIMIT_REACHED" for item in data["scan"]["files_skipped"])
-
-
-def test_inspect_reports_framework_evidence_truncation(tmp_path, monkeypatch):
-    monkeypatch.setattr(inspector_module, "MAX_EVIDENCE_COLLECT", 2)
-    script = tmp_path / "model.py"
-    script.write_text("import torch\nimport torch.nn\nimport torch.optim\n", encoding="utf-8")
-
-    data = inspect_path(script)
-
-    assert len(data["frameworks"][0]["evidence"]) == 2
-    assert any(item["code"] == "FRAMEWORK_EVIDENCE_LIMIT_REACHED" for item in data["findings"])
-    assert data["completeness"]["complete"] is False
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-orient"]
-
-
-@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="FIFO is not available on this platform")
-def test_inspect_rejects_python_fifo_without_blocking(tmp_path):
-    fifo = tmp_path / "train.py"
-    os.mkfifo(fifo)
-
-    data = inspect_path(tmp_path)
-
-    assert data["scan"]["files_scanned"] == 0
-    assert data["completeness"]["complete"] is False
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-orient"]
-    assert any(item["code"] == "NON_REGULAR_FILE" for item in data["scan"]["files_skipped"])
-
-
-def test_inspect_opens_python_file_once_with_no_follow_and_nonblocking_flags(tmp_path, monkeypatch):
-    script = tmp_path / "train.py"
-    script.write_text("import torch\n", encoding="utf-8")
-    real_open = inspector_module.os.open
-    calls = []
-
-    def recording_open(path, flags, *args, **kwargs):
-        calls.append((path, flags))
-        return real_open(path, flags, *args, **kwargs)
-
-    monkeypatch.setattr(inspector_module.os, "open", recording_open)
-
-    data = inspect_path(script)
-
-    assert data["scan"]["files_scanned"] == 1
-    assert len(calls) == 1
-    assert calls[0][1] & getattr(os, "O_NONBLOCK", 0) == getattr(os, "O_NONBLOCK", 0)
-    assert calls[0][1] & getattr(os, "O_NOFOLLOW", 0) == getattr(os, "O_NOFOLLOW", 0)
-
-
-def test_inspect_caps_findings_and_evidence_with_explicit_metadata(tmp_path, monkeypatch):
-    monkeypatch.setattr(inspector_module, "MAX_EVIDENCE_COLLECT", 2)
-    script = tmp_path / "main.py"
-    script.write_text(
-        "api_key_one = '/private/one'\n" "api_key_two = '/private/two'\n" "api_key_three = '/private/three'\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(script)
-
-    completeness = data["completeness"]
-    assert completeness["complete"] is False
-    assert {"findings", "absolute_path_findings"} <= set(completeness["truncated_buckets"])
-    assert completeness["bucket_counts"]["findings"] == {"observed": 4, "collected": 2}
-    assert completeness["bucket_counts"]["absolute_path_findings"] == {"observed": 3, "collected": 2}
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-orient"]
-
-
-def test_inspect_incomplete_import_graph_suppresses_conversion_recommendation(tmp_path, monkeypatch):
-    monkeypatch.setattr(inspector_module, "MAX_IMPORTS_PER_FILE", 1)
-    (tmp_path / "train.py").write_text(
-        "import torch\n" "import local_model\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "local_model.py").write_text("", encoding="utf-8")
-
-    data = inspect_path(tmp_path)
-
-    assert data["skill_selection"]["detected_framework"] == "pytorch"
-    assert data["completeness"]["complete"] is False
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-orient"]
-    assert data["recommended_next_commands"] == ["nvflare agent doctor --format json"]
-
-
-def test_reachability_budget_counts_only_resolved_local_edges(tmp_path, monkeypatch):
-    monkeypatch.setattr(inspector_module, "MAX_REACHABILITY_EDGES", 1)
-    external_imports = "".join(f"import external_{index}\n" for index in range(20))
-    (tmp_path / "main.py").write_text(external_imports + "from model import Net\n", encoding="utf-8")
-    (tmp_path / "model.py").write_text(
-        "import torch\n" "class Net(torch.nn.Module):\n" "    pass\n",
-        encoding="utf-8",
-    )
-
-    data = inspect_path(tmp_path)
-
-    assert data["completeness"]["complete"] is True
-    assert data["skill_selection"]["detected_framework"] == "pytorch"
-    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]

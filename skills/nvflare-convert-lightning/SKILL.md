@@ -121,20 +121,12 @@ adding only a disclaimer.
   `../nvflare-shared/references/conversion-workflow.md`; otherwise ask or fail closed.
 - Must use the PyTorch recipe family; must not invent a Lightning-only recipe.
 - Must treat DDP/multi-GPU as high-impact source evidence. When the source
-  uses a DDP-family strategy, inspect the selected recipe's public metadata via
-  `recipe show`. Set an external-process option only when that public metadata
-  explicitly documents it for the detected Lightning runtime; the mere
-  presence of a similarly named parameter is not proof of the mapping. Ask or
-  fail closed when the public contract is absent or ambiguous. Do not maintain
-  a skill-owned DDP-to-recipe-parameter table. See
+  uses a DDP-family strategy, confirm the selected recipe exposes
+  `launch_external_process` via `recipe show`, then set
+  `launch_external_process=True`; if the recipe does not expose it, ask or fail
+  closed. For single-process DataParallel (`dp`), leave
+  `launch_external_process` unset so the recipe stays in-process. See
   `references/lightning-ddp-and-tracking.md`.
-- Must preserve local-only callbacks and logger behavior where safe. Existing
-  network-connected tracking, upload callbacks, and custom/unknown loggers do
-  not establish approval: keep them disabled during validation unless the user
-  explicitly approves the external effects and destinations. In unattended
-  mode, disable them and retain denied egress; block validation when they cannot
-  be safely disabled. This safety rule narrows the general behavior-preservation
-  guidance in `references/lightning-conversion.md`.
 - Custom aggregation must use the recipe `aggregator=` hook with a
   `ModelAggregator` subclass in `aggregators.py` per
   `../nvflare-shared/references/conversion-workflow.md`, and only while the Lightning client
@@ -151,8 +143,7 @@ adding only a disclaimer.
   a recipe.
 - Explain the selected recipe when the user's algorithm intent is ambiguous.
 - Convert the Lightning trainer to the patched Client API loop and generate or
-  update `job.py`, preserving local-only callbacks, loggers, and checkpoint
-  behavior while gating network-connected or custom/unknown logger effects.
+  update `job.py`, preserving callbacks, loggers, and checkpoint behavior.
 - Keep conversion choices, validation blockers, recipe comparisons, and
   data-prep decisions within this skill, its references, and the shared
   conversion guidance.
@@ -166,10 +157,8 @@ adding only a disclaimer.
 
 - Ask the user to clarify FL workflow intent when recipe selection is
   uncertain; in unattended mode fail closed on high-impact ambiguity.
-- Ask before enabling experiment tracking or any source-provided
-  network/custom logger. A user request can grant approval; the source code's
-  existing logger configuration cannot. Keep those effects disabled for
-  unattended validation.
+- Ask before enabling experiment tracking unless the user requests it or the
+  source code already uses a Lightning logger.
 - Follow the shared approval boundary in `../nvflare-shared/references/conversion-workflow.md`
   for overwriting files, installing dependencies, fetching repo-supplied URLs,
   downloading data, and first execution of source-derived code. POC or

@@ -149,17 +149,6 @@ def test_build_skill_manifest_wraps_source_hash_errors(monkeypatch, tmp_path):
     assert "late-link" in exc_info.value.detail
 
 
-def test_build_skill_manifest_rejects_reserved_installer_manifest_in_source(tmp_path):
-    skill_dir = _write_skill(tmp_path, "nvflare-test-skill")
-    skill_dir.joinpath(".nvflare_skill_install.json").write_text("{}\n", encoding="utf-8")
-
-    with pytest.raises(SkillManifestError) as exc_info:
-        build_skill_manifest(tmp_path, source_type="editable", nvflare_version="2.8.0")
-
-    assert exc_info.value.code == "AGENT_SKILL_MANIFEST_BUILD_FAILED"
-    assert "reserved installer file" in exc_info.value.detail
-
-
 @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are not supported on this platform")
 def test_skill_tree_hash_rejects_skill_symlinks(tmp_path):
     skill_dir = _write_skill(tmp_path, "nvflare-test-skill")
@@ -179,24 +168,6 @@ def test_skill_tree_hash_rejects_symlink_skill_root(tmp_path):
 
     with pytest.raises(ValueError, match="skill directory contains symlink"):
         skill_tree_hash(link_dir)
-
-
-@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="FIFOs are not supported on this platform")
-def test_skill_tree_hash_rejects_special_files_without_opening_them(tmp_path):
-    skill_dir = _write_skill(tmp_path, "nvflare-test-skill")
-    fifo_path = skill_dir / "blocking-input"
-    os.mkfifo(fifo_path)
-
-    with pytest.raises(ValueError, match="unsupported entry type: blocking-input"):
-        skill_tree_hash(skill_dir)
-
-
-def test_skill_tree_hash_rejects_non_directory_root(tmp_path):
-    regular_file = tmp_path / "not-a-skill"
-    regular_file.write_text("content\n", encoding="utf-8")
-
-    with pytest.raises(ValueError, match="is not a directory"):
-        skill_tree_hash(regular_file)
 
 
 def test_skill_tree_hash_ignores_python_cache_files(tmp_path):
@@ -304,29 +275,6 @@ def test_copy_released_skills_to_bundle_copies_runtime_content(tmp_path):
     assert saved_manifest["skills"][0]["source_hash"] == skill_tree_hash(bundle_root / "nvflare-test-skill")
 
 
-def test_copy_released_skills_to_bundle_rejects_source_change_after_manifest(monkeypatch, tmp_path):
-    source_root = tmp_path / "skills"
-    bundle_root = tmp_path / "bundle"
-    skill_dir = _write_skill(source_root, "nvflare-test-skill")
-    original_copytree = skill_manifest._copytree_no_follow
-    changed = False
-
-    def mutate_then_copy(source_dir, target_dir, *, exclude_names):
-        nonlocal changed
-        if source_dir == skill_dir and not changed:
-            changed = True
-            skill_dir.joinpath("SKILL.md").write_text(
-                skill_dir.joinpath("SKILL.md").read_text(encoding="utf-8") + "\nchanged during build\n",
-                encoding="utf-8",
-            )
-        return original_copytree(source_dir, target_dir, exclude_names=exclude_names)
-
-    monkeypatch.setattr(skill_manifest, "_copytree_no_follow", mutate_then_copy)
-
-    with pytest.raises(SkillManifestError, match="changed while being copied"):
-        copy_released_skills_to_bundle(source_root, bundle_root, nvflare_version="2.8.0")
-
-
 def test_copy_released_skills_to_bundle_cleans_existing_bundle_content(tmp_path):
     source_root = tmp_path / "skills"
     bundle_root = tmp_path / "bundle"
@@ -364,50 +312,6 @@ def test_copy_released_skills_to_bundle_unlinks_stale_bundle_symlink(tmp_path):
 
 
 @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are not supported on this platform")
-def test_write_empty_skill_bundle_rejects_symlink_root_without_touching_target(tmp_path):
-    outside = tmp_path / "outside"
-    outside.mkdir()
-    sentinel = outside / "sentinel.txt"
-    sentinel.write_text("preserve\n", encoding="utf-8")
-    bundle_root = tmp_path / "bundle"
-    bundle_root.symlink_to(outside, target_is_directory=True)
-
-    with pytest.raises(ValueError, match="real directories"):
-        write_empty_skill_bundle(bundle_root, nvflare_version="2.8.0")
-
-    assert sentinel.read_text(encoding="utf-8") == "preserve\n"
-    assert not outside.joinpath("manifest.json").exists()
-
-
-@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are not supported on this platform")
-def test_write_empty_skill_bundle_rejects_symlink_parent_before_creating_root(tmp_path):
-    outside = tmp_path / "outside"
-    outside.mkdir()
-    linked_parent = tmp_path / "linked-parent"
-    linked_parent.symlink_to(outside, target_is_directory=True)
-    bundle_root = linked_parent / "bundle"
-
-    with pytest.raises(ValueError, match="real directories"):
-        write_empty_skill_bundle(bundle_root, nvflare_version="2.8.0")
-
-    assert not outside.joinpath("bundle").exists()
-
-
-@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are not supported on this platform")
-def test_write_empty_skill_bundle_rejects_symlinked_package_marker(tmp_path):
-    bundle_root = tmp_path / "bundle"
-    bundle_root.mkdir()
-    outside = tmp_path / "outside.py"
-    outside.write_text("# preserve\n", encoding="utf-8")
-    bundle_root.joinpath("__init__.py").symlink_to(outside)
-
-    with pytest.raises(ValueError, match="package marker"):
-        write_empty_skill_bundle(bundle_root, nvflare_version="2.8.0")
-
-    assert outside.read_text(encoding="utf-8") == "# preserve\n"
-
-
-@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are not supported on this platform")
 def test_copy_released_skills_to_bundle_rejects_shared_reference_symlink(tmp_path):
     source_root = tmp_path / "skills"
     bundle_root = tmp_path / "bundle"
@@ -418,11 +322,9 @@ def test_copy_released_skills_to_bundle_rejects_shared_reference_symlink(tmp_pat
     outside_file.write_text("external shared content\n", encoding="utf-8")
     shared_dir.joinpath("outside-link.md").symlink_to(outside_file)
 
-    with pytest.raises(SkillManifestError) as exc_info:
+    with pytest.raises(ValueError, match="skill directory contains symlink"):
         copy_released_skills_to_bundle(source_root, bundle_root, nvflare_version="2.8.0")
 
-    assert exc_info.value.code == "AGENT_SKILL_MANIFEST_BUILD_FAILED"
-    assert "skill directory contains symlink" in exc_info.value.detail
     assert not bundle_root.joinpath("nvflare-shared", "outside-link.md").exists()
 
 
@@ -473,52 +375,6 @@ def test_load_manifest_wraps_read_and_json_errors(tmp_path):
     with pytest.raises(SkillManifestError) as shape_exc:
         load_manifest(corrupt)
     assert shape_exc.value.code == "AGENT_SKILL_MANIFEST_INVALID"
-
-
-@pytest.mark.parametrize(
-    ("field", "value", "detail"),
-    [
-        ("name", "../escaped", "canonical skill name"),
-        ("name", "/tmp/escaped", "canonical skill name"),
-        ("relative_path", "../escaped", "must exactly match"),
-        ("relative_path", "/tmp/escaped", "must exactly match"),
-        ("source_hash", "not-a-digest", "lowercase SHA-256"),
-    ],
-)
-def test_load_manifest_rejects_unsafe_skill_paths_and_hashes(tmp_path, field, value, detail):
-    root = tmp_path / "skills"
-    _write_skill(root, "nvflare-test-skill")
-    manifest = build_skill_manifest(root, source_type="wheel", nvflare_version="2.8.0")
-    manifest["skills"][0][field] = value
-    manifest_path = tmp_path / "manifest.json"
-    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-
-    with pytest.raises(SkillManifestError) as exc_info:
-        load_manifest(manifest_path)
-
-    assert exc_info.value.code == "AGENT_SKILL_MANIFEST_INVALID"
-    assert detail in exc_info.value.detail
-
-
-def test_load_manifest_rejects_mismatched_shared_dependency_hash(tmp_path):
-    root = tmp_path / "skills"
-    skill_dir = _write_skill(root, "nvflare-test-skill")
-    skill_dir.joinpath("SKILL.md").write_text(
-        skill_dir.joinpath("SKILL.md").read_text(encoding="utf-8") + "\nSee `../nvflare-shared/references/guide.md`.\n",
-        encoding="utf-8",
-    )
-    shared_dir = root / "nvflare-shared" / "references"
-    shared_dir.mkdir(parents=True)
-    shared_dir.joinpath("guide.md").write_text("guide\n", encoding="utf-8")
-    manifest = build_skill_manifest(root, source_type="wheel", nvflare_version="2.8.0")
-    manifest["skills"][0]["shared_source_hash"] = "0" * 64
-    manifest_path = tmp_path / "manifest.json"
-    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-
-    with pytest.raises(SkillManifestError) as exc_info:
-        load_manifest(manifest_path)
-
-    assert "does not match shared.source_hash" in exc_info.value.detail
 
 
 def _write_skill(root, name):

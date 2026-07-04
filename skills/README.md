@@ -22,13 +22,10 @@ dev_tools/agent/skill_evals/
     files/
 ```
 
-`nvflare-shared/` is an internal authoring container for references and
-templates used by conversion skills. In the source tree it has a valid
-`SKILL.md` so the same lint rules apply. Packaging omits that `SKILL.md`, and
-installation stores only the referenced runtime content under an immutable
-hidden `.nvflare-shared/<sha256>/` snapshot. Each dependent public skill pins
-that hash; unrelated skills have no shared dependency. The internal container
-therefore never appears as a user-triggerable installed skill.
+`nvflare-shared/` is an internal, non-triggered skill: it holds references and
+templates shared by the other skills and is installed alongside them, but it is
+not user-selectable. It still follows the skill structure (a valid `SKILL.md`
+with `status: internal`, plus `references/` and `assets/`).
 
 `SKILL.md` frontmatter follows the [agentskills.io spec](https://agentskills.io/specification):
 only `name`, `description`, `license`, `compatibility`, `metadata`, and

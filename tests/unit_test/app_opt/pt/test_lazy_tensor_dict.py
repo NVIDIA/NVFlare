@@ -20,7 +20,7 @@ import torch
 from safetensors.torch import save_file
 
 import nvflare.app_opt.pt.lazy_tensor_dict as lazy_tensor_dict
-from nvflare.app_opt.pt.lazy_tensor_dict import LazyTensorDict, LazyTensorMetadata, LazyTensorRef, _LazyRef, _TempDirRef
+from nvflare.app_opt.pt.lazy_tensor_dict import LazyTensorDict, _LazyRef, _TempDirRef
 
 
 @pytest.fixture
@@ -47,9 +47,6 @@ def temp_safetensors():
 
 
 class TestLazyRef:
-    def test_public_compatibility_type(self):
-        assert LazyTensorRef is _LazyRef
-
     def test_materialize_loads_tensor(self, temp_safetensors):
         key_to_file, temp_dir, tensors = temp_safetensors
         file_path, st_key = key_to_file["layer1.weight"]
@@ -57,84 +54,6 @@ class TestLazyRef:
 
         result = ref.materialize()
         assert torch.allclose(result, tensors["layer1.weight"])
-
-    def test_tensor_metadata_does_not_materialize_tensor(self, temp_safetensors, monkeypatch):
-        key_to_file, temp_dir, _ = temp_safetensors
-        file_path, st_key = key_to_file["layer1.weight"]
-        ref = LazyTensorRef(file_path=file_path, key=st_key, temp_ref=_TempDirRef(temp_dir))
-
-        class SafeOpenWrapper:
-            def __init__(self, opened):
-                self.opened = opened
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc_val, exc_tb):
-                self.opened.__exit__(exc_type, exc_val, exc_tb)
-
-            def get_slice(self, key):
-                return self.opened.get_slice(key)
-
-            def get_tensor(self, key):
-                raise AssertionError("metadata preflight must not load tensor data")
-
-        original_safe_open = lazy_tensor_dict.safe_open
-
-        def wrapped_safe_open(*args, **kwargs):
-            opened = original_safe_open(*args, **kwargs)
-            opened.__enter__()
-            return SafeOpenWrapper(opened)
-
-        monkeypatch.setattr(lazy_tensor_dict, "safe_open", wrapped_safe_open)
-
-        metadata = ref.tensor_metadata()
-
-        assert metadata == LazyTensorMetadata(shape=(10, 5), dtype="F32", num_elements=50, num_bytes=200)
-
-    def test_bounded_materialize_rejects_from_metadata_before_loading(self, tmp_path, monkeypatch):
-        loaded = False
-
-        class FakeSlice:
-            @staticmethod
-            def get_shape():
-                return [4]
-
-            @staticmethod
-            def get_dtype():
-                return "F32"
-
-        class FakeSafeOpen:
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc_val, exc_tb):
-                return None
-
-            @staticmethod
-            def get_slice(key):
-                assert key == "weight"
-                return FakeSlice()
-
-            @staticmethod
-            def get_tensor(key):
-                nonlocal loaded
-                loaded = True
-                return torch.ones(4)
-
-        monkeypatch.setattr(lazy_tensor_dict, "safe_open", lambda *args, **kwargs: FakeSafeOpen())
-        temp_dir = tmp_path / "offload"
-        temp_dir.mkdir()
-        ref = LazyTensorRef(
-            file_path=str(temp_dir / "unused.safetensors"),
-            key="weight",
-            temp_ref=_TempDirRef(str(temp_dir)),
-        )
-
-        with pytest.raises(ValueError, match="lazy tensor byte size"):
-            ref.materialize_bounded(max_elements=4, max_bytes=15)
-
-        assert loaded is False
 
     def test_repr(self, temp_safetensors):
         key_to_file, temp_dir, _ = temp_safetensors

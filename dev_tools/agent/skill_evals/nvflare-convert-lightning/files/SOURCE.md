@@ -11,11 +11,6 @@ and full job execution details so trigger and behavior evals stay deterministic.
 conversion; the agent under evaluation is expected to add the
 `flare.patch(trainer)` Client API integration and a `job.py`.
 
-The `gpu-device-lightning` fixture is synthetic, derived from
-`hello-lightning` with an explicit `torch.cuda.is_available()` choice between
-Lightning's `gpu` and `cpu` accelerators. It makes device-intent preservation
-applicable without requiring a GPU on the evaluation host.
-
 The `vocab-lightning` fixture adds a `LitTextCNN` model whose `__init__` has a
 required, data-derived argument (`vocab_size`, no default). The conversion must
 pin one shared vocabulary size for the server recipe model config and every

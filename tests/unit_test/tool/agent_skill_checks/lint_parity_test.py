@@ -95,30 +95,6 @@ def test_known_agent_flag_table_keys_are_valid_command_paths():
         assert "--schema" in flags, f"command '{key}' should allow --schema"
 
 
-def test_known_agent_flags_match_real_cli_options():
-    agent = _agent_parser_tree()
-    agent_subs = _subparser_choices(agent)
-    skills_subs = _subparser_choices(agent_subs["skills"])
-    parsers = {
-        "agent": agent,
-        **{f"agent {name}": parser for name, parser in agent_subs.items()},
-        **{f"agent skills {name}": parser for name, parser in skills_subs.items()},
-    }
-
-    for command_path, expected in lints_module._KNOWN_AGENT_FLAGS.items():
-        parser = parsers[command_path]
-        actual = {
-            option
-            for action in parser._actions
-            if not isinstance(action, (argparse._HelpAction, argparse._SubParsersAction))
-            for option in action.option_strings
-        }
-        # --format is a top-level option normalized so it is accepted after any
-        # subcommand; it is intentionally not repeated on each nested parser.
-        actual.add("--format")
-        assert expected == actual, f"flag registry drift for '{command_path}'"
-
-
 def test_runtime_boundary_excluded_dirs_match_packaging_exclusions():
     # The runtime-boundary lint's excluded dirs and the packaging exclusion set
     # are hand-mirrored: both name the directories that are stripped from a

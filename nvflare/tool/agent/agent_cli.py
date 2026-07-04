@@ -34,7 +34,6 @@ _AGENT_EXAMPLES = [
     "nvflare agent info --format json",
     "nvflare agent inspect ./train.py --format json",
     "nvflare agent doctor --format json",
-    "nvflare agent doctor --online --format json",
     "nvflare agent skills install --agent codex --dry-run --format json",
     "nvflare agent skills list --agent claude --format json",
     "nvflare agent info --schema",
@@ -90,12 +89,6 @@ def def_agent_cli_parser(sub_cmd) -> dict:
         description="Check local NVFLARE agent readiness without modifying state.",
         help="check local NVFLARE agent readiness",
     )
-    doctor_parser.add_argument(
-        "--online",
-        action="store_true",
-        help="also run a bounded read-only status check through the selected startup kit",
-    )
-    _add_startup_kit_selection_args(doctor_parser)
     doctor_parser.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
 
     skills_parser = agent_subparser.add_parser(
@@ -142,12 +135,6 @@ def _add_agent_target_args(parser) -> None:
         "--agent", choices=list(SUPPORTED_AGENT_TARGETS), required=True, help="agent skill target to manage"
     )
     parser.add_argument("--target", help="override the resolved agent skill directory")
-
-
-def _add_startup_kit_selection_args(parser) -> None:
-    from nvflare.tool.cli_session import add_startup_kit_selection_args
-
-    add_startup_kit_selection_args(parser)
 
 
 def _agent_info_data() -> dict:
@@ -277,12 +264,12 @@ def _handle_agent_doctor_cmd(args, handle_schema_flag, output_error_message, out
         idempotent=True,
     )
     try:
-        data = doctor_environment(online=getattr(args, "online", False), args=args)
+        data = doctor_environment()
     except Exception as e:
         output_error_message(
             "AGENT_DOCTOR_FAILED",
             "NVFLARE agent doctor failed.",
-            "Review local NVFLARE installation, skill bundle, and startup-kit configuration.",
+            "Review the local NVFLARE installation and installed agent skill bundle.",
             exit_code=1,
             detail=str(e),
             include_data=True,
@@ -298,10 +285,7 @@ def _handle_agent_doctor_cmd(args, handle_schema_flag, output_error_message, out
         data,
         code="OK",
         message="NVFLARE agent doctor completed.",
-        hint=(
-            "Resolve conversion-status findings before conversion; resolve deployment and online findings "
-            "before those workflows."
-        ),
+        hint="Resolve warning/error findings before conversion or agent skill workflows.",
     )
 
 

@@ -14,23 +14,6 @@ The `eval-pt` fixtures are synthetic, derived from the `hello-pt` fixture with
 an added validation loader and accuracy evaluation loop so paired
 training/evaluation transformation can be asserted.
 
-The `gpu-device-pt` fixtures are synthetic, derived from `hello-pt` with an
-explicit `torch.cuda.is_available()` CUDA/CPU selection. They exist solely to
-make device-intent preservation applicable and statically measurable; the
-fixture does not require the evaluation host to provide a GPU.
-
-The `checkpoint-pt` fixture is synthetic and intentionally requests
-`weights_only=False` in its source `torch.load` call. It carries no checkpoint
-payload; the eval checks that conversion emits weight-only loading rather than
-copying the explicitly unsafe source call.
-
-The `state-mismatch-pt` fixture is synthetic. Its JSON manifest describes a
-post-conversion validation result in which generated server construction is
-key-compatible but shape-incompatible with the unchanged source model, without
-including or loading serialized data. That generated construction mismatch is
-a conversion bug; a mismatch already present in user input would instead be an
-incompatible-input blocker.
-
 The `external-data-pt` fixtures are synthetic, derived from the `hello-pt`
 fixture but reading tabular rows from an external CSV path (`--data-path`,
 default `/data/nvflare/tabular/train.csv`) instead of building synthetic
