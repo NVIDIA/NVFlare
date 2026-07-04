@@ -923,7 +923,7 @@ def _skill_selection(detected_framework: Optional[str], conversion_state: str, s
 def _recommended_next_commands(
     detected_framework: Optional[str], conversion_state: str, state: InspectState
 ) -> list[str]:
-    commands = ["nvflare agent doctor --format json"]
+    commands = []
     if conversion_state == "exported_job":
         commands.append("nvflare job submit <job-folder> --format json")
     elif state.job_py and state.export_support:

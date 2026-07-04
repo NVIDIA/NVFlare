@@ -146,11 +146,10 @@ _KNOWN_NVFLARE_ROOT_COMMANDS = {
     "study",
     "system",
 }
-_KNOWN_AGENT_COMMANDS = {"doctor", "info", "inspect", "skills"}
+_KNOWN_AGENT_COMMANDS = {"info", "inspect", "skills"}
 _KNOWN_AGENT_SKILLS_COMMANDS = {"install", "list"}
 _KNOWN_AGENT_FLAGS = {
     "agent": {"--format", "--schema"},
-    "agent doctor": {"--format", "--schema"},
     "agent info": {"--format", "--schema"},
     "agent inspect": {"--format", "--redact", "--schema"},
     "agent skills": {"--format", "--schema"},

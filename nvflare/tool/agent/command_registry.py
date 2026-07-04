@@ -34,13 +34,6 @@ AGENT_COMMANDS = (
         "streaming": False,
     },
     {
-        "name": "doctor",
-        "command": "nvflare agent doctor",
-        "status": "available",
-        "mutating": False,
-        "streaming": False,
-    },
-    {
         "name": "skills install",
         "command": "nvflare agent skills install",
         "status": "available",

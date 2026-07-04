@@ -71,7 +71,6 @@ def test_inspect_detects_pytorch_lightning_and_recommends_lightning_skill(tmp_pa
     assert data["conversion_state"] == "not_converted"
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-lightning"]
     assert data["recommended_next_commands"] == [
-        "nvflare agent doctor --format json",
         "Use the nvflare-convert-lightning skill before editing.",
     ]
     assert any(item["kind"] == "lightning_class" for item in data["frameworks"][0]["evidence"])

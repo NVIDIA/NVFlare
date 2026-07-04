@@ -36,12 +36,12 @@ diagnosis. Route to the narrower skill instead.
 
 1. Clarify the target path or use the current workspace when the user already
    gives enough context.
-2. Run `nvflare agent inspect <path> --format json` for static project evidence.
-3. Run `nvflare agent doctor --format json` when the user asks about local
-   readiness or when inspection suggests missing FLARE setup.
-4. Classify the request into one next action: conversion, local validation,
+2. Run `nvflare agent inspect <path> --format json` for static project evidence,
+   including detected framework routing, FLARE integration, local readiness, and
+   the recommended skill.
+3. Classify the request into one next action: conversion, local validation,
    POC workflow, production workflow, diagnosis, deployment, or no FLARE skill.
-5. Recommend one lead skill and only mention supporting skills when the next
+4. Recommend one lead skill and only mention supporting skills when the next
    step clearly needs them.
 
 ## Requirements

@@ -769,55 +769,6 @@ def test_agent_inspect_schema_exits_zero(capsys):
     assert path_arg["required"] is True
 
 
-def test_agent_doctor_json_reports_local_readiness(capsys, monkeypatch, tmp_path):
-    home = tmp_path / "home"
-    monkeypatch.setenv("HOME", str(home))
-    monkeypatch.delenv("NVFLARE_STARTUP_KIT_DIR", raising=False)
-
-    exit_code = _run_main(["nvflare", "agent", "doctor", "--format", "json"])
-
-    assert exit_code == 0
-    payload = _load_single_stdout_json(capsys.readouterr())
-    _assert_envelope_shape(payload, "ok")
-    assert payload["data"]["status"] in {"ok", "attention"}
-    assert payload["data"]["nvflare"]["import_ok"] is True
-    # Deployment/POC readiness is out of the conversion-only scope.
-    assert "online" not in payload["data"]
-    assert "startup_kits" not in payload["data"]
-    assert "poc" not in payload["data"]
-    assert not home.joinpath(".nvflare", "config.conf").exists()
-
-
-def test_agent_doctor_human_output_is_summarized(capsys, monkeypatch, tmp_path):
-    home = tmp_path / "home"
-    monkeypatch.setenv("HOME", str(home))
-    monkeypatch.delenv("NVFLARE_STARTUP_KIT_DIR", raising=False)
-
-    exit_code = _run_main(["nvflare", "agent", "doctor"])
-
-    assert exit_code == 0
-    captured = capsys.readouterr()
-    assert captured.err == ""
-    assert "NVFLARE Agent Doctor" in captured.out
-    # Deployment/POC sections are not part of the conversion-scoped doctor.
-    assert "startup kits:" not in captured.out
-    assert "poc:" not in captured.out
-    assert "online:" not in captured.out
-    assert "{'import_ok':" not in captured.out
-
-
-def test_agent_doctor_schema_exits_zero(capsys):
-    exit_code = _run_main(["nvflare", "agent", "doctor", "--schema"])
-
-    assert exit_code == 0
-    schema = json.loads(capsys.readouterr().out)
-    assert schema["command"] == "nvflare agent doctor"
-    assert schema["mutating"] is False
-    assert schema["output_modes"] == ["json"]
-    # --online (and startup-kit selection) were removed with the deployment checks.
-    assert not any(arg["name"] == "--online" for arg in schema["args"])
-
-
 def _patch_skill_source(
     monkeypatch, tmp_path, *, with_behavior=False, with_compound_trigger=False, with_no_skill_trigger=False
 ):

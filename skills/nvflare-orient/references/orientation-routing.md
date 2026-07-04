@@ -5,10 +5,9 @@ turn project evidence and user intent into one narrow next action.
 
 ## Evidence Sources
 
-- `nvflare agent inspect <path> --format json` for framework, FLARE usage,
-  conversion state, safety findings, and recommended skills.
-- `nvflare agent doctor --format json` for local CLI command surface, installed
-  skill bundle, and ML framework dependency readiness.
+- `nvflare agent inspect <path> --format json` for framework routing, FLARE
+  usage, conversion state, safety findings, local readiness, and recommended
+  skills.
 - User-provided target files, job folders, logs, or stated deployment context.
 
 ## Routing Rules
