@@ -4,7 +4,7 @@
     {
       "id": "lightning-convert-basic",
       "prompt": "Here is my PyTorch Lightning training code. Convert it to a FLARE federated job, run it with 3 simulated sites using FedAvg for 3 rounds, and show me validation results.",
-      "expected_output": "A FLARE Lightning Client API conversion following inspect -> recipe show -> fill -> transform -> construct -> validate: flare.patch(trainer) owns model exchange, standard client.py/job.py/model.py layout, a runnable job.py that constructs the PyTorch FedAvg recipe with explicit class_path model config for 3 simulated sites and 3 rounds, local validation evidence, metric evidence, and an export attempt under /tmp/nvflare/job_config when supported.",
+      "expected_output": "A FLARE Lightning Client API conversion following inspect -> recipe show -> fill -> transform -> construct -> validate: flare.patch(trainer) owns model exchange, standard client.py/job.py/model.py layout, a runnable job.py that constructs the PyTorch FedAvg recipe with explicit class_path model config for 3 simulated sites and 3 rounds, local validation evidence, metric evidence, and an export attempt under an atomically randomized run directory inside a verified private 0700 per-user runtime root when supported. The exact generated paths are recorded for later diagnosis and reporting.",
       "files": [
         "files/hello-lightning/train.py",
         "files/hello-lightning/model.py"
@@ -21,9 +21,9 @@
         "The agent sets enable_tensor_disk_offload=True when the selected recipe exposes it.",
         "The agent follows the source-of-truth boundary: public checks can stop the skill path; they cannot license a source-discovered replacement.",
         "The generated source uses standard names such as client.py, job.py, and model.py.",
-        "The agent keeps simulation workspaces, exported job folders, and generated runtime outputs under /tmp/nvflare unless the user gives another location.",
-        "The agent preserves existing Lightning callbacks, loggers, and checkpoint behavior.",
-        "The agent runs python job.py for local validation in the foreground to completion, installing applicable requirements*.txt into the validation environment first per dependency-install.md instead of treating missing-but-installable dependencies as a blocker.",
+        "The agent creates an atomically randomized run directory inside a verified private 0700 per-user runtime root, rejects existing or symlinked output components, treats the sanitized job name as display-only metadata, and records exact source/export/workspace/result/report/log paths in a run manifest and final report.",
+        "The agent preserves local-only Lightning callbacks, loggers, and checkpoint behavior; network-connected or custom/unknown loggers still require explicit approval and remain disabled during validation otherwise.",
+        "For unattended untrusted local validation, the agent runs python job.py in the foreground to completion only inside a qualifying OS-level sandbox, container, or VM with no ambient secrets, read-only source, bounded writable output, resource limits, and denied source-execution egress; a venv alone is not security isolation. It installs eligible applicable requirements*.txt in a separate allowlisted acquisition phase inside that boundary and reports a blocker if the sandbox or a required skipped dependency is unavailable.",
         "The generated client constructs the model, datamodule/data loaders, and trainer once before the flare round loop rather than inside it; no separate client-side loss object is required when the source defines loss inside LightningModule methods.",
         "The agent preserves the source accelerator/devices selection and does not shortcut GPU training to CPU or add a hard GPU requirement, validating on CPU or a reduced device count only as a reported limitation.",
         "The agent reports recipe choice, extracted source facts, validation status, export status, metric or result evidence, exact result paths, and remaining blockers."
@@ -64,28 +64,40 @@
             "description": "uses standard generated file names such as client.py, job.py, and model.py"
           },
           {
-            "id": "tmp-runtime-outputs",
-            "description": "uses /tmp/nvflare locations for exported jobs, simulation workspaces, and generated validation outputs unless overridden by the user"
+            "id": "secure-random-runtime-outputs",
+            "description": "uses an atomically randomized run directory under a verified private 0700 per-user runtime root, rejects existing or symlinked output components, keeps the sanitized job name display-only, and records exact source/export/workspace/result/report/log paths for later diagnosis"
           },
           {
             "id": "preserve-lightning-behavior",
-            "description": "preserves existing Lightning callbacks, loggers, and checkpoint behavior"
+            "description": "preserves local-only Lightning callbacks, loggers, and checkpoint behavior while requiring explicit approval for network/custom logger effects and disabling them during validation otherwise"
           },
           {
             "id": "local-validation",
-            "description": "runs local job validation in the foreground to completion, installing applicable requirements*.txt into the validation environment first per dependency-install.md instead of treating missing-but-installable dependencies as a blocker"
+            "description": "runs unattended untrusted local validation in the foreground only inside an OS-level sandbox/container/VM with no ambient secrets, read-only source, bounded writable output, resource limits, and denied source-execution egress; a venv alone is insufficient, and eligible requirements install in a separately allowlisted sandbox phase"
           },
           {
             "id": "setup-outside-round-loop",
-            "description": "constructs the model, datamodule/data loaders, and trainer once before the flare round loop, not inside it, and reuses them each round; source-defined LightningModule loss code can remain inside training_step or validation_step"
+            "description": "constructs expensive or stateful objects including the model, datamodule/data loaders, and trainer once before the FL round loop and reuses them each round; source-defined LightningModule loss code can remain inside training_step or validation_step"
           },
           {
             "id": "device-selection-respects-availability",
-            "description": "training selects CUDA/GPU acceleration when torch.cuda.is_available() and falls back to CPU; must not hard-code CPU when the source used GPU-when-available, and CPU or reduced-device validation is reported as a validation-environment limitation"
+            "description": "training selects CUDA when torch.cuda.is_available() and falls back to CPU; must not hard-code CPU when the source used GPU-when-available, and CPU-only validation is reported as a validation-environment limitation"
           },
           {
             "id": "report-validation-evidence",
-            "description": "reports recipe choice, extracted source facts, validation command status, export status, metric or result evidence, exact result paths, and remaining blockers"
+            "description": "reports recipe choice, extracted source facts, process exit code, terminal Finished evidence, metric or result evidence, exact result paths, and unresolved validation or approval blockers"
+          },
+          {
+            "id": "receive-is-optional-metadata-only",
+            "description": "treats flare.receive inside the patched loop as optional task-progression or metadata access, not a second model-load path"
+          },
+          {
+            "id": "use-pytorch-recipe-family",
+            "description": "uses the PyTorch recipe family for Lightning conversion instead of inventing a Lightning-only recipe"
+          },
+          {
+            "id": "follow-source-of-truth-boundary",
+            "description": "follows the Source Of Truth Boundary so public checks can stop the skill path but cannot license a source-discovered replacement"
           }
         ],
         "prohibited_behavior": [
@@ -103,7 +115,15 @@
           },
           {
             "id": "no-source-discovered-strategy-override",
-            "description": "follows the source-of-truth boundary: public checks can stop the skill path; they cannot license a source-discovered replacement"
+            "description": "follows the source-of-truth boundary: public checks can stop the skill path but cannot license a source-discovered replacement, and does not replace the public contract with ad hoc SDK-internal APIs based on local source or docstring inspection"
+          },
+          {
+            "id": "no-venv-as-security-sandbox",
+            "description": "does not treat a Python virtual environment alone as security containment for unattended untrusted dependency installation or source-derived execution"
+          },
+          {
+            "id": "no-unapproved-network-logger",
+            "description": "does not enable source-provided network tracking, upload callbacks, or custom/unknown loggers during validation without explicit user approval; records tracking-tool presence and configuration shape but never credential values"
           },
           {
             "id": "no-poc-production-submit",
@@ -120,6 +140,26 @@
           {
             "id": "no-hardcoded-absolute-data-path",
             "description": "does not embed an absolute data path as a fixed non-configurable literal in generated client code (an absolute path used only as the default of a configurable train_args/per_site_config argument is allowed), and does not point at data inside the nvflare run workspace"
+          },
+          {
+            "id": "no-preemptive-reference-or-examples-dependency",
+            "description": "does not load every reference preemptively and does not depend on NVFLARE repository examples being present in the user's environment"
+          },
+          {
+            "id": "no-lightning-hook-or-step-rewrite",
+            "description": "does not rewrite training_step or validation_step semantics and does not break callbacks, loggers, checkpoint callbacks, or the FL round loop after patching"
+          },
+          {
+            "id": "no-unsupported-he-job",
+            "description": "does not generate an HE job or silently replace an unsupported privacy requirement with an unprotected Lightning conversion"
+          },
+          {
+            "id": "no-invalid-client-logger-import",
+            "description": "does not import ClientLogger from nvflare.app_opt.lightning.loggers.ClientLogger because that symbol is not exported there"
+          },
+          {
+            "id": "no-second-manual-flare-send",
+            "description": "does not add a second manual flare.send with FLModel for normal Lightning training because the patched trainer owns model exchange"
           }
         ],
         "optional_behavior": [
@@ -148,6 +188,39 @@
           {
             "id": "validation_evidence_completeness",
             "description": "whether the final answer reports validation commands, statuses, the declared primary/global metric scalar when applicable, result evidence, and exact artifact paths"
+          }
+        ]
+      }
+    },
+    {
+      "id": "lightning-device-selection",
+      "prompt": "Convert this PyTorch Lightning training code to a two-site FLARE FedAvg job. Preserve its GPU-when-available and CPU-fallback accelerator choice even if validation runs on a CPU-only host.",
+      "expected_output": "A FLARE Lightning conversion whose generated Trainer keeps a reachable torch.cuda.is_available() choice between GPU and CPU acceleration, retains flare.patch(trainer), and reports a CPU-only validation limitation without rewriting the generated Trainer to hard-coded CPU.",
+      "files": [
+        "files/gpu-device-lightning/train.py",
+        "files/gpu-device-lightning/model.py"
+      ],
+      "assertions": [
+        "The source fixture has a reachable torch.cuda.is_available() GPU/CPU accelerator selection, so device preservation is applicable.",
+        "The generated Trainer keeps the GPU-available branch and CPU fallback for the same accelerator target.",
+        "CPU-only validation is reported as an environment limitation and does not cause a hard-coded CPU rewrite."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-convert-lightning",
+        "mandatory_behavior": [
+          {
+            "id": "device-selection-respects-availability",
+            "description": "generated Lightning training selects GPU acceleration when torch.cuda.is_available() and falls back to CPU for the same reachable accelerator target"
+          },
+          {
+            "id": "use-lightning-patched-trainer",
+            "description": "Lightning conversion retains flare.patch(trainer) while preserving accelerator selection"
+          }
+        ],
+        "prohibited_behavior": [
+          {
+            "id": "no-hardcoded-device-rewrite",
+            "description": "does not replace source GPU-when-available behavior with hard-coded CPU or hard-coded GPU acceleration and does not silently force CPU"
           }
         ]
       }
@@ -266,7 +339,7 @@
         "prohibited_behavior": [
           {
             "id": "no-live-instance-with-required-args",
-            "description": "does not pass a live LightningModule instance with required constructor args as the recipe model"
+            "description": "does not pass a live LightningModule instance with required constructor args as the recipe model and does not move data-derived training-policy values into recipe model args"
           },
           {
             "id": "no-manual-flmodel-exchange-lightning",
@@ -311,6 +384,14 @@
           {
             "id": "no-input-model-to-trainer",
             "description": "Lightning conversion does not pass an optional input_model returned by flare.receive() into Trainer methods"
+          },
+          {
+            "id": "no-unguarded-receive-on-nonzero-ranks",
+            "description": "does not insert an unguarded flare.receive() on every rank for metadata and ensures non-zero ranks do not receive the task or model object"
+          },
+          {
+            "id": "no-local-validate-metric-delivery-inference",
+            "description": "does not infer server-side metric delivery from a local trainer.validate call or from executor internals"
           }
         ]
       }
@@ -355,7 +436,17 @@
       ],
       "nvflare": {
         "expected_skill": "nvflare-convert-pytorch",
-        "negative_for": "nvflare-convert-lightning"
+        "negative_for": "nvflare-convert-lightning",
+        "prohibited_behavior": [
+          {
+            "id": "no-lightning-patch-without-evidence",
+            "description": "when no Lightning evidence exists, does not force the Lightning flare.patch trainer pattern onto a plain PyTorch manual loop"
+          },
+          {
+            "id": "no-use-for-plain-pytorch-or-other-frameworks",
+            "description": "does not use the Lightning conversion skill for plain torch.nn.Module manual training loops, TensorFlow, XGBoost, failed jobs, or generic debugging without a FLARE Lightning conversion request"
+          }
+        ]
       }
     },
     {
