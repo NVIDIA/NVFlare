@@ -48,7 +48,9 @@ In interactive mode, ask when a high-impact value is missing or unclear. In
 unattended mode, fail closed instead: report the missing field or blocker and
 stop. In unattended mode, never invent high-impact runtime, aggregation,
 privacy, or deployment decisions, write generated output to a separate directory
-when possible, and run source-derived execution only in an isolated environment.
+when possible, and run source-derived execution only in the OS-enforced
+validation sandbox defined by `dependency-install.md`. A virtual environment
+alone is package isolation, not a security sandbox.
 
 Fail closed in unattended mode when:
 
@@ -81,10 +83,15 @@ interactive mode, ask before the first such execution on a repo the user has
 not established as trusted; the agent's own inspection does not establish
 trust, and supplying a repo for conversion does not by itself establish trust —
 trust requires the user's explicit confirmation or an explicit project policy.
-In unattended mode, run source-derived execution only in an isolated
-environment (clean virtual environment or container, no ambient credentials,
-minimum filesystem and network access needed for the validation), and report
-the isolation used.
+In unattended mode, run source-derived execution only in a disposable
+OS-level sandbox, container, or virtual machine that satisfies the full
+`dependency-install.md` Security Sandbox contract: no ambient credentials,
+read-only source and required input data, only the private per-run output
+directory writable, bounded resources, and denied network egress during source
+execution. A clean venv or a broadly mounted/networked container does not
+satisfy this boundary. If such a sandbox is unavailable, do not execute; save
+an unvalidated draft and report the blocker. Report the sandbox controls used,
+not merely the environment name.
 
 Checkpoint and serialized-artifact files from the source repo are untrusted
 executable input. Load PyTorch checkpoint files with
@@ -102,6 +109,16 @@ paths, credentials, model weights, or datasets to external services. In
 unattended mode, do not fetch repo-supplied URLs or download from source-derived
 endpoints at all: fail closed and report the fetch as blocked instead of
 reaching the network without an approval channel.
+
+Existing source code that configures network clients, telemetry, remote
+experiment tracking, upload callbacks, or custom/unknown loggers does not
+authorize an external action. Preserve local-only logging where safe. Disable
+network-connected and custom/unknown loggers and callbacks for validation
+unless the user explicitly approves their external effects and destinations.
+In unattended mode there is no such approval, so keep them disabled and retain
+denied egress; if they cannot be disabled without invalidating the run, report
+validation as blocked. Never infer approval from the fact that the source
+already enables a logger.
 
 Redact secrets everywhere. Reports, generated files, and logs must not
 reproduce credential values found in `.env` files, shell exports, notebooks,
@@ -380,13 +397,14 @@ to force a run.
   unavailable.
 - Before Python import checks, export, or simulation, follow
   `dependency-install.md`.
-- Treat missing dependencies as blockers only when no applicable dependency
-  file exists, install fails, system/GPU resources are unavailable, or (in
-  interactive mode) required approval is not given, or network access is
-  unavailable. A dependency covered by an applicable `requirements*.txt` is not
-  a blocker in unattended mode: install it into the isolated validation
-  environment per `dependency-install.md` and proceed, instead of running a
-  command you already know will fail.
+- Treat missing dependencies as blockers only when no applicable eligible
+  dependency entry exists, install fails, system/GPU resources are unavailable,
+  an elevated-risk dependency must be skipped, the required security sandbox
+  is unavailable, required package-index access is unavailable, or (in
+  interactive mode) required approval is not given. An eligible dependency
+  covered by an applicable `requirements*.txt` is not a blocker in unattended
+  mode when the sandboxed install path is available: install it there per
+  `dependency-install.md` instead of running a command you know will fail.
 - Keep validation commands single-purpose. Run cleanup, dependency install,
   export, and simulation as separate commands; do not combine destructive
   cleanup and execution such as `rm -rf <workspace> && python job.py`.
@@ -400,9 +418,10 @@ to force a run.
 ## Final Validation Run Must Finish Before You Finalize
 
 This is a hard rule for every conversion skill, framework-agnostic. The
-approval boundary and the unattended isolation requirement take precedence over
-it: a run blocked by the execution trust gate is reported as an unvalidated
-draft, never run in a non-isolated unattended environment.
+approval boundary and the unattended security-sandbox requirement take
+precedence over it: a run blocked by the execution trust gate is reported as an
+unvalidated draft, never run in a host venv or other non-sandboxed unattended
+environment.
 
 - Run the final `python job.py` validation in the **foreground** and let it run
   to completion in the same step. Do not choose background execution for the
@@ -452,6 +471,8 @@ Ask for explicit user approval before:
 - fetching repo-supplied URLs or downloading data;
 - changing private data paths, replacing dataset access, or using non-fixture
   data for validation;
+- enabling source-provided network clients, telemetry, upload callbacks,
+  remote tracking, or custom/unknown loggers during validation;
 - the first execution of source-derived `job.py`, simulation, or export on a
   repo the user has not established as trusted;
 - any externally visible action.
@@ -468,8 +489,9 @@ report it as unvalidated and name the concrete blocker.
 
 Report the selected recipe, extracted source facts, generated files, custom
 aggregation choice if any, assumptions, commands run, validation results,
-export location if produced, execution isolation or approval status, redacted
-security-relevant findings, and blockers. State that the generated
+export location if produced, the exact recorded runtime/result/report paths,
+execution sandbox controls or approval status, redacted security-relevant
+findings, disabled network/custom loggers, and blockers. State that the generated
 local-validation job carries no deployment-reviewed privacy or security policy
 (no differential privacy, access control, or production approval) unless a
 separate workflow explicitly added one. If the user requested homomorphic
