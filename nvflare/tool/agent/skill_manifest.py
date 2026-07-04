@@ -548,8 +548,8 @@ def _open_real_directory(path: Path) -> int:
             raise ValueError(f"skill bundle root changed while it was opened: {path}")
         if hasattr(os, "geteuid") and opened.st_uid != os.geteuid():
             raise ValueError(f"skill bundle root must be owned by the current user: {path}")
-        if stat.S_IMODE(opened.st_mode) & 0o022:
-            raise ValueError(f"skill bundle root must not be group/world writable: {path}")
+        if stat.S_IMODE(opened.st_mode) & 0o002:
+            raise ValueError(f"skill bundle root must not be world writable: {path}")
         return fd
     except Exception:
         os.close(fd)
