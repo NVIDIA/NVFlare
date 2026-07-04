@@ -28,6 +28,8 @@ class LitNet(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         features, labels = batch
+        if labels.numel() == 0:
+            raise ValueError("empty training batch; check per-site data partitioning")
         return F.cross_entropy(self(features), labels)
 
     def configure_optimizers(self):
