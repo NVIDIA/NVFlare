@@ -53,6 +53,9 @@ privacy, or deployment decisions, write generated output to a separate directory
 when possible, and run source-derived execution only in the OS-enforced
 validation sandbox defined by `dependency-install.md`. A virtual environment
 alone is package isolation, not a security sandbox.
+Do not issue approval prompts in unattended mode: when a safe unattended path is
+defined, take it automatically; when no safe unattended path exists, fail closed
+with the concrete blocker.
 
 Fail closed in unattended mode when:
 
@@ -485,7 +488,7 @@ environment.
 
 ## Approval Boundary
 
-Ask for explicit user approval before:
+In interactive mode, ask for explicit user approval before:
 
 - overwriting existing non-generated project files;
 - installing dependencies;
@@ -497,6 +500,13 @@ Ask for explicit user approval before:
 - the first execution of source-derived `job.py`, simulation, or export on a
   repo the user has not established as trusted;
 - any externally visible action.
+
+In unattended mode, never wait at an approval prompt. For dependency install
+and first source-derived execution, use the unattended sandboxed paths defined
+in `dependency-install.md` and the Source Trust Boundary above. For actions with
+no safe unattended path — overwriting non-generated files, fetching
+repo-supplied URLs, changing private data paths, enabling external loggers, or
+other externally visible effects — fail closed and report the blocker.
 
 POC or production submission is outside conversion scope. If the user asks for
 it, state that it is handled outside the conversion skill; do not run submit or

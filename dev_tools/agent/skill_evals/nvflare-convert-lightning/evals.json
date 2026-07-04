@@ -25,6 +25,7 @@
         "The agent creates an atomically randomized run directory inside a verified private 0700 per-user runtime root, rejects existing or symlinked output components, treats the sanitized job name as display-only metadata, and records exact source/export/workspace/result/report/log paths in a run manifest and final report.",
         "The agent preserves local-only Lightning callbacks, loggers, and checkpoint behavior; network-connected or custom/unknown loggers still require explicit approval and remain disabled during validation otherwise.",
         "For unattended untrusted local validation, the agent runs python job.py in the foreground to completion only inside a qualifying OS-level sandbox, container, or VM with no ambient secrets, read-only source, bounded writable output, resource limits, and denied source-execution egress; a venv alone is not security isolation. It installs eligible applicable requirements*.txt in a separate allowlisted acquisition phase inside that boundary and reports a blocker if the sandbox or a required skipped dependency is unavailable.",
+        "In unattended or non-interactive evaluation harness runs, the agent does not ask for approval or wait for a reply before installing eligible dependencies or executing validation; it automatically uses the sandboxed unattended path when available, otherwise reports the missing sandbox or skipped required dependency as the blocker.",
         "The generated client constructs the model, datamodule/data loaders, and trainer once before the flare round loop rather than inside it; no separate client-side loss object is required when the source defines loss inside LightningModule methods.",
         "The agent preserves the source accelerator/devices selection and does not shortcut GPU training to CPU or add a hard GPU requirement, validating on CPU or a reduced device count only as a reported limitation.",
         "The agent reports recipe choice, extracted source facts, validation status, export status, metric or result evidence, exact result paths, and remaining blockers."
@@ -78,7 +79,7 @@
           },
           {
             "id": "local-validation",
-            "description": "runs unattended untrusted local validation in the foreground only inside an OS-level sandbox/container/VM with no ambient secrets, read-only source, bounded writable output, resource limits, and denied source-execution egress; a venv alone is insufficient, and eligible requirements install in a separately allowlisted sandbox phase before any import-level preflight, recipe-construction probe, export, simulation, or python job.py"
+            "description": "runs unattended untrusted local validation in the foreground only inside an OS-level sandbox/container/VM with no ambient secrets, read-only source, bounded writable output, resource limits, and denied source-execution egress; a venv alone is insufficient, eligible requirements install in a separately allowlisted sandbox phase before any import-level preflight, recipe-construction probe, export, simulation, or python job.py, and the agent does not wait for approval in a non-interactive run"
           },
           {
             "id": "setup-outside-round-loop",
@@ -145,6 +146,10 @@
           {
             "id": "no-hardcoded-absolute-data-path",
             "description": "does not embed an absolute data path as a fixed non-configurable literal in generated client code (an absolute path used only as the default of a configurable train_args/per_site_config argument is allowed), and does not point at data inside the nvflare run workspace"
+          },
+          {
+            "id": "no-unattended-approval-prompt",
+            "description": "does not stop an unattended or non-interactive evaluation run at an approval prompt for dependency install or first source-derived validation execution; it uses the sandboxed unattended path or reports a concrete blocker"
           },
           {
             "id": "no-conventional-field-assumption",
