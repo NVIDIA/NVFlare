@@ -22,6 +22,7 @@ import pytest
 
 from nvflare.tool.agent import skill_manager
 from nvflare.tool.agent.skill_manager import (
+    INSTALL_LOCK_OWNER_FILE_NAME,
     INSTALL_LOCK_TIMESTAMP_FILE_NAME,
     INSTALL_MANIFEST_FILE_NAME,
     SkillSource,
@@ -216,6 +217,51 @@ def test_install_skills_dry_run_reports_plan_without_copying(tmp_path):
     assert not target.exists()
 
 
+def test_install_skills_dry_run_reports_versioned_shared_snapshot(tmp_path):
+    source = _skill_source(tmp_path, shared_heading="Shared v1")
+    target = tmp_path / "target"
+
+    plan = install_skills(agent="codex", dry_run=True, target_dir=target, source=source)
+
+    shared_hash = source.manifest["shared"]["source_hash"]
+    assert plan["shared"]["action"] == "copy"
+    assert Path(plan["shared"]["target_path"]) == target / ".nvflare-shared" / shared_hash
+    assert plan["shared"]["files"]
+    assert not target.exists()
+
+
+def test_install_skills_does_not_couple_unrelated_skill_to_shared_resources(tmp_path):
+    root = tmp_path / "skills"
+    _write_skill(root, "nvflare-test-skill")
+    _write_shared_reference(root, "Shared v1")
+    source = SkillSource(
+        source_type="editable",
+        root=root,
+        manifest=build_skill_manifest(root, source_type="editable", nvflare_version="2.8.0"),
+    )
+
+    plan = install_skills(agent="codex", target_dir=tmp_path / "target", source=source)
+
+    assert plan["applied"] is True
+    assert plan["shared"] is None
+    assert plan["skills"][0]["shared_source_hash"] is None
+    assert not (tmp_path / "target" / ".nvflare-shared").exists()
+
+
+def test_install_skills_blocks_dependent_skill_when_shared_source_is_missing(tmp_path):
+    source = _skill_source(tmp_path, shared_heading="Shared v1")
+    shutil.rmtree(source.root / "nvflare-shared")
+    target = tmp_path / "target"
+
+    plan = install_skills(agent="codex", target_dir=target, source=source)
+
+    assert plan["applied"] is False
+    assert plan["shared"]["conflict"] == "shared_source_missing"
+    assert plan["skills"][0]["status"] == "blocked"
+    assert plan["errors"][0]["code"] == "shared_dependency_unavailable"
+    assert not (target / "nvflare-test-skill").exists()
+
+
 def test_install_skills_installs_all_by_default(tmp_path):
     source = _skill_source(tmp_path)
     target = tmp_path / "target"
@@ -306,40 +352,110 @@ def test_install_skills_is_idempotent_for_same_managed_version(tmp_path):
     assert plan["skills"][0]["reason"] == "already_installed"
 
 
-def test_install_skills_preserves_modified_shared_references(tmp_path):
+def test_install_skills_keeps_modified_old_shared_snapshot_and_installs_new_version(tmp_path):
     source = _skill_source(tmp_path, shared_heading="Shared v1")
     target = tmp_path / "target"
     install_skills(agent="codex", target_dir=target, source=source)
-    shared_file = target / "nvflare-shared" / "references" / "conversion-workflow.md"
+    old_hash = source.manifest["shared"]["source_hash"]
+    shared_file = target / ".nvflare-shared" / old_hash / "references" / "conversion-workflow.md"
     shared_file.write_text("# User Edit\n", encoding="utf-8")
 
     updated_source = _skill_source(tmp_path, shared_heading="Shared v2")
     plan = install_skills(agent="codex", target_dir=target, source=updated_source)
 
+    new_hash = updated_source.manifest["shared"]["source_hash"]
+    assert plan["applied"] is True
+    assert new_hash != old_hash
+    assert shared_file.read_text(encoding="utf-8") == "# User Edit\n"
+    assert "# Shared v2" in (target / ".nvflare-shared" / new_hash / "references" / "conversion-workflow.md").read_text(
+        encoding="utf-8"
+    )
+
+
+def test_install_skills_blocks_when_required_shared_snapshot_was_modified(tmp_path):
+    source = _skill_source(tmp_path, shared_heading="Shared v1")
+    target = tmp_path / "target"
+    first_plan = install_skills(agent="codex", target_dir=target, source=source)
+    shared_hash = source.manifest["shared"]["source_hash"]
+    shared_file = target / ".nvflare-shared" / shared_hash / "references" / "conversion-workflow.md"
+    shared_file.write_text("# User Edit\n", encoding="utf-8")
+
+    plan = install_skills(agent="codex", target_dir=target, source=source)
+
+    assert first_plan["applied"] is True
     assert plan["applied"] is False
-    assert plan["errors"] == [
-        {
-            "skill": "nvflare-shared",
-            "code": "skill_install_failed",
-            "type": "FileExistsError",
-            "message": f"shared reference target has local modifications: {target / 'nvflare-shared'}",
-        }
-    ]
+    assert plan["shared"]["conflict"] == "local_modifications_detected"
+    assert plan["errors"][0]["code"] == "shared_dependency_unavailable"
+    assert all(entry["status"] == "blocked" for entry in plan["skills"])
     assert shared_file.read_text(encoding="utf-8") == "# User Edit\n"
 
 
-def test_install_skills_updates_unmodified_shared_references(tmp_path):
+def test_install_skills_retains_immutable_shared_versions_and_repins_skill(tmp_path):
     source = _skill_source(tmp_path, shared_heading="Shared v1")
     target = tmp_path / "target"
     install_skills(agent="codex", target_dir=target, source=source)
+    old_hash = source.manifest["shared"]["source_hash"]
 
     updated_source = _skill_source(tmp_path, shared_heading="Shared v2")
     plan = install_skills(agent="codex", target_dir=target, source=updated_source)
 
+    new_hash = updated_source.manifest["shared"]["source_hash"]
     assert plan["applied"] is True
-    assert "# Shared v2" in (target / "nvflare-shared" / "references" / "conversion-workflow.md").read_text(
+    assert (target / ".nvflare-shared" / old_hash).is_dir()
+    assert "# Shared v2" in (target / ".nvflare-shared" / new_hash / "references" / "conversion-workflow.md").read_text(
         encoding="utf-8"
     )
+    install_manifest = json.loads(
+        (target / "nvflare-test-skill" / INSTALL_MANIFEST_FILE_NAME).read_text(encoding="utf-8")
+    )
+    assert install_manifest["shared_source_hash"] == new_hash
+    assert not (target / "nvflare-shared").exists()
+
+
+def test_install_skills_backs_up_unmodified_legacy_discoverable_shared_skill(tmp_path):
+    source = _skill_source(tmp_path)
+    target = tmp_path / "target"
+    legacy_dir = _write_managed_install(target, "nvflare-shared")
+
+    plan = install_skills(agent="codex", target_dir=target, source=source)
+
+    assert plan["applied"] is True
+    assert plan["legacy_shared"]["status"] == "backed_up"
+    assert not legacy_dir.exists()
+    backup_path = Path(plan["legacy_shared"]["backup_path"])
+    assert backup_path.joinpath("SKILL.md").is_file()
+
+
+def test_install_skills_blocks_modified_legacy_discoverable_shared_skill(tmp_path):
+    source = _skill_source(tmp_path)
+    target = tmp_path / "target"
+    legacy_dir = _write_managed_install(target, "nvflare-shared")
+    legacy_dir.joinpath("SKILL.md").write_text("locally modified\n", encoding="utf-8")
+
+    plan = install_skills(agent="codex", target_dir=target, source=source)
+
+    assert plan["applied"] is False
+    assert plan["legacy_shared"]["conflict"] == "local_modifications_detected"
+    assert plan["errors"][0]["code"] == "legacy_shared_migration_required"
+    assert legacy_dir.joinpath("SKILL.md").read_text(encoding="utf-8") == "locally modified\n"
+
+
+def test_install_skills_blocks_legacy_retirement_while_unselected_skill_uses_it(tmp_path):
+    source = _skill_source(tmp_path)
+    target = tmp_path / "target"
+    _write_managed_install(target, "nvflare-shared")
+    _write_managed_install(
+        target,
+        "nvflare-old-skill",
+        extra_body="\nSee `../nvflare-shared/references/conversion-workflow.md`.\n",
+    )
+
+    plan = install_skills(agent="codex", target_dir=target, source=source)
+
+    assert plan["applied"] is False
+    assert plan["legacy_shared"]["conflict"] == "legacy_shared_in_use"
+    assert plan["legacy_shared"]["dependent_skills"] == ["nvflare-old-skill"]
+    assert (target / "nvflare-shared" / "SKILL.md").is_file()
 
 
 def test_install_skills_preserves_modified_managed_install(tmp_path):
@@ -449,6 +565,36 @@ def test_install_skills_replace_copy_error_keeps_existing_install(monkeypatch, t
     assert not (target / ".nvflare_bak").exists()
 
 
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are not supported on this platform")
+def test_install_skills_rejects_symlinked_backup_root_before_replacement(tmp_path):
+    root = tmp_path / "skills"
+    _write_skill(root, "nvflare-test-skill", heading="First Skill")
+    source = SkillSource(
+        source_type="editable",
+        root=root,
+        manifest=build_skill_manifest(root, source_type="editable", nvflare_version="2.8.0"),
+    )
+    target = tmp_path / "target"
+    install_skills(agent="codex", target_dir=target, source=source)
+    _write_skill(root, "nvflare-test-skill", heading="Second Skill")
+    updated_source = SkillSource(
+        source_type="editable",
+        root=root,
+        manifest=build_skill_manifest(root, source_type="editable", nvflare_version="2.8.0"),
+    )
+    outside = tmp_path / "outside-backups"
+    outside.mkdir()
+    (target / ".nvflare_bak").symlink_to(outside, target_is_directory=True)
+
+    plan = install_skills(agent="codex", target_dir=target, source=updated_source)
+
+    assert plan["applied"] is False
+    assert plan["skills"][0]["status"] == "failed"
+    assert "expected a real directory" in plan["errors"][0]["message"]
+    assert "First Skill" in (target / "nvflare-test-skill" / "SKILL.md").read_text(encoding="utf-8")
+    assert list(outside.iterdir()) == []
+
+
 def test_install_skills_replace_publish_error_restores_existing_install(monkeypatch, tmp_path):
     root = tmp_path / "skills"
     _write_skill(root, "nvflare-test-skill", heading="First Skill")
@@ -488,7 +634,7 @@ def test_install_skills_replace_publish_error_restores_existing_install(monkeypa
     assert not any((target / ".nvflare_bak").iterdir())
 
 
-def test_skill_install_lock_ignores_stale_lock_removal_race(monkeypatch, tmp_path):
+def test_skill_install_lock_reuses_stale_directory_under_os_lease(monkeypatch, tmp_path):
     target = tmp_path / "target"
     target.mkdir()
     lock_dir = tmp_path / ".target.install.lock"
@@ -496,7 +642,7 @@ def test_skill_install_lock_ignores_stale_lock_removal_race(monkeypatch, tmp_pat
     real_rmtree = shutil.rmtree
     calls = []
 
-    monkeypatch.setattr(skill_manager, "_lock_dir_is_stale", lambda path: path == lock_dir)
+    monkeypatch.setattr(skill_manager, "_lock_dir_is_stale", lambda path, **_kwargs: path == lock_dir)
 
     def rmtree_with_race(path, *args, **kwargs):
         calls.append(kwargs)
@@ -508,7 +654,81 @@ def test_skill_install_lock_ignores_stale_lock_removal_race(monkeypatch, tmp_pat
     with skill_manager._skill_install_lock(target):
         assert lock_dir.is_dir()
 
-    assert calls == [{"ignore_errors": True}, {"ignore_errors": True}]
+    # The stale pathname is never removed before ownership is acquired; only
+    # final cleanup removes it, closing the check/remove race.
+    assert calls == [{"ignore_errors": True}]
+
+
+def test_skill_install_lock_cleanup_does_not_delete_replacement_owner(tmp_path):
+    target = tmp_path / "target"
+    target.mkdir()
+    lock_dir = tmp_path / ".target.install.lock"
+
+    with skill_manager._skill_install_lock(target):
+        lock_dir.joinpath(INSTALL_LOCK_OWNER_FILE_NAME).write_text(
+            json.dumps({"token": "replacement-owner", "pid": os.getpid()}),
+            encoding="utf-8",
+        )
+
+    assert lock_dir.is_dir()
+    shutil.rmtree(lock_dir)
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are not supported on this platform")
+def test_skill_install_lock_replaces_stale_metadata_links_without_following(monkeypatch, tmp_path):
+    pytest.importorskip("fcntl")
+    target = tmp_path / "target"
+    lock_dir = tmp_path / ".target.install.lock"
+    lock_dir.mkdir()
+    lock_dir.joinpath(skill_manager.INSTALL_LOCK_LEASE_FILE_NAME).touch()
+    outside_owner = tmp_path / "outside-owner.json"
+    outside_timestamp = tmp_path / "outside-timestamp"
+    outside_owner.write_text('{"preserve": true}\n', encoding="utf-8")
+    outside_timestamp.write_text("preserve\n", encoding="utf-8")
+    lock_dir.joinpath(INSTALL_LOCK_OWNER_FILE_NAME).symlink_to(outside_owner)
+    lock_dir.joinpath(INSTALL_LOCK_TIMESTAMP_FILE_NAME).symlink_to(outside_timestamp)
+    os.utime(lock_dir, (0, 0))
+    monkeypatch.setenv("NVFLARE_AGENT_SKILL_INSTALL_LOCK_TTL_SECONDS", "1")
+
+    with skill_manager._skill_install_lock(target):
+        assert not lock_dir.joinpath(INSTALL_LOCK_OWNER_FILE_NAME).is_symlink()
+        assert not lock_dir.joinpath(INSTALL_LOCK_TIMESTAMP_FILE_NAME).is_symlink()
+        owner = json.loads(lock_dir.joinpath(INSTALL_LOCK_OWNER_FILE_NAME).read_text(encoding="utf-8"))
+        assert owner["lease_version"] == skill_manager.INSTALL_LOCK_LEASE_VERSION
+
+    assert outside_owner.read_text(encoding="utf-8") == '{"preserve": true}\n'
+    assert outside_timestamp.read_text(encoding="utf-8") == "preserve\n"
+
+
+@pytest.mark.parametrize("preexisting", [False, True])
+def test_skill_install_lock_closes_lease_when_metadata_write_fails(monkeypatch, tmp_path, preexisting):
+    target = tmp_path / "target"
+    lock_dir = tmp_path / ".target.install.lock"
+    if preexisting:
+        lock_dir.mkdir()
+    opened_fds = []
+
+    def acquire_fake_lease(_lock_dir):
+        fd = os.open(os.devnull, os.O_RDONLY)
+        opened_fds.append(fd)
+        return fd, True
+
+    def metadata_failure(*_args, **_kwargs):
+        raise OSError("injected metadata failure")
+
+    monkeypatch.setattr(skill_manager, "_try_acquire_lock_lease", acquire_fake_lease)
+    monkeypatch.setattr(skill_manager, "_write_lock_metadata", metadata_failure)
+    if preexisting:
+        monkeypatch.setattr(skill_manager, "_lock_dir_is_stale", lambda *_args, **_kwargs: True)
+
+    with pytest.raises(OSError, match="injected metadata failure"):
+        with skill_manager._skill_install_lock(target):
+            pass
+
+    assert opened_fds
+    for fd in opened_fds:
+        with pytest.raises(OSError):
+            os.fstat(fd)
 
 
 def test_install_skills_replace_reports_publish_error_when_recovery_fails(monkeypatch, tmp_path):
@@ -593,6 +813,20 @@ def test_install_skills_reports_copy_error_and_continues(monkeypatch, tmp_path):
     assert (target / "nvflare-z-skill" / "SKILL.md").is_file()
 
 
+def test_install_skills_rejects_source_content_that_does_not_match_manifest(tmp_path):
+    source = _skill_source(tmp_path)
+    source.manifest["skills"][0]["source_hash"] = "0" * 64
+    target = tmp_path / "target"
+
+    plan = install_skills(agent="codex", target_dir=target, source=source)
+
+    assert plan["applied"] is False
+    assert plan["skills"][0]["status"] == "failed"
+    assert plan["errors"][0]["type"] == "ValueError"
+    assert "does not match its source manifest hash" in plan["errors"][0]["message"]
+    assert not (target / "nvflare-test-skill").exists()
+
+
 def test_install_skills_reports_target_mkdir_error(monkeypatch, tmp_path):
     source = _skill_source(tmp_path)
     target = tmp_path / "denied" / "target"
@@ -611,6 +845,56 @@ def test_install_skills_reports_target_mkdir_error(monkeypatch, tmp_path):
     assert error["type"] == "PermissionError"
     assert error["message"] == "permission denied"
     assert not target.exists()
+
+
+def test_install_skills_rejects_world_writable_target(tmp_path):
+    source = _skill_source(tmp_path)
+    target = tmp_path / "target"
+    target.mkdir(mode=0o777)
+    target.chmod(0o777)
+
+    plan = install_skills(agent="codex", target_dir=target, source=source)
+
+    assert plan["applied"] is False
+    assert plan["errors"][0]["type"] == "ValueError"
+    assert "must not be world writable" in plan["errors"][0]["message"]
+
+
+def test_install_skills_allows_group_writable_user_owned_target(tmp_path):
+    # User-private-group systems (umask 002) commonly leave the install root
+    # group-writable; it is still owned by the current user, so the ownership
+    # check backstops it and it must not be rejected as a writable-target
+    # security failure.
+    source = _skill_source(tmp_path)
+    target = tmp_path / "target"
+    target.mkdir(mode=0o770)
+    target.chmod(0o770)
+
+    plan = install_skills(agent="codex", target_dir=target, source=source)
+
+    writable_errors = [e for e in plan.get("errors", []) if "writable" in e.get("message", "")]
+    assert writable_errors == []
+
+
+def test_install_skills_detects_install_root_replacement_before_publish(monkeypatch, tmp_path):
+    source = _skill_source(tmp_path)
+    target = tmp_path / "target"
+    original_stage = skill_manager._stage_skill
+
+    def stage_then_swap(*args, **kwargs):
+        original_stage(*args, **kwargs)
+        moved = tmp_path / "moved-target"
+        target.rename(moved)
+        target.mkdir(mode=0o700)
+
+    monkeypatch.setattr(skill_manager, "_stage_skill", stage_then_swap)
+
+    plan = install_skills(agent="codex", target_dir=target, source=source)
+
+    assert plan["applied"] is False
+    assert plan["skills"][0]["status"] == "failed"
+    assert "verified install directory changed" in plan["errors"][0]["message"]
+    assert not (target / "nvflare-test-skill").exists()
 
 
 def test_install_skills_fails_when_same_skill_install_lock_exists(tmp_path):
@@ -662,6 +946,54 @@ def test_install_skills_recovers_stale_install_lock_from_timestamp(monkeypatch, 
     assert not lock.exists()
 
 
+def test_install_skills_does_not_reclaim_old_lock_owned_by_live_process(monkeypatch, tmp_path):
+    source = _skill_source(tmp_path)
+    target = tmp_path / "target"
+    target.mkdir()
+    lock = target / ".nvflare-test-skill.install.lock"
+    lock.mkdir()
+    lock.joinpath(INSTALL_LOCK_TIMESTAMP_FILE_NAME).write_text("0", encoding="utf-8")
+    lock.joinpath(INSTALL_LOCK_OWNER_FILE_NAME).write_text(
+        json.dumps({"token": "active-owner", "pid": os.getpid()}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("NVFLARE_AGENT_SKILL_INSTALL_LOCK_TTL_SECONDS", "1")
+
+    plan = install_skills(agent="codex", target_dir=target, source=source)
+
+    assert plan["applied"] is False
+    assert plan["errors"][0]["type"] == "FileExistsError"
+    assert lock.is_dir()
+
+
+def test_install_skills_reclaims_versioned_unleased_lock_despite_reused_live_pid(monkeypatch, tmp_path):
+    pytest.importorskip("fcntl")
+    source = _skill_source(tmp_path)
+    target = tmp_path / "target"
+    target.mkdir()
+    lock = target / ".nvflare-test-skill.install.lock"
+    lock.mkdir()
+    lock.joinpath(skill_manager.INSTALL_LOCK_LEASE_FILE_NAME).touch()
+    lock.joinpath(INSTALL_LOCK_TIMESTAMP_FILE_NAME).write_text("0", encoding="utf-8")
+    lock.joinpath(INSTALL_LOCK_OWNER_FILE_NAME).write_text(
+        json.dumps(
+            {
+                "token": "crashed-owner",
+                "pid": os.getpid(),
+                "lease_version": skill_manager.INSTALL_LOCK_LEASE_VERSION,
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("NVFLARE_AGENT_SKILL_INSTALL_LOCK_TTL_SECONDS", "1")
+
+    plan = install_skills(agent="codex", target_dir=target, source=source)
+
+    assert plan["applied"] is True
+    assert plan["skills"][0]["status"] == "installed"
+    assert not lock.exists()
+
+
 @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are not supported on this platform")
 def test_install_skills_dry_run_reports_source_symlink_conflict(tmp_path):
     root = tmp_path / "skills"
@@ -680,7 +1012,7 @@ def test_install_skills_dry_run_reports_source_symlink_conflict(tmp_path):
                 {
                     "name": "nvflare-test-skill",
                     "skill_version": "0.0.0",
-                    "source_hash": "fake-source-hash",
+                    "source_hash": "0" * 64,
                     "relative_path": "nvflare-test-skill",
                 }
             ],
@@ -727,7 +1059,7 @@ def test_install_skills_skips_source_symlink_before_copytree(tmp_path):
                 {
                     "name": "nvflare-test-skill",
                     "skill_version": "0.0.0",
-                    "source_hash": "fake-source-hash",
+                    "source_hash": "0" * 64,
                     "relative_path": "nvflare-test-skill",
                 }
             ],
@@ -759,7 +1091,7 @@ def test_stage_skill_rejects_source_symlink_before_copytree(tmp_path):
         skill_manager._stage_skill(
             skill_dir,
             tmp_path / "staged",
-            {"name": "nvflare-test-skill", "source_hash": "fake-source-hash"},
+            {"name": "nvflare-test-skill", "source_hash": "0" * 64},
             source,
             installed_path=tmp_path / "target" / "nvflare-test-skill",
         )
@@ -784,7 +1116,7 @@ def test_install_skills_reports_source_symlink_root_conflict(tmp_path):
                 {
                     "name": "nvflare-test-skill",
                     "skill_version": "0.0.0",
-                    "source_hash": "fake-source-hash",
+                    "source_hash": "0" * 64,
                     "relative_path": "nvflare-test-skill",
                 }
             ],
@@ -811,7 +1143,7 @@ def test_stage_skill_rejects_source_symlink_root(tmp_path):
         skill_manager._stage_skill(
             source_link,
             tmp_path / "staged",
-            {"name": "nvflare-test-skill", "source_hash": "fake-source-hash"},
+            {"name": "nvflare-test-skill", "source_hash": "0" * 64},
             source,
             installed_path=tmp_path / "target" / "nvflare-test-skill",
         )
@@ -995,9 +1327,14 @@ def test_conflict_falls_back_to_code_for_unknown_conflict(tmp_path):
 
 def _skill_source(tmp_path, *, shared_heading=None):
     root = tmp_path / "skills"
-    _write_skill(root, "nvflare-test-skill")
+    skill_dir = _write_skill(root, "nvflare-test-skill")
     if shared_heading:
         _write_shared_reference(root, shared_heading)
+        skill_dir.joinpath("SKILL.md").write_text(
+            skill_dir.joinpath("SKILL.md").read_text(encoding="utf-8")
+            + "\nSee `../nvflare-shared/references/conversion-workflow.md`.\n",
+            encoding="utf-8",
+        )
     return SkillSource(
         source_type="editable",
         root=root,
@@ -1030,3 +1367,27 @@ def _write_shared_reference(root, heading):
     shared_dir.mkdir(parents=True, exist_ok=True)
     shared_dir.joinpath("conversion-workflow.md").write_text(f"# {heading}\n", encoding="utf-8")
     return shared_dir
+
+
+def _write_managed_install(target, name, *, extra_body=""):
+    skill_dir = _write_skill(target, name)
+    if extra_body:
+        skill_dir.joinpath("SKILL.md").write_text(
+            skill_dir.joinpath("SKILL.md").read_text(encoding="utf-8") + extra_body,
+            encoding="utf-8",
+        )
+    installed_hash = skill_tree_hash(skill_dir)
+    skill_dir.joinpath(INSTALL_MANIFEST_FILE_NAME).write_text(
+        json.dumps(
+            {
+                "schema_version": "1",
+                "managed_by": "nvflare",
+                "name": name,
+                "source_type": "editable",
+                "source_hash": installed_hash,
+                "installed_hash": installed_hash,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return skill_dir
