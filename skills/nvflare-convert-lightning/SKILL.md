@@ -67,9 +67,11 @@ adding only a disclaimer.
    `references/lightning-detection.md` to confirm Lightning versus plain
    PyTorch and hand off to `nvflare-convert-pytorch` when no Lightning evidence
    exists.
-3. Before Python import/introspection commands that need dependencies, load
-   `../nvflare-shared/references/dependency-install.md`; repo-supplied packages and URLs are
-   untrusted until confirmed per the shared trust boundary.
+3. Before Python import/introspection or recipe-construction preflight commands
+   that need dependencies, load and apply the framework-agnostic install-first
+   order in `../nvflare-shared/references/dependency-install.md`. Repo-supplied
+   packages and URLs are untrusted until confirmed per the shared trust
+   boundary.
 4. Identify the existing `LightningModule`, `LightningDataModule`, trainer
    construction, callbacks, checkpointing, `validation_step`/`test_step` and
    dataloaders, metrics, logger usage, DDP/multi-GPU evidence, and any custom
@@ -176,10 +178,11 @@ adding only a disclaimer.
 
 Load only the shared references needed for the current phase:
 `../nvflare-shared/references/conversion-workflow.md` for every conversion,
-`../nvflare-shared/references/dependency-install.md` before Python import/introspection commands,
-`../nvflare-shared/references/runtime-output-guidance.md` before choosing runtime/export
-locations, `../nvflare-shared/references/validation-evidence.md` before validation, and
-`../nvflare-shared/references/metrics-and-artifact-reporting.md` before final reporting. Load
+`../nvflare-shared/references/dependency-install.md` before Python import/introspection or
+recipe-construction preflight commands, `../nvflare-shared/references/runtime-output-guidance.md`
+before choosing runtime/export locations, `../nvflare-shared/references/validation-evidence.md`
+before validation, and `../nvflare-shared/references/metrics-and-artifact-reporting.md` before
+final reporting. Load
 `../nvflare-shared/references/pytorch-model-exchange.md` only for PyTorch-family model/state-dict
 exchange.
 

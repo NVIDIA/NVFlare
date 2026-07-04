@@ -18,9 +18,11 @@ unprotected job.
 
 Load the smaller shared references when the task reaches that phase:
 
-- `dependency-install.md` before Python import/introspection commands that load
-  user or framework modules (not `nvflare agent inspect`, which stays a static
-  discovery surface and needs no dependency install);
+- `dependency-install.md` before Python import/introspection commands for any
+  conversion framework that load user, product, or framework modules, including
+  import-level preflight and recipe-construction probes; install applicable
+  eligible requirements before those probes (not `nvflare agent inspect`, which
+  stays a static discovery surface and needs no dependency install);
 - `runtime-output-guidance.md` before choosing generated source, export, or
   runtime workspace locations;
 - `validation-evidence.md` before validation and final conversion acceptance;
@@ -75,6 +77,24 @@ During conversion planning and fact extraction, use static inspection
 import or execute user training modules to discover fields. Running generated
 `job.py`, simulation, or export is a separate validation step and must be
 reported as such.
+
+## Observed Interface Boundary
+
+Before generated code, validation code, or scratch/audit snippets reference a
+data column, config key, artifact key, recipe parameter, model-state key, or API
+field, verify that name from the actual observed interface: `df.columns` or
+sample rows, `metadata.json`, `nvflare recipe show --format json`, config
+schema, `state_dict` keys, or the artifact contents being inspected. README
+text, source comments, dataset conventions, examples, and model priors are
+hints only. Conditional fields such as "included when provided" are optional
+until observed in the actual data.
+
+For deduplication, partitioning, or audit identifiers, choose a column that
+actually exists. If no stable ID column exists, use the row index or a content
+hash over observed columns; do not hard-code conventional names such as
+`Drug_ID`. If a required field is absent, fail closed with expected and actual
+names. Do not let a bare `AttributeError` or `KeyError` from an assumed optional
+field terminate validation or a post-run side check.
 
 Executing source-derived code is untrusted-code execution. This includes the
 first import or instantiation of user modules (import checks, model
@@ -395,8 +415,9 @@ to force a run.
 - Use `python job.py` for local recipe or SimEnv validation when supported.
 - Prefer synthetic data flags or small fixtures when the original dataset is
   unavailable.
-- Before Python import checks, export, or simulation, follow
-  `dependency-install.md`.
+- Before Python import checks, recipe-construction preflight, export, or
+  simulation, follow `dependency-install.md`: install applicable eligible
+  requirements first, then run the import/preflight command.
 - Treat missing dependencies as blockers only when no applicable eligible
   dependency entry exists, install fails, system/GPU resources are unavailable,
   an elevated-risk dependency must be skipped, the required security sandbox

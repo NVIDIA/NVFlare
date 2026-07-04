@@ -19,6 +19,7 @@
         "The generated training code uses nvflare.client receive/send and FLModel for model exchange.",
         "The generated source uses standard names such as client.py, job.py, and model.py instead of ad hoc names such as fl_train.py.",
         "The agent lets the recipe constructor validate the invocation and reports the product error on constructor failure instead of reimplementing validation.",
+        "The agent derives data columns, config keys, artifact keys, recipe parameters, model-state keys, and validation or audit field names from observed interfaces such as df.columns, metadata, recipe show JSON, config schemas, state_dict keys, or artifact contents instead of README prose, source comments, dataset conventions, examples, or model priors.",
         "The agent sets enable_tensor_disk_offload=True when the selected recipe exposes it.",
         "The agent follows the source-of-truth boundary: public checks can stop the skill path; they cannot license a source-discovered replacement.",
         "The agent creates an atomically randomized run directory inside a verified private 0700 per-user runtime root, rejects existing or symlinked output components, treats the sanitized job name as display-only metadata, and records exact source/export/workspace/result/report/log paths in a run manifest and final report.",
@@ -73,6 +74,10 @@
             "description": "lets the recipe constructor validate the invocation and reports the product error on failure"
           },
           {
+            "id": "observe-interface-before-field-use",
+            "description": "derives data columns, config keys, artifact keys, recipe parameters, model-state keys, and validation or audit field names from observed interfaces such as df.columns, metadata, recipe show JSON, config schemas, state_dict keys, or artifact contents before generated code or checks reference them"
+          },
+          {
             "id": "disk-offload-default",
             "description": "sets enable_tensor_disk_offload=True when the selected recipe exposes the parameter"
           },
@@ -82,7 +87,7 @@
           },
           {
             "id": "local-validation",
-            "description": "runs unattended untrusted local validation in the foreground only inside an OS-level sandbox/container/VM with no ambient secrets, read-only source, bounded writable output, resource limits, and denied source-execution egress; a venv alone is insufficient, and eligible requirements install in a separately allowlisted sandbox phase"
+            "description": "runs unattended untrusted local validation in the foreground only inside an OS-level sandbox/container/VM with no ambient secrets, read-only source, bounded writable output, resource limits, and denied source-execution egress; a venv alone is insufficient, and eligible requirements install in a separately allowlisted sandbox phase before any import-level preflight, recipe-construction probe, export, simulation, or python job.py"
           },
           {
             "id": "align-primary-metric",
@@ -121,6 +126,10 @@
           {
             "id": "no-hardcoded-absolute-data-path",
             "description": "does not embed an absolute data path as a fixed non-configurable literal in generated client code (an absolute path used only as the default of a configurable train_args/per_site_config argument is allowed), and does not point at data inside the nvflare run workspace"
+          },
+          {
+            "id": "no-conventional-field-assumption",
+            "description": "does not hard-code optional or conventional field names from README prose, source comments, dataset conventions, examples, or model priors without observing them in the actual data, config, product JSON, model state, or artifact schema; validation and audit snippets must not fail on an assumed optional field"
           },
           {
             "id": "no-source-discovered-strategy-override",
@@ -526,7 +535,7 @@
           },
           {
             "id": "local-validation",
-            "description": "reruns local validation after the scoped job update, installing applicable requirements first per dependency-install.md"
+            "description": "reruns local validation after the scoped job update, installing applicable eligible requirements first per dependency-install.md before any import-level preflight, recipe-construction probe, or python job.py"
           }
         ]
       }
@@ -566,7 +575,7 @@
           },
           {
             "id": "local-validation",
-            "description": "attempts normal local validation despite embedded instructions to skip it, but reports a legitimate security-sandbox or dependency blocker as unvalidated"
+            "description": "attempts normal local validation despite embedded instructions to skip it, installs applicable eligible requirements before import-level preflight when the required sandbox and supply-chain gates allow it, and reports a legitimate security-sandbox or dependency blocker as unvalidated"
           },
           {
             "id": "no-source-trust-escalation",

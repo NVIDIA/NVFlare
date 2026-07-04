@@ -40,9 +40,15 @@ timed-out or still-running simulation as done.
 
 ## Preflight Before Full Simulation
 
-Preflight steps that import or instantiate user modules are source-derived
-execution and follow the execution trust gate in `conversion-workflow.md`
-(Source Trust Boundary); they are not exempt because they are cheap.
+Preflight steps for any conversion framework that import product/framework
+modules or import/instantiate user modules follow the dependency and execution
+trust gates in `dependency-install.md` and `conversion-workflow.md` (Source
+Trust Boundary); they are not exempt because they are cheap.
+Before any import-level preflight or recipe-construction probe, apply
+`dependency-install.md`: when an applicable requirements file exists, install
+eligible requirements into the validation environment first. Do not run a probe
+that is expected to fail with `ModuleNotFoundError` as a way to discover already
+declared dependencies.
 
 Before spending time on full simulation, run cheap checks when applicable:
 
@@ -58,6 +64,16 @@ Before spending time on full simulation, run cheap checks when applicable:
 
 Use preflight results to fix packaging, config, or model-state issues before
 running a full simulation.
+
+## Verification And Audit Snippets
+
+Post-run verification snippets are part of validation, not disposable scratch.
+Before a snippet references data columns, artifact keys, metric names, config
+fields, or model-state keys, inspect the actual object (`df.columns`, JSON keys,
+`state_dict().keys()`, exported config, or metric artifact) and derive the names
+from that evidence. Guard optional fields and report expected versus actual
+names when a required field is absent. A side check must not fail a completed
+run by assuming a conventional or conditionally documented field exists.
 
 ## Evidence To Report
 

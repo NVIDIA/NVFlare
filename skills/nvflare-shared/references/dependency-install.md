@@ -1,7 +1,8 @@
-# Dependency Install Before Inspection
+# Dependency Install Before Import Preflight
 
-Use this reference before Python import checks, recipe inspection that imports
-framework modules, generated job validation, export, or simulation.
+Use this framework-agnostic rule for every conversion workflow before Python
+import checks, recipe inspection that imports product or framework modules,
+generated job validation, export, or simulation.
 
 ## Supply-Chain Gate
 
@@ -77,18 +78,27 @@ than a shared or system Python.
 
 Once the install is approved (interactive) or a qualifying security sandbox is
 in place (unattended — create it; do not wait for an approval that cannot
-arrive), install applicable `requirements*.txt` files
-into the dedicated validation environment before running Python commands that
-import NVFLARE, framework modules, recipe classes, or generated client/model
-code.
+arrive), install applicable eligible `requirements*.txt` entries into the
+dedicated validation environment before running Python commands that import
+NVFLARE, product modules, framework modules, recipe classes, or generated
+client/model code.
 Install `nvflare` into that same environment if it is not already present, and
 run `nvflare` commands, import probes, export, and simulation from it — not
 from a separate shared or system environment.
 
-Do this before probing imports with Python. Avoid first discovering missing
-framework dependencies through failed import checks when a requirements file is
-already present. Import probes of user modules are themselves source-derived
-execution and follow the execution trust gate in `conversion-workflow.md`.
+Order is mandatory:
+
+1. statically inspect source and read applicable dependency files;
+2. apply the approval/sandbox and supply-chain rules above;
+3. install eligible requirements into the validation environment;
+4. only then run Python import probes, recipe-construction preflights, export,
+   simulation, or `python job.py`.
+
+Do not run an import-level preflight first to discover a missing package when an
+applicable requirements file is already present. A `ModuleNotFoundError` from
+such a preflight is an ordering error, not validation evidence. Import probes of
+user modules are themselves source-derived execution and follow the execution
+trust gate in `conversion-workflow.md`.
 
 ## Installer Choice
 

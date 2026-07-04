@@ -19,6 +19,7 @@
         "The agent selects the PyTorch FedAvg recipe for standard horizontal training instead of inventing a Lightning-only recipe.",
         "The agent generates explicit recipe model config with class_path plus args instead of passing a live LightningModule instance, asking or failing closed when constructor args are not statically clear.",
         "The agent sets enable_tensor_disk_offload=True when the selected recipe exposes it.",
+        "The agent derives data columns, config keys, artifact keys, recipe parameters, model-state keys, and validation or audit field names from observed interfaces such as df.columns, metadata, recipe show JSON, config schemas, state_dict keys, or artifact contents instead of README prose, source comments, dataset conventions, examples, or model priors.",
         "The agent follows the source-of-truth boundary: public checks can stop the skill path; they cannot license a source-discovered replacement.",
         "The generated source uses standard names such as client.py, job.py, and model.py.",
         "The agent creates an atomically randomized run directory inside a verified private 0700 per-user runtime root, rejects existing or symlinked output components, treats the sanitized job name as display-only metadata, and records exact source/export/workspace/result/report/log paths in a run manifest and final report.",
@@ -60,6 +61,10 @@
             "description": "sets enable_tensor_disk_offload=True when the selected recipe exposes the parameter"
           },
           {
+            "id": "observe-interface-before-field-use",
+            "description": "derives data columns, config keys, artifact keys, recipe parameters, model-state keys, and validation or audit field names from observed interfaces such as df.columns, metadata, recipe show JSON, config schemas, state_dict keys, or artifact contents before generated code or checks reference them"
+          },
+          {
             "id": "standard-generated-layout",
             "description": "uses standard generated file names such as client.py, job.py, and model.py"
           },
@@ -73,7 +78,7 @@
           },
           {
             "id": "local-validation",
-            "description": "runs unattended untrusted local validation in the foreground only inside an OS-level sandbox/container/VM with no ambient secrets, read-only source, bounded writable output, resource limits, and denied source-execution egress; a venv alone is insufficient, and eligible requirements install in a separately allowlisted sandbox phase"
+            "description": "runs unattended untrusted local validation in the foreground only inside an OS-level sandbox/container/VM with no ambient secrets, read-only source, bounded writable output, resource limits, and denied source-execution egress; a venv alone is insufficient, and eligible requirements install in a separately allowlisted sandbox phase before any import-level preflight, recipe-construction probe, export, simulation, or python job.py"
           },
           {
             "id": "setup-outside-round-loop",
@@ -140,6 +145,10 @@
           {
             "id": "no-hardcoded-absolute-data-path",
             "description": "does not embed an absolute data path as a fixed non-configurable literal in generated client code (an absolute path used only as the default of a configurable train_args/per_site_config argument is allowed), and does not point at data inside the nvflare run workspace"
+          },
+          {
+            "id": "no-conventional-field-assumption",
+            "description": "does not hard-code optional or conventional field names from README prose, source comments, dataset conventions, examples, or model priors without observing them in the actual data, config, product JSON, model state, or artifact schema; validation and audit snippets must not fail on an assumed optional field"
           },
           {
             "id": "no-preemptive-reference-or-examples-dependency",
@@ -307,7 +316,7 @@
     {
       "id": "lightning-data-derived-required-arg",
       "prompt": "Convert this PyTorch Lightning training code to a FLARE FedAvg job over 2 sites. The model needs a vocab_size argument built from the data.",
-      "expected_output": "A FLARE Lightning Client API conversion that extracts the data-derived vocab_size statically and pins it as one value in the explicit class_path plus args recipe model config used by both server and client, so every site constructs the same architecture; passes the recipe model as an explicit class_path plus args config rather than a live LightningModule instance; patches the trainer with flare.patch; validates with python job.py, installing applicable requirements first per dependency-install.md; and reports the pinned constructor value and validation evidence. If the vocab_size is not statically determinable from the source or supplied metadata, the agent asks in interactive mode or fails closed rather than guessing it or computing it per site.",
+      "expected_output": "A FLARE Lightning Client API conversion that extracts the data-derived vocab_size statically and pins it as one value in the explicit class_path plus args recipe model config used by both server and client, so every site constructs the same architecture; passes the recipe model as an explicit class_path plus args config rather than a live LightningModule instance; patches the trainer with flare.patch; installs applicable eligible requirements first per dependency-install.md before any import-level preflight or recipe-construction probe, then validates with python job.py; and reports the pinned constructor value and validation evidence. If the vocab_size is not statically determinable from the source or supplied metadata, the agent asks in interactive mode or fails closed rather than guessing it or computing it per site.",
       "files": [
         "files/vocab-lightning/train.py",
         "files/vocab-lightning/model.py"
@@ -317,7 +326,7 @@
         "The agent passes the recipe model as explicit class_path plus args, not as a live LightningModule instance.",
         "The agent treats the data-derived vocab_size as statically clear only when the source or supplied metadata makes it deterministic; otherwise it asks or fails closed instead of guessing.",
         "The agent integrates through flare.patch(trainer).",
-        "The agent runs python job.py for local validation, installing applicable requirements first per dependency-install.md.",
+        "The agent installs applicable eligible requirements first per dependency-install.md before import-level preflight or recipe-construction probes, then runs python job.py for local validation.",
         "The agent reports the pinned constructor value and any validation blockers."
       ],
       "nvflare": {
