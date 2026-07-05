@@ -158,6 +158,12 @@ unless the user requests them, and use
 `../../nvflare-shared/references/runtime-output-guidance.md` for runtime
 workspaces, exported job directories, and validation output locations.
 
+If the Lightning entry point imports `model.py` or defines the
+`LightningModule`/`LightningDataModule` in `train.py`, preserve that source
+structure. Generate `client.py`, `job.py`, and optional `aggregators.py`; do not
+create a replacement `model.py` that copies the full Lightning/data stack into
+a nested job directory.
+
 ## Recipe Reuse
 
 Lightning reuses the PyTorch recipe family. Follow

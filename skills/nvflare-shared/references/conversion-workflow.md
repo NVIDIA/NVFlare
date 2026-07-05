@@ -229,11 +229,21 @@ Generated conversion jobs must use FLARE's standard source layout:
   the conversion generates data preparation or download code;
 - `requirements.txt` only when dependencies differ from the source project.
 
-Do not generate ad hoc FLARE entry-point names such as `train_fl.py`. If the
-source project already uses one of the canonical names for unrelated code,
-write the generated FLARE job into a separate output directory instead of
-inventing a different FLARE layout. Use `runtime-output-guidance.md` for
-generated source, runtime workspace, and export directory placement.
+Do not generate ad hoc FLARE entry-point names such as `train_fl.py`.
+
+Before treating an existing canonical filename as a collision, classify it by
+static source evidence. If the detected training entry point imports or directly
+uses `model.py`, `train.py`, `prepare_data.py`, `download_data.py`, or another
+canonical file, that file is relevant source, not unrelated code. Reuse relevant
+source by import, minimal wrapper, or small targeted edit; do not create a
+nested generated job directory or duplicate/rewrite the model, data, or training
+logic solely because a canonical filename already exists.
+
+Write the generated FLARE job into a separate output directory only when the
+user requested that target, the source root is read-only, or the same-name file
+is statically unrelated to the detected training program. Use
+`runtime-output-guidance.md` for generated source, runtime workspace, and export
+directory placement.
 
 ## Setup Outside The Round Loop
 

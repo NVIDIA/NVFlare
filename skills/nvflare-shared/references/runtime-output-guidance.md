@@ -27,6 +27,11 @@ default. Preserve original training files such as `train.py` as references
 instead of renaming or overwriting them unless the user explicitly asks for an
 in-place rewrite.
 
+An existing canonical file is not a collision when it is imported by or part of
+the detected training program. Preserve and reuse relevant source files; add
+only missing FLARE entry points such as `client.py`, `job.py`, and optional
+`aggregators.py` beside them.
+
 ## Read-Only Source Roots
 
 If the source root is not writable — it may be owned by another user or mounted

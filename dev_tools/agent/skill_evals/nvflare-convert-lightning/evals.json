@@ -22,6 +22,7 @@
         "The agent derives data columns, config keys, artifact keys, recipe parameters, model-state keys, and validation or audit field names from observed interfaces such as df.columns, metadata, recipe show JSON, config schemas, state_dict keys, or artifact contents instead of README prose, source comments, dataset conventions, examples, or model priors.",
         "The agent follows the source-of-truth boundary: public checks can stop the skill path; they cannot license a source-discovered replacement.",
         "The generated source uses standard names such as client.py, job.py, and model.py.",
+        "When the Lightning entrypoint imports an existing model.py or defines the LightningModule/DataModule in train.py, the agent treats that file as relevant source, reuses it by import/minimal wrapper/targeted edit, and does not create a nested replacement model.py or duplicate the full Lightning/data stack.",
         "Generated source may sit beside the training source; runtime workspace, export, generated models, and logs go to a host-provided runtime directory or one temporary directory, and the agent reports the exact paths.",
         "The agent preserves local-only Lightning callbacks, loggers, and checkpoint behavior; network-connected or custom/unknown loggers remain disabled during validation unless the user explicitly requested them, without a skill-issued approval prompt.",
         "The agent reads applicable requirements, installs missing dependencies into the host-provided environment before import-level preflight, and runs python job.py to completion, letting the host permission system allow, deny, or prompt rather than gating on a skill-inferred mode.",
@@ -71,6 +72,10 @@
           {
             "id": "standard-generated-layout",
             "description": "uses standard generated file names such as client.py, job.py, and model.py"
+          },
+          {
+            "id": "reuse-relevant-source-layout",
+            "description": "treats an existing model.py or train.py that is imported by or defines the Lightning training program as relevant source, reusing it by import, minimal wrapper, or targeted edit instead of creating a nested replacement model.py"
           },
           {
             "id": "runtime-output-locations",
@@ -169,6 +174,10 @@
           {
             "id": "no-preemptive-reference-or-examples-dependency",
             "description": "for an explicit FedAvg conversion with a writable source root and normal metric artifacts, does not preemptively load the full conversion-workflow, recipe-catalog, runtime-output, or metric-fallback references; loads only the Lightning transformation, model-exchange, dependency-if-needed, and validation guidance required by the current phase, and does not depend on NVFLARE repository examples"
+          },
+          {
+            "id": "no-nested-replacement-model-for-relevant-source",
+            "description": "does not treat an existing model.py imported by the Lightning entrypoint as a filename collision and does not create a nested generated source directory with a replacement model.py that duplicates the model, data, or training stack"
           },
           {
             "id": "no-lightning-hook-or-step-rewrite",
