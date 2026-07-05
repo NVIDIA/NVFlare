@@ -18,6 +18,7 @@
         "The agent generates explicit recipe model config with class_path plus args instead of passing a live model instance, asking or failing closed when constructor args are not statically clear.",
         "The generated training code uses nvflare.client receive/send and FLModel for model exchange.",
         "The generated source uses standard names such as client.py, job.py, and model.py instead of ad hoc names such as fl_train.py.",
+        "The agent derives the user's existing model source file from static inspection rather than assuming it is named model.py, treats imported model/data/training source as relevant, and reuses it by import, mechanical copy/rename, thin wrapper, or targeted edit instead of synthesizing a nested replacement model implementation.",
         "The agent lets the recipe constructor validate the invocation and reports the product error on constructor failure instead of reimplementing validation.",
         "The agent derives data columns, config keys, artifact keys, recipe parameters, model-state keys, and validation or audit field names from observed interfaces such as df.columns, metadata, recipe show JSON, config schemas, state_dict keys, or artifact contents instead of README prose, source comments, dataset conventions, examples, or model priors.",
         "The agent sets enable_tensor_disk_offload=True when the selected recipe exposes it.",
@@ -72,6 +73,10 @@
           {
             "id": "standard-generated-layout",
             "description": "uses standard generated file names such as client.py, job.py, and model.py"
+          },
+          {
+            "id": "reuse-relevant-source-layout",
+            "description": "derives the existing model source file from static inspection rather than assuming it is named model.py, treats imported model/data/training source as relevant, and reuses it by import, mechanical copy/rename, thin wrapper, or targeted edit instead of synthesizing a replacement model implementation"
           },
           {
             "id": "constructor-owns-validation",
@@ -190,6 +195,10 @@
           {
             "id": "no-numpy-outbound-model-weights",
             "description": "does not convert outbound PyTorch model weights to NumPy before sending FLModel parameters"
+          },
+          {
+            "id": "no-nested-replacement-model-for-relevant-source",
+            "description": "does not treat an existing model source file imported by the training entrypoint as a filename collision, regardless of that file's name, and does not create a nested generated source directory with a synthesized replacement model implementation that recreates the model, data, or training stack"
           },
           {
             "id": "no-unjustified-explicit-per-site-deployment",

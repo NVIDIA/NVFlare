@@ -232,12 +232,18 @@ Generated conversion jobs must use FLARE's standard source layout:
 Do not generate ad hoc FLARE entry-point names such as `train_fl.py`.
 
 Before treating an existing canonical filename as a collision, classify it by
-static source evidence. If the detected training entry point imports or directly
-uses `model.py`, `train.py`, `prepare_data.py`, `download_data.py`, or another
-canonical file, that file is relevant source, not unrelated code. Reuse relevant
-source by import, minimal wrapper, or small targeted edit; do not create a
-nested generated job directory or duplicate/rewrite the model, data, or training
-logic solely because a canonical filename already exists.
+static source evidence. Derive the model, data-prep, download, and training
+source files from the detected training entry point and import graph; do not
+assume the user's source model file is named `model.py`. If the entry point
+imports or directly uses any source file or module that defines model, data, or
+training logic, that file is relevant source, not unrelated code. Prefer the
+canonical generated names (`client.py`, `model.py`, `job.py`,
+`aggregators.py`), but preserve relevant source semantics by importing the
+existing module, mechanically copying or renaming it into the generated layout,
+adding a thin wrapper, or making a small targeted edit. Do not create a nested
+generated job directory or synthesize a replacement implementation of the model,
+data, or training stack solely because a canonical generated filename already
+exists.
 
 Write the generated FLARE job into a separate output directory only when the
 user requested that target, the source root is read-only, or the same-name file
