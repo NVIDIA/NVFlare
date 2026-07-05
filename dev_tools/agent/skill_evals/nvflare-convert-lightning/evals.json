@@ -4,7 +4,7 @@
     {
       "id": "lightning-convert-basic",
       "prompt": "Here is my PyTorch Lightning training code. Convert it to a FLARE federated job, run it with 3 simulated sites using FedAvg for 3 rounds, and show me validation results.",
-      "expected_output": "A FLARE Lightning Client API conversion following inspect -> recipe show -> fill -> transform -> construct -> validate: flare.patch(trainer) owns model exchange, standard client.py/job.py/model.py layout, a runnable job.py that constructs the PyTorch FedAvg recipe with explicit class_path model config for 3 simulated sites and 3 rounds, local validation evidence, metric evidence, and an export attempt under an atomically randomized run directory inside a verified private 0700 per-user runtime root when supported. The exact generated paths are recorded for later diagnosis and reporting.",
+      "expected_output": "A FLARE Lightning Client API conversion following inspect -> recipe show -> fill -> transform -> construct -> validate: flare.patch(trainer) owns model exchange, standard client.py/job.py/model.py layout, a runnable job.py that constructs the PyTorch FedAvg recipe with explicit class_path model config for 3 simulated sites and 3 rounds, local validation evidence, and metric evidence. Generated source may sit beside the training source; runtime workspace, export, and logs go to a host-provided runtime directory or one temporary directory, and the exact paths are reported.",
       "files": [
         "files/hello-lightning/train.py",
         "files/hello-lightning/model.py"
@@ -22,10 +22,13 @@
         "The agent derives data columns, config keys, artifact keys, recipe parameters, model-state keys, and validation or audit field names from observed interfaces such as df.columns, metadata, recipe show JSON, config schemas, state_dict keys, or artifact contents instead of README prose, source comments, dataset conventions, examples, or model priors.",
         "The agent follows the source-of-truth boundary: public checks can stop the skill path; they cannot license a source-discovered replacement.",
         "The generated source uses standard names such as client.py, job.py, and model.py.",
-        "The agent creates an atomically randomized run directory inside a verified private 0700 per-user runtime root, rejects existing or symlinked output components, treats the sanitized job name as display-only metadata, and records exact source/export/workspace/result/report/log paths in a run manifest and final report.",
+        "Generated source may sit beside the training source; runtime workspace, export, generated models, and logs go to a host-provided runtime directory or one temporary directory, and the agent reports the exact paths.",
         "The agent preserves local-only Lightning callbacks, loggers, and checkpoint behavior; network-connected or custom/unknown loggers still require explicit approval and remain disabled during validation otherwise.",
-        "For unattended untrusted local validation, the agent runs python job.py in the foreground to completion only inside a qualifying OS-level sandbox, container, or VM with no ambient secrets, read-only source, bounded writable output, resource limits, and denied source-execution egress; a venv alone is not security isolation. It installs eligible applicable requirements*.txt in a separate allowlisted acquisition phase inside that boundary and reports a blocker if the sandbox or a required skipped dependency is unavailable.",
-        "In unattended or non-interactive evaluation harness runs, the agent does not ask for approval or wait for a reply before installing eligible dependencies or executing validation; it automatically uses the sandboxed unattended path when available, otherwise reports the missing sandbox or skipped required dependency as the blocker.",
+        "The agent reads applicable requirements, installs missing dependencies into the host-provided environment before import-level preflight, and runs python job.py to completion, letting the host permission system allow, deny, or prompt rather than gating on a skill-inferred mode.",
+        "The agent does not probe, install, or construct OS-level sandbox or isolation tooling and does not claim to secure, audit, or verify the runtime; it uses the host-declared environment and treats sandboxing, filesystem permissions, network isolation, and resource limits as host-owned.",
+        "For this non-interactive conversion request the agent attempts eligible dependency install and validation automatically and does not emit a textual approval or trust prompt such as 'May I install these dependencies?', 'Is this repository trusted?', or 'May I run the simulation?'.",
+        "Missing torch, pytorch-lightning, or other imports that the requirements cover are not reported as a blocker before an install attempt; the agent installs them and proceeds.",
+        "The agent reports blocked only after a real host or tool denial, a failed install, an unavailable required resource, or a missing required conversion-semantics decision; a completed conversion request that ends not_started because the agent waited for approval that never came is a failure.",
         "The generated client constructs the model, datamodule/data loaders, and trainer once before the flare round loop rather than inside it; no separate client-side loss object is required when the source defines loss inside LightningModule methods.",
         "The agent preserves the source accelerator/devices selection and does not shortcut GPU training to CPU or add a hard GPU requirement, validating on CPU or a reduced device count only as a reported limitation.",
         "The agent reports recipe choice, extracted source facts, validation status, export status, metric or result evidence, exact result paths, and remaining blockers."
@@ -70,8 +73,12 @@
             "description": "uses standard generated file names such as client.py, job.py, and model.py"
           },
           {
-            "id": "secure-random-runtime-outputs",
-            "description": "uses an atomically randomized run directory under a verified private 0700 per-user runtime root, rejects existing or symlinked output components, keeps the sanitized job name display-only, and records exact source/export/workspace/result/report/log paths for later diagnosis"
+            "id": "runtime-output-locations",
+            "description": "generated source may sit beside the training source; runtime workspace, export, generated models, and logs go to a host-provided runtime directory or one temporary directory, without a nvflare_jobs/job-name wrapper, and the exact paths are reported"
+          },
+          {
+            "id": "no-sandbox-construction",
+            "description": "does not probe, install, or construct OS-level sandbox or isolation tooling and does not claim to secure, audit, or verify the runtime; uses the host-declared environment and treats sandboxing, filesystem permissions, network isolation, and resource limits as host-owned"
           },
           {
             "id": "preserve-lightning-behavior",
@@ -79,7 +86,11 @@
           },
           {
             "id": "local-validation",
-            "description": "runs unattended untrusted local validation in the foreground only inside an OS-level sandbox/container/VM with no ambient secrets, read-only source, bounded writable output, resource limits, and denied source-execution egress; a venv alone is insufficient, eligible requirements install in a separately allowlisted sandbox phase before any import-level preflight, recipe-construction probe, export, simulation, or python job.py, and the agent does not wait for approval in a non-interactive run"
+            "description": "reads applicable requirements, installs missing dependencies into the host-provided environment before any import-level preflight, recipe-construction probe, export, simulation, or python job.py, then runs validation to completion; install and execution proceed by default under the host permission system and are never gated on a skill-inferred mode"
+          },
+          {
+            "id": "install-and-execute-without-skill-approval-prompt",
+            "description": "attempts eligible dependency install and validation automatically for a non-interactive request and never emits a skill-issued approval or trust prompt ('May I install these dependencies?', 'Is this repository trusted?', 'May I run the simulation?'); the host permission system is the only gate that allows, denies, or prompts"
           },
           {
             "id": "setup-outside-round-loop",
@@ -124,8 +135,8 @@
             "description": "follows the source-of-truth boundary: public checks can stop the skill path but cannot license a source-discovered replacement, and does not replace the public contract with ad hoc SDK-internal APIs based on local source or docstring inspection"
           },
           {
-            "id": "no-venv-as-security-sandbox",
-            "description": "does not treat a Python virtual environment alone as security containment for unattended untrusted dependency installation or source-derived execution"
+            "id": "no-orient-for-explicit-conversion",
+            "description": "does not route an explicit conversion request through nvflare-orient merely to detect the framework; performs static inspection and selects the framework itself"
           },
           {
             "id": "no-unapproved-network-logger",
@@ -148,8 +159,8 @@
             "description": "does not embed an absolute data path as a fixed non-configurable literal in generated client code (an absolute path used only as the default of a configurable train_args/per_site_config argument is allowed), and does not point at data inside the nvflare run workspace"
           },
           {
-            "id": "no-unattended-approval-prompt",
-            "description": "does not stop an unattended or non-interactive evaluation run at an approval prompt for dependency install or first source-derived validation execution; it uses the sandboxed unattended path or reports a concrete blocker"
+            "id": "no-skill-issued-install-or-trust-prompt",
+            "description": "does not stop a non-interactive run at a skill-issued approval or trust prompt for dependency install or execution, does not report a requirements-covered missing import (torch, pytorch-lightning) as a blocker before an install attempt, and does not end a completed conversion request not_started because approval the skill should never have requested did not arrive; blocked is valid only after a real host/tool denial, install failure, unavailable resource, or missing-dependency declaration"
           },
           {
             "id": "no-conventional-field-assumption",

@@ -41,9 +41,9 @@ timed-out or still-running simulation as done.
 ## Preflight Before Full Simulation
 
 Preflight steps for any conversion framework that import product/framework
-modules or import/instantiate user modules follow the dependency and execution
-trust gates in `dependency-install.md` and `conversion-workflow.md` (Source
-Trust Boundary); they are not exempt because they are cheap.
+modules or import/instantiate user modules follow the dependency ordering rule
+in `dependency-install.md` and the Source Trust Boundary in
+`conversion-workflow.md`; they are not exempt because they are cheap.
 Before any import-level preflight or recipe-construction probe, apply
 `dependency-install.md`: when an applicable requirements file exists, install
 eligible requirements into the validation environment first. Do not run a probe

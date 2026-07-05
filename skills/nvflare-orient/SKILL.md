@@ -30,7 +30,10 @@ FLARE workflows, or which FLARE skill should handle an ambiguous request.
 
 Do not use when the user already names a specific workflow such as PyTorch
 conversion, job submission, production deployment, Kubernetes setup, or log
-diagnosis. Route to the narrower skill instead.
+diagnosis. Route to the narrower skill instead. An explicit conversion request
+does not need orientation merely to detect the framework: the converter skill
+performs static inspection and selects the framework itself, so hand off
+directly rather than invoking orient first.
 
 ## Workflow
 
