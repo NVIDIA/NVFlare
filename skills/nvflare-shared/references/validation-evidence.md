@@ -90,7 +90,7 @@ Before calling a generated job correct, report:
   server-side metrics artifacts, server/client logs, and global-model artifacts
   when present;
 - unresolved blockers such as unavailable data, missing dependencies, failed
-  validation, or required user approval.
+  validation, or an actual host or tool denial.
 
 When a generated job does not run as expected, keep the failure as evaluation
 evidence. Record the user request, selected recipe, files changed, validation

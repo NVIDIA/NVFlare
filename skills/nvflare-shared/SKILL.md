@@ -27,10 +27,11 @@ selected or invoked on its own.
 
 ## Contents
 
-- `references/conversion-workflow.md` — the conversion workflow, defaults,
-  export, and approval boundaries.
+- `references/conversion-workflow.md` — non-standard conversion, rerun,
+  data-location, export, and authorization guidance.
 - `references/validation-evidence.md` — the local validation ladder.
-- `references/dependency-install.md` — safe dependency install guidance.
+- `references/dependency-install.md` — dependency ordering and host-permission
+  guidance.
 - `references/pytorch-model-exchange.md` — PyTorch-family model/state-dict
   exchange details.
 - `references/pytorch-family-recipe-selection.md` — PyTorch-family recipe

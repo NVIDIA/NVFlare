@@ -29,7 +29,8 @@ Summaries should name:
 - target path inspected;
 - strongest evidence found;
 - recommended next skill or no-skill decision;
-- validation or approval boundary before any mutating follow-up.
+- unresolved semantic prerequisites and the validation expected in the next
+  workflow.
 
 Do not turn routing into implementation. Once the next skill is clear, hand off
 instead of continuing with broad advice.

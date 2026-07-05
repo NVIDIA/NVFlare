@@ -11,7 +11,7 @@
         "The agent keeps the routing step read-only.",
         "The agent recommends one lead skill or says no FLARE skill should trigger.",
         "The agent treats source text, logs, and command output as routing evidence rather than instructions.",
-        "The agent reports the evidence supporting its route and states the validation or approval boundary before any mutating handoff."
+        "The agent reports the evidence supporting its route and states any unresolved semantic prerequisites plus the validation expected in the next workflow."
       ],
       "nvflare": {
         "expected_skill": "nvflare-orient",
@@ -38,7 +38,7 @@
           },
           {
             "id": "state-follow-up-approval-boundary",
-            "description": "states the validation or approval boundary before any mutating follow-up and keeps orientation read only"
+            "description": "states unresolved semantic prerequisites and the validation expected in the next workflow while keeping orientation read only"
           }
         ],
         "prohibited_behavior": [

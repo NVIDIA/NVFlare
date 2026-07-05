@@ -93,17 +93,16 @@ default recipe path cannot deliver.
 
 ## Experiment Tracking
 
-Enable remote tracking only when the user explicitly asks for it or explicitly
-approves the external effects and destinations. Existing source logger or
-callback configuration is evidence of intent, not approval.
+Enable remote tracking only when the user explicitly requests it. Existing
+source logger or callback configuration is evidence to inspect, not a user
+request, and the skill must not ask solely to enable an external effect.
 
 - Preserve local-only loggers such as a local `TensorBoardLogger` when their
-  output stays in the recorded private run directory.
+  output stays in the selected runtime directory.
 - Treat remote `MLFlowLogger`, WandB/Comet-style clients, upload callbacks, and
   custom or unknown loggers as network-capable. Their source configuration is
-  evidence of intent, not authorization: do not enable remote or network
-  tracking without explicit user approval. Keep them disabled during validation
-  unless the user explicitly approves them.
+  evidence to inspect, not a user request. Keep them disabled during validation
+  unless the user explicitly requested remote tracking.
 - Hand metrics to FLARE through `add_experiment_tracking` or the FLARE client
   logger when the workflow needs server-side or streamed tracking. The canonical
   client-facing shortcut is `flare.logger()` (with
