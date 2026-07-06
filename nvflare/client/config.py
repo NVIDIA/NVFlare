@@ -14,6 +14,7 @@
 
 import json
 import os
+import tempfile
 from enum import Enum
 from typing import Dict, Optional
 
@@ -26,6 +27,9 @@ from nvflare.fuel.f3.streaming.transfer_progress import (
 )
 from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.fuel.utils.log_utils import get_obj_logger
+
+# The Client API config can carry auth material, so persisted copies must be owner-only.
+CONFIG_FILE_PERMISSION = 0o600
 
 
 class ExchangeFormat(str, Enum):
@@ -274,8 +278,36 @@ class ClientConfig:
         return self.config.get(FLMetaKey.AUTH_TOKEN_SIGNATURE)
 
     def to_json(self, config_file: str):
-        with open(config_file, "w") as f:
-            json.dump(self.config, f, indent=2)
+        # The config may carry live auth material (e.g. AUTH_TOKEN / AUTH_TOKEN_SIGNATURE).
+        # On POSIX it must be readable by the owner only (0600). Write atomically via a
+        # sibling temp file that is secured (fchmod 0600) before any content is written,
+        # then rename into place: on failure the original file is never touched (no
+        # truncation/data loss), and a planted symlink at config_file is replaced by a
+        # regular owner-only file rather than being written through to its target. On
+        # Windows POSIX modes do not map to NTFS ACLs, so read protection there relies on
+        # directory ACLs; the atomic replace still holds.
+        config_dir = os.path.dirname(os.path.abspath(config_file))
+        fd, tmp_path = tempfile.mkstemp(dir=config_dir, prefix=".client_api_config-", suffix=".tmp")
+        fd_owned = True  # cleared once os.fdopen takes ownership of the descriptor
+        try:
+            if os.name == "posix":
+                # mkstemp already creates 0600, but set it explicitly to be robust.
+                os.fchmod(fd, CONFIG_FILE_PERMISSION)
+            with os.fdopen(fd, "w") as f:
+                fd_owned = False  # the fdopen wrapper now owns and will close fd
+                json.dump(self.config, f, indent=2)
+            os.replace(tmp_path, config_file)
+        except BaseException:
+            # Best-effort cleanup; never leave the temp file behind and never touch the
+            # original config_file on failure.
+            if fd_owned:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            raise
 
 
 def from_file(config_file: str):

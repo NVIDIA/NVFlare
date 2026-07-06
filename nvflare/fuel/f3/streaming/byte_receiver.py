@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
+import math
 import threading
 from collections import deque
 from typing import Callable, Deque, Dict, Optional, Tuple
@@ -42,12 +43,24 @@ ACK_INTERVAL = 1024 * 1024 * 4
 READ_TIMEOUT = 300
 COMPLETED_TASK_TTL = 60.0
 RETRY_WAIT = 5.0
+# Hard cap on the peer-requested retry window: the sender's RETRY_TIMEOUT and
+# RETRY_WAIT headers are hints, and an unbounded value would let a peer pin
+# completed tasks in memory indefinitely.
+MAX_COMPLETED_TASK_TTL = 3600.0
 COUNTER_NAME_RECEIVED = "received"
 
 # Read result status
 RESULT_DATA = 0
 RESULT_NO_DATA = 1
 RESULT_EOS = 2
+
+
+def _abbrev(value, limit: int = 64) -> str:
+    # for logging peer-controlled header values, which can be arbitrarily large
+    text = repr(value)
+    if len(text) > limit:
+        text = f"{text[:limit]}...({len(text)} chars)"
+    return text
 
 
 class RxTask:
@@ -88,6 +101,7 @@ class RxTask:
         self.failed = False
         self.error = None
         self.error_msg = None
+        self.error_notified = False  # protected by ack_lock, like the ack state
         self.stop_lock = threading.RLock()
         self.cleanup_timer = None
 
@@ -207,7 +221,34 @@ class RxTask:
         retry_timeout = message.get_header(StreamHeaderKey.RETRY_TIMEOUT, None)
         retry_wait = message.get_header(StreamHeaderKey.RETRY_WAIT, None)
         if retry_timeout is not None and retry_wait is not None:
-            self.completed_task_ttl = max(self.completed_task_ttl, float(retry_timeout) + float(retry_wait))
+            # The sender's retry window is a peer-supplied hint: validate and
+            # clamp it so a bad value cannot crash the chunk handler or pin
+            # completed tasks in memory indefinitely.
+            try:
+                # int headers beyond the float range raise OverflowError;
+                # equivalent strings round-trip to inf and are non-finite
+                requested_ttl = float(retry_timeout) + float(retry_wait)
+            except (TypeError, ValueError, OverflowError):
+                requested_ttl = None
+            if requested_ttl is None or not math.isfinite(requested_ttl):
+                # NaN must not reach the max() below: max(a, nan) is
+                # order-dependent, so non-finite values are rejected outright
+                log.warning(
+                    f"{self} ignoring invalid retry window headers from {self.origin}: "
+                    f"{_abbrev(retry_timeout)}/{_abbrev(retry_wait)}"
+                )
+            else:
+                if requested_ttl > MAX_COMPLETED_TASK_TTL:
+                    if requested_ttl > self.completed_task_ttl:
+                        # warn only when the cap actually lowers the effective
+                        # window; otherwise the local config already governs
+                        log.warning(
+                            f"{self} retry window requested by {self.origin} ({requested_ttl}s) "
+                            f"exceeds the {MAX_COMPLETED_TASK_TTL}s cap; raise streaming_retry_timeout "
+                            f"on this site if a longer window is needed"
+                        )
+                    requested_ttl = MAX_COMPLETED_TASK_TTL
+                self.completed_task_ttl = max(self.completed_task_ttl, requested_ttl)
 
         self.stream_future = StreamFuture(self.sid, self.headers)
         self.stream_future.set_size(self.size)
@@ -276,8 +317,12 @@ class RxTask:
                         needs_ack = ack_seq != self.seq_ack or ack_offset > self.offset_ack
                 if needs_ack:
                     ack_to_send = (ack_offset, ack_seq)
+                # completed also marks the trailing and post-completion
+                # flow-control ACKs of a non-reliable stream as advisory: the
+                # non-reliable sender finishes at send-completion and never
+                # waits for them (see _send_ack).
+                self.completed = True
                 if self.reliable:
-                    self.completed = True
                     schedule_remove = True
                 else:
                     remove_now = True
@@ -332,6 +377,14 @@ class RxTask:
             self._remove_task()
 
     def _send_error(self, error_msg: str):
+        # Only a re-notification of an error that was already delivered is optional: the
+        # first error notification is required, and a failed first attempt keeps retries
+        # at ERROR (mirrors _send_ack). A retained failed task re-notifies on every
+        # retried chunk, and at job teardown those re-notifications race the sender's
+        # cells going away. As with ACKs, "delivered" means accepted by the first hop.
+        with self.ack_lock:
+            already_notified = self.error_notified
+        log_func = log.debug if already_notified else log.error
         message = Message()
 
         message.add_headers(
@@ -342,14 +395,21 @@ class RxTask:
             }
         )
         try:
-            errors = self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_ACK_TOPIC, self.origin, message)
+            errors = self.cell.fire_and_forget(
+                STREAM_CHANNEL, STREAM_ACK_TOPIC, self.origin, message, optional=already_notified
+            )
         except Exception as ex:
-            log.error(f"{self} failed to send error to {self.origin}: {ex}")
+            log_func(f"{self} failed to send error to {self.origin}: {ex}")
+            return
         else:
             errors = errors or {}
             error = errors.get(self.origin)
             if error:
-                log.error(f"{self} failed to send error to {self.origin}: {error}")
+                log_func(f"{self} failed to send error to {self.origin}: {error}")
+                return
+
+        with self.ack_lock:
+            self.error_notified = True
 
     def _remove_task(self):
         with self.stop_lock:
@@ -452,6 +512,17 @@ class RxTask:
         return self.received_offset if self.completed else self.offset
 
     def _send_ack(self, offset, seq):
+        # For a reliable stream, only a re-ACK at or behind state that was sent successfully
+        # is optional: the first final ACK is still required even though stop() has already
+        # marked the receive task completed, and a failed first attempt keeps retries at
+        # ERROR. For a non-reliable stream every ACK after completion is advisory - the
+        # sender finishes at send-completion and never waits for them. Note "already acked"
+        # means accepted by the first hop, not delivered end-to-end; a mid-route drop is
+        # still surfaced by the sender's own retry timeout.
+        with self.ack_lock:
+            already_acked = seq <= self.seq_ack and offset <= self.offset_ack
+        optional = self.completed and (already_acked or not self.reliable)
+        log_func = log.debug if optional else log.error
         message = Message()
         message.add_headers(
             {
@@ -462,15 +533,17 @@ class RxTask:
             }
         )
         try:
-            errors = self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_ACK_TOPIC, self.origin, message)
+            errors = self.cell.fire_and_forget(
+                STREAM_CHANNEL, STREAM_ACK_TOPIC, self.origin, message, optional=optional
+            )
         except Exception as ex:
-            log.error(f"{self} failed to ack seq {seq} to {self.origin}: {ex}")
+            log_func(f"{self} failed to ack seq {seq} to {self.origin}: {ex}")
             return False
         else:
             errors = errors or {}
             error = errors.get(self.origin)
             if error:
-                log.error(f"{self} failed to ack seq {seq} to {self.origin}: {error}")
+                log_func(f"{self} failed to ack seq {seq} to {self.origin}: {error}")
                 return False
 
         with self.ack_lock:

@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import threading
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -21,7 +22,7 @@ import pytest
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.message import Message
-from nvflare.fuel.f3.streaming.byte_receiver import RxStream, RxTask
+from nvflare.fuel.f3.streaming.byte_receiver import MAX_COMPLETED_TASK_TTL, RxStream, RxTask
 from nvflare.fuel.f3.streaming.stream_const import STREAM_ACK_TOPIC, STREAM_CHANNEL, StreamDataType, StreamHeaderKey
 from nvflare.fuel.f3.streaming.stream_types import StreamError
 
@@ -225,7 +226,7 @@ def test_reliable_duplicate_initial_chunk_sends_sequence_ack():
     assert task.process_chunk(message) is False
 
     cell.fire_and_forget.assert_called_with(
-        STREAM_CHANNEL, STREAM_ACK_TOPIC, "site-1", cell.fire_and_forget.call_args.args[3]
+        STREAM_CHANNEL, STREAM_ACK_TOPIC, "site-1", cell.fire_and_forget.call_args.args[3], optional=False
     )
     ack = cell.fire_and_forget.call_args.args[3]
     assert ack.get_header(StreamHeaderKey.SEQUENCE) == 0
@@ -275,6 +276,7 @@ def test_reliable_final_chunk_sends_sequence_ack():
 
     ack = cell.fire_and_forget.call_args.args[3]
     assert cell.fire_and_forget.call_args.args[:3] == (STREAM_CHANNEL, STREAM_ACK_TOPIC, "site-1")
+    assert cell.fire_and_forget.call_args.kwargs == {"optional": False}
     assert ack.get_header(StreamHeaderKey.SEQUENCE) == 0
     assert ack.get_header(StreamHeaderKey.OFFSET) == 0
 
@@ -409,6 +411,7 @@ def test_send_ack_updates_ack_state_only_on_success():
     task = RxTask(sid=504, origin="site-1", cell=cell, reliable=True)
 
     assert task._send_ack(offset=10, seq=2) is False
+    assert cell.fire_and_forget.call_args.kwargs == {"optional": False}
     assert task.offset_ack == 0
     assert task.seq_ack == -1
 
@@ -417,6 +420,56 @@ def test_send_ack_updates_ack_state_only_on_success():
     assert task._send_ack(offset=10, seq=2) is True
     assert task.offset_ack == 10
     assert task.seq_ack == 2
+
+
+def test_failed_final_ack_retries_remain_required(caplog):
+    cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={"site-1": "target_unreachable"}))
+    message = _make_chunk("site-1", sid=519, seq=0, data_type=StreamDataType.FINAL, payload=b"", reliable=True)
+    task = RxTask.find_or_create_task(message, cell)
+
+    with caplog.at_level(logging.ERROR, logger="nvflare.fuel.f3.streaming.byte_receiver"):
+        assert task.process_chunk(message) is True
+        assert task.process_chunk(message) is False
+
+    assert task.completed is True
+    assert task.seq_ack == -1
+    assert task.offset_ack == 0
+    assert cell.fire_and_forget.call_count == 2
+    assert all(call.kwargs == {"optional": False} for call in cell.fire_and_forget.call_args_list)
+    assert [record for record in caplog.records if record.levelno >= logging.ERROR]
+    assert "failed to ack seq 0" in caplog.text
+
+
+def test_completed_reack_send_failure_is_debug_only(caplog):
+    cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={}))
+    task = RxTask(sid=519, origin="site-1", cell=cell, reliable=True)
+    task.completed = True
+
+    assert task._send_ack(offset=10, seq=2) is True
+    assert cell.fire_and_forget.call_args.kwargs == {"optional": False}
+
+    cell.fire_and_forget.return_value = {"site-1": "target_unreachable"}
+    with caplog.at_level(logging.DEBUG, logger="nvflare.fuel.f3.streaming.byte_receiver"):
+        assert task._send_ack(offset=10, seq=2) is False
+
+    assert cell.fire_and_forget.call_args.kwargs == {"optional": True}
+    assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
+    assert "failed to ack seq 2" in caplog.text
+
+
+def test_completed_reack_exception_is_debug_only(caplog):
+    cell = SimpleNamespace(fire_and_forget=MagicMock(side_effect=RuntimeError("connection closed")))
+    task = RxTask(sid=520, origin="site-1", cell=cell, reliable=True)
+    task.completed = True
+    task.offset_ack = 10
+    task.seq_ack = 2
+
+    with caplog.at_level(logging.DEBUG, logger="nvflare.fuel.f3.streaming.byte_receiver"):
+        assert task._send_ack(offset=10, seq=2) is False
+
+    assert cell.fire_and_forget.call_args.kwargs == {"optional": True}
+    assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
+    assert "connection closed" in caplog.text
 
 
 def test_reliable_completed_task_reacks_duplicate_final_chunk():
@@ -431,10 +484,12 @@ def test_reliable_completed_task_reacks_duplicate_final_chunk():
         assert RxTask.rx_task_map[("site-1", 505)] is task
     assert task.completed is True
     assert cell.fire_and_forget.call_count == 1
+    assert cell.fire_and_forget.call_args.kwargs == {"optional": False}
 
     assert task.process_chunk(message) is False
 
     assert cell.fire_and_forget.call_count == 2
+    assert cell.fire_and_forget.call_args.kwargs == {"optional": True}
     duplicate_ack = cell.fire_and_forget.call_args.args[3]
     assert duplicate_ack.get_header(StreamHeaderKey.SEQUENCE) == 0
     assert duplicate_ack.get_header(StreamHeaderKey.OFFSET) == 0
@@ -504,3 +559,259 @@ def test_completed_task_ttl_keeps_longer_local_retry_window(monkeypatch):
     task.process_chunk(message)
 
     assert task.completed_task_ttl == 35.0
+
+
+def test_non_reliable_trailing_ack_is_optional_and_debug_only(caplog):
+    # the non-reliable sender finishes at send-completion and never waits for
+    # the trailing ACK, so its delivery failure at teardown must not ERROR
+    cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={"site-1": "target_unreachable"}))
+    message = _make_chunk("site-1", sid=530, seq=0, data_type=StreamDataType.FINAL, payload=b"abc", reliable=False)
+    task = RxTask.find_or_create_task(message, cell)
+
+    with caplog.at_level(logging.DEBUG, logger="nvflare.fuel.f3.streaming.byte_receiver"):
+        assert task.process_chunk(message) is True
+
+    assert task.completed is True
+    assert cell.fire_and_forget.call_args.kwargs == {"optional": True}
+    trailing_ack = cell.fire_and_forget.call_args.args[3]
+    assert trailing_ack.get_header(StreamHeaderKey.SEQUENCE) == 0
+    assert trailing_ack.get_header(StreamHeaderKey.OFFSET) == 3
+    assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
+    assert "failed to ack seq 0" in caplog.text
+
+
+def test_non_reliable_midstream_flow_control_ack_remains_required():
+    # before completion the sender may be blocked on the flow-control window,
+    # so mid-stream ACKs stay required
+    cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={}))
+    task = RxTask(sid=531, origin="site-1", cell=cell, reliable=False)
+
+    assert task._send_ack(offset=10, seq=2) is True
+
+    assert cell.fire_and_forget.call_args.kwargs == {"optional": False}
+
+
+def test_failed_task_error_renotification_is_optional_and_debug_only(caplog):
+    cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={}))
+    message = _make_chunk("site-1", sid=532, seq=0, data_type=StreamDataType.CHUNK, payload=b"abc", reliable=True)
+    task = RxTask.find_or_create_task(message, cell)
+
+    task.stop(StreamError("stream failed"), notify=True)
+
+    assert task.error_notified is True
+    assert cell.fire_and_forget.call_args.kwargs == {"optional": False}
+
+    # teardown race: the sender's cells are gone when the retried chunk re-notifies
+    cell.fire_and_forget.return_value = {"site-1": "target_unreachable"}
+    caplog.clear()
+    with caplog.at_level(logging.DEBUG, logger="nvflare.fuel.f3.streaming.byte_receiver"):
+        assert task.process_chunk(message) is False
+
+    assert cell.fire_and_forget.call_args.kwargs == {"optional": True}
+    assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
+    assert "failed to send error" in caplog.text
+
+
+def test_failed_first_error_notification_keeps_renotifications_required(caplog):
+    cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={"site-1": "target_unreachable"}))
+    message = _make_chunk("site-1", sid=533, seq=0, data_type=StreamDataType.CHUNK, payload=b"abc", reliable=True)
+    task = RxTask.find_or_create_task(message, cell)
+
+    task.stop(StreamError("stream failed"), notify=True)
+
+    assert task.error_notified is False
+
+    caplog.clear()
+    with caplog.at_level(logging.DEBUG, logger="nvflare.fuel.f3.streaming.byte_receiver"):
+        assert task.process_chunk(message) is False
+
+    assert cell.fire_and_forget.call_args.kwargs == {"optional": False}
+    assert [record for record in caplog.records if record.levelno >= logging.ERROR]
+    assert "failed to send error" in caplog.text
+
+
+def test_completed_task_ttl_clamps_excessive_sender_retry_window(monkeypatch):
+    monkeypatch.setattr(CommConfigurator, "get_streaming_retry_timeout", lambda self, default: 1.0)
+    monkeypatch.setattr(CommConfigurator, "get_streaming_retry_wait", lambda self, default: 1.0)
+    cell = SimpleNamespace()
+    message = _make_chunk(
+        "site-1",
+        sid=534,
+        seq=0,
+        data_type=StreamDataType.CHUNK,
+        payload=b"x",
+        reliable=True,
+        retry_wait=1e6,
+        retry_timeout=1e9,
+    )
+    task = RxTask.find_or_create_task(message, cell)
+
+    task.process_chunk(message)
+
+    assert task.completed_task_ttl == MAX_COMPLETED_TASK_TTL
+
+
+def test_invalid_sender_retry_window_is_ignored(monkeypatch):
+    monkeypatch.setattr(CommConfigurator, "get_streaming_retry_timeout", lambda self, default: 1.0)
+    monkeypatch.setattr(CommConfigurator, "get_streaming_retry_wait", lambda self, default: 1.0)
+    cell = SimpleNamespace()
+    message = _make_chunk(
+        "site-1",
+        sid=535,
+        seq=0,
+        data_type=StreamDataType.CHUNK,
+        payload=b"x",
+        reliable=True,
+        retry_wait="bogus",
+        retry_timeout=20.0,
+    )
+    task = RxTask.find_or_create_task(message, cell)
+
+    # a non-numeric peer header must not crash the chunk handler
+    task.process_chunk(message)
+
+    assert task.completed_task_ttl == 2.0
+
+
+def test_overflowing_sender_retry_window_is_ignored(monkeypatch):
+    monkeypatch.setattr(CommConfigurator, "get_streaming_retry_timeout", lambda self, default: 1.0)
+    monkeypatch.setattr(CommConfigurator, "get_streaming_retry_wait", lambda self, default: 1.0)
+    cell = SimpleNamespace()
+    message = _make_chunk(
+        "site-1",
+        sid=536,
+        seq=0,
+        data_type=StreamDataType.CHUNK,
+        payload=b"x",
+        reliable=True,
+        retry_wait=10**400,  # int beyond float range: float() raises OverflowError
+        retry_timeout=10**400,
+    )
+    task = RxTask.find_or_create_task(message, cell)
+
+    task.process_chunk(message)
+
+    assert task.completed_task_ttl == 2.0
+
+
+@pytest.mark.parametrize("bad_value", ["1e400", "nan"])  # inf and NaN are both non-finite
+def test_non_finite_sender_retry_window_is_ignored(monkeypatch, bad_value):
+    # NaN would bypass a plain ">" clamp check and its safety under max() is
+    # order-dependent, so non-finite windows are rejected as invalid outright
+    monkeypatch.setattr(CommConfigurator, "get_streaming_retry_timeout", lambda self, default: 1.0)
+    monkeypatch.setattr(CommConfigurator, "get_streaming_retry_wait", lambda self, default: 1.0)
+    cell = SimpleNamespace()
+    message = _make_chunk(
+        "site-1",
+        sid=537,
+        seq=0,
+        data_type=StreamDataType.CHUNK,
+        payload=b"x",
+        reliable=True,
+        retry_wait=bad_value,
+        retry_timeout=bad_value,
+    )
+    task = RxTask.find_or_create_task(message, cell)
+
+    task.process_chunk(message)
+
+    assert task.completed_task_ttl == 2.0
+
+
+def test_clamp_warning_only_when_effective_window_is_lowered(monkeypatch, caplog):
+    monkeypatch.setattr(CommConfigurator, "get_streaming_retry_timeout", lambda self, default: 1.0)
+    monkeypatch.setattr(CommConfigurator, "get_streaming_retry_wait", lambda self, default: 1.0)
+    cell = SimpleNamespace()
+    message = _make_chunk(
+        "site-1",
+        sid=538,
+        seq=0,
+        data_type=StreamDataType.CHUNK,
+        payload=b"x",
+        reliable=True,
+        retry_wait=1.0,
+        retry_timeout=1e9,
+    )
+    task = RxTask.find_or_create_task(message, cell)
+
+    with caplog.at_level(logging.WARNING, logger="nvflare.fuel.f3.streaming.byte_receiver"):
+        task.process_chunk(message)
+
+    assert task.completed_task_ttl == MAX_COMPLETED_TASK_TTL
+    assert "exceeds" in caplog.text and "streaming_retry_timeout" in caplog.text
+
+
+def test_clamp_is_silent_when_local_window_already_governs(monkeypatch, caplog):
+    # receiver-local config larger than both the cap and the request: the cap
+    # changes nothing, so no warning should be emitted
+    monkeypatch.setattr(CommConfigurator, "get_streaming_retry_timeout", lambda self, default: 7000.0)
+    monkeypatch.setattr(CommConfigurator, "get_streaming_retry_wait", lambda self, default: 5.0)
+    cell = SimpleNamespace()
+    message = _make_chunk(
+        "site-1",
+        sid=539,
+        seq=0,
+        data_type=StreamDataType.CHUNK,
+        payload=b"x",
+        reliable=True,
+        retry_wait=5.0,
+        retry_timeout=5000.0,
+    )
+    task = RxTask.find_or_create_task(message, cell)
+
+    with caplog.at_level(logging.WARNING, logger="nvflare.fuel.f3.streaming.byte_receiver"):
+        task.process_chunk(message)
+
+    assert task.completed_task_ttl == 7005.0
+    assert not [record for record in caplog.records if record.levelno >= logging.WARNING]
+
+
+def test_error_notified_transitions_after_late_successful_notification():
+    # first notification fails (stays required); a later re-notification that
+    # succeeds flips error_notified, and only then do further ones go optional
+    cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={"site-1": "target_unreachable"}))
+    message = _make_chunk("site-1", sid=540, seq=0, data_type=StreamDataType.CHUNK, payload=b"x", reliable=True)
+    task = RxTask.find_or_create_task(message, cell)
+
+    task.stop(StreamError("stream failed"), notify=True)
+    assert task.error_notified is False
+
+    cell.fire_and_forget.return_value = {}
+    assert task.process_chunk(message) is False
+    assert cell.fire_and_forget.call_args.kwargs == {"optional": False}
+    assert task.error_notified is True
+
+    assert task.process_chunk(message) is False
+    assert cell.fire_and_forget.call_args.kwargs == {"optional": True}
+
+
+def test_error_renotification_exception_is_debug_only(caplog):
+    cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={}))
+    message = _make_chunk("site-1", sid=541, seq=0, data_type=StreamDataType.CHUNK, payload=b"x", reliable=True)
+    task = RxTask.find_or_create_task(message, cell)
+    task.stop(StreamError("stream failed"), notify=True)
+    assert task.error_notified is True
+
+    cell.fire_and_forget.side_effect = RuntimeError("connection closed")
+    caplog.clear()
+    with caplog.at_level(logging.DEBUG, logger="nvflare.fuel.f3.streaming.byte_receiver"):
+        assert task.process_chunk(message) is False
+
+    assert cell.fire_and_forget.call_args.kwargs == {"optional": True}
+    assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
+    assert "connection closed" in caplog.text
+
+
+def test_stop_error_after_completion_is_noop_for_non_reliable():
+    cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={}))
+    message = _make_chunk("site-1", sid=542, seq=0, data_type=StreamDataType.FINAL, payload=b"abc", reliable=False)
+    task = RxTask.find_or_create_task(message, cell)
+
+    assert task.process_chunk(message) is True
+    assert task.completed is True
+    calls = cell.fire_and_forget.call_count
+
+    task.stop(StreamError("late failure"), notify=True)
+
+    assert task.failed is False
+    assert cell.fire_and_forget.call_count == calls
