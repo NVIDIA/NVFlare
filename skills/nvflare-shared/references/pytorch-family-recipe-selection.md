@@ -29,6 +29,12 @@ Prefer recipe CLI metadata before Python introspection. If Python introspection
 is still needed, do not guess top-level exports: the base `Recipe` class lives in
 `nvflare.recipe.spec`, not `nvflare.recipe`.
 
+When writing `job.py`, import the recipe class from the exact `module` and
+`class` returned by `recipe show`; do not substitute a package-level or
+top-level import. For `fedavg-pt`, import
+`nvflare.app_opt.pt.recipes.fedavg.FedAvgRecipe`, not
+`nvflare.recipe.FedAvgRecipe`.
+
 ## Quick Algorithm Guide
 
 If the user does not know which FL algorithm they need, explain the choices in

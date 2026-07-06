@@ -13,6 +13,7 @@
         "The agent runs nvflare agent inspect before editing and extracts source facts statically without importing or executing user training modules during planning.",
         "The agent edits only training, model, job, or small config files.",
         "Because PyTorch and FedAvg are explicit, the agent runs nvflare recipe show fedavg-pt --format json directly and does not run recipe list before constructing it.",
+        "The generated job.py imports the selected recipe class from the module returned by recipe show, using nvflare.app_opt.pt.recipes.fedavg.FedAvgRecipe for fedavg-pt and not nvflare.recipe.FedAvgRecipe.",
         "The agent selects FedAvg only when the requested workflow is standard horizontal model-parameter aggregation.",
         "The agent translates the natural request into recipe, site-count, dataset, split, training, evaluation, and export settings.",
         "The agent generates explicit recipe model config with class_path plus args instead of passing a live model instance, asking or failing closed when constructor args are not statically clear.",
@@ -49,6 +50,10 @@
           {
             "id": "discover-pytorch-recipes",
             "description": "runs nvflare recipe show fedavg-pt --format json directly when PyTorch and FedAvg are explicit, without first running recipe list"
+          },
+          {
+            "id": "use-recipe-show-module-import",
+            "description": "imports the selected recipe class from the exact module returned by recipe show; for fedavg-pt uses nvflare.app_opt.pt.recipes.fedavg.FedAvgRecipe and not nvflare.recipe.FedAvgRecipe"
           },
           {
             "id": "select-recipe-from-fl-intent",
@@ -494,10 +499,11 @@
         "The agent generates aggregators.py with a ModelAggregator subclass implementing accept_model, aggregate_model, and reset_stats.",
         "The generated aggregator operates on FLModel.params and preserves or intentionally sets FLModel.params_type.",
         "The generated aggregator weights client contributions using FLModel.meta such as NUM_STEPS_CURRENT_ROUND.",
+        "The generated aggregator logs concise accept/aggregate evidence through its FLComponent logger before the full simulation runs.",
         "The agent wires the aggregator through the recipe aggregator= parameter with matching aggregator_data_kind and parameter transfer settings.",
         "The client keeps the standard Client API exchange and sends step-count metadata the aggregator needs.",
         "The agent does not invent new client/server exchange semantics; if the requested algorithm needed them, the agent would include the matching client transformation or ask/fail.",
-        "The agent reports the custom aggregation choice and its validation evidence."
+        "The agent reports the custom aggregation choice and its validation evidence without rerunning a completed full simulation solely to make log lines more visible."
       ],
       "nvflare": {
         "expected_skill": "nvflare-convert-pytorch",
@@ -515,8 +521,12 @@
             "description": "uses FLModel.meta client contribution metadata such as NUM_STEPS_CURRENT_ROUND for weighting"
           },
           {
+            "id": "aggregator-logs-runtime-evidence",
+            "description": "emits concise accept/aggregate evidence through the aggregator's FLComponent logger so the first full simulation can prove runtime use"
+          },
+          {
             "id": "report-aggregation-choice",
-            "description": "reports the custom aggregation choice, generated files, and validation evidence"
+            "description": "reports the custom aggregation choice, generated files, and validation evidence without rerunning a completed full simulation solely to improve log visibility"
           }
         ],
         "prohibited_behavior": [

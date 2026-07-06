@@ -82,7 +82,9 @@ provisioning/deployment, never substituting an unprotected recipe or disclaimer.
 5. Reuse the PyTorch recipe family; Lightning is not a separate recipe family.
    For the standard case — the user explicitly requests FedAvg and inspection
    identifies Lightning — run `nvflare recipe show fedavg-pt --format json`
-   directly and construct it. Load
+   directly and construct it. Use the returned module, class, and parameters;
+   for `fedavg-pt`, import `FedAvgRecipe` from
+   `nvflare.app_opt.pt.recipes.fedavg`, never from `nvflare.recipe`. Load
    `../nvflare-shared/references/pytorch-family-recipe-selection.md` (discovery,
    algorithm guide, catalog-based selection, HE-not-supported rule; FedAvg,
    FedOpt, FedProx, SCAFFOLD, Cyclic, Swarm, FedEval) only for ambiguous or

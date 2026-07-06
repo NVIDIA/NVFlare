@@ -34,6 +34,12 @@ unavailable. Progress messages, scheduled wakeups, "standing by"/"I'll wait"
 statements, and active processes are not completion evidence and are not valid
 final answers.
 
+After a full simulation succeeds, do not rerun it solely to make already-wired
+custom-aggregator log lines more visible. Use the first run's terminal evidence
+plus exported config/server-log evidence; if custom aggregation needs visible
+runtime proof, make the aggregator template log through its FLComponent logger
+before the first full run.
+
 If the run exceeds the allowed time, report it as blocked or timed out with the
 current command status, log evidence, and artifact evidence. Do not describe a
 timed-out or still-running simulation as done.

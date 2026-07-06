@@ -84,8 +84,10 @@ rather than substituting an unprotected recipe or adding only a disclaimer.
    algorithm guide, catalog-based selection, HE-not-supported rule) only for
    ambiguous or non-FedAvg algorithms, reserving `nvflare recipe list` for those
    cases. Use the module, class, and parameters returned by `recipe show` for
-   standard `job.py` construction; load `references/recipe-selection.md` only
-   when non-FedAvg or execution-mode details are needed.
+   standard `job.py` construction; for `fedavg-pt`, import `FedAvgRecipe` from
+   `nvflare.app_opt.pt.recipes.fedavg`, never from `nvflare.recipe`. Load
+   `references/recipe-selection.md` only when non-FedAvg or execution-mode
+   details are needed.
 5. Convert training and evaluation as a pair using
    `references/pytorch-client-api-conversion.md`: initialize FLARE, receive an
    `FLModel`, load `params`, evaluate the received global model, train, and

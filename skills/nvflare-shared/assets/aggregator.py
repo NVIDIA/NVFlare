@@ -68,6 +68,7 @@ class WeightedAggregator(ModelAggregator):
         # key missing from the first client does not raise KeyError.
         self._key_weight = {}
         self._params_type = None
+        self._accepted = 0
 
     def accept_model(self, model: FLModel):
         weight = _step_weight(model)
@@ -80,11 +81,22 @@ class WeightedAggregator(ModelAggregator):
             else:
                 self._weighted_sum[key] = value * weight
                 self._key_weight[key] = weight
+        self._accepted += 1
+        self.log_info(
+            self.fl_ctx,
+            f"{self.__class__.__name__} accepted model #{self._accepted} "
+            f"(weight={weight}, tensors={len(model.params)})",
+        )
 
     def aggregate_model(self) -> FLModel:
         if not self._weighted_sum:
             raise RuntimeError("no client models accepted this round")
         averaged = {key: self._weighted_sum[key] / self._key_weight[key] for key in self._weighted_sum}
         result = FLModel(params=averaged, params_type=self._params_type)
+        self.log_info(
+            self.fl_ctx,
+            f"{self.__class__.__name__} aggregated {self._accepted} models "
+            f"into {len(averaged)} tensors",
+        )
         self.reset_stats()
         return result
