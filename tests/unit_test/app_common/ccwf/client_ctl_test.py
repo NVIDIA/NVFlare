@@ -14,11 +14,13 @@
 
 from unittest.mock import MagicMock
 
+from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.ccwf.client_ctl import ClientSideController, _LearnTask
+from nvflare.app_common.ccwf.common import Constant
 
 
 class _FailingClientSideController(ClientSideController):
@@ -39,6 +41,13 @@ class _FailingClientSideController(ClientSideController):
         raise RuntimeError("learn failed")
 
 
+class _AbortedClientSideController(_FailingClientSideController):
+    def do_learn_task(self, name: str, data: Shareable, fl_ctx: FLContext, abort_signal: Signal):
+        self.asked_to_stop = True
+        abort_signal.trigger(True)
+        raise RuntimeError("aborted")
+
+
 def test_do_learn_logs_exception_from_learn_task():
     ctl = _FailingClientSideController()
     ctl.logger = MagicMock()
@@ -55,3 +64,45 @@ def test_do_learn_logs_exception_from_learn_task():
     assert ctl.current_status.error == ReturnCode.EXECUTION_EXCEPTION
     report = ctl._get_status_report()
     assert report is not None and report.error == ReturnCode.EXECUTION_EXCEPTION
+
+
+def test_do_learn_does_not_record_error_for_aborted_task():
+    # an aborted task (e.g. end-of-workflow teardown) is expected to raise;
+    # it must not fail an otherwise-completed job
+    ctl = _AbortedClientSideController()
+    ctl.logger = MagicMock()
+    ctl.learn_task = _LearnTask("train", Shareable(), FLContext())
+
+    ctl._do_learn()
+
+    assert ctl.learn_task is None
+    assert not ctl.current_status.error
+
+
+def test_error_report_is_delivered_even_after_workflow_done():
+    # a failure that races the end-workflow request must still reach the
+    # server on the next task pull so the job ends with an error status
+    ctl = _FailingClientSideController()
+    ctl.logger = MagicMock()
+    ctl.workflow_id = "swarm"
+    ctl.workflow_done = True
+    ctl.update_status(action="do_learn_task", error=ReturnCode.EXECUTION_EXCEPTION)
+
+    fl_ctx = FLContext()
+    ctl.handle_event(EventType.BEFORE_PULL_TASK, fl_ctx)
+
+    reports = fl_ctx.get_prop(Constant.STATUS_REPORTS)
+    assert reports and reports["swarm"][Constant.ERROR] == ReturnCode.EXECUTION_EXCEPTION
+
+
+def test_no_report_after_workflow_done_without_error():
+    ctl = _FailingClientSideController()
+    ctl.logger = MagicMock()
+    ctl.workflow_id = "swarm"
+    ctl.workflow_done = True
+    ctl.update_status(action="finished")
+
+    fl_ctx = FLContext()
+    ctl.handle_event(EventType.BEFORE_PULL_TASK, fl_ctx)
+
+    assert not fl_ctx.get_prop(Constant.STATUS_REPORTS)

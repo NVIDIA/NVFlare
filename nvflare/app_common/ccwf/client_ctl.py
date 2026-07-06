@@ -189,7 +189,10 @@ class ClientSideController(Executor, TaskController):
             if reports:
                 reports.pop(self.workflow_id, None)
 
-            if self.workflow_done:
+            if self.workflow_done and not self.current_status.error:
+                # After the workflow ends, only a recorded error is still worth
+                # reporting: a failure that raced the end-workflow request must
+                # still end the job with an error status.
                 return
             report = self._get_status_report()
             if not report:
@@ -462,9 +465,12 @@ class ClientSideController(Executor, TaskController):
                     self.do_learn_task(t.task_name, t.task_data, t.fl_ctx, t.abort_signal)
                 except:
                     self.log_exception(t.fl_ctx, "exception from do_learn_task")
-                    # report the failure to the server so the job ends with an
-                    # error status instead of FINISHED:COMPLETED
-                    self.update_status(action="do_learn_task", error=ReturnCode.EXECUTION_EXCEPTION)
+                    if not t.abort_signal.triggered:
+                        # report the failure to the server so the job ends with
+                        # an error status instead of FINISHED:COMPLETED. An
+                        # aborted task (e.g. end-of-workflow teardown) is
+                        # expected to raise and is not a job failure.
+                        self.update_status(action="do_learn_task", error=ReturnCode.EXECUTION_EXCEPTION)
                 finally:
                     # force garbage collection
                     gc.collect()
