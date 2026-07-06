@@ -33,8 +33,9 @@ class FQCN(FQN):
 #     cannot drift apart.
 #
 # CellPipe cell-name schemes, in historical order:
-#   1. flat (through 2.7): the whole FQCN is "<site>_<token>_<mode>", a root-level
-#      sibling of the site cell.
+#   1. legacy (through 2.7): a bare "<site>_<token>_<mode>" leaf. Root-connected
+#      pipes use it as the whole FQCN; CP/relay-connected pipes nest it under
+#      the connected cell ("<parent_fqcn>.<site>_<token>_<mode>").
 #   2. hierarchical (#4801, never released): "<site>.<token>.<mode>". Replaced
 #      because the extra segments created unconnected FQCN parents that broke
 #      routing (NVBug 6371056).
@@ -43,11 +44,12 @@ class FQCN(FQN):
 #      "<parent>.cellpipe~plain~<token>~<mode>", or
 #      "<relay_fqcn>.cellpipe~alias~<owner>~<token>~<mode>" when connected
 #      through another cell.
-# Mixed-version notes: scheme-1 aliases are still accepted by identity
-# resolution and stream auth (as whole-FQCN aliases via the bare grammar),
-# but the two ends of one pipe pair must run the same scheme - each end
-# derives the peer's name from its own code, so a CJ and a training
-# subprocess on different schemes fail with "peer FQCN mismatch".
+# Mixed-version notes: only scheme-1 whole-FQCN aliases are still accepted by
+# identity resolution and stream auth. Nested bare aliases are intentionally
+# unsupported because an unmarked leaf inside a longer FQCN is indistinguishable
+# from a real cell of that name. The two ends of one pipe pair must run the same
+# scheme - each end derives the peer's name from its own code, so a CJ and a
+# training subprocess on different schemes fail with "peer FQCN mismatch".
 CELL_PIPE_SEPARATOR = "~"
 CELL_PIPE_PREFIX = f"cellpipe{CELL_PIPE_SEPARATOR}"
 CELL_PIPE_LEAF_PREFIX = f"{CELL_PIPE_PREFIX}plain{CELL_PIPE_SEPARATOR}"
