@@ -189,10 +189,7 @@ class ClientSideController(Executor, TaskController):
             if reports:
                 reports.pop(self.workflow_id, None)
 
-            if self.workflow_done and not self.current_status.error:
-                # After the workflow ends, only a recorded error is still worth
-                # reporting: a failure that raced the end-workflow request must
-                # still end the job with an error status.
+            if self.workflow_done:
                 return
             report = self._get_status_report()
             if not report:

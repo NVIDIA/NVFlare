@@ -110,9 +110,12 @@ def test_do_learn_records_failure_when_abort_races_exception_logging():
     assert ctl.current_status.error == ReturnCode.EXECUTION_EXCEPTION
 
 
-def test_error_report_is_delivered_even_after_workflow_done():
-    # a failure that races the end-workflow request must still reach the
-    # server on the next task pull so the job ends with an error status
+def test_no_report_after_workflow_done():
+    # Once the workflow has ended, the client stops reporting status - the
+    # server no longer reliably consumes reports, and a recorded error may be
+    # a recoverable condition (e.g. a swarm straggler's dropped submission)
+    # that must not fail an otherwise-successful job. A genuine failure is
+    # instead delivered on the normal pull path while the workflow is live.
     ctl = _FailingClientSideController()
     ctl.logger = MagicMock()
     ctl.workflow_id = "swarm"
@@ -122,18 +125,19 @@ def test_error_report_is_delivered_even_after_workflow_done():
     fl_ctx = FLContext()
     ctl.handle_event(EventType.BEFORE_PULL_TASK, fl_ctx)
 
-    reports = fl_ctx.get_prop(Constant.STATUS_REPORTS)
-    assert reports and reports["swarm"][Constant.ERROR] == ReturnCode.EXECUTION_EXCEPTION
+    assert not fl_ctx.get_prop(Constant.STATUS_REPORTS)
 
 
-def test_no_report_after_workflow_done_without_error():
+def test_error_report_is_delivered_while_workflow_live():
+    # a genuine learn failure recorded while the workflow is still running is
+    # reported on the next pull so the job ends with an error status
     ctl = _FailingClientSideController()
     ctl.logger = MagicMock()
     ctl.workflow_id = "swarm"
-    ctl.workflow_done = True
-    ctl.update_status(action="finished")
+    ctl.update_status(action="do_learn_task", error=ReturnCode.EXECUTION_EXCEPTION)
 
     fl_ctx = FLContext()
     ctl.handle_event(EventType.BEFORE_PULL_TASK, fl_ctx)
 
-    assert not fl_ctx.get_prop(Constant.STATUS_REPORTS)
+    reports = fl_ctx.get_prop(Constant.STATUS_REPORTS)
+    assert reports and reports["swarm"][Constant.ERROR] == ReturnCode.EXECUTION_EXCEPTION
