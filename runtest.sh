@@ -28,7 +28,9 @@ fi
 
 function install_deps {
     local extras
-    if [[ $(uname) == "Darwin" ]]; then
+    if [[ "${cmd}" == check_style_type_import* || "${cmd}" == fix_style_import* ]]; then
+      extras=".[test_support]"
+    elif [[ $(uname) == "Darwin" ]]; then
       extras=".[dev_mac]"
     elif [[ "${torch_backend}" == "cpu" ]]; then
       extras=".[dev_cpu]"
@@ -36,7 +38,7 @@ function install_deps {
       extras=".[dev]"
     fi
 
-    if [[ "${torch_backend}" == "cpu" && $(uname) != "Darwin" ]]; then
+    if [[ "${torch_backend}" == "cpu" && "${extras}" != ".[test_support]" && $(uname) != "Darwin" ]]; then
       export UV_TORCH_BACKEND=cpu
       bash "${WORK_DIR}/ci/install_cpu_torch.sh"
     fi
