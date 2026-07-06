@@ -204,10 +204,8 @@ sequenceDiagram
     E->>E: write bootstrap config (0600, launch token, route, FQCNs)
     E->>T: Popen(torchrun train.py) [process tree]
     Note over T: flare.init(): read config, build Cell
-    T->>E: HELLO
-    E->>T: HELLO_CHALLENGE (nonce)
-    T->>E: HELLO_PROOF (token)
-    E->>T: HELLO_ACCEPTED
+    T->>E: HELLO (session id, rank, version, launch token)
+    E->>T: HELLO_ACCEPTED (token + FQCN match, trusted host)
     Note over T: only rank 0 connects. Non-zero ranks get the model<br/>via framework broadcast
     loop each round (session reused, no new HELLO)
         C->>E: task
@@ -239,7 +237,7 @@ sequenceDiagram
         C->>E: task
         E->>T: write config + Popen(...) [new process]
         Note over T: flare.init() (job-scoped token reused)
-        T->>E: HELLO / HELLO_PROOF
+        T->>E: HELLO (launch token)
         E->>T: HELLO_ACCEPTED (fresh session)
         E->>T: TASK_READY (task_id, FLModel ref)
         T->>E: RESULT_READY (result_id, transfer_id, manifest)
@@ -357,14 +355,36 @@ Two vocabularies appear below and should not be conflated: **control messages** 
 
 The logical control protocol, grouped by when each message is used:
 
-**Session setup (all out-of-process modes):**
+**Session setup (all out-of-process modes).** Every out-of-process trainer performs a HELLO
+handshake before the first task — it is what tells the CJ the trainer's Cell is connected,
+which FQCN rank 0 bound, and that `flare.init()` completed (the push-style protocol below
+cannot send TASK_READY blind). What differs is only the *proof strength*, which scales with
+how the trainer was started and where it can be reached:
+
+external_process (V1, trusted host — NVFlare launched the trainer on the local host and
+handed it the token in a 0600 bootstrap file, so the token is a rendezvous/binding id, not a
+secret to defend against co-tenants):
 
 ```
-trainer -> CJ : HELLO           (identity, attach/session id, rank, protocol version)
-CJ -> trainer : HELLO_CHALLENGE (nonce)                                   [or ERROR]
-trainer -> CJ : HELLO_PROOF     (token proof over the nonce; see Appendix B)
-CJ -> trainer : HELLO_ACCEPTED  (or ERROR)
+trainer -> CJ : HELLO           (session id, rank, protocol version, launch token)
+CJ -> trainer : HELLO_ACCEPTED  (token + scope + FQCN match)   [or HELLO_REJECTED / ERROR]
 ```
+
+attach (the platform started the trainer and delivered the token out-of-band, possibly over
+the network — so the token is a real credential and the proof is challenge-response; see
+Appendix B):
+
+```
+trainer -> CJ : HELLO           (attach id, rank, protocol version)
+CJ -> trainer : HELLO_CHALLENGE (nonce)                                   [or ERROR]
+trainer -> CJ : HELLO_PROOF     (HMAC over the nonce, keyed by the token)
+CJ -> trainer : HELLO_ACCEPTED  [or HELLO_REJECTED / ERROR]
+```
+
+(A multi-tenant external_process host — where another local user could reach the CJ's cell —
+should use the attach-style challenge-response instead of the plain token match. That strength
+choice is an EP-3 decision; V1 assumes the trusted, single-tenant host that matches today's
+subprocess behavior.)
 
 **Per task (every round):**
 
@@ -395,8 +415,8 @@ either        : ERROR
 
 Notes on use:
 
-- **Session setup is universal, not attach-only.** Owning the launched PID does not tell the CJ when the trainer's Cell is connected, which FQCN it bound, or that `flare.init()` completed — and the first per-task message is a CJ→trainer push. So external_process performs the same HELLO handshake as attach, proving possession of a launch-scoped session token that the executor generated into the bootstrap config at launch time. Attach differs only in token delivery (out-of-band, by the platform/operator) and auth policy (Appendix B; a one-round variant that folds the proof into HELLO is available where the channel already provides confidentiality). One handshake thus provides readiness signaling, stale-process rejection (a leftover trainer from a previous run holds a stale token and is refused), and version negotiation in all out-of-process modes. This generalizes what the legacy stack did implicitly: today the CJ waits for the subprocess's first Pipe heartbeat before sending tasks, and CellPipe embeds a job-scoped token in the FQCN to reject strange peers.
-- **Protocol version** is carried in HELLO in both modes. Version skew is actually most likely in external_process — the launched command routinely runs a different nvflare install (a user venv/conda env or container image). On mismatch the executor rejects the HELLO with a clear error and fails the task; V1 supports exactly one protocol version, and the version field exists so later versions can define a compatibility window.
+- **The HELLO handshake is universal; the proof is not.** The reason to handshake at all is the same in both modes and independent of security: owning the launched PID does not tell the CJ when the trainer's Cell is connected, which FQCN rank 0 bound, or that `flare.init()` completed — and the first per-task message is a CJ→trainer push, so the CJ must know the trainer is up before sending TASK_READY. So both modes do HELLO for **readiness + binding + stale-process rejection**. This generalizes what the legacy stack does implicitly today: the CJ waits for the subprocess's first Pipe heartbeat before sending tasks (`peer_is_up_or_dead`), and CellPipe embeds a job-scoped token in the FQCN to reject strange peers. What differs is the *proof*: external_process (V1) matches a plain launch token over its own trusted localhost connection — no nonce, no HMAC — while attach uses challenge-response because it did not start the trainer and the token arrived out-of-band (see Session setup above and Appendix B).
+- **Protocol version** is carried in HELLO. It is a cheap forward-compat field, not a driver of the handshake: V1 supports exactly one version, and a mismatch is rejected with a clear error. It matters least in external_process (the launched subprocess normally inherits the CJ's environment, hence the same nvflare install) and more in attach (a separate, NVFlare-unlaunched system); the field exists so a later version can define a compatibility window in either mode.
 - TASK_READY/TASK_ACCEPTED and RESULT_READY/RESULT_ACCEPTED are the request/reply core, one cycle per `flare.receive()`/`flare.send()`.
 - **TASK_READY idempotency.** TASK_READY carries the task id; the trainer backend treats a duplicate/redelivered TASK_READY for the current task id as idempotent and replies with its current task state instead of double-delivering the task to user code. Because Cell gives request/reply semantics, the CJ does not blind-resend TASK_READY while the session is alive; redelivery arises only around reconnect/retry edges.
 - LOG and HEARTBEAT flow on the same Cell connection — no separate metrics pipe. (This is not a new co-mingling: today's "metrics pipe" is a second logical CellPipe channel on the same underlying Cell connection.)
@@ -951,7 +971,7 @@ Core external_process and rank contract (steps 3–4):
 
 Session and failure contracts (steps 3–4):
 
-- session setup with a wrong/stale session token is rejected (the proof fails at HELLO_PROOF); a stale trainer from a previous run cannot bind
+- external_process: a HELLO carrying a wrong/stale launch token is rejected (HELLO_REJECTED) and a stale trainer from a previous run cannot bind; attach: a bad token proof fails at HELLO_PROOF (see the attach auth tests)
 - HELLO with a mismatched protocol version fails fast with a clear error
 - duplicate TASK_READY delivery does not double-deliver the task to user code
 - trainer-side task payload download failure produces TASK_FAILED, not a hang
@@ -1109,7 +1129,7 @@ Low-level attach details such as parent/root URL, target CJ FQCN, trainer FQCN, 
 
 - The executor generates a high-entropy attach token per attach id. The token is held in executor memory for the session lifetime; anything persisted stores only its digest.
 - The token is scoped to job id, site name, attach id, target FQCN, trainer FQCN, and allowed rank policy.
-- **Token proof is challenge-response, not bearer presentation.** HELLO carries the attach id; the executor replies with HELLO_CHALLENGE (a nonce); the trainer proves possession in HELLO_PROOF with an HMAC over (nonce, attach id, job id, trainer FQCN, protocol version) keyed by the token. The raw token never crosses the wire, so observing attach traffic does not permit replay. (A one-round variant — the proof folded into HELLO, computed over an executor nonce delivered in the bootstrap config plus a trainer nonce — is acceptable where the channel already provides confidentiality, e.g. external_process on localhost or TLS; raw-token presentation is acceptable only over a confidential channel, and never in POC/insecure mode across a network.)
+- **Token proof is challenge-response, not bearer presentation.** HELLO carries the attach id; the executor replies with HELLO_CHALLENGE (a nonce); the trainer proves possession in HELLO_PROOF with an HMAC over (nonce, attach id, job id, trainer FQCN, protocol version) keyed by the token. The raw token never crosses the wire, so observing attach traffic does not permit replay. (A one-round variant — the proof folded into HELLO, computed over an executor nonce delivered in the bootstrap config plus a trainer nonce — is acceptable where the channel already provides confidentiality, e.g. TLS or a multi-tenant external_process host that opts into a proof, an EP-3 choice. This is distinct from trusted-host external_process V1, which does no proof at all: it presents the plain launch token over its own confidential localhost connection and the CJ matches it. Raw-token presentation is acceptable only over a confidential channel, and never in POC/insecure mode across a network.)
 - **Attach requires a confidential transport.** The trainer's Cell connection to the CP/relay endpoint must be TLS-protected in secure mode; attach across a network in insecure/POC mode is for local development only. The ad-hoc trainer cell has no mTLS client identity in the existing stack (it loads only the root CA), so the token contract — not transport identity — is what authenticates the trainer; the transport requirement exists to protect the exchange, and the FQCN it claims is treated as unauthenticated routing data.
 - The token is single-session by default.
 - HELLO must include attach id, job id, site name, trainer FQCN, rank info, and protocol version; the token proof arrives in HELLO_PROOF over the executor's nonce (or inside HELLO in the one-round variant).
@@ -1122,4 +1142,4 @@ Low-level attach details such as parent/root URL, target CJ FQCN, trainer FQCN, 
 - **Teardown is authenticated in both directions.** The trainer backend accepts ABORT/SHUTDOWN/BYE only from the bound CJ session (sender FQCN equals the session's CJ FQCN and the message carries the session id); teardown from any other origin is logged and ignored. This closes the gap in today's IPCAgent, which acts on abort/bye from any sender. Symmetrically, the executor accepts trainer messages only from the bound session.
 - **Listener hygiene.** The attach channel is an inbound endpoint on the CJ: HELLO handling is rate-limited per source, failed proofs count toward invalidating the attach id (bounded attempts), and the listener accepts only the message shapes of the session-setup exchange before authentication.
 
-This is similar to the bootstrap data that IPCAgent needed, but hidden behind Client API. Implementation may reuse IPCAgent-style topology or helpers, but IPCAgent is not part of the trainer-facing contract. external_process uses the same session-token machinery with local delivery (the executor writes the bootstrap config directly into the trainer's launch environment), which is why session setup is one protocol rather than an attach-only feature.
+This is similar to the bootstrap data that IPCAgent needed, but hidden behind Client API. Implementation may reuse IPCAgent-style topology or helpers, but IPCAgent is not part of the trainer-facing contract. external_process uses the same session-token machinery with local delivery (the executor writes the bootstrap config directly into the trainer's launch environment), which is why session setup is one protocol rather than an attach-only feature — external_process V1 uses the trusted-host plain token match, not the challenge-response above; the proof strength is the only thing that differs.
