@@ -464,8 +464,8 @@ class SwarmClientController(ClientSideController):
 
     def start_workflow(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         clients = self.get_config_prop(Constant.CLIENTS)
-        aggregator_candidates = self.get_config_prop(Constant.AGGR_CLIENTS, [])
-        train_clients = self.get_config_prop(Constant.TRAIN_CLIENTS, [])
+        aggregator_candidates = self.aggrs
+        train_clients = self.trainers
 
         self.log_info(
             fl_ctx,
@@ -481,8 +481,16 @@ class SwarmClientController(ClientSideController):
         return make_reply(ReturnCode.OK)
 
     def _scatter(self, task_data: Shareable, for_round: int, fl_ctx: FLContext) -> bool:
-        clients = self.get_config_prop(Constant.TRAIN_CLIENTS)
-        aggregator_candidates = self.get_config_prop(Constant.AGGR_CLIENTS)
+        clients = self.trainers
+        aggregator_candidates = self.aggrs
+
+        if not clients:
+            self.log_error(fl_ctx, "no training clients are available for swarm learning")
+            return False
+
+        if not aggregator_candidates:
+            self.log_error(fl_ctx, "no aggregator candidates are available for swarm learning")
+            return False
 
         # determine aggr client
         aggr = random.choice(aggregator_candidates)
