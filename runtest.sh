@@ -39,7 +39,6 @@ function install_deps {
     fi
 
     if [[ "${torch_backend}" == "cpu" && "${extras}" != ".[test_support]" && $(uname) != "Darwin" ]]; then
-      export UV_TORCH_BACKEND=cpu
       bash "${WORK_DIR}/ci/install_cpu_torch.sh"
     fi
 
