@@ -28,7 +28,7 @@ from nvflare.fuel.f3.cellnet.core_cell import make_reply as make_cellnet_reply
 from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
-from nvflare.fuel.f3.cellnet.fqcn import FQCN, parse_cell_pipe_alias
+from nvflare.fuel.f3.cellnet.fqcn import CELL_PIPE_ALIAS_PREFIX, FQCN, parse_cell_pipe_alias
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL
@@ -335,14 +335,18 @@ def _origin_matches_fqcn(origin: str, fqcn: str, channel: Optional[str] = None) 
     if origin_parent != fqcn_parent:
         return False
 
-    # The alias leaf may be the explicit "~"-delimited form or the bare
-    # legacy form of pre-2.8 CellPipe names (whole-FQCN for root-connected
-    # pipes, nested under the connected cell for 2.6-2.7 CP/relay-connected
-    # pipes). Both parse to exact fields - the legacy form right-anchored -
-    # so a token for "site" can never validate an origin such as
-    # "site_x_<job>_active" when "site_x" is also a valid client FQCN.
+    # The bare alias grammar is only valid for single-segment origins (legacy
+    # pre-2.8 flat CellPipe names); at any depth the alias must carry the
+    # explicit cellpipe~alias~ marker, so an unmarked leaf
+    # can never be misread as an alias.
+    origin_leaf = FQCN.split(origin)[-1]
+    if origin_parent and not origin_leaf.startswith(CELL_PIPE_ALIAS_PREFIX):
+        return False
+
+    # parse_cell_pipe_alias returns exact "~"-delimited fields, so hyphens and
+    # underscores in an owner cannot be confused with field separators.
     owner = FQCN.split(fqcn)[-1]
-    parsed = parse_cell_pipe_alias(FQCN.split(origin)[-1])
+    parsed = parse_cell_pipe_alias(origin_leaf)
     return parsed is not None and parsed[0] == owner
 
 

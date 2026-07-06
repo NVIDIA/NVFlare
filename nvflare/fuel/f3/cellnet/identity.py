@@ -129,8 +129,8 @@ class CellIdentityResolver:
         # CellPipe cells connected through another cell use an alias leaf like
         # "cellpipe~alias~site-1~<runtime-id>~active" but authenticate with
         # the owning site's certificate. Older NVFlare versions used the bare
-        # form "site-1_<runtime-id>_active", as the whole FQCN or nested under
-        # the connected cell. See parse_cell_pipe_alias for the alias grammar.
+        # sibling form "site-1_<runtime-id>_active" as the whole FQCN. See
+        # parse_cell_pipe_alias for the alias grammar.
         parsed = parse_cell_pipe_alias(segment)
         return parsed[0] if parsed else None
 
@@ -146,26 +146,19 @@ class CellIdentityResolver:
         parts = FQCN.split(fqcn)
         leaf = parts[-1]
 
-        # An alias leaf identifies the owning cell, not the physical parent it
-        # is named under. Both alias shapes are handled here: the explicit
-        # "cellpipe~alias~..." form, and the bare legacy form of pre-2.8
-        # CellPipe names (whole-FQCN "site-1_<job>_active" for root-connected
-        # pipes; nested "site-1.site-1_<job>_active" or
-        # "relay-1.site-1_<job>_active" for 2.6-2.7 CP/relay-connected pipes).
-        # A bare-parsing leaf is unambiguous: current "~"-delimited pipe
-        # leaves can never match the bare grammar because their parsed mode
-        # field would contain "~". Aliases resolve before generic prefix
+        # An explicitly marked alias is a sibling of its owning cell, not a
+        # descendant of its physical parent. Resolve it before generic prefix
         # mappings so a relay identity cannot shadow the alias owner (for
         # example, relay-1.relay-2 must not win over the site-1 owner in
         # relay-1.relay-2.cellpipe~alias~site-1~<token>~<mode>).
-        alias_owner = self._get_cell_pipe_alias_owner(leaf)
-        if leaf.startswith(CELL_PIPE_ALIAS_PREFIX) and not alias_owner:
-            # The explicit prefix reserves the alias namespace. A malformed
-            # alias must not fall through and authenticate as a plain pipe
-            # child of its parent.
-            return None
+        if leaf.startswith(CELL_PIPE_ALIAS_PREFIX):
+            alias_owner = self._get_cell_pipe_alias_owner(leaf)
+            if not alias_owner:
+                # The explicit prefix reserves the alias namespace. A malformed
+                # alias must not fall through and authenticate as a plain pipe
+                # child of its parent.
+                return None
 
-        if alias_owner:
             owner_fqcn = FQCN.join(parts[:-1] + [alias_owner])
             identity = self.exact_identity_map.get(owner_fqcn) or self.prefix_identity_map.get(owner_fqcn)
             if identity:
@@ -183,6 +176,14 @@ class CellIdentityResolver:
             identity = self.prefix_identity_map.get(prefix)
             if identity:
                 return identity
+
+        # A legacy (pre-2.8 flat naming) cell whose whole FQCN is a bare alias
+        # also authenticates with the owning site's certificate. An unmarked
+        # leaf inside a longer FQCN is never an alias.
+        if len(parts) == 1:
+            alias_owner = self._get_cell_pipe_alias_owner(leaf)
+            if alias_owner:
+                return self.resolve(alias_owner)
 
         # A plain CellPipe leaf ("cellpipe~plain~<token>~<mode>") authenticates with
         # the identity of the cell it is named under, so resolve its parent.

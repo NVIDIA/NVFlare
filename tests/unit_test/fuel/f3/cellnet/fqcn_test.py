@@ -43,9 +43,7 @@ class TestCellPipeAliasGrammar:
         assert parse_cell_pipe_alias(alias) == (owner, runtime_id, mode)
 
     def test_legacy_bare_alias_is_still_parsed(self):
-        # pre-2.8 CellPipe names are bare aliases with no prefix: the whole
-        # FQCN for root-connected pipes, or the leaf under the connected cell
-        # for 2.6/2.7 CP/relay-connected pipes
+        # pre-2.8 flat CellPipe names are whole-FQCN aliases with no prefix
         assert parse_cell_pipe_alias("site-1_job-123_active") == ("site-1", "job-123", "active")
 
     def test_legacy_owner_with_underscores_parses_from_the_right(self):
@@ -89,15 +87,24 @@ class TestCellPipeAliasGrammar:
     def test_invalid_segments_are_rejected(self, segment):
         assert parse_cell_pipe_alias(segment) is None
 
-    def test_current_tilde_leaves_never_match_the_bare_grammar(self):
-        # The bare (unmarked) alias grammar is honored at any FQCN depth for
-        # pre-2.8 compat. This is unambiguous only because every current pipe
-        # leaf puts "~" before the mode field, so a bare parse of a current
-        # leaf always yields an invalid mode - even when the token itself
+    @pytest.mark.parametrize(
+        "runtime_id,mode",
+        [("job-123", "active"), ("simulate_job", "passive"), ("ext_active", "active")],
+    )
+    def test_current_tilde_leaves_never_bare_parse(self, runtime_id, mode):
+        # No pre-2.8 FQCN segment can contain "~", so the bare grammar rejects
+        # any "~"-bearing segment. This guarantees a current "~"-delimited pipe
+        # leaf can never be misread as a legacy bare alias, even when the token
         # contains "_" or ends in a mode word.
-        assert parse_cell_pipe_alias(make_cell_pipe_leaf("job-123", "active")) is None
-        assert parse_cell_pipe_alias(make_cell_pipe_leaf("simulate_job", "passive")) is None
-        assert parse_cell_pipe_alias(make_cell_pipe_leaf("ext_active", "active")) is None
+        assert parse_cell_pipe_alias(make_cell_pipe_leaf(runtime_id, mode)) is None
+        assert parse_cell_pipe_alias("a~b_c_active") is None
+
+    def test_legacy_plain_leaf_shape_bare_parses_so_callers_must_gate(self):
+        # The bare legacy grammar cannot tell a plain leaf with an underscore
+        # token from an alias - that is exactly why callers only accept the
+        # bare form for whole-FQCN (single-segment) names and require the
+        # cellpipe~alias~ marker everywhere else.
+        assert parse_cell_pipe_alias("cellpipe-simulate_job_active") == ("cellpipe-simulate", "job", "active")
 
     def test_tilde_is_valid_inside_an_fqcn_segment(self):
         assert FQCN.validate("site-1.cellpipe~plain~job-123~active") == ""

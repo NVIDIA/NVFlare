@@ -123,32 +123,11 @@ def test_validate_auth_headers_rejects_relay_cell_pipe_alias_under_different_par
     assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.UNAUTHENTICATED
 
 
-def test_validate_auth_headers_accepts_legacy_nested_cell_pipe_stream_alias():
-    # released 2.6/2.7 name relay-connected pipes "<relay>.<site>_<job>_<mode>";
-    # the bare alias grammar is honored at any depth for mixed-version compat
-    assert (
-        _validate(
-            "relay-1.site-a_8065f1c4-fd35-47ef-b945-800f4d0d5176_passive",
-            lambda _client_name, _token: "relay-1.site-a",
-            channel=STREAM_CHANNEL,
-            topic=STREAM_DATA_TOPIC,
-        )
-        is None
-    )
-
-
-@pytest.mark.parametrize(
-    "origin",
-    [
-        # bare alias owned by a different site under the same relay
-        "relay-1.site-b_8065f1c4-fd35-47ef-b945-800f4d0d5176_active",
-        # right-anchored parsing: this alias can only belong to "site-a_x"
-        "relay-1.site-a_x_8065f1c4-fd35-47ef-b945-800f4d0d5176_active",
-    ],
-)
-def test_validate_auth_headers_rejects_legacy_nested_alias_for_different_client(origin):
+def test_validate_auth_headers_rejects_unmarked_alias_shape_at_depth():
+    # the bare alias grammar is only honored for whole-FQCN (legacy flat)
+    # origins; at any depth the origin must carry the cellpipe~alias~ marker
     reply = _validate(
-        origin,
+        "relay-1.site-a_8065f1c4-fd35-47ef-b945-800f4d0d5176_passive",
         lambda _client_name, _token: "relay-1.site-a",
         channel=STREAM_CHANNEL,
         topic=STREAM_DATA_TOPIC,

@@ -288,27 +288,6 @@ def test_identity_resolver_maps_legacy_cell_pipe_alias_to_owner_identity():
     assert resolver.resolve("site-1_8cb50f16-8158-46f6-a8d7-ec85b1f06c53_passive") == "site-1"
 
 
-def test_identity_resolver_maps_legacy_nested_cell_pipe_alias_to_owner_identity():
-    # released 2.6/2.7 nest the bare alias under the connected cell:
-    # "<site>.<site>_<job>_<mode>" (own CP) or "<relay>.<site>_<job>_<mode>"
-    # (relay); an upgraded CP/relay must still map these to the owning site
-    cp_resolver = CellIdentityResolver(local_fqcn="site-1")
-    assert cp_resolver.resolve("site-1.site-1_job-123_passive") == "site-1"
-
-    relay_resolver = CellIdentityResolver(local_fqcn="relay-1", exact_identity_map={"relay-1": "relay-1"})
-    assert relay_resolver.resolve("relay-1.site-1_job-123_active") == "site-1"
-
-
-def test_identity_resolver_maps_legacy_nested_alias_to_configured_owner_identity():
-    resolver = CellIdentityResolver(
-        local_fqcn="relay-1",
-        prefix_identity_map={"relay-1.site-1": "custom-site-cn"},
-        exact_identity_map={"relay-1": "relay-1"},
-    )
-
-    assert resolver.resolve("relay-1.site-1_job-123_active") == "custom-site-cn"
-
-
 def test_identity_resolver_maps_cell_pipe_alias_to_configured_owner_identity():
     resolver = CellIdentityResolver(local_fqcn="server", prefix_identity_map={"site-1": "custom-site-cn"})
 
