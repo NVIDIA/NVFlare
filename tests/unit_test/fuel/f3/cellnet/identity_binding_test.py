@@ -244,6 +244,42 @@ def test_identity_resolver_maps_relay_cell_pipe_alias_from_a_distant_cell():
     assert resolver.resolve("relay-1.cellpipe-alias-site-1_job-123_active") == "site-1"
 
 
+def test_identity_resolver_maps_nested_relay_alias_before_parent_identity():
+    # The server carries identity mappings for both a nested relay and its
+    # client. The explicit alias belongs to the client and must not inherit the
+    # first matching ancestor relay identity.
+    resolver = CellIdentityResolver(
+        local_fqcn="server",
+        prefix_identity_map={
+            "relay-1.relay-2": "relay-2",
+            "relay-1.relay-2.site-1": "site-1",
+        },
+    )
+
+    assert resolver.resolve("relay-1.relay-2.cellpipe-alias-site-1_job-123_active") == "site-1"
+
+
+def test_identity_resolver_maps_relay_alias_to_configured_owner_identity():
+    resolver = CellIdentityResolver(
+        local_fqcn="relay-1",
+        prefix_identity_map={"relay-1.site-1": "custom-site-cn"},
+        exact_identity_map={"relay-1": "relay-1"},
+    )
+
+    fqcn = "relay-1.cellpipe-alias-site-1_job-123_active"
+    assert resolver.resolve(fqcn) == "custom-site-cn"
+    resolver.require_match(fqcn, "custom-site-cn", "connection site-1 pipe")
+
+
+def test_identity_resolver_rejects_malformed_marked_alias():
+    resolver = CellIdentityResolver(local_fqcn="server", prefix_identity_map={"relay-1": "relay-1"})
+    fqcn = "relay-1.cellpipe-alias-malformed"
+
+    assert resolver.resolve(fqcn) is None
+    with pytest.raises(ValueError, match="does not resolve"):
+        resolver.require_match(fqcn, "relay-1", "connection malformed pipe")
+
+
 def test_identity_resolver_maps_legacy_cell_pipe_alias_to_owner_identity():
     # CellPipe cells from older NVFlare versions use underscore alias names
     resolver = CellIdentityResolver(local_fqcn="server", prefix_identity_map={"site-1": "site-1"})

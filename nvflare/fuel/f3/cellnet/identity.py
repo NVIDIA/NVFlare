@@ -144,6 +144,30 @@ class CellIdentityResolver:
             return identity
 
         parts = FQCN.split(fqcn)
+        leaf = parts[-1]
+
+        # An explicitly marked alias is a sibling of its owning cell, not a
+        # descendant of its physical parent. Resolve it before generic prefix
+        # mappings so a relay identity cannot shadow the alias owner (for
+        # example, relay-1.relay-2 must not win over the site-1 owner in
+        # relay-1.relay-2.cellpipe-alias-site-1_<token>_<mode>).
+        if leaf.startswith(CELL_PIPE_ALIAS_PREFIX):
+            alias_owner = self._get_cell_pipe_alias_owner(leaf)
+            if not alias_owner:
+                # The explicit prefix reserves the alias namespace. A malformed
+                # alias must not fall through and authenticate as a plain pipe
+                # child of its parent.
+                return None
+
+            owner_fqcn = FQCN.join(parts[:-1] + [alias_owner])
+            identity = self.exact_identity_map.get(owner_fqcn) or self.prefix_identity_map.get(owner_fqcn)
+            if identity:
+                return identity
+
+            # Provisioning omits default identity mappings, so fall back to the
+            # owner's normal identity when no parent-qualified override exists.
+            return self.resolve(alias_owner)
+
         for i in range(len(parts), 0, -1):
             prefix = FQCN.join(parts[:i])
             if self._is_local_descendant_with_ancestor_prefix(fqcn, prefix):
@@ -153,18 +177,13 @@ class CellIdentityResolver:
             if identity:
                 return identity
 
-        # The alias interpretation applies to the two shapes that carry an
-        # alias: the explicitly marked leaf "cellpipe-alias-..." at any depth,
-        # or a legacy (pre-2.8 flat naming) cell whose whole FQCN is the bare
-        # alias. An unmarked "<token>_<mode>"-shaped leaf inside a longer FQCN
-        # is never an alias - its token may itself contain "_" (e.g.
+        # A legacy (pre-2.8 flat naming) cell whose whole FQCN is a bare alias
+        # also authenticates with the owning site's certificate. An unmarked
+        # "<token>_<mode>"-shaped leaf inside a longer FQCN is never an alias:
+        # its token may itself contain "_" (e.g.
         # "site-1.cellpipe-ext_trainer_active"), and alias-parsing it would
-        # fabricate a wrong owner such as "ext". This check intentionally
-        # precedes _resolve_local_child_identity: an alias cell connected as a
-        # direct child of this local cell authenticates with the owning site's
-        # certificate, not with a certificate named after the alias segment.
-        leaf = parts[-1]
-        if leaf.startswith(CELL_PIPE_ALIAS_PREFIX) or len(parts) == 1:
+        # fabricate a wrong owner such as "ext".
+        if len(parts) == 1:
             alias_owner = self._get_cell_pipe_alias_owner(leaf)
             if alias_owner:
                 return self.resolve(alias_owner)

@@ -31,7 +31,7 @@ class FQCN(FQN):
 #     cannot drift apart.
 #
 # CellPipe cell-name schemes, in historical order:
-#   1. flat (pre-2.7): the whole FQCN is "<site>_<token>_<mode>", a root-level
+#   1. flat (through 2.7): the whole FQCN is "<site>_<token>_<mode>", a root-level
 #      sibling of the site cell.
 #   2. hierarchical (#4801, never released): "<site>.<token>.<mode>". Replaced
 #      because the extra segments created unconnected FQCN parents that broke
