@@ -56,6 +56,16 @@ SENSITIVE_FILE_SUFFIXES = {".key", ".pem", ".p12", ".pfx"}
 SENSITIVE_FILE_NAMES = {"id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"}
 SECRET_NAME_PATTERN = re.compile(r"(api[_-]?key|secret|token|password|passwd|credential|access[_-]?key)", re.I)
 
+# Installed-skill discovery: read-only scan for <dir>/*/SKILL.md under known
+# agent skill directories. Bounded so a pathological tree can't blow up the scan.
+SKILL_FILE_NAME = "SKILL.md"
+MAX_INSTALLED_SKILLS = 200
+MAX_SKILL_FRONTMATTER_BYTES = 64 * 1024
+# Project-scope skill dirs are resolved relative to the inspected path's project
+# root (walked up to cwd); global-scope dirs live under the user home.
+_PROJECT_SKILL_DIRS = (".claude/skills", ".agents/skills")
+_GLOBAL_SKILL_DIRS = ("~/.claude/skills", "~/.codex/skills")
+
 # Framework detection (import roots, symbols, evidence weights, recommended
 # skills, and family/promotion rules) lives in nvflare.tool.agent.frameworks.
 # This engine stays framework-agnostic; add a framework there, not here.
@@ -166,6 +176,7 @@ def inspect_path(
         "findings": state.findings[:MAX_EVIDENCE_PER_BUCKET],
         "skill_selection": _skill_selection(detected_framework, conversion_state, state),
         "recommended_next_commands": _recommended_next_commands(detected_framework, conversion_state, state),
+        "installed_skills": _installed_skills(target),
     }
 
 
@@ -896,6 +907,130 @@ def _is_main_guard(node: ast.If) -> bool:
         return False
     value = comparators[0]
     return isinstance(value, ast.Constant) and value.value == "__main__"
+
+
+def _installed_skills(target: Path) -> list[dict]:
+    """Discover installed skills from known agent skill dirs (read-only).
+
+    Scans ``<dir>/*/SKILL.md`` under project-scope dirs (relative to the inspected
+    path's project root, walked up to cwd) and global-scope dirs (under the user
+    home). Reads only the YAML frontmatter ``name``/``description`` with a small
+    inline parser; no user code is imported or executed. Symlinked SKILL.md files
+    are skipped and results are deduplicated by skill name and capped.
+    """
+    skills: list[dict] = []
+    seen_names: set[str] = set()
+    for base, scope in _installed_skill_search_roots(target):
+        for skill_dir in _iter_skill_dirs(base):
+            if len(skills) >= MAX_INSTALLED_SKILLS:
+                return skills
+            skill_file = skill_dir / SKILL_FILE_NAME
+            if skill_file.is_symlink() or not skill_file.is_file():
+                continue
+            frontmatter = _read_skill_frontmatter(skill_file)
+            if frontmatter is None:
+                continue
+            name = frontmatter.get("name") or skill_dir.name
+            if name in seen_names:
+                continue
+            seen_names.add(name)
+            skills.append(
+                {
+                    "name": name,
+                    "description": frontmatter.get("description", ""),
+                    "scope": scope,
+                    "source": _installed_skill_source(skill_dir),
+                }
+            )
+    return skills
+
+
+def _installed_skill_search_roots(target: Path) -> list[tuple[Path, str]]:
+    roots: list[tuple[Path, str]] = []
+    project_root = _project_root_for(target)
+    if project_root is not None:
+        for rel in _PROJECT_SKILL_DIRS:
+            roots.append((project_root / rel, "project"))
+    home = Path.home()
+    for rel in _GLOBAL_SKILL_DIRS:
+        roots.append((Path(rel).expanduser() if rel.startswith("~") else home / rel, "global"))
+    return roots
+
+
+def _project_root_for(target: Path) -> Optional[Path]:
+    # Walk up from the inspected path toward cwd looking for a directory that
+    # holds a known project-scope skill dir. Fall back to cwd so a project with
+    # no skills still reports an empty list rather than erroring.
+    try:
+        start = target if target.is_dir() and not target.is_symlink() else target.parent
+        start = start.resolve()
+        cwd = Path.cwd().resolve()
+    except OSError:
+        return None
+    candidates = [start, *start.parents]
+    for candidate in candidates:
+        for rel in _PROJECT_SKILL_DIRS:
+            if (candidate / rel).is_dir():
+                return candidate
+        if candidate == cwd:
+            break
+    return cwd
+
+
+def _iter_skill_dirs(base: Path):
+    if base.is_symlink() or not base.is_dir():
+        return
+    try:
+        children = sorted(base.iterdir(), key=lambda p: p.name)
+    except OSError:
+        return
+    for child in children:
+        if child.is_symlink() or not child.is_dir():
+            continue
+        yield child
+
+
+def _installed_skill_source(skill_dir: Path) -> str:
+    try:
+        return str(skill_dir.resolve(strict=False))
+    except OSError:
+        return str(skill_dir)
+
+
+def _read_skill_frontmatter(skill_file: Path) -> Optional[dict]:
+    """Parse the leading YAML frontmatter block for name/description only.
+
+    Small inline parser (no PyYAML, no dev-tools import): reads the block between
+    the leading ``---`` fences and extracts top-level ``name`` and ``description``
+    scalars. Returns None on unreadable/oversized files or a missing block.
+    """
+    try:
+        if skill_file.stat().st_size > MAX_SKILL_FRONTMATTER_BYTES:
+            return None
+        text = skill_file.read_text(encoding="utf-8-sig", errors="replace")
+    except OSError:
+        return None
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return None
+    result: dict[str, str] = {}
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        # Only top-level keys (no leading indentation) so nested metadata is ignored.
+        if line[:1] in (" ", "\t") or ":" not in line:
+            continue
+        key, _, value = line.partition(":")
+        key = key.strip()
+        if key in ("name", "description"):
+            result[key] = _strip_scalar(value.strip())
+    return result
+
+
+def _strip_scalar(value: str) -> str:
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+        return value[1:-1]
+    return value
 
 
 def _skill_selection(detected_framework: Optional[str], conversion_state: str, state: InspectState) -> dict:

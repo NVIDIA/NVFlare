@@ -148,7 +148,7 @@ def validate_skill_dir(skill_dir: Path | str) -> SkillValidationResult:
     except OSError as e:
         # An unreadable SKILL.md (e.g. PermissionError) is a skill-dir problem, not a
         # crash: report it as an issue so callers handle it as a finding instead of a
-        # raw traceback escaping through build_skill_manifest/install.
+        # raw traceback escaping through the lint runner.
         issues.append(_issue("skill-md-unreadable", f"SKILL.md could not be read: {e}", skill_file))
         return SkillValidationResult(str(path), metadata, tuple(issues))
 

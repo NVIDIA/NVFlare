@@ -59,3 +59,26 @@ omit it while they are not publishable.
 - `runs_simulator`
 - `submits_poc`
 - `submits_production`
+
+## Installing the skills
+
+NVFLARE skills are installed with the standard [`skills`](https://agentskills.io)
+tool via `npx skills add`. Both `claude-code` and `codex` are supported agent
+targets. Install the whole set together so cross-skill references resolve:
+`nvflare-shared/` is loaded by the other skills through relative references, so
+installing skills individually can leave those references dangling.
+
+From a local checkout (pre-publish):
+
+```bash
+npx skills add ./skills -a claude-code -a codex
+```
+
+From the published repository:
+
+```bash
+npx skills add NVIDIA/<skills-repo> -a claude-code -a codex
+```
+
+Pass every agent you use with repeated `-a` flags. Omitting an agent skips
+installation for that agent; there is no NVFLARE-specific installer command.

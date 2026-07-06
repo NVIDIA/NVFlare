@@ -146,15 +146,11 @@ _KNOWN_NVFLARE_ROOT_COMMANDS = {
     "study",
     "system",
 }
-_KNOWN_AGENT_COMMANDS = {"info", "inspect", "skills"}
-_KNOWN_AGENT_SKILLS_COMMANDS = {"install", "list"}
+_KNOWN_AGENT_COMMANDS = {"info", "inspect"}
 _KNOWN_AGENT_FLAGS = {
     "agent": {"--format", "--schema"},
     "agent info": {"--format", "--schema"},
     "agent inspect": {"--format", "--redact", "--schema"},
-    "agent skills": {"--format", "--schema"},
-    "agent skills install": {"--agent", "--dry-run", "--format", "--schema", "--skill", "--target"},
-    "agent skills list": {"--agent", "--format", "--schema", "--target"},
 }
 
 
@@ -905,10 +901,17 @@ _EVALUATOR_HOOK_RE = re.compile(
     r")",
     re.IGNORECASE,
 )
-# Content directories that release packaging strips or that are not shipped as
-# runtime guidance. Mirrors nvflare release packaging exclusions without
-# importing product code (keeps this lint engine self-contained over skills/).
-_RUNTIME_BOUNDARY_EXCLUDED_DIRS = {"evals", "__pycache__"}
+# Names stripped from a shipped skill: byte-code globs plus directories that are
+# not shipped as runtime guidance (evals suites, __pycache__). This is the source
+# of truth for what packaging removes; the runtime-boundary lint mirrors the
+# directory-name subset so it never scans content packaging strips. Kept here so
+# the lint engine stays self-contained over skills/ without importing product
+# code (no dependency on nvflare product modules that are not shipped in this
+# engine).
+SKILL_PACKAGING_EXCLUDE_NAMES = frozenset({"__pycache__", "*.pyc", "*.pyo", "evals"})
+# Directory-name subset of SKILL_PACKAGING_EXCLUDE_NAMES (byte-code file globs are
+# not directory names). The runtime-boundary lint uses this to prune what it scans.
+_RUNTIME_BOUNDARY_EXCLUDED_DIRS = {name for name in SKILL_PACKAGING_EXCLUDE_NAMES if not name.startswith("*")}
 _RUNTIME_TEXT_SUFFIXES = {
     ".md",
     ".txt",
@@ -1273,12 +1276,8 @@ def _command_drift_message(command: str) -> Optional[str]:
 
     if len(positional) >= 2 and positional[1] not in _KNOWN_AGENT_COMMANDS:
         return f"unknown nvflare agent command '{positional[1]}' in '{command}'"
-    if len(positional) >= 3 and positional[1] == "skills":
-        skills_command = positional[2]
-        if skills_command not in _KNOWN_AGENT_SKILLS_COMMANDS:
-            return f"unknown nvflare agent skills command '{skills_command}' in '{command}'"
 
-    command_key = " ".join(positional[:3] if len(positional) >= 3 and positional[1] == "skills" else positional[:2])
+    command_key = " ".join(positional[:2])
     allowed_flags = _KNOWN_AGENT_FLAGS.get(command_key, _KNOWN_AGENT_FLAGS.get(root, set()))
     for token in tokens:
         if token.startswith("--"):

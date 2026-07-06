@@ -74,21 +74,16 @@ def test_known_agent_command_tables_match_real_cli():
     agent_subs = _subparser_choices(agent)
     assert set(agent_subs) == lints_module._KNOWN_AGENT_COMMANDS
 
-    skills_subs = _subparser_choices(agent_subs["skills"])
-    assert set(skills_subs) == lints_module._KNOWN_AGENT_SKILLS_COMMANDS
-
     assert "agent" in lints_module._KNOWN_NVFLARE_ROOT_COMMANDS
 
 
 def test_known_agent_flag_table_keys_are_valid_command_paths():
     # Every _KNOWN_AGENT_FLAGS key must be a real command path built from the
-    # command tables ("agent", "agent <cmd>", or "agent skills <cmd>"), and each
-    # command must at least allow --schema (the universal agent flag).
+    # command tables ("agent" or "agent <cmd>"), and each command must at least
+    # allow --schema (the universal agent flag).
     valid_keys = {"agent"}
     for command in lints_module._KNOWN_AGENT_COMMANDS:
         valid_keys.add(f"agent {command}")
-    for command in lints_module._KNOWN_AGENT_SKILLS_COMMANDS:
-        valid_keys.add(f"agent skills {command}")
 
     for key, flags in lints_module._KNOWN_AGENT_FLAGS.items():
         assert key in valid_keys, f"_KNOWN_AGENT_FLAGS key '{key}' is not a known agent command path"
@@ -97,12 +92,11 @@ def test_known_agent_flag_table_keys_are_valid_command_paths():
 
 def test_runtime_boundary_excluded_dirs_match_packaging_exclusions():
     # The runtime-boundary lint's excluded dirs and the packaging exclusion set
-    # are hand-mirrored: both name the directories that are stripped from a
-    # shipped skill (evals/, __pycache__). Keep them in sync so the lint never
-    # scans content packaging removes, and packaging never ships content the lint
-    # skips. Packaging also lists byte-code file globs (*.pyc/*.pyo), which are
-    # not directory names and are excluded from this comparison.
-    from nvflare.tool.agent.skill_manifest import SKILL_PACKAGING_EXCLUDE_NAMES
-
-    packaging_dir_names = {name for name in SKILL_PACKAGING_EXCLUDE_NAMES if not name.startswith("*")}
+    # are derived from a single source of truth in the lint engine
+    # (SKILL_PACKAGING_EXCLUDE_NAMES): both name what is stripped from a shipped
+    # skill (evals/, __pycache__, and byte-code globs). Keep the directory-name
+    # subset in sync so the lint never scans content packaging removes, and
+    # packaging never ships content the lint skips. Byte-code file globs
+    # (*.pyc/*.pyo) are not directory names and are excluded from this comparison.
+    packaging_dir_names = {name for name in lints_module.SKILL_PACKAGING_EXCLUDE_NAMES if not name.startswith("*")}
     assert lints_module._RUNTIME_BOUNDARY_EXCLUDED_DIRS == packaging_dir_names

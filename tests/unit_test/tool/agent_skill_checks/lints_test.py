@@ -250,7 +250,7 @@ def test_run_v1_lints_parses_quoted_nvflare_command_with_shlex(tmp_path):
     _write_skill(
         tmp_path / "skills",
         "nvflare-command-skill",
-        body='Run `nvflare agent skills install --skill "nvflare-valid-skill" --target /tmp/skills`.\n',
+        body='Run `nvflare agent inspect "./my project/train.py" --redact on`.\n',
     )
 
     result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_COMMAND_DRIFT])
