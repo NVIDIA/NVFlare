@@ -160,8 +160,9 @@ class ExProcessClientAPI(APISpec):
         """Initializes NVFlare Client API environment.
 
         Args:
-            rank (str): local rank of the process.
-                It is only useful when the training script has multiple worker processes. (for example multi GPU)
+            rank (str): rank of the process for Client API control-path behavior.
+                In distributed training, use the global process rank (for example torchrun's RANK),
+                not the device-local rank used for GPU placement.
         """
 
         if rank is None:
