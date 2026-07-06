@@ -17,6 +17,15 @@ if [ ! -d "$repo_root/skills" ]; then
     exit 0
 fi
 
+# The lint imports the checks package, which requires PyYAML. Probe it first so
+# a missing dep gives an actionable message instead of a confusing traceback.
+if ! python3 -c "import yaml" >/dev/null 2>&1; then
+    echo "pre-push: PyYAML missing -- the agent skill lint cannot run."
+    echo "          Activate your nvflare dev environment or run: pip install pyyaml"
+    echo "          Emergency bypass: git push --no-verify"
+    exit 1
+fi
+
 echo "pre-push: running agent skill lint (python -m dev_tools.agent.skills.checks)..."
 if ! python3 -m dev_tools.agent.skills.checks --skills-root "$repo_root/skills"; then
     echo ""

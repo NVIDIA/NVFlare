@@ -1925,6 +1925,77 @@ def test_inspect_does_not_treat_pytorch_to_call_as_export_support(tmp_path):
     assert "python job.py --export --export-dir <job-dir>" not in data["recommended_next_commands"]
 
 
+def test_inspect_bom_prefixed_source_still_detects_framework(tmp_path):
+    # A leading UTF-8 BOM (Windows/Notepad-authored source) must not blind the
+    # inspector: it should still parse and detect the framework, not degrade to a
+    # parse error with no evidence.
+    script = tmp_path / "train.py"
+    script.write_text(
+        "﻿import torch\n"
+        "\n"
+        "\n"
+        "class Net(torch.nn.Module):\n"
+        "    def forward(self, x):\n"
+        "        return x\n"
+        "\n"
+        "\n"
+        'if __name__ == "__main__":\n'
+        "    Net()\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    assert data["skill_selection"]["detected_framework"] == "pytorch"
+    assert "nvflare-convert-pytorch" in data["skill_selection"]["recommended_skills"]
+    assert not any(finding["code"] == "PYTHON_PARSE_ERROR" for finding in data["findings"])
+
+
+def test_inspect_name_only_job_py_without_flare_evidence_is_not_flare_job(tmp_path):
+    # A plain training repo that happens to have a launcher named job.py (a common
+    # SLURM filename) and no nvflare imports must route to conversion, not be
+    # misclassified as an existing FLARE job.
+    (tmp_path / "job.py").write_text(
+        "import torch\n\n\ndef main():\n    torch.nn.Linear(1, 1)\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    assert data["conversion_state"] == "not_converted"
+    assert data["target_type"] == "training_repository"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
+
+
+def test_inspect_simenv_call_without_flare_evidence_is_not_flare_job(tmp_path):
+    # SimEnv is a natural class name in RL/robotics code; a call to a local SimEnv
+    # with no nvflare imports must not be classified as a FLARE job.
+    (tmp_path / "train.py").write_text(
+        "class SimEnv:\n    pass\n\n\ndef main():\n    env = SimEnv()\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    assert data["job"]["sim_env_used"] is True
+    assert data["conversion_state"] != "flare_job"
+    assert data["target_type"] != "flare_job_source"
+
+
+def test_inspect_export_command_requires_flare_evidence(tmp_path):
+    # `.export` calls over-match (torch.onnx.export); without nvflare evidence the
+    # inspector must not ship a `job.py --export` command that would fail argparse.
+    (tmp_path / "job.py").write_text(
+        "import torch\n\n\ndef main():\n    torch.onnx.export(None, (), 'm.onnx')\n",
+        encoding="utf-8",
+    )
+
+    data = inspect_path(tmp_path)
+
+    assert data["job"]["export_support"] is True
+    assert "python job.py --export --export-dir <job-dir>" not in data["recommended_next_commands"]
+
+
 def test_inspect_does_not_treat_builtin_compile_as_torch_compile(tmp_path):
     script = tmp_path / "train.py"
     script.write_text(

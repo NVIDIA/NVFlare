@@ -669,6 +669,102 @@ def test_run_v1_lints_allows_evaluation_language_in_runtime_content(tmp_path):
     assert result["findings"] == []
 
 
+@pytest.mark.parametrize("evil_name", ["/tmp/evil", "../../escape"])
+def test_load_skill_records_contains_eval_dir_for_malicious_name(tmp_path, evil_name):
+    # FINDING A: a frontmatter `name` that is absolute or uses traversal must
+    # not let eval loading escape evals_root. pathlib discards the left operand
+    # on an absolute right operand, and `..` escapes on resolve; the record's
+    # eval dir must stay contained under evals_root regardless.
+    skills_root = tmp_path / "skills"
+    skill_dir = skills_root / "nvflare-evil-skill"
+    skill_dir.mkdir(parents=True)
+    skill_dir.joinpath("SKILL.md").write_text(
+        "---\n"
+        f"name: {evil_name}\n"
+        "description: Convert PyTorch training code into a FLARE job.\n"
+        "---\n\nUse when converting PyTorch training code.\n",
+        encoding="utf-8",
+    )
+    evals_root = tmp_path / "dev_tools" / "agent" / "skill_evals"
+    evals_root.mkdir(parents=True)
+
+    findings = []
+    records = lints_module._load_skill_records(skills_root, evals_root, findings)
+
+    assert len(records) == 1
+    record = records[0]
+    resolved_evals_root = evals_root.resolve()
+    assert record.evals_dir.resolve() == (resolved_evals_root / "nvflare-evil-skill")
+    assert record.evals_dir.resolve().is_relative_to(resolved_evals_root)
+    assert record.evals_path.resolve().is_relative_to(resolved_evals_root)
+
+
+def test_run_v1_lints_reports_command_drift_in_apostrophe_line(tmp_path):
+    # FINDING B: shlex.split raises on the unbalanced quote from the apostrophe
+    # in "server's"; a whitespace fallback must still extract "nvflare
+    # frobnicate" so the bogus command root is flagged instead of passing.
+    _write_skill(
+        tmp_path / "skills",
+        "nvflare-command-skill",
+        body="Run nvflare frobnicate to reset the server's state.\n",
+    )
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_COMMAND_DRIFT])
+
+    assert _has_finding(result, LINT_SKILL_COMMAND_DRIFT, "skill-command-drift")
+    finding = _finding(result, LINT_SKILL_COMMAND_DRIFT, "skill-command-drift")
+    assert "frobnicate" in finding["message"]
+    _assert_structured_findings(result)
+
+
+def test_run_v1_lints_undrifted_command_in_apostrophe_line_passes(tmp_path):
+    # FINDING B (companion): a genuine subcommand in an apostrophe-bearing line
+    # must still pass after the whitespace fallback.
+    _write_skill(
+        tmp_path / "skills",
+        "nvflare-command-skill",
+        body="Run `nvflare agent inspect` to check the server's state.\n",
+    )
+
+    result = run_v1_lints(tmp_path / "skills", checks=[LINT_SKILL_COMMAND_DRIFT])
+
+    assert result["status"] == "ok"
+    assert result["findings"] == []
+
+
+def test_iter_files_no_follow_skips_symlinked_file(tmp_path):
+    # FINDING C: a symlink-to-regular-file must not be yielded, so its target
+    # (potentially outside the skill tree) is never read/scored.
+    root = tmp_path / "references"
+    root.mkdir()
+    root.joinpath("real.md").write_text("real reference\n", encoding="utf-8")
+    outside = tmp_path / "outside.md"
+    outside.write_text("secret outside content\n", encoding="utf-8")
+    link = root / "leak.md"
+    try:
+        link.symlink_to(outside)
+    except (NotImplementedError, OSError) as e:
+        pytest.skip(f"symlink is not available in this environment: {e}")
+
+    files = {path.relative_to(root).as_posix() for path in lints_module._iter_files_no_follow(root)}
+
+    assert files == {"real.md"}
+
+
+def test_read_bounded_text_returns_none_for_symlink(tmp_path):
+    # FINDING C: _read_bounded_text must refuse to follow a symlink even when it
+    # points at a readable regular file.
+    outside = tmp_path / "outside.md"
+    outside.write_text("secret outside content\n", encoding="utf-8")
+    link = tmp_path / "leak.md"
+    try:
+        link.symlink_to(outside)
+    except (NotImplementedError, OSError) as e:
+        pytest.skip(f"symlink is not available in this environment: {e}")
+
+    assert lints_module._read_bounded_text(link) is None
+
+
 def _write_skill(
     root,
     name,

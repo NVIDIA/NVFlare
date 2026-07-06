@@ -57,16 +57,24 @@ try:
     from .frontmatter import (
         PUBLIC_EXEMPT_STATUS,
         SKILL_FILE_NAME,
+        SKILL_NAME_RE,
         SkillValidationResult,
         parse_skill_frontmatter,
         should_skip_skill_dir,
         skill_metadata,
         validate_skill_dir,
     )
-except ImportError:
+except ImportError as e:
+    # Only fall back to the bare-script import path for the script-vs-package
+    # case (e.name is None: "attempted relative import with no known parent
+    # package"). A genuinely missing third-party dep (e.g. PyYAML) has a real
+    # e.name and must surface with its true message instead of being masked.
+    if e.name is not None:
+        raise
     from frontmatter import (
         PUBLIC_EXEMPT_STATUS,
         SKILL_FILE_NAME,
+        SKILL_NAME_RE,
         SkillValidationResult,
         parse_skill_frontmatter,
         should_skip_skill_dir,
@@ -377,7 +385,15 @@ def _load_skill_records(skills_root: Path, evals_root: Path, findings: list[Lint
         text = text or ""
         skill_name = str(metadata.get("name") or child.name)
         # Eval suites live outside the shipped skill tree, one dir per skill name.
-        evals_dir = evals_root / skill_name
+        # The frontmatter name is attacker-controlled; an absolute or traversal
+        # value ("/tmp/evil", "../../escape") would make evals_root / name escape
+        # the eval tree (pathlib discards the left operand on an absolute right
+        # operand) and load evals from outside BEFORE any lint runs. Only trust
+        # the name for path building when it matches SKILL_NAME_RE; otherwise use
+        # the real filesystem child.name (a contained subdir). The invalid
+        # frontmatter name is still reported separately by the frontmatter lint.
+        eval_dir_name = skill_name if SKILL_NAME_RE.match(skill_name) else child.name
+        evals_dir = evals_root / eval_dir_name
         evals_path = evals_dir / "evals.json"
         evals, evals_error = _load_evals(evals_path)
         records.append(
@@ -1291,7 +1307,11 @@ def _command_tokens(command: str) -> list[str]:
     try:
         tokens = shlex.split(command)
     except ValueError:
-        return []
+        # shlex.split raises on an unbalanced quote (e.g. an apostrophe in prose
+        # like "the server's state"). Falling back to a plain whitespace split
+        # keeps the drift lint fail-closed: the "nvflare <subcommand>" tokens are
+        # still extracted and checked instead of the command silently passing.
+        tokens = command.split()
     try:
         start = tokens.index("nvflare")
     except ValueError:
@@ -1338,7 +1358,10 @@ def _iter_skill_text_files(skill_dir: Path, *, include_scripts: bool = False) ->
         if scripts_dir.is_dir():
             candidates.extend(_iter_files_no_follow(scripts_dir))
     for path in candidates:
-        if path.is_file():
+        # Guard the direct SKILL.md join too (and re-guard reference/script
+        # candidates): never follow a symlink, whose target may be outside the
+        # skill tree.
+        if path.is_file() and not path.is_symlink():
             try:
                 if path.stat().st_size > MAX_SKILL_TEXT_FILE_BYTES:
                     continue
@@ -1386,7 +1409,10 @@ def _iter_files_no_follow(root: Path, *, excluded_dir_names: Iterable[str] = ())
     for current_dir, _dir_names, file_names in _walk_no_follow(root, excluded_dir_names):
         for filename in file_names:
             path = current_dir / filename
-            if path.is_file():
+            # Reject symlinked files too, not just symlinked dirs: a
+            # references/x.md -> /etc/passwd symlink is a "file" to is_file()
+            # and would otherwise be read from outside the skill tree.
+            if path.is_file() and not path.is_symlink():
                 yield path
 
 
@@ -1400,6 +1426,9 @@ def _has_fixture_notes(evals_dir: Path) -> bool:
 
 
 def _read_bounded_text(path: Path) -> Optional[str]:
+    # Never follow a symlink: its target may live outside the skill tree.
+    if path.is_symlink():
+        return None
     if not path.is_file():
         return None
     if _is_oversized_text_file(path):

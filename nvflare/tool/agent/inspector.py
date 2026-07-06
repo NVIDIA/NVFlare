@@ -369,7 +369,11 @@ def _inspect_file(path: Path, state: InspectState, max_file_bytes: int) -> None:
         return
 
     try:
-        text = path.read_text(encoding="utf-8")
+        # utf-8-sig strips a leading BOM (Windows/Notepad-authored sources) that
+        # would otherwise reach ast.parse as U+FEFF and raise SyntaxError, losing
+        # all framework/entry-point evidence for the file. It decodes plain UTF-8
+        # identically, so NON_UTF8_FILE handling is unaffected.
+        text = path.read_text(encoding="utf-8-sig")
     except UnicodeDecodeError:
         _add_skip(state, _skip_entry(path, state, "NON_UTF8_FILE", "file is not UTF-8 text"))
         return
@@ -987,7 +991,11 @@ def _exported_job_info(state: InspectState) -> dict:
 def _conversion_state(state: InspectState, detected_framework: Optional[str], exported_job_info: dict) -> str:
     if exported_job_info["submit_ready_candidates"]:
         return "exported_job"
-    if state.job_py or state.sim_env_used:
+    # job.py is a common filename (SLURM launchers) and SimEnv is a natural class
+    # name in RL/robotics code, so neither is trustworthy on its own. Require
+    # corroborating nvflare evidence (an nvflare-rooted import) before treating a
+    # name-only signal as a FLARE job, mirroring the exported-job marker grouping.
+    if (state.job_py or state.sim_env_used) and state.flare_imports:
         return "flare_job"
     if _has_conversion_integration(state):
         return "client_api_converted"
@@ -1211,7 +1219,11 @@ def _recommended_next_commands(
     commands = []
     if conversion_state == "exported_job":
         commands.append("nvflare job submit <job-folder> --format json")
-    elif state.job_py and state.export_support:
+    elif state.job_py and state.export_support and state.flare_imports:
+        # Only suggest `job.py --export` for a genuine FLARE job.py: `.export`
+        # calls (torch.onnx.export, YOLO model.export, ...) over-match, so without
+        # corroborating nvflare evidence this would ship a command that fails with
+        # an argparse error on an unrelated repo.
         commands.append("python job.py --export --export-dir <job-dir>")
     elif detected_framework and conversion_state == "not_converted":
         skill = frameworks.recommended_skill_for(detected_framework)
