@@ -2,7 +2,7 @@
 name: nvflare-shared
 description: Shared NVFLARE conversion references and templates used by the other NVFLARE agent skills (conversion workflow, validation ladder, dependency install, model exchange, metrics/artifact reporting, and the custom aggregator template). Not a user-triggered skill; loaded via references from the conversion skills.
 metadata:
-  author: "Chester Chen <chesterc@nvidia.com>"
+  author: "nvflare"
   min_flare_version: "2.8.0"
   blast_radius: read_only
   status: internal

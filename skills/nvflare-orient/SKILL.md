@@ -2,7 +2,7 @@
 name: nvflare-orient
 description: "Route open-ended or ambiguous NVFLARE requests by inspecting the local project and recommending one specific workflow skill without editing files; do not use for an explicit conversion request, even when its framework still needs detection."
 metadata:
-  author: "Chester Chen <chesterc@nvidia.com>"
+  author: "nvflare"
   min_flare_version: "2.8.0"
   blast_radius: read_only
   category: Orientation

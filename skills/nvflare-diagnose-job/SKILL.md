@@ -2,7 +2,7 @@
 name: nvflare-diagnose-job
 description: "Diagnose failed, stalled, or suspicious NVFLARE jobs in simulation, POC, or production by collecting bounded evidence and mapping failure patterns to recovery actions."
 metadata:
-  author: "Chester Chen <chesterc@nvidia.com>"
+  author: "nvflare"
   min_flare_version: "2.8.0"
   blast_radius: read_only
   category: Troubleshooting
