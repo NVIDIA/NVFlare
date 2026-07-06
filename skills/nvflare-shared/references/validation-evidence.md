@@ -4,7 +4,18 @@ Use this reference before declaring a generated or exported NVFLARE job valid.
 
 ## Local Validation
 
-- Use `python job.py` for local recipe or SimEnv validation when supported.
+Choose one final full-run path based on the artifact being validated:
+
+- Local recipe or first-user simulation validation: run `python job.py`.
+- Exported deployable job validation: create the job folder with `python job.py
+  --export --export-dir <runtime-dir>/job_config`, then run that exported folder
+  with the product simulator CLI, for example `nvflare simulator
+  <exported-job-dir> -w <runtime-dir>/workspace -n <num_clients> -t
+  <num_threads> -l concise` (or `-c site-1,site-2,...`).
+
+Do not run both full simulations unless the first one failed and the second is a
+scoped rerun after a fix. Do not write Python code to call simulator APIs for
+exported-job validation.
 - Prefer synthetic data flags or small fixtures when the original dataset is
   unavailable.
 - Keep validation commands single-purpose. Run dependency installation, cleanup,
@@ -33,6 +44,11 @@ the server log reaching a Finished state, and metrics evidence such as
 unavailable. Progress messages, scheduled wakeups, "standing by"/"I'll wait"
 statements, and active processes are not completion evidence and are not valid
 final answers.
+
+Do not pipe the final validation command through `tail`, `grep`, or another
+command that can hide the simulator or `python job.py` exit status. Redirect the
+full log to a runtime log file and print a bounded tail only after the command
+has finished and its exit code has been recorded.
 
 After a full simulation succeeds, do not rerun it solely to make already-wired
 custom-aggregator log lines more visible. Use the first run's terminal evidence

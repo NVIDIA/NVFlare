@@ -25,7 +25,7 @@
         "The agent sets enable_tensor_disk_offload=True when the selected recipe exposes it.",
         "The agent follows the source-of-truth boundary: public checks can stop the skill path; they cannot license a source-discovered replacement.",
         "Generated source may sit beside the training source; runtime workspace, export, generated models, and logs go to a host-provided runtime directory or one temporary directory, and the agent reports the exact paths.",
-        "The agent reads applicable requirements, installs missing dependencies into the host-provided environment before import-level preflight, and runs python job.py to completion, letting the host permission system allow, deny, or prompt rather than gating on a skill-inferred mode.",
+        "The agent reads applicable requirements, installs missing dependencies into the host-provided environment before import-level preflight, then validates to completion; when validating an exported deployable job folder it runs that folder with the nvflare simulator CLI rather than Python simulator APIs, while letting the host permission system allow, deny, or prompt rather than gating on a skill-inferred mode.",
         "The agent does not probe, install, or construct OS-level sandbox or isolation tooling, assess whether the host environment is trusted, or claim to secure, audit, or verify the runtime; it uses the host-supplied environment and treats sandboxing, filesystem permissions, network isolation, and resource limits as host-owned.",
         "For this non-interactive conversion request the agent attempts eligible dependency install and validation automatically and does not emit a textual approval or trust prompt such as 'May I install these dependencies?', 'Is this repository trusted?', or 'May I run the simulation?'.",
         "Missing torch, pandas, or other imports that the requirements cover are not reported as a blocker before an install attempt; the agent installs them and proceeds.",
@@ -101,7 +101,7 @@
           },
           {
             "id": "local-validation",
-            "description": "reads applicable requirements, installs missing dependencies into the host-provided environment before any import-level preflight, recipe-construction probe, export, simulation, or python job.py, then runs validation to completion; install and execution proceed by default under the host permission system and are never gated on a skill-inferred mode"
+            "description": "reads applicable requirements, installs missing dependencies into the host-provided environment before any import-level preflight, recipe-construction probe, export, simulation, or python job.py, then runs validation to completion; when validating an exported deployable job folder uses the exported-job nvflare simulator CLI rather than Python simulator APIs; install and execution proceed by default under the host permission system and are never gated on a skill-inferred mode"
           },
           {
             "id": "install-and-execute-without-skill-approval-prompt",

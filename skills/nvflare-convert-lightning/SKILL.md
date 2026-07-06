@@ -103,7 +103,9 @@ provisioning/deployment, never substituting an unprotected recipe or disclaimer.
    and `enable_tensor_disk_offload=True` paired with
    `server_expected_format=ExchangeFormat.PYTORCH` when the recipe exposes them
    (the offload is a warned no-op under the default NumPy format).
-8. Validate in a ladder per `../nvflare-shared/references/validation-evidence.md`, then use
+8. Validate in a ladder per `../nvflare-shared/references/validation-evidence.md`:
+   compile checks, recipe construction, one final full-run path chosen by the
+   artifact being validated, and export inspection; then use
    `references/lightning-validation.md` for Lightning-specific checks before
    calling the conversion complete. Use the environment and permission
    mechanisms supplied by the agent host; do not inspect or enforce its security

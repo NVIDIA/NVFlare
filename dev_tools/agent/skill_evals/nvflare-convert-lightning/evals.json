@@ -26,7 +26,7 @@
         "When the Lightning entrypoint imports an existing model source file or defines the LightningModule/DataModule in train.py, the agent derives that source file from static inspection rather than assuming it is named model.py, treats it as relevant source, reuses it by import, mechanical copy/rename, thin wrapper, or targeted edit, and does not synthesize a nested replacement model implementation or recreate the full Lightning/data stack.",
         "Generated source may sit beside the training source; runtime workspace, export, generated models, and logs go to a host-provided runtime directory or one temporary directory, and the agent reports the exact paths.",
         "The agent preserves local-only Lightning callbacks, loggers, and checkpoint behavior; network-connected or custom/unknown loggers remain disabled during validation unless the user explicitly requested them, without a skill-issued approval prompt.",
-        "The agent reads applicable requirements, installs missing dependencies into the host-provided environment before import-level preflight, and runs python job.py to completion, letting the host permission system allow, deny, or prompt rather than gating on a skill-inferred mode.",
+        "The agent reads applicable requirements, installs missing dependencies into the host-provided environment before import-level preflight, then validates to completion; when validating an exported deployable job folder it runs that folder with the nvflare simulator CLI rather than Python simulator APIs, while letting the host permission system allow, deny, or prompt rather than gating on a skill-inferred mode.",
         "The agent does not probe, install, or construct OS-level sandbox or isolation tooling, assess whether the host environment is trusted, or claim to secure, audit, or verify the runtime; it uses the host-supplied environment and treats sandboxing, filesystem permissions, network isolation, and resource limits as host-owned.",
         "For this non-interactive conversion request the agent attempts eligible dependency install and validation automatically and does not emit a textual approval or trust prompt such as 'May I install these dependencies?', 'Is this repository trusted?', or 'May I run the simulation?'.",
         "Missing torch, pytorch-lightning, or other imports that the requirements cover are not reported as a blocker before an install attempt; the agent installs them and proceeds.",
@@ -96,7 +96,7 @@
           },
           {
             "id": "local-validation",
-            "description": "reads applicable requirements, installs missing dependencies into the host-provided environment before any import-level preflight, recipe-construction probe, export, simulation, or python job.py, then runs validation to completion; install and execution proceed by default under the host permission system and are never gated on a skill-inferred mode"
+            "description": "reads applicable requirements, installs missing dependencies into the host-provided environment before any import-level preflight, recipe-construction probe, export, simulation, or python job.py, then runs validation to completion; when validating an exported deployable job folder uses the exported-job nvflare simulator CLI rather than Python simulator APIs; install and execution proceed by default under the host permission system and are never gated on a skill-inferred mode"
           },
           {
             "id": "install-and-execute-without-skill-approval-prompt",
@@ -346,7 +346,7 @@
     {
       "id": "lightning-data-derived-required-arg",
       "prompt": "Convert this PyTorch Lightning training code to a FLARE FedAvg job over 2 sites. The model needs a vocab_size argument built from the data.",
-      "expected_output": "A FLARE Lightning Client API conversion that extracts the data-derived vocab_size statically and pins it as one value in the explicit class_path plus args recipe model config used by both server and client, so every site constructs the same architecture; passes the recipe model as an explicit class_path plus args config rather than a live LightningModule instance; patches the trainer with flare.patch; installs applicable eligible requirements first per dependency-install.md before any import-level preflight or recipe-construction probe, then validates with python job.py; and reports the pinned constructor value and validation evidence. If the vocab_size is not statically determinable from the source or supplied metadata, the agent asks in interactive mode or fails closed rather than guessing it or computing it per site.",
+      "expected_output": "A FLARE Lightning Client API conversion that extracts the data-derived vocab_size statically and pins it as one value in the explicit class_path plus args recipe model config used by both server and client, so every site constructs the same architecture; passes the recipe model as an explicit class_path plus args config rather than a live LightningModule instance; patches the trainer with flare.patch; installs applicable eligible requirements first per dependency-install.md before any import-level preflight or recipe-construction probe, then validates to completion, using the exported-job nvflare simulator CLI when validating an exported deployable job folder; and reports the pinned constructor value and validation evidence. If the vocab_size is not statically determinable from the source or supplied metadata, the agent asks in interactive mode or fails closed rather than guessing it or computing it per site.",
       "files": [
         "files/vocab-lightning/train.py",
         "files/vocab-lightning/model.py"
@@ -356,7 +356,7 @@
         "The agent passes the recipe model as explicit class_path plus args, not as a live LightningModule instance.",
         "The agent treats the data-derived vocab_size as statically clear only when the source or supplied metadata makes it deterministic; otherwise it asks or fails closed instead of guessing.",
         "The agent integrates through flare.patch(trainer).",
-        "The agent installs applicable eligible requirements first per dependency-install.md before import-level preflight or recipe-construction probes, then runs python job.py for local validation.",
+        "The agent installs applicable eligible requirements first per dependency-install.md before import-level preflight or recipe-construction probes, then runs validation to completion; when validating an exported deployable job folder it uses the exported-job nvflare simulator CLI.",
         "The agent reports the pinned constructor value and any validation blockers."
       ],
       "nvflare": {

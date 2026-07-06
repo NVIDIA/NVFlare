@@ -445,6 +445,20 @@ env = SimEnv(num_clients=num_clients, num_threads=num_clients, workspace_root=wo
 recipe.execute(env)
 ```
 
+For normal first-user simulation, `python job.py` is the intended local
+experience because no exported job folder may exist yet. The exported job folder
+is still the deployable artifact: POC or production submission uses the job
+folder with product submission commands such as `nvflare job submit -j`.
+
+Validate the artifact being claimed. If the final claim is that the recipe runs
+locally, use `python job.py`. If the final claim includes an exported,
+deployable job folder, create it with `python job.py --export --export-dir
+<runtime-dir>/job_config` and validate that exported folder with the product
+simulator CLI: `nvflare simulator <exported-job-dir> -w
+<runtime-dir>/workspace -n <num_clients> -t <num_threads> -l concise` (or `-c
+site-1,site-2,...`). Do not write Python code to call simulator APIs such as
+`simulator_run()` for exported-job validation.
+
 `PocEnv` and `ProdEnv` are outside conversion scope; do not generate or run
 them from a conversion skill. Homomorphic-encryption recipes reject `SimEnv` and
 require those provisioned environments, so HE is not supported by conversion —
@@ -453,7 +467,12 @@ recipe rejects `SimEnv`, follow the selecting reference's ask/fail-closed rule
 and report the job as unvalidated instead of switching recipes or environments
 to force a run.
 
-- Use `python job.py` for local recipe or SimEnv validation when supported.
+- Choose one final full-run path based on the artifact being validated. Use
+  `python job.py` for local recipe or first-user simulation validation. Use
+  `python job.py --export --export-dir <runtime-dir>/job_config` plus
+  `nvflare simulator <exported-job-dir> ...` when validating an exported,
+  deployable job folder. Do not run both full simulations unless the first one
+  failed and the second is a scoped rerun after a fix.
 - Prefer synthetic data flags or small fixtures when the original dataset is
   unavailable.
 - Before Python import checks, recipe-construction preflight, export, or
@@ -483,9 +502,10 @@ This is a hard rule for every conversion skill, framework-agnostic. If the host
 denies execution or an install fails, report the conversion as an unvalidated
 draft with that real failure as the blocker rather than looping on it.
 
-- Run the final `python job.py` validation in the **foreground** and let it run
-  to completion in the same step. Do not choose background execution for the
-  final validation run.
+- Run the final local validation command in the **foreground** and let it run to
+  completion in the same step. For exported-job validation, that command is the
+  `nvflare simulator` CLI on the exported job folder. Do not choose background
+  execution for the final validation run.
 - A conversion is **not complete** until you have observed the terminal
   completion evidence defined in `validation-evidence.md` (the exact evidence
   contract lives there; do not restate it here).

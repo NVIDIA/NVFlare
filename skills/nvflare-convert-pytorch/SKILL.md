@@ -99,8 +99,8 @@ rather than substituting an unprotected recipe or adding only a disclaimer.
    aggregator wiring through `aggregator=` when requested, and
    `enable_tensor_disk_offload=True` when the recipe exposes it.
 7. Validate in a ladder per `../nvflare-shared/references/validation-evidence.md`:
-   compile checks, recipe construction, local simulation, then export with
-   `python job.py --export --export-dir <runtime-dir>/job_config`; use
+   compile checks, recipe construction, one final full-run path chosen by the
+   artifact being validated, and export inspection; use
    `references/job-validation.md` for PyTorch-specific failures. Stop at the
    first failed rung and report the product error. Use the environment and
    permission mechanisms supplied by the agent host; do not inspect or enforce
