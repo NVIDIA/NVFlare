@@ -14,6 +14,7 @@
 
 import json
 import os
+from pathlib import Path
 
 import pytest
 
@@ -56,6 +57,177 @@ def test_inspect_static_only_does_not_execute_user_module(tmp_path):
     assert data["conversion_state"] == "not_converted"
     assert data["frameworks"][0]["name"] == "pytorch"
     assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
+
+
+def test_inspect_does_not_classify_lone_export_marker_as_submit_ready(tmp_path):
+    (tmp_path / "config_fed_server.json").write_text("{}", encoding="utf-8")
+
+    data = inspect_path(tmp_path)
+
+    assert data["conversion_state"] == "unknown"
+    assert data["target_type"] == "unknown_target"
+    assert data["recommended_next_commands"] == []
+    assert data["job"]["exported_job_candidates"] == []
+    assert data["job"]["nested_candidates"] == [
+        {
+            "path": ".",
+            "markers": ["config_fed_server.json"],
+            "reason": "incomplete_exported_job_marker_set",
+        }
+    ]
+
+
+def test_inspect_does_not_let_nested_export_marker_hijack_training_repo(tmp_path):
+    (tmp_path / "train.py").write_text("import torch\n", encoding="utf-8")
+    (tmp_path / "model.py").write_text(
+        "import torch\n\nclass Net(torch.nn.Module):\n    pass\n",
+        encoding="utf-8",
+    )
+    marker = tmp_path / "tests" / "fixtures" / "config_fed_server.json"
+    marker.parent.mkdir(parents=True)
+    marker.write_text("{}", encoding="utf-8")
+
+    data = inspect_path(tmp_path)
+
+    assert data["conversion_state"] == "not_converted"
+    assert data["target_type"] == "training_repository"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
+    assert data["recommended_next_commands"] == ["Use the nvflare-convert-pytorch skill before editing."]
+    assert data["job"]["exported_job_candidates"] == []
+    assert data["job"]["nested_candidates"] == [
+        {
+            "path": "tests/fixtures",
+            "markers": ["config_fed_server.json"],
+            "reason": "incomplete_exported_job_marker_set",
+        }
+    ]
+
+
+def test_inspect_requires_export_markers_to_form_submit_ready_root(tmp_path):
+    (tmp_path / "meta.json").write_text("{}", encoding="utf-8")
+    app_config = tmp_path / "app" / "config"
+    app_config.mkdir(parents=True)
+    (app_config / "config_fed_server.json").write_text("{}", encoding="utf-8")
+
+    data = inspect_path(tmp_path)
+
+    assert data["conversion_state"] == "exported_job"
+    assert data["target_type"] == "exported_submit_ready_flare_job"
+    assert data["job"]["exported_job_candidates"] == ["."]
+    assert data["job"]["nested_candidates"] == []
+    assert data["skill_selection"]["recommended_skills"] == []
+    assert data["recommended_next_commands"] == ["nvflare job submit <job-folder> --format json"]
+
+
+def test_inspect_relative_path_does_not_create_false_app_layout(monkeypatch, tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "meta.json").write_text("{}", encoding="utf-8")
+    config = project / "config"
+    config.mkdir()
+    (config / "config_fed_server.json").write_text("{}", encoding="utf-8")
+
+    monkeypatch.chdir(project)
+    data = inspect_path(".")
+
+    assert data["path"] == str(project.resolve(strict=False))
+    assert data["conversion_state"] == "unknown"
+    assert data["target_type"] == "unknown_target"
+    assert data["job"]["exported_job_candidates"] == []
+    assert data["recommended_next_commands"] == []
+    assert data["job"]["nested_candidates"] == [
+        {
+            "path": ".",
+            "markers": ["meta.json"],
+            "reason": "incomplete_exported_job_marker_set",
+        },
+        {
+            "path": "config",
+            "markers": ["config_fed_server.json"],
+            "reason": "incomplete_exported_job_marker_set",
+        },
+    ]
+
+
+def test_inspect_reports_valid_nested_exported_job_candidate(tmp_path):
+    job = tmp_path / "job"
+    job.mkdir()
+    (job / "meta.json").write_text("{}", encoding="utf-8")
+    (job / "config_fed_server.json").write_text("{}", encoding="utf-8")
+
+    data = inspect_path(tmp_path)
+
+    assert data["conversion_state"] == "unknown"
+    assert data["target_type"] == "unknown_target"
+    assert data["job"]["exported_job_candidates"] == []
+    assert data["job"]["nested_candidates"] == [
+        {
+            "path": "job",
+            "markers": ["config_fed_server.json", "meta.json"],
+            "reason": "nested_exported_job_candidate",
+        }
+    ]
+
+
+def test_inspect_suppresses_consumed_root_app_configs_but_keeps_unrelated_nested_candidates(tmp_path):
+    (tmp_path / "meta.json").write_text("{}", encoding="utf-8")
+    app_config = tmp_path / "app" / "config"
+    app_config.mkdir(parents=True)
+    (app_config / "config_fed_server.json").write_text("{}", encoding="utf-8")
+    fixture_config = tmp_path / "tests" / "fixtures" / "config_fed_client.json"
+    fixture_config.parent.mkdir(parents=True)
+    fixture_config.write_text("{}", encoding="utf-8")
+
+    data = inspect_path(tmp_path)
+
+    assert data["conversion_state"] == "exported_job"
+    assert data["target_type"] == "exported_submit_ready_flare_job"
+    assert data["job"]["exported_job_candidates"] == ["."]
+    assert data["job"]["nested_candidates"] == [
+        {
+            "path": "tests/fixtures",
+            "markers": ["config_fed_client.json"],
+            "reason": "incomplete_exported_job_marker_set",
+        }
+    ]
+
+
+def test_inspect_does_not_classify_lone_root_meta_json_as_exported_job(tmp_path):
+    (tmp_path / "meta.json").write_text("{}", encoding="utf-8")
+
+    data = inspect_path(tmp_path)
+
+    assert data["conversion_state"] == "unknown"
+    assert data["target_type"] == "unknown_target"
+    assert data["recommended_next_commands"] == []
+
+
+def test_inspect_does_not_pair_root_meta_with_unrelated_nested_config(tmp_path):
+    (tmp_path / "train.py").write_text("import torch\n", encoding="utf-8")
+    (tmp_path / "meta.json").write_text("{}", encoding="utf-8")
+    fixture_config = tmp_path / "tests" / "fixtures" / "config_fed_server.json"
+    fixture_config.parent.mkdir(parents=True)
+    fixture_config.write_text("{}", encoding="utf-8")
+
+    data = inspect_path(tmp_path)
+
+    assert data["conversion_state"] == "not_converted"
+    assert data["target_type"] == "training_repository"
+    assert data["job"]["exported_job_candidates"] == []
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]
+    assert data["recommended_next_commands"] == ["Use the nvflare-convert-pytorch skill before editing."]
+    assert data["job"]["nested_candidates"] == [
+        {
+            "path": ".",
+            "markers": ["meta.json"],
+            "reason": "incomplete_exported_job_marker_set",
+        },
+        {
+            "path": "tests/fixtures",
+            "markers": ["config_fed_server.json"],
+            "reason": "incomplete_exported_job_marker_set",
+        },
+    ]
 
 
 def test_inspect_detects_pytorch_lightning_and_recommends_lightning_skill(tmp_path):
@@ -1590,9 +1762,10 @@ def test_inspect_lightning_with_other_frameworks_recommends_lightning(tmp_path):
 
 
 def test_inspect_exported_job_priority_over_lightning_routing(tmp_path):
-    app = tmp_path / "app_server"
-    app.mkdir()
-    (app / "config_fed_server.json").write_text("{}\n", encoding="utf-8")
+    (tmp_path / "meta.json").write_text("{}\n", encoding="utf-8")
+    app_config = tmp_path / "app_server" / "config"
+    app_config.mkdir(parents=True)
+    (app_config / "config_fed_server.json").write_text("{}\n", encoding="utf-8")
     (tmp_path / "client.py").write_text(
         "import pytorch_lightning as pl\n" "\n" "class Net(pl.LightningModule):\n" "    pass\n",
         encoding="utf-8",
@@ -1603,6 +1776,7 @@ def test_inspect_exported_job_priority_over_lightning_routing(tmp_path):
     assert data["frameworks"][0]["name"] == "pytorch_lightning"
     assert data["conversion_state"] == "exported_job"
     assert data["target_type"] == "exported_submit_ready_flare_job"
+    assert data["job"]["nested_candidates"] == []
     assert data["skill_selection"]["recommended_skills"] == []
 
 
@@ -1772,13 +1946,108 @@ def test_inspect_stops_and_caps_skips_after_file_limit(tmp_path):
 
     data = inspect_path(root, max_files=3)
 
+    assert data["classification_incomplete"] is True
+    assert data["scan"]["entries_visited"] == 3
+    assert data["scan"]["files_considered"] == 20
+    assert data["scan"]["files_scanned"] == 3
+    assert data["scan"]["files_skipped_count"] == 17
+    assert data["scan"]["files_skipped_count_approximate"] is False
+    assert data["scan"]["files_skipped_truncated"] is True
+    assert data["scan"]["files_skipped_evidence_truncated"] is True
+    assert len(data["scan"]["files_skipped"]) == 12
+    assert data["scan"]["files_skipped"][0] == {
+        "code": "FILE_LIMIT_REACHED",
+        "path": "train_03.py",
+        "message": "file scan limit reached",
+    }
+    assert data["scan"]["files_skipped"][-1]["path"] == "train_14.py"
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch", "nvflare-orient"]
+
+
+def test_inspect_exact_file_limit_without_unvisited_files_is_complete(tmp_path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    for index in range(3):
+        (root / f"train_{index:02d}.py").write_text("import torch\n", encoding="utf-8")
+
+    data = inspect_path(root, max_files=3)
+
+    assert data["classification_incomplete"] is False
     assert data["scan"]["entries_visited"] == 3
     assert data["scan"]["files_considered"] == 3
     assert data["scan"]["files_scanned"] == 3
-    assert data["scan"]["files_skipped_count"] == 1
+    assert data["scan"]["files_skipped_count"] == 0
+    assert data["scan"]["files_skipped_count_approximate"] is False
     assert data["scan"]["files_skipped_truncated"] is False
+    assert data["scan"]["files_skipped_evidence_truncated"] is False
+
+
+def test_inspect_file_limit_accounting_is_bounded(monkeypatch, tmp_path):
+    monkeypatch.setattr("nvflare.tool.agent.inspector.MAX_FILE_LIMIT_ACCOUNTED_SKIPS", 3)
+    root = tmp_path / "repo"
+    root.mkdir()
+    for index in range(10):
+        (root / f"train_{index:02d}.py").write_text("import torch\n", encoding="utf-8")
+
+    data = inspect_path(root, max_files=1)
+
+    assert data["classification_incomplete"] is True
+    assert data["scan"]["entries_visited"] == 1
+    assert data["scan"]["files_considered"] == 4
+    assert data["scan"]["files_scanned"] == 1
+    assert data["scan"]["files_skipped_count"] == 3
+    assert data["scan"]["files_skipped_count_approximate"] is True
+    assert data["scan"]["files_skipped_truncated"] is True
     assert data["scan"]["files_skipped"] == [
-        {"code": "FILE_LIMIT_REACHED", "path": "train_03.py", "message": "file scan limit reached"}
+        {"code": "FILE_LIMIT_REACHED", "path": "train_01.py", "message": "file scan limit reached"},
+        {"code": "FILE_LIMIT_REACHED", "path": "train_02.py", "message": "file scan limit reached"},
+        {"code": "FILE_LIMIT_REACHED", "path": "train_03.py", "message": "file scan limit reached"},
+    ]
+
+
+def test_inspect_file_limit_unreadable_directory_accounting_is_bounded(monkeypatch, tmp_path):
+    monkeypatch.setattr("nvflare.tool.agent.inspector.MAX_FILE_LIMIT_ACCOUNTED_SKIPS", 3)
+    root = tmp_path / "repo"
+    root.mkdir()
+    for index in range(5):
+        (root / f"a_{index:02d}").mkdir()
+    (root / "train.py").write_text("import torch\n", encoding="utf-8")
+
+    original_iterdir = Path.iterdir
+
+    def fake_iterdir(path):
+        if path.name.startswith("a_"):
+            raise OSError("blocked")
+        return original_iterdir(path)
+
+    monkeypatch.setattr(Path, "iterdir", fake_iterdir)
+
+    data = inspect_path(root, max_files=1)
+
+    assert data["classification_incomplete"] is True
+    assert data["scan"]["entries_visited"] == 1
+    assert data["scan"]["files_considered"] == 1
+    assert data["scan"]["files_scanned"] == 1
+    assert data["scan"]["files_skipped_count"] == 3
+    assert data["scan"]["files_skipped_count_approximate"] is True
+    assert data["scan"]["files_skipped_truncated"] is True
+    assert data["scan"]["files_skipped"] == [
+        {
+            "code": "DIRECTORY_NOT_SCANNED_FILE_LIMIT",
+            "path": "a_00",
+            "message": "directory not scanned because file scan limit was reached",
+        },
+        {
+            "code": "UNREADABLE_DIRECTORY",
+            "path": "a_00",
+            "message": "could not read directory",
+            "error_type": "OSError",
+        },
+        {
+            "code": "DIRECTORY_NOT_SCANNED_FILE_LIMIT",
+            "path": "a_01",
+            "message": "directory not scanned because file scan limit was reached",
+        },
     ]
 
 
@@ -1794,8 +2063,12 @@ def test_inspect_file_limit_records_unvisited_stack_directories(tmp_path):
 
     skipped = {(entry["code"], entry["path"]) for entry in data["scan"]["files_skipped"]}
     assert ("FILE_LIMIT_REACHED", "train_03.py") in skipped
+    assert ("FILE_LIMIT_REACHED", "train_04.py") in skipped
     assert ("DIRECTORY_NOT_SCANNED_FILE_LIMIT", "a_nested") in skipped
-    assert data["scan"]["files_skipped_count"] == 2
+    assert ("FILE_LIMIT_REACHED", "a_nested/train_nested.py") in skipped
+    assert data["classification_incomplete"] is True
+    assert data["scan"]["files_considered"] == 6
+    assert data["scan"]["files_skipped_count"] == 4
 
 
 def test_inspect_file_limit_records_pending_directories_when_last_child_reaches_limit(tmp_path):
@@ -1810,10 +2083,11 @@ def test_inspect_file_limit_records_pending_directories_when_last_child_reaches_
 
     skipped = {(entry["code"], entry["path"]) for entry in data["scan"]["files_skipped"]}
     assert ("DIRECTORY_NOT_SCANNED_FILE_LIMIT", "a_nested") in skipped
-    assert all(code != "FILE_LIMIT_REACHED" for code, _path in skipped)
+    assert ("FILE_LIMIT_REACHED", "a_nested/train_nested.py") in skipped
     assert data["scan"]["entries_visited"] == 3
+    assert data["scan"]["files_considered"] == 4
     assert data["scan"]["files_scanned"] == 3
-    assert data["scan"]["files_skipped_count"] == 1
+    assert data["scan"]["files_skipped_count"] == 2
 
 
 def test_inspect_file_limit_counts_non_python_entries(tmp_path):
@@ -1825,9 +2099,30 @@ def test_inspect_file_limit_counts_non_python_entries(tmp_path):
 
     data = inspect_path(root, max_files=3)
 
+    assert data["classification_incomplete"] is True
     assert data["scan"]["entries_visited"] == 3
-    assert data["scan"]["files_considered"] == 3
+    assert data["scan"]["files_considered"] == 6
     assert data["scan"]["files_scanned"] == 0
     assert data["scan"]["files_skipped"] == [
-        {"code": "FILE_LIMIT_REACHED", "path": "metadata_03.json", "message": "file scan limit reached"}
+        {"code": "FILE_LIMIT_REACHED", "path": "metadata_03.json", "message": "file scan limit reached"},
+        {"code": "FILE_LIMIT_REACHED", "path": "metadata_04.json", "message": "file scan limit reached"},
+        {"code": "FILE_LIMIT_REACHED", "path": "train.py", "message": "file scan limit reached"},
     ]
+
+
+def test_inspect_benign_directory_skip_does_not_self_recommend_orient(tmp_path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "train.py").write_text("import torch\n", encoding="utf-8")
+    git_dir = root / ".git"
+    git_dir.mkdir()
+    (git_dir / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+
+    data = inspect_path(root)
+
+    assert data["classification_incomplete"] is False
+    assert data["scan"]["files_skipped_count"] == 1
+    assert data["scan"]["files_skipped"] == [
+        {"code": "DIRECTORY_SKIPPED", "path": ".git", "message": "directory skipped"}
+    ]
+    assert data["skill_selection"]["recommended_skills"] == ["nvflare-convert-pytorch"]

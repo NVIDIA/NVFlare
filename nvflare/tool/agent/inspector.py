@@ -28,6 +28,10 @@ from nvflare.tool.agent.frameworks.base import DetectContext
 DEFAULT_MAX_FILES = 250
 DEFAULT_MAX_FILE_BYTES = 512 * 1024
 MAX_EVIDENCE_PER_BUCKET = 12
+# After max_files is reached, the inspector accounts for a bounded number of
+# unvisited files/directories so callers can see that classification is
+# incomplete without turning the cap into an unbounded full-tree walk.
+MAX_FILE_LIMIT_ACCOUNTED_SKIPS = 10000
 # Backstop for evidence collected per framework bucket. Far above the display
 # cap so ranking/detection uses true counts; only a memory guard for pathological
 # inputs, not a routing-relevant threshold.
@@ -55,6 +59,14 @@ SKIPPED_DIR_NAMES = {
 SENSITIVE_FILE_SUFFIXES = {".key", ".pem", ".p12", ".pfx"}
 SENSITIVE_FILE_NAMES = {"id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"}
 SECRET_NAME_PATTERN = re.compile(r"(api[_-]?key|secret|token|password|passwd|credential|access[_-]?key)", re.I)
+_INCOMPLETE_SCAN_SKIP_CODES = {
+    "DIRECTORY_NOT_SCANNED_FILE_LIMIT",
+    "FILE_LIMIT_REACHED",
+    "FILE_TOO_LARGE",
+    "NON_UTF8_FILE",
+    "UNREADABLE_DIRECTORY",
+    "UNREADABLE_FILE",
+}
 
 # Installed-skill discovery: read-only scan for <dir>/*/SKILL.md under known
 # agent skill directories. Bounded so a pathological tree can't blow up the scan.
@@ -80,6 +92,10 @@ class InspectState:
     files_scanned: int = 0
     bytes_scanned: int = 0
     files_skipped_count: int = 0
+    file_limit_reached: bool = False
+    file_limit_accounted_skips: int = 0
+    file_limit_skip_accounting_truncated: bool = False
+    classification_incomplete: bool = False
     files_skipped: list[dict] = field(default_factory=list)
     findings: list[dict] = field(default_factory=list)
     framework_evidence: dict[str, list[dict]] = field(default_factory=dict)
@@ -94,6 +110,7 @@ class InspectState:
     sim_env_used: bool = False
     export_support: bool = False
     exported_job_markers: list[str] = field(default_factory=list)
+    exported_job_marker_paths: list[Path] = field(default_factory=list)
     distributed_patterns: list[dict] = field(default_factory=list)
     dynamic_patterns: list[dict] = field(default_factory=list)
     absolute_path_findings: list[dict] = field(default_factory=list)
@@ -114,7 +131,7 @@ def inspect_path(
     max_file_bytes: int = DEFAULT_MAX_FILE_BYTES,
 ) -> dict:
     """Inspect a path without importing or executing user code."""
-    target = Path(path).expanduser()
+    target = _normalized_inspect_target(path)
     state = InspectState(root=target, redact=redact)
 
     if not target.exists() and not target.is_symlink():
@@ -127,10 +144,11 @@ def inspect_path(
     else:
         _inspect_dir(target, state, max_files=max_files, max_file_bytes=max_file_bytes)
 
+    exported_job_info = _exported_job_info(state)
     ranked_frameworks = _rank_frameworks(state)
     detected_framework = _detect_primary_framework(state, ranked_frameworks)
     ranked_frameworks = _order_frameworks_for_display(ranked_frameworks, detected_framework)
-    conversion_state = _conversion_state(state, detected_framework)
+    conversion_state = _conversion_state(state, detected_framework, exported_job_info)
     target_type = _target_type(target, state, detected_framework, conversion_state)
 
     return {
@@ -145,13 +163,16 @@ def inspect_path(
             "max_file_bytes": max_file_bytes,
             "max_evidence_per_bucket": MAX_EVIDENCE_PER_BUCKET,
         },
+        "classification_incomplete": state.classification_incomplete,
         "scan": {
             "entries_visited": state.entries_visited,
             "files_considered": state.files_considered,
             "files_scanned": state.files_scanned,
             "bytes_scanned": state.bytes_scanned,
             "files_skipped_count": state.files_skipped_count,
-            "files_skipped_truncated": state.files_skipped_count > len(state.files_skipped),
+            "files_skipped_count_approximate": state.file_limit_skip_accounting_truncated,
+            "files_skipped_truncated": state.file_limit_reached,
+            "files_skipped_evidence_truncated": state.files_skipped_count > len(state.files_skipped),
             "files_skipped": state.files_skipped,
         },
         "frameworks": ranked_frameworks,
@@ -167,6 +188,8 @@ def inspect_path(
             "sim_env_used": state.sim_env_used,
             "export_support": state.export_support,
             "exported_job_markers": state.exported_job_markers[:MAX_EVIDENCE_PER_BUCKET],
+            "exported_job_candidates": exported_job_info["submit_ready_candidates"][:MAX_EVIDENCE_PER_BUCKET],
+            "nested_candidates": exported_job_info["nested_candidates"][:MAX_EVIDENCE_PER_BUCKET],
         },
         "patterns": {
             "distributed": state.distributed_patterns[:MAX_EVIDENCE_PER_BUCKET],
@@ -201,30 +224,50 @@ def _inspect_dir(root: Path, state: InspectState, *, max_files: int, max_file_by
                 stack.append(child)
                 continue
             if state.entries_visited >= max_files:
-                _add_skip(state, _skip_entry(child, state, "FILE_LIMIT_REACHED", "file scan limit reached"))
-                _record_unvisited_directories_due_to_file_limit(state, root, stack, children[index + 1 :])
+                _record_unvisited_due_to_file_limit(state, root, stack, children[index:])
                 return
             state.entries_visited += 1
             if not child.is_file():
                 continue
             _inspect_file(child, state, max_file_bytes)
             if state.entries_visited >= max_files:
-                _record_next_file_due_to_file_limit(state, children[index + 1 :])
-                _record_unvisited_directories_due_to_file_limit(state, root, stack, children[index + 1 :])
+                _record_unvisited_due_to_file_limit(state, root, stack, children[index + 1 :])
                 return
 
 
-def _record_unvisited_directories_due_to_file_limit(
+def _record_unvisited_due_to_file_limit(
     state: InspectState, root: Path, pending_stack: list[Path], remaining_children: list[Path]
 ) -> None:
     directories = list(pending_stack)
+    limit_left_unvisited_entries = bool(directories)
     for child in remaining_children:
         try:
-            if child.is_symlink() or not child.is_dir() or _should_skip_dir(child, root):
+            if child.is_symlink():
+                if not _record_symlink_skip_after_file_limit(child, state):
+                    break
+                continue
+            if child.is_file():
+                limit_left_unvisited_entries = True
+                if not _add_file_limit_skip(state, child):
+                    break
+                continue
+            if not child.is_dir() or _should_skip_dir(child, root):
                 continue
         except OSError:
+            limit_left_unvisited_entries = True
+            if not _add_skip_after_file_limit(
+                state, _skip_entry(child, state, "UNREADABLE_FILE", "could not stat file")
+            ):
+                break
             continue
         directories.append(child)
+        limit_left_unvisited_entries = True
+
+    if not limit_left_unvisited_entries:
+        return
+
+    state.file_limit_reached = True
+    state.classification_incomplete = True
 
     seen = set()
     for directory in directories:
@@ -232,26 +275,76 @@ def _record_unvisited_directories_due_to_file_limit(
         if key in seen:
             continue
         seen.add(key)
-        _add_skip(
-            state,
-            _skip_entry(
-                directory,
-                state,
-                "DIRECTORY_NOT_SCANNED_FILE_LIMIT",
-                "directory not scanned because file scan limit was reached",
-            ),
-        )
+        if not _add_directory_not_scanned_due_to_file_limit(state, directory):
+            break
+        _record_unvisited_files_under_file_limit(directory, state, root)
+        if state.file_limit_skip_accounting_truncated:
+            break
 
 
-def _record_next_file_due_to_file_limit(state: InspectState, remaining_children: list[Path]) -> None:
-    for child in remaining_children:
+def _record_unvisited_files_under_file_limit(directory: Path, state: InspectState, root: Path) -> None:
+    stack = [directory]
+    while stack:
+        current = stack.pop()
         try:
-            if child.is_symlink() or child.is_dir():
-                continue
-        except OSError:
+            children = sorted(current.iterdir(), key=lambda p: p.name)
+        except OSError as e:
+            if not _add_skip_after_file_limit(
+                state, _skip_entry(current, state, "UNREADABLE_DIRECTORY", "could not read directory", e)
+            ):
+                return
             continue
-        _add_skip(state, _skip_entry(child, state, "FILE_LIMIT_REACHED", "file scan limit reached"))
-        return
+        for child in children:
+            try:
+                if child.is_symlink():
+                    if not _record_symlink_skip_after_file_limit(child, state):
+                        return
+                elif child.is_dir():
+                    if not _should_skip_dir(child, root):
+                        stack.append(child)
+                elif child.is_file():
+                    if not _add_file_limit_skip(state, child):
+                        return
+            except OSError:
+                if not _add_skip_after_file_limit(
+                    state, _skip_entry(child, state, "UNREADABLE_FILE", "could not stat file")
+                ):
+                    return
+
+
+def _account_file_limit_skip(state: InspectState) -> bool:
+    if state.file_limit_accounted_skips >= MAX_FILE_LIMIT_ACCOUNTED_SKIPS:
+        state.file_limit_skip_accounting_truncated = True
+        return False
+    state.file_limit_accounted_skips += 1
+    return True
+
+
+def _add_file_limit_skip(state: InspectState, path: Path) -> bool:
+    if not _account_file_limit_skip(state):
+        return False
+    state.files_considered += 1
+    _add_skip(state, _skip_entry(path, state, "FILE_LIMIT_REACHED", "file scan limit reached"))
+    return True
+
+
+def _add_skip_after_file_limit(state: InspectState, entry: dict) -> bool:
+    if not _account_file_limit_skip(state):
+        return False
+    _add_skip(state, entry)
+    return True
+
+
+def _add_directory_not_scanned_due_to_file_limit(state: InspectState, directory: Path) -> bool:
+    return _add_skip_after_file_limit(
+        state,
+        _skip_entry(
+            directory,
+            state,
+            "DIRECTORY_NOT_SCANNED_FILE_LIMIT",
+            "directory not scanned because file scan limit was reached",
+        ),
+    )
 
 
 def _inspect_file(path: Path, state: InspectState, max_file_bytes: int) -> None:
@@ -262,6 +355,7 @@ def _inspect_file(path: Path, state: InspectState, max_file_bytes: int) -> None:
         return
     if _is_exported_job_marker(path):
         state.exported_job_markers.append(rel_path)
+        state.exported_job_marker_paths.append(path)
     if path.suffix not in PYTHON_SUFFIXES:
         return
 
@@ -838,8 +932,60 @@ def _order_frameworks_for_display(ranked: list[dict], detected_framework: Option
     return sorted(ranked, key=lambda item: item["name"] != detected_framework)
 
 
-def _conversion_state(state: InspectState, detected_framework: Optional[str]) -> str:
-    if state.exported_job_markers:
+def _exported_job_info(state: InspectState) -> dict:
+    root = state.root if state.root.is_dir() and not state.root.is_symlink() else state.root.parent
+    markers_by_dir: dict[Path, set[str]] = {}
+    for path in state.exported_job_marker_paths:
+        markers_by_dir.setdefault(path.parent, set()).add(path.name)
+
+    valid_candidate_dirs = set()
+    consumed_marker_dirs = set()
+    for directory, names in markers_by_dir.items():
+        if "meta.json" in names and names.intersection({"config_fed_server.json", "config_fed_client.json"}):
+            valid_candidate_dirs.add(directory)
+
+    meta_dirs = {directory for directory, names in markers_by_dir.items() if "meta.json" in names}
+    config_paths = [
+        path
+        for path in state.exported_job_marker_paths
+        if path.name in {"config_fed_server.json", "config_fed_client.json"}
+    ]
+    for meta_dir in meta_dirs:
+        for config_path in config_paths:
+            if config_path.parent.name == "config" and config_path.parent.parent.parent == meta_dir:
+                valid_candidate_dirs.add(meta_dir)
+                consumed_marker_dirs.add(config_path.parent)
+
+    submit_ready = sorted(
+        (_display_path(directory, root, state.redact) for directory in valid_candidate_dirs if directory == root)
+    )
+    nested = []
+    for directory, names in sorted(markers_by_dir.items(), key=lambda item: _display_path(item[0], root, state.redact)):
+        if directory in consumed_marker_dirs:
+            continue
+        rel_dir = _display_path(directory, root, state.redact)
+        if directory in valid_candidate_dirs:
+            if directory != root:
+                nested.append(
+                    {
+                        "path": rel_dir,
+                        "markers": sorted(names),
+                        "reason": "nested_exported_job_candidate",
+                    }
+                )
+        else:
+            nested.append(
+                {
+                    "path": rel_dir,
+                    "markers": sorted(names),
+                    "reason": "incomplete_exported_job_marker_set",
+                }
+            )
+    return {"submit_ready_candidates": submit_ready, "nested_candidates": nested}
+
+
+def _conversion_state(state: InspectState, detected_framework: Optional[str], exported_job_info: dict) -> str:
+    if exported_job_info["submit_ready_candidates"]:
         return "exported_job"
     if state.job_py or state.sim_env_used:
         return "flare_job"
@@ -1043,7 +1189,7 @@ def _skill_selection(detected_framework: Optional[str], conversion_state: str, s
         skill = frameworks.recommended_skill_for(detected_framework)
         if skill:
             recommended.append(skill)
-    if state.findings or state.files_skipped:
+    if state.findings or _has_problematic_skips(state):
         recommended.append("nvflare-orient")
 
     return {
@@ -1053,6 +1199,10 @@ def _skill_selection(detected_framework: Optional[str], conversion_state: str, s
         "recommended_skills": recommended,
         "safety_findings": [finding["code"] for finding in state.findings[:MAX_EVIDENCE_PER_BUCKET]],
     }
+
+
+def _has_problematic_skips(state: InspectState) -> bool:
+    return state.classification_incomplete
 
 
 def _recommended_next_commands(
@@ -1071,23 +1221,30 @@ def _recommended_next_commands(
 
 
 def _record_symlink_skip(path: Path, state: InspectState) -> None:
+    _add_skip(state, _symlink_skip_entry(path, state))
+
+
+def _record_symlink_skip_after_file_limit(path: Path, state: InspectState) -> bool:
+    return _add_skip_after_file_limit(state, _symlink_skip_entry(path, state))
+
+
+def _symlink_skip_entry(path: Path, state: InspectState) -> dict:
     try:
         target = os.readlink(path)
     except OSError:
         target = ""
-    _add_skip(
-        state,
-        {
-            "code": "SYMLINK_SKIPPED",
-            "path": _display_path(path, state.root, state.redact),
-            "target": _redact_literal(target, state.redact),
-            "message": "symlink was not followed during static inspection",
-        },
-    )
+    return {
+        "code": "SYMLINK_SKIPPED",
+        "path": _display_path(path, state.root, state.redact),
+        "target": _redact_literal(target, state.redact),
+        "message": "symlink was not followed during static inspection",
+    }
 
 
 def _add_skip(state: InspectState, entry: dict) -> None:
     state.files_skipped_count += 1
+    if entry.get("code") in _INCOMPLETE_SCAN_SKIP_CODES:
+        state.classification_incomplete = True
     if len(state.files_skipped) < MAX_EVIDENCE_PER_BUCKET:
         state.files_skipped.append(entry)
 
@@ -1125,6 +1282,10 @@ def _display_path(path: Path, root: Path, redact: bool) -> str:
 
 def _inspected_target_path(path: Path) -> str:
     return os.path.abspath(os.path.normpath(str(path)))
+
+
+def _normalized_inspect_target(path: Path | str) -> Path:
+    return Path(_inspected_target_path(Path(path).expanduser()))
 
 
 def _redact_literal(value: str, redact: bool) -> str:
