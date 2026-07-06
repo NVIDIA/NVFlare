@@ -556,18 +556,7 @@ class ClientSideController(Executor, TaskController):
         self.asked_to_stop = True
         self._abort_current_task(fl_ctx)
         self.finalize(fl_ctx)
-        reply = make_reply(ReturnCode.OK)
-        # Deliver a recorded learn failure synchronously on this reply. Once
-        # finalize() sets workflow_done, the piggybacked status report is no
-        # longer consumed by the server (it stops processing task requests once
-        # its control_flow returns), so a failure that raced the end-workflow
-        # request would otherwise be lost and the job would end COMPLETED. The
-        # server checks this header (see ServerSideController.control_flow).
-        with self.status_lock:
-            error = self.current_status.error
-        if error:
-            reply[Constant.ERROR] = error
-        return reply
+        return make_reply(ReturnCode.OK)
 
     def _process_learn_request(self, request: Shareable, fl_ctx: FLContext) -> Shareable:
         try:
