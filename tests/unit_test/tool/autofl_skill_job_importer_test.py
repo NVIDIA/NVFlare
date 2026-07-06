@@ -12,15 +12,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import importlib.util
+import sys
+from pathlib import Path
+
+import pytest
 import yaml
 
-from nvflare.app_common.autofl import (
-    AUTOFL_CONFIG_SCHEMA_VERSION,
-    DeterministicJobImporter,
-    dump_autofl_yaml,
-    import_job_to_autofl_config,
-    job_importer,
-)
+
+def _load_importer():
+    repo_root = Path(__file__).parents[3]
+    importer_path = repo_root / "skills" / "nvflare-autofl" / "scripts" / "job_importer.py"
+    spec = importlib.util.spec_from_file_location("nvflare_autofl_skill_job_importer", importer_path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+job_importer = _load_importer()
+AUTOFL_CONFIG_SCHEMA_VERSION = job_importer.AUTOFL_CONFIG_SCHEMA_VERSION
+DeterministicJobImporter = job_importer.DeterministicJobImporter
+dump_autofl_yaml = job_importer.dump_autofl_yaml
+import_job_to_autofl_config = job_importer.import_job_to_autofl_config
 
 
 def _objective(metric, source="user_request"):
@@ -30,7 +44,7 @@ def _objective(metric, source="user_request"):
         "optimization_metric": metric,
         "metric_extraction_order": [metric],
         "mode": "max",
-        "source": source,
+        "metric_contract_source": source,
     }
 
 
@@ -125,8 +139,9 @@ def test_import_recipe_job_extracts_trust_contract_without_executing_code(tmp_pa
     assert config["search_space"]["suggested"]["lr"]["default"] == 0.01
     assert config["search_space"]["suggested"]["batch_size"]["type"] == "int"
     assert config["trust_contract"]["allowed_edit_paths"] == ["job.py", "client.py", "model.py"]
-    assert config["job"]["allowed_create_patterns"] == ["**/*.py"]
     assert config["trust_contract"]["allowed_create_patterns"] == ["**/*.py"]
+    assert "allowed_edit_paths" not in config["job"]
+    assert "allowed_create_patterns" not in config["job"]
     assert config["trust_contract"]["agent_controls"]["must_not_edit_outside_allowed_paths"] is True
     assert config["unresolved"] == []
 
@@ -479,13 +494,91 @@ ScriptRunner(script="train_b.py")
     assert {"field": "job.train_script", "reason": "no train_script was found or resolved"} in config["unresolved"]
 
 
-def test_main_returns_clean_error_for_missing_job(tmp_path, capsys):
-    output_path = tmp_path / "autofl.yaml"
+def test_import_keeps_async_function_assignments_out_of_module_scope(tmp_path):
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 
-    exit_code = job_importer.main([str(tmp_path / "missing.py"), "--output", str(output_path)])
+NUM_ROUNDS = 3
 
-    captured = capsys.readouterr()
-    assert exit_code == 1
-    assert captured.out == ""
-    assert "error: job.py not found:" in captured.err
-    assert not output_path.exists()
+async def helper():
+    NUM_ROUNDS = 99
+    return NUM_ROUNDS
+
+FedAvgRecipe(name="demo", model=object(), num_rounds=NUM_ROUNDS, min_clients=2)
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert config["budget"]["fixed_training_budget"]["num_rounds"] == 3
+
+
+def test_import_marks_augmented_budget_assignment_unresolved(tmp_path):
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+
+NUM_ROUNDS = 3
+NUM_ROUNDS += 97
+FedAvgRecipe(name="demo", model=object(), num_rounds=NUM_ROUNDS, min_clients=2)
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert "num_rounds" not in config["budget"]["fixed_training_budget"]
+    assert any(item["field"] == "budget.fixed_training_budget.num_rounds" for item in config["unresolved"])
+
+
+def test_import_ignores_add_argument_on_non_argparse_objects(tmp_path):
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+import argparse
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+
+class Registry:
+    def add_argument(self, *args, **kwargs):
+        pass
+
+registry = Registry()
+registry.add_argument("--num_rounds", default=99)
+parser = argparse.ArgumentParser()
+parser.add_argument("--num_rounds", type=int, default=4)
+args = parser.parse_args()
+FedAvgRecipe(name="demo", model=object(), num_rounds=args.num_rounds, min_clients=2)
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert config["budget"]["fixed_training_budget"]["num_rounds"] == 4
+
+
+def test_import_does_not_admit_local_recipe_classes(tmp_path):
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+class MyRecipe:
+    pass
+
+MyRecipe(name="local", num_rounds=1, min_clients=2)
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert config["import"]["support"]["status"] == "partial"
+    assert config["job"]["surface"] == "unknown"
+
+
+def test_import_returns_clean_error_for_missing_job(tmp_path):
+    with pytest.raises(job_importer.JobImportError, match="job.py not found"):
+        import_job_to_autofl_config(str(tmp_path / "missing.py"), workspace_root=str(tmp_path))

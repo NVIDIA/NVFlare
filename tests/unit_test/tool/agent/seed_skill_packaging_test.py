@@ -27,6 +27,7 @@ from nvflare.tool.agent.skill_manager import SkillSource, install_skills, list_s
 from nvflare.tool.agent.skill_manifest import build_skill_manifest, copy_released_skills_to_bundle
 
 SEED_SKILLS = {
+    "nvflare-autofl",
     "nvflare-orient",
     "nvflare-convert-pytorch",
     "nvflare-diagnose-job",
@@ -96,6 +97,8 @@ def test_seed_skills_install_into_codex_and_claude_temp_targets(tmp_path):
     _assert_diagnose_runtime_payload(claude_target / "nvflare-diagnose-job")
     _assert_analysis_payload_present(codex_target / "nvflare-diagnose-job")
     _assert_analysis_payload_present(claude_target / "nvflare-diagnose-job")
+    _assert_autofl_runtime_payload(codex_target / "nvflare-autofl", tmp_path / "codex-job")
+    _assert_autofl_runtime_payload(claude_target / "nvflare-autofl", tmp_path / "claude-job")
 
     codex_list = list_skills(agent="codex", target_dir=codex_target, source=source)
     claude_list = list_skills(agent="claude", target_dir=claude_target, source=source)
@@ -285,6 +288,23 @@ def _assert_diagnose_runtime_payload(skill_dir: Path) -> None:
     assert skill_dir.joinpath("SKILL.md").is_file()
     assert skill_dir.joinpath("references", "evidence-collection.md").is_file()
     assert skill_dir.joinpath("references", "failure-patterns.md").is_file()
+
+
+def _assert_autofl_runtime_payload(skill_dir: Path, unrelated_job_dir: Path) -> None:
+    runner = skill_dir / "scripts" / "run_job_campaign.py"
+    importer = skill_dir / "scripts" / "job_importer.py"
+    assert skill_dir.joinpath("SKILL.md").is_file()
+    assert runner.is_file()
+    assert importer.is_file()
+    unrelated_job_dir.mkdir()
+    result = subprocess.run(
+        [sys.executable, str(runner), "--help"],
+        cwd=unrelated_job_dir,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def _assert_analysis_payload_present(skill_dir: Path) -> None:

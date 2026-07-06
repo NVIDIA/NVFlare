@@ -39,6 +39,8 @@ Common next actions:
   then retry initialization.
 - `edit_candidate`: finish the pending candidate draft, then invoke the runner's
   `evaluate` lifecycle action.
+- `abandon_candidate`: abandon pending candidate work after a manual stop, then
+  refresh status before final reporting.
 - `propose_candidate`: form a hypothesis, prepare its manifest, and edit the
   returned candidate source directory.
 - `submit_baseline` or `submit_candidate`: use the standard POC/production job

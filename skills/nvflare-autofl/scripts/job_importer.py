@@ -22,10 +22,8 @@ dynamic or unsupported fields are surfaced under ``unresolved``.
 
 from __future__ import annotations
 
-import argparse
 import ast
 import hashlib
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -174,8 +172,6 @@ class DeterministicJobImporter:
             "source": self._display_path(source_path),
             "surface": _surface_name(job_call),
             "entrypoint": "main" if _has_main_entrypoint(tree) else "unresolved",
-            "allowed_edit_paths": allowed_edit_paths,
-            "allowed_create_patterns": list(ALLOWED_CREATE_PATTERNS),
         }
         if job_call:
             call_args, call_issues = self._resolved_call_keywords(job_call, index.parser_args, source_text)
@@ -491,6 +487,8 @@ class _ImportIndex(ast.NodeVisitor):
         self.module_assignments: Dict[str, ast.AST] = {}
         self._local_assignments_stack: List[Dict[str, ast.AST]] = []
         self._function_stack: List[str] = []
+        self._argparse_parser_names: set[str] = set()
+        self._argparse_subparser_names: set[str] = set()
         self.job_calls: List[CallInfo] = []
         self.unsupported_job_calls: List[CallInfo] = []
         self.script_runner_calls: List[CallInfo] = []
@@ -521,6 +519,12 @@ class _ImportIndex(ast.NodeVisitor):
                 self.imports[alias.asname or alias.name] = f"{node.module}.{alias.name}"
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._visit_function(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._visit_function(node)
+
+    def _visit_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
         self._function_stack.append(node.name)
         self._local_assignments_stack.append({})
         self.generic_visit(node)
@@ -531,16 +535,26 @@ class _ImportIndex(ast.NodeVisitor):
         for target in node.targets:
             if isinstance(target, ast.Name):
                 self._current_assignments()[target.id] = node.value
+                self._track_argparse_assignment(target.id, node.value)
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         if isinstance(node.target, ast.Name) and node.value:
             self._current_assignments()[node.target.id] = node.value
+            self._track_argparse_assignment(node.target.id, node.value)
+        self.generic_visit(node)
+
+    def visit_AugAssign(self, node: ast.AugAssign) -> None:
+        if isinstance(node.target, ast.Name):
+            # The result depends on runtime state. Preserve the expression so
+            # downstream resolution marks the value as unresolved instead of
+            # reusing an earlier static assignment.
+            self._current_assignments()[node.target.id] = node
         self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call) -> None:
         call_name = _call_name(node.func)
-        if _is_argparse_add_argument_call(call_name):
+        if self._is_argparse_add_argument_call(call_name):
             arg_spec = _arg_spec_from_call(node)
             if arg_spec:
                 self.parser_args[arg_spec.name] = arg_spec
@@ -569,6 +583,23 @@ class _ImportIndex(ast.NodeVisitor):
             else:
                 self.unsupported_job_calls.append(call_info)
         self.generic_visit(node)
+
+    def _track_argparse_assignment(self, target: str, value: ast.AST) -> None:
+        if not isinstance(value, ast.Call):
+            return
+        call_name = self._resolve_import_path(_call_name(value.func))
+        if call_name in {"argparse.ArgumentParser", "argparse._ArgumentGroup"}:
+            self._argparse_parser_names.add(target)
+            return
+        owner, _, method = call_name.rpartition(".")
+        if method == "add_subparsers" and owner in self._argparse_parser_names:
+            self._argparse_subparser_names.add(target)
+        elif method == "add_parser" and owner in self._argparse_subparser_names:
+            self._argparse_parser_names.add(target)
+
+    def _is_argparse_add_argument_call(self, call_name: str) -> bool:
+        owner, _, method = call_name.rpartition(".")
+        return method == "add_argument" and owner in self._argparse_parser_names
 
     def _resolve_import_path(self, call_name: str) -> str:
         if not call_name:
@@ -758,14 +789,12 @@ def _unparse(node: ast.AST) -> str:
         return type(node).__name__
 
 
-def _is_argparse_add_argument_call(call_name: str) -> bool:
-    return call_name.endswith(".add_argument")
-
-
 def _is_supported_job_call(name: str, resolved_name: str) -> bool:
+    if not resolved_name.startswith("nvflare."):
+        return False
     if name.endswith("Recipe"):
         return True
-    return resolved_name.startswith("nvflare.") and name.endswith("Job") and name != "Job"
+    return name.endswith("Job") and name != "Job"
 
 
 def _is_recipe_call(call_info: CallInfo) -> bool:
@@ -823,12 +852,14 @@ def _objective_contract(metric_name: str, mode: str, source: str) -> Dict[str, A
         "optimization_metric": metric_name,
         "metric_extraction_order": [metric_name],
         "mode": mode,
-        "source": source,
+        "metric_contract_source": source,
     }
 
 
 def _has_main_entrypoint(tree: ast.AST) -> bool:
-    return any(isinstance(node, ast.FunctionDef) and node.name == "main" for node in ast.walk(tree))
+    return any(
+        isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "main" for node in ast.walk(tree)
+    )
 
 
 def _existing_path(path: Path) -> Optional[Path]:
@@ -865,36 +896,3 @@ def _overall_confidence(unresolved: List[Dict[str, str]], job_call: Optional[Cal
 
 def _unresolved(field: str, reason: str) -> Dict[str, str]:
     return {"field": field, "reason": reason}
-
-
-def main(argv: Optional[List[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description="Deterministically import an NVFlare job.py into autofl.yaml")
-    parser.add_argument("job", help="NVFlare job.py file or directory containing job.py")
-    parser.add_argument("--output", default="autofl.yaml", help="output path for generated autofl.yaml")
-    parser.add_argument("--metric", help="requested optimization metric")
-    parser.add_argument("--mode", default="max", choices=["max", "min"])
-    parser.add_argument("--env", dest="target_env", choices=["sim", "poc", "prod"], help="target environment")
-    parser.add_argument("--max-candidates", type=int, help="candidate budget")
-    args = parser.parse_args(argv)
-
-    importer = DeterministicJobImporter()
-    try:
-        config = importer.import_job(
-            args.job,
-            metric=args.metric,
-            mode=args.mode,
-            target_env=args.target_env,
-            max_candidates=args.max_candidates,
-        )
-    except JobImportError as e:
-        print(f"error: {e}", file=sys.stderr)
-        return 1
-    output_path = Path(args.output)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(importer.dump_yaml(config), encoding="utf-8")
-    print(output_path)
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

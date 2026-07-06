@@ -241,7 +241,7 @@ def test_numeric_crashes_and_pending_candidates_do_not_change_retained_best_or_p
     assert state["next_action"] == "edit_candidate"
 
 
-def test_pending_manifest_takes_precedence_over_cap_and_stop_file(tmp_path):
+def test_stop_file_requires_pending_candidate_abandonment_before_final_report(tmp_path):
     guard = _load_guard()
     stop_file = tmp_path / "STOP_AUTOFL"
     stop_file.touch()
@@ -254,8 +254,9 @@ def test_pending_manifest_takes_precedence_over_cap_and_stop_file(tmp_path):
         pending_manifest_count=1,
     )
 
-    assert state["decision"] == "continue"
-    assert state["reason"] == "pending_candidates"
+    assert state["decision"] == "stop"
+    assert state["reason"] == "manual_stop_pending_candidate"
+    assert state["next_action"] == "abandon_candidate"
     assert state["final_response_allowed"] is False
 
 
@@ -266,6 +267,7 @@ def test_continuous_campaign_reference_documents_only_emitted_actions():
     actions = {
         "repair_baseline",
         "edit_candidate",
+        "abandon_candidate",
         "propose_candidate",
         "submit_baseline",
         "submit_candidate",

@@ -38,7 +38,7 @@ def _campaign_config():
     return {
         "schema_version": "nvflare.autofl.config.v1",
         "import": {"source_sha256": "a" * 64, "support": {"status": "supported"}},
-        "job": {"allowed_edit_paths": ["job.py", "client.py"]},
+        "job": {},
         "objective": {
             "metric": "accuracy",
             "requested_metric": "accuracy",
@@ -48,7 +48,11 @@ def _campaign_config():
         "budget": {"fixed_training_budget": {"num_clients": 2, "num_rounds": 1}},
         "environment": {"requested": "sim"},
         "search_space": {"suggested": {"lr": {"default": 0.1}}},
-        "trust_contract": {"allowed_edit_paths": ["job.py", "client.py"], "unresolved": []},
+        "trust_contract": {
+            "allowed_edit_paths": ["job.py", "client.py"],
+            "allowed_create_patterns": ["**/*.py"],
+            "unresolved": [],
+        },
     }
 
 
@@ -160,9 +164,7 @@ def test_initialize_merges_existing_mutation_schema_preferred_targets_into_autof
     assert runner.main(["initialize", str(job), "--no-prefer-synthetic"]) == 0
 
     config = runner.read_yaml(tmp_path / "autofl.yaml")
-    assert "custom_aggregators.py" in config["job"]["allowed_edit_paths"]
     assert "custom_aggregators.py" in config["trust_contract"]["allowed_edit_paths"]
-    assert config["job"]["preferred_targets"] == ["client.py", "custom_aggregators.py"]
     assert config["trust_contract"]["preferred_targets"] == ["client.py", "custom_aggregators.py"]
 
     assert (
@@ -206,8 +208,8 @@ def test_missing_or_escaping_preferred_targets_remain_unresolved(tmp_path):
 
     updated = runner.apply_mutation_schema_contract(config, schema, tmp_path)
 
-    assert "missing_aggregator.py" not in updated["job"]["allowed_edit_paths"]
-    assert "../shared/custom_aggregators.py" not in updated["job"]["allowed_edit_paths"]
+    assert "missing_aggregator.py" not in updated["trust_contract"]["allowed_edit_paths"]
+    assert "../shared/custom_aggregators.py" not in updated["trust_contract"]["allowed_edit_paths"]
     unresolved_reasons = [
         item["reason"] for item in updated["unresolved"] if item["field"] == "mutation_schema.preferred_targets"
     ]
@@ -248,6 +250,19 @@ def test_text_metric_extraction_supports_scientific_notation(tmp_path):
     tmp_path.joinpath("log_fl.txt").write_text("validation_loss: 1.25e-4\n", encoding="utf-8")
 
     assert runner.extract_score(tmp_path, ["validation_loss"]) == pytest.approx(0.000125)
+
+
+def test_text_metric_extraction_requires_exact_metric_token_and_records_provenance(tmp_path):
+    runner = _load_runner()
+    log_path = tmp_path / "log.txt"
+    log_path.write_text("val_accuracy: 0.9\naccuracy: 0.7\n", encoding="utf-8")
+
+    evidence = runner.extract_metric_evidence(tmp_path, ["accuracy"])
+
+    assert evidence.score == 0.7
+    assert evidence.metric_name == "accuracy"
+    assert evidence.source == "text:log.txt"
+    assert evidence.artifact == str(log_path.resolve())
 
 
 def test_runner_applies_schema_metric_contract():
@@ -361,6 +376,15 @@ def test_run_streams_partial_line_before_timeout(tmp_path):
     assert "partial output" in log_path.read_text(encoding="utf-8")
 
 
+def test_job_help_is_bounded(tmp_path):
+    runner = _load_runner()
+    job = tmp_path / "job.py"
+    job.write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="job.py --help exceeded 1 seconds"):
+        runner.job_help(sys.executable, job, tmp_path, timeout=1)
+
+
 def test_metric_extraction_prefers_structured_artifacts_then_known_text_logs(tmp_path):
     runner = _load_runner()
     nested = tmp_path / "server"
@@ -390,15 +414,15 @@ def test_result_paths_and_static_job_names_are_resolved_deterministically(tmp_pa
 
     assert runner.extract_result_dir("Result can be found in : relative-result", tmp_path) == relative.resolve()
     assert runner.imported_job_names(config) == ["recipe-name", "fed-job-name"]
-    assert runner.expected_simulator_roots(config, "injected") == [
-        Path("/tmp/nvflare/simulation/injected"),
-        Path("/tmp/nvflare/simulation/recipe-name"),
-        Path("/tmp/nvflare/simulation/fed-job-name"),
+    assert runner.expected_simulator_roots(config, "injected", tmp_path) == [
+        Path("/tmp/nvflare/simulation/injected").resolve(),
+        Path("/tmp/nvflare/simulation/recipe-name").resolve(),
+        Path("/tmp/nvflare/simulation/fed-job-name").resolve(),
     ]
     config["job"]["recipe_args"]["name"]["confidence"] = "low"
     assert runner.imported_job_names(config) == ["fed-job-name"]
     with pytest.raises(ValueError, match="unsafe simulator job name"):
-        runner.expected_simulator_roots({}, "../other-run")
+        runner.expected_simulator_roots({}, "../other-run", tmp_path)
 
 
 def test_success_without_deterministic_result_root_is_actionable_failure(tmp_path, monkeypatch):
@@ -426,18 +450,22 @@ def test_success_without_deterministic_result_root_is_actionable_failure(tmp_pat
     assert "no deterministic NVFlare result directory" in record.failure_reason
 
 
-def test_run_job_collects_relative_result_and_standard_nvflare_text_metric(tmp_path):
+def test_run_job_collects_configured_sim_result_and_standard_nvflare_text_metric(tmp_path):
     runner = _load_runner()
     job = tmp_path / "job.py"
     job.write_text(
-        """
+        f"""
+import argparse
 from pathlib import Path
 
-result = Path("relative-result")
+parser = argparse.ArgumentParser()
+parser.add_argument("--name", default="run")
+args = parser.parse_args()
+result = Path({str(tmp_path / 'simulation')!r}) / args.name
 server = result / "server"
 server.mkdir(parents=True, exist_ok=True)
 server.joinpath("log.txt").write_text("accuracy: 0.76\\n")
-print("Result can be found in : relative-result")
+print(f"Result can be found in : {{result}}")
 """.lstrip(),
         encoding="utf-8",
     )
@@ -447,21 +475,35 @@ print("Result can be found in : relative-result")
         python=sys.executable,
         job=job,
         cwd=tmp_path,
-        help_text="",
+        help_text="--name NAME",
         fixed_args=[],
         base_args=[],
         output_root=tmp_path / "runs",
         timeout=10,
         simulator_no_progress_timeout=0,
         metrics=["accuracy"],
-        config={"job": {}},
+        config={
+            "job": {},
+            "environment": {
+                "discovered": {
+                    "name": "SimEnv",
+                    "args": {
+                        "workspace_root": {
+                            "value": str(tmp_path / "simulation"),
+                            "confidence": "high",
+                        }
+                    },
+                }
+            },
+        },
     )
 
     assert record.status == "candidate"
     assert record.score == pytest.approx(0.76)
+    assert record.metric_source == "text:log.txt"
     assert tmp_path.joinpath("runs/candidate/simulation/server/log.txt").is_file()
     assert tmp_path.joinpath("runs/candidate/run.log").is_file()
-    assert tmp_path.joinpath("relative-result").is_dir()
+    assert tmp_path.joinpath("simulation/autofl_candidate").is_dir()
 
 
 def test_run_stops_on_nvflare_simulator_stall_log(tmp_path):
@@ -657,9 +699,44 @@ def test_runner_state_marks_infrastructure_retry_non_final(tmp_path):
     assert state["final_response_allowed"] is False
 
 
+def test_successful_retry_clears_historical_infrastructure_decision(tmp_path):
+    runner = _load_runner()
+    records = [
+        runner.RunRecord(
+            runner.INFRASTRUCTURE_RETRY,
+            "baseline",
+            None,
+            1.0,
+            "none",
+            "baseline",
+            "python job.py",
+            "/tmp/failed",
+        ),
+        runner.RunRecord(
+            "baseline",
+            "baseline_retry_2",
+            0.5,
+            1.0,
+            "none",
+            "baseline",
+            "python job.py",
+            "/tmp/success",
+        ),
+    ]
+    results_path = tmp_path / "results.tsv"
+    runner.write_results(results_path, records)
+
+    state = runner.write_state(tmp_path / "state.json", results_path, records, max_candidates=None)
+
+    assert state["decision"] == "continue"
+    assert state["next_action"] == "propose_candidate"
+
+
 def test_baseline_crash_is_not_counted_as_candidate_attempt():
     runner = _load_runner()
-    records = [runner.RunRecord("crash", "baseline", None, 1.0, "none", "baseline", "python job.py", "/tmp/baseline")]
+    records = [
+        runner.RunRecord("baseline", "baseline", None, 1.0, "none", "baseline", "python job.py", "/tmp/baseline")
+    ]
 
     assert runner.candidate_attempts(records) == 0
     assert runner.is_sandbox_socket_failure(
@@ -730,6 +807,48 @@ def test_candidate_rejects_unauthorized_existing_source_and_symlink(tmp_path, mo
         link.symlink_to(tmp_path / "secret.py")
     except OSError:
         pytest.skip("symlinks are unavailable on this platform")
+    assert runner.main(["evaluate", str(job)]) == 2
+
+
+def test_candidate_creation_uses_only_trust_contract_patterns(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    config_path = tmp_path / "autofl.yaml"
+    config = runner.read_yaml(config_path)
+    config["trust_contract"]["allowed_create_patterns"] = ["algorithms/*.py"]
+    runner.write_yaml(config_path, config)
+
+    assert runner.main(["prepare", str(job), "--name", "new_module", "--hypothesis", "add algorithm"]) == 0
+    draft = tmp_path / ".nvflare/autofl/candidates/new_module/source"
+    draft.joinpath("new_module.py").write_text("VALUE = 1\n", encoding="utf-8")
+    assert runner.main(["evaluate", str(job)]) == 2
+
+    draft.joinpath("new_module.py").unlink()
+    draft.joinpath("algorithms").mkdir()
+    draft.joinpath("algorithms/new_module.py").write_text("VALUE = 1\n", encoding="utf-8")
+    monkeypatch.setattr(
+        runner,
+        "run_job",
+        lambda run_def, **kwargs: runner.RunRecord(
+            "candidate", run_def.name, 0.7, 1.0, "none", run_def.description, "python job.py", "/tmp/candidate"
+        ),
+    )
+    assert runner.main(["evaluate", str(job)]) == 0
+    assert tmp_path.joinpath("algorithms/new_module.py").is_file()
+
+
+def test_missing_create_patterns_deny_new_source(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    config_path = tmp_path / "autofl.yaml"
+    config = runner.read_yaml(config_path)
+    config["trust_contract"].pop("allowed_create_patterns")
+    runner.write_yaml(config_path, config)
+
+    assert runner.main(["prepare", str(job), "--name", "denied_module", "--hypothesis", "add algorithm"]) == 0
+    draft = tmp_path / ".nvflare/autofl/candidates/denied_module/source"
+    draft.joinpath("new_module.py").write_text("VALUE = 1\n", encoding="utf-8")
+
     assert runner.main(["evaluate", str(job)]) == 2
 
 
@@ -962,6 +1081,21 @@ def test_abandon_candidate_clears_pending_draft_without_touching_best(tmp_path, 
     assert state["pending_candidate_manifest"] is None
 
 
+def test_abandon_rejects_agent_modified_manifest_paths(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, client, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    assert runner.main(["prepare", str(job), "--name", "tampered", "--hypothesis", "temporary idea"]) == 0
+    draft = tmp_path / ".nvflare/autofl/candidates/tampered/source/client.py"
+    draft.write_text("ALGORITHM = 'temporary'\n", encoding="utf-8")
+    manifest_path = tmp_path / ".nvflare/autofl/candidates/tampered/candidate_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["changed_files"] = ["../client.py"]
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    assert runner.main(["abandon", str(job)]) == 2
+    assert client.read_text(encoding="utf-8") == "ALGORITHM = 'baseline'\n"
+
+
 def test_status_rescans_pending_manifests_before_writing_state(tmp_path, monkeypatch):
     runner = _load_runner()
     job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
@@ -976,6 +1110,22 @@ def test_status_rescans_pending_manifests_before_writing_state(tmp_path, monkeyp
     assert state["next_action"] == "edit_candidate"
     assert state["final_response_allowed"] is False
     assert state["pending_candidate_manifest"].endswith("pending/candidate_manifest.json")
+
+
+def test_unchanged_status_does_not_regenerate_campaign_artifacts(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    artifact_paths = [tmp_path / "results.tsv", tmp_path / "progress.png", tmp_path / "autofl_report.md"]
+    before = {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in artifact_paths}
+
+    assert runner.main(["status", str(job)]) == 0
+    first_state = tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_bytes()
+    first_state_mtime = tmp_path.joinpath(".nvflare/autofl/campaign_state.json").stat().st_mtime_ns
+    assert runner.main(["status", str(job)]) == 0
+
+    assert {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in artifact_paths} == before
+    assert tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_bytes() == first_state
+    assert tmp_path.joinpath(".nvflare/autofl/campaign_state.json").stat().st_mtime_ns == first_state_mtime
 
 
 def test_status_refuses_malformed_candidate_manifest(tmp_path, monkeypatch):
@@ -1065,6 +1215,69 @@ def test_record_literature_checkpoint_returns_to_agent_proposal(tmp_path, monkey
     assert "server aggregation candidate" in state["agent_instruction"]
 
 
+def test_external_baseline_may_follow_literature_event(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch, target_env="prod")
+
+    assert runner.main(["record", str(job), "--literature", "--hypothesis", "reviewed FedOpt"]) == 0
+    assert runner.main(["record", str(job), "--baseline", "--score", "0.5", "--job-id", "baseline-job"]) == 0
+
+    records = runner.load_results(tmp_path / "results.tsv")
+    assert [record.status for record in records] == ["literature", "baseline"]
+
+
+def test_omitted_metric_uses_imported_job_metric(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job = tmp_path / "job.py"
+    job.write_text("print('job')\n", encoding="utf-8")
+    tmp_path.joinpath("client.py").write_text("ALGORITHM = 'baseline'\n", encoding="utf-8")
+    config = _campaign_config()
+    config["objective"] = {
+        "metric": "auc",
+        "requested_metric": "auc",
+        "optimization_metric": "auc",
+        "metric_extraction_order": ["auc"],
+        "metric_contract_source": "arg:key_metric",
+    }
+    monkeypatch.setattr(runner, "import_job_config", lambda *args, **kwargs: deepcopy(config))
+    monkeypatch.setattr(runner, "job_help", lambda *args, **kwargs: "")
+    monkeypatch.setattr(runner, "write_progress", lambda path, *args: path.write_bytes(b"progress"))
+
+    def fake_run(run_def, **kwargs):
+        assert kwargs["metrics"] == ["auc"]
+        return runner.RunRecord(
+            "baseline", run_def.name, 0.6, 1.0, "none", "baseline", "python job.py", "/tmp/baseline"
+        )
+
+    monkeypatch.setattr(runner, "run_job", fake_run)
+
+    assert runner.main(["initialize", str(job), "--no-prefer-synthetic"]) == 0
+    metadata = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign.json").read_text(encoding="utf-8"))
+    assert metadata["settings"]["metric"] == "auc"
+
+
+def test_explicit_mutable_campaign_settings_persist_and_uncapped_removes_cap(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+
+    assert runner.main(["status", str(job), "--max-candidates", "7", "--timeout", "123"]) == 0
+    metadata_path = tmp_path / ".nvflare/autofl/campaign.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    assert metadata["settings"]["max_candidates"] == 7
+    assert metadata["settings"]["timeout"] == 123
+
+    assert runner.main(["status", str(job), "--uncapped"]) == 0
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    assert metadata["settings"]["max_candidates"] is None
+
+
+def test_explicit_immutable_campaign_setting_change_is_rejected(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+
+    assert runner.main(["status", str(job), "--metric", "loss"]) == 2
+
+
 def test_external_candidate_uses_standard_job_result_recording(tmp_path, monkeypatch):
     runner = _load_runner()
     job, client, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch, target_env="prod")
@@ -1125,17 +1338,23 @@ def test_import_job_config_forwards_minimization_mode(tmp_path, monkeypatch):
     output = tmp_path / "autofl.yaml"
     captured = {}
 
-    def fake_run(command, cwd, timeout, log_path):
-        captured["command"] = command
-        runner.write_yaml(output, _campaign_config())
-        return 0, "", 0.0
+    class FakeImporter:
+        __file__ = __file__
 
-    monkeypatch.setattr(runner, "run", fake_run)
+        @staticmethod
+        def import_job_to_autofl_config(*args, **kwargs):
+            captured.update(kwargs)
+            return _campaign_config()
+
+        @staticmethod
+        def dump_autofl_yaml(config):
+            return runner.yaml.safe_dump(config)
+
+    monkeypatch.setattr(runner, "load_job_importer", lambda: FakeImporter)
     args = runner.parse_args(["initialize", str(job), "--mode", "min"])
     runner.import_job_config(args, job, output, tmp_path / "import.log", 10)
 
-    mode_index = captured["command"].index("--mode")
-    assert captured["command"][mode_index + 1] == "min"
+    assert captured["mode"] == "min"
 
 
 @pytest.mark.parametrize(
@@ -1172,21 +1391,27 @@ def test_cli_lifecycle_runs_agent_code_candidate_end_to_end(tmp_path):
     repo_root = Path(__file__).parents[3]
     runner_path = repo_root / "skills" / "nvflare-autofl" / "scripts" / "run_job_campaign.py"
     job = tmp_path / "job.py"
+    simulation_root = tmp_path / "simulation"
     job.write_text(
-        """
+        f"""
 import argparse
 import json
 from pathlib import Path
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe as ImportedFedAvgRecipe
+from nvflare.recipe import SimEnv as ImportedSimEnv
 
 SCORE = 0.5
 
-class FedAvgRecipe:
+class FakeFedAvgRecipe:
     def __init__(self, **kwargs):
         self.kwargs = kwargs
 
-class SimEnv:
+class FakeSimEnv:
     def __init__(self, **kwargs):
         self.kwargs = kwargs
+
+ImportedFedAvgRecipe = FakeFedAvgRecipe
+ImportedSimEnv = FakeSimEnv
 
 def main():
     parser = argparse.ArgumentParser()
@@ -1194,12 +1419,12 @@ def main():
     parser.add_argument("--num_rounds", type=int, default=1)
     parser.add_argument("--n_clients", type=int, default=2)
     args = parser.parse_args()
-    FedAvgRecipe(model=object(), num_rounds=args.num_rounds, min_clients=args.n_clients)
-    SimEnv(num_clients=args.n_clients)
-    result = Path(f"result-{args.name}")
-    result.mkdir(exist_ok=True)
-    result.joinpath("metrics_summary.json").write_text(json.dumps({"accuracy": SCORE}))
-    print(f"Result can be found in : {result.resolve()}")
+    ImportedFedAvgRecipe(model=object(), num_rounds=args.num_rounds, min_clients=args.n_clients)
+    ImportedSimEnv(num_clients=args.n_clients, workspace_root={str(simulation_root)!r})
+    result = Path({str(simulation_root)!r}) / args.name
+    result.mkdir(parents=True, exist_ok=True)
+    result.joinpath("metrics_summary.json").write_text(json.dumps({{"accuracy": SCORE}}))
+    print(f"Result can be found in : {{result.resolve()}}")
 
 if __name__ == "__main__":
     main()

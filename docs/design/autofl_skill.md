@@ -19,8 +19,8 @@ The first production-oriented slice includes:
 
 - A root `skills/nvflare-autofl` agent skill that follows the NVFLARE skills
   layout used by the general agent-skills work.
-- A deterministic `job.py` importer that emits reviewable `autofl.yaml` for the
-  Auto-FL campaign.
+- A deterministic, skill-private `job.py` importer that emits reviewable
+  `autofl.yaml` for the Auto-FL campaign without executing user code.
 - A trust contract in `autofl.yaml` showing editable campaign settings,
   unresolved fields, fixed-budget constraints, and allowed edit paths.
 - A skill-local candidate lifecycle that snapshots the current best source,
@@ -30,7 +30,8 @@ The first production-oriented slice includes:
   environments through existing NVFlare surfaces.
 
 The first version does not embed or vendor a coding agent, and it does not add a
-public Auto-FL command family.
+public Auto-FL command family. Users install and select the skill, then express
+their intent in a prompt; they do not invoke its helper scripts directly.
 
 ## Role of autofl.yaml
 
@@ -95,19 +96,20 @@ Every import result includes:
 
 - `import`: importer version, source path, source hash, support status, and
   confidence.
-- `job`: surface, entrypoint, allowed edit paths, train script, and call
-  arguments with provenance.
+- `job`: surface, entrypoint, train script, and call arguments with provenance.
 - `objective`, `budget`, `environment`, and `search_space`.
 - `trust_contract`: extracted facts, unresolved fields, allowed edit paths, and
-  agent controls.
+  allowed creation patterns and agent controls. This is the sole source of
+  candidate source permissions.
 
 The skill must present editable, unresolved, and allowed sections before it runs
 candidates. This is the core product guardrail: NVFlare makes the campaign
 reviewable and reproducible; the agent makes it interactive and exploratory.
 During campaign initialization, the runner merges existing, workspace-local
-`mutation_schema.yaml` `preferred_targets` into both allowed-edit lists. Missing,
-symlinked, reserved, or out-of-workspace targets remain unresolved rather than
-being silently authorized.
+`mutation_schema.yaml` `preferred_targets` into
+`trust_contract.allowed_edit_paths`. Missing, symlinked, reserved, or
+out-of-workspace targets remain unresolved rather than being silently
+authorized.
 
 ## Candidate Contract
 
@@ -156,10 +158,33 @@ submitted or reused through the standard NVFlare job lifecycle; no separate
 promotion command is needed.
 
 The runner is the sole writer of `.nvflare/autofl/campaign_state.json`. Its
-`status` action rescans the ledger, pending manifests, stop files, and cap before
-refreshing state. The standalone campaign guard is a read-only diagnostic and
-cannot overwrite runner metadata. Pending prepared or externally ready
-candidates take precedence over stop files, cap exhaustion, and final reporting.
+`status` action rescans the ledger, pending manifests, stop files, and cap and
+only rewrites state when its semantic contents change. It does not regenerate
+the ledger, plot, or report during an unchanged status check. The standalone
+campaign guard is a read-only diagnostic and cannot overwrite runner metadata.
+A stop file takes immediate precedence: pending candidates must be safely
+abandoned before final reporting. Without a stop request, pending prepared or
+externally ready candidates take precedence over cap exhaustion and reporting.
+
+Every score records its metric name, extraction source, and artifact. Structured
+metric artifacts take precedence over exact, provenance-labelled text fallback.
+The ledger is replaced atomically so a failed write cannot leave a partial
+campaign record.
+
+## Skill Implementation Boundary
+
+The deterministic importer and campaign runner live under
+`skills/nvflare-autofl/scripts/`. They are private executable resources of the
+Agent Skill, resolved relative to `SKILL.md` by the activated coding agent. The
+human-facing workflow exposes only skill installation, selection, and an intent
+prompt; it does not document direct Python helper invocation.
+
+This placement deliberately keeps the unreleased `autofl.yaml` contract out of
+`nvflare.app_common` and the public `nvflare agent` CLI. A general NVFlare job
+contract command should be considered only after another concrete workflow
+needs the same interface and the schema has proved stable. The general,
+read-only `nvflare agent inspect` surface does not acquire an Auto-FL-specific
+profile in this proposal.
 
 ## Review Questions
 

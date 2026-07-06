@@ -34,6 +34,7 @@ VALID_BLAST_RADIUS = frozenset(
         "submits_production",
     }
 )
+NVFLARE_METADATA_FIELDS = ("min_flare_version", "max_flare_version", "blast_radius", "skill_version", "status")
 
 
 @dataclass(frozen=True)
@@ -83,6 +84,25 @@ def parse_skill_frontmatter(skill_file: Path | str) -> dict[str, Any]:
     return metadata
 
 
+def normalize_skill_metadata(frontmatter: Mapping[str, Any]) -> dict[str, Any]:
+    """Return NVFLARE metadata from spec-compliant or legacy frontmatter."""
+    normalized = dict(frontmatter)
+    extension = frontmatter.get("metadata")
+    if extension is None:
+        return normalized
+    if not isinstance(extension, dict):
+        raise SkillFrontmatterError("SKILL.md frontmatter field 'metadata' must be a mapping")
+    for field in NVFLARE_METADATA_FIELDS:
+        nested_value = extension.get(field)
+        if nested_value is None:
+            continue
+        legacy_value = frontmatter.get(field)
+        if legacy_value is not None and legacy_value != nested_value:
+            raise SkillFrontmatterError(f"conflicting values for frontmatter field '{field}'")
+        normalized[field] = nested_value
+    return normalized
+
+
 def validate_skill_dir(skill_dir: Path | str) -> SkillValidationResult:
     """Validate one guide-compatible skill directory."""
     path = Path(skill_dir)
@@ -104,7 +124,7 @@ def validate_skill_dir(skill_dir: Path | str) -> SkillValidationResult:
         return SkillValidationResult(str(path), metadata, tuple(issues))
 
     try:
-        metadata = parse_skill_frontmatter(skill_file)
+        metadata = normalize_skill_metadata(parse_skill_frontmatter(skill_file))
     except SkillFrontmatterError as e:
         issues.append(_issue("skill-frontmatter-invalid", str(e), skill_file))
         return SkillValidationResult(str(path), metadata, tuple(issues))

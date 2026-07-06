@@ -66,6 +66,55 @@ def test_validate_skill_dir_accepts_fixture_skill():
     assert result.issues == ()
 
 
+def test_validate_skill_dir_accepts_spec_metadata_extension(tmp_path):
+    skill_dir = tmp_path / "nvflare-spec-skill"
+    skill_dir.mkdir()
+    skill_dir.joinpath("SKILL.md").write_text(
+        "---\n"
+        "name: nvflare-spec-skill\n"
+        "description: Test specification-compatible metadata.\n"
+        "license: Apache-2.0\n"
+        "compatibility: Requires NVFLARE.\n"
+        "metadata:\n"
+        '  min_flare_version: "2.8.0"\n'
+        "  blast_radius: runs_simulator\n"
+        '  skill_version: "0.1.0"\n'
+        "---\n\n"
+        "# Test Skill\n",
+        encoding="utf-8",
+    )
+
+    result = validate_skill_dir(skill_dir)
+
+    assert result.ok
+    assert result.metadata["min_flare_version"] == "2.8.0"
+    assert result.metadata["blast_radius"] == "runs_simulator"
+    assert result.metadata["skill_version"] == "0.1.0"
+
+
+def test_validate_skill_dir_rejects_conflicting_legacy_and_nested_metadata(tmp_path):
+    skill_dir = tmp_path / "nvflare-conflicting-skill"
+    skill_dir.mkdir()
+    skill_dir.joinpath("SKILL.md").write_text(
+        "---\n"
+        "name: nvflare-conflicting-skill\n"
+        "description: Test conflicting metadata.\n"
+        'min_flare_version: "2.8.0"\n'
+        "blast_radius: read_only\n"
+        "metadata:\n"
+        "  blast_radius: runs_simulator\n"
+        "---\n\n"
+        "# Test Skill\n",
+        encoding="utf-8",
+    )
+
+    result = validate_skill_dir(skill_dir)
+
+    assert not result.ok
+    assert _issue_codes(result) == {"skill-frontmatter-invalid"}
+    assert "conflicting values" in result.issues[0].message
+
+
 def test_validate_skill_dir_requires_directory_name_to_match_frontmatter(tmp_path):
     skill_dir = _write_skill(tmp_path, "nvflare-other-name", name="nvflare-example-skill")
 

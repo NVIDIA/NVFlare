@@ -69,12 +69,7 @@ def row_text(row: Dict[str, str]) -> str:
 
 
 def is_baseline(row: Dict[str, str]) -> bool:
-    status = normalize_status(row)
-    if status == "baseline":
-        return True
-    name = (row.get("name", "") or "").strip().lower()
-    command = (row.get("run_command", "") or "").lower()
-    return name == "baseline" or name.startswith("baseline_") or "--name baseline" in command
+    return normalize_status(row) == "baseline"
 
 
 def is_literature_event(row: Dict[str, str]) -> bool:
@@ -229,14 +224,18 @@ def guard_state_for_rows(
     final_response_allowed = False
 
     pending_count = len(pending) + pending_manifest_count
-    if pending_count:
+    if stop_file_hits:
+        decision = "stop"
+        if pending_count:
+            reason = "manual_stop_pending_candidate"
+            next_action = "abandon_candidate"
+        else:
+            reason = "manual_stop_file"
+            next_action = "final_report"
+            final_response_allowed = True
+    elif pending_count:
         reason = "pending_candidates"
         next_action = "edit_candidate"
-    elif stop_file_hits:
-        decision = "stop"
-        reason = "manual_stop_file"
-        next_action = "final_report"
-        final_response_allowed = True
     elif cap is not None and len(attempts) >= cap:
         decision = "stop"
         reason = "candidate_cap_exhausted"
@@ -253,6 +252,11 @@ def guard_state_for_rows(
 
     if final_response_allowed:
         instruction = "Final report is allowed because authoritative campaign state reached a stop condition."
+    elif next_action == "abandon_candidate":
+        instruction = (
+            "Manual stop requested. Do not execute the pending candidate. Run the runner abandon action, "
+            "then refresh status and generate the final report."
+        )
     elif next_action == "edit_candidate":
         instruction = "Do not produce a final answer. Finish the pending candidate, then run the runner status action."
     elif next_action == "run_literature_loop":

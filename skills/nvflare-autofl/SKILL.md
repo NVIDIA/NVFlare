@@ -1,27 +1,27 @@
 ---
 name: nvflare-autofl
 description: "Optimize an existing NVFLARE job.py through an agent-assisted Auto-FL campaign that preserves FLARE execution, policy, artifacts, and reproducibility."
-min_flare_version: "2.8.0"
-blast_radius: submits_production
-skill_version: "0.1.0"
+license: Apache-2.0
+compatibility: "Requires NVFLARE 2.8.0+, Python, and permission to run NVFLARE jobs in the selected environment."
+metadata:
+  min_flare_version: "2.8.0"
+  blast_radius: submits_production
+  skill_version: "0.1.0"
 ---
 
 # NVFLARE Auto-FL
 
 ## Use When
-
 Use this skill when the user asks to optimize an existing NVFLARE `job.py` for
 accuracy, AUC, loss, runtime, robustness, or another metric in simulation, POC,
 or production.
 
 ## Do Not Use When
-
 Do not use for converting non-FL training code into NVFLARE, diagnosing failed
 jobs without an optimization goal, production deployment setup, or generic
 hyperparameter tuning outside an NVFLARE job.
 
 ## Workflow
-
 Use this skill to optimize an existing NVFLARE `job.py` without asking the user
 to learn a new Auto-FL command tree. The user selects this skill, points to a
 job, and states the objective, environment, and optional budget. NVFLARE
@@ -29,17 +29,18 @@ provides the deterministic campaign import, execution substrate, policy
 boundaries, artifacts, and machine-readable contracts. The coding agent owns
 hypotheses, source edits, new algorithm implementations, and candidate choice.
 
-Initialize the campaign and baseline through the bundled helper:
+Resolve [run_job_campaign.py](scripts/run_job_campaign.py) relative to this
+`SKILL.md`, store its absolute path as `RUNNER`, and initialize the campaign:
 
 ```bash
-python "$CODEX_HOME/skills/nvflare-autofl/scripts/run_job_campaign.py" initialize ./job.py --metric <metric> --mode <max|min> --env <sim|poc|prod> [--max-candidates <n>]
+python "$RUNNER" initialize ./job.py [--metric <metric>] --mode <max|min> --env <sim|poc|prod> [--max-candidates <n>]
 ```
 
 Read `autofl.yaml` and the JSON response, then prepare an agent-authored
 candidate with a short hypothesis and optional candidate-only arguments:
 
 ```bash
-python "$CODEX_HOME/skills/nvflare-autofl/scripts/run_job_campaign.py" prepare ./job.py --name <candidate> --hypothesis "<expected improvement>" [--run-args "<args>"]
+python "$RUNNER" prepare ./job.py --name <candidate> --hypothesis "<expected improvement>" [--run-args "<args>"]
 ```
 
 Edit only the returned candidate source directory. Modify existing allowed
@@ -47,7 +48,7 @@ files or add Python modules under the job root; do not edit the live best source
 directly. Then evaluate the manifest:
 
 ```bash
-python "$CODEX_HOME/skills/nvflare-autofl/scripts/run_job_campaign.py" evaluate ./job.py --manifest <candidate_manifest.json>
+python "$RUNNER" evaluate ./job.py --manifest <candidate_manifest.json>
 ```
 
 Simulation evaluation runs the candidate immediately. POC and production
@@ -79,6 +80,8 @@ and reports. After each lifecycle action, read
 `.nvflare/autofl/campaign_state.json` and only finalize when
 `final_response_allowed=true`. For long-running and simulator-stall handling, read
 [continuous-campaigns.md](references/continuous-campaigns.md).
+For comparison budgets, data distributions, and rerun evidence, read
+[the shared experiment workflow](../_shared/nvflare-experiment-workflows.md).
 
 Read `autofl.yaml` and show the user a concise campaign summary:
 
@@ -99,12 +102,11 @@ candidate comparability, or production submission, ask the user to resolve those
 specific fields before running candidates.
 
 ## Requirements
-
 - Edit existing files only through candidate drafts and within
-  `job.allowed_edit_paths`. New Python modules may match
-  `job.allowed_create_patterns` under the job root.
+  `trust_contract.allowed_edit_paths`. New Python modules may match
+  `trust_contract.allowed_create_patterns` under the job root.
 - Use existing `mutation_schema.yaml` `preferred_targets` only after the runner
-  reflects them in both allowed-edit lists; surface unresolved targets.
+  reflects them in the trust contract; surface unresolved targets.
 - You may create and register new Python server aggregators through `job.py`;
   do not limit exploration to existing FedAvg/FedAvgM/FedAdam/FedOpt/SCAFFOLD choices.
 - Preserve `budget.fixed_training_budget` unless the user explicitly changes
