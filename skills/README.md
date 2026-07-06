@@ -74,11 +74,14 @@ From a local checkout (pre-publish):
 npx skills add ./skills -a claude-code -a codex
 ```
 
-From the published repository:
+From the published repository (no manual `git clone` needed — `npx skills add`
+fetches the repo itself; append `#<branch>` to install from a specific branch):
 
 ```bash
 npx skills add NVIDIA/<skills-repo> -a claude-code -a codex
 ```
 
-Pass every agent you use with repeated `-a` flags. Omitting an agent skips
-installation for that agent; there is no NVFLARE-specific installer command.
+Installation is git-based and does not depend on `pip install nvflare`; the
+skills are not shipped inside the Python wheel. Pass every agent you use with
+repeated `-a` flags. Omitting an agent skips installation for that agent; there
+is no NVFLARE-specific installer command.
