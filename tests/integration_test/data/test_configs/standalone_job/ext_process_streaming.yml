@@ -1,8 +1,9 @@
 # Regression tests for the ext-process Client API + streaming path (NVBug 6371056):
 # the training script runs in a subprocess whose CellPipe cell must route streamed
-# data (including download-service tensor transfers) to server.<jobid>. These two
-# test cases also run as part of the client_api group; this group exists so the
-# streaming routing path can be exercised on its own:
+# data (including download-service tensor transfers) to server.<jobid>. This file
+# is the only home of these two test cases; test_configs.yml lists it under both
+# the client_api group and the ext_process_streaming group, so the streaming
+# routing path can also be exercised on its own:
 #   NVFLARE_TEST_FRAMEWORK=ext_process_streaming pytest system_test.py
 n_servers: 1
 n_clients: 2
