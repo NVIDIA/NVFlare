@@ -416,7 +416,11 @@ Compatibility and Migration Notes
   so a Client Job process and an external training process must run the same
   NVFlare naming scheme. A training environment pinned to an older NVFlare
   fails with "peer FQCN mismatch" when paired with a 2.8 CJ; align the
-  training environment's NVFlare version with the site's.
+  training environment's NVFlare version with the site's. Pipe cells named by
+  pre-2.8 NVFlare (both the flat root-level form and the 2.6/2.7 forms nested
+  under the connected CP or relay) are still authenticated by upgraded CPs,
+  relays, and servers, so a fully pre-2.8 site behind an upgraded relay keeps
+  working.
 
 See the :ref:`migration_guide` for additional API and configuration migration
 notes.
