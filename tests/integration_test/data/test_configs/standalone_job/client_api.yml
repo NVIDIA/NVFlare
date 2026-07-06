@@ -67,6 +67,21 @@ tests:
           "data": { "run_finished": True }
     setup:
       - python tools/prepare_cifar10.py --root /tmp/nvflare/data
+  - test_name: "run pt-client-api-torchrun-cpu"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job pt_client_api_torchrun_cpu" ]
+        "result":
+          "type": "job_submit_success"
+      - "trigger":
+          "type": "run_state"
+          "data": { "run_finished": True }
+        "actions": [ "ensure_current_job_done" ]
+        "result":
+          "type": "run_state"
+          "data": { "run_finished": True }
   - test_name: "run pt-client-api-launch-once"
     event_sequence:
       - "trigger":
