@@ -363,6 +363,19 @@ class ServerSideController(Controller):
             if rc != ReturnCode.OK:
                 self.log_warning(fl_ctx, f"client {c} failed to end workflow {self.workflow_id}: {rc}")
                 num_errors += 1
+                continue
+
+            # A learn failure that raced the end-workflow request may not have
+            # reached us through the piggybacked status-report path; the client
+            # delivers it here instead. Fail the job so it ends with an error
+            # status rather than FINISHED:COMPLETED.
+            client_error = reply.get(Constant.ERROR)
+            if client_error:
+                self.asked_to_stop = True
+                self.system_panic(
+                    f"client {c} reported failure ending workflow {self.workflow_id}: {client_error}", fl_ctx
+                )
+                return
 
         total = len(self.participating_clients)
         successful = total - num_errors

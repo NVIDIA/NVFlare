@@ -137,3 +137,30 @@ def test_no_report_after_workflow_done_without_error():
     ctl.handle_event(EventType.BEFORE_PULL_TASK, fl_ctx)
 
     assert not fl_ctx.get_prop(Constant.STATUS_REPORTS)
+
+
+def test_end_workflow_reply_carries_recorded_error():
+    # after workflow_done the piggybacked status report is no longer consumed
+    # by the server, so a recorded learn failure must ride the end-workflow
+    # reply to still fail the job
+    ctl = _FailingClientSideController()
+    ctl.logger = MagicMock()
+    ctl.fire_event = MagicMock()
+    ctl.update_status(action="do_learn_task", error=ReturnCode.EXECUTION_EXCEPTION)
+
+    reply = ctl._process_end_workflow("topic", Shareable(), FLContext())
+
+    assert ctl.workflow_done
+    assert reply.get_return_code() == ReturnCode.OK
+    assert reply.get(Constant.ERROR) == ReturnCode.EXECUTION_EXCEPTION
+
+
+def test_end_workflow_reply_has_no_error_when_clean():
+    ctl = _FailingClientSideController()
+    ctl.logger = MagicMock()
+    ctl.fire_event = MagicMock()
+
+    reply = ctl._process_end_workflow("topic", Shareable(), FLContext())
+
+    assert reply.get_return_code() == ReturnCode.OK
+    assert reply.get(Constant.ERROR) is None
