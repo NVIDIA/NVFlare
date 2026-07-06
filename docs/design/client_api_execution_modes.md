@@ -133,6 +133,29 @@ It does not create a Cell connection, launch a child process, or manage an exter
 
 What actually changes relative to today's InProcessClientAPIExecutor: nothing user-visible. The executor is consolidated under ClientAPIExecutor as the in_process backend, and LOG-to-analytics conversion (today the executor callback that fires `fed.analytix_log_stats`) moves with it. The payload lifecycle below is trivially satisfied in this mode — there is no cross-process transfer between trainer and CJ. When the CJ itself is the producer toward the server (lazy refs forwarded upstream), the CJ-side transfer is governed by the same shared payload-lifecycle contract; that obligation exists today and is unchanged by this design.
 
+Sequence (one round). No Cell, no HELLO handshake, no heartbeat, no payload
+transfer — the trainer runs in the CJ process and exchanges the FLModel through
+DataBus directly:
+
+```mermaid
+sequenceDiagram
+    participant C as Controller
+    participant E as Executor
+    participant D as DataBus
+    participant T as Trainer
+    C->>E: task (Shareable)
+    E->>D: put global FLModel
+    D->>T: flare.receive()
+    Note over T: train()
+    T->>D: flare.log(...)
+    D->>E: log data
+    Note over E: fire fed.analytix_log_stats
+    T->>D: flare.send(result)
+    D->>E: take local FLModel
+    E->>C: result (Shareable)
+    Note over E,T: abort via TOPIC_ABORT; end via TOPIC_STOP
+```
+
 #### external_process
 
 Starts and owns an external trainer process tree.
@@ -167,6 +190,67 @@ external_process mode should be configured through `ClientAPIExecutor(..., comma
 
 external_process mode does not mean single-node-only. It means the trainer runs outside the CJ process, while NVFlare still owns the local command it starts. That command may be torchrun, Deepspeed, or another distributed launcher that joins a multinode training job, provided rendezvous configuration and the other nodes are arranged by the user, scheduler, or site platform. NVFlare owns only the process tree it started; remote ranks outside that tree are governed by the distributed launcher/scheduler contract.
 
+Sequence — `launch_once=True` (default). One process and one session for the whole
+job. Control messages flow over Cell; NVFlare owns and launches the process tree, so
+session setup is a local launch-token handshake done once. Only rank 0 connects.
+RESULT_ACCEPTED is a control ack, not payload completion — the producer is held until
+the terminal transfer outcome:
+
+```mermaid
+sequenceDiagram
+    participant C as Controller
+    participant E as CJ
+    participant T as Trainer
+    E->>E: write bootstrap config (0600, launch token, route, FQCNs)
+    E->>T: Popen(torchrun train.py) [process tree]
+    Note over T: flare.init(): read config, build Cell
+    T->>E: HELLO
+    E->>T: HELLO_CHALLENGE (nonce)
+    T->>E: HELLO_PROOF (token)
+    E->>T: HELLO_ACCEPTED
+    Note over T: only rank 0 connects; non-zero ranks get the model<br/>via framework broadcast
+    loop each round (session reused, no new HELLO)
+        C->>E: task
+        E->>T: TASK_READY (task_id, FLModel ref)
+        T->>E: TASK_ACCEPTED
+        Note over T: pull task payload; train()
+        T-->>E: LOG / HEARTBEAT
+        T->>E: RESULT_READY (result_id, transfer_id, manifest)
+        E->>T: RESULT_ACCEPTED (control ack, not payload done)
+        Note over E,T: payload transfer; WAIT_TRANSFER_COMPLETE<br/>(producer held until terminal outcome)
+        E->>C: result
+    end
+    E->>T: SHUTDOWN
+    T->>E: BYE
+    Note over E,T: stop process group: SIGTERM then grace then SIGKILL
+```
+
+Sequence — `launch_once=False`. A fresh process per task; the HELLO handshake repeats
+each round (the job-scoped launch token is reused). The key difference: the per-task
+process stop **waits for the terminal transfer outcome** before killing the process —
+this is what replaces the legacy `download_complete_timeout` deferred stop:
+
+```mermaid
+sequenceDiagram
+    participant C as Controller
+    participant E as CJ
+    participant T as Trainer
+    loop each task
+        C->>E: task
+        E->>T: write config + Popen(...) [new process]
+        Note over T: flare.init() (job-scoped token reused)
+        T->>E: HELLO / HELLO_PROOF
+        E->>T: HELLO_ACCEPTED (fresh session)
+        E->>T: TASK_READY (task_id, FLModel ref)
+        T->>E: RESULT_READY (result_id, transfer_id, manifest)
+        E->>T: RESULT_ACCEPTED
+        Note over E,T: WAIT_TRANSFER_COMPLETE (hold process until terminal)
+        E->>C: result
+        E->>T: SHUTDOWN
+        Note over E,T: stop THIS process group;<br/>next task launches a new process
+    end
+```
+
 #### attach
 
 Passive mode: it waits for an externally started trainer (AV, scheduler, or a user) to attach. Responsibilities:
@@ -180,6 +264,46 @@ Passive mode: it waits for an externally started trainer (AV, scheduler, or a us
 - send abort/shutdown control messages
 
 NVFlare does not start the trainer in this mode; it only enforces the Cell session, heartbeat, token, and payload lifecycle. Because it does not own the process, the external trainer/platform must honor the contract that it does not exit or cleanup producer-owned streaming resources before terminal payload state. (A narrow optional hook for NVFlare to also start/poll/cancel the trainer — e.g. for SLURM/K8s — is a possible later addition; see Future Enhancements.)
+
+Sequence (attach, one round, teardown). Same per-task protocol as external_process,
+but an external platform (not NVFlare) starts the trainer and delivers the bootstrap
+config out-of-band, so session setup is a challenge-response over a token the platform
+delivered. NVFlare owns the session/lease, not the process — on teardown it does not
+kill the trainer:
+
+```mermaid
+sequenceDiagram
+    participant C as Controller
+    participant E as CJ
+    participant P as Platform
+    participant T as Trainer
+    E->>E: create attach id + token, write config
+    E->>P: config available (out-of-band)
+    Note over E: wait for attach
+    P->>T: deliver config + start trainer
+    Note over T: flare.init(): build Cell
+    T->>E: HELLO
+    E->>T: HELLO_CHALLENGE (nonce)
+    T->>E: HELLO_PROOF (HMAC over nonce)
+    Note over E: verify token+scope; single-session
+    alt proof valid
+        E->>T: HELLO_ACCEPTED
+    else bad proof / scope / expiry
+        E->>T: HELLO_REJECTED
+    end
+    C->>E: task
+    E->>T: TASK_READY (task_id, FLModel ref)
+    T->>E: TASK_ACCEPTED
+    T-->>E: LOG / HEARTBEAT (session lease)
+    Note over T: train()
+    T->>E: RESULT_READY (result_id, transfer_id, manifest)
+    E->>T: RESULT_ACCEPTED (control ack)
+    Note over E,T: payload transfer; WAIT_TRANSFER_COMPLETE
+    E->>C: result
+    E->>T: SHUTDOWN
+    T->>E: BYE
+    Note over E,T: revoke session/lease; NVFlare does NOT kill the<br/>process (external system owns it)
+```
 
 ### Client API Backends
 
