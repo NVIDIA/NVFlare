@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import threading
 from unittest.mock import MagicMock
 
 from nvflare.apis.event_type import EventType
@@ -48,6 +49,17 @@ class _AbortedClientSideController(_FailingClientSideController):
         raise RuntimeError("aborted")
 
 
+class _BlockingLogClientSideController(_FailingClientSideController):
+    def __init__(self):
+        super().__init__()
+        self.exception_caught = threading.Event()
+        self.continue_logging = threading.Event()
+
+    def log_exception(self, fl_ctx: FLContext, msg: str):
+        self.exception_caught.set()
+        self.continue_logging.wait(timeout=5.0)
+
+
 def test_do_learn_logs_exception_from_learn_task():
     ctl = _FailingClientSideController()
     ctl.logger = MagicMock()
@@ -77,6 +89,25 @@ def test_do_learn_does_not_record_error_for_aborted_task():
 
     assert ctl.learn_task is None
     assert not ctl.current_status.error
+
+
+def test_do_learn_records_failure_when_abort_races_exception_logging():
+    ctl = _BlockingLogClientSideController()
+    ctl.learn_task = _LearnTask("train", Shareable(), FLContext())
+
+    learn_thread = threading.Thread(target=ctl._do_learn)
+    learn_thread.start()
+    assert ctl.exception_caught.wait(timeout=5.0)
+
+    # The task failed before it was aborted. Simulate end-workflow triggering
+    # the abort signal while exception logging has released the GIL.
+    ctl.learn_task.abort_signal.trigger(True)
+    ctl.continue_logging.set()
+    learn_thread.join(timeout=5.0)
+
+    assert not learn_thread.is_alive()
+    assert ctl.learn_task is None
+    assert ctl.current_status.error == ReturnCode.EXECUTION_EXCEPTION
 
 
 def test_error_report_is_delivered_even_after_workflow_done():
