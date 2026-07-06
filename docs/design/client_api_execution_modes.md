@@ -153,7 +153,7 @@ sequenceDiagram
     T->>D: flare.send(result)
     D->>E: take local FLModel
     E->>C: result (Shareable)
-    Note over E,T: abort via TOPIC_ABORT; end via TOPIC_STOP
+    Note over E,T: abort via TOPIC_ABORT, stop via TOPIC_STOP
 ```
 
 #### external_process
@@ -208,16 +208,16 @@ sequenceDiagram
     E->>T: HELLO_CHALLENGE (nonce)
     T->>E: HELLO_PROOF (token)
     E->>T: HELLO_ACCEPTED
-    Note over T: only rank 0 connects; non-zero ranks get the model<br/>via framework broadcast
+    Note over T: only rank 0 connects. Non-zero ranks get the model<br/>via framework broadcast
     loop each round (session reused, no new HELLO)
         C->>E: task
         E->>T: TASK_READY (task_id, FLModel ref)
         T->>E: TASK_ACCEPTED
-        Note over T: pull task payload; train()
+        Note over T: pull task payload, then train()
         T-->>E: LOG / HEARTBEAT
         T->>E: RESULT_READY (result_id, transfer_id, manifest)
         E->>T: RESULT_ACCEPTED (control ack, not payload done)
-        Note over E,T: payload transfer; WAIT_TRANSFER_COMPLETE<br/>(producer held until terminal outcome)
+        Note over E,T: payload transfer, WAIT_TRANSFER_COMPLETE<br/>(producer held until terminal outcome)
         E->>C: result
     end
     E->>T: SHUTDOWN
@@ -247,7 +247,7 @@ sequenceDiagram
         Note over E,T: WAIT_TRANSFER_COMPLETE (hold process until terminal)
         E->>C: result
         E->>T: SHUTDOWN
-        Note over E,T: stop THIS process group;<br/>next task launches a new process
+        Note over E,T: stop THIS process group,<br/>next task launches a new process
     end
 ```
 
@@ -284,8 +284,8 @@ sequenceDiagram
     Note over T: flare.init(): build Cell
     T->>E: HELLO
     E->>T: HELLO_CHALLENGE (nonce)
-    T->>E: HELLO_PROOF (HMAC over nonce)
-    Note over E: verify token+scope; single-session
+    T->>E: HELLO_PROOF (HMAC of nonce)
+    Note over E: verify token+scope, single-session
     alt proof valid
         E->>T: HELLO_ACCEPTED
     else bad proof / scope / expiry
@@ -298,11 +298,11 @@ sequenceDiagram
     Note over T: train()
     T->>E: RESULT_READY (result_id, transfer_id, manifest)
     E->>T: RESULT_ACCEPTED (control ack)
-    Note over E,T: payload transfer; WAIT_TRANSFER_COMPLETE
+    Note over E,T: payload transfer, WAIT_TRANSFER_COMPLETE
     E->>C: result
     E->>T: SHUTDOWN
     T->>E: BYE
-    Note over E,T: revoke session/lease; NVFlare does NOT kill the<br/>process (external system owns it)
+    Note over E,T: revoke session/lease. NVFlare does NOT kill the<br/>process (external system owns it)
 ```
 
 ### Client API Backends
