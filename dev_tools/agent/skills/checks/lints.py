@@ -24,21 +24,9 @@ from pathlib import Path
 from typing import Any, Iterable, Optional
 
 try:
-    from .frontmatter import (
-        SKILL_FILE_NAME,
-        normalize_skill_metadata,
-        parse_skill_frontmatter,
-        should_skip_skill_dir,
-        validate_skill_dir,
-    )
+    from .frontmatter import SKILL_FILE_NAME, parse_skill_frontmatter, should_skip_skill_dir, validate_skill_dir
 except ImportError:
-    from frontmatter import (
-        SKILL_FILE_NAME,
-        normalize_skill_metadata,
-        parse_skill_frontmatter,
-        should_skip_skill_dir,
-        validate_skill_dir,
-    )
+    from frontmatter import SKILL_FILE_NAME, parse_skill_frontmatter, should_skip_skill_dir, validate_skill_dir
 
 V1_LINT_IDS = (
     "skill-frontmatter-lint",
@@ -1101,7 +1089,7 @@ def _resolve_docs_root(docs_root: Path | str | None) -> Optional[Path]:
 
 def _try_parse_frontmatter(skill_file: Path) -> dict[str, Any]:
     try:
-        return normalize_skill_metadata(parse_skill_frontmatter(skill_file))
+        return parse_skill_frontmatter(skill_file)
     except Exception:
         return {}
 

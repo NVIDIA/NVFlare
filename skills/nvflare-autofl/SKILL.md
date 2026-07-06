@@ -4,8 +4,10 @@ description: "Optimize an existing NVFLARE job.py through an agent-assisted Auto
 license: Apache-2.0
 compatibility: "Requires NVFLARE 2.8.0+, Python, and permission to run NVFLARE jobs in the selected environment."
 metadata:
+  author: "Holger Roth <hroth@nvidia.com>"
   min_flare_version: "2.8.0"
   blast_radius: submits_production
+  category: Optimization
   skill_version: "0.1.0"
 ---
 
@@ -81,7 +83,7 @@ and reports. After each lifecycle action, read
 `final_response_allowed=true`. For long-running and simulator-stall handling, read
 [continuous-campaigns.md](references/continuous-campaigns.md).
 For comparison budgets, data distributions, and rerun evidence, read
-[the shared experiment workflow](../_shared/nvflare-experiment-workflows.md).
+[experiment comparability](references/experiment-comparability.md).
 
 Read `autofl.yaml` and show the user a concise campaign summary:
 
@@ -132,7 +134,6 @@ specific fields before running candidates.
   startup-kit authentication, site policy, or normal NVFLARE job submission.
 
 ## Candidate Loop
-
 1. Inspect `autofl.yaml`, current best source, prior manifests, and results.
 2. Form a concrete hypothesis. Use literature, framework knowledge, source
    edits, new client or server algorithms, or a fallback tunable suggestion as
@@ -144,7 +145,6 @@ specific fields before running candidates.
    pass when requested, then implement its strongest compatible idea.
 
 ## Continuous Campaign Rule
-
 For uncapped campaigns, continue proposing and evaluating same-budget candidates
 after setup and baseline until manually interrupted. Do not ask whether to keep
 going or finalize while campaign state says `final_response_allowed=false`.
