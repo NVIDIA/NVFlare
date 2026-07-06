@@ -17,14 +17,16 @@ from nvflare.fuel.common.fqn import FQN
 
 
 class FQCN(FQN):
-    pass
+    VALID_PATTERN = "^[A-Za-z0-9_.~-]*$"
 
 
-# CellPipe cells use explicitly marked leaf segments so pipe names can never
-# be confused with other cell names or with each other:
-#   - plain leaf "cellpipe-<token>_<mode>" for pipes connected to the server
+# CellPipe cells use "~"-delimited, explicitly marked leaf segments so pipe
+# names can never be confused with other cell names or with each other. "~"
+# is reserved inside CellPipe fields and is safe for site names such as
+# "site-1" and tokens such as "ext_trainer":
+#   - plain leaf "cellpipe~plain~<token>~<mode>" for pipes connected to the server
 #     root or to the site's own CP;
-#   - alias leaf "cellpipe-alias-<owner>_<token>_<mode>" for pipes connected
+#   - alias leaf "cellpipe~alias~<owner>~<token>~<mode>" for pipes connected
 #     through another cell (e.g. a relay). The alias maps the cell to the
 #     owning site for mTLS identity resolution and stream message
 #     authentication. Both directions of the alias grammar live here so they
@@ -38,44 +40,62 @@ class FQCN(FQN):
 #      routing (NVBug 6371056).
 #   3. topology (current): a single prefixed leaf segment under the FQCN of
 #      the cell the pipe actually connects to,
-#      "<parent>.cellpipe-<token>_<mode>", or
-#      "<relay_fqcn>.cellpipe-alias-<owner>_<token>_<mode>" when connected
+#      "<parent>.cellpipe~plain~<token>~<mode>", or
+#      "<relay_fqcn>.cellpipe~alias~<owner>~<token>~<mode>" when connected
 #      through another cell.
 # Mixed-version notes: scheme-1 aliases are still accepted by identity
 # resolution and stream auth (as whole-FQCN aliases via the bare grammar),
 # but the two ends of one pipe pair must run the same scheme - each end
 # derives the peer's name from its own code, so a CJ and a training
 # subprocess on different schemes fail with "peer FQCN mismatch".
-CELL_PIPE_LEAF_PREFIX = "cellpipe-"
-CELL_PIPE_ALIAS_PREFIX = "cellpipe-alias-"
+CELL_PIPE_SEPARATOR = "~"
+CELL_PIPE_PREFIX = f"cellpipe{CELL_PIPE_SEPARATOR}"
+CELL_PIPE_LEAF_PREFIX = f"{CELL_PIPE_PREFIX}plain{CELL_PIPE_SEPARATOR}"
+CELL_PIPE_ALIAS_PREFIX = f"{CELL_PIPE_PREFIX}alias{CELL_PIPE_SEPARATOR}"
 CELL_PIPE_ALIAS_MODES = ("active", "passive")
 
 
+def make_cell_pipe_leaf(runtime_id: str, mode: str) -> str:
+    return CELL_PIPE_SEPARATOR.join(("cellpipe", "plain", runtime_id, mode))
+
+
 def make_cell_pipe_alias(owner: str, runtime_id: str, mode: str) -> str:
-    return f"{CELL_PIPE_ALIAS_PREFIX}{owner}_{runtime_id}_{mode}"
+    return CELL_PIPE_SEPARATOR.join(("cellpipe", "alias", owner, runtime_id, mode))
 
 
 def parse_cell_pipe_alias(segment: str) -> Optional[Tuple[str, str, str]]:
     """Parse a CellPipe alias leaf segment into (owner, runtime_id, mode).
 
     Two shapes are accepted:
-      - the current explicit form "cellpipe-alias-<owner>_<runtime_id>_<mode>";
+      - the current explicit form
+        "cellpipe~alias~<owner>~<runtime_id>~<mode>";
       - the bare legacy form "<owner>_<runtime_id>_<mode>" used by pre-2.8
         flat CellPipe names, where the whole FQCN is the alias. Callers decide
         where the bare form is acceptable; it is normally restricted to
         single-segment FQCNs so an unmarked "<token>_<mode>" leaf inside a
         longer FQCN is never misread as an alias.
 
-    In both shapes the runtime_id must be non-empty and contain no "." or
-    "_": parsing from the right makes the interpretation unambiguous, so
-    "site-a_x_<uuid>_active" can only belong to "site-a_x", never to "site-a"
-    with a runtime id of "x_<uuid>".
+    The explicit form accepts "-" and "_" in both owner and runtime_id because
+    "~" is its only field separator. The legacy form is parsed from the right,
+    so its runtime_id must not contain "." or "_".
 
     Returns None if the segment is not a valid alias.
     """
     if segment.startswith(CELL_PIPE_ALIAS_PREFIX):
-        segment = segment[len(CELL_PIPE_ALIAS_PREFIX) :]
+        parts = segment.split(CELL_PIPE_SEPARATOR)
+        if len(parts) != 5:
+            return None
 
+        marker, alias_marker, owner, runtime_id, mode = parts
+        if marker != "cellpipe" or alias_marker != "alias":
+            return None
+        if not owner or not runtime_id or "." in owner or "." in runtime_id:
+            return None
+        if mode not in CELL_PIPE_ALIAS_MODES:
+            return None
+        return owner, runtime_id, mode
+
+    # Legacy flat alias grammar.
     head, sep, mode = segment.rpartition("_")
     if not sep or mode not in CELL_PIPE_ALIAS_MODES:
         return None

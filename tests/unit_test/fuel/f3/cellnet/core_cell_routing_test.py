@@ -35,16 +35,16 @@ def _routing_cell(fqcn, connected):
 
 
 def test_pipe_cell_reaches_peer_through_connected_cp():
-    cell = _routing_cell("site-1.cellpipe-job-123_active", ["site-1"])
+    cell = _routing_cell("site-1.cellpipe~plain~job-123~active", ["site-1"])
 
-    ep = cell._try_find_ep("site-1.cellpipe-job-123_passive", None)
+    ep = cell._try_find_ep("site-1.cellpipe~plain~job-123~passive", None)
 
     assert ep is not None
     assert ep.name == "site-1"
 
 
 def test_pipe_cell_reaches_server_job_through_connected_cp():
-    cell = _routing_cell("site-1.cellpipe-job-123_active", ["site-1"])
+    cell = _routing_cell("site-1.cellpipe~plain~job-123~active", ["site-1"])
 
     ep = cell._try_find_ep("server.job-123", None)
 
@@ -55,27 +55,27 @@ def test_pipe_cell_reaches_server_job_through_connected_cp():
 def test_pipe_cell_reaches_peer_through_server_root():
     # With pipe_connect_type VIA_ROOT the pipe cell connects only to the
     # server root; the same-family peer must be routed through it.
-    cell = _routing_cell("site-1.cellpipe-job-123_active", ["server"])
+    cell = _routing_cell("site-1.cellpipe~plain~job-123~active", ["server"])
 
-    ep = cell._try_find_ep("site-1.cellpipe-job-123_passive", None)
+    ep = cell._try_find_ep("site-1.cellpipe~plain~job-123~passive", None)
 
     assert ep is not None
     assert ep.name == "server"
 
 
 def test_relay_alias_pipe_cell_reaches_peer_through_connected_relay():
-    # A pipe cell behind a relay is named <relay>.cellpipe-alias-<site>_<token>_<mode>: its
+    # A pipe cell behind a relay is named <relay>.cellpipe~alias~<site>~<token>~<mode>: its
     # FQCN parent is the connected relay, so normal parent routing applies.
-    cell = _routing_cell("relay-1.cellpipe-alias-site-1_job-123_active", ["relay-1"])
+    cell = _routing_cell("relay-1.cellpipe~alias~site-1~job-123~active", ["relay-1"])
 
-    ep = cell._try_find_ep("relay-1.cellpipe-alias-site-1_job-123_passive", None)
+    ep = cell._try_find_ep("relay-1.cellpipe~alias~site-1~job-123~passive", None)
 
     assert ep is not None
     assert ep.name == "relay-1"
 
 
 def test_relay_alias_pipe_cell_reaches_server_job_through_connected_relay():
-    cell = _routing_cell("relay-1.cellpipe-alias-site-1_job-123_active", ["relay-1"])
+    cell = _routing_cell("relay-1.cellpipe~alias~site-1~job-123~active", ["relay-1"])
 
     ep = cell._try_find_ep("server.job-123", None)
 
@@ -84,7 +84,7 @@ def test_relay_alias_pipe_cell_reaches_server_job_through_connected_relay():
 
 
 def test_pipe_cell_reaches_site_ancestor_through_connected_cp():
-    cell = _routing_cell("site-1.cellpipe-job-123_active", ["site-1"])
+    cell = _routing_cell("site-1.cellpipe~plain~job-123~active", ["site-1"])
 
     ep = cell._try_find_ep("site-1", None)
 
@@ -103,6 +103,6 @@ def test_same_family_routing_still_prefers_fqcn_parent():
 
 
 def test_pipe_cell_with_no_connection_is_unreachable():
-    cell = _routing_cell("site-1.cellpipe-job-123_active", [])
+    cell = _routing_cell("site-1.cellpipe~plain~job-123~active", [])
 
-    assert cell._try_find_ep("site-1.cellpipe-job-123_passive", None) is None
+    assert cell._try_find_ep("site-1.cellpipe~plain~job-123~passive", None) is None

@@ -323,7 +323,7 @@ def _origin_matches_fqcn(origin: str, fqcn: str, channel: Optional[str] = None) 
         return True
 
     # CellPipe stream cells can use an alias leaf such as
-    # "cellpipe-alias-site-1_<job-id>_active" when connected through another
+    # "cellpipe~alias~site-1~<job-id>~active" when connected through another
     # cell, but their auth token is issued to the owning site FQCN. Treat only stream aliases
     # under the same FQCN parent as the owning site; normal server-command
     # origins remain bound to the exact registered FQCN/descendant relationship.
@@ -337,15 +337,14 @@ def _origin_matches_fqcn(origin: str, fqcn: str, channel: Optional[str] = None) 
 
     # The bare alias grammar is only valid for single-segment origins (legacy
     # pre-2.8 flat CellPipe names); at any depth the alias must carry the
-    # explicit cellpipe-alias- marker, so an unmarked "<token>_<mode>" leaf
+    # explicit cellpipe~alias~ marker, so an unmarked leaf
     # can never be misread as an alias.
     origin_leaf = FQCN.split(origin)[-1]
     if origin_parent and not origin_leaf.startswith(CELL_PIPE_ALIAS_PREFIX):
         return False
 
-    # parse_cell_pipe_alias parses from the right and rejects "." or "_" in the
-    # runtime id, so a token for "site" can never validate an origin such as
-    # "site_x_<job>_active" when "site_x" is also a valid client FQCN.
+    # parse_cell_pipe_alias returns exact "~"-delimited fields, so hyphens and
+    # underscores in an owner cannot be confused with field separators.
     owner = FQCN.split(fqcn)[-1]
     parsed = parse_cell_pipe_alias(origin_leaf)
     return parsed is not None and parsed[0] == owner

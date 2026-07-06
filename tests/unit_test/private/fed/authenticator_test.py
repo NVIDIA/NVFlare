@@ -79,8 +79,8 @@ def test_validate_auth_headers_accepts_direct_cell_pipe_stream_alias(origin):
 @pytest.mark.parametrize(
     "origin, registered_fqcn",
     [
-        ("relay-1.cellpipe-alias-site-a_8065f1c4-fd35-47ef-b945-800f4d0d5176_active", "relay-1.site-a"),
-        ("relay-1.cellpipe-alias-site-a_x_8065f1c4-fd35-47ef-b945-800f4d0d5176_passive", "relay-1.site-a_x"),
+        ("relay-1.cellpipe~alias~site-a~8065f1c4-fd35-47ef-b945-800f4d0d5176~active", "relay-1.site-a"),
+        ("relay-1.cellpipe~alias~site-a_x~8065f1c4-fd35-47ef-b945-800f4d0d5176~passive", "relay-1.site-a_x"),
     ],
 )
 def test_validate_auth_headers_accepts_relay_cell_pipe_stream_alias(origin, registered_fqcn):
@@ -114,7 +114,7 @@ def test_validate_auth_headers_rejects_cell_pipe_alias_for_different_client():
 
 def test_validate_auth_headers_rejects_relay_cell_pipe_alias_under_different_parent():
     reply = _validate(
-        "relay-1.cellpipe-alias-site-a_8065f1c4-fd35-47ef-b945-800f4d0d5176_passive",
+        "relay-1.cellpipe~alias~site-a~8065f1c4-fd35-47ef-b945-800f4d0d5176~passive",
         lambda _client_name, _token: "relay-2.site-a",
         channel=STREAM_CHANNEL,
         topic=STREAM_DATA_TOPIC,
@@ -125,7 +125,7 @@ def test_validate_auth_headers_rejects_relay_cell_pipe_alias_under_different_par
 
 def test_validate_auth_headers_rejects_unmarked_alias_shape_at_depth():
     # the bare alias grammar is only honored for whole-FQCN (legacy flat)
-    # origins; at any depth the origin must carry the cellpipe-alias- marker
+    # origins; at any depth the origin must carry the cellpipe~alias~ marker
     reply = _validate(
         "relay-1.site-a_8065f1c4-fd35-47ef-b945-800f4d0d5176_passive",
         lambda _client_name, _token: "relay-1.site-a",

@@ -647,7 +647,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             self._create_bb_external_connector()
         elif not parent_url and self.root_url:
             # A cell configured with only a root URL (e.g. a CellPipe cell named
-            # <site>.cellpipe-<token>_<mode> that joins the cellnet at the root) has no
+            # <site>.cellpipe~plain~<token>~<mode> that joins the cellnet at the root) has no
             # other way to connect, regardless of its generation.
             self._create_bb_external_connector()
 
@@ -1180,7 +1180,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                     return agent.endpoint
                 # I'm not connected to my FQCN parent: some hierarchical cells
                 # connect to an ancestor or to the root instead (e.g. CellPipe
-                # cells named <site>.cellpipe-<token>_<mode> that connect to
+                # cells named <site>.cellpipe~plain~<token>~<mode> that connect to
                 # the server root). This fall-through is load-bearing for such cells - see
                 # test_pipe_cell_reaches_peer_through_server_root in
                 # core_cell_routing_test.py. Fall through to the generic

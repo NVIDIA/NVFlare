@@ -127,7 +127,7 @@ class CellIdentityResolver:
     @staticmethod
     def _get_cell_pipe_alias_owner(segment: str) -> Optional[str]:
         # CellPipe cells connected through another cell use an alias leaf like
-        # "cellpipe-alias-site-1_<runtime-id>_active" but authenticate with
+        # "cellpipe~alias~site-1~<runtime-id>~active" but authenticate with
         # the owning site's certificate. Older NVFlare versions used the bare
         # sibling form "site-1_<runtime-id>_active" as the whole FQCN. See
         # parse_cell_pipe_alias for the alias grammar.
@@ -150,7 +150,7 @@ class CellIdentityResolver:
         # descendant of its physical parent. Resolve it before generic prefix
         # mappings so a relay identity cannot shadow the alias owner (for
         # example, relay-1.relay-2 must not win over the site-1 owner in
-        # relay-1.relay-2.cellpipe-alias-site-1_<token>_<mode>).
+        # relay-1.relay-2.cellpipe~alias~site-1~<token>~<mode>).
         if leaf.startswith(CELL_PIPE_ALIAS_PREFIX):
             alias_owner = self._get_cell_pipe_alias_owner(leaf)
             if not alias_owner:
@@ -179,16 +179,13 @@ class CellIdentityResolver:
 
         # A legacy (pre-2.8 flat naming) cell whose whole FQCN is a bare alias
         # also authenticates with the owning site's certificate. An unmarked
-        # "<token>_<mode>"-shaped leaf inside a longer FQCN is never an alias:
-        # its token may itself contain "_" (e.g.
-        # "site-1.cellpipe-ext_trainer_active"), and alias-parsing it would
-        # fabricate a wrong owner such as "ext".
+        # leaf inside a longer FQCN is never an alias.
         if len(parts) == 1:
             alias_owner = self._get_cell_pipe_alias_owner(leaf)
             if alias_owner:
                 return self.resolve(alias_owner)
 
-        # A plain CellPipe leaf ("cellpipe-<token>_<mode>") authenticates with
+        # A plain CellPipe leaf ("cellpipe~plain~<token>~<mode>") authenticates with
         # the identity of the cell it is named under, so resolve its parent.
         # This must also precede _resolve_local_child_identity: a CP resolving
         # its own pipe child expects the site's identity, not one named after

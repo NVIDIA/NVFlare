@@ -401,14 +401,15 @@ Compatibility and Migration Notes
   Recipe environments, and ``nvflare`` CLI workflows for new automation.
 - HA/Overseer code has been removed from the 2.8 branch.
 - CellPipe cell names now keep the runtime token and pipe mode in one
-  explicitly marked FQCN leaf segment (``site-1.cellpipe-<job-id>_active``,
-  or ``<relay>.cellpipe-alias-<site>_<job-id>_active`` behind a relay) so a
+  explicitly marked, ``~``-delimited FQCN leaf segment
+  (``site-1.cellpipe~plain~<job-id>~active``, or
+  ``<relay>.cellpipe~alias~<site>~<job-id>~active`` behind a relay) so a
   pipe cell's FQCN parent matches the cell it actually connects to and pipe
   names can never be confused with other cell names. As part of this change,
   CellPipe validates tokens at construction: tokens must be non-empty, may
-  not start with ``alias-``, may not contain ``.`` when the pipe connects to
-  the site's own CP or a relay, and may not contain ``_`` or ``.`` when
-  connected through a relay. Custom ``FlareAgentWithCellPipe`` agent ids that
+  not contain the reserved ``~`` separator, and may not contain ``.`` when
+  the pipe connects to the site's own CP or a relay. Custom
+  ``FlareAgentWithCellPipe`` agent ids that
   violate these rules now fail fast with a ``ValueError`` instead of
   producing unroutable cell names.
 - Both ends of a CellPipe pair derive each other's cell names independently,
