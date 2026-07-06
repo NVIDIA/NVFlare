@@ -15,12 +15,14 @@
         "The agent integrates through flare.patch(trainer) and lets the patched trainer own model exchange.",
         "The agent does not generate a manual FLModel send/receive path as the default Lightning exchange.",
         "The agent does not pass the received input_model into the Trainer.",
+        "If generated Lightning client code calls flare.get_site_name(), flare.get_config(), or flare.receive() before patched-trainer execution, it calls flare.init() before the first such Client API context access.",
         "Because Lightning and FedAvg are explicit, the agent runs nvflare recipe show fedavg-pt --format json directly and does not run recipe list before constructing it.",
         "The generated job.py imports the selected recipe class from the module returned by recipe show, using nvflare.app_opt.pt.recipes.fedavg.FedAvgRecipe for fedavg-pt and not nvflare.recipe.FedAvgRecipe.",
         "The agent selects the PyTorch FedAvg recipe for standard horizontal training instead of inventing a Lightning-only recipe.",
         "The agent generates explicit recipe model config with class_path plus args instead of passing a live LightningModule instance, asking or failing closed when constructor args are not statically clear.",
         "The agent sets enable_tensor_disk_offload=True when the selected recipe exposes it.",
         "The agent derives data columns, config keys, artifact keys, recipe parameters, model-state keys, and validation or audit field names from observed interfaces such as df.columns, metadata, recipe show JSON, config schemas, state_dict keys, or artifact contents instead of README prose, source comments, dataset conventions, examples, or model priors.",
+        "For multiple simulated sites, the generated Lightning client or DataModule trains each site on a deterministic local training partition by default and does not make every site train on the full source training set unless the user explicitly requested shared training data.",
         "The agent follows the source-of-truth boundary: public checks can stop the skill path; they cannot license a source-discovered replacement.",
         "The generated source uses standard names such as client.py, job.py, and model.py.",
         "When the Lightning entrypoint imports an existing model source file or defines the LightningModule/DataModule in train.py, the agent derives that source file from static inspection rather than assuming it is named model.py, treats it as relevant source, reuses it by import, mechanical copy/rename, thin wrapper, or targeted edit, and does not synthesize a nested replacement model implementation or recreate the full Lightning/data stack.",
@@ -51,6 +53,10 @@
             "description": "Lightning conversion uses flare.patch(trainer) and the Lightning callback path for model exchange"
           },
           {
+            "id": "init-before-client-api-context",
+            "description": "calls flare.init() before any generated pre-patch Client API context access such as flare.get_site_name(), flare.get_config(), or flare.receive()"
+          },
+          {
             "id": "discover-pytorch-recipes",
             "description": "runs nvflare recipe show fedavg-pt --format json directly when Lightning and FedAvg are explicit, without first running recipe list"
           },
@@ -73,6 +79,10 @@
           {
             "id": "observe-interface-before-field-use",
             "description": "derives data columns, config keys, artifact keys, recipe parameters, model-state keys, and validation or audit field names from observed interfaces such as df.columns, metadata, recipe show JSON, config schemas, state_dict keys, or artifact contents before generated code or checks reference them"
+          },
+          {
+            "id": "site-local-training-partitions",
+            "description": "for multiple simulated/federated sites, trains each site on a deterministic local training partition by default and does not make every site train on the full source training set unless the user explicitly requested shared training data"
           },
           {
             "id": "standard-generated-layout",

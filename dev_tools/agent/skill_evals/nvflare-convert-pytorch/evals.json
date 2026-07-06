@@ -16,6 +16,7 @@
         "The generated job.py imports the selected recipe class from the module returned by recipe show, using nvflare.app_opt.pt.recipes.fedavg.FedAvgRecipe for fedavg-pt and not nvflare.recipe.FedAvgRecipe.",
         "The agent selects FedAvg only when the requested workflow is standard horizontal model-parameter aggregation.",
         "The agent translates the natural request into recipe, site-count, dataset, split, training, evaluation, and export settings.",
+        "For multiple simulated sites, the generated client trains each site on a deterministic local training partition by default and does not make every site train on the full source training set unless the user explicitly requested shared training data.",
         "The agent generates explicit recipe model config with class_path plus args instead of passing a live model instance, asking or failing closed when constructor args are not statically clear.",
         "The generated training code uses nvflare.client receive/send and FLModel for model exchange.",
         "The generated source uses standard names such as client.py, job.py, and model.py instead of ad hoc names such as fl_train.py.",
@@ -62,6 +63,10 @@
           {
             "id": "derive-config-from-natural-request",
             "description": "translates natural user requests into recipe, site-count, dataset, split, training, evaluation, and export settings"
+          },
+          {
+            "id": "site-local-training-partitions",
+            "description": "for multiple simulated/federated sites, trains each site on a deterministic local training partition by default and does not make every site train on the full source training set unless the user explicitly requested shared training data"
           },
           {
             "id": "explicit-model-config-with-args",

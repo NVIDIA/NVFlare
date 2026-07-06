@@ -41,7 +41,7 @@ Follow the shared Source Of Truth Boundary in
 ```python
 import nvflare.client.lightning as flare
 
-flare.init()  # optional: only when get_site_name() or other pre-patch context is needed
+flare.init()  # required before get_site_name(), get_config(), receive(), or other pre-patch context
 trainer = Trainer(...)
 flare.patch(trainer)
 
@@ -69,8 +69,9 @@ are sent can train an unwanted round or block the task. The packaged
   trainer loads the global model internally.
 - Do not add a second manual `flare.send(FLModel(...))` for normal training; the
   patched trainer already sends the trained model.
-- Use `flare.init()` and `flare.get_site_name()` only when the code needs
-  pre-patch context such as site-specific logging or data paths.
+- Use `flare.get_site_name()` or `flare.get_config()` only when the code needs
+  pre-patch context such as site-specific logging or data paths, and call
+  `flare.init()` before the first such Client API context access.
 - Use `flare.receive()` in the patched loop only for FL task progression,
   round/site logging, or task metadata, never for manual model loading.
 
@@ -131,6 +132,13 @@ shared.
 
 Report the split policy, seed, and where local training-policy values are
 computed.
+
+For multi-site conversion from a single-node Lightning source, the generated
+client or `LightningDataModule` must filter the local training split by site.
+Do not let every simulated site train on the full source training set unless
+the user explicitly asks for shared training data or the source already provides
+site-specific data that resolves to that behavior. Validation/test splits may
+remain shared only when that matches the source's validation/test semantics.
 
 ## Model Construction Consistency
 

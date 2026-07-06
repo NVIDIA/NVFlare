@@ -74,6 +74,13 @@ replace all-client deployment with explicit per-site deployment unless the
 conversion has real per-site differences such as different scripts, arguments,
 data-split settings, or launch behavior.
 
+For multi-site conversion from a single-node PyTorch source, the generated
+client or data-loader setup must filter the local training data by site. Do not
+let every simulated site train on the full source training set unless the user
+explicitly asks for shared training data or the source already provides
+site-specific data that resolves to that behavior. Validation/test loaders may
+remain shared only when that matches the source's validation/test semantics.
+
 ## Model Construction Consistency
 
 Follow the shared model-config and construction-consistency rule in

@@ -67,8 +67,8 @@ rather than substituting an unprotected recipe or adding only a disclaimer.
    user training modules to discover fields. Extract: training entrypoint,
    model class path and constructor args, checkpoint behavior, train/eval
    functions, data loading, metric names and denominators, local epochs/steps,
-   requested client and round counts, tracking evidence, DDP evidence, and any
-   custom aggregation intent.
+   requested client and round counts, source data split or partition evidence,
+   tracking evidence, DDP evidence, and any custom aggregation intent.
 3. Read applicable requirements and install missing dependencies into the
    host-provided environment before import-level preflight, recipe
    construction, export, or simulation. Load
@@ -93,7 +93,9 @@ rather than substituting an unprotected recipe or adding only a disclaimer.
    `FLModel`, load `params`, evaluate the received global model, train, and
    send an `FLModel` with updated `params` and `metrics`. Adapt the user's
    evaluation code into the packaged evaluation template; if evaluation is
-   required but missing, ask or fail closed.
+   required but missing, ask or fail closed. For multi-site single-node-source
+   conversion, create deterministic site-local training partitions unless the
+   source has site data or the user explicitly asks for shared training data.
 6. Add or update `job.py` with the selected recipe: explicit model config
    `{"class_path": ..., "args": ...}` (never a live model instance), custom
    aggregator wiring through `aggregator=` when requested, and
@@ -126,6 +128,10 @@ rather than substituting an unprotected recipe or adding only a disclaimer.
 - Must convert source evaluation alongside training and return metrics through
   `FLModel.metrics`; must not synthesize metric semantics without source
   evidence.
+- Must train each site on its local partition for multi-site single-node-source
+  conversion. Preserve existing site splits; otherwise use deterministic seeded
+  split, stratified when labels exist. Shared validation/test is allowed only
+  when source-backed; report split policy, seed, site count, and shared-data requests.
 - Must load checkpoints with `torch.load(..., weights_only=True)`; a
   checkpoint that needs full unpickling is ask/fail, per
   `references/pytorch-client-api-conversion.md`.
@@ -136,9 +142,8 @@ rather than substituting an unprotected recipe or adding only a disclaimer.
 - Must follow the Source Of Truth Boundary: public checks can stop the skill
   path; they cannot license a replacement strategy discovered from NVFLARE
   source or docstrings.
-- Must not make TensorFlow or other non-PyTorch skills load
-  `../nvflare-shared/references/pytorch-model-exchange.md`; that reference is only for
-  PyTorch-family model/state-dict exchange.
+- Must not make non-PyTorch skills load `../nvflare-shared/references/pytorch-model-exchange.md`;
+  that reference is only for PyTorch-family model/state-dict exchange.
 
 ## Agent Responsibilities
 
@@ -169,11 +174,10 @@ rather than substituting an unprotected recipe or adding only a disclaimer.
   scope.
 
 Always read this converter SKILL.md. The standard routing, recipe selection,
-output, authorization, and reporting path is inline, so a common FedAvg
-conversion does not load the broad policy or algorithm-selection references.
-Load the client template, model-exchange reference, validation reference, and
-aggregator asset only when the corresponding phase needs them. Load other
-detailed references only for exceptions:
+output, authorization, and reporting path is inline, so common FedAvg does not
+load broad policy or algorithm-selection references. Load the client template,
+model-exchange reference, validation reference, and aggregator asset only when
+their phase needs them. Load other detailed references only for exceptions:
 
 - `../nvflare-shared/references/conversion-workflow.md` for the full conversion
   contract when a case is non-standard;
@@ -188,11 +192,9 @@ detailed references only for exceptions:
 - `../nvflare-shared/references/metrics-and-artifact-reporting.md` only when
   metrics are absent or inconsistent;
 - `../nvflare-shared/references/validation-evidence.md` before validation, and
-  `../nvflare-shared/references/pytorch-model-exchange.md` only for
-  PyTorch-family model/state-dict exchange;
-- `references/pytorch-client-api-conversion.md` when converting training and
-  evaluation to Client API model exchange, and `references/job-validation.md`
-  for PyTorch-specific validation failures.
+  `../nvflare-shared/references/pytorch-model-exchange.md` only for PyTorch-family exchange;
+- `references/pytorch-client-api-conversion.md` for Client API conversion, and
+  `references/job-validation.md` for PyTorch-specific validation failures.
 
 Do not load every reference preemptively, and do not depend on NVFLARE
 repository examples being present in the user's environment.

@@ -401,8 +401,9 @@ receive/send loops, recipe construction, or generated helper definitions.
 ## Site Data Partitioning
 
 When converting single-node training code to multiple simulated or federated
-sites, preserve any existing user-provided site split. If no split exists and
-the user asks the agent to create one, prefer a deterministic seeded shuffle and
+sites, preserve any existing user-provided site split. If no split exists,
+create deterministic site-local training partitions by default unless the user
+explicitly asks all sites to train on shared data. Prefer a seeded shuffle and
 use a stratified split when classification labels are available. Do not use a
 simple stride or contiguous split as the default because it can create biased
 site partitions from ordered data.
