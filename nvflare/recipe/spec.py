@@ -15,7 +15,7 @@
 import sys
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 # Single source of truth for the default export dir. Kept in the current working
 # directory on purpose: an export is a user-requested artifact, so it lands next to
@@ -88,7 +88,9 @@ def _peek_recipe_args() -> tuple:
     return _RECIPE_EXPORT, _RECIPE_EXPORT_DIR
 
 
+from nvflare.apis.executor import Executor
 from nvflare.apis.filter import Filter
+from nvflare.apis.impl.controller import Controller
 from nvflare.app_common.widgets.decomposer_reg import DecomposerRegister
 from nvflare.fuel.utils.fobs import Decomposer
 from nvflare.job_config.api import FedJob
@@ -314,14 +316,19 @@ class Recipe(ABC):
             obj: Object to add to clients.
             clients: Optional list of specific client names. If None, applies to all clients.
             **kwargs: Extra options forwarded to `job.to()`/`job.to_clients()`.
-        """
-        if clients is None:
-            from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
-            from nvflare.job_config.defs import JobTargetType
 
-            # FedJob has no public API to list per-site deploy targets, so we inspect
-            # private deploy map to preserve existing per-site client topology.
-            deploy_map = getattr(self.job, "_deploy_map", {})
+        Raises:
+            ValueError: If clients contains a non-client name, or if specific clients are
+                targeted while the recipe's client app applies to all clients (per-site
+                placement cannot be expressed in the generated job in that topology).
+        """
+        from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
+        from nvflare.job_config.defs import JobTargetType
+
+        # FedJob has no public API to list per-site deploy targets, so we inspect
+        # private deploy map to preserve existing per-site client topology.
+        deploy_map = getattr(self.job, "_deploy_map", {})
+        if clients is None:
             existing_client_sites = [
                 target
                 for target in deploy_map.keys()
@@ -334,6 +341,19 @@ class Recipe(ABC):
             else:
                 self.job.to_clients(obj, **kwargs)
         else:
+            for client in clients:
+                if not isinstance(client, str) or client in (ALL_SITES, SERVER_SITE_NAME):
+                    raise ValueError(f"invalid client name {client!r}: client names must name specific client sites")
+            if ALL_SITES in deploy_map:
+                # The generated job has one client app deployed to all clients. Exporting
+                # both an all-clients app and per-site apps is not expressible (the
+                # all-clients app wins and per-site apps are dropped), so fail loudly
+                # instead of silently losing the placement.
+                raise ValueError(
+                    "cannot target specific clients: this recipe's client app applies to all clients. "
+                    "Configure per-site client apps first (e.g. per_site_config/set_per_site_config) "
+                    "or omit clients to apply to all clients."
+                )
             for client in clients:
                 self.job.to(obj, client, **kwargs)
 
@@ -407,6 +427,75 @@ class Recipe(ABC):
 
         self._add_to_client_apps(file_path, clients=clients)
 
+    def add_client_component(self, component: Any, clients: Optional[List[str]] = None, id: Optional[str] = None):
+        """Add a component to client apps.
+
+        Use this for client-side components such as tracking receivers or streamers,
+        instead of reaching into the recipe's generated job. The component is
+        registered in each targeted client app's configuration.
+
+        This is a bounded placement primitive for components only. Files, config
+        parameters, filters, and executors have dedicated APIs: ``add_client_file``,
+        ``add_client_config``, ``add_client_input_filter``/``add_client_output_filter``,
+        and the recipe's own executor/train-script parameters.
+
+        Args:
+            component: The component object to add to client apps.
+            clients: Optional list of specific client names. If None, applies to all clients.
+                Targeting specific clients requires the recipe's client apps to be per-site
+                (e.g. recipes configured with per-site config); with the default all-clients
+                topology, targeted placement raises ValueError instead of silently dropping
+                the component from the generated job.
+            id: Optional component id. If None, an id is generated. If the id is already
+                used in a client app, a numeric suffix is appended.
+
+        Raises:
+            TypeError: If component is a str, dict, Filter, Controller, Executor, or a
+                script runner.
+            ValueError: If clients names non-client sites, or targets specific clients
+                while the recipe's client app applies to all clients.
+
+        Example:
+            # Add a streamer component to all clients
+            recipe.add_client_component(TensorClientStreamer())
+
+            # Add a tracking receiver to one site only (per-site client apps required)
+            recipe.add_client_component(receiver, clients=["site-1"], id="mlflow_receiver")
+        """
+        self._validate_placed_component(component, "client")
+        if isinstance(component, Controller):
+            raise TypeError(
+                "Controllers run in the server workflow and are configured by the recipe; "
+                "they cannot be added to clients"
+            )
+        self._add_to_client_apps(component, clients=clients, id=id)
+
+    @staticmethod
+    def _validate_placed_component(component: Any, target_type: str) -> None:
+        """Reject objects that have dedicated APIs so component placement stays bounded."""
+        if isinstance(component, str):
+            raise TypeError(f"component must be an object; use add_{target_type}_file for files or scripts")
+        if isinstance(component, dict):
+            raise TypeError(f"component must be an object; use add_{target_type}_config for configuration parameters")
+        if isinstance(component, Filter):
+            raise TypeError(
+                f"Filters are wired into filter chains; use add_{target_type}_input_filter or "
+                f"add_{target_type}_output_filter"
+            )
+        if isinstance(component, Executor):
+            raise TypeError(
+                "Executors are configured through the recipe's executor/train-script parameters, "
+                f"not add_{target_type}_component"
+            )
+        # Script runners are executor-installing wrappers, not plain components.
+        from nvflare.job_config.script_runner import BaseScriptRunner, ScriptRunner
+
+        if isinstance(component, (BaseScriptRunner, ScriptRunner)):
+            raise TypeError(
+                "script runners are configured through the recipe's train-script parameters, "
+                f"not add_{target_type}_component"
+            )
+
     def add_server_output_filter(self, filter: Filter, tasks: Optional[List[str]] = None):
         """Add a filter to the server for outgoing tasks to clients.
 
@@ -465,6 +554,43 @@ class Recipe(ABC):
             raise TypeError(f"file_path must be a str, got {type(file_path).__name__}")
 
         self.job.to_server(file_path)
+
+    def add_server_component(self, component: Any, id: Optional[str] = None) -> Any:
+        """Add a component to the server app.
+
+        Use this for server-side components such as tracking receivers or streamers,
+        instead of reaching into the recipe's generated job. The component is
+        registered in the server app's configuration.
+
+        This is a bounded placement primitive for components only. Files, config
+        parameters, and filters have dedicated APIs: ``add_server_file``,
+        ``add_server_config``, and ``add_server_input_filter``/``add_server_output_filter``.
+        Controllers are configured by the recipe itself.
+
+        Args:
+            component: The component object to add to the server app.
+            id: Optional component id. If None, an id is generated. If the id is already
+                used in the server app, a numeric suffix is appended.
+
+        Returns:
+            The final component id assigned in the server app. Components that implement
+            their own job-registration hook (``add_to_fed_job``) return that hook's result
+            instead, which may not be an id.
+
+        Raises:
+            TypeError: If component is a str, dict, Filter, Controller, Executor, or a
+                script runner.
+
+        Example:
+            # Add a streamer component to the server
+            streamer_id = recipe.add_server_component(TensorServerStreamer())
+        """
+        self._validate_placed_component(component, "server")
+        if isinstance(component, Controller):
+            raise TypeError(
+                "Controllers are configured by the recipe itself; they cannot be added through " "add_server_component"
+            )
+        return self.job.to_server(component, id=id)
 
     @staticmethod
     def _get_full_class_name(obj):

@@ -98,6 +98,24 @@ File packaging helpers:
 ``recipe.add_server_file(file_path)``
    Bundle a file or directory into the generated server app package.
 
+Component helpers:
+
+``recipe.add_client_component(component, clients=None, id=None)``
+   Add a component object (e.g. a tracking receiver or streamer) to generated
+   client apps. If ``clients`` is omitted, the component applies to all
+   generated client apps.
+
+``recipe.add_server_component(component, id=None)``
+   Add a component object to the generated server app. Returns the final
+   component id.
+
+These component helpers place plain components only. Files, config parameters,
+filters, and executors have the dedicated APIs above; controllers are
+configured by the recipe itself. Targeting specific clients with ``clients``
+requires per-site client apps (e.g. recipes configured with per-site config);
+with the default all-clients topology, targeted placement raises an error
+rather than silently dropping the component from the generated job.
+
 Filter helpers:
 
 ``recipe.add_client_input_filter(filter, tasks=None, clients=None)``
@@ -123,9 +141,11 @@ Shared helpers:
 
 Utility helpers:
 
-``add_experiment_tracking(recipe, tracking_type, tracking_config=None, client_side=False, server_side=True)``
+``add_experiment_tracking(recipe, tracking_type, tracking_config=None, client_side=False, server_side=True, clients=None)``
    Add supported experiment tracking receivers such as TensorBoard, MLflow, or
-   Weights & Biases.
+   Weights & Biases. With ``client_side=True``, ``clients`` limits which sites
+   receive the client-side receiver; call once per site with different
+   ``tracking_config`` values for per-site tracking destinations.
 
 ``add_cross_site_evaluation(recipe, submit_model_timeout=600, validation_timeout=6000, participating_clients=None)``
    Add cross-site evaluation to a training recipe when the recipe/framework
@@ -228,9 +248,10 @@ The following are internal details and should not be used in recipe scripts:
 * generated deploy-map internals;
 * internal fields used by Recipe helpers.
 
-If a workflow needs arbitrary component placement that is not covered by a named
-Recipe helper, use the lower-level Job API workflow or add a new named Recipe
-helper for the repeated pattern.
+Custom component placement is covered by ``add_server_component`` and
+``add_client_component``. If a workflow needs job structure those helpers do
+not express (e.g. custom executors or multi-app layouts), use the lower-level
+Job API workflow or add a new named Recipe helper for the repeated pattern.
 
 Recipe Catalog JSON
 -------------------
