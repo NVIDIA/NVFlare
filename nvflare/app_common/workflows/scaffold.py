@@ -31,6 +31,26 @@ from .base_fedavg import (
 )
 
 
+def _zero_control_value(value):
+    """Zero an array or tensor in place without changing its type, dtype, or device."""
+    try:
+        value[...] = 0
+    except (IndexError, TypeError):
+        value = np.zeros_like(value)
+    return value
+
+
+def _add_control_delta(control, delta):
+    """Add a control delta while preserving a tensor control's dtype and device."""
+    new_tensor = getattr(control, "new_tensor", None)
+    add = getattr(control, "add_", None)
+    if callable(new_tensor) and callable(add) and not callable(getattr(delta, "new_tensor", None)):
+        add(new_tensor(delta))
+        return control
+    control += delta
+    return control
+
+
 class Scaffold(BaseFedAvg):
     """Controller for Scaffold Workflow. *Note*: This class is based on `ModelController`.
     Implements [SCAFFOLD](https://proceedings.mlr.press/v119/karimireddy20a.html).
@@ -71,7 +91,7 @@ class Scaffold(BaseFedAvg):
         self._global_ctrl_weights = copy.deepcopy(self.model.params)
         # Initialize correction term with zeros
         for k in self._global_ctrl_weights.keys():
-            self._global_ctrl_weights[k] = np.zeros_like(self._global_ctrl_weights[k])
+            self._global_ctrl_weights[k] = _zero_control_value(self._global_ctrl_weights[k])
 
     def run(self) -> None:
         disk_offload_context = None
@@ -112,7 +132,7 @@ class Scaffold(BaseFedAvg):
             # update SCAFFOLD global controls
             ctr_diff = aggregate_results.meta[AlgorithmConstants.SCAFFOLD_CTRL_DIFF]
             for v_name, v_value in ctr_diff.items():
-                self._global_ctrl_weights[v_name] += v_value
+                self._global_ctrl_weights[v_name] = _add_control_delta(self._global_ctrl_weights[v_name], v_value)
 
             self.save_model(self.model)
 

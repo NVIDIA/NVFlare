@@ -114,7 +114,10 @@ class PTScaffoldHelper(object):
             c_new_para[key] = (
                 c_new_para[key] - c_global_para[key] + (global_model_para[key] - net_para[key]) / (self.cnt * curr_lr)
             )
-            self.c_delta_para[key] = (c_new_para[key] - c_local_para[key]).cpu().numpy()
+            c_delta = (c_new_para[key] - c_local_para[key]).cpu()
+            if c_delta.dtype == torch.bfloat16:
+                c_delta = c_delta.to(torch.float32)
+            self.c_delta_para[key] = c_delta.numpy()
         self.c_local.load_state_dict(c_new_para)
 
     def load_global_controls(self, weights):

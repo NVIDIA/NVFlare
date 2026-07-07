@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+import time
 
 from nvflare.apis.job_def import DEFAULT_STUDY
 from nvflare.fuel.hci.base64_utils import b64str_to_str, str_to_b64str
@@ -62,6 +63,25 @@ def test_session_token_uses_study_field_name():
 
     assert payload["study"] == "cancer-research"
     assert "t" not in payload
+
+
+def test_session_token_round_trip_preserves_cert_expiry():
+    cert_exp = time.time() + 60
+    session = Session(
+        sess_id="session-id",
+        user_name="admin@nvidia.com",
+        org="nvidia",
+        role="lead",
+        origin_fqcn="origin",
+        active_study="cancer-research",
+        cert_exp=cert_exp,
+    )
+
+    restored = Session.decode_token(session.make_token(_FakeIdAsserter()))
+
+    assert restored.cert_exp == cert_exp
+    assert not restored.is_cert_expired(now=cert_exp - 1)
+    assert restored.is_cert_expired(now=cert_exp)
 
 
 def test_decode_token_defaults_legacy_session_study():

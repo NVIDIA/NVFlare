@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import datetime
+
 from nvflare.apis.job_def import DEFAULT_STUDY
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.message import Message
@@ -41,8 +43,12 @@ class _FakeConnection:
 
 class _FakeVerifier:
     @staticmethod
-    def verify_common_name(asserter_cert, asserted_cn, signature, nonce):
+    def verify_common_name(asserter_cert, asserted_cn, signature, nonce, intermediate_certs=None):
         return True
+
+
+class _FakeCert:
+    not_valid_after = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)
 
 
 class _FakeIdAsserter:
@@ -123,8 +129,13 @@ def _make_conn(study=None):
     )
 
 
+def _patch_cert_login(monkeypatch):
+    monkeypatch.setattr("nvflare.fuel.hci.server.login.load_crt_chain_bytes", lambda _data: [_FakeCert()])
+    monkeypatch.setattr("nvflare.fuel.hci.server.login.validate_admin_leaf_cert", lambda _cert: None)
+
+
 def test_handle_cert_login_rejects_unknown_study_when_registry_exists(monkeypatch):
-    monkeypatch.setattr("nvflare.fuel.hci.server.login.load_crt_bytes", lambda _data: object())
+    _patch_cert_login(monkeypatch)
     monkeypatch.setattr(
         "nvflare.fuel.hci.server.login.cert_to_dict",
         lambda _cert: {"subject": {"commonName": "admin@nvidia.com"}},
@@ -151,7 +162,7 @@ def test_handle_cert_login_rejects_unknown_study_when_registry_exists(monkeypatc
 
 
 def test_handle_cert_login_rejects_unmapped_user_when_registry_exists(monkeypatch):
-    monkeypatch.setattr("nvflare.fuel.hci.server.login.load_crt_bytes", lambda _data: object())
+    _patch_cert_login(monkeypatch)
     monkeypatch.setattr(
         "nvflare.fuel.hci.server.login.cert_to_dict",
         lambda _cert: {"subject": {"commonName": "admin@nvidia.com"}},
@@ -186,7 +197,7 @@ def test_handle_cert_login_rejects_unmapped_user_when_registry_exists(monkeypatc
 
 
 def test_handle_cert_login_accepts_mapped_user_for_valid_study(monkeypatch):
-    monkeypatch.setattr("nvflare.fuel.hci.server.login.load_crt_bytes", lambda _data: object())
+    _patch_cert_login(monkeypatch)
     monkeypatch.setattr(
         "nvflare.fuel.hci.server.login.cert_to_dict",
         lambda _cert: {"subject": {"commonName": "admin@nvidia.com"}},
@@ -219,7 +230,7 @@ def test_handle_cert_login_accepts_mapped_user_for_valid_study(monkeypatch):
 
 
 def test_handle_cert_login_defaults_to_default_study_without_registry(monkeypatch):
-    monkeypatch.setattr("nvflare.fuel.hci.server.login.load_crt_bytes", lambda _data: object())
+    _patch_cert_login(monkeypatch)
     monkeypatch.setattr(
         "nvflare.fuel.hci.server.login.cert_to_dict",
         lambda _cert: {"subject": {"commonName": "admin@nvidia.com"}},
@@ -246,7 +257,7 @@ def test_handle_cert_login_defaults_to_default_study_without_registry(monkeypatc
 
 
 def test_handle_cert_login_rejects_non_default_study_without_registry(monkeypatch):
-    monkeypatch.setattr("nvflare.fuel.hci.server.login.load_crt_bytes", lambda _data: object())
+    _patch_cert_login(monkeypatch)
     monkeypatch.setattr(
         "nvflare.fuel.hci.server.login.cert_to_dict",
         lambda _cert: {"subject": {"commonName": "admin@nvidia.com"}},

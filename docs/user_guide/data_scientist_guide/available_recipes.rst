@@ -11,44 +11,13 @@ Recipes are high-level, declarative APIs that simplify job configuration and exe
    :local:
    :depth: 2
 
-Common Recipe Parameters
-========================
+Before You Start
+================
 
-Most training recipes accept the following model-related parameters:
-
-``model``
-    The model to use for federated training. Accepts:
-
-    * **Class instance**: e.g., ``MyModel()`` - convenient and Pythonic
-    * **Dict config**: e.g., ``{"class_path": "module.MyModel", "args": {"param": value}}`` - better for large models
-
-    .. note::
-       Class instances are converted to configuration files before job submission. For large models,
-       use dict config to avoid unnecessary instantiation overhead. For TensorFlow/Keras, class instances
-       should be user-defined subclassed models (for example, ``tf.keras.Model`` or ``tf.keras.Sequential`` subclasses).
-
-``initial_ckpt``
-    Absolute path to a pre-trained checkpoint file. The file may not exist locally but must exist
-    on the server when the model is loaded during job execution.
-
-    * PyTorch: Requires ``model`` for architecture (checkpoint has weights only)
-    * TensorFlow/Keras: Can use ``initial_ckpt`` alone (Keras saves full model). If ``model`` is provided, use a
-      subclassed Keras class instance or dict config.
-
-``enable_tensor_disk_offload`` (PyTorch FedAvg recipes)
-    Controls where streamed PyTorch tensors are materialized during server-side aggregation.
-
-    * ``False`` (default): materialize in memory
-    * ``True``: materialize to temporary safetensors files and consume through lazy refs to reduce peak memory
-
-    .. warning::
-
-       Temporary files use the server process temp directory (``TMPDIR`` / OS default such as ``/tmp``).
-       The server IT setup must point this to a writable, disk-backed mount. In containers or Kubernetes,
-       ``/tmp`` may be RAM-backed, which prevents memory offload benefits. See
-       :ref:`Starting Federated Learning Servers <starting_fl_servers>`.
-
-See :ref:`job_recipe` for detailed explanations of these options.
+This page is a catalog of available recipe classes and short starting snippets.
+For model input formats, checkpoint behavior, and execution environments, see
+:ref:`job_recipe`. For common Recipe methods, helpers, and stable API behavior,
+see :ref:`recipe_api`.
 
 Fed Task
 ==============
@@ -97,6 +66,12 @@ PyTorch FedAvg
     )
     env = SimEnv(num_clients=2)
     run = recipe.execute(env)
+
+For large PyTorch model updates, ``FedAvgRecipe`` also supports
+``enable_tensor_disk_offload=True`` to reduce server memory use by materializing
+incoming streamed tensors to temporary files. See
+:ref:`Starting Federated Learning Servers <starting_fl_servers>` for deployment
+notes about configuring the server temporary directory.
 
 **Examples:**
 
@@ -923,45 +898,3 @@ Add cross-site evaluation to any training recipe.
     add_cross_site_evaluation(recipe)
     # or limit evaluation to selected clients
     add_cross_site_evaluation(recipe, participating_clients=["site-1", "site-3"])
-
-
-Execution Environments
-======================
-
-Recipes can be executed in different environments:
-
-SimEnv (Simulation)
--------------------
-
-Run locally for development and testing.
-
-.. code-block:: python
-
-    from nvflare.recipe import SimEnv
-
-    env = SimEnv(num_clients=2)
-    run = recipe.execute(env)
-
-PocEnv (Proof of Concept)
--------------------------
-
-Run with multiple processes on a single machine.
-
-.. code-block:: python
-
-    from nvflare.recipe import PocEnv
-
-    env = PocEnv(num_clients=2)
-    run = recipe.execute(env)
-
-ProdEnv (Production)
---------------------
-
-Deploy to production NVFlare infrastructure.
-
-.. code-block:: python
-
-    from nvflare.recipe import ProdEnv
-
-    env = ProdEnv(startup_kit_location="/path/to/startup_kit")
-    run = recipe.execute(env)
