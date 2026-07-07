@@ -177,7 +177,7 @@ class CellIdentityResolver:
             if identity:
                 return identity
 
-        # A legacy (pre-2.8 flat naming) cell whose whole FQCN is a bare alias
+        # A legacy (2.8-and-earlier flat naming) cell whose whole FQCN is a bare alias
         # also authenticates with the owning site's certificate. An unmarked
         # leaf inside a longer FQCN is never an alias.
         if len(parts) == 1:

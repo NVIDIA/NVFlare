@@ -33,7 +33,7 @@ class FQCN(FQN):
 #     cannot drift apart.
 #
 # CellPipe cell-name schemes, in historical order:
-#   1. legacy (through 2.7): a bare "<site>_<token>_<mode>" leaf. Root-connected
+#   1. legacy (through 2.8): a bare "<site>_<token>_<mode>" leaf. Root-connected
 #      pipes use it as the whole FQCN; CP/relay-connected pipes nest it under
 #      the connected cell ("<parent_fqcn>.<site>_<token>_<mode>").
 #   2. hierarchical (#4801, never released): "<site>.<token>.<mode>". Replaced
@@ -71,7 +71,7 @@ def parse_cell_pipe_alias(segment: str) -> Optional[Tuple[str, str, str]]:
     Two shapes are accepted:
       - the current explicit form
         "cellpipe~alias~<owner>~<runtime_id>~<mode>";
-      - the bare legacy form "<owner>_<runtime_id>_<mode>" used by pre-2.8
+      - the bare legacy form "<owner>_<runtime_id>_<mode>" used by pre-2.9
         flat CellPipe names, where the whole FQCN is the alias. Callers decide
         where the bare form is acceptable; it is normally restricted to
         single-segment FQCNs so an unmarked "<token>_<mode>" leaf inside a
@@ -97,7 +97,7 @@ def parse_cell_pipe_alias(segment: str) -> Optional[Tuple[str, str, str]]:
             return None
         return owner, runtime_id, mode
 
-    # Legacy flat alias grammar. No pre-2.8 FQCN segment can contain the
+    # Legacy flat alias grammar. No pre-2.9 FQCN segment can contain the
     # reserved "~" separator (it was added to FQCN.VALID_PATTERN by the topology
     # scheme), so a "~"-bearing segment is never a legacy alias. Rejecting it
     # here also guarantees a current "~"-delimited leaf can never bare-parse.

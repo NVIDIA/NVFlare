@@ -288,6 +288,12 @@ def test_identity_resolver_maps_legacy_cell_pipe_alias_to_owner_identity():
     assert resolver.resolve("site-1_8cb50f16-8158-46f6-a8d7-ec85b1f06c53_passive") == "site-1"
 
 
+def test_identity_resolver_does_not_map_nested_legacy_alias_to_owner_identity():
+    resolver = CellIdentityResolver(local_fqcn="server")
+
+    assert resolver.resolve("relay-1.site-1_job-123_active") == "relay-1"
+
+
 def test_identity_resolver_maps_cell_pipe_alias_to_configured_owner_identity():
     resolver = CellIdentityResolver(local_fqcn="server", prefix_identity_map={"site-1": "custom-site-cn"})
 

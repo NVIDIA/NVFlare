@@ -335,8 +335,8 @@ def _origin_matches_fqcn(origin: str, fqcn: str, channel: Optional[str] = None) 
     if origin_parent != fqcn_parent:
         return False
 
-    # The bare alias grammar is only valid for single-segment origins (legacy
-    # pre-2.8 flat CellPipe names); at any depth the alias must carry the
+    # The bare alias grammar is only valid for single-segment origins (the legacy
+    # flat CellPipe names used in 2.8 and earlier); at any depth the alias must carry the
     # explicit cellpipe~alias~ marker, so an unmarked leaf
     # can never be misread as an alias.
     origin_leaf = FQCN.split(origin)[-1]

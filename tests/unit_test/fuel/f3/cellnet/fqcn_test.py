@@ -43,7 +43,7 @@ class TestCellPipeAliasGrammar:
         assert parse_cell_pipe_alias(alias) == (owner, runtime_id, mode)
 
     def test_legacy_bare_alias_is_still_parsed(self):
-        # pre-2.8 flat CellPipe names are whole-FQCN aliases with no prefix
+        # pre-2.9 flat CellPipe names are whole-FQCN aliases with no prefix
         assert parse_cell_pipe_alias("site-1_job-123_active") == ("site-1", "job-123", "active")
 
     def test_legacy_owner_with_underscores_parses_from_the_right(self):
@@ -92,7 +92,7 @@ class TestCellPipeAliasGrammar:
         [("job-123", "active"), ("simulate_job", "passive"), ("ext_active", "active")],
     )
     def test_current_tilde_leaves_never_bare_parse(self, runtime_id, mode):
-        # No pre-2.8 FQCN segment can contain "~", so the bare grammar rejects
+        # No pre-2.9 FQCN segment can contain "~", so the bare grammar rejects
         # any "~"-bearing segment. This guarantees a current "~"-delimited pipe
         # leaf can never be misread as a legacy bare alias, even when the token
         # contains "_" or ends in a mode word.
