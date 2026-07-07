@@ -245,6 +245,13 @@ def test_metric_order_precedes_artifact_file_order(tmp_path):
     assert runner.extract_score(tmp_path, ["test_accuracy", "accuracy"]) == 0.8
 
 
+def test_structured_metric_extraction_rejects_boolean_values():
+    runner = _load_runner()
+
+    assert runner.find_metric_value({"accuracy": True}, ["accuracy"]) is None
+    assert runner.find_metric_value({"metrics": [{"name": "accuracy", "value": False}]}, ["accuracy"]) is None
+
+
 def test_text_metric_extraction_supports_scientific_notation(tmp_path):
     runner = _load_runner()
     tmp_path.joinpath("log_fl.txt").write_text("validation_loss: 1.25e-4\n", encoding="utf-8")
@@ -632,6 +639,31 @@ def test_runner_state_routes_plateau_to_literature_checkpoint(tmp_path):
     assert state["next_action"] == "run_literature_loop"
     assert state["final_response_allowed"] is False
     assert state == json.loads(state_path.read_text(encoding="utf-8"))
+
+
+def test_small_retained_improvement_does_not_reset_plateau_clock(tmp_path):
+    runner = _load_runner()
+    records = [
+        runner.RunRecord("baseline", "baseline", 0.85, 1.0, "none", "baseline", "python job.py", "/tmp/baseline"),
+        runner.RunRecord("keep", "candidate_1", 0.8503, 1.0, "client.py", "candidate", "python job.py", "/tmp/c1"),
+    ]
+    results_path = tmp_path / "results.tsv"
+    runner.write_results(results_path, records)
+
+    state = runner.write_state(
+        tmp_path / "state.json",
+        results_path,
+        records,
+        None,
+        plateau_threshold=1,
+        plateau_min_delta=0.0005,
+    )
+
+    assert runner.best_retained_record(records, "max").name == "candidate_1"
+    assert state["best_score"] == pytest.approx(0.8503)
+    assert state["plateau"]["best_score"] == pytest.approx(0.85)
+    assert state["reason"] == "plateau_literature"
+    assert state["next_action"] == "run_literature_loop"
 
 
 def test_runner_state_finalizes_after_explicit_candidate_cap(tmp_path):

@@ -1030,6 +1030,10 @@ def normalize_metric_order(metrics: Sequence[str] | str) -> List[str]:
     return [str(metric) for metric in metrics if metric]
 
 
+def is_numeric_metric_value(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
 def find_metric_value(payload: Any, metric_order: Sequence[str] | str) -> Optional[float]:
     metric_keys = normalize_metric_order(metric_order)
     if isinstance(payload, dict):
@@ -1039,7 +1043,7 @@ def find_metric_value(payload: Any, metric_order: Sequence[str] | str) -> Option
                 if value is not None:
                     return value
         for metric_key in metric_keys:
-            if metric_key in payload and isinstance(payload[metric_key], (int, float)):
+            if metric_key in payload and is_numeric_metric_value(payload[metric_key]):
                 return float(payload[metric_key])
         for value in payload.values():
             score = find_metric_value(value, metric_keys)
@@ -1063,7 +1067,7 @@ def metric_from_list(items: Any, metric: str) -> Optional[float]:
     for item in items:
         if not isinstance(item, dict):
             continue
-        if item.get("name") == metric and isinstance(item.get("value"), (int, float)):
+        if item.get("name") == metric and is_numeric_metric_value(item.get("value")):
             return float(item["value"])
     return None
 
@@ -1785,7 +1789,6 @@ def write_state(
     plateau_threshold: int = DEFAULT_PLATEAU_THRESHOLD,
     plateau_min_delta: float = DEFAULT_PLATEAU_MIN_DELTA,
     hard_crash_threshold: int = DEFAULT_HARD_CRASH_THRESHOLD,
-    manual_stop: bool = False,
     pending_manifest_count: int = 0,
     persist: bool = True,
 ) -> Dict[str, Any]:
@@ -1797,35 +1800,6 @@ def write_state(
             if record.status in {"candidate", "keep", "discard", "crash"} and not is_baseline_record(record)
         ]
     )
-    if manual_stop:
-        state = guard.guard_state(
-            results_path,
-            max_candidates=max_candidates,
-            stop_files=stop_files,
-            plateau_threshold=plateau_threshold,
-            min_delta=plateau_min_delta,
-            hard_crash_threshold=hard_crash_threshold,
-            mode=mode,
-            pending_manifest_count=pending_manifest_count,
-        )
-        if state.get("pending_candidates"):
-            if persist:
-                write_json(path, state)
-            return state
-        state.update(
-            {
-                "candidate_attempts": attempts,
-                "decision": "stop",
-                "reason": "manual_interrupt",
-                "next_action": "final_report",
-                "final_response_allowed": True,
-                "agent_instruction": "Final report is allowed because the campaign was manually interrupted.",
-            }
-        )
-        if persist:
-            write_json(path, state)
-        return state
-
     if records and records[-1].status == INFRASTRUCTURE_RETRY:
         state = guard.guard_state(
             results_path,
