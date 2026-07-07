@@ -16,6 +16,7 @@ import csv
 import importlib.util
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -30,7 +31,7 @@ def _load_plotter():
     return module
 
 
-def _record(plotter, index, score, status="discard", name=None, runtime=300.0):
+def _record(plotter, index, score, status="discard", name=None, runtime=300.0, kind="", family="", lit_id=""):
     return plotter.ProgressRecord(
         index=index,
         status=status,
@@ -38,6 +39,9 @@ def _record(plotter, index, score, status="discard", name=None, runtime=300.0):
         score=score,
         runtime_seconds=runtime,
         description=f"candidate {index}",
+        kind=kind,
+        family=family,
+        literature_event_id=lit_id,
     )
 
 
@@ -105,8 +109,98 @@ def test_load_results_uses_productized_ledger_fields(tmp_path):
 
     records = plotter.load_results(ledger)
 
-    assert records == [plotter.ProgressRecord(0, "keep", "fedavgm", 0.75, 123.5, "server momentum")]
+    # Legacy ledger has no candidate_kind/changed_files columns, so kind falls back to "argument_only".
+    assert records == [plotter.ProgressRecord(0, "keep", "fedavgm", 0.75, 123.5, "server momentum", "argument_only")]
     assert plotter.normalize_records(records) == records
+
+
+def test_load_results_populates_candidate_kind_family_and_literature_link(tmp_path):
+    plotter = _load_plotter()
+    ledger = tmp_path / "results.tsv"
+    fieldnames = [
+        "status",
+        "name",
+        "score",
+        "runtime_seconds",
+        "diff_summary",
+        "changed_files",
+        "candidate_kind",
+        "algorithm_family",
+        "literature_event_id",
+    ]
+    with ledger.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter="\t")
+        writer.writeheader()
+        writer.writerow({"status": "baseline", "name": "baseline", "score": "0.687", "runtime_seconds": "100"})
+        writer.writerow(
+            {
+                "status": "keep",
+                "name": "fedprox_mu",
+                "score": "0.75",
+                "runtime_seconds": "120",
+                "changed_files": "client.py",
+                "candidate_kind": "source_edit",
+                "algorithm_family": "fedprox",
+                "literature_event_id": "lit-0001",
+            }
+        )
+        writer.writerow(
+            {
+                "status": "discard",
+                "name": "higher_lr",
+                "score": "0.70",
+                "runtime_seconds": "110",
+                "candidate_kind": "argument_only",
+            }
+        )
+
+    records = plotter.load_results(ledger)
+
+    assert [record.kind for record in records] == ["", "source_edit", "argument_only"]
+    assert [record.family for record in records] == ["", "fedprox", ""]
+    assert [record.literature_event_id for record in records] == ["", "lit-0001", ""]
+
+
+def test_normalize_records_reads_run_record_attributes_with_changed_files_fallback():
+    plotter = _load_plotter()
+    runs = [
+        SimpleNamespace(
+            status="keep",
+            name="scaffold_variant",
+            score=0.76,
+            runtime_seconds=100.0,
+            diff_summary="control variates",
+            changed_files="client.py",
+            candidate_kind="source_edit",
+            algorithm_family="scaffold",
+            literature_event_id="lit-0002",
+        ),
+        # Legacy run records without the new columns fall back to changed_files.
+        SimpleNamespace(
+            status="discard",
+            name="legacy_edit",
+            score=0.70,
+            runtime_seconds=90.0,
+            diff_summary="edited trainer",
+            changed_files="trainer.py",
+        ),
+        SimpleNamespace(
+            status="discard",
+            name="legacy_args",
+            score=0.69,
+            runtime_seconds=80.0,
+            diff_summary="tuned lr",
+            changed_files="none",
+        ),
+    ]
+
+    records = plotter.normalize_records(runs)
+
+    assert [record.kind for record in records] == ["source_edit", "source_edit", "argument_only"]
+    assert records[0].family == "scaffold"
+    assert records[0].literature_event_id == "lit-0002"
+    assert [record.family for record in records[1:]] == ["", ""]
+    assert [record.literature_event_id for record in records[1:]] == ["", ""]
 
 
 def test_zero_score_label_uses_the_actual_score():
@@ -133,5 +227,26 @@ def test_rich_progress_plot_renders_png(tmp_path):
 
     assert baseline == pytest.approx(0.687)
     assert best == pytest.approx(0.73)
+    assert output.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+    assert output.stat().st_size > 20_000
+
+
+def test_progress_plot_distinguishes_candidate_kinds(tmp_path):
+    pytest.importorskip("matplotlib")
+    plotter = _load_plotter()
+    records = [
+        _record(plotter, 0, 0.687, status="baseline", name="baseline"),
+        _record(plotter, 1, None, status="literature", name="lit_review", runtime=45.0, lit_id="lit-0001"),
+        _record(plotter, 2, 0.70, status="discard", kind="argument_only"),
+        _record(plotter, 3, 0.71, status="discard", kind="source_edit"),
+        _record(plotter, 4, 0.72, status="candidate", kind="argument_only"),
+        _record(plotter, 5, 0.75, status="keep", kind="source_edit", family="fedprox", lit_id="lit-0001"),
+    ]
+    output = tmp_path / "progress.png"
+
+    baseline, best = plotter.plot_progress(records, output, mode="max", metric_label="test_accuracy")
+
+    assert baseline == pytest.approx(0.687)
+    assert best == pytest.approx(0.75)
     assert output.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
     assert output.stat().st_size > 20_000

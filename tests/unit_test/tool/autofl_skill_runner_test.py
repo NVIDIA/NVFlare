@@ -1316,10 +1316,97 @@ def test_record_literature_checkpoint_returns_to_agent_proposal(tmp_path, monkey
     records = runner.load_results(tmp_path / "results.tsv")
     assert records[-1].status == "literature"
     assert records[-1].diff_summary == "reviewed adaptive federated optimization"
+    assert records[-1].literature_event_id == "lit-0001"
     state = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_text(encoding="utf-8"))
-    assert state["next_action"] == "propose_candidate"
-    assert state["required_exploration"] == "source_backed_server_aggregation"
-    assert "server aggregation candidate" in state["agent_instruction"]
+    assert state["next_action"] == "develop_literature_batch"
+    assert state["required_exploration"] == "source_backed_exploration"
+    assert state["exploration_batch"]["literature_event_id"] == "lit-0001"
+    assert state["exploration_batch"]["completed"] == 0
+    assert "--literature-event" in state["agent_instruction"]
+
+
+def test_results_roundtrip_preserves_candidate_provenance(tmp_path):
+    runner = _load_runner()
+    records = [
+        runner.RunRecord("baseline", "baseline", 0.5, 1.0, "none", "baseline", "python job.py", "/tmp/baseline"),
+        runner.RunRecord(
+            "keep",
+            "fedyogi_faithful",
+            0.6,
+            1.0,
+            "client.py",
+            "faithful FedYogi implementation",
+            "python job.py",
+            "/tmp/run",
+            candidate_kind="source_edit",
+            algorithm_family="fedyogi",
+            literature_event_id="lit-0001",
+        ),
+    ]
+    results_path = tmp_path / "results.tsv"
+
+    runner.write_results(results_path, records)
+    loaded = runner.load_results(results_path)
+
+    assert loaded[-1].candidate_kind == "source_edit"
+    assert loaded[-1].algorithm_family == "fedyogi"
+    assert loaded[-1].literature_event_id == "lit-0001"
+    assert loaded[0].candidate_kind == ""
+
+
+def test_prepare_rejects_unknown_literature_event(tmp_path, monkeypatch, capsys):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+
+    rc = runner.main(
+        [
+            "prepare",
+            str(job),
+            "--name",
+            "fedyogi_faithful",
+            "--hypothesis",
+            "faithful FedYogi",
+            "--family",
+            "fedyogi",
+            "--literature-event",
+            "lit-9999",
+        ]
+    )
+
+    assert rc == 2
+    assert "unknown literature event id" in capsys.readouterr().err
+
+
+def test_prepare_persists_family_and_literature_event_in_manifest(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    assert runner.main(["record", str(job), "--literature", "--hypothesis", "reviewed FedYogi"]) == 0
+
+    assert (
+        runner.main(
+            [
+                "prepare",
+                str(job),
+                "--name",
+                "fedyogi_faithful",
+                "--hypothesis",
+                "faithful FedYogi",
+                "--family",
+                "FedYogi",
+                "--literature-event",
+                "lit-0001",
+            ]
+        )
+        == 0
+    )
+
+    manifest = json.loads(
+        tmp_path.joinpath(".nvflare/autofl/candidates/fedyogi_faithful/candidate_manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert manifest["algorithm_family"] == "fedyogi"
+    assert manifest["literature_event_id"] == "lit-0001"
 
 
 def test_external_baseline_may_follow_literature_event(tmp_path, monkeypatch):

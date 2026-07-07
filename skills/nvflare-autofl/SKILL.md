@@ -42,8 +42,14 @@ Read `autofl.yaml` and the JSON response, then prepare an agent-authored
 candidate with a short hypothesis and optional candidate-only arguments:
 
 ```bash
-python "$RUNNER" prepare ./job.py --name <candidate> --hypothesis "<expected improvement>" [--run-args "<args>"]
+python "$RUNNER" prepare ./job.py --name <candidate> --hypothesis "<expected improvement>" [--run-args "<args>"] [--family <slug>] [--literature-event <id>]
 ```
+
+Pass `--family` with an algorithm-family slug (for example `fedyogi` or
+`adaptive-clipping`) and `--literature-event` with the review's
+`literature_event_id` when the candidate implements a literature idea. Both are
+persisted in `candidate_manifest.json` and as the `candidate_kind`,
+`algorithm_family`, and `literature_event_id` columns in `results.tsv`.
 
 Edit only the returned candidate source directory. Modify existing allowed
 files or add Python modules under the job root; do not edit the live best source
@@ -141,8 +147,9 @@ specific fields before running candidates.
 3. Prepare a candidate, edit its draft, and evaluate its manifest.
 4. Let the helper validate paths and fixed-budget comparability, compute the
    patch hash, execute or materialize it, extract metrics, and keep or restore.
-5. Read campaign state and execute `next_action`. Run a source-backed literature
-   pass when requested, then implement its strongest compatible idea.
+5. Read campaign state and execute `next_action`. When it requests a literature
+   pass, run it, record it, then complete the full source-backed exploration
+   batch linked to that review before resuming normal candidate flow.
 
 ## Continuous Campaign Rule
 For uncapped campaigns, continue proposing and evaluating same-budget candidates
@@ -185,9 +192,39 @@ next mode, and continue unless the state reports `final_response_allowed=true`.
 Use `campaign_guard.py` only for read-only ledger diagnostics; it never updates
 authoritative campaign state.
 After a source-backed review, record it with the helper's `record --literature
---hypothesis "<sources and decision>"` action before preparing its candidate.
-After every literature-triggered plateau, evaluate at least one source-backed
-server aggregation candidate, or record why the job contract is incompatible.
+--hypothesis "<sources and decision>"` action before preparing its candidates.
+Each recorded review gets a persistent `literature_event_id` (`lit-0001` style).
+
+## Literature Exploration Batches
+
+A recorded literature review requires an exploration batch:
+`exploration_batch_size` (default 3, flag `--exploration-batch-size`, env
+`AUTOFL_EXPLORATION_BATCH_SIZE`) scored source-backed candidates linked to that
+review via `prepare --literature-event <id>` before normal candidate flow
+resumes. Campaign state keeps `next_action=develop_literature_batch` and
+`required_exploration=source_backed_exploration` until the batch completes.
+Compose the batch as a faithful implementation of the literature idea, a tuned
+variant, and an ablation. Every literature-linked candidate must contain
+source edits; the runner rejects argument-only literature-linked candidates at
+evaluate time.
+
+The plateau clock resets only when the exploration batch completes — when its
+final linked candidate scores — not when the review row is recorded. Recording
+a review does not relieve plateau pressure. After the first literature event,
+if the last `family_repeat_limit` (default 6, flag `--family-repeat-limit`,
+env `AUTOFL_FAMILY_REPEAT_LIMIT`, 0 disables) scored attempts are all
+argument-only tuning of the same algorithm family, campaign state sets
+`next_action=diversify_candidates`: switch to a different algorithm family or
+prepare a source-backed candidate.
+
+Select literature ideas for the workload, not only for server aggregation:
+client optimizer, loss function, learning-rate schedule, and architecture
+changes within the fixed comparison budget all qualify as source-backed
+exploration. Match the workload's threat model: do not select Byzantine-robust
+aggregation (geometric median, trimmed mean, sign gating, bucketed median) for
+benign-client campaigns, where it predictably sacrifices accuracy with no
+adversary present. If no source-backed exploration is compatible with the job
+contract, record the reason in the literature event.
 
 ## Stop Handling
 
