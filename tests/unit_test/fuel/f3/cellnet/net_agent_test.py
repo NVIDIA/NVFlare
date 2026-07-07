@@ -212,10 +212,10 @@ def test_connector_inventory_and_url_use():
 @pytest.mark.parametrize(
     "reply, expected_error, expected",
     [
-        (_reply(payload={"connector": 1}), {}, {"connector": 1}),
-        (_reply(payload={}), {}, {}),
-        (_reply(payload=[]), {"error": "reply payload should be dict but got <class 'list'>"}, {}),
-        (_reply(ReturnCode.PROCESS_EXCEPTION), {"error": "processing error"}, {}),
+        (_reply(payload={"connector": 1}), None, {"connector": 1}),
+        (_reply(payload={}), None, {}),
+        (_reply(payload=[]), "reply payload should be dict but got <class 'list'>", {}),
+        (_reply(ReturnCode.PROCESS_EXCEPTION), "processing error", {}),
     ],
 )
 def test_get_connectors_validates_reply(reply, expected_error, expected):
@@ -225,7 +225,10 @@ def test_get_connectors_validates_reply(reply, expected_error, expected):
     error, result = agent.get_connectors("site-2")
 
     assert result == expected
-    assert error["error"] == expected_error["error"] if expected_error else error == {}
+    if expected_error is None:
+        assert error == {}
+    else:
+        assert error["error"] == expected_error
 
 
 def test_route_operations_validate_payloads_and_return_codes():

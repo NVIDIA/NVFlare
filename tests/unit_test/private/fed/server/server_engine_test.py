@@ -388,7 +388,7 @@ def test_aux_target_translation_handles_special_clients_and_invalid_input():
     assert engine._get_aux_msg_target("missing") is None
     assert [target.name for target in engine._to_aux_msg_targets([])] == ["site-1"]
     assert engine._to_aux_msg_targets(["site-1"])[0].fqcn == "site-1.job"
-    assert engine._to_aux_msg_targets(["missing"]) == {}
+    assert not engine._to_aux_msg_targets(["missing"])
     with pytest.raises(TypeError, match="invalid target_names"):
         engine._to_aux_msg_targets("site-1")
     with pytest.raises(TypeError, match="target name must be str"):

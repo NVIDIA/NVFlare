@@ -19,7 +19,7 @@ import pytest
 
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReturnCode
+from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
@@ -30,6 +30,7 @@ from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.message import Message
+from tests.unit_test.fl_context_helper import make_fl_context
 
 
 def _exchanger(**kwargs):
@@ -43,11 +44,7 @@ def _exchanger(**kwargs):
 
 
 def _context(engine=None):
-    fl_ctx = FLContext()
-    if engine:
-        fl_ctx.set_prop(ReservedKey.ENGINE, engine, private=True, sticky=False)
-    fl_ctx.set_prop(ReservedKey.IDENTITY_NAME, "site-1", private=False, sticky=False)
-    return fl_ctx
+    return make_fl_context(engine=engine, identity_name="site-1")
 
 
 def _cell_reply(rc=CellReturnCode.OK, payload=None):
@@ -266,9 +263,9 @@ def test_abort_request_and_finish_result():
     )
 
 
-def test_receive_result_validates_context_task_and_payload():
+def test_receive_result_validates_context_task_and_payload(monkeypatch):
     exchanger = _exchanger(agent_id="agent")
-    exchanger.logger.error = MagicMock()
+    monkeypatch.setattr(exchanger.logger, "error", MagicMock())
     no_task = Message(headers={MessageHeaderKey.ORIGIN: "agent"})
     assert exchanger._receive_result(no_task).get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.OK
 

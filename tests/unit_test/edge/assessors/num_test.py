@@ -93,7 +93,7 @@ def test_initial_device_report_generates_model_and_selection(assessor_cls, state
 
 @pytest.mark.parametrize("assessor_cls,state_cls,module", ASSESSORS)
 def test_model_update_is_accepted_and_generates_next_model(assessor_cls, state_cls, module):
-    assessor = _assessor(assessor_cls, device_selection_size=1)
+    assessor = _assessor(assessor_cls, device_selection_size=1, device_reuse=False)
     assessor.process_child_update(StateUpdateReport(0, 0, None, _devices()).to_shareable(), FLContext())
     device_id = next(iter(assessor.current_selection))
     update = ModelUpdate(
@@ -111,7 +111,7 @@ def test_model_update_is_accepted_and_generates_next_model(assessor_cls, state_c
     assert assessor.current_model_version == 2
     assert assessor.current_model.data["value"] == 4.0
     assert reply.model_version == 2
-    assert device_id not in assessor.current_selection or assessor.device_reuse
+    assert device_id not in assessor.current_selection
 
 
 @pytest.mark.parametrize("assessor_cls,state_cls,module", ASSESSORS)
@@ -154,17 +154,52 @@ def test_child_update_skips_bad_stale_and_unknown_versions(assessor_cls, state_c
 
 
 @pytest.mark.parametrize("assessor_cls,state_cls,module", ASSESSORS)
-def test_fill_selection_respects_reuse_policy(assessor_cls, state_cls, module):
+def test_fill_selection_excludes_used_devices_without_reuse(assessor_cls, state_cls, module):
     assessor = _assessor(assessor_cls, device_selection_size=2, device_reuse=False)
     assessor.available_devices = _devices()
-    assessor.used_devices = {"device-1": 0}
+    # used at an older model version: without reuse it must stay excluded anyway
+    assessor.used_devices = {"device-1": 5}
     assessor._fill_selection(FLContext())
-    assert "device-1" not in assessor.current_selection
-    assert len(assessor.current_selection) == 2
+    assert set(assessor.current_selection) == {"device-2", "device-3"}
 
     assessor.current_selection = {"device-2": assessor.current_selection["device-2"]}
     assessor._fill_selection(FLContext())
-    assert len(assessor.current_selection) == 1
+    assert set(assessor.current_selection) == {"device-2"}
+
+
+def test_fill_selection_with_reuse_excludes_only_current_version_devices():
+    assessor = _assessor(num.NumAssessor, device_selection_size=3, device_reuse=True)
+    assessor.available_devices = _devices()
+    assessor.used_devices = {"device-1": 0, "device-2": 5}
+    assessor._fill_selection(FLContext())
+    # device-1 was used for the current model version (0) and is excluded;
+    # device-2 was used for a different version and becomes usable again
+    assert set(assessor.current_selection) == {"device-2", "device-3"}
+
+
+def test_async_fill_selection_excludes_used_devices_despite_reuse():
+    assessor = _assessor(async_num.AsyncNumAssessor, device_selection_size=3, device_reuse=True)
+    assessor.available_devices = _devices()
+    assessor.used_devices = {"device-1": {"model_version": 5, "selection_version": 5}}
+    assessor._fill_selection(FLContext())
+    assert set(assessor.current_selection) == {"device-2", "device-3"}
+
+
+@pytest.mark.parametrize("device_reuse", [True, False])
+def test_async_update_frees_used_device_only_with_reuse(device_reuse):
+    assessor = _assessor(
+        async_num.AsyncNumAssessor, device_selection_size=1, min_hole_to_fill=5, device_reuse=device_reuse
+    )
+    assessor.process_child_update(StateUpdateReport(0, 0, None, _devices()).to_shareable(), FLContext())
+    device_id = next(iter(assessor.current_selection))
+    update = ModelUpdate(1, DXO("number", {"value": 8.0, "count": 2}).to_shareable(), {device_id: 5.0})
+
+    assessor.process_child_update(
+        StateUpdateReport(1, assessor.current_selection_version, {1: update}, None).to_shareable(), FLContext()
+    )
+
+    assert device_id not in assessor.current_selection
+    assert (device_id in assessor.used_devices) is not device_reuse
 
 
 @pytest.mark.parametrize("assessor_cls,state_cls,module", ASSESSORS)

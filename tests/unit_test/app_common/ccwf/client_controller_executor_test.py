@@ -15,14 +15,14 @@
 from unittest.mock import MagicMock, patch
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReturnCode
-from nvflare.apis.fl_context import FLContext
+from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.learnable import Learnable
 from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
 from nvflare.app_common.ccwf.client_controller_executor import ClientControllerExecutor
 from nvflare.app_common.ccwf.common import Constant
+from tests.unit_test.fl_context_helper import make_fl_context
 
 
 class _Persistor(LearnablePersistor):
@@ -51,11 +51,7 @@ def _executor():
 
 
 def _context(engine=None):
-    fl_ctx = FLContext()
-    if engine:
-        fl_ctx.set_prop(ReservedKey.ENGINE, engine, private=True, sticky=False)
-    fl_ctx.set_prop(ReservedKey.IDENTITY_NAME, "site-1", private=False, sticky=False)
-    return fl_ctx
+    return make_fl_context(engine=engine, identity_name="site-1")
 
 
 def test_get_config_prop_and_initialize():

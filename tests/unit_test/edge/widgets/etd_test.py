@@ -16,8 +16,7 @@ import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey
-from nvflare.apis.fl_context import FLContext
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.edge.constants import EdgeApiStatus, EdgeConfigFile, EdgeContextKey, EdgeMsgTopic, JobDataKey
 from nvflare.edge.web.models.job_request import JobRequest
@@ -27,13 +26,11 @@ from nvflare.edge.widgets.etd import EdgeTaskDispatcher
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.message import Message
+from tests.unit_test.fl_context_helper import make_fl_context
 
 
 def _context(engine=None):
-    fl_ctx = FLContext()
-    if engine:
-        fl_ctx.set_prop(ReservedKey.ENGINE, engine, private=True, sticky=False)
-    return fl_ctx
+    return make_fl_context(engine=engine)
 
 
 def _job_meta(job_id="job-1", name="edge-job"):
@@ -83,10 +80,10 @@ def test_job_lifecycle_handlers_validate_context(tmp_path):
     workspace.get_app_config_dir.return_value = str(tmp_path)
     fl_ctx = _context()
     fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True, sticky=False)
-    dispatcher.logger.error = MagicMock()
 
-    dispatcher._handle_job_launched("launched", fl_ctx)
-    dispatcher.logger.error.assert_called_once()
+    with patch.object(dispatcher.logger, "error") as log_error:
+        dispatcher._handle_job_launched("launched", fl_ctx)
+    log_error.assert_called_once()
 
     fl_ctx.set_prop(FLContextKey.JOB_META, _job_meta(), private=True, sticky=False)
     dispatcher._handle_job_launched("launched", fl_ctx)
@@ -98,9 +95,9 @@ def test_job_lifecycle_handlers_validate_context(tmp_path):
     assert not dispatcher._job_exists("job-1")
 
 
-def test_edge_job_request_returns_invalid_no_job_and_match():
+def test_edge_job_request_returns_invalid_no_job_and_match(monkeypatch):
     dispatcher = EdgeTaskDispatcher()
-    dispatcher.logger.error = MagicMock()
+    monkeypatch.setattr(dispatcher.logger, "error", MagicMock())
     fl_ctx = _context()
     fl_ctx.set_prop(
         EdgeContextKey.REQUEST_FROM_EDGE,

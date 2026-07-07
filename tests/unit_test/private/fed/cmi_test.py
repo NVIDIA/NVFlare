@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReturnCode
+from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
@@ -25,6 +25,7 @@ from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.message import Message
 from nvflare.private.defs import CellMessageHeaderKeys
 from nvflare.private.fed.cmi import CellMessageInterface, JobCellMessenger
+from tests.unit_test.fl_context_helper import make_fl_context
 
 
 def _messenger():
@@ -43,9 +44,7 @@ def _messenger():
 
 
 def _context():
-    fl_ctx = FLContext()
-    fl_ctx.set_prop(ReservedKey.RUN_NUM, "job-1", private=True, sticky=False)
-    return fl_ctx
+    return make_fl_context(run_num="job-1")
 
 
 def test_init_registers_base_and_job_filters():
@@ -104,6 +103,7 @@ def test_incoming_request_creates_context_and_attaches_peer():
         (CellReturnCode.TIMEOUT, ReturnCode.COMMUNICATION_ERROR),
         (CellReturnCode.COMM_ERROR, ReturnCode.COMMUNICATION_ERROR),
         (CellReturnCode.PROCESS_EXCEPTION, ReturnCode.EXECUTION_EXCEPTION),
+        # known leak in RC_TABLE: maps to a CellReturnCode instead of an API ReturnCode
         (CellReturnCode.AUTHENTICATION_ERROR, CellReturnCode.UNAUTHENTICATED),
         ("unknown", ReturnCode.ERROR),
     ],
@@ -120,9 +120,9 @@ def test_job_filters_stamp_and_validate_job_id():
 
     incoming = Message(headers={messenger.HEADER_JOB_ID: "other-job"})
     messenger._filter_incoming(incoming)
-    messenger.logger.error = MagicMock()
-    messenger._filter_incoming(incoming)
-    messenger.logger.error.assert_called_once()
+    with patch.object(messenger.logger, "error") as log_error:
+        messenger._filter_incoming(incoming)
+    log_error.assert_called_once()
 
 
 @pytest.mark.parametrize(

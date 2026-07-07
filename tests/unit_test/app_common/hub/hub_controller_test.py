@@ -20,7 +20,6 @@ import pytest
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, OperatorConfigKey, OperatorMethod, Task, TaskOperatorKey
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.apis.signal import Signal
@@ -32,6 +31,7 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.hub.hub_controller import BcastOperator, HubController, RelayOperator
 from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.pipe.pipe import Message, Pipe, Topic
+from tests.unit_test.fl_context_helper import make_fl_context
 
 
 class _Aggregator(Aggregator):
@@ -95,12 +95,7 @@ class _Pipe(Pipe):
 
 
 def _context(engine=None):
-    fl_ctx = FLContext()
-    if engine:
-        fl_ctx.set_prop(ReservedKey.ENGINE, engine, private=True, sticky=False)
-    fl_ctx.set_prop(ReservedKey.IDENTITY_NAME, "server", private=False, sticky=False)
-    fl_ctx.set_prop(ReservedKey.RUN_NUM, "job-1", private=True, sticky=False)
-    return fl_ctx
+    return make_fl_context(engine=engine, identity_name="server", run_num="job-1")
 
 
 def _hub():
