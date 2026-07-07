@@ -180,7 +180,9 @@ def test_client_lookup_error_replies_and_callback_helpers():
     assert comm._get_client("site-2", engine).name == "site-2"
     assert comm._get_client("missing", engine) is None
     assert comm._get_client_task(engine.all_clients[0], task) is client_task
-    assert comm._make_error_reply(ReturnCode.ERROR, ["site-1"])["site-1"].get_return_code() == ReturnCode.ERROR
+    error_replies = comm._make_error_reply(ReturnCode.ERROR, ["site-1", "site-2"])
+    assert error_replies["site-1"].get_return_code() == ReturnCode.ERROR
+    assert error_replies["site-1"] is not error_replies["site-2"]
 
     comm.log_exception = MagicMock()
     callback = MagicMock(side_effect=RuntimeError("failed"))
@@ -211,6 +213,31 @@ def test_send_and_relay_delegate_in_order():
     comm.broadcast_and_wait.reset_mock()
     comm.broadcast_and_wait.side_effect = [{"site-1": ok}, {"site-2": ok}]
     assert comm.relay(task, fl_ctx, ["site-1", "site-2"]) == {"site-1": ok, "site-2": ok}
+
+
+def test_send_failover_scopes_replies_and_callbacks_to_current_attempt():
+    engine = _engine()
+    failed = make_reply(ReturnCode.EXECUTION_EXCEPTION)
+    failed.set_peer_context(FLContext())
+    engine.send_aux_request.side_effect = [{"site-1": failed}, {"site-2": _ok_reply("site-2")}]
+    after_sent_counts = {}
+
+    def after_sent(client_task, fl_ctx):
+        after_sent_counts[client_task.client.name] = after_sent_counts.get(client_task.client.name, 0) + 1
+
+    task = Task("train", Shareable(), timeout=1, after_task_sent_cb=after_sent)
+    comm = WFCommClient()
+    comm.fire_event = MagicMock()
+    comm.fire_event_with_data = MagicMock()
+
+    with patch("nvflare.apis.impl.wf_comm_client.apply_filters", side_effect=lambda *args: args[1]):
+        replies = comm.send(task, _context(engine), ["site-1", "site-2"])
+
+    # the failover attempt must not leak site-1's stale result or re-fire its callback
+    assert set(replies) == {"site-2"}
+    assert replies["site-2"].get_return_code() == ReturnCode.OK
+    assert after_sent_counts == {"site-1": 1, "site-2": 1}
+    assert [ct.client.name for ct in task.client_tasks] == ["site-1", "site-2"]
 
 
 def test_validate_target_rejects_empty_and_unknown_targets():
