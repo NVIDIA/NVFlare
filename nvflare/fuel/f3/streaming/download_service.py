@@ -215,12 +215,26 @@ class _Ref:
             if all_done:
                 self._downloaded_to_all_called = True
 
+        # Guarded like the terminal callbacks in transaction_done: a raising user
+        # callback on the serving path must not lose the EOF reply for this attempt,
+        # and a raising downloaded_to_one must not skip downloaded_to_all (the
+        # _downloaded_to_all_called latch above is already set and is never retried).
         assert isinstance(self.obj, Downloadable)
-        self.obj.downloaded_to_one(to_receiver, status)
+        _invoke_cb_safely(
+            self.tx.logger,
+            f"downloaded_to_one of {type(self.obj)} for ref {self.rid}",
+            self.obj.downloaded_to_one,
+            to_receiver,
+            status,
+        )
 
         if all_done:
             # this object is done for all receivers
-            self.obj.downloaded_to_all()
+            _invoke_cb_safely(
+                self.tx.logger,
+                f"downloaded_to_all of {type(self.obj)} for ref {self.rid}",
+                self.obj.downloaded_to_all,
+            )
 
     def snapshot_receiver_statuses(self) -> dict:
         with self._progress_lock:
@@ -612,7 +626,6 @@ class DownloadService:
     # its outcome over the new incarnation. Guarded by _outcome_lock.
     _tx_incarnations = {}
     _outcome_lock = threading.Lock()
-    _accept_outcomes = True
     TX_OUTCOME_TTL = 1800.0
     _logger = None
     _tx_monitor = None
@@ -628,17 +641,6 @@ class DownloadService:
             if not cls._tx_monitor:
                 cls._tx_monitor = threading.Thread(target=cls._monitor_tx, daemon=True)
                 cls._tx_monitor.start()
-
-            # re-enable outcome recording for the new service lifecycle. Written under
-            # _outcome_lock only to keep this flag's access uniform (it is read under the
-            # same lock in _record_outcome). This does NOT by itself close the stale-outcome
-            # race across shutdown/re-init: a callback that blocked on _outcome_lock during
-            # shutdown can still win the lock after this write and see the re-enabled flag.
-            # That race is closed by the live-incarnation guard in _record_outcome, not here.
-            # Nesting is deadlock-safe: shutdown() acquires _outcome_lock and _init_lock
-            # sequentially (never nested), so there is no reverse _outcome_lock -> _init_lock.
-            with cls._outcome_lock:
-                cls._accept_outcomes = True
 
             initialized = cls._initialized_cells.get(cell)
             if not initialized:
@@ -674,14 +676,36 @@ class DownloadService:
             progress_interval=progress_interval,
             outcome_cb=outcome_cb,
         )
-        with cls._tx_lock:
-            cls._tx_table[tx.tid] = tx
         with cls._outcome_lock:
             # a reused explicit tx_id must not surface the previous incarnation's
             # outcome: purge any recorded outcome and register this incarnation as
-            # current so a concurrently-terminating older incarnation cannot record
+            # current so a concurrently-terminating older incarnation cannot record.
+            # Registration happens BEFORE the tx becomes monitor-visible in _tx_table:
+            # a tx the monitor can terminate is always incarnation-registered, so its
+            # terminal outcome can never be dropped as stale, and no dead incarnation
+            # entry can be left behind by a terminate-before-register interleaving.
             cls._tx_outcomes.pop(tx.tid, None)
             cls._tx_incarnations[tx.tid] = tx
+
+        old_tx = None
+        with cls._tx_lock:
+            old_tx = cls._tx_table.get(tx.tid)
+            if old_tx:
+                # A retry reusing a tx_id supersedes a still-live prior transaction.
+                # Retire it now: a plain overwrite would orphan it -- the monitor only
+                # discovers transactions through _tx_table, so the old refs would stay
+                # servable in _ref_table forever and the old sources would never be
+                # released via transaction_done.
+                cls._delete_tx(old_tx)
+            cls._tx_table[tx.tid] = tx
+
+        if old_tx:
+            # terminal callbacks run outside the lock, as in delete_transaction(); the
+            # retired transaction's outcome is dropped by the incarnation guard because
+            # the new incarnation already owns the tid -- the retry is authoritative
+            old_tx.transaction_done(
+                TransactionDoneStatus.DELETED, on_outcome=functools.partial(cls._record_outcome, tx=old_tx)
+            )
         return tx.tid
 
     @classmethod
@@ -730,9 +754,10 @@ class DownloadService:
             cls._finished_refs.clear()
 
         with cls._outcome_lock:
-            # stop recording (a concurrent monitor iteration may be mid-termination)
-            # and drop recorded outcomes; recording re-enables on next _initialize
-            cls._accept_outcomes = False
+            # drop recorded outcomes and clear live incarnations. A monitor iteration
+            # mid-termination that blocked on _outcome_lock finds its incarnation gone
+            # once it acquires the lock, so its outcome drops in _record_outcome --
+            # the incarnation guard alone gates post-shutdown recording.
             cls._tx_outcomes.clear()
             cls._tx_incarnations.clear()
 
@@ -758,25 +783,21 @@ class DownloadService:
                 cls._finished_refs.pop(r.rid, None)
 
     @classmethod
-    def _record_outcome(cls, outcome: TransferOutcome, tx: Optional[_Transaction] = None):
+    def _record_outcome(cls, outcome: TransferOutcome, tx: _Transaction):
+        # tx is required so no call site can opt out of the incarnation guard:
+        # recording is legal only for the live registered incarnation.
         with cls._outcome_lock:
-            current = cls._tx_incarnations.get(outcome.tx_id)
-            if tx is not None and current is not tx:
-                # Record only for the live registered incarnation. current is not tx means
-                # this outcome belongs to a dead generation and must be dropped, covering:
+            if cls._tx_incarnations.get(outcome.tx_id) is not tx:
+                # This outcome belongs to a dead generation and must be dropped:
                 #   - a newer same-tx_id incarnation (a retry) registered while this
-                #     transaction was terminating (current is the newer tx), and
-                #   - the incarnation was already cleared -- by shutdown() (which also
-                #     clears the outcome table) or by a prior terminal record (current is
-                #     None). This is what closes the stale-outcome race across shutdown/
-                #     re-init: a callback that blocked on _outcome_lock during shutdown and
-                #     wins the lock afterward finds no live incarnation and is dropped here,
-                #     regardless of the _accept_outcomes flag below.
+                #     transaction was terminating, or
+                #   - the incarnation was cleared by shutdown() (which also clears the
+                #     outcome table) or consumed by a prior terminal record.
+                # This single guard closes the stale-outcome race across shutdown and
+                # re-init: a recorder that blocked on _outcome_lock during shutdown and
+                # wins the lock afterward finds no live incarnation and drops here.
                 return
-            if current is tx:
-                cls._tx_incarnations.pop(outcome.tx_id, None)
-            if not cls._accept_outcomes:
-                return
+            cls._tx_incarnations.pop(outcome.tx_id, None)
             cls._tx_outcomes[outcome.tx_id] = outcome
 
     @classmethod

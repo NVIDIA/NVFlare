@@ -476,50 +476,40 @@ class TestDownloadService:
 
         assert list(service._initialized_cells.keys()) == []
 
-    def test_initialize_reenable_holds_outcome_lock(self):
-        """The _accept_outcomes re-enable in _initialize() must happen under _outcome_lock.
+    def test_new_transaction_registers_incarnation_before_monitor_visible(self):
+        """A tx must be incarnation-registered before it appears in _tx_table.
 
-        This guards lock-discipline uniformity only: the flag is read under _outcome_lock in
-        _record_outcome(), so its write must be too (it previously ran under _init_lock only).
-        This is NOT what closes the stale-outcome race -- that is the live-incarnation guard
-        in _record_outcome(), covered by test_stale_outcome_dropped_after_incarnation_cleared.
+        The monitor discovers transactions through _tx_table. If a tx were inserted
+        there first, a monitor tick landing in the window before incarnation
+        registration could terminate it: its terminal outcome would be dropped by the
+        live-incarnation guard (a terminated-but-unknown gap), and new_transaction
+        would then register a dead incarnation that nothing ever pops.
         """
         service = _make_isolated_download_service()
         service._tx_monitor = object()  # avoid starting a real monitor thread
 
-        class FakeCell:
-            def register_request_cb(self, **kwargs):
-                pass
+        registered_at_insert = []
 
-        cell = FakeCell()
-        service._accept_outcomes = False  # as left by a prior shutdown()
+        class MonitorVisibilityDict(dict):
+            def __setitem__(self, key, value):
+                registered_at_insert.append(key in service._tx_incarnations)
+                super().__setitem__(key, value)
 
-        init_done = threading.Event()
+        service._tx_table = MonitorVisibilityDict()
 
-        def run_init():
-            service._initialize(cell)
-            init_done.set()
+        tx_id = service.new_transaction(cell=Mock(), timeout=10.0, num_receivers=1)
 
-        with service._outcome_lock:
-            t = threading.Thread(target=run_init)
-            t.start()
-            # while _outcome_lock is held, the guarded re-enable must not complete
-            assert not init_done.wait(0.2)
-            assert service._accept_outcomes is False
-
-        t.join(2.0)
-        assert init_done.is_set()
-        assert service._accept_outcomes is True
+        assert registered_at_insert == [True]
+        assert service._tx_incarnations[tx_id] is service._tx_table[tx_id]
 
     def test_stale_outcome_dropped_after_incarnation_cleared(self):
         """A terminal outcome for a transaction whose incarnation is no longer live must drop.
 
-        This is the invariant that actually closes the cross-lifecycle stale-outcome race:
+        This is the invariant that closes the cross-lifecycle stale-outcome race:
         _record_outcome() records only for the live registered incarnation (current is tx).
-        After shutdown() clears _tx_incarnations, a callback that blocked on _outcome_lock
-        during shutdown can win the lock afterward and observe _accept_outcomes re-enabled by
-        a subsequent _initialize() -- so the _accept_outcomes flag alone does not stop it. The
-        live-incarnation guard does: with no live incarnation for the tid, the outcome drops.
+        A recorder that blocked on _outcome_lock while shutdown() cleared the tables can
+        win the lock after a subsequent _initialize(); with no live incarnation for the
+        tid, its pre-shutdown outcome drops instead of repopulating the cleared table.
         """
         service = _make_isolated_download_service()
 
@@ -529,9 +519,8 @@ class TestDownloadService:
         old_outcome.tx_id = "tx-old"
         old_outcome.expired.return_value = False
 
-        # shutdown() cleared incarnations; a later _initialize() re-enabled recording
+        # shutdown() cleared incarnations; recording is gated by incarnation identity alone
         service._tx_incarnations.clear()
-        service._accept_outcomes = True
 
         # the late callback for the old, now-unregistered transaction must be dropped
         service._record_outcome(old_outcome, tx=old_tx)
@@ -546,6 +535,41 @@ class TestDownloadService:
         service._tx_incarnations["tx-live"] = live_tx
         service._record_outcome(live_outcome, tx=live_tx)
         assert service.get_transaction_outcome("tx-live") is live_outcome
+
+    def test_raising_download_callbacks_do_not_break_serving_path(self):
+        """Raising downloaded_to_one/downloaded_to_all must not propagate into serving.
+
+        A raising downloaded_to_one on the chunk-serving path would lose the EOF reply
+        for that attempt, and -- because the _downloaded_to_all_called latch is set
+        before the callbacks run and is never retried -- would permanently skip
+        downloaded_to_all. Both callbacks are guarded like the terminal callbacks in
+        transaction_done: the exception is logged, serving and the all-receivers-done
+        notification proceed.
+        """
+        service = _make_isolated_download_service()
+        service._tx_monitor = object()  # avoid starting a real monitor thread
+
+        calls = []
+
+        class RaisingDownloadable(MockDownloadable):
+            def downloaded_to_one(self, to_receiver: str, status: str):
+                calls.append(("one", to_receiver, status))
+                raise RuntimeError("user callback failure")
+
+            def downloaded_to_all(self):
+                calls.append(("all",))
+                raise RuntimeError("user callback failure")
+
+        tx_id = service.new_transaction(cell=Mock(), timeout=10.0, num_receivers=1)
+        obj = RaisingDownloadable([b"chunk"])
+        rid = service.add_object(tx_id, obj)
+        ref = service._ref_table[rid]
+
+        # must not raise; downloaded_to_all still fires after downloaded_to_one raised
+        ref.obj_downloaded("r1", DownloadStatus.SUCCESS)
+
+        assert calls == [("one", "r1", DownloadStatus.SUCCESS), ("all",)]
+        assert ref.snapshot_receiver_statuses() == {"r1": DownloadStatus.SUCCESS}
 
     def test_get_transaction_id_from_ref_id(self, cell):
         """Test retrieving transaction ID from reference ID."""

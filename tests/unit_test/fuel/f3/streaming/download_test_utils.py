@@ -85,7 +85,6 @@ def make_isolated_download_service():
         _tx_outcomes = {}
         _tx_incarnations = {}
         _outcome_lock = threading.Lock()
-        _accept_outcomes = True
         _logger = Mock()
         _tx_lock = threading.Lock()
         _initialized_cells = weakref.WeakKeyDictionary()

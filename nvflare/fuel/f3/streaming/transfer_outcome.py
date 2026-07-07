@@ -44,7 +44,8 @@ docs/design/client_api_execution_modes_plan.md):
 
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from types import MappingProxyType
+from typing import Mapping, Optional, Sequence, Tuple
 
 from nvflare.fuel.f3.streaming.transfer_progress import TransferProgressState
 
@@ -92,12 +93,19 @@ class RefOutcome:
     """Per-object terminal outcome.
 
     receiver_statuses maps receiver FQCN to a DownloadStatus value (success / failed)
-    as recorded by the producer side. Treat the dict as read-only: the same instance
-    is shared with every consumer of the outcome.
+    as recorded by the producer side. It is deep-frozen at construction (a
+    MappingProxyType over a private copy): the same instance is recorded in the
+    service outcome table and handed to outcome_cb consumers, so a callback must
+    not be able to mutate the recorded per-receiver truth. If outcomes ever cross
+    a process boundary, the serializer must materialize it (dict(...)).
     """
 
     ref_id: str
-    receiver_statuses: Dict[str, str]
+    receiver_statuses: Mapping[str, str]
+
+    def __post_init__(self):
+        # frozen=True only blocks attribute rebinding; freeze the container too
+        object.__setattr__(self, "receiver_statuses", MappingProxyType(dict(self.receiver_statuses)))
 
 
 @dataclass(frozen=True)
@@ -116,8 +124,13 @@ class TransferOutcome:
     reason: str  # a TransferOutcomeReason value
     done_status: str  # the raw TransactionDoneStatus value
     num_receivers: int
-    refs: List[RefOutcome]
+    refs: Tuple[RefOutcome, ...]
     timestamp: float
+
+    def __post_init__(self):
+        # frozen=True only blocks attribute rebinding; freeze the container too so
+        # outcome_cb consumers cannot mutate the recorded outcome
+        object.__setattr__(self, "refs", tuple(self.refs))
 
     @property
     def completed(self) -> bool:
@@ -127,7 +140,7 @@ class TransferOutcome:
         return now - self.timestamp > ttl
 
 
-def _all_receivers_succeeded(num_receivers: int, refs: List[RefOutcome]) -> bool:
+def _all_receivers_succeeded(num_receivers: int, refs: Sequence[RefOutcome]) -> bool:
     if num_receivers <= 0 or not refs:
         return False
     for r in refs:
@@ -149,7 +162,7 @@ def compute_transfer_outcome(
     tx_id: str,
     done_status: str,
     num_receivers: int,
-    refs: List[RefOutcome],
+    refs: Sequence[RefOutcome],
     timestamp: Optional[float] = None,
 ) -> TransferOutcome:
     """Compute the aggregate terminal outcome for a terminated transaction.

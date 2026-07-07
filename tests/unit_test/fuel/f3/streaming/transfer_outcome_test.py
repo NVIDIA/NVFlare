@@ -35,6 +35,30 @@ def _stub_obj():
     return MockDownloadable([b"chunk"])
 
 
+class TestOutcomeImmutability:
+    """The recorded outcome is shared with pollers and outcome_cb consumers: it must be deep-frozen."""
+
+    def test_outcome_is_deep_frozen(self):
+        source_statuses = {"r1": DownloadStatus.SUCCESS}
+        ref = RefOutcome(ref_id="R1", receiver_statuses=source_statuses)
+        outcome = compute_transfer_outcome("T1", TransactionDoneStatus.FINISHED, 1, [ref], 100.0)
+
+        # containers are frozen, not just the dataclass attributes
+        assert isinstance(outcome.refs, tuple)
+        with pytest.raises(TypeError):
+            outcome.refs[0].receiver_statuses["r2"] = DownloadStatus.SUCCESS
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            outcome.refs = ()
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            outcome.refs[0].receiver_statuses = {}
+
+        # the frozen view is a private copy: mutating the source dict after
+        # construction cannot rewrite the recorded per-receiver truth
+        source_statuses["r1"] = DownloadStatus.FAILED
+        assert outcome.refs[0].receiver_statuses == {"r1": DownloadStatus.SUCCESS}
+        assert outcome.completed
+
+
 class TestComputeTransferOutcome:
     """Aggregation rules: COMPLETED only when every expected receiver succeeded; receiver truth wins."""
 
@@ -332,6 +356,43 @@ class TestServiceOutcomeTable:
         finally:
             service.shutdown()
 
+    def test_reusing_active_tx_id_retires_prior_transaction(self):
+        # reusing a tx_id while the prior transaction is still LIVE must retire it,
+        # not orphan it: a plain _tx_table overwrite would leave the old refs servable
+        # in _ref_table forever (the monitor only sees _tx_table) and never release
+        # the old sources via transaction_done
+        from unittest.mock import Mock
+
+        service = make_isolated_download_service()
+        service._tx_monitor = Mock()  # suppress real monitor thread start
+        cell = Mock()
+        done = []
+        try:
+            first = service.new_transaction(
+                cell=cell,
+                timeout=10.0,
+                num_receivers=1,
+                tx_id="TX-DUP",
+                transaction_done_cb=lambda tid, status, base_objs, **kw: done.append((tid, status)),
+            )
+            obj = _stub_obj()
+            rid = service.add_object(first, obj)
+            assert rid in service._ref_table
+
+            second = service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-DUP")
+            assert second == "TX-DUP"
+
+            # the prior live transaction was retired: refs unservable, done cb fired
+            assert rid not in service._ref_table
+            assert done == [("TX-DUP", TransactionDoneStatus.DELETED)]
+            # its terminal outcome does not shadow the live retry
+            assert service.get_transaction_outcome("TX-DUP") is None
+            # the live tx is the new incarnation
+            assert service._tx_table["TX-DUP"] is service._tx_incarnations["TX-DUP"]
+            assert service._tx_table["TX-DUP"] is not None
+        finally:
+            service.shutdown()
+
     def test_unknown_transaction_has_no_outcome(self):
         service = make_isolated_download_service()
         assert service.get_transaction_outcome("no-such-tx") is None
@@ -366,7 +427,11 @@ class TestServiceOutcomeTable:
         service.shutdown()
 
         assert service.get_transaction_outcome(tx.tid) is None
-        # a monitor iteration that was mid-termination during shutdown cannot repopulate
+        # a monitor iteration that was mid-termination during shutdown cannot repopulate:
+        # shutdown cleared _tx_incarnations, so the late recorder's tx is not the live
+        # incarnation and its outcome drops
+        from unittest.mock import Mock
+
         late = compute_transfer_outcome("T-LATE", TransactionDoneStatus.FINISHED, 1, [], time.time())
-        service._record_outcome(late)
+        service._record_outcome(late, tx=Mock())
         assert service.get_transaction_outcome("T-LATE") is None
