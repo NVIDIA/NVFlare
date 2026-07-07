@@ -4,7 +4,7 @@ description: "Optimize an existing NVFLARE job.py through an agent-assisted Auto
 license: Apache-2.0
 compatibility: "Requires NVFLARE 2.8.0+, Python, and permission to run NVFLARE jobs in the selected environment."
 metadata:
-  author: "Holger Roth <hroth@nvidia.com>"
+  author: "nvflare"
   min_flare_version: "2.8.0"
   blast_radius: submits_production
   category: Optimization
