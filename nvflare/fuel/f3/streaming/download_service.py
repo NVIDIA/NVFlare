@@ -629,8 +629,16 @@ class DownloadService:
                 cls._tx_monitor = threading.Thread(target=cls._monitor_tx, daemon=True)
                 cls._tx_monitor.start()
 
-            # re-enable outcome recording after a prior shutdown()
-            cls._accept_outcomes = True
+            # re-enable outcome recording for the new service lifecycle. Written under
+            # _outcome_lock only to keep this flag's access uniform (it is read under the
+            # same lock in _record_outcome). This does NOT by itself close the stale-outcome
+            # race across shutdown/re-init: a callback that blocked on _outcome_lock during
+            # shutdown can still win the lock after this write and see the re-enabled flag.
+            # That race is closed by the live-incarnation guard in _record_outcome, not here.
+            # Nesting is deadlock-safe: shutdown() acquires _outcome_lock and _init_lock
+            # sequentially (never nested), so there is no reverse _outcome_lock -> _init_lock.
+            with cls._outcome_lock:
+                cls._accept_outcomes = True
 
             initialized = cls._initialized_cells.get(cell)
             if not initialized:
@@ -753,9 +761,17 @@ class DownloadService:
     def _record_outcome(cls, outcome: TransferOutcome, tx: Optional[_Transaction] = None):
         with cls._outcome_lock:
             current = cls._tx_incarnations.get(outcome.tx_id)
-            if tx is not None and current is not None and current is not tx:
-                # a newer incarnation of this tx_id (a retry) registered while this
-                # transaction was terminating; its outcome must not shadow the live one
+            if tx is not None and current is not tx:
+                # Record only for the live registered incarnation. current is not tx means
+                # this outcome belongs to a dead generation and must be dropped, covering:
+                #   - a newer same-tx_id incarnation (a retry) registered while this
+                #     transaction was terminating (current is the newer tx), and
+                #   - the incarnation was already cleared -- by shutdown() (which also
+                #     clears the outcome table) or by a prior terminal record (current is
+                #     None). This is what closes the stale-outcome race across shutdown/
+                #     re-init: a callback that blocked on _outcome_lock during shutdown and
+                #     wins the lock afterward finds no live incarnation and is dropped here,
+                #     regardless of the _accept_outcomes flag below.
                 return
             if current is tx:
                 cls._tx_incarnations.pop(outcome.tx_id, None)

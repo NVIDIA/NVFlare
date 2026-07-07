@@ -476,6 +476,77 @@ class TestDownloadService:
 
         assert list(service._initialized_cells.keys()) == []
 
+    def test_initialize_reenable_holds_outcome_lock(self):
+        """The _accept_outcomes re-enable in _initialize() must happen under _outcome_lock.
+
+        This guards lock-discipline uniformity only: the flag is read under _outcome_lock in
+        _record_outcome(), so its write must be too (it previously ran under _init_lock only).
+        This is NOT what closes the stale-outcome race -- that is the live-incarnation guard
+        in _record_outcome(), covered by test_stale_outcome_dropped_after_incarnation_cleared.
+        """
+        service = _make_isolated_download_service()
+        service._tx_monitor = object()  # avoid starting a real monitor thread
+
+        class FakeCell:
+            def register_request_cb(self, **kwargs):
+                pass
+
+        cell = FakeCell()
+        service._accept_outcomes = False  # as left by a prior shutdown()
+
+        init_done = threading.Event()
+
+        def run_init():
+            service._initialize(cell)
+            init_done.set()
+
+        with service._outcome_lock:
+            t = threading.Thread(target=run_init)
+            t.start()
+            # while _outcome_lock is held, the guarded re-enable must not complete
+            assert not init_done.wait(0.2)
+            assert service._accept_outcomes is False
+
+        t.join(2.0)
+        assert init_done.is_set()
+        assert service._accept_outcomes is True
+
+    def test_stale_outcome_dropped_after_incarnation_cleared(self):
+        """A terminal outcome for a transaction whose incarnation is no longer live must drop.
+
+        This is the invariant that actually closes the cross-lifecycle stale-outcome race:
+        _record_outcome() records only for the live registered incarnation (current is tx).
+        After shutdown() clears _tx_incarnations, a callback that blocked on _outcome_lock
+        during shutdown can win the lock afterward and observe _accept_outcomes re-enabled by
+        a subsequent _initialize() -- so the _accept_outcomes flag alone does not stop it. The
+        live-incarnation guard does: with no live incarnation for the tid, the outcome drops.
+        """
+        service = _make_isolated_download_service()
+
+        old_tx = Mock()
+        old_tx.tid = "tx-old"
+        old_outcome = Mock()
+        old_outcome.tx_id = "tx-old"
+        old_outcome.expired.return_value = False
+
+        # shutdown() cleared incarnations; a later _initialize() re-enabled recording
+        service._tx_incarnations.clear()
+        service._accept_outcomes = True
+
+        # the late callback for the old, now-unregistered transaction must be dropped
+        service._record_outcome(old_outcome, tx=old_tx)
+        assert service.get_transaction_outcome("tx-old") is None
+
+        # sanity: a live registered incarnation still records (guard does not over-drop)
+        live_tx = Mock()
+        live_tx.tid = "tx-live"
+        live_outcome = Mock()
+        live_outcome.tx_id = "tx-live"
+        live_outcome.expired.return_value = False
+        service._tx_incarnations["tx-live"] = live_tx
+        service._record_outcome(live_outcome, tx=live_tx)
+        assert service.get_transaction_outcome("tx-live") is live_outcome
+
     def test_get_transaction_id_from_ref_id(self, cell):
         """Test retrieving transaction ID from reference ID."""
         tx_id = DownloadService.new_transaction(cell=cell, timeout=10.0, num_receivers=2)

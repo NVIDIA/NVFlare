@@ -216,6 +216,11 @@ class TestServiceOutcomeTable:
         tx = _Transaction(timeout=timeout, num_receivers=num_receivers)
         with service._tx_lock:
             service._tx_table[tx.tid] = tx
+        # mirror new_transaction(): a live tx is registered as the current incarnation.
+        # _record_outcome() records only for the live incarnation (current is tx), so a tx
+        # placed directly in _tx_table without this would never record its terminal outcome.
+        with service._outcome_lock:
+            service._tx_incarnations[tx.tid] = tx
         obj = _stub_obj()
         rid = service.add_object(tx.tid, obj)
         with service._tx_lock:
