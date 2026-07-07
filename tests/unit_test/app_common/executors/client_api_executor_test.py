@@ -327,11 +327,21 @@ class TestConstructorValidation:
 
 
 class TestDispatch:
-    """All three modes are skeleton-only in EX-2: resolving the backend at START_RUN must fail
-    the job cleanly (system_panic naming the mode), and execute() must reply with an error instead
-    of hanging."""
+    """in_process now resolves a real backend (EX-3); external_process/attach remain
+    skeleton-only: resolving those backends at START_RUN must fail the job cleanly
+    (system_panic naming the mode), and execute() must reply with an error instead of hanging.
+    in_process START_RUN without a valid task_script_path fails the same clean way, so the
+    all-modes panic tests below still hold."""
 
-    @pytest.mark.parametrize("mode", list(ALL_EXECUTION_MODES))
+    NOT_IMPLEMENTED_MODES = [ExecutionMode.EXTERNAL_PROCESS, ExecutionMode.ATTACH]
+
+    def test_in_process_factory_returns_real_backend(self):
+        from nvflare.app_common.executors.client_api.in_process_backend import InProcessBackend
+
+        executor = ClientAPIExecutor(**MODE_KWARGS[ExecutionMode.IN_PROCESS])
+        assert isinstance(executor._create_backend(), InProcessBackend)
+
+    @pytest.mark.parametrize("mode", NOT_IMPLEMENTED_MODES)
     def test_backend_factory_raises_not_implemented(self, mode):
         # finding 7: user-facing message must not carry an internal plan id (EX-3/EP-4/AT-2); it
         # names the mode and says "not yet implemented".
@@ -347,6 +357,8 @@ class TestDispatch:
     def test_start_run_panics_naming_the_mode(self, mode):
         # findings 6 + 7: the panic reason names the mode directly (not via secure_format_exception,
         # so it is robust whether or not NVFLARE_SECURE_LOGGING is set) and carries no plan id.
+        # For in_process the failure is now the missing task_script_path (backend initialize
+        # raises), not a NotImplementedError factory - the clean-failure contract is the same.
         executor = ClientAPIExecutor(**MODE_KWARGS[mode])
         engine, fired = _make_recording_engine()
         fl_ctx = _make_fl_ctx(engine)

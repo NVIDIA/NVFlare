@@ -280,3 +280,16 @@ class InProcessClientAPI(APISpec):
         self.stop = True
         self.event_manager.fire_event(TOPIC_STOP)
         self.stop_reason = "API shutdown called."
+
+    def close(self):
+        """Unsubscribes this API instance's DataBus callbacks.
+
+        The DataBus is a process singleton: without this, a finished job's API instance
+        stays subscribed to TOPIC_GLOBAL_RESULT for the process lifetime, so every later
+        job's task publish also lands on the dead instance and pins its latest global
+        model in memory. Called by the owning executor/backend at teardown; safe to call
+        more than once (unsubscribe of an absent callback is a no-op).
+        """
+        self.data_bus.unsubscribe(TOPIC_GLOBAL_RESULT, self.__receive_callback)
+        self.data_bus.unsubscribe(TOPIC_ABORT, self.__ask_to_abort)
+        self.data_bus.unsubscribe(TOPIC_STOP, self.__ask_to_abort)

@@ -444,8 +444,11 @@ class ClientAPIExecutor(Executor):
         return factory()
 
     def _create_in_process_backend(self) -> ClientAPIBackendSpec:
-        # Implemented in a follow-up PR (plan: EX-3).
-        raise NotImplementedError("in_process execution mode is not yet implemented in this release")
+        # Deferred import: the backend pulls in DataBus/TaskScriptRunner machinery that the
+        # other modes never need; the skeleton stays import-light.
+        from nvflare.app_common.executors.client_api.in_process_backend import InProcessBackend
+
+        return InProcessBackend()
 
     def _create_external_process_backend(self) -> ClientAPIBackendSpec:
         # Implemented in a follow-up PR (plan: EP-4).
