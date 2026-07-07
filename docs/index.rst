@@ -30,6 +30,7 @@ NVIDIA FLARE
 
    user_guide/data_scientist_guide/client_api_usage
    user_guide/data_scientist_guide/job_recipe
+   user_guide/data_scientist_guide/recipe_api
    user_guide/data_scientist_guide/available_recipes
    user_guide/data_scientist_guide/flare_api
    API Evolution & Recommendations <programming_guide/flare_api_evolution>
