@@ -1,6 +1,6 @@
 # Client API Execution Modes — 2.9 Implementation Plan
 
-Companion to `client_api_execution_modes.md` (design). Tracks Epic **FLARE-2698** (Client API and 3rd party integration refactoring, 2.9.0). Decomposes the design's 8-step Migration Plan into **36 PRs** with dependencies, sizes, and a release cut line. Scoped against the codebase post-2.8.0; granularity calibrated against the repo's merged-PR history (2026-07-01, see Calibration below).
+Companion to `client_api_execution_modes.md` (design). Tracks Epic **FLARE-2698** (Client API and 3rd party integration refactoring, 2.9.0). Decomposes the design's 8-step Migration Plan into **36 PRs** with dependencies, sizes, and a release cut line (the wave plan lists 37 entries; PR-0 is not a separate PR — the doc set lands inside the F3-1 PR, #4853). Scoped against the codebase post-2.8.0; granularity calibrated against the repo's merged-PR history (2026-07-01, see Calibration below).
 
 Size guide: **S** <300 changed LOC, **M** 300–800, **L** 800–2000.
 
@@ -24,8 +24,8 @@ Tracks: **F3** payload layer · **EX** executor/ScriptRunner · **TE** trainer e
 
 | PR | Track | Size | Notes |
 |---|---|---|---|
-| PR-0 Land design doc + this implementation plan in docs/design/ | all | S | **Lands first, merges fast** — the design is already approved; this just puts the reference material in-repo so every subsequent PR links it. Interface-freeze sign-offs happen on TE-1/EX-2/F3-1 themselves |
-| F3-1 Aggregate all-receivers terminal transfer outcome | F3 | M | Interface freeze #3. Purely additive next to FINISHED/TIMEOUT/DELETED |
+| PR-0 Land design doc + this implementation plan in docs/design/ | all | S | **Lands with F3-1 in a single PR (#4853)**, not as a separate docs-only PR — the reference material merges together with the first frozen contract, and every subsequent PR links it. Interface-freeze sign-offs happen on TE-1/EX-2/F3-1 themselves |
+| F3-1 Aggregate all-receivers terminal transfer outcome | F3 | M | Interface freeze #3. Purely additive next to FINISHED/TIMEOUT/DELETED. Ships as #4853, carrying PR-0's docs |
 | TE-1 Protocol vocabulary (`client/cell/defs.py`) | TE | S | Interface freeze #1 — the Cell control-protocol Topics/MsgKeys/CHANNEL/version only. The auth **mechanism** is deliberately NOT frozen here: the token is 3 roles (rendezvous, anti-mixup, auth) and whether external_process needs a *secret* HMAC proof at all is a host-trust decision (single-tenant: no; multi-tenant: yes) that EP-3 makes. So the proof helpers (TokenScope, compute/verify_hello_proof, combine_nonces) land with **EP-3**, and the generic generators (generate_session_token/nonce, token_digest) go to the fuel/sec consolidation (**FLARE-3017**). The stateful SessionTokenManager is attach-only (**AT-2**) |
 | EX-2 ClientAPIExecutor skeleton + backend spec + analytics-event ownership | EX | M | Interface freeze #2 |
 | TE-2 Bootstrap config schema + NVFLARE_CLIENT_API_CONFIG resolution | TE | M | Additive ConfigKeys; consumes EP-1's 0600 writer. Kept separate from TE-1: touches legacy-shared `client/config.py`, different revert profile |
@@ -38,8 +38,8 @@ Tracks: **F3** payload layer · **EX** executor/ScriptRunner · **TE** trainer e
 | PR | Track | Size | Depends |
 |---|---|---|---|
 | F3-2 Receiver-confirmed completion + retry-aware accounting | F3 | M | F3-1. The version-skew wire change — lands as early as possible for maximum soak; capability-flag gated, both skews interop-tested |
-| F3-3 Per-(transfer, receiver) acquire/idle budgets | F3 | M | F3-1. Unconditional per-receiver activity tracking. Must also settle the quorum surface for fan-out: workflows with min_responses-style policy (k-of-N receivers suffices) need either an optional min_receivers on the transaction/facade or a documented pattern of evaluating TransferOutcome.refs against their own threshold — `completed` stays the strict all-receivers certificate either way |
-| F3-4 Awaitable producer transfer facade + PAYLOAD_ACQUIRED + post-completion linger | F3 | M | F3-1 (and F3-2 for the linger's receiver-confirmed path). Must CHAIN existing DOWNLOAD_COMPLETE_CB, not replace. Folds in the former F3-5 bounded post-completion linger (a leaf with no independent consumer — only this facade's release path uses it); F3-2 still lands as its own isolated PR so the wire-skew change is not welded here |
+| F3-3 Per-(transfer, receiver) acquire/idle budgets | F3 | M | F3-1; blocks F3-4, whose aggregate outcome resolves in bounded time only through these budgets (a stalled receiver is marked failed without waiting for the full transaction TTL). Unconditional per-receiver activity tracking. Must also settle the quorum surface for fan-out: workflows with min_responses-style policy (k-of-N receivers suffices) need either an optional min_receivers on the transaction/facade or a documented pattern of evaluating TransferOutcome.refs against their own threshold — `completed` stays the strict all-receivers certificate either way |
+| F3-4 Awaitable producer transfer facade + PAYLOAD_ACQUIRED + post-completion linger | F3 | M | F3-1, F3-2, F3-3 — all hard. The facade's returns-means-delivered guarantee holds only over receiver-confirmed, retry-aware outcomes (F3-2), and its aggregate outcome resolves in bounded time only with the per-receiver budgets (F3-3); a facade over producer-served EOF would reintroduce the silent-truncation gap. Must CHAIN existing DOWNLOAD_COMPLETE_CB, not replace. Folds in the former F3-5 bounded post-completion linger (a leaf with no independent consumer — only this facade's release path uses it); F3-2 still lands as its own isolated PR so the wire-skew change is not welded here |
 | EX-3 in_process backend (consolidate InProcessClientAPIExecutor) | EX | L | EX-2. Behavior-parity bar: "nothing user-visible" |
 | TE-3 TrainerCellSession engine (handshake, heartbeat, owner-death, trainer-side authenticated teardown) | TE | L | TE-1, TE-2. Injectable clock + kill hook; AT owner co-reviews the teardown-auth tests |
 | EP-5 CP-side orphan reaping of trainer PGIDs | EP | M | EP-2. PID-reuse guard via start-time record |
@@ -48,10 +48,9 @@ Tracks: **F3** payload layer · **EX** executor/ScriptRunner · **TE** trainer e
 
 | PR | Track | Size | Depends |
 |---|---|---|---|
-| TE-4 TrainerCellSession task/result contracts (receive queue + TASK_READY idempotency + TASK_FAILED; RESULT_READY flow + terminal-outcome blocking + fan-out drain/shutdown gating) | TE | L | TE-3; F3-4 via a narrow stubbed wait-protocol interface. Merged from two Ms: same class, same owner, no independent consumer of either half. Guard: split fan-out drain back out if the diff passes ~1800 LOC |
+| TE-4 TrainerCellSession task/result contracts (receive queue + TASK_READY idempotency + TASK_PAYLOAD_READY/TASK_FAILED; RESULT_READY flow + terminal-outcome blocking + fan-out drain/shutdown gating) | TE | L | TE-3; F3-4 via a narrow stubbed wait-protocol interface. Merged from two Ms: same class, same owner, no independent consumer of either half. Guard: split fan-out drain back out if the diff passes ~1800 LOC |
 | EP-3 external_process auth + CJ-side HELLO acceptance + session-scoped message enforcement | EP | M | TE-1 (vocabulary). **Owns the auth-model decision**: a per-launch rendezvous id always; a *secret* launch token proven by one-round HMAC on multi-tenant hosts (rendezvous-only + OS isolation may suffice single-tenant). Introduces the proof helpers (TokenScope, compute/verify_hello_proof, combine_nonces) here — reused later by AT-2. Session-scoped message enforcement (accept trainer messages only from the bound session) closes the live IPCAgent any-sender gap; a P0 control, not the P2 attach track |
 | EX-4 ScriptRunner `execution_mode` param + launch_external_process mapping | EX | M | EX-2/3. Convert ~22 internal recipe call sites in the same PR |
-| EX-5 Converter→filter migration (FLARE-2698 bullet 2) | EX | M | EX-3, EP-4. Replace executor-owned ParamsConverters with PT/TF send+receive conversion filters at the client edge (last task-data / first task-result filter); recipes auto-wire per framework only when server format ≠ exchange format; Client API boundary passes through (RAW). Filters delegate to the existing converter classes (no logic rewrite); round-trip state (tensor shapes, excluded entries) rides DXO meta (quantizer pattern), not FLContext — removes the `_ConverterContext` stub. Keep ParamsConverter ABC deprecated + a `ParamsConverterFilter` adapter for custom converter IDs. Wiring the conversion filter makes the CJ a materializing hop (design doc: payload-lifecycle rule); numpy regime excludes bf16 — large models use pytorch end-to-end. Removes params_exchange_format/server_expected_format/converter-id from the surface (already excluded from EX-2's freeze). Transfer type FULL/DIFF stays in model_registry, decided separately |
 | CC-1 CCWF transfer-declaration plumbing (receiver sets, stage windows, aux passthrough) | CC | M | F3-3. Declaration-only; absent headers preserve today's defaults — its behavior-neutrality is what de-risks the CC track |
 | CT-8 Session observability (state-transition logs + StatsPoolManager view) | CT | M | EX-2; extends as backends land |
 
@@ -68,6 +67,7 @@ Tracks: **F3** payload layer · **EX** executor/ScriptRunner · **TE** trainer e
 
 | PR | Track | Size | Depends |
 |---|---|---|---|
+| EX-5 Converter→filter migration (FLARE-2698 bullet 2) | EX | M | EX-3, EP-4. Replace executor-owned ParamsConverters with PT/TF send+receive conversion filters at the client edge (last task-data / first task-result filter); recipes auto-wire per framework only when server format ≠ exchange format; Client API boundary passes through (RAW). Filters delegate to the existing converter classes (no logic rewrite); round-trip state (tensor shapes, excluded entries) rides DXO meta (quantizer pattern), not FLContext — removes the `_ConverterContext` stub. Keep ParamsConverter ABC deprecated + a `ParamsConverterFilter` adapter for custom converter IDs. Wiring the conversion filter makes the CJ a materializing hop (design doc: payload-lifecycle rule); numpy regime excludes bf16 — large models use pytorch end-to-end. Removes params_exchange_format/server_expected_format/converter-id from the surface (already excluded from EX-2's freeze). Transfer type FULL/DIFF stays in model_registry, decided separately |
 | CT-2 torchrun 2-rank rank-contract CI tests (CPU/gloo) | CT | M | CT-1, EP-4. EP owner co-reviews |
 | CT-3 Owner-death (CJ-kill) + payload-lifecycle E2E tests | CT | L | CT-1, F3 track, EP-4. Covers CJ-SIGKILL self-termination + CP reaping; EP owner co-reviews |
 | CC-2 Swarm onto the transfer contract (remove lazy-ref machinery) | CC | L | CC-1, F3 track, EP-4. Highest-risk PR in the program; maximally isolated revert unit; retires test_lazy_ref_local_aggr / test_msg_root_ttl |
@@ -112,18 +112,19 @@ Notes: the one-paragraph "why" for the whole program lives in PR-0 and gets link
 
 ## Critical path
 
-F3-1 → F3-4 → TE-4 → TE-5 → EP-4 → CT-1 → CT-3 → release gate. The TE-4 merge removed one review cycle from the path. **EP-4** remains the schedule risk to watch — it's where executor, trainer engine, auth, process runner, and the F3 facade meet; its prerequisites are deliberately extracted to keep it L.
+F3-1 → F3-2/F3-3 (parallel) → F3-4 → TE-4 → TE-5 → EP-4 → CT-1 → CT-3 → release gate. F3-2 and F3-3 run in parallel behind F3-1, so the facade's hard dependencies cost the path one M — still inside the 10–14-week floor. The TE-4 merge removed one review cycle from the path. **EP-4** remains the schedule risk to watch — it's where executor, trainer engine, auth, process runner, and the F3 facade meet; its prerequisites are deliberately extracted to keep it L.
 
 ## 2.9 cut line (recommendation)
 
-- **P0 — commit for 2.9** (24 PRs): F3 track (4, after folding F3-5 into F3-4) + EX track (4) + TE track (5) + EP track (6) + CT-1/2/3/6/8. Headline: *external_process and in_process on the new Cell stack with an enforceable payload lifecycle, owner-death handling, session-scoped message enforcement, and the config-permission fix*.
-- **P1 — strongly target for 2.9** (6 PRs): CC track (5) + the CCWF half of CT-4. Fully severable (SWARM keeps current behavior until CC-2 lands); ship CC-5 flagged experimental.
+- **P0 — commit for 2.9** (24 PRs): F3 track (4, after folding F3-5 into F3-4) + EX track (4 — EX-1..4; EX-5 goes to P1) + TE track (5) + EP track (6) + CT-1/2/3/6/8. Headline: *external_process and in_process on the new Cell stack with an enforceable payload lifecycle, owner-death handling, session-scoped message enforcement, and the config-permission fix*.
+- **P1 — strongly target for 2.9** (8 PRs): CC track (5) + EX-5 conversion-filter migration (2.9 runs PyTorch end-to-end without it — the numpy regime is what needs the filters) + CT-5 rank-contract example updates (shipped examples must demonstrate the new contract; they do not gate the code cut) + the CCWF half of CT-4. Fully severable (SWARM keeps current behavior until CC-2 lands); ship CC-5 flagged experimental.
 - **P2 — stretch for 2.9, else 2.9.x/2.10** (4 PRs): AT track (3) + the attach half of CT-4. Attach is the most self-contained step; nothing in P0/P1 depends on it (its reusable auth/proof helpers ship in P0 via EP-3, and session enforcement via EP-3, regardless).
 - **CT-7 warnings** (1 PR) close 2.9. **Explicitly deferred to 2.10**: the ScriptRunner default flip and any legacy-class removal — ship 2.9 opt-in with warnings; flip after a release of field soak.
+- Tier accounting: every one of the 36 PRs has a tier — P0 (24) + P1 unique (7: CC×5, EX-5, CT-5) + P2 unique (3: AT×3) + CT-4 (one PR, halves in P1 and P2) + CT-7 (1) = 36. The P1/P2 headline counts each mention CT-4 once, so the tier lines name 37 items for 36 PRs.
 
 ## Effort and staffing
 
-36 PRs. At review-inclusive rates (S ≈ 2 days, M ≈ 1 week, L ≈ 2 weeks) that is ≈ 44 engineer-weeks total; ≈ 34 for P0+P1. With 4–5 engineers owning tracks (F3, TE, EP+EX, CC, AT+CT), full parallelism after Wave 0; calendar floor is the critical path — realistically **10–14 weeks to P0+P1 complete** plus stabilization. If 2.9 code freeze is nearer, cut P2 first, then CC-4/CC-5.
+36 PRs. At review-inclusive rates (S ≈ 2 days, M ≈ 1 week, L ≈ 2 weeks) that is ≈ 44 engineer-weeks total; ≈ 36 for P0+P1. With 4–5 engineers owning tracks (F3, TE, EP+EX, CC, AT+CT), full parallelism after Wave 0; calendar floor is the critical path — realistically **10–14 weeks to P0+P1 complete** plus stabilization. If 2.9 code freeze is nearer, cut P2 first, then CC-4/CC-5.
 
 ## Guardrails — deliberate non-merges
 
@@ -132,7 +133,7 @@ These pairs are tempting to consolidate and must stay separate:
 - **EP-1 (0600 fix) with anything**: live credential exposure on today's path; standalone, cherry-pickable, surgical revert.
 - **EX-3 (in_process backend) + EX-4 (ScriptRunner)**: ScriptRunner is the most-used public entry point (golden exported-config tests, ~22 recipe conversions); a backend parity revert must not drag the public parameter surface.
 - **Anything into CC-2 (swarm refactor)**: highest-risk PR in the program; must remain a maximally isolated revert unit.
-- **F3-3 (budgets) + F3-4 (facade)**: same module, but F3-4 is on the critical path every track waits on; F3-3 serves only CC-1.
+- **F3-3 (budgets) + F3-4 (facade)**: same module and strictly sequenced (F3-3 is a hard prerequisite of F3-4), but they stay separate PRs — the budgets land ahead as their own surgical revert unit, and F3-4 is the critical-path PR every track waits on.
 - **F3-2 (receiver-confirm wire change) must not weld to F3-4's linger/exit-timing policy**: the version-skew change wants early landing and a surgical revert; the linger now lives in F3-4 (former F3-5) but F3-2 still ships isolated ahead of it.
 - **EP-3 + AT-2**: same CJ-side HELLO/session machinery, but they straddle the P0/P2 boundary — AT-2 consumes EP-3's module instead.
 - **EP-2 (runner) + EP-5 (CP reaping)**: different processes and blast radii; EP-5's false-positive-reap risk needs an independent revert path.
