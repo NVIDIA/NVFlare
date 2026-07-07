@@ -1,6 +1,6 @@
 # Client API Execution Modes — 2.9 Implementation Plan
 
-Companion to `client_api_execution_modes.md` (design). Tracks Epic **FLARE-2698** (Client API and 3rd party integration refactoring, 2.9.0). Decomposes the design's 8-step Migration Plan into **37 PRs** with dependencies, sizes, and a release cut line. Scoped against the codebase post-2.8.0; granularity calibrated against the repo's merged-PR history (2026-07-01, see Calibration below).
+Companion to `client_api_execution_modes.md` (design). Tracks Epic **FLARE-2698** (Client API and 3rd party integration refactoring, 2.9.0). Decomposes the design's 8-step Migration Plan into **36 PRs** with dependencies, sizes, and a release cut line. Scoped against the codebase post-2.8.0; granularity calibrated against the repo's merged-PR history (2026-07-01, see Calibration below).
 
 Size guide: **S** <300 changed LOC, **M** 300–800, **L** 800–2000.
 
@@ -39,7 +39,7 @@ Tracks: **F3** payload layer · **EX** executor/ScriptRunner · **TE** trainer e
 |---|---|---|---|
 | F3-2 Receiver-confirmed completion + retry-aware accounting | F3 | M | F3-1. The version-skew wire change — lands as early as possible for maximum soak; capability-flag gated, both skews interop-tested |
 | F3-3 Per-(transfer, receiver) acquire/idle budgets | F3 | M | F3-1. Unconditional per-receiver activity tracking. Must also settle the quorum surface for fan-out: workflows with min_responses-style policy (k-of-N receivers suffices) need either an optional min_receivers on the transaction/facade or a documented pattern of evaluating TransferOutcome.refs against their own threshold — `completed` stays the strict all-receivers certificate either way |
-| F3-4 Awaitable producer transfer facade + PAYLOAD_ACQUIRED (via existing progress_cb) | F3 | M | F3-1. Must CHAIN existing DOWNLOAD_COMPLETE_CB, not replace |
+| F3-4 Awaitable producer transfer facade + PAYLOAD_ACQUIRED + post-completion linger | F3 | M | F3-1 (and F3-2 for the linger's receiver-confirmed path). Must CHAIN existing DOWNLOAD_COMPLETE_CB, not replace. Folds in the former F3-5 bounded post-completion linger (a leaf with no independent consumer — only this facade's release path uses it); F3-2 still lands as its own isolated PR so the wire-skew change is not welded here |
 | EX-3 in_process backend (consolidate InProcessClientAPIExecutor) | EX | L | EX-2. Behavior-parity bar: "nothing user-visible" |
 | TE-3 TrainerCellSession engine (handshake, heartbeat, owner-death, trainer-side authenticated teardown) | TE | L | TE-1, TE-2. Injectable clock + kill hook; AT owner co-reviews the teardown-auth tests |
 | EP-5 CP-side orphan reaping of trainer PGIDs | EP | M | EP-2. PID-reuse guard via start-time record |
@@ -48,7 +48,6 @@ Tracks: **F3** payload layer · **EX** executor/ScriptRunner · **TE** trainer e
 
 | PR | Track | Size | Depends |
 |---|---|---|---|
-| F3-5 Bounded post-completion linger before producer release | F3 | S | F3-2, F3-4. Gates only the new `wait_released`; kept separate from F3-2 so the wire change isn't welded to exit-timing policy |
 | TE-4 TrainerCellSession task/result contracts (receive queue + TASK_READY idempotency + TASK_FAILED; RESULT_READY flow + terminal-outcome blocking + fan-out drain/shutdown gating) | TE | L | TE-3; F3-4 via a narrow stubbed wait-protocol interface. Merged from two Ms: same class, same owner, no independent consumer of either half. Guard: split fan-out drain back out if the diff passes ~1800 LOC |
 | EP-3 external_process auth + CJ-side HELLO acceptance + session-scoped message enforcement | EP | M | TE-1 (vocabulary). **Owns the auth-model decision**: a per-launch rendezvous id always; a *secret* launch token proven by one-round HMAC on multi-tenant hosts (rendezvous-only + OS isolation may suffice single-tenant). Introduces the proof helpers (TokenScope, compute/verify_hello_proof, combine_nonces) here — reused later by AT-2. Session-scoped message enforcement (accept trainer messages only from the bound session) closes the live IPCAgent any-sender gap; a P0 control, not the P2 attach track |
 | EX-4 ScriptRunner `execution_mode` param + launch_external_process mapping | EX | M | EX-2/3. Convert ~22 internal recipe call sites in the same PR |
@@ -117,14 +116,14 @@ F3-1 → F3-4 → TE-4 → TE-5 → EP-4 → CT-1 → CT-3 → release gate. The
 
 ## 2.9 cut line (recommendation)
 
-- **P0 — commit for 2.9** (25 PRs): F3 track (5) + EX track (4) + TE track (5) + EP track (6) + CT-1/2/3/6/8. Headline: *external_process and in_process on the new Cell stack with an enforceable payload lifecycle, owner-death handling, session-scoped message enforcement, and the config-permission fix*.
+- **P0 — commit for 2.9** (24 PRs): F3 track (4, after folding F3-5 into F3-4) + EX track (4) + TE track (5) + EP track (6) + CT-1/2/3/6/8. Headline: *external_process and in_process on the new Cell stack with an enforceable payload lifecycle, owner-death handling, session-scoped message enforcement, and the config-permission fix*.
 - **P1 — strongly target for 2.9** (6 PRs): CC track (5) + the CCWF half of CT-4. Fully severable (SWARM keeps current behavior until CC-2 lands); ship CC-5 flagged experimental.
 - **P2 — stretch for 2.9, else 2.9.x/2.10** (4 PRs): AT track (3) + the attach half of CT-4. Attach is the most self-contained step; nothing in P0/P1 depends on it (its reusable auth/proof helpers ship in P0 via EP-3, and session enforcement via EP-3, regardless).
 - **CT-7 warnings** (1 PR) close 2.9. **Explicitly deferred to 2.10**: the ScriptRunner default flip and any legacy-class removal — ship 2.9 opt-in with warnings; flip after a release of field soak.
 
 ## Effort and staffing
 
-36 PRs ≈ 6 S + 18 M + 12 L. At review-inclusive rates (S ≈ 2 days, M ≈ 1 week, L ≈ 2 weeks) that is ≈ 44 engineer-weeks total; ≈ 34 for P0+P1. With 4–5 engineers owning tracks (F3, TE, EP+EX, CC, AT+CT), full parallelism after Wave 0; calendar floor is the critical path — realistically **10–14 weeks to P0+P1 complete** plus stabilization. If 2.9 code freeze is nearer, cut P2 first, then CC-4/CC-5.
+36 PRs. At review-inclusive rates (S ≈ 2 days, M ≈ 1 week, L ≈ 2 weeks) that is ≈ 44 engineer-weeks total; ≈ 34 for P0+P1. With 4–5 engineers owning tracks (F3, TE, EP+EX, CC, AT+CT), full parallelism after Wave 0; calendar floor is the critical path — realistically **10–14 weeks to P0+P1 complete** plus stabilization. If 2.9 code freeze is nearer, cut P2 first, then CC-4/CC-5.
 
 ## Guardrails — deliberate non-merges
 
@@ -134,7 +133,7 @@ These pairs are tempting to consolidate and must stay separate:
 - **EX-3 (in_process backend) + EX-4 (ScriptRunner)**: ScriptRunner is the most-used public entry point (golden exported-config tests, ~22 recipe conversions); a backend parity revert must not drag the public parameter surface.
 - **Anything into CC-2 (swarm refactor)**: highest-risk PR in the program; must remain a maximally isolated revert unit.
 - **F3-3 (budgets) + F3-4 (facade)**: same module, but F3-4 is on the critical path every track waits on; F3-3 serves only CC-1.
-- **F3-2 (receiver-confirm wire change) + F3-5 (linger policy)**: the version-skew change wants early landing and a surgical revert; don't weld it to exit-timing policy.
+- **F3-2 (receiver-confirm wire change) must not weld to F3-4's linger/exit-timing policy**: the version-skew change wants early landing and a surgical revert; the linger now lives in F3-4 (former F3-5) but F3-2 still ships isolated ahead of it.
 - **EP-3 + AT-2**: same CJ-side HELLO/session machinery, but they straddle the P0/P2 boundary — AT-2 consumes EP-3's module instead.
 - **EP-2 (runner) + EP-5 (CP reaping)**: different processes and blast radii; EP-5's false-positive-reap risk needs an independent revert path.
 - **CT-7 warnings + default flip**: different ship dates by design (2.9 vs 2.10).

@@ -90,15 +90,13 @@ This produces two distinct problems.
 
 ### What We Propose
 
-In one paragraph: the trainer-facing Client API (flare.init/receive/send/log) stays exactly as it is; everything changing is behind it. Concretely:
+The trainer-facing Client API (flare.init/receive/send/log) stays exactly as it is; everything changing is behind it. Concretely:
 
 1. Replace the Pipe/launcher integration stack with one public **ClientAPIExecutor** configured by execution mode. The executor delegates internally to mode-specific backends for `in_process`, `external_process`, and `attach`. Retire ClientAPILauncherExecutor, LauncherExecutor, the generic Launcher/SubprocessLauncher, and the Pipe/TaskExchanger/FlareAgent chain as the recommended surface. The old path stays available, marked legacy, during migration.
 
 2. Formalize one **Client API control protocol over Cell**. All out-of-process communication (session setup, task/result/log/abort/heartbeat) goes through Cell — never a Pipe. In-process is the only exception and uses DataBus. Users never touch IPCAgent/CellPipe/FilePipe/FlareAgent.
 
 3. Make **payload terminal-state explicit**, consuming existing F3 transfer signals (see Payload Lifecycle and Dependencies) so "control message accepted" is never confused with "payload transferred" — for task delivery as well as result upload.
-
-The rest of this section details each.
 
 ### Overview
 
@@ -347,7 +345,7 @@ A Client API **session** is the runtime state for one trainer connection: identi
 
 Per-task control state (task id) resets when the task completes; each result's (result_id, transfer_id) state persists until its transfer reaches a terminal state. In `launch_once=True` and attach, session identity/auth/heartbeat persist across rounds; in `launch_once=False` each task is a fresh process and a fresh session (see that sequence), so "persist across rounds" does not apply there.
 
-Note the trainer side is not a thin shim: the Cell backend of the Client API replaces FlareAgent's protocol engine (task queueing, heartbeat, teardown handling, payload waits) inside the trainer process. This is real scope, accounted for in Migration Plan step 3.
+The trainer side replaces FlareAgent's protocol engine — task queueing, heartbeat, teardown handling, payload waits — inside the trainer process (Migration Plan step 3).
 
 ### JobLauncher Boundary
 
@@ -461,7 +459,7 @@ TASK_ACCEPTED acknowledges control receipt of the task message only — it does 
 - Both sides send HEARTBEAT on the session's Cell connection. Recommended defaults follow the legacy Pipe values: interval 5 s, miss timeout 30 s, tunable in the bootstrap config.
 - In external_process the executor has two liveness signals: process exit (waitpid on the process tree it owns) and heartbeat. Process exit is authoritative for "trainer is gone"; heartbeat covers a live-but-wedged trainer.
 - In attach the heartbeat lease is the only liveness signal the executor has.
-- **Precedence rule for transfers (result path):** active data-plane transfer progress counts as session liveness. While a session has an in-flight result transfer (WAIT_PAYLOAD_ACQUIRED/WAIT_TRANSFER_COMPLETE), the session lease does not expire on missed control heartbeats alone; the transfer's own idle/progress policy (shared F3 layer) governs, and only transfer failure/timeout or an explicit abort ends the session. This resolves the otherwise-contradictory pair "heartbeat timeout invalidates the session" vs "the executor must not revoke the session before terminal payload state" — and heartbeat false-positives during multi-GB result uploads are precisely one failure class this design removes. (The legacy stack solved this with a dedicated STREAM_PROGRESS topic feeding transfer waits, deliberately separate from peer liveness; the same separation is preserved here, just owned by the shared transfer layer.)
+- **Precedence rule for transfers (result path):** active data-plane transfer progress counts as session liveness. While a session has an in-flight result transfer (WAIT_PAYLOAD_ACQUIRED/WAIT_TRANSFER_COMPLETE), the session lease does not expire on missed control heartbeats alone; the transfer's own idle/progress policy (shared F3 layer) governs, and only transfer failure/timeout or an explicit abort ends the session. This resolves the otherwise-contradictory pair "heartbeat timeout invalidates the session" vs "the executor must not revoke the session before terminal payload state" — and heartbeat false-positives during multi-GB result uploads are one failure class this design removes. (The legacy stack solved this with a dedicated STREAM_PROGRESS topic feeding transfer waits, deliberately separate from peer liveness; the same separation is preserved here, just owned by the shared transfer layer.)
 - **Precedence rule for the forward (task-delivery) path:** the same false-positive class exists in the *other* direction and needs its own rule, because the CJ cannot see forward bytes. When TASK_READY carries a lazy ref to a multi-GB global model, the control rank pulls those bytes **directly from the producer** (server job process); the CJ that owns the session/heartbeat lease is only a relay and observes no forward transfer (the producer's progress callback fires at the server, not the CJ). A control rank busy materializing 5 GB inside `flare.receive()` therefore has no in-flight-transfer signal to feed the rule above. Rule: **the CJ must not revoke the session on control-heartbeat timeout while a TASK_ACCEPTED is outstanding** — an accepted-but-not-yet-completed task means the trainer is legitimately working (materializing the payload and/or training), and forward materialization is bounded by the trainer-local pull policy (the shared F3 idle/timeout on the trainer→producer transfer), not by the control heartbeat. This is the forward analog of the result-path rule and closes the same 5GB-materialization false-positive that `progress_aware_streaming.md` documents on `task_payload_download`.
 
 #### CJ Failure (Owner Death)
@@ -635,7 +633,7 @@ external trainer process
 
 In that path, the CJ may intentionally skip tensor materialization and forward lazy references so the server-side job process streams tensors directly from the producer's DownloadService. The important rule is that the producer's resources remain alive until the final consumer's transfer reaches a terminal state, not merely until the CJ ACKs the control message.
 
-Whether the CJ forwards references or materializes is a per-(task, direction) decision, resolvable at executor initialization from the configured filter chains: **a hop that runs content filters is a materializing hop.** If the job or the site privacy scope configures any task-data or task-result DXO filter — including the framework conversion filter (see Configuration Surface) — the CJ must decode without pass-through, materialize the payload, run the filter chain, and re-publish the result as its own transfer, becoming the producer for the next leg under the same lifecycle contract. Reference forwarding is valid only when the filter chains are empty for the task. This rule is not new with this design: a param-touching filter cannot operate on lazy-reference placeholders today either — the design only makes the decision explicit instead of leaving it to a per-channel decode flag.
+Whether the CJ forwards references or materializes is a per-(task, direction) decision, resolvable at executor initialization from the configured filter chains: **a hop that runs content filters is a materializing hop.** If the job or the site privacy scope configures any task-data or task-result DXO filter — including the framework conversion filter (see Configuration Surface) — the CJ must decode without pass-through, materialize the payload, run the filter chain, and re-publish the result as its own transfer, becoming the producer for the next leg under the same lifecycle contract. Reference forwarding is valid only when the filter chains are empty for the task. Today this constraint is implicit and unenforced — a param-touching filter cannot operate on lazy-reference placeholders; here it becomes an explicit decision instead of a per-channel decode flag.
 
 For external_process and attach modes, the producer must stay alive until the terminal transfer outcome. For scheduler batch artifact mode, use explicit file/NFS or object-store payload manifests (PERSISTENT_ARTIFACT) instead of live pass-through.
 
@@ -749,7 +747,7 @@ training script native tensors — the ergonomic is preserved, the executor surf
 Transfer type (FULL/DIFF) is a separate axis handled by the Client API's model_registry, not a
 converter; it is decided independently of this removal.
 
-Three placement details, from reviewing the runner and streaming code:
+Placement details:
 
 - **Ordering caveat (site filters).** The runner applies site privacy-scope filters *before* job
   filters in both directions, so on the result path site-enforced filters see framework-native
@@ -1159,7 +1157,7 @@ The trainer Cell should use a deterministic child FQCN under the site, scoped by
 <site_name>.-client_api_<attach_id>
 ```
 
-The `-` child-name convention follows the existing IPCAgent-style ad-hoc connection pattern. The exact helper should be internal; user code should not construct FQCNs. Note the FQCN is a routing name, not an identity: authentication comes from the token contract below, never from the FQCN alone.
+The `-` child-name convention follows the existing IPCAgent-style ad-hoc connection pattern. The exact helper should be internal; user code should not construct FQCNs. The FQCN is a routing name, not an identity: authentication comes from the token contract below, never from the FQCN alone.
 
 Low-level attach details such as parent/root URL, target CJ FQCN, trainer FQCN, token, secure-mode settings, and heartbeat timeouts belong in the bootstrap config. Bootstrap config should include:
 
