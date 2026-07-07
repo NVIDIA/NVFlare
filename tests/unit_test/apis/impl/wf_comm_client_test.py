@@ -18,16 +18,15 @@ import pytest
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, Task, TaskCompletionStatus
-from nvflare.apis.fl_constant import ReservedKey, ReturnCode, SiteType
+from nvflare.apis.fl_constant import ReturnCode, SiteType
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.wf_comm_client import WFCommClient
 from nvflare.apis.shareable import Shareable, make_reply
+from tests.unit_test.fl_context_helper import make_fl_context
 
 
 def _context(engine):
-    fl_ctx = FLContext()
-    fl_ctx.set_prop(ReservedKey.ENGINE, engine, private=True, sticky=False)
-    return fl_ctx
+    return make_fl_context(engine=engine)
 
 
 def _engine():
@@ -196,10 +195,18 @@ def test_send_and_relay_delegate_in_order():
     comm = WFCommClient()
     comm._validate_target = MagicMock()
     ok = make_reply(ReturnCode.OK)
-    comm.broadcast_and_wait = MagicMock(side_effect=[make_reply(ReturnCode.ERROR), ok])
+    comm.broadcast_and_wait = MagicMock(
+        side_effect=[{"site-1": make_reply(ReturnCode.ERROR)}, {"site-2": ok}],
+    )
 
-    assert comm.send(task, fl_ctx, ["site-1", "site-2"]) is ok
+    assert comm.send(task, fl_ctx, ["site-1", "site-2"]) == {"site-2": ok}
     assert comm.broadcast_and_wait.call_count == 2
+
+    comm.broadcast_and_wait.reset_mock()
+    error_replies = [{"site-1": make_reply(ReturnCode.ERROR)}, {"site-2": make_reply(ReturnCode.ERROR)}]
+    comm.broadcast_and_wait.side_effect = error_replies
+    failed = comm.send(task, fl_ctx, ["site-1", "site-2"])
+    assert failed["site-2"].get_return_code() == ReturnCode.ERROR
 
     comm.broadcast_and_wait.reset_mock()
     comm.broadcast_and_wait.side_effect = [{"site-1": ok}, {"site-2": ok}]

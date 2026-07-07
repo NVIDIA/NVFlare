@@ -271,10 +271,12 @@ class WFCommClient(FLComponent, WFCommSpec):
 
         self._validate_target(engine, targets)
 
+        replies = {}
         for target in targets:
-            reply = self.broadcast_and_wait(task, fl_ctx, [target], abort_signal=abort_signal)
-            if reply.get_return_code() == ReturnCode.OK:
-                return reply
+            replies = self.broadcast_and_wait(task, fl_ctx, [target], abort_signal=abort_signal)
+            if any(reply and reply.get_return_code() == ReturnCode.OK for reply in replies.values()):
+                return replies
+        return replies
 
     def relay(
         self,
