@@ -19,8 +19,10 @@ from __future__ import annotations
 
 import argparse
 import csv
+import importlib.util
 import math
 import os
+import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,24 +47,33 @@ class ProgressRecord:
     description: str
 
 
-def parse_score(value: Any) -> Optional[float]:
+def load_campaign_guard():
+    """Load the sibling campaign guard, the shared owner of the ledger score contract."""
+    module_name = "nvflare_autofl_skill_campaign_guard"
+    cached = sys.modules.get(module_name)
+    if cached is not None:
+        return cached
+    module_path = Path(__file__).resolve().with_name("campaign_guard.py")
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Unable to load campaign guard from {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
     try:
-        score = float(value)
-    except (TypeError, ValueError):
-        return None
-    if math.isnan(score) or math.isinf(score):
-        return None
-    return score
+        spec.loader.exec_module(module)
+    except BaseException:
+        sys.modules.pop(module_name, None)
+        raise
+    return module
+
+
+def parse_score(value: Any) -> Optional[float]:
+    return load_campaign_guard().parse_score(value)
 
 
 def parse_runtime(value: Any) -> float:
-    try:
-        seconds = float(value)
-    except (TypeError, ValueError):
-        return 0.0
-    if math.isnan(seconds) or math.isinf(seconds):
-        return 0.0
-    return max(0.0, seconds)
+    seconds = load_campaign_guard().parse_score(value)
+    return max(0.0, seconds) if seconds is not None else 0.0
 
 
 def format_runtime(seconds: float) -> str:
@@ -135,9 +146,7 @@ def normalize_records(records: Iterable[Any]) -> List[ProgressRecord]:
 
 
 def better(value: float, incumbent: Optional[float], mode: str) -> bool:
-    if incumbent is None:
-        return True
-    return value > incumbent if mode == "max" else value < incumbent
+    return load_campaign_guard().better(value, incumbent, mode)
 
 
 def cumulative_best(values: Sequence[float], mode: str) -> List[float]:
