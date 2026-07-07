@@ -30,7 +30,6 @@ import hashlib
 import importlib.util
 import io
 import json
-import math
 import os
 import queue
 import re
@@ -45,7 +44,6 @@ import time
 import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
 
@@ -532,24 +530,6 @@ def run(
     return process.returncode or 0, "".join(chunks), time.monotonic() - started
 
 
-def run_allow_timeout(
-    argv: Sequence[str],
-    cwd: Path,
-    timeout: int,
-    log_path: Path,
-    simulator_stall_roots: Sequence[Path] = (),
-    simulator_no_progress_timeout: int = DEFAULT_SIMULATOR_NO_PROGRESS_TIMEOUT,
-) -> Tuple[int, str, float]:
-    return run(
-        argv,
-        cwd,
-        timeout,
-        log_path,
-        simulator_stall_roots=simulator_stall_roots,
-        simulator_no_progress_timeout=simulator_no_progress_timeout,
-    )
-
-
 def read_yaml(path: Path) -> Dict[str, Any]:
     if yaml is None:
         raise RuntimeError("PyYAML is required to read YAML files")
@@ -606,7 +586,7 @@ def read_json(path: Path) -> Dict[str, Any]:
 
 
 def utc_now() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return load_campaign_guard().utc_now()
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -910,40 +890,32 @@ def validate_manifest_change_set(
         raise ValueError("candidate manifest source lists do not match the deterministic candidate diff")
 
 
-_CAMPAIGN_GUARD = None
-_JOB_IMPORTER = None
+def load_sibling_module(filename: str, module_name: str):
+    """Load a sibling skill script as a module, cached in sys.modules."""
+    cached = sys.modules.get(module_name)
+    if cached is not None:
+        return cached
+
+    module_path = Path(__file__).resolve().with_name(filename)
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Unable to load skill module from {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        sys.modules.pop(module_name, None)
+        raise
+    return module
 
 
 def load_campaign_guard():
-    global _CAMPAIGN_GUARD
-    if _CAMPAIGN_GUARD is not None:
-        return _CAMPAIGN_GUARD
-
-    guard_path = Path(__file__).resolve().with_name("campaign_guard.py")
-    spec = importlib.util.spec_from_file_location("nvflare_autofl_skill_campaign_guard", guard_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Unable to load campaign guard from {guard_path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    _CAMPAIGN_GUARD = module
-    return module
+    return load_sibling_module("campaign_guard.py", "nvflare_autofl_skill_campaign_guard")
 
 
 def load_job_importer():
-    global _JOB_IMPORTER
-    if _JOB_IMPORTER is not None:
-        return _JOB_IMPORTER
-
-    importer_path = Path(__file__).resolve().with_name("job_importer.py")
-    spec = importlib.util.spec_from_file_location("nvflare_autofl_skill_job_importer", importer_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Unable to load Auto-FL job importer from {importer_path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    _JOB_IMPORTER = module
-    return module
+    return load_sibling_module("job_importer.py", "nvflare_autofl_skill_job_importer")
 
 
 def resolve_output_path(cwd: Path, value: str) -> Path:
@@ -1032,13 +1004,7 @@ def normalize_metric_order(metrics: Sequence[str] | str) -> List[str]:
 
 
 def parse_finite_metric_value(value: Any) -> Optional[float]:
-    if isinstance(value, bool):
-        return None
-    try:
-        score = float(value)
-    except (TypeError, ValueError):
-        return None
-    return score if math.isfinite(score) else None
+    return load_campaign_guard().parse_score(value)
 
 
 def is_numeric_metric_value(value: Any) -> bool:
@@ -1710,7 +1676,7 @@ def run_job(
     with locked_simulator_roots(simulator_roots):
         for simulator_root in simulator_roots:
             shutil.rmtree(simulator_root, ignore_errors=True)
-        rc, stdout, runtime = run_allow_timeout(
+        rc, stdout, runtime = run(
             command,
             cwd,
             timeout,
@@ -1837,13 +1803,7 @@ def load_results(path: Path) -> List[RunRecord]:
 
 
 def better(new_score: Optional[float], old_score: Optional[float], mode: str) -> bool:
-    new_score = parse_finite_metric_value(new_score)
-    old_score = parse_finite_metric_value(old_score)
-    if new_score is None:
-        return False
-    if old_score is None:
-        return True
-    return new_score > old_score if mode == "max" else new_score < old_score
+    return load_campaign_guard().better(new_score, old_score, mode)
 
 
 def write_state(
@@ -1864,23 +1824,23 @@ def write_state(
     plateau_threshold = guard.DEFAULT_PLATEAU_THRESHOLD if plateau_threshold is None else plateau_threshold
     plateau_min_delta = guard.DEFAULT_MIN_DELTA if plateau_min_delta is None else plateau_min_delta
     hard_crash_threshold = guard.DEFAULT_HARD_CRASH_THRESHOLD if hard_crash_threshold is None else hard_crash_threshold
-    attempts = len(
-        [
-            record
-            for record in records
-            if record.status in {"candidate", "keep", "discard", "crash"} and not is_baseline_record(record)
-        ]
+    state = guard.guard_state(
+        results_path,
+        max_candidates=max_candidates,
+        stop_files=stop_files,
+        plateau_threshold=plateau_threshold,
+        min_delta=plateau_min_delta,
+        hard_crash_threshold=hard_crash_threshold,
+        mode=mode,
+        pending_manifest_count=pending_manifest_count,
     )
     if records and records[-1].status == INFRASTRUCTURE_RETRY:
-        state = guard.guard_state(
-            results_path,
-            max_candidates=max_candidates,
-            stop_files=stop_files,
-            plateau_threshold=plateau_threshold,
-            min_delta=plateau_min_delta,
-            hard_crash_threshold=hard_crash_threshold,
-            mode=mode,
-            pending_manifest_count=pending_manifest_count,
+        attempts = len(
+            [
+                record
+                for record in records
+                if record.status in {"candidate", "keep", "discard", "crash"} and not is_baseline_record(record)
+            ]
         )
         state.update(
             {
@@ -1895,20 +1855,6 @@ def write_state(
                 ),
             }
         )
-        if persist:
-            write_json(path, state)
-        return state
-
-    state = guard.guard_state(
-        results_path,
-        max_candidates=max_candidates,
-        stop_files=stop_files,
-        plateau_threshold=plateau_threshold,
-        min_delta=plateau_min_delta,
-        hard_crash_threshold=hard_crash_threshold,
-        mode=mode,
-        pending_manifest_count=pending_manifest_count,
-    )
     if persist:
         write_json(path, state)
     return state
@@ -1929,14 +1875,7 @@ def write_state_if_changed(path: Path, state: Dict[str, Any]) -> bool:
 
 
 def load_progress_plotter():
-    script_path = Path(__file__).with_name("plot_progress.py")
-    spec = importlib.util.spec_from_file_location("nvflare_autofl_plot_progress", script_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"cannot load Auto-FL progress plotter from {script_path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+    return load_sibling_module("plot_progress.py", "nvflare_autofl_plot_progress")
 
 
 def write_progress_fallback(path: Path, records: List[RunRecord], mode: str, metric_label: str) -> None:

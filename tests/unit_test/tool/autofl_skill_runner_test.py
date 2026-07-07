@@ -469,7 +469,7 @@ def test_run_without_deterministic_result_root_fails_before_execution(tmp_path, 
     job.write_text("print('done')\n", encoding="utf-8")
     monkeypatch.setattr(
         runner,
-        "run_allow_timeout",
+        "run",
         lambda *args, **kwargs: pytest.fail("unmonitored simulator jobs must not execute"),
     )
 

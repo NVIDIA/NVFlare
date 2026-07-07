@@ -44,13 +44,13 @@ def utc_now() -> str:
 
 
 def parse_score(value: Any) -> Optional[float]:
+    if isinstance(value, bool):
+        return None
     try:
         score = float(value)
     except (TypeError, ValueError):
         return None
-    if math.isnan(score) or math.isinf(score):
-        return None
-    return score
+    return score if math.isfinite(score) else None
 
 
 def load_rows(path: Path) -> List[Dict[str, str]]:
@@ -87,10 +87,18 @@ def pending_candidates(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
     return [row for row in rows if normalize_status(row) == "candidate"]
 
 
-def scored_attempts_with_index(rows: List[Dict[str, str]]) -> List[Tuple[int, Dict[str, str], float]]:
+def is_scored_attempt(row: Dict[str, str]) -> bool:
+    return normalize_status(row) in SCORED_ATTEMPT_STATUSES and not is_baseline(row)
+
+
+def is_retained(row: Dict[str, str]) -> bool:
+    return normalize_status(row) == "keep" or is_baseline(row)
+
+
+def scored_rows_with_index(rows: List[Dict[str, str]], keep_row) -> List[Tuple[int, Dict[str, str], float]]:
     scored = []
     for idx, row in enumerate(rows):
-        if normalize_status(row) not in SCORED_ATTEMPT_STATUSES or is_baseline(row):
+        if not keep_row(row):
             continue
         score = parse_score(row.get("score", ""))
         if score is not None:
@@ -98,7 +106,15 @@ def scored_attempts_with_index(rows: List[Dict[str, str]]) -> List[Tuple[int, Di
     return scored
 
 
-def better(new_score: float, old_score: Optional[float], mode: str, min_delta: float = 0.0) -> bool:
+def scored_attempts_with_index(rows: List[Dict[str, str]]) -> List[Tuple[int, Dict[str, str], float]]:
+    return scored_rows_with_index(rows, is_scored_attempt)
+
+
+def better(new_score: Optional[float], old_score: Optional[float], mode: str, min_delta: float = 0.0) -> bool:
+    new_score = parse_score(new_score)
+    old_score = parse_score(old_score)
+    if new_score is None:
+        return False
     if old_score is None:
         return True
     if mode == "min":
@@ -108,29 +124,14 @@ def better(new_score: float, old_score: Optional[float], mode: str, min_delta: f
 
 def best_score(rows: List[Dict[str, str]], mode: str) -> Optional[float]:
     best = None
-    for row in rows:
-        status = normalize_status(row)
-        retained = status == "keep" or (is_baseline(row) and status not in ATTEMPT_STATUSES)
-        if not retained:
-            continue
-        score = parse_score(row.get("score", ""))
-        if score is None:
-            continue
+    for _, _, score in scored_rows_with_index(rows, is_retained):
         if better(score, best, mode):
             best = score
     return best
 
 
 def plateau_status(rows: List[Dict[str, str]], threshold: int, min_delta: float, mode: str) -> Dict[str, Any]:
-    retained = []
-    for idx, row in enumerate(rows):
-        status = normalize_status(row)
-        is_retained = status == "keep" or (is_baseline(row) and status not in ATTEMPT_STATUSES)
-        if not is_retained:
-            continue
-        score = parse_score(row.get("score", ""))
-        if score is not None:
-            retained.append((idx, row, score))
+    retained = scored_rows_with_index(rows, is_retained)
     scored_attempts = scored_attempts_with_index(rows)
     if threshold <= 0 or not retained:
         return {
