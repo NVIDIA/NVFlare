@@ -299,6 +299,13 @@ FedAvg is the default. The same client can run SCAFFOLD without changing its tra
 For manual Lightning optimization, use an explicit receive/train/send loop without ``flare.patch(trainer)``
 and integrate ``PTScaffoldHelper`` directly.
 
+The automatic path supports one optimizer with ``precision="32-true"`` or ``precision="bf16-mixed"`` and
+equal finite, non-negative learning rates across parameter groups at every step. Starting with NVFlare 2.9.0,
+PyTorch SCAFFOLD control differences contain trainable parameters only; buffers such as BatchNorm running
+statistics remain ordinary model state. Custom SCAFFOLD aggregators must accept sparse control dictionaries.
+Trainability may change between rounds, which resets newly trainable local controls to zero, but
+``requires_grad`` must not change during a round.
+
 
 output
 

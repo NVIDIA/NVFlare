@@ -88,8 +88,8 @@ def _scaffold_model(model: nn.Module, controls=None) -> FLModel:
     return FLModel(meta={AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL: controls})
 
 
-def _trainer(*optimizers):
-    return SimpleNamespace(optimizers=list(optimizers))
+def _trainer(*optimizers, precision="32-true"):
+    return SimpleNamespace(optimizers=list(optimizers), precision=precision)
 
 
 def test_receive_and_update_model_raises_when_no_keys_match_and_suggests_prefix():
@@ -335,11 +335,11 @@ def test_scaffold_handler_skips_gradient_accumulation_batches_without_optimizer_
     handler.start_round(_trainer(optimizer), module, _scaffold_model(module))
 
     handler.after_train_batch(module)
-    assert handler._num_steps == 0
+    assert handler.num_steps == 0
 
     handler.before_optimizer_step(optimizer)
     handler.after_train_batch(module)
-    assert handler._num_steps == 1
+    assert handler.num_steps == 1
 
 
 def test_scaffold_handler_preserves_local_controls_between_rounds_and_rejects_missing_controls():
@@ -363,19 +363,23 @@ def test_scaffold_handler_preserves_local_controls_between_rounds_and_rejects_mi
         handler.start_round(_trainer(optimizer), module, FLModel(meta={}))
 
 
-def test_scaffold_handler_uses_cpu_state_snapshot_without_deepcopying_module_each_round():
+def test_scaffold_handler_uses_cpu_controls_and_snapshot_without_deepcopying_module():
     module = SimpleNet()
+    module.non_copyable = threading.Lock()
     optimizer = torch.optim.SGD(module.parameters(), lr=0.1)
     handler = _ScaffoldHandler()
 
     handler.start_round(_trainer(optimizer), module, _scaffold_model(module))
     initial_snapshot = _clone_state_dict(module)
     assert all(value.device.type == "cpu" for value in handler._model_global.state_dict().values())
+    assert all(value.device.type == "cpu" for value in handler._helper.c_global.state_dict().values())
+    assert all(value.device.type == "cpu" for value in handler._helper.c_local.state_dict().values())
     handler.before_optimizer_step(optimizer)
     handler.after_train_batch(module)
+    assert set(handler._helper._control_correction) == set(dict(module.named_parameters()))
     handler.finish_round(module)
+    assert handler._helper._control_correction == {}
 
-    module.non_copyable = threading.Lock()
     handler.start_round(_trainer(optimizer), module, _scaffold_model(module))
     with torch.no_grad():
         module.fc.weight.add_(1)
@@ -416,6 +420,24 @@ def test_scaffold_handler_rejects_gradient_scaler_mixed_precision():
         _ScaffoldHandler().start_round(trainer, module, _scaffold_model(module))
 
 
+def test_scaffold_handler_rejects_unsupported_precision_without_scaler_attributes():
+    module = SimpleNet()
+    optimizer = torch.optim.SGD(module.parameters(), lr=0.1)
+
+    with pytest.raises(RuntimeError, match="trainer.precision"):
+        _ScaffoldHandler().start_round(_trainer(optimizer, precision="16-mixed"), module, _scaffold_model(module))
+
+
+def test_scaffold_handler_accepts_bf16_mixed_precision_without_scaler():
+    module = SimpleNet()
+    optimizer = torch.optim.SGD(module.parameters(), lr=0.1)
+    handler = _ScaffoldHandler()
+
+    handler.start_round(_trainer(optimizer, precision="bf16-mixed"), module, _scaffold_model(module))
+
+    assert handler.active is True
+
+
 def test_scaffold_handler_rejects_multiple_optimizers():
     module = SimpleNet()
     optimizer_1 = torch.optim.SGD([module.fc.weight], lr=0.1)
@@ -428,8 +450,16 @@ def test_scaffold_handler_rejects_multiple_optimizers():
 def test_scaffold_handler_rejects_unequal_parameter_group_learning_rates():
     module = SimpleNet()
     optimizer = torch.optim.SGD([{"params": module.fc.weight, "lr": 0.1}, {"params": module.fc.bias, "lr": 0.2}])
+    with pytest.raises(RuntimeError, match="all optimizer parameter groups"):
+        _ScaffoldHandler().start_round(_trainer(optimizer), module, _scaffold_model(module))
+
+
+def test_scaffold_handler_rejects_scheduler_induced_unequal_parameter_group_learning_rates():
+    module = SimpleNet()
+    optimizer = torch.optim.SGD([{"params": module.fc.weight}, {"params": module.fc.bias}], lr=0.1)
     handler = _ScaffoldHandler()
     handler.start_round(_trainer(optimizer), module, _scaffold_model(module))
+    optimizer.param_groups[1]["lr"] = 0.2
 
     with pytest.raises(RuntimeError, match="all optimizer parameter groups"):
         handler.before_optimizer_step(optimizer)
@@ -447,14 +477,18 @@ def test_scaffold_handler_rejects_negative_or_non_finite_learning_rate(invalid_l
         handler.before_optimizer_step(optimizer)
 
 
-def test_scaffold_handler_rejects_missing_control_keys():
+def test_scaffold_handler_zero_fills_missing_parameter_controls_and_ignores_global_only_keys():
     module = SimpleNet()
     optimizer = torch.optim.SGD(module.parameters(), lr=0.1)
     controls = _zero_controls(module)
     controls.pop("fc.bias")
+    controls["server_only.buffer"] = torch.ones(1)
+    handler = _ScaffoldHandler()
 
-    with pytest.raises(RuntimeError, match="must exactly match"):
-        _ScaffoldHandler().start_round(_trainer(optimizer), module, _scaffold_model(module, controls))
+    handler.start_round(_trainer(optimizer), module, _scaffold_model(module, controls))
+
+    assert set(handler._c_global_para) == set(dict(module.named_parameters()))
+    assert torch.count_nonzero(handler._c_global_para["fc.bias"]) == 0
 
 
 def test_scaffold_handler_rejects_present_but_incomplete_control_metadata():
@@ -472,8 +506,56 @@ def test_scaffold_handler_rejects_control_shape_mismatch():
     controls = _zero_controls(module)
     controls["fc.weight"] = torch.zeros(3, 4)
 
-    with pytest.raises(RuntimeError, match="Invalid SCAFFOLD global controls"):
+    with pytest.raises(RuntimeError, match="expected shape"):
         _ScaffoldHandler().start_round(_trainer(optimizer), module, _scaffold_model(module, controls))
+
+
+def test_scaffold_handler_rejects_controls_without_matching_parameters():
+    module = SimpleNet()
+    optimizer = torch.optim.SGD(module.parameters(), lr=0.1)
+    controls = {"server_only.weight": torch.zeros_like(module.fc.weight)}
+
+    with pytest.raises(RuntimeError, match="do not match any named parameters"):
+        _ScaffoldHandler().start_round(_trainer(optimizer), module, _scaffold_model(module, controls))
+
+
+def test_scaffold_handler_rejects_non_tensor_control_value():
+    module = SimpleNet()
+    optimizer = torch.optim.SGD(module.parameters(), lr=0.1)
+    controls = _zero_controls(module)
+    controls["fc.weight"] = object()
+
+    with pytest.raises(RuntimeError, match="Failed to convert SCAFFOLD global control 'fc.weight'"):
+        _ScaffoldHandler().start_round(_trainer(optimizer), module, _scaffold_model(module, controls))
+
+
+def test_scaffold_handler_resets_newly_trainable_local_control_between_rounds():
+    module = SimpleNet()
+    module.fc.bias.requires_grad = False
+    optimizer = torch.optim.SGD(module.parameters(), lr=0.1)
+    handler = _ScaffoldHandler()
+    handler.start_round(_trainer(optimizer), module, _scaffold_model(module))
+    handler.before_optimizer_step(optimizer)
+    handler.after_train_batch(module)
+    handler.finish_round(module)
+
+    handler._helper.c_local._values["fc.bias"].fill_(3)
+    module.fc.bias.requires_grad = True
+    handler.start_round(_trainer(optimizer), module, _scaffold_model(module))
+
+    assert torch.count_nonzero(handler._c_local_para["fc.bias"]) == 0
+
+
+def test_scaffold_handler_rejects_trainability_change_during_round():
+    module = SimpleNet()
+    optimizer = torch.optim.SGD(module.parameters(), lr=0.1)
+    handler = _ScaffoldHandler()
+    handler.start_round(_trainer(optimizer), module, _scaffold_model(module))
+    module.fc.bias.requires_grad = False
+    handler.before_optimizer_step(optimizer)
+
+    with pytest.raises(RuntimeError, match="changing requires_grad during a training round"):
+        handler.after_train_batch(module)
 
 
 def test_scaffold_handler_rejects_round_without_optimizer_step():
@@ -500,7 +582,7 @@ def test_scaffold_handler_explains_interrupted_optimizer_hook_sequence():
 def test_train_end_uses_scaffold_completed_steps_and_preserves_user_metadata():
     callback = _make_callback()
     callback._is_training = True
-    callback._algorithm_handler.finish_round = MagicMock(
+    callback._algorithm_handler_manager.finish_round = MagicMock(
         return_value=_AlgorithmResult(metadata={AlgorithmConstants.SCAFFOLD_CTRL_DIFF: {"fc": 1}}, num_steps=3)
     )
     callback._send_model = MagicMock()
@@ -521,7 +603,7 @@ def test_train_end_uses_scaffold_completed_steps_and_preserves_user_metadata():
 def test_train_end_preserves_explicit_user_step_count_for_scaffold():
     callback = _make_callback()
     callback._is_training = True
-    callback._algorithm_handler.finish_round = MagicMock(
+    callback._algorithm_handler_manager.finish_round = MagicMock(
         return_value=_AlgorithmResult(metadata={AlgorithmConstants.SCAFFOLD_CTRL_DIFF: {"fc": 1}}, num_steps=3)
     )
     callback._send_model = MagicMock()
@@ -539,7 +621,7 @@ def test_train_end_preserves_explicit_user_step_count_for_scaffold():
 def test_train_end_rejects_user_metadata_that_conflicts_with_automatic_algorithm_metadata():
     callback = _make_callback()
     callback._is_training = True
-    callback._algorithm_handler.finish_round = MagicMock(
+    callback._algorithm_handler_manager.finish_round = MagicMock(
         return_value=_AlgorithmResult(metadata={AlgorithmConstants.SCAFFOLD_CTRL_DIFF: {"fc": 1}}, num_steps=3)
     )
     module = SimpleNet()
@@ -549,40 +631,44 @@ def test_train_end_rejects_user_metadata_that_conflicts_with_automatic_algorithm
         callback.on_train_end(SimpleNamespace(estimated_stepping_batches=3), module)
 
 
-def test_train_end_fedavg_keeps_estimated_step_count_behavior():
+def test_train_end_fedavg_reports_completed_steps_for_each_round():
     callback = _make_callback()
     callback._is_training = True
     callback._send_model = MagicMock()
     callback.reset_state = MagicMock()
-    trainer = SimpleNamespace(estimated_stepping_batches=6)
+    trainer = SimpleNamespace(global_step=5)
+    callback._round_start_global_step = 2
 
     callback.on_train_end(trainer, SimpleNet())
+    callback._round_start_global_step = 5
+    trainer.global_step = 9
+    callback.on_train_end(trainer, SimpleNet())
 
-    output_model = callback._send_model.call_args.args[0]
-    assert output_model.meta[MetaKey.NUM_STEPS_CURRENT_ROUND] == 6
+    assert callback._send_model.call_args_list[0].args[0].meta[MetaKey.NUM_STEPS_CURRENT_ROUND] == 3
+    assert callback._send_model.call_args_list[1].args[0].meta[MetaKey.NUM_STEPS_CURRENT_ROUND] == 4
 
 
 def test_validation_before_fit_reuses_pending_training_model():
     callback = _make_callback()
     input_model = _scaffold_model(SimpleNet())
     callback._receive_and_update_model = MagicMock(return_value=input_model)
-    callback._algorithm_handler.start_round = MagicMock()
+    callback._update_model = MagicMock()
+    callback._algorithm_handler_manager.start_round = MagicMock()
     callback._is_training = True
     module = SimpleNet()
-    trainer = SimpleNamespace()
+    trainer = SimpleNamespace(global_step=0)
 
     callback.on_validation_start(trainer, module)
-    callback._algorithm_handler.start_round.assert_not_called()
+    callback._algorithm_handler_manager.start_round.assert_not_called()
     assert callback._pending_train_model is input_model
-    assert callback._pending_train_module is module
 
     callback.on_train_start(trainer, module)
     callback._receive_and_update_model.assert_called_once_with(trainer, module)
-    callback._algorithm_handler.start_round.assert_called_once_with(
+    callback._update_model.assert_called_once_with(module, input_model)
+    callback._algorithm_handler_manager.start_round.assert_called_once_with(
         trainer=trainer, pl_module=module, input_model=input_model
     )
     assert callback._pending_train_model is None
-    assert callback._pending_train_module is None
     assert callback._training_round_started is True
 
 
@@ -591,20 +677,39 @@ def test_validation_before_fit_reapplies_pending_model_to_a_different_module():
     input_model = _scaffold_model(SimpleNet())
     callback._receive_and_update_model = MagicMock(return_value=input_model)
     callback._update_model = MagicMock()
-    callback._algorithm_handler.start_round = MagicMock()
+    callback._algorithm_handler_manager.start_round = MagicMock()
     callback._is_training = True
     validation_module = SimpleNet()
     training_module = SimpleNet()
-    trainer = SimpleNamespace()
+    trainer = SimpleNamespace(global_step=0)
 
     callback.on_validation_start(trainer, validation_module)
     callback.on_train_start(trainer, training_module)
 
     callback._receive_and_update_model.assert_called_once_with(trainer, validation_module)
     callback._update_model.assert_called_once_with(training_module, input_model)
-    callback._algorithm_handler.start_round.assert_called_once_with(
+    callback._algorithm_handler_manager.start_round.assert_called_once_with(
         trainer=trainer, pl_module=training_module, input_model=input_model
     )
+
+
+def test_validation_before_fit_reapplies_pending_model_to_same_module_after_mutation():
+    callback = _make_callback()
+    module = SimpleNet()
+    global_params = {key: torch.full_like(value, 2) for key, value in module.state_dict().items()}
+    input_model = FLModel(params=global_params)
+    callback._receive_and_update_model = MagicMock(return_value=input_model)
+    callback._is_training = True
+    trainer = SimpleNamespace(global_step=0)
+
+    callback.on_validation_start(trainer, module)
+    with torch.no_grad():
+        for parameter in module.parameters():
+            parameter.zero_()
+    callback.on_train_start(trainer, module)
+
+    for key, value in module.state_dict().items():
+        assert torch.equal(value, global_params[key])
 
 
 def test_mid_fit_validation_collects_metrics_without_receiving_or_reloading_model():
@@ -654,7 +759,7 @@ def test_real_lightning_fit_with_gradient_accumulation_returns_scaffold_controls
     output_model = send.call_args.args[0]
     assert AlgorithmConstants.SCAFFOLD_CTRL_DIFF in output_model.meta
     assert output_model.meta[MetaKey.NUM_STEPS_CURRENT_ROUND] == 2
-    assert callback._algorithm_handler._handler._helper.cnt == 2
+    assert callback._algorithm_handler_manager._handler._helper.cnt == 2
 
 
 def test_real_lightning_train_with_evaluation_reuses_scaffold_model_and_returns_metrics():
@@ -695,6 +800,39 @@ def test_real_lightning_train_with_evaluation_reuses_scaffold_model_and_returns_
     assert output_model.metrics["val_loss"] >= 0.0
     assert AlgorithmConstants.SCAFFOLD_CTRL_DIFF in output_model.meta
     assert callback._pending_train_model is None
+
+
+def test_real_lightning_fedavg_reports_per_round_steps_across_two_fits():
+    module = TinyLightningNet()
+    input_models = [
+        FLModel(params=_clone_state_dict(module), current_round=round_idx, meta={}) for round_idx in range(2)
+    ]
+    loader = DataLoader(TensorDataset(torch.randn(4, 2), torch.tensor([0, 1, 0, 1])), batch_size=1, shuffle=False)
+
+    with (
+        patch("nvflare.app_opt.lightning.api.init"),
+        patch("nvflare.app_opt.lightning.api.get_config", return_value={}),
+        patch("nvflare.app_opt.lightning.api.receive", side_effect=input_models),
+        patch("nvflare.app_opt.lightning.api.is_train", return_value=True),
+        patch("nvflare.app_opt.lightning.api.is_evaluate", return_value=False),
+        patch("nvflare.app_opt.lightning.api.is_submit_model", return_value=False),
+        patch("nvflare.app_opt.lightning.api.send") as send,
+        patch("nvflare.app_opt.lightning.api.clear"),
+    ):
+        callback = FLCallback(rank=0)
+        trainer = pl.Trainer(
+            max_epochs=1,
+            callbacks=[callback],
+            logger=False,
+            enable_checkpointing=False,
+            enable_progress_bar=False,
+            enable_model_summary=False,
+            num_sanity_val_steps=0,
+        )
+        trainer.fit(module, train_dataloaders=loader)
+        trainer.fit(module, train_dataloaders=loader)
+
+    assert [call.args[0].meta[MetaKey.NUM_STEPS_CURRENT_ROUND] for call in send.call_args_list] == [4, 4]
 
 
 def test_real_lightning_fit_only_reuses_one_received_model_per_round_with_mid_fit_validation():

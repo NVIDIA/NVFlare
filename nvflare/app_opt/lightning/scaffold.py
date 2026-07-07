@@ -16,12 +16,10 @@ import math
 from collections.abc import Mapping
 
 import pytorch_lightning as pl
-import torch
 
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.app_constant import AlgorithmConstants
 from nvflare.app_opt.pt.scaffold import PTScaffoldHelper
-from nvflare.app_opt.pt.utils import inspect_model_params
 
 
 class _StateDictSnapshot:
@@ -46,7 +44,6 @@ class _ScaffoldHandler:
         self._c_local_para = None
         self._pending_lr = None
         self._lr_sum = 0.0
-        self._num_steps = 0
 
     @property
     def active(self) -> bool:
@@ -54,7 +51,7 @@ class _ScaffoldHandler:
 
     @property
     def num_steps(self) -> int:
-        return self._num_steps
+        return self._helper.cnt if self._helper is not None else 0
 
     def start_round(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", input_model: FLModel):
         meta = input_model.meta or {}
@@ -76,6 +73,14 @@ class _ScaffoldHandler:
                 "integrate PTScaffoldHelper directly."
             )
 
+        precision = str(getattr(trainer, "precision", ""))
+        if precision not in {"32-true", "bf16-mixed"}:
+            raise RuntimeError(
+                "Automatic Lightning SCAFFOLD support requires trainer.precision to be '32-true' or "
+                f"'bf16-mixed', but received {precision!r}. Other precision modes can skip optimizer steps or "
+                "use unsupported parameter representations."
+            )
+
         scaler = getattr(trainer, "scaler", None)
         if scaler is None:
             scaler = getattr(getattr(trainer, "precision_plugin", None), "scaler", None)
@@ -93,16 +98,13 @@ class _ScaffoldHandler:
                 "Automatic Lightning SCAFFOLD support requires exactly one optimizer, "
                 f"but the Trainer has {len(optimizers)}."
             )
+        self._get_common_learning_rate(optimizers[0])
 
         if not isinstance(global_controls, Mapping) or not global_controls:
             raise RuntimeError(f"SCAFFOLD requires non-empty mapping metadata at FLModel.meta['{control_key}'].")
 
-        local_state = pl_module.state_dict()
-        self._validate_controls(local_state=local_state, global_controls=global_controls)
-        controls_on_device = self._controls_to_device(local_state=local_state, global_controls=global_controls)
-
         try:
-            device = next(pl_module.parameters()).device
+            next(pl_module.parameters())
         except StopIteration as e:
             raise RuntimeError("Automatic Lightning SCAFFOLD support requires a model with parameters.") from e
 
@@ -110,27 +112,18 @@ class _ScaffoldHandler:
             self._helper = PTScaffoldHelper()
             self._helper.init(pl_module)
         else:
-            self._helper.c_global.to(device)
-            self._helper.c_local.to(device)
+            self._helper._prepare_model(pl_module)
 
-        self._model_global = _StateDictSnapshot(local_state)
-        self._helper.load_global_controls(controls_on_device)
+        self._model_global = _StateDictSnapshot(pl_module.state_dict())
+        self._helper.load_global_controls(global_controls)
         self._c_global_para, self._c_local_para = self._helper.get_params()
         self._pending_lr = None
         self._lr_sum = 0.0
-        self._num_steps = 0
         self._active = True
         self._ever_activated = True
 
-    def before_optimizer_step(self, optimizer):
-        if not self._active:
-            return
-        if self._pending_lr is not None:
-            raise RuntimeError(
-                "Automatic Lightning SCAFFOLD support observed multiple optimizer steps in one training batch. "
-                "Manual or multi-step optimization is not supported."
-            )
-
+    @staticmethod
+    def _get_common_learning_rate(optimizer) -> float:
         lr_values = [float(group["lr"]) for group in optimizer.param_groups]
         if not lr_values or any(not math.isfinite(lr) or lr < 0.0 for lr in lr_values):
             raise RuntimeError(
@@ -144,7 +137,18 @@ class _ScaffoldHandler:
                 "Automatic Lightning SCAFFOLD support requires all optimizer parameter groups "
                 f"to use the same learning rate, but received {lr_values}."
             )
-        self._pending_lr = reference_lr
+        return reference_lr
+
+    def before_optimizer_step(self, optimizer):
+        if not self._active:
+            return
+        if self._pending_lr is not None:
+            raise RuntimeError(
+                "Automatic Lightning SCAFFOLD support observed multiple optimizer steps in one training batch. "
+                "Manual or multi-step optimization is not supported."
+            )
+
+        self._pending_lr = self._get_common_learning_rate(optimizer)
 
     def after_train_batch(self, pl_module: "pl.LightningModule"):
         if not self._active or self._pending_lr is None:
@@ -159,7 +163,6 @@ class _ScaffoldHandler:
         )
         self._pending_lr = None
         self._lr_sum += curr_lr
-        self._num_steps += 1
 
     def finish_round(self, pl_module: "pl.LightningModule") -> dict:
         if not self._active:
@@ -170,17 +173,18 @@ class _ScaffoldHandler:
                 "on_train_batch_end to apply the final model correction. Training may have been interrupted "
                 "between optimizer hooks, or a Lightning plugin may have changed the documented hook sequence."
             )
-        if self._num_steps == 0:
+        num_steps = self.num_steps
+        if num_steps == 0:
             raise RuntimeError(
                 "Automatic Lightning SCAFFOLD support requires at least one completed optimizer step per round."
             )
         if not math.isfinite(self._lr_sum) or self._lr_sum <= 0.0:
             raise RuntimeError(
                 "Automatic Lightning SCAFFOLD support requires positive total learning-rate exposure per round, "
-                f"but the {self._num_steps} completed optimizer steps summed to {self._lr_sum}."
+                f"but the {num_steps} completed optimizer steps summed to {self._lr_sum}."
             )
 
-        average_lr = self._lr_sum / self._num_steps
+        average_lr = self._lr_sum / num_steps
         self._helper.terms_update(
             model=pl_module,
             curr_lr=average_lr,
@@ -195,31 +199,4 @@ class _ScaffoldHandler:
         self._c_global_para = None
         self._c_local_para = None
         self._pending_lr = None
-        return result
-
-    @staticmethod
-    def _validate_controls(local_state: Mapping, global_controls: Mapping):
-        local_keys = set(local_state)
-        control_keys = set(global_controls)
-        missing_keys = sorted(local_keys - control_keys)
-        unexpected_keys = sorted(control_keys - local_keys)
-        if missing_keys or unexpected_keys:
-            raise RuntimeError(
-                "SCAFFOLD global controls must exactly match the Lightning module state dict. "
-                f"Missing keys: {missing_keys[:5]}; unexpected keys: {unexpected_keys[:5]}."
-            )
-
-        report = inspect_model_params(local_state, global_controls)
-        if report.shape_mismatches:
-            raise RuntimeError(f"Invalid SCAFFOLD global controls. {report.format_shape_mismatch_error()}")
-
-    @staticmethod
-    def _controls_to_device(local_state: Mapping, global_controls: Mapping) -> dict:
-        result = {}
-        for key, value in global_controls.items():
-            expected = local_state[key]
-            try:
-                result[key] = torch.as_tensor(value, dtype=expected.dtype, device=expected.device)
-            except (TypeError, ValueError, RuntimeError) as e:
-                raise RuntimeError(f"Failed to convert SCAFFOLD global control '{key}' to a tensor: {e}") from e
         return result

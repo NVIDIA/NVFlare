@@ -294,9 +294,15 @@ python job.py --algorithm scaffold --num_rounds 2 --batch_size 16
 
 `flare.patch(trainer)` detects the SCAFFOLD controls sent by `ScaffoldRecipe`, applies the required
 `PTScaffoldHelper` updates around optimizer steps, and returns the control difference to the server. This
-automatic path supports Lightning automatic optimization with one optimizer. Manual optimization must use an
-explicit `flare.receive()`/training/`flare.send()` loop without `flare.patch(trainer)` and call
-`PTScaffoldHelper` directly in the client training loop.
+automatic path supports Lightning automatic optimization with one optimizer, `precision="32-true"` or
+`precision="bf16-mixed"`, and equal finite non-negative learning rates across parameter groups at every step.
+Manual optimization must use an explicit `flare.receive()`/training/`flare.send()` loop without
+`flare.patch(trainer)` and call `PTScaffoldHelper` directly in the client training loop.
+
+Starting with NVFlare 2.9.0, PyTorch SCAFFOLD control differences contain trainable parameters only. Buffers
+such as BatchNorm running statistics remain ordinary model state. Custom SCAFFOLD aggregators must therefore
+accept sparse control dictionaries. Changing which parameters are trainable is supported between rounds;
+newly trainable local controls are reset to zero, while changing `requires_grad` during a round fails clearly.
 
 output
 

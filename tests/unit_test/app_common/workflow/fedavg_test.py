@@ -1206,6 +1206,50 @@ class TestScaffoldControlValues:
         assert buffer_control.dtype == np.int64
         assert buffer_control == 0
 
+    def test_round_initializes_control_for_newly_aggregated_parameter(self):
+        from nvflare.app_common.app_constant import AlgorithmConstants
+        from nvflare.app_common.workflows.scaffold import Scaffold
+
+        controller = Scaffold(num_clients=1, num_rounds=1)
+        controller.fl_ctx = FLContext()
+        controller.model = FLModel(params={"weight": np.zeros(2, dtype=np.float32)})
+        controller._global_ctrl_weights = {"weight": np.zeros(2, dtype=np.float32)}
+        controller.sample_clients = lambda _: ["site-1"]
+        controller.send_model_and_wait = lambda targets, data: []
+        controller.aggregate = lambda results, aggregate_fn=None: FLModel(
+            params={
+                "weight": np.ones(2, dtype=np.float32),
+                "head": np.ones(1, dtype=np.float32),
+            },
+            meta={AlgorithmConstants.SCAFFOLD_CTRL_DIFF: {"head": np.array([0.5], dtype=np.float32)}},
+        )
+        controller.update_model = lambda model, aggr_result: aggr_result
+        controller.save_model = lambda model: None
+
+        controller.run()
+
+        np.testing.assert_array_equal(controller._global_ctrl_weights["head"], np.array([0.5], dtype=np.float32))
+
+    def test_round_rejects_control_delta_for_unknown_model_parameter(self):
+        from nvflare.app_common.app_constant import AlgorithmConstants
+        from nvflare.app_common.workflows.scaffold import Scaffold
+
+        controller = Scaffold(num_clients=1, num_rounds=1)
+        controller.fl_ctx = FLContext()
+        controller.model = FLModel(params={"weight": np.zeros(2, dtype=np.float32)})
+        controller._global_ctrl_weights = {"weight": np.zeros(2, dtype=np.float32)}
+        controller.sample_clients = lambda _: ["site-1"]
+        controller.send_model_and_wait = lambda targets, data: []
+        controller.aggregate = lambda results, aggregate_fn=None: FLModel(
+            params={"weight": np.ones(2, dtype=np.float32)},
+            meta={AlgorithmConstants.SCAFFOLD_CTRL_DIFF: {"unknown": np.ones(1, dtype=np.float32)}},
+        )
+        controller.update_model = lambda model, aggr_result: aggr_result
+        controller.save_model = lambda model: None
+
+        with pytest.raises(RuntimeError, match="unknown model parameter 'unknown'"):
+            controller.run()
+
     def test_round_keeps_cuda_tensor_controls_when_client_delta_is_numpy(self):
         torch = pytest.importorskip("torch")
         if not torch.cuda.is_available():

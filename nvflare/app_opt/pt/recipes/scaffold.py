@@ -64,6 +64,9 @@ class ScaffoldRecipe(Recipe):
     when SCAFFOLD metadata is received. Automatic Lightning support requires automatic
     optimization with one optimizer. Manual Lightning optimization must use an explicit
     receive/train/send loop without ``patch()`` and integrate PTScaffoldHelper directly.
+    Starting with NVFlare 2.9.0, PyTorch control differences contain trainable parameters
+    only; model buffers remain regular model state and custom aggregators must accept sparse
+    control dictionaries. Trainability can change between rounds but not during a round.
 
     This recipe sets up a complete federated learning workflow with Scaffold controller.
 

@@ -55,10 +55,10 @@ def patch(
     SCAFFOLD:
         When the received model contains SCAFFOLD global controls, ``patch`` automatically
         applies ``PTScaffoldHelper`` around Lightning's optimizer steps and returns the
-        required control difference. This supports automatic optimization with one optimizer;
-        manual optimization and mixed precision backed by a gradient scaler are not supported
-        by the patched path. Those clients must use an explicit receive/train/send loop and
-        integrate ``PTScaffoldHelper`` directly.
+        required control difference. This supports automatic optimization with one optimizer
+        and ``precision="32-true"`` or ``precision="bf16-mixed"``. Manual optimization and
+        other precision modes are not supported by the patched path. Those clients must use
+        an explicit receive/train/send loop and integrate ``PTScaffoldHelper`` directly.
 
     Example:
 
@@ -137,10 +137,10 @@ class FLCallback(Callback):
         self._is_submit_model = False
         self._load_state_dict_strict = load_state_dict_strict
         self._update_fit_loop = update_fit_loop
-        self._algorithm_handler = _AlgorithmHandlerManager()
+        self._algorithm_handler_manager = _AlgorithmHandlerManager()
         self._pending_train_model = None
-        self._pending_train_module = None
         self._training_round_started = False
+        self._round_start_global_step = None
 
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -175,31 +175,27 @@ class FLCallback(Callback):
         # resets attributes
         self.metrics = None
         self._pending_train_model = None
-        self._pending_train_module = None
         self._training_round_started = False
+        self._round_start_global_step = None
         clear()
 
     def on_train_start(self, trainer, pl_module):
-        # Validation may already have received and loaded the training model.
         input_model = self._pending_train_model
-        pending_module = self._pending_train_module
         self._pending_train_model = None
-        self._pending_train_module = None
         if input_model is None:
             input_model = self._receive_and_update_model(trainer, pl_module)
-        elif pending_module is not pl_module:
-            # Reuse the retained FLModel without relying on another cached receive(), but
-            # ensure fit() starts from the global weights when validate() used another module.
+        else:
             self._update_model(pl_module, input_model)
         if input_model and self._is_training:
-            self._algorithm_handler.start_round(trainer=trainer, pl_module=pl_module, input_model=input_model)
+            self._round_start_global_step = trainer.global_step
+            self._algorithm_handler_manager.start_round(trainer=trainer, pl_module=pl_module, input_model=input_model)
             self._training_round_started = True
 
     def on_before_optimizer_step(self, trainer, pl_module, optimizer, *args):
-        self._algorithm_handler.before_optimizer_step(optimizer)
+        self._algorithm_handler_manager.before_optimizer_step(optimizer)
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
-        self._algorithm_handler.after_train_batch(pl_module)
+        self._algorithm_handler_manager.after_train_batch(pl_module)
 
     def on_train_end(self, trainer, pl_module):
         if hasattr(pl_module, FL_META_KEY):
@@ -210,7 +206,7 @@ class FLCallback(Callback):
         else:
             fl_meta = {}
         if self._is_training:
-            algorithm_result = self._algorithm_handler.finish_round(pl_module)
+            algorithm_result = self._algorithm_handler_manager.finish_round(pl_module)
             metadata_conflicts = sorted(set(fl_meta).intersection(algorithm_result.metadata))
             if metadata_conflicts:
                 raise RuntimeError(
@@ -224,7 +220,7 @@ class FLCallback(Callback):
                 fl_meta[MetaKey.NUM_STEPS_CURRENT_ROUND] = (
                     algorithm_result.num_steps
                     if algorithm_result.num_steps is not None
-                    else trainer.estimated_stepping_batches
+                    else self._get_round_num_steps(trainer)
                 )
             model = FLModel(params=pl_module.cpu().state_dict(), meta=fl_meta)
             if self.train_with_evaluation:
@@ -247,7 +243,19 @@ class FLCallback(Callback):
             input_model = self._receive_and_update_model(trainer, pl_module)
             if input_model and self._is_training:
                 self._pending_train_model = input_model
-                self._pending_train_module = pl_module
+
+    def _get_round_num_steps(self, trainer) -> int:
+        if self._round_start_global_step is None:
+            raise RuntimeError(
+                "Cannot determine round steps because on_train_start did not record trainer.global_step."
+            )
+        completed_steps = trainer.global_step - self._round_start_global_step
+        if completed_steps < 0:
+            raise RuntimeError(
+                "Cannot determine round steps because trainer.global_step moved backwards from "
+                f"{self._round_start_global_step} to {trainer.global_step}."
+            )
+        return completed_steps
 
     def on_validation_end(self, trainer, pl_module):
         if pl_module and self.metrics is None:
