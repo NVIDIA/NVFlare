@@ -68,20 +68,24 @@ def _is_valid_cifar10_root(root: str) -> bool:
 def _download_cifar10(root: str):
     from torchvision.datasets import CIFAR10
 
-    urls = [os.environ.get("NVFLARE_CIFAR10_URL", DEFAULT_DOWNLOAD_URL), CIFAR10.url]
+    original_url = CIFAR10.url
+    urls = [os.environ.get("NVFLARE_CIFAR10_URL") or DEFAULT_DOWNLOAD_URL, original_url]
     print(f"Preparing CIFAR-10 cache at {root}")
     last_error = None
-    for url in dict.fromkeys(urls):
-        CIFAR10.url = url
-        try:
-            CIFAR10(root=root, train=True, download=True)
-            CIFAR10(root=root, train=False, download=True)
-            break
-        except Exception as download_error:
-            print(f"CIFAR-10 download from {url} failed: {download_error}")
-            last_error = download_error
-    else:
-        raise RuntimeError("CIFAR-10 download failed from all sources") from last_error
+    try:
+        for url in dict.fromkeys(urls):
+            CIFAR10.url = url
+            try:
+                CIFAR10(root=root, train=True, download=True)
+                CIFAR10(root=root, train=False, download=True)
+                break
+            except Exception as download_error:
+                print(f"CIFAR-10 download from {url} failed: {download_error}")
+                last_error = download_error
+        else:
+            raise RuntimeError("CIFAR-10 download failed from all sources") from last_error
+    finally:
+        CIFAR10.url = original_url
 
     if not _is_valid_cifar10_root(root):
         raise RuntimeError(f"CIFAR-10 cache at {root} failed integrity validation")
