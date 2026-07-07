@@ -96,11 +96,15 @@ class WFCommClient(FLComponent, WFCommSpec):
             raise ValueError(f"invalid target(s): {invalid_names}")
 
         # set up ClientTask for each client
+        # scope per-call processing to the client tasks created in this call: task.client_tasks
+        # accumulates across calls when send/relay reuse the same task for multiple targets
+        current_client_tasks = []
         for target in targets:
             client: Client = self._get_client(target, engine)
             client_task = ClientTask(task=task, client=client)
             task.client_tasks.append(client_task)
             task.last_client_task_map[client_task.id] = client_task
+            current_client_tasks.append(client_task)
 
             task_cb_error = self._call_task_cb(task.before_task_sent_cb, client, task, fl_ctx)
             if task_cb_error:
@@ -131,7 +135,7 @@ class WFCommClient(FLComponent, WFCommSpec):
         # the request is no longer needed
         delete_msg_root(msg_root_id)
 
-        for client_task in task.client_tasks:
+        for client_task in current_client_tasks:
             task_cb_error = self._call_task_cb(task.after_task_sent_cb, client_task.client, client_task.task, fl_ctx)
             if task_cb_error:
                 return self._make_error_reply(ReturnCode.ERROR, targets)
@@ -146,7 +150,7 @@ class WFCommClient(FLComponent, WFCommSpec):
             fl_ctx.set_peer_context(peer_ctx)
 
             # get the client task for the target
-            for client_task in task.client_tasks:
+            for client_task in current_client_tasks:
                 if client_task.client.name == target:
                     rc = reply.get_return_code()
                     if rc and rc == ReturnCode.OK:
@@ -194,15 +198,14 @@ class WFCommClient(FLComponent, WFCommSpec):
                 return self._make_error_reply(ReturnCode.ERROR, targets)
 
         replies = {}
-        for client_task in task.client_tasks:
+        for client_task in current_client_tasks:
             replies[client_task.client.name] = client_task.result
         return replies
 
     def _make_error_reply(self, error_type, targets):
-        error_reply = make_reply(error_type)
         replies = {}
         for target in targets:
-            replies[target] = error_reply
+            replies[target] = make_reply(error_type)
         return replies
 
     def _get_client(self, client, engine) -> Client:
@@ -271,10 +274,12 @@ class WFCommClient(FLComponent, WFCommSpec):
 
         self._validate_target(engine, targets)
 
+        replies = {}
         for target in targets:
-            reply = self.broadcast_and_wait(task, fl_ctx, [target], abort_signal=abort_signal)
-            if reply.get_return_code() == ReturnCode.OK:
-                return reply
+            replies = self.broadcast_and_wait(task, fl_ctx, [target], abort_signal=abort_signal)
+            if any(reply and reply.get_return_code() == ReturnCode.OK for reply in replies.values()):
+                return replies
+        return replies
 
     def relay(
         self,
