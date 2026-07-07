@@ -166,10 +166,17 @@ A stop file takes immediate precedence: pending candidates must be safely
 abandoned before final reporting. Without a stop request, pending prepared or
 externally ready candidates take precedence over cap exhaustion and reporting.
 
-Every score records its metric name, extraction source, and artifact. Structured
-metric artifacts take precedence over exact, provenance-labelled text fallback.
-The ledger is replaced atomically so a failed write cannot leave a partial
-campaign record.
+Every score must be finite and records its metric name, extraction source, and
+artifact. Structured metric artifacts take precedence over text fallback, which
+accepts only explicit metric-field or final-evaluation lines and records the
+selected line number. The ledger is replaced atomically so a failed write cannot
+leave a partial campaign record.
+
+Simulation runs use campaign-scoped result names and lock every deterministic
+simulator result root before cleanup and execution. A simulation that cannot
+resolve a monitored result root fails before launch. POC and production results
+are accepted only after the materialized candidate is re-imported and its fixed
+comparison budget is verified again.
 
 ## Skill Implementation Boundary
 

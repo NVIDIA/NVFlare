@@ -30,6 +30,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import math
 import os
 import queue
 import re
@@ -38,13 +39,15 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
 
 try:
     import yaml
@@ -104,9 +107,6 @@ SIMULATOR_PROGRESS_PATTERNS = (
 SIMULATOR_PROGRESS_LOG_LIMIT = 131072
 DEFAULT_SIMULATOR_NO_PROGRESS_TIMEOUT = 240
 DEFAULT_JOB_HELP_TIMEOUT = 30
-DEFAULT_HARD_CRASH_THRESHOLD = 6
-DEFAULT_PLATEAU_MIN_DELTA = 0.0005
-DEFAULT_PLATEAU_THRESHOLD = 8
 
 FIXED_BUDGET_TO_CLI = {
     "num_clients": "n_clients",
@@ -187,6 +187,7 @@ def env_float(name: str, default: float) -> float:
 
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
+    guard = load_campaign_guard()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "action",
@@ -213,7 +214,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--plateau-threshold",
         type=int,
-        default=env_int("AUTOFL_PLATEAU_THRESHOLD", DEFAULT_PLATEAU_THRESHOLD),
+        default=env_int("AUTOFL_PLATEAU_THRESHOLD", guard.DEFAULT_PLATEAU_THRESHOLD),
         help=(
             "scored comparable candidate attempts after the last material improvement or literature event "
             "before campaign state requests run_literature_loop"
@@ -222,13 +223,13 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--plateau-min-delta",
         type=float,
-        default=env_float("AUTOFL_PLATEAU_MIN_DELTA", DEFAULT_PLATEAU_MIN_DELTA),
+        default=env_float("AUTOFL_PLATEAU_MIN_DELTA", guard.DEFAULT_MIN_DELTA),
         help="minimum metric delta required to reset the plateau clock",
     )
     parser.add_argument(
         "--hard-crash-threshold",
         type=int,
-        default=env_int("AUTOFL_HARD_CRASH_THRESHOLD", DEFAULT_HARD_CRASH_THRESHOLD),
+        default=env_int("AUTOFL_HARD_CRASH_THRESHOLD", guard.DEFAULT_HARD_CRASH_THRESHOLD),
         help="stop after this many consecutive real candidate crashes; set 0 to disable",
     )
     parser.add_argument(
@@ -1030,8 +1031,18 @@ def normalize_metric_order(metrics: Sequence[str] | str) -> List[str]:
     return [str(metric) for metric in metrics if metric]
 
 
+def parse_finite_metric_value(value: Any) -> Optional[float]:
+    if isinstance(value, bool):
+        return None
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        return None
+    return score if math.isfinite(score) else None
+
+
 def is_numeric_metric_value(value: Any) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
+    return isinstance(value, (int, float)) and parse_finite_metric_value(value) is not None
 
 
 def find_metric_value(payload: Any, metric_order: Sequence[str] | str) -> Optional[float]:
@@ -1044,7 +1055,7 @@ def find_metric_value(payload: Any, metric_order: Sequence[str] | str) -> Option
                     return value
         for metric_key in metric_keys:
             if metric_key in payload and is_numeric_metric_value(payload[metric_key]):
-                return float(payload[metric_key])
+                return parse_finite_metric_value(payload[metric_key])
         for value in payload.values():
             score = find_metric_value(value, metric_keys)
             if score is not None:
@@ -1068,8 +1079,28 @@ def metric_from_list(items: Any, metric: str) -> Optional[float]:
         if not isinstance(item, dict):
             continue
         if item.get("name") == metric and is_numeric_metric_value(item.get("value")):
-            return float(item["value"])
+            return parse_finite_metric_value(item["value"])
     return None
+
+
+def text_metric_matches(text: str, metric: str) -> List[Tuple[int, float]]:
+    number = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
+    context = r"(?:(?:final|test|validation|cross[-_ ]site)\s+)*"
+    line_prefix = r"^\s*(?:\[[^\]]+\]\s*)*(?:\{|\[)?\s*"
+    pattern = re.compile(
+        line_prefix + rf"{context}[\"']?{re.escape(metric)}[\"']?" rf"\s*[:=]\s*({number})(?:\s|[,}}\]]|$)",
+        flags=re.IGNORECASE,
+    )
+    matches = []
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        message = line.rsplit(" - ", 1)[-1]
+        match = pattern.search(message)
+        if not match:
+            continue
+        score = parse_finite_metric_value(match.group(1))
+        if score is not None:
+            matches.append((line_number, score))
+    return matches
 
 
 def extract_metric_evidence(artifact_root: Path, metrics: Sequence[str] | str) -> Optional[MetricEvidence]:
@@ -1099,19 +1130,18 @@ def extract_metric_evidence(artifact_root: Path, metrics: Sequence[str] | str) -
     for name in ("run.log", "log.txt", "log_fl.txt", "error_log.txt"):
         text_artifacts.extend(sorted(artifact_root.glob(f"**/{name}")))
     for metric in metric_order:
-        number = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
-        pattern = rf"(?<![A-Za-z0-9_]){re.escape(metric)}(?![A-Za-z0-9_])[^0-9+\-.]+({number})"
         for path in text_artifacts:
             try:
                 text = path.read_text(encoding="utf-8", errors="replace")
             except Exception:
                 continue
-            matches = re.findall(pattern, text, flags=re.IGNORECASE)
+            matches = text_metric_matches(text, metric)
             if matches:
+                line_number, score = matches[-1]
                 return MetricEvidence(
-                    score=float(matches[-1]),
+                    score=score,
                     metric_name=metric,
-                    source=f"text:{path.name}",
+                    source=f"text:{path.name}:line={line_number}",
                     artifact=str(path.resolve()),
                 )
     return None
@@ -1605,7 +1635,12 @@ def simulator_workspace_root(config: Dict[str, Any], cwd: Path) -> Path:
             if workspace_arg.get("confidence") == "high" and isinstance(value, str) and value:
                 root = Path(value).expanduser()
                 return (root if root.is_absolute() else cwd / root).resolve()
-    return Path("/tmp/nvflare/simulation").resolve()
+    return (Path(tempfile.gettempdir()) / "nvflare" / "simulation").resolve()
+
+
+def simulator_run_name(candidate_name: str, cwd: Path) -> str:
+    campaign_namespace = sha256_bytes(str(cwd.resolve()).encode("utf-8"))[:12]
+    return f"autofl_{campaign_namespace}_{candidate_name}"
 
 
 def expected_simulator_roots(config: Dict[str, Any], injected_name: Optional[str], cwd: Path) -> List[Path]:
@@ -1621,6 +1656,29 @@ def expected_simulator_roots(config: Dict[str, Any], injected_name: Optional[str
         if root not in roots:
             roots.append(root)
     return roots
+
+
+@contextmanager
+def locked_simulator_roots(roots: Sequence[Path]) -> Iterator[None]:
+    lock_paths = []
+    try:
+        for root in sorted(set(roots), key=str):
+            root.parent.mkdir(parents=True, exist_ok=True)
+            lock_path = root.parent / f".{root.name}.autofl.lock"
+            try:
+                descriptor = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            except FileExistsError as e:
+                raise RuntimeError(
+                    f"simulator result root is already in use: {root}; "
+                    f"wait for the other campaign or remove the stale lock {lock_path}"
+                ) from e
+            lock_paths.append(lock_path)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as lock_file:
+                lock_file.write(json.dumps({"pid": os.getpid(), "workspace": str(Path.cwd().resolve())}) + "\n")
+        yield
+    finally:
+        for lock_path in reversed(lock_paths):
+            lock_path.unlink(missing_ok=True)
 
 
 def run_job(
@@ -1640,31 +1698,36 @@ def run_job(
 ) -> RunRecord:
     baseline_run = run_def.status == "baseline"
     log_path = output_root / run_def.name / "run.log"
-    run_name = f"autofl_{run_def.name}"
+    run_name = simulator_run_name(run_def.name, cwd)
     name_args = ["--name", run_name] if supports_flag(help_text, "--name") else []
     simulator_roots = expected_simulator_roots(config, run_name if name_args else None, cwd)
+    if not simulator_roots:
+        raise ValueError(
+            "cannot resolve a deterministic simulator result root; expose a literal job name or support --name"
+        )
     command = [python, str(job), *fixed_args, *base_args, *name_args, *run_def.args]
     run_def.command = command
-    for simulator_root in simulator_roots:
-        shutil.rmtree(simulator_root, ignore_errors=True)
-    rc, stdout, runtime = run_allow_timeout(
-        command,
-        cwd,
-        timeout,
-        log_path,
-        simulator_stall_roots=simulator_roots,
-        simulator_no_progress_timeout=simulator_no_progress_timeout,
-    )
-    run_def.runtime_seconds = runtime
-    printed_result_dir = extract_result_dir(stdout, cwd)
-    existing_roots = [root.resolve() for root in simulator_roots if root.exists()]
-    result_dir = printed_result_dir if printed_result_dir in existing_roots else None
-    injected_root = (simulator_workspace_root(config, cwd) / run_name).resolve() if name_args else None
-    if result_dir is None and injected_root in existing_roots:
-        result_dir = injected_root
-    if result_dir is None and len(existing_roots) == 1:
-        result_dir = existing_roots[0]
-    artifact_dir = collect_artifacts(result_dir, output_root, run_def.name, log_path)
+    with locked_simulator_roots(simulator_roots):
+        for simulator_root in simulator_roots:
+            shutil.rmtree(simulator_root, ignore_errors=True)
+        rc, stdout, runtime = run_allow_timeout(
+            command,
+            cwd,
+            timeout,
+            log_path,
+            simulator_stall_roots=simulator_roots,
+            simulator_no_progress_timeout=simulator_no_progress_timeout,
+        )
+        run_def.runtime_seconds = runtime
+        printed_result_dir = extract_result_dir(stdout, cwd)
+        existing_roots = [root.resolve() for root in simulator_roots if root.exists()]
+        result_dir = printed_result_dir if printed_result_dir in existing_roots else None
+        injected_root = (simulator_workspace_root(config, cwd) / run_name).resolve() if name_args else None
+        if result_dir is None and injected_root in existing_roots:
+            result_dir = injected_root
+        if result_dir is None and len(existing_roots) == 1:
+            result_dir = existing_roots[0]
+        artifact_dir = collect_artifacts(result_dir, output_root, run_def.name, log_path)
     run_def.artifacts = str(artifact_dir)
 
     evidence = None
@@ -1719,11 +1782,14 @@ def write_results(path: Path, records: List[RunRecord]) -> None:
     writer = csv.DictWriter(stream, fieldnames=RESULT_FIELDS, delimiter="\t")
     writer.writeheader()
     for record in records:
+        score = parse_finite_metric_value(record.score) if record.score is not None else None
+        if record.score is not None and score is None:
+            raise ValueError(f"record {record.name!r} has a non-finite score")
         writer.writerow(
             {
                 "status": record.status,
                 "name": record.name,
-                "score": "" if record.score is None else f"{record.score:.6f}",
+                "score": "" if score is None else f"{score:.6f}",
                 "runtime_seconds": f"{record.runtime_seconds:.3f}",
                 "changed_files": record.changed_files,
                 "diff_summary": record.diff_summary,
@@ -1752,7 +1818,7 @@ def load_results(path: Path) -> List[RunRecord]:
                 RunRecord(
                     status=row.get("status", ""),
                     name=row.get("name", ""),
-                    score=float(score_text) if score_text else None,
+                    score=parse_finite_metric_value(score_text) if score_text else None,
                     runtime_seconds=float(row.get("runtime_seconds") or 0.0),
                     changed_files=row.get("changed_files", ""),
                     diff_summary=row.get("diff_summary", ""),
@@ -1771,6 +1837,8 @@ def load_results(path: Path) -> List[RunRecord]:
 
 
 def better(new_score: Optional[float], old_score: Optional[float], mode: str) -> bool:
+    new_score = parse_finite_metric_value(new_score)
+    old_score = parse_finite_metric_value(old_score)
     if new_score is None:
         return False
     if old_score is None:
@@ -1786,13 +1854,16 @@ def write_state(
     *,
     mode: str = "max",
     stop_files: Optional[List[str]] = None,
-    plateau_threshold: int = DEFAULT_PLATEAU_THRESHOLD,
-    plateau_min_delta: float = DEFAULT_PLATEAU_MIN_DELTA,
-    hard_crash_threshold: int = DEFAULT_HARD_CRASH_THRESHOLD,
+    plateau_threshold: Optional[int] = None,
+    plateau_min_delta: Optional[float] = None,
+    hard_crash_threshold: Optional[int] = None,
     pending_manifest_count: int = 0,
     persist: bool = True,
 ) -> Dict[str, Any]:
     guard = load_campaign_guard()
+    plateau_threshold = guard.DEFAULT_PLATEAU_THRESHOLD if plateau_threshold is None else plateau_threshold
+    plateau_min_delta = guard.DEFAULT_MIN_DELTA if plateau_min_delta is None else plateau_min_delta
+    hard_crash_threshold = guard.DEFAULT_HARD_CRASH_THRESHOLD if hard_crash_threshold is None else hard_crash_threshold
     attempts = len(
         [
             record
@@ -2862,7 +2933,9 @@ def record_external_result(args: argparse.Namespace, job: Path) -> int:
     paths = campaign_paths(args, job)
     config = read_yaml(paths["autofl_yaml"])
     artifact_path = Path(args.external_artifacts).resolve() if args.external_artifacts else None
-    score = args.score
+    score = parse_finite_metric_value(args.score) if args.score is not None else None
+    if args.score is not None and score is None:
+        raise ValueError("--score must be a finite number")
     evidence = None
     if score is None and artifact_path:
         evidence = extract_metric_evidence(artifact_path, metric_extraction_order(config, args.metric))
@@ -2963,8 +3036,18 @@ def record_external_result(args: argparse.Namespace, job: Path) -> int:
     patch_path = manifest_path.parent / "candidate.patch"
     patch = patch_path.read_text(encoding="utf-8") if patch_path.exists() else ""
     candidate_config_path = manifest_path.parent / "candidate_autofl.yaml"
-    candidate_config = read_yaml(candidate_config_path) if candidate_config_path.exists() else config
-    candidate_config = candidate_campaign_config(candidate_config, config, args, load_mutation_schema(workspace))
+    schema = load_mutation_schema(workspace)
+    timeout, _ = campaign_timeout(args, schema)
+    candidate_config = import_job_config(
+        args,
+        job,
+        candidate_config_path,
+        manifest_path.parent / "record_import.log",
+        timeout,
+    )
+    if fixed_budget_hash(candidate_config) != metadata.get("fixed_budget_sha256"):
+        raise ValueError("candidate changes budget.fixed_training_budget")
+    candidate_config = candidate_campaign_config(candidate_config, config, args, schema)
     status = "crash" if args.failure_reason or score is None else "candidate"
     record = RunRecord(
         status=status,

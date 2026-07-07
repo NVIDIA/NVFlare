@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -415,10 +416,23 @@ class DeterministicJobImporter:
             if arg_spec.default_unresolved:
                 item["default_source"] = arg_spec.default_source
                 item["unresolved"] = True
+                reason = f"default is dynamic expression: {arg_spec.default}"
+                if arg_spec.default_source == "required_positional":
+                    reason = "required positional argument has no deterministic default"
                 unresolved.append(
                     _unresolved(
                         f"search_space.suggested.{arg_name}.default",
-                        f"default is dynamic expression: {arg_spec.default}",
+                        reason,
+                    )
+                )
+            if not arg_spec.flags:
+                item["confidence"] = "low"
+                item["mutable_via_run_args"] = False
+                item["unresolved"] = True
+                unresolved.append(
+                    _unresolved(
+                        f"search_space.suggested.{arg_name}.interface",
+                        "positional argparse fields require source edits; candidate run_args support long options only",
                     )
                 )
             suggested[arg_name] = item
@@ -634,20 +648,28 @@ def _collect_argparse_args_from_file(path: Optional[Path]) -> Dict[str, ArgSpec]
 
 def _arg_spec_from_call(node: ast.Call) -> Optional[ArgSpec]:
     flags = []
+    positional_names = []
     for arg in node.args:
         is_literal, value = _literal_value(arg)
-        if is_literal and isinstance(value, str) and value.startswith("-"):
+        if not is_literal or not isinstance(value, str):
+            continue
+        if value.startswith("-"):
             flags.append(value)
-    if not flags:
+        else:
+            positional_names.append(value)
+    if not flags and len(positional_names) != 1:
         return None
 
     keywords = {keyword.arg: keyword.value for keyword in node.keywords if keyword.arg}
-    name = _literal_keyword_value(keywords.get("dest")) or _name_from_flags(flags)
+    name = _literal_keyword_value(keywords.get("dest")) or (_name_from_flags(flags) if flags else positional_names[0])
     if not name:
         return None
 
     action = _literal_keyword_value(keywords.get("action"))
     default, default_source, default_unresolved = _arg_default_from_keywords(keywords)
+    if not flags and "default" not in keywords:
+        default_source = "required_positional"
+        default_unresolved = True
     if not default_unresolved and default is None and action == "store_true":
         default = False
         default_source = "argparse_action"
@@ -716,10 +738,21 @@ def _resolve_value(
     if isinstance(node, ast.Call):
         call_name = _call_name(node.func)
         if call_name in {"Path", "pathlib.Path", "os.path.join"}:
-            arg_value = _first_resolved_argparse_string(node, assignments, parser_args, source_text)
-            if arg_value is not None:
-                return arg_value
+            path_value = _resolve_path_call(node, call_name, assignments, parser_args, source_text)
+            if path_value is not None:
+                return path_value
         return ResolvedValue(_source_segment(source_text, node) or call_name, f"call:{call_name}", "low", True)
+
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+        left = _resolve_value(node.left, assignments, parser_args, source_text)
+        right = _resolve_value(node.right, assignments, parser_args, source_text)
+        if all(isinstance(value.value, str) and not value.unresolved for value in (left, right)):
+            confidence = "low" if "low" in {left.confidence, right.confidence} else "high"
+            return ResolvedValue(
+                str(Path(left.value) / right.value),
+                f"path:{left.source}+{right.source}",
+                confidence,
+            )
 
     return ResolvedValue(_source_segment(source_text, node) or type(node).__name__, "expression", "low", True)
 
@@ -730,17 +763,27 @@ def _resolve_arg_default(name: str, arg_spec: ArgSpec) -> ResolvedValue:
     return ResolvedValue(arg_spec.default, f"arg:{name}")
 
 
-def _first_resolved_argparse_string(
+def _resolve_path_call(
     node: ast.Call,
+    call_name: str,
     assignments: Dict[str, ast.AST],
     parser_args: Dict[str, ArgSpec],
     source_text: str,
 ) -> Optional[ResolvedValue]:
+    resolved_parts = []
     for arg in node.args:
         resolved = _resolve_value(arg, assignments, parser_args, source_text)
-        if resolved.source.startswith("arg:") and isinstance(resolved.value, str):
-            return resolved
-    return None
+        if resolved.unresolved or not isinstance(resolved.value, str):
+            return None
+        resolved_parts.append(resolved)
+    if not resolved_parts:
+        return None
+
+    values = [part.value for part in resolved_parts]
+    value = os.path.join(*values) if call_name == "os.path.join" else str(Path(*values))
+    confidence = "low" if any(part.confidence == "low" for part in resolved_parts) else "high"
+    sources = "+".join(part.source for part in resolved_parts)
+    return ResolvedValue(value, f"path:{sources}", confidence)
 
 
 def _call_name(node: Optional[ast.AST]) -> str:
@@ -867,7 +910,7 @@ def _existing_path(path: Path) -> Optional[Path]:
 
 
 def _is_resolved_path_string(value: ResolvedValue) -> bool:
-    return not value.unresolved and (value.source == "literal" or value.source.startswith("arg:"))
+    return not value.unresolved and isinstance(value.value, str)
 
 
 def _sha256_text(text: str) -> str:

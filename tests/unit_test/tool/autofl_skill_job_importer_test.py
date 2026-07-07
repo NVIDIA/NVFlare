@@ -259,6 +259,73 @@ def main():
     assert {"field": "job.train_script", "reason": "no train_script was found or resolved"} in config["unresolved"]
 
 
+@pytest.mark.parametrize(
+    "expression,expected",
+    [
+        ('Path("configs/train.py")', "configs/train.py"),
+        ('os.path.join("src", args.train_script)', "src/train.py"),
+        ('Path("src") / args.train_script', "src/train.py"),
+    ],
+)
+def test_import_resolves_composed_train_script_paths(tmp_path, expression, expected):
+    target = tmp_path / expected
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        f"""
+import argparse
+import os
+from pathlib import Path
+
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--train_script", default="train.py")
+args = parser.parse_args()
+recipe = FedAvgRecipe(name="demo", min_clients=2, num_rounds=3, train_script={expression})
+recipe.execute(SimEnv(num_clients=2))
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert config["job"]["train_script"] == expected
+    assert expected in config["trust_contract"]["allowed_edit_paths"]
+
+
+def test_import_surfaces_positional_tunable_as_source_edit_only(tmp_path):
+    (tmp_path / "client.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+import argparse
+
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+parser = argparse.ArgumentParser()
+parser.add_argument("epochs", type=int)
+parser.parse_args()
+recipe = FedAvgRecipe(name="demo", min_clients=2, num_rounds=3, train_script="client.py")
+recipe.execute(SimEnv(num_clients=2))
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    epochs = config["search_space"]["suggested"]["epochs"]
+    assert epochs["mutable_via_run_args"] is False
+    assert epochs["unresolved"] is True
+    assert {
+        "field": "search_space.suggested.epochs.interface",
+        "reason": "positional argparse fields require source edits; candidate run_args support long options only",
+    } in config["unresolved"]
+
+
 def test_import_marks_imported_budget_and_metric_constants_unresolved(tmp_path):
     (tmp_path / "client.py").write_text(
         """

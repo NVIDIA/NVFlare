@@ -252,6 +252,21 @@ def test_structured_metric_extraction_rejects_boolean_values():
     assert runner.find_metric_value({"metrics": [{"name": "accuracy", "value": False}]}, ["accuracy"]) is None
 
 
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_metric_paths_reject_non_finite_values(tmp_path, value):
+    runner = _load_runner()
+
+    assert runner.find_metric_value({"accuracy": value}, ["accuracy"]) is None
+    assert runner.find_metric_value({"metrics": [{"name": "accuracy", "value": value}]}, ["accuracy"]) is None
+    assert runner.better(value, 0.5, "max") is False
+    assert runner.better(0.6, value, "max") is True
+    with pytest.raises(ValueError, match="non-finite score"):
+        runner.write_results(
+            tmp_path / "results.tsv",
+            [runner.RunRecord("keep", "candidate", value, 1.0, "none", "candidate", "run", "/tmp/run")],
+        )
+
+
 def test_text_metric_extraction_supports_scientific_notation(tmp_path):
     runner = _load_runner()
     tmp_path.joinpath("log_fl.txt").write_text("validation_loss: 1.25e-4\n", encoding="utf-8")
@@ -268,8 +283,19 @@ def test_text_metric_extraction_requires_exact_metric_token_and_records_provenan
 
     assert evidence.score == 0.7
     assert evidence.metric_name == "accuracy"
-    assert evidence.source == "text:log.txt"
+    assert evidence.source == "text:log.txt:line=2"
     assert evidence.artifact == str(log_path.resolve())
+
+
+def test_text_metric_extraction_ignores_trailing_contextual_mentions(tmp_path):
+    runner = _load_runner()
+    log_path = tmp_path / "log.txt"
+    log_path.write_text("final cross-site accuracy: 0.7\ntarget accuracy: 0.5\n", encoding="utf-8")
+
+    evidence = runner.extract_metric_evidence(tmp_path, ["accuracy"])
+
+    assert evidence.score == pytest.approx(0.7)
+    assert evidence.source == "text:log.txt:line=1"
 
 
 def test_runner_applies_schema_metric_contract():
@@ -408,8 +434,10 @@ def test_metric_extraction_prefers_structured_artifacts_then_known_text_logs(tmp
     assert runner.extract_score(tmp_path, ["accuracy"]) == 0.95
 
 
-def test_result_paths_and_static_job_names_are_resolved_deterministically(tmp_path):
+def test_result_paths_and_static_job_names_are_resolved_deterministically(tmp_path, monkeypatch):
     runner = _load_runner()
+    default_root = tmp_path / "system-tmp" / "nvflare" / "simulation"
+    monkeypatch.setattr(runner.tempfile, "gettempdir", lambda: str(tmp_path / "system-tmp"))
     relative = tmp_path / "relative-result"
     relative.mkdir()
     config = {
@@ -422,39 +450,56 @@ def test_result_paths_and_static_job_names_are_resolved_deterministically(tmp_pa
     assert runner.extract_result_dir("Result can be found in : relative-result", tmp_path) == relative.resolve()
     assert runner.imported_job_names(config) == ["recipe-name", "fed-job-name"]
     assert runner.expected_simulator_roots(config, "injected", tmp_path) == [
-        Path("/tmp/nvflare/simulation/injected").resolve(),
-        Path("/tmp/nvflare/simulation/recipe-name").resolve(),
-        Path("/tmp/nvflare/simulation/fed-job-name").resolve(),
+        (default_root / "injected").resolve(),
+        (default_root / "recipe-name").resolve(),
+        (default_root / "fed-job-name").resolve(),
     ]
+    assert runner.simulator_run_name("baseline", tmp_path) != runner.simulator_run_name(
+        "baseline", tmp_path / "other-campaign"
+    )
     config["job"]["recipe_args"]["name"]["confidence"] = "low"
     assert runner.imported_job_names(config) == ["fed-job-name"]
     with pytest.raises(ValueError, match="unsafe simulator job name"):
         runner.expected_simulator_roots({}, "../other-run", tmp_path)
 
 
-def test_success_without_deterministic_result_root_is_actionable_failure(tmp_path, monkeypatch):
+def test_run_without_deterministic_result_root_fails_before_execution(tmp_path, monkeypatch):
     runner = _load_runner()
     job = tmp_path / "job.py"
     job.write_text("print('done')\n", encoding="utf-8")
-    monkeypatch.setattr(runner, "run_allow_timeout", lambda *args, **kwargs: (0, "done\n", 0.1))
-
-    record = runner.run_job(
-        runner.JobRun("candidate", [], "candidate"),
-        python=sys.executable,
-        job=job,
-        cwd=tmp_path,
-        help_text="",
-        fixed_args=[],
-        base_args=[],
-        output_root=tmp_path / "runs",
-        timeout=10,
-        simulator_no_progress_timeout=0,
-        metrics=["accuracy"],
-        config={"job": {}},
+    monkeypatch.setattr(
+        runner,
+        "run_allow_timeout",
+        lambda *args, **kwargs: pytest.fail("unmonitored simulator jobs must not execute"),
     )
 
-    assert record.status == "crash"
-    assert "no deterministic NVFlare result directory" in record.failure_reason
+    with pytest.raises(ValueError, match="cannot resolve a deterministic simulator result root"):
+        runner.run_job(
+            runner.JobRun("candidate", [], "candidate"),
+            python=sys.executable,
+            job=job,
+            cwd=tmp_path,
+            help_text="",
+            fixed_args=[],
+            base_args=[],
+            output_root=tmp_path / "runs",
+            timeout=10,
+            simulator_no_progress_timeout=0,
+            metrics=["accuracy"],
+            config={"job": {}},
+        )
+
+
+def test_simulator_root_lock_rejects_concurrent_campaign(tmp_path):
+    runner = _load_runner()
+    root = tmp_path / "simulation" / "shared-job"
+
+    with runner.locked_simulator_roots([root]):
+        with pytest.raises(RuntimeError, match="already in use"):
+            with runner.locked_simulator_roots([root]):
+                pass
+
+    assert not root.with_name(f".{root.name}.autofl.lock").exists()
 
 
 def test_run_job_collects_configured_sim_result_and_standard_nvflare_text_metric(tmp_path):
@@ -507,10 +552,10 @@ print(f"Result can be found in : {{result}}")
 
     assert record.status == "candidate"
     assert record.score == pytest.approx(0.76)
-    assert record.metric_source == "text:log.txt"
+    assert record.metric_source == "text:log.txt:line=1"
     assert tmp_path.joinpath("runs/candidate/simulation/server/log.txt").is_file()
     assert tmp_path.joinpath("runs/candidate/run.log").is_file()
-    assert tmp_path.joinpath("simulation/autofl_candidate").is_dir()
+    assert tmp_path.joinpath("simulation", runner.simulator_run_name("candidate", tmp_path)).is_dir()
 
 
 def test_run_stops_on_nvflare_simulator_stall_log(tmp_path):
@@ -639,6 +684,36 @@ def test_runner_state_routes_plateau_to_literature_checkpoint(tmp_path):
     assert state["next_action"] == "run_literature_loop"
     assert state["final_response_allowed"] is False
     assert state == json.loads(state_path.read_text(encoding="utf-8"))
+
+
+def test_runner_uses_campaign_guard_threshold_defaults(tmp_path, monkeypatch):
+    runner = _load_runner()
+    guard = runner.load_campaign_guard()
+    monkeypatch.setattr(guard, "DEFAULT_PLATEAU_THRESHOLD", 3)
+    monkeypatch.setattr(guard, "DEFAULT_MIN_DELTA", 0.25)
+    monkeypatch.setattr(guard, "DEFAULT_HARD_CRASH_THRESHOLD", 2)
+    monkeypatch.delenv("AUTOFL_PLATEAU_THRESHOLD", raising=False)
+    monkeypatch.delenv("AUTOFL_PLATEAU_MIN_DELTA", raising=False)
+    monkeypatch.delenv("AUTOFL_HARD_CRASH_THRESHOLD", raising=False)
+
+    args = runner.parse_args(["status", "job.py"])
+
+    assert args.plateau_threshold == 3
+    assert args.plateau_min_delta == pytest.approx(0.25)
+    assert args.hard_crash_threshold == 2
+
+    records = [
+        runner.RunRecord("baseline", "baseline", 0.5, 1.0, "none", "baseline", "run", "/tmp/baseline"),
+        runner.RunRecord("crash", "candidate_1", None, 1.0, "none", "candidate", "run", "/tmp/c1"),
+        runner.RunRecord("crash", "candidate_2", None, 1.0, "none", "candidate", "run", "/tmp/c2"),
+    ]
+    results_path = tmp_path / "results.tsv"
+    runner.write_results(results_path, records)
+    state = runner.write_state(tmp_path / "state.json", results_path, records, None)
+
+    assert state["reason"] == "hard_repeated_crash_blocker"
+    assert state["plateau"]["threshold"] == 3
+    assert state["plateau"]["min_delta"] == pytest.approx(0.25)
 
 
 def test_small_retained_improvement_does_not_reset_plateau_clock(tmp_path):
@@ -1344,6 +1419,34 @@ def test_external_candidate_uses_standard_job_result_recording(tmp_path, monkeyp
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["status"] == "keep"
     assert manifest["artifacts"]["job_id"] == "job-candidate"
+
+
+def test_external_candidate_record_reimports_fixed_budget(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, _, config = _initialize_fake_campaign(runner, tmp_path, monkeypatch, target_env="prod")
+    assert runner.main(["record", str(job), "--baseline", "--score", "0.5"]) == 0
+    assert runner.main(["prepare", str(job), "--name", "prod_algo", "--hypothesis", "production algorithm"]) == 0
+    draft = tmp_path / ".nvflare" / "autofl" / "candidates" / "prod_algo" / "source"
+    draft.joinpath("client.py").write_text("ALGORITHM = 'production'\n", encoding="utf-8")
+    assert runner.main(["evaluate", str(job)]) == 0
+
+    drifted = deepcopy(config)
+    drifted["budget"]["fixed_training_budget"]["num_rounds"] = 2
+    monkeypatch.setattr(runner, "import_job_config", lambda *args, **kwargs: deepcopy(drifted))
+    manifest_path = tmp_path / ".nvflare" / "autofl" / "candidates" / "prod_algo" / "candidate_manifest.json"
+
+    assert runner.main(["record", str(job), "--manifest", str(manifest_path), "--score", "0.8"]) == 2
+    assert json.loads(manifest_path.read_text(encoding="utf-8"))["status"] == "ready_for_external_execution"
+    assert [record.status for record in runner.load_results(tmp_path / "results.tsv")] == ["baseline"]
+
+
+@pytest.mark.parametrize("score", ["nan", "inf", "-inf"])
+def test_external_record_rejects_non_finite_explicit_score(tmp_path, monkeypatch, score):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch, target_env="prod")
+
+    assert runner.main(["record", str(job), "--baseline", f"--score={score}"]) == 2
+    assert runner.load_results(tmp_path / "results.tsv") == []
 
 
 def test_suggest_returns_fallbacks_without_executing_them(tmp_path, monkeypatch, capsys):
