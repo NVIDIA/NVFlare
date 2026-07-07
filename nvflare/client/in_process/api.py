@@ -71,8 +71,9 @@ class InProcessClientAPI(APISpec):
 
         Args:
             config (Union[str, Dict]): config dictionary.
-            rank (str): local rank of the process.
-                It is only useful when the training script has multiple worker processes. (for example multi GPU)
+            rank (str): rank of the process for Client API control-path behavior.
+                In distributed training, use the global process rank (for example torchrun's RANK),
+                not the device-local rank used for GPU placement.
         """
 
         self.rank = rank
