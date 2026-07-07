@@ -32,6 +32,9 @@ RESULT_FIELDS = [
     "candidate_manifest",
     "base_candidate",
     "patch_sha256",
+    "candidate_kind",
+    "algorithm_family",
+    "literature_event_id",
 ]
 
 
@@ -53,13 +56,23 @@ def _write_results(path, rows):
             writer.writerow(row)
 
 
-def _row(status, name, score="", diff_summary="candidate", run_command="python job.py"):
+def _row(
+    status,
+    name,
+    score="",
+    diff_summary="candidate",
+    run_command="python job.py",
+    changed_files="none",
+    kind="",
+    family="",
+    lit="",
+):
     return {
         "status": status,
         "name": name,
         "score": score,
         "runtime_seconds": "10.0",
-        "changed_files": "none",
+        "changed_files": changed_files,
         "diff_summary": diff_summary,
         "run_command": run_command,
         "artifacts": "/tmp/run",
@@ -67,6 +80,9 @@ def _row(status, name, score="", diff_summary="candidate", run_command="python j
         "candidate_manifest": "",
         "base_candidate": "",
         "patch_sha256": "",
+        "candidate_kind": kind,
+        "algorithm_family": family,
+        "literature_event_id": lit,
     }
 
 
@@ -102,24 +118,89 @@ def test_guard_routes_plateau_to_literature_without_finalizing():
     assert state["next_action"] == "run_literature_loop"
     assert state["final_response_allowed"] is False
     assert state["best_score"] == 0.85
-    assert state["required_exploration"] == "source_backed_server_aggregation"
-    assert "server aggregation candidate" in state["agent_instruction"]
+    assert state["required_exploration"] == "source_backed_exploration"
+    assert "--literature-event" in state["agent_instruction"]
     assert "Do not produce a final answer" in state["agent_instruction"]
 
 
-def test_guard_literature_event_resets_plateau_clock():
+def test_guard_literature_recording_alone_does_not_reset_plateau_clock():
     guard = _load_guard()
     rows = [_row("baseline", "baseline", "0.85")]
     rows.extend(_row("discard", f"before_lit_{idx}", "0.840") for idx in range(4))
-    rows.append(_row("literature", "literature_review", "", diff_summary="literature review"))
-    rows.extend(_row("discard", f"after_lit_{idx}", "0.841") for idx in range(2))
+    rows.append(_row("literature", "literature_review_1", "", diff_summary="literature review", lit="lit-0001"))
+    rows.extend(_row("discard", f"after_lit_{idx}", "0.841", kind="argument_only") for idx in range(2))
 
+    state = guard.guard_state_for_rows(rows, plateau_threshold=4)
+
+    # The batch is incomplete, so campaign state demands source-backed development
+    # and the plateau clock keeps counting from the last real improvement.
+    assert state["reason"] == "literature_exploration_batch"
+    assert state["next_action"] == "develop_literature_batch"
+    assert state["required_exploration"] == "source_backed_exploration"
+    assert state["exploration_batch"]["literature_event_id"] == "lit-0001"
+    assert state["exploration_batch"]["completed"] == 0
+    assert state["plateau"]["last_literature_event_index"] == 5
+    assert state["plateau"]["scored_since_reset"] == 6
+
+
+def test_guard_exploration_batch_completion_resets_plateau_and_resumes_flow():
+    guard = _load_guard()
+    rows = [_row("baseline", "baseline", "0.85")]
+    rows.extend(_row("discard", f"before_lit_{idx}", "0.840") for idx in range(4))
+    rows.append(_row("literature", "literature_review_1", "", diff_summary="literature review", lit="lit-0001"))
+    rows.append(_row("discard", "faithful", "0.842", kind="source_edit", family="fedyogi", lit="lit-0001"))
+    rows.append(_row("discard", "arg_only_linked", "0.83", kind="argument_only", family="fedyogi", lit="lit-0001"))
+    rows.append(_row("discard", "tuned", "0.845", kind="source_edit", family="fedyogi", lit="lit-0001"))
+
+    state = guard.guard_state_for_rows(rows, plateau_threshold=4)
+
+    # Argument-only rows never count toward the source-backed batch.
+    assert state["next_action"] == "develop_literature_batch"
+    assert state["exploration_batch"]["completed"] == 2
+
+    rows.append(_row("discard", "ablation", "0.841", kind="source_edit", family="fedyogi", lit="lit-0001"))
     state = guard.guard_state_for_rows(rows, plateau_threshold=4)
 
     assert state["reason"] == "continue"
     assert state["next_action"] == "propose_candidate"
-    assert state["plateau"]["last_literature_event_index"] == 5
-    assert state["plateau"]["scored_since_reset"] == 2
+    assert state["required_exploration"] is None
+    assert state["exploration_batch"]["completed"] == 3
+    assert state["plateau"]["last_batch_completion_index"] == len(rows) - 1
+    assert state["plateau"]["scored_since_reset"] == 0
+
+
+def test_guard_family_repeat_limiter_requires_diversification():
+    guard = _load_guard()
+    rows = [_row("baseline", "baseline", "0.85")]
+    rows.append(_row("literature", "literature_review_1", "", diff_summary="literature review", lit="lit-0001"))
+    rows.extend(
+        _row("discard", f"lit_{idx}", "0.84", kind="source_edit", family="fedyogi", lit="lit-0001") for idx in range(3)
+    )
+    rows.extend(_row("discard", f"tune_{idx}", "0.845", kind="argument_only", family="fedavgm") for idx in range(6))
+
+    state = guard.guard_state_for_rows(rows, plateau_threshold=20)
+
+    assert state["reason"] == "family_repeat_limit"
+    assert state["next_action"] == "diversify_candidates"
+    assert "source-backed candidate" in state["agent_instruction"]
+
+
+def test_guard_legacy_rows_use_changed_files_fallback_and_zero_batch_disables_gate():
+    guard = _load_guard()
+    rows = [_row("baseline", "baseline", "0.85")]
+    rows.append(_row("literature", "literature_review_1", "", diff_summary="literature review"))
+    rows.append(_row("discard", "legacy_source", "0.84", changed_files="client.py"))
+    rows.append(_row("discard", "legacy_args", "0.84"))
+
+    state = guard.guard_state_for_rows(rows, plateau_threshold=20)
+    # Legacy rows without candidate_kind derive it from changed_files; unlinked
+    # source rows after the latest event count toward its batch.
+    assert state["next_action"] == "develop_literature_batch"
+    assert state["exploration_batch"]["completed"] == 1
+
+    state = guard.guard_state_for_rows(rows, plateau_threshold=20, exploration_batch_size=0)
+    assert state["next_action"] == "propose_candidate"
+    assert state["required_exploration"] is None
 
 
 def test_guard_counts_candidate_with_baseline_in_description():
@@ -273,6 +354,8 @@ def test_continuous_campaign_reference_documents_only_emitted_actions():
         "submit_candidate",
         "rerun_with_escalated_execution",
         "run_literature_loop",
+        "develop_literature_batch",
+        "diversify_candidates",
         "final_report",
     }
 

@@ -135,10 +135,22 @@ standard NVFlare job lifecycle.
 The built-in parameter candidates are suggestion seeds only. They are returned
 as machine-readable hypotheses and arguments when requested, but are not the
 default search loop and are never executed without agent selection.
-After each literature-triggered plateau, campaign state requests at least one
-source-backed server aggregation candidate under the same comparison budget.
-When the job contract makes that impossible, the agent records the reason in
-the literature event instead of silently omitting aggregation exploration.
+Each recorded literature review receives a persistent `literature_event_id`
+(`lit-0001` style). After a review is recorded, campaign state requires an
+exploration batch: `exploration_batch_size` scored source-backed candidates
+(default 3, flag `--exploration-batch-size`, env
+`AUTOFL_EXPLORATION_BATCH_SIZE`) linked to that review under the same
+comparison budget before normal candidate flow resumes. `prepare` accepts
+`--family` for the algorithm-family slug and `--literature-event` for the
+review link; both are persisted in `candidate_manifest.json` and as the
+`candidate_kind`, `algorithm_family`, and `literature_event_id` columns in
+`results.tsv`. A literature-linked candidate must contain source edits; the
+runner rejects argument-only literature-linked candidates at evaluate time.
+Qualifying exploration is not limited to server aggregation: client optimizer,
+loss function, learning-rate schedule, and architecture candidates within the
+fixed comparison budget count equally. When the job contract makes
+source-backed exploration impossible, the agent records the reason in the
+literature event instead of silently omitting it.
 
 ## Execution Model
 
@@ -165,6 +177,19 @@ campaign guard is a read-only diagnostic and cannot overwrite runner metadata.
 A stop file takes immediate precedence: pending candidates must be safely
 abandoned before final reporting. Without a stop request, pending prepared or
 externally ready candidates take precedence over cap exhaustion and reporting.
+
+Campaign state enforces the exploration batch deterministically. After a
+literature review is recorded, state reports
+`next_action=develop_literature_batch` and
+`required_exploration=source_backed_exploration` until the review's batch of
+linked scored candidates completes. The plateau counter resets only when that
+batch completes — when its final linked scored candidate records — not when
+the review row is recorded. After the first literature event, if the last
+`family_repeat_limit` scored attempts (default 6, flag `--family-repeat-limit`,
+env `AUTOFL_FAMILY_REPEAT_LIMIT`, 0 disables) are all argument-only tuning of
+the same algorithm family, state reports `next_action=diversify_candidates`.
+The `progress.png` plot renders source-edited candidates distinctly from
+argument-only candidates and annotates literature-linked families.
 
 Every score must be finite and records its metric name, extraction source, and
 artifact. Structured metric artifacts take precedence over text fallback, which

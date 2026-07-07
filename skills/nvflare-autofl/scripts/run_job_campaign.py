@@ -69,6 +69,9 @@ RESULT_FIELDS = [
     "metric_name",
     "metric_source",
     "metric_artifact",
+    "candidate_kind",
+    "algorithm_family",
+    "literature_event_id",
 ]
 
 CANDIDATE_MANIFEST_SCHEMA_VERSION = "nvflare.autofl.candidate.v1"
@@ -145,6 +148,9 @@ class RunRecord:
     metric_name: str = ""
     metric_source: str = ""
     metric_artifact: str = ""
+    candidate_kind: str = ""
+    algorithm_family: str = ""
+    literature_event_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -231,6 +237,24 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="stop after this many consecutive real candidate crashes; set 0 to disable",
     )
     parser.add_argument(
+        "--exploration-batch-size",
+        type=int,
+        default=env_int("AUTOFL_EXPLORATION_BATCH_SIZE", guard.DEFAULT_EXPLORATION_BATCH_SIZE),
+        help=(
+            "scored source-backed candidates required per literature event before normal candidate "
+            "flow resumes; set 0 to disable"
+        ),
+    )
+    parser.add_argument(
+        "--family-repeat-limit",
+        type=int,
+        default=env_int("AUTOFL_FAMILY_REPEAT_LIMIT", guard.DEFAULT_FAMILY_REPEAT_LIMIT),
+        help=(
+            "consecutive same-family argument-only scored attempts before campaign state requires "
+            "diversification; set 0 to disable"
+        ),
+    )
+    parser.add_argument(
         "--stop-file",
         action="append",
         help="manual stop-file path; defaults to STOP_AUTOFL and .nvflare/autofl/STOP under the job directory",
@@ -252,6 +276,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--synthetic-test-size", type=int, default=256)
     parser.add_argument("--name", help="candidate name for prepare")
     parser.add_argument("--hypothesis", help="candidate hypothesis for prepare")
+    parser.add_argument("--family", help="algorithm family slug for prepare or record --literature")
+    parser.add_argument("--literature-event", help="literature event id this candidate develops (prepare)")
     parser.add_argument("--manifest", help="candidate_manifest.json path")
     parser.add_argument("--run-args", default="", help="candidate-only job.py arguments")
     parser.add_argument("--score", type=float, help="externally measured metric for record")
@@ -1768,6 +1794,9 @@ def write_results(path: Path, records: List[RunRecord]) -> None:
                 "metric_name": record.metric_name,
                 "metric_source": record.metric_source,
                 "metric_artifact": record.metric_artifact,
+                "candidate_kind": record.candidate_kind,
+                "algorithm_family": record.algorithm_family,
+                "literature_event_id": record.literature_event_id,
             }
         )
     atomic_write_bytes(path, stream.getvalue().encode("utf-8"))
@@ -1797,6 +1826,9 @@ def load_results(path: Path) -> List[RunRecord]:
                     metric_name=row.get("metric_name", ""),
                     metric_source=row.get("metric_source", ""),
                     metric_artifact=row.get("metric_artifact", ""),
+                    candidate_kind=row.get("candidate_kind", "") or "",
+                    algorithm_family=row.get("algorithm_family", "") or "",
+                    literature_event_id=row.get("literature_event_id", "") or "",
                 )
             )
     return records
@@ -1817,6 +1849,8 @@ def write_state(
     plateau_threshold: Optional[int] = None,
     plateau_min_delta: Optional[float] = None,
     hard_crash_threshold: Optional[int] = None,
+    exploration_batch_size: Optional[int] = None,
+    family_repeat_limit: Optional[int] = None,
     pending_manifest_count: int = 0,
     persist: bool = True,
 ) -> Dict[str, Any]:
@@ -1824,6 +1858,10 @@ def write_state(
     plateau_threshold = guard.DEFAULT_PLATEAU_THRESHOLD if plateau_threshold is None else plateau_threshold
     plateau_min_delta = guard.DEFAULT_MIN_DELTA if plateau_min_delta is None else plateau_min_delta
     hard_crash_threshold = guard.DEFAULT_HARD_CRASH_THRESHOLD if hard_crash_threshold is None else hard_crash_threshold
+    exploration_batch_size = (
+        guard.DEFAULT_EXPLORATION_BATCH_SIZE if exploration_batch_size is None else exploration_batch_size
+    )
+    family_repeat_limit = guard.DEFAULT_FAMILY_REPEAT_LIMIT if family_repeat_limit is None else family_repeat_limit
     state = guard.guard_state(
         results_path,
         max_candidates=max_candidates,
@@ -1833,6 +1871,8 @@ def write_state(
         hard_crash_threshold=hard_crash_threshold,
         mode=mode,
         pending_manifest_count=pending_manifest_count,
+        exploration_batch_size=exploration_batch_size,
+        family_repeat_limit=family_repeat_limit,
     )
     if records and records[-1].status == INFRASTRUCTURE_RETRY:
         attempts = len(
@@ -2062,6 +2102,8 @@ CAMPAIGN_SETTING_NAMES = (
     "plateau_threshold",
     "plateau_min_delta",
     "hard_crash_threshold",
+    "exploration_batch_size",
+    "family_repeat_limit",
     "stop_file",
     "base_args",
     "timeout",
@@ -2077,6 +2119,8 @@ MUTABLE_CAMPAIGN_SETTING_NAMES = {
     "plateau_threshold",
     "plateau_min_delta",
     "hard_crash_threshold",
+    "exploration_batch_size",
+    "family_repeat_limit",
     "stop_file",
     "timeout",
     "simulator_no_progress_timeout",
@@ -2220,7 +2264,6 @@ def refresh_campaign_artifacts(
     pending_manifest: Optional[Path] = None,
     next_action: Optional[str] = None,
     reason: Optional[str] = None,
-    required_exploration: Optional[str] = None,
 ) -> Dict[str, Any]:
     pending_manifests = pending_candidate_manifests(paths["workspace"])
     if pending_manifest is not None and pending_manifest not in pending_manifests:
@@ -2236,6 +2279,8 @@ def refresh_campaign_artifacts(
         plateau_threshold=args.plateau_threshold,
         plateau_min_delta=args.plateau_min_delta,
         hard_crash_threshold=args.hard_crash_threshold,
+        exploration_batch_size=args.exploration_batch_size,
+        family_repeat_limit=args.family_repeat_limit,
         pending_manifest_count=len(pending_manifests),
     )
     if state.get("next_action") == "abandon_candidate":
@@ -2249,12 +2294,6 @@ def refresh_campaign_artifacts(
         state["next_action"] = next_action
         state["reason"] = reason or next_action
         state["agent_instruction"] = f"Do not produce a final answer. Execute `{next_action}` for this campaign."
-    if required_exploration:
-        state["required_exploration"] = required_exploration
-        state["agent_instruction"] = (
-            f"{state['agent_instruction']} Prepare and evaluate at least one source-backed server aggregation "
-            "candidate when compatible with the job contract; otherwise record why it is incompatible."
-        )
     state.update(
         {
             "best_candidate": metadata.get("best_candidate"),
@@ -2432,6 +2471,12 @@ def prepare_candidate(args: argparse.Namespace, job: Path) -> int:
     candidate_id = validate_candidate_id(args.name or "")
     if not args.hypothesis:
         raise ValueError("--hypothesis is required for prepare")
+    algorithm_family = (args.family or "").strip().lower()
+    literature_event = (args.literature_event or "").strip()
+    if literature_event:
+        known_events = {record.literature_event_id for record in records if record.status == "literature"}
+        if literature_event not in known_events:
+            raise ValueError(f"unknown literature event id: {literature_event}")
     manifest_path = candidate_manifest_path(workspace, candidate_id)
     candidate_dir = manifest_path.parent
     if candidate_dir.exists():
@@ -2450,6 +2495,8 @@ def prepare_candidate(args: argparse.Namespace, job: Path) -> int:
         "candidate_id": candidate_id,
         "name": candidate_id,
         "hypothesis": args.hypothesis,
+        "algorithm_family": algorithm_family,
+        "literature_event_id": literature_event,
         "status": "prepared",
         "created_at": utc_now(),
         "updated_at": utc_now(),
@@ -2529,6 +2576,8 @@ def validate_candidate_for_evaluation(
         raise ValueError(reason)
     if not changed and not run_args:
         raise ValueError("candidate has no source changes or run arguments")
+    if (str(manifest.get("literature_event_id") or "")).strip() and not changed and not created:
+        raise ValueError("literature-linked candidates must include source edits")
     patch = render_candidate_patch(best_source, draft_source, changed)
     return manifest, config, best_source, best_files, changed, created, patch
 
@@ -2601,6 +2650,9 @@ def finalize_candidate_result(
         record.candidate_manifest = str(manifest_path.resolve())
         record.base_candidate = str(manifest.get("base_candidate") or "")
         record.patch_sha256 = patch_sha256
+        record.candidate_kind = "source_edit" if changed or created else "argument_only"
+        record.algorithm_family = str(manifest.get("algorithm_family") or "")
+        record.literature_event_id = str(manifest.get("literature_event_id") or "")
 
         if record.status == "keep":
             update_config_for_kept_sources(config, created)
@@ -2625,6 +2677,7 @@ def finalize_candidate_result(
                 "updated_at": utc_now(),
                 "changed_files": changed,
                 "created_files": created,
+                "candidate_kind": record.candidate_kind,
                 "patch_sha256": patch_sha256,
                 "artifacts": {"patch": str(patch_path.resolve()), "run": record.artifacts},
                 "result": {
@@ -2888,7 +2941,9 @@ def record_external_result(args: argparse.Namespace, job: Path) -> int:
         )
     if args.literature:
         records = load_results(paths["results"])
-        name = f"literature_review_{sum(record.status == 'literature' for record in records) + 1}"
+        event_number = sum(record.status == "literature" for record in records) + 1
+        event_id = f"lit-{event_number:04d}"
+        name = f"literature_review_{event_number}"
         records.append(
             RunRecord(
                 status="literature",
@@ -2899,19 +2954,14 @@ def record_external_result(args: argparse.Namespace, job: Path) -> int:
                 diff_summary=args.hypothesis or "source-backed literature review",
                 run_command="agent literature review",
                 artifacts=str(artifact_path or ""),
+                algorithm_family=(args.family or "").strip().lower(),
+                literature_event_id=event_id,
             )
         )
-        state = refresh_campaign_artifacts(
-            args,
-            paths,
-            config,
-            records,
-            metadata,
-            next_action="propose_candidate",
-            reason="literature_review_recorded",
-            required_exploration="source_backed_server_aggregation",
-        )
-        print_campaign_result(paths, records, state, literature_event=name)
+        # The guard now derives next_action=develop_literature_batch and keeps
+        # required_exploration active until the linked exploration batch completes.
+        state = refresh_campaign_artifacts(args, paths, config, records, metadata)
+        print_campaign_result(paths, records, state, literature_event=name, literature_event_id=event_id)
         return 0
     if args.baseline:
         records = load_results(paths["results"])

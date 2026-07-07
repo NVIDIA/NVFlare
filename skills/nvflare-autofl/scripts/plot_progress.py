@@ -45,6 +45,9 @@ class ProgressRecord:
     score: Optional[float]
     runtime_seconds: float
     description: str
+    kind: str = ""
+    family: str = ""
+    literature_event_id: str = ""
 
 
 def load_campaign_guard():
@@ -112,6 +115,16 @@ def record_label(record: ProgressRecord, limit: int) -> str:
     return compact_label(record.name or record.description, limit)
 
 
+def resolve_candidate_kind(kind: Any, changed_files: Any) -> str:
+    """Resolve the candidate kind, falling back to the legacy changed_files column when kind is absent (None)."""
+    if kind is not None:
+        return str(kind).strip().lower()
+    changed = str(changed_files or "").strip().lower()
+    if changed and changed != "none":
+        return "source_edit"
+    return "argument_only"
+
+
 def load_results(path: Path) -> List[ProgressRecord]:
     records = []
     with path.open("r", encoding="utf-8", newline="") as f:
@@ -124,6 +137,9 @@ def load_results(path: Path) -> List[ProgressRecord]:
                     score=parse_score(row.get("score", "")),
                     runtime_seconds=parse_runtime(row.get("runtime_seconds", "")),
                     description=row.get("diff_summary", "") or row.get("description", ""),
+                    kind=resolve_candidate_kind(row.get("candidate_kind"), row.get("changed_files", "")),
+                    family=(row.get("algorithm_family", "") or "").strip(),
+                    literature_event_id=(row.get("literature_event_id", "") or "").strip(),
                 )
             )
     return records
@@ -132,6 +148,9 @@ def load_results(path: Path) -> List[ProgressRecord]:
 def normalize_records(records: Iterable[Any]) -> List[ProgressRecord]:
     normalized = []
     for index, record in enumerate(records):
+        kind = getattr(record, "candidate_kind", None)
+        if kind is None:
+            kind = getattr(record, "kind", None)
         normalized.append(
             ProgressRecord(
                 index=index,
@@ -140,6 +159,9 @@ def normalize_records(records: Iterable[Any]) -> List[ProgressRecord]:
                 score=parse_score(getattr(record, "score", None)),
                 runtime_seconds=parse_runtime(getattr(record, "runtime_seconds", 0.0)),
                 description=str(getattr(record, "diff_summary", "") or getattr(record, "description", "") or ""),
+                kind=resolve_candidate_kind(kind, getattr(record, "changed_files", "")),
+                family=str(getattr(record, "algorithm_family", "") or getattr(record, "family", "") or "").strip(),
+                literature_event_id=str(getattr(record, "literature_event_id", "") or "").strip(),
             )
         )
     return normalized
@@ -314,20 +336,33 @@ def plot_progress(
         "candidate": [record for record in valid if record.status == "candidate"],
         "keep": [record for record in valid if record.status in {"baseline", "keep"}],
     }
+    literature_edge = "#8e44ad"
     for status, group in groups.items():
         if not group:
             continue
         style = styles[status]
+        base_edge = "black" if status == "keep" else "none"
+        base_width = 0.5 if status == "keep" else 0.0
+        source_edits = [record for record in group if record.kind == "source_edit"]
+        argument_only = [record for record in group if record.kind != "source_edit"]
+        for subgroup, marker, label_suffix in ((argument_only, "o", ""), (source_edits, "D", " (source edit)")):
+            if not subgroup:
+                continue
+            ax.scatter(
+                [record.index for record in subgroup],
+                [record.score for record in subgroup],
+                c=style["color"],
+                s=style["size"],
+                alpha=style["alpha"],
+                marker=marker,
+                zorder=4 if status == "keep" else 2,
+                label=style["label"] + label_suffix,
+                edgecolors=[literature_edge if record.literature_event_id else base_edge for record in subgroup],
+                linewidths=[0.9 if record.literature_event_id else base_width for record in subgroup],
+            )
+    if any(record.literature_event_id for group in groups.values() for record in group):
         ax.scatter(
-            [record.index for record in group],
-            [record.score for record in group],
-            c=style["color"],
-            s=style["size"],
-            alpha=style["alpha"],
-            zorder=4 if status == "keep" else 2,
-            label=style["label"],
-            edgecolors="black" if status == "keep" else "none",
-            linewidths=0.5 if status == "keep" else 0,
+            [], [], facecolors="none", edgecolors=literature_edge, linewidths=0.9, s=40, label="Literature-linked"
         )
 
     known_statuses = {"baseline", "keep", "discard", "candidate", "crash", "literature"}
@@ -431,8 +466,11 @@ def plot_progress(
 
     for label_number, (_, record) in enumerate(select_observed_milestones(valid, mode, max_labels)):
         offset, horizontal_align, vertical_align = label_placement(label_number, record, ax.get_xlim(), ax.get_ylim())
+        milestone_text = f"#{record.index} {record.score:.4f}: {record_label(record, 28)}"
+        if record.literature_event_id:
+            milestone_text += f" [{record.family or record.literature_event_id}]"
         annotation = ax.annotate(
-            f"#{record.index} {record.score:.4f}: {record_label(record, 28)}",
+            milestone_text,
             (record.index, record.score),
             textcoords="offset points",
             xytext=offset,

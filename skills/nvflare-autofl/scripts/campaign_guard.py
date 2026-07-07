@@ -33,6 +33,8 @@ from typing import Any, Dict, List, Optional, Tuple
 DEFAULT_HARD_CRASH_THRESHOLD = 6
 DEFAULT_MIN_DELTA = 0.0005
 DEFAULT_PLATEAU_THRESHOLD = 8
+DEFAULT_EXPLORATION_BATCH_SIZE = 3
+DEFAULT_FAMILY_REPEAT_LIMIT = 6
 DEFAULT_STOP_FILES = ("STOP_AUTOFL", ".nvflare/autofl/STOP")
 ATTEMPT_STATUSES = {"candidate", "keep", "discard", "crash"}
 SCORED_ATTEMPT_STATUSES = {"keep", "discard"}
@@ -79,6 +81,27 @@ def is_literature_event(row: Dict[str, str]) -> bool:
     return "literature" in (row.get("name", "") or "").lower()
 
 
+def candidate_kind(row: Dict[str, str]) -> str:
+    kind = (row.get("candidate_kind", "") or "").strip().lower()
+    if kind:
+        return kind
+    changed = (row.get("changed_files", "") or "").strip().lower()
+    return "source_edit" if changed and changed != "none" else "argument_only"
+
+
+def algorithm_family(row: Dict[str, str]) -> str:
+    return (row.get("algorithm_family", "") or "").strip().lower()
+
+
+def literature_events(rows: List[Dict[str, str]]) -> List[Tuple[int, str]]:
+    events = []
+    for idx, row in enumerate(rows):
+        if is_literature_event(row):
+            event_id = (row.get("literature_event_id", "") or "").strip() or f"lit-{len(events) + 1:04d}"
+            events.append((idx, event_id))
+    return events
+
+
 def comparable_attempts(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
     return [row for row in rows if normalize_status(row) in ATTEMPT_STATUSES and not is_baseline(row)]
 
@@ -110,6 +133,51 @@ def scored_attempts_with_index(rows: List[Dict[str, str]]) -> List[Tuple[int, Di
     return scored_rows_with_index(rows, is_scored_attempt)
 
 
+def exploration_batches(rows: List[Dict[str, str]], batch_size: int) -> List[Dict[str, Any]]:
+    """Per literature event: linked scored source-edited candidates and the batch-completion row index."""
+    events = literature_events(rows)
+    scored = scored_attempts_with_index(rows)
+    batches = []
+    for position, (event_idx, event_id) in enumerate(events):
+        next_event_idx = events[position + 1][0] if position + 1 < len(events) else len(rows)
+        linked = []
+        for row_idx, row, _ in scored:
+            if row_idx <= event_idx or candidate_kind(row) != "source_edit":
+                continue
+            row_event = (row.get("literature_event_id", "") or "").strip()
+            if row_event == event_id or (not row_event and row_idx < next_event_idx):
+                linked.append(row_idx)
+        if batch_size <= 0:
+            completion_index: Optional[int] = event_idx
+        elif len(linked) >= batch_size:
+            completion_index = sorted(linked)[batch_size - 1]
+        else:
+            completion_index = None
+        batches.append(
+            {
+                "literature_event_id": event_id,
+                "event_index": event_idx,
+                "required": max(batch_size, 0),
+                "completed": len(linked),
+                "completion_index": completion_index,
+            }
+        )
+    return batches
+
+
+def family_repeat_stalled(rows: List[Dict[str, str]], limit: int) -> bool:
+    if limit <= 0 or not literature_events(rows):
+        return False
+    scored = scored_attempts_with_index(rows)
+    if len(scored) < limit:
+        return False
+    recent = [row for _, row, _ in scored[-limit:]]
+    families = {algorithm_family(row) for row in recent}
+    if len(families) != 1 or not next(iter(families)):
+        return False
+    return all(candidate_kind(row) == "argument_only" for row in recent)
+
+
 def better(new_score: Optional[float], old_score: Optional[float], mode: str, min_delta: float = 0.0) -> bool:
     new_score = parse_score(new_score)
     old_score = parse_score(old_score)
@@ -130,7 +198,13 @@ def best_score(rows: List[Dict[str, str]], mode: str) -> Optional[float]:
     return best
 
 
-def plateau_status(rows: List[Dict[str, str]], threshold: int, min_delta: float, mode: str) -> Dict[str, Any]:
+def plateau_status(
+    rows: List[Dict[str, str]],
+    threshold: int,
+    min_delta: float,
+    mode: str,
+    exploration_batch_size: int = DEFAULT_EXPLORATION_BATCH_SIZE,
+) -> Dict[str, Any]:
     retained = scored_rows_with_index(rows, is_retained)
     scored_attempts = scored_attempts_with_index(rows)
     if threshold <= 0 or not retained:
@@ -153,8 +227,15 @@ def plateau_status(rows: List[Dict[str, str]], threshold: int, min_delta: float,
             best_scored_idx = scored_idx
             best_name = row.get("name", "")
 
-    last_literature_idx = max((idx for idx, row in enumerate(rows) if is_literature_event(row)), default=-1)
-    reset_row_idx = max(best_row_idx, last_literature_idx)
+    batches = exploration_batches(rows, exploration_batch_size)
+    last_literature_idx = max((batch["event_index"] for batch in batches), default=-1)
+    # The plateau clock resets when a literature exploration batch COMPLETES, not when the
+    # review is merely recorded — otherwise recording a review relieves plateau pressure
+    # without any source-backed follow-through.
+    last_batch_completion_idx = max(
+        (batch["completion_index"] for batch in batches if batch["completion_index"] is not None), default=-1
+    )
+    reset_row_idx = max(best_row_idx, last_batch_completion_idx)
     scored_since_reset = sum(1 for row_idx, _, _ in scored_attempts if row_idx > reset_row_idx)
     recommendation = "literature" if scored_since_reset >= threshold else "continue"
     return {
@@ -164,6 +245,7 @@ def plateau_status(rows: List[Dict[str, str]], threshold: int, min_delta: float,
         "best_score": best,
         "best_scored_index": best_scored_idx,
         "last_literature_event_index": last_literature_idx,
+        "last_batch_completion_index": last_batch_completion_idx,
         "min_delta": min_delta,
         "reset_row_index": reset_row_idx,
         "scored_since_reset": scored_since_reset,
@@ -211,13 +293,17 @@ def guard_state_for_rows(
     hard_crash_threshold: int = DEFAULT_HARD_CRASH_THRESHOLD,
     mode: str = "max",
     pending_manifest_count: int = 0,
+    exploration_batch_size: int = DEFAULT_EXPLORATION_BATCH_SIZE,
+    family_repeat_limit: int = DEFAULT_FAMILY_REPEAT_LIMIT,
 ) -> Dict[str, Any]:
     attempts = comparable_attempts(rows)
     pending = pending_candidates(rows)
     cap = max_candidates
     cap_source = "explicit" if cap is not None else "uncapped"
     stop_file_hits = existing_stop_files(stop_files or list(DEFAULT_STOP_FILES))
-    plateau = plateau_status(rows, plateau_threshold, min_delta, mode)
+    batches = exploration_batches(rows, exploration_batch_size)
+    active_batch = batches[-1] if batches and batches[-1]["completion_index"] is None else None
+    plateau = plateau_status(rows, plateau_threshold, min_delta, mode, exploration_batch_size)
 
     decision = "continue"
     reason = "continue"
@@ -247,6 +333,12 @@ def guard_state_for_rows(
         reason = "hard_repeated_crash_blocker"
         next_action = "final_report"
         final_response_allowed = True
+    elif active_batch is not None:
+        reason = "literature_exploration_batch"
+        next_action = "develop_literature_batch"
+    elif family_repeat_stalled(rows, family_repeat_limit):
+        reason = "family_repeat_limit"
+        next_action = "diversify_candidates"
     elif plateau.get("recommendation") == "literature":
         reason = "plateau_literature"
         next_action = "run_literature_loop"
@@ -262,9 +354,23 @@ def guard_state_for_rows(
         instruction = "Do not produce a final answer. Finish the pending candidate, then run the runner status action."
     elif next_action == "run_literature_loop":
         instruction = (
-            "Do not produce a final answer. Run the literature loop, record a literature event, "
-            "then launch source-backed candidates under the same comparison budget. Include at least one "
-            "server aggregation candidate when compatible with the job contract; otherwise record why it is incompatible."
+            "Do not produce a final answer. Run the literature loop and record a literature event with "
+            "record --literature. Select a workload-appropriate idea (server aggregation, client optimizer, "
+            "loss, schedule, or architecture within the fixed budget), then develop it as a source-backed "
+            "exploration batch linked via --literature-event."
+        )
+    elif next_action == "develop_literature_batch":
+        remaining = active_batch["required"] - active_batch["completed"]
+        instruction = (
+            f"Do not produce a final answer. Literature event {active_batch['literature_event_id']} needs "
+            f"{remaining} more scored source-backed candidate(s) prepared with --literature-event before normal "
+            "candidate flow resumes: a faithful implementation, a tuned variant, and an ablation under the "
+            "same comparison budget."
+        )
+    elif next_action == "diversify_candidates":
+        instruction = (
+            "Do not produce a final answer. Recent scored attempts are argument-only tuning of a single "
+            "algorithm family; prepare a source-backed candidate or switch to a different family next."
         )
     else:
         instruction = "Do not produce a final answer. Propose and prepare the next same-budget candidate now."
@@ -285,7 +391,10 @@ def guard_state_for_rows(
         "best_score": best_score(rows, mode),
         "stop_files": stop_file_hits,
         "plateau": plateau,
-        "required_exploration": "source_backed_server_aggregation" if next_action == "run_literature_loop" else None,
+        "exploration_batch": batches[-1] if batches else None,
+        "required_exploration": (
+            "source_backed_exploration" if next_action in {"run_literature_loop", "develop_literature_batch"} else None
+        ),
         "agent_instruction": instruction,
     }
 
@@ -300,6 +409,8 @@ def guard_state(
     hard_crash_threshold: int = DEFAULT_HARD_CRASH_THRESHOLD,
     mode: str = "max",
     pending_manifest_count: int = 0,
+    exploration_batch_size: int = DEFAULT_EXPLORATION_BATCH_SIZE,
+    family_repeat_limit: int = DEFAULT_FAMILY_REPEAT_LIMIT,
 ) -> Dict[str, Any]:
     return guard_state_for_rows(
         load_rows(results_path),
@@ -311,6 +422,8 @@ def guard_state(
         hard_crash_threshold=hard_crash_threshold,
         mode=mode,
         pending_manifest_count=pending_manifest_count,
+        exploration_batch_size=exploration_batch_size,
+        family_repeat_limit=family_repeat_limit,
     )
 
 
@@ -344,6 +457,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--plateau-threshold", type=int, default=DEFAULT_PLATEAU_THRESHOLD)
     parser.add_argument("--min-delta", type=float, default=DEFAULT_MIN_DELTA)
     parser.add_argument("--hard-crash-threshold", type=int, default=DEFAULT_HARD_CRASH_THRESHOLD)
+    parser.add_argument("--exploration-batch-size", type=int, default=DEFAULT_EXPLORATION_BATCH_SIZE)
+    parser.add_argument("--family-repeat-limit", type=int, default=DEFAULT_FAMILY_REPEAT_LIMIT)
     parser.add_argument("--mode", choices=["max", "min"], default="max")
     parser.add_argument("--format", choices=["text", "json"], default="text")
     args = parser.parse_args(argv)
@@ -366,6 +481,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         min_delta=args.min_delta,
         hard_crash_threshold=args.hard_crash_threshold,
         mode=args.mode,
+        exploration_batch_size=args.exploration_batch_size,
+        family_repeat_limit=args.family_repeat_limit,
     )
     if args.format == "json":
         print(json.dumps(state, sort_keys=True))

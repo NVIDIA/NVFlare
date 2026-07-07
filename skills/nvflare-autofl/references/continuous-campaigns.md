@@ -47,13 +47,35 @@ Common next actions:
   lifecycle, then call `record` with its job ID and artifacts.
 - `rerun_with_escalated_execution`: retry the same lifecycle action after
   repairing runtime permissions; do not count it as a candidate.
-- `run_literature_loop`: run a short source-backed literature pass, record a
-  non-scored `literature` row when a ledger is available, then launch the next
-  compatible same-budget candidates. Include at least one source-backed server
-  aggregation candidate; if that is incompatible with the job contract,
-  record the reason in the literature event.
+- `run_literature_loop`: run a short source-backed literature pass and record
+  it with `record --literature`; the runner assigns a persistent
+  `literature_event_id` (`lit-0001` style) and a non-scored `literature` ledger
+  row. Select ideas that fit the workload: client optimizer, loss function,
+  learning-rate schedule, architecture, and server aggregation changes within
+  the fixed comparison budget all qualify as source-backed exploration. Match
+  the workload's threat model — do not select Byzantine-robust aggregation
+  (geometric median, trimmed mean, sign gating, bucketed median) for
+  benign-client campaigns. If no source-backed exploration is compatible with
+  the job contract, record the reason in the literature event.
+- `develop_literature_batch`: the latest review's exploration batch is
+  incomplete. Prepare and evaluate scored source-backed candidates linked to
+  the review via `prepare --family <slug> --literature-event <id>` until
+  `exploration_batch_size` of them (default 3, flag `--exploration-batch-size`,
+  env `AUTOFL_EXPLORATION_BATCH_SIZE`) have scored; state keeps
+  `required_exploration=source_backed_exploration` until then. Compose the
+  batch as a faithful implementation of the literature idea, a tuned variant,
+  and an ablation. Literature-linked candidates must contain source edits; the
+  runner rejects argument-only literature-linked candidates at evaluate time.
+- `diversify_candidates`: the last `family_repeat_limit` scored attempts
+  (default 6, flag `--family-repeat-limit`, env `AUTOFL_FAMILY_REPEAT_LIMIT`,
+  0 disables) were all argument-only tuning of the same algorithm family.
+  Switch to a different algorithm family or prepare a source-backed candidate.
 - `final_report`: generate final artifacts only after the runner permits a final
   response.
+
+The plateau clock resets when a literature review's exploration batch
+completes — when its final linked candidate scores — not when the review row
+is recorded. Recording a review does not relieve plateau pressure.
 
 After every finalized batch, run the available plateau or progress watchdog when
 the task provides one. If it recommends `continue`, refresh `progress.png` and
@@ -67,7 +89,10 @@ request deterministic tunable suggestions as seeds.
 Server aggregation is an open code-search surface. The agent may create a new
 Python aggregator module, edit an existing allowed aggregator module, and
 register it through `job.py`; it must not limit exploration to the job's
-pre-existing FedAvg, FedAvgM, FedAdam, FedOpt, or SCAFFOLD options.
+pre-existing FedAvg, FedAvgM, FedAdam, FedOpt, or SCAFFOLD options. Required
+source-backed exploration is not aggregation-only: client optimizer, loss
+function, learning-rate schedule, and architecture candidates within the fixed
+comparison budget qualify equally.
 
 ## Simulator Recovery
 
