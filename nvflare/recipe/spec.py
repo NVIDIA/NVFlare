@@ -357,8 +357,8 @@ class Recipe(ABC):
                 # instead of silently losing the placement.
                 raise ValueError(
                     "cannot target specific clients: this recipe's client app applies to all clients. "
-                    "Configure per-site client apps first (e.g. per_site_config/set_per_site_config) "
-                    "or omit clients to apply to all clients."
+                    "Construct the recipe with per-site client apps (e.g. the per_site_config constructor "
+                    "argument on recipes that support it) or omit clients to apply to all clients."
                 )
             for client in clients:
                 self.job.to(obj, client, **kwargs)
@@ -449,9 +449,9 @@ class Recipe(ABC):
             component: The component object to add to client apps.
             clients: Optional list of specific client names. If None, applies to all clients.
                 Targeting specific clients requires the recipe's client apps to be per-site
-                (e.g. recipes configured with per-site config); with the default all-clients
-                topology, targeted placement raises ValueError instead of silently dropping
-                the component from the generated job.
+                (e.g. recipes constructed with the per_site_config constructor argument);
+                with the default all-clients topology, targeted placement raises ValueError
+                instead of silently dropping the component from the generated job.
             id: Optional component id. If None, an id is generated. If the id is already
                 used in a client app, a numeric suffix is appended.
 

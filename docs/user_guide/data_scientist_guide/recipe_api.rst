@@ -113,9 +113,14 @@ Component helpers:
 These component helpers place plain components only. Files, config parameters,
 filters, and executors have the dedicated APIs above; controllers are
 configured by the recipe itself. Targeting specific clients with ``clients``
-requires per-site client apps (e.g. recipes configured with per-site config);
-with the default all-clients topology, targeted placement raises an error
-rather than silently dropping the component from the generated job.
+requires per-site client apps: construct the recipe with the
+``per_site_config`` constructor argument on recipes that support it. With the
+default all-clients topology, targeted placement raises an error rather than
+silently dropping the component from the generated job. Calling
+``set_per_site_config`` after construction records the configuration for
+``configured_sites()`` but does not yet rebuild an existing all-clients app
+into per-site apps; recipes will interpret helper-provided per-site config as
+follow-up work.
 
 Filter helpers:
 
