@@ -56,6 +56,11 @@ class Topic:
     # Per task (every round)
     TASK_READY = "client_api.task_ready"
     TASK_ACCEPTED = "client_api.task_accepted"
+    # Sent when the trainer has materialized (or lazily bound) the task payload and hands
+    # it to user code. Ends the payload-materialization phase: the forward-path heartbeat
+    # exemption stops here and heartbeats govern the session lease while user code trains
+    # (design: Heartbeat and Liveness, Revision 2.2).
+    TASK_PAYLOAD_READY = "client_api.task_payload_ready"
     TASK_FAILED = "client_api.task_failed"
     RESULT_READY = "client_api.result_ready"
     RESULT_ACCEPTED = "client_api.result_accepted"
