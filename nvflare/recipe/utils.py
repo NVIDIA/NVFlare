@@ -266,6 +266,8 @@ def add_experiment_tracking(
             raise ValueError("clients is only used for client-side tracking; set client_side=True")
         if not isinstance(clients, list) or not all(isinstance(c, str) for c in clients):
             raise TypeError(f"clients must be a list of str, got {clients!r}")
+        if not clients:
+            raise ValueError("clients must not be empty; omit it to add tracking to all clients")
 
     _, flag = optional_import(TRACKING_REGISTRY[tracking_type]["package"])
     if not flag:

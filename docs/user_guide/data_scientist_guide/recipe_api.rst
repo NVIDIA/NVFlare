@@ -107,7 +107,8 @@ Component helpers:
 
 ``recipe.add_server_component(component, id=None)``
    Add a component object to the generated server app. Returns the final
-   component id.
+   component id; components that implement their own job-registration hook
+   return that hook's result instead.
 
 These component helpers place plain components only. Files, config parameters,
 filters, and executors have the dedicated APIs above; controllers are

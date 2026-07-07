@@ -318,9 +318,10 @@ class Recipe(ABC):
             **kwargs: Extra options forwarded to `job.to()`/`job.to_clients()`.
 
         Raises:
-            ValueError: If clients contains a non-client name, or if specific clients are
-                targeted while the recipe's client app applies to all clients (per-site
-                placement cannot be expressed in the generated job in that topology).
+            TypeError: If clients is not a list.
+            ValueError: If clients is empty or contains a non-client name, or if specific
+                clients are targeted while the recipe's client app applies to all clients
+                (per-site placement cannot be expressed in the generated job in that topology).
         """
         from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
         from nvflare.job_config.defs import JobTargetType
@@ -341,6 +342,11 @@ class Recipe(ABC):
             else:
                 self.job.to_clients(obj, **kwargs)
         else:
+            # A bare string would iterate per character; an empty list would be a silent no-op.
+            if not isinstance(clients, list):
+                raise TypeError(f"clients must be a list of client names, got {type(clients).__name__}")
+            if not clients:
+                raise ValueError("clients must not be empty; omit it to apply to all clients")
             for client in clients:
                 if not isinstance(client, str) or client in (ALL_SITES, SERVER_SITE_NAME):
                     raise ValueError(f"invalid client name {client!r}: client names must name specific client sites")
@@ -449,11 +455,16 @@ class Recipe(ABC):
             id: Optional component id. If None, an id is generated. If the id is already
                 used in a client app, a numeric suffix is appended.
 
+        Returns:
+            None. The final id may differ per client app (numeric suffixing is per app),
+            so no single id is returned; pass an explicit id that is unused in the
+            targeted apps if you need a stable reference.
+
         Raises:
             TypeError: If component is a str, dict, Filter, Controller, Executor, or a
-                script runner.
-            ValueError: If clients names non-client sites, or targets specific clients
-                while the recipe's client app applies to all clients.
+                script runner, or clients is not a list.
+            ValueError: If clients is empty or names non-client sites, or targets specific
+                clients while the recipe's client app applies to all clients.
 
         Example:
             # Add a streamer component to all clients
@@ -463,11 +474,6 @@ class Recipe(ABC):
             recipe.add_client_component(receiver, clients=["site-1"], id="mlflow_receiver")
         """
         self._validate_placed_component(component, "client")
-        if isinstance(component, Controller):
-            raise TypeError(
-                "Controllers run in the server workflow and are configured by the recipe; "
-                "they cannot be added to clients"
-            )
         self._add_to_client_apps(component, clients=clients, id=id)
 
     @staticmethod
@@ -479,21 +485,27 @@ class Recipe(ABC):
             raise TypeError(f"component must be an object; use add_{target_type}_config for configuration parameters")
         if isinstance(component, Filter):
             raise TypeError(
-                f"Filters are wired into filter chains; use add_{target_type}_input_filter or "
-                f"add_{target_type}_output_filter"
+                f"Filters are wired into filter chains; use add_{target_type}_input_filter or add_{target_type}_output_filter"
+            )
+        # Check Controller before Executor so a hybrid subclass gets the accurate message.
+        if isinstance(component, Controller):
+            if target_type == "client":
+                raise TypeError(
+                    "Controllers run in the server workflow and are configured by the recipe; they cannot be added to clients"
+                )
+            raise TypeError(
+                "Controllers are configured by the recipe itself; they cannot be added through add_server_component"
             )
         if isinstance(component, Executor):
             raise TypeError(
-                "Executors are configured through the recipe's executor/train-script parameters, "
-                f"not add_{target_type}_component"
+                f"Executors are configured through the recipe's executor/train-script parameters, not add_{target_type}_component"
             )
         # Script runners are executor-installing wrappers, not plain components.
         from nvflare.job_config.script_runner import BaseScriptRunner, ScriptRunner
 
         if isinstance(component, (BaseScriptRunner, ScriptRunner)):
             raise TypeError(
-                "script runners are configured through the recipe's train-script parameters, "
-                f"not add_{target_type}_component"
+                f"script runners are configured through the recipe's train-script parameters, not add_{target_type}_component"
             )
 
     def add_server_output_filter(self, filter: Filter, tasks: Optional[List[str]] = None):
@@ -586,10 +598,6 @@ class Recipe(ABC):
             streamer_id = recipe.add_server_component(TensorServerStreamer())
         """
         self._validate_placed_component(component, "server")
-        if isinstance(component, Controller):
-            raise TypeError(
-                "Controllers are configured by the recipe itself; they cannot be added through " "add_server_component"
-            )
         return self.job.to_server(component, id=id)
 
     @staticmethod

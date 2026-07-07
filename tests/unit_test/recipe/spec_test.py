@@ -915,6 +915,17 @@ class TestRecipeComponentPlacement:
         with pytest.raises(ValueError, match="invalid client name"):
             recipe.add_client_component(_PlainComponent(), clients=[bad_site])
 
+    def test_add_client_component_rejects_bare_string_clients(self):
+        recipe = self._make_recipe()
+        # A bare string would otherwise iterate per character and create per-char apps.
+        with pytest.raises(TypeError, match="must be a list"):
+            recipe.add_client_component(_PlainComponent(), clients="site-1")
+
+    def test_add_client_component_rejects_empty_clients(self):
+        recipe = self._make_recipe()
+        with pytest.raises(ValueError, match="must not be empty"):
+            recipe.add_client_component(_PlainComponent(), clients=[])
+
     @pytest.mark.parametrize("method", ["add_client_component", "add_server_component"])
     def test_component_methods_reject_filter(self, method):
         from nvflare.apis.filter import Filter

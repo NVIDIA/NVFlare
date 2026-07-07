@@ -622,6 +622,13 @@ class TestAddExperimentTrackingClients:
                 recipe, dummy_tracking, {"tracking_uri": "u"}, client_side=True, clients=bad_clients
             )
 
+    def test_clients_empty_list_raises(self, dummy_tracking):
+        from nvflare.recipe.utils import add_experiment_tracking
+
+        recipe = self._make_recipe()
+        with pytest.raises(ValueError, match="must not be empty"):
+            add_experiment_tracking(recipe, dummy_tracking, {"tracking_uri": "u"}, client_side=True, clients=[])
+
     def test_clients_targeting_rejects_all_sites_topology(self, dummy_tracking):
         from nvflare.recipe.utils import add_experiment_tracking
 
