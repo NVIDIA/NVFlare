@@ -6,6 +6,8 @@ Proposal / design note. Epic: **FLARE-2698** (Client API and 3rd party integrati
 
 Revision 2 (2026-07-01): incorporates review feedback — universal session setup, owner-death and receive-side contracts, forward-path payload lifecycle, cleanup policy definition, receiver-confirmed terminal outcome, per-receiver transfer budgets, configuration surface, attach auth hardening, and a re-sequenced migration plan.
 
+Revision 2.1 (2026-07-06): adds the filters-imply-materializing-hop rule to the payload lifecycle (per-(task,direction) granularity), conversion-filter placement details (site-scope filter ordering, DXO-meta round-trip state, mixed-format cost and bf16 limit, and what selects the regime — `server_expected_format` surviving as a recipe knob), the TensorStream disposition, and a CCWF caveat cross-referencing the materializing-hop rule (a wired conversion filter moves the producer role from the subprocess to the CJ). Claims verified against code.
+
 ## Background
 
 NVFlare supports the Client API so training scripts can interact with FLARE through a small surface:
@@ -25,6 +27,21 @@ This works well for simple in-process scripts. It becomes harder to reason about
 Several integration paths have grown up around this — an in-process executor, the subprocess Pipe/LauncherExecutor stack, AV-style IPCAgent, third-party FlareAgent, and an older multi-process executor. They are catalogued in Appendix A: Current Integration Paths.
 
 The new design keeps the Client API as the user-facing contract, but replaces the recommended Pipe/LauncherExecutor integration story with clearer execution modes.
+
+## Definitions (actor vocabulary)
+
+"Trainer" is used throughout for several related-but-distinct things; this section pins the vocabulary. Where a sentence's meaning depends on which one, the specific term below is used.
+
+- **Training script (the trainer code):** the user's Client API code calling `flare.init()/receive()/send()/log()`. Framework-agnostic and unchanged by this design. Say "training script" when you mean the code, not a process.
+- **Trainer process / trainer process tree:** the OS process — or, under torchrun/Deepspeed/mpirun, the whole process group — running the training script out-of-process in external_process or attach. In **in_process there is no trainer process**: the script runs as a thread inside the CJ process.
+- **Control rank (rank 0):** the single rank inside a trainer process tree that owns the Cell connection and may call the control APIs. Defaults to global RANK 0; overridable via `flare.init(rank=...)`. It is the only rank that is an NVFlare Cell peer, and thus the only rank that is a producer/consumer of payloads.
+- **Client Job (CJ) process:** the NVFlare client-side job-runtime process launched by JobLauncherSpec. It hosts the Executor and is the trainer's Cell peer in out-of-process modes.
+- **Executor (ClientAPIExecutor):** the FLComponent inside the CJ process that drives the mode backend. Not a synonym for the CJ process.
+- **Client CP (client control/parent process):** the long-lived client process that launches and reaps CJ processes; the reaping backstop in the owner-death contract.
+- **Producer / consumer:** direction-dependent role labels for one transfer, not fixed actors. On result upload the control rank is the producer and the server (or a peer) is the consumer; on task delivery the CJ/server side is the producer and the control rank is the consumer.
+- **External platform vs external trainer (attach only):** the external *platform* (AV, SLURM/K8s, operator) starts the trainer and delivers the bootstrap config; the *external trainer* is the started process that attaches. They are distinct actors.
+
+Unqualified "trainer" below means the trainer process tree in out-of-process modes (and, loosely, the training script in in_process). "Keep the trainer alive" is a claim about the **trainer process** (the producer's live resources exist in the control rank; the stop mechanism acts on the whole process group).
 
 ## Problem
 
@@ -324,7 +341,11 @@ Internally, `flare.init()` binds to:
 
 A Client API **session** is the runtime state for one trainer connection: identity, auth, current task, heartbeat, payload policy, and shutdown state. It is not a separate user-visible concept.
 
-**Session invariant (V1).** A session owns at most one active *task* at a time; it may additionally have open *transfers* from earlier tasks draining in the background (the fan-out case below). For the default single-receiver result, `flare.send()` blocks until the terminal transfer outcome (see Payload Lifecycle), so the previous task is fully terminal before the next TASK_READY — matching the blocking behavior of today's subprocess send path. For a workflow-declared multi-receiver result (CCWF fan-out), `flare.send()` returns at RESULT_ACCEPTED with the payload registered for download; the transfer keeps draining in the background while the session accepts its next task, and the producer-liveness obligation attaches to the session/process rather than the send call — `flare.shutdown()` and executor process stop block until all open transfers reach terminal state. Without this, staged fan-out would deadlock: CSE/broadcast receivers pull a producer's result during their own later tasks, which could never be dispatched if every producer sat blocked in send. Per-task control state (task id) resets when the task completes; each result's (result_id, transfer_id) state persists until its transfer reaches a terminal state; session identity, auth, and heartbeat state persist across rounds.
+**Session invariant (V1).** A session owns at most one active *task* at a time. A trainer (the control rank) only ever produces **single-receiver, live-pull** results — client→server, swarm-learn→aggregator, cyclic→next-client (all `num_receivers=1`). For those, `flare.send()` blocks until the terminal transfer outcome (see Payload Lifecycle), so the previous task is fully terminal before the next TASK_READY — matching the blocking behavior of today's subprocess send path. This is true in both launch modes: under `launch_once=True` the send blocks on the persistent session; under `launch_once=False` the per-task process is held until the terminal outcome and only then stopped (see the launch_once=False sequence).
+
+**Fan-out is CJ-held, not trainer-held.** Workflow-declared multi-receiver results (CCWF broadcast-best/last, CSE — `num_receivers=N`) are **not produced by the trainer subprocess**. In the actual CCWF paths the model is served from CJ-side state — the controller's in-memory best model for broadcast-best, or the persistor for CSE (whose training subprocess has already exited by eval time). So the resident producer for a fan-out result is the **CJ process**, whose lifetime already spans the whole job; it can serve N receivers in the background across later rounds (their staged pulls) and its release gates on the aggregate outcome. There is no "trainer subprocess draining fan-out in the background," and therefore no interaction with `launch_once` for fan-out — the trainer subprocess never holds a multi-receiver transfer. Without this split, staged fan-out would appear to deadlock (CSE/broadcast receivers pull during their own later tasks); locating the fan-out producer in the CJ is what removes that.
+
+Per-task control state (task id) resets when the task completes; each result's (result_id, transfer_id) state persists until its transfer reaches a terminal state. In `launch_once=True` and attach, session identity/auth/heartbeat persist across rounds; in `launch_once=False` each task is a fresh process and a fresh session (see that sequence), so "persist across rounds" does not apply there.
 
 Note the trainer side is not a thin shim: the Cell backend of the Client API replaces FlareAgent's protocol engine (task queueing, heartbeat, teardown handling, payload waits) inside the trainer process. This is real scope, accounted for in Migration Plan step 3.
 
@@ -440,7 +461,8 @@ TASK_ACCEPTED acknowledges control receipt of the task message only — it does 
 - Both sides send HEARTBEAT on the session's Cell connection. Recommended defaults follow the legacy Pipe values: interval 5 s, miss timeout 30 s, tunable in the bootstrap config.
 - In external_process the executor has two liveness signals: process exit (waitpid on the process tree it owns) and heartbeat. Process exit is authoritative for "trainer is gone"; heartbeat covers a live-but-wedged trainer.
 - In attach the heartbeat lease is the only liveness signal the executor has.
-- **Precedence rule for transfers:** active data-plane transfer progress counts as session liveness. While a session has an in-flight transfer (a result in WAIT_PAYLOAD_ACQUIRED/WAIT_TRANSFER_COMPLETE, including background fan-out drains), the session lease does not expire on missed control heartbeats alone; the transfer's own idle/progress policy (shared F3 layer) governs, and only transfer failure/timeout or an explicit abort ends the session. This resolves the otherwise-contradictory pair "heartbeat timeout invalidates the session" vs "the executor must not revoke the session before terminal payload state" — and heartbeat false-positives during multi-GB transfers are precisely the failure class this design exists to remove. (The legacy stack solved this with a dedicated STREAM_PROGRESS topic feeding transfer waits, deliberately separate from peer liveness; the same separation is preserved here, just owned by the shared transfer layer.)
+- **Precedence rule for transfers (result path):** active data-plane transfer progress counts as session liveness. While a session has an in-flight result transfer (WAIT_PAYLOAD_ACQUIRED/WAIT_TRANSFER_COMPLETE), the session lease does not expire on missed control heartbeats alone; the transfer's own idle/progress policy (shared F3 layer) governs, and only transfer failure/timeout or an explicit abort ends the session. This resolves the otherwise-contradictory pair "heartbeat timeout invalidates the session" vs "the executor must not revoke the session before terminal payload state" — and heartbeat false-positives during multi-GB result uploads are precisely one failure class this design removes. (The legacy stack solved this with a dedicated STREAM_PROGRESS topic feeding transfer waits, deliberately separate from peer liveness; the same separation is preserved here, just owned by the shared transfer layer.)
+- **Precedence rule for the forward (task-delivery) path:** the same false-positive class exists in the *other* direction and needs its own rule, because the CJ cannot see forward bytes. When TASK_READY carries a lazy ref to a multi-GB global model, the control rank pulls those bytes **directly from the producer** (server job process); the CJ that owns the session/heartbeat lease is only a relay and observes no forward transfer (the producer's progress callback fires at the server, not the CJ). A control rank busy materializing 5 GB inside `flare.receive()` therefore has no in-flight-transfer signal to feed the rule above. Rule: **the CJ must not revoke the session on control-heartbeat timeout while a TASK_ACCEPTED is outstanding** — an accepted-but-not-yet-completed task means the trainer is legitimately working (materializing the payload and/or training), and forward materialization is bounded by the trainer-local pull policy (the shared F3 idle/timeout on the trainer→producer transfer), not by the control heartbeat. This is the forward analog of the result-path rule and closes the same 5GB-materialization false-positive that `progress_aware_streaming.md` documents on `task_payload_download`.
 
 #### CJ Failure (Owner Death)
 
@@ -574,7 +596,7 @@ A receiver that exhausts its acquire or idle budget is marked failed for the agg
 
 Payloads should be represented by a manifest rather than implied by the control transport.
 
-Possible payload locations: inline payload, Cell streaming reference, lazy download reference, disk offload reference, NFS/shared file reference, object store reference.
+Possible payload locations: inline payload, Cell streaming reference, lazy download reference, NFS/shared file reference, object store reference. (Tensor disk offload is **not** a manifest location type — it is a receiver-side FOBS storage policy engaged by a cell-global receiver flag, orthogonal to how the payload is referenced; see Tensor Streaming And Disk Offload.)
 
 Example conceptual result envelope:
 
@@ -612,6 +634,8 @@ external trainer process
 ```
 
 In that path, the CJ may intentionally skip tensor materialization and forward lazy references so the server-side job process streams tensors directly from the producer's DownloadService. The important rule is that the producer's resources remain alive until the final consumer's transfer reaches a terminal state, not merely until the CJ ACKs the control message.
+
+Whether the CJ forwards references or materializes is a per-(task, direction) decision, resolvable at executor initialization from the configured filter chains: **a hop that runs content filters is a materializing hop.** If the job or the site privacy scope configures any task-data or task-result DXO filter — including the framework conversion filter (see Configuration Surface) — the CJ must decode without pass-through, materialize the payload, run the filter chain, and re-publish the result as its own transfer, becoming the producer for the next leg under the same lifecycle contract. Reference forwarding is valid only when the filter chains are empty for the task. This rule is not new with this design: a param-touching filter cannot operate on lazy-reference placeholders today either — the design only makes the decision explicit instead of leaving it to a per-channel decode flag.
 
 For external_process and attach modes, the producer must stay alive until the terminal transfer outcome. For scheduler batch artifact mode, use explicit file/NFS or object-store payload manifests (PERSISTENT_ARTIFACT) instead of live pass-through.
 
@@ -725,6 +749,30 @@ training script native tensors — the ergonomic is preserved, the executor surf
 Transfer type (FULL/DIFF) is a separate axis handled by the Client API's model_registry, not a
 converter; it is decided independently of this removal.
 
+Three placement details, from reviewing the runner and streaming code:
+
+- **Ordering caveat (site filters).** The runner applies site privacy-scope filters *before* job
+  filters in both directions, so on the result path site-enforced filters see framework-native
+  tensors before the job's conversion filter runs. This is already true for tensor-native jobs
+  today; the requirement it implies is that site filters be format-tolerant (the PT
+  quantizer/dequantizer already detect numpy vs torch per-param). Job-configured privacy filters
+  are unaffected — they run after conversion on results, before it on task data, and see numpy.
+- **Round-trip state rides DXO meta.** The conversion filters carry their bookkeeping (tensor
+  shapes, excluded non-tensor entries) in DXO meta — the quantizer's `quant_state` pattern —
+  rather than FLContext properties. This removes the subprocess-side `_ConverterContext` stub and
+  the fl_ctx side-channel coupling between the two legacy converter instances.
+- **Cost of the mixed-format regime.** Wiring the conversion filter makes the CJ a materializing
+  hop (see the payload-lifecycle rule): the numpy leg (server↔CJ) and the tensor leg (CJ↔trainer)
+  become two chained transfers, and the CJ holds one in-memory copy of the model. The conversion
+  itself is near zero-copy, but numpy cannot represent bf16, so this regime is limited to
+  fp32/fp16 models. Large/modern models should use `server_expected_format=PYTORCH` end-to-end,
+  where no conversion filter is wired and the CJ forwards references untouched.
+- **What selects the regime.** `server_expected_format` is removed only as an *executor
+  argument*; it survives as a **recipe/ScriptRunner-level knob** that decides whether the
+  framework conversion filter is auto-wired — `PYTORCH` ⇒ no filter, references forwarded;
+  `NUMPY` (today's default) ⇒ the conversion filter is wired and the CJ becomes a materializing
+  hop. (Code: recipes gate on `allow_numpy_conversion = server_expected_format != PYTORCH`.)
+
 Example client job config (external_process):
 
 ```json
@@ -756,9 +804,10 @@ One executor component, no pipes, no launcher, no MetricRelay: LOG messages arri
 | MetricRelay, metric pipe | dropped — LOG on the session connection; executor fires analytics events |
 | SubprocessLauncher | internal process runner (not public surface) |
 | ExternalConfigurator | folded into external_process launch (bootstrap config) |
-| params_exchange_format / server_expected_format / from_nvflare_converter_id / to_nvflare_converter_id | removed from executor (FLARE-2698) — conversion moves to send/receive filters at the client edge |
+| params_exchange_format / server_expected_format / from_nvflare_converter_id / to_nvflare_converter_id | removed as **executor arguments** (FLARE-2698) — conversion moves to send/receive filters at the client edge. `server_expected_format` survives as a recipe/ScriptRunner knob that gates whether the conversion filter is auto-wired (PYTORCH ⇒ none; NUMPY ⇒ wired) |
 | params_transfer_type (FULL/DIFF) | not a converter — stays a Client API concern (model_registry); decided separately |
 | task_script_path / task_script_args | kept (in_process trainer entry point) |
+| TensorServerStreamer / TensorClientStreamer (push tensor streaming) | opt-in optional component with **no hard code dependency** — only its own example instantiates it (swarm does not import or require it, so retiring it would not break swarm). But swarm is intentionally engineered to be TensorStreamer-*compatible* (`swarm_client_ctl.py` self-message local-queue + deep-copy defends against a TensorStreamer deadlock/in-place-mutation race, with a dedicated regression test), so retiring it would orphan that accommodation code. The data-plane standard is the shared DownloadService pull path (qwen3-vl/medgemma already run multi-GB rounds on it); fold eager pre-positioning into the shared layer only if a workload demands it |
 | train_task_name / evaluate_task_name / submit_model_task_name / train_with_evaluation | kept — power flare.is_train()/is_evaluate()/is_submit_model() |
 | memory_gc_rounds / cuda_empty_cache | kept, same meaning |
 
@@ -858,10 +907,12 @@ Client-controlled workflows (swarm, cyclic, CSE) are the historically fragile ca
 
 This is not a missing-transport problem. DownloadService already provides what is needed: a transaction with num_receivers, per-receiver completion (downloaded_to_one), an all-done signal (downloaded_to_all / transaction_done), and a timeout backstop. The model is direct pull — the ref carries the producer subprocess's fqcn + ref_id, the peer downloads straight from that subprocess, and the CJ that forwards the ref is a relay, not a receiver. So num_receivers counts the real consumers, and the relay hop does not need to be counted.
 
+**Caveat — this direct-pull, CJ-is-pure-relay model holds only when the CJ can forward references, i.e. when no task-result filter is wired.** Per the materializing-hop rule (see Tensor Streaming And Disk Offload), if the CCWF job runs the framework conversion filter (the default when `server_expected_format=NUMPY`) or any other task-result DXO filter, the CJ must materialize the result, run the filter, and re-publish it — so the **CJ becomes the producer** for the peer's pull, not a pure relay, and its own resources are held under the same lifecycle contract until the peer's transfer is terminal. The subprocess-is-producer / relay-not-counted description above therefore applies to the PYTORCH-end-to-end (no-conversion-filter) case; under a wired conversion filter the producer role simply moves one hop toward the peer (CJ → peer instead of subprocess → peer), which composes cleanly with the producer-liveness contract.
+
 The fix is therefore to use that contract instead of reimplementing it above the transport:
 
 - The workflow declares num_receivers when the result is produced — it always knows the consumer set: aggregator = 1 (swarm), next client = 1 (cyclic), all clients = N (broadcast best / CSE). This is the concrete, tractable form of the "dynamic receiver count" item — it is workflow-declared, not unknown. The count reaches the producer via the existing FOBS-context NUM_RECEIVERS mechanism when the result is registered.
-- The executor gates subprocess stop on the normalized terminal transfer outcome for those receivers, replacing download_complete_timeout + deferred stop. This is the same normalized-outcome contract the Client API consumes — one mechanism observed at two points. For single-receiver results (swarm aggregator, cyclic next-client) the trainer's `flare.send()` itself returns at the terminal outcome. For fan-out results, send returns at RESULT_ACCEPTED and the executor's stop-gate is the enforcement point: the trainer process stays resident (typically blocked in its next `flare.receive()`), serving downloads in the background, and is released only when the aggregate outcome resolves (see the session invariant).
+- The executor gates subprocess stop on the normalized terminal transfer outcome for those receivers, replacing download_complete_timeout + deferred stop. This applies to the **single-receiver** producer paths where the trainer subprocess is the producer (swarm-learn→aggregator, cyclic→next-client, `num_receivers=1`): the trainer's `flare.send()` returns at the terminal outcome (`launch_once=True`) or the per-task process is held until it (`launch_once=False`), and only then stopped. **Fan-out (broadcast-best/last, CSE — `num_receivers=N`) is served CJ-side, not by the trainer subprocess** (the controller's in-memory best model, or the persistor for CSE whose subprocess has already exited): the CJ process is the resident producer, serves the N staged pulls in the background, and is released on the aggregate outcome (see the session invariant). So there is no subprocess held resident across rounds to serve fan-out — the subprocess-stop gate only ever concerns a single-receiver transfer.
 - This removes the LazyDownloadRef / PASS_THROUGH / `_resolve_lazy_refs` / per-path branching from the workflow controller: it hands the transfer layer a result + receiver count and waits for terminal state.
 
 This is an explicit refactor, not an automatic benefit of the executor change — and it is scheduled as Migration Plan step 6. Today the same "when do the real bytes get pulled" concern is solved three different ways in swarm_client_ctl:
@@ -875,7 +926,7 @@ These three are not the same moment — they fire at different workflow stages �
 Two CCWF-specific policies still need to be set (not new transport):
 
 - **Fan-out (broadcast/CSE).** The producer stays alive until all N receivers pull; a stuck or dead receiver must not pin it forever. This is enforced with the per-receiver budgets above: each receiver stage gets a workflow-supplied expected-pull window, a receiver that exhausts its budget is marked failed for the aggregate outcome, and the workflow decides whether a partial fan-out (N-1 of N) is a usable result or a task failure. The transaction TTL is the envelope over the stage windows, plus a defined abort path.
-- **Disk offload.** Safe to re-enable once the offloaded artifact is deleted only on the normalized terminal outcome (not on subprocess exit); requires explicit validation given its history.
+- **Disk offload.** Two distinct artifacts must not be conflated. The **producer** serves tensors from its in-memory source (a DownloadService ref, no producer-side disk file); that source is released only on the normalized terminal outcome, which is what keeps the subprocess alive long enough. The **receiver's** offloaded copy (e.g. safetensors written by the receiving side's FOBS decode) is the receiver's own storage, on its own GC lifecycle — it is not gated on the producer's outcome. The historical CCWF fragility was the *producer/subprocess* exiting before the peer finished pulling; that is fixed by the terminal-outcome gate on the producer's source. **Hard dependency:** safely re-enabling disk offload in CCWF requires the receiver-confirmed terminal status (Payload Lifecycle refinement #1, plan PR F3-2) — re-enabling on the current *producer-served EOF* outcome would reintroduce silent truncation (a receiver whose disk write fails after its last pull is invisible to the producer). This is a hard prerequisite, not merely "requires validation."
 
 ## Alternatives Considered
 
