@@ -29,6 +29,9 @@ except ImportError:  # pragma: no cover - fcntl is available on CI Linux/macOS.
 DEFAULT_CACHE_ROOT = "/tmp/nvf-test-data"
 CIFAR10_DIR_NAME = "cifar-10-batches-py"
 
+# This archive matches torchvision's CIFAR10 MD5; torchvision's default host is unreliable in CI.
+DEFAULT_DOWNLOAD_URL = "https://zenodo.org/records/15602362/files/cifar-10-python.tar.gz?download=1"
+
 
 def _normalize_path(path: str) -> str:
     return os.path.abspath(os.path.expandvars(os.path.expanduser(path)))
@@ -65,9 +68,20 @@ def _is_valid_cifar10_root(root: str) -> bool:
 def _download_cifar10(root: str):
     from torchvision.datasets import CIFAR10
 
+    urls = [os.environ.get("NVFLARE_CIFAR10_URL", DEFAULT_DOWNLOAD_URL), CIFAR10.url]
     print(f"Preparing CIFAR-10 cache at {root}")
-    CIFAR10(root=root, train=True, download=True)
-    CIFAR10(root=root, train=False, download=True)
+    last_error = None
+    for url in dict.fromkeys(urls):
+        CIFAR10.url = url
+        try:
+            CIFAR10(root=root, train=True, download=True)
+            CIFAR10(root=root, train=False, download=True)
+            break
+        except Exception as download_error:
+            print(f"CIFAR-10 download from {url} failed: {download_error}")
+            last_error = download_error
+    else:
+        raise RuntimeError("CIFAR-10 download failed from all sources") from last_error
 
     if not _is_valid_cifar10_root(root):
         raise RuntimeError(f"CIFAR-10 cache at {root} failed integrity validation")
