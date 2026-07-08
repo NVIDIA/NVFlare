@@ -20,6 +20,8 @@ from unittest.mock import patch
 
 import pytest
 
+from nvflare.apis.job_def import ALL_SITES
+
 torch = pytest.importorskip("torch")
 
 
@@ -240,6 +242,60 @@ class TestSwarmLearningRecipe:
         )
 
         assert recipe.job is not None
+
+
+class TestSwarmLearningRecipeControllerConfig:
+    """Test named controller parameters and advanced config overrides."""
+
+    def test_parameters_and_override_precedence(self, mock_file_system, simple_pt_model):
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+
+        recipe = SwarmLearningRecipe(
+            name="test_swarm_override_precedence",
+            model=simple_pt_model,
+            num_rounds=5,
+            train_script="train.py",
+            min_clients=2,
+            progress_timeout=7200,
+            learn_task_timeout=1800,
+            max_concurrent_submissions=3,
+            learn_task_abort_timeout=15,
+            learn_task_ack_timeout=20,
+            final_result_ack_timeout=25,
+            server_config_overrides={"progress_timeout": 9000},
+            client_config_overrides={
+                "learn_task_timeout": 2400,
+                "max_concurrent_submissions": 4,
+                "final_result_ack_timeout": 30,
+            },
+        )
+
+        server_controller = recipe.job._deploy_map["server"].app_config.workflows[0].controller
+        client_app = recipe.job._deploy_map[ALL_SITES]
+        client_controller = next(item.executor for item in client_app.app_config.executors if item.tasks == ["swarm_*"])
+        assert server_controller.progress_timeout == 9000
+        assert client_controller.learn_task_timeout == 2400
+        assert client_controller.max_concurrent_submissions == 4
+        assert client_controller.learn_task_abort_timeout == 15
+        assert client_controller.learn_task_ack_timeout == 20
+        assert client_controller.final_result_ack_timeout == 30
+
+    def test_invalid_new_config_is_rejected(self, mock_file_system, simple_pt_model):
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+
+        defaults = {
+            "name": "test_swarm_invalid_overrides",
+            "model": simple_pt_model,
+            "num_rounds": 5,
+            "train_script": "train.py",
+            "min_clients": 2,
+        }
+        with pytest.raises(ValueError, match="learn_task_timeout"):
+            SwarmLearningRecipe(**defaults, learn_task_timeout=0)
+        with pytest.raises(TypeError, match="server_config_overrides must be a dict"):
+            SwarmLearningRecipe(**defaults, server_config_overrides=[])
+        with pytest.raises(TypeError, match="server_config_overrides keys must be strings"):
+            SwarmLearningRecipe(**defaults, server_config_overrides={1: 2})
 
 
 class TestSwarmLearningRecipeMemoryGC:
