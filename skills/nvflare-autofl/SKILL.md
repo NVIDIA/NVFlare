@@ -18,9 +18,8 @@ Use this skill when the user asks to optimize an existing NVFLARE `job.py` for a
 AUC, loss, runtime, robustness, or another metric in simulation, POC, or production.
 
 ## Do Not Use When
-Do not use for converting non-FL training code into NVFLARE, diagnosing failed jobs
-without an optimization goal, production deployment setup, or generic hyperparameter
-tuning outside an NVFLARE job.
+Do not use for converting non-FL training code into NVFLARE, diagnosing failed jobs without an optimization goal,
+production deployment setup, evaluation/statistics-only recipes, or generic tuning outside an NVFLARE job.
 
 ## Workflow
 Use this skill to optimize an existing NVFLARE `job.py` without asking the user to learn
@@ -35,6 +34,8 @@ Resolve [run_job_campaign.py](scripts/run_job_campaign.py) relative to this `SKI
 ```bash
 python "$RUNNER" initialize ./job.py [--metric <metric>] --mode <max|min> --env <sim|poc|prod> [--max-candidates <n>]
 ```
+
+For conditional recipes, safe refusals, and unnamed simulator roots, read the [job import contract](references/job-import-contract.md).
 
 Read `autofl.yaml` and the JSON response, then prepare an agent-authored candidate with a short hypothesis and optional candidate-only arguments:
 

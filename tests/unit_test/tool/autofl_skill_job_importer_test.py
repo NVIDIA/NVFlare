@@ -646,6 +646,159 @@ MyRecipe(name="local", num_rounds=1, min_clients=2)
     assert config["job"]["surface"] == "unknown"
 
 
+@pytest.mark.parametrize(
+    "recipe_name",
+    ["FedEvalRecipe", "FedStatsRecipe", "NumpyCrossSiteEvalRecipe"],
+)
+def test_import_refuses_non_optimization_recipes_before_execution(tmp_path, recipe_name):
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        f"""
+from nvflare.recipe import {recipe_name}
+
+{recipe_name}(name="not-training", min_clients=2)
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    support = config["import"]["support"]
+    assert support["status"] == "partial"
+    assert "no training loop" in support["reason"]
+    assert any(item["field"] == "job.surface" for item in config["unresolved"])
+
+
+def test_import_refuses_nested_flower_recipe_before_execution(tmp_path):
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+from nvflare.app_opt.flower.recipe import FlowerRecipe
+
+FlowerRecipe(name="flower", flower_content="app", min_clients=2)
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    support = config["import"]["support"]
+    assert support["status"] == "partial"
+    assert "nested application" in support["reason"]
+
+
+def test_import_selects_conditional_training_recipe_from_job_args(tmp_path):
+    tmp_path.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+import argparse
+
+from nvflare.app_common.np.recipes import NumpyCrossSiteEvalRecipe, NumpyFedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+def define_parser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", choices=["pretrained", "training"], default="pretrained")
+    parser.add_argument("--n_clients", type=int, default=2)
+    parser.add_argument("--num_rounds", type=int, default=1)
+    return parser.parse_args()
+
+
+def run_eval(n_clients):
+    NumpyCrossSiteEvalRecipe(name="eval", min_clients=n_clients)
+    SimEnv(num_clients=n_clients)
+
+
+def run_training(n_clients, num_rounds):
+    NumpyFedAvgRecipe(
+        name="training",
+        min_clients=n_clients,
+        num_rounds=num_rounds,
+        train_script="client.py",
+    )
+    SimEnv(num_clients=n_clients)
+
+
+def main():
+    args = define_parser()
+    if args.mode == "pretrained":
+        run_eval(args.n_clients)
+    elif args.mode == "training":
+        run_training(args.n_clients, args.num_rounds)
+
+
+if __name__ == "__main__":
+    main()
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    default_config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+    training_config = import_job_to_autofl_config(
+        str(job_path),
+        workspace_root=str(tmp_path),
+        job_args=["--mode", "training", "--num_rounds=3"],
+    )
+
+    assert default_config["job"]["recipe"] == "NumpyCrossSiteEvalRecipe"
+    assert default_config["import"]["support"]["status"] == "partial"
+    assert training_config["job"]["recipe"] == "NumpyFedAvgRecipe"
+    assert training_config["job"]["train_script"] == "client.py"
+    assert training_config["import"]["support"]["status"] == "supported"
+    assert training_config["budget"]["fixed_training_budget"] == {
+        "num_rounds": 3,
+        "min_clients": 2,
+        "num_clients": 2,
+    }
+
+
+@pytest.mark.parametrize(
+    ("example", "expected_status", "expected_recipe"),
+    [
+        ("hello-cyclic", "supported", "CyclicRecipe"),
+        ("hello-lightning", "supported", "FedAvgRecipe"),
+        ("hello-lr", "supported", "FedAvgLrRecipe"),
+        ("hello-flower", "partial", "FlowerRecipe"),
+        ("hello-lightning-eval", "partial", "FedEvalRecipe"),
+        ("hello-numpy-cross-val", "partial", "NumpyCrossSiteEvalRecipe"),
+        ("hello-tabular-stats", "partial", "FedStatsRecipe"),
+        ("hello-tf", "supported", "FedAvgRecipe"),
+    ],
+)
+def test_import_classifies_hello_world_release_gate_examples(example, expected_status, expected_recipe):
+    repo_root = Path(__file__).parents[3]
+    example_root = repo_root / "examples" / "hello-world" / example
+
+    config = import_job_to_autofl_config(
+        str(example_root / "job.py"),
+        workspace_root=str(example_root),
+        metric="accuracy",
+        max_candidates=12,
+    )
+
+    assert config["import"]["support"]["status"] == expected_status
+    assert config["job"]["recipe"] == expected_recipe
+
+
+def test_import_selects_hello_numpy_cross_val_training_mode():
+    repo_root = Path(__file__).parents[3]
+    example_root = repo_root / "examples" / "hello-world" / "hello-numpy-cross-val"
+
+    config = import_job_to_autofl_config(
+        str(example_root / "job.py"),
+        workspace_root=str(example_root),
+        metric="weight_mean",
+        max_candidates=12,
+        job_args=["--mode", "training"],
+    )
+
+    assert config["import"]["support"]["status"] == "supported"
+    assert config["job"]["recipe"] == "NumpyFedAvgRecipe"
+    assert config["job"]["train_script"] == "client.py"
+
+
 def test_import_returns_clean_error_for_missing_job(tmp_path):
     with pytest.raises(job_importer.JobImportError, match="job.py not found"):
         import_job_to_autofl_config(str(tmp_path / "missing.py"), workspace_root=str(tmp_path))

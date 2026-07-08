@@ -23,6 +23,7 @@ discarded candidates, and records reproducible campaign state and artifacts.
 from __future__ import annotations
 
 import argparse
+import ast
 import codecs
 import csv
 import difflib
@@ -46,6 +47,11 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Windows fallback keeps per-root locks
+    fcntl = None
 
 try:
     import yaml
@@ -967,9 +973,11 @@ def extract_result_dir(output: str, cwd: Optional[Path] = None) -> Optional[Path
         r"Result can be found in\s*:\s*(?P<path>\S+)",
         r"Results:\s*(?P<path>\S+)",
         r"result_dir=(?P<path>\S+)",
+        r"result location\s*[:=]\s*(?P<path>\S+)",
+        r"simulation logs can be found at\s+(?P<path>\S+)",
     ]
     for pattern in patterns:
-        match = re.search(pattern, output)
+        match = re.search(pattern, output, flags=re.IGNORECASE)
         if match:
             path = Path(match.group("path")).expanduser()
             if not path.is_absolute() and cwd is not None:
@@ -1084,20 +1092,51 @@ def text_metric_matches(text: str, metric: str) -> List[Tuple[int, float]]:
     number = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
     context = r"(?:(?:final|test|validation|cross[-_ ]site)\s+)*"
     line_prefix = r"^\s*(?:\[[^\]]+\]\s*)*(?:\{|\[)?\s*"
-    pattern = re.compile(
+    direct_pattern = re.compile(
         line_prefix + rf"{context}[\"']?{re.escape(metric)}[\"']?" rf"\s*[:=]\s*({number})(?:\s|[,}}\]]|$)",
         flags=re.IGNORECASE,
     )
-    matches = []
+    evaluation_pattern = re.compile(
+        rf"\b{re.escape(metric)}\s+of\s+the\s+received\s+model\b.*?:\s*({number})(?:\s*%|\s|$)",
+        flags=re.IGNORECASE,
+    )
+    framework_pattern = re.compile(
+        rf"(?<![\w]){re.escape(metric)}(?![\w])\s*[:=]\s*({number})(?:\s|[,}}\]]|$)",
+        flags=re.IGNORECASE,
+    )
+    mapping_pattern = re.compile(
+        rf"(?:\{{|,)\s*[\"']{re.escape(metric)}[\"']\s*:\s*({number})(?:\s|[,}}]|$)",
+        flags=re.IGNORECASE,
+    )
+    direct_matches = []
+    evaluation_matches = []
+    mapping_matches = []
+    framework_matches = []
     for line_number, line in enumerate(text.splitlines(), start=1):
-        message = line.rsplit(" - ", 1)[-1]
-        match = pattern.search(message)
-        if not match:
-            continue
-        score = parse_finite_metric_value(match.group(1))
-        if score is not None:
-            matches.append((line_number, score))
-    return matches
+        log_prefix = re.match(r"^\d{4}-\d{2}-\d{2}[^\n]*? - [A-Z]+ - (.*)$", line)
+        message = log_prefix.group(1) if log_prefix else line
+        direct_match = direct_pattern.search(message)
+        if direct_match:
+            score = parse_finite_metric_value(direct_match.group(1))
+            if score is not None:
+                direct_matches.append((line_number, score))
+        evaluation_match = evaluation_pattern.search(message)
+        if evaluation_match:
+            score = parse_finite_metric_value(evaluation_match.group(1))
+            if score is not None:
+                evaluation_matches.append((line_number, score))
+        mapping_match = mapping_pattern.search(message)
+        if mapping_match:
+            score = parse_finite_metric_value(mapping_match.group(1))
+            if score is not None:
+                mapping_matches.append((line_number, score))
+        if re.search(r"\d+/\d+.*\d+(?:\.\d+)?(?:ms|s)/step\b", message):
+            matches = list(framework_pattern.finditer(message))
+            if matches:
+                score = parse_finite_metric_value(matches[-1].group(1))
+                if score is not None:
+                    framework_matches.append((line_number, score))
+    return evaluation_matches or direct_matches or mapping_matches or framework_matches
 
 
 def extract_metric_evidence(artifact_root: Path, metrics: Sequence[str] | str) -> Optional[MetricEvidence]:
@@ -1183,19 +1222,22 @@ def collect_artifacts(result_dir: Optional[Path], output_root: Path, name: str, 
 
 
 def job_help(python: str, job: Path, cwd: Path, timeout: int = DEFAULT_JOB_HELP_TIMEOUT) -> str:
+    del python, cwd, timeout
     try:
-        process = subprocess.run(
-            [python, str(job), "--help"],
-            cwd=str(cwd),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            check=False,
-            timeout=timeout,
-        )
-    except subprocess.TimeoutExpired as e:
-        raise RuntimeError(f"job.py --help exceeded {timeout} seconds") from e
-    return process.stdout
+        tree = ast.parse(job.read_text(encoding="utf-8"), filename=str(job))
+    except (OSError, SyntaxError) as e:
+        raise RuntimeError(f"cannot inspect job CLI flags in {job}: {e}") from e
+    flags = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        if node.func.attr != "add_argument":
+            continue
+        for argument in node.args:
+            if isinstance(argument, ast.Constant) and isinstance(argument.value, str):
+                if argument.value.startswith("--"):
+                    flags.add(argument.value)
+    return " ".join(sorted(flags))
 
 
 def supported_long_flags(help_text: str) -> set[str]:
@@ -1619,6 +1661,9 @@ def imported_job_names(config: Dict[str, Any]) -> List[str]:
             continue
         if isinstance(value, str) and value and value not in names:
             names.append(value)
+    discovered_name = config.get("artifacts", {}).get("simulator_result_name")
+    if isinstance(discovered_name, str) and discovered_name and discovered_name not in names:
+        names.append(discovered_name)
     return names
 
 
@@ -1678,6 +1723,55 @@ def locked_simulator_roots(roots: Sequence[Path]) -> Iterator[None]:
             lock_path.unlink(missing_ok=True)
 
 
+@contextmanager
+def locked_simulator_workspace(simulator_base: Path, *, exclusive: bool) -> Iterator[None]:
+    """Coordinate unknown result roots with named jobs in the same simulator workspace."""
+
+    if fcntl is None:
+        yield
+        return
+    simulator_base.mkdir(parents=True, exist_ok=True)
+    lock_path = simulator_base / ".autofl-workspace.lock"
+    descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+    operation = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
+    try:
+        try:
+            fcntl.flock(descriptor, operation | fcntl.LOCK_NB)
+        except BlockingIOError as e:
+            mode = "unnamed" if exclusive else "named"
+            raise RuntimeError(
+                f"simulator workspace is already in use by a conflicting {mode} campaign: {simulator_base}"
+            ) from e
+        yield
+    finally:
+        os.close(descriptor)
+
+
+def validated_printed_simulator_root(result_dir: Optional[Path], simulator_base: Path) -> Optional[Path]:
+    if result_dir is None or not result_dir.exists():
+        return None
+    resolved = result_dir.resolve()
+    if resolved.parent != simulator_base.resolve():
+        return None
+    return resolved
+
+
+def simulator_root_snapshot(simulator_base: Path) -> Dict[Path, int]:
+    snapshot = {}
+    if not simulator_base.exists():
+        return snapshot
+    for path in simulator_base.iterdir():
+        if path.name.startswith(".") or path.is_symlink() or not path.is_dir():
+            continue
+        snapshot[path.resolve()] = path.stat().st_mtime_ns
+    return snapshot
+
+
+def changed_simulator_roots(simulator_base: Path, before: Dict[Path, int]) -> List[Path]:
+    after = simulator_root_snapshot(simulator_base)
+    return sorted(path for path, modified in after.items() if before.get(path) != modified)
+
+
 def run_job(
     run_def: JobRun,
     *,
@@ -1698,33 +1792,40 @@ def run_job(
     run_name = simulator_run_name(run_def.name, cwd)
     name_args = ["--name", run_name] if supports_flag(help_text, "--name") else []
     simulator_roots = expected_simulator_roots(config, run_name if name_args else None, cwd)
-    if not simulator_roots:
-        raise ValueError(
-            "cannot resolve a deterministic simulator result root; expose a literal job name or support --name"
-        )
+    simulator_base = simulator_workspace_root(config, cwd)
     command = [python, str(job), *fixed_args, *base_args, *name_args, *run_def.args]
     run_def.command = command
-    with locked_simulator_roots(simulator_roots):
-        for simulator_root in simulator_roots:
-            shutil.rmtree(simulator_root, ignore_errors=True)
-        rc, stdout, runtime = run(
-            command,
-            cwd,
-            timeout,
-            log_path,
-            simulator_stall_roots=simulator_roots,
-            simulator_no_progress_timeout=simulator_no_progress_timeout,
-        )
-        run_def.runtime_seconds = runtime
-        printed_result_dir = extract_result_dir(stdout, cwd)
-        existing_roots = [root.resolve() for root in simulator_roots if root.exists()]
-        result_dir = printed_result_dir if printed_result_dir in existing_roots else None
-        injected_root = (simulator_workspace_root(config, cwd) / run_name).resolve() if name_args else None
-        if result_dir is None and injected_root in existing_roots:
-            result_dir = injected_root
-        if result_dir is None and len(existing_roots) == 1:
-            result_dir = existing_roots[0]
-        artifact_dir = collect_artifacts(result_dir, output_root, run_def.name, log_path)
+    with locked_simulator_workspace(simulator_base, exclusive=not simulator_roots):
+        with locked_simulator_roots(simulator_roots):
+            unnamed_root_snapshot = simulator_root_snapshot(simulator_base) if not simulator_roots else {}
+            for simulator_root in simulator_roots:
+                shutil.rmtree(simulator_root, ignore_errors=True)
+            rc, stdout, runtime = run(
+                command,
+                cwd,
+                timeout,
+                log_path,
+                simulator_stall_roots=simulator_roots,
+                simulator_no_progress_timeout=simulator_no_progress_timeout,
+            )
+            run_def.runtime_seconds = runtime
+            printed_result_dir = extract_result_dir(stdout, cwd)
+            existing_roots = [root.resolve() for root in simulator_roots if root.exists()]
+            result_dir = printed_result_dir if printed_result_dir in existing_roots else None
+            injected_root = (simulator_base / run_name).resolve() if name_args else None
+            if result_dir is None and injected_root in existing_roots:
+                result_dir = injected_root
+            if result_dir is None and len(existing_roots) == 1:
+                result_dir = existing_roots[0]
+            if result_dir is None and not simulator_roots:
+                result_dir = validated_printed_simulator_root(printed_result_dir, simulator_base)
+                if result_dir is None:
+                    changed_roots = changed_simulator_roots(simulator_base, unnamed_root_snapshot)
+                    if len(changed_roots) == 1:
+                        result_dir = changed_roots[0]
+                if result_dir is not None:
+                    config.setdefault("artifacts", {})["simulator_result_name"] = result_dir.name
+            artifact_dir = collect_artifacts(result_dir, output_root, run_def.name, log_path)
     run_def.artifacts = str(artifact_dir)
 
     evidence = None
@@ -1745,7 +1846,7 @@ def run_job(
         run_def.status = "crash"
         run_def.failure_reason = (
             "job exited successfully but no deterministic NVFlare result directory was resolved; "
-            "expose literal SimEnv workspace_root and job name values"
+            "expose a literal job name, support --name, or print the direct simulator result directory"
         )
     else:
         artifact_root = artifact_dir.parent
@@ -2210,6 +2311,7 @@ def import_job_config(
         mode=args.mode,
         target_env=args.target_env,
         max_candidates=args.max_candidates,
+        job_args=shlex.split(args.base_args),
     )
     atomic_write_bytes(output, importer.dump_autofl_yaml(config).encode("utf-8"))
     atomic_write_bytes(
@@ -2235,7 +2337,8 @@ def campaign_admission_errors(config: Dict[str, Any]) -> List[str]:
     errors = []
     support = config.get("import", {}).get("support", {})
     if not isinstance(support, dict) or support.get("status") != "supported":
-        errors.append("job surface is not deterministically supported")
+        reason = support.get("reason") if isinstance(support, dict) else None
+        errors.append(f"job surface is not deterministically supported{f': {reason}' if reason else ''}")
     fixed_budget = config.get("budget", {}).get("fixed_training_budget")
     if not isinstance(fixed_budget, dict) or not fixed_budget:
         errors.append("fixed comparison budget is unresolved")
@@ -2375,6 +2478,7 @@ def initialize_campaign(args: argparse.Namespace, job: Path) -> int:
                 load_mutation_schema(workspace),
                 name=f"baseline_retry_{retry_number}",
             )
+            write_yaml(paths["autofl_yaml"], config)
             records.append(baseline)
             metadata["best_score"] = baseline.score
             if baseline.score is not None:
@@ -2426,6 +2530,7 @@ def initialize_campaign(args: argparse.Namespace, job: Path) -> int:
     records: List[RunRecord] = []
     if args.target_env == "sim":
         baseline = execute_sim_baseline(args, job, paths, config, schema)
+        write_yaml(paths["autofl_yaml"], config)
         records.append(baseline)
         metadata["best_score"] = baseline.score
         metadata["updated_at"] = utc_now()
