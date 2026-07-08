@@ -145,6 +145,33 @@ prepared chart's workspace PVC name, creates the namespace and PVCs, stages
 at ``workspace_mount_path``, installs the Helm chart, and prints recent pod
 logs.
 
+Submit a Recipe Job
+===================
+
+After all three participants are running, submit the NumPy Recipe example from
+the same local NVFlare checkout used to prepare the startup kits. Find the
+latest admin startup directory, then pass the image that all three Brev
+clusters can pull:
+
+.. code-block:: shell
+
+   ADMIN_KIT="$(find /tmp/nvflare/brev-provision/brev_nvflare_project \
+     -path '*/admin@nvidia.com/startup' -type d | sort | tail -n 1)"
+
+   cd examples/advanced/recipe-k8s
+   python3 job.py \
+     --startup-kit "$ADMIN_KIT" \
+     --site-1-image "$IMAGE" \
+     --site-2-image "$IMAGE" \
+     --server-image "$IMAGE"
+
+The ``--server-image`` argument is needed here because this quickstart prepares
+the server with ``ServerK8sJobLauncher`` as well as preparing both clients with
+``ClientK8sJobLauncher``. The example targets the two clients explicitly and
+uses ``set_recipe_meta`` to add their scheduler-facing ``resource_spec`` and
+Kubernetes ``launcher_spec`` entries. See the
+:github_nvflare_link:`complete example and metadata explanation <examples/advanced/recipe-k8s>`.
+
 Useful Overrides
 ================
 
