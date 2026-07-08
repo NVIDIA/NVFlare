@@ -19,6 +19,7 @@ class FQN:
 
     SEPARATOR = "."
     ROOT_SERVER = "server"
+    VALID_PATTERN = "^[A-Za-z0-9_.-]*$"
 
     @staticmethod
     def normalize(fqn: str) -> str:
@@ -32,18 +33,17 @@ class FQN:
     def join(path: List[str]) -> str:
         return FQN.SEPARATOR.join(path)
 
-    @staticmethod
-    def validate(fqn) -> str:
+    @classmethod
+    def validate(cls, fqn) -> str:
         if not isinstance(fqn, str):
             return f"must be str but got {type(fqn)}"
-        fqn = FQN.normalize(fqn)
+        fqn = cls.normalize(fqn)
         if not fqn:
             return "empty"
-        pattern = "^[A-Za-z0-9_.-]*$"
-        valid = bool(re.match(pattern, fqn))
+        valid = bool(re.match(cls.VALID_PATTERN, fqn))
         if not valid:
             return "invalid char"
-        parts = FQN.split(fqn)
+        parts = cls.split(fqn)
         info = {}
         for p in parts:
             if not p:
