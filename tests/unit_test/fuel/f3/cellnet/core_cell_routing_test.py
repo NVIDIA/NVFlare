@@ -90,6 +90,27 @@ def test_cj_routes_to_root_connected_pipe_cell_via_cp():
     assert ep.name == "site-1"
 
 
+def test_ancestor_path_miss_for_regular_cell_does_not_fall_back_to_server_root():
+    # A deeper ordinary descendant also keeps the original behavior when no
+    # cell on its path is connected. The VIA_ROOT exception is only for an
+    # unconnected direct CellPipe child.
+    cell = _routing_cell("site-1", ["server"])
+
+    ep = cell._try_find_ep("site-1.job-dead.worker", None)
+
+    assert ep is None
+
+
+def test_regular_child_without_connection_does_not_fall_back_to_server_root():
+    # Ordinary direct children still fail at their FQCN parent. Only a plain
+    # CellPipe child may intentionally connect through the server root.
+    cell = _routing_cell("site-1", ["server"])
+
+    ep = cell._try_find_ep("site-1.job-dead", None)
+
+    assert ep is None
+
+
 def test_relay_alias_pipe_cell_reaches_peer_through_connected_relay():
     # A pipe cell behind a relay is named <relay>.cellpipe~alias~<site>~<token>~<mode>: its
     # FQCN parent is the connected relay, so normal parent routing applies.
@@ -156,10 +177,10 @@ def test_find_endpoint_refuses_next_leg_already_on_route():
     # already handled this message would bounce it forever (e.g. CP -> server
     # -> CP for a disconnected pipe cell). The hop is refused and the message
     # fails cleanly with TARGET_UNREACHABLE.
-    cell = _routing_cell("site-1", ["server"])
-    msg = Message(headers={MessageHeaderKey.ROUTE: [("server", 0.0), ("site-1", 1.0)]})
+    cell = _routing_cell("server", ["site-1"])
+    msg = Message(headers={MessageHeaderKey.ROUTE: [("site-1", 0.0)]})
 
-    rc, ep = cell._find_endpoint("site-1.job-dead", msg)
+    rc, ep = cell._find_endpoint("site-1.cellpipe~plain~job-dead~active", msg)
 
     assert ep is None
     assert rc == ReturnCode.TARGET_UNREACHABLE

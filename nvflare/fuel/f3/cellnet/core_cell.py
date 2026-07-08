@@ -38,7 +38,7 @@ from nvflare.fuel.f3.cellnet.defs import (
     ReturnReason,
     ServiceUnavailable,
 )
-from nvflare.fuel.f3.cellnet.fqcn import FQCN, FqcnInfo, same_family
+from nvflare.fuel.f3.cellnet.fqcn import CELL_PIPE_LEAF_PREFIX, FQCN, FqcnInfo, same_family
 from nvflare.fuel.f3.cellnet.identity import (
     CellIdentityResolver,
     get_cert_common_name_from_file,
@@ -1183,16 +1183,22 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             return agent.endpoint
 
         if same_family(self.my_info, target_info):
+            unconnected_pipe_child = False
             if FQCN.is_parent(self.my_info.fqcn, target_fqcn):
-                # I am the target's FQCN parent but have no direct connection
-                # to it: topology-named cells (e.g. a CellPipe cell named
-                # <site>.cellpipe~plain~<token>~<mode> with pipe_connect_type
-                # VIA_ROOT) may connect to the server root instead of their
-                # FQCN parent. Fall through to the generic resolution below;
-                # the routing-loop guard in _find_endpoint keeps this from
-                # bouncing between cells when the target is not connected
-                # anywhere.
-                self.logger.debug(f"{self.my_info.fqcn}: no connection to child {target_fqcn}")
+                if target_info.path[-1].startswith(CELL_PIPE_LEAF_PREFIX):
+                    # A topology-named CellPipe child may connect to the server
+                    # root instead of its FQCN parent when using VIA_ROOT. Let
+                    # this specific topology fall through to root resolution;
+                    # the routing-loop guard in _find_endpoint handles a pipe
+                    # target that is not connected anywhere.
+                    unconnected_pipe_child = True
+                    self.logger.debug(f"{self.my_info.fqcn}: no connection to CellPipe child {target_fqcn}")
+                else:
+                    # Preserve the original behavior for every other direct
+                    # child. Only CellPipe has a supported topology in which a
+                    # child intentionally bypasses its FQCN parent.
+                    self.log_warning(msg=for_msg, log_text=f"no connection to child {target_fqcn}")
+                    return None
             elif FQCN.is_parent(target_fqcn, self.my_info.fqcn):
                 self.log_warning(f"no connection to parent {target_fqcn}", for_msg)
 
@@ -1201,12 +1207,9 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 # I am the ancestor of the target
                 self.logger.debug(f"{self.my_info.fqcn}: I'm ancestor of the target {target_fqcn}")
                 ep = self._try_path(target_info.path)
-                if ep:
+                if ep or not unconnected_pipe_child:
                     return ep
-                # no connected cell on the target's FQCN path below me: fall
-                # through so a root-connected target can still be reached
-                # through the server root
-                self.logger.debug(f"{self.my_info.fqcn}: no connected descendant toward {target_fqcn}")
+                self.logger.debug(f"{self.my_info.fqcn}: trying server root for CellPipe child {target_fqcn}")
             else:
                 # target is my ancestor, or we share the same ancestor - go to my parent!
                 self.logger.debug(f"{self.my_info.fqcn}: target {target_fqcn} is or share my ancestor")

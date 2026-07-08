@@ -89,10 +89,10 @@ class TestScriptRunner:
 
     @pytest.mark.parametrize(
         "connect_type",
-        [PipeConnectType.VIA_CP, PipeConnectType.VIA_RELAY, PipeConnectType.VIA_ROOT],
+        [connect_type.value for connect_type in PipeConnectType],
     )
     def test_valid_pipe_connect_types_accepted(self, base_script_runner_params, connect_type):
-        """All PipeConnectType values are accepted, including VIA_ROOT."""
+        """All user-facing PipeConnectType strings are accepted, including VIA_ROOT."""
         runner = ScriptRunner(launch_external_process=True, pipe_connect_type=connect_type, **base_script_runner_params)
 
         assert runner._pipe_connect_type == connect_type
