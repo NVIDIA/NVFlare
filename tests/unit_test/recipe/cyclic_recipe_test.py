@@ -180,6 +180,14 @@ class TestCyclicRecipeControllerConfig:
         assert launcher._shutdown_timeout == 90.0
         assert launcher._launch_once is False
 
+        with pytest.raises(ValueError, match="task_check_period"):
+            PTCyclicRecipe(
+                name="test_invalid_task_check_period",
+                model=simple_model,
+                server_config_overrides={"task_check_period": 0},
+                **base_recipe_params,
+            )
+
 
 class TestPTCyclicRecipe:
     """Test cases for PyTorch CyclicRecipe."""

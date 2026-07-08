@@ -90,6 +90,7 @@ class CyclicRecipe(Recipe):
             shutdown. Defaults to 0.0 and only applies when ``launch_external_process=True``.
         server_config_overrides: Advanced shallow overrides for ``CyclicController``.
             Values here take precedence over named constructor parameters.
+            ``task_check_period`` must be positive when supplied.
         client_config_overrides: Advanced shallow overrides for ``ScriptRunner``.
             Values here take precedence over named constructor parameters.
 
@@ -199,7 +200,11 @@ class CyclicRecipe(Recipe):
             )
 
         # Define the controller workflow and send to server
-        from nvflare.fuel.utils.validation_utils import check_non_negative_int, check_non_negative_number
+        from nvflare.fuel.utils.validation_utils import (
+            check_non_negative_int,
+            check_non_negative_number,
+            check_positive_number,
+        )
         from nvflare.recipe.utils import merge_config_overrides
 
         server_config = merge_config_overrides(
@@ -216,6 +221,7 @@ class CyclicRecipe(Recipe):
             "server_config_overrides",
         )
         check_non_negative_int("task_assignment_timeout", server_config.get("task_assignment_timeout"))
+        check_positive_number("task_check_period", server_config.get("task_check_period"))
         controller = CyclicController(**server_config)
         job.to(controller, "server")
 

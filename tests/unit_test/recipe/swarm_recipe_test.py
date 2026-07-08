@@ -292,6 +292,8 @@ class TestSwarmLearningRecipeControllerConfig:
         }
         with pytest.raises(ValueError, match="learn_task_timeout"):
             SwarmLearningRecipe(**defaults, learn_task_timeout=0)
+        with pytest.raises(ValueError, match="learn_task_abort_timeout"):
+            SwarmLearningRecipe(**defaults, learn_task_abort_timeout=0)
         for invalid_max_concurrency in (
             {"max_concurrent_submissions": 0},
             {"client_config_overrides": {"max_concurrent_submissions": 0}},

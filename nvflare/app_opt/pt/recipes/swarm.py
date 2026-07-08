@@ -141,7 +141,8 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         max_concurrent_submissions: Maximum number of concurrent result submissions
             accepted by the aggregation client. Must be at least 1. Defaults to 1.
         learn_task_abort_timeout: Seconds to wait for a learning task to stop after an
-            abort request. ``None`` uses the Swarm client controller default.
+            abort request. Must be positive when specified. ``None`` uses the Swarm
+            client controller default.
         learn_task_ack_timeout: Seconds to wait for acknowledgment when dispatching a
             learning task. ``None`` uses ``round_timeout`` for backward compatibility.
         final_result_ack_timeout: Seconds to wait for clients to acknowledge the final
@@ -357,6 +358,8 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         check_positive_int("max_concurrent_submissions", client_config_args["max_concurrent_submissions"])
         if client_config_args.get("learn_task_timeout") is not None:
             check_positive_number("learn_task_timeout", client_config_args["learn_task_timeout"])
+        if client_config_args.get("learn_task_abort_timeout") is not None:
+            check_positive_number("learn_task_abort_timeout", client_config_args["learn_task_abort_timeout"])
         client_config = SwarmClientConfig(**client_config_args)
 
         BaseSwarmLearningRecipe.__init__(self, name, server_config, client_config, cse_config, job=job)

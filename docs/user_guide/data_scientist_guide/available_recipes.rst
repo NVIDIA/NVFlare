@@ -405,7 +405,7 @@ PyTorch Cyclic
 runner options that do not have named recipe parameters, use
 ``server_config_overrides`` or ``client_config_overrides``. These dictionaries
 are shallow-merged after the named parameters, so overlapping dictionary values
-take precedence:
+take precedence. ``task_check_period`` must be positive when overridden:
 
 .. code-block:: python
 
