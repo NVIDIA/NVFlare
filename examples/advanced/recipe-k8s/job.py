@@ -18,6 +18,7 @@ from pathlib import Path
 from model import Cifar10Net
 
 from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.utils.format_check import name_check
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import ProdEnv, set_recipe_meta
 
@@ -60,7 +61,11 @@ def define_parser() -> argparse.ArgumentParser:
     parser.add_argument("--startup-kit", required=True, help="Path to the production admin startup directory.")
     parser.add_argument("--username", default="admin@nvidia.com", help="Provisioned admin participant name.")
     parser.add_argument("--study", default="default", help="Study in which to submit the job.")
-    parser.add_argument("--job-name", default="cifar10-k8s")
+    parser.add_argument(
+        "--job-name",
+        default="cifar10-k8s",
+        help="Job and export-directory name; use letters, numbers, dots, underscores, and hyphens.",
+    )
     parser.add_argument("--num-rounds", type=positive_int, default=3)
 
     parser.add_argument("--site-1-name", default="site-1", help="First provisioned NVFlare client name.")
@@ -115,6 +120,11 @@ def define_parser() -> argparse.ArgumentParser:
 
 
 def validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    if name_check(args.job_name, "job_name")[0]:
+        parser.error(
+            "--job-name must start with a letter or number and contain only letters, numbers, dots, underscores, "
+            "and hyphens"
+        )
     if args.site_1_name == args.site_2_name:
         parser.error("--site-1-name and --site-2-name must identify different clients")
     if "default" in (args.site_1_name, args.site_2_name):

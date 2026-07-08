@@ -67,6 +67,8 @@ def _parse_validated(job_module, *extra_args):
         ([], "provide --image"),
         (["--image", "shared", "--site-1-gpus", "2"], "must be 0 or 1"),
         (["--image", "shared", "--data-dir", "/data/cifar ten"], "must not contain whitespace"),
+        (["--image", "shared", "--job-name", "bad name"], "--job-name must start"),
+        (["--image", "shared", "--job-name", "bad/name"], "--job-name must start"),
     ],
 )
 def test_invalid_cli_values_use_argparse_errors(load_example_module, capsys, extra_args, expected_error):
