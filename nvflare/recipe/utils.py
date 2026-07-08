@@ -231,8 +231,9 @@ def add_experiment_tracking(
             To give sites different receiver configs (e.g. per-site tracking_uri), call this
             function once per site with that site's tracking_config and clients=[site].
             Targeting specific clients requires the recipe's client apps to be per-site
-            (e.g. recipes constructed with the per_site_config constructor argument);
-            with the default all-clients topology, targeted placement raises ValueError.
+            (e.g. recipes constructed with the per_site_config constructor argument), and
+            each name must match an existing per-site client app; with the default
+            all-clients topology or unknown site names, targeted placement raises ValueError.
 
     Examples:
         # Server-side tracking (default - federated metrics)

@@ -570,6 +570,10 @@ class TestAddExperimentTrackingClients:
         from nvflare.recipe.utils import add_experiment_tracking
 
         recipe = self._make_recipe()
+        # Real recipes have per-site client apps (e.g. from per_site_config) before
+        # tracking is added; targeting only existing sites is enforced.
+        for site in ("site-1", "site-2"):
+            recipe.job.to({"site_arg": site}, site)
         for site in ("site-1", "site-2"):
             add_experiment_tracking(
                 recipe,
@@ -628,6 +632,23 @@ class TestAddExperimentTrackingClients:
         recipe = self._make_recipe()
         with pytest.raises(ValueError, match="must not be empty"):
             add_experiment_tracking(recipe, dummy_tracking, {"tracking_uri": "u"}, client_side=True, clients=[])
+
+    def test_clients_targeting_rejects_unknown_site(self, dummy_tracking):
+        from nvflare.recipe.utils import add_experiment_tracking
+
+        recipe = self._make_recipe()
+        recipe.job.to({"site_arg": 1}, "site-1")
+        recipe.job.to({"site_arg": 2}, "site-2")
+
+        with pytest.raises(ValueError, match="unknown client site"):
+            add_experiment_tracking(
+                recipe,
+                dummy_tracking,
+                {"tracking_uri": "u"},
+                client_side=True,
+                server_side=False,
+                clients=["site-3"],
+            )
 
     def test_clients_targeting_rejects_all_sites_topology(self, dummy_tracking):
         from nvflare.recipe.utils import add_experiment_tracking

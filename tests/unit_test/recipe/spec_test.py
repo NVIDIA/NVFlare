@@ -798,6 +798,14 @@ class TestClientPlacementHardening:
         assert recipe.job._deploy_map["site-1"].app_config.additional_params["timeout"] == 600
         assert "timeout" not in recipe.job._deploy_map["site-2"].app_config.additional_params
 
+    def test_targeted_config_rejects_unknown_site_with_per_site_topology(self):
+        recipe = self._make_recipe()
+        recipe.job.to({"site_arg": 1}, "site-1")
+        recipe.job.to({"site_arg": 2}, "site-2")
+
+        with pytest.raises(ValueError, match=r"unknown client site.*site-3"):
+            recipe.add_client_config({"timeout": 600}, clients=["site-3"])
+
     def test_clients_must_be_a_list(self):
         recipe = self._make_recipe()
         # A bare string would otherwise iterate per character and create per-char apps.

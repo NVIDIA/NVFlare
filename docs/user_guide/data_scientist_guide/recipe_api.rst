@@ -100,9 +100,11 @@ File packaging helpers:
 
 Helpers that accept ``clients`` target specific generated client apps. This
 requires per-site client apps: construct the recipe with the
-``per_site_config`` constructor argument on recipes that support it. With the
+``per_site_config`` constructor argument on recipes that support it, and each
+name in ``clients`` must match an existing per-site client app. With the
 default all-clients topology, targeted calls raise an error rather than
-silently dropping the change from the generated job. Calling
+silently dropping the change from the generated job, and unknown site names
+raise an error rather than deploying a bare app to that site. Calling
 ``set_per_site_config`` after construction records the configuration for
 ``configured_sites()`` but does not yet rebuild an existing all-clients app
 into per-site apps; recipes will interpret helper-provided per-site config as
