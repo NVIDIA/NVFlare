@@ -858,7 +858,7 @@ Decentralized federated learning without a central server.
      acknowledgment budgets. The ``round_timeout`` compatibility shortcut sets both
      when their explicit parameters are omitted.
    - ``progress_timeout`` (default 3600 s): maximum time without workflow progress.
-   - ``max_concurrent_submissions`` (default 1): concurrent aggregation submissions.
+   - ``max_concurrent_submissions`` (default 1, minimum 1): concurrent aggregation submissions.
    - ``pipe_type`` (default ``"cell_pipe"``): set to ``"file_pipe"`` when cell networking
      is unavailable or for third-party subprocess integrations.
    - ``submit_result_timeout``, ``download_complete_timeout``,
@@ -870,7 +870,9 @@ Decentralized federated learning without a central server.
 For advanced controller settings, ``server_config_overrides`` and
 ``client_config_overrides`` are shallow-merged into ``SwarmServerConfig`` and
 ``SwarmClientConfig`` after the named parameters. Overlapping dictionary values
-therefore take precedence over the documented named API.
+therefore take precedence over the documented named API. Client overrides cannot
+replace the recipe-managed executor, aggregator, persistor, or shareable generator;
+use ``BaseSwarmLearningRecipe`` when custom components are required.
 
 
 Edge Recipes

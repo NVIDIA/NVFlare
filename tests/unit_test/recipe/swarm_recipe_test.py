@@ -292,6 +292,14 @@ class TestSwarmLearningRecipeControllerConfig:
         }
         with pytest.raises(ValueError, match="learn_task_timeout"):
             SwarmLearningRecipe(**defaults, learn_task_timeout=0)
+        for invalid_max_concurrency in (
+            {"max_concurrent_submissions": 0},
+            {"client_config_overrides": {"max_concurrent_submissions": 0}},
+        ):
+            with pytest.raises(ValueError, match="max_concurrent_submissions"):
+                SwarmLearningRecipe(**defaults, **invalid_max_concurrency)
+        with pytest.raises(ValueError, match="cannot override recipe-managed components: executor"):
+            SwarmLearningRecipe(**defaults, client_config_overrides={"executor": object()})
         with pytest.raises(TypeError, match="server_config_overrides must be a dict"):
             SwarmLearningRecipe(**defaults, server_config_overrides=[])
         with pytest.raises(TypeError, match="server_config_overrides keys must be strings"):

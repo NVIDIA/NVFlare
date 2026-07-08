@@ -26,7 +26,7 @@ from nvflare.app_common.ccwf.comps.simple_model_shareable_generator import Simpl
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
 from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.pipe.file_pipe import FilePipe
-from nvflare.fuel.utils.validation_utils import check_positive_number
+from nvflare.fuel.utils.validation_utils import check_positive_int, check_positive_number
 from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.recipe.spec import Recipe
 from nvflare.recipe.utils import merge_config_overrides, validate_ckpt
@@ -34,6 +34,7 @@ from nvflare.recipe.utils import merge_config_overrides, validate_ckpt
 logger = logging.getLogger(__name__)
 
 _VALID_PIPE_TYPES = ("cell_pipe", "file_pipe")
+_RECIPE_MANAGED_CLIENT_CONFIG_KEYS = frozenset({"executor", "aggregator", "persistor", "shareable_generator"})
 
 
 class _SwarmValidator(BaseModel):
@@ -138,7 +139,7 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         learn_task_timeout: Maximum seconds allowed for a learning task. ``None`` means
             no limit. Defaults to None.
         max_concurrent_submissions: Maximum number of concurrent result submissions
-            accepted by the aggregation client. Defaults to 1.
+            accepted by the aggregation client. Must be at least 1. Defaults to 1.
         learn_task_abort_timeout: Seconds to wait for a learning task to stop after an
             abort request. ``None`` uses the Swarm client controller default.
         learn_task_ack_timeout: Seconds to wait for acknowledgment when dispatching a
@@ -148,7 +149,9 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         server_config_overrides: Advanced shallow overrides for ``SwarmServerConfig``.
             Values here take precedence over named constructor parameters.
         client_config_overrides: Advanced shallow overrides for ``SwarmClientConfig``.
-            Values here take precedence over named constructor parameters.
+            Values here take precedence over named constructor parameters. Recipe-managed
+            components (executor, aggregator, persistor, and shareable generator) cannot
+            be replaced through this dictionary; use ``BaseSwarmLearningRecipe`` instead.
         pipe_type: Pipe used for communication between the NVFlare client process
             and the external training process when ``launch_external_process=True``.
             Accepted values:
@@ -228,6 +231,17 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         pipe_root_path: Optional[str] = None,
     ):
         _SwarmValidator(initial_ckpt=initial_ckpt)
+
+        validated_client_config_overrides = merge_config_overrides(
+            {}, client_config_overrides, "client_config_overrides"
+        )
+        protected_overrides = _RECIPE_MANAGED_CLIENT_CONFIG_KEYS.intersection(validated_client_config_overrides)
+        if protected_overrides:
+            fields = ", ".join(sorted(protected_overrides))
+            raise ValueError(
+                f"client_config_overrides cannot override recipe-managed components: {fields}. "
+                "Use BaseSwarmLearningRecipe to provide custom components."
+            )
 
         if pipe_type not in _VALID_PIPE_TYPES:
             raise ValueError(f"pipe_type must be one of {_VALID_PIPE_TYPES}, got '{pipe_type}'")
@@ -337,9 +351,10 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
             client_config_args["learn_task_abort_timeout"] = learn_task_abort_timeout
         client_config_args = merge_config_overrides(
             client_config_args,
-            client_config_overrides,
+            validated_client_config_overrides,
             "client_config_overrides",
         )
+        check_positive_int("max_concurrent_submissions", client_config_args["max_concurrent_submissions"])
         if client_config_args.get("learn_task_timeout") is not None:
             check_positive_number("learn_task_timeout", client_config_args["learn_task_timeout"])
         client_config = SwarmClientConfig(**client_config_args)

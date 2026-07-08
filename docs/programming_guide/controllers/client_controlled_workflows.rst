@@ -543,7 +543,9 @@ The named parameters are the preferred API. For less common
 shallow-merged last, so an overlapping dictionary value intentionally wins over
 the named parameter. ``round_timeout`` remains available as a compatibility
 shortcut for setting both acknowledgment timeouts when their explicit parameters
-are omitted.
+are omitted. ``client_config_overrides`` cannot replace the recipe-managed
+executor, aggregator, persistor, or shareable generator; use
+``BaseSwarmLearningRecipe`` when custom components are required.
 
 For advanced customization, use ``BaseSwarmLearningRecipe`` with explicit server and client configurations:
 
