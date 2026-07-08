@@ -571,7 +571,7 @@ def read_yaml(path: Path) -> Dict[str, Any]:
 def write_yaml(path: Path, data: Dict[str, Any]) -> None:
     if yaml is None:
         raise RuntimeError("PyYAML is required to write autofl.yaml")
-    path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    atomic_write_bytes(path, yaml.safe_dump(data, sort_keys=False).encode("utf-8"))
 
 
 def write_json(path: Path, data: Dict[str, Any]) -> None:

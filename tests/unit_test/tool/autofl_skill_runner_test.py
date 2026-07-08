@@ -85,6 +85,28 @@ def _initialize_fake_campaign(runner, tmp_path, monkeypatch, *, target_env="sim"
     return job, client, config
 
 
+def test_write_yaml_preserves_existing_file_when_temporary_write_fails(tmp_path, monkeypatch):
+    runner = _load_runner()
+    config_path = tmp_path / "autofl.yaml"
+    original = b"existing: valid\n"
+    config_path.write_bytes(original)
+    original_write_bytes = Path.write_bytes
+
+    def fail_temporary_write(path, data):
+        if path.name.startswith(".autofl.yaml.tmp-"):
+            original_write_bytes(path, b"partial")
+            raise OSError("simulated temporary write failure")
+        return original_write_bytes(path, data)
+
+    monkeypatch.setattr(Path, "write_bytes", fail_temporary_write)
+
+    with pytest.raises(OSError, match="simulated temporary write failure"):
+        runner.write_yaml(config_path, {"replacement": "value"})
+
+    assert config_path.read_bytes() == original
+    assert not list(tmp_path.glob(".autofl.yaml.tmp-*"))
+
+
 def test_candidate_args_respect_mutation_schema_bounds():
     runner = _load_runner()
     schema = {"mutable_args": {"lr": {"type": "float", "min": 0.0001, "max": 0.1}}}
