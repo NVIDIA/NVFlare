@@ -70,6 +70,13 @@ from nvflare.security.logging import secure_format_traceback
 # The legacy executor exposed this as result_pull_interval (default 0.5); the frozen
 # surface deliberately drops the knob, so the default becomes the behavior.
 _RESULT_POLL_INTERVAL = 0.5
+
+# Bound for finalize()'s trainer-thread join. TOPIC_STOP is only observed at the trainer's
+# next flare call; a trainer stuck in user code (a long GPU op, a loop that never checks
+# flare.is_running()) may never observe it. With result_wait_timeout, execute() can return
+# while the trainer is still alive, so an unbounded join here could hang CJ/simulator
+# teardown forever.
+_TRAINER_STOP_JOIN_TIMEOUT = 30.0
 _NO_RESULT = object()
 
 
@@ -127,9 +134,14 @@ class InProcessBackend(ClientAPIBackendSpec):
             # this is how the trainer script's flare.init() finds the API instance
             self._data_bus.put_data(CLIENT_API_KEY, self._client_api)
 
-            # non-daemon, matching the legacy executor: process exit waits for the trainer,
-            # and finalize() joins it after TOPIC_STOP
-            self._task_fn_thread = threading.Thread(target=task_fn_wrapper.run, name="client_api_in_process_trainer")
+            # daemon: a deliberate divergence from the legacy executor (non-daemon). With
+            # result_wait_timeout, execute() can return while the trainer is still running;
+            # a trainer wedged in user code never observes TOPIC_STOP, and a non-daemon
+            # thread would then block process exit even after finalize() gives up its
+            # bounded join. finalize() still joins cooperatively first.
+            self._task_fn_thread = threading.Thread(
+                target=task_fn_wrapper.run, name="client_api_in_process_trainer", daemon=True
+            )
             self._task_fn_thread.start()
         except Exception:
             # contract (backend_spec): initialize() self-unwinds its partial setup on failure;
@@ -254,7 +266,14 @@ class InProcessBackend(ClientAPIBackendSpec):
         try:
             thread = self._task_fn_thread
             if thread is not None and thread.is_alive():
-                thread.join()
+                # bounded: TOPIC_STOP is only seen at the trainer's next flare call, and a
+                # trainer stuck in user code may never make one -- do not hang teardown on it
+                thread.join(timeout=_TRAINER_STOP_JOIN_TIMEOUT)
+                if thread.is_alive():
+                    self.logger.error(
+                        f"in-process trainer thread did not stop within {_TRAINER_STOP_JOIN_TIMEOUT}s "
+                        f"after TOPIC_STOP; abandoning it (daemon thread, will not block process exit)"
+                    )
         except Exception:
             self.logger.error(secure_format_traceback())
         finally:

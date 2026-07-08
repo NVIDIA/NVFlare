@@ -23,7 +23,7 @@ wait, and LOG routing through the executor-owned fire_log_analytics().
 """
 
 import time
-from unittest.mock import MagicMock, Mock
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
@@ -36,6 +36,7 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendContext
+from nvflare.app_common.executors.client_api import in_process_backend as ipb_module
 from nvflare.app_common.executors.client_api.in_process_backend import InProcessBackend
 from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
 from nvflare.client.api_spec import CLIENT_API_KEY
@@ -198,6 +199,25 @@ class TestInitializeAndFinalize:
         assert clean_databus.get_data(CLIENT_API_KEY) is None
         assert not _backend_callbacks_subscribed(clean_databus, backend)
         assert not backend._task_fn_thread.is_alive()
+
+    def test_finalize_bounded_when_trainer_stuck_in_user_code(self, tmp_path, caplog):
+        """A trainer wedged in user code never observes TOPIC_STOP: with result_wait_timeout,
+        execute() returns while the thread still runs, so finalize() must join with a bound
+        and abandon (daemon thread) instead of hanging CJ/simulator teardown forever."""
+        (tmp_path / "train.py").write_text("import time\nwhile True: time.sleep(0.5)\n")
+        backend, fl_ctx = _initialized_backend(str(tmp_path), result_wait_timeout=0.05)
+        try:
+            result = backend.execute("train", Shareable(), fl_ctx, Signal())
+            assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+            assert backend._task_fn_thread.is_alive()  # the reachable-hang precondition
+            assert backend._task_fn_thread.daemon  # a wedged trainer cannot block process exit
+        finally:
+            with patch.object(ipb_module, "_TRAINER_STOP_JOIN_TIMEOUT", 0.5):
+                start = time.monotonic()
+                backend.finalize(FLContext())
+                elapsed = time.monotonic() - start
+        assert elapsed < 5.0, "finalize must not hang on a stuck trainer"
+        assert "did not stop within" in caplog.text
 
     def test_initialize_configures_memory_management(self, custom_dir):
         backend, _ = _initialized_backend(custom_dir, memory_gc_rounds=3, cuda_empty_cache=True)
