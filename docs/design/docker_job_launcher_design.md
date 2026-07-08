@@ -144,7 +144,7 @@ If a job package is intended to be portable across deployments and carries both 
 workspace/               ← read-write in SP/CP; not mounted wholesale into SJ/CJ
   startup/               ← read-only in SJ/CJ
   local/
-    study_data.yaml      ← read-only in SJ/CJ
+    study_runtime.yaml   ← read-only in SJ/CJ
   job_001/               ← over-mounted read-write only for job_001's SJ/CJ
   job_002/               ← over-mounted read-write only for job_002's SJ/CJ
 ```
@@ -286,25 +286,29 @@ Set `"study"` in `meta.json` to the name of the study whose data the job needs:
 { "study": "study_a" }
 ```
 
-The site admin creates `workspace/local/study_data.yaml` mapping study and dataset names to host data paths:
+The site admin creates `workspace/local/study_runtime.yaml` mapping study and dataset names to host data paths:
 
 ```yaml
-study_a:
-  training:
-    source: /host/data/study_a/training
-    mode: ro
-  output:
-    source: /host/data/study_a/output
-    mode: rw
-default:
-  training:
-    source: /host/data/default/training
-    mode: ro
+format_version: 2
+studies:
+  study_a:
+    datasets:
+      training:
+        source: /host/data/study_a/training
+        mode: ro
+      output:
+        source: /host/data/study_a/output
+        mode: rw
+  default:
+    datasets:
+      training:
+        source: /host/data/default/training
+        mode: ro
 ```
 
-At launch time, `DockerJobLauncher` looks up the study name and bind-mounts each configured dataset into the SJ/CJ container at `/data/<study>/<dataset>`. In Docker mode, `source` is the host path passed to Docker and `mode` must be `ro` or `rw`. If the file doesn't exist or the study has no entry, no data volume is added and the launcher logs a warning.
+At launch time, `DockerJobLauncher` looks up the study name and bind-mounts each configured dataset into the SJ/CJ container at `/data/<study>/<dataset>`. In Docker mode, `source` is the host path passed to Docker and `mode` must be `ro` or `rw`. If the file doesn't exist or the study has no entry, no data volume is added and the launcher logs a warning. The same file also configures per-study `env`, `secret_env` (launcher-env pass-through), and `secret_mounts`; see `docs/design/study_runtime_config.md`.
 
-This YAML schema replaces the legacy flat `study -> path` map. A stale flat-format file now fails validation instead of being ignored. If a configured dataset host `source` path does not exist, Docker reports the bind-mount failure when the job container is created.
+The legacy v1 `study_data.yaml` (`study -> dataset -> {source, mode}`) remains supported for existing sites; the two files must not coexist. If a configured dataset host `source` path does not exist, Docker reports the bind-mount failure when the job container is created.
 
 ---
 
@@ -384,7 +388,7 @@ The prepared kit gets:
 - `startup/start_docker.sh` - Docker mode startup script
 - `local/resources.json.default` - process-mode launcher replaced with `DockerJobLauncher`
 - `local/comm_config.json` - internal parent communication adjusted for Docker networking
-- `local/study_data.yaml` - template used by job containers for study data mounts
+- `local/study_runtime.yaml` - per-study runtime config template (data mounts, env vars, secrets)
 
 ### Step 2 — Persist job storage (server only)
 
@@ -444,16 +448,19 @@ NVFL_P_IMAGE=nvflare-site:2.7.2 ./start_docker.sh
 
 ### Step 4 — Configure site data (optional)
 
-If jobs need access to study data, create `workspace/local/study_data.yaml`. No change to `resources.json` is needed — `DockerJobLauncher` reads this file fresh on every job launch, so entries can be added or updated at any time without restarting SP/CP.
+If jobs need access to study data, edit `workspace/local/study_runtime.yaml`. No change to `resources.json` is needed — `DockerJobLauncher` reads this file fresh on every job launch, so entries can be added or updated at any time without restarting SP/CP.
 
 ```yaml
-study_a:
-  training:
-    source: /host/data/study_a/training
-    mode: ro
+format_version: 2
+studies:
+  study_a:
+    datasets:
+      training:
+        source: /host/data/study_a/training
+        mode: ro
 ```
 
-Top-level keys are study names from `meta.json`; nested keys are dataset names. Each dataset entry defines the host `source` path and mount `mode`. Dataset names appear in the container path as `/data/<study>/<dataset>`. If the file is absent or the job's study has no entry, no data volume is added, the launcher logs a warning, and the job runs without a data mount. Legacy flat `study -> path` entries are invalid in this schema.
+`studies` keys are study names from `meta.json`; `datasets` keys are dataset names. Each dataset entry defines the host `source` path and mount `mode`. Dataset names appear in the container path as `/data/<study>/<dataset>`. If the file is absent or the job's study has no entry, no data volume is added, the launcher logs a warning, and the job runs without a data mount. Legacy v1 `study_data.yaml` files remain supported but must not coexist with `study_runtime.yaml`.
 
 ### Step 5 — Submit a job
 

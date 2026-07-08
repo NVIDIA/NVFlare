@@ -39,6 +39,11 @@ from nvflare.app_opt.job_launcher.study_data import (
     resolve_study_dataset_mounts,
     should_mount_study_data,
 )
+from nvflare.app_opt.job_launcher.study_runtime import (
+    STUDY_RUNTIME_FILE,
+    load_study_runtime_file,
+    resolve_study_runtime,
+)
 from nvflare.utils.job_launcher_utils import get_client_job_args, get_job_launcher_spec, get_server_job_args
 
 
@@ -427,6 +432,23 @@ class DockerJobLauncher(JobLauncherSpec):
 
         self._docker_client = None
 
+    def _resolve_study_runtime(self, study):
+        # Reads use WORKSPACE_MOUNT (container-internal path) because launch_job runs inside
+        # the SP/CP container; the host path (self.workspace) is not visible here.
+        runtime_file = os.path.join(self.WORKSPACE_MOUNT, *STUDY_RUNTIME_FILE.split("/"))
+        if not os.path.exists(runtime_file):
+            return None
+        legacy_file = os.path.join(self.WORKSPACE_MOUNT, self.STUDY_DATA_PATH_FILE)
+        if os.path.exists(legacy_file):
+            raise RuntimeError(
+                f"study runtime file '{runtime_file}' cannot be combined with the legacy study data file "
+                f"'{legacy_file}'; migrate all studies to study_runtime.yaml and remove the v1 file."
+            )
+        runtime_map = load_study_runtime_file(
+            runtime_file, allow_pod_template=False, allow_secret_mount_items=False, logger=self.logger
+        )
+        return resolve_study_runtime(runtime_map, study, runtime_file, logger=self.logger)
+
     def _get_docker_client(self):
         if self._docker_client is None:
             if not _DOCKER_AVAILABLE:
@@ -514,6 +536,20 @@ class DockerJobLauncher(JobLauncherSpec):
             raise RuntimeError(f"launcher_spec['{site_name}']['docker']['python_path'] must be a non-empty string")
         command = [python_path, "-u", "-m", exe_module] + module_args_list
 
+        study = job_meta.get(JobMetaKey.STUDY.value)
+        study_runtime = self._resolve_study_runtime(study)
+        site_env = {}
+        if study_runtime is not None:
+            site_env.update(study_runtime.env)
+            for secret_env_ref in study_runtime.secret_env:
+                secret_value = os.environ.get(secret_env_ref.source)
+                if secret_value is None:
+                    raise RuntimeError(
+                        f"secret_env '{secret_env_ref.name}' for study '{study}' requires env var "
+                        f"'{secret_env_ref.source}' in the launcher environment, but it is not set"
+                    )
+                site_env[secret_env_ref.name] = secret_value
+
         # PYTHONPATH: translate app_custom_folder host path to container-internal path
         # so custom Python code in the job app is importable inside the container.
         # USER: some libraries (e.g. torch._dynamo) call getpass.getuser() which falls back to
@@ -523,6 +559,7 @@ class DockerJobLauncher(JobLauncherSpec):
         # don't fall back to pwd.getpwuid() — which fails when the host UID has no /etc/passwd entry.
         environment = {
             **self.default_job_env,
+            **site_env,
             "USER": os.environ.get("USER", "nvflare"),
             "HOME": os.environ.get("HOME", "/tmp"),
         }
@@ -578,27 +615,23 @@ class DockerJobLauncher(JobLauncherSpec):
         container_job_workspace = posixpath.join(self.WORKSPACE_MOUNT, job_workspace_name)
         container_startup_dir = posixpath.join(self.WORKSPACE_MOUNT, WorkspaceConstants.STARTUP_FOLDER_NAME)
         container_local_dir = posixpath.join(self.WORKSPACE_MOUNT, WorkspaceConstants.SITE_FOLDER_NAME)
+        # Dataset sources are host paths for Docker (bind sources go to the daemon API);
+        # each dataset is mounted at /data/<study>/<dataset>.
         data_mounts = []
-
-        # Read study data map from workspace/local/study_data.yaml.
-        # Must use WORKSPACE_MOUNT (container-internal path) for the file read because launch_job
-        # runs inside the SP/CP container. The host path (workspace) does not exist in the container
-        # filesystem. The Docker volume source must remain the host path for the daemon API.
-        # Maps study -> dataset -> {source, mode}; source is a host path for Docker.
-        # Each dataset is mounted at /data/<study>/<dataset>.
-        study_data_file = os.path.join(self.WORKSPACE_MOUNT, self.STUDY_DATA_PATH_FILE)
-        study = job_meta.get(JobMetaKey.STUDY.value)
-        if should_mount_study_data(study):
+        if study_runtime is not None:
+            data_mounts = study_runtime.datasets
+        elif should_mount_study_data(study):
+            study_data_file = os.path.join(self.WORKSPACE_MOUNT, self.STUDY_DATA_PATH_FILE)
             study_data_map = load_study_data_file(study_data_file, logger=self.logger)
             data_mounts = resolve_study_dataset_mounts(study_data_map, study, study_data_file, logger=self.logger)
-            for dataset_mount in data_mounts:
-                self.logger.info(
-                    "mounting study '%s' dataset '%s' from %s -> %s",
-                    study,
-                    dataset_mount.dataset,
-                    dataset_mount.source,
-                    dataset_mount.mount_path,
-                )
+        for dataset_mount in data_mounts:
+            self.logger.info(
+                "mounting study '%s' dataset '%s' from %s -> %s",
+                study,
+                dataset_mount.dataset,
+                dataset_mount.source,
+                dataset_mount.mount_path,
+            )
 
         self.logger.info(f"launching job {job_id} as container {container_name} using image {job_image}")
 
@@ -635,6 +668,16 @@ class DockerJobLauncher(JobLauncherSpec):
                         read_only=dataset_mount.read_only,
                     )
                 )
+            if study_runtime is not None:
+                for secret_mount in study_runtime.secret_mounts:
+                    mounts.append(
+                        docker.types.Mount(
+                            target=secret_mount.mount_path,
+                            source=secret_mount.source,
+                            type="bind",
+                            read_only=True,
+                        )
+                    )
             container = docker_client.containers.run(
                 job_image,
                 command=command,

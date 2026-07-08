@@ -498,31 +498,40 @@ def _prepare_poc_docker_deployments(poc_workspace: str, project_config: Dict):
     return True
 
 
-def _write_poc_docker_study_data(kit_dir: Path, poc_workspace: str) -> None:
-    study_data_file = kit_dir / "local" / "study_data.yaml"
+def _write_poc_docker_study_runtime(kit_dir: Path, poc_workspace: str) -> None:
+    study_runtime_file = kit_dir / "local" / "study_runtime.yaml"
     try:
-        with study_data_file.open("rt", encoding="utf-8") as f:
-            study_data = yaml.safe_load(f) or {}
+        with study_runtime_file.open("rt", encoding="utf-8") as f:
+            study_runtime = yaml.safe_load(f) or {}
     except FileNotFoundError:
-        study_data = {}
+        study_runtime = {}
     except yaml.YAMLError as e:
-        raise CLIException(f"invalid study data file for POC Docker kit '{kit_dir}': {e}") from e
+        raise CLIException(f"invalid study runtime file for POC Docker kit '{kit_dir}': {e}") from e
 
-    if not isinstance(study_data, dict):
-        raise CLIException(f"study data file for POC Docker kit '{kit_dir}' must contain a dictionary")
+    if not isinstance(study_runtime, dict):
+        raise CLIException(f"study runtime file for POC Docker kit '{kit_dir}' must contain a dictionary")
 
-    study_entry = study_data.setdefault(POC_DOCKER_DATA_STUDY, {})
+    study_runtime.setdefault("format_version", 2)
+    studies = study_runtime.setdefault("studies", {})
+    if not isinstance(studies, dict):
+        raise CLIException(f"studies entry for POC Docker kit '{kit_dir}' must contain a dictionary")
+    study_entry = studies.setdefault(POC_DOCKER_DATA_STUDY, {})
     if not isinstance(study_entry, dict):
         raise CLIException(
-            f"study data entry '{POC_DOCKER_DATA_STUDY}' for POC Docker kit '{kit_dir}' must contain a dictionary"
+            f"study entry '{POC_DOCKER_DATA_STUDY}' for POC Docker kit '{kit_dir}' must contain a dictionary"
         )
-    study_entry.setdefault(
+    datasets = study_entry.setdefault("datasets", {})
+    if not isinstance(datasets, dict):
+        raise CLIException(
+            f"datasets entry for study '{POC_DOCKER_DATA_STUDY}' in POC Docker kit '{kit_dir}' must be a dictionary"
+        )
+    datasets.setdefault(
         POC_DOCKER_DATA_DATASET,
         {"source": os.path.realpath(os.path.join(poc_workspace, "data")), "mode": "rw"},
     )
 
-    with study_data_file.open("wt", encoding="utf-8") as f:
-        yaml.safe_dump(study_data, f, default_flow_style=False, sort_keys=False)
+    with study_runtime_file.open("wt", encoding="utf-8") as f:
+        yaml.safe_dump(study_runtime, f, default_flow_style=False, sort_keys=False)
 
 
 def _prepare_poc_docker_kit(kit_dir: str, docker_config: Dict, poc_workspace: str):
@@ -539,7 +548,7 @@ def _prepare_poc_docker_kit(kit_dir: str, docker_config: Dict, poc_workspace: st
         _validate_runtime_config(RUNTIME_DOCKER, docker_config)
         kit_info = _validate_kit(kit_path)
         _prepare_docker(kit_info, kit_path, docker_config)
-        _write_poc_docker_study_data(kit_path, poc_workspace)
+        _write_poc_docker_study_runtime(kit_path, poc_workspace)
         if kit_info.role == ROLE_CLIENT:
             _patch_poc_docker_client_target(kit_path)
     except SystemExit as e:
