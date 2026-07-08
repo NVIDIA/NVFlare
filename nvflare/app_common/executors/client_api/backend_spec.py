@@ -43,11 +43,11 @@ if TYPE_CHECKING:
 class ClientAPIBackendContext:
     """Immutable config a ClientAPIExecutor hands to its backend at ``initialize()``.
 
-    Rationale (finding 11): the executor's frozen constructor args live in private attributes and
-    the backend factories are zero-arg, so a backend previously had no clean way to read the
-    heartbeat/timeout/converter/task-name config it needs, nor a supported reference back to the
-    executor's analytics hook. This frozen snapshot is that supported channel - a backend reads its
-    config from here rather than reaching into ``ClientAPIExecutor`` private attributes.
+    Rationale: the executor's frozen constructor args live in private attributes and the backend
+    factories are zero-arg, so a backend previously had no clean way to read the heartbeat/timeout/
+    converter/task-name config it needs, nor a supported reference back to the executor's analytics
+    hook. This frozen snapshot is that supported channel - a backend reads its config from here
+    rather than reaching into ``ClientAPIExecutor`` private attributes.
 
     The fields mirror the frozen ``ClientAPIExecutor`` constructor surface one-to-one. ``executor``
     is a back-reference so a backend can:
@@ -111,10 +111,10 @@ class ClientAPIBackendSpec(ABC):
     def initialize(self, context: ClientAPIBackendContext, fl_ctx: FLContext) -> None:
         """Prepares the backend for the run. Called once when the executor handles START_RUN.
 
-        ``context`` (finding 11) is the frozen snapshot of the executor's configuration plus a
-        back-reference to the executor (for ``fire_log_analytics`` and logging). A backend should
-        read all of its config from ``context`` rather than from executor private attributes, and
-        should retain what it needs for ``execute``/``handle_event``/``finalize``.
+        ``context`` is the frozen snapshot of the executor's configuration plus a back-reference to
+        the executor (for ``fire_log_analytics`` and logging). A backend should read all of its
+        config from ``context`` rather than from executor private attributes, and should retain what
+        it needs for ``execute``/``handle_event``/``finalize``.
 
         The backend sets up its control plane here (DataBus wiring for in_process; Cell session
         machinery, bootstrap config, and - per launch_once policy - trainer launch for
@@ -124,11 +124,11 @@ class ClientAPIBackendSpec(ABC):
         into system_panic so the job fails cleanly instead of hanging while tasks wait on a
         backend that never became ready.
 
-        Cleanup-on-failure contract (finding 12): ``initialize()`` must be exception-safe and
-        self-unwinding - if it raises, it must first release any partial setup it already made
-        (threads started, processes launched, listeners/tokens registered, files written). The
-        executor does NOT call ``finalize()`` on a backend whose ``initialize()`` raised, because
-        ``finalize()`` cannot assume a consistently half-initialized backend. Own your own rollback.
+        Cleanup-on-failure contract: ``initialize()`` must be exception-safe and self-unwinding - if
+        it raises, it must first release any partial setup it already made (threads started,
+        processes launched, listeners/tokens registered, files written). The executor does NOT call
+        ``finalize()`` on a backend whose ``initialize()`` raised, because ``finalize()`` cannot
+        assume a consistently half-initialized backend. Own your own rollback.
 
         Args:
             context: the frozen backend configuration and executor back-reference.

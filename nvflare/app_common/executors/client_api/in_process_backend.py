@@ -43,6 +43,7 @@ from typing import Optional
 
 from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.analytix_utils import create_analytic_dxo
@@ -69,6 +70,7 @@ from nvflare.security.logging import secure_format_traceback
 # The legacy executor exposed this as result_pull_interval (default 0.5); the frozen
 # surface deliberately drops the knob, so the default becomes the behavior.
 _RESULT_POLL_INTERVAL = 0.5
+_NO_RESULT = object()
 
 
 class InProcessBackend(ClientAPIBackendSpec):
@@ -85,7 +87,7 @@ class InProcessBackend(ClientAPIBackendSpec):
         self._event_manager: Optional[EventManager] = None
         self._client_api: Optional[InProcessClientAPI] = None
         self._task_fn_thread: Optional[threading.Thread] = None
-        self._local_result: Optional[Shareable] = None
+        self._local_result = _NO_RESULT
         self._abort = False
         self._abort_reason: Optional[str] = None
         self._finalized = False
@@ -142,6 +144,9 @@ class InProcessBackend(ClientAPIBackendSpec):
             self._event_manager.fire_event(TOPIC_ABORT, f"'{task_name}' is aborted, abort_signal_triggered")
             return make_reply(ReturnCode.TASK_ABORTED)
 
+        if not self._trainer_thread_is_alive():
+            self._latch_abort("trainer thread exited without signaling ABORT")
+
         if self._abort:
             # An in-process trainer that aborted (script failure, prior timeout, STOP) is gone
             # for good -- the thread is never relaunched. Fail fast with an accurate return code:
@@ -159,7 +164,7 @@ class InProcessBackend(ClientAPIBackendSpec):
         # concurrently with that task's timeout decision must not satisfy this task's wait.
         # No further correlation is needed: execute() runs one task at a time, and any
         # trainer abort latches _abort above, so at most one such straggler can exist.
-        self._local_result = None
+        self._local_result = _NO_RESULT
 
         try:
             # kept from the legacy executor: some task scripts read this ad-hoc prop
@@ -178,6 +183,7 @@ class InProcessBackend(ClientAPIBackendSpec):
             # monotonic: a wall-clock step (NTP, VM resume) must not fire a spurious timeout,
             # which would kill the trainer for the rest of the job
             wait_start = time.monotonic()
+            wait_deadline = None if result_wait_timeout is None else wait_start + result_wait_timeout
             self._context.executor.log_info(fl_ctx, "waiting for result from in-process trainer")
             while True:
                 if abort_signal.triggered or self._abort:
@@ -185,9 +191,9 @@ class InProcessBackend(ClientAPIBackendSpec):
                     self._event_manager.fire_event(TOPIC_ABORT, f"'{task_name}' is aborted, abort_signal_triggered")
                     return make_reply(ReturnCode.TASK_ABORTED)
 
-                if self._local_result is not None:
+                if self._local_result is not _NO_RESULT:
                     result = self._local_result
-                    self._local_result = None
+                    self._local_result = _NO_RESULT
 
                     if not isinstance(result, Shareable):
                         self._context.executor.log_error(
@@ -200,7 +206,14 @@ class InProcessBackend(ClientAPIBackendSpec):
                         result.set_header(AppConstants.CURRENT_ROUND, current_round)
                     return result
 
-                if result_wait_timeout is not None and time.monotonic() - wait_start > result_wait_timeout:
+                if not self._trainer_thread_is_alive():
+                    reason = "trainer thread exited before producing a result"
+                    self._latch_abort(reason)
+                    self._context.executor.log_error(fl_ctx, f"{reason} for task '{task_name}'")
+                    return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+
+                now = time.monotonic()
+                if wait_deadline is not None and now >= wait_deadline:
                     # the contract forbids waiting unbounded past the configured bound: tell the
                     # trainer to stop this task and fail the round
                     self._event_manager.fire_event(
@@ -211,7 +224,12 @@ class InProcessBackend(ClientAPIBackendSpec):
                     )
                     return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-                time.sleep(_RESULT_POLL_INTERVAL)
+                sleep_time = _RESULT_POLL_INTERVAL
+                if wait_deadline is not None:
+                    sleep_time = min(sleep_time, wait_deadline - now)
+                time.sleep(sleep_time)
+        except UnsafeJobError:
+            raise
         except Exception:
             self._context.executor.log_error(fl_ctx, secure_format_traceback())
             self._event_manager.fire_event(TOPIC_ABORT, f"'{task_name}' failed: {secure_format_traceback()}")
@@ -283,6 +301,15 @@ class InProcessBackend(ClientAPIBackendSpec):
             },
         }
 
+    def _trainer_thread_is_alive(self) -> bool:
+        thread = self._task_fn_thread
+        return thread is not None and thread.is_alive()
+
+    def _latch_abort(self, reason: str) -> None:
+        self._abort = True
+        if self._abort_reason is None:
+            self._abort_reason = reason
+
     def _local_result_callback(self, topic, data, databus):
         if not isinstance(data, Shareable):
             # do not raise into the trainer's send path; record the bad result and let the
@@ -293,8 +320,9 @@ class InProcessBackend(ClientAPIBackendSpec):
 
     def _log_result_callback(self, topic, data, databus):
         result = data
-        if result and not isinstance(result, dict):
-            raise ValueError(f"invalid result format, expecting Dict, but get {type(result)}")
+        if not isinstance(result, dict):
+            self.logger.error(f"invalid result format, expecting Dict, but got {type(result)}")
+            return
 
         if "key" in result:
             result["tag"] = result.pop("key")
@@ -305,7 +333,5 @@ class InProcessBackend(ClientAPIBackendSpec):
             self._context.executor.fire_log_analytics(fl_ctx, dxo)
 
     def _to_abort_callback(self, topic, data, databus):
-        self._abort = True
-        if self._abort_reason is None:
-            # keep the FIRST cause: later echoes (e.g. our own fail-fast fires) must not mask it
-            self._abort_reason = f"{topic}: {data}"
+        # keep the FIRST cause: later echoes (e.g. our own fail-fast fires) must not mask it
+        self._latch_abort(f"{topic}: {data}")

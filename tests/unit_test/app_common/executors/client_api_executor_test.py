@@ -170,8 +170,8 @@ class TestConstructorValidation:
         assert executor._cuda_empty_cache is True
 
     def test_task_name_and_memory_defaults(self):
-        # findings 9 + 10: rank-contract task names and memory-management knobs are frozen with the
-        # legacy executors' defaults, valid in every mode.
+        # Rank-contract task names and memory-management knobs are frozen with the legacy
+        # executors' defaults, valid in every mode.
         executor = ClientAPIExecutor(execution_mode="in_process")
         assert executor._train_task_name == AppConstants.TASK_TRAIN
         assert executor._evaluate_task_name == AppConstants.TASK_VALIDATION
@@ -181,8 +181,8 @@ class TestConstructorValidation:
         assert executor._cuda_empty_cache is False
 
     def test_in_process_accepts_task_script(self):
-        # finding 8: in_process names its script via task_script_path/args (command names the
-        # external_process trainer).
+        # in_process names its script via task_script_path/args; command names the external_process
+        # trainer.
         executor = ClientAPIExecutor(
             execution_mode="in_process", task_script_path="custom/train.py", task_script_args="--epochs 3"
         )
@@ -238,20 +238,20 @@ class TestConstructorValidation:
     @pytest.mark.parametrize("mode", ["in_process", "attach"])
     @pytest.mark.parametrize("command", ["", "   ", "\t"])
     def test_empty_command_treated_as_unset_for_non_external_modes(self, mode, command):
-        # finding 1: an empty/whitespace command is "unset", not a wrong-mode command, so it must
-        # not be rejected with the misleading "only valid for external_process" message.
+        # An empty/whitespace command is "unset", not a wrong-mode command, so it must not be
+        # rejected with the misleading "only valid for external_process" message.
         executor = ClientAPIExecutor(execution_mode=mode, command=command)
         assert executor._command is None
 
     @pytest.mark.parametrize("command", ["", "   "])
     def test_external_process_rejects_empty_command(self, command):
-        # finding 1: the same normalization must keep external_process requiring a real command.
+        # The same normalization must keep external_process requiring a real command.
         with pytest.raises(ValueError, match="'external_process' requires a non-empty command"):
             ClientAPIExecutor(execution_mode="external_process", command=command)
 
     @pytest.mark.parametrize("mode", ["external_process", "attach"])
     def test_task_script_path_rejected_for_non_in_process_modes(self, mode):
-        # finding 8: task_script_path names the in_process script only.
+        # task_script_path names the in_process script only.
         kwargs = dict(MODE_KWARGS[mode])
         with pytest.raises(ValueError, match="task_script_path is only valid for execution_mode 'in_process'"):
             ClientAPIExecutor(task_script_path="custom/train.py", **kwargs)
@@ -264,8 +264,8 @@ class TestConstructorValidation:
 
     @pytest.mark.parametrize("mode", ["in_process", "attach"])
     def test_launch_once_non_default_rejected_for_non_external_modes(self, mode):
-        # finding 3: external_process-only knobs must be rejected (not silently ignored) when set
-        # to a non-default value in a mode that ignores them.
+        # external_process-only knobs must be rejected (not silently ignored) when set to a
+        # non-default value in a mode that ignores them.
         kwargs = dict(MODE_KWARGS[mode])
         with pytest.raises(ValueError, match="launch_once is only valid for execution_mode 'external_process'"):
             ClientAPIExecutor(launch_once=False, **kwargs)
@@ -290,8 +290,8 @@ class TestConstructorValidation:
 
     @pytest.mark.parametrize("arg", ["heartbeat_interval", "heartbeat_timeout"])
     def test_heartbeat_non_default_rejected_for_in_process(self, arg):
-        # finding 3: there is no session heartbeat in_process, so a non-default heartbeat knob is
-        # dead there and must be rejected (valid for external_process/attach).
+        # There is no session heartbeat in_process, so a non-default heartbeat knob is dead there
+        # and must be rejected (valid for external_process/attach).
         with pytest.raises(ValueError, match=f"{arg} is only valid for execution_mode 'external_process' or 'attach'"):
             ClientAPIExecutor(execution_mode="in_process", **{arg: 99.0})
 
@@ -319,9 +319,9 @@ class TestConstructorValidation:
     @pytest.mark.parametrize("mode", ["in_process", "external_process"])
     @pytest.mark.parametrize("falsy", [None, 0])
     def test_allow_reconnect_falsy_values_accepted_for_non_attach_modes(self, mode, falsy):
-        # finding 2: the wrong-mode check uses `if allow_reconnect` (truthy), not
-        # `is not False`, so falsy-but-not-False values (None, 0, numpy.bool_(False)) are treated
-        # as "not set" instead of misfiring.
+        # The wrong-mode check uses `if allow_reconnect` (truthy), not `is not False`, so
+        # falsy-but-not-False values (None, 0, numpy.bool_(False)) are treated as "not set"
+        # instead of misfiring.
         kwargs = dict(MODE_KWARGS[mode])
         ClientAPIExecutor(allow_reconnect=falsy, **kwargs)
 
@@ -343,8 +343,8 @@ class TestDispatch:
 
     @pytest.mark.parametrize("mode", NOT_IMPLEMENTED_MODES)
     def test_backend_factory_raises_not_implemented(self, mode):
-        # finding 7: user-facing message must not carry an internal plan id (EX-3/EP-4/AT-2); it
-        # names the mode and says "not yet implemented".
+        # The user-facing message must not carry an internal plan id (EX-3/EP-4/AT-2); it names the
+        # mode and says "not yet implemented".
         executor = ClientAPIExecutor(**MODE_KWARGS[mode])
         with pytest.raises(NotImplementedError, match="not yet implemented") as exc_info:
             executor._create_backend()
@@ -355,8 +355,8 @@ class TestDispatch:
 
     @pytest.mark.parametrize("mode", list(ALL_EXECUTION_MODES))
     def test_start_run_panics_naming_the_mode(self, mode):
-        # findings 6 + 7: the panic reason names the mode directly (not via secure_format_exception,
-        # so it is robust whether or not NVFLARE_SECURE_LOGGING is set) and carries no plan id.
+        # The panic reason names the mode directly (not via secure_format_exception, so it is robust
+        # whether or not NVFLARE_SECURE_LOGGING is set) and carries no plan id.
         # For in_process the failure is now the missing task_script_path (backend initialize
         # raises), not a NotImplementedError factory - the clean-failure contract is the same.
         executor = ClientAPIExecutor(**MODE_KWARGS[mode])
@@ -457,8 +457,8 @@ class TestBackendPlumbing:
         assert reply.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
 
     def test_backend_receives_config_context(self):
-        # finding 11: initialize() receives a frozen ClientAPIBackendContext carrying the executor
-        # config and a back-reference to the executor (for fire_log_analytics/logging).
+        # initialize() receives a frozen ClientAPIBackendContext carrying the executor config and a
+        # back-reference to the executor (for fire_log_analytics/logging).
         backend = _StubBackend()
         executor = _StubbedInProcessExecutor(
             backend,
@@ -513,8 +513,8 @@ class TestAnalyticsOwnership:
         assert scopes == [(ANALYTIC_EVENT_TYPE, EventScope.LOCAL)]
 
     def test_fed_path_fires_federation_scoped_event(self):
-        # finding 4: the fed path must fire the already-"fed."-prefixed event name so it lands on
-        # the same server-side event as MetricRelay (job_config/script_runner.py) and flower_job.py
+        # The fed path must fire the already-"fed."-prefixed event name so it lands on the same
+        # server-side event as MetricRelay (job_config/script_runner.py) and flower_job.py
         # ("fed.analytix_log_stats"); firing the un-prefixed name federation-scoped would miss every
         # consumer listening on "fed.analytix_log_stats".
         assert FED_ANALYTIC_EVENT_TYPE == "fed.analytix_log_stats"

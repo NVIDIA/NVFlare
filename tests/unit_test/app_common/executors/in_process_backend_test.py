@@ -31,6 +31,7 @@ from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
@@ -80,7 +81,23 @@ def clean_databus():
 
 @pytest.fixture
 def custom_dir(tmp_path):
-    """A workspace custom dir holding a trivial trainer script that exits immediately."""
+    """A workspace custom dir holding a trainer thread that stays alive until STOP."""
+    (tmp_path / "train.py").write_text(
+        "from nvflare.client.api_spec import CLIENT_API_KEY\n"
+        "from nvflare.fuel.data_event.data_bus import DataBus\n"
+        "api = DataBus().get_data(CLIENT_API_KEY)\n"
+        "try:\n"
+        "    while api.is_running():\n"
+        "        api.clear()\n"
+        "except RuntimeError:\n"
+        "    pass\n"
+    )
+    return str(tmp_path)
+
+
+@pytest.fixture
+def exited_custom_dir(tmp_path):
+    """A workspace custom dir holding a trainer script that exits normally."""
     (tmp_path / "train.py").write_text("x = 1\n")
     return str(tmp_path)
 
@@ -151,11 +168,10 @@ class TestInitializeAndFinalize:
             assert isinstance(clean_databus.get_data(CLIENT_API_KEY), InProcessClientAPI)
             for topic in BACKEND_TOPICS:
                 assert topic in clean_databus.subscribers, f"backend must subscribe {topic}"
-            # the trivial script exits on its own
-            backend._task_fn_thread.join(timeout=5.0)
-            assert not backend._task_fn_thread.is_alive()
+            assert backend._task_fn_thread.is_alive()
         finally:
             backend.finalize(FLContext())
+        assert not backend._task_fn_thread.is_alive()
 
     def test_initialize_unwinds_on_failure(self, clean_databus, custom_dir):
         backend = InProcessBackend()
@@ -229,16 +245,33 @@ class TestExecute:
         finally:
             backend.finalize(FLContext())
 
-    def test_execute_bounded_by_result_wait_timeout(self, clean_databus, custom_dir):
+    def test_execute_bounded_by_result_wait_timeout(self, clean_databus, custom_dir, monkeypatch):
         # contract: never wait unbounded past the configured bound; no trainer reply -> error
+        monkeypatch.setattr("nvflare.app_common.executors.client_api.in_process_backend._RESULT_POLL_INTERVAL", 1.0)
         backend, fl_ctx = _initialized_backend(custom_dir, result_wait_timeout=0.05)
         try:
-            start = time.time()
+            start = time.monotonic()
             result = backend.execute("train", Shareable(), fl_ctx, Signal())
-            elapsed = time.time() - start
+            elapsed = time.monotonic() - start
 
             assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
-            assert elapsed < 5.0, "timeout path must not hang"
+            assert elapsed < 0.5, "timeout must not be rounded up to the polling interval"
+        finally:
+            backend.finalize(FLContext())
+
+    def test_execute_fails_fast_when_trainer_thread_exits(self, clean_databus, exited_custom_dir):
+        backend, fl_ctx = _initialized_backend(exited_custom_dir, result_wait_timeout=2.0)
+        try:
+            backend._task_fn_thread.join(timeout=1.0)
+            assert not backend._task_fn_thread.is_alive()
+
+            start = time.monotonic()
+            result = backend.execute("train", Shareable(), fl_ctx, Signal())
+            elapsed = time.monotonic() - start
+
+            assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+            assert elapsed < 0.5, "a dead trainer must be detected before waiting for a result"
+            assert "trainer thread exited" in backend._abort_reason
         finally:
             backend.finalize(FLContext())
 
@@ -302,6 +335,31 @@ class TestExecute:
             )
             result = backend.execute("train", Shareable(), fl_ctx, Signal())
             assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+        finally:
+            backend.finalize(FLContext())
+
+    def test_none_result_returns_execution_exception_without_waiting_for_timeout(self, clean_databus, custom_dir):
+        backend, fl_ctx = _initialized_backend(custom_dir, result_wait_timeout=1.0)
+        try:
+            clean_databus.subscribe(
+                [TOPIC_GLOBAL_RESULT],
+                lambda t, d, b: clean_databus.publish([TOPIC_LOCAL_RESULT], None),
+            )
+            start = time.monotonic()
+            result = backend.execute("train", Shareable(), fl_ctx, Signal())
+            elapsed = time.monotonic() - start
+
+            assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+            assert elapsed < 0.5, "an invalid None result must fail fast"
+        finally:
+            backend.finalize(FLContext())
+
+    def test_unsafe_job_error_propagates(self, clean_databus, custom_dir, monkeypatch):
+        backend, fl_ctx = _initialized_backend(custom_dir)
+        try:
+            monkeypatch.setattr(backend, "_prepare_task_meta", Mock(side_effect=UnsafeJobError("unsafe")))
+            with pytest.raises(UnsafeJobError, match="unsafe"):
+                backend.execute("train", Shareable(), fl_ctx, Signal())
         finally:
             backend.finalize(FLContext())
 
@@ -378,6 +436,17 @@ class TestLogRouting:
             dxo = executor.fire_log_analytics.call_args[0][1]
             # the key->tag rename happened and the DXO carries the exact metric
             assert dxo.data == {"track_key": "accuracy", "track_value": 0.9}
+        finally:
+            backend.finalize(FLContext())
+
+    def test_invalid_log_data_is_logged_and_ignored(self, clean_databus, custom_dir, caplog):
+        executor = MagicMock()
+        backend, _ = _initialized_backend(custom_dir, executor=executor)
+        try:
+            backend._log_result_callback(TOPIC_LOG_DATA, None, clean_databus)
+
+            executor.fire_log_analytics.assert_not_called()
+            assert "invalid result format" in caplog.text
         finally:
             backend.finalize(FLContext())
 

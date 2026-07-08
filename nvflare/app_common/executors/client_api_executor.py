@@ -42,7 +42,6 @@ conversion moves from executor-owned ParamsConverters to send/receive filters at
 edge (the intermediate layers pass through), so these are not frozen into this surface. The
 transfer type (FULL/DIFF) remains a Client API concern (model_registry) and is decided
 separately from the converter removal.
-  (public on ScriptRunner and both legacy executors).
 """
 
 from typing import Callable, Dict, Optional
@@ -278,9 +277,9 @@ class ClientAPIExecutor(Executor):
                 self._backend = self._create_backend()
                 self._backend.initialize(self._build_backend_context(), fl_ctx)
             except Exception as e:
-                # finding 12: initialize() is contracted to self-unwind its partial setup on
-                # failure, so the executor does NOT call finalize() on a half-initialized backend;
-                # it just drops the reference and panics so the job fails cleanly.
+                # initialize() is contracted to self-unwind its partial setup on failure, so the
+                # executor does NOT call finalize() on a half-initialized backend; it just drops
+                # the reference and panics so the job fails cleanly.
                 self._backend = None
                 self.log_error(fl_ctx, secure_format_traceback(), fire_event=False)
                 self.system_panic(
@@ -395,7 +394,7 @@ class ClientAPIExecutor(Executor):
         )
 
     def _build_backend_context(self) -> ClientAPIBackendContext:
-        """Builds the frozen config snapshot handed to the backend at initialize() (finding 11)."""
+        """Builds the frozen config snapshot handed to the backend at initialize()."""
         return ClientAPIBackendContext(
             executor=self,
             execution_mode=self._execution_mode,
