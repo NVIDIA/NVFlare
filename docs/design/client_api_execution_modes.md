@@ -2,7 +2,7 @@
 
 ## Status
 
-**Status: Approved** — implementation in progress for 2.9 (see the companion implementation plan, `client_api_execution_modes_plan.md`). Epic: **FLARE-2698** (Client API and 3rd party integration refactoring, fix version 2.9.0).
+**Status: Approved** — implementation in progress for 2.9. Epic: **FLARE-2698** (Client API and 3rd party integration refactoring, fix version 2.9.0).
 
 Revision 2 (2026-07-01): incorporates review feedback — universal session setup, owner-death and receive-side contracts, forward-path payload lifecycle, cleanup policy definition, receiver-confirmed terminal outcome, per-receiver transfer budgets, configuration surface, attach auth hardening, and a re-sequenced migration plan.
 
@@ -937,7 +937,7 @@ These three are not the same moment — they fire at different workflow stages �
 Two CCWF-specific policies still need to be set (not new transport):
 
 - **Fan-out (broadcast/CSE).** The producer stays alive until all N receivers pull; a stuck or dead receiver must not pin it forever. This is enforced with the per-receiver budgets above: each receiver stage gets a workflow-supplied expected-pull window, a receiver that exhausts its budget is marked failed for the aggregate outcome, and the workflow decides whether a partial fan-out (N-1 of N) is a usable result or a task failure. The transaction TTL is the envelope over the stage windows, plus a defined abort path.
-- **Disk offload.** Two distinct artifacts must not be conflated. The **producer** serves tensors from its in-memory source (a DownloadService ref, no producer-side disk file); that source is released only on the normalized terminal outcome, which is what keeps the subprocess alive long enough. The **receiver's** offloaded copy (e.g. safetensors written by the receiving side's FOBS decode) is the receiver's own storage, on its own GC lifecycle — it is not gated on the producer's outcome. The historical CCWF fragility was the *producer/subprocess* exiting before the peer finished pulling; that is fixed by the terminal-outcome gate on the producer's source. **Hard dependency:** safely re-enabling disk offload in CCWF requires the receiver-confirmed terminal status (Payload Lifecycle refinement #1, plan PR F3-2) — re-enabling on the current *producer-served EOF* outcome would reintroduce silent truncation (a receiver whose disk write fails after its last pull is invisible to the producer). This is a hard prerequisite, not merely "requires validation."
+- **Disk offload.** Two distinct artifacts must not be conflated. The **producer** serves tensors from its in-memory source (a DownloadService ref, no producer-side disk file); that source is released only on the normalized terminal outcome, which is what keeps the subprocess alive long enough. The **receiver's** offloaded copy (e.g. safetensors written by the receiving side's FOBS decode) is the receiver's own storage, on its own GC lifecycle — it is not gated on the producer's outcome. The historical CCWF fragility was the *producer/subprocess* exiting before the peer finished pulling; that is fixed by the terminal-outcome gate on the producer's source. **Hard dependency:** safely re-enabling disk offload in CCWF requires the receiver-confirmed terminal status (Payload Lifecycle refinement #1 — the receiver-confirmed completion wire change) — re-enabling on the current *producer-served EOF* outcome would reintroduce silent truncation (a receiver whose disk write fails after its last pull is invisible to the producer). This is a hard prerequisite, not merely "requires validation."
 
 ## Alternatives Considered
 
@@ -1064,13 +1064,13 @@ CCWF (step 6):
 
 ### Open Questions
 
-Each open question is tracked to the PR that decides it (plan PR ids); none blocks the interface freezes already landed.
+Each open question is tracked to the work item that decides it; none blocks the interface freezes already landed.
 
-- Exact public argument names and migration aliases — decided at the EX-2 interface freeze (the frozen `ClientAPIExecutor` constructor is the decision record) and the EX-3 ScriptRunner wiring.
+- Exact public argument names and migration aliases — decided at the `ClientAPIExecutor` interface freeze (the frozen constructor is the decision record) and the ScriptRunner `execution_mode` wiring.
 - Scheduler batch helper library vs. standard wrapper component — deferred to Migration Plan step 7 (Future Enhancements); not 2.9-blocking.
-- Exact factoring of shared code with IPCAgent/IPCExchanger — decided during the trainer-engine PR (TE-4), where the shared session/receive machinery gets its final home.
-- Compatibility flag for selecting the legacy Pipe path during migration — decided in EX-3/EP-4: whether legacy selection stays purely class-name-based (per the Compatibility section's keep-legacy story) or also gets an explicit flag.
-- Whether partial fan-out (N-1 of N receivers succeeded) is surfaceable to CCWF workflows as a usable result or always a task failure — decided by F3-3's quorum surface (the plan requires F3-3 to settle it) and surfaced to workflows in CC-1.
+- Exact factoring of shared code with IPCAgent/IPCExchanger — decided during the trainer-engine work, where the shared session/receive machinery gets its final home.
+- Compatibility flag for selecting the legacy Pipe path during migration — decided with the in_process/external_process backend wiring: whether legacy selection stays purely class-name-based (per the Compatibility section's keep-legacy story) or also gets an explicit flag.
+- Whether partial fan-out (N-1 of N receivers succeeded) is surfaceable to CCWF workflows as a usable result or always a task failure — decided by the per-receiver budget work's quorum surface (`min_receivers` / `quorum_met`: `completed` stays the strict all-receivers certificate) and surfaced to workflows in the CCWF refactor.
 
 ## Migration Plan
 
