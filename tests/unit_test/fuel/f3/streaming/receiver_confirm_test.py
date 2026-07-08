@@ -31,27 +31,15 @@ from unittest.mock import Mock, patch
 import pytest
 
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
-from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
+from nvflare.fuel.f3.cellnet.utils import make_reply
 from nvflare.fuel.f3.streaming import download_service as ds_module
 from nvflare.fuel.f3.streaming.download_service import Consumer, DownloadStatus, ProduceRC, _PropKey, download_object
-from tests.unit_test.fuel.f3.streaming.download_test_utils import (
-    MockDownloadable,
-    make_isolated_download_service,
-    run_monitor_once,
-)
-
-
-@pytest.fixture(autouse=True)
-def confirm_switch_on():
-    """Pin the kill-switch ON for tests (individual tests patch it OFF explicitly)."""
-    with patch.object(ds_module, "_receiver_confirm_cached", True):
-        yield
-
-
-def _make_service():
-    service = make_isolated_download_service()
-    service._tx_monitor = Mock()  # suppress the real monitor thread
-    return service
+from tests.unit_test.fuel.f3.streaming.download_test_utils import MockDownloadable
+from tests.unit_test.fuel.f3.streaming.download_test_utils import confirm_request as _confirm_request
+from tests.unit_test.fuel.f3.streaming.download_test_utils import make_confirm_test_service as _make_service
+from tests.unit_test.fuel.f3.streaming.download_test_utils import pull_request as _pull_request
+from tests.unit_test.fuel.f3.streaming.download_test_utils import pull_to_terminal as _pull_to_terminal
+from tests.unit_test.fuel.f3.streaming.download_test_utils import run_monitor_once
 
 
 def _new_tx(service, num_receivers=1, timeout=10.0, chunks=1):
@@ -59,34 +47,6 @@ def _new_tx(service, num_receivers=1, timeout=10.0, chunks=1):
     obj = MockDownloadable([b"chunk"] * chunks)
     rid = service.add_object(tx_id, obj)
     return tx_id, rid, obj
-
-
-def _pull_request(rid, requester, confirm_capable=False, state=None):
-    payload = {_PropKey.REF_ID: rid}
-    if confirm_capable:
-        payload[_PropKey.CONFIRM_CAPABLE] = True
-    if state is not None:
-        payload[_PropKey.STATE] = state
-    return new_cell_message(headers={MessageHeaderKey.ORIGIN: requester}, payload=payload)
-
-
-def _confirm_request(rid, requester, status):
-    return new_cell_message(
-        headers={MessageHeaderKey.ORIGIN: requester}, payload={_PropKey.REF_ID: rid, _PropKey.CONFIRM: status}
-    )
-
-
-def _pull_to_terminal(service, rid, requester, confirm_capable=False):
-    """Drives the pull loop for one receiver until the producer serves a terminal status."""
-    state = None
-    for _ in range(50):
-        reply = service._handle_download(_pull_request(rid, requester, confirm_capable=confirm_capable, state=state))
-        body = reply.payload
-        status = body.get(_PropKey.STATUS)
-        if status in (ProduceRC.EOF, ProduceRC.ERROR):
-            return reply
-        state = body.get(_PropKey.STATE)
-    raise AssertionError("pull loop never reached a terminal status")
 
 
 def _ref(service, rid):

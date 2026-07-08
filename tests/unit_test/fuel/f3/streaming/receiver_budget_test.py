@@ -26,28 +26,14 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
-from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.streaming import download_service as ds_module
-from nvflare.fuel.f3.streaming.download_service import DownloadStatus, ProduceRC, _PropKey
+from nvflare.fuel.f3.streaming.download_service import DownloadStatus
 from nvflare.fuel.f3.streaming.transfer_outcome import TransferOutcomeReason, compute_transfer_outcome
-from tests.unit_test.fuel.f3.streaming.download_test_utils import (
-    MockDownloadable,
-    make_isolated_download_service,
-    run_monitor_once,
-)
-
-
-@pytest.fixture(autouse=True)
-def confirm_switch_on():
-    with patch.object(ds_module, "_receiver_confirm_cached", True):
-        yield
-
-
-def _make_service():
-    service = make_isolated_download_service()
-    service._tx_monitor = Mock()
-    return service
+from tests.unit_test.fuel.f3.streaming.download_test_utils import MockDownloadable, confirm_request
+from tests.unit_test.fuel.f3.streaming.download_test_utils import make_confirm_test_service as _make_service
+from tests.unit_test.fuel.f3.streaming.download_test_utils import pull_request
+from tests.unit_test.fuel.f3.streaming.download_test_utils import pull_to_terminal as _pull_to_terminal
+from tests.unit_test.fuel.f3.streaming.download_test_utils import run_monitor_once
 
 
 def _new_tx(service, chunks=1, **tx_kwargs):
@@ -59,34 +45,13 @@ def _new_tx(service, chunks=1, **tx_kwargs):
     return tx_id, rid
 
 
-def _pull_once(service, rid, requester, confirm_capable=False, state=None):
-    payload = {_PropKey.REF_ID: rid}
-    if confirm_capable:
-        payload[_PropKey.CONFIRM_CAPABLE] = True
-    if state is not None:
-        payload[_PropKey.STATE] = state
-    request = new_cell_message(headers={MessageHeaderKey.ORIGIN: requester}, payload=payload)
-    return service._handle_download(request)
-
-
-def _pull_to_terminal(service, rid, requester, confirm_capable=False):
-    state = None
-    for _ in range(50):
-        reply = _pull_once(service, rid, requester, confirm_capable=confirm_capable, state=state)
-        status = reply.payload.get(_PropKey.STATUS)
-        if status in (ProduceRC.EOF, ProduceRC.ERROR):
-            return reply
-        state = reply.payload.get(_PropKey.STATE)
-    raise AssertionError("pull loop never reached terminal")
-
-
 class TestIdleBudget:
     def test_stalled_receiver_fails_without_waiting_tx_ttl(self):
         service = _make_service()
         tx_id, rid = _new_tx(service, chunks=3, num_receivers=2, receiver_idle_timeout=5.0)
 
         _pull_to_terminal(service, rid, "healthy")  # legacy receiver, final at serve
-        _pull_once(service, rid, "stalled")  # one pull, then silence
+        service._handle_download(pull_request(rid, "stalled"))  # one pull, then silence
 
         # a monitor pass past the idle budget (but far inside the 1000s TTL)
         run_monitor_once(service, now=time.time() + 30.0)
@@ -118,7 +83,7 @@ class TestIdleBudget:
     def test_active_receiver_is_not_idle_failed(self):
         service = _make_service()
         tx_id, rid = _new_tx(service, chunks=3, receiver_idle_timeout=5.0)
-        reply = _pull_once(service, rid, "r1")
+        reply = service._handle_download(pull_request(rid, "r1"))
         ref = service._ref_table[rid]
         # receiver keeps making requests: refresh activity to "now" as seen by the monitor
         future = time.time() + 30.0
@@ -157,7 +122,7 @@ class TestAcquireBudget:
     def test_receiver_with_activity_is_not_acquire_failed(self):
         service = _make_service()
         tx_id, rid = _new_tx(service, chunks=3, num_receivers=0, receiver_ids=("r1",), receiver_acquire_timeout=5.0)
-        _pull_once(service, rid, "r1")  # first pull happened: acquire satisfied
+        service._handle_download(pull_request(rid, "r1"))  # first pull happened: acquire satisfied
 
         run_monitor_once(service, now=time.time() + 30.0)
 
@@ -180,7 +145,7 @@ class TestBudgetSemantics:
     def test_budgets_disabled_preserve_ttl_only_behavior(self):
         service = _make_service()
         tx_id, rid = _new_tx(service, num_receivers=2)
-        _pull_once(service, rid, "r1")
+        service._handle_download(pull_request(rid, "r1"))
 
         run_monitor_once(service, now=time.time() + 500.0)  # inside the 1000s TTL
 
@@ -190,7 +155,7 @@ class TestBudgetSemantics:
     def test_activity_tracked_without_progress_cb(self):
         service = _make_service()
         tx_id, rid = _new_tx(service, chunks=2)
-        _pull_once(service, rid, "r1")
+        service._handle_download(pull_request(rid, "r1"))
 
         activity = service._ref_table[rid].snapshot_receiver_activity()
         assert "r1" in activity
@@ -220,7 +185,7 @@ class TestMultiRefAcquisition:
         )
         rid1 = service.add_object(tx_id, MockDownloadable([b"chunk"] * 3))
         rid2 = service.add_object(tx_id, MockDownloadable([b"chunk"] * 3))
-        _pull_once(service, rid1, "r1")  # busy on ref 1, has not touched ref 2
+        service._handle_download(pull_request(rid1, "r1"))  # busy on ref 1, has not touched ref 2
 
         run_monitor_once(service, now=time.time() + 30.0)
 
@@ -234,12 +199,7 @@ class TestMultiRefAcquisition:
         tx_id, rid = _new_tx(service, receiver_idle_timeout=5.0)
         _pull_to_terminal(service, rid, "r1", confirm_capable=True)
         ref = service._ref_table[rid]
-        service._handle_download(
-            new_cell_message(
-                headers={MessageHeaderKey.ORIGIN: "r1"},
-                payload={_PropKey.REF_ID: rid, _PropKey.CONFIRM: DownloadStatus.SUCCESS},
-            )
-        )
+        service._handle_download(confirm_request(rid, "r1", DownloadStatus.SUCCESS))
 
         enforced = ref.enforce_budgets(time.time() + 30.0, None, 5.0, None)
 
@@ -294,7 +254,7 @@ class TestTransactionValidation:
 
     def test_negative_budget_rejected(self):
         service = _make_service()
-        with pytest.raises(ValueError, match="must be positive"):
+        with pytest.raises(ValueError, match="must > 0"):
             service.new_transaction(cell=Mock(), timeout=10.0, num_receivers=1, receiver_idle_timeout=-1.0)
 
 

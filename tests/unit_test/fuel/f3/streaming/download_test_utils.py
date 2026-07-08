@@ -26,7 +26,9 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from nvflare.fuel.f3.streaming.download_service import Downloadable, DownloadService, ProduceRC
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.utils import new_cell_message
+from nvflare.fuel.f3.streaming.download_service import Downloadable, DownloadService, ProduceRC, _PropKey
 
 
 class MockDownloadable(Downloadable):
@@ -91,6 +93,42 @@ def make_isolated_download_service():
         _initialized_cells = weakref.WeakKeyDictionary()
 
     return IsolatedDownloadService
+
+
+def make_confirm_test_service():
+    """An isolated service with the real monitor thread suppressed (budget/confirm/waiter tests)."""
+    service = make_isolated_download_service()
+    service._tx_monitor = Mock()
+    return service
+
+
+def pull_request(rid, requester, confirm_capable=False, state=None):
+    """Builds one downloader pull request as it appears on the wire."""
+    payload = {_PropKey.REF_ID: rid}
+    if confirm_capable:
+        payload[_PropKey.CONFIRM_CAPABLE] = True
+    if state is not None:
+        payload[_PropKey.STATE] = state
+    return new_cell_message(headers={MessageHeaderKey.ORIGIN: requester}, payload=payload)
+
+
+def confirm_request(rid, requester, status):
+    """Builds one receiver-confirmation message as it appears on the wire."""
+    return new_cell_message(
+        headers={MessageHeaderKey.ORIGIN: requester}, payload={_PropKey.REF_ID: rid, _PropKey.CONFIRM: status}
+    )
+
+
+def pull_to_terminal(service, rid, requester, confirm_capable=False):
+    """Drives the pull loop for one receiver until the producer serves a terminal status."""
+    state = None
+    for _ in range(50):
+        reply = service._handle_download(pull_request(rid, requester, confirm_capable=confirm_capable, state=state))
+        status = reply.payload.get(_PropKey.STATUS)
+        if status in (ProduceRC.EOF, ProduceRC.ERROR):
+            return reply
+        state = reply.payload.get(_PropKey.STATE)
+    raise AssertionError("pull loop never reached a terminal status")
 
 
 def run_monitor_once(service_cls, now):

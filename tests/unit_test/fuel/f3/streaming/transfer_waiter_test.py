@@ -24,61 +24,18 @@ import threading
 import time
 from unittest.mock import Mock, patch
 
-import pytest
-
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
-from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.streaming import download_service as ds_module
-from nvflare.fuel.f3.streaming.download_service import DownloadStatus, ProduceRC, TransferWaiter, _PropKey
-from tests.unit_test.fuel.f3.streaming.download_test_utils import (
-    MockDownloadable,
-    make_isolated_download_service,
-    run_monitor_once,
-)
-
-
-@pytest.fixture(autouse=True)
-def confirm_switch_on():
-    with patch.object(ds_module, "_receiver_confirm_cached", True):
-        yield
-
-
-def _make_service():
-    service = make_isolated_download_service()
-    service._tx_monitor = Mock()
-    return service
+from nvflare.fuel.f3.streaming.download_service import DownloadStatus, TransferWaiter
+from tests.unit_test.fuel.f3.streaming.download_test_utils import MockDownloadable, confirm_request
+from tests.unit_test.fuel.f3.streaming.download_test_utils import make_confirm_test_service as _make_service
+from tests.unit_test.fuel.f3.streaming.download_test_utils import pull_to_terminal as _pull_to_terminal
+from tests.unit_test.fuel.f3.streaming.download_test_utils import run_monitor_once
 
 
 def _new_tx(service, num_receivers=1, timeout=10.0):
     tx_id = service.new_transaction(cell=Mock(), timeout=timeout, num_receivers=num_receivers)
     rid = service.add_object(tx_id, MockDownloadable([b"chunk"]))
     return tx_id, rid
-
-
-def _pull_to_terminal(service, rid, requester, confirm_capable=False):
-    state = None
-    for _ in range(50):
-        payload = {_PropKey.REF_ID: rid}
-        if confirm_capable:
-            payload[_PropKey.CONFIRM_CAPABLE] = True
-        if state is not None:
-            payload[_PropKey.STATE] = state
-        reply = service._handle_download(
-            new_cell_message(headers={MessageHeaderKey.ORIGIN: requester}, payload=payload)
-        )
-        status = reply.payload.get(_PropKey.STATUS)
-        if status in (ProduceRC.EOF, ProduceRC.ERROR):
-            return reply
-        state = reply.payload.get(_PropKey.STATE)
-    raise AssertionError("pull loop never reached terminal")
-
-
-def _confirm(service, rid, requester, status):
-    service._handle_download(
-        new_cell_message(
-            headers={MessageHeaderKey.ORIGIN: requester}, payload={_PropKey.REF_ID: rid, _PropKey.CONFIRM: status}
-        )
-    )
 
 
 class TestTransferWaiter:
@@ -95,7 +52,7 @@ class TestTransferWaiter:
         t.start()
 
         _pull_to_terminal(service, rid, "r1", confirm_capable=True)
-        _confirm(service, rid, "r1", DownloadStatus.SUCCESS)
+        service._handle_download(confirm_request(rid, "r1", DownloadStatus.SUCCESS))
         run_monitor_once(service, now=time.time())
 
         t.join(5.0)
@@ -134,7 +91,9 @@ class TestTransferWaiter:
         waiter = service.get_transfer_waiter(tx_id)
 
         _pull_to_terminal(service, rid, "r1", confirm_capable=True)
-        _confirm(service, rid, "r1", DownloadStatus.FAILED)  # receiver truth: finalization failed
+        service._handle_download(
+            confirm_request(rid, "r1", DownloadStatus.FAILED)
+        )  # receiver truth: finalization failed
         run_monitor_once(service, now=time.time())
 
         outcome = waiter.wait(timeout=5.0)
@@ -161,7 +120,7 @@ class TestTransferWaiter:
         # receiver-failed FINISHED: linger still applied (partial fan-out healing window)
         tx_id2, rid2 = _new_tx(service)
         _pull_to_terminal(service, rid2, "r1", confirm_capable=True)
-        _confirm(service, rid2, "r1", DownloadStatus.FAILED)
+        service._handle_download(confirm_request(rid2, "r1", DownloadStatus.FAILED))
         run_monitor_once(service, now=time.time())
         waiter2 = service.get_transfer_waiter(tx_id2)
         with patch.object(ds_module.time, "sleep") as mock_sleep:

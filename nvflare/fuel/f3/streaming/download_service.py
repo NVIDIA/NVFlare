@@ -34,8 +34,10 @@ from nvflare.fuel.f3.streaming.transfer_outcome import (  # noqa: F401 (re-expor
     terminal_state_for_done_status,
 )
 from nvflare.fuel.f3.streaming.transfer_progress import TransferProgressState
+from nvflare.fuel.utils.app_config_utils import get_positive_float_var
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.fuel.utils.validation_utils import check_positive_number
 from nvflare.security.logging import secure_format_exception
 
 OBJ_DOWNLOADER_CHANNEL = "download_service__"
@@ -183,9 +185,10 @@ class _PropKey:
     CONFIRM_EXPECTED = "confirm_expected"  # producer -> receiver, per reply: confirmations consumed
 
 
-# Runtime kill-switch for receiver-confirmed completion. The wire behavior is doubly gated --
-# per-message capability advertisement AND this config var on each side -- so a field issue in a
-# mixed-version fleet is mitigated by configuration without a code revert.
+# Per-process kill-switch for receiver-confirmed completion (read once at first use; set the
+# config var / env before process start and restart to change it). The wire behavior is doubly
+# gated -- per-message capability advertisement AND this switch on each side -- so a field issue
+# in a mixed-version fleet is mitigated by configuration + restart without a code revert.
 RECEIVER_CONFIRM_CONFIG_VAR = "streaming_receiver_confirm_enabled"
 _receiver_confirm_cached = None
 
@@ -214,17 +217,9 @@ RECEIVER_IDLE_TIMEOUT_CONFIG_VAR = "streaming_receiver_idle_timeout"
 
 def _resolve_receiver_budget(explicit, var_name: str):
     if explicit is not None:
-        value = float(explicit)
-        if value <= 0:
-            raise ValueError(f"receiver budget must be positive, got {explicit}")
-        return value
-    try:
-        value = ConfigService.get_float_var(var_name, conf=SystemConfigs.APPLICATION_CONF, default=None)
-    except Exception:
-        return None
-    if value is None or value <= 0:
-        return None
-    return float(value)
+        check_positive_number(var_name, explicit)
+        return float(explicit)
+    return get_positive_float_var(var_name, default=None)
 
 
 class _Ref:
@@ -368,6 +363,12 @@ class _Ref:
     def mark_receiver_active(self, receiver: str):
         with self._progress_lock:
             self._receiver_activity[receiver] = time.time()
+        tx = self.tx
+        if receiver not in tx._acquired_receivers:
+            # double-checked: the set is monotonic, so the lock is taken at most once
+            # per (transaction, receiver) -- not per chunk
+            with tx._stats_lock:
+                tx._acquired_receivers.add(receiver)
 
     def snapshot_receiver_activity(self) -> dict:
         with self._progress_lock:
@@ -420,7 +421,7 @@ class _Ref:
                     continue  # finalized (e.g. confirmed) between snapshot and enforcement: truth wins
                 if self._receiver_activity.get(receiver) != activity.get(receiver):
                     continue  # activity advanced past the snapshot: not actually idle
-                self._pending_confirms.pop(receiver, None)
+            # _finalize_receiver pops the pending-confirm entry itself
             if not self._finalize_receiver(receiver, DownloadStatus.FAILED):
                 continue
             self.tx.logger.warning(f"receiver {receiver} failed for ref {self.rid}: {reason}")
@@ -650,6 +651,9 @@ class _Transaction:
         self.progress_interval = float(progress_interval)
         self.refs = []
         self._refs_lock = threading.RLock()
+        # receivers that have issued at least one pull on ANY ref (monotonic; the
+        # transaction-level PAYLOAD_ACQUIRED fact the acquire budget and the facade read)
+        self._acquired_receivers = set()
         self.logger = get_obj_logger(self)
 
     def mark_active(self):
@@ -702,17 +706,18 @@ class _Transaction:
         """
         self.transaction_done(TransactionDoneStatus.TIMEOUT)
 
+    @property
+    def has_receiver_budgets(self) -> bool:
+        return self.receiver_acquire_timeout is not None or self.receiver_idle_timeout is not None
+
     def enforce_receiver_budgets(self, now: float):
         """Evaluates per-receiver budgets across all refs; called by the monitor thread."""
-        if self.receiver_acquire_timeout is None and self.receiver_idle_timeout is None:
+        if not self.has_receiver_budgets:
             return
-        refs = self.snapshot_refs()
-        # transaction-level acquisition: a first pull on ANY ref acquires the receiver
-        tx_acquired = set()
-        for ref in refs:
+        with self._stats_lock:
+            tx_acquired = set(self._acquired_receivers)
+        for ref in self.snapshot_refs():
             assert isinstance(ref, _Ref)
-            tx_acquired.update(ref.snapshot_receiver_activity().keys())
-        for ref in refs:
             ref.enforce_budgets(
                 now,
                 self.receiver_acquire_timeout,
@@ -1127,10 +1132,8 @@ class DownloadService:
         if tx is None:
             return set()
         assert isinstance(tx, _Transaction)
-        acquired = set()
-        for ref in tx.snapshot_refs():
-            acquired.update(ref.snapshot_receiver_activity().keys())
-        return acquired
+        with tx._stats_lock:
+            return set(tx._acquired_receivers)
 
     @classmethod
     def _record_outcome(cls, outcome: TransferOutcome, tx: _Transaction):
@@ -1286,15 +1289,14 @@ class DownloadService:
                 # provisional: the receiver's confirmation carries the terminal truth --
                 # do not latch a terminal progress state the confirm may contradict
                 ref.emit_progress(receiver_id=requester, state=TransferProgressState.ACTIVE, force=True)
+                body = {_PropKey.STATUS: rc, _PropKey.CONFIRM_EXPECTED: True}
             else:
                 ref.emit_progress(
                     receiver_id=requester,
                     state=TransferProgressState.COMPLETED if rc == ProduceRC.EOF else TransferProgressState.FAILED,
                     force=True,
                 )
-            body = {_PropKey.STATUS: rc}
-            if expect_confirm:
-                body[_PropKey.CONFIRM_EXPECTED] = True
+                body = {_PropKey.STATUS: rc}
             return make_reply(ReturnCode.OK, body=body)
         else:
             # continue — accumulate bytes for timing summary in transaction_done()
@@ -1310,14 +1312,17 @@ class DownloadService:
                     bytes_delta=bytes_delta,
                     items_delta=items_delta,
                 )
-            body = {
-                _PropKey.STATUS: rc,
-                _PropKey.STATE: new_state,
-                _PropKey.DATA: data,
-            }
-            if expect_confirm:
-                body[_PropKey.CONFIRM_EXPECTED] = True
-            return make_reply(ReturnCode.OK, body=body)
+            # no CONFIRM_EXPECTED on data chunks: the receiver only consumes it from the
+            # terminal reply (confirms are sent only after terminal serves), so advertising
+            # per chunk would be dead weight on the hottest wire message
+            return make_reply(
+                ReturnCode.OK,
+                body={
+                    _PropKey.STATUS: rc,
+                    _PropKey.STATE: new_state,
+                    _PropKey.DATA: data,
+                },
+            )
 
     @classmethod
     def _handle_confirm(cls, rid: str, requester: str, status: str) -> Message:
@@ -1345,7 +1350,7 @@ class DownloadService:
             # never run under the global lock. A budget failure recorded here flips
             # is_finished() so the classification pass below resolves the tx immediately.
             with cls._tx_lock:
-                budget_txs = list(cls._tx_table.values())
+                budget_txs = [tx for tx in cls._tx_table.values() if tx.has_receiver_budgets]
             for tx in budget_txs:
                 with cls._tx_lock:
                     if cls._tx_table.get(tx.tid) is not tx:
