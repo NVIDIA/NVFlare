@@ -545,7 +545,9 @@ the named parameter. ``round_timeout`` remains available as a compatibility
 shortcut for setting both acknowledgment timeouts when their explicit parameters
 are omitted. ``client_config_overrides`` cannot replace the recipe-managed
 executor, aggregator, persistor, or shareable generator; use
-``BaseSwarmLearningRecipe`` when custom components are required.
+``BaseSwarmLearningRecipe`` when custom components are required. Set
+``min_clients`` only through the named parameter so the scheduler, server
+controller, and client aggregation quorums remain aligned.
 
 For advanced customization, use ``BaseSwarmLearningRecipe`` with explicit server and client configurations:
 

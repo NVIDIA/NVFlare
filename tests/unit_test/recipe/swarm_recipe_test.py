@@ -306,6 +306,8 @@ class TestSwarmLearningRecipeControllerConfig:
             SwarmLearningRecipe(**defaults, server_config_overrides=[])
         with pytest.raises(TypeError, match="server_config_overrides keys must be strings"):
             SwarmLearningRecipe(**defaults, server_config_overrides={1: 2})
+        with pytest.raises(ValueError, match="cannot override recipe-managed fields: min_clients"):
+            SwarmLearningRecipe(**defaults, server_config_overrides={"min_clients": 5})
 
 
 class TestSwarmLearningRecipeMemoryGC:

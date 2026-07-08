@@ -34,6 +34,7 @@ from nvflare.recipe.utils import merge_config_overrides, validate_ckpt
 logger = logging.getLogger(__name__)
 
 _VALID_PIPE_TYPES = ("cell_pipe", "file_pipe")
+_RECIPE_MANAGED_SERVER_CONFIG_KEYS = frozenset({"min_clients"})
 _RECIPE_MANAGED_CLIENT_CONFIG_KEYS = frozenset({"executor", "aggregator", "persistor", "shareable_generator"})
 
 
@@ -148,7 +149,9 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         final_result_ack_timeout: Seconds to wait for clients to acknowledge the final
             result. ``None`` uses ``round_timeout`` for backward compatibility.
         server_config_overrides: Advanced shallow overrides for ``SwarmServerConfig``.
-            Values here take precedence over named constructor parameters.
+            Values here take precedence over named constructor parameters, except
+            ``min_clients``, which must be set through the named parameter to keep
+            scheduler, server-controller, and client aggregation quorums aligned.
         client_config_overrides: Advanced shallow overrides for ``SwarmClientConfig``.
             Values here take precedence over named constructor parameters. Recipe-managed
             components (executor, aggregator, persistor, and shareable generator) cannot
@@ -232,6 +235,17 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         pipe_root_path: Optional[str] = None,
     ):
         _SwarmValidator(initial_ckpt=initial_ckpt)
+
+        validated_server_config_overrides = merge_config_overrides(
+            {}, server_config_overrides, "server_config_overrides"
+        )
+        protected_server_overrides = _RECIPE_MANAGED_SERVER_CONFIG_KEYS.intersection(validated_server_config_overrides)
+        if protected_server_overrides:
+            fields = ", ".join(sorted(protected_server_overrides))
+            raise ValueError(
+                f"server_config_overrides cannot override recipe-managed fields: {fields}. "
+                "Set min_clients directly on SwarmLearningRecipe to keep all quorum settings aligned."
+            )
 
         validated_client_config_overrides = merge_config_overrides(
             {}, client_config_overrides, "client_config_overrides"
@@ -319,7 +333,7 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
                 "max_status_report_interval": max_status_report_interval,
                 "min_clients": min_clients,
             },
-            server_config_overrides,
+            validated_server_config_overrides,
             "server_config_overrides",
         )
         server_config = SwarmServerConfig(**server_config_args)
