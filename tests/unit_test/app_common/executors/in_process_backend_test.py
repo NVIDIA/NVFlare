@@ -35,8 +35,8 @@ from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendContext
 from nvflare.app_common.executors.client_api import in_process_backend as ipb_module
+from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendContext
 from nvflare.app_common.executors.client_api.in_process_backend import InProcessBackend
 from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
 from nvflare.client.api_spec import CLIENT_API_KEY
