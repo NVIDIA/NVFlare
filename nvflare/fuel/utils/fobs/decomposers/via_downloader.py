@@ -447,7 +447,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
                 transaction_done_cb=on_complete_cb,
                 progress_cb=progress_cb,
                 progress_interval=RESULT_UPLOAD_PROGRESS_INTERVAL,
-                # expected receiver identities (F3-3): enables the transaction's per-receiver
+                # expected receiver identities: enables the transaction's per-receiver
                 # acquire budget; None when any identity is unknown
                 receiver_ids=receiver_ids,
             )

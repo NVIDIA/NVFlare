@@ -31,7 +31,8 @@ receiver truth is considered).
 Outcome status values reuse the TransferProgressState terminal vocabulary
 (completed / failed / aborted) rather than introducing another status set.
 
-Semantics with the full payload layer (F3-2/F3-3/F3-4, same design):
+Semantics with the full payload layer (receiver-confirmed completion, per-receiver
+budgets, awaitable transfer facade):
 - per-receiver statuses are receiver-confirmed where the receiver supports it (a served
   EOF is provisional until the receiver confirms its finalization succeeded); legacy
   receivers remain producer-served — both skews and the runtime kill-switch degrade to
@@ -130,7 +131,7 @@ class TransferOutcome:
     num_receivers: int
     refs: Tuple[RefOutcome, ...]
     timestamp: float
-    # optional k-of-N quorum declared by the workflow (F3-3): informational for quorum_met;
+    # optional k-of-N quorum declared by the workflow: informational for quorum_met;
     # `completed` deliberately stays the strict all-receivers certificate
     min_receivers: Optional[int] = None
 

@@ -176,7 +176,7 @@ class _PropKey:
     STATE = "state"
     DATA = "data"
     STATUS = "status"
-    # Receiver-confirmed completion (F3-2). All three keys are OPTIONAL on the wire so both
+    # Receiver-confirmed completion. All three keys are OPTIONAL on the wire so both
     # version skews interop with legacy peers: an old receiver never sends CONFIRM_CAPABLE and
     # gets today's producer-served semantics; an old producer never sends CONFIRM_EXPECTED so a
     # new receiver never confirms toward it.
@@ -208,7 +208,7 @@ def _receiver_confirm_enabled() -> bool:
     return _receiver_confirm_cached
 
 
-# Per-(transfer, receiver) budgets (F3-3). System defaults resolved from config vars; explicit
+# Per-(transfer, receiver) budgets. System defaults resolved from config vars; explicit
 # per-transaction values win. None (unset everywhere) disables enforcement for that budget --
 # the whole-transaction timeout then remains the only backstop, exactly today's behavior.
 RECEIVER_ACQUIRE_TIMEOUT_CONFIG_VAR = "streaming_receiver_acquire_timeout"
@@ -242,7 +242,7 @@ class _Ref:
         # producer-served terminal statuses awaiting the receiver's confirmation; only
         # finalized (confirmed or legacy-served) statuses live in receiver_statuses
         self._pending_confirms = {}
-        # unconditional per-receiver liveness (F3-3): receiver -> last activity timestamp,
+        # unconditional per-receiver liveness: receiver -> last activity timestamp,
         # updated on every request regardless of whether a progress_cb is configured -- so a
         # live receiver can no longer mask a stalled one behind the tx-wide last_active_time
         self._receiver_activity = {}
@@ -614,7 +614,7 @@ class _Transaction:
             self.tid = "T" + str(uuid.uuid4())
         self.timeout = timeout
 
-        # Expected receiver identities (F3-3). Optional: when provided they enable the acquire
+        # Expected receiver identities. Optional: when provided they enable the acquire
         # budget (a receiver that never issues its first pull can be failed) and, if
         # num_receivers is unknown (0), supply the receiver count.
         if receiver_ids:
@@ -850,7 +850,7 @@ class TransactionInfo:
 
 
 class TransferWaiter:
-    """The awaitable facade over a transaction's terminal transfer outcome (F3-4).
+    """The awaitable facade over a transaction's terminal transfer outcome.
 
     This is the "returns == delivered" primitive the upper layers (executor backends,
     trainer engine) consume: wait() blocks -- event-driven, no polling -- until the
@@ -1105,7 +1105,7 @@ class DownloadService:
 
     @classmethod
     def get_transfer_waiter(cls, transaction_id: str) -> TransferWaiter:
-        """Returns an awaitable facade over the transaction's terminal outcome (F3-4).
+        """Returns an awaitable facade over the transaction's terminal outcome.
 
         Safe to call before or after termination: a waiter created after the outcome was
         recorded resolves immediately from the outcome table.
@@ -1348,7 +1348,7 @@ class DownloadService:
         while True:
             now = time.time()
 
-            # Per-receiver budget enforcement (F3-3) runs OUTSIDE _tx_lock: finalizing a
+            # Per-receiver budget enforcement runs OUTSIDE _tx_lock: finalizing a
             # budget-failed receiver fires user callbacks (downloaded_to_one/all), which must
             # never run under the global lock. A budget failure recorded here flips
             # is_finished() so the classification pass below resolves the tx immediately.

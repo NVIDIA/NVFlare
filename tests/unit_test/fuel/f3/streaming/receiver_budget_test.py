@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for per-(transfer, receiver) acquire/idle budgets and the quorum surface (plan: F3-3).
+"""Tests for per-(transfer, receiver) acquire/idle budgets and the quorum surface.
 
 A receiver that exhausts its acquire budget (never issued its first pull) or idle budget
 (stopped making requests) is finalized FAILED for the aggregate outcome on a monitor pass --

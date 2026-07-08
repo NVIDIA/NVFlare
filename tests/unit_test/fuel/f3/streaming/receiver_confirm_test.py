@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for receiver-confirmed completion + retry-aware accounting (plan: F3-2).
+"""Tests for receiver-confirmed completion + retry-aware accounting.
 
 Producer side: a confirm-capable receiver's served EOF/ERROR is PROVISIONAL; the receiver's
 confirmation finalizes it (receiver truth wins, first confirm is final, retries overwrite

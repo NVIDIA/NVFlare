@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for the awaitable transfer facade (plan: F3-4).
+"""Tests for the awaitable transfer facade (TransferWaiter).
 
 TransferWaiter is the "returns == delivered" primitive the upper layers (executor backends,
 trainer engine) consume: wait() blocks -- event-driven, resolved inside the outcome-recording
@@ -180,7 +180,7 @@ class TestTransferWaiter:
         assert service.get_acquired_receivers(tx_id) == {"r1"}
 
     def test_budget_failure_resolves_waiter_in_bounded_time(self):
-        # end-to-end with F3-3: a stalled receiver's budget failure terminates the tx and
+        # end-to-end with the budgets: a stalled receiver's budget failure terminates the tx and
         # releases the waiter -- the producer is never pinned to the full TTL
         service = _make_service()
         tx_id = service.new_transaction(cell=Mock(), timeout=1000.0, num_receivers=2, receiver_idle_timeout=5.0)
