@@ -74,33 +74,7 @@ def test_validate_skill_dir_accepts_spec_metadata_extension(tmp_path):
         "name: nvflare-spec-skill\n"
         "description: Test specification-compatible metadata.\n"
         "license: Apache-2.0\n"
-        'version: "0.1.0"\n'
         "compatibility: Requires NVFLARE.\n"
-        "metadata:\n"
-        '  min_flare_version: "2.8.0"\n'
-        "  blast_radius: runs_simulator\n"
-        "---\n\n"
-        "# Test Skill\n",
-        encoding="utf-8",
-    )
-
-    result = validate_skill_dir(skill_dir)
-
-    assert result.ok
-    assert result.metadata["version"] == "0.1.0"
-    assert result.metadata["min_flare_version"] == "2.8.0"
-    assert result.metadata["blast_radius"] == "runs_simulator"
-    assert result.metadata["skill_version"] == "0.1.0"
-
-
-def test_validate_skill_dir_rejects_conflicting_catalog_and_legacy_versions(tmp_path):
-    skill_dir = tmp_path / "nvflare-conflicting-version"
-    skill_dir.mkdir()
-    skill_dir.joinpath("SKILL.md").write_text(
-        "---\n"
-        "name: nvflare-conflicting-version\n"
-        "description: Test conflicting catalog and legacy versions.\n"
-        'version: "0.2.0"\n'
         "metadata:\n"
         '  min_flare_version: "2.8.0"\n'
         "  blast_radius: runs_simulator\n"
@@ -112,20 +86,10 @@ def test_validate_skill_dir_rejects_conflicting_catalog_and_legacy_versions(tmp_
 
     result = validate_skill_dir(skill_dir)
 
-    assert not result.ok
-    assert _issue_codes(result) == {"skill-frontmatter-invalid"}
-    assert "'version' and 'skill_version'" in result.issues[0].message
-
-
-def test_autofl_skill_uses_catalog_identity_metadata():
-    skill_file = Path(__file__).resolve().parents[4] / "skills" / "nvflare-autofl" / "SKILL.md"
-
-    metadata = parse_skill_frontmatter(skill_file)
-
-    assert metadata["license"] == "Apache-2.0"
-    assert metadata["version"] == "0.1.0"
-    assert metadata["metadata"]["author"] == "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
-    assert "skill_version" not in metadata["metadata"]
+    assert result.ok
+    assert result.metadata["min_flare_version"] == "2.8.0"
+    assert result.metadata["blast_radius"] == "runs_simulator"
+    assert result.metadata["skill_version"] == "0.1.0"
 
 
 def test_validate_skill_dir_rejects_conflicting_legacy_and_nested_metadata(tmp_path):

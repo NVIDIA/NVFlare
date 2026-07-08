@@ -104,7 +104,7 @@ def build_skill_manifest(
             skills.append(
                 {
                     "name": metadata["name"],
-                    "skill_version": metadata.get("skill_version", "0.0.0"),
+                    "skill_version": metadata.get("version", metadata.get("skill_version", "0.0.0")),
                     "min_flare_version": metadata["min_flare_version"],
                     "max_flare_version": metadata.get("max_flare_version"),
                     "blast_radius": metadata["blast_radius"],
