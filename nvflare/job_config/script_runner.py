@@ -123,7 +123,7 @@ class BaseScriptRunner:
                 (design: docs/design/client_api_execution_modes.md) instead of the legacy
                 executor stack. Currently only "in_process" is available; "external_process"
                 and "attach" land with their backends. When set, the params boundary is
-                pass-through (no ParamsConverters per FLARE-2698): `framework`,
+                pass-through (no ParamsConverters): `framework`,
                 `server_expected_format` and `params_transfer_type` are not used, and the
                 legacy stack args (`launch_external_process`, `executor`, `task_pipe`,
                 `launcher`, `metric_relay`, `metric_pipe`) must not be set. Defaults to None
@@ -165,7 +165,7 @@ class BaseScriptRunner:
 
         self._params_exchange_format = None
 
-        # The new-executor path is pass-through (no ParamsConverters per FLARE-2698), so the
+        # The new-executor path is pass-through (no ParamsConverters), so the
         # framework format resolution -- including its torch/tensorflow import checks -- is
         # skipped entirely when execution_mode is set.
         if execution_mode is not None:

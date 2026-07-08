@@ -17,9 +17,9 @@
 Design: docs/design/client_api_execution_modes.md ("Overview", "Execution Modes",
 "Client API Backends"). One ClientAPIExecutor delegates to one mode-specific backend:
 
-- in_process: trainer runs inside the Client Job (CJ) process over DataBus (EX-3)
-- external_process: NVFlare launches and owns the trainer process tree over Cell (EP-4)
-- attach: an externally owned trainer attaches over Cell (AT-2)
+- in_process: trainer runs inside the Client Job (CJ) process over DataBus
+- external_process: NVFlare launches and owns the trainer process tree over Cell
+- attach: an externally owned trainer attaches over Cell
 
 This module is internal to NVFlare. It is not a user extension point; users configure
 ``ClientAPIExecutor(execution_mode=...)`` only.
@@ -78,11 +78,10 @@ class ClientAPIBackendContext:
     task_wait_timeout: Optional[float] = None
     result_wait_timeout: Optional[float] = None
     # NOTE: params_exchange_format / params_transfer_type / server_expected_format and the
-    # from/to_nvflare_converter ids are intentionally NOT here. Per FLARE-2698, param
-    # conversion between the framework-agnostic aggregation representation (numpy) and the
-    # framework-native training representation moves out of the executor to send/receive
-    # filters at the client edge; the Client API boundary is pass-through. Transfer type
-    # (FULL/DIFF) stays a Client API concern (model_registry), decided separately.
+    # from/to_nvflare_converter ids are intentionally NOT here: the Client API boundary is
+    # pass-through, and format conversion between the aggregation representation and the
+    # framework-native training representation belongs to send/receive filters at the client
+    # edge. Transfer type (FULL/DIFF) is a model-registry concern.
     # task-name / rank contract (all modes)
     train_task_name: str = AppConstants.TASK_TRAIN
     evaluate_task_name: str = AppConstants.TASK_VALIDATION

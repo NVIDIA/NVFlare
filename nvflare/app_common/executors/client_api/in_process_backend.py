@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""in_process backend for ClientAPIExecutor (plan: EX-3).
+"""in_process backend for ClientAPIExecutor.
 
 Ports InProcessClientAPIExecutor's DataBus machinery behind the frozen
 ClientAPIBackendSpec surface, with the behavior-parity bar "nothing user-visible":
@@ -20,10 +20,9 @@ the trainer script still runs on a thread inside the CJ process, finds its
 InProcessClientAPI via the DataBus CLIENT_API_KEY entry, receives tasks over
 TOPIC_GLOBAL_RESULT, and returns results over TOPIC_LOCAL_RESULT.
 
-Differences from the legacy executor, all mandated by the design
-(docs/design/client_api_execution_modes.md) and the backend contract:
+Differences from the legacy executor (see docs/design/client_api_execution_modes.md):
 
-- No ParamsConverters and no exchange-format/transfer-type knobs (FLARE-2698):
+- No ParamsConverters and no exchange-format/transfer-type knobs:
   the Client API boundary passes params through unconverted (ExchangeFormat.RAW)
   and V1 sends full params (TransferType.FULL); DIFF support returns with the
   model_registry transfer-type decision, and format conversion moves to
@@ -309,9 +308,9 @@ class InProcessBackend(ClientAPIBackendSpec):
             ConfigKey.TASK_NAME: task_name,
             ConfigKey.TASK_EXCHANGE: {
                 ConfigKey.TRAIN_WITH_EVAL: context.train_with_evaluation,
-                # FLARE-2698: the Client API boundary passes params through unconverted; format
-                # conversion happens in send/receive filters at the client edge, and DIFF returns
-                # with the model_registry transfer-type decision
+                # the Client API boundary passes params through unconverted; format conversion
+                # happens in send/receive filters at the client edge, and DIFF returns with the
+                # model-registry transfer-type decision
                 ConfigKey.EXCHANGE_FORMAT: ExchangeFormat.RAW,
                 ConfigKey.TRANSFER_TYPE: TransferType.FULL,
                 ConfigKey.TRAIN_TASK_NAME: context.train_task_name,

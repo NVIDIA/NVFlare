@@ -18,30 +18,15 @@ Design: docs/design/client_api_execution_modes.md ("What We Propose", "Overview"
 "Execution Modes", "Configuration Surface"). This module path is normative - job configs
 reference ``nvflare.app_common.executors.client_api_executor.ClientAPIExecutor``.
 
-This is the interface-freeze skeleton (plan: EX-2). The constructor surface below is frozen;
-the mode backends land in follow-up PRs (in_process, external_process, attach).
+Availability: ``in_process`` is fully supported. ``external_process`` and ``attach`` are
+not yet implemented; selecting them fails cleanly at job startup.
 
-Divergence from the design's V1 "Configuration Surface" list
-------------------------------------------------------------
-The design's V1 arg list is a subset; the frozen surface below adds the following load-bearing
-args that the mode backends require and that both legacy executors
-(InProcessClientAPIExecutor / ClientAPILauncherExecutor) already expose. They are recorded here
-so the design's Configuration Surface can be synced separately:
-
-- ``task_script_path`` / ``task_script_args`` - in_process script entry point (the in_process
-  backend runs a user script via TaskScriptRunner; ``command`` names the external_process
-  trainer, ``task_script_path`` names the in_process one).
-- ``train_task_name`` / ``evaluate_task_name`` / ``submit_model_task_name`` /
-  ``train_with_evaluation`` - power the rank-contract APIs flare.is_train()/is_evaluate()/
-  is_submit_model().
-- ``memory_gc_rounds`` / ``cuda_empty_cache`` - periodic GC / CUDA cache management
-
-Deliberately excluded (per FLARE-2698): ``params_exchange_format`` / ``params_transfer_type`` /
-``server_expected_format`` / ``from_nvflare_converter_id`` / ``to_nvflare_converter_id``. Param
-conversion moves from executor-owned ParamsConverters to send/receive filters at the client
-edge (the intermediate layers pass through), so these are not frozen into this surface. The
-transfer type (FULL/DIFF) remains a Client API concern (model_registry) and is decided
-separately from the converter removal.
+Unlike the legacy executors (InProcessClientAPIExecutor / ClientAPILauncherExecutor), this
+surface has no parameter-conversion args (``params_exchange_format`` /
+``params_transfer_type`` / ``server_expected_format`` / converter ids): the Client API
+boundary passes parameters through unconverted, and format conversion belongs to
+send/receive filters at the client edge. Transfer type (FULL/DIFF) is a model-registry
+concern, configured elsewhere.
 """
 
 from typing import Callable, Dict, Optional
@@ -122,9 +107,8 @@ class ClientAPIExecutor(Executor):
     ):
         """Initializes the ClientAPIExecutor.
 
-        This constructor surface is frozen (design: "Configuration Surface"); parameter renames
-        break the surface-freeze test and downstream backend PRs. See the module docstring for the
-        args added beyond the design's V1 Configuration Surface list.
+        Parameter names are part of the public job-config surface: renames are breaking
+        changes (guarded by the surface-freeze test).
 
         Args:
             execution_mode (str): One of "in_process", "external_process", or "attach". Required.
@@ -267,7 +251,7 @@ class ClientAPIExecutor(Executor):
         # ConvertToFedEvent widget (added by BaseFedJob) to re-fire it as
         # "fed.analytix_log_stats" - today's in-process executor behavior.
         # True: fire a federation-scoped event directly (today's MetricRelay behavior for
-        # ex-process). Cell backends (EP-4/AT-2) may select this path in initialize().
+        # ex-process). Cell backends (external_process/attach) may select this path in initialize().
         self._analytics_fire_fed_event: bool = False
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
@@ -463,9 +447,7 @@ class ClientAPIExecutor(Executor):
         return InProcessBackend()
 
     def _create_external_process_backend(self) -> ClientAPIBackendSpec:
-        # Implemented in a follow-up PR (plan: EP-4).
         raise NotImplementedError("external_process execution mode is not yet implemented in this release")
 
     def _create_attach_backend(self) -> ClientAPIBackendSpec:
-        # Implemented in a follow-up PR (plan: AT-2).
         raise NotImplementedError("attach execution mode is not yet implemented in this release")
