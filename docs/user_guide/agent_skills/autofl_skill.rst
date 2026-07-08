@@ -8,15 +8,17 @@ The NVFlare Auto-FL agent skill optimizes an existing NVFlare ``job.py``
 through a coding agent. It is not an ``nvflare autofl`` command and does not
 add an Auto-FL command family to the NVFlare CLI.
 
-Install the NVFlare-owned skill for the coding agent you use. For Codex:
+Install the NVFlare-owned skill set from the repository root for Codex and
+Claude Code:
 
 .. code-block:: shell
 
-   nvflare agent skills install --agent codex --skill nvflare-autofl
+   npx skills add ./skills -a codex -a claude-code
 
-For Claude Code, use ``--agent claude``. The installer places the complete
-skill, including its deterministic helper scripts, in the selected agent's
-managed skill directory.
+The standard Agent Skills installer places the complete skill set, including
+Auto-FL's deterministic helper scripts, in each selected agent's managed skill
+directory. NVFlare does not provide a separate skill installation command, and
+skills are not distributed through the NVFlare Python wheel.
 
 User Experience
 ===============

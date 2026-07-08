@@ -32,6 +32,9 @@ The first production-oriented slice includes:
 The first version does not embed or vendor a coding agent, and it does not add a
 public Auto-FL command family. Users install and select the skill, then express
 their intent in a prompt; they do not invoke its helper scripts directly.
+Installation uses the standard Agent Skills workflow, for example
+`npx skills add ./skills -a codex -a claude-code`; NVFlare does not add a custom
+skill installer or package skills in the Python wheel.
 
 ## Role of autofl.yaml
 

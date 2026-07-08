@@ -14,8 +14,10 @@
 
 """Validation for NVFLARE agent skill frontmatter."""
 
+import errno
 import os
 import re
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Optional
@@ -24,7 +26,36 @@ import yaml
 
 SKILL_FILE_NAME = "SKILL.md"
 YAML_ANCHOR_OR_ALIAS_RE = re.compile(r"(^|[:\s\[{,])([&*])[A-Za-z0-9_-]+(?=\s|$|[,}\]])")
-REQUIRED_FRONTMATTER_FIELDS = ("name", "description", "min_flare_version", "blast_radius")
+# agentskills.io allows only name/description/license/compatibility/metadata/
+# allowed-tools at the top level; NVFLARE's custom fields live under the spec
+# `metadata` map, validated via skill_metadata().
+REQUIRED_FRONTMATTER_FIELDS = ("name", "description")
+# `author` (name plus NVIDIA email inside the spec `metadata` map) is required
+# by the company skills guideline (NVCARPS).
+REQUIRED_METADATA_FIELDS = ("author", "min_flare_version", "blast_radius")
+# The NVIDIA skills catalog uses a team identity, never an individual: once
+# `npx skills add` copies the frontmatter out of the repo, `author` acts as the
+# support contact, and a personal inbox goes stale when people change teams.
+AUTHOR_RE = re.compile(r"^[^<>@]+ <[A-Za-z0-9._%+-]+@nvidia\.com>$")
+REQUIRED_PUBLIC_METADATA_FIELDS = ("category",)
+# The only frontmatter keys agentskills.io permits at the top level, plus
+# `title`, an optional display-name field the company skills guideline
+# (NVCARPS) allows at the top level, and `version`, which the NVIDIA skills
+# catalog (github.com/NVIDIA/skills) declares at the top level. Everything
+# else (NVFLARE custom fields) must be nested under `metadata`.
+SPEC_TOP_LEVEL_FIELDS = frozenset(
+    {"name", "title", "description", "license", "compatibility", "metadata", "allowed-tools", "version"}
+)
+PUBLIC_EXEMPT_STATUS = {"draft", "internal", "private"}
+# Company skills guideline (NVCARPS) constraints, enforced on top of the
+# NVFLARE-specific checks: name charset/length, description and compatibility
+# length caps, and the SKILL.md main-file length rule.
+SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+MAX_NAME_LENGTH = 64
+MAX_DESCRIPTION_LENGTH = 1024
+MAX_COMPATIBILITY_LENGTH = 500
+MAX_SKILL_MD_LINES = 500
+MAX_SKILL_MD_BYTES = 512 * 1024
 VALID_BLAST_RADIUS = frozenset(
     {
         "read_only",
@@ -34,7 +65,6 @@ VALID_BLAST_RADIUS = frozenset(
         "submits_production",
     }
 )
-NVFLARE_METADATA_FIELDS = ("min_flare_version", "max_flare_version", "blast_radius", "skill_version", "status")
 
 
 @dataclass(frozen=True)
@@ -59,10 +89,21 @@ class SkillFrontmatterError(ValueError):
     """Raised when SKILL.md frontmatter cannot be parsed."""
 
 
+def skill_metadata(metadata: Mapping[str, Any]) -> dict:
+    """Return the spec ``metadata`` sub-map where NVFLARE custom fields live.
+
+    Custom keys (min_flare_version, blast_radius, category, status, ...) are
+    nested under the agentskills.io ``metadata`` map rather than at the top
+    level. Returns an empty dict when absent or malformed.
+    """
+    value = metadata.get("metadata")
+    return value if isinstance(value, dict) else {}
+
+
 def parse_skill_frontmatter(skill_file: Path | str) -> dict[str, Any]:
     """Parse YAML frontmatter from a SKILL.md file."""
     path = Path(skill_file)
-    text = path.read_text(encoding="utf-8-sig")
+    text = _read_regular_skill_file(path)
     lines = text.splitlines()
     if not lines or lines[0].strip() != "---":
         raise SkillFrontmatterError("SKILL.md must start with YAML frontmatter delimiter '---'")
@@ -82,25 +123,6 @@ def parse_skill_frontmatter(skill_file: Path | str) -> dict[str, Any]:
     if not isinstance(metadata, dict):
         raise SkillFrontmatterError("SKILL.md frontmatter must be a mapping")
     return metadata
-
-
-def normalize_skill_metadata(frontmatter: Mapping[str, Any]) -> dict[str, Any]:
-    """Return NVFLARE metadata from spec-compliant or legacy frontmatter."""
-    normalized = dict(frontmatter)
-    extension = frontmatter.get("metadata")
-    if extension is None:
-        return normalized
-    if not isinstance(extension, dict):
-        raise SkillFrontmatterError("SKILL.md frontmatter field 'metadata' must be a mapping")
-    for field in NVFLARE_METADATA_FIELDS:
-        nested_value = extension.get(field)
-        if nested_value is None:
-            continue
-        legacy_value = frontmatter.get(field)
-        if legacy_value is not None and legacy_value != nested_value:
-            raise SkillFrontmatterError(f"conflicting values for frontmatter field '{field}'")
-        normalized[field] = nested_value
-    return normalized
 
 
 def validate_skill_dir(skill_dir: Path | str) -> SkillValidationResult:
@@ -124,20 +146,29 @@ def validate_skill_dir(skill_dir: Path | str) -> SkillValidationResult:
         return SkillValidationResult(str(path), metadata, tuple(issues))
 
     try:
-        metadata = normalize_skill_metadata(parse_skill_frontmatter(skill_file))
+        metadata = parse_skill_frontmatter(skill_file)
     except SkillFrontmatterError as e:
         issues.append(_issue("skill-frontmatter-invalid", str(e), skill_file))
         return SkillValidationResult(str(path), metadata, tuple(issues))
     except OSError as e:
         # An unreadable SKILL.md (e.g. PermissionError) is a skill-dir problem, not a
         # crash: report it as an issue so callers handle it as a finding instead of a
-        # raw traceback escaping through build_skill_manifest/install.
+        # raw traceback escaping through the lint runner.
         issues.append(_issue("skill-md-unreadable", f"SKILL.md could not be read: {e}", skill_file))
         return SkillValidationResult(str(path), metadata, tuple(issues))
 
     _validate_required_fields(metadata, skill_file, issues)
+    _validate_supported_top_level_fields(metadata, skill_file, issues)
+    _validate_metadata_is_mapping(metadata, skill_file, issues)
+    sub = skill_metadata(metadata)
+    _validate_required_fields(sub, skill_file, issues, fields=REQUIRED_METADATA_FIELDS, container="metadata")
+    if _is_public_skill(metadata):
+        _validate_required_fields(sub, skill_file, issues, fields=REQUIRED_PUBLIC_METADATA_FIELDS, container="metadata")
     _validate_name_matches_directory(metadata.get("name"), path, skill_file, issues)
-    _validate_blast_radius(metadata.get("blast_radius"), skill_file, issues)
+    _validate_author(sub.get("author"), skill_file, issues)
+    _validate_blast_radius(sub.get("blast_radius"), skill_file, issues)
+    _validate_spec_constraints(metadata, skill_file, issues)
+    _validate_skill_md_length(skill_file, issues)
 
     return SkillValidationResult(str(path), metadata, tuple(issues))
 
@@ -169,22 +200,60 @@ def _find_closing_delimiter(lines: list[str]) -> Optional[int]:
 
 
 def _validate_required_fields(
-    metadata: Mapping[str, Any], skill_file: Path, issues: list[SkillValidationIssue]
+    metadata: Mapping[str, Any],
+    skill_file: Path,
+    issues: list[SkillValidationIssue],
+    *,
+    fields: tuple[str, ...] = REQUIRED_FRONTMATTER_FIELDS,
+    container: Optional[str] = None,
 ) -> None:
-    for field in REQUIRED_FRONTMATTER_FIELDS:
+    label = f"{container} field" if container else "frontmatter field"
+    for field in fields:
         value = metadata.get(field)
         if value is None or (isinstance(value, str) and not value.strip()):
-            issues.append(
-                _issue("skill-frontmatter-field-required", f"frontmatter field '{field}' is required", skill_file)
-            )
+            issues.append(_issue("skill-frontmatter-field-required", f"{label} '{field}' is required", skill_file))
         elif not isinstance(value, str):
             issues.append(
                 _issue(
                     "skill-frontmatter-field-type",
-                    f"frontmatter field '{field}' must be a non-empty string; " f"got {type(value).__name__}={value!r}",
+                    f"{label} '{field}' must be a non-empty string; got {type(value).__name__}={value!r}",
                     skill_file,
                 )
             )
+
+
+def _validate_supported_top_level_fields(
+    metadata: Mapping[str, Any], skill_file: Path, issues: list[SkillValidationIssue]
+) -> None:
+    for key in metadata:
+        if key not in SPEC_TOP_LEVEL_FIELDS:
+            issues.append(
+                _issue(
+                    "skill-frontmatter-field-unsupported",
+                    f"unsupported top-level frontmatter field '{key}'; nest custom fields under 'metadata:' "
+                    f"(agentskills.io allows only {', '.join(sorted(SPEC_TOP_LEVEL_FIELDS))} at the top level)",
+                    skill_file,
+                )
+            )
+
+
+def _validate_metadata_is_mapping(
+    metadata: Mapping[str, Any], skill_file: Path, issues: list[SkillValidationIssue]
+) -> None:
+    value = metadata.get("metadata")
+    if value is not None and not isinstance(value, dict):
+        issues.append(
+            _issue(
+                "skill-frontmatter-metadata-type",
+                f"frontmatter 'metadata' must be a mapping; got {type(value).__name__}={value!r}",
+                skill_file,
+            )
+        )
+
+
+def _is_public_skill(metadata: Mapping[str, Any]) -> bool:
+    status = str(skill_metadata(metadata).get("status", "public")).strip().lower()
+    return status not in PUBLIC_EXEMPT_STATUS
 
 
 def _validate_name_matches_directory(
@@ -195,6 +264,18 @@ def _validate_name_matches_directory(
             _issue(
                 "skill-name-directory-mismatch",
                 f"frontmatter name '{name}' must match directory name '{skill_dir.name}'",
+                skill_file,
+            )
+        )
+
+
+def _validate_author(author: Any, skill_file: Path, issues: list[SkillValidationIssue]) -> None:
+    if isinstance(author, str) and author.strip() and not AUTHOR_RE.match(author):
+        issues.append(
+            _issue(
+                "skill-author-format-invalid",
+                'metadata author must be a team identity with an NVIDIA email, e.g. "NVIDIA FLARE Team '
+                f'<federatedlearning@nvidia.com>"; got {author!r}',
                 skill_file,
             )
         )
@@ -211,6 +292,60 @@ def _validate_blast_radius(radius: Any, skill_file: Path, issues: list[SkillVali
         )
 
 
+def _validate_spec_constraints(
+    metadata: Mapping[str, Any], skill_file: Path, issues: list[SkillValidationIssue]
+) -> None:
+    """Enforce the company skills guideline (NVCARPS) field constraints."""
+    name = metadata.get("name")
+    if isinstance(name, str) and name.strip():
+        if len(name) > MAX_NAME_LENGTH or not SKILL_NAME_RE.match(name):
+            issues.append(
+                _issue(
+                    "skill-frontmatter-name-invalid",
+                    f"frontmatter field 'name' must be 1-{MAX_NAME_LENGTH} chars, lowercase alphanumeric plus "
+                    f"hyphens, with no leading/trailing/consecutive hyphens; got {name!r}",
+                    skill_file,
+                )
+            )
+    description = metadata.get("description")
+    if isinstance(description, str) and len(description) > MAX_DESCRIPTION_LENGTH:
+        issues.append(
+            _issue(
+                "skill-frontmatter-description-too-long",
+                f"frontmatter field 'description' must be at most {MAX_DESCRIPTION_LENGTH} characters; "
+                f"got {len(description)}",
+                skill_file,
+            )
+        )
+    compatibility = metadata.get("compatibility")
+    if isinstance(compatibility, str) and len(compatibility) > MAX_COMPATIBILITY_LENGTH:
+        issues.append(
+            _issue(
+                "skill-frontmatter-compatibility-too-long",
+                f"frontmatter field 'compatibility' must be at most {MAX_COMPATIBILITY_LENGTH} characters; "
+                f"got {len(compatibility)}",
+                skill_file,
+            )
+        )
+
+
+def _validate_skill_md_length(skill_file: Path, issues: list[SkillValidationIssue]) -> None:
+    """Enforce the company guideline that the main SKILL.md stays under 500 lines."""
+    try:
+        line_count = len(_read_regular_skill_file(skill_file).splitlines())
+    except (OSError, SkillFrontmatterError):
+        return  # unreadable SKILL.md is already reported as skill-md-unreadable
+    if line_count > MAX_SKILL_MD_LINES:
+        issues.append(
+            _issue(
+                "skill-md-too-long",
+                f"SKILL.md has {line_count} lines; keep the main file under {MAX_SKILL_MD_LINES} lines and move "
+                "detailed content into references/",
+                skill_file,
+            )
+        )
+
+
 def _validate_no_symlinks(skill_dir: Path, issues: list[SkillValidationIssue]) -> None:
     for root, dir_names, file_names in os.walk(skill_dir, topdown=True, followlinks=False):
         root_path = Path(root)
@@ -218,9 +353,71 @@ def _validate_no_symlinks(skill_dir: Path, issues: list[SkillValidationIssue]) -
         file_names.sort()
         for name in dir_names + file_names:
             path = root_path / name
-            if path.is_symlink():
+            try:
+                entry_stat = path.lstat()
+            except OSError:
+                issues.append(_issue("skill-entry-unreadable", "skill entry could not be inspected", path))
+                continue
+            if stat.S_ISLNK(entry_stat.st_mode):
                 issues.append(_issue("skill-symlink-not-allowed", "skill directories must not contain symlinks", path))
+            elif name in dir_names and not stat.S_ISDIR(entry_stat.st_mode):
+                issues.append(
+                    _issue("skill-special-file-not-allowed", "skill entries must be regular files or directories", path)
+                )
+            elif name in file_names and not stat.S_ISREG(entry_stat.st_mode):
+                issues.append(
+                    _issue("skill-special-file-not-allowed", "skill entries must be regular files or directories", path)
+                )
         dir_names[:] = [name for name in dir_names if not (root_path / name).is_symlink()]
+
+
+def _read_regular_skill_file(path: Path) -> str:
+    """Read SKILL.md through one bounded, nonblocking, no-follow descriptor."""
+
+    try:
+        before = path.lstat()
+    except OSError:
+        raise
+    if stat.S_ISLNK(before.st_mode):
+        raise SkillFrontmatterError("SKILL.md must not be a symlink")
+    if not stat.S_ISREG(before.st_mode):
+        raise SkillFrontmatterError("SKILL.md must be a regular file")
+    if before.st_size > MAX_SKILL_MD_BYTES:
+        raise SkillFrontmatterError(f"SKILL.md exceeds {MAX_SKILL_MD_BYTES} byte limit")
+
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as e:
+        if e.errno in {errno.ELOOP, getattr(errno, "EMLINK", errno.ELOOP)}:
+            raise SkillFrontmatterError("SKILL.md must not be a symlink") from e
+        raise
+    try:
+        opened = os.fstat(descriptor)
+        if not stat.S_ISREG(opened.st_mode):
+            raise SkillFrontmatterError("SKILL.md must be a regular file")
+        if (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino):
+            raise SkillFrontmatterError("SKILL.md changed while it was being opened")
+        if opened.st_size > MAX_SKILL_MD_BYTES:
+            raise SkillFrontmatterError(f"SKILL.md exceeds {MAX_SKILL_MD_BYTES} byte limit")
+
+        chunks: list[bytes] = []
+        bytes_read = 0
+        while bytes_read <= MAX_SKILL_MD_BYTES:
+            chunk = os.read(descriptor, min(64 * 1024, MAX_SKILL_MD_BYTES + 1 - bytes_read))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            bytes_read += len(chunk)
+        data = b"".join(chunks)
+        if len(data) > MAX_SKILL_MD_BYTES:
+            raise SkillFrontmatterError(f"SKILL.md exceeds {MAX_SKILL_MD_BYTES} byte limit")
+        try:
+            return data.decode("utf-8-sig")
+        except UnicodeDecodeError as e:
+            raise SkillFrontmatterError(f"SKILL.md is not valid UTF-8: {e}") from e
+    finally:
+        os.close(descriptor)
 
 
 def _issue(code: str, message: str, path: Path) -> SkillValidationIssue:
