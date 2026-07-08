@@ -329,6 +329,43 @@ def test_text_metric_extraction_ignores_trailing_contextual_mentions(tmp_path):
     assert evidence.source == "text:log.txt:line=1"
 
 
+def test_text_metric_extraction_supports_keras_progress_output(tmp_path):
+    runner = _load_runner()
+    tmp_path.joinpath("log.txt").write_text(
+        "938/938 - 3s - 3ms/step - accuracy: 0.9687 - loss: 0.0991 - val_accuracy: 0.9816\n",
+        encoding="utf-8",
+    )
+
+    assert runner.extract_score(tmp_path, ["accuracy"]) == pytest.approx(0.9687)
+
+
+def test_text_metric_extraction_prefers_nvflare_received_model_evaluation(tmp_path):
+    runner = _load_runner()
+    tmp_path.joinpath("log.txt").write_text(
+        """
+2026-07-08 16:25:18,029 - INFO - Accuracy of the received model on round 1 on the test images: 94.3 %
+938/938 - 3s - 3ms/step - accuracy: 0.9687 - loss: 0.0991
+2026-07-08 16:25:22,029 - INFO - Accuracy of the received model on round 2 on the test images: 98.2 %
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    evidence = runner.extract_metric_evidence(tmp_path, ["accuracy"])
+
+    assert evidence.score == pytest.approx(98.2)
+    assert evidence.source == "text:log.txt:line=3"
+
+
+def test_text_metric_extraction_supports_embedded_metrics_mapping(tmp_path):
+    runner = _load_runner()
+    tmp_path.joinpath("log.txt").write_text(
+        "validation metric scores on client: site-2 = {'accuracy': 0.764, 'precision': 0.64}\n",
+        encoding="utf-8",
+    )
+
+    assert runner.extract_score(tmp_path, ["accuracy"]) == pytest.approx(0.764)
+
+
 def test_runner_applies_schema_metric_contract():
     runner = _load_runner()
     config = {
@@ -440,13 +477,35 @@ def test_run_streams_partial_line_before_timeout(tmp_path):
     assert "partial output" in log_path.read_text(encoding="utf-8")
 
 
-def test_job_help_is_bounded(tmp_path):
+def test_job_help_discovers_flags_without_executing_job(tmp_path):
+    runner = _load_runner()
+    job = tmp_path / "job.py"
+    marker = tmp_path / "executed"
+    job.write_text(
+        f"""
+import argparse
+from pathlib import Path
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--n_clients", type=int, default=2)
+parser.add_argument("-r", "--num_rounds", type=int, default=1)
+Path({str(marker)!r}).write_text("executed")
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    help_text = runner.job_help(sys.executable, job, tmp_path, timeout=1)
+
+    assert runner.supported_long_flags(help_text) == {"--n_clients", "--num_rounds"}
+    assert not marker.exists()
+
+
+def test_job_help_returns_no_flags_for_non_argparse_job(tmp_path):
     runner = _load_runner()
     job = tmp_path / "job.py"
     job.write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
 
-    with pytest.raises(RuntimeError, match="job.py --help exceeded 1 seconds"):
-        runner.job_help(sys.executable, job, tmp_path, timeout=1)
+    assert runner.job_help(sys.executable, job, tmp_path, timeout=1) == ""
 
 
 def test_metric_extraction_prefers_structured_artifacts_then_known_text_logs(tmp_path):
@@ -479,6 +538,10 @@ def test_result_paths_and_static_job_names_are_resolved_deterministically(tmp_pa
     }
 
     assert runner.extract_result_dir("Result can be found in : relative-result", tmp_path) == relative.resolve()
+    assert runner.extract_result_dir("result location = relative-result", tmp_path) == relative.resolve()
+    assert (
+        runner.extract_result_dir("The simulation logs can be found at relative-result", tmp_path) == relative.resolve()
+    )
     assert runner.imported_job_names(config) == ["recipe-name", "fed-job-name"]
     assert runner.expected_simulator_roots(config, "injected", tmp_path) == [
         (default_root / "injected").resolve(),
@@ -494,31 +557,187 @@ def test_result_paths_and_static_job_names_are_resolved_deterministically(tmp_pa
         runner.expected_simulator_roots({}, "../other-run", tmp_path)
 
 
-def test_run_without_deterministic_result_root_fails_before_execution(tmp_path, monkeypatch):
+def test_run_without_deterministic_result_root_records_actionable_failure(tmp_path, monkeypatch):
     runner = _load_runner()
     job = tmp_path / "job.py"
     job.write_text("print('done')\n", encoding="utf-8")
-    monkeypatch.setattr(
-        runner,
-        "run",
-        lambda *args, **kwargs: pytest.fail("unmonitored simulator jobs must not execute"),
+    monkeypatch.setattr(runner, "run", lambda *args, **kwargs: (0, "done\n", 0.1))
+
+    record = runner.run_job(
+        runner.JobRun("candidate", [], "candidate"),
+        python=sys.executable,
+        job=job,
+        cwd=tmp_path,
+        help_text="",
+        fixed_args=[],
+        base_args=[],
+        output_root=tmp_path / "runs",
+        timeout=10,
+        simulator_no_progress_timeout=0,
+        metrics=["accuracy"],
+        config={"job": {}},
     )
 
-    with pytest.raises(ValueError, match="cannot resolve a deterministic simulator result root"):
-        runner.run_job(
-            runner.JobRun("candidate", [], "candidate"),
-            python=sys.executable,
-            job=job,
-            cwd=tmp_path,
-            help_text="",
-            fixed_args=[],
-            base_args=[],
-            output_root=tmp_path / "runs",
-            timeout=10,
-            simulator_no_progress_timeout=0,
-            metrics=["accuracy"],
-            config={"job": {}},
-        )
+    assert record.status == "crash"
+    assert "print the direct simulator result directory" in record.failure_reason
+
+
+def test_run_discovers_and_persists_printed_unnamed_simulator_root(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job = tmp_path / "job.py"
+    job.write_text("print('job')\n", encoding="utf-8")
+    simulator_base = tmp_path / "simulation"
+    result = simulator_base / "recipe-default"
+
+    def fake_run(*args, **kwargs):
+        result.mkdir(parents=True)
+        result.joinpath("metrics_summary.json").write_text(json.dumps({"accuracy": 0.81}), encoding="utf-8")
+        return 0, f"The simulation logs can be found at {result}\n", 0.1
+
+    monkeypatch.setattr(runner, "run", fake_run)
+    config = {
+        "job": {},
+        "artifacts": {},
+        "environment": {
+            "discovered": {"args": {"workspace_root": {"value": str(simulator_base), "confidence": "high"}}}
+        },
+    }
+
+    record = runner.run_job(
+        runner.JobRun("baseline", [], "baseline", status="baseline"),
+        python=sys.executable,
+        job=job,
+        cwd=tmp_path,
+        help_text="",
+        fixed_args=[],
+        base_args=[],
+        output_root=tmp_path / "runs",
+        timeout=10,
+        simulator_no_progress_timeout=0,
+        metrics=["accuracy"],
+        config=config,
+    )
+
+    assert record.status == "baseline"
+    assert record.score == pytest.approx(0.81)
+    assert config["artifacts"]["simulator_result_name"] == "recipe-default"
+    assert runner.expected_simulator_roots(config, None, tmp_path) == [result.resolve()]
+
+
+def test_run_discovers_single_changed_unnamed_simulator_root(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job = tmp_path / "job.py"
+    job.write_text("print('job')\n", encoding="utf-8")
+    simulator_base = tmp_path / "simulation"
+    result = simulator_base / "recipe-default"
+
+    def fake_run(*args, **kwargs):
+        result.mkdir(parents=True)
+        result.joinpath("metrics_summary.json").write_text(json.dumps({"val_acc": 0.73}), encoding="utf-8")
+        return 0, "job complete without a result message\n", 0.1
+
+    monkeypatch.setattr(runner, "run", fake_run)
+    config = {
+        "job": {},
+        "artifacts": {},
+        "environment": {
+            "discovered": {"args": {"workspace_root": {"value": str(simulator_base), "confidence": "high"}}}
+        },
+    }
+
+    record = runner.run_job(
+        runner.JobRun("baseline", [], "baseline", status="baseline"),
+        python=sys.executable,
+        job=job,
+        cwd=tmp_path,
+        help_text="",
+        fixed_args=[],
+        base_args=[],
+        output_root=tmp_path / "runs",
+        timeout=10,
+        simulator_no_progress_timeout=0,
+        metrics=["val_acc"],
+        config=config,
+    )
+
+    assert record.status == "baseline"
+    assert record.score == pytest.approx(0.73)
+    assert config["artifacts"]["simulator_result_name"] == "recipe-default"
+
+
+def test_run_rejects_ambiguous_changed_unnamed_simulator_roots(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job = tmp_path / "job.py"
+    job.write_text("print('job')\n", encoding="utf-8")
+    simulator_base = tmp_path / "simulation"
+
+    def fake_run(*args, **kwargs):
+        for name in ("first", "second"):
+            result = simulator_base / name
+            result.mkdir(parents=True)
+            result.joinpath("metrics_summary.json").write_text(json.dumps({"accuracy": 0.5}), encoding="utf-8")
+        return 0, "ambiguous job complete\n", 0.1
+
+    monkeypatch.setattr(runner, "run", fake_run)
+    record = runner.run_job(
+        runner.JobRun("candidate", [], "candidate"),
+        python=sys.executable,
+        job=job,
+        cwd=tmp_path,
+        help_text="",
+        fixed_args=[],
+        base_args=[],
+        output_root=tmp_path / "runs",
+        timeout=10,
+        simulator_no_progress_timeout=0,
+        metrics=["accuracy"],
+        config={
+            "job": {},
+            "environment": {
+                "discovered": {"args": {"workspace_root": {"value": str(simulator_base), "confidence": "high"}}}
+            },
+        },
+    )
+
+    assert record.status == "crash"
+    assert record.score is None
+
+
+def test_run_rejects_printed_result_outside_simulator_workspace(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job = tmp_path / "job.py"
+    job.write_text("print('job')\n", encoding="utf-8")
+    outside = tmp_path / "outside"
+
+    def fake_run(*args, **kwargs):
+        outside.mkdir()
+        return 0, f"Result can be found in : {outside}\n", 0.1
+
+    monkeypatch.setattr(runner, "run", fake_run)
+    record = runner.run_job(
+        runner.JobRun("candidate", [], "candidate"),
+        python=sys.executable,
+        job=job,
+        cwd=tmp_path,
+        help_text="",
+        fixed_args=[],
+        base_args=[],
+        output_root=tmp_path / "runs",
+        timeout=10,
+        simulator_no_progress_timeout=0,
+        metrics=["accuracy"],
+        config={
+            "job": {},
+            "environment": {
+                "discovered": {
+                    "args": {"workspace_root": {"value": str(tmp_path / "simulation"), "confidence": "high"}}
+                }
+            },
+        },
+    )
+
+    assert record.status == "crash"
+    assert record.score is None
 
 
 def test_simulator_root_lock_rejects_concurrent_campaign(tmp_path):
@@ -531,6 +750,18 @@ def test_simulator_root_lock_rejects_concurrent_campaign(tmp_path):
                 pass
 
     assert not root.with_name(f".{root.name}.autofl.lock").exists()
+
+
+def test_simulator_workspace_lock_excludes_unnamed_and_named_campaigns(tmp_path):
+    runner = _load_runner()
+    if runner.fcntl is None:
+        pytest.skip("fcntl workspace locking is unavailable")
+    simulator_base = tmp_path / "simulation"
+
+    with runner.locked_simulator_workspace(simulator_base, exclusive=True):
+        with pytest.raises(RuntimeError, match="conflicting named campaign"):
+            with runner.locked_simulator_workspace(simulator_base, exclusive=False):
+                pass
 
 
 def test_run_job_collects_configured_sim_result_and_standard_nvflare_text_metric(tmp_path):
@@ -1621,10 +1852,11 @@ def test_import_job_config_forwards_minimization_mode(tmp_path, monkeypatch):
             return runner.yaml.safe_dump(config)
 
     monkeypatch.setattr(runner, "load_job_importer", lambda: FakeImporter)
-    args = runner.parse_args(["initialize", str(job), "--mode", "min"])
+    args = runner.parse_args(["initialize", str(job), "--mode", "min", "--base-args", "--mode training"])
     runner.import_job_config(args, job, output, tmp_path / "import.log", 10)
 
     assert captured["mode"] == "min"
+    assert captured["job_args"] == ["--mode", "training"]
 
 
 @pytest.mark.parametrize(

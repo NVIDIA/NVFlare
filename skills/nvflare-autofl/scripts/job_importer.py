@@ -27,7 +27,7 @@ import hashlib
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 import yaml
 
@@ -36,6 +36,8 @@ IMPORTER_VERSION = "nvflare-autofl-job-importer/v1"
 ALLOWED_CREATE_PATTERNS = ["**/*.py"]
 
 SUPPORTED_ENV_NAMES = {"PocEnv", "ProdEnv", "SimEnv"}
+NON_OPTIMIZATION_RECIPE_NAMES = {"FedEvalRecipe", "FedStatsRecipe", "NumpyCrossSiteEvalRecipe"}
+UNSUPPORTED_NESTED_RECIPE_NAMES = {"FlowerRecipe"}
 TUNABLE_ARG_NAMES = {
     "aggregation_epochs",
     "alpha",
@@ -114,6 +116,7 @@ class DeterministicJobImporter:
         mode: str = "max",
         target_env: Optional[str] = None,
         max_candidates: Optional[int] = None,
+        job_args: Optional[Sequence[str]] = None,
     ) -> Dict[str, Any]:
         """Return an ``autofl.yaml``-shaped config for ``job_path``.
 
@@ -123,6 +126,8 @@ class DeterministicJobImporter:
             mode: ``max`` or ``min`` objective direction.
             target_env: Optional target environment, such as ``sim`` or ``prod``.
             max_candidates: Optional fixed candidate budget.
+            job_args: Optional job CLI arguments used to resolve argparse defaults
+                and simple conditional recipe branches.
 
         Returns:
             A deterministic, YAML-serializable mapping.
@@ -139,9 +144,11 @@ class DeterministicJobImporter:
             raise JobImportError(f"failed to parse {source_path}: {e}") from e
 
         index = _ImportIndex.from_tree(tree, source_text)
-        job_call = index.first_job_call()
-        env_call = index.first_env_call()
-        train_script = self._resolve_train_script(source_path, job_call, index, source_text)
+        parser_args = _parser_args_with_cli_overrides(index.parser_args, job_args or [])
+        reachable_functions = _reachable_function_names(tree, parser_args)
+        job_call = index.first_job_call(reachable_functions)
+        env_call = index.first_env_call(reachable_functions)
+        train_script = self._resolve_train_script(source_path, job_call, index, parser_args, source_text)
         train_args = _collect_argparse_args_from_file(train_script) if train_script else {}
         unresolved: List[Dict[str, str]] = []
 
@@ -154,19 +161,22 @@ class DeterministicJobImporter:
                     "its contract cannot be imported deterministically"
                 )
             unresolved.append(_unresolved("job.surface", reason))
+        support_status, support_reason = _support_status(job_call)
+        if support_reason and job_call:
+            unresolved.append(_unresolved("job.surface", support_reason))
         if not train_script:
             unresolved.append(_unresolved("job.train_script", "no train_script was found or resolved"))
 
-        metric_name, metric_source, metric_issue = self._resolve_metric(metric, job_call, index.parser_args)
+        metric_name, metric_source, metric_issue = self._resolve_metric(metric, job_call, parser_args)
         objective = _objective_contract(metric_name, mode, metric_source)
         if metric_issue:
             unresolved.append(metric_issue)
 
-        budget, budget_issues = self._resolve_budget(max_candidates, job_call, env_call, index.parser_args, source_text)
+        budget, budget_issues = self._resolve_budget(max_candidates, job_call, env_call, parser_args, source_text)
         unresolved.extend(budget_issues)
 
         allowed_edit_paths = self._allowed_edit_paths(source_path, train_script)
-        search_space, search_issues = self._suggest_search_space(index.parser_args, train_args)
+        search_space, search_issues = self._suggest_search_space(parser_args, train_args)
         unresolved.extend(search_issues)
 
         job_payload = {
@@ -175,7 +185,7 @@ class DeterministicJobImporter:
             "entrypoint": "main" if _has_main_entrypoint(tree) else "unresolved",
         }
         if job_call:
-            call_args, call_issues = self._resolved_call_keywords(job_call, index.parser_args, source_text)
+            call_args, call_issues = self._resolved_call_keywords(job_call, parser_args, source_text)
             unresolved.extend(call_issues)
             if _is_recipe_call(job_call):
                 job_payload.update(
@@ -196,9 +206,9 @@ class DeterministicJobImporter:
         if train_script:
             job_payload["train_script"] = self._display_path(train_script)
 
-        environment = self._environment_profile(target_env, env_call, index.parser_args, source_text)
+        environment = self._environment_profile(target_env, env_call, parser_args, source_text)
         if env_call:
-            env_args, env_issues = self._resolved_call_keywords(env_call, index.parser_args, source_text)
+            env_args, env_issues = self._resolved_call_keywords(env_call, parser_args, source_text)
             unresolved.extend(env_issues)
             environment["discovered"] = {"name": env_call.name, "args": env_args}
 
@@ -210,8 +220,9 @@ class DeterministicJobImporter:
                 "source_sha256": _sha256_text(source_text),
                 "confidence": _overall_confidence(unresolved, job_call),
                 "support": {
-                    "status": "supported" if job_call else "partial",
+                    "status": support_status,
                     "patterns": _support_patterns(job_call, env_call),
+                    **({"reason": support_reason} if support_reason else {}),
                 },
             },
             "job": job_payload,
@@ -273,6 +284,7 @@ class DeterministicJobImporter:
         source_path: Path,
         job_call: Optional[CallInfo],
         index: "_ImportIndex",
+        parser_args: Dict[str, ArgSpec],
         source_text: str,
     ) -> Optional[Path]:
         if not job_call:
@@ -280,7 +292,7 @@ class DeterministicJobImporter:
 
         train_script_node = job_call.keywords.get("train_script")
         if train_script_node:
-            resolved = _resolve_value(train_script_node, job_call.assignments, index.parser_args, source_text)
+            resolved = _resolve_value(train_script_node, job_call.assignments, parser_args, source_text)
             value = resolved.value
             if isinstance(value, str) and _is_resolved_path_string(resolved):
                 return _existing_path((source_path.parent / value).resolve())
@@ -291,7 +303,7 @@ class DeterministicJobImporter:
             script_node = runner_call.keywords.get("script")
             if not script_node:
                 continue
-            resolved = _resolve_value(script_node, runner_call.assignments, index.parser_args, source_text)
+            resolved = _resolve_value(script_node, runner_call.assignments, parser_args, source_text)
             if isinstance(resolved.value, str) and _is_resolved_path_string(resolved):
                 path = _existing_path((source_path.parent / resolved.value).resolve())
                 if path:
@@ -469,6 +481,7 @@ def import_job_to_autofl_config(
     mode: str = "max",
     target_env: Optional[str] = None,
     max_candidates: Optional[int] = None,
+    job_args: Optional[Sequence[str]] = None,
 ) -> Dict[str, Any]:
     """Convenience wrapper for deterministic job import."""
 
@@ -479,6 +492,7 @@ def import_job_to_autofl_config(
         mode=mode,
         target_env=target_env,
         max_candidates=max_candidates,
+        job_args=job_args,
     )
 
 
@@ -514,11 +528,11 @@ class _ImportIndex(ast.NodeVisitor):
         index.visit(tree)
         return index
 
-    def first_job_call(self) -> Optional[CallInfo]:
-        return self.job_calls[0] if self.job_calls else None
+    def first_job_call(self, reachable_functions: Optional[Set[str]] = None) -> Optional[CallInfo]:
+        return _first_reachable_call(self.job_calls, reachable_functions)
 
-    def first_env_call(self) -> Optional[CallInfo]:
-        return self.env_calls[0] if self.env_calls else None
+    def first_env_call(self, reachable_functions: Optional[Set[str]] = None) -> Optional[CallInfo]:
+        return _first_reachable_call(self.env_calls, reachable_functions)
 
     def first_unsupported_job_call(self) -> Optional[CallInfo]:
         return self.unsupported_job_calls[0] if self.unsupported_job_calls else None
@@ -634,6 +648,153 @@ class _ImportIndex(ast.NodeVisitor):
         if self._local_assignments_stack:
             assignments.update(self._local_assignments_stack[-1])
         return assignments
+
+
+def _first_reachable_call(calls: Sequence[CallInfo], reachable_functions: Optional[Set[str]]) -> Optional[CallInfo]:
+    if not calls:
+        return None
+    if len(calls) == 1 or reachable_functions is None:
+        return calls[0]
+    reachable_calls = [
+        call for call in calls if call.function_name is None or call.function_name in reachable_functions
+    ]
+    return reachable_calls[0] if reachable_calls else None
+
+
+def _parser_args_with_cli_overrides(parser_args: Dict[str, ArgSpec], job_args: Sequence[str]) -> Dict[str, ArgSpec]:
+    resolved = dict(parser_args)
+    flags = {flag: spec for spec in parser_args.values() for flag in spec.flags}
+    index = 0
+    while index < len(job_args):
+        token = job_args[index]
+        flag, separator, inline_value = token.partition("=")
+        spec = flags.get(flag)
+        if spec is None:
+            index += 1
+            continue
+
+        if spec.action in {"store_true", "store_false"}:
+            value = spec.action == "store_true"
+            consumed = 1
+        elif separator:
+            value = _coerce_cli_value(inline_value, spec)
+            consumed = 1
+        elif index + 1 < len(job_args):
+            value = _coerce_cli_value(job_args[index + 1], spec)
+            consumed = 2
+        else:
+            index += 1
+            continue
+
+        resolved[spec.name] = ArgSpec(
+            name=spec.name,
+            flags=spec.flags,
+            default=value,
+            default_source="job_cli_arg",
+            value_type=spec.value_type,
+            choices=spec.choices,
+            action=spec.action,
+        )
+        index += consumed
+    return resolved
+
+
+def _coerce_cli_value(value: str, spec: ArgSpec) -> Any:
+    value_type = (spec.value_type or "").split(".")[-1]
+    try:
+        if value_type == "int":
+            return int(value)
+        if value_type == "float":
+            return float(value)
+    except ValueError:
+        return value
+    return value
+
+
+def _reachable_function_names(tree: ast.AST, parser_args: Dict[str, ArgSpec]) -> Set[str]:
+    functions = {
+        node.name: node
+        for node in getattr(tree, "body", [])
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    if "main" not in functions:
+        return set(functions)
+
+    arg_values = {name: spec.default for name, spec in parser_args.items() if not spec.default_unresolved}
+    reachable = set()
+    pending = ["main"]
+    while pending:
+        name = pending.pop()
+        if name in reachable or name not in functions:
+            continue
+        reachable.add(name)
+        called = _called_functions(functions[name].body, arg_values)
+        pending.extend(sorted((called & functions.keys()) - reachable, reverse=True))
+    return reachable
+
+
+def _called_functions(statements: Sequence[ast.stmt], arg_values: Dict[str, Any]) -> Set[str]:
+    calls: Set[str] = set()
+    for statement in statements:
+        if isinstance(statement, ast.If):
+            condition = _static_condition_value(statement.test, arg_values)
+            if condition is True:
+                calls.update(_called_functions(statement.body, arg_values))
+            elif condition is False:
+                calls.update(_called_functions(statement.orelse, arg_values))
+            else:
+                calls.update(_called_functions(statement.body, arg_values))
+                calls.update(_called_functions(statement.orelse, arg_values))
+            continue
+        collector = _DirectCallCollector()
+        collector.visit(statement)
+        calls.update(collector.names)
+    return calls
+
+
+class _DirectCallCollector(ast.NodeVisitor):
+    def __init__(self):
+        self.names: Set[str] = set()
+
+    def visit_Call(self, node: ast.Call) -> None:
+        if isinstance(node.func, ast.Name):
+            self.names.add(node.func.id)
+        self.generic_visit(node)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        return
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        return
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        return
+
+
+def _static_condition_value(node: ast.AST, arg_values: Dict[str, Any]) -> Optional[bool]:
+    if isinstance(node, ast.Compare) and len(node.ops) == 1 and len(node.comparators) == 1:
+        left_known, left = _static_condition_operand(node.left, arg_values)
+        right_known, right = _static_condition_operand(node.comparators[0], arg_values)
+        if not left_known or not right_known:
+            return None
+        if isinstance(node.ops[0], ast.Eq):
+            return left == right
+        if isinstance(node.ops[0], ast.NotEq):
+            return left != right
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+        value = _static_condition_value(node.operand, arg_values)
+        return None if value is None else not value
+    return None
+
+
+def _static_condition_operand(node: ast.AST, arg_values: Dict[str, Any]) -> Tuple[bool, Any]:
+    is_literal, value = _literal_value(node)
+    if is_literal:
+        return True, value
+    if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == "args":
+        if node.attr in arg_values:
+            return True, arg_values[node.attr]
+    return False, None
 
 
 def _collect_argparse_args_from_file(path: Optional[Path]) -> Dict[str, ArgSpec]:
@@ -848,6 +1009,22 @@ def _surface_name(call_info: Optional[CallInfo]) -> str:
     if not call_info:
         return "unknown"
     return "recipe" if _is_recipe_call(call_info) else "fed_job"
+
+
+def _support_status(job_call: Optional[CallInfo]) -> Tuple[str, Optional[str]]:
+    if not job_call:
+        return "partial", "no supported Recipe or NVFlare FedJob constructor was found"
+    if job_call.name in NON_OPTIMIZATION_RECIPE_NAMES:
+        return (
+            "partial",
+            f"{job_call.name} is evaluation/statistics-only and has no training loop for Auto-FL optimization",
+        )
+    if job_call.name in UNSUPPORTED_NESTED_RECIPE_NAMES:
+        return (
+            "partial",
+            f"{job_call.name} wraps a nested application whose training source cannot be imported deterministically",
+        )
+    return "supported", None
 
 
 def _env_name_to_profile(env_name: str) -> str:
