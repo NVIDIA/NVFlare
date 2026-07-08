@@ -240,11 +240,11 @@ class TestServiceOutcomeTable:
         tx = _Transaction(timeout=timeout, num_receivers=num_receivers)
         with service._tx_lock:
             service._tx_table[tx.tid] = tx
-        # mirror new_transaction(): a live tx is registered as the current incarnation.
-        # _record_outcome() records only for the live incarnation (current is tx), so a tx
-        # placed directly in _tx_table without this would never record its terminal outcome.
+        # mirror new_transaction(): a live tx owns its outcome slot.
+        # _record_outcome() records only for the owning tx, so a tx placed directly in
+        # _tx_table without ownership would never record its terminal outcome.
         with service._outcome_lock:
-            service._tx_incarnations[tx.tid] = tx
+            service._outcome_owners[tx.tid] = tx
         obj = _stub_obj()
         rid = service.add_object(tx.tid, obj)
         with service._tx_lock:
@@ -323,14 +323,14 @@ class TestServiceOutcomeTable:
 
             second = service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-REUSE")
             assert second == "TX-REUSE"
-            # the stale terminal outcome of the previous incarnation is purged
+            # the stale terminal outcome of the previous owner is purged
             assert service.get_transaction_outcome("TX-REUSE") is None
         finally:
             service.shutdown()
 
-    def test_stale_incarnation_cannot_record_over_live_retry(self):
+    def test_stale_owner_cannot_record_over_live_retry(self):
         # the record-after-purge race: termination removes the old tx from _tx_table,
-        # a retry registers the same tx_id, THEN the old incarnation records its
+        # a retry takes ownership of the same tx_id, THEN the old transaction records its
         # outcome — it must not shadow the live retry
         from functools import partial
         from unittest.mock import Mock
@@ -343,10 +343,10 @@ class TestServiceOutcomeTable:
             with service._tx_lock:
                 old_tx = service._tx_table.pop("TX-RACE")  # termination step 1, as the monitor does
 
-            # the retry registers the same id before the old incarnation records
+            # the retry takes ownership of the id before the old transaction records
             service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-RACE")
 
-            # the old incarnation now finishes terminating and tries to record
+            # the old transaction now finishes terminating and tries to record
             old_tx.transaction_done(
                 TransactionDoneStatus.DELETED, on_outcome=partial(service._record_outcome, tx=old_tx)
             )
@@ -387,8 +387,8 @@ class TestServiceOutcomeTable:
             assert done == [("TX-DUP", TransactionDoneStatus.DELETED)]
             # its terminal outcome does not shadow the live retry
             assert service.get_transaction_outcome("TX-DUP") is None
-            # the live tx is the new incarnation
-            assert service._tx_table["TX-DUP"] is service._tx_incarnations["TX-DUP"]
+            # the live tx is the new owner
+            assert service._tx_table["TX-DUP"] is service._outcome_owners["TX-DUP"]
             assert service._tx_table["TX-DUP"] is not None
         finally:
             service.shutdown()
@@ -428,8 +428,8 @@ class TestServiceOutcomeTable:
 
         assert service.get_transaction_outcome(tx.tid) is None
         # a monitor iteration that was mid-termination during shutdown cannot repopulate:
-        # shutdown cleared _tx_incarnations, so the late recorder's tx is not the live
-        # incarnation and its outcome drops
+        # shutdown cleared outcome ownership, so the late recorder's tx no longer owns
+        # the slot and its outcome drops
         from unittest.mock import Mock
 
         late = compute_transfer_outcome("T-LATE", TransactionDoneStatus.FINISHED, 1, [], time.time())

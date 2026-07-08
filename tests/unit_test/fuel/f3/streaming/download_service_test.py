@@ -476,14 +476,14 @@ class TestDownloadService:
 
         assert list(service._initialized_cells.keys()) == []
 
-    def test_new_transaction_registers_incarnation_before_monitor_visible(self):
-        """A tx must be incarnation-registered before it appears in _tx_table.
+    def test_new_transaction_takes_ownership_before_monitor_visible(self):
+        """A tx must own its outcome slot before it appears in _tx_table.
 
         The monitor discovers transactions through _tx_table. If a tx were inserted
-        there first, a monitor tick landing in the window before incarnation
-        registration could terminate it: its terminal outcome would be dropped by the
-        live-incarnation guard (a terminated-but-unknown gap), and new_transaction
-        would then register a dead incarnation that nothing ever pops.
+        there first, a monitor tick landing in the window before ownership is taken
+        could terminate it: its terminal outcome would be dropped by the owner guard
+        (a terminated-but-unknown gap), and new_transaction would then register a
+        dead owner entry that nothing ever pops.
         """
         service = _make_isolated_download_service()
         service._tx_monitor = object()  # avoid starting a real monitor thread
@@ -492,7 +492,7 @@ class TestDownloadService:
 
         class MonitorVisibilityDict(dict):
             def __setitem__(self, key, value):
-                registered_at_insert.append(key in service._tx_incarnations)
+                registered_at_insert.append(key in service._outcome_owners)
                 super().__setitem__(key, value)
 
         service._tx_table = MonitorVisibilityDict()
@@ -500,16 +500,16 @@ class TestDownloadService:
         tx_id = service.new_transaction(cell=Mock(), timeout=10.0, num_receivers=1)
 
         assert registered_at_insert == [True]
-        assert service._tx_incarnations[tx_id] is service._tx_table[tx_id]
+        assert service._outcome_owners[tx_id] is service._tx_table[tx_id]
 
-    def test_stale_outcome_dropped_after_incarnation_cleared(self):
-        """A terminal outcome for a transaction whose incarnation is no longer live must drop.
+    def test_stale_outcome_dropped_after_ownership_cleared(self):
+        """A terminal outcome for a transaction that no longer owns its tx_id must drop.
 
         This is the invariant that closes the cross-lifecycle stale-outcome race:
-        _record_outcome() records only for the live registered incarnation (current is tx).
+        _record_outcome() records only for the transaction that owns the outcome slot.
         A recorder that blocked on _outcome_lock while shutdown() cleared the tables can
-        win the lock after a subsequent _initialize(); with no live incarnation for the
-        tid, its pre-shutdown outcome drops instead of repopulating the cleared table.
+        win the lock after a subsequent _initialize(); no longer owning the slot, its
+        pre-shutdown outcome drops instead of repopulating the cleared table.
         """
         service = _make_isolated_download_service()
 
@@ -519,20 +519,20 @@ class TestDownloadService:
         old_outcome.tx_id = "tx-old"
         old_outcome.expired.return_value = False
 
-        # shutdown() cleared incarnations; recording is gated by incarnation identity alone
-        service._tx_incarnations.clear()
+        # shutdown() cleared ownership; recording is gated by owner identity alone
+        service._outcome_owners.clear()
 
         # the late callback for the old, now-unregistered transaction must be dropped
         service._record_outcome(old_outcome, tx=old_tx)
         assert service.get_transaction_outcome("tx-old") is None
 
-        # sanity: a live registered incarnation still records (guard does not over-drop)
+        # sanity: the owning transaction still records (guard does not over-drop)
         live_tx = Mock()
         live_tx.tid = "tx-live"
         live_outcome = Mock()
         live_outcome.tx_id = "tx-live"
         live_outcome.expired.return_value = False
-        service._tx_incarnations["tx-live"] = live_tx
+        service._outcome_owners["tx-live"] = live_tx
         service._record_outcome(live_outcome, tx=live_tx)
         assert service.get_transaction_outcome("tx-live") is live_outcome
 

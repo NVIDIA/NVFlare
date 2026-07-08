@@ -163,7 +163,7 @@ class TestProducerSide:
 
     def test_unsolicited_confirm_cannot_certify(self):
         # fail-open hole guard: a CONFIRM for a receiver that was never served a terminal
-        # reply on THIS incarnation of the ref must be dropped -- otherwise a stale confirm
+        # reply in this life of the ref must be dropped -- otherwise a stale confirm
         # delayed across a ref_id reuse could certify (or pre-poison) a transfer that never
         # delivered a byte
         service = _make_service()

@@ -269,7 +269,7 @@ class _Ref:
                 return False
             if require_pending and to_receiver not in self._pending_confirms:
                 # a legitimate confirmation always follows a provisional terminal serve on
-                # THIS incarnation of the ref; an unsolicited/stale confirm (e.g. delayed
+                # the CURRENT life of this ref; an unsolicited/stale confirm (e.g. delayed
                 # across a ref_id reuse) must not certify -- or poison -- this transfer
                 self.tx.logger.warning(f"dropping unsolicited confirmation from {to_receiver} for ref {self.rid}")
                 return False
@@ -331,7 +331,7 @@ class _Ref:
         """Records the receiver-confirmed terminal status. Receiver truth wins; first confirm is final.
 
         Accepted only when a provisional serve is pending for this receiver on THIS
-        incarnation of the ref -- unsolicited or stale confirmations are dropped, so a
+        life of the ref -- unsolicited or stale confirmations are dropped, so a
         delayed confirm from a previous life of a reused ref_id can neither falsely
         certify nor pre-poison the new transfer.
         """
@@ -922,10 +922,13 @@ class DownloadService:
     # time so producers can query the aggregate result after termination. Guarded by
     # its own lock so outcome polling never contends with the chunk-serving _tx_lock.
     _tx_outcomes = {}
-    # Current live incarnation per tx_id (registered by new_transaction), so a
-    # transaction that terminates concurrently with a same-id retry cannot record
-    # its outcome over the new incarnation. Guarded by _outcome_lock.
-    _tx_incarnations = {}
+    # The transaction object currently entitled to record the outcome for its tx_id
+    # (registered by new_transaction). tx_ids are deliberately reused by retries
+    # (design: stable transfer ids make retries idempotent), so recording checks
+    # OBJECT identity against this map: a transaction that terminates concurrently
+    # with a same-id retry is no longer the owner and cannot record its stale outcome
+    # over the live one. Guarded by _outcome_lock.
+    _outcome_owners = {}
     # Waiters blocked on a transaction's terminal outcome (the awaitable facade). Guarded by
     # _outcome_lock; resolved inside _record_outcome so a waiter can never miss the outcome.
     _tx_waiters = {}
@@ -989,15 +992,15 @@ class DownloadService:
             receiver_idle_timeout=receiver_idle_timeout,
         )
         with cls._outcome_lock:
-            # a reused explicit tx_id must not surface the previous incarnation's
-            # outcome: purge any recorded outcome and register this incarnation as
-            # current so a concurrently-terminating older incarnation cannot record.
-            # Registration happens BEFORE the tx becomes monitor-visible in _tx_table:
-            # a tx the monitor can terminate is always incarnation-registered, so its
-            # terminal outcome can never be dropped as stale, and no dead incarnation
+            # a reused explicit tx_id must not surface the previous owner's outcome:
+            # purge any recorded outcome and register this transaction as the outcome
+            # owner, so a concurrently-terminating previous owner cannot record.
+            # Ownership is taken BEFORE the tx becomes monitor-visible in _tx_table:
+            # a tx the monitor can terminate always owns its outcome slot, so its
+            # terminal outcome can never be dropped as stale, and no dead owner
             # entry can be left behind by a terminate-before-register interleaving.
             cls._tx_outcomes.pop(tx.tid, None)
-            cls._tx_incarnations[tx.tid] = tx
+            cls._outcome_owners[tx.tid] = tx
 
         old_tx = None
         with cls._tx_lock:
@@ -1013,8 +1016,8 @@ class DownloadService:
 
         if old_tx:
             # terminal callbacks run outside the lock, as in delete_transaction(); the
-            # retired transaction's outcome is dropped by the incarnation guard because
-            # the new incarnation already owns the tid -- the retry is authoritative
+            # retired transaction's outcome is dropped by the owner guard because the
+            # new transaction already owns the tid -- the retry is authoritative
             old_tx.transaction_done(
                 TransactionDoneStatus.DELETED, on_outcome=functools.partial(cls._record_outcome, tx=old_tx)
             )
@@ -1066,12 +1069,12 @@ class DownloadService:
             cls._finished_refs.clear()
 
         with cls._outcome_lock:
-            # drop recorded outcomes and clear live incarnations. A monitor iteration
-            # mid-termination that blocked on _outcome_lock finds its incarnation gone
+            # drop recorded outcomes and clear outcome ownership. A monitor iteration
+            # mid-termination that blocked on _outcome_lock finds its ownership gone
             # once it acquires the lock, so its outcome drops in _record_outcome --
-            # the incarnation guard alone gates post-shutdown recording.
+            # the owner guard alone gates post-shutdown recording.
             cls._tx_outcomes.clear()
-            cls._tx_incarnations.clear()
+            cls._outcome_owners.clear()
             # unblock the awaitable facade: waiters resolve to None (service shut down
             # before the transaction terminated), never hang
             for waiters in cls._tx_waiters.values():
@@ -1114,11 +1117,11 @@ class DownloadService:
                 # resolve even from an expired record: it is still the recorded truth
                 waiter._resolve(existing)
                 return waiter
-            if transaction_id not in cls._tx_incarnations:
+            if transaction_id not in cls._outcome_owners:
                 # unknown, already-forgotten (outcome expired) or shut down: nothing will
                 # ever record an outcome for this id, so resolving with None immediately is
                 # the only way to honor "waiters can never hang". Race-free: _record_outcome
-                # swaps incarnation -> outcome under this same lock.
+                # swaps ownership -> recorded outcome under this same lock.
                 waiter._resolve(None)
                 return waiter
             cls._tx_waiters.setdefault(transaction_id, []).append(waiter)
@@ -1137,20 +1140,20 @@ class DownloadService:
 
     @classmethod
     def _record_outcome(cls, outcome: TransferOutcome, tx: _Transaction):
-        # tx is required so no call site can opt out of the incarnation guard:
-        # recording is legal only for the live registered incarnation.
+        # tx is required so no call site can opt out of the owner guard:
+        # recording is legal only for the transaction that owns the outcome slot.
         with cls._outcome_lock:
-            if cls._tx_incarnations.get(outcome.tx_id) is not tx:
+            if cls._outcome_owners.get(outcome.tx_id) is not tx:
                 # This outcome belongs to a dead generation and must be dropped:
-                #   - a newer same-tx_id incarnation (a retry) registered while this
-                #     transaction was terminating, or
-                #   - the incarnation was cleared by shutdown() (which also clears the
+                #   - a newer same-tx_id transaction (a retry) took ownership while this
+                #     one was terminating, or
+                #   - ownership was cleared by shutdown() (which also clears the
                 #     outcome table) or consumed by a prior terminal record.
                 # This single guard closes the stale-outcome race across shutdown and
                 # re-init: a recorder that blocked on _outcome_lock during shutdown and
-                # wins the lock afterward finds no live incarnation and drops here.
+                # wins the lock afterward finds it no longer owns the slot and drops here.
                 return
-            cls._tx_incarnations.pop(outcome.tx_id, None)
+            cls._outcome_owners.pop(outcome.tx_id, None)
             cls._tx_outcomes[outcome.tx_id] = outcome
             # resolve the awaitable facade: waiters are TransferWaiter objects (no user code
             # runs in _resolve), so setting them under the lock is safe and race-free
