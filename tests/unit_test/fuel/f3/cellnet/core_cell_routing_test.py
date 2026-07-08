@@ -83,6 +83,22 @@ def test_relay_alias_pipe_cell_reaches_server_job_through_connected_relay():
     assert ep.name == "relay-1"
 
 
+def test_server_routes_to_pipe_cell_through_cp_not_cj():
+    # NVBug 6423409: the server holds direct agents for both the site CP and
+    # the CJ. A message addressed to the site's pipe cell (e.g. a swarm
+    # cross-site download to the training subprocess) must route to the CP,
+    # which the pipe cell actually connects to. Under the #4801 hierarchical
+    # name site-1.job-123.active, longest-prefix resolution picked the CJ
+    # (site-1.job-123), which has no connection to the pipe cell and dropped
+    # the request.
+    cell = _routing_cell("server", ["site-1", "site-1.job-123"])
+
+    ep = cell._try_find_ep("site-1.cellpipe~plain~job-123~active", None)
+
+    assert ep is not None
+    assert ep.name == "site-1"
+
+
 def test_pipe_cell_reaches_site_ancestor_through_connected_cp():
     cell = _routing_cell("site-1.cellpipe~plain~job-123~active", ["site-1"])
 
