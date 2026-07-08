@@ -257,7 +257,7 @@ class ClientAPIExecutor(Executor):
         self._memory_gc_rounds = memory_gc_rounds
         self._cuda_empty_cache = cuda_empty_cache
         self._attach_timeout = attach_timeout
-        self._allow_reconnect = allow_reconnect
+        self._allow_reconnect = bool(allow_reconnect)
 
         self._backend: Optional[ClientAPIBackendSpec] = None
 
@@ -335,6 +335,17 @@ class ClientAPIExecutor(Executor):
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
         return result
 
+    def set_analytics_fire_fed_event(self, enabled: bool) -> None:
+        """Selects whether trainer LOG data is fired as a federation-scoped analytics event.
+
+        Cell backends call this during initialization when no ConvertToFedEvent widget is
+        configured. The default remains the local analytics path used by the in-process backend.
+
+        Args:
+            enabled: True to fire federation-scoped events directly; False to fire local events.
+        """
+        self._analytics_fire_fed_event = bool(enabled)
+
     def fire_log_analytics(self, fl_ctx: FLContext, dxo: DXO) -> None:
         """Converts trainer LOG data into an analytics event. Executor-owned surface.
 
@@ -342,14 +353,15 @@ class ClientAPIExecutor(Executor):
         regardless of execution mode - this replaces MetricRelay (ex-process) and the
         in-process executor's log callback as the single analytics-event ownership point.
 
-        The fire path is mode-selectable via ``self._analytics_fire_fed_event``:
+        The fire path is mode-selectable via ``set_analytics_fire_fed_event()``:
 
         - False (default): fires the local, un-prefixed ANALYTIC_EVENT_TYPE
           ("analytix_log_stats") and relies on the ConvertToFedEvent widget (added by
           BaseFedJob) to forward it to the server as "fed.analytix_log_stats".
         - True: fires a federation-scoped event directly to the server, matching what
-          MetricRelay does today for ex-process metrics. Cell backends may select this
-          path during initialize() when no ConvertToFedEvent widget is configured.
+          MetricRelay does today for ex-process metrics. Cell backends may select this path during
+          initialize() by calling ``set_analytics_fire_fed_event(True)`` when no ConvertToFedEvent
+          widget is configured.
 
         The two paths must land on the same server-side event name. ConvertToFedEvent prefixes
         the local event with "fed.", so the fed path must fire the already-prefixed

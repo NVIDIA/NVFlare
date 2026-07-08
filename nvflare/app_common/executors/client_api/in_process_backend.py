@@ -324,13 +324,18 @@ class InProcessBackend(ClientAPIBackendSpec):
             self.logger.error(f"invalid result format, expecting Dict, but got {type(result)}")
             return
 
-        if "key" in result:
-            result["tag"] = result.pop("key")
-        dxo = create_analytic_dxo(**result)
+        try:
+            if "key" in result:
+                result["tag"] = result.pop("key")
+            dxo = create_analytic_dxo(**result)
 
-        # single analytics-event ownership point: the executor decides local vs fed fire path
-        with self._engine.new_context() as fl_ctx:
-            self._context.executor.fire_log_analytics(fl_ctx, dxo)
+            # single analytics-event ownership point: the executor decides local vs fed fire path
+            with self._engine.new_context() as fl_ctx:
+                self._context.executor.fire_log_analytics(fl_ctx, dxo)
+        except Exception:
+            # DataBus callback failures otherwise disappear in the thread-pool Future, dropping the
+            # metric without any useful diagnostic.
+            self.logger.error(f"failed to process trainer LOG data: {secure_format_traceback()}")
 
     def _to_abort_callback(self, topic, data, databus):
         # keep the FIRST cause: later echoes (e.g. our own fail-fast fires) must not mask it

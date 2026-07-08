@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Optional
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
+from nvflare.app_common.app_constant import AppConstants
 
 if TYPE_CHECKING:
     # Import for typing only; avoids a runtime import cycle
@@ -54,9 +55,9 @@ class ClientAPIBackendContext:
 
     - call ``executor.fire_log_analytics(fl_ctx, dxo)`` for every trainer LOG message (the single
       LOG-to-analytics ownership point; see design "Configuration Surface"), and
-    - select the federation-scoped analytics path when appropriate by setting
-      ``executor._analytics_fire_fed_event = True`` in ``initialize()`` (Cell backends do this when
-      no ConvertToFedEvent widget is configured), and
+    - select the federation-scoped analytics path when appropriate by calling
+      ``executor.set_analytics_fire_fed_event(True)`` in ``initialize()`` (Cell backends do this
+      when no ConvertToFedEvent widget is configured), and
     - use the executor's FLComponent logging helpers.
     """
 
@@ -83,9 +84,9 @@ class ClientAPIBackendContext:
     # filters at the client edge; the Client API boundary is pass-through. Transfer type
     # (FULL/DIFF) stays a Client API concern (model_registry), decided separately.
     # task-name / rank contract (all modes)
-    train_task_name: str = "train"
-    evaluate_task_name: str = "validate"
-    submit_model_task_name: str = "submit_model"
+    train_task_name: str = AppConstants.TASK_TRAIN
+    evaluate_task_name: str = AppConstants.TASK_VALIDATION
+    submit_model_task_name: str = AppConstants.TASK_SUBMIT_MODEL
     train_with_evaluation: bool = False
     # memory management (all modes)
     memory_gc_rounds: int = 0

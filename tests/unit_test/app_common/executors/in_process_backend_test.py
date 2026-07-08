@@ -450,6 +450,21 @@ class TestLogRouting:
         finally:
             backend.finalize(FLContext())
 
+    def test_log_processing_error_is_logged_and_ignored(self, clean_databus, custom_dir, caplog):
+        executor = MagicMock()
+        executor.fire_log_analytics.side_effect = RuntimeError("analytics failed")
+        backend, _ = _initialized_backend(custom_dir, executor=executor)
+        try:
+            backend._log_result_callback(
+                TOPIC_LOG_DATA,
+                {"key": "accuracy", "value": 0.9, "data_type": AnalyticsDataType.SCALAR},
+                clean_databus,
+            )
+
+            assert "failed to process trainer LOG data" in caplog.text
+        finally:
+            backend.finalize(FLContext())
+
 
 class TestMetaPassThrough:
     def test_meta_uses_raw_full_and_context_task_names(self, custom_dir):

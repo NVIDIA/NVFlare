@@ -323,7 +323,8 @@ class TestConstructorValidation:
         # falsy-but-not-False values (None, 0, numpy.bool_(False)) are treated as "not set"
         # instead of misfiring.
         kwargs = dict(MODE_KWARGS[mode])
-        ClientAPIExecutor(allow_reconnect=falsy, **kwargs)
+        executor = ClientAPIExecutor(allow_reconnect=falsy, **kwargs)
+        assert executor._allow_reconnect is False
 
 
 class TestDispatch:
@@ -495,7 +496,7 @@ class TestAnalyticsOwnership:
 
     def _fire(self, fire_fed_event: bool):
         executor = ClientAPIExecutor(execution_mode="in_process")
-        executor._analytics_fire_fed_event = fire_fed_event
+        executor.set_analytics_fire_fed_event(fire_fed_event)
         engine = Mock()
         scopes = []
         engine.fire_event.side_effect = lambda event_type, ctx: scopes.append(
