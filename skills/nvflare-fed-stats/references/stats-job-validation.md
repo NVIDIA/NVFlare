@@ -1,0 +1,108 @@
+# Federated Statistics Job Validation
+
+Validate in the shared ladder order and stop at the first failed rung,
+reporting the product error. Statistics jobs add three rungs after the
+simulator run: output completeness, per-site parity, and global parity.
+
+## Ladder
+
+1. **Compile checks** — `python -m py_compile` on generated `client.py` and
+   `job.py`.
+2. **Import preflight** — pandas import; re-verify the `fastdigest` import
+   (first gated at selection time) only when quantiles are configured.
+3. **Recipe construction** — construct `FedStatsRecipe` with the generated
+   arguments without executing the job.
+4. **Simulator run** — execute `job.py` under `SimEnv`. The statistics job is
+   single-round and completes in seconds on typical tabular data; a hang
+   usually means `load_data()` cannot find a site's data path.
+5. **Output completeness** — locate the output JSON under the simulator
+   workspace (`.../server/simulate_job/<stats_output_path>`), parse it, and
+   assert against its actual hierarchy
+   `{feature: {statistic: {site: {dataset: value}}}}`: every expected numeric
+   feature appears at the top level; under each feature every configured
+   statistic appears; under each statistic every site plus `Global` appears;
+   and each site entry covers every dataset name. A value missing at one site
+   with a small partition may be the `min_count` cleanser working as designed
+   — check the site's count before calling it a failure, and report the
+   withholding either way.
+6. **Per-site parity** — recompute reference statistics for one site with an
+   agent-authored pandas snippet over that site's partition (never by
+   executing the user's original script) and compare against that site's
+   values in the output JSON. The controller rounds every persisted value to
+   its `precision` (4 digits by default), so compare count exactly and round
+   float references (sum, mean, stddev — pandas `std()` ddof=1) to that
+   precision before an exact compare; histogram bin counts must match when an
+   explicit range was configured. A mismatch beyond rounding is a failed
+   run — fix the generation, do not loosen the comparison. Two
+   statistics are approximate by design and exempt from exact parity:
+   quantiles (t-digest sketch; compare within a coarse tolerance) and
+   min/max (the default privacy filter adds calibrated noise; check
+   presence and plausibility, never exact equality).
+7. **Global parity** — completeness proves fields exist; this rung proves
+   the weighted aggregation is right. Recompute the global reference over
+   the union of all site partitions: `Global` count and sum exact; mean and
+   stddev (and var when configured) at the persisted precision, with the
+   pooled reference computed around the global mean using `(N - 1)`;
+   histogram bin counts equal to the sum of the site bin counts when an
+   explicit range was configured. A Global row that matches no
+   union-recompute is a failed run even when every per-site row is
+   correct.
+
+## Helper Separation
+
+Keep generated job code and validation helpers separate. `job.py` and
+`client.py` are the fedstats job; any optional output checker, parity
+checker, or summary script must go under `tools/` or `validation/` and be
+reported as a helper, not as part of the deployable NVFLARE job.
+
+## Statistics-Specific Failures
+
+- **`fastdigest` import error / Rust toolchain missing** — quantiles cannot
+  be computed. Report the product error; include quantiles only after a
+  successful preflight.
+- **Empty or missing site data path** — `load_data()` raised or returned no
+  DataFrame for a site. Verify the per-site path parameterization and the
+  partition step; do not fall back to sharing one site's data.
+- **All features excluded as non-numeric** — nothing to compute. Report the
+  observed dtypes and stop; do not coerce categorical codes into numerics to
+  make output appear.
+- **Histogram range errors or empty global histograms** — usually a per-site
+  range mismatch when no explicit `range` was configured; set an explicit
+  per-feature range from evidence or a user answer and rerun.
+- **Feature withheld at a site** — likely `min_count`; report the applied
+  threshold rather than padding results.
+- **Requested min/max absent from output** — output is filtered to
+  configured statistics; confirm `"min"`/`"max"` were actually placed in
+  `statistic_configs`. When configured they must appear, with noised
+  values (presence-and-plausibility check only).
+- **var/stddev silently missing from output** — the second round computes
+  them around the global mean; confirm `count`, `sum`, and `mean` were all
+  configured as prerequisites (see the dependency-expansion rule in
+  statistics-mapping.md).
+- **Histogram withheld at a site** — the bin-cap cleanser requires bins to be
+  under `max_bins_percent`% of the site's row count (20 bins needs >200
+  rows); reduce the bin count and rerun, or report the withholding.
+- **Schema mismatch across sites** — pre-split site files must share one
+  schema; on differing headers or column counts, fail closed and report the
+  differing sites instead of intersecting columns silently.
+- **Per-site dtype drift** — each client derives its feature list from its
+  own dtypes, so one stray string (a sentinel like "unknown" in a numeric
+  column) silently drops that feature at that site. When a feature is
+  missing at one site but numeric at the others, compare the per-site
+  inferred dtypes and report the drift as a data-quality finding ("site-2's
+  age parsed as text — check for sentinel strings"), distinct from
+  min_count withholding.
+
+## Reporting
+
+Report: the mapping outcomes (supported / noise-protected / unsupported),
+changed files, each ladder rung's status, the applied privacy parameters
+(described as heuristic disclosure-risk reductions, never as privacy
+guarantees), per-feature missing rates per site with cross-site divergence
+flagged, the exact output JSON path, and a compact per-site plus Global
+summary table of aggregates. Include the standing case-mix caveat: Global
+pools sites with different case mixes, so site rows can each contradict the
+Global trend (Simpson's effect) — compare site rows before acting on
+Global. Note visible skew where equal-width histogram bins are
+uninformative. Never include raw data rows or individual values; everything
+shown must already be an aggregate from the output JSON.
