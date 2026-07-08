@@ -488,6 +488,62 @@ def test_validate_skill_dir_requires_author_in_metadata(tmp_path):
     )
 
 
+@pytest.mark.parametrize(
+    "author",
+    [
+        "nvflare",  # bare project name, no contact
+        "Jane Doe <jane@gmail.com>",  # non-NVIDIA email
+        "federatedlearning@nvidia.com",  # email without a display name
+    ],
+)
+def test_validate_skill_dir_rejects_author_without_team_identity_format(tmp_path, author):
+    # The NVIDIA skills catalog convention: author is a team identity with an
+    # NVIDIA email so the support contact survives outside the repo.
+    skill_dir = tmp_path / "nvflare-bad-author"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: nvflare-bad-author\n"
+        "description: Test skill fixture.\n"
+        "metadata:\n"
+        f'  author: "{author}"\n'
+        '  min_flare_version: "2.8.0"\n'
+        "  blast_radius: read_only\n"
+        "  category: Test\n"
+        "---\n\n# Skill\n",
+        encoding="utf-8",
+    )
+
+    result = validate_skill_dir(skill_dir)
+
+    assert "skill-author-format-invalid" in _issue_codes(result)
+
+
+def test_validate_skill_dir_accepts_top_level_license_and_version(tmp_path):
+    # The NVIDIA skills catalog declares `license` and `version` at the top
+    # level; both must pass the top-level field check.
+    skill_dir = tmp_path / "nvflare-licensed"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: nvflare-licensed\n"
+        "description: Test skill fixture.\n"
+        "license: Apache-2.0\n"
+        'version: "0.1.0"\n'
+        "metadata:\n"
+        '  author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"\n'
+        '  min_flare_version: "2.8.0"\n'
+        "  blast_radius: read_only\n"
+        "  category: Test\n"
+        "---\n\n# Skill\n",
+        encoding="utf-8",
+    )
+
+    result = validate_skill_dir(skill_dir)
+
+    assert result.ok, result.issues
+
+
 def test_validate_skill_dir_accepts_optional_title(tmp_path):
     # NVCARPS allows an optional top-level display title.
     skill_dir = tmp_path / "nvflare-with-title"

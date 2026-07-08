@@ -33,13 +33,18 @@ REQUIRED_FRONTMATTER_FIELDS = ("name", "description")
 # `author` (name plus NVIDIA email inside the spec `metadata` map) is required
 # by the company skills guideline (NVCARPS).
 REQUIRED_METADATA_FIELDS = ("author", "min_flare_version", "blast_radius")
+# The NVIDIA skills catalog uses a team identity, never an individual: once
+# `npx skills add` copies the frontmatter out of the repo, `author` acts as the
+# support contact, and a personal inbox goes stale when people change teams.
+AUTHOR_RE = re.compile(r"^[^<>@]+ <[A-Za-z0-9._%+-]+@nvidia\.com>$")
 REQUIRED_PUBLIC_METADATA_FIELDS = ("category",)
 # The only frontmatter keys agentskills.io permits at the top level, plus
 # `title`, an optional display-name field the company skills guideline
-# (NVCARPS) allows at the top level. Everything else (NVFLARE custom fields)
-# must be nested under `metadata`.
+# (NVCARPS) allows at the top level, and `version`, which the NVIDIA skills
+# catalog (github.com/NVIDIA/skills) declares at the top level. Everything
+# else (NVFLARE custom fields) must be nested under `metadata`.
 SPEC_TOP_LEVEL_FIELDS = frozenset(
-    {"name", "title", "description", "license", "compatibility", "metadata", "allowed-tools"}
+    {"name", "title", "description", "license", "compatibility", "metadata", "allowed-tools", "version"}
 )
 PUBLIC_EXEMPT_STATUS = {"draft", "internal", "private"}
 # Company skills guideline (NVCARPS) constraints, enforced on top of the
@@ -87,9 +92,9 @@ class SkillFrontmatterError(ValueError):
 def skill_metadata(metadata: Mapping[str, Any]) -> dict:
     """Return the spec ``metadata`` sub-map where NVFLARE custom fields live.
 
-    Custom keys (min_flare_version, blast_radius, category, skill_version,
-    status, ...) are nested under the agentskills.io ``metadata`` map rather than
-    at the top level. Returns an empty dict when absent or malformed.
+    Custom keys (min_flare_version, blast_radius, category, status, ...) are
+    nested under the agentskills.io ``metadata`` map rather than at the top
+    level. Returns an empty dict when absent or malformed.
     """
     value = metadata.get("metadata")
     return value if isinstance(value, dict) else {}
@@ -160,6 +165,7 @@ def validate_skill_dir(skill_dir: Path | str) -> SkillValidationResult:
     if _is_public_skill(metadata):
         _validate_required_fields(sub, skill_file, issues, fields=REQUIRED_PUBLIC_METADATA_FIELDS, container="metadata")
     _validate_name_matches_directory(metadata.get("name"), path, skill_file, issues)
+    _validate_author(sub.get("author"), skill_file, issues)
     _validate_blast_radius(sub.get("blast_radius"), skill_file, issues)
     _validate_spec_constraints(metadata, skill_file, issues)
     _validate_skill_md_length(skill_file, issues)
@@ -258,6 +264,18 @@ def _validate_name_matches_directory(
             _issue(
                 "skill-name-directory-mismatch",
                 f"frontmatter name '{name}' must match directory name '{skill_dir.name}'",
+                skill_file,
+            )
+        )
+
+
+def _validate_author(author: Any, skill_file: Path, issues: list[SkillValidationIssue]) -> None:
+    if isinstance(author, str) and author.strip() and not AUTHOR_RE.match(author):
+        issues.append(
+            _issue(
+                "skill-author-format-invalid",
+                'metadata author must be a team identity with an NVIDIA email, e.g. "NVIDIA FLARE Team '
+                f'<federatedlearning@nvidia.com>"; got {author!r}',
                 skill_file,
             )
         )

@@ -1,12 +1,13 @@
 ---
 name: nvflare-diagnose-job
 description: "Diagnose failed, stalled, or suspicious NVFLARE jobs in simulation, POC, or production by collecting bounded evidence and mapping failure patterns to recovery actions."
+license: Apache-2.0
+version: "0.1.0"
 metadata:
-  author: "nvflare"
+  author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
   min_flare_version: "2.8.0"
   blast_radius: read_only
   category: Troubleshooting
-  skill_version: "0.1.0"
   tags:
     - nvflare
     - federated-learning
@@ -17,7 +18,6 @@ metadata:
   frameworks:
     - nvflare
   domain: ml
-  team: nvflare
 ---
 
 # NVFLARE Diagnose Job
