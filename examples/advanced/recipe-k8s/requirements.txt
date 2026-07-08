@@ -1,2 +1,1 @@
-nvflare~=2.9.0rc
-numpy
+nvflare[PT]~=2.9.0rc

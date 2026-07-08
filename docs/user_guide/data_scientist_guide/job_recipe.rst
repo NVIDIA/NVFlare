@@ -309,9 +309,10 @@ execution environment and deployment still determine which sites are present.
 
 For a complete production example, see the
 :github_nvflare_link:`Recipe job on Kubernetes clients <examples/advanced/recipe-k8s>`.
-It uses ``ProdEnv`` to submit to ``site-1`` and ``site-2`` in separate
-Kubernetes clusters, keeps GPU requirements in ``resource_spec``, and places
-the per-cluster job images and container settings in ``launcher_spec``.
+It uses ``ProdEnv`` to submit a PyTorch CIFAR-10 job to ``site-1`` and
+``site-2`` in separate Kubernetes clusters, keeps GPU requirements in
+``resource_spec``, and places the per-cluster job images and container
+settings in ``launcher_spec``.
 
 Execution Environments
 ----------------------

@@ -70,21 +70,34 @@ Before running the scripts, have:
 * three running Brev Kubernetes environments for ``server``, ``site-1``, and
   ``site-2``;
 * a DNS name or IP for the server that both sites can reach;
-* an NVFlare container image that all three environments can pull;
+* an NVFlare parent container image that all three environments can pull;
+* a PyTorch NVFlare job image that all three environments can pull;
 * the Brev CLI installed and logged in on your local workstation.
 
 Prepare and Copy Kits
 =====================
 
-From your local NVFlare checkout, set the server host and image, then run the
-prepare script:
+From your local NVFlare checkout, set the server host, parent image, and
+PyTorch workload image. The maintained Dockerfiles can build the two images;
+push them to a registry that all three environments can pull from:
 
 .. code-block:: shell
 
    export SERVER_HOST=server1.example.com
-   export IMAGE=registry.example.com/nvflare:dev
+   export IMAGE=registry.example.com/nvflare-parent:dev
+   export JOB_IMAGE=registry.example.com/nvflare-job:dev
+
+   docker build -t "$IMAGE" -f docker/Dockerfile.parent .
+   docker build -t "$JOB_IMAGE" -f docker/Dockerfile.job .
+   docker push "$IMAGE"
+   docker push "$JOB_IMAGE"
 
    bash docs/user_guide/admin_guide/deployment/brev_scripts/prepare_brev_startup_kits.sh
+
+``IMAGE`` runs the long-lived parent processes and includes the Kubernetes
+launcher dependencies. ``JOB_IMAGE`` runs the submitted CIFAR-10 workloads and
+includes PyTorch and torchvision. They may be the same custom image only when
+that image satisfies both sets of requirements.
 
 By default, the script copies kits to Brev environments named ``server``,
 ``site-1``, and ``site-2``.
@@ -148,10 +161,10 @@ logs.
 Submit a Recipe Job
 ===================
 
-After all three participants are running, submit the NumPy Recipe example from
-the same local NVFlare checkout used to prepare the startup kits. Find the
-latest admin startup directory, then pass the image that all three Brev
-clusters can pull:
+After all three participants are running, submit the PyTorch CIFAR-10 Recipe
+example from the same local NVFlare checkout used to prepare the startup kits.
+Find the latest admin startup directory, then pass the workload image that all
+three Brev clusters can pull:
 
 .. code-block:: shell
 
@@ -161,9 +174,8 @@ clusters can pull:
    cd examples/advanced/recipe-k8s
    python3 job.py \
      --startup-kit "$ADMIN_KIT" \
-     --site-1-image "$IMAGE" \
-     --site-2-image "$IMAGE" \
-     --server-image "$IMAGE"
+     --image "$JOB_IMAGE" \
+     --server-image "$JOB_IMAGE"
 
 The ``--server-image`` argument is needed here because this quickstart prepares
 the server with ``ServerK8sJobLauncher`` as well as preparing both clients with
