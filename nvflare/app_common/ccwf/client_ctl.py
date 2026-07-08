@@ -461,7 +461,16 @@ class ClientSideController(Executor, TaskController):
                 try:
                     self.do_learn_task(t.task_name, t.task_data, t.fl_ctx, t.abort_signal)
                 except:
-                    self.logger.log(f"exception from do_learn_task: {secure_format_traceback()}")
+                    # Snapshot before logging: end-workflow may trigger the
+                    # signal while logging yields, after the task already failed.
+                    task_was_aborted = t.abort_signal.triggered
+                    self.log_exception(t.fl_ctx, "exception from do_learn_task")
+                    if not task_was_aborted:
+                        # report the failure to the server so the job ends with
+                        # an error status instead of FINISHED:COMPLETED. An
+                        # aborted task (e.g. end-of-workflow teardown) is
+                        # expected to raise and is not a job failure.
+                        self.update_status(action="do_learn_task", error=ReturnCode.EXECUTION_EXCEPTION)
                 finally:
                     # force garbage collection
                     gc.collect()
