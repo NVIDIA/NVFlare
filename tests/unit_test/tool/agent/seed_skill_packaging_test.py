@@ -42,6 +42,8 @@ def test_seed_skill_manifest_includes_public_skills_and_skips_shared_references(
     names = {skill["name"] for skill in manifest["skills"]}
     assert manifest["findings"] == []
     assert SEED_SKILLS.issubset(names)
+    autofl = next(skill for skill in manifest["skills"] if skill["name"] == "nvflare-autofl")
+    assert autofl["skill_version"] == "0.1.0"
     assert "_shared" not in names
     assert all(skill["relative_path"] != "_shared" for skill in manifest["skills"])
 

@@ -88,18 +88,23 @@ def normalize_skill_metadata(frontmatter: Mapping[str, Any]) -> dict[str, Any]:
     """Return NVFLARE metadata from spec-compliant or legacy frontmatter."""
     normalized = dict(frontmatter)
     extension = frontmatter.get("metadata")
-    if extension is None:
-        return normalized
-    if not isinstance(extension, dict):
+    if extension is not None and not isinstance(extension, dict):
         raise SkillFrontmatterError("SKILL.md frontmatter field 'metadata' must be a mapping")
-    for field in NVFLARE_METADATA_FIELDS:
-        nested_value = extension.get(field)
-        if nested_value is None:
-            continue
-        legacy_value = frontmatter.get(field)
-        if legacy_value is not None and legacy_value != nested_value:
-            raise SkillFrontmatterError(f"conflicting values for frontmatter field '{field}'")
-        normalized[field] = nested_value
+    if extension is not None:
+        for field in NVFLARE_METADATA_FIELDS:
+            nested_value = extension.get(field)
+            if nested_value is None:
+                continue
+            legacy_value = frontmatter.get(field)
+            if legacy_value is not None and legacy_value != nested_value:
+                raise SkillFrontmatterError(f"conflicting values for frontmatter field '{field}'")
+            normalized[field] = nested_value
+    catalog_version = frontmatter.get("version")
+    legacy_version = normalized.get("skill_version")
+    if catalog_version is not None:
+        if legacy_version is not None and legacy_version != catalog_version:
+            raise SkillFrontmatterError("conflicting values for frontmatter fields 'version' and 'skill_version'")
+        normalized["skill_version"] = catalog_version
     return normalized
 
 
