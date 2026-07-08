@@ -20,7 +20,7 @@ from unittest.mock import patch
 import pytest
 
 from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
-from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
+from nvflare.job_config.script_runner import FrameworkType, PipeConnectType, ScriptRunner
 
 
 class TestScriptRunner:
@@ -86,6 +86,22 @@ class TestScriptRunner:
         assert runner._launch_once is False
         assert runner._shutdown_timeout == 10.0
         assert runner._launch_external_process is False
+
+    @pytest.mark.parametrize(
+        "connect_type",
+        [PipeConnectType.VIA_CP, PipeConnectType.VIA_RELAY, PipeConnectType.VIA_ROOT],
+    )
+    def test_valid_pipe_connect_types_accepted(self, base_script_runner_params, connect_type):
+        """All PipeConnectType values are accepted, including VIA_ROOT."""
+        runner = ScriptRunner(launch_external_process=True, pipe_connect_type=connect_type, **base_script_runner_params)
+
+        assert runner._pipe_connect_type == connect_type
+
+    def test_invalid_pipe_connect_type_rejected(self, base_script_runner_params):
+        with pytest.raises(ValueError, match="invalid pipe_connect_type"):
+            ScriptRunner(
+                launch_external_process=True, pipe_connect_type="via_carrier_pigeon", **base_script_runner_params
+            )
 
     def test_subprocess_launcher_creation_with_default_values(self, mock_file_system, base_script_runner_params):
         """Test that SubprocessLauncher is created with default launch_once and shutdown_timeout."""

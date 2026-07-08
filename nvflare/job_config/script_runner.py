@@ -165,7 +165,7 @@ class BaseScriptRunner:
 
         if pipe_connect_type:
             check_str("pipe_connect_type", pipe_connect_type)
-            valid_connect_types = [PipeConnectType.VIA_CP, PipeConnectType.VIA_RELAY, PipeConnectType.VIA_RELAY]
+            valid_connect_types = [PipeConnectType.VIA_CP, PipeConnectType.VIA_RELAY, PipeConnectType.VIA_ROOT]
             if pipe_connect_type not in valid_connect_types:
                 raise ValueError(f"invalid pipe_connect_type '{pipe_connect_type}': must be {valid_connect_types}")
 
