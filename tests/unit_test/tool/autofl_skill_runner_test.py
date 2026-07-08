@@ -880,6 +880,7 @@ def test_code_candidate_keeps_improvement_and_restores_discard_without_git(tmp_p
     assert runner.main(["prepare", str(job), "--name", "bad_algo", "--hypothesis", "try a regression"]) == 0
     bad_draft = tmp_path / ".nvflare" / "autofl" / "candidates" / "bad_algo" / "source"
     bad_draft.joinpath("client.py").write_text("ALGORITHM = 'regression'\n", encoding="utf-8")
+    bad_draft.joinpath("discarded_algorithm.py").write_text("VALUE = 'discarded'\n", encoding="utf-8")
 
     def regressed_run(run_def, **kwargs):
         return runner.RunRecord(
@@ -889,6 +890,7 @@ def test_code_candidate_keeps_improvement_and_restores_discard_without_git(tmp_p
     monkeypatch.setattr(runner, "run_job", regressed_run)
     assert runner.main(["evaluate", str(job)]) == 0
     assert client.read_text(encoding="utf-8") == "from new_algorithm import VALUE\n"
+    assert not tmp_path.joinpath("discarded_algorithm.py").exists()
     records = runner.load_results(tmp_path / "results.tsv")
     assert [record.status for record in records] == ["baseline", "keep", "discard"]
     assert records[1].changed_files == "client.py,new_algorithm.py"
@@ -1026,6 +1028,7 @@ def test_candidate_job_help_failure_restores_workspace(tmp_path, monkeypatch):
     assert runner.main(["prepare", str(job), "--name", "help_failure", "--hypothesis", "change code"]) == 0
     draft = tmp_path / ".nvflare" / "autofl" / "candidates" / "help_failure" / "source"
     draft.joinpath("client.py").write_text("ALGORITHM = 'candidate'\n", encoding="utf-8")
+    draft.joinpath("temporary_algorithm.py").write_text("VALUE = 'candidate'\n", encoding="utf-8")
 
     def fail_job_help(*args, **kwargs):
         raise OSError("simulated missing Python executable")
@@ -1034,6 +1037,20 @@ def test_candidate_job_help_failure_restores_workspace(tmp_path, monkeypatch):
 
     assert runner.main(["evaluate", str(job)]) == 2
     assert client.read_text(encoding="utf-8") == "ALGORITHM = 'baseline'\n"
+    assert not tmp_path.joinpath("temporary_algorithm.py").exists()
+
+
+def test_restore_best_source_removes_explicit_created_file(tmp_path):
+    runner = _load_runner()
+    workspace = tmp_path / "workspace"
+    best_source = tmp_path / "best"
+    workspace.mkdir()
+    best_source.mkdir()
+    workspace.joinpath("created_algorithm.py").write_text("VALUE = 'candidate'\n", encoding="utf-8")
+
+    runner.restore_best_source(workspace, best_source, {}, [], ["created_algorithm.py"])
+
+    assert not workspace.joinpath("created_algorithm.py").exists()
 
 
 def test_keyboard_interrupt_during_candidate_import_restores_workspace(tmp_path, monkeypatch):

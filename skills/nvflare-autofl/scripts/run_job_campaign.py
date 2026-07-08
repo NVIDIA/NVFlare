@@ -882,9 +882,15 @@ def apply_candidate_source(workspace: Path, draft_source: Path, changed: Sequenc
         copy_relative_file(draft_source, workspace, relative)
 
 
-def restore_best_source(workspace: Path, best_source: Path, best_files: Dict[str, str], changed: Sequence[str]) -> None:
-    for value in changed:
-        relative = safe_relative_path(workspace, value)
+def restore_best_source(
+    workspace: Path,
+    best_source: Path,
+    best_files: Dict[str, str],
+    changed: Sequence[str],
+    created: Sequence[str],
+) -> None:
+    restore_paths = {safe_relative_path(workspace, value) for value in list(changed) + list(created)}
+    for relative in sorted(restore_paths):
         destination = workspace / relative
         if relative in best_files:
             copy_relative_file(best_source, workspace, relative)
@@ -2669,7 +2675,7 @@ def finalize_candidate_result(
                 }
             )
         else:
-            restore_best_source(job.parent, best_source, best_files, changed)
+            restore_best_source(job.parent, best_source, best_files, changed, created)
 
         manifest.update(
             {
@@ -2700,7 +2706,7 @@ def finalize_candidate_result(
             if previous_snapshot is not None:
                 rollback_best_snapshot(paths["snapshot_root"], previous_snapshot)
                 previous_snapshot = None
-            restore_best_source(job.parent, paths["snapshot_root"] / "source", best_files, changed)
+            restore_best_source(job.parent, paths["snapshot_root"] / "source", best_files, changed, created)
             if rollback_files:
                 restore_file_versions(rollback_files)
         except BaseException as rollback_error:
@@ -2759,7 +2765,7 @@ def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
             raise ValueError("candidate changes budget.fixed_training_budget")
         candidate_config = candidate_campaign_config(candidate_config, config, args, schema)
     except BaseException:
-        restore_best_source(workspace, best_source, best_files, changed)
+        restore_best_source(workspace, best_source, best_files, changed, created)
         raise
 
     if args.target_env != "sim":
@@ -2807,10 +2813,10 @@ def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
             config=config,
         )
     except BaseException:
-        restore_best_source(workspace, best_source, best_files, changed)
+        restore_best_source(workspace, best_source, best_files, changed, created)
         raise
     if run_record.status == INFRASTRUCTURE_RETRY:
-        restore_best_source(workspace, best_source, best_files, changed)
+        restore_best_source(workspace, best_source, best_files, changed, created)
         manifest["status"] = "prepared"
         manifest["result"] = {"failure_reason": run_record.failure_reason}
         manifest["updated_at"] = utc_now()
@@ -2878,7 +2884,7 @@ def abandon_candidate(args: argparse.Namespace, job: Path) -> int:
     if manifest.get("status") == "ready_for_external_execution":
         if not workspace_matches_snapshot(workspace, draft_source, file_map(draft_source)):
             raise ValueError("materialized candidate source changed after validation")
-        restore_best_source(workspace, best_source, best_files, changed)
+        restore_best_source(workspace, best_source, best_files, changed, created)
     elif not workspace_matches_snapshot(workspace, best_source, best_files):
         raise ValueError("job workspace differs from the recorded best candidate")
     manifest["status"] = "abandoned"
