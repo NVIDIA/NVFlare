@@ -444,13 +444,14 @@ class ClientAPIExecutor(Executor):
         }
 
     def _create_backend(self) -> ClientAPIBackendSpec:
-        factory = self._backend_registry().get(self._execution_mode)
+        registry = self._backend_registry()
+        factory = registry.get(self._execution_mode)
         if factory is None:
             # Unreachable via the public constructor (execution_mode is validated there);
             # guards subclasses that override _backend_registry().
             raise ValueError(
                 f"no backend factory registered for execution_mode '{self._execution_mode}': "
-                f"registered modes are {list(self._backend_registry().keys())}"
+                f"registered modes are {list(registry.keys())}"
             )
         return factory()
 

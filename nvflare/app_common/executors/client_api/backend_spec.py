@@ -135,7 +135,6 @@ class ClientAPIBackendSpec(ABC):
             context: the frozen backend configuration and executor back-reference.
             fl_ctx: the FLContext of the START_RUN event.
         """
-        pass
 
     @abstractmethod
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
@@ -162,7 +161,6 @@ class ClientAPIBackendSpec(ABC):
         Returns:
             The result Shareable (an error reply on failure/abort - never None).
         """
-        pass
 
     @abstractmethod
     def handle_event(self, event_type: str, fl_ctx: FLContext) -> None:
@@ -177,7 +175,6 @@ class ClientAPIBackendSpec(ABC):
             event_type: the fired event type.
             fl_ctx: the FLContext of the event.
         """
-        pass
 
     @abstractmethod
     def finalize(self, fl_ctx: FLContext) -> None:
@@ -194,4 +191,3 @@ class ClientAPIBackendSpec(ABC):
         Args:
             fl_ctx: the FLContext of the END_RUN event.
         """
-        pass

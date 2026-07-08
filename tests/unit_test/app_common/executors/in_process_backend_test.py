@@ -199,6 +199,45 @@ class TestInitializeAndFinalize:
         assert not _backend_callbacks_subscribed(clean_databus, backend)
         assert not backend._task_fn_thread.is_alive()
 
+    def test_initialize_configures_memory_management(self, custom_dir):
+        backend, _ = _initialized_backend(custom_dir, memory_gc_rounds=3, cuda_empty_cache=True)
+        try:
+            assert backend._client_api._memory_gc_rounds == 3
+            assert backend._client_api._cuda_empty_cache is True
+        finally:
+            backend.finalize(FLContext())
+
+    def test_finalize_logs_stop_publish_failure(self, exited_custom_dir, caplog):
+        backend, _ = _initialized_backend(exited_custom_dir)
+        backend._task_fn_thread.join(timeout=1.0)
+        backend._event_manager.fire_event = Mock(side_effect=RuntimeError("stop failed"))
+
+        backend.finalize(FLContext())
+
+        assert "stop failed" in caplog.text
+
+    def test_finalize_logs_thread_join_failure(self, exited_custom_dir, caplog):
+        backend, _ = _initialized_backend(exited_custom_dir)
+        backend._task_fn_thread.join(timeout=1.0)
+        thread = Mock()
+        thread.is_alive.return_value = True
+        thread.join.side_effect = RuntimeError("join failed")
+        backend._task_fn_thread = thread
+
+        backend.finalize(FLContext())
+
+        assert "join failed" in caplog.text
+
+    def test_unwind_logs_cleanup_failure(self, caplog):
+        backend = InProcessBackend()
+        backend._data_bus = Mock()
+        backend._subscribed = True
+        backend._data_bus.unsubscribe.side_effect = RuntimeError("unsubscribe failed")
+
+        backend._unwind()
+
+        assert "unsubscribe failed" in caplog.text
+
 
 class TestExecute:
     def test_execute_round_trip(self, clean_databus, custom_dir):
@@ -272,6 +311,17 @@ class TestExecute:
             assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
             assert elapsed < 0.5, "a dead trainer must be detected before waiting for a result"
             assert "trainer thread exited" in backend._abort_reason
+        finally:
+            backend.finalize(FLContext())
+
+    def test_execute_detects_trainer_exit_while_waiting(self, clean_databus, custom_dir, monkeypatch):
+        backend, fl_ctx = _initialized_backend(custom_dir, result_wait_timeout=2.0)
+        monkeypatch.setattr(backend, "_trainer_thread_is_alive", Mock(side_effect=[True, False]))
+        try:
+            result = backend.execute("train", Shareable(), fl_ctx, Signal())
+
+            assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+            assert backend._abort_reason == "trainer thread exited before producing a result"
         finally:
             backend.finalize(FLContext())
 
@@ -362,6 +412,22 @@ class TestExecute:
                 backend.execute("train", Shareable(), fl_ctx, Signal())
         finally:
             backend.finalize(FLContext())
+
+    def test_execute_exception_returns_execution_exception(self, clean_databus, custom_dir, monkeypatch):
+        backend, fl_ctx = _initialized_backend(custom_dir)
+        try:
+            monkeypatch.setattr(backend, "_prepare_task_meta", Mock(side_effect=RuntimeError("boom")))
+
+            result = backend.execute("train", Shareable(), fl_ctx, Signal())
+
+            assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+            assert backend._abort_reason is not None
+        finally:
+            backend.finalize(FLContext())
+
+    def test_handle_event_is_noop(self):
+        backend = InProcessBackend()
+        backend.handle_event("custom_event", FLContext())
 
 
 class TestMultiBackend:

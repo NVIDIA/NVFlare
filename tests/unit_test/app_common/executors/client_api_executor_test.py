@@ -422,12 +422,28 @@ class TestBackendPlumbing:
         executor.handle_event(EventType.ABOUT_TO_END_RUN, fl_ctx)
         assert ("handle_event", EventType.ABOUT_TO_END_RUN) in backend.calls
 
+    def test_backend_event_exception_is_logged_and_ignored(self):
+        executor, backend, fl_ctx, _ = self._make_started_executor()
+        backend.handle_event = Mock(side_effect=RuntimeError("event failed"))
+
+        executor.handle_event(EventType.ABOUT_TO_END_RUN, fl_ctx)
+
+        assert executor._backend is backend
+
     def test_end_run_finalizes_and_clears_backend(self):
         executor, backend, fl_ctx, _ = self._make_started_executor()
         executor.handle_event(EventType.END_RUN, fl_ctx)
         assert "finalize" in backend.calls
         reply = executor.execute("train", Shareable(), fl_ctx, Signal())
         assert reply.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+
+    def test_backend_finalize_exception_is_logged_and_ignored(self):
+        executor, backend, fl_ctx, _ = self._make_started_executor()
+        backend.finalize = Mock(side_effect=RuntimeError("finalize failed"))
+
+        executor.handle_event(EventType.END_RUN, fl_ctx)
+
+        assert executor._backend is None
 
     def test_backend_exception_in_execute_becomes_error_reply(self):
         executor, backend, fl_ctx, _ = self._make_started_executor()
@@ -489,6 +505,16 @@ class TestBackendPlumbing:
     def test_backend_spec_is_abstract(self):
         with pytest.raises(TypeError):
             ClientAPIBackendSpec()
+
+    def test_missing_backend_factory_reports_registered_modes(self, monkeypatch):
+        executor = ClientAPIExecutor(execution_mode="in_process")
+        registry = Mock(return_value={})
+        monkeypatch.setattr(executor, "_backend_registry", registry)
+
+        with pytest.raises(ValueError, match=r"registered modes are \[\]"):
+            executor._create_backend()
+
+        registry.assert_called_once_with()
 
 
 class TestAnalyticsOwnership:
