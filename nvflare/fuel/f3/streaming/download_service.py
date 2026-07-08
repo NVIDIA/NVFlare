@@ -19,6 +19,7 @@ import weakref
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Optional, Tuple
 
+from nvflare.apis.fl_constant import SystemConfigs
 from nvflare.apis.signal import Signal
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
@@ -33,6 +34,7 @@ from nvflare.fuel.f3.streaming.transfer_outcome import (  # noqa: F401 (re-expor
     terminal_state_for_done_status,
 )
 from nvflare.fuel.f3.streaming.transfer_progress import TransferProgressState
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception
 
@@ -172,6 +174,57 @@ class _PropKey:
     STATE = "state"
     DATA = "data"
     STATUS = "status"
+    # Receiver-confirmed completion (F3-2). All three keys are OPTIONAL on the wire so both
+    # version skews interop with legacy peers: an old receiver never sends CONFIRM_CAPABLE and
+    # gets today's producer-served semantics; an old producer never sends CONFIRM_EXPECTED so a
+    # new receiver never confirms toward it.
+    CONFIRM = "confirm"  # receiver -> producer: terminal receiver truth (a DownloadStatus value)
+    CONFIRM_CAPABLE = "confirm_capable"  # receiver -> producer, per request: will confirm if asked
+    CONFIRM_EXPECTED = "confirm_expected"  # producer -> receiver, per reply: confirmations consumed
+
+
+# Runtime kill-switch for receiver-confirmed completion. The wire behavior is doubly gated --
+# per-message capability advertisement AND this config var on each side -- so a field issue in a
+# mixed-version fleet is mitigated by configuration without a code revert.
+RECEIVER_CONFIRM_CONFIG_VAR = "streaming_receiver_confirm_enabled"
+_receiver_confirm_cached = None
+
+
+def _receiver_confirm_enabled() -> bool:
+    global _receiver_confirm_cached
+    if _receiver_confirm_cached is None:
+        try:
+            _receiver_confirm_cached = bool(
+                ConfigService.get_bool_var(
+                    RECEIVER_CONFIRM_CONFIG_VAR, conf=SystemConfigs.APPLICATION_CONF, default=True
+                )
+            )
+        except Exception:
+            # unconfigured environments (e.g. bare unit tests) default to enabled
+            _receiver_confirm_cached = True
+    return _receiver_confirm_cached
+
+
+# Per-(transfer, receiver) budgets (F3-3). System defaults resolved from config vars; explicit
+# per-transaction values win. None (unset everywhere) disables enforcement for that budget --
+# the whole-transaction timeout then remains the only backstop, exactly today's behavior.
+RECEIVER_ACQUIRE_TIMEOUT_CONFIG_VAR = "streaming_receiver_acquire_timeout"
+RECEIVER_IDLE_TIMEOUT_CONFIG_VAR = "streaming_receiver_idle_timeout"
+
+
+def _resolve_receiver_budget(explicit, var_name: str):
+    if explicit is not None:
+        value = float(explicit)
+        if value <= 0:
+            raise ValueError(f"receiver budget must be positive, got {explicit}")
+        return value
+    try:
+        value = ConfigService.get_float_var(var_name, conf=SystemConfigs.APPLICATION_CONF, default=None)
+    except Exception:
+        return None
+    if value is None or value <= 0:
+        return None
+    return float(value)
 
 
 class _Ref:
@@ -191,6 +244,14 @@ class _Ref:
         self.obj = obj
         self.num_receivers_done = 0
         self.receiver_statuses = {}
+        # producer-served terminal statuses awaiting the receiver's confirmation; only
+        # finalized (confirmed or legacy-served) statuses live in receiver_statuses
+        self._pending_confirms = {}
+        # unconditional per-receiver liveness (F3-3): receiver -> last activity timestamp,
+        # updated on every request regardless of whether a progress_cb is configured -- so a
+        # live receiver can no longer mask a stalled one behind the tx-wide last_active_time
+        self._receiver_activity = {}
+        self._created_time = time.time()
         self._downloaded_to_all_called = False
         self._receiver_progress = {}
         self._terminal_progress_state = None
@@ -200,12 +261,24 @@ class _Ref:
         self.tx.mark_active()
 
     def obj_downloaded(self, to_receiver: str, status: str):
+        self._finalize_receiver(to_receiver, status)
+
+    def _finalize_receiver(self, to_receiver: str, status: str, require_pending: bool = False) -> bool:
         # Status recording is guarded so terminal-outcome snapshots taken on the
         # monitor thread never observe a half-updated map; user callbacks run
-        # outside the lock.
+        # outside the lock. The whole decision (dedup, pending-guard, pending pop,
+        # record, all-done latch) is one critical section, so a duplicate serve can
+        # never resurrect a pending entry around a racing finalization.
         with self._progress_lock:
             if to_receiver in self.receiver_statuses:
-                return
+                return False
+            if require_pending and to_receiver not in self._pending_confirms:
+                # a legitimate confirmation always follows a provisional terminal serve on
+                # THIS incarnation of the ref; an unsolicited/stale confirm (e.g. delayed
+                # across a ref_id reuse) must not certify -- or poison -- this transfer
+                self.tx.logger.warning(f"dropping unsolicited confirmation from {to_receiver} for ref {self.rid}")
+                return False
+            self._pending_confirms.pop(to_receiver, None)
 
             self.receiver_statuses[to_receiver] = status
             self.num_receivers_done = len(self.receiver_statuses)
@@ -235,10 +308,125 @@ class _Ref:
                 f"downloaded_to_all of {type(self.obj)} for ref {self.rid}",
                 self.obj.downloaded_to_all,
             )
+        return True
+
+    def obj_served(self, to_receiver: str, status: str, expect_confirm: bool):
+        """Records the producer-served terminal status for a receiver.
+
+        Legacy receivers (expect_confirm=False) finalize immediately: served EOF/ERROR is the
+        only truth available. Confirm-capable receivers are recorded as PROVISIONAL only -- the
+        receiver's confirmation (obj_confirmed) finalizes them. This is what makes accounting
+        retry-aware: while the record is provisional, a later serve for the same receiver
+        overwrites it -- a lost terminal reply healed by a retry is not stuck at the first
+        served status -- and the confirmation supersedes any provisional state (a receiver-side
+        finalization failure after the last chunk turns a served-EOF SUCCESS into a confirmed
+        FAILED). Once the receiver confirms, its status is final: a receiver that confirms
+        FAILED has given up (it confirms only on its own terminal exits).
+        """
+        if not expect_confirm:
+            self.obj_downloaded(to_receiver, status)
+            return
+        with self._progress_lock:
+            if to_receiver in self.receiver_statuses:
+                # already finalized -- a late duplicate serve must not resurrect a provisional
+                return
+            self._pending_confirms[to_receiver] = status
+
+    def obj_confirmed(self, to_receiver: str, status: str) -> bool:
+        """Records the receiver-confirmed terminal status. Receiver truth wins; first confirm is final.
+
+        Accepted only when a provisional serve is pending for this receiver on THIS
+        incarnation of the ref -- unsolicited or stale confirmations are dropped, so a
+        delayed confirm from a previous life of a reused ref_id can neither falsely
+        certify nor pre-poison the new transfer.
+        """
+        if status not in (DownloadStatus.SUCCESS, DownloadStatus.FAILED):
+            self.tx.logger.error(f"ignoring confirmation with invalid status '{status}' from {to_receiver}")
+            return False
+        accepted = self._finalize_receiver(to_receiver, status, require_pending=True)
+        if accepted:
+            # the receiver's truth is the terminal progress state for this receiver
+            self.emit_progress(
+                receiver_id=to_receiver,
+                state=(
+                    TransferProgressState.COMPLETED
+                    if status == DownloadStatus.SUCCESS
+                    else TransferProgressState.FAILED
+                ),
+                force=True,
+            )
+        return accepted
 
     def snapshot_receiver_statuses(self) -> dict:
         with self._progress_lock:
             return dict(self.receiver_statuses)
+
+    def snapshot_pending_confirms(self) -> dict:
+        with self._progress_lock:
+            return dict(self._pending_confirms)
+
+    def mark_receiver_active(self, receiver: str):
+        with self._progress_lock:
+            self._receiver_activity[receiver] = time.time()
+
+    def snapshot_receiver_activity(self) -> dict:
+        with self._progress_lock:
+            return dict(self._receiver_activity)
+
+    def enforce_budgets(
+        self, now: float, acquire_timeout, idle_timeout, expected_receivers, tx_acquired_receivers=None
+    ) -> list:
+        """Finalizes FAILED for receivers whose acquire or idle budget is exhausted.
+
+        A budget failure counts toward completion (via obj_downloaded), so the transaction's
+        aggregate outcome resolves on the next monitor pass instead of waiting for the whole
+        transaction TTL. This also bounds a lost fire-and-forget confirmation: the receiver
+        stops making requests after EOF, so its idle budget finalizes it FAILED (fail-closed).
+
+        Returns: list of (receiver, reason) that were failed on this pass.
+        """
+        failures = []
+        with self._progress_lock:
+            final = set(self.receiver_statuses)
+            activity = dict(self._receiver_activity)
+        if idle_timeout is not None:
+            for receiver, last_active in activity.items():
+                if receiver in final:
+                    continue
+                idle = now - last_active
+                if idle > idle_timeout:
+                    failures.append((receiver, f"idle budget exhausted: {idle:.1f}s > {idle_timeout}s"))
+        if acquire_timeout is not None and expected_receivers:
+            waited = now - self._created_time
+            if waited > acquire_timeout:
+                for receiver in expected_receivers:
+                    if receiver in final or receiver in activity:
+                        continue
+                    if tx_acquired_receivers is not None and receiver in tx_acquired_receivers:
+                        # acquired at TRANSACTION level: a receiver working through the
+                        # transaction's refs sequentially must not be failed on refs it
+                        # has not reached yet
+                        continue
+                    failures.append(
+                        (
+                            receiver,
+                            f"acquire budget exhausted: no pull within {acquire_timeout}s (waited {waited:.1f}s)",
+                        )
+                    )
+        enforced = []
+        for receiver, reason in failures:
+            with self._progress_lock:
+                if receiver in self.receiver_statuses:
+                    continue  # finalized (e.g. confirmed) between snapshot and enforcement: truth wins
+                if self._receiver_activity.get(receiver) != activity.get(receiver):
+                    continue  # activity advanced past the snapshot: not actually idle
+                self._pending_confirms.pop(receiver, None)
+            if not self._finalize_receiver(receiver, DownloadStatus.FAILED):
+                continue
+            self.tx.logger.warning(f"receiver {receiver} failed for ref {self.rid}: {reason}")
+            self.emit_progress(receiver_id=receiver, state=TransferProgressState.FAILED, force=True)
+            enforced.append((receiver, reason))
+        return enforced
 
     def emit_progress(
         self,
@@ -403,6 +591,10 @@ class _Transaction:
         progress_cb: Optional[Callable] = None,
         progress_interval: float = 30.0,
         outcome_cb: Optional[Callable] = None,
+        receiver_ids=None,
+        min_receivers: Optional[int] = None,
+        receiver_acquire_timeout: Optional[float] = None,
+        receiver_idle_timeout: Optional[float] = None,
     ):
         """Constructor of the transaction object.
 
@@ -420,6 +612,30 @@ class _Transaction:
         else:
             self.tid = "T" + str(uuid.uuid4())
         self.timeout = timeout
+
+        # Expected receiver identities (F3-3). Optional: when provided they enable the acquire
+        # budget (a receiver that never issues its first pull can be failed) and, if
+        # num_receivers is unknown (0), supply the receiver count.
+        if receiver_ids:
+            receiver_ids = tuple(dict.fromkeys(str(r) for r in receiver_ids))  # dedup, keep order
+            if num_receivers and num_receivers != len(receiver_ids):
+                raise ValueError(
+                    f"num_receivers ({num_receivers}) does not match receiver_ids count ({len(receiver_ids)})"
+                )
+            num_receivers = len(receiver_ids)
+            self.receiver_ids = receiver_ids
+        else:
+            self.receiver_ids = None
+        if min_receivers is not None:
+            if min_receivers <= 0:
+                raise ValueError(f"min_receivers must be positive, got {min_receivers}")
+            if num_receivers and min_receivers > num_receivers:
+                raise ValueError(f"min_receivers ({min_receivers}) exceeds num_receivers ({num_receivers})")
+        self.min_receivers = min_receivers
+        self.receiver_acquire_timeout = _resolve_receiver_budget(
+            receiver_acquire_timeout, RECEIVER_ACQUIRE_TIMEOUT_CONFIG_VAR
+        )
+        self.receiver_idle_timeout = _resolve_receiver_budget(receiver_idle_timeout, RECEIVER_IDLE_TIMEOUT_CONFIG_VAR)
         self.num_receivers = num_receivers
         self.last_active_time = time.time()
         self.start_time = time.time()
@@ -486,6 +702,25 @@ class _Transaction:
         """
         self.transaction_done(TransactionDoneStatus.TIMEOUT)
 
+    def enforce_receiver_budgets(self, now: float):
+        """Evaluates per-receiver budgets across all refs; called by the monitor thread."""
+        if self.receiver_acquire_timeout is None and self.receiver_idle_timeout is None:
+            return
+        refs = self.snapshot_refs()
+        # transaction-level acquisition: a first pull on ANY ref acquires the receiver
+        tx_acquired = set()
+        for ref in refs:
+            assert isinstance(ref, _Ref)
+            tx_acquired.update(ref.snapshot_receiver_activity().keys())
+        for ref in refs:
+            ref.enforce_budgets(
+                now,
+                self.receiver_acquire_timeout,
+                self.receiver_idle_timeout,
+                self.receiver_ids,
+                tx_acquired_receivers=tx_acquired,
+            )
+
     def is_finished(self):
         """Check whether the transaction is finished (all objects are downloaded)."""
         if self.num_receivers <= 0:
@@ -518,6 +753,7 @@ class _Transaction:
             tx_id=self.tid,
             done_status=status,
             num_receivers=self.num_receivers,
+            min_receivers=self.min_receivers,
             refs=[RefOutcome(ref_id=ref.rid, receiver_statuses=ref.snapshot_receiver_statuses()) for ref in refs],
             timestamp=time.time(),
         )
@@ -608,6 +844,66 @@ class TransactionInfo:
         self.objects = [r.obj for r in tx.snapshot_refs()]
 
 
+class TransferWaiter:
+    """The awaitable facade over a transaction's terminal transfer outcome (F3-4).
+
+    This is the "returns == delivered" primitive the upper layers (executor backends,
+    trainer engine) consume: wait() blocks -- event-driven, no polling -- until the
+    transaction's aggregate TransferOutcome is recorded, and the outcome is COMPLETED only
+    when every expected receiver succeeded (receiver-confirmed where supported, budget- and
+    TTL-bounded). It attaches to the outcome-recording path directly, so it composes with --
+    and never replaces -- transaction_done_cb / outcome_cb / the FOBS-context
+    DOWNLOAD_COMPLETE_CB chain.
+    """
+
+    def __init__(self, transaction_id: str, service=None):
+        self.transaction_id = transaction_id
+        self._service = service  # the DownloadService class that created this waiter
+        self._event = threading.Event()
+        self._outcome: Optional[TransferOutcome] = None
+
+    def _resolve(self, outcome: Optional[TransferOutcome]):
+        self._outcome = outcome
+        self._event.set()
+
+    @property
+    def outcome(self) -> Optional[TransferOutcome]:
+        """The terminal outcome, or None while the transfer is still in flight."""
+        return self._outcome
+
+    def done(self) -> bool:
+        return self._event.is_set()
+
+    def acquired_receivers(self) -> set:
+        """Receivers that have issued at least one pull (the PAYLOAD_ACQUIRED signal, V1)."""
+        service = self._service if self._service is not None else DownloadService
+        return service.get_acquired_receivers(self.transaction_id)
+
+    def wait(self, timeout: Optional[float] = None, linger: Optional[float] = None) -> Optional[TransferOutcome]:
+        """Blocks until the terminal transfer outcome is recorded.
+
+        Args:
+            timeout: max seconds to wait. None waits indefinitely (callers should normally
+                bound this; the transaction's own TTL and per-receiver budgets bound the
+                producer side).
+            linger: optional bounded post-completion linger, applied after any FINISHED
+                outcome (completed or not). By termination time the sources are already
+                released and the refs tombstoned; what the linger preserves is the PROCESS
+                (and with it the tombstone window), so a receiver whose terminal EOF/ERROR
+                reply was lost can still retry and be replayed its recorded status before
+                the producer exits. Timed-out/deleted outcomes get no linger.
+
+        Returns: the TransferOutcome; None if the wait timed out (transfer still in flight)
+        or the service shut down before the transaction terminated.
+        """
+        if not self._event.wait(timeout):
+            return None
+        outcome = self._outcome
+        if outcome is not None and linger and outcome.done_status == TransactionDoneStatus.FINISHED:
+            time.sleep(linger)
+        return outcome
+
+
 class DownloadService:
 
     _init_lock = threading.Lock()
@@ -625,6 +921,9 @@ class DownloadService:
     # transaction that terminates concurrently with a same-id retry cannot record
     # its outcome over the new incarnation. Guarded by _outcome_lock.
     _tx_incarnations = {}
+    # Waiters blocked on a transaction's terminal outcome (the awaitable facade). Guarded by
+    # _outcome_lock; resolved inside _record_outcome so a waiter can never miss the outcome.
+    _tx_waiters = {}
     _outcome_lock = threading.Lock()
     TX_OUTCOME_TTL = 1800.0
     _logger = None
@@ -663,6 +962,10 @@ class DownloadService:
         progress_cb: Optional[Callable] = None,
         progress_interval: float = 30.0,
         outcome_cb: Optional[Callable] = None,
+        receiver_ids=None,
+        min_receivers: Optional[int] = None,
+        receiver_acquire_timeout: Optional[float] = None,
+        receiver_idle_timeout: Optional[float] = None,
         **cb_kwargs,
     ):
         cls._initialize(cell)
@@ -675,6 +978,10 @@ class DownloadService:
             progress_cb=progress_cb,
             progress_interval=progress_interval,
             outcome_cb=outcome_cb,
+            receiver_ids=receiver_ids,
+            min_receivers=min_receivers,
+            receiver_acquire_timeout=receiver_acquire_timeout,
+            receiver_idle_timeout=receiver_idle_timeout,
         )
         with cls._outcome_lock:
             # a reused explicit tx_id must not surface the previous incarnation's
@@ -760,6 +1067,12 @@ class DownloadService:
             # the incarnation guard alone gates post-shutdown recording.
             cls._tx_outcomes.clear()
             cls._tx_incarnations.clear()
+            # unblock the awaitable facade: waiters resolve to None (service shut down
+            # before the transaction terminated), never hang
+            for waiters in cls._tx_waiters.values():
+                for waiter in waiters:
+                    waiter._resolve(None)
+            cls._tx_waiters.clear()
 
         with cls._init_lock:
             # Shutdown resets callback-registration state even when a cell is still
@@ -783,6 +1096,43 @@ class DownloadService:
                 cls._finished_refs.pop(r.rid, None)
 
     @classmethod
+    def get_transfer_waiter(cls, transaction_id: str) -> TransferWaiter:
+        """Returns an awaitable facade over the transaction's terminal outcome (F3-4).
+
+        Safe to call before or after termination: a waiter created after the outcome was
+        recorded resolves immediately from the outcome table.
+        """
+        waiter = TransferWaiter(transaction_id, service=cls)
+        with cls._outcome_lock:
+            existing = cls._tx_outcomes.get(transaction_id)
+            if existing is not None:
+                # resolve even from an expired record: it is still the recorded truth
+                waiter._resolve(existing)
+                return waiter
+            if transaction_id not in cls._tx_incarnations:
+                # unknown, already-forgotten (outcome expired) or shut down: nothing will
+                # ever record an outcome for this id, so resolving with None immediately is
+                # the only way to honor "waiters can never hang". Race-free: _record_outcome
+                # swaps incarnation -> outcome under this same lock.
+                waiter._resolve(None)
+                return waiter
+            cls._tx_waiters.setdefault(transaction_id, []).append(waiter)
+        return waiter
+
+    @classmethod
+    def get_acquired_receivers(cls, transaction_id: str) -> set:
+        """Receivers that have issued at least one pull on any ref of the transaction."""
+        with cls._tx_lock:
+            tx = cls._tx_table.get(transaction_id)
+        if tx is None:
+            return set()
+        assert isinstance(tx, _Transaction)
+        acquired = set()
+        for ref in tx.snapshot_refs():
+            acquired.update(ref.snapshot_receiver_activity().keys())
+        return acquired
+
+    @classmethod
     def _record_outcome(cls, outcome: TransferOutcome, tx: _Transaction):
         # tx is required so no call site can opt out of the incarnation guard:
         # recording is legal only for the live registered incarnation.
@@ -799,6 +1149,10 @@ class DownloadService:
                 return
             cls._tx_incarnations.pop(outcome.tx_id, None)
             cls._tx_outcomes[outcome.tx_id] = outcome
+            # resolve the awaitable facade: waiters are TransferWaiter objects (no user code
+            # runs in _resolve), so setting them under the lock is safe and race-free
+            for waiter in cls._tx_waiters.pop(outcome.tx_id, ()):
+                waiter._resolve(outcome)
 
     @classmethod
     def get_transaction_outcome(cls, transaction_id: str) -> Optional[TransferOutcome]:
@@ -876,6 +1230,10 @@ class DownloadService:
             cls._logger.error(f"missing {_PropKey.REF_ID} in request from {requester}")
             return make_reply(ReturnCode.INVALID_REQUEST)
 
+        confirm_status = payload.get(_PropKey.CONFIRM)
+        if confirm_status is not None:
+            return cls._handle_confirm(rid, requester, confirm_status)
+
         current_state = payload.get(_PropKey.STATE)
         with cls._tx_lock:
             ref = cls._ref_table.get(rid)
@@ -893,9 +1251,14 @@ class DownloadService:
 
         assert isinstance(ref, _Ref)
         ref.mark_active()
+        ref.mark_receiver_active(requester)
         ref.emit_progress(receiver_id=requester, state=TransferProgressState.ACTIVE)
         tx = ref.tx
         assert isinstance(tx, _Transaction)
+
+        # receiver-confirmed completion is armed only when the receiver advertised the
+        # capability on this request AND the local kill-switch is on
+        expect_confirm = bool(payload.get(_PropKey.CONFIRM_CAPABLE)) and _receiver_confirm_enabled()
 
         # Keep produce() outside the global transaction lock so slow chunk generation
         # does not block unrelated downloads. Timeout/delete cleanup can release the
@@ -911,16 +1274,28 @@ class DownloadService:
             return make_reply(ReturnCode.PROCESS_EXCEPTION)
 
         if rc != ProduceRC.OK:
-            # already done
-            ref.obj_downloaded(
-                requester, status=DownloadStatus.SUCCESS if rc == ProduceRC.EOF else DownloadStatus.FAILED
+            # already done -- for a confirm-capable receiver this record is PROVISIONAL and the
+            # receiver's confirmation finalizes it; for a legacy receiver it is final (today's
+            # producer-served semantics)
+            ref.obj_served(
+                requester,
+                status=DownloadStatus.SUCCESS if rc == ProduceRC.EOF else DownloadStatus.FAILED,
+                expect_confirm=expect_confirm,
             )
-            ref.emit_progress(
-                receiver_id=requester,
-                state=TransferProgressState.COMPLETED if rc == ProduceRC.EOF else TransferProgressState.FAILED,
-                force=True,
-            )
-            return make_reply(ReturnCode.OK, body={_PropKey.STATUS: rc})
+            if expect_confirm:
+                # provisional: the receiver's confirmation carries the terminal truth --
+                # do not latch a terminal progress state the confirm may contradict
+                ref.emit_progress(receiver_id=requester, state=TransferProgressState.ACTIVE, force=True)
+            else:
+                ref.emit_progress(
+                    receiver_id=requester,
+                    state=TransferProgressState.COMPLETED if rc == ProduceRC.EOF else TransferProgressState.FAILED,
+                    force=True,
+                )
+            body = {_PropKey.STATUS: rc}
+            if expect_confirm:
+                body[_PropKey.CONFIRM_EXPECTED] = True
+            return make_reply(ReturnCode.OK, body=body)
         else:
             # continue — accumulate bytes for timing summary in transaction_done()
             # CacheableObject returns a list of byte-chunks; FileDownloader returns raw bytes.
@@ -935,19 +1310,53 @@ class DownloadService:
                     bytes_delta=bytes_delta,
                     items_delta=items_delta,
                 )
-            return make_reply(
-                ReturnCode.OK,
-                body={
-                    _PropKey.STATUS: rc,
-                    _PropKey.STATE: new_state,
-                    _PropKey.DATA: data,
-                },
-            )
+            body = {
+                _PropKey.STATUS: rc,
+                _PropKey.STATE: new_state,
+                _PropKey.DATA: data,
+            }
+            if expect_confirm:
+                body[_PropKey.CONFIRM_EXPECTED] = True
+            return make_reply(ReturnCode.OK, body=body)
+
+    @classmethod
+    def _handle_confirm(cls, rid: str, requester: str, status: str) -> Message:
+        with cls._tx_lock:
+            ref = cls._ref_table.get(rid)
+        if ref is None:
+            # the transaction already terminated/cleaned up: its outcome was computed from what
+            # was known then (fail-closed for unconfirmed receivers); a late confirm is dropped
+            cls._logger.debug(f"late confirmation for unknown ref {rid} from {requester} dropped")
+            return make_reply(ReturnCode.OK)
+        assert isinstance(ref, _Ref)
+        # deliberately no unconditional mark_active/mark_receiver_active: a stale or
+        # unsolicited confirm must not extend the transaction TTL nor reset idle budgets
+        if ref.obj_confirmed(requester, status):
+            ref.mark_active()
+        return make_reply(ReturnCode.OK)
 
     @classmethod
     def _monitor_tx(cls):
         while True:
             now = time.time()
+
+            # Per-receiver budget enforcement (F3-3) runs OUTSIDE _tx_lock: finalizing a
+            # budget-failed receiver fires user callbacks (downloaded_to_one/all), which must
+            # never run under the global lock. A budget failure recorded here flips
+            # is_finished() so the classification pass below resolves the tx immediately.
+            with cls._tx_lock:
+                budget_txs = list(cls._tx_table.values())
+            for tx in budget_txs:
+                with cls._tx_lock:
+                    if cls._tx_table.get(tx.tid) is not tx:
+                        continue  # deleted/replaced since the snapshot: do not touch a dead tx
+                try:
+                    tx.enforce_receiver_budgets(now)
+                except Exception as ex:
+                    cls._logger.error(
+                        f"error enforcing receiver budgets for tx {tx.tid}: {secure_format_exception(ex)}"
+                    )
+
             expired_tx = []
             finished_tx = []
             with cls._tx_lock:
@@ -1076,6 +1485,32 @@ def download_object(
     # On retry, resend the same state so producer re-generates the same chunk.
     current_state = None
 
+    # Receiver-confirmed completion: we advertise the capability on every request (when the
+    # kill-switch is on) and learn from each reply whether the producer consumes confirmations.
+    confirm_enabled = _receiver_confirm_enabled()
+    producer_expects_confirm = False
+
+    def _send_confirm(receiver_truth: str):
+        # wire contract: a confirmation is sent ONLY after a producer-served terminal reply
+        # (EOF/ERROR) -- the producer accepts a confirm only against its pending provisional
+        # serve, so mid-stream failure exits do not confirm (budgets/TTL handle those)
+        if not (confirm_enabled and producer_expects_confirm):
+            return
+        try:
+            # fire-and-forget by design: a lost confirmation is backstopped producer-side by
+            # per-receiver budgets / the transaction timeout, failing closed
+            cell.fire_and_forget(
+                channel=OBJ_DOWNLOADER_CHANNEL,
+                topic=OBJ_DOWNLOADER_TOPIC,
+                targets=from_fqcn,
+                message=new_cell_message(
+                    headers={}, payload={_PropKey.REF_ID: ref_id, _PropKey.CONFIRM: receiver_truth}
+                ),
+                optional=optional,
+            )
+        except Exception as ex:
+            logger.warning(f"failed to send download confirmation for ref={ref_id}: {secure_format_exception(ex)}")
+
     def _emit_progress(state: str, force: bool = False):
         nonlocal progress_sequence, last_progress_emit_time
         if not progress_cb:
@@ -1105,6 +1540,8 @@ def download_object(
         # Build a fresh request each iteration (including retries)
         # to avoid re-encoding an already-encoded message.
         request_payload = {_PropKey.REF_ID: ref_id}
+        if confirm_enabled:
+            request_payload[_PropKey.CONFIRM_CAPABLE] = True
         if current_state is not None:
             request_payload[_PropKey.STATE] = current_state
         request = new_cell_message(headers={}, payload=request_payload)
@@ -1172,6 +1609,8 @@ def download_object(
 
         payload = reply.payload
         assert isinstance(payload, dict)
+        if payload.get(_PropKey.CONFIRM_EXPECTED):
+            producer_expects_confirm = True
         status = payload.get(_PropKey.STATUS)
         if status == ProduceRC.EOF:
             elapsed = time.time() - download_start
@@ -1180,10 +1619,20 @@ def download_object(
                 f"[client] download ref={ref_id} done: elapsed={elapsed:.2f}s "
                 f"size={size_mb:.1f}MB ({total_bytes:,} bytes)"
             )
-            consumer.download_completed(ref_id)
+            try:
+                consumer.download_completed(ref_id)
+            except Exception:
+                # receiver-side finalization failed AFTER the last chunk (e.g. disk-offload
+                # finalize): exactly what receiver-confirmed completion exists to surface --
+                # the producer must not certify this receiver on its served EOF
+                _send_confirm(DownloadStatus.FAILED)
+                _emit_progress("failed", force=True)
+                raise
+            _send_confirm(DownloadStatus.SUCCESS)
             _emit_progress("completed", force=True)
             return
         elif status == ProduceRC.ERROR:
+            _send_confirm(DownloadStatus.FAILED)
             consumer.download_failed(ref_id, f"producer error after {duration} secs")
             _emit_progress("failed", force=True)
             return

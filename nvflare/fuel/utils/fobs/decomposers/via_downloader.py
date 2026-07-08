@@ -380,7 +380,9 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         self.logger.debug(f"ViaDownloader: created ref for target {target_id}: {item_id}")
         return {EncKey.TYPE: EncType.REF, EncKey.DATA: item_id}
 
-    def _create_downloader(self, fobs_ctx: dict, progress_cb=None, timeout_override=None, num_receivers_override=None):
+    def _create_downloader(
+        self, fobs_ctx: dict, progress_cb=None, timeout_override=None, num_receivers_override=None, receiver_ids=None
+    ):
         # Transaction lifecycle is managed solely by _monitor_tx() (download_service.py).
         # We deliberately do NOT subscribe to msg_root deletion here.  The msg_root is
         # deleted as soon as all blobs are delivered, but blob_cb fires asynchronously —
@@ -445,6 +447,9 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
                 transaction_done_cb=on_complete_cb,
                 progress_cb=progress_cb,
                 progress_interval=RESULT_UPLOAD_PROGRESS_INTERVAL,
+                # expected receiver identities (F3-3): enables the transaction's per-receiver
+                # acquire budget; None when any identity is unknown
+                receiver_ids=receiver_ids,
             )
 
         return downloader
@@ -603,11 +608,15 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
                 progress_context = fobs_ctx.get(RESULT_UPLOAD_PROGRESS_CTX_KEY) or {}
                 timeout_override = progress_context.get(ResultUploadProgressContextKey.STREAMING_IDLE_TIMEOUT)
 
+            # forward receiver identities to the transaction only when every identity is
+            # actually known (a (None,) placeholder means unknown-single-receiver)
+            known_receiver_ids = receiver_ids if receiver_ids and all(r is not None for r in receiver_ids) else None
             downloader = self._create_downloader(
                 fobs_ctx,
                 progress_cb=progress_cb if progress_trackable else None,
                 timeout_override=timeout_override,
                 num_receivers_override=download_num_receivers,
+                receiver_ids=known_receiver_ids,
             )
             if downloader is None:
                 self.logger.warning("download transaction was not created because FOBS context has no cell")

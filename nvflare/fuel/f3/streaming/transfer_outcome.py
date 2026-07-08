@@ -31,13 +31,15 @@ receiver truth is considered).
 Outcome status values reuse the TransferProgressState terminal vocabulary
 (completed / failed / aborted) rather than introducing another status set.
 
-Known limits, resolved by later PRs of the same design (see
-docs/design/client_api_execution_modes_plan.md):
-- per-receiver statuses are producer-served (recorded when produce() returns EOF),
-  not receiver-confirmed — a receiver-side finalization failure after the last chunk
-  is not visible here until receiver-confirmed completion (plan PR F3-2) lands;
-- num_receivers is a count without receiver identity — expected-receiver identity
-  checks arrive with per-receiver budgets (plan PR F3-3);
+Semantics with the full payload layer (F3-2/F3-3/F3-4, same design):
+- per-receiver statuses are receiver-confirmed where the receiver supports it (a served
+  EOF is provisional until the receiver confirms its finalization succeeded); legacy
+  receivers remain producer-served — both skews and the runtime kill-switch degrade to
+  producer-served semantics (download_service.py, receiver-confirmed completion);
+- expected receiver identities and per-receiver acquire/idle budgets bound the outcome's
+  resolution time (a stalled or never-pulling receiver is finalized FAILED without
+  waiting the whole-transaction TTL); min_receivers surfaces the optional k-of-N quorum
+  via quorum_met while `completed` stays the strict all-receivers certificate;
 - the outcome covers the refs present at termination; adding objects to a
   transaction after receivers already finished the earlier ones is not supported.
 """
@@ -92,8 +94,10 @@ class TransferOutcomeReason:
 class RefOutcome:
     """Per-object terminal outcome.
 
-    receiver_statuses maps receiver FQCN to a DownloadStatus value (success / failed)
-    as recorded by the producer side. It is deep-frozen at construction (a
+    receiver_statuses maps receiver FQCN to a DownloadStatus value (success / failed) --
+    receiver-confirmed where the receiver supports it, producer-served for legacy peers
+    or when the receiver-confirm kill-switch is off, and budget-FAILED for receivers that
+    exhausted their acquire/idle budget. It is deep-frozen at construction (a
     MappingProxyType over a private copy): the same instance is recorded in the
     service outcome table and handed to outcome_cb consumers, so a callback must
     not be able to mutate the recorded per-receiver truth. If outcomes ever cross
@@ -126,6 +130,9 @@ class TransferOutcome:
     num_receivers: int
     refs: Tuple[RefOutcome, ...]
     timestamp: float
+    # optional k-of-N quorum declared by the workflow (F3-3): informational for quorum_met;
+    # `completed` deliberately stays the strict all-receivers certificate
+    min_receivers: Optional[int] = None
 
     def __post_init__(self):
         # frozen=True only blocks attribute rebinding; freeze the container too so
@@ -135,6 +142,28 @@ class TransferOutcome:
     @property
     def completed(self) -> bool:
         return self.status == TransferProgressState.COMPLETED
+
+    @property
+    def quorum_met(self) -> bool:
+        """True if every ref reached at least min_receivers confirmed successes.
+
+        The k-of-N surface for fan-out workflows (min_responses-style policies): `completed`
+        stays the strict all-receivers certificate; a workflow that accepts partial fan-out
+        checks quorum_met (or thresholds refs itself). Falls back to `completed` when no
+        min_receivers was declared; fails closed with no refs.
+        """
+        if self.min_receivers is None:
+            return self.completed
+        if not self.refs:
+            return False
+        # a receiver counts toward the quorum only if it succeeded on EVERY ref: counting
+        # per-ref successes independently would let different receiver subsets satisfy each
+        # ref while no single receiver holds the complete payload
+        quorum_receivers = None
+        for r in self.refs:
+            ref_successes = {rcv for rcv, v in r.receiver_statuses.items() if v == DownloadStatus.SUCCESS}
+            quorum_receivers = ref_successes if quorum_receivers is None else quorum_receivers & ref_successes
+        return len(quorum_receivers) >= self.min_receivers
 
     def expired(self, now: float, ttl: float) -> bool:
         return now - self.timestamp > ttl
@@ -164,6 +193,7 @@ def compute_transfer_outcome(
     num_receivers: int,
     refs: Sequence[RefOutcome],
     timestamp: Optional[float] = None,
+    min_receivers: Optional[int] = None,
 ) -> TransferOutcome:
     """Compute the aggregate terminal outcome for a terminated transaction.
 
@@ -213,4 +243,5 @@ def compute_transfer_outcome(
         num_receivers=num_receivers,
         refs=refs,
         timestamp=timestamp,
+        min_receivers=min_receivers,
     )

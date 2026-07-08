@@ -84,6 +84,7 @@ def make_isolated_download_service():
         _finished_refs = {}
         _tx_outcomes = {}
         _tx_incarnations = {}
+        _tx_waiters = {}
         _outcome_lock = threading.Lock()
         _logger = Mock()
         _tx_lock = threading.Lock()
