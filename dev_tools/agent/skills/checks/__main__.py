@@ -14,7 +14,13 @@
 
 try:
     from .cli import main
-except ImportError:
+except ImportError as e:
+    # Only fall back for the script-vs-package case (relative import with no
+    # parent package: e.name is None). A missing third-party dep (e.g. PyYAML,
+    # e.name == "yaml") must re-raise with its real message instead of being
+    # masked as "No module named 'cli'".
+    if e.name is not None:
+        raise
     from cli import main
 
 raise SystemExit(main())
