@@ -1,0 +1,2 @@
+nvflare~=2.9.0rc
+numpy
