@@ -85,15 +85,24 @@ def _initialize_fake_campaign(runner, tmp_path, monkeypatch, *, target_env="sim"
     return job, client, config
 
 
-def test_write_yaml_preserves_existing_file_when_temporary_write_fails(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    ("writer_name", "file_name", "replacement"),
+    [
+        ("write_yaml", "autofl.yaml", {"replacement": "value"}),
+        ("write_json", "campaign.json", {"replacement": "value"}),
+    ],
+)
+def test_structured_write_preserves_existing_file_when_temporary_write_fails(
+    tmp_path, monkeypatch, writer_name, file_name, replacement
+):
     runner = _load_runner()
-    config_path = tmp_path / "autofl.yaml"
+    config_path = tmp_path / file_name
     original = b"existing: valid\n"
     config_path.write_bytes(original)
     original_write_bytes = Path.write_bytes
 
     def fail_temporary_write(path, data):
-        if path.name.startswith(".autofl.yaml.tmp-"):
+        if path.name.startswith(f".{file_name}.tmp-"):
             original_write_bytes(path, b"partial")
             raise OSError("simulated temporary write failure")
         return original_write_bytes(path, data)
@@ -101,10 +110,10 @@ def test_write_yaml_preserves_existing_file_when_temporary_write_fails(tmp_path,
     monkeypatch.setattr(Path, "write_bytes", fail_temporary_write)
 
     with pytest.raises(OSError, match="simulated temporary write failure"):
-        runner.write_yaml(config_path, {"replacement": "value"})
+        getattr(runner, writer_name)(config_path, replacement)
 
     assert config_path.read_bytes() == original
-    assert not list(tmp_path.glob(".autofl.yaml.tmp-*"))
+    assert not list(tmp_path.glob(f".{file_name}.tmp-*"))
 
 
 def test_candidate_args_respect_mutation_schema_bounds():

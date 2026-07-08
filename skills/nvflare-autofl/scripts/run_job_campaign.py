@@ -575,8 +575,7 @@ def write_yaml(path: Path, data: Dict[str, Any]) -> None:
 
 
 def write_json(path: Path, data: Dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    atomic_write_bytes(path, (json.dumps(data, indent=2, sort_keys=True) + "\n").encode("utf-8"))
 
 
 def atomic_write_bytes(path: Path, data: bytes) -> None:
