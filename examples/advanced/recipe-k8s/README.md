@@ -129,10 +129,13 @@ python3 job.py \
 ```
 
 If the server is also prepared with `ServerK8sJobLauncher`, add an image that
-its cluster can pull:
+its cluster can pull. The server pod defaults to one CPU and `2Gi` of memory;
+override those values with `--server-cpu` and `--server-memory`:
 
 ```bash
-  --server-image registry-server.example.com/nvflare-job:2.9
+  --server-image registry-server.example.com/nvflare-job:2.9 \
+  --server-cpu 4 \
+  --server-memory 8Gi
 ```
 
 ## Inspect Without Submitting
@@ -140,6 +143,12 @@ its cluster can pull:
 Recipe export uses the same metadata-building path without connecting to the
 NVFlare server. The startup-kit argument must still name an existing directory
 because `ProdEnv` validates it during construction:
+
+`--export` and `--export-dir` are standard Recipe API flags. The
+`nvflare.recipe` package consumes them before `job.py` parses its
+example-specific arguments, and `recipe.execute()` exports instead of calling
+`ProdEnv.deploy()`. They therefore do not appear as arguments in
+`define_parser()`.
 
 ```bash
 python3 job.py \

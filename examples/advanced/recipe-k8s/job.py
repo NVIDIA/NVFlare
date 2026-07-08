@@ -20,15 +20,22 @@ from nvflare.recipe import ProdEnv, set_recipe_meta
 
 
 def non_negative_int(value: str) -> int:
-    value = int(value)
-    if value < 0:
+    try:
+        parsed_value = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{value!r} is not a valid integer") from None
+    if parsed_value < 0:
         raise argparse.ArgumentTypeError("must be greater than or equal to 0")
-    return value
+    return parsed_value
 
 
 def define_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Submit a NumPy FedAvg recipe to two NVFlare clients that use Kubernetes job launchers."
+        description="Submit a NumPy FedAvg recipe to two NVFlare clients that use Kubernetes job launchers.",
+        epilog=(
+            "Standard Recipe flags --export and --export-dir DIR are consumed by nvflare.recipe "
+            "before this parser processes the example-specific options."
+        ),
     )
     parser.add_argument("--startup-kit", required=True, help="Path to the production admin startup directory.")
     parser.add_argument("--username", default="admin@nvidia.com", help="Provisioned admin participant name.")
@@ -56,6 +63,8 @@ def define_parser() -> argparse.ArgumentParser:
             "Omit this when the server uses the process launcher."
         ),
     )
+    parser.add_argument("--server-cpu", default="1", help="Kubernetes CPU limit for the server job pod.")
+    parser.add_argument("--server-memory", default="2Gi", help="Memory limit for the server job pod.")
     return parser
 
 
@@ -128,8 +137,8 @@ def create_recipe(args: argparse.Namespace) -> NumpyFedAvgRecipe:
         launcher_spec["default"] = {
             "k8s": k8s_launcher_spec(
                 args.server_image,
-                "1",
-                "2Gi",
+                args.server_cpu,
+                args.server_memory,
                 args.python_path,
                 args.ephemeral_storage,
             )
