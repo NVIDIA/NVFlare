@@ -46,6 +46,11 @@ _SECRET_MOUNT_KEYS = {"source", "mount_path", "mode", "items"}
 _VALID_NAME = re.compile(r"^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$")
 _RFC1123_LABEL = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 
+# Env names the launchers own at job launch (PYTHONPATH and the workspace-transfer
+# variables from workspace_cell_transfer). A study value would be silently overridden
+# or break workspace transfer, so both env and secret_env reject them up front.
+_RESERVED_ENV_NAMES = frozenset({"PYTHONPATH", "NVFL_WORKSPACE_OWNER_FQCN", "NVFL_WORKSPACE_TRANSFER_TOKEN"})
+
 
 @dataclass(frozen=True)
 class SecretEnvRef:
@@ -176,6 +181,8 @@ def _parse_env(study: str, entry, file_path: str) -> dict:
     env = {}
     for name, value in entry.items():
         _require_str(name, f"studies.{study}.env variable name", file_path)
+        if name in _RESERVED_ENV_NAMES:
+            raise _error(file_path, f"studies.{study}.env.{name} is launcher-owned and cannot be set in study config.")
         if isinstance(value, (dict, list)) or value is None:
             raise _error(file_path, f"studies.{study}.env.{name} must be a scalar value.")
         if isinstance(value, bool):
@@ -191,6 +198,8 @@ def _parse_secret_env(study: str, entry, file_path: str) -> list:
     for name, ref in entry.items():
         label = f"studies.{study}.secret_env.{name}"
         _require_str(name, f"{label} variable name", file_path)
+        if name in _RESERVED_ENV_NAMES:
+            raise _error(file_path, f"{label} is launcher-owned and cannot be set in study config.")
         ref = _require_dict(ref, label, file_path)
         _require_known_keys(ref, _SECRET_ENV_KEYS, label, file_path)
         refs.append(

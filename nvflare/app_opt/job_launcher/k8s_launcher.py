@@ -108,10 +108,6 @@ SCHEDULED_EVENT_FAILURE_MAX_AGE = 60
 WORKSPACE_MOUNT_PATH = "/var/tmp/nvflare/workspace"
 DEFAULT_EPHEMERAL_STORAGE = "1Gi"
 
-# secret_env entries are appended after the launcher-built env and would win the
-# kubelet's last-entry-wins resolution, so reserved names must be rejected up front.
-_RESERVED_JOB_ENV_NAMES = frozenset({"PYTHONPATH", ENV_WORKSPACE_OWNER_FQCN, ENV_WORKSPACE_TRANSFER_TOKEN})
-
 _PENDING_FAILURE_WAITING_REASONS = {
     "CreateContainerConfigError",
     "CreateContainerError",
@@ -895,14 +891,7 @@ class K8sJobLauncher(JobLauncherSpec):
                 f"file(s) {conflicts}; migrate all studies to study_runtime.yaml and delete the v1 file."
             )
         runtime_map = load_study_runtime_file(runtime_file, logger=self.logger)
-        study_runtime = resolve_study_runtime(runtime_map, study, runtime_file, logger=self.logger)
-        reserved = sorted({ref.name for ref in study_runtime.secret_env} & _RESERVED_JOB_ENV_NAMES)
-        if reserved:
-            raise RuntimeError(
-                f"study runtime file '{runtime_file}': secret_env must not override "
-                f"launcher-owned env vars {reserved} for study '{study}'"
-            )
-        return study_runtime
+        return resolve_study_runtime(runtime_map, study, runtime_file, logger=self.logger)
 
     def _ensure_startup_secret(self, site_name: str, startup_dir: str) -> str:
         """Create or update a k8s Secret containing the site startup kit.

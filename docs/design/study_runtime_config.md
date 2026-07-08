@@ -184,8 +184,8 @@ both present (or v2 + legacy launcher args) → hard error
 
 - `format_version: 2` required — the gate for future format evolution.
 - Hard errors: unknown top-level keys, unknown per-study keys, unknown dataset `type`, a key in both `env` and
-  `secret_env`, a `secret_env` name that collides with a launcher-owned env var (`PYTHONPATH`, the
-  workspace-transfer variables), v1/v2 coexistence.
+  `secret_env`, an `env` or `secret_env` name that is launcher-owned (`PYTHONPATH`, the workspace-transfer
+  variables), v1/v2 coexistence.
 - Missing referenced Secrets are not validated pre-launch (the launcher holds no Secret-read RBAC); the pending-pod
   failure classification already fails the job fast (`CreateContainerConfigError`, `FailedMount`).
 - Migration is wholesale: move all studies to `study_runtime.yaml`, delete `study_data.yaml` and any

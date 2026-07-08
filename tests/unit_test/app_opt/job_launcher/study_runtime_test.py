@@ -175,6 +175,24 @@ class TestLoadStudyRuntimeFile:
                 )
             )
 
+    @pytest.mark.parametrize(
+        "section, entry",
+        [
+            ("env", "PYTHONPATH: /opt/site"),
+            ("env", "NVFL_WORKSPACE_TRANSFER_TOKEN: site-value"),
+            ("secret_env", "NVFL_WORKSPACE_TRANSFER_TOKEN: {source: study-db, key: token}"),
+            ("secret_env", "NVFL_WORKSPACE_OWNER_FQCN: {source: study-db, key: fqcn}"),
+        ],
+    )
+    def test_launcher_owned_env_names_rejected(self, tmp_path, section, entry):
+        with pytest.raises(ValueError, match="launcher-owned"):
+            load_study_runtime_file(
+                _write(
+                    tmp_path,
+                    "format_version: 2\n" "studies:\n" "  study-a:\n" f"    {section}:\n" f"      {entry}\n",
+                )
+            )
+
     def test_env_value_must_be_scalar(self, tmp_path):
         with pytest.raises(ValueError, match="scalar"):
             load_study_runtime_file(

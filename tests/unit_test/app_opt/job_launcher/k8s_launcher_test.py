@@ -2316,7 +2316,6 @@ spec:
             "  study-a:\n"
             "    env:\n"
             "      DB_HOST: postgres.svc\n"
-            "      NVFL_WORKSPACE_TRANSFER_TOKEN: site-owned-value\n"
             "    secret_env:\n"
             "      DB_PASSWORD: {source: study-db, key: password}\n",
         )
@@ -2326,7 +2325,7 @@ spec:
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
             env_items = {e["name"]: e for e in manifest["spec"]["containers"][0]["env"]}
             assert env_items["DB_HOST"]["value"] == "postgres.svc"
-            # FLARE-owned transfer env wins over site-provided values
+            # launcher-owned transfer env is present alongside the study entries
             assert env_items[ENV_WORKSPACE_TRANSFER_TOKEN]["value"] == "transfer-token"
             assert env_items["DB_PASSWORD"]["valueFrom"] == {"secretKeyRef": {"name": "study-db", "key": "password"}}
             assert "value" not in env_items["DB_PASSWORD"]
@@ -2579,7 +2578,7 @@ spec:
             "      NVFL_WORKSPACE_TRANSFER_TOKEN: {source: study-db, key: token}\n",
         )
         try:
-            with pytest.raises(RuntimeError, match="launcher-owned env vars"):
+            with pytest.raises(ValueError, match="launcher-owned"):
                 launcher.launch_job(
                     _make_launch_job_meta(study="study-a"), _make_launch_fl_ctx(workspace=str(tmp_path))
                 )
