@@ -1,83 +1,18 @@
 # PyTorch Recipe Selection
 
 PyTorch identifies the training framework; it does not determine the federated
-workflow. Choose the recipe from the user's FL intent, topology, and aggregation
-requirements.
+workflow. Choose the recipe from the user's FL intent and aggregation,
+state-exchange, privacy, and site-role requirements.
 
-## Discover Recipes
+## Recipe Discovery, Algorithms, And Selection
 
-Run the local recipe catalog before creating or updating `job.py`:
-
-```bash
-nvflare recipe list --framework pytorch --format json
-```
-
-Use the returned recipe metadata as the source of truth for recipe names,
-modules, classes, algorithms, aggregation mode, state exchange, privacy metadata,
-and optional dependencies.
-
-After selecting a candidate recipe, inspect its parameters:
-
-```bash
-nvflare recipe show <recipe-name> --format json
-```
-
-Prefer recipe CLI metadata before Python introspection. If Python introspection
-is still needed, do not guess top-level exports: the base `Recipe` class lives in
-`nvflare.recipe.spec`, not `nvflare.recipe`.
-
-## Quick Algorithm Guide
-
-If the user does not know which FL algorithm they need, explain the choices in
-plain language before editing `job.py`:
-
-- FedAvg: the default starting point for most horizontal FL jobs. Each site
-  trains locally, sends model weights or updates, and the server averages them.
-  Use this when the user simply asks to federate normal PyTorch training.
-- FedAvg with HE: FedAvg plus homomorphic encryption support for protected
-  aggregation. Use only when the user asks for HE or encrypted aggregation.
-- FedProx: FedAvg-style training with a proximal term in the client loss to
-  improve stability when site data or compute behavior is very different.
-- FedOpt: server-side optimizer variants such as FedAdam, FedYogi, or FedAdagrad.
-  Use when the user wants server optimizer control or better behavior than plain
-  averaging on heterogeneous data.
-- SCAFFOLD: adds control variates to reduce client drift on non-IID data. Use
-  when the user specifically asks for SCAFFOLD or drift mitigation.
-- Cyclic: sends the model through clients sequentially instead of aggregating
-  updates on the server. Use when the requested workflow is client-to-client or
-  cyclic weight transfer.
-- Swarm Learning: peer/client-parent aggregation topology instead of a normal
-  server-centered FedAvg topology. Use when the user asks for swarm learning.
-- FedEval: evaluation-only. Use when the user wants to distribute a checkpoint
-  to sites and collect metrics without federated training updates.
-
-For deeper background, see the algorithm papers for
-[FedAvg](https://proceedings.mlr.press/v54/mcmahan17a.html),
-[FedProx](https://arxiv.org/abs/1812.06127),
-[FedOpt](https://openreview.net/forum?id=LkFG3lB13U5),
-[SCAFFOLD](https://proceedings.mlr.press/v119/karimireddy20a.html), and
-[Swarm Learning](https://www.nature.com/articles/s41586-021-03583-3). For
-Cyclic recipes, use the local catalog and
-`nvflare recipe show cyclic-pt --format json`.
-
-## Selection Rules
-
-- Use `fedavg-pt` for standard horizontal federated training where clients train
-  the same PyTorch model locally and the server aggregates model weights or
-  weight diffs across rounds.
-- Use `fedavg-he-pt` when the user asks for FedAvg with homomorphic encryption.
-- Use `fedprox-pt` when the user asks for FedProx or proximal loss behavior.
-- Use `fedopt-pt` when the user asks for server-side optimizer variants such as
-  FedAdam, FedYogi, or FedAdagrad behavior.
-- Use `scaffold-pt` when the user asks for SCAFFOLD-style control variates or
-  client-drift mitigation.
-- Use `cyclic-pt` when the user asks for sequential client-to-client model
-  transfer rather than server aggregation.
-- Use `swarm-pt` when the user asks for swarm learning or peer/client-parent
-  aggregation topology.
-- Use `fedeval-pt` for evaluation-only jobs that send a checkpoint to sites and
-  collect metrics without local training updates.
-- Ask the user before choosing when the requested FL workflow is not clear.
+Recipe discovery, the algorithm guide (FedAvg, FedProx, FedOpt, SCAFFOLD,
+Cyclic, Swarm, FedEval), catalog-based selection rules, the HE-not-supported
+rule, and non-FedAvg recipe rules are shared across the PyTorch recipe family.
+Follow
+`../../nvflare-shared/references/pytorch-family-recipe-selection.md` for all of
+them before constructing `job.py`. This file covers only the plain-PyTorch
+`job.py` construction details.
 
 ## Standard FedAvg Fast Path
 
@@ -86,10 +21,11 @@ small and portable:
 
 ```python
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.client.config import ExchangeFormat
 from nvflare.recipe.sim_env import SimEnv
 
 model_args = {"input_size": input_size, "num_classes": num_classes}
-recipe_model = {"path": "model.ModelClass", "args": model_args}
+recipe_model = {"class_path": "model.ModelClass", "args": model_args}
 
 recipe = FedAvgRecipe(
     name=job_name,
@@ -98,6 +34,8 @@ recipe = FedAvgRecipe(
     model=recipe_model,
     train_script="client.py",
     train_args=train_args,
+    server_expected_format=ExchangeFormat.PYTORCH,
+    enable_tensor_disk_offload=True,
 )
 
 env = SimEnv(num_clients=num_clients, workspace_root=workspace_root)
@@ -108,16 +46,15 @@ Prefer a recipe model dict with the same constructor arguments used by the
 client-side model:
 
 ```python
-model={"path": "model.ModelClass", "args": model_args}
+model={"class_path": "model.ModelClass", "args": model_args}
 ```
 
-The exported job/config uses `path`. If a local recipe API still requires
-`class_path`, use that key at recipe construction time, but do not prefer it
-when `path` is accepted.
-Some export paths serialize only the class path if given a live model instance,
-which can drop required constructor values. Use explicit model config with
-`path` or `class_path` plus `args`, then verify export preserves the required
-model arguments.
+Prefer `class_path` at recipe construction time; `path` is the normalized key
+used in exported job config, and recipes accept it as an alias. Set
+`enable_tensor_disk_offload=True` when the selected recipe exposes it, paired
+with `server_expected_format=ExchangeFormat.PYTORCH`, per
+`../../nvflare-shared/references/conversion-workflow.md` ("Conversion Defaults") and
+`../../nvflare-shared/references/pytorch-model-exchange.md`.
 
 The server-side recipe model and the client-side training model must construct
 the same architecture. If the model constructor needs dimensions, class counts,
@@ -143,32 +80,38 @@ recipe deploy the executor to all clients. Use `per_site_config` only when at
 least one site needs a different `train_script`, `train_args`, command,
 external-process setting, framework/exchange setting, or launch behavior.
 
-For non-FedAvg workflows, use the matching recipe from the catalog and keep the
-PyTorch Client API exchange aligned with that recipe's expected task names,
-metadata, and parameter format.
+For non-FedAvg workflows, use the matching recipe from the catalog (see the
+shared reference above) and keep the PyTorch Client API exchange aligned with
+that recipe's expected task names, metadata, and parameter format.
 
-## Non-FedAvg Recipe Rules
+## Execution Mode (In-Process vs External)
 
-The FedAvg fast path is not a universal PyTorch job template. When the user asks
-for FedOpt, FedProx, SCAFFOLD, Cyclic, Swarm Learning, FedEval, encryption, or a
-topology-specific workflow:
+Match the recipe's execution mode to the source project's process model:
 
-- use `nvflare recipe show <recipe-name> --format json` for the selected recipe;
-- supply parameters marked `"required": true`;
-- leave optional parameters at defaults unless the user request, source code, or
-  validation result requires them;
-- keep generated source names and runtime locations consistent with this skill;
-- keep shared generated files on all clients unless the recipe semantics or user
-  request require site-specific roles, scripts, arguments, or launch settings;
-- ask before choosing when recipe intent or topology is ambiguous.
+- Single-process training — CPU or a single GPU with no distributed launch —
+  runs in-process; leave `launch_external_process` unset so the recipe applies
+  its own default (the in-process Client API). Do not force it on for
+  single-process training.
+- Multi-process / multi-GPU evidence — `torch.distributed` / DDP, `torchrun` or
+  `torch.distributed.run`, `DistributedDataParallel`, or an explicit user request
+  for multi-GPU — needs the external-process executor: set
+  `launch_external_process=True`, because distributed workers cannot run inside
+  the in-process executor. Also preserve the source launch model by setting the
+  recipe's documented launch command or launcher parameter, such as
+  `command="torchrun ..."` when the source requires `torchrun` or
+  multi-process arguments. Do not rely on the recipe's default external command
+  when the source project needs distributed launch arguments.
 
-For recipes with topology roles, such as cyclic ordering, swarm roles, vertical
-data ownership, or label-owner style workflows, do not collapse the topology into
-standard FedAvg. Preserve the selected recipe's required role or site parameters
-and report any missing user input before validation.
+Confirm the selected recipe exposes `launch_external_process` with
+`nvflare recipe show <recipe> --format json` before setting it. For distributed
+launches, also confirm the recipe exposes a documented `command`, `launcher`, or
+equivalent launch-argument surface that can express the source launch command;
+if either surface is missing, report the gap and ask or fail closed rather than
+assuming or silently dropping the source launch model. This section is for plain
+PyTorch conversions; Lightning conversions follow their own DDP guidance.
 
 ## Export Behavior
 
 Export handling is shared across algorithms and frameworks. Follow
-`../../_shared/nvflare-job-lifecycle.md` for `--export`, `--export-dir`, and
+`../../nvflare-shared/references/conversion-workflow.md` for `--export`, `--export-dir`, and
 local command-line parser behavior.
