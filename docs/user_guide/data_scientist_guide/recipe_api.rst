@@ -98,25 +98,11 @@ File packaging helpers:
 ``recipe.add_server_file(file_path)``
    Bundle a file or directory into the generated server app package.
 
-Component helpers:
-
-``recipe.add_client_component(component, clients=None, id=None)``
-   Add a component object (e.g. a tracking receiver or streamer) to generated
-   client apps. If ``clients`` is omitted, the component applies to all
-   generated client apps.
-
-``recipe.add_server_component(component, id=None)``
-   Add a component object to the generated server app. Returns the final
-   component id; components that implement their own job-registration hook
-   return that hook's result instead.
-
-These component helpers place plain components only. Files, config parameters,
-filters, and executors have the dedicated APIs above; controllers are
-configured by the recipe itself. Targeting specific clients with ``clients``
+Helpers that accept ``clients`` target specific generated client apps. This
 requires per-site client apps: construct the recipe with the
 ``per_site_config`` constructor argument on recipes that support it. With the
-default all-clients topology, targeted placement raises an error rather than
-silently dropping the component from the generated job. Calling
+default all-clients topology, targeted calls raise an error rather than
+silently dropping the change from the generated job. Calling
 ``set_per_site_config`` after construction records the configuration for
 ``configured_sites()`` but does not yet rebuild an existing all-clients app
 into per-site apps; recipes will interpret helper-provided per-site config as
@@ -254,10 +240,9 @@ The following are internal details and should not be used in recipe scripts:
 * generated deploy-map internals;
 * internal fields used by Recipe helpers.
 
-Custom component placement is covered by ``add_server_component`` and
-``add_client_component``. If a workflow needs job structure those helpers do
-not express (e.g. custom executors or multi-app layouts), use the lower-level
-Job API workflow or add a new named Recipe helper for the repeated pattern.
+If a workflow needs arbitrary component placement that is not covered by a named
+Recipe helper, use the lower-level Job API workflow or add a new named Recipe
+helper for the repeated pattern.
 
 Recipe Catalog JSON
 -------------------

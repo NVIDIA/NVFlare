@@ -758,232 +758,59 @@ class TestRecipePerSiteConfigHelper:
             set_per_site_config(BasicRecipe(), config)
 
 
-class _PlainComponent:
-    """Minimal component for placement tests."""
+class TestClientPlacementHardening:
+    """Test _add_to_client_apps validation through the public clients=-taking helpers.
 
-    def __init__(self, tag: str = ""):
-        self.tag = tag
+    These guards fix pre-existing silent failures: targeting specific clients while
+    the job has an all-clients app used to silently drop the placement at export,
+    and malformed clients values were silently ignored or iterated per character.
+    """
 
-
-class TestRecipeComponentPlacement:
-    """Test add_server_component and add_client_component methods in Recipe."""
-
-    def _make_recipe(self, name="test_component_placement"):
+    def _make_recipe(self, name="test_placement_hardening"):
         from nvflare.recipe.spec import Recipe
 
         return Recipe(FedJob(name=name, min_clients=1))
 
-    def test_add_server_component_registers_and_returns_id(self):
-        recipe = self._make_recipe()
-        comp = _PlainComponent()
-
-        cid = recipe.add_server_component(comp, id="my_comp")
-
-        assert cid == "my_comp"
-        server_app = recipe.job._deploy_map.get("server")
-        assert server_app is not None
-        assert server_app.app_config.components[cid] is comp
-
-    def test_add_server_component_generates_id_when_none(self):
-        recipe = self._make_recipe()
-        comp = _PlainComponent()
-
-        cid = recipe.add_server_component(comp)
-
-        assert cid
-        assert recipe.job._deploy_map["server"].app_config.components[cid] is comp
-
-    def test_add_server_component_duplicate_id_gets_suffix(self):
-        recipe = self._make_recipe()
-        first = _PlainComponent("first")
-        second = _PlainComponent("second")
-
-        cid1 = recipe.add_server_component(first, id="recv")
-        cid2 = recipe.add_server_component(second, id="recv")
-
-        assert cid1 == "recv"
-        assert cid2 != cid1
-        components = recipe.job._deploy_map["server"].app_config.components
-        assert components[cid1] is first
-        assert components[cid2] is second
-
-    def test_add_client_component_all_clients(self):
-        from nvflare.apis.job_def import ALL_SITES
-
-        recipe = self._make_recipe()
-        comp = _PlainComponent()
-
-        recipe.add_client_component(comp, id="recv")
-
-        all_clients_app = recipe.job._deploy_map.get(ALL_SITES)
-        assert all_clients_app is not None
-        assert all_clients_app.app_config.components["recv"] is comp
-
-    def test_add_client_component_specific_clients(self):
-        from nvflare.apis.job_def import ALL_SITES
-
-        recipe = self._make_recipe()
-        comp = _PlainComponent()
-
-        recipe.add_client_component(comp, clients=["site-1"], id="recv")
-
-        assert recipe.job._deploy_map["site-1"].app_config.components["recv"] is comp
-        assert ALL_SITES not in recipe.job._deploy_map
-        assert "site-2" not in recipe.job._deploy_map
-
-    def test_add_client_component_preserves_per_site_apps(self):
-        from nvflare.apis.job_def import ALL_SITES
-
-        recipe = self._make_recipe()
-        # Existing per-site client topology.
-        recipe.job.to(_PlainComponent("site-1-only"), "site-1")
-        recipe.job.to(_PlainComponent("site-2-only"), "site-2")
-
-        shared = _PlainComponent("shared")
-        recipe.add_client_component(shared, id="recv")
-
-        # Added to every existing per-site app instead of creating an ALL_SITES app.
-        assert ALL_SITES not in recipe.job._deploy_map
-        for site in ("site-1", "site-2"):
-            components = recipe.job._deploy_map[site].app_config.components
-            assert any(c is shared for c in components.values())
-
-    @pytest.mark.parametrize(
-        "component, match",
-        [
-            ("component.py", "use add_client_file"),
-            ({"param": 1}, "use add_client_config"),
-        ],
-    )
-    def test_add_client_component_rejects_str_and_dict(self, component, match):
-        recipe = self._make_recipe()
-        with pytest.raises(TypeError, match=match):
-            recipe.add_client_component(component)
-
-    @pytest.mark.parametrize(
-        "component, match",
-        [
-            ("component.py", "use add_server_file"),
-            ({"param": 1}, "use add_server_config"),
-        ],
-    )
-    def test_add_server_component_rejects_str_and_dict(self, component, match):
-        recipe = self._make_recipe()
-        with pytest.raises(TypeError, match=match):
-            recipe.add_server_component(component)
-
-    def test_add_client_component_rejects_controller(self):
-        from nvflare.apis.impl.controller import Controller
-
-        class _DummyController(Controller):
-            def control_flow(self, abort_signal, fl_ctx):
-                pass
-
-            def start_controller(self, fl_ctx):
-                pass
-
-            def stop_controller(self, fl_ctx):
-                pass
-
-        recipe = self._make_recipe()
-        with pytest.raises(TypeError, match="Controllers"):
-            recipe.add_client_component(_DummyController())
-
-    @pytest.mark.parametrize("method", ["add_client_component", "add_server_component"])
-    def test_component_methods_reject_executor(self, method):
-        from nvflare.apis.executor import Executor
-
-        class _DummyExecutor(Executor):
-            def execute(self, task_name, shareable, fl_ctx, abort_signal):
-                return None
-
-        recipe = self._make_recipe()
-        with pytest.raises(TypeError, match="Executors"):
-            getattr(recipe, method)(_DummyExecutor())
-
-    def test_add_client_component_specific_clients_rejects_all_sites_topology(self):
+    def test_targeted_config_rejects_all_clients_topology(self):
         recipe = self._make_recipe()
         # Default recipe topology: one client app for all clients.
-        recipe.job.to_clients(_PlainComponent("executor-standin"))
+        recipe.job.to_clients({"executor_standin": True})
 
         with pytest.raises(ValueError, match="applies to all clients"):
-            recipe.add_client_component(_PlainComponent(), clients=["site-1"])
+            recipe.add_client_config({"timeout": 600}, clients=["site-1"])
 
-    @pytest.mark.parametrize("bad_site", ["server", "@ALL"])
-    def test_add_client_component_rejects_non_client_site_names(self, bad_site):
+    def test_targeted_file_rejects_all_clients_topology(self, tmp_path):
+        src_file = tmp_path / "wrapper.sh"
+        src_file.write_text("#!/bin/sh\n")
         recipe = self._make_recipe()
-        with pytest.raises(ValueError, match="invalid client name"):
-            recipe.add_client_component(_PlainComponent(), clients=[bad_site])
+        recipe.job.to_clients({"executor_standin": True})
 
-    def test_add_client_component_rejects_bare_string_clients(self):
+        with pytest.raises(ValueError, match="applies to all clients"):
+            recipe.add_client_file(str(src_file), clients=["site-1"])
+
+    def test_targeted_config_works_with_per_site_topology(self):
+        recipe = self._make_recipe()
+        recipe.job.to({"site_arg": 1}, "site-1")
+        recipe.job.to({"site_arg": 2}, "site-2")
+
+        recipe.add_client_config({"timeout": 600}, clients=["site-1"])
+
+        assert recipe.job._deploy_map["site-1"].app_config.additional_params["timeout"] == 600
+        assert "timeout" not in recipe.job._deploy_map["site-2"].app_config.additional_params
+
+    def test_clients_must_be_a_list(self):
         recipe = self._make_recipe()
         # A bare string would otherwise iterate per character and create per-char apps.
         with pytest.raises(TypeError, match="must be a list"):
-            recipe.add_client_component(_PlainComponent(), clients="site-1")
+            recipe.add_client_config({"timeout": 600}, clients="site-1")
 
-    def test_add_client_component_rejects_empty_clients(self):
+    def test_clients_must_not_be_empty(self):
         recipe = self._make_recipe()
         with pytest.raises(ValueError, match="must not be empty"):
-            recipe.add_client_component(_PlainComponent(), clients=[])
+            recipe.add_client_config({"timeout": 600}, clients=[])
 
-    @pytest.mark.parametrize("method", ["add_client_component", "add_server_component"])
-    def test_component_methods_reject_filter(self, method):
-        from nvflare.apis.filter import Filter
-
-        class _DummyFilter(Filter):
-            def process(self, shareable, fl_ctx):
-                return shareable
-
+    @pytest.mark.parametrize("bad_site", ["server", "@ALL"])
+    def test_clients_must_name_client_sites(self, bad_site):
         recipe = self._make_recipe()
-        with pytest.raises(TypeError, match="input_filter"):
-            getattr(recipe, method)(_DummyFilter())
-
-    def test_add_server_component_rejects_controller(self):
-        from nvflare.apis.impl.controller import Controller
-
-        class _DummyController(Controller):
-            def control_flow(self, abort_signal, fl_ctx):
-                pass
-
-            def start_controller(self, fl_ctx):
-                pass
-
-            def stop_controller(self, fl_ctx):
-                pass
-
-        recipe = self._make_recipe()
-        with pytest.raises(TypeError, match="Controllers"):
-            recipe.add_server_component(_DummyController())
-
-    @pytest.mark.parametrize("method", ["add_client_component", "add_server_component"])
-    def test_component_methods_reject_script_runner(self, method):
-        from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
-
-        runner = ScriptRunner(script="train.py", framework=FrameworkType.RAW)
-        recipe = self._make_recipe()
-        with pytest.raises(TypeError, match="script runners"):
-            getattr(recipe, method)(runner)
-
-    def test_components_appear_in_exported_job_config(self, tmp_path):
-        recipe = self._make_recipe("test_component_export")
-        recipe.job.to_server({"server_arg": True})
-        server_comp = _PlainComponent("server-side")
-        client_comp = _PlainComponent("client-side")
-
-        recipe.add_server_component(server_comp, id="server_recv")
-        recipe.add_client_component(client_comp, id="client_recv")
-
-        recipe.job.export_job(str(tmp_path))
-        job_dir = tmp_path / "test_component_export"
-
-        with open(job_dir / "app" / "config" / "config_fed_server.json") as f:
-            server_cfg = json.load(f)
-        with open(job_dir / "app" / "config" / "config_fed_client.json") as f:
-            client_cfg = json.load(f)
-
-        server_entry = next(c for c in server_cfg["components"] if c["id"] == "server_recv")
-        assert server_entry["path"].endswith("_PlainComponent")
-        assert server_entry["args"] == {"tag": "server-side"}
-        client_entry = next(c for c in client_cfg["components"] if c["id"] == "client_recv")
-        assert client_entry["path"].endswith("_PlainComponent")
-        assert client_entry["args"] == {"tag": "client-side"}
+        with pytest.raises(ValueError, match="invalid client name"):
+            recipe.add_client_config({"timeout": 600}, clients=[bad_site])

@@ -293,9 +293,9 @@ def add_experiment_tracking(
             client_config["events"] = [ANALYTIC_EVENT_TYPE]
 
         client_receiver = receiver_class(**client_config)
-        # Route through the recipe placement helper so existing per-site client apps
+        # Route through the recipe placement layer so existing per-site client apps
         # are preserved (to_clients would target ALL_SITES even when per-site apps exist).
-        recipe.add_client_component(client_receiver, clients=clients, id="client_receiver")
+        recipe._add_to_client_apps(client_receiver, clients=clients, id="client_receiver")
 
 
 def add_cross_site_evaluation(
