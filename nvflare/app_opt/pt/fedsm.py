@@ -15,6 +15,7 @@
 """PyTorch components and client helpers for personalized learning with FedSM."""
 
 import copy
+import math
 import os
 import time
 from numbers import Number
@@ -32,7 +33,7 @@ from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
-from nvflare.app_common.workflows.base_fedavg import BaseFedAvg
+from nvflare.app_common.workflows.base_fedavg import BaseFedAvg, _aggregate_fl_model_metrics
 
 
 class FedSMConstants:
@@ -140,11 +141,17 @@ def _to_cpu_copy(value):
 def _weighted_average(values: List, weights: List[float]):
     first = values[0]
     if isinstance(first, dict):
-        common_keys = set(first)
-        for value in values[1:]:
-            common_keys.intersection_update(value)
+        expected_keys = set(first)
+        for index, value in enumerate(values[1:], start=1):
+            if not isinstance(value, dict) or set(value) != expected_keys:
+                actual_keys = set(value) if isinstance(value, dict) else set()
+                raise ValueError(
+                    "FedSM cannot average model states with different keys: "
+                    f"expected {sorted(expected_keys, key=str)}, got {sorted(actual_keys, key=str)} "
+                    f"at value index {index}"
+                )
         return {
-            key: _weighted_average([value[key] for value in values], weights) for key in sorted(common_keys, key=str)
+            key: _weighted_average([value[key] for value in values], weights) for key in sorted(expected_keys, key=str)
         }
     if isinstance(first, torch.Tensor):
         if not (first.is_floating_point() or first.is_complex()):
@@ -210,11 +217,18 @@ class FedSMModelAggregator(ModelAggregator):
             raise ValueError("FedSM cannot aggregate an empty result set")
 
         clients = sorted(self._results)
-        raw_weights = [
-            float((self._results[client].meta or {}).get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, 1.0)) for client in clients
-        ]
+        raw_weights = []
+        for client in clients:
+            raw_weight = (self._results[client].meta or {}).get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, 1.0)
+            try:
+                weight = float(raw_weight)
+            except (TypeError, ValueError, OverflowError) as e:
+                raise ValueError(f"FedSM client {client!r} returned invalid step weight {raw_weight!r}") from e
+            if not math.isfinite(weight) or weight <= 0.0:
+                raise ValueError(f"FedSM client {client!r} step weight must be finite and positive, got {raw_weight!r}")
+            raw_weights.append(weight)
         total = sum(raw_weights)
-        weights = [weight / total for weight in raw_weights] if total > 0 else [1.0 / len(clients)] * len(clients)
+        weights = [weight / total for weight in raw_weights]
 
         global_update = _weighted_average(
             [self._results[client].params[FedSMConstants.GLOBAL_MODEL] for client in clients],
@@ -251,9 +265,12 @@ class FedSMModelAggregator(ModelAggregator):
         if all(state is not None for state in optimizer_states):
             bundle[FedSMConstants.SELECTOR_OPTIMIZER] = _weighted_average(optimizer_states, weights)
 
+        metrics = _aggregate_fl_model_metrics([self._results[client] for client in clients])
+
         return FLModel(
             params=bundle,
             params_type=ParamsType.FULL,
+            metrics=metrics,
             current_round=self._results[clients[0]].current_round,
             meta={"nr_aggregated": len(clients)},
         )

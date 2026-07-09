@@ -19,7 +19,8 @@ import pytest
 torch = pytest.importorskip("torch")
 from torch import nn
 
-from nvflare.app_common.abstract.fl_model import ParamsType
+from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
+from nvflare.app_opt.pt.fedce import FedCEConstants
 from nvflare.app_opt.pt.recipes.fedce import FedCERecipe
 from nvflare.app_opt.pt.recipes.fedsm import FedSMRecipe
 from nvflare.client.config import ExchangeFormat
@@ -46,6 +47,51 @@ def test_fedce_recipe_rejects_non_pytorch_exchange():
             train_script=__file__,
             server_expected_format=ExchangeFormat.NUMPY,
         )
+
+
+def test_fedce_dict_model_requires_explicit_trainable_names_and_filters_buffers():
+    model = {"path": "torch.nn.BatchNorm1d", "args": {"num_features": 1}}
+    with pytest.raises(ValueError, match="trainable_param_names is required"):
+        FedCERecipe(model=model, min_clients=2, train_script=__file__)
+
+    recipe = FedCERecipe(
+        model=model,
+        min_clients=2,
+        train_script=__file__,
+        trainable_param_names=["weight", "bias"],
+    )
+    for client in ("site-1", "site-2"):
+        recipe.fedce_aggregator.accept_model(
+            FLModel(
+                params={
+                    "weight": torch.tensor([1.0]),
+                    "bias": torch.tensor([0.0]),
+                    "running_mean": torch.tensor([10.0]),
+                    "running_var": torch.tensor([2.0]),
+                    "num_batches_tracked": torch.tensor(3),
+                },
+                params_type=ParamsType.DIFF,
+                meta={"client_name": client, FedCEConstants.MINUS_MODEL_SCORE: 0.5},
+            )
+        )
+
+    assert recipe.fedce_aggregator._get_cosine_param_names(["site-1", "site-2"]) == ["bias", "weight"]
+
+
+@pytest.mark.parametrize("names", [[], [""], ["weight", "weight"], "weight"])
+def test_fedce_recipe_rejects_invalid_explicit_trainable_names(names):
+    with pytest.raises(ValueError, match="non-empty list of unique"):
+        FedCERecipe(
+            model={"path": "torch.nn.Linear", "args": {"in_features": 1, "out_features": 1}},
+            min_clients=2,
+            train_script=__file__,
+            trainable_param_names=names,
+        )
+
+
+def test_fedce_recipe_requires_at_least_one_trainable_parameter():
+    with pytest.raises(ValueError, match="at least one trainable parameter"):
+        FedCERecipe(model=nn.Identity(), min_clients=2, train_script=__file__)
 
 
 def test_fedsm_recipe_builds_dedicated_components():

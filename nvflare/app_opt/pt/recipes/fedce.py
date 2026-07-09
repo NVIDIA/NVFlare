@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from nvflare.app_opt.pt.fedce import FedCEModelAggregator
 from nvflare.client.config import ExchangeFormat, TransferType
@@ -45,6 +45,7 @@ class FedCERecipe(FedAvgRecipe):
         train_script: str,
         train_args: str = "",
         fedce_mode: str = "plus",
+        trainable_param_names: Optional[List[str]] = None,
         launch_external_process: bool = False,
         command: str = "python3 -u",
         server_expected_format: ExchangeFormat = ExchangeFormat.PYTORCH,
@@ -63,15 +64,29 @@ class FedCERecipe(FedAvgRecipe):
         if server_expected_format != ExchangeFormat.PYTORCH:
             raise ValueError("FedCERecipe requires server_expected_format=ExchangeFormat.PYTORCH")
 
-        trainable_param_names = None
-        named_parameters = getattr(model, "named_parameters", None)
-        if callable(named_parameters):
+        if trainable_param_names is None:
+            named_parameters = getattr(model, "named_parameters", None)
+            if not callable(named_parameters):
+                raise ValueError(
+                    "trainable_param_names is required when model does not expose named_parameters(), "
+                    "including dict-config models"
+                )
             trainable_param_names = [name for name, parameter in named_parameters() if parameter.requires_grad]
+        elif (
+            not isinstance(trainable_param_names, list)
+            or not trainable_param_names
+            or any(not isinstance(name, str) or not name for name in trainable_param_names)
+            or len(trainable_param_names) != len(set(trainable_param_names))
+        ):
+            raise ValueError("trainable_param_names must be a non-empty list of unique parameter names")
+        if not trainable_param_names:
+            raise ValueError("FedCE requires at least one trainable parameter")
 
         self.fedce_mode = fedce_mode
+        self.trainable_param_names = list(trainable_param_names)
         self.fedce_aggregator = FedCEModelAggregator(
             mode=fedce_mode,
-            trainable_param_names=trainable_param_names,
+            trainable_param_names=self.trainable_param_names,
         )
         super().__init__(
             name=name,

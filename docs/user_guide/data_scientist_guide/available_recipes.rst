@@ -204,6 +204,8 @@ FedCE requires a compatible client training script. The script must return model
 reads the prior contribution weight from the received model metadata, and attaches the score to the result.
 The score should increase with estimated contribution, matching the research implementation's
 ``1 - minus-model validation metric`` convention.
+When ``model`` is supplied as a dict config, pass ``trainable_param_names`` explicitly so contribution
+estimation excludes non-trainable state such as BatchNorm running statistics and counters.
 FedCE is therefore a dedicated algorithm recipe, not a passive option on ``FedAvgRecipe``.
 
 FedSM

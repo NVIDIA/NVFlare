@@ -99,13 +99,18 @@ def test_fedsm_aggregates_fedavg_and_softpull_models():
 
 def test_fedsm_uses_num_steps_for_global_and_selector_updates():
     aggregator = FedSMModelAggregator()
-    aggregator.accept_model(_result("site-1", 0.0, 0.0, 0.0, steps=1))
-    aggregator.accept_model(_result("site-2", 8.0, 10.0, 4.0, steps=3))
+    site_1 = _result("site-1", 0.0, 0.0, 0.0, steps=1)
+    site_1.metrics = {"accuracy": 0.0, "label": "ignored"}
+    site_2 = _result("site-2", 8.0, 10.0, 4.0, steps=3)
+    site_2.metrics = {"accuracy": 1.0, "label": "ignored"}
+    aggregator.accept_model(site_1)
+    aggregator.accept_model(site_2)
 
     result = aggregator.aggregate_model()
 
     assert result.params[FedSMConstants.GLOBAL_MODEL]["weight"].item() == pytest.approx(6.0)
     assert result.params[FedSMConstants.SELECTOR_MODEL]["weight"].item() == pytest.approx(3.0)
+    assert result.metrics == {"accuracy": pytest.approx(0.75)}
 
 
 def test_fedsm_updates_mixed_semantics_bundle():
@@ -293,6 +298,8 @@ def test_fedsm_weighted_average_supports_buffers_numpy_and_scalars():
     assert integer.item() == 2
     assert array.tolist() == pytest.approx([2.5])
     assert scalar == pytest.approx(4.0)
+    with pytest.raises(ValueError, match="different keys"):
+        _weighted_average([{"weight": torch.tensor(1.0)}, {"bias": torch.tensor(1.0)}], [0.5, 0.5])
     with pytest.raises(TypeError, match="cannot average"):
         _weighted_average([object(), object()], [0.5, 0.5])
 
@@ -305,7 +312,7 @@ def test_fedsm_add_state_diff_ignores_unknown_parameters():
     assert copied_meta.value == 3
 
 
-def test_fedsm_aggregator_validates_results_and_single_client_fallback():
+def test_fedsm_aggregator_validates_results_and_single_client_updates():
     with pytest.raises(ValueError, match="soft_pull_lambda"):
         FedSMModelAggregator(soft_pull_lambda=1.1)
 
@@ -333,13 +340,36 @@ def test_fedsm_aggregator_validates_results_and_single_client_fallback():
     aggregator.accept_model(result)
     with pytest.raises(ValueError, match="more than one result"):
         aggregator.accept_model(result)
+    with pytest.raises(ValueError, match="finite and positive"):
+        aggregator.aggregate_model()
 
+    aggregator.reset_stats()
+    aggregator.accept_model(_result("site-1", 2.0, 4.0, 6.0, steps="invalid"))
+    with pytest.raises(ValueError, match="invalid step weight"):
+        aggregator.aggregate_model()
+
+    aggregator.reset_stats()
+    valid_result = _result("site-1", 2.0, 4.0, 6.0, steps=1)
+    valid_result.params[FedSMConstants.SELECTOR_OPTIMIZER] = {"step": torch.tensor(1.0)}
+    aggregator.accept_model(valid_result)
     aggregated = aggregator.aggregate_model()
 
     assert aggregated.params[FedSMConstants.PERSONAL_MODELS]["site-1"]["weight"].item() == pytest.approx(4.0)
     assert aggregated.params[FedSMConstants.SELECTOR_OPTIMIZER]["step"].item() == pytest.approx(1.0)
     aggregator.reset_stats()
     assert aggregator._results == {}
+
+
+def test_fedsm_rejects_partial_personal_model_states():
+    aggregator = FedSMModelAggregator()
+    site_1 = _result("site-1", 1.0, 2.0, 3.0)
+    site_2 = _result("site-2", 1.0, 2.0, 3.0)
+    site_2.params[FedSMConstants.PERSONAL_MODEL] = {}
+    aggregator.accept_model(site_1)
+    aggregator.accept_model(site_2)
+
+    with pytest.raises(ValueError, match="different keys"):
+        aggregator.aggregate_model()
 
 
 def test_fedsm_persistor_round_trips_complete_bundle(tmp_path):
