@@ -98,6 +98,18 @@ File packaging helpers:
 ``recipe.add_server_file(file_path)``
    Bundle a file or directory into the generated server app package.
 
+Helpers that accept ``clients`` target specific generated client apps. This
+requires per-site client apps: construct the recipe with the
+``per_site_config`` constructor argument on recipes that support it, and each
+name in ``clients`` must match an existing per-site client app. With the
+default all-clients topology, targeted calls raise an error rather than
+silently dropping the change from the generated job, and unknown site names
+raise an error rather than deploying a bare app to that site. Calling
+``set_per_site_config`` after construction records the configuration for
+``configured_sites()`` but does not yet rebuild an existing all-clients app
+into per-site apps; recipes will interpret helper-provided per-site config as
+follow-up work.
+
 Filter helpers:
 
 ``recipe.add_client_input_filter(filter, tasks=None, clients=None)``
@@ -123,9 +135,11 @@ Shared helpers:
 
 Utility helpers:
 
-``add_experiment_tracking(recipe, tracking_type, tracking_config=None, client_side=False, server_side=True)``
+``add_experiment_tracking(recipe, tracking_type, tracking_config=None, client_side=False, server_side=True, clients=None)``
    Add supported experiment tracking receivers such as TensorBoard, MLflow, or
-   Weights & Biases.
+   Weights & Biases. With ``client_side=True``, ``clients`` limits which sites
+   receive the client-side receiver; call once per site with different
+   ``tracking_config`` values for per-site tracking destinations.
 
 ``add_cross_site_evaluation(recipe, submit_model_timeout=600, validation_timeout=6000, participating_clients=None)``
    Add cross-site evaluation to a training recipe when the recipe/framework
