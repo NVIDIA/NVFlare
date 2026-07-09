@@ -134,11 +134,17 @@ class TransferOutcome:
     # optional k-of-N quorum declared by the workflow: informational for quorum_met;
     # `completed` deliberately stays the strict all-receivers certificate
     min_receivers: Optional[int] = None
+    # expected receiver identities declared by the workflow. When present, completion and
+    # quorum are judged against THESE identities: a status from an unexpected receiver can
+    # neither complete the transfer nor count toward the quorum.
+    receiver_ids: Optional[Tuple[str, ...]] = None
 
     def __post_init__(self):
-        # frozen=True only blocks attribute rebinding; freeze the container too so
+        # frozen=True only blocks attribute rebinding; freeze the containers too so
         # outcome_cb consumers cannot mutate the recorded outcome
         object.__setattr__(self, "refs", tuple(self.refs))
+        if self.receiver_ids is not None:
+            object.__setattr__(self, "receiver_ids", tuple(self.receiver_ids))
 
     @property
     def completed(self) -> bool:
@@ -164,15 +170,27 @@ class TransferOutcome:
         for r in self.refs:
             ref_successes = {rcv for rcv, v in r.receiver_statuses.items() if v == DownloadStatus.SUCCESS}
             quorum_receivers = ref_successes if quorum_receivers is None else quorum_receivers & ref_successes
+        if self.receiver_ids is not None:
+            # only declared receivers count toward the quorum
+            quorum_receivers &= set(self.receiver_ids)
         return len(quorum_receivers) >= self.min_receivers
 
     def expired(self, now: float, ttl: float) -> bool:
         return now - self.timestamp > ttl
 
 
-def _all_receivers_succeeded(num_receivers: int, refs: Sequence[RefOutcome]) -> bool:
+def _all_receivers_succeeded(num_receivers: int, refs: Sequence[RefOutcome], receiver_ids=None) -> bool:
     if num_receivers <= 0 or not refs:
         return False
+    if receiver_ids:
+        # identity mode: every DECLARED receiver must have succeeded on every ref.
+        # Statuses from unexpected receivers are ignored -- they can never certify
+        # a transfer that a declared receiver did not actually get.
+        for r in refs:
+            for expected in receiver_ids:
+                if r.receiver_statuses.get(expected) != DownloadStatus.SUCCESS:
+                    return False
+        return True
     for r in refs:
         if len(r.receiver_statuses) < num_receivers:
             return False
@@ -195,6 +213,7 @@ def compute_transfer_outcome(
     refs: Sequence[RefOutcome],
     timestamp: Optional[float] = None,
     min_receivers: Optional[int] = None,
+    receiver_ids=None,
 ) -> TransferOutcome:
     """Compute the aggregate terminal outcome for a terminated transaction.
 
@@ -219,7 +238,7 @@ def compute_transfer_outcome(
 
     if done_status not in _KNOWN_DONE_STATUSES:
         status, reason = TransferProgressState.FAILED, TransferOutcomeReason.UNKNOWN_DONE_STATUS
-    elif _all_receivers_succeeded(num_receivers, refs):
+    elif _all_receivers_succeeded(num_receivers, refs, receiver_ids):
         status, reason = TransferProgressState.COMPLETED, TransferOutcomeReason.ALL_RECEIVERS_SUCCEEDED
     elif done_status == TransactionDoneStatus.DELETED:
         status, reason = TransferProgressState.ABORTED, TransferOutcomeReason.DELETED
@@ -245,4 +264,5 @@ def compute_transfer_outcome(
         refs=refs,
         timestamp=timestamp,
         min_receivers=min_receivers,
+        receiver_ids=receiver_ids,
     )

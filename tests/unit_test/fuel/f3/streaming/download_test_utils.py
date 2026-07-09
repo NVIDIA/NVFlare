@@ -112,11 +112,17 @@ def pull_request(rid, requester, confirm_capable=False, state=None):
     return new_cell_message(headers={MessageHeaderKey.ORIGIN: requester}, payload=payload)
 
 
-def confirm_request(rid, requester, status):
+def confirm_request(rid, requester, status, nonce=None):
     """Builds one receiver-confirmation message as it appears on the wire."""
-    return new_cell_message(
-        headers={MessageHeaderKey.ORIGIN: requester}, payload={_PropKey.REF_ID: rid, _PropKey.CONFIRM: status}
-    )
+    payload = {_PropKey.REF_ID: rid, _PropKey.CONFIRM: status}
+    if nonce is not None:
+        payload[_PropKey.CONFIRM_NONCE] = nonce
+    return new_cell_message(headers={MessageHeaderKey.ORIGIN: requester}, payload=payload)
+
+
+def serve_nonce(terminal_reply):
+    """The per-serve nonce a confirmation must echo (from the producer's terminal reply)."""
+    return terminal_reply.payload.get(_PropKey.CONFIRM_NONCE)
 
 
 def pull_to_terminal(service, rid, requester, confirm_capable=False):

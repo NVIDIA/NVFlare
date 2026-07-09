@@ -29,7 +29,7 @@ from nvflare.fuel.f3.streaming.download_service import DownloadStatus, TransferW
 from tests.unit_test.fuel.f3.streaming.download_test_utils import MockDownloadable, confirm_request
 from tests.unit_test.fuel.f3.streaming.download_test_utils import make_confirm_test_service as _make_service
 from tests.unit_test.fuel.f3.streaming.download_test_utils import pull_to_terminal as _pull_to_terminal
-from tests.unit_test.fuel.f3.streaming.download_test_utils import run_monitor_once
+from tests.unit_test.fuel.f3.streaming.download_test_utils import run_monitor_once, serve_nonce
 
 
 def _new_tx(service, num_receivers=1, timeout=10.0):
@@ -51,8 +51,8 @@ class TestTransferWaiter:
         t = threading.Thread(target=lambda: results.append(waiter.wait(timeout=10.0)))
         t.start()
 
-        _pull_to_terminal(service, rid, "r1", confirm_capable=True)
-        service._handle_download(confirm_request(rid, "r1", DownloadStatus.SUCCESS))
+        terminal = _pull_to_terminal(service, rid, "r1", confirm_capable=True)
+        service._handle_download(confirm_request(rid, "r1", DownloadStatus.SUCCESS, serve_nonce(terminal)))
         run_monitor_once(service, now=time.time())
 
         t.join(5.0)
@@ -90,9 +90,9 @@ class TestTransferWaiter:
         tx_id, rid = _new_tx(service)
         waiter = service.get_transfer_waiter(tx_id)
 
-        _pull_to_terminal(service, rid, "r1", confirm_capable=True)
+        terminal = _pull_to_terminal(service, rid, "r1", confirm_capable=True)
         service._handle_download(
-            confirm_request(rid, "r1", DownloadStatus.FAILED)
+            confirm_request(rid, "r1", DownloadStatus.FAILED, serve_nonce(terminal))
         )  # receiver truth: finalization failed
         run_monitor_once(service, now=time.time())
 
@@ -119,8 +119,8 @@ class TestTransferWaiter:
 
         # receiver-failed FINISHED: linger still applied (partial fan-out healing window)
         tx_id2, rid2 = _new_tx(service)
-        _pull_to_terminal(service, rid2, "r1", confirm_capable=True)
-        service._handle_download(confirm_request(rid2, "r1", DownloadStatus.FAILED))
+        terminal2 = _pull_to_terminal(service, rid2, "r1", confirm_capable=True)
+        service._handle_download(confirm_request(rid2, "r1", DownloadStatus.FAILED, serve_nonce(terminal2)))
         run_monitor_once(service, now=time.time())
         waiter2 = service.get_transfer_waiter(tx_id2)
         with patch.object(ds_module.time, "sleep") as mock_sleep:
@@ -195,6 +195,34 @@ class TestTransferWaiter:
         assert outcome is not None
         assert not outcome.completed
         assert outcome.refs[0].receiver_statuses["stalled"] == DownloadStatus.FAILED
+
+    def test_wait_returns_only_after_callbacks_and_release(self):
+        # P1 pin: an upper layer that stops the producer when wait() returns must not be
+        # able to preempt the callback chain or source release
+        service = _make_service()
+        settled = []
+        tx_id = service.new_transaction(
+            cell=Mock(),
+            timeout=10.0,
+            num_receivers=1,
+            transaction_done_cb=lambda *a, **kw: settled.append("done_cb"),
+            outcome_cb=lambda outcome: settled.append("outcome_cb"),
+        )
+        obj = MockDownloadable([b"chunk"])
+        rid = service.add_object(tx_id, obj)
+        waiter = service.get_transfer_waiter(tx_id)
+
+        results = []
+        t = threading.Thread(target=lambda: results.append(waiter.wait(timeout=10.0)))
+        t.start()
+        _pull_to_terminal(service, rid, "r1")
+        run_monitor_once(service, now=time.time())
+        t.join(5.0)
+
+        assert results and results[0] is not None and results[0].completed
+        # by the time wait() returned, the transaction was fully settled
+        assert settled == ["done_cb", "outcome_cb"]
+        assert obj.released
 
     def test_waiter_is_a_transfer_waiter(self):
         service = _make_service()

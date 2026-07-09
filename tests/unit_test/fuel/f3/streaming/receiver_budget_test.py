@@ -33,7 +33,7 @@ from tests.unit_test.fuel.f3.streaming.download_test_utils import MockDownloadab
 from tests.unit_test.fuel.f3.streaming.download_test_utils import make_confirm_test_service as _make_service
 from tests.unit_test.fuel.f3.streaming.download_test_utils import pull_request
 from tests.unit_test.fuel.f3.streaming.download_test_utils import pull_to_terminal as _pull_to_terminal
-from tests.unit_test.fuel.f3.streaming.download_test_utils import run_monitor_once
+from tests.unit_test.fuel.f3.streaming.download_test_utils import run_monitor_once, serve_nonce
 
 
 def _new_tx(service, chunks=1, **tx_kwargs):
@@ -85,10 +85,11 @@ class TestIdleBudget:
         tx_id, rid = _new_tx(service, chunks=3, receiver_idle_timeout=5.0)
         reply = service._handle_download(pull_request(rid, "r1"))
         ref = service._ref_table[rid]
+        tx = service._tx_table[tx_id]
         # receiver keeps making requests: refresh activity to "now" as seen by the monitor
         future = time.time() + 30.0
-        with ref._progress_lock:
-            ref._receiver_activity["r1"] = future - 1.0
+        with tx._stats_lock:
+            tx._receiver_last_active["r1"] = future - 1.0
 
         run_monitor_once(service, now=future)
 
@@ -163,15 +164,15 @@ class TestBudgetSemantics:
     def test_budget_failed_receiver_is_final_even_against_late_confirm(self):
         service = _make_service()
         tx_id, rid = _new_tx(service, num_receivers=2, receiver_idle_timeout=5.0)
-        _pull_to_terminal(service, rid, "r1", confirm_capable=True)
+        terminal = _pull_to_terminal(service, rid, "r1", confirm_capable=True)
         ref = service._ref_table[rid]
 
-        failures = ref.enforce_budgets(time.time() + 30.0, None, 5.0, None)
-        assert [r for r, _ in failures] == ["r1"]
+        run_monitor_once(service, now=time.time() + 30.0)  # idle budget fires
+        assert ref.snapshot_receiver_statuses()["r1"] == DownloadStatus.FAILED
         assert ref.snapshot_pending_confirms() == {}
 
-        # the straggler confirmation cannot resurrect the budget-failed receiver
-        ref.obj_confirmed("r1", DownloadStatus.SUCCESS)
+        # the straggler confirmation (correct nonce and all) cannot resurrect it
+        assert ref.obj_confirmed("r1", DownloadStatus.SUCCESS, serve_nonce(terminal)) is False
         assert ref.snapshot_receiver_statuses()["r1"] == DownloadStatus.FAILED
 
 
@@ -197,14 +198,73 @@ class TestMultiRefAcquisition:
         # and enforcement must not be flipped to FAILED, and no failure is reported for it
         service = _make_service()
         tx_id, rid = _new_tx(service, receiver_idle_timeout=5.0)
-        _pull_to_terminal(service, rid, "r1", confirm_capable=True)
+        terminal = _pull_to_terminal(service, rid, "r1", confirm_capable=True)
         ref = service._ref_table[rid]
-        service._handle_download(confirm_request(rid, "r1", DownloadStatus.SUCCESS))
+        service._handle_download(confirm_request(rid, "r1", DownloadStatus.SUCCESS, serve_nonce(terminal)))
 
-        enforced = ref.enforce_budgets(time.time() + 30.0, None, 5.0, None)
+        tx = service._tx_table[tx_id]
+        with tx._stats_lock:
+            tx_last_active = dict(tx._receiver_last_active)
+        enforced = ref.enforce_budgets(
+            time.time() + 30.0, None, 5.0, None, tx_acquired={"r1"}, tx_last_active=tx_last_active
+        )
 
         assert enforced == []
         assert ref.snapshot_receiver_statuses() == {"r1": DownloadStatus.SUCCESS}
+
+
+class TestMultiRefIdleEscape:
+    def test_receiver_idle_after_finishing_one_ref_fails_sibling_ref_in_bounded_time(self):
+        # P2 pin (reproduced by review): after finishing ref 1, the receiver is tx-acquired
+        # (exempt from ref 2's acquire budget) and has no per-ref timestamp on ref 2 -- with
+        # per-ref idle it escaped BOTH budgets and pinned the producer to the full TTL.
+        # Idle is judged on transaction-level activity, so its silence now fails ref 2.
+        service = _make_service()
+        tx_id = service.new_transaction(
+            cell=Mock(), timeout=1000.0, num_receivers=0, receiver_ids=("r1",), receiver_idle_timeout=5.0
+        )
+        rid1 = service.add_object(tx_id, MockDownloadable([b"chunk"]))
+        rid2 = service.add_object(tx_id, MockDownloadable([b"chunk"]))
+        _pull_to_terminal(service, rid1, "r1")  # finishes ref 1 (legacy final), never touches ref 2
+
+        run_monitor_once(service, now=time.time() + 30.0)
+
+        outcome = service.get_transaction_outcome(tx_id)
+        assert outcome is not None, "must resolve via the idle budget, not the 1000s TTL"
+        assert not outcome.completed
+        statuses = {r.ref_id: r.receiver_statuses for r in outcome.refs}
+        assert statuses[rid1] == {"r1": DownloadStatus.SUCCESS}
+        assert statuses[rid2] == {"r1": DownloadStatus.FAILED}
+
+
+class TestConcurrentSameIdCreation:
+    def test_owner_and_table_stay_consistent_under_concurrent_creation(self):
+        # P1 pin (reproduced by review): with registration and table insertion in separate
+        # critical sections, two concurrent same-id constructors could leave the live
+        # transaction without outcome ownership -- and record the retired transaction's
+        # DELETED outcome as if it were the live attempt.
+        import threading as th
+
+        service = _make_service()
+        for _ in range(30):
+            barrier = th.Barrier(2)
+
+            def create():
+                barrier.wait()
+                service.new_transaction(cell=Mock(), timeout=10.0, num_receivers=1, tx_id="TX-RACE2")
+
+            threads = [th.Thread(target=create) for _ in range(2)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(5.0)
+
+            live = service._tx_table["TX-RACE2"]
+            with service._outcome_lock:
+                owner = service._outcome_owners.get("TX-RACE2")
+            assert owner is live, "the live transaction must own its outcome slot"
+            # the retired constructor's DELETED outcome must never be recorded for the id
+            assert service.get_transaction_outcome("TX-RACE2") is None
 
 
 class TestConfigResolution:

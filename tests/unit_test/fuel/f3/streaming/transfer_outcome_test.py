@@ -175,7 +175,10 @@ class TestTransactionOutcome:
         assert outcome.refs[0].receiver_statuses == {"r1": DownloadStatus.SUCCESS}
         assert obj.released
 
-    def test_on_outcome_fires_before_user_callbacks(self):
+    def test_on_outcome_fires_after_callbacks_and_release(self):
+        # settle-then-record: recording (which releases waiters) happens only after the
+        # callback chain and source release complete, so an upper layer acting on
+        # waiter.wait() can never preempt them (e.g. by stopping the producer process)
         order = []
         tx = _Transaction(
             timeout=10.0,
@@ -184,12 +187,13 @@ class TestTransactionOutcome:
             outcome_cb=lambda outcome: order.append("outcome_cb"),
         )
         obj = _stub_obj()
+        obj.release = lambda: order.append("release")  # observe source release order
         ref = tx.add_object(obj)
         ref.obj_downloaded("r1", DownloadStatus.FAILED)
 
         tx.transaction_done(TransactionDoneStatus.FINISHED, on_outcome=lambda outcome: order.append("recorded"))
 
-        assert order == ["recorded", "done_cb", "outcome_cb"]
+        assert order == ["done_cb", "outcome_cb", "release", "recorded"]
 
     def test_raising_callbacks_do_not_break_recording_or_release(self):
         # a raising transaction_done_cb must not skip outcome recording, source
@@ -382,9 +386,12 @@ class TestServiceOutcomeTable:
             second = service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-DUP")
             assert second == "TX-DUP"
 
-            # the prior live transaction was retired: refs unservable, done cb fired
+            # the prior live transaction was retired: refs unservable, sources released --
+            # but its transfer-facing callbacks are SUPPRESSED (superseded): their reused
+            # tx_id now names the live retry, so firing them would misattribute
             assert rid not in service._ref_table
-            assert done == [("TX-DUP", TransactionDoneStatus.DELETED)]
+            assert obj.released
+            assert done == []
             # its terminal outcome does not shadow the live retry
             assert service.get_transaction_outcome("TX-DUP") is None
             # the live tx is the new owner
