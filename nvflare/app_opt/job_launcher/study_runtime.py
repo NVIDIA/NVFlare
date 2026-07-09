@@ -185,7 +185,12 @@ def _parse_env(study: str, entry, file_path: str) -> dict:
         if isinstance(value, bool):
             # str(True) is "True"; YAML users writing `true` expect "true"
             value = "true" if value else "false"
-        env[name] = str(value)
+        value = str(value)
+        if not value:
+            # empty values behave differently per launcher and can silently lose
+            # against pod-template entries in the manifest merge
+            raise _error(file_path, f"studies.{study}.env.{name} must not be empty; set a value or remove the key.")
+        env[name] = value
     return env
 
 

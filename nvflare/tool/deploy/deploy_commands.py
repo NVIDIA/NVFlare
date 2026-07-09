@@ -101,6 +101,7 @@ DOCKER_RESERVED_KWARGS = {
     "detach",
     "user",
     "working_dir",
+    "image",
 }
 
 STUDY_RUNTIME_TEMPLATE = """# Per-study runtime configuration used by Docker and Kubernetes job launchers.
@@ -564,7 +565,8 @@ def _validate_runtime_config(runtime: str, config: dict[str, Any]) -> None:
                 _fail(
                     "INVALID_CONFIG",
                     f"default_job_container_kwargs contains reserved keys: {sorted(reserved)}",
-                    "Remove keys controlled by DockerJobLauncher.",
+                    "Remove keys controlled by DockerJobLauncher. For a site default job image, "
+                    "set studies.<study>.container.image in local/study_runtime.yaml.",
                 )
     elif runtime == RUNTIME_K8S:
         _validate_allowed_keys(

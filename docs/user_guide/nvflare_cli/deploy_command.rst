@@ -92,7 +92,9 @@ Top-level keys:
 - ``default_job_container_kwargs``: Docker SDK container kwargs applied to
   every job container. Launcher-controlled keys such as ``volumes``,
   ``mounts``, ``network``, ``environment``, ``command``, ``name``, ``detach``,
-  ``user``, and ``working_dir`` are rejected.
+  ``user``, ``working_dir``, and ``image`` are rejected. For a site default
+  job image, set ``studies.<study>.container.image`` in
+  ``local/study_runtime.yaml``.
 
 Prepare and start:
 

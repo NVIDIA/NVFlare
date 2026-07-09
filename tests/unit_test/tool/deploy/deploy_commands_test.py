@@ -1004,6 +1004,27 @@ def test_prepare_k8s_launcher_defaults_to_incluster_config(tmp_path, capsys):
     assert launcher["args"]["config_file_path"] is None
 
 
+def test_prepare_docker_rejects_image_in_default_container_kwargs(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "prepared"
+
+    with pytest.raises(SystemExit):
+        _run_prepare(
+            kit,
+            output,
+            {
+                "runtime": "docker",
+                "parent": {"docker_image": "repo/nvflare:dev"},
+                "job_launcher": {"default_job_container_kwargs": {"image": "site-image:v1"}},
+            },
+        )
+
+    err = capsys.readouterr().err
+    assert "INVALID_CONFIG" in err
+    assert "image" in err
+    assert "container.image" in err
+
+
 def test_prepare_k8s_keeps_v1_study_data_for_legacy_kit(tmp_path, capsys):
     kit = _make_client_kit(tmp_path)
     (kit / "local" / "study_data.yaml").write_text("default:\n  data:\n    source: nvfldata\n    mode: ro\n")

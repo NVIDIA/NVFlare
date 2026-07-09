@@ -199,6 +199,12 @@ class TestLoadStudyRuntimeFile:
                 _write(tmp_path, "format_version: 2\nstudies:\n  study-a:\n    env:\n      DB: {host: x}\n")
             )
 
+    def test_env_value_must_not_be_empty(self, tmp_path):
+        with pytest.raises(ValueError, match="must not be empty"):
+            load_study_runtime_file(
+                _write(tmp_path, 'format_version: 2\nstudies:\n  study-a:\n    env:\n      FOO: ""\n')
+            )
+
     def test_container_name_key_rejected(self, tmp_path):
         # the main container is identified via the nvflare_job template sentinel, not config
         with pytest.raises(ValueError, match="name"):

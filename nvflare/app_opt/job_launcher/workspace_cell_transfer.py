@@ -26,6 +26,7 @@ so large bundles move in chunks instead of being buffered into a single message.
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import os
 import posixpath
@@ -71,6 +72,8 @@ BOOTSTRAP_CONNECT_POLL_INTERVAL = 0.1
 
 _BOOTSTRAP_CELL_PREFIX = "ws_transfer_"
 _DEFAULT_WORKSPACE_DOWNLOAD_EXCLUDES = frozenset({"local/study_data.yaml", "local/study_runtime.yaml"})
+_RESOURCE_CONFIG_NAMES = ("resources.json", "resources.json.default")
+_K8S_LAUNCHER_COMPONENT_ID = "k8s_launcher"
 
 
 @dataclass
@@ -92,6 +95,56 @@ def _safe_rel_path(path: str) -> str | None:
     if rel_path.is_absolute() or ".." in rel_path.parts:
         return None
     return normalized
+
+
+def _config_path_to_workspace_rel(path, workspace_root: str, workspace_mount_path=None) -> str | None:
+    if not isinstance(path, str) or not path:
+        return None
+    normalized = path.replace("\\", "/").replace(os.sep, "/")
+    if not posixpath.isabs(normalized):
+        return _safe_rel_path(normalized)
+
+    prefixes = []
+    if isinstance(workspace_mount_path, str) and workspace_mount_path:
+        prefixes.append(workspace_mount_path.replace("\\", "/").replace(os.sep, "/").rstrip("/"))
+    prefixes.append(os.path.abspath(workspace_root).replace(os.sep, "/").rstrip("/"))
+
+    for prefix in prefixes:
+        if normalized.startswith(f"{prefix}/"):
+            return _safe_rel_path(normalized[len(prefix) + 1 :])
+    return None
+
+
+def _add_legacy_study_data_excludes(excluded_paths: set[str], workspace_root: str) -> None:
+    """Exclude a legacy kit's custom study_data_pvc_file_path from job workspace bundles."""
+    local_dir = os.path.join(workspace_root, "local")
+    for resource_config_name in _RESOURCE_CONFIG_NAMES:
+        try:
+            with open(os.path.join(local_dir, resource_config_name), "rt") as f:
+                resource_config = json.load(f)
+        except FileNotFoundError:
+            continue
+        except Exception as e:
+            logger.debug(
+                "could not inspect resource config '%s' for workspace download excludes: %s", resource_config_name, e
+            )
+            continue
+        if not isinstance(resource_config, dict):
+            continue
+        components = resource_config.get("components")
+        if not isinstance(components, list):
+            continue
+        for component in components:
+            if not isinstance(component, dict) or component.get("id") != _K8S_LAUNCHER_COMPONENT_ID:
+                continue
+            args = component.get("args")
+            if not isinstance(args, dict):
+                continue
+            rel_path = _config_path_to_workspace_rel(
+                args.get("study_data_pvc_file_path"), workspace_root, args.get("workspace_mount_path")
+            )
+            if rel_path:
+                excluded_paths.add(rel_path)
 
 
 def _add_study_runtime_excludes(excluded_paths: set[str], workspace_root: str) -> None:
@@ -123,6 +176,7 @@ def _add_study_runtime_excludes(excluded_paths: set[str], workspace_root: str) -
 
 def _workspace_download_excludes(workspace_root: str) -> frozenset[str]:
     excluded_paths = set(_DEFAULT_WORKSPACE_DOWNLOAD_EXCLUDES)
+    _add_legacy_study_data_excludes(excluded_paths, workspace_root)
     _add_study_runtime_excludes(excluded_paths, workspace_root)
     return frozenset(excluded_paths)
 

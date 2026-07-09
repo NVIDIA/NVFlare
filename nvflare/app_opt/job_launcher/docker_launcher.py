@@ -400,8 +400,10 @@ class DockerJobLauncher(JobLauncherSpec):
                                           (underscores, not hyphens).
                                           Example: {"shm_size": "8g", "ipc_mode": "host"}
                                           Note: "volumes", "mounts", "network", "environment", "command",
-                                          "name", "detach", "auto_remove", "user", "working_dir" are controlled
-                                          by the launcher and cannot be overridden here.
+                                          "name", "detach", "auto_remove", "user", "working_dir", and "image"
+                                          are controlled by the launcher and cannot be overridden here; a site
+                                          default job image belongs in studies.<study>.container.image in
+                                          local/study_runtime.yaml.
             default_job_env: site-level default environment variables injected into every job
                              container launched by this site. Useful for site/runtime-specific
                              settings such as NCCL workarounds. Launcher-controlled variables
