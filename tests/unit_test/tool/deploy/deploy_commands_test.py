@@ -296,7 +296,9 @@ def test_prepare_docker_client_copies_and_patches_runtime_files(tmp_path, capsys
 
     comm_config = json.loads((output / "local" / "comm_config.json").read_text())
     assert comm_config["internal"]["resources"]["host"] == "0.0.0.0"
-    assert (output / "local" / "study_data.yaml").exists()
+    study_runtime = yaml.safe_load((output / "local" / "study_runtime.yaml").read_text())
+    assert study_runtime == {"format_version": 2, "studies": {}}
+    assert not (output / "local" / "study_data.yaml").exists()
 
 
 @pytest.mark.parametrize(
@@ -651,7 +653,6 @@ def test_prepare_k8s_client_writes_chart_and_launcher_config(tmp_path, capsys):
                 "default_python_path": "/usr/bin/python3",
                 "job_pod_security_context": {"runAsNonRoot": True},
                 "image_pull_secrets": ["job-regcred", "site.registry.example.com"],
-                "study_job_spec_file_path": "/workspace/local/study_job_spec.yaml",
             },
         },
     )
@@ -663,13 +664,13 @@ def test_prepare_k8s_client_writes_chart_and_launcher_config(tmp_path, capsys):
     assert launcher["path"] == "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher"
     assert launcher["args"]["config_file_path"] is None
     assert launcher["args"]["namespace"] == "flare"
-    assert launcher["args"]["study_data_pvc_file_path"] == "/workspace/local/study_data.yaml"
+    assert "study_data_pvc_file_path" not in launcher["args"]
     assert launcher["args"]["workspace_mount_path"] == "/workspace"
     assert launcher["args"]["default_python_path"] == "/usr/bin/python3"
     assert launcher["args"]["pending_timeout"] == 7
     assert launcher["args"]["security_context"] == {"runAsNonRoot": True}
     assert launcher["args"]["image_pull_secrets"] == ["job-regcred", "site.registry.example.com"]
-    assert launcher["args"]["study_job_spec_file_path"] == "/workspace/local/study_job_spec.yaml"
+    assert "study_job_spec_file_path" not in launcher["args"]
 
     comm_config = json.loads((output / "local" / "comm_config.json").read_text())
     assert comm_config["internal"]["resources"] == {
@@ -736,7 +737,7 @@ def test_stage_k8_creates_configmap_secret_and_patches_chart(tmp_path, capsys, m
     local_items = {item["path"]: item["key"] for item in values["workspaceConfig"]["local"]["items"]}
     assert "resources.json.default" in local_items
     assert "comm_config.json" in local_items
-    assert "study_data.yaml" in local_items
+    assert "study_runtime.yaml" in local_items
     assert "custom/helper.py" in local_items
     helper_key = local_items["custom/helper.py"]
     assert base64.b64decode(configmap["binaryData"][helper_key]).decode() == "VALUE = 1\n"
@@ -1345,6 +1346,51 @@ def test_prepare_k8s_launcher_defaults_to_incluster_config(tmp_path, capsys):
     assert launcher["args"]["config_file_path"] is None
 
 
+@pytest.mark.parametrize("reserved_key", ["image", "auto_remove"])
+def test_prepare_docker_rejects_reserved_default_container_kwargs(tmp_path, capsys, reserved_key):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "prepared"
+
+    with pytest.raises(SystemExit):
+        _run_prepare(
+            kit,
+            output,
+            {
+                "runtime": "docker",
+                "parent": {"docker_image": "repo/nvflare:dev"},
+                "job_launcher": {"default_job_container_kwargs": {reserved_key: "anything"}},
+            },
+        )
+
+    err = capsys.readouterr().err
+    assert "INVALID_CONFIG" in err
+    assert reserved_key in err
+    assert "container.image" in err
+
+
+def test_prepare_k8s_keeps_v1_study_data_for_legacy_kit(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    (kit / "local" / "study_data.yaml").write_text("default:\n  data:\n    source: nvfldata\n    mode: ro\n")
+    output = tmp_path / "site-1-k8s"
+
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev", "workspace_mount_path": "/workspace"},
+        },
+    )
+    capsys.readouterr()
+
+    resources = json.loads((output / "local" / "resources.json.default").read_text())
+    launcher = _component(resources, "k8s_launcher")
+    assert launcher["args"]["study_data_pvc_file_path"] == "/workspace/local/study_data.yaml"
+    # v1 and v2 files must not coexist: no template is written next to a legacy file
+    assert not (output / "local" / "study_runtime.yaml").exists()
+    assert (output / "local" / "study_data.yaml").exists()
+
+
 @pytest.mark.parametrize(
     "make_kit, template_name",
     [
@@ -1701,14 +1747,6 @@ def test_prepare_rejects_admin_kit_without_writing_output(tmp_path, capsys):
                 "job_launcher": {"default_python_path": False},
             },
             "job_launcher.default_python_path",
-        ),
-        (
-            {
-                "runtime": "k8s",
-                "parent": {"docker_image": "repo/nvflare:dev"},
-                "job_launcher": {"study_job_spec_file_path": 7},
-            },
-            "job_launcher.study_job_spec_file_path",
         ),
     ],
 )
