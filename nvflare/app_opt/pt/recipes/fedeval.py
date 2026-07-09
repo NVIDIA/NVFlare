@@ -53,7 +53,6 @@ class EvalController(ModelController):
 
 
 class FedEvalRecipe(Recipe):
-    _SUPPORTED_PER_SITE_SECRET_REF_KEYS = frozenset({"command", "eval_args"})
     """A recipe for federated evaluation of a PyTorch model across multiple sites.
 
     This recipe sets up a federated evaluation workflow where a global model
@@ -119,6 +118,8 @@ class FedEvalRecipe(Recipe):
         )
         ```
     """
+
+    _SUPPORTED_PER_SITE_SECRET_REF_KEYS = frozenset({"command", "eval_args"})
 
     def __init__(
         self,

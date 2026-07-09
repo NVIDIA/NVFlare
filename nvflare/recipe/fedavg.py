@@ -70,7 +70,6 @@ class _FedAvgValidator(BaseModel):
 
 
 class FedAvgRecipe(Recipe):
-    _SUPPORTED_PER_SITE_SECRET_REF_KEYS = frozenset({"command", "train_args"})
     """Unified FedAvg recipe for PyTorch, TensorFlow, and Scikit-learn.
 
     FedAvg is a fundamental federated learning algorithm that aggregates model updates
@@ -169,6 +168,8 @@ class FedAvgRecipe(Recipe):
         If you want to use a custom aggregator, you can pass it in the aggregator parameter.
         The custom aggregator must be a subclass of the Aggregator class.
     """
+
+    _SUPPORTED_PER_SITE_SECRET_REF_KEYS = frozenset({"command", "train_args"})
 
     def __init__(
         self,
