@@ -23,6 +23,7 @@ import time
 import traceback
 from contextlib import contextmanager
 from functools import partial
+from pathlib import PurePath
 from tempfile import mkdtemp
 from typing import List, Optional, Tuple
 
@@ -1217,7 +1218,7 @@ def _manifest_global_model(download_path: str, manifest_paths: List[Tuple[int, s
     model_path = manifest_artifacts.get("global_model") if isinstance(manifest_artifacts, dict) else None
     if manifest_version != "1" or not isinstance(model_path, str) or not model_path:
         return True, None
-    if os.path.isabs(model_path) or ".." in model_path.split(os.sep):
+    if os.path.isabs(model_path) or ".." in PurePath(model_path).parts:
         return True, None
 
     candidate_path = os.path.normpath(os.path.join(os.path.dirname(manifest_path), model_path))
@@ -1225,7 +1226,7 @@ def _manifest_global_model(download_path: str, manifest_paths: List[Tuple[int, s
     if (
         os.path.normcase(candidate_path) == os.path.normcase(manifest_path)
         or not _is_path_within(root_real_path, candidate_path)
-        or not os.path.exists(candidate_path)
+        or not os.path.isfile(candidate_path)
     ):
         return True, None
 
