@@ -77,6 +77,9 @@ _RESERVED_CONTAINER_KWARGS = {
     "user",
     "working_dir",
 }
+# "image" is additionally reserved for site-level defaults only: jobs select their
+# image through docker_spec["image"], so it must not trip the job-spec warning.
+_RESERVED_DEFAULT_KWARGS = _RESERVED_CONTAINER_KWARGS | {"image"}
 
 
 def _sanitize_container_name(name: str) -> str:
@@ -421,7 +424,7 @@ class DockerJobLauncher(JobLauncherSpec):
             raise ValueError("default_python_path must be a non-empty string")
         self.timeout = timeout
         default_job_container_kwargs = default_job_container_kwargs or {}
-        reserved_used = _RESERVED_CONTAINER_KWARGS & set(default_job_container_kwargs.keys())
+        reserved_used = _RESERVED_DEFAULT_KWARGS & set(default_job_container_kwargs.keys())
         if reserved_used:
             raise ValueError(
                 f"default_job_container_kwargs must not contain reserved keys: {sorted(reserved_used)}. "

@@ -187,9 +187,10 @@ direction, recorded from PR review:
 - Job-supplied image wins by default; an enforce/pin mode for sites that forbid job-supplied images can come later.
 - A site-supplied image is site-trusted content and is not BYOC-gated the way job-supplied images are.
 - Re-read-per-launch means a site can roll a study to a new image version without restarting the parent.
-- Include the Docker cleanup: `image` in `default_job_container_kwargs` passes init validation today but fails at
-  launch (duplicate `image` argument to `containers.run`); it should be rejected at init. `docker_spec["image"]`
-  remains the legitimate job image selector and must not trip the reserved-keys warning.
+
+(The related Docker cleanup — `image` in `default_job_container_kwargs` passed init validation but failed every
+launch with a duplicate `containers.run` argument — is already fixed: init now rejects it, while
+`docker_spec["image"]` remains the legitimate job image selector.)
 
 ## Parsing, Compatibility, Migration
 

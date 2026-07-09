@@ -451,6 +451,9 @@ class TestDockerJobLauncherInit:
             "auto_remove",
             "user",
             "working_dir",
+            # image is job-selected via docker_spec; a site-level default would
+            # collide with the positional image arg at containers.run time
+            "image",
         ):
             with pytest.raises(ValueError, match="reserved"):
                 _make_launcher(default_job_container_kwargs={reserved: "anything"})
