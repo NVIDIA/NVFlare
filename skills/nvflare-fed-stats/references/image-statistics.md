@@ -14,10 +14,13 @@ Route on that output rather than re-deriving it; `counts_approximate:
 true` means the walk hit its file limit — verify site counts directly
 before bin-cap decisions. Datalist-JSON layouts may classify as
 `unknown_target`; read the datalist as declared layout evidence in that
-case. Mixed tabular+image data reports `modality: mixed` without routing
-(`target_type` stays `unknown_target` and no skill is recommended): read
-the dataset block, report the split, and run the two modalities as two
-separate jobs.
+case. Companion tabular metadata (a `labels.csv` beside the scans) keeps
+the dataset `image` and appears per site as `tabular_companions`: mention
+it in the report, never treat it as a statistics target. Genuinely mixed
+data — an image-only site among tabular sites, or materially both
+modalities — reports `modality: mixed` without routing (`target_type`
+stays `unknown_target`): read the dataset block, report the split, and
+run the two modalities as two separate jobs.
 
 ## Supported Statistics (Image)
 

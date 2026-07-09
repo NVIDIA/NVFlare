@@ -272,7 +272,9 @@ def test_stray_image_below_threshold_stays_tabular(tmp_path):
     assert dataset["file_census"][".png"] == 1  # stray file stays visible
 
 
-def test_image_only_site_under_tabular_majority_gets_no_parquet_nulls(tmp_path):
+def test_image_only_site_among_tabular_sites_is_mixed_and_unrouted(tmp_path):
+    # Codex repro: 19 tabular sites + 1 image-only site cannot be served by
+    # one tabular job; the dataset is mixed and stays unrouted.
     for i in range(1, 20):
         _write_site(tmp_path, f"site-{i:02d}", HEADER + ROWS)
     d = tmp_path / "site-99"
@@ -280,10 +282,65 @@ def test_image_only_site_under_tabular_majority_gets_no_parquet_nulls(tmp_path):
     (d / "scan.png").write_bytes(b"\x89PNG not really")
 
     dataset = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
+    result = inspect_path(tmp_path)
 
+    assert dataset["modality"] == "mixed"
+    assert result["target_type"] == "unknown_target"
+    assert "nvflare-fed-stats" not in result["skill_selection"]["recommended_skills"]
     image_site = [s for s in dataset["sites"] if s["name"] == "site-99"][0]
-    assert "format" not in image_site  # no parquet-shaped block of nulls
-    assert image_site["data_files"] == 1
+    assert image_site["image_files"] == 1 and image_site["tabular_files"] == 0
+
+
+def test_image_dataset_with_companion_labels_stays_image(tmp_path):
+    # THE standard imaging shape: scans plus a labels.csv per site.
+    for site in ("site-1", "site-2"):
+        d = tmp_path / site
+        d.mkdir()
+        for i in range(12):
+            (d / f"scan_{i}.png").write_bytes(b"\x89PNG not really")
+        (d / "labels.csv").write_text(HEADER + ROWS, encoding="utf-8")
+
+    dataset = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
+
+    assert dataset["modality"] == "image"
+    assert dataset["sites"][0]["tabular_companions"] == 1
+
+
+def test_same_width_shard_header_drift_is_flagged(tmp_path):
+    # Codex repro: part-1 header renames occupation to job at the same width.
+    d = tmp_path / "site-1"
+    d.mkdir()
+    (d / "part-0.csv").write_text(HEADER + ROWS, encoding="utf-8")
+    (d / "part-1.csv").write_text("age,job,income\n" + ROWS, encoding="utf-8")
+
+    result = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
+
+    assert result["sites"][0]["shard_schema_consistent"] is False
+    assert result["schema_agreement"]["status"] == "mismatch"
+
+
+def test_repeated_identical_shard_header_is_consistent(tmp_path):
+    d = tmp_path / "site-1"
+    d.mkdir()
+    (d / "part-0.csv").write_text(HEADER + ROWS, encoding="utf-8")
+    (d / "part-1.csv").write_text(HEADER + ROWS, encoding="utf-8")
+
+    result = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
+
+    site = result["sites"][0]
+    assert "shard_schema_consistent" not in site  # consistent
+    assert site["row_count_approximate"] is True  # multi-file totals stay approximate
+
+
+def test_headerless_data_shard_is_consistent(tmp_path):
+    d = tmp_path / "site-1"
+    d.mkdir()
+    (d / "part-0.csv").write_text(HEADER + ROWS, encoding="utf-8")
+    (d / "part-1.csv").write_text(ROWS, encoding="utf-8")  # data-first shard
+
+    result = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
+
+    assert "shard_schema_consistent" not in result["sites"][0]
 
 
 def test_parquet_shard_schema_disagreement_is_a_mismatch(tmp_path):

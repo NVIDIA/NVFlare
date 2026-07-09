@@ -24,25 +24,29 @@ size as the upper bound.
 
 Dataset block contract (all keys always present per modality):
 
-- ``modality``: ``tabular`` | ``image`` | ``mixed``. Mixed means the
-  minority modality is a material share (>= 10%) of the data files; it is
-  reported but not routed (``target_type`` stays ``unknown_target``).
-  Below the threshold the majority wins and stray files stay visible in
-  ``file_census``.
+- ``modality``: ``tabular`` | ``image`` | ``mixed``, decided per site, not
+  by file-count share. Targeted shapes: a tabular dataset tolerates stray
+  images (<= 2 per site, e.g. exported plots); an image dataset tolerates
+  companion tabular metadata (<= 2 files per site, e.g. labels.csv,
+  flagged ``tabular_companions`` and never a statistics target); anything
+  else — an image-only site among tabular sites, or materially both — is
+  ``mixed``, reported but not routed (``target_type`` stays
+  ``unknown_target``).
 - ``layout``: ``per_site_directories`` | ``flat``.
 - ``file_census``: extension -> count (bounded; see ``counts_approximate``).
 - ``counts_approximate``: true when a walk limit was hit.
 - ``scan``: ``files_read`` / ``bytes_read`` performed by this classification.
 - ``sites``: per top-level directory (or ``.`` when flat):
-  - always: ``name``, ``data_files``;
+  - always: ``name``, ``data_files``, ``tabular_files``, ``image_files``;
   - tabular/parquet: ``format``, ``header``, ``column_count``, ``features``,
     ``dtypes``, ``row_count``, ``row_count_approximate``, and for parquet
     ``schema_available``. ``header: present`` means "names available"
     (parquet always has names when readable); ``header: ambiguous`` means
     names must be user-supplied. ``row_count`` aggregates every tabular
     file in the site; sharded CSV sites are always approximate (per-shard
-    headers are unknowable), parquet shards are exact metadata sums when
-    the shards agree on schema.
+    headers are unknowable; a shard whose header-like first row disagrees
+    with the site schema flags ``shard_schema_consistent: false``), parquet
+    shards are exact metadata sums when the shards agree on schema.
     Feature names are sanitized: control characters stripped and length
     capped (``feature_names_truncated`` marks a cap hit).
   - image: ``pixel_depth`` from one sample when an optional loader exists.
@@ -71,10 +75,14 @@ MAX_SAMPLE_ROWS = 200
 MAX_SCHEMA_COLUMNS = 512
 MAX_FEATURE_NAME_CHARS = 120
 MAX_WALK_ENTRIES = 50_000
-# Both modalities present: classify as mixed (unrouted) when the minority
-# modality is a material share of the data files; below the threshold the
-# stray files (a plot.png beside CSVs) do not flip the classification.
-MIXED_MINORITY_SHARE = 0.10
+# Per-site structural modality rules (file-count percentages misjudge mixed
+# data: one CSV can be a complete dataset while image datasets inherently
+# hold hundreds of files):
+# - a tabular site tolerates at most this many stray images (exported plots);
+STRAY_MAX_IMAGES_PER_SITE = 2
+# - an image site tolerates at most this many tabular files as companion
+#   metadata (labels.csv beside the scans), reported but never a stats target.
+COMPANION_MAX_TABULAR_PER_SITE = 2
 
 HEADER_PRESENT = "present"
 # Per the fed-stats contract: a first row is a header only when at least one
@@ -91,15 +99,9 @@ _NON_NUMERIC_FLOAT_TOKENS = {"nan", "inf", "-inf", "+inf", "infinity", "-infinit
 def inspect_dataset(root: Path, max_files: int, max_file_bytes: int) -> Optional[dict]:
     """Classify a directory as a dataset; None when it holds no data files."""
     groups, census, truncated = _collect_data_files(root, max_files)
-    tabular_count = sum(census.get(ext, 0) for ext in TABULAR_EXTENSIONS)
-    image_count = sum(n for ext, n in census.items() if ext in IMAGE_EXTENSIONS or ext == ".nii.gz")
-    if tabular_count == 0 and image_count == 0:
+    if not groups:
         return None
-    minority = min(tabular_count, image_count)
-    if minority > 0 and minority / (tabular_count + image_count) >= MIXED_MINORITY_SHARE:
-        modality = "mixed"
-    else:
-        modality = "tabular" if tabular_count > image_count else "image"
+    modality = _dataset_modality(groups)
 
     # Dataset classification reads data bytes (bounded, metadata-only);
     # account for every read so the inspection stays auditable.
@@ -107,11 +109,22 @@ def inspect_dataset(root: Path, max_files: int, max_file_bytes: int) -> Optional
     sites = []
     for name in sorted(groups):
         files = groups[name]
-        site: Dict = {"name": name, "data_files": len(files)}
+        tabular_files = [f for f in files if _data_extension(f) in TABULAR_EXTENSIONS]
+        image_count = len(files) - len(tabular_files)
+        site: Dict = {
+            "name": name,
+            "data_files": len(files),
+            "tabular_files": len(tabular_files),
+            "image_files": image_count,
+        }
         if modality == "tabular":
             site.update(_tabular_schema(files, max_file_bytes, reads))
         elif modality == "image":
             site["pixel_depth"] = _sample_pixel_depth(files, reads)
+            if tabular_files:
+                # companion metadata (e.g. labels.csv): reported, never a
+                # statistics target
+                site["tabular_companions"] = len(tabular_files)
         sites.append(site)
 
     dataset: Dict = {
@@ -125,6 +138,30 @@ def inspect_dataset(root: Path, max_files: int, max_file_bytes: int) -> Optional
     if modality == "tabular":
         dataset["schema_agreement"] = _schema_agreement(sites)
     return dataset
+
+
+def _dataset_modality(groups: Dict[str, List[Path]]) -> str:
+    """Per-site structural classification; see the module contract.
+
+    tabular-consistent: every site has tabular files and at most
+    ``STRAY_MAX_IMAGES_PER_SITE`` images. image-consistent: every site has
+    image files and at most ``COMPANION_MAX_TABULAR_PER_SITE`` tabular
+    files. Exactly one consistent view wins; both (tiny ambiguous sites) or
+    neither (an image-only site among tabular sites, or materially both) is
+    ``mixed`` and stays unrouted.
+    """
+    tabular_ok = True
+    image_ok = True
+    for files in groups.values():
+        tabular = sum(1 for f in files if _data_extension(f) in TABULAR_EXTENSIONS)
+        images = len(files) - tabular
+        if tabular == 0 or images > STRAY_MAX_IMAGES_PER_SITE:
+            tabular_ok = False
+        if images == 0 or tabular > COMPANION_MAX_TABULAR_PER_SITE:
+            image_ok = False
+    if tabular_ok == image_ok:
+        return "mixed"
+    return "tabular" if tabular_ok else "image"
 
 
 def _collect_data_files(root: Path, max_files: int):
@@ -247,16 +284,23 @@ def _tabular_schema(files: List[Path], max_file_bytes: int, reads: Dict[str, int
     shards_consistent = True
     # sharded site: aggregate line counts across the remaining files; per-shard
     # header presence is unknowable, so any multi-file total is approximate.
-    # A shard whose first row has a different field count disagrees with the
-    # site schema and must not stay silent.
+    # A shard disagrees when its first row has a different field count, or
+    # when its first row is header-like (text where the site dtypes are
+    # numeric) but carries different names than the site schema.
     for extra in text_files[1:]:
         extra_raw, _extra_capped = _read_bounded(extra, max_file_bytes, reads)
         if extra_raw is not None:
             extra_text = extra_raw.decode("utf-8", errors="replace")
             data_rows += extra_text.count("\n")
             first = next(csv.reader(io.StringIO(extra_text), delimiter=delimiter), None)
-            if first and len(first[:MAX_SCHEMA_COLUMNS]) != column_count:
-                shards_consistent = False
+            if first:
+                first = first[:MAX_SCHEMA_COLUMNS]
+                if len(first) != column_count:
+                    shards_consistent = False
+                elif header == HEADER_PRESENT and _row_is_header_like(first, dtypes_flags=numeric):
+                    shard_names, _ = _sanitize_names(first)
+                    if shard_names != features:
+                        shards_consistent = False
         approximate = True
     # a site mixing text and parquet formats is counted from the text files
     # only; never present that as an exact total
@@ -279,6 +323,11 @@ def _tabular_schema(files: List[Path], max_file_bytes: int, reads: Dict[str, int
     if not shards_consistent:
         schema["shard_schema_consistent"] = False
     return schema
+
+
+def _row_is_header_like(row: List[str], dtypes_flags: List[bool]) -> bool:
+    """True when a row carries text in columns the site knows are numeric."""
+    return any(flag and not _numeric_token(cell) for flag, cell in zip(dtypes_flags, row))
 
 
 def _sanitize_names(cells: List[str]) -> Tuple[List[str], bool]:
