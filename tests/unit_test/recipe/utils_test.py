@@ -17,6 +17,7 @@ import os
 import tempfile
 from datetime import datetime
 from decimal import Decimal
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -242,6 +243,11 @@ class TestRecipePackageExports:
         from nvflare.recipe import add_cross_site_evaluation
 
         assert callable(add_cross_site_evaluation)
+
+    def test_add_final_global_evaluation_importable_from_recipe(self):
+        from nvflare.recipe import add_final_global_evaluation
+
+        assert callable(add_final_global_evaluation)
 
     def test_set_per_site_config_importable_from_recipe(self):
         """set_per_site_config must be importable from the top-level nvflare.recipe package."""
@@ -523,6 +529,117 @@ class TestCrossSiteEvalIdempotency:
         add_cross_site_evaluation(recipe, participating_clients=participating_clients)
 
         assert captured_kwargs["participating_clients"] == participating_clients
+
+
+class TestFinalGlobalEvaluation:
+    def _make_recipe(self, comp_ids=None, framework=None):
+        from nvflare.job_config.script_runner import FrameworkType
+
+        job = MagicMock()
+        job._deploy_map = {}
+        job.comp_ids = comp_ids
+        return SimpleNamespace(job=job, framework=framework or FrameworkType.PYTORCH)
+
+    def test_adds_locator_generator_and_final_eval_controller(self):
+        from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
+        from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
+        from nvflare.app_opt.pt.file_model_locator import PTFileModelLocator
+        from nvflare.recipe import add_final_global_evaluation
+
+        recipe = self._make_recipe({"persistor_id": "persistor"})
+        recipe.job.to_server.side_effect = ["final_model_locator", None, None]
+
+        add_final_global_evaluation(recipe, participating_clients=["site-1"], validation_timeout=42)
+
+        calls = recipe.job.to_server.call_args_list
+        assert isinstance(calls[0].args[0], PTFileModelLocator)
+        assert calls[0].kwargs == {"id": "final_model_locator"}
+        assert isinstance(calls[1].args[0], ValidationJsonGenerator)
+        controller = calls[2].args[0]
+        assert isinstance(controller, CrossSiteModelEval)
+        assert controller._model_locator_id == "final_model_locator"
+        assert controller._submit_model_task_name == ""
+        assert controller._participating_clients == ["site-1"]
+        assert controller._validation_timeout == 42
+        assert recipe.job.comp_ids["locator_id"] == "final_model_locator"
+        assert recipe._cse_added is True
+
+    def test_reuses_existing_model_locator(self):
+        from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
+        from nvflare.recipe import add_final_global_evaluation
+
+        recipe = self._make_recipe({"persistor_id": "persistor", "locator_id": "existing_locator"})
+
+        add_final_global_evaluation(recipe)
+
+        assert recipe.job.to_server.call_count == 2
+        controller = recipe.job.to_server.call_args_list[-1].args[0]
+        assert isinstance(controller, CrossSiteModelEval)
+        assert controller._model_locator_id == "existing_locator"
+        assert controller._participating_clients is None
+
+    @pytest.mark.parametrize(
+        "participating_clients, error_type",
+        [
+            ("site-1", TypeError),
+            (("site-1",), TypeError),
+            ([1], TypeError),
+            ([], ValueError),
+        ],
+    )
+    def test_validates_participating_clients(self, participating_clients, error_type):
+        from nvflare.recipe import add_final_global_evaluation
+
+        recipe = self._make_recipe({"persistor_id": "persistor"})
+
+        with pytest.raises(error_type, match="participating_clients must"):
+            add_final_global_evaluation(recipe, participating_clients=participating_clients)
+
+        recipe.job.to_server.assert_not_called()
+
+    def test_rejects_duplicate_configuration(self):
+        from nvflare.recipe import add_final_global_evaluation
+
+        recipe = self._make_recipe({"persistor_id": "persistor"})
+        recipe._cse_added = True
+
+        with pytest.raises(RuntimeError, match="already configured"):
+            add_final_global_evaluation(recipe)
+
+    def test_requires_pytorch_recipe(self):
+        from nvflare.job_config.script_runner import FrameworkType
+        from nvflare.recipe import add_final_global_evaluation
+
+        recipe = self._make_recipe({"persistor_id": "persistor"}, framework=FrameworkType.NUMPY)
+
+        with pytest.raises(ValueError, match="supports PyTorch"):
+            add_final_global_evaluation(recipe)
+
+    @pytest.mark.parametrize("comp_ids", [None, [], "persistor"])
+    def test_requires_component_id_mapping(self, comp_ids):
+        from nvflare.recipe import add_final_global_evaluation
+
+        recipe = self._make_recipe(comp_ids)
+
+        with pytest.raises(ValueError, match="tracks component IDs"):
+            add_final_global_evaluation(recipe)
+
+    def test_requires_model_persistor(self):
+        from nvflare.recipe import add_final_global_evaluation
+
+        recipe = self._make_recipe({})
+
+        with pytest.raises(ValueError, match="requires a PyTorch model persistor"):
+            add_final_global_evaluation(recipe)
+
+    def test_rejects_failed_model_locator_registration(self):
+        from nvflare.recipe import add_final_global_evaluation
+
+        recipe = self._make_recipe({"persistor_id": "persistor"})
+        recipe.job.to_server.return_value = None
+
+        with pytest.raises(RuntimeError, match="failed to register"):
+            add_final_global_evaluation(recipe)
 
 
 class TestAddExperimentTrackingClients:

@@ -317,7 +317,9 @@ def add_final_global_evaluation(
         validation_timeout: Timeout in seconds for validation tasks.
 
     Raises:
-        ValueError: If the recipe is not PyTorch or has no model persistor.
+        TypeError: If ``participating_clients`` is not a list of strings.
+        ValueError: If ``participating_clients`` is empty, the recipe is not
+            PyTorch, or the recipe has no model persistor.
         RuntimeError: If a cross-site evaluation workflow is already configured.
     """
     from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
@@ -330,6 +332,14 @@ def add_final_global_evaluation(
 
     if getattr(recipe, "framework", None) != FrameworkType.PYTORCH:
         raise ValueError("final global evaluation currently supports PyTorch recipes only")
+
+    if participating_clients is not None:
+        if not isinstance(participating_clients, list) or not all(
+            isinstance(client, str) for client in participating_clients
+        ):
+            raise TypeError(f"participating_clients must be a list of str, got {participating_clients!r}")
+        if not participating_clients:
+            raise ValueError("participating_clients must not be empty; use None to evaluate on all clients")
 
     comp_ids = getattr(recipe.job, "comp_ids", None)
     if not isinstance(comp_ids, dict):

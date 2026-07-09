@@ -565,11 +565,22 @@ class Recipe(ABC):
                 for the server to wait for all clients to receive task tensors.
 
         Raises:
-            ValueError: If ``format`` does not match a declared
-                ``server_expected_format``.
+            TypeError: If ``tasks`` is not a list of strings.
+            ValueError: If ``tasks`` is empty, if ``format`` does not match a
+                declared ``server_expected_format``.
+            RuntimeError: If tensor streaming was already enabled.
         """
         from nvflare.app_opt.tensor_stream.client import TensorClientStreamer
         from nvflare.app_opt.tensor_stream.server import TensorServerStreamer
+
+        if getattr(self, "_tensor_streaming_added", False):
+            raise RuntimeError("tensor streaming has already been enabled for this recipe")
+
+        if tasks is not None:
+            if not isinstance(tasks, list) or not all(isinstance(task, str) for task in tasks):
+                raise TypeError(f"tasks must be a list of str, got {tasks!r}")
+            if not tasks:
+                raise ValueError("tasks must not be empty; use None for the default train task")
 
         server_expected_format = getattr(self, "server_expected_format", None)
         if server_expected_format is not None and format != server_expected_format:
@@ -596,6 +607,7 @@ class Recipe(ABC):
             ),
             id="tensor_client_streamer",
         )
+        self._tensor_streaming_added = True
 
     def add_decomposers(self, decomposers: List[Union[str, Decomposer]]):
         """Add decomposers to the job
