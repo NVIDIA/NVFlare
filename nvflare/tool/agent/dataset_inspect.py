@@ -148,20 +148,33 @@ def _dataset_modality(groups: Dict[str, List[Path]]) -> str:
     tabular-consistent: every site has tabular files and at most
     ``STRAY_MAX_IMAGES_PER_SITE`` images. image-consistent: every site has
     image files and at most ``COMPANION_MAX_TABULAR_PER_SITE`` tabular
-    files. Exactly one consistent view wins; both (tiny ambiguous sites) or
-    neither (an image-only site among tabular sites, or materially both) is
-    ``mixed`` and stays unrouted.
+    files. Exactly one consistent view wins. When tiny sites satisfy both
+    tolerance windows, the side with more files overall is the substantive
+    dataset and a dead tie is ``mixed``; neither view consistent (an
+    image-only site among tabular sites, or materially both) is ``mixed``
+    and stays unrouted.
     """
     tabular_ok = True
     image_ok = True
+    total_tabular = 0
+    total_images = 0
     for files in groups.values():
         tabular = sum(1 for f in files if _data_extension(f) in TABULAR_EXTENSIONS)
         images = len(files) - tabular
+        total_tabular += tabular
+        total_images += images
         if tabular == 0 or images > STRAY_MAX_IMAGES_PER_SITE:
             tabular_ok = False
         if images == 0 or tabular > COMPANION_MAX_TABULAR_PER_SITE:
             image_ok = False
-    if tabular_ok == image_ok:
+    if tabular_ok and image_ok:
+        # tiny sites sit inside both tolerance windows (a few files of
+        # each); the substantive side is whichever holds more files, and a
+        # dead tie is genuinely ambiguous
+        if total_tabular == total_images:
+            return "mixed"
+        return "tabular" if total_tabular > total_images else "image"
+    if not tabular_ok and not image_ok:
         return "mixed"
     return "tabular" if tabular_ok else "image"
 
@@ -303,6 +316,9 @@ def _tabular_schema(files: List[Path], max_file_bytes: int, reads: Dict[str, int
                     shard_names, _ = _sanitize_names(first)
                     if shard_names != features:
                         shards_consistent = False
+                    else:
+                        # a detected repeated header is not a data row
+                        data_rows -= 1
         approximate = True
     # a site mixing text and parquet formats is counted from the text files
     # only; never present that as an exact total

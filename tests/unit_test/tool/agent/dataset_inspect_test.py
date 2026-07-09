@@ -245,8 +245,9 @@ def test_parquet_sharded_site_sums_exact_rows(tmp_path):
     assert result["scan"]["files_read"] == 2
 
 
-def test_material_minority_makes_mixed_not_majority(tmp_path):
-    # Codex repro: 2 CSV + 1 PNG must be mixed (unrouted), not tabular
+def test_more_tabular_than_stray_images_is_tabular(tmp_path):
+    # 2 CSVs + 1 stray PNG in one site: within both tolerance windows, the
+    # substantive side (more files) wins
     d = tmp_path / "site-1"
     d.mkdir()
     (d / "a.csv").write_text(HEADER + ROWS, encoding="utf-8")
@@ -256,9 +257,23 @@ def test_material_minority_makes_mixed_not_majority(tmp_path):
     dataset = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
     result = inspect_path(tmp_path)
 
-    assert dataset["modality"] == "mixed"
-    assert result["target_type"] == "unknown_target"
-    assert "nvflare-fed-stats" not in result["skill_selection"]["recommended_skills"]
+    assert dataset["modality"] == "tabular"
+    assert result["target_type"] == "tabular_dataset"
+    assert result["skill_selection"]["recommended_skills"] == ["nvflare-fed-stats"]
+
+
+def test_tabular_shards_with_one_stray_plot_stay_tabular(tmp_path):
+    # the companion-cap regression case: 3 CSV shards + 1 exported plot must
+    # not flip to mixed because the companion window widened to 4
+    d = tmp_path / "site-1"
+    d.mkdir()
+    for i in range(3):
+        (d / f"part_{i}.csv").write_text(HEADER + ROWS, encoding="utf-8")
+    (d / "plot.png").write_bytes(b"\x89PNG not really")
+
+    dataset = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
+
+    assert dataset["modality"] == "tabular"
 
 
 def test_stray_image_below_threshold_stays_tabular(tmp_path):
@@ -347,6 +362,7 @@ def test_repeated_identical_shard_header_is_consistent(tmp_path):
 
     site = result["sites"][0]
     assert "shard_schema_consistent" not in site  # consistent
+    assert site["row_count"] == 8  # detected repeated header is not a data row
     assert site["row_count_approximate"] is True  # multi-file totals stay approximate
 
 
