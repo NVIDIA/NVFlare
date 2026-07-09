@@ -90,6 +90,7 @@ def _initialize_fake_campaign(runner, tmp_path, monkeypatch, *, target_env="sim"
     [
         ("write_yaml", "autofl.yaml", {"replacement": "value"}),
         ("write_json", "campaign.json", {"replacement": "value"}),
+        ("atomic_write_text", "autofl_report.md", "replacement"),
     ],
 )
 def test_structured_write_preserves_existing_file_when_temporary_write_fails(

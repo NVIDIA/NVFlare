@@ -597,6 +597,10 @@ def atomic_write_bytes(path: Path, data: bytes) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def atomic_write_text(path: Path, text: str) -> None:
+    atomic_write_bytes(path, text.encode("utf-8"))
+
+
 def capture_file_versions(paths: Iterable[Path]) -> Dict[Path, Optional[bytes]]:
     return {path: path.read_bytes() if path.is_file() else None for path in paths}
 
@@ -2142,7 +2146,7 @@ def write_report(path: Path, config: Dict[str, Any], records: List[RunRecord], a
         lines.append(f"Best retained run: `{best.name}` with `{objective['optimization_metric']}={best.score:.6f}`.")
     else:
         lines.append("No scored run was retained.")
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    atomic_write_text(path, "\n".join(lines) + "\n")
 
 
 def candidate_attempts(records: List[RunRecord]) -> int:
@@ -2765,7 +2769,7 @@ def finalize_candidate_result(
                 patch_path,
             ]
         )
-        patch_path.write_text(patch, encoding="utf-8")
+        atomic_write_text(patch_path, patch)
         patch_sha256 = sha256_bytes(patch.encode("utf-8"))
         record.changed_files = ",".join(changed) if changed else "none"
         record.diff_summary = str(manifest.get("hypothesis") or "candidate")
@@ -2854,7 +2858,7 @@ def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
         args, job, metadata, paths, manifest_path
     )
     patch_path = manifest_path.parent / "candidate.patch"
-    patch_path.write_text(patch, encoding="utf-8")
+    atomic_write_text(patch_path, patch)
     manifest.update(
         {
             "updated_at": utc_now(),
