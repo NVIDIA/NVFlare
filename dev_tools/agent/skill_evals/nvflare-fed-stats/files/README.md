@@ -33,3 +33,8 @@ testable; all non-null counts stay above 200.
   site-3 is truncated to 60 rows so the bin-cap cleanser allows at most 5
   histogram bins, for the bin-reduction eval. Copies of the base site data
   are intentional, same isolation rationale as `readme-injection/`.
+- `images-intensity/site-{1,2,3}/` — 110 synthetic 8x8 grayscale PNGs per
+  site (seeded, site-shifted intensity means so per-site histograms differ)
+  plus one deliberately corrupt file at site-1 for failure_count. 110
+  images per site clears the bin-cap cleanser for the 10-bin histogram the
+  eval requests (bins must stay under 10% of a site's image count).
