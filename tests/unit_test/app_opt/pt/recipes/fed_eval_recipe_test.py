@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import warnings
 from unittest.mock import patch
 
 import pytest
@@ -20,6 +21,7 @@ from pydantic import ValidationError
 
 from nvflare.app_opt.pt.recipes.fedeval import FedEvalRecipe
 from nvflare.client.config import ExchangeFormat
+from nvflare.fuel.utils.secret_utils import PotentialSecretWarning, UnsupportedSecretRefWarning
 
 
 class SimpleTestModel(nn.Module):
@@ -74,6 +76,30 @@ def assert_recipe_basics(recipe, expected_name, expected_params):
 
 class TestFedEvalRecipe:
     """Test cases for FedEvalRecipe class."""
+
+    def test_warns_on_secret_in_eval_args(self, mock_file_system, base_recipe_params, simple_model):
+        model, _ = simple_model
+        params = dict(base_recipe_params)
+        params["eval_args"] = "--password hunter22x"
+
+        with pytest.warns(PotentialSecretWarning, match="eval_args"):
+            FedEvalRecipe(name="secret_eval", model=model, **params)
+
+    def test_external_command_secret_ref_is_supported(self, mock_file_system, base_recipe_params, simple_model):
+        model, _ = simple_model
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UnsupportedSecretRefWarning)
+            FedEvalRecipe(
+                name="command_secret_ref",
+                model=model,
+                per_site_config={
+                    "site-1": {
+                        "launch_external_process": True,
+                        "command": "env API_TOKEN=${secret:API_TOKEN} python3 -u",
+                    }
+                },
+                **base_recipe_params,
+            )
 
     def test_basic_initialization(self, mock_file_system, base_recipe_params, simple_model):
         """Test FedEvalRecipe initialization with default parameters."""

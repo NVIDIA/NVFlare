@@ -14,7 +14,6 @@
 
 import os
 import re
-import shlex
 import signal
 import subprocess
 from threading import Lock, Thread
@@ -26,6 +25,7 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.launcher import Launcher, LauncherRunStatus
 from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.fuel.utils.secret_utils import resolve_secret_refs, split_command_preserving_secret_refs
 from nvflare.utils.job_launcher_utils import add_custom_dir_to_path
 
 
@@ -169,7 +169,12 @@ class SubprocessLauncher(Launcher):
                 app_custom_folder = workspace.get_app_custom_dir(job_id)
                 add_custom_dir_to_path(app_custom_folder, env)
 
-                command_seq = shlex.split(command)
+                # Resolve ${secret:ENV_VAR} references from this site's environment after shlex
+                # splitting, so injected values never re-tokenize. The resolved values exist only
+                # in the argument vector of the subprocess and must never be logged.
+                command_seq = [
+                    resolve_secret_refs(token) for token in split_command_preserving_secret_refs(command, posix=True)
+                ]
                 self._process = subprocess.Popen(
                     command_seq,
                     shell=False,
@@ -204,7 +209,10 @@ class SubprocessLauncher(Launcher):
                 self._terminate_process()
                 self._log_thread.join()
                 if self._clean_up_script:
-                    command_seq = shlex.split(self._clean_up_script)
+                    command_seq = [
+                        resolve_secret_refs(token)
+                        for token in split_command_preserving_secret_refs(self._clean_up_script, posix=True)
+                    ]
                     process = subprocess.Popen(command_seq, cwd=self._app_dir, shell=False)
                     process.wait()
                 self._process = None

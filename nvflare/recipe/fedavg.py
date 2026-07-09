@@ -25,6 +25,7 @@ from nvflare.app_common.app_constant import DefaultCheckpointFileName
 from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.constants import FrameworkType
+from nvflare.fuel.utils.secret_utils import warn_on_unsupported_secret_refs_outside_keys
 from nvflare.job_config.base_fed_job import BaseFedJob
 from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.recipe.spec import Recipe
@@ -96,7 +97,12 @@ class FedAvgRecipe(Recipe):
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
         train_script: Path to the training script that will be executed on each client.
-        train_args: Command line arguments to pass to the training script.
+        train_args: Command line arguments to pass to the training script. Written in clear
+            text into the generated job config, so it must never contain actual secret values
+            (a PotentialSecretWarning is emitted if it looks like it does). To pass a secret,
+            use :func:`nvflare.recipe.secrets.secret_ref` for a site environment variable or
+            :func:`nvflare.recipe.secrets.secret_file_ref` for a mounted secret file. The
+            executing site resolves the placeholder at runtime.
         aggregator: Custom aggregator (ModelAggregator) for combining client model updates.
             Must implement accept_model(), aggregate_model(), reset_stats() methods.
             If None, uses built-in memory-efficient weighted averaging. Defaults to None.
@@ -130,6 +136,9 @@ class FedAvgRecipe(Recipe):
             - launch_once (bool): Whether to launch external process once or per task
             - shutdown_timeout (float): Shutdown timeout in seconds
             If not provided, the same configuration will be used for all clients.
+            Like train_args, per-site values are written in clear text into the generated job
+            config and must never contain actual secret values; see
+            :mod:`nvflare.recipe.secrets` for how to pass secrets safely.
         launch_once: Whether the external process will be launched only once at the beginning
             or on each task. Only used if `launch_external_process` is True. Defaults to True.
         shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
@@ -272,6 +281,11 @@ class FedAvgRecipe(Recipe):
         self.per_site_config = v.per_site_config
         self._validate_per_site_config(self.per_site_config)
         self._validate_aggregator_data_kind()
+        warn_on_unsupported_secret_refs_outside_keys(
+            self.per_site_config,
+            supported_value_keys={"command", "train_args"},
+            context="recipe parameter 'per_site_config'",
+        )
         self.launch_once = v.launch_once
         self.shutdown_timeout = v.shutdown_timeout
         self.key_metric = v.key_metric

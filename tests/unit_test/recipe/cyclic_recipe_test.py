@@ -14,6 +14,7 @@
 
 """Tests for CyclicRecipe and framework-specific variants with initial_ckpt support."""
 
+import warnings
 from unittest.mock import patch
 
 import pytest
@@ -22,6 +23,7 @@ import torch.nn as nn
 from nvflare.apis.job_def import ALL_SITES
 from nvflare.app_opt.pt.job_config.model import PTModel
 from nvflare.fuel.utils.constants import FrameworkType
+from nvflare.fuel.utils.secret_utils import PotentialSecretWarning, UnsupportedSecretRefWarning
 from nvflare.recipe.cyclic import CyclicRecipe as BaseCyclicRecipe
 
 
@@ -62,6 +64,34 @@ def base_recipe_params():
 
 class TestBaseCyclicRecipe:
     """Test cases for base CyclicRecipe class."""
+
+    def test_warns_on_secret_in_client_config_overrides(self, mock_file_system, base_recipe_params, simple_model):
+        secret = "ghp_" + "Ab1" * 12
+
+        with pytest.warns(PotentialSecretWarning) as record:
+            BaseCyclicRecipe(
+                name="secret_override",
+                model=PTModel(model=simple_model),
+                client_config_overrides={"command": secret},
+                framework=FrameworkType.PYTORCH,
+                **base_recipe_params,
+            )
+
+        messages = [str(warning.message) for warning in record]
+        assert any("client_config_overrides" in message for message in messages)
+        assert all(secret not in message for message in messages)
+
+    def test_external_command_secret_ref_is_supported(self, mock_file_system, base_recipe_params, simple_model):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UnsupportedSecretRefWarning)
+            BaseCyclicRecipe(
+                name="command_secret_ref",
+                model=PTModel(model=simple_model),
+                launch_external_process=True,
+                client_config_overrides={"command": "env API_TOKEN=${secret:API_TOKEN} python3 -u"},
+                framework=FrameworkType.PYTORCH,
+                **base_recipe_params,
+            )
 
     def test_initial_ckpt_must_exist_for_relative_path(self):
         """Test that non-existent relative paths are rejected (no mock - validation must run)."""

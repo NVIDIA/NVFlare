@@ -18,6 +18,7 @@ from pydantic import BaseModel, field_validator
 
 from nvflare.app_common.workflows.model_controller import ModelController
 from nvflare.client.config import ExchangeFormat
+from nvflare.fuel.utils.secret_utils import warn_on_unsupported_secret_refs_outside_keys
 from nvflare.job_config.base_fed_job import BaseFedJob
 from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 from nvflare.recipe.spec import Recipe
@@ -74,7 +75,9 @@ class FedEvalRecipe(Recipe):
             The file may not exist locally (server-side path).
         min_clients: Minimum number of clients required to start evaluation.
         eval_script: Path to the evaluation script that will be executed on each client.
-        eval_args: Command line arguments to pass to the evaluation script. Defaults to "".
+        eval_args: Command line arguments to pass to the evaluation script. The string is
+            stored in the job definition and must not contain actual secret values; see
+            :mod:`nvflare.recipe.secrets` for safe runtime references. Defaults to "".
         launch_external_process: Whether to launch the script in external process. Defaults to False.
         command: If launch_external_process=True, command to run script (prepended to script).
             Defaults to "python3 -u".
@@ -84,6 +87,7 @@ class FedEvalRecipe(Recipe):
         per_site_config: Per-site configuration for the evaluation job. Dictionary mapping
             site names to configuration dicts. Each config dict can contain optional overrides:
             eval_script, eval_args, launch_external_process, command, server_expected_format.
+            Values are stored in the job definition and must not contain actual secret values.
             If not provided, the same configuration will be used for all clients. Defaults to None.
 
     Example:
@@ -147,6 +151,11 @@ class FedEvalRecipe(Recipe):
         self.server_expected_format = server_expected_format
         self.validation_timeout = validation_timeout
         self.per_site_config = per_site_config
+        warn_on_unsupported_secret_refs_outside_keys(
+            self.per_site_config,
+            supported_value_keys={"command", "eval_args"},
+            context="recipe parameter 'per_site_config'",
+        )
         self.client_memory_gc_rounds = client_memory_gc_rounds
         self.cuda_empty_cache = cuda_empty_cache
 

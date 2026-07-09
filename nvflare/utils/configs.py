@@ -20,10 +20,16 @@ from typing import Any
 
 from nvflare.apis.fl_constant import JobConstants
 from nvflare.apis.fl_context import FLContext
+from nvflare.fuel.utils.secret_utils import resolve_secret_refs
 
 
 def get_job_config_value(fl_ctx: FLContext, config_file: str, key: str, default: Any = None) -> Any:
     """Generic function to read from any job config file.
+
+    Secret references in the selected value are resolved recursively at this runtime boundary.
+    This helper reads the exported JSON directly, so it does not expand ordinary NVFlare
+    placeholders such as ``{SITE_NAME}``. Do not combine those placeholders with secret
+    references in values consumed through this helper.
 
     Args:
         fl_ctx: FLContext
@@ -33,7 +39,13 @@ def get_job_config_value(fl_ctx: FLContext, config_file: str, key: str, default:
 
     Returns:
         The configuration value if found, otherwise the default value.
+
+    Raises:
+        ValueError: If the selected value contains a malformed reference, a referenced
+            environment variable is unset, or a referenced file cannot be read.
     """
+    value_found = False
+    value = default
     try:
         engine = fl_ctx.get_engine()
         workspace = engine.get_workspace()
@@ -43,19 +55,23 @@ def get_job_config_value(fl_ctx: FLContext, config_file: str, key: str, default:
         if os.path.exists(config_file_path):
             with open(config_file_path, "r") as f:
                 config_data = json.load(f)
-                return config_data.get(key, default)
+                value = config_data.get(key, default)
+                value_found = key in config_data
     except Exception:
         # Silently return default on any error
-        pass
+        return default
 
-    return default
+    # Resolve outside the broad file-reading exception handler so an unavailable secret
+    # reference fails explicitly instead of silently becoming the caller's default.
+    return resolve_secret_refs(value) if value_found else default
 
 
 def get_client_config_value(fl_ctx: FLContext, key: str, default: Any = None) -> Any:
     """Read a value from config_fed_client.json.
 
     This utility function reads top-level configuration values from the client config JSON file.
-    Jobs can set these values using recipe.add_client_config({"key": value}).
+    Jobs can set these values using recipe.add_client_config({"key": value}). Secret references
+    in the selected value are resolved recursively when it is read; dictionary keys are unchanged.
 
     Args:
         fl_ctx: FLContext
@@ -64,6 +80,10 @@ def get_client_config_value(fl_ctx: FLContext, key: str, default: Any = None) ->
 
     Returns:
         The configuration value if found, otherwise the default value.
+
+    Raises:
+        ValueError: If the selected value contains a malformed reference, a referenced
+            environment variable is unset, or a referenced file cannot be read.
 
     Example:
         ```python
@@ -81,7 +101,8 @@ def get_server_config_value(fl_ctx: FLContext, key: str, default: Any = None) ->
     """Read a value from config_fed_server.json.
 
     This utility function reads top-level configuration values from the server config JSON file.
-    Jobs can set these values using recipe.add_server_config({"key": value}).
+    Jobs can set these values using recipe.add_server_config({"key": value}). Secret references
+    in the selected value are resolved recursively when it is read; dictionary keys are unchanged.
 
     Args:
         fl_ctx: FLContext
@@ -90,6 +111,10 @@ def get_server_config_value(fl_ctx: FLContext, key: str, default: Any = None) ->
 
     Returns:
         The configuration value if found, otherwise the default value.
+
+    Raises:
+        ValueError: If the selected value contains a malformed reference, a referenced
+            environment variable is unset, or a referenced file cannot be read.
 
     Example:
         ```python
