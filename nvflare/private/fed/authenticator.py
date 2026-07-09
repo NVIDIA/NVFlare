@@ -17,6 +17,8 @@ import traceback
 import uuid
 from typing import Callable, Optional
 
+from cryptography.x509.oid import ExtendedKeyUsageOID
+
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.shareable import Shareable
@@ -26,13 +28,18 @@ from nvflare.fuel.f3.cellnet.core_cell import make_reply as make_cellnet_reply
 from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
-from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.cellnet.fqcn import CELL_PIPE_ALIAS_PREFIX, FQCN, parse_cell_pipe_alias
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeaderKeys, ClientRegMsgKey, new_cell_message
-from nvflare.private.fed.utils.identity_utils import IdentityAsserter, IdentityVerifier, TokenVerifier, load_crt_bytes
+from nvflare.private.fed.utils.identity_utils import (
+    IdentityAsserter,
+    IdentityVerifier,
+    TokenVerifier,
+    load_crt_chain_bytes,
+)
 
 MISSING_CLIENT_FQCN = ""
 
@@ -135,7 +142,8 @@ class Authenticator:
         assert isinstance(reply, Shareable)
         server_nonce = reply.get(IdentityChallengeKey.NONCE)
         cert_bytes = reply.get(IdentityChallengeKey.CERT)
-        server_cert = load_crt_bytes(cert_bytes)
+        server_cert_chain = load_crt_chain_bytes(cert_bytes)
+        server_cert = server_cert_chain[0]
         server_signature = reply.get(IdentityChallengeKey.SIGNATURE)
         server_cn = reply.get(IdentityChallengeKey.COMMON_NAME)
 
@@ -150,7 +158,12 @@ class Authenticator:
         # - signature received from the server is valid
         id_verifier = IdentityVerifier(root_cert_file=self.root_cert_file)
         id_verifier.verify_common_name(
-            asserter_cert=server_cert, asserted_cn=server_cn, nonce=my_nonce, signature=server_signature
+            asserter_cert=server_cert,
+            asserted_cn=server_cn,
+            nonce=my_nonce,
+            signature=server_signature,
+            intermediate_certs=server_cert_chain[1:],
+            expected_eku=ExtendedKeyUsageOID.SERVER_AUTH,
         )
 
         self.logger.info(f"verified server identity '{self.expected_sp_identity}'")
@@ -309,25 +322,32 @@ def _origin_matches_fqcn(origin: str, fqcn: str, channel: Optional[str] = None) 
     if origin == fqcn or FQCN.is_ancestor(fqcn, origin):
         return True
 
-    # CellPipe stream cells from older NVFlare versions use sibling names such
-    # as "site-1_<job-id>_active" and "site-1_<job-id>_passive", but their auth
-    # token is issued to the registered site FQCN ("site-1"). Current versions
-    # name these cells <site>.<token>.<mode>, which the descendant check above
-    # already covers. Treat only the legacy stream aliases as the owning site;
-    # normal server-command origins remain bound to the exact registered
-    # FQCN/descendant relationship above.
-    if channel != STREAM_CHANNEL or not origin.startswith(f"{fqcn}_"):
+    # CellPipe stream cells can use an alias leaf such as
+    # "cellpipe~alias~site-1~<job-id>~active" when connected through another
+    # cell, but their auth token is issued to the owning site FQCN. Treat only stream aliases
+    # under the same FQCN parent as the owning site; normal server-command
+    # origins remain bound to the exact registered FQCN/descendant relationship.
+    if channel != STREAM_CHANNEL:
         return False
 
-    runtime_id, sep, mode = origin[len(fqcn) + 1 :].rpartition("_")
-    if not sep or mode not in {"active", "passive"}:
+    origin_parent = FQCN.get_parent(origin)
+    fqcn_parent = FQCN.get_parent(fqcn)
+    if origin_parent != fqcn_parent:
         return False
 
-    # Deployed CellPipe aliases use the job UUID as the runtime id. Do not allow
-    # FQCN separators or alias separators inside this portion: otherwise a token
-    # for "site" could validate an origin such as "site_x_<job>_active" when
-    # "site_x" is also a valid client FQCN.
-    return bool(runtime_id) and "." not in runtime_id and "_" not in runtime_id
+    # The bare alias grammar is only valid for single-segment origins (the legacy
+    # flat CellPipe names used in 2.8 and earlier); at any depth the alias must carry the
+    # explicit cellpipe~alias~ marker, so an unmarked leaf
+    # can never be misread as an alias.
+    origin_leaf = FQCN.split(origin)[-1]
+    if origin_parent and not origin_leaf.startswith(CELL_PIPE_ALIAS_PREFIX):
+        return False
+
+    # parse_cell_pipe_alias returns exact "~"-delimited fields, so hyphens and
+    # underscores in an owner cannot be confused with field separators.
+    owner = FQCN.split(fqcn)[-1]
+    parsed = parse_cell_pipe_alias(origin_leaf)
+    return parsed is not None and parsed[0] == owner
 
 
 def validate_auth_headers(

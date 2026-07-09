@@ -191,6 +191,7 @@ class Recipe(ABC):
             job: the job that implements the recipe.
         """
         self.job = job
+        self._helper_per_site_config = None
 
     def process_env(self, env: ExecEnv):
         """Process environment-specific configuration.
@@ -199,6 +200,37 @@ class Recipe(ABC):
         Script validation is handled by each ExecEnv subclass in deploy().
         """
         pass
+
+    def set_per_site_config(self, config: Dict[str, Dict]) -> None:
+        """Set helper-provided per-site configuration for this recipe.
+
+        The generic helper validates only the site-keyed shape. Recipes that
+        need to map fields into generated app config, command arguments, data
+        loaders, or validators should override ``_apply_per_site_config``.
+        """
+        self._helper_per_site_config = dict(config)
+        self._apply_per_site_config(dict(self._helper_per_site_config))
+
+    def _apply_per_site_config(self, config: Dict[str, Dict]) -> None:
+        """Recipe-specific hook for helper-provided per-site configuration."""
+        pass
+
+    def configured_sites(self) -> List[str]:
+        """Return site keys configured through the helper or legacy constructor config.
+
+        This reports configured site names only. It does not infer sites from job
+        metadata, validate production enrollment, or indicate which clients are
+        connected in the execution environment.
+        """
+        helper_per_site_config = getattr(self, "_helper_per_site_config", None)
+        if helper_per_site_config is not None:
+            return list(helper_per_site_config.keys())
+
+        legacy_per_site_config = getattr(self, "per_site_config", None)
+        if isinstance(legacy_per_site_config, dict):
+            return list(legacy_per_site_config.keys())
+
+        return []
 
     def _snapshot_additional_params(self) -> Dict[str, Dict]:
         snapshot = {}
@@ -282,26 +314,63 @@ class Recipe(ABC):
             obj: Object to add to clients.
             clients: Optional list of specific client names. If None, applies to all clients.
             **kwargs: Extra options forwarded to `job.to()`/`job.to_clients()`.
-        """
-        if clients is None:
-            from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
-            from nvflare.job_config.defs import JobTargetType
 
-            # FedJob has no public API to list per-site deploy targets, so we inspect
-            # private deploy map to preserve existing per-site client topology.
-            deploy_map = getattr(self.job, "_deploy_map", {})
-            existing_client_sites = [
-                target
-                for target in deploy_map.keys()
-                if target not in [ALL_SITES, SERVER_SITE_NAME]
-                and JobTargetType.get_target_type(target) == JobTargetType.CLIENT
-            ]
+        Raises:
+            TypeError: If clients is not a list.
+            ValueError: If clients is empty or contains a non-client name; if specific
+                clients are targeted while the recipe's client app applies to all clients
+                (per-site placement cannot be expressed in the generated job in that
+                topology); or if clients names a site with no existing client app while
+                per-site client apps exist (that would deploy a bare, executor-less app
+                to that site).
+        """
+        from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
+        from nvflare.job_config.defs import JobTargetType
+
+        # FedJob has no public API to list per-site deploy targets, so we inspect
+        # private deploy map to preserve existing per-site client topology.
+        deploy_map = getattr(self.job, "_deploy_map", {})
+        existing_client_sites = [
+            target
+            for target in deploy_map.keys()
+            if target not in [ALL_SITES, SERVER_SITE_NAME]
+            and JobTargetType.get_target_type(target) == JobTargetType.CLIENT
+        ]
+        if clients is None:
             if existing_client_sites:
                 for site in existing_client_sites:
                     self.job.to(obj, site, **kwargs)
             else:
                 self.job.to_clients(obj, **kwargs)
         else:
+            # A bare string would iterate per character; an empty list would be a silent no-op.
+            if not isinstance(clients, list):
+                raise TypeError(f"clients must be a list of client names, got {type(clients).__name__}")
+            if not clients:
+                raise ValueError("clients must not be empty; omit it to apply to all clients")
+            for client in clients:
+                if not isinstance(client, str) or client in (ALL_SITES, SERVER_SITE_NAME):
+                    raise ValueError(f"invalid client name {client!r}: client names must name specific client sites")
+            if ALL_SITES in deploy_map:
+                # The generated job has one client app deployed to all clients. Exporting
+                # both an all-clients app and per-site apps is not expressible (the
+                # all-clients app wins and per-site apps are dropped), so fail loudly
+                # instead of silently losing the placement.
+                raise ValueError(
+                    "cannot target specific clients: this recipe's client app applies to all clients. "
+                    "Construct the recipe with per-site client apps (e.g. the per_site_config constructor "
+                    "argument on recipes that support it) or omit clients to apply to all clients."
+                )
+            if existing_client_sites:
+                # Targeting a site with no app would create a bare, executor-less app for
+                # that site in the exported job — the same class of quiet misconfiguration
+                # as the ALL_SITES case above, so fail loudly instead.
+                unknown = [c for c in clients if c not in existing_client_sites]
+                if unknown:
+                    raise ValueError(
+                        f"unknown client site(s) {unknown}: this recipe has per-site client apps "
+                        f"only for {sorted(existing_client_sites)}"
+                    )
             for client in clients:
                 self.job.to(obj, client, **kwargs)
 

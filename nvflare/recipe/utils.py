@@ -14,12 +14,16 @@
 
 import copy
 import importlib
+import json
 import os
+import warnings
 from typing import Any, Dict, List, Optional
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
+from nvflare.apis.job_def import USER_SETTABLE_JOB_META_KEYS, JobMetaKey
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.job_config.api import FedJob
+from nvflare.job_config.fed_job_config import FedJobConfig
 from nvflare.recipe.spec import Recipe
 
 TRACKING_REGISTRY = {
@@ -59,6 +63,145 @@ MODEL_LOCATOR_REGISTRY = {
 }
 
 
+# User-settable keys whose values are dicts keyed by site name with dict values.
+_SITE_KEYED_META_KEYS = frozenset({JobMetaKey.RESOURCE_SPEC, JobMetaKey.JOB_LAUNCHER_SPEC})
+
+
+def merge_config_overrides(defaults: Dict[str, Any], overrides: Optional[Dict[str, Any]], name: str) -> Dict[str, Any]:
+    """Return a shallow merge of recipe defaults and user overrides."""
+    if overrides is None:
+        return dict(defaults)
+    if not isinstance(overrides, dict):
+        raise TypeError(f"{name} must be a dict, but got {type(overrides).__name__}")
+    for key in overrides:
+        if not isinstance(key, str):
+            raise TypeError(f"{name} keys must be strings, but got {type(key).__name__}")
+
+    result = dict(defaults)
+    result.update(overrides)
+    return result
+
+
+def _normalize_recipe_meta_key(key: Any) -> str:
+    if not isinstance(key, JobMetaKey):
+        raise TypeError(f"recipe meta key must be a JobMetaKey, got {type(key).__name__}")
+    if key not in USER_SETTABLE_JOB_META_KEYS:
+        raise ValueError(f"recipe meta key {key.value!r} cannot be set through set_recipe_meta")
+    return key.value
+
+
+def _normalize_recipe_meta_value(key: JobMetaKey, key_str: str, value: Any) -> Any:
+    """Validate ``value`` against the key's shape contract and return a
+    JSON-normalized, caller-independent copy.
+
+    Per-key shapes: SCOPE is a plain string; RESOURCE_SPEC and JOB_LAUNCHER_SPEC
+    are dicts keyed by site name with dict values; the remaining user-settable
+    keys (CUSTOM_PROPS) are dicts. Catching shape errors here gives an immediate,
+    contextual error instead of a late failure at server-side submission
+    (JobMetaValidator) or job launch (e.g. PrivacyService scope lookup).
+
+    For dict values, the round-trip through JSON validates nested
+    serializability, rejects non-finite floats, and produces a value with
+    exactly the semantics the generated ``meta.json`` will have (e.g. dict keys
+    coerced to strings) with no aliasing to the caller's object -- so no
+    separate ``deepcopy`` is needed.
+    """
+    if key is JobMetaKey.SCOPE:
+        if not isinstance(value, str):
+            raise TypeError(f"recipe meta value for key {key_str!r} must be a str, got {type(value).__name__}")
+        return value
+    # All other user-settable keys are dict-shaped.
+    if key in _SITE_KEYED_META_KEYS:
+        try:
+            _validate_per_site_config_shape(value)
+        except TypeError as e:
+            raise TypeError(f"recipe meta value for key {key_str!r}: {e}") from None
+    elif not isinstance(value, dict):
+        raise TypeError(f"recipe meta value for key {key_str!r} must be a dict, got {type(value).__name__}")
+    try:
+        return json.loads(json.dumps(value, allow_nan=False))
+    except TypeError as e:
+        raise TypeError(f"recipe meta value for key {key_str!r} must be JSON-serializable: {e}") from e
+    except ValueError as e:
+        raise ValueError(f"recipe meta value for key {key_str!r} must be JSON-serializable: {e}") from e
+
+
+def _get_recipe_job_config(recipe: Recipe) -> FedJobConfig:
+    job = getattr(recipe, "job", None)
+    job_config = getattr(job, "job", None)
+    if not isinstance(job_config, FedJobConfig):
+        raise TypeError("recipe must provide a FedJob through recipe.job")
+    return job_config
+
+
+def set_recipe_meta(recipe: Recipe, key: JobMetaKey, value: Any) -> None:
+    """Set one generated job metadata value through ``meta_props``.
+
+    The key must be one of :data:`nvflare.apis.job_def.USER_SETTABLE_JOB_META_KEYS`.
+    Keys with dedicated ``FedJob`` constructor fields, such as ``MIN_CLIENTS`` and
+    ``MANDATORY_CLIENTS``, are not accepted here -- set those through the
+    recipe/``FedJob`` constructor so the controller, scheduler, and metadata stay
+    in sync. ``STUDY`` is not accepted either: the server assigns the study from
+    the admin session's active study at job submission, so a recipe-set value
+    would be silently overwritten.
+
+    The value shape depends on the key: ``SCOPE`` takes a string;
+    ``RESOURCE_SPEC`` and ``JOB_LAUNCHER_SPEC`` take a dict keyed by site name
+    with dict values; ``CUSTOM_PROPS`` takes a dict. Dict values must be
+    completely JSON-serializable, cannot contain non-finite floats, and have
+    their keys coerced to strings as they will appear in ``meta.json``. The
+    value is stored in ``meta_props`` and replaces any existing ``meta_props``
+    value for that key.
+    """
+    key_str = _normalize_recipe_meta_key(key)
+    normalized_value = _normalize_recipe_meta_value(key, key_str, value)
+    job_config = _get_recipe_job_config(recipe)
+
+    # RESOURCE_SPEC also has a dedicated FedJobConfig field (populated via
+    # add_resource_spec). meta.json is generated by merging meta_props last, so a
+    # meta_props value silently replaces any per-site specs registered there. Warn
+    # rather than merge, since the two shapes are not guaranteed to be compatible.
+    # Note this check is point-in-time: specs registered after this call are still
+    # overridden at export, without a warning.
+    if key is JobMetaKey.RESOURCE_SPEC and job_config.resource_specs:
+        warnings.warn(
+            "set_recipe_meta(RESOURCE_SPEC, ...) overrides the per-site resource specs registered "
+            "on the FedJob (via add_resource_spec); those specs will not appear in the generated meta.json.",
+            stacklevel=2,
+        )
+
+    if job_config.meta_props is None:
+        job_config.meta_props = {}
+    job_config.meta_props[key_str] = normalized_value
+
+
+def _validate_per_site_config_shape(config: Any) -> Dict[str, Dict]:
+    if not isinstance(config, dict):
+        raise TypeError(f"config must be a dict, got {type(config).__name__}")
+
+    for site_name, site_config in config.items():
+        if not isinstance(site_name, str):
+            raise TypeError(f"per-site config key must be a str, got {type(site_name).__name__}")
+        if not isinstance(site_config, dict):
+            raise TypeError(f"per-site config for site {site_name!r} must be a dict, got {type(site_config).__name__}")
+
+    return config
+
+
+def set_per_site_config(recipe: Recipe, config: Dict[str, Dict]) -> None:
+    """Set site-keyed configuration on a recipe.
+
+    The helper only validates the generic shape:
+    - top-level keys are site names
+    - values are recipe-specific dictionaries
+
+    Each recipe is responsible for validating and interpreting the fields inside
+    each site's dictionary. The execution environment still controls which
+    clients are present for a run.
+    """
+    recipe.set_per_site_config(_validate_per_site_config_shape(config))
+
+
 def _has_cross_site_eval_workflow(job: FedJob) -> bool:
     """Check if CrossSiteModelEval workflow is already configured on server."""
     from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
@@ -86,6 +229,7 @@ def add_experiment_tracking(
     tracking_config: Optional[dict] = None,
     client_side: bool = False,
     server_side: bool = True,
+    clients: Optional[List[str]] = None,
 ):
     """Add experiment tracking to a recipe.
 
@@ -95,8 +239,16 @@ def add_experiment_tracking(
         recipe: Recipe instance to augment with experiment tracking.
         tracking_type: Type of tracking to enable ("mlflow", "tensorboard", or "wandb").
         tracking_config: Optional configuration dict for the tracking receiver.
-        client_side: If True, add tracking to all clients (each client tracks locally).
+        client_side: If True, add tracking to clients (each client tracks locally).
         server_side: If True, add tracking to server (aggregates metrics from all clients). Default: True.
+        clients: Optional list of client names for client-side tracking. If None, the
+            client-side receiver is added to all clients. Only valid with client_side=True.
+            To give sites different receiver configs (e.g. per-site tracking_uri), call this
+            function once per site with that site's tracking_config and clients=[site].
+            Targeting specific clients requires the recipe's client apps to be per-site
+            (e.g. recipes constructed with the per_site_config constructor argument), and
+            each name must match an existing per-site client app; with the default
+            all-clients topology or unknown site names, targeted placement raises ValueError.
 
     Examples:
         # Server-side tracking (default - federated metrics)
@@ -107,6 +259,16 @@ def add_experiment_tracking(
 
         # Both server and client tracking
         add_experiment_tracking(recipe, "mlflow", {...}, client_side=True, server_side=True)
+
+        # Per-site client tracking configs (one call per site)
+        add_experiment_tracking(
+            recipe, "mlflow", {"tracking_uri": "file:///tmp/site-1/mlruns"},
+            client_side=True, server_side=False, clients=["site-1"],
+        )
+        add_experiment_tracking(
+            recipe, "mlflow", {"tracking_uri": "file:///tmp/site-2/mlruns"},
+            client_side=True, server_side=False, clients=["site-2"],
+        )
     """
     tracking_config = tracking_config or {}
     if tracking_type not in TRACKING_REGISTRY:
@@ -114,6 +276,14 @@ def add_experiment_tracking(
 
     if not server_side and not client_side:
         raise ValueError("At least one of server_side or client_side must be True")
+
+    if clients is not None:
+        if not client_side:
+            raise ValueError("clients is only used for client-side tracking; set client_side=True")
+        if not isinstance(clients, list) or not all(isinstance(c, str) for c in clients):
+            raise TypeError(f"clients must be a list of str, got {clients!r}")
+        if not clients:
+            raise ValueError("clients must not be empty; omit it to add tracking to all clients")
 
     _, flag = optional_import(TRACKING_REGISTRY[tracking_type]["package"])
     if not flag:
@@ -139,7 +309,9 @@ def add_experiment_tracking(
             client_config["events"] = [ANALYTIC_EVENT_TYPE]
 
         client_receiver = receiver_class(**client_config)
-        recipe.job.to_clients(client_receiver, id="client_receiver")
+        # Route through the recipe placement layer so existing per-site client apps
+        # are preserved (to_clients would target ALL_SITES even when per-site apps exist).
+        recipe._add_to_client_apps(client_receiver, clients=clients, id="client_receiver")
 
 
 def add_cross_site_evaluation(

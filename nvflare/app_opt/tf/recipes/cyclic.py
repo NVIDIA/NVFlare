@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Optional, Union
+from typing import Any, Dict, Optional, Union
 
 from nvflare.app_opt.tf.job_config.model import TFModel
 from nvflare.client.config import ExchangeFormat, TransferType
@@ -45,6 +45,10 @@ class CyclicRecipe(BaseCyclicRecipe):
         server_expected_format: Data exchange format between server and clients.
         params_transfer_type: Method for transferring model parameters.
         server_memory_gc_rounds: Run memory cleanup every N rounds on server. Defaults to 1.
+        task_assignment_timeout: Seconds to wait for the assigned client to request its task.
+        shutdown_timeout: Seconds to wait for an external client process during shutdown.
+        server_config_overrides: Advanced shallow overrides for the server controller.
+        client_config_overrides: Advanced shallow overrides for the client script runner.
     """
 
     def __init__(
@@ -64,6 +68,10 @@ class CyclicRecipe(BaseCyclicRecipe):
         params_transfer_type: TransferType = TransferType.FULL,
         server_memory_gc_rounds: int = 1,
         client_memory_gc_rounds: int = 0,
+        task_assignment_timeout: int = 10,
+        shutdown_timeout: float = 0.0,
+        server_config_overrides: Optional[Dict[str, Any]] = None,
+        client_config_overrides: Optional[Dict[str, Any]] = None,
     ):
         # Validate initial_ckpt early (base class won't see it since we pass None)
         from nvflare.recipe.utils import validate_ckpt
@@ -97,6 +105,10 @@ class CyclicRecipe(BaseCyclicRecipe):
             server_memory_gc_rounds=server_memory_gc_rounds,
             client_memory_gc_rounds=client_memory_gc_rounds,
             cuda_empty_cache=False,
+            task_assignment_timeout=task_assignment_timeout,
+            shutdown_timeout=shutdown_timeout,
+            server_config_overrides=server_config_overrides,
+            client_config_overrides=client_config_overrides,
         )
 
     def _setup_model_and_persistor(self, job) -> str:

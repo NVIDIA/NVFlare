@@ -24,7 +24,7 @@ import pytest
 
 from nvflare.job_config.api import FedApp, FedJob
 from nvflare.job_config.fed_app_config import ClientAppConfig
-from nvflare.recipe.utils import collect_non_local_scripts
+from nvflare.recipe.utils import collect_non_local_scripts, set_per_site_config
 
 
 class TestCollectNonLocalScriptsUtility:
@@ -628,3 +628,197 @@ def test_export_processes_falsy_env(tmp_path):
         recipe.export(job_dir=tmpdir, env=_FalsyEnv())
 
     assert "env" in seen
+
+
+class TestRecipePerSiteConfigHelper:
+    """Test generic helper-provided per-site recipe configuration."""
+
+    def test_set_per_site_config_stores_sites_and_calls_recipe_hook(self):
+        from nvflare.recipe.spec import Recipe
+
+        class RecordingRecipe(Recipe):
+            def __init__(self):
+                super().__init__(FedJob(name="test_per_site_config", min_clients=1))
+                self.applied_config = None
+
+            def _apply_per_site_config(self, config):
+                self.applied_config = config
+
+        recipe = RecordingRecipe()
+        config = {
+            "site-1": {"data_path": "xxx", "batch_size": 4, "unknown_to_helper": True},
+            "site-2": {"data_path": "yyy", "batch_size": 2},
+        }
+
+        set_per_site_config(recipe, config)
+
+        assert recipe.configured_sites() == ["site-1", "site-2"]
+        assert recipe.applied_config == config
+        assert recipe.applied_config is not config
+        assert recipe.applied_config["site-1"] is config["site-1"]
+
+    def test_set_per_site_config_hook_mutation_does_not_change_configured_sites(self):
+        from nvflare.recipe.spec import Recipe
+
+        class MutatingRecipe(Recipe):
+            def __init__(self):
+                super().__init__(FedJob(name="test_per_site_config_hook_mutation", min_clients=1))
+
+            def _apply_per_site_config(self, config):
+                del config["site-1"]
+                config["site-2"] = {"rewritten": True}
+                config["site-3"] = {}
+
+        recipe = MutatingRecipe()
+
+        set_per_site_config(recipe, {"site-1": {}, "site-2": {"batch_size": 4}})
+
+        assert recipe.configured_sites() == ["site-1", "site-2"]
+
+    def test_set_per_site_config_does_not_create_client_targets_by_itself(self):
+        from nvflare.recipe.spec import Recipe
+
+        class BasicRecipe(Recipe):
+            def __init__(self):
+                super().__init__(FedJob(name="test_per_site_no_targets", min_clients=1))
+
+        recipe = BasicRecipe()
+
+        set_per_site_config(recipe, {"site-1": {}, "site-2": {}})
+
+        assert recipe.configured_sites() == ["site-1", "site-2"]
+        assert recipe.job._deploy_map == {}
+
+    def test_configured_sites_prefers_helper_config_over_legacy_constructor_config(self):
+        from nvflare.recipe.spec import Recipe
+
+        class LegacyRecipe(Recipe):
+            def __init__(self):
+                self.per_site_config = {"legacy-1": {}, "legacy-2": {}}
+                super().__init__(FedJob(name="test_legacy_per_site_config", min_clients=1))
+
+        recipe = LegacyRecipe()
+        assert recipe.configured_sites() == ["legacy-1", "legacy-2"]
+
+        set_per_site_config(recipe, {"helper-1": {}})
+
+        assert recipe.configured_sites() == ["helper-1"]
+
+    def test_empty_helper_config_still_overrides_legacy_constructor_config(self):
+        from nvflare.recipe.spec import Recipe
+
+        class LegacyRecipe(Recipe):
+            def __init__(self):
+                self.per_site_config = {"legacy-1": {}}
+                super().__init__(FedJob(name="test_empty_helper_per_site_config", min_clients=1))
+
+        recipe = LegacyRecipe()
+
+        set_per_site_config(recipe, {})
+
+        assert recipe.configured_sites() == []
+
+    def test_configured_sites_does_not_infer_from_job_meta(self):
+        from nvflare.recipe.spec import Recipe
+
+        class MetaRecipe(Recipe):
+            def __init__(self):
+                super().__init__(
+                    FedJob(
+                        name="test_meta_sites_not_configured_sites",
+                        min_clients=1,
+                        mandatory_clients=["site-1"],
+                        meta_props={
+                            "resource_spec": {"site-1": {"num_of_gpus": 1}},
+                            "launcher_spec": {"site-2": {"docker": {"image": "example/image:latest"}}},
+                        },
+                    )
+                )
+
+        recipe = MetaRecipe()
+
+        assert recipe.configured_sites() == []
+
+    @pytest.mark.parametrize(
+        "config, match",
+        [
+            ("not-a-dict", "config must be a dict"),
+            ({1: {}}, "per-site config key must be a str"),
+            ({"site-1": "not-a-dict"}, "per-site config for site 'site-1' must be a dict"),
+        ],
+    )
+    def test_set_per_site_config_validates_generic_shape_only(self, config, match):
+        from nvflare.recipe.spec import Recipe
+
+        class BasicRecipe(Recipe):
+            def __init__(self):
+                super().__init__(FedJob(name="test_per_site_validation", min_clients=1))
+
+        with pytest.raises(TypeError, match=match):
+            set_per_site_config(BasicRecipe(), config)
+
+
+class TestClientPlacementHardening:
+    """Test _add_to_client_apps validation through the public clients=-taking helpers.
+
+    These guards fix pre-existing silent failures: targeting specific clients while
+    the job has an all-clients app used to silently drop the placement at export,
+    and malformed clients values were silently ignored or iterated per character.
+    """
+
+    def _make_recipe(self, name="test_placement_hardening"):
+        from nvflare.recipe.spec import Recipe
+
+        return Recipe(FedJob(name=name, min_clients=1))
+
+    def test_targeted_config_rejects_all_clients_topology(self):
+        recipe = self._make_recipe()
+        # Default recipe topology: one client app for all clients.
+        recipe.job.to_clients({"executor_standin": True})
+
+        with pytest.raises(ValueError, match="applies to all clients"):
+            recipe.add_client_config({"timeout": 600}, clients=["site-1"])
+
+    def test_targeted_file_rejects_all_clients_topology(self, tmp_path):
+        src_file = tmp_path / "wrapper.sh"
+        src_file.write_text("#!/bin/sh\n")
+        recipe = self._make_recipe()
+        recipe.job.to_clients({"executor_standin": True})
+
+        with pytest.raises(ValueError, match="applies to all clients"):
+            recipe.add_client_file(str(src_file), clients=["site-1"])
+
+    def test_targeted_config_works_with_per_site_topology(self):
+        recipe = self._make_recipe()
+        recipe.job.to({"site_arg": 1}, "site-1")
+        recipe.job.to({"site_arg": 2}, "site-2")
+
+        recipe.add_client_config({"timeout": 600}, clients=["site-1"])
+
+        assert recipe.job._deploy_map["site-1"].app_config.additional_params["timeout"] == 600
+        assert "timeout" not in recipe.job._deploy_map["site-2"].app_config.additional_params
+
+    def test_targeted_config_rejects_unknown_site_with_per_site_topology(self):
+        recipe = self._make_recipe()
+        recipe.job.to({"site_arg": 1}, "site-1")
+        recipe.job.to({"site_arg": 2}, "site-2")
+
+        with pytest.raises(ValueError, match=r"unknown client site.*site-3"):
+            recipe.add_client_config({"timeout": 600}, clients=["site-3"])
+
+    def test_clients_must_be_a_list(self):
+        recipe = self._make_recipe()
+        # A bare string would otherwise iterate per character and create per-char apps.
+        with pytest.raises(TypeError, match="must be a list"):
+            recipe.add_client_config({"timeout": 600}, clients="site-1")
+
+    def test_clients_must_not_be_empty(self):
+        recipe = self._make_recipe()
+        with pytest.raises(ValueError, match="must not be empty"):
+            recipe.add_client_config({"timeout": 600}, clients=[])
+
+    @pytest.mark.parametrize("bad_site", ["server", "@ALL"])
+    def test_clients_must_name_client_sites(self, bad_site):
+        recipe = self._make_recipe()
+        with pytest.raises(ValueError, match="invalid client name"):
+            recipe.add_client_config({"timeout": 600}, clients=[bad_site])

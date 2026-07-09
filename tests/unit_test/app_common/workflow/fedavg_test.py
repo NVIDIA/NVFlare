@@ -12,14 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 
 import nvflare.app_common.utils.tensor_disk_offload_context as tensor_disk_offload_context_module
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, Task
-from nvflare.apis.fl_constant import FLMetaKey
+from nvflare.apis.fl_constant import FLMetaKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
@@ -1054,6 +1056,138 @@ class TestScaffoldDownloadToDiskContext:
         assert cell.ctx["enable_tensor_disk_offload"] is False
         assert cell.ctx[_TENSOR_DISK_OFFLOAD_ROOT_DIR] is None
         assert not root_dir.exists()
+
+
+class TestScaffoldControlValues:
+    @staticmethod
+    def _initialize_scaffold(params):
+        from nvflare.app_common.workflows.scaffold import Scaffold
+
+        controller = Scaffold(num_clients=1, num_rounds=1)
+        controller.load_model = lambda: FLModel(params=params)
+        controller.warning = lambda _: None
+        engine = MagicMock()
+        engine.get_component.return_value = None
+        fl_ctx = FLContext()
+        fl_ctx.put(ReservedKey.ENGINE, engine, private=True, sticky=False)
+        controller.initialize(fl_ctx)
+        return controller
+
+    @staticmethod
+    def _run_control_round(control, client_delta):
+        from nvflare.app_common.app_constant import AlgorithmConstants
+        from nvflare.app_common.workflows.scaffold import Scaffold
+
+        controller = Scaffold(num_clients=1, num_rounds=1)
+        controller.fl_ctx = FLContext()
+        controller.model = FLModel(params={"w": copy.deepcopy(control)})
+        controller._global_ctrl_weights = {"w": control}
+        controller.sample_clients = lambda _: ["site-1"]
+        sent = {}
+
+        def send_model_and_wait(targets, data):
+            sent["control"] = data.meta[AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL]["w"]
+            return []
+
+        controller.send_model_and_wait = send_model_and_wait
+        controller.aggregate = lambda results, aggregate_fn=None: FLModel(
+            params={"w": copy.deepcopy(control)},
+            meta={AlgorithmConstants.SCAFFOLD_CTRL_DIFF: {"w": client_delta}},
+        )
+        controller.update_model = lambda model, aggr_result: model
+        controller.save_model = lambda model: None
+        controller.run()
+        return controller, sent
+
+    def test_initialize_keeps_numpy_control_values_as_arrays(self):
+        params = {"w": np.array([1.0, np.nan], dtype=np.float32)}
+
+        controller = self._initialize_scaffold(params)
+
+        control = controller._global_ctrl_weights["w"]
+        assert isinstance(control, np.ndarray)
+        assert control.dtype == np.float32
+        np.testing.assert_array_equal(control, np.zeros_like(params["w"]))
+        assert np.isnan(params["w"][1])
+
+    def test_initialize_keeps_cpu_float32_control_values_as_tensors(self):
+        torch = pytest.importorskip("torch")
+        params = {"w": torch.tensor([1.0, float("nan")], dtype=torch.float32)}
+
+        controller = self._initialize_scaffold(params)
+
+        control = controller._global_ctrl_weights["w"]
+        assert isinstance(control, torch.Tensor)
+        assert control.dtype == torch.float32
+        assert control.device.type == "cpu"
+        assert torch.equal(control, torch.zeros_like(params["w"]))
+        assert torch.isnan(params["w"][1])
+
+    def test_initialize_keeps_cpu_bfloat16_control_values_as_tensors(self):
+        torch = pytest.importorskip("torch")
+        params = {"w": torch.tensor([1.0, float("nan")], dtype=torch.bfloat16)}
+
+        controller = self._initialize_scaffold(params)
+
+        control = controller._global_ctrl_weights["w"]
+        assert isinstance(control, torch.Tensor)
+        assert control.dtype == torch.bfloat16
+        assert control.device.type == "cpu"
+        assert torch.equal(control, torch.zeros_like(params["w"]))
+        assert torch.isnan(params["w"][1])
+
+    def test_initialize_keeps_cuda_control_values_as_tensors(self):
+        torch = pytest.importorskip("torch")
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA is not available")
+        params = {"w": torch.tensor([1.0, float("nan")], dtype=torch.float32, device="cuda")}
+
+        controller = self._initialize_scaffold(params)
+
+        control = controller._global_ctrl_weights["w"]
+        assert isinstance(control, torch.Tensor)
+        assert control.dtype == torch.float32
+        assert control.device == params["w"].device
+        assert torch.equal(control, torch.zeros_like(params["w"]))
+        assert torch.isnan(params["w"][1])
+
+    @pytest.mark.parametrize("dtype_name", ["float32", "bfloat16"])
+    def test_round_keeps_cpu_tensor_controls_when_client_delta_is_numpy(self, dtype_name):
+        torch = pytest.importorskip("torch")
+        dtype = getattr(torch, dtype_name)
+        control = torch.zeros(2, dtype=dtype)
+
+        controller, sent = self._run_control_round(control, np.ones(2, dtype=np.float32))
+
+        assert sent["control"] is control
+        assert sent["control"].dtype == dtype
+        assert sent["control"].device.type == "cpu"
+        assert controller._global_ctrl_weights["w"] is control
+        assert torch.equal(control, torch.ones_like(control))
+
+    def test_round_keeps_numpy_float32_controls_when_client_delta_is_numpy(self):
+        control = np.zeros(2, dtype=np.float32)
+
+        controller, sent = self._run_control_round(control, np.ones(2, dtype=np.float32))
+
+        assert sent["control"] is control
+        assert sent["control"].dtype == np.float32
+        assert controller._global_ctrl_weights["w"] is control
+        np.testing.assert_array_equal(control, np.ones_like(control))
+
+    def test_round_keeps_cuda_tensor_controls_when_client_delta_is_numpy(self):
+        torch = pytest.importorskip("torch")
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA is not available")
+        control = torch.zeros(2, dtype=torch.float32, device="cuda")
+
+        controller, sent = self._run_control_round(control, np.ones(2, dtype=np.float32))
+
+        assert sent["control"] is control
+        assert sent["control"].dtype == torch.float32
+        assert sent["control"].device == control.device
+        assert controller._global_ctrl_weights["w"] is control
+        assert torch.equal(control, torch.ones_like(control))
 
 
 class TestFedAvgWorkflowEvents:

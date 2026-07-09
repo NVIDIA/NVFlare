@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import datetime
 import json
 import os
 
@@ -27,6 +28,7 @@ from nvflare.lighter.spec import Builder
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
 
 MAX_CN_LENGTH = 64
+DEFAULT_CERT_VALID_DAYS = 360
 
 
 class _CertState:
@@ -95,13 +97,24 @@ class _CertState:
 
 
 class CertBuilder(Builder):
-    def __init__(self):
+    def __init__(self, root_valid_days=DEFAULT_CERT_VALID_DAYS):
         """Build certificate chain for every participant.
 
         Handles building (creating and self-signing) the root CA certificates, creating server, client and
         admin certificates, and having them signed by the root CA for secure communication. If the state folder has
         information about previously generated certs, it loads them back and reuses them.
+
+        Args:
+            root_valid_days: validity period in days for a newly generated root CA certificate. This value does not
+                renew or replace a root CA already stored in the provisioning state.
         """
+        if isinstance(root_valid_days, bool) or not isinstance(root_valid_days, int) or root_valid_days <= 0:
+            raise ValueError(
+                f"root_valid_days must be a positive integer, got {root_valid_days!r} "
+                f"({type(root_valid_days).__name__})"
+            )
+
+        self.root_valid_days = root_valid_days
         self.root_cert = None
         self.persistent_state = None
         self.serialized_cert = None
@@ -178,13 +191,34 @@ class CertBuilder(Builder):
             self.pub_key = self.pri_key.public_key()
             self.subject = self.root_cert.subject
             self.issuer = self.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
+            self._validate_existing_root_validity()
+
+    def _validate_existing_root_validity(self):
+        actual_validity = self.root_cert.not_valid_after_utc - self.root_cert.not_valid_before_utc
+        requested_validity = datetime.timedelta(days=self.root_valid_days)
+        if actual_validity != requested_validity:
+            actual_days = actual_validity.total_seconds() / datetime.timedelta(days=1).total_seconds()
+            raise ValueError(
+                f"root_valid_days={self.root_valid_days} does not match the existing root CA certificate's actual "
+                f"validity of {actual_days:g} days (NotBefore {self.root_cert.not_valid_before_utc.isoformat()}, "
+                f"NotAfter {self.root_cert.not_valid_after_utc.isoformat()}). root_valid_days only controls a newly "
+                "generated root; use a new provisioning workspace or a root CA rollover procedure to change it."
+            )
 
     def _build_root(self, subject, subject_org):
         assert isinstance(self.persistent_state, _CertState)
         if not self.persistent_state.is_available:
             pri_key, pub_key = generate_keys()
             self.issuer = subject
-            self.root_cert = self._generate_cert(subject, subject_org, self.issuer, pri_key, pub_key, ca=True)
+            self.root_cert = self._generate_cert(
+                subject,
+                subject_org,
+                self.issuer,
+                pri_key,
+                pub_key,
+                valid_days=self.root_valid_days,
+                ca=True,
+            )
             self.pri_key = pri_key
             self.pub_key = pub_key
             self.serialized_cert = serialize_cert(self.root_cert)
@@ -283,6 +317,10 @@ class CertBuilder(Builder):
         self._build_root(project.name, subject_org=None)
         ctx[CtxKey.ROOT_CERT] = self.root_cert
         ctx[CtxKey.ROOT_PRI_KEY] = self.pri_key
+        ctx.info(
+            f"Root CA validity: NotBefore={self.root_cert.not_valid_before_utc.isoformat()}, "
+            f"NotAfter={self.root_cert.not_valid_after_utc.isoformat()}"
+        )
 
         server = project.get_server()
         if server:
@@ -306,6 +344,16 @@ class CertBuilder(Builder):
         else:
             role = None
 
+        now = datetime.datetime.now(datetime.timezone.utc)
+        root_not_after = self.root_cert.not_valid_after_utc
+        if root_not_after <= now:
+            raise RuntimeError(
+                f"cannot generate certificate for '{participant.name}': root CA expired at {root_not_after.isoformat()}"
+            )
+        not_valid_after = (
+            root_not_after if root_not_after < now + datetime.timedelta(days=DEFAULT_CERT_VALID_DAYS) else None
+        )
+
         server = participant if participant.type == ParticipantType.SERVER else None
         cert = self._generate_cert(
             subject,
@@ -315,6 +363,8 @@ class CertBuilder(Builder):
             pub_key,
             role=role,
             server=server,
+            not_valid_before=now,
+            not_valid_after=not_valid_after,
         )
         return pri_key, cert
 
@@ -325,13 +375,15 @@ class CertBuilder(Builder):
         issuer,
         signing_pri_key,
         subject_pub_key,
-        valid_days=360,
+        valid_days=DEFAULT_CERT_VALID_DAYS,
         ca=False,
         role=None,
         server: Participant = None,
         server_default_host=None,
         server_additional_hosts=None,
         extra_extensions=None,
+        not_valid_before=None,
+        not_valid_after=None,
     ):
         if server:
             # This is to generate a server cert.
@@ -349,6 +401,8 @@ class CertBuilder(Builder):
             server_default_host=server_default_host,
             server_additional_hosts=server_additional_hosts,
             extra_extensions=extra_extensions,
+            not_valid_before=not_valid_before,
+            not_valid_after=not_valid_after,
         )
 
     def finalize(self, project: Project, ctx: ProvisionContext):
