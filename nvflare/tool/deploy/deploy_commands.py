@@ -35,6 +35,7 @@ from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.x509.oid import NameOID
 
+from nvflare.app_opt.job_launcher.study_runtime import RESERVED_DOCKER_KWARGS
 from nvflare.tool.cli_output import output_error_message, output_ok, print_human
 
 RUNTIME_DOCKER = "docker"
@@ -91,18 +92,8 @@ BUILTIN_LAUNCHER_PATHS = {
 BUILTIN_RESOURCE_MANAGER_PATHS = {GPU_RESOURCE_MANAGER, PASSTHROUGH_RESOURCE_MANAGER}
 BUILTIN_RESOURCE_CONSUMER_PATHS = {GPU_RESOURCE_CONSUMER}
 RESOURCE_CONSUMER_IDS = {"resource_consumer"}
-DOCKER_RESERVED_KWARGS = {
-    "volumes",
-    "mounts",
-    "network",
-    "environment",
-    "command",
-    "name",
-    "detach",
-    "user",
-    "working_dir",
-    "image",
-}
+# single source of truth for launcher-owned containers.run kwargs
+DOCKER_RESERVED_KWARGS = RESERVED_DOCKER_KWARGS
 
 STUDY_RUNTIME_TEMPLATE = """# Per-study runtime configuration used by Docker and Kubernetes job launchers.
 # Everything a study gets at this site lives in this file: data mounts, env

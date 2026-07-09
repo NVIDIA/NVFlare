@@ -1346,7 +1346,8 @@ def test_prepare_k8s_launcher_defaults_to_incluster_config(tmp_path, capsys):
     assert launcher["args"]["config_file_path"] is None
 
 
-def test_prepare_docker_rejects_image_in_default_container_kwargs(tmp_path, capsys):
+@pytest.mark.parametrize("reserved_key", ["image", "auto_remove"])
+def test_prepare_docker_rejects_reserved_default_container_kwargs(tmp_path, capsys, reserved_key):
     kit = _make_client_kit(tmp_path)
     output = tmp_path / "prepared"
 
@@ -1357,13 +1358,13 @@ def test_prepare_docker_rejects_image_in_default_container_kwargs(tmp_path, caps
             {
                 "runtime": "docker",
                 "parent": {"docker_image": "repo/nvflare:dev"},
-                "job_launcher": {"default_job_container_kwargs": {"image": "site-image:v1"}},
+                "job_launcher": {"default_job_container_kwargs": {reserved_key: "anything"}},
             },
         )
 
     err = capsys.readouterr().err
     assert "INVALID_CONFIG" in err
-    assert "image" in err
+    assert reserved_key in err
     assert "container.image" in err
 
 
