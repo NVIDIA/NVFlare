@@ -39,6 +39,7 @@ from nvflare.client.constants import CLIENT_API_CONFIG
 from nvflare.fuel.utils.class_utils import instantiate_class
 from nvflare.fuel.utils.secret_utils import UnsupportedSecretRefWarning
 from nvflare.job_config.base_fed_job import BaseFedJob
+from nvflare.recipe.fedavg import FedAvgRecipe as BaseFedAvgRecipe
 
 
 class SimpleTestModel(nn.Module):
@@ -226,6 +227,10 @@ def _run_exported_external_process_executor_startup(executor_config, config_dir,
 
 
 class TestFedAvgRecipe:
+    def test_class_docstrings_are_preserved(self):
+        assert BaseFedAvgRecipe.__doc__
+        assert FedAvgRecipe.__doc__
+
     def test_external_command_secret_ref_is_supported(self, mock_file_system, base_recipe_params, simple_model):
         with warnings.catch_warnings():
             warnings.simplefilter("error", UnsupportedSecretRefWarning)
