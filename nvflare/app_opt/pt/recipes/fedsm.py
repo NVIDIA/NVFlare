@@ -49,6 +49,7 @@ class FedSMRecipe(Recipe):
         site_label_mapping: Optional[Dict[str, int]] = None,
         soft_pull_lambda: float = 0.7,
         initial_ckpt: Optional[str] = None,
+        load_weights_only: bool = True,
         launch_external_process: bool = False,
         command: str = "python3 -u",
         server_expected_format: ExchangeFormat = ExchangeFormat.PYTORCH,
@@ -101,15 +102,17 @@ class FedSMRecipe(Recipe):
         self.site_label_mapping = dict(mapping)
         self.soft_pull_lambda = soft_pull_lambda
         self.initial_ckpt = initial_ckpt
+        self.load_weights_only = load_weights_only
         self.server_expected_format = server_expected_format
 
-        job = BaseFedJob(name=name, min_clients=min_clients)
+        job = BaseFedJob(name=name, min_clients=min_clients, mandatory_clients=sites)
         ckpt_path = prepare_initial_ckpt(initial_ckpt, job)
         persistor = PTFedSMModelPersistor(
             model=model,
             selector_model=selector_model,
             client_ids=sites,
             source_ckpt_file_full_name=ckpt_path,
+            load_weights_only=load_weights_only,
         )
         persistor_id = job.to_server(persistor, id="persistor")
 

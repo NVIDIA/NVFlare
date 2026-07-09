@@ -22,6 +22,11 @@ from nvflare.app_common.abstract.model import ModelLearnableKey
 from nvflare.app_opt.pt.fedsm import FedSM, FedSMConstants, FedSMModelAggregator, PTFedSMHelper, PTFedSMModelPersistor
 
 
+class _CheckpointMeta:
+    def __init__(self, value):
+        self.value = value
+
+
 def _state(value):
     return {"weight": torch.tensor([value], dtype=torch.float32)}
 
@@ -123,6 +128,70 @@ def test_fedsm_helper_loads_bundle_and_returns_mixed_update_types():
     assert result.meta[FLMetaKey.NUM_STEPS_CURRENT_ROUND] == 7
 
 
+def test_fedsm_helper_rejects_non_full_bundle():
+    model = torch.nn.Linear(1, 1, bias=False)
+    helper = PTFedSMHelper(model, torch.nn.Linear(1, 1, bias=False), torch.nn.Linear(1, 1, bias=False))
+    incoming = FLModel(
+        params={"weight": torch.tensor([[1.0]])},
+        params_type=ParamsType.DIFF,
+        meta={FedSMConstants.TARGET_ID: "site-1", FedSMConstants.SELECTOR_LABEL: 0},
+    )
+
+    with pytest.raises(ValueError, match="ParamsType.FULL"):
+        helper.load_bundle(incoming, client_name="site-1")
+
+
+def test_fedsm_helper_reports_missing_bundle_entries():
+    model = torch.nn.Linear(1, 1, bias=False)
+    helper = PTFedSMHelper(model, torch.nn.Linear(1, 1, bias=False), torch.nn.Linear(1, 1, bias=False))
+    incoming = FLModel(
+        params={FedSMConstants.GLOBAL_MODEL: {"weight": torch.tensor([[1.0]])}},
+        params_type=ParamsType.FULL,
+        meta={},
+    )
+
+    with pytest.raises(ValueError, match="missing parameter entries"):
+        helper.load_bundle(incoming, client_name="site-1")
+
+
+def test_fedsm_helper_reports_missing_bundle_metadata():
+    model = torch.nn.Linear(1, 1, bias=False)
+    helper = PTFedSMHelper(model, torch.nn.Linear(1, 1, bias=False), torch.nn.Linear(1, 1, bias=False))
+    incoming = FLModel(
+        params={
+            FedSMConstants.GLOBAL_MODEL: {"weight": torch.tensor([[1.0]])},
+            FedSMConstants.PERSONAL_MODEL: {"weight": torch.tensor([[2.0]])},
+            FedSMConstants.SELECTOR_MODEL: {"weight": torch.tensor([[3.0]])},
+        },
+        params_type=ParamsType.FULL,
+        meta={},
+    )
+
+    with pytest.raises(ValueError, match="missing metadata entries"):
+        helper.load_bundle(incoming, client_name="site-1")
+
+
+def test_fedsm_requires_exact_configured_client_set_each_round():
+    controller = FedSM(
+        num_clients=2,
+        client_id_label_mapping={"site-1": 0, "site-2": 1},
+    )
+
+    controller._validate_sampled_clients(["site-1", "site-2"])
+    with pytest.raises(RuntimeError, match=r"missing clients: \['site-2'\]"):
+        controller._validate_sampled_clients(["site-1"])
+    with pytest.raises(RuntimeError, match=r"unexpected clients: \['site-3'\]"):
+        controller._validate_sampled_clients(["site-1", "site-3"])
+
+
+def test_fedsm_requires_num_clients_to_match_label_mapping():
+    with pytest.raises(ValueError, match="num_clients must equal"):
+        FedSM(
+            num_clients=1,
+            client_id_label_mapping={"site-1": 0, "site-2": 1},
+        )
+
+
 def test_fedsm_persistor_round_trips_complete_bundle(tmp_path):
     model = torch.nn.Linear(1, 1, bias=False)
     selector = torch.nn.Linear(1, 2, bias=False)
@@ -145,3 +214,24 @@ def test_fedsm_persistor_round_trips_complete_bundle(tmp_path):
         bundle[FedSMConstants.GLOBAL_MODEL]["weight"],
         learnable[ModelLearnableKey.WEIGHTS][FedSMConstants.GLOBAL_MODEL]["weight"],
     )
+
+
+def test_fedsm_persistor_can_load_trusted_checkpoint_with_custom_metadata(tmp_path):
+    model = torch.nn.Linear(1, 1, bias=False)
+    selector = torch.nn.Linear(1, 2, bias=False)
+    persistor = PTFedSMModelPersistor(model, selector, ["site-1"])
+    learnable = persistor.load_model(fl_ctx=None)
+    learnable[ModelLearnableKey.META]["custom"] = _CheckpointMeta(7)
+    checkpoint = tmp_path / "fedsm-custom-meta.pt"
+    persistor._ckpt_save_path = str(checkpoint)
+    persistor.save_model(learnable, fl_ctx=None)
+
+    resumed = PTFedSMModelPersistor(
+        model,
+        selector,
+        ["site-1"],
+        source_ckpt_file_full_name=str(checkpoint),
+        load_weights_only=False,
+    ).load_model(fl_ctx=None)
+
+    assert resumed[ModelLearnableKey.META]["custom"].value == 7

@@ -234,6 +234,8 @@ is given an optimizer.
 
 FedSM currently requires every configured site to participate in every round. FedSM and FedCE are
 separate recipes and cannot be enabled together as independent features.
+FedSM checkpoints use PyTorch's restricted weights-only loader by default. Set ``load_weights_only=False``
+only when resuming a trusted checkpoint whose metadata contains types that the restricted loader does not support.
 
 
 FedProx

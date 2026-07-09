@@ -117,6 +117,7 @@ def test_fedce_and_fedsm_recipes_export_server_components(tmp_path):
         sites=["site-1", "site-2"],
         min_clients=2,
         train_script=__file__,
+        load_weights_only=False,
     )
     fedsm_recipe.add_client_config({"site_setting": 1}, clients=["site-1"])
     fedsm_recipe.export(str(tmp_path / "fedsm"))
@@ -131,8 +132,10 @@ def test_fedce_and_fedsm_recipes_export_server_components(tmp_path):
     assert fedsm_config["workflows"][0]["path"].endswith("pt.fedsm.FedSM")
     persistor = next(component for component in fedsm_config["components"] if component["id"] == "persistor")
     assert persistor["path"].endswith("PTFedSMModelPersistor")
+    assert persistor["args"]["load_weights_only"] is False
 
     fedsm_meta = json.loads((tmp_path / "fedsm/test-fedsm-export/meta.json").read_text())
+    assert fedsm_meta["mandatory_clients"] == ["site-1", "site-2"]
     assert fedsm_meta["deploy_map"] == {
         "app_server": ["server"],
         "app_site-1": ["site-1"],

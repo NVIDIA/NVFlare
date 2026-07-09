@@ -16,7 +16,6 @@
 
 import copy
 import math
-from collections import defaultdict
 from typing import Dict, List, Optional
 
 import torch
@@ -121,7 +120,8 @@ class FedCEModelAggregator(ModelAggregator):
         self.epsilon = epsilon
         self._results: Dict[str, FLModel] = {}
         self._contribution_weights: Dict[str, float] = {}
-        self._cosine_history: Dict[str, List[float]] = defaultdict(list)
+        self._cosine_means: Dict[str, float] = {}
+        self._cosine_counts: Dict[str, int] = {}
 
     def reset_stats(self):
         self._results = {}
@@ -143,6 +143,8 @@ class FedCEModelAggregator(ModelAggregator):
             )
         if client_name in self._results:
             raise ValueError(f"FedCE received more than one result from client {client_name!r} in the same round")
+        # BaseModelController copies the outgoing model metadata into the
+        # returned model's ``props`` entry before invoking this aggregator.
         task_meta = model.meta.get("props", {})
         prior_weights = task_meta.get(FedCEConstants.CONTRIBUTION_WEIGHTS) if isinstance(task_meta, dict) else None
         if not self._contribution_weights and isinstance(prior_weights, dict):
@@ -167,8 +169,11 @@ class FedCEModelAggregator(ModelAggregator):
                 similarity = 0.0
             else:
                 similarity = float(torch.cosine_similarity(client_vector, without_client, dim=0).item())
-            self._cosine_history[client].append(similarity)
-            mean_similarity = sum(self._cosine_history[client]) / len(self._cosine_history[client])
+            count = self._cosine_counts.get(client, 0) + 1
+            previous_mean = self._cosine_means.get(client, 0.0)
+            mean_similarity = previous_mean + (similarity - previous_mean) / count
+            self._cosine_counts[client] = count
+            self._cosine_means[client] = mean_similarity
             cosine_scores.append(max(0.0, 1.0 - mean_similarity))
             minus_scores.append(float(self._results[client].meta[FedCEConstants.MINUS_MODEL_SCORE]))
 

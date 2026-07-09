@@ -46,7 +46,7 @@ def test_fedce_weights_favor_higher_minus_model_score():
     assert result.params["weight"].tolist() == pytest.approx([weights["site-1"], weights["site-2"]])
 
 
-def test_fedce_reset_keeps_contribution_history_for_next_round():
+def test_fedce_reset_keeps_constant_space_cosine_mean_for_next_round():
     aggregator = FedCEModelAggregator()
     aggregator.accept_model(_result("site-1", [1.0], 0.7))
     aggregator.accept_model(_result("site-2", [2.0], 0.3))
@@ -59,7 +59,20 @@ def test_fedce_reset_keeps_contribution_history_for_next_round():
 
     assert aggregator._contribution_weights
     assert first.keys() == aggregator._contribution_weights.keys()
-    assert len(aggregator._cosine_history["site-1"]) == 2
+    assert aggregator._cosine_counts["site-1"] == 2
+    assert set(aggregator._cosine_means) == {"site-1", "site-2"}
+
+
+def test_fedce_recovers_prior_weights_from_dispatched_model_metadata():
+    aggregator = FedCEModelAggregator()
+    prior_weights = {"site-1": 0.8, "site-2": 0.2}
+    site_1 = _result("site-1", [1.0], 0.7)
+    site_1.meta["props"] = {FedCEConstants.CONTRIBUTION_WEIGHTS: prior_weights}
+
+    aggregator.accept_model(site_1)
+    aggregator.accept_model(_result("site-2", [2.0], 0.3))
+
+    assert aggregator._get_prior_weights(["site-1", "site-2"]) == prior_weights
 
 
 def test_fedce_requires_minus_model_score():

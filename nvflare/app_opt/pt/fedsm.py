@@ -70,8 +70,26 @@ class PTFedSMHelper:
         self._selector_before = None
 
     def load_bundle(self, incoming: FLModel, client_name: Optional[str] = None):
+        if incoming.params_type != ParamsType.FULL:
+            raise ValueError(f"FedSM incoming bundle must use ParamsType.FULL, got {incoming.params_type}")
+
         params = incoming.params or {}
-        target = incoming.meta.get(FedSMConstants.TARGET_ID)
+        required_params = {
+            FedSMConstants.GLOBAL_MODEL,
+            FedSMConstants.PERSONAL_MODEL,
+            FedSMConstants.SELECTOR_MODEL,
+        }
+        missing_params = required_params.difference(params)
+        if missing_params:
+            raise ValueError(f"FedSM incoming bundle is missing parameter entries: {sorted(missing_params)}")
+
+        meta = incoming.meta or {}
+        required_meta = {FedSMConstants.TARGET_ID, FedSMConstants.SELECTOR_LABEL}
+        missing_meta = required_meta.difference(meta)
+        if missing_meta:
+            raise ValueError(f"FedSM incoming bundle is missing metadata entries: {sorted(missing_meta)}")
+
+        target = meta[FedSMConstants.TARGET_ID]
         if client_name is not None and target != client_name:
             raise ValueError(f"FedSM bundle targets {target!r}, but this client is {client_name!r}")
         self.global_model.load_state_dict(params[FedSMConstants.GLOBAL_MODEL])
@@ -85,7 +103,7 @@ class PTFedSMHelper:
             current_state = self.selector_optimizer.state_dict()
             current_state["state"] = optimizer_state
             self.selector_optimizer.load_state_dict(current_state)
-        return incoming.meta[FedSMConstants.SELECTOR_LABEL]
+        return meta[FedSMConstants.SELECTOR_LABEL]
 
     def build_result(self, num_steps: int, metrics: Optional[Dict] = None) -> FLModel:
         if self._global_before is None or self._selector_before is None:
@@ -251,6 +269,7 @@ class PTFedSMModelPersistor(ModelPersistor):
         client_ids: List[str],
         source_ckpt_file_full_name: Optional[str] = None,
         global_model_file_name: str = "FL_fedsm_model.pt",
+        load_weights_only: bool = True,
     ):
         super().__init__()
         self.model = model
@@ -258,6 +277,7 @@ class PTFedSMModelPersistor(ModelPersistor):
         self.client_ids = list(client_ids)
         self.source_ckpt_file_full_name = source_ckpt_file_full_name
         self.global_model_file_name = global_model_file_name
+        self.load_weights_only = load_weights_only
         self._ckpt_save_path = None
 
     def handle_event(self, event: str, fl_ctx: FLContext):
@@ -316,7 +336,7 @@ class PTFedSMModelPersistor(ModelPersistor):
             path = os.path.join(app_root, WorkspaceConstants.CUSTOM_FOLDER_NAME, path)
         if not os.path.exists(path):
             raise ValueError(f"FedSM source checkpoint not found: {path}")
-        return torch.load(path, map_location="cpu", weights_only=True)
+        return torch.load(path, map_location="cpu", weights_only=self.load_weights_only)
 
     def save_model(self, model: ModelLearnable, fl_ctx: FLContext):
         if self._ckpt_save_path is None:
@@ -346,6 +366,12 @@ class FedSM(BaseFedAvg):
         self.aggregator = aggregator or FedSMModelAggregator()
         self.task_name = task_name
 
+        if self.num_clients != len(self.client_id_label_mapping):
+            raise ValueError(
+                "FedSM num_clients must equal the number of entries in client_id_label_mapping "
+                "so every personalized model participates in each round"
+            )
+
     def run(self):
         model = self.load_model()
         model.start_round = self.start_round
@@ -358,9 +384,7 @@ class FedSM(BaseFedAvg):
             self.fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self.num_rounds, private=True, sticky=False)
             self.event(AppEventType.ROUND_STARTED)
             clients = self.sample_clients(self.num_clients)
-            missing = [client for client in clients if client not in self.client_id_label_mapping]
-            if missing:
-                raise ValueError(f"FedSM has no selector labels for clients: {missing}")
+            self._validate_sampled_clients(clients)
 
             results = []
             for client in clients:
@@ -395,6 +419,17 @@ class FedSM(BaseFedAvg):
             self.event(AppEventType.ROUND_DONE)
             self.info(f"FedSM round {self.current_round} finished")
             self._maybe_cleanup_memory()
+
+    def _validate_sampled_clients(self, clients: List[str]):
+        expected = set(self.client_id_label_mapping)
+        sampled = set(clients)
+        missing = sorted(expected.difference(sampled))
+        unexpected = sorted(sampled.difference(expected))
+        if missing or unexpected:
+            raise RuntimeError(
+                "FedSM requires every configured client in every round; "
+                f"missing clients: {missing}; unexpected clients: {unexpected}"
+            )
 
     def _make_client_model(self, model: FLModel, client: str) -> FLModel:
         bundle = model.params
