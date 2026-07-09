@@ -15,14 +15,20 @@
 """Static dataset classification for `nvflare agent inspect`.
 
 Classifies a data-only directory as a tabular or image dataset and emits a
-metadata-only evidence block. It never emits cell values or pixel data,
-follows no symlinks, and bounds every read; worst-case read volume is
-``max_files x max_file_bytes``.
+metadata-only evidence block. It never emits cell values or pixel data and
+follows no symlinks. Read bounds: text and image reads are capped at
+``max_file_bytes`` each (worst case ``max_files x max_file_bytes``);
+parquet metadata reads parse only the file footer via pyarrow — they are
+not capped by ``max_file_bytes`` and are accounted in ``scan`` at file
+size as the upper bound.
 
 Dataset block contract (all keys always present per modality):
 
-- ``modality``: ``tabular`` | ``image`` | ``mixed`` (mixed is reported but
-  not routed: ``target_type`` stays ``unknown_target``).
+- ``modality``: ``tabular`` | ``image`` | ``mixed``. Mixed means the
+  minority modality is a material share (>= 10%) of the data files; it is
+  reported but not routed (``target_type`` stays ``unknown_target``).
+  Below the threshold the majority wins and stray files stay visible in
+  ``file_census``.
 - ``layout``: ``per_site_directories`` | ``flat``.
 - ``file_census``: extension -> count (bounded; see ``counts_approximate``).
 - ``counts_approximate``: true when a walk limit was hit.
@@ -35,14 +41,16 @@ Dataset block contract (all keys always present per modality):
     (parquet always has names when readable); ``header: ambiguous`` means
     names must be user-supplied. ``row_count`` aggregates every tabular
     file in the site; sharded CSV sites are always approximate (per-shard
-    headers are unknowable), parquet shards are exact metadata sums.
+    headers are unknowable), parquet shards are exact metadata sums when
+    the shards agree on schema.
     Feature names are sanitized: control characters stripped and length
     capped (``feature_names_truncated`` marks a cap hit).
   - image: ``pixel_depth`` from one sample when an optional loader exists.
 - ``schema_agreement`` (tabular): compares feature names, column counts,
   AND dtype classes across sites; any drift is a ``mismatch`` with per-site
   issues (``feature_names_differ`` | ``column_count_differs`` |
-  ``dtypes_differ``).
+  ``dtypes_differ`` | ``shards_differ``, the last when shards inside one
+  site disagree — flagged per site as ``shard_schema_consistent: false``).
 
 Walk bounds: ``max_files`` counts data files so non-data clutter cannot
 hide a dataset, and ``MAX_WALK_ENTRIES`` bounds total traversal (files and
@@ -63,6 +71,10 @@ MAX_SAMPLE_ROWS = 200
 MAX_SCHEMA_COLUMNS = 512
 MAX_FEATURE_NAME_CHARS = 120
 MAX_WALK_ENTRIES = 50_000
+# Both modalities present: classify as mixed (unrouted) when the minority
+# modality is a material share of the data files; below the threshold the
+# stray files (a plot.png beside CSVs) do not flip the classification.
+MIXED_MINORITY_SHARE = 0.10
 
 HEADER_PRESENT = "present"
 # Per the fed-stats contract: a first row is a header only when at least one
@@ -83,7 +95,8 @@ def inspect_dataset(root: Path, max_files: int, max_file_bytes: int) -> Optional
     image_count = sum(n for ext, n in census.items() if ext in IMAGE_EXTENSIONS or ext == ".nii.gz")
     if tabular_count == 0 and image_count == 0:
         return None
-    if tabular_count == image_count:
+    minority = min(tabular_count, image_count)
+    if minority > 0 and minority / (tabular_count + image_count) >= MIXED_MINORITY_SHARE:
         modality = "mixed"
     else:
         modality = "tabular" if tabular_count > image_count else "image"
@@ -188,9 +201,14 @@ def _null_schema(fmt: str) -> dict:
 
 def _tabular_schema(files: List[Path], max_file_bytes: int, reads: Dict[str, int]) -> dict:
     """Schema metadata for a site: names/dtypes from the first file, rows from all."""
-    text_files = [f for f in files if f.suffix.lower() in TEXT_TABULAR_EXTENSIONS]
+    tabular_files = [f for f in files if f.suffix.lower() in TABULAR_EXTENSIONS]
+    if not tabular_files:
+        # e.g. an image-only site under a tabular-majority dataset: no schema
+        # keys at all rather than a parquet-shaped block of nulls
+        return {}
+    text_files = [f for f in tabular_files if f.suffix.lower() in TEXT_TABULAR_EXTENSIONS]
     if not text_files:
-        return _parquet_schema(files, reads)
+        return _parquet_schema(tabular_files, reads)
     target = text_files[0]
     schema = _null_schema(target.suffix.lower().lstrip("."))
     raw, capped = _read_bounded(target, max_file_bytes, reads)
@@ -226,13 +244,25 @@ def _tabular_schema(files: List[Path], max_file_bytes: int, reads: Dict[str, int
     if len(rows) >= MAX_SAMPLE_ROWS or capped:
         data_rows = max(data_rows, text.count("\n") - (1 if header == HEADER_PRESENT else 0))
     approximate = capped
+    shards_consistent = True
     # sharded site: aggregate line counts across the remaining files; per-shard
-    # header presence is unknowable, so any multi-file total is approximate
+    # header presence is unknowable, so any multi-file total is approximate.
+    # A shard whose first row has a different field count disagrees with the
+    # site schema and must not stay silent.
     for extra in text_files[1:]:
         extra_raw, _extra_capped = _read_bounded(extra, max_file_bytes, reads)
         if extra_raw is not None:
-            data_rows += extra_raw.decode("utf-8", errors="replace").count("\n")
+            extra_text = extra_raw.decode("utf-8", errors="replace")
+            data_rows += extra_text.count("\n")
+            first = next(csv.reader(io.StringIO(extra_text), delimiter=delimiter), None)
+            if first and len(first[:MAX_SCHEMA_COLUMNS]) != column_count:
+                shards_consistent = False
         approximate = True
+    # a site mixing text and parquet formats is counted from the text files
+    # only; never present that as an exact total
+    if len(tabular_files) > len(text_files):
+        approximate = True
+        shards_consistent = False
 
     schema.update(
         {
@@ -246,6 +276,8 @@ def _tabular_schema(files: List[Path], max_file_bytes: int, reads: Dict[str, int
     )
     if names_truncated:
         schema["feature_names_truncated"] = True
+    if not shards_consistent:
+        schema["shard_schema_consistent"] = False
     return schema
 
 
@@ -292,8 +324,10 @@ def _parquet_schema(files: List[Path], reads: Dict[str, int]) -> dict:
     parquet_files = [f for f in files if f.suffix.lower() == ".parquet"]
     features = None
     dtypes = None
+    reference_signature = None
     total_rows = 0
     approximate = False
+    shards_consistent = True
     for target in parquet_files:
         try:
             parquet_file = pq.ParquetFile(target)
@@ -303,13 +337,21 @@ def _parquet_schema(files: List[Path], reads: Dict[str, int]) -> dict:
         reads["files_read"] += 1
         reads["bytes_read"] += target.stat().st_size  # footer read; size is the upper bound
         total_rows += parquet_file.metadata.num_rows
+        arrow_schema = parquet_file.schema_arrow
+        shard_names, _ = _sanitize_names(list(arrow_schema.names)[:MAX_SCHEMA_COLUMNS])
+        shard_dtypes = [
+            "numeric" if (pa.types.is_integer(field.type) or pa.types.is_floating(field.type)) else "text"
+            for field in arrow_schema
+        ][:MAX_SCHEMA_COLUMNS]
+        signature = (tuple(shard_names), tuple(shard_dtypes))
         if features is None:
-            arrow_schema = parquet_file.schema_arrow
-            features, _ = _sanitize_names(list(arrow_schema.names)[:MAX_SCHEMA_COLUMNS])
-            dtypes = [
-                "numeric" if (pa.types.is_integer(field.type) or pa.types.is_floating(field.type)) else "text"
-                for field in arrow_schema
-            ][:MAX_SCHEMA_COLUMNS]
+            features, dtypes, reference_signature = shard_names, shard_dtypes, signature
+        elif signature != reference_signature:
+            # shards within one site disagree: a summed row count across
+            # different schemas is not exact, and the disagreement must
+            # surface in schema_agreement rather than stay silent
+            shards_consistent = False
+            approximate = True
 
     if features is None:
         schema["schema_available"] = False
@@ -326,6 +368,8 @@ def _parquet_schema(files: List[Path], reads: Dict[str, int]) -> dict:
             "row_count_approximate": approximate,
         }
     )
+    if not shards_consistent:
+        schema["shard_schema_consistent"] = False
     return schema
 
 
@@ -355,6 +399,8 @@ def _schema_agreement(sites: List[dict]) -> dict:
     reference = None
     mismatches = []
     for site in sites:
+        if site.get("shard_schema_consistent") is False:
+            mismatches.append({"site": site["name"], "reference_site": site["name"], "issue": "shards_differ"})
         names = tuple(site["features"]) if site.get("features") else None
         signature = (names or site.get("column_count"), tuple(site["dtypes"]) if site.get("dtypes") else None)
         if signature[0] is None:

@@ -243,6 +243,94 @@ def test_parquet_sharded_site_sums_exact_rows(tmp_path):
     assert result["scan"]["files_read"] == 2
 
 
+def test_material_minority_makes_mixed_not_majority(tmp_path):
+    # Codex repro: 2 CSV + 1 PNG must be mixed (unrouted), not tabular
+    d = tmp_path / "site-1"
+    d.mkdir()
+    (d / "a.csv").write_text(HEADER + ROWS, encoding="utf-8")
+    (d / "b.csv").write_text(HEADER + ROWS, encoding="utf-8")
+    (d / "scan.png").write_bytes(b"\x89PNG not really")
+
+    dataset = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
+    result = inspect_path(tmp_path)
+
+    assert dataset["modality"] == "mixed"
+    assert result["target_type"] == "unknown_target"
+    assert "nvflare-fed-stats" not in result["skill_selection"]["recommended_skills"]
+
+
+def test_stray_image_below_threshold_stays_tabular(tmp_path):
+    d = tmp_path / "site-1"
+    d.mkdir()
+    for i in range(20):
+        (d / f"part_{i}.csv").write_text(HEADER + ROWS, encoding="utf-8")
+    (d / "plot.png").write_bytes(b"\x89PNG not really")
+
+    dataset = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
+
+    assert dataset["modality"] == "tabular"
+    assert dataset["file_census"][".png"] == 1  # stray file stays visible
+
+
+def test_image_only_site_under_tabular_majority_gets_no_parquet_nulls(tmp_path):
+    for i in range(1, 20):
+        _write_site(tmp_path, f"site-{i:02d}", HEADER + ROWS)
+    d = tmp_path / "site-99"
+    d.mkdir()
+    (d / "scan.png").write_bytes(b"\x89PNG not really")
+
+    dataset = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
+
+    image_site = [s for s in dataset["sites"] if s["name"] == "site-99"][0]
+    assert "format" not in image_site  # no parquet-shaped block of nulls
+    assert image_site["data_files"] == 1
+
+
+def test_parquet_shard_schema_disagreement_is_a_mismatch(tmp_path):
+    pa = __import__("pytest").importorskip("pyarrow")
+    import pyarrow.parquet as pq
+
+    d = tmp_path / "site-1"
+    d.mkdir()
+    pq.write_table(pa.table({"age": [39, 50]}), d / "part-0.parquet")
+    pq.write_table(pa.table({"height": [170, 180, 175]}), d / "part-1.parquet")
+
+    result = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
+
+    site = result["sites"][0]
+    assert site["shard_schema_consistent"] is False
+    assert site["row_count_approximate"] is True
+    agreement = result["schema_agreement"]
+    assert agreement["status"] == "mismatch"
+    assert {"site": "site-1", "reference_site": "site-1", "issue": "shards_differ"} in agreement["mismatches"]
+
+
+def test_csv_shard_column_count_drift_is_flagged(tmp_path):
+    d = tmp_path / "site-1"
+    d.mkdir()
+    (d / "part-0.csv").write_text(HEADER + ROWS, encoding="utf-8")
+    (d / "part-1.csv").write_text("39,100\n50,220\n", encoding="utf-8")  # 2 columns, not 3
+
+    result = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
+
+    site = result["sites"][0]
+    assert site["shard_schema_consistent"] is False
+    assert result["schema_agreement"]["status"] == "mismatch"
+
+
+def test_mixed_format_site_is_never_exact(tmp_path):
+    d = tmp_path / "site-1"
+    d.mkdir()
+    (d / "data.csv").write_text(HEADER + ROWS, encoding="utf-8")
+    (d / "extra.parquet").write_bytes(b"PAR1 not really")
+
+    result = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
+
+    site = result["sites"][0]
+    assert site["row_count_approximate"] is True
+    assert site["shard_schema_consistent"] is False
+
+
 def test_file_limit_marks_counts_approximate(tmp_path):
     d = tmp_path / "site-1"
     d.mkdir()

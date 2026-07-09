@@ -129,8 +129,9 @@ encryption, or custom privacy filters are out of scope.
 - Cross-site schema agreement is a generation precondition, not just a
   validation failure: `nvflare agent inspect` emits `schema_agreement`,
   comparing feature names, column counts, AND dtype classes across sites
-  (same names with drifting dtypes is `dtypes_differ` — not analysis-ready
-  for numeric statistics); on `mismatch` fail closed naming the differing
+  (same names with drifting dtypes is `dtypes_differ`; shards disagreeing
+  inside one site is `shards_differ` — neither is analysis-ready for
+  numeric statistics); on `mismatch` fail closed naming the differing
   sites and the issue.
 - Porting boundary for an existing script: PORT population-defining data
   prep — cohort filters, derived columns, dataset splits, missing-value
