@@ -73,9 +73,10 @@ silently dropped or approximated.
    names must come from the request, a README/metadata file, or a names
    file — else fail closed with a precise missing-input report (ask once
    only when an interactive channel exists); never invent or auto-number
-   names. A `schema_agreement` mismatch fails closed naming the differing
-   sites; `counts_approximate: true` means verify site sizes before
-   bin-cap decisions. On 2.8.x CLIs (no dataset block yet), apply the
+   names. A `schema_agreement` mismatch or `columns_truncated` schema
+   fails closed (the latter unless the user declares a feature subset);
+   `counts_approximate: true` means verify site sizes before bin-cap
+   decisions. On 2.8.x CLIs (no dataset block yet), apply the
    same rules directly from `references/statistics-mapping.md`.
    Read any statistics script or notebook as optional intent evidence
    (statistics, read options, splits, histogram ranges) without importing

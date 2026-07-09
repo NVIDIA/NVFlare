@@ -36,6 +36,9 @@ import numpy as np
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.statistics_spec import Bin, DataType, Feature, Histogram, HistogramType, Statistics
 
+# ADAPTATION POINT: extend with the site's actual formats (e.g. ".dcm",
+# ".nii", ".nii.gz") when swapping _load_image for the matching loader; the
+# dataset block's per-site image_formats says which formats are present.
 IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff")
 
 

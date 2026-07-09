@@ -130,14 +130,23 @@ encryption, or custom privacy filters are out of scope.
   counts (summed across a site's shards from footer metadata) when
   `schema_available` is true (pyarrow present); when false, treat it like
   an ambiguous header — declared names or fail closed.
-- Header heuristic, precisely: treat the first row as a header when at
-  least one column's first value does not parse as that column's inferred
-  dtype from the remaining rows (classic text-names-over-numeric-data).
-  Anything else (all-numeric first row, or text over text columns) is
-  AMBIGUOUS: do not guess — require declared names or an explicit "first
-  row is the header" statement, else fail closed. `nvflare agent inspect`
-  implements this rule and emits it as the dataset block's `header:
-  present|ambiguous`; consume that output instead of re-deriving it.
+- Header heuristic, precisely: treat the first row as a header ONLY when
+  every numeric-bodied column carries a non-numeric first value AND the
+  resulting names are unique and non-empty. Weaker evidence (one text
+  token over one numeric column, e.g. a masked data row "SUPPRESSED,100",
+  or repeated tokens like "SUPPRESSED,SUPPRESSED") is a data row —
+  treating it as a header leaks cell values as feature names. Anything
+  short of the full rule is AMBIGUOUS: do not guess — require declared
+  names or an explicit "first row is the header" statement, else fail
+  closed. `nvflare agent inspect` implements this rule and emits it as
+  the dataset block's `header: present|ambiguous`; consume that output
+  instead of re-deriving it.
+- `columns_truncated: true` (schema wider than the 512-column cap): the
+  block's names and drift checks cannot cover the hidden columns — fail
+  closed, or proceed only with an explicit user-declared feature subset
+  within the cap.
+- `feature_names_invalid` (parquet with duplicate or empty column names):
+  downstream readers mangle such names — fail closed and report them.
 - Cross-site schema agreement is a generation precondition, not just a
   validation failure: `nvflare agent inspect` emits `schema_agreement`,
   comparing feature names, column counts, AND dtype classes across sites

@@ -223,6 +223,61 @@ def test_sample_capped_row_count_is_exact_without_trailing_newline(tmp_path):
     assert site["row_count_approximate"] is False
 
 
+def test_repeated_masked_first_row_does_not_leak(tmp_path):
+    # Codex repro: identical masked tokens over all-numeric body must not
+    # become feature names — a valid header names columns uniquely
+    _write_site(tmp_path, "site-1", "SUPPRESSED,SUPPRESSED\n1,2\n3,4\n")
+
+    result = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
+
+    site = result["sites"][0]
+    assert site["header"] == "ambiguous"
+    assert site["features"] is None
+    assert "SUPPRESSED" not in str(result)
+
+
+def test_numpy_helper_script_does_not_hide_the_dataset(tmp_path):
+    # Codex repro: a data root with a small numpy helper must still classify
+    # and route as a dataset — numpy has no converter skill to defer to
+    for site in ("site-1", "site-2"):
+        _write_site(tmp_path, site, HEADER + ROWS)
+    (tmp_path / "compute_stats.py").write_text("import numpy as np\n\n\ndef main():\n    pass\n", encoding="utf-8")
+
+    result = inspect_path(tmp_path)
+
+    assert result["target_type"] == "tabular_dataset"
+    assert result["dataset"] is not None
+    assert result["skill_selection"]["recommended_skills"] == ["nvflare-fed-stats"]
+
+
+def test_parquet_duplicate_names_flagged_invalid(tmp_path):
+    pa = __import__("pytest").importorskip("pyarrow")
+    import pyarrow.parquet as pq
+
+    d = tmp_path / "site-1"
+    d.mkdir()
+    table = pa.table([pa.array([1, 2]), pa.array([3, 4])], names=["age", "age"])
+    pq.write_table(table, d / "data.parquet")
+
+    result = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
+
+    assert result["sites"][0]["feature_names_invalid"] is True
+
+
+def test_image_sites_report_their_formats(tmp_path):
+    d = tmp_path / "site-1"
+    d.mkdir()
+    for i in range(3):
+        (d / f"scan_{i}.dcm").write_bytes(b"DICM not really")
+    (d / "extra.png").write_bytes(b"\x89PNG not really")
+
+    result = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
+
+    site = result["sites"][0]
+    assert site["image_formats"] == [".dcm", ".png"]
+    assert site["pixel_depth"] is None or site["pixel_depth"] == "uint8"
+
+
 def test_symlinks_consume_walk_budget(tmp_path, monkeypatch):
     # Codex repro: symlink entries are traversal work and must count toward
     # the cap even though they are never followed

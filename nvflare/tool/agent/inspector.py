@@ -151,11 +151,13 @@ def inspect_path(
     conversion_state = _conversion_state(state, detected_framework, exported_job_info)
     target_type = _target_type(target, state, detected_framework, conversion_state)
 
-    # Data-target classification runs only when code classification found
-    # nothing: a data-only directory is a dataset target, and its evidence
-    # block replaces the skill's need for hand-rolled data inspection.
+    # Data-target classification runs when code classification found nothing,
+    # OR when it found only a framework with no converter skill (e.g. a small
+    # numpy/sklearn helper script inside a data root): scripts are optional
+    # stats intent evidence, and a data root must still route to fed-stats.
     dataset = None
-    if target_type == "unknown_target" and target.is_dir():
+    code_has_skill_route = bool(frameworks.recommended_skill_for(detected_framework))
+    if target.is_dir() and (target_type == "unknown_target" or not code_has_skill_route):
         dataset = dataset_inspect.inspect_dataset(target, max_files=max_files, max_file_bytes=max_file_bytes)
         if dataset and dataset["modality"] in ("tabular", "image"):
             target_type = f"{dataset['modality']}_dataset"
@@ -1205,17 +1207,18 @@ def _skill_selection(
         # Lifecycle skills are out of scope and not planned; exported jobs are
         # handled with product APIs directly, so no skill is recommended.
         pass
-    elif detected_framework and conversion_state == "not_converted":
-        skill = frameworks.recommended_skill_for(detected_framework)
-        if skill:
-            recommended.append(skill)
     elif dataset and dataset.get("modality") in ("tabular", "image"):
-        # A data-only target routes to federated statistics.
+        # A dataset target routes to federated statistics; when a dataset
+        # block exists, code classification found no converter route.
         recommended.append("nvflare-fed-stats")
     elif dataset and dataset.get("modality") == "mixed":
         # Mixed data is definitionally ambiguous, and routing ambiguity is
         # orient's job; an empty recommendation would strand the consumer.
         recommended.append("nvflare-orient")
+    elif detected_framework and conversion_state == "not_converted":
+        skill = frameworks.recommended_skill_for(detected_framework)
+        if skill:
+            recommended.append(skill)
     if (
         (state.findings or _has_problematic_skips(state))
         and "nvflare-fed-stats" not in recommended

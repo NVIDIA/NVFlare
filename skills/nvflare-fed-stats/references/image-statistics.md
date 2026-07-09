@@ -9,7 +9,11 @@ the tabular template.
 
 `nvflare agent inspect <path> --format json` classifies image data:
 `target_type: image_dataset` with a `dataset` block carrying the extension
-census, per-site file counts, and a sampled `pixel_depth` (e.g. `uint8`).
+census, per-site file counts, per-site `image_formats` (pick the loader
+from these), and a sampled `pixel_depth` (e.g. `uint8`; stays null for
+DICOM/NIfTI, where depth must come from the format-specific loader). For
+`.dcm`/`.nii` sites the generated client must extend the template's
+discovery extensions and swap `_load_image` for the preflighted loader.
 Route on that output rather than re-deriving it; `counts_approximate:
 true` means the walk hit its file limit — verify site counts directly
 before bin-cap decisions. Datalist-JSON layouts may classify as

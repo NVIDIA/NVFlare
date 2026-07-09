@@ -56,10 +56,15 @@ Dataset block contract (all keys always present per modality):
     capped (``feature_names_truncated`` marks a cap hit); schemas wider
     than the column cap set ``columns_truncated`` — drift past the cap is
     invisible. ``header: present`` requires every numeric-bodied column
-    to carry a non-numeric first value. Dtype classes
+    to carry a non-numeric first value AND the names to be unique and
+    non-empty; parquet names failing that are flagged
+    ``feature_names_invalid``. Dtype classes
     are inferred from a bounded row sample; a full-file reader (pandas at
     job runtime) can disagree when anomalies appear past the sample.
-  - image: ``pixel_depth`` from one sample when an optional loader exists.
+  - image: ``image_formats`` (the site's image extensions, so the consumer
+    picks the matching loader) and ``pixel_depth`` from one sample when an
+    optional loader exists (PIL formats only; DICOM/NIfTI depth stays
+    null and the loader must be chosen from ``image_formats``).
 - ``schema_agreement`` (tabular): compares feature names, column counts,
   AND dtype classes across sites; any drift is a ``mismatch`` with per-site
   issues (``feature_names_differ`` | ``column_count_differs`` |
@@ -137,6 +142,9 @@ def inspect_dataset(root: Path, max_files: int, max_file_bytes: int) -> Optional
         if modality == "tabular":
             site.update(_tabular_schema(files, max_file_bytes, reads))
         elif modality == "image":
+            site["image_formats"] = sorted(
+                {_data_extension(f) for f in files if _data_extension(f) not in TABULAR_EXTENSIONS} - {None}
+            )
             site["pixel_depth"] = _sample_pixel_depth(files, reads)
             if tabular_files:
                 # companion metadata (e.g. labels.csv): reported, never a
@@ -319,15 +327,17 @@ def _tabular_schema(files: List[Path], max_file_bytes: int, reads: Dict[str, int
     # (e.g. a masked first data row like "SUPPRESSED,100") is NOT a header -
     # emitting it would leak cell values as feature names.
     numeric_columns = [j for j in range(column_count) if numeric[j]]
-    if numeric_columns and all(not _numeric_token(rows[0][j]) for j in numeric_columns):
-        header = HEADER_PRESENT
-    else:
-        header = HEADER_AMBIGUOUS
-
     features = None
     names_truncated = False
-    if header == HEADER_PRESENT:
-        features, names_truncated = _sanitize_names(rows[0])
+    header = HEADER_AMBIGUOUS
+    if numeric_columns and all(not _numeric_token(rows[0][j]) for j in numeric_columns):
+        candidate, names_truncated = _sanitize_names(rows[0])
+        # a valid header must also name every column uniquely: duplicates or
+        # empties (e.g. a masked data row "SUPPRESSED,SUPPRESSED") are not
+        # headers and must not be emitted as names
+        if all(candidate) and len(set(candidate)) == len(candidate):
+            header = HEADER_PRESENT
+            features = candidate
 
     # rows in the schema file, within the byte cap; the line-count fallback
     # adds the final unterminated line so uncapped counts stay exact
@@ -479,6 +489,10 @@ def _parquet_schema(files: List[Path], reads: Dict[str, int]) -> dict:
             "row_count_approximate": approximate,
         }
     )
+    if not all(features) or len(set(features)) != len(features):
+        # real metadata, but pathological: duplicate or empty column names
+        # will be mangled by downstream readers
+        schema["feature_names_invalid"] = True
     if not shards_consistent:
         schema["shard_schema_consistent"] = False
     return schema
