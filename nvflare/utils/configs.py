@@ -27,9 +27,9 @@ def get_job_config_value(fl_ctx: FLContext, config_file: str, key: str, default:
     """Generic function to read from any job config file.
 
     Secret references in the selected value are resolved recursively at this runtime boundary.
-    This helper reads the exported JSON directly, so it does not expand ordinary NVFlare
-    placeholders such as ``{SITE_NAME}``. Do not combine those placeholders with secret
-    references in values consumed through this helper.
+    This helper reads the exported JSON directly, so ordinary NVFlare placeholders such as
+    ``{SITE_NAME}`` are not expanded here and remain literal in the returned value, even when
+    they appear alongside secret references.
 
     Args:
         fl_ctx: FLContext

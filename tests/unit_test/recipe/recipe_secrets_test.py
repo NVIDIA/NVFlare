@@ -125,6 +125,14 @@ class TestRecipeSecretScanning:
             recipe.export(str(tmp_path), client_exec_params={"api_key": "abcd1234efgh"})
         assert any("client_exec_params" in str(w.message) for w in record)
 
+    @pytest.mark.parametrize("params_name", ["server_exec_params", "client_exec_params"])
+    def test_exec_params_warn_for_nested_secret_ref_key(self, make_recipe, tmp_path, params_name):
+        recipe = make_recipe()
+        params = {"service": {secret_ref("DYNAMIC_KEY"): "value"}}
+
+        with pytest.warns(UnsupportedSecretRefWarning, match=params_name):
+            recipe.export(str(tmp_path), **{params_name: params})
+
     def test_export_scans_generated_config_files(self, make_recipe, tmp_path):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", PotentialSecretWarning)  # constructor warning is tested elsewhere

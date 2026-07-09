@@ -364,8 +364,10 @@ class Recipe(ABC):
         """
         if server_exec_params:
             warn_on_potential_secrets(server_exec_params, context="server_exec_params")
+            warn_on_unsupported_secret_ref_keys(server_exec_params, context="server_exec_params")
         if client_exec_params:
             warn_on_potential_secrets(client_exec_params, context="client_exec_params")
+            warn_on_unsupported_secret_ref_keys(client_exec_params, context="client_exec_params")
 
         params_snapshot = None
         if server_exec_params is not None or client_exec_params is not None:
