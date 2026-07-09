@@ -29,9 +29,10 @@ Dataset block contract (all keys always present per modality):
   images (<= 2 per site, e.g. exported plots); an image dataset tolerates
   companion tabular metadata (<= 4 files per site, e.g. train/val/test
   label files, flagged ``tabular_companions``, never a statistics
-  target); anything
-  else — an image-only site among tabular sites, or materially both — is
-  ``mixed``, reported but not routed (``target_type`` stays
+  target); tiny sites inside both tolerance windows resolve to the side
+  with more files overall; anything else — an image-only site among
+  tabular sites, materially both modalities, or a dead file-count tie —
+  is ``mixed``, reported but not routed (``target_type`` stays
   ``unknown_target``).
 - ``layout``: ``per_site_directories`` | ``flat``.
 - ``file_census``: extension -> count (bounded; see ``counts_approximate``).
