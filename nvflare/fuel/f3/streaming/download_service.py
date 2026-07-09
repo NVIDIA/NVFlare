@@ -687,6 +687,10 @@ class _Transaction:
         self.progress_interval = float(progress_interval)
         self.refs = []
         self._refs_lock = threading.RLock()
+        # set by a retry that takes ownership of this tx_id while this transaction is
+        # still terminating (already out of _tx_table, not yet settled): its transfer-
+        # facing emissions must be suppressed -- their tx_id now names the live retry
+        self._superseded_by_retry = False
         # receivers that have issued at least one pull on ANY ref (monotonic; the
         # transaction-level PAYLOAD_ACQUIRED fact the acquire budget and the facade read),
         # and each receiver's last activity anywhere on the transaction (what the idle
@@ -745,6 +749,9 @@ class _Transaction:
         """
         self.transaction_done(TransactionDoneStatus.TIMEOUT)
 
+    def mark_superseded(self):
+        self._superseded_by_retry = True
+
     @property
     def has_receiver_budgets(self) -> bool:
         return self.receiver_acquire_timeout is not None or self.receiver_idle_timeout is not None
@@ -802,11 +809,15 @@ class _Transaction:
         stops the producer process) can never preempt the callback chain or the
         release of the sources.
 
-        superseded=True (a retry took over this transaction's reused tx_id) suppresses
-        the transfer-facing emissions — terminal progress, transaction_done_cb and
-        outcome_cb — because their tx_id now names the LIVE retry; consumers keyed by
-        tx_id would misattribute them. Sources are still released and the per-object
-        obj.transaction_done cleanup still runs.
+        superseded (a retry took over this transaction's reused tx_id, passed as an arg
+        by the retirement path or set via mark_superseded() by a retry that lands while
+        this transaction is mid-settlement) suppresses the TRANSFER-FACING emissions —
+        terminal progress and outcome_cb — because their tx_id now names the LIVE retry
+        and consumers keyed by tx_id would misattribute them. The CLEANUP surfaces always
+        run regardless: transaction_done_cb (in-tree callers use it to delete temp files,
+        e.g. workspace_cell_transfer._cleanup_transfer_files), per-object
+        obj.transaction_done, and release(). The superseded state is re-read at each
+        emission gate, narrowing the window for a retry that lands mid-settlement.
         """
         refs = self.snapshot_refs()
 
@@ -822,62 +833,68 @@ class _Transaction:
             timestamp=time.time(),
         )
 
-        progress_state = self._progress_state_for_transaction_status(status)
-        if progress_state and not superseded:
+        try:
+            progress_state = self._progress_state_for_transaction_status(status)
+            if progress_state and not (superseded or self._superseded_by_retry):
+                for ref in refs:
+                    ref.emit_terminal_progress_for_started_receivers(progress_state)
+
+            elapsed = time.time() - self.start_time
+            total_bytes = self.get_total_bytes()
+            size_mb = total_bytes / (1024 * 1024)
+            self.logger.info(
+                f"[server] download tx {self.tid} done: status={status} elapsed={elapsed:.2f}s "
+                f"size={size_mb:.1f}MB ({total_bytes:,} bytes)"
+            )
+
+            # Snapshot base_objs BEFORE the loop so the callback receives the
+            # original objects.  obj.transaction_done() may clear the chunk cache
+            # (CacheableObject.clear_cache()); the source object itself is released
+            # via obj.release() AFTER the callback so the callback can still
+            # observe it (e.g. for memory-GC notifications).
+            base_objs = [ref.obj.base_obj for ref in refs]
+
             for ref in refs:
-                ref.emit_terminal_progress_for_started_receivers(progress_state)
+                obj = ref.obj
+                assert isinstance(obj, Downloadable)
+                _invoke_cb_safely(
+                    self.logger,
+                    f"transaction_done of {type(obj)} for tx {self.tid}",
+                    obj.transaction_done,
+                    self.tid,
+                    status,
+                )
 
-        elapsed = time.time() - self.start_time
-        total_bytes = self.get_total_bytes()
-        size_mb = total_bytes / (1024 * 1024)
-        self.logger.info(
-            f"[server] download tx {self.tid} done: status={status} elapsed={elapsed:.2f}s "
-            f"size={size_mb:.1f}MB ({total_bytes:,} bytes)"
-        )
+            # CLEANUP surface, not transfer-facing: always runs, superseded or not --
+            # in-tree callers delete their temp files here
+            if self.transaction_done_cb:
+                _invoke_cb_safely(
+                    self.logger,
+                    f"transaction done callback for tx {self.tid}",
+                    self.transaction_done_cb,
+                    self.tid,
+                    status,
+                    base_objs,
+                    **self.cb_kwargs,
+                )
 
-        # Snapshot base_objs BEFORE the loop so the callback receives the
-        # original objects.  obj.transaction_done() may clear the chunk cache
-        # (CacheableObject.clear_cache()); the source object itself is released
-        # via obj.release() AFTER the callback so the callback can still
-        # observe it (e.g. for memory-GC notifications).
-        base_objs = [ref.obj.base_obj for ref in refs]
+            # transfer-facing: gate re-read here so a retry that took ownership while the
+            # callbacks above ran is still respected
+            if self.outcome_cb and not (superseded or self._superseded_by_retry):
+                _invoke_cb_safely(self.logger, f"transfer outcome callback for tx {self.tid}", self.outcome_cb, outcome)
 
-        for ref in refs:
-            obj = ref.obj
-            assert isinstance(obj, Downloadable)
-            _invoke_cb_safely(
-                self.logger,
-                f"transaction_done of {type(obj)} for tx {self.tid}",
-                obj.transaction_done,
-                self.tid,
-                status,
-            )
-
-        if self.transaction_done_cb and not superseded:
-            _invoke_cb_safely(
-                self.logger,
-                f"transaction done callback for tx {self.tid}",
-                self.transaction_done_cb,
-                self.tid,
-                status,
-                base_objs,
-                **self.cb_kwargs,
-            )
-
-        if self.outcome_cb and not superseded:
-            _invoke_cb_safely(self.logger, f"transfer outcome callback for tx {self.tid}", self.outcome_cb, outcome)
-
-        # Release source objects after the callback so the callback can still
-        # reference them.  This drops the last infrastructure reference to
-        # large objects (e.g. numpy dicts) allowing GC to reclaim them.
-        for ref in refs:
-            ref.obj.release()
-
-        # Record the outcome (and release waiters) only now that the transaction is fully
-        # settled: callbacks done, sources released. waiter.wait() returning therefore
-        # means there is nothing left in flight on this transaction.
-        if on_outcome:
-            _invoke_cb_safely(self.logger, f"outcome recording for tx {self.tid}", on_outcome, outcome)
+            # Release source objects after the callback so the callback can still
+            # reference them. Each release is guarded: a raising custom release() must
+            # not skip its siblings -- nor, via the finally below, outcome recording.
+            for ref in refs:
+                _invoke_cb_safely(self.logger, f"release of {type(ref.obj)} for tx {self.tid}", ref.obj.release)
+        finally:
+            # Record the outcome (and release waiters) only now that the transaction is
+            # fully settled: callbacks done, sources released. In a finally so that no
+            # exception anywhere above (including on the monitor thread) can leave the
+            # outcome unrecorded, the waiter pending forever, and ownership registered.
+            if on_outcome:
+                _invoke_cb_safely(self.logger, f"outcome recording for tx {self.tid}", on_outcome, outcome)
 
         return outcome
 
@@ -1066,7 +1083,14 @@ class DownloadService:
                 # a reused tx_id must not surface the previous owner's outcome: purge any
                 # recorded outcome and take ownership. Ownership is taken before the tx
                 # becomes monitor-visible, so a tx the monitor can terminate always owns
-                # its outcome slot.
+                # its outcome slot. A previous owner still registered here is either live
+                # in _tx_table (retired below) or MID-SETTLEMENT -- already popped from
+                # the table by the monitor/delete path but still running its callbacks;
+                # mark it superseded so its remaining transfer-facing emissions are
+                # suppressed (their tx_id now names this retry).
+                prev_owner = cls._outcome_owners.get(tx.tid)
+                if prev_owner is not None and prev_owner is not tx:
+                    prev_owner.mark_superseded()
                 cls._tx_outcomes.pop(tx.tid, None)
                 cls._outcome_owners[tx.tid] = tx
             old_tx = cls._tx_table.get(tx.tid)

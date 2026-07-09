@@ -175,6 +175,68 @@ class TestTransactionOutcome:
         assert outcome.refs[0].receiver_statuses == {"r1": DownloadStatus.SUCCESS}
         assert obj.released
 
+    def test_raising_release_cannot_leave_waiter_unresolved(self):
+        """P1 pin: an unguarded custom release() used to escape transaction_done -- with
+        recording moved to the end, that left the outcome unrecorded, the waiter pending
+        forever, ownership registered, and (from the monitor) killed the monitor thread.
+        Releases are individually guarded and recording runs in a finally."""
+        from unittest.mock import Mock
+
+        service = make_isolated_download_service()
+        service._tx_monitor = Mock()
+        cell = Mock()
+        tx_id = service.new_transaction(cell=cell, timeout=10.0, num_receivers=1)
+        obj = _stub_obj()
+        obj.release = Mock(side_effect=RuntimeError("release blew up"))
+        service.add_object(tx_id, obj)
+        ref = service._tx_table[tx_id].snapshot_refs()[0]
+        ref.obj_downloaded("r1", DownloadStatus.SUCCESS)
+        waiter = service.get_transfer_waiter(tx_id)
+
+        run_monitor_once(service, now=time.time())  # must not raise off the monitor thread
+
+        outcome = waiter.wait(timeout=5.0)
+        assert outcome is not None and outcome.completed, "recording must survive a raising release()"
+        with service._outcome_lock:
+            assert tx_id not in service._outcome_owners, "ownership must be consumed"
+
+    def test_mid_settlement_retry_suppresses_stale_transfer_emissions(self):
+        """P1 pin: the monitor pops a finishing transaction from _tx_table BEFORE running
+        its callbacks; a retry registering the same tx_id in that gap is not seen by the
+        retire path (old tx not in table). The retry now marks the previous owner
+        superseded, so its in-flight transaction_done suppresses outcome_cb/progress --
+        while cleanup (done_cb, release) still runs."""
+        from functools import partial
+        from unittest.mock import Mock
+
+        service = make_isolated_download_service()
+        service._tx_monitor = Mock()
+        cell = Mock()
+        done, outcome_cbs = [], []
+        service.new_transaction(
+            cell=cell,
+            timeout=10.0,
+            num_receivers=1,
+            tx_id="TX-MID",
+            transaction_done_cb=lambda tid, status, base_objs, **kw: done.append(status),
+            outcome_cb=lambda outcome: outcome_cbs.append(outcome),
+        )
+        obj = _stub_obj()
+        service.add_object("TX-MID", obj)
+        with service._tx_lock:
+            old_tx = service._tx_table.pop("TX-MID")  # monitor termination step 1
+
+        # the retry lands in the settlement gap
+        service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-MID")
+
+        # the old generation now runs its (already started) termination
+        old_tx.transaction_done(TransactionDoneStatus.FINISHED, on_outcome=partial(service._record_outcome, tx=old_tx))
+
+        assert outcome_cbs == [], "stale transfer-facing outcome_cb must be suppressed"
+        assert done == [TransactionDoneStatus.FINISHED], "cleanup callback still runs"
+        assert obj.released, "sources still released"
+        assert service.get_transaction_outcome("TX-MID") is None, "stale outcome not recorded"
+
     def test_on_outcome_fires_after_callbacks_and_release(self):
         # settle-then-record: recording (which releases waiters) happens only after the
         # callback chain and source release complete, so an upper layer acting on
@@ -372,12 +434,14 @@ class TestServiceOutcomeTable:
         cell = Mock()
         done = []
         try:
+            outcome_cbs = []
             first = service.new_transaction(
                 cell=cell,
                 timeout=10.0,
                 num_receivers=1,
                 tx_id="TX-DUP",
                 transaction_done_cb=lambda tid, status, base_objs, **kw: done.append((tid, status)),
+                outcome_cb=lambda outcome: outcome_cbs.append(outcome),
             )
             obj = _stub_obj()
             rid = service.add_object(first, obj)
@@ -386,12 +450,14 @@ class TestServiceOutcomeTable:
             second = service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-DUP")
             assert second == "TX-DUP"
 
-            # the prior live transaction was retired: refs unservable, sources released --
-            # but its transfer-facing callbacks are SUPPRESSED (superseded): their reused
-            # tx_id now names the live retry, so firing them would misattribute
+            # the prior live transaction was retired: refs unservable, sources released.
+            # CLEANUP surfaces still run (transaction_done_cb deletes temp files in real
+            # callers) -- but the TRANSFER-FACING outcome_cb is suppressed (superseded):
+            # its reused tx_id now names the live retry and would misattribute
             assert rid not in service._ref_table
             assert obj.released
-            assert done == []
+            assert done == [("TX-DUP", TransactionDoneStatus.DELETED)]
+            assert outcome_cbs == []
             # its terminal outcome does not shadow the live retry
             assert service.get_transaction_outcome("TX-DUP") is None
             # the live tx is the new owner
