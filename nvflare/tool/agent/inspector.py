@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Optional
 
 import nvflare
-from nvflare.tool.agent import frameworks
+from nvflare.tool.agent import dataset_inspect, frameworks
 from nvflare.tool.agent.frameworks.base import DetectContext
 
 DEFAULT_MAX_FILES = 250
@@ -151,6 +151,15 @@ def inspect_path(
     conversion_state = _conversion_state(state, detected_framework, exported_job_info)
     target_type = _target_type(target, state, detected_framework, conversion_state)
 
+    # Data-target classification runs only when code classification found
+    # nothing: a data-only directory is a dataset target, and its evidence
+    # block replaces the skill's need for hand-rolled data inspection.
+    dataset = None
+    if target_type == "unknown_target" and target.is_dir():
+        dataset = dataset_inspect.inspect_dataset(target, max_files=max_files, max_file_bytes=max_file_bytes)
+        if dataset and dataset["modality"] in ("tabular", "image"):
+            target_type = f"{dataset['modality']}_dataset"
+
     return {
         "schema_version": "1",
         "nvflare_version": nvflare.__version__,
@@ -197,7 +206,8 @@ def inspect_path(
             "absolute_data_paths": state.absolute_path_findings[:MAX_EVIDENCE_PER_BUCKET],
         },
         "findings": state.findings[:MAX_EVIDENCE_PER_BUCKET],
-        "skill_selection": _skill_selection(detected_framework, conversion_state, state),
+        "dataset": dataset,
+        "skill_selection": _skill_selection(detected_framework, conversion_state, state, dataset),
         "recommended_next_commands": _recommended_next_commands(detected_framework, conversion_state, state),
         "installed_skills": _installed_skills(target),
     }
@@ -1187,7 +1197,9 @@ def _strip_scalar(value: str) -> str:
     return value
 
 
-def _skill_selection(detected_framework: Optional[str], conversion_state: str, state: InspectState) -> dict:
+def _skill_selection(
+    detected_framework: Optional[str], conversion_state: str, state: InspectState, dataset: Optional[dict] = None
+) -> dict:
     recommended = []
     if conversion_state == "exported_job":
         # Lifecycle skills are out of scope and not planned; exported jobs are
@@ -1197,6 +1209,9 @@ def _skill_selection(detected_framework: Optional[str], conversion_state: str, s
         skill = frameworks.recommended_skill_for(detected_framework)
         if skill:
             recommended.append(skill)
+    elif dataset and dataset.get("modality") in ("tabular", "image"):
+        # A data-only target routes to federated statistics.
+        recommended.append("nvflare-fed-stats")
     if state.findings or _has_problematic_skips(state):
         recommended.append("nvflare-orient")
 

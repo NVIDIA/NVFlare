@@ -7,10 +7,15 @@ the tabular template.
 
 ## Detection
 
-Route to this path when the per-site data is image files: image extensions
-(PNG/JPEG/BMP/TIFF, DICOM `.dcm`, NIfTI `.nii`/`.nii.gz`), image folder
-layouts, or a datalist JSON pointing at image files. Mixed tabular+image
-requests are two runs; report that and run them separately.
+`nvflare agent inspect <path> --format json` classifies image data:
+`target_type: image_dataset` with a `dataset` block carrying the extension
+census, per-site file counts, and a sampled `pixel_depth` (e.g. `uint8`).
+Route on that output rather than re-deriving it; `counts_approximate:
+true` means the walk hit its file limit — verify site counts directly
+before bin-cap decisions. Datalist-JSON layouts may classify as
+`unknown_target`; read the datalist as declared layout evidence in that
+case. Mixed tabular+image requests are two runs; report that and run them
+separately.
 
 ## Supported Statistics (Image)
 
@@ -38,8 +43,8 @@ statistic_configs = {
 
 - The intensity range comes from the pixel dtype/bit depth, which is
   legitimate static evidence: `[0, 256]` for 8-bit, `[0, 65536]` for
-  16-bit, `[0, 1]` for normalized floats. Confirm from one sample image's
-  dtype and state the choice; a user/README declaration overrides.
+  16-bit, `[0, 1]` for normalized floats. Use the dataset block's sampled
+  `pixel_depth` and state the choice; a user/README declaration overrides.
 - The bin-cap cleanser compares bins to the site's *image count* (not pixel
   count): 20 bins needs >200 images per site. Size the default bin count to
   the smallest site and state the choice, exactly as in the tabular path.

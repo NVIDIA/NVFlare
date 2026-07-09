@@ -63,24 +63,23 @@ silently dropped or approximated.
    report it as an anomaly. Keep generated source beside the user's data;
    workspace, outputs, and logs go in a host runtime or temporary
    directory, with paths reported.
-2. Inspect the data first, statically and bounded, and detect modality:
-   image files (image extensions or a datalist) follow the image path —
-   load `references/image-statistics.md` and generate from
-   `assets/image_stats_client.py`; the steps below describe tabular. For
-   tabular, read the header row and a bounded sample of rows for feature
-   names and dtypes. Names must come
-   from a header row or user-supplied names (request, README/metadata file,
-   or names file) — when the first row parses as data values and no names
-   are supplied anywhere, fail closed with a precise missing-input report
-   (or ask once when an interactive channel exists); never invent or
-   auto-number names (see the header heuristic and ambiguous-header rule
-   in `references/statistics-mapping.md`). Compare header, column count,
-   and inferred dtypes across every site file; disagreement fails closed
-   naming the differing sites. Read any statistics script or notebook as
-   optional intent evidence (statistics, read options, dataset splits,
-   histogram ranges) without importing or executing it. For a project tree
-   (not a bare data folder), also run `nvflare agent inspect <path>
-   --format json` for FLARE evidence.
+2. Inspect deterministically: run `nvflare agent inspect <path> --format
+   json` first; its `target_type` and `dataset` block are the evidence —
+   do not hand-roll data inspection. `image_dataset` follows the image
+   path (`references/image-statistics.md` with
+   `assets/image_stats_client.py`); `tabular_dataset` supplies site
+   layout, per-site row counts, and feature names with dtype classes when
+   `header` is `present`. On `header: ambiguous` (no names extracted),
+   names must come from the request, a README/metadata file, or a names
+   file — else fail closed with a precise missing-input report (ask once
+   only when an interactive channel exists); never invent or auto-number
+   names. A `schema_agreement` mismatch fails closed naming the differing
+   sites; `counts_approximate: true` means verify site sizes before
+   bin-cap decisions. When the installed CLI predates the dataset block,
+   the rules it implements live in `references/statistics-mapping.md`.
+   Read any statistics script or notebook as optional intent evidence
+   (statistics, read options, splits, histogram ranges) without importing
+   or executing it.
 3. Select statistics automatically and report the support mapping before
    writing any code. Intent priority: explicit request, README/notes
    declaration, an existing script's computations; with none, apply the

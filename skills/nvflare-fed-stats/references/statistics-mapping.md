@@ -113,13 +113,15 @@ encryption, or custom privacy filters are out of scope.
 - Header heuristic, precisely: treat the first row as a header when at
   least one column's first value does not parse as that column's inferred
   dtype from the remaining rows (classic text-names-over-numeric-data).
-  When every first-row value parses as data (all-numeric names, ID-like
-  headers) the header is AMBIGUOUS: do not guess — require declared names
-  or an explicit "first row is the header" statement, else fail closed.
+  Anything else (all-numeric first row, or text over text columns) is
+  AMBIGUOUS: do not guess — require declared names or an explicit "first
+  row is the header" statement, else fail closed. `nvflare agent inspect`
+  implements this rule and emits it as the dataset block's `header:
+  present|ambiguous`; consume that output instead of re-deriving it.
 - Cross-site schema agreement is a generation precondition, not just a
-  validation failure: during inspection compare header, column count, and
-  inferred dtypes across every site file; on disagreement fail closed
-  naming the differing sites and columns.
+  validation failure: `nvflare agent inspect` emits `schema_agreement`
+  (feature names and column counts compared across sites); on `mismatch`
+  fail closed naming the differing sites and columns.
 - Porting boundary for an existing script: PORT population-defining data
   prep — cohort filters, derived columns, dataset splits, missing-value
   encodings (report any imputation: it shifts every downstream statistic).

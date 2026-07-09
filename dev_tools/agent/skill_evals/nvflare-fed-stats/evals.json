@@ -13,7 +13,7 @@
       "assertions": [
         "The agent recognizes both asks are satisfied by one FedStatsRecipe job and does not create separate per-site scripts or run the job once per site.",
         "The agent builds a real federated statistics job; it does not pool the site CSVs into one DataFrame and present pandas output as the federated result.",
-        "The agent derives the 27 feature names and dtypes from the CSV header with a bounded read and runs end-to-end without pausing for confirmation.",
+        "The agent runs nvflare agent inspect and takes the 27 feature names, dtype classes, site layout, and row counts from its dataset block instead of hand-rolling data inspection, and runs end-to-end without pausing for confirmation.",
         "The generated client subclasses DFStatisticsCore and points each site at its own site directory; the generated job.py imports FedStatsRecipe from nvflare.recipe.fedstats and runs SimEnv with 3 sites.",
         "statistic_configs includes count, and the default statistic selection is stated.",
         "The categorical features (sex, smoker, diagnosis_group, readmitted_30d) are named as excluded, derived from observed dtypes.",
@@ -36,8 +36,8 @@
             "description": "generates and runs an actual FedStatsRecipe job instead of pooling site data into a local pandas computation"
           },
           {
-            "id": "data-first-inspection",
-            "description": "derives feature names and dtypes from the data header with a bounded static read, requiring no user statistics code"
+            "id": "inspect-dataset-block",
+            "description": "consumes nvflare agent inspect's dataset block (target_type, features, dtypes, site layout, row counts) as the inspection evidence instead of hand-rolled data reads"
           },
           {
             "id": "automatic-end-to-end",
@@ -140,7 +140,7 @@
         "files/patients-no-header/site-3/data.csv"
       ],
       "assertions": [
-        "The agent detects the missing header from the data and uses the prompt-supplied names in order.",
+        "The agent detects the missing header via inspect's dataset block (header: ambiguous) and uses the prompt-supplied names in order.",
         "The generated read call passes the names explicitly (for example names=[...]) with header=None semantics.",
         "The run completes automatically without asking for anything already supplied in the prompt.",
         "The categorical columns among the supplied names are excluded by observed dtype, not by name convention."
@@ -193,7 +193,7 @@
         "files/patients-no-header/site-3/data.csv"
       ],
       "assertions": [
-        "The agent detects the missing header from the data itself.",
+        "The agent detects the missing header from inspect's dataset block (header: ambiguous), not only from the prompt.",
         "The agent stops with a precise missing-input report (or one focused question) for the feature names.",
         "The agent does not invent, auto-number, or guess feature names (no col_0/feature_1 style output).",
         "The agent does not run the job with fabricated names."
@@ -454,7 +454,7 @@
         "files/schema-drift/site-2/data.csv"
       ],
       "assertions": [
-        "The agent detects the cross-site schema disagreement during inspection, before generating the job.",
+        "The agent detects the cross-site schema disagreement from inspect's schema_agreement output during inspection, before generating the job.",
         "The failure report names the differing sites and columns (bmi vs body_mass_index).",
         "The agent does not silently intersect columns, rename columns, or run the job with mismatched schemas."
       ],
@@ -566,7 +566,7 @@
         "files/images-intensity/site-3"
       ],
       "assertions": [
-        "The agent detects the image modality and generates the client from the image template as a Statistics implementation, not DFStatisticsCore.",
+        "The agent detects the image modality via inspect (target_type: image_dataset) and generates the client from the image template as a Statistics implementation, not DFStatisticsCore.",
         "statistic_configs contains count, failure_count, and histogram with 10 bins and range [0, 256] derived from the 8-bit pixel depth (stated, not guessed from file names).",
         "The agent checks the bin count against the bin-cap cleanser using the image count of the smallest site.",
         "The grayscale conversion policy is stated in the report.",
@@ -579,7 +579,7 @@
         "mandatory_behavior": [
           {
             "id": "image-path-routing",
-            "description": "detects an image dataset and follows the image path with the image template instead of DFStatisticsCore"
+            "description": "routes on inspect's image_dataset classification and uses the image template instead of DFStatisticsCore"
           },
           {
             "id": "image-statistic-set",
