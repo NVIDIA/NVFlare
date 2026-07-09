@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import ast
 import builtins
 import inspect
 import json
@@ -260,76 +261,194 @@ class FedJobConfig:
                     relative_script = self._get_relative_script(script)
                 else:
                     relative_script = script
+                relative_script = os.path.normpath(relative_script)
+                if (
+                    relative_script in ("", os.curdir)
+                    or os.path.isabs(relative_script)
+                    or relative_script == os.pardir
+                    or relative_script.startswith(os.pardir + os.sep)
+                ):
+                    raise ValueError(f"Invalid external script path: {script}")
+
                 dest_file = os.path.join(custom_dir, relative_script)
-                module = "".join(relative_script.rsplit(".py", 1)).replace(os.sep, ".")
-                self._copy_source_file(custom_dir, module, script, dest_file)
+                module_path = relative_script[:-3] if relative_script.endswith(".py") else relative_script
+                if os.path.basename(module_path) == "__init__" and os.path.dirname(module_path):
+                    module_path = os.path.dirname(module_path)
+                module = module_path.replace(os.sep, ".")
+                path_depth = len(module_path.split(os.sep))
+                if os.path.basename(script) != "__init__.py":
+                    path_depth -= 1
+                source_root = os.path.dirname(os.path.abspath(script))
+                for _ in range(max(path_depth, 1)):
+                    source_root = os.path.dirname(source_root)
+                self._copy_source_file(custom_dir, module, script, dest_file, source_root=source_root)
 
     def _copy_ext_dirs(self, custom_dir, app_config: BaseAppConfig):
         for dir in app_config.ext_dirs:
             shutil.copytree(dir, custom_dir, dirs_exist_ok=True)
 
     def _get_relative_script(self, script):
-        package_path = ""
+        script_path = os.path.abspath(script)
+        package_path = None
         for path in sys.path:
-            if script.startswith(path):
-                if len(path) > len(package_path):
+            path = os.path.abspath(path or os.curdir)
+            if self._is_path_within(script_path, path):
+                if package_path is None or len(path) > len(package_path):
                     package_path = path
-        return script[len(package_path) + 1 :]
+        if package_path:
+            return os.path.relpath(script_path, package_path)
+        return os.path.basename(script_path)
 
     def _get_class_path(self, obj, custom_dir):
         module = obj.__module__
         source_file = inspect.getsourcefile(obj.__class__)
         if module == "__main__":
-            module = os.path.basename(source_file).strip(".py")
+            module = os.path.splitext(os.path.basename(source_file))[0]
         self._get_custom_file(custom_dir, module, source_file)
 
         return module + "." + obj.__class__.__name__
 
-    def _get_custom_file(self, custom_dir, module, source_file):
-        package = module.split(".")[0]
-        if os.path.exists(source_file):
-            if package not in FL_PACKAGES and package not in self.app_packages and module not in self.custom_modules:
-                module_path = module.replace(".", os.sep)
-                if module_path in source_file:
-                    index = source_file.rindex(module_path)
-                    dest = source_file[index:]
+    @staticmethod
+    def _resolved_path(path):
+        return os.path.normcase(os.path.realpath(os.path.abspath(path)))
 
-                    self.custom_modules.append(module)
-                    os.makedirs(custom_dir, exist_ok=True)
-                    # dest_file = os.path.join(custom_dir, module.replace(".", os.sep) + ".py")
-                    dest_file = os.path.join(custom_dir, dest)
+    @classmethod
+    def _is_path_within(cls, path, root):
+        path = cls._resolved_path(path)
+        root = cls._resolved_path(root)
+        try:
+            return os.path.commonpath([path, root]) == root
+        except ValueError:
+            return False
 
-                    self._copy_source_file(custom_dir, module, source_file, dest_file)
+    @staticmethod
+    def _module_parts(module):
+        parts = module.split(".") if module else []
+        if not parts or any(not part.isidentifier() for part in parts):
+            raise ValueError(f"Invalid module path: {module}")
+        return parts
 
-    def _copy_source_file(self, custom_dir, module, source_file, dest_file):
+    def _derive_source_root(self, module, source_file):
+        module_parts = self._module_parts(module)
+        if os.path.basename(source_file) == "__init__.py":
+            expected_source = os.path.join(*module_parts, "__init__.py")
+        else:
+            expected_source = os.path.join(*module_parts) + ".py"
+
+        source_file = os.path.normpath(os.path.abspath(source_file))
+        source_parts = os.path.normcase(source_file).split(os.sep)
+        expected_parts = os.path.normcase(expected_source).split(os.sep)
+        if source_parts[-len(expected_parts) :] != expected_parts:
+            raise ValueError(f"Source path '{source_file}' does not match module '{module}'")
+
+        source_root = source_file
+        for _ in expected_parts:
+            source_root = os.path.dirname(source_root)
+        return source_root
+
+    def _validate_source_path(self, source_file, source_root):
+        source_file = self._resolved_path(source_file)
+        source_root = self._resolved_path(source_root)
+        if not self._is_path_within(source_file, source_root):
+            raise ValueError(f"Source path '{source_file}' resolves outside the allowed source root '{source_root}'")
+        return source_file, source_root
+
+    def _validate_copy_paths(self, custom_dir, source_file, source_root, dest_file):
         os.makedirs(custom_dir, exist_ok=True)
-        source_dir = os.path.dirname(os.path.abspath(source_file))
-        with open(source_file, "r") as sf:
-            import_lines = list(self.locate_imports(sf, dest_file))
-        for line in import_lines:
-            import_module = line.split(" ")[1]
+        source_file, source_root = self._validate_source_path(source_file, source_root)
+        custom_dir = self._resolved_path(custom_dir)
+        dest_file = self._resolved_path(dest_file)
+        if not self._is_path_within(dest_file, custom_dir):
+            raise ValueError(f"Destination path '{dest_file}' resolves outside the custom directory '{custom_dir}'")
+        paths_are_same = source_file == dest_file
+        if not paths_are_same and os.path.exists(dest_file):
+            try:
+                paths_are_same = os.path.samefile(source_file, dest_file)
+            except OSError:
+                paths_are_same = False
+        if paths_are_same:
+            raise ValueError(f"Source and destination resolve to the same file: {source_file}")
+        return source_file, source_root, dest_file
 
-            import_source = import_module
-            if import_module.startswith("."):
-                import_source = import_source[1:]
-                new_module = module.split(".")[0:-1]
-                new_module.append(import_source)
-                import_module = ".".join(new_module)
+    def _get_custom_file(self, custom_dir, module, source_file, source_root=None):
+        module_parts = self._module_parts(module)
+        if source_root is None:
+            source_root = self._derive_source_root(module=module, source_file=source_file)
+        source_file, source_root = self._validate_source_path(source_file, source_root)
 
-            import_source_file = os.path.join(source_dir, import_source.replace(".", os.sep) + ".py")
-            if os.path.exists(import_source_file):
-                # Handle the import from within the same module
-                self._get_custom_file(custom_dir, import_module, import_source_file)
-            else:
-                # Handle the import from outside the module
-                module_depth = len(module.split(".")) - 1
-                source_root = source_dir
-                # The same directory was already checked, so the fallback must climb at least once.
-                for _ in range(max(module_depth, 1)):
-                    source_root = os.path.dirname(source_root)
-                import_source_file = os.path.join(source_root, import_source.replace(".", os.sep) + ".py")
-                if os.path.exists(import_source_file):
-                    self._get_custom_file(custom_dir, import_module, import_source_file)
+        package = module_parts[0]
+        if package in FL_PACKAGES or package in self.app_packages or module in self.custom_modules:
+            return
+
+        if os.path.basename(source_file) == "__init__.py":
+            dest = os.path.join(*module_parts, "__init__.py")
+        else:
+            dest = os.path.join(*module_parts) + ".py"
+        dest_file = os.path.join(custom_dir, dest)
+
+        self.custom_modules.append(module)
+        try:
+            self._copy_source_file(custom_dir, module, source_file, dest_file, source_root=source_root)
+        except Exception:
+            self.custom_modules.remove(module)
+            raise
+
+    def _resolve_import_module(self, module, import_source, level, source_file):
+        import_parts = self._module_parts(import_source) if import_source else []
+        if level == 0:
+            return ".".join(import_parts)
+
+        module_parts = self._module_parts(module)
+        if os.path.basename(source_file) == "__init__.py":
+            package_parts = module_parts
+        else:
+            package_parts = module_parts[:-1]
+        if level > len(package_parts):
+            relative_import = "." * level + (import_source or "*")
+            raise ValueError(
+                f"Relative import '{relative_import}' from module '{module}' escapes the allowed source root"
+            )
+        keep_parts = len(package_parts) - level + 1
+        resolved_parts = package_parts[:keep_parts] + import_parts
+        return ".".join(resolved_parts) if resolved_parts else None
+
+    def _copy_source_file(self, custom_dir, module, source_file, dest_file, source_root):
+        source_file, source_root, dest_file = self._validate_copy_paths(
+            custom_dir=custom_dir,
+            source_file=source_file,
+            source_root=source_root,
+            dest_file=dest_file,
+        )
+        import_specs = []
+        if source_file.endswith(".py"):
+            with open(source_file, "rb") as sf:
+                import_specs = list(self.locate_imports(sf))
+
+        os.makedirs(os.path.dirname(dest_file), exist_ok=True)
+        shutil.copyfile(source_file, dest_file)
+
+        source_dir = os.path.dirname(source_file)
+        for import_source, level in import_specs:
+            import_module = self._resolve_import_module(module, import_source, level, source_file)
+            if not import_module:
+                continue
+            import_path = os.path.join(*self._module_parts(import_module)) + ".py"
+            search_roots = [source_root] if level else [source_dir, source_root]
+            checked_roots = set()
+            for search_root in search_roots:
+                search_root = self._resolved_path(search_root)
+                if search_root in checked_roots:
+                    continue
+                checked_roots.add(search_root)
+                import_source_file = os.path.join(search_root, import_path)
+                if os.path.isfile(import_source_file):
+                    self._get_custom_file(
+                        custom_dir,
+                        import_module,
+                        import_source_file,
+                        source_root=source_root,
+                    )
+                    break
 
     def _get_client_app(self, config_dir, custom_dir, fed_app):
         client_app = {"format_version": 2, "executors": []}
@@ -448,33 +567,30 @@ class FedJobConfig:
             r.append({"path": self._get_class_path(f, custom_dir), "args": self._get_args(f, custom_dir)})
         return r
 
-    def locate_imports(self, sf, dest_file):
-        """Locate all the import statements from the python script, including the imports across multiple lines,
-        using the line break continuing.
+    def locate_imports(self, sf):
+        """Locate imported modules in a Python source file.
 
         Args:
             sf: source file
-            dest_file: copy to destination file
 
         Returns:
-            yield all the imports within the source file
+            yield (module name or None, relative import level) tuples
 
         """
-        os.makedirs(os.path.dirname(dest_file), exist_ok=True)
-        with open(dest_file, "w") as df:
-            trimmed = ""
-            for line in sf:
-                df.write(line)
-                trimmed += line.strip()
-                if trimmed.endswith("\\"):
-                    trimmed = trimmed[0:-1]
-                    trimmed = trimmed.strip() + " "
+        source = sf.read()
+        source_file = getattr(sf, "name", "<unknown>")
+        tree = ast.parse(source, filename=source_file)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for imported_name in node.names:
+                    yield imported_name.name, 0
+            elif isinstance(node, ast.ImportFrom):
+                if node.module:
+                    yield node.module, node.level
                 else:
-                    if trimmed.startswith("from ") and ("import " in trimmed):
-                        yield trimmed
-                    elif trimmed.startswith("import "):
-                        yield trimmed
-                    trimmed = ""
+                    for imported_name in node.names:
+                        import_source = None if imported_name.name == "*" else imported_name.name
+                        yield import_source, node.level
 
     def _get_deploy_map(self):
         deploy_map = {}
