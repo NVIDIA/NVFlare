@@ -51,6 +51,28 @@ _DOCUMENTED_RECIPE_SPECS = {
         "aggregation": "weighted_average",
         "state_exchange": "full_model",
     },
+    "fedce-pt": {
+        "module": "nvflare.app_opt.pt.recipes.fedce",
+        "class": "FedCERecipe",
+        "description": "PyTorch federated training via client contribution estimation (FedCE).",
+        "framework": "pytorch",
+        "algorithm": "fedce",
+        "aggregation": "contribution_weighted_average",
+        "state_exchange": "weight_diff",
+        "heterogeneity_support": ["non_iid", "contribution_fairness"],
+        "notes": ["Client scripts must return fedce_minus_val metadata; FedCE is not a passive FedAvg flag."],
+    },
+    "fedsm-pt": {
+        "module": "nvflare.app_opt.pt.recipes.fedsm",
+        "class": "FedSMRecipe",
+        "description": "PyTorch personalized federated learning with FedSM and SoftPull.",
+        "framework": "pytorch",
+        "algorithm": "fedsm",
+        "aggregation": "softpull",
+        "state_exchange": "model_bundle",
+        "heterogeneity_support": ["non_iid", "personalization"],
+        "notes": ["FedSM exchanges global, per-client personalized, selector, and optional selector optimizer state."],
+    },
     "fedavg-tf": {
         "module": "nvflare.app_opt.tf.recipes.fedavg",
         "class": "FedAvgRecipe",
@@ -582,13 +604,14 @@ def _privacy_compatible(entry: dict, parameters: list, recipe_cls) -> list:
 def _client_requirements(entry: dict, parameters: list) -> dict:
     by_name = {p["name"]: p for p in parameters}
     per_site_config = by_name.get("per_site_config")
+    site_list = by_name.get("sites") or by_name.get("client_ids")
     requirements = {
         "state_exchange": entry.get("state_exchange"),
         "requires_training_script": "train_script" in by_name,
         "requires_per_site_config": bool(per_site_config and per_site_config["required"]),
-        "requires_site_list": "sites" in by_name,
+        "requires_site_list": site_list is not None,
     }
-    for name in ("min_clients", "sites", "label_owner", "client_ranks"):
+    for name in ("min_clients", "sites", "client_ids", "label_owner", "client_ranks"):
         parameter = by_name.get(name)
         if parameter:
             requirements[name] = {

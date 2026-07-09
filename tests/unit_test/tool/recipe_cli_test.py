@@ -480,8 +480,9 @@ def test_recipe_catalog_includes_all_documented_recipe_variants():
     catalog = _load_catalog()
     names = {entry["name"] for entry in catalog}
 
-    assert len(_DOCUMENTED_RECIPE_SPECS) == 21
+    assert len(_DOCUMENTED_RECIPE_SPECS) == 23
     assert set(_DOCUMENTED_RECIPE_SPECS).issubset(names)
+    assert {"fedce-pt", "fedsm-pt"}.issubset(names)
 
 
 def test_recipe_list_filters_documented_recipe_variants_without_optional_dependencies(monkeypatch, capsys):
@@ -516,6 +517,22 @@ def test_recipe_show_fedprox_documents_fedavg_constructor(monkeypatch, capsys):
     assert data["class"] == "FedAvgRecipe"
     assert data["notes"]
     assert "same recipe constructor as fedavg-pt" in data["notes"][0]
+
+
+def test_recipe_show_fedsm_reports_required_client_ids(monkeypatch, capsys):
+    import json
+
+    from nvflare.tool import cli_output
+    from nvflare.tool.recipe.recipe_cli import cmd_recipe_show
+
+    monkeypatch.setattr(cli_output, "_output_format", "json")
+
+    cmd_recipe_show(Namespace(name="fedsm-pt"))
+
+    payload = json.loads(capsys.readouterr().out)
+    requirements = payload["data"]["client_requirements"]
+    assert requirements["requires_site_list"] is True
+    assert requirements["client_ids"] == {"required": True, "default": None}
 
 
 def test_recipe_show_uses_static_metadata_when_optional_dependency_is_missing(monkeypatch, capsys):

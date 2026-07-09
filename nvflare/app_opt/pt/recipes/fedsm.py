@@ -1,0 +1,141 @@
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+from typing import Any, Dict, List, Optional, Union
+
+from nvflare.app_opt.pt.fedsm import FedSM, FedSMModelAggregator, PTFedSMModelPersistor
+from nvflare.client.config import ExchangeFormat, TransferType
+from nvflare.fuel.utils.constants import FrameworkType
+from nvflare.job_config.base_fed_job import BaseFedJob
+from nvflare.job_config.script_runner import ScriptRunner
+from nvflare.recipe.spec import Recipe
+
+
+class FedSMRecipe(Recipe):
+    """PyTorch recipe for personalized federated learning with FedSM.
+
+    FedSM jointly trains a global model, one personalized model per client, and
+    a selector model. Client scripts receive a model bundle and must return a
+    FULL bundle containing global and selector weight differences plus the full
+    personalized model. They may also return selector optimizer state.
+
+    Unlike FedAvg, FedSM requires the complete client identity set before job
+    construction. For now every configured client participates in every round.
+    """
+
+    def __init__(
+        self,
+        *,
+        name: str = "fedsm",
+        model: Union[Any, Dict[str, Any]],
+        selector_model: Union[Any, Dict[str, Any]],
+        client_ids: List[str],
+        min_clients: int,
+        num_rounds: int = 2,
+        train_script: str,
+        train_args: str = "",
+        client_id_label_mapping: Optional[Dict[str, int]] = None,
+        soft_pull_lambda: float = 0.7,
+        initial_ckpt: Optional[str] = None,
+        launch_external_process: bool = False,
+        command: str = "python3 -u",
+        server_expected_format: ExchangeFormat = ExchangeFormat.PYTORCH,
+        launch_once: bool = True,
+        shutdown_timeout: float = 0.0,
+        server_memory_gc_rounds: int = 0,
+        client_memory_gc_rounds: int = 0,
+        cuda_empty_cache: bool = False,
+    ):
+        if model is None:
+            raise ValueError("FedSMRecipe requires model")
+        if selector_model is None:
+            raise ValueError("FedSMRecipe requires selector_model")
+        if not isinstance(client_ids, list) or not client_ids:
+            raise ValueError("client_ids must be a non-empty list of unique client names")
+        if any(not isinstance(client_id, str) or not client_id for client_id in client_ids):
+            raise ValueError("client_ids must contain non-empty strings")
+        if len(client_ids) != len(set(client_ids)):
+            raise ValueError("client_ids must be a non-empty list of unique client names")
+        if min_clients != len(client_ids):
+            raise ValueError(
+                "FedSMRecipe currently requires min_clients to equal len(client_ids) "
+                "so every personalized model participates in each SoftPull update"
+            )
+        if server_expected_format != ExchangeFormat.PYTORCH:
+            raise ValueError("FedSMRecipe requires server_expected_format=ExchangeFormat.PYTORCH")
+
+        mapping = client_id_label_mapping or {client_id: index for index, client_id in enumerate(client_ids)}
+        if set(mapping) != set(client_ids):
+            raise ValueError("client_id_label_mapping keys must exactly match client_ids")
+        if set(mapping.values()) != set(range(len(client_ids))):
+            raise ValueError("client_id_label_mapping values must be contiguous selector labels starting at 0")
+
+        from nvflare.recipe.utils import prepare_initial_ckpt, recipe_model_to_job_model, validate_ckpt
+
+        validate_ckpt(initial_ckpt)
+        if isinstance(model, dict):
+            model = recipe_model_to_job_model(model)
+        if isinstance(selector_model, dict):
+            selector_model = recipe_model_to_job_model(selector_model)
+
+        self.name = name
+        self.model = model
+        self.selector_model = selector_model
+        self.client_ids = list(client_ids)
+        self.min_clients = min_clients
+        self.num_rounds = num_rounds
+        self.train_script = train_script
+        self.train_args = train_args
+        self.client_id_label_mapping = dict(mapping)
+        self.soft_pull_lambda = soft_pull_lambda
+        self.initial_ckpt = initial_ckpt
+        self.server_expected_format = server_expected_format
+
+        job = BaseFedJob(name=name, min_clients=min_clients)
+        ckpt_path = prepare_initial_ckpt(initial_ckpt, job)
+        persistor = PTFedSMModelPersistor(
+            model=model,
+            selector_model=selector_model,
+            client_ids=client_ids,
+            source_ckpt_file_full_name=ckpt_path,
+        )
+        persistor_id = job.to_server(persistor, id="persistor")
+
+        aggregator = FedSMModelAggregator(soft_pull_lambda=soft_pull_lambda)
+        controller = FedSM(
+            num_clients=min_clients,
+            num_rounds=num_rounds,
+            persistor_id=persistor_id,
+            client_id_label_mapping=mapping,
+            aggregator=aggregator,
+            memory_gc_rounds=server_memory_gc_rounds,
+        )
+        job.to_server(controller)
+
+        executor = ScriptRunner(
+            script=train_script,
+            script_args=train_args,
+            launch_external_process=launch_external_process,
+            command=command,
+            framework=FrameworkType.PYTORCH,
+            server_expected_format=server_expected_format,
+            params_transfer_type=TransferType.FULL,
+            launch_once=launch_once,
+            shutdown_timeout=shutdown_timeout,
+            memory_gc_rounds=client_memory_gc_rounds,
+            cuda_empty_cache=cuda_empty_cache,
+        )
+        job.to_clients(executor)
+
+        super().__init__(job)
