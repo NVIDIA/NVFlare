@@ -215,8 +215,8 @@ such as supported data kinds and a custom aggregator's declared ``expected_data_
    * - PyTorch ``FedOptRecipe``
      - ``InTimeAccumulateWeightedAggregator``
      - Yes
-     - The recipe fixes its aggregation path to ``WEIGHT_DIFF``. A custom aggregator must
-       declare ``expected_data_kind=DataKind.WEIGHT_DIFF``.
+     - The recipe fixes its aggregation path to ``WEIGHT_DIFF``. If a custom aggregator
+       declares ``expected_data_kind``, it must declare ``DataKind.WEIGHT_DIFF``.
    * - TensorFlow ``FedOptRecipe``
      - Built-in ``FedAvg`` streaming aggregation with FedOpt model update
      - Yes
