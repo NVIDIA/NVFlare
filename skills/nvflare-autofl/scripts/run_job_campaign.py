@@ -114,6 +114,7 @@ SIMULATOR_PROGRESS_PATTERNS = (
 SIMULATOR_PROGRESS_LOG_LIMIT = 131072
 DEFAULT_SIMULATOR_NO_PROGRESS_TIMEOUT = 240
 DEFAULT_JOB_HELP_TIMEOUT = 30
+SIMULATOR_WORKSPACE_ROOT_ENV_VAR = "NVFLARE_SIMULATOR_WORKSPACE_ROOT"
 
 FIXED_BUDGET_TO_CLI = {
     "num_clients": "n_clients",
@@ -444,6 +445,7 @@ def run(
     simulator_stall_roots: Sequence[Path] = (),
     stall_check_interval: float = 5.0,
     simulator_no_progress_timeout: int = DEFAULT_SIMULATOR_NO_PROGRESS_TIMEOUT,
+    env: Optional[Dict[str, str]] = None,
 ) -> Tuple[int, str, float]:
     started = time.monotonic()
     next_stall_check = started
@@ -463,6 +465,7 @@ def run(
             text=False,
             bufsize=0,
             start_new_session=os.name != "nt",
+            env=env,
         )
         assert process.stdout is not None
         output_queue: queue.Queue[Optional[bytes]] = queue.Queue()
@@ -1685,10 +1688,15 @@ def simulator_run_name(candidate_name: str, cwd: Path) -> str:
     return f"autofl_{campaign_namespace}_{candidate_name}"
 
 
-def expected_simulator_roots(config: Dict[str, Any], injected_name: Optional[str], cwd: Path) -> List[Path]:
+def expected_simulator_roots(
+    config: Dict[str, Any],
+    injected_name: Optional[str],
+    cwd: Path,
+    simulator_base: Optional[Path] = None,
+) -> List[Path]:
     names = ([injected_name] if injected_name else []) + imported_job_names(config)
     roots = []
-    simulator_base = simulator_workspace_root(config, cwd)
+    simulator_base = (simulator_base or simulator_workspace_root(config, cwd)).resolve()
     for name in names:
         if Path(name).name != name or name in {".", ".."}:
             raise ValueError(f"unsafe simulator job name: {name!r}")
@@ -1791,41 +1799,45 @@ def run_job(
     log_path = output_root / run_def.name / "run.log"
     run_name = simulator_run_name(run_def.name, cwd)
     name_args = ["--name", run_name] if supports_flag(help_text, "--name") else []
-    simulator_roots = expected_simulator_roots(config, run_name if name_args else None, cwd)
-    simulator_base = simulator_workspace_root(config, cwd)
     command = [python, str(job), *fixed_args, *base_args, *name_args, *run_def.args]
     run_def.command = command
-    with locked_simulator_workspace(simulator_base, exclusive=not simulator_roots):
-        with locked_simulator_roots(simulator_roots):
-            unnamed_root_snapshot = simulator_root_snapshot(simulator_base) if not simulator_roots else {}
-            for simulator_root in simulator_roots:
-                shutil.rmtree(simulator_root, ignore_errors=True)
-            rc, stdout, runtime = run(
-                command,
-                cwd,
-                timeout,
-                log_path,
-                simulator_stall_roots=simulator_roots,
-                simulator_no_progress_timeout=simulator_no_progress_timeout,
-            )
-            run_def.runtime_seconds = runtime
-            printed_result_dir = extract_result_dir(stdout, cwd)
-            existing_roots = [root.resolve() for root in simulator_roots if root.exists()]
-            result_dir = printed_result_dir if printed_result_dir in existing_roots else None
-            injected_root = (simulator_base / run_name).resolve() if name_args else None
-            if result_dir is None and injected_root in existing_roots:
-                result_dir = injected_root
-            if result_dir is None and len(existing_roots) == 1:
-                result_dir = existing_roots[0]
-            if result_dir is None and not simulator_roots:
-                result_dir = validated_printed_simulator_root(printed_result_dir, simulator_base)
-                if result_dir is None:
-                    changed_roots = changed_simulator_roots(simulator_base, unnamed_root_snapshot)
-                    if len(changed_roots) == 1:
-                        result_dir = changed_roots[0]
-                if result_dir is not None:
-                    config.setdefault("artifacts", {})["simulator_result_name"] = result_dir.name
-            artifact_dir = collect_artifacts(result_dir, output_root, run_def.name, log_path)
+    with tempfile.TemporaryDirectory(prefix="nvflare-autofl-sim-") as trial_workspace:
+        simulator_base = Path(trial_workspace).resolve()
+        simulator_roots = expected_simulator_roots(
+            config, run_name if name_args else None, cwd, simulator_base=simulator_base
+        )
+        run_env = os.environ.copy()
+        run_env[SIMULATOR_WORKSPACE_ROOT_ENV_VAR] = str(simulator_base)
+        with locked_simulator_workspace(simulator_base, exclusive=not simulator_roots):
+            with locked_simulator_roots(simulator_roots):
+                unnamed_root_snapshot = simulator_root_snapshot(simulator_base) if not simulator_roots else {}
+                rc, stdout, runtime = run(
+                    command,
+                    cwd,
+                    timeout,
+                    log_path,
+                    env=run_env,
+                    simulator_stall_roots=simulator_roots,
+                    simulator_no_progress_timeout=simulator_no_progress_timeout,
+                )
+                run_def.runtime_seconds = runtime
+                printed_result_dir = extract_result_dir(stdout, cwd)
+                existing_roots = [root.resolve() for root in simulator_roots if root.exists()]
+                result_dir = printed_result_dir if printed_result_dir in existing_roots else None
+                injected_root = (simulator_base / run_name).resolve() if name_args else None
+                if result_dir is None and injected_root in existing_roots:
+                    result_dir = injected_root
+                if result_dir is None and len(existing_roots) == 1:
+                    result_dir = existing_roots[0]
+                if result_dir is None and not simulator_roots:
+                    result_dir = validated_printed_simulator_root(printed_result_dir, simulator_base)
+                    if result_dir is None:
+                        changed_roots = changed_simulator_roots(simulator_base, unnamed_root_snapshot)
+                        if len(changed_roots) == 1:
+                            result_dir = changed_roots[0]
+                    if result_dir is not None:
+                        config.setdefault("artifacts", {})["simulator_result_name"] = result_dir.name
+                artifact_dir = collect_artifacts(result_dir, output_root, run_def.name, log_path)
     run_def.artifacts = str(artifact_dir)
 
     evidence = None

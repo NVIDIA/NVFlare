@@ -590,6 +590,7 @@ def test_run_discovers_and_persists_printed_unnamed_simulator_root(tmp_path, mon
     result = simulator_base / "recipe-default"
 
     def fake_run(*args, **kwargs):
+        result = Path(kwargs["env"][runner.SIMULATOR_WORKSPACE_ROOT_ENV_VAR]) / "recipe-default"
         result.mkdir(parents=True)
         result.joinpath("metrics_summary.json").write_text(json.dumps({"accuracy": 0.81}), encoding="utf-8")
         return 0, f"The simulation logs can be found at {result}\n", 0.1
@@ -632,6 +633,7 @@ def test_run_discovers_single_changed_unnamed_simulator_root(tmp_path, monkeypat
     result = simulator_base / "recipe-default"
 
     def fake_run(*args, **kwargs):
+        result = Path(kwargs["env"][runner.SIMULATOR_WORKSPACE_ROOT_ENV_VAR]) / "recipe-default"
         result.mkdir(parents=True)
         result.joinpath("metrics_summary.json").write_text(json.dumps({"val_acc": 0.73}), encoding="utf-8")
         return 0, "job complete without a result message\n", 0.1
@@ -672,6 +674,7 @@ def test_run_rejects_ambiguous_changed_unnamed_simulator_roots(tmp_path, monkeyp
     simulator_base = tmp_path / "simulation"
 
     def fake_run(*args, **kwargs):
+        simulator_base = Path(kwargs["env"][runner.SIMULATOR_WORKSPACE_ROOT_ENV_VAR])
         for name in ("first", "second"):
             result = simulator_base / name
             result.mkdir(parents=True)
@@ -770,12 +773,13 @@ def test_run_job_collects_configured_sim_result_and_standard_nvflare_text_metric
     job.write_text(
         f"""
 import argparse
+import os
 from pathlib import Path
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--name", default="run")
 args = parser.parse_args()
-result = Path({str(tmp_path / 'simulation')!r}) / args.name
+result = Path(os.environ["{runner.SIMULATOR_WORKSPACE_ROOT_ENV_VAR}"]) / args.name
 server = result / "server"
 server.mkdir(parents=True, exist_ok=True)
 server.joinpath("log.txt").write_text("accuracy: 0.76\\n")
@@ -817,7 +821,44 @@ print(f"Result can be found in : {{result}}")
     assert record.metric_source == "text:log.txt:line=1"
     assert tmp_path.joinpath("runs/candidate/simulation/server/log.txt").is_file()
     assert tmp_path.joinpath("runs/candidate/run.log").is_file()
-    assert tmp_path.joinpath("simulation", runner.simulator_run_name("candidate", tmp_path)).is_dir()
+    assert not tmp_path.joinpath("simulation").exists()
+
+
+def test_run_job_uses_a_fresh_simulator_workspace_for_each_trial(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job = tmp_path / "job.py"
+    job.write_text("print('job')\n", encoding="utf-8")
+    workspaces = []
+
+    def fake_run(*args, **kwargs):
+        workspace = Path(kwargs["env"][runner.SIMULATOR_WORKSPACE_ROOT_ENV_VAR])
+        workspaces.append(workspace)
+        result = workspace / "fixed-job"
+        result.mkdir(parents=True)
+        result.joinpath("metrics_summary.json").write_text(json.dumps({"accuracy": 0.5}), encoding="utf-8")
+        return 0, f"Result can be found in : {result}\n", 0.1
+
+    monkeypatch.setattr(runner, "run", fake_run)
+    config = {"job": {"recipe_args": {"name": {"value": "fixed-job", "confidence": "high"}}}}
+    for name in ("candidate-one", "candidate-two"):
+        record = runner.run_job(
+            runner.JobRun(name, [], name),
+            python=sys.executable,
+            job=job,
+            cwd=tmp_path,
+            help_text="",
+            fixed_args=[],
+            base_args=[],
+            output_root=tmp_path / "runs",
+            timeout=10,
+            simulator_no_progress_timeout=0,
+            metrics=["accuracy"],
+            config=config,
+        )
+        assert record.score == pytest.approx(0.5)
+
+    assert workspaces[0] != workspaces[1]
+    assert all(not workspace.exists() for workspace in workspaces)
 
 
 def test_run_stops_on_nvflare_simulator_stall_log(tmp_path):
@@ -1929,6 +1970,7 @@ def test_cli_lifecycle_runs_agent_code_candidate_end_to_end(tmp_path):
         f"""
 import argparse
 import json
+import os
 from pathlib import Path
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe as ImportedFedAvgRecipe
 from nvflare.recipe import SimEnv as ImportedSimEnv
@@ -1954,7 +1996,7 @@ def main():
     args = parser.parse_args()
     ImportedFedAvgRecipe(model=object(), num_rounds=args.num_rounds, min_clients=args.n_clients)
     ImportedSimEnv(num_clients=args.n_clients, workspace_root={str(simulation_root)!r})
-    result = Path({str(simulation_root)!r}) / args.name
+    result = Path(os.environ["NVFLARE_SIMULATOR_WORKSPACE_ROOT"]) / args.name
     result.mkdir(parents=True, exist_ok=True)
     result.joinpath("metrics_summary.json").write_text(json.dumps({{"accuracy": SCORE}}))
     print(f"Result can be found in : {{result.resolve()}}")

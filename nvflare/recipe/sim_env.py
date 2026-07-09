@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import json
-import os.path
+import os
 from typing import Optional
 
 from pydantic import BaseModel, model_validator
@@ -27,6 +27,7 @@ from .spec import ExecEnv
 from .utils import collect_non_local_scripts
 
 WORKSPACE_ROOT = "/tmp/nvflare/simulation"
+SIMULATOR_WORKSPACE_ROOT_ENV_VAR = "NVFLARE_SIMULATOR_WORKSPACE_ROOT"
 
 
 # Internal — not part of the public API
@@ -78,6 +79,7 @@ class SimEnv(ExecEnv):
             gpu_config (str, optional): GPU configuration string. Defaults to None.
             log_config (str, optional): Log configuration string. Defaults to None.
             workspace_root (str, optional): Root directory for simulation workspace. Defaults to WORKSPACE_ROOT.
+                NVFLARE_SIMULATOR_WORKSPACE_ROOT overrides this value for the current process.
             extra: extra env config info
         """
         super().__init__(extra)
@@ -97,7 +99,7 @@ class SimEnv(ExecEnv):
         self.gpu_config = v.gpu_config
         self.log_config = v.log_config
         self.clients = v.clients
-        self.workspace_root = v.workspace_root
+        self.workspace_root = os.environ.get(SIMULATOR_WORKSPACE_ROOT_ENV_VAR) or v.workspace_root
         self.last_run_failed = False
 
     def deploy(self, job: FedJob):
