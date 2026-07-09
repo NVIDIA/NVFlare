@@ -73,14 +73,14 @@ def def_agent_cli_parser(sub_cmd) -> dict:
     )
     inspect_parser.add_argument(
         "--max-files",
-        type=int,
+        type=_positive_int,
         default=None,
         help="walk limit; for datasets this counts data files - raise it when a dataset "
         "exceeds the default and counts come back approximate (default: 250)",
     )
     inspect_parser.add_argument(
         "--max-file-bytes",
-        type=int,
+        type=_positive_int,
         default=None,
         help="per-file read cap in bytes for code scans and text/image data reads (default: 524288)",
     )
@@ -90,6 +90,15 @@ def def_agent_cli_parser(sub_cmd) -> dict:
 
     _agent_parser = parser
     return {"agent": parser}
+
+
+def _positive_int(value: str) -> int:
+    import argparse
+
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError(f"must be a positive integer, got {value}")
+    return parsed
 
 
 def _agent_info_data() -> dict:
@@ -165,12 +174,10 @@ def _handle_agent_inspect_cmd(args, handle_schema_flag, output_error_message, ou
         idempotent=True,
     )
     inspect_kwargs = {"redact": getattr(args, "redact", "on") != "off"}
-    max_files = getattr(args, "max_files", None)
-    if max_files and max_files > 0:
-        inspect_kwargs["max_files"] = max_files
-    max_file_bytes = getattr(args, "max_file_bytes", None)
-    if max_file_bytes and max_file_bytes > 0:
-        inspect_kwargs["max_file_bytes"] = max_file_bytes
+    if getattr(args, "max_files", None):
+        inspect_kwargs["max_files"] = args.max_files
+    if getattr(args, "max_file_bytes", None):
+        inspect_kwargs["max_file_bytes"] = args.max_file_bytes
     try:
         data = inspect_path(args.path, **inspect_kwargs)
     except FileNotFoundError as e:
