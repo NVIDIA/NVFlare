@@ -38,3 +38,7 @@ testable; all non-null counts stay above 200.
   plus one deliberately corrupt file at site-1 for failure_count. 110
   images per site clears the bin-cap cleanser for the 10-bin histogram the
   eval requests (bins must stay under 10% of a site's image count).
+
+Known eval coverage gap: parquet datasets (CLI dataset-block handling is
+unit-tested in dataset_inspect_test.py; no eval case exercises the parquet
+path end-to-end yet).

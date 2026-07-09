@@ -15,22 +15,53 @@
 """Static dataset classification for `nvflare agent inspect`.
 
 Classifies a data-only directory as a tabular or image dataset and emits a
-metadata-only evidence block: site layout, feature names and inferred dtype
-classes, row/file counts, and cross-site schema agreement. It never emits
-cell values or pixel data, follows no symlinks, and bounds every read, so
-it preserves the inspector's static/redaction posture. Skills consume this
-block instead of hand-rolling their own data inspection.
+metadata-only evidence block. It never emits cell values or pixel data,
+follows no symlinks, and bounds every read; worst-case read volume is
+``max_files x max_file_bytes``.
+
+Dataset block contract (all keys always present per modality):
+
+- ``modality``: ``tabular`` | ``image`` | ``mixed`` (mixed is reported but
+  not routed: ``target_type`` stays ``unknown_target``).
+- ``layout``: ``per_site_directories`` | ``flat``.
+- ``file_census``: extension -> count (bounded; see ``counts_approximate``).
+- ``counts_approximate``: true when a walk limit was hit.
+- ``scan``: ``files_read`` / ``bytes_read`` performed by this classification.
+- ``sites``: per top-level directory (or ``.`` when flat):
+  - always: ``name``, ``data_files``;
+  - tabular/parquet: ``format``, ``header``, ``column_count``, ``features``,
+    ``dtypes``, ``row_count``, ``row_count_approximate``, and for parquet
+    ``schema_available``. ``header: present`` means "names available"
+    (parquet always has names when readable); ``header: ambiguous`` means
+    names must be user-supplied. ``row_count`` aggregates every tabular
+    file in the site; sharded CSV sites are always approximate (per-shard
+    headers are unknowable), parquet shards are exact metadata sums.
+    Feature names are sanitized: control characters stripped and length
+    capped (``feature_names_truncated`` marks a cap hit).
+  - image: ``pixel_depth`` from one sample when an optional loader exists.
+- ``schema_agreement`` (tabular): compares feature names, column counts,
+  AND dtype classes across sites; any drift is a ``mismatch`` with per-site
+  issues (``feature_names_differ`` | ``column_count_differs`` |
+  ``dtypes_differ``).
+
+Walk bounds: ``max_files`` counts data files so non-data clutter cannot
+hide a dataset, and ``MAX_WALK_ENTRIES`` bounds total traversal (files and
+directories). This deliberately differs from the code walk in
+``inspector.py``, which bounds per-file scan work; the two walks bound
+different costs and are kept separate on purpose.
 """
 
 import csv
 import io
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 TABULAR_EXTENSIONS = {".csv", ".tsv", ".parquet"}
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".dcm", ".nii"}
+TEXT_TABULAR_EXTENSIONS = {".csv", ".tsv"}
 MAX_SAMPLE_ROWS = 200
 MAX_SCHEMA_COLUMNS = 512
+MAX_FEATURE_NAME_CHARS = 120
 MAX_WALK_ENTRIES = 50_000
 
 HEADER_PRESENT = "present"
@@ -39,6 +70,10 @@ HEADER_PRESENT = "present"
 # numeric, or text over text columns) cannot be distinguished from data, so
 # the caller must obtain declared names or an explicit header statement.
 HEADER_AMBIGUOUS = "ambiguous"
+
+# float() accepts nan/inf tokens; a column of literal "nan" strings is not
+# numeric evidence for statistics.
+_NON_NUMERIC_FLOAT_TOKENS = {"nan", "inf", "-inf", "+inf", "infinity", "-infinity", "+infinity"}
 
 
 def inspect_dataset(root: Path, max_files: int, max_file_bytes: int) -> Optional[dict]:
@@ -61,9 +96,7 @@ def inspect_dataset(root: Path, max_files: int, max_file_bytes: int) -> Optional
         files = groups[name]
         site: Dict = {"name": name, "data_files": len(files)}
         if modality == "tabular":
-            schema = _tabular_schema(files, max_file_bytes, reads)
-            if schema is not None:
-                site.update(schema)
+            site.update(_tabular_schema(files, max_file_bytes, reads))
         elif modality == "image":
             site["pixel_depth"] = _sample_pixel_depth(files, reads)
         sites.append(site)
@@ -84,9 +117,9 @@ def inspect_dataset(root: Path, max_files: int, max_file_bytes: int) -> Optional
 def _collect_data_files(root: Path, max_files: int):
     """Bounded, sorted, symlink-free walk grouping data files by top-level dir.
 
-    The ``max_files`` limit counts *data* files, so non-data clutter cannot
-    exhaust the budget before any data file is seen; ``MAX_WALK_ENTRIES``
-    separately bounds total traversal work.
+    ``max_files`` counts *data* files, so non-data clutter cannot exhaust the
+    budget before any data file is seen; ``MAX_WALK_ENTRIES`` bounds total
+    traversal work, counting directories as well as files.
     """
     groups: Dict[str, List[Path]] = {}
     census: Dict[str, int] = {}
@@ -103,16 +136,16 @@ def _collect_data_files(root: Path, max_files: int):
         for child in children:
             if child.is_symlink():
                 continue
-            if child.is_dir():
-                stack.append(child)
-                continue
-            if not child.is_file():
-                continue
             entries_seen += 1
             if entries_seen > MAX_WALK_ENTRIES:
                 truncated = True
                 stack.clear()
                 break
+            if child.is_dir():
+                stack.append(child)
+                continue
+            if not child.is_file():
+                continue
             ext = _data_extension(child)
             if ext is None:
                 continue
@@ -140,15 +173,29 @@ def _data_extension(path: Path) -> Optional[str]:
     return None
 
 
-def _tabular_schema(files: List[Path], max_file_bytes: int, reads: Dict[str, int]) -> Optional[dict]:
+def _null_schema(fmt: str) -> dict:
+    """Stable site shape: every schema key present even for degenerate files."""
+    return {
+        "format": fmt,
+        "header": None,
+        "column_count": None,
+        "features": None,
+        "dtypes": None,
+        "row_count": None,
+        "row_count_approximate": None,
+    }
+
+
+def _tabular_schema(files: List[Path], max_file_bytes: int, reads: Dict[str, int]) -> dict:
     """Schema metadata for a site: names/dtypes from the first file, rows from all."""
-    text_files = [f for f in files if f.suffix.lower() in {".csv", ".tsv"}]
+    text_files = [f for f in files if f.suffix.lower() in TEXT_TABULAR_EXTENSIONS]
     if not text_files:
         return _parquet_schema(files, reads)
     target = text_files[0]
+    schema = _null_schema(target.suffix.lower().lstrip("."))
     raw, capped = _read_bounded(target, max_file_bytes, reads)
     if raw is None:
-        return None
+        return schema
     text = raw.decode("utf-8", errors="replace")
     delimiter = "\t" if target.suffix.lower() == ".tsv" else ","
     rows = []
@@ -158,44 +205,61 @@ def _tabular_schema(files: List[Path], max_file_bytes: int, reads: Dict[str, int
         if len(rows) >= MAX_SAMPLE_ROWS:
             break
     if len(rows) < 2:
-        return {"format": target.suffix.lower().lstrip("."), "header": None, "features": None, "dtypes": None}
+        return schema
 
     column_count = len(rows[0])
     body = [r for r in rows[1:] if len(r) == column_count]
     numeric = [_column_is_numeric(body, j) for j in range(column_count)]
     header = HEADER_AMBIGUOUS
     for j in range(column_count):
-        if numeric[j] and not _parses_as_float(rows[0][j]):
+        if numeric[j] and not _numeric_token(rows[0][j]):
             header = HEADER_PRESENT
             break
 
-    dtypes = ["numeric" if numeric[j] else "text" for j in range(column_count)]
-    features = [cell.strip() for cell in rows[0]] if header == HEADER_PRESENT else None
-    # rows in the first file, within the byte cap
+    features = None
+    names_truncated = False
+    if header == HEADER_PRESENT:
+        features, names_truncated = _sanitize_names(rows[0])
+
+    # rows in the schema file, within the byte cap
     data_rows = len(rows) - (1 if header == HEADER_PRESENT else 0)
     if len(rows) >= MAX_SAMPLE_ROWS or capped:
         data_rows = max(data_rows, text.count("\n") - (1 if header == HEADER_PRESENT else 0))
     approximate = capped
-    # a sharded site: aggregate line counts across the remaining files; the
-    # per-shard header presence is unknowable, so the total is approximate
+    # sharded site: aggregate line counts across the remaining files; per-shard
+    # header presence is unknowable, so any multi-file total is approximate
     for extra in text_files[1:]:
-        extra_raw, extra_capped = _read_bounded(extra, max_file_bytes, reads)
-        if extra_raw is None:
-            approximate = True
-            continue
-        data_rows += extra_raw.decode("utf-8", errors="replace").count("\n")
+        extra_raw, _extra_capped = _read_bounded(extra, max_file_bytes, reads)
+        if extra_raw is not None:
+            data_rows += extra_raw.decode("utf-8", errors="replace").count("\n")
         approximate = True
-        if extra_capped:
-            approximate = True
-    return {
-        "format": target.suffix.lower().lstrip("."),
-        "header": header,
-        "column_count": column_count,
-        "features": features,
-        "dtypes": dtypes,
-        "row_count": data_rows,
-        "row_count_approximate": approximate,
-    }
+
+    schema.update(
+        {
+            "header": header,
+            "column_count": column_count,
+            "features": features,
+            "dtypes": ["numeric" if numeric[j] else "text" for j in range(column_count)],
+            "row_count": data_rows,
+            "row_count_approximate": approximate,
+        }
+    )
+    if names_truncated:
+        schema["feature_names_truncated"] = True
+    return schema
+
+
+def _sanitize_names(cells: List[str]) -> Tuple[List[str], bool]:
+    """Bound emitted names: strip control characters, cap the length."""
+    names = []
+    truncated = False
+    for cell in cells:
+        cleaned = "".join(ch for ch in cell.strip() if ch.isprintable())
+        if len(cleaned) > MAX_FEATURE_NAME_CHARS:
+            cleaned = cleaned[:MAX_FEATURE_NAME_CHARS]
+            truncated = True
+        names.append(cleaned)
+    return names, truncated
 
 
 def _read_bounded(path: Path, max_file_bytes: int, reads: Dict[str, int]):
@@ -209,55 +273,71 @@ def _read_bounded(path: Path, max_file_bytes: int, reads: Dict[str, int]):
 
 
 def _parquet_schema(files: List[Path], reads: Dict[str, int]) -> dict:
-    """Parquet metadata via optional pyarrow; explicit fallback marker without it."""
-    base = {"format": "parquet", "header": None, "features": None, "dtypes": None}
+    """Parquet metadata via optional pyarrow; explicit fallback marker without it.
+
+    Row counts sum the footer metadata of every parquet shard in the site, so
+    sharded parquet sites are exact; a shard whose footer cannot be read makes
+    the total approximate.
+    """
+    schema = _null_schema("parquet")
     try:
+        import pyarrow as pa
         import pyarrow.parquet as pq
     except ImportError:
         # No reader available: the caller must obtain declared names or fail
         # closed, exactly like an ambiguous header.
-        base["schema_available"] = False
-        return base
-    target = next((f for f in files if f.suffix.lower() == ".parquet"), None)
-    if target is None:
-        base["schema_available"] = False
-        return base
-    try:
-        parquet_file = pq.ParquetFile(target)
-        schema = parquet_file.schema_arrow
-        row_count = parquet_file.metadata.num_rows
-    except Exception:
-        base["schema_available"] = False
-        return base
-    reads["files_read"] += 1
-    reads["bytes_read"] += target.stat().st_size  # footer read; size is the upper bound
-    dtypes = []
-    import pyarrow as pa
+        schema["schema_available"] = False
+        return schema
 
-    for field in schema:
-        is_numeric = pa.types.is_integer(field.type) or pa.types.is_floating(field.type)
-        dtypes.append("numeric" if is_numeric else "text")
-    base.update(
+    parquet_files = [f for f in files if f.suffix.lower() == ".parquet"]
+    features = None
+    dtypes = None
+    total_rows = 0
+    approximate = False
+    for target in parquet_files:
+        try:
+            parquet_file = pq.ParquetFile(target)
+        except Exception:
+            approximate = True
+            continue
+        reads["files_read"] += 1
+        reads["bytes_read"] += target.stat().st_size  # footer read; size is the upper bound
+        total_rows += parquet_file.metadata.num_rows
+        if features is None:
+            arrow_schema = parquet_file.schema_arrow
+            features, _ = _sanitize_names(list(arrow_schema.names)[:MAX_SCHEMA_COLUMNS])
+            dtypes = [
+                "numeric" if (pa.types.is_integer(field.type) or pa.types.is_floating(field.type)) else "text"
+                for field in arrow_schema
+            ][:MAX_SCHEMA_COLUMNS]
+
+    if features is None:
+        schema["schema_available"] = False
+        schema["row_count_approximate"] = approximate or None
+        return schema
+    schema.update(
         {
             "schema_available": True,
-            "header": HEADER_PRESENT,
-            "column_count": len(schema.names),
-            "features": list(schema.names)[:MAX_SCHEMA_COLUMNS],
-            "dtypes": dtypes[:MAX_SCHEMA_COLUMNS],
-            "row_count": row_count,
-            "row_count_approximate": False,
+            "header": HEADER_PRESENT,  # means "names available"; parquet always carries names
+            "column_count": len(features),
+            "features": features,
+            "dtypes": dtypes,
+            "row_count": total_rows,
+            "row_count_approximate": approximate,
         }
     )
-    return base
+    return schema
 
 
 def _column_is_numeric(body: List[List[str]], index: int) -> bool:
     values = [row[index].strip() for row in body]
     non_empty = [v for v in values if v]
-    return bool(non_empty) and all(_parses_as_float(v) for v in non_empty)
+    return bool(non_empty) and all(_numeric_token(v) for v in non_empty)
 
 
-def _parses_as_float(value: str) -> bool:
+def _numeric_token(value: str) -> bool:
+    if value.strip().lower() in _NON_NUMERIC_FLOAT_TOKENS:
+        return False
     try:
         float(value)
         return True
@@ -266,24 +346,29 @@ def _parses_as_float(value: str) -> bool:
 
 
 def _schema_agreement(sites: List[dict]) -> dict:
-    """Compare feature names (or column counts) across sites; names, no values."""
+    """Compare names, column counts, AND dtype classes across sites.
+
+    Same feature names with drifting dtypes (income numeric at one site, text
+    at another) is not analysis-ready for federated statistics, so dtype
+    drift is a mismatch, not a footnote.
+    """
     reference = None
     mismatches = []
     for site in sites:
-        signature = (site.get("features") and tuple(site["features"])) or site.get("column_count")
-        if signature is None:
+        names = tuple(site["features"]) if site.get("features") else None
+        signature = (names or site.get("column_count"), tuple(site["dtypes"]) if site.get("dtypes") else None)
+        if signature[0] is None:
             continue
         if reference is None:
             reference = (site["name"], signature)
             continue
-        if signature != reference[1]:
-            mismatches.append(
-                {
-                    "site": site["name"],
-                    "reference_site": reference[0],
-                    "issue": "feature_names_differ" if isinstance(signature, tuple) else "column_count_differs",
-                }
-            )
+        if signature == reference[1]:
+            continue
+        if signature[0] != reference[1][0]:
+            issue = "feature_names_differ" if isinstance(signature[0], tuple) else "column_count_differs"
+        else:
+            issue = "dtypes_differ"
+        mismatches.append({"site": site["name"], "reference_site": reference[0], "issue": issue})
     return {"status": "mismatch" if mismatches else "consistent", "mismatches": mismatches}
 
 

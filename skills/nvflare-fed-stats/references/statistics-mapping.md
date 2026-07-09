@@ -115,8 +115,9 @@ encryption, or custom privacy filters are out of scope.
   more than one file (per-shard headers are unknowable); verify sizes
   directly before bin-cap decisions when approximate.
 - Parquet: the dataset block carries names, dtype classes, and exact row
-  counts when `schema_available` is true (pyarrow present); when false,
-  treat it like an ambiguous header — declared names or fail closed.
+  counts (summed across a site's shards from footer metadata) when
+  `schema_available` is true (pyarrow present); when false, treat it like
+  an ambiguous header — declared names or fail closed.
 - Header heuristic, precisely: treat the first row as a header when at
   least one column's first value does not parse as that column's inferred
   dtype from the remaining rows (classic text-names-over-numeric-data).
@@ -126,9 +127,11 @@ encryption, or custom privacy filters are out of scope.
   implements this rule and emits it as the dataset block's `header:
   present|ambiguous`; consume that output instead of re-deriving it.
 - Cross-site schema agreement is a generation precondition, not just a
-  validation failure: `nvflare agent inspect` emits `schema_agreement`
-  (feature names and column counts compared across sites); on `mismatch`
-  fail closed naming the differing sites and columns.
+  validation failure: `nvflare agent inspect` emits `schema_agreement`,
+  comparing feature names, column counts, AND dtype classes across sites
+  (same names with drifting dtypes is `dtypes_differ` — not analysis-ready
+  for numeric statistics); on `mismatch` fail closed naming the differing
+  sites and the issue.
 - Porting boundary for an existing script: PORT population-defining data
   prep — cohort filters, derived columns, dataset splits, missing-value
   encodings (report any imputation: it shifts every downstream statistic).

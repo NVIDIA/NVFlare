@@ -87,11 +87,11 @@ reported as a helper, not as part of the deployable NVFLARE job.
   differing sites instead of intersecting columns silently.
 - **Per-site dtype drift** — each client derives its feature list from its
   own dtypes, so one stray string (a sentinel like "unknown" in a numeric
-  column) silently drops that feature at that site. When a feature is
-  missing at one site but numeric at the others, compare the per-site
-  inferred dtypes and report the drift as a data-quality finding ("site-2's
-  age parsed as text — check for sentinel strings"), distinct from
-  min_count withholding.
+  column) silently drops that feature at that site. `nvflare agent
+  inspect` catches this before generation (`schema_agreement` reports
+  `dtypes_differ`); when it surfaces only at validation, report the drift
+  as a data-quality finding ("site-2's age parsed as text — check for
+  sentinel strings"), distinct from min_count withholding.
 
 ## Reporting
 

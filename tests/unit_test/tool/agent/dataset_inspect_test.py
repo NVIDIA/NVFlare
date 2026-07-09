@@ -147,6 +147,102 @@ def test_parquet_without_reader_marks_schema_unavailable(tmp_path, monkeypatch):
     assert site["features"] is None
 
 
+def test_mixed_modality_is_reported_but_not_routed(tmp_path):
+    d = tmp_path / "site-1"
+    d.mkdir()
+    (d / "data.csv").write_text(HEADER + ROWS, encoding="utf-8")
+    (d / "scan.png").write_bytes(b"\x89PNG not really")
+
+    dataset = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
+    result = inspect_path(tmp_path)
+
+    assert dataset["modality"] == "mixed"
+    assert result["target_type"] == "unknown_target"
+    assert "nvflare-fed-stats" not in result["skill_selection"]["recommended_skills"]
+
+
+def test_dtype_drift_with_same_names_is_a_mismatch(tmp_path):
+    _write_site(tmp_path, "site-1", HEADER + ROWS)
+    # same feature names, but income is text at site-2
+    _write_site(tmp_path, "site-2", HEADER + "39,clerical,low\n50,managerial,high\n38,service,low\n41,clerical,mid\n")
+
+    result = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
+
+    agreement = result["schema_agreement"]
+    assert agreement["status"] == "mismatch"
+    assert agreement["mismatches"][0]["issue"] == "dtypes_differ"
+
+
+def test_directory_only_tree_is_bounded(tmp_path, monkeypatch):
+    import nvflare.tool.agent.dataset_inspect as di
+
+    monkeypatch.setattr(di, "MAX_WALK_ENTRIES", 10)
+    d = tmp_path
+    for i in range(30):
+        d = d / f"level_{i}"
+        d.mkdir()
+    (d / "data.csv").write_text(HEADER + ROWS, encoding="utf-8")
+
+    groups, census, truncated = di._collect_data_files(tmp_path, max_files=250)
+
+    assert truncated is True  # the entries cap stopped the walk instead of running the full depth
+
+
+def test_feature_names_are_sanitized_and_capped(tmp_path):
+    long_name = "x" * 500
+    header = f'age,"bad\x07name",{long_name}\n'
+    _write_site(tmp_path, "site-1", header + "39,a,1\n50,b,2\n38,c,3\n")
+
+    result = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
+
+    site = result["sites"][0]
+    assert site["header"] == "present"
+    assert site["features"][1] == "badname"  # control character stripped
+    assert len(site["features"][2]) == 120
+    assert site["feature_names_truncated"] is True
+
+
+def test_degenerate_file_keeps_stable_site_shape(tmp_path):
+    _write_site(tmp_path, "site-1", "just_one_line\n")
+
+    result = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
+
+    site = result["sites"][0]
+    for key in ("format", "header", "column_count", "features", "dtypes", "row_count", "row_count_approximate"):
+        assert key in site
+        assert site[key] is None or key == "format"
+
+
+def test_nan_tokens_are_not_numeric_evidence(tmp_path):
+    _write_site(tmp_path, "site-1", "age,flag\n39,nan\n50,nan\n38,nan\n")
+
+    result = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
+
+    assert result["sites"][0]["dtypes"] == ["numeric", "text"]
+
+
+def test_parquet_sharded_site_sums_exact_rows(tmp_path):
+    pa = __import__("pytest").importorskip("pyarrow")
+    import pyarrow.parquet as pq
+
+    d = tmp_path / "site-1"
+    d.mkdir()
+    table1 = pa.table({"age": [39, 50], "income": ["a", "b"]})
+    table2 = pa.table({"age": [38, 41, 44], "income": ["c", "d", "e"]})
+    pq.write_table(table1, d / "part-0.parquet")
+    pq.write_table(table2, d / "part-1.parquet")
+
+    result = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
+
+    site = result["sites"][0]
+    assert site["schema_available"] is True
+    assert site["features"] == ["age", "income"]
+    assert site["dtypes"] == ["numeric", "text"]
+    assert site["row_count"] == 5
+    assert site["row_count_approximate"] is False
+    assert result["scan"]["files_read"] == 2
+
+
 def test_file_limit_marks_counts_approximate(tmp_path):
     d = tmp_path / "site-1"
     d.mkdir()
