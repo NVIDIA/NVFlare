@@ -206,7 +206,6 @@ The ``FedAvgRecipe`` combines the client training script with DP parameters:
 .. code-block:: python
 
    from nvflare.apis.dxo import DataKind
-   from nvflare.client.config import TransferType
 
    recipe = FedAvgRecipe(
        name="hello-dp",
@@ -218,17 +217,16 @@ The ``FedAvgRecipe`` combines the client training script with DP parameters:
        train_script="client.py",
        train_args=f"--batch_size {batch_size} --target_epsilon {target_epsilon} --n_clients {n_clients}",
        aggregator_data_kind=DataKind.WEIGHT_DIFF,
-       params_transfer_type=TransferType.DIFF,
    )
 
    env = SimEnv(num_clients=n_clients)
    recipe.execute(env=env)
 
-DP-SGD protects each client's local training, while ``TransferType.DIFF`` sends only the
-DP-trained model change for server aggregation. The two update-kind settings are a pair:
-``aggregator_data_kind=DataKind.WEIGHT_DIFF`` configures the server expectation and
-``params_transfer_type=TransferType.DIFF`` configures the client output. A recipe with only
-one of these settings fails immediately with an actionable configuration error.
+DP-SGD protects each client's local training. In ``client.py``, the client explicitly computes
+local-minus-global parameters and returns ``FLModel(params_type=ParamsType.DIFF)``. That
+``params_type`` is the authoritative description of the client result; the recipe cannot infer
+the result kind from an arbitrary training script at construction time. The recipe validates
+server-side settings it owns, including a custom aggregator's declared ``expected_data_kind``.
 
 **Important**: Privacy budget (ε) accumulates across ALL federated rounds. The ``target_epsilon`` parameter specifies the total privacy budget for the entire training process, not per round.
 

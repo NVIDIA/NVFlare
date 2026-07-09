@@ -113,13 +113,13 @@ class FedAvgRecipeWithHE(Recipe):
         train_args: Command line arguments to pass to the training script.
         aggregator: Aggregator for combining client updates. If None,
             uses HEInTimeAccumulateWeightedAggregator with aggregator_data_kind.
-        aggregator_data_kind: Data kind to use for the aggregator. Must match params_transfer_type:
-            use WEIGHTS with FULL or WEIGHT_DIFF with DIFF. Defaults to DataKind.WEIGHTS.
+        aggregator_data_kind: Data kind to use for the aggregator. When a custom aggregator
+            declares expected_data_kind, the declaration must match. Defaults to DataKind.WEIGHTS.
         launch_external_process (bool): Whether to launch the script in external process. Defaults to False.
         command (str): If launch_external_process=True, command to run script (prepended to script). Defaults to "python3".
         server_expected_format (str): What format to exchange the parameters between server and client.
-        params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
-            DIFF means that only the difference is sent. Must match aggregator_data_kind.
+        params_transfer_type (str): How to transfer the parameters. DIFF enables automatic difference
+            calculation for full-model client results. A client's FLModel.params_type remains authoritative.
             Defaults to TransferType.FULL.
         encrypt_layers: if not specified (None), all layers are being encrypted;
                         if list of variable/layer names, only specified variables are encrypted;
@@ -223,11 +223,10 @@ class FedAvgRecipeWithHE(Recipe):
         self.client_memory_gc_rounds = v.client_memory_gc_rounds
         self.cuda_empty_cache = v.cuda_empty_cache
 
-        from nvflare.recipe.utils import validate_data_kind_transfer_type
+        from nvflare.recipe.utils import validate_aggregator_data_kind
 
-        validate_data_kind_transfer_type(
+        validate_aggregator_data_kind(
             data_kind=self.aggregator_data_kind,
-            transfer_type=self.params_transfer_type,
             recipe_name=type(self).__name__,
             aggregator=self.aggregator,
             require_data_kind=self.aggregator is None,

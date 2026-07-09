@@ -29,7 +29,7 @@ from nvflare.fuel.utils.pipe.file_pipe import FilePipe
 from nvflare.fuel.utils.validation_utils import check_positive_int, check_positive_number
 from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.recipe.spec import Recipe
-from nvflare.recipe.utils import merge_config_overrides, validate_ckpt, validate_data_kind_transfer_type
+from nvflare.recipe.utils import merge_config_overrides, validate_aggregator_data_kind, validate_ckpt
 
 logger = logging.getLogger(__name__)
 
@@ -121,11 +121,11 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
             gc.collect() was called unconditionally after each trainer submission. Set to 0 to disable.
         cuda_empty_cache: Call torch.cuda.empty_cache() during cleanup. Defaults to False.
         expected_data_kind: The data kind the aggregator expects from clients. Defaults to
-            DataKind.WEIGHTS for full-weight FedAvg. Must match params_transfer_type: use
-            WEIGHTS with FULL or WEIGHT_DIFF with DIFF.
+            DataKind.WEIGHTS for full-weight FedAvg. Clients returning differences must label
+            their result with FLModel.params_type=ParamsType.DIFF.
         params_transfer_type: How parameters are transferred between client script and NVFlare.
-            FULL sends the entire parameter state each round; DIFF sends only the delta.
-            Defaults to FULL. Must match expected_data_kind and the ParamsType used in the training script.
+            DIFF enables automatic difference calculation for full-model client results.
+            A client's FLModel.params_type remains authoritative. Defaults to FULL.
         start_task_timeout: Seconds to wait for the starting client to acknowledge the start
             task. Increase for large models that need time to load. Defaults to 300.
         progress_timeout: Seconds of no progress from any client before the workflow is
@@ -280,9 +280,8 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
                 "(in-process mode does not use pipes)"
             )
 
-        validate_data_kind_transfer_type(
+        validate_aggregator_data_kind(
             data_kind=expected_data_kind,
-            transfer_type=params_transfer_type,
             recipe_name=type(self).__name__,
             data_kind_arg="expected_data_kind",
             require_data_kind=True,

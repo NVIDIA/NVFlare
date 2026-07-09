@@ -23,7 +23,6 @@ import pytest
 
 from nvflare.apis.dxo import DataKind
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.client.config import TransferType
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import Recipe
 from nvflare.recipe.utils import (
@@ -32,8 +31,8 @@ from nvflare.recipe.utils import (
     resolve_initial_ckpt,
     set_recipe_meta,
     setup_custom_persistor,
+    validate_aggregator_data_kind,
     validate_ckpt,
-    validate_data_kind_transfer_type,
 )
 
 
@@ -91,7 +90,7 @@ class TestValidateCkpt:
             validate_ckpt("checkpoints/non_existent.pt")
 
 
-class TestValidateDataKindTransferType:
+class TestValidateAggregatorDataKind:
     class DeclaredAggregator:
         def __init__(self, expected_data_kind):
             self.expected_data_kind = expected_data_kind
@@ -99,9 +98,8 @@ class TestValidateDataKindTransferType:
     def test_single_entry_declared_kind_is_normalized(self):
         aggregator = self.DeclaredAggregator({"model": "WEIGHT_DIFF"})
 
-        validate_data_kind_transfer_type(
+        validate_aggregator_data_kind(
             data_kind=None,
-            transfer_type=TransferType.DIFF,
             recipe_name="TestRecipe",
             aggregator=aggregator,
         )
@@ -111,9 +109,8 @@ class TestValidateDataKindTransferType:
         aggregator = self.DeclaredAggregator(declared_kind)
 
         with pytest.raises(ValueError, match="recipe expects a single model-update DataKind"):
-            validate_data_kind_transfer_type(
+            validate_aggregator_data_kind(
                 data_kind=DataKind.WEIGHTS,
-                transfer_type=TransferType.FULL,
                 recipe_name="TestRecipe",
                 aggregator=aggregator,
             )
@@ -124,34 +121,30 @@ class TestValidateDataKindTransferType:
         aggregator = MagicMock(spec=["assembler"])
         aggregator.assembler = assembler
 
-        validate_data_kind_transfer_type(
+        validate_aggregator_data_kind(
             data_kind=DataKind.WEIGHT_DIFF,
-            transfer_type=TransferType.DIFF,
             recipe_name="TestRecipe",
             aggregator=aggregator,
         )
 
     def test_required_data_kind_rejects_none(self):
         with pytest.raises(ValueError, match="requires aggregator_data_kind"):
-            validate_data_kind_transfer_type(
+            validate_aggregator_data_kind(
                 data_kind=None,
-                transfer_type=TransferType.FULL,
                 recipe_name="TestRecipe",
                 require_data_kind=True,
             )
 
     def test_optional_data_kind_allows_none(self):
-        validate_data_kind_transfer_type(
+        validate_aggregator_data_kind(
             data_kind=None,
-            transfer_type=TransferType.FULL,
             recipe_name="TestRecipe",
         )
 
     def test_unsupported_data_kind_is_rejected(self):
         with pytest.raises(ValueError, match="does not support aggregator_data_kind=DataKind.METRICS"):
-            validate_data_kind_transfer_type(
+            validate_aggregator_data_kind(
                 data_kind=DataKind.METRICS,
-                transfer_type=TransferType.FULL,
                 recipe_name="TestRecipe",
             )
 

@@ -138,7 +138,6 @@ The `job.py` script uses `FedAvgRecipeWithHE` which automatically configures HE 
 ```python
 from nvflare.app_opt.pt.recipes.fedavg_he import FedAvgRecipeWithHE
 from nvflare.apis.dxo import DataKind
-from nvflare.client.config import TransferType
 
 recipe = FedAvgRecipeWithHE(
     name="cifar10_fedavg_he",
@@ -149,10 +148,12 @@ recipe = FedAvgRecipeWithHE(
     model=ModerateCNN(),
     train_script="client.py",
     aggregator_data_kind=DataKind.WEIGHT_DIFF,
-    params_transfer_type=TransferType.DIFF,
     encrypt_layers=None  # None = encrypt all layers (default)
 )
 ```
+
+The client computes the local-minus-global update and returns it as
+`FLModel(params_type=ParamsType.DIFF)`, which is the authoritative description of the client result.
 
 **Selective Encryption:** By default, all model parameters are encrypted. You can optionally use the `encrypt_layers` parameter to encrypt only specific layers:
 - Pass a **list of layer names** for exact matches: `encrypt_layers=["fc3.weight", "fc3.bias"]`

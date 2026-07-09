@@ -20,7 +20,6 @@ from model import TabularMLP
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.client.config import TransferType
 from nvflare.recipe import SimEnv, add_experiment_tracking
 
 
@@ -60,7 +59,6 @@ def main():
         train_script=args.train_script,
         train_args=f"--batch_size {batch_size} --epochs {epochs} --target_epsilon {args.target_epsilon} --n_clients {n_clients}",
         aggregator_data_kind=DataKind.WEIGHT_DIFF,
-        params_transfer_type=TransferType.DIFF,
     )
     add_experiment_tracking(recipe, tracking_type="tensorboard")
 

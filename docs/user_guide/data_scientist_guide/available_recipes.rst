@@ -183,8 +183,10 @@ WEIGHT_DIFF Compatibility
 -------------------------
 
 ``DataKind.WEIGHT_DIFF`` is supported only when the client executor sends parameter
-differences and the server aggregation path accepts differences. Recipe construction
-validates these settings where both are configurable.
+differences and the server aggregation path accepts differences. A client's
+``FLModel.params_type`` is the authoritative description of its result. Recipe construction
+cannot inspect an arbitrary training script, so it validates only recipe-owned server settings,
+such as supported data kinds and a custom aggregator's declared ``expected_data_kind``.
 
 .. list-table:: Recipe and aggregator support
    :header-rows: 1
@@ -197,36 +199,39 @@ validates these settings where both are configurable.
    * - Unified, PyTorch, TensorFlow, and NumPy ``FedAvgRecipe``; PyTorch FedProx
      - Built-in ``FedAvg`` streaming aggregation
      - Yes
-     - ``aggregator_data_kind=DataKind.WEIGHT_DIFF`` and
-       ``params_transfer_type=TransferType.DIFF``
+     - Set ``aggregator_data_kind=DataKind.WEIGHT_DIFF`` and return
+       ``FLModel(params_type=ParamsType.DIFF)`` from the client.
    * - ``FedAvgRecipe`` with a custom ``ModelAggregator``
      - User-provided aggregator
      - Conditional
-     - Use the same pair as FedAvg. The custom aggregator must accept difference models
-       and preserve ``ParamsType.DIFF`` in its aggregate result.
+     - The client returns ``ParamsType.DIFF``. The custom aggregator must accept difference
+       models and preserve ``ParamsType.DIFF`` in its aggregate result. If it declares
+       ``expected_data_kind``, it must declare ``DataKind.WEIGHT_DIFF``.
    * - ``FedAvgRecipeWithHE``
      - ``HEInTimeAccumulateWeightedAggregator``
      - Yes
-     - ``aggregator_data_kind=DataKind.WEIGHT_DIFF`` and
-       ``params_transfer_type=TransferType.DIFF``
+     - Set ``aggregator_data_kind=DataKind.WEIGHT_DIFF`` and return
+       ``FLModel(params_type=ParamsType.DIFF)`` from the client.
    * - PyTorch ``FedOptRecipe``
      - ``InTimeAccumulateWeightedAggregator``
      - Yes
-     - Always configured for ``WEIGHT_DIFF`` and ``DIFF`` by the recipe.
+     - The recipe fixes its aggregation path to ``WEIGHT_DIFF``. A custom aggregator must
+       declare ``expected_data_kind=DataKind.WEIGHT_DIFF``.
    * - TensorFlow ``FedOptRecipe``
      - Built-in ``FedAvg`` streaming aggregation with FedOpt model update
      - Yes
-     - ``params_transfer_type=TransferType.DIFF``; there is no separate
+     - Return ``FLModel(params_type=ParamsType.DIFF)`` from the client; there is no separate
        ``aggregator_data_kind`` parameter.
    * - ``SwarmLearningRecipe``
      - ``InTimeAccumulateWeightedAggregator``
      - Yes
-     - ``expected_data_kind=DataKind.WEIGHT_DIFF`` and
-       ``params_transfer_type=TransferType.DIFF``
+     - Set ``expected_data_kind=DataKind.WEIGHT_DIFF`` and return
+       ``FLModel(params_type=ParamsType.DIFF)`` from the client.
    * - ``SklearnFedAvgRecipe``
      - Built-in ``FedAvg`` streaming aggregation
-     - No
-     - This recipe currently fixes client transfer to ``TransferType.FULL``.
+     - Conditional
+     - The client script must compute the difference and return
+       ``FLModel(params_type=ParamsType.DIFF)`` explicitly.
 
 The standard ``InTimeAccumulateWeightedAggregator`` and
 ``HEInTimeAccumulateWeightedAggregator`` accept both ``WEIGHTS`` and ``WEIGHT_DIFF``
@@ -239,7 +244,6 @@ For example, configure PyTorch FedAvg with differences as follows:
 
     from nvflare.apis.dxo import DataKind
     from nvflare.app_opt.pt.recipes import FedAvgRecipe
-    from nvflare.client.config import TransferType
 
     recipe = FedAvgRecipe(
         name="fedavg-diff",
@@ -248,12 +252,19 @@ For example, configure PyTorch FedAvg with differences as follows:
         model=MyModel(),
         train_script="client.py",
         aggregator_data_kind=DataKind.WEIGHT_DIFF,
-        params_transfer_type=TransferType.DIFF,
     )
 
-If ``per_site_config`` overrides ``params_transfer_type``, every configured site must
-also use ``TransferType.DIFF``. A mismatch raises an error that names the affected site
-and shows both valid setting pairs.
+The client script must compute local minus global parameters and return them explicitly:
+
+.. code-block:: python
+
+    import nvflare.client as flare
+    from nvflare.app_common.abstract.fl_model import ParamsType
+
+    flare.send(flare.FLModel(params=model_diff, params_type=ParamsType.DIFF))
+
+If a custom aggregator declares an incompatible ``expected_data_kind``, recipe construction
+raises an error naming both the configured and declared kinds and how to align them.
 
 
 FedProx

@@ -27,7 +27,6 @@ from model import FLUNet
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.client.config import TransferType
 from nvflare.recipe import SimEnv, add_experiment_tracking
 
 
@@ -87,7 +86,6 @@ def main():
         train_script=os.path.join(job_dir, "client.py"),
         train_args=train_args,
         aggregator_data_kind=DataKind.WEIGHT_DIFF if args.send_weight_diff else DataKind.WEIGHTS,
-        params_transfer_type=TransferType.DIFF if args.send_weight_diff else TransferType.FULL,
     )
 
     # Add experiment tracking

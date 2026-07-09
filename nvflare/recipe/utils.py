@@ -22,7 +22,6 @@ from typing import Any, Dict, List, Optional
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.apis.dxo import DataKind
 from nvflare.apis.job_def import USER_SETTABLE_JOB_META_KEYS, JobMetaKey
-from nvflare.client.config import TransferType
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.job_config.api import FedJob
 from nvflare.job_config.fed_job_config import FedJobConfig
@@ -69,22 +68,24 @@ MODEL_LOCATOR_REGISTRY = {
 _SITE_KEYED_META_KEYS = frozenset({JobMetaKey.RESOURCE_SPEC, JobMetaKey.JOB_LAUNCHER_SPEC})
 
 
-def validate_data_kind_transfer_type(
+def validate_aggregator_data_kind(
     *,
     data_kind: Optional[DataKind],
-    transfer_type: TransferType,
     recipe_name: str,
     data_kind_arg: str = "aggregator_data_kind",
     aggregator: Any = None,
-    client_name: Optional[str] = None,
     require_data_kind: bool = False,
     fixed_data_kind: bool = False,
 ) -> None:
-    """Validate that client output and server aggregation use the same model-update kind.
+    """Validate recipe-owned server aggregation data-kind settings.
 
     ``fixed_data_kind`` is for recipes such as FedOpt that do not expose the update-kind
     settings. Its error guidance tells users to replace or reconfigure their custom
     aggregator instead of suggesting recipe arguments they cannot change.
+
+    This intentionally does not infer the client result kind from ``TransferType``.
+    ``FLModel.params_type`` is the authoritative description of a client result, and a
+    recipe cannot inspect an arbitrary training script at construction time.
     """
     declared_kind = getattr(aggregator, "expected_data_kind", None)
     if declared_kind is None:
@@ -109,25 +110,6 @@ def validate_data_kind_transfer_type(
     else:
         data_kind = declared_kind
 
-    if data_kind is not None and declared_kind is not None:
-        if declared_kind != data_kind:
-            if fixed_data_kind:
-                raise ValueError(
-                    f"{recipe_name} requires a custom aggregator configured with "
-                    f"expected_data_kind=DataKind.{data_kind.name}, but {type(aggregator).__name__} declares "
-                    f"expected_data_kind=DataKind.{declared_kind.name}. Configure the custom aggregator for "
-                    f"DataKind.{data_kind.name}, or omit it to use the built-in aggregator."
-                )
-            declared_transfer_type = TransferType.DIFF if declared_kind == DataKind.WEIGHT_DIFF else TransferType.FULL
-            raise ValueError(
-                f"{recipe_name} has incompatible server aggregation settings: "
-                f"{data_kind_arg}=DataKind.{data_kind.name}, but aggregator "
-                f"{type(aggregator).__name__} declares expected_data_kind=DataKind.{declared_kind.name}. "
-                f"Use an aggregator configured for DataKind.{data_kind.name}, or set "
-                f"{data_kind_arg}=DataKind.{declared_kind.name} and "
-                f"params_transfer_type=TransferType.{declared_transfer_type.name}."
-            )
-
     if data_kind is None:
         if require_data_kind:
             raise ValueError(
@@ -136,26 +118,35 @@ def validate_data_kind_transfer_type(
             )
         return
 
-    transfer_type = TransferType(transfer_type)
     if data_kind not in (DataKind.WEIGHTS, DataKind.WEIGHT_DIFF):
         raise ValueError(
             f"{recipe_name} does not support {data_kind_arg}=DataKind.{data_kind.name}; "
             "use DataKind.WEIGHTS or DataKind.WEIGHT_DIFF."
         )
 
-    client_data_kind = DataKind.WEIGHT_DIFF if transfer_type == TransferType.DIFF else DataKind.WEIGHTS
-    if data_kind == client_data_kind:
+    if declared_kind not in (None, DataKind.WEIGHTS, DataKind.WEIGHT_DIFF):
+        raise ValueError(
+            f"{recipe_name} cannot use aggregator {type(aggregator).__name__}: it declares "
+            f"expected_data_kind=DataKind.{declared_kind.name}, but the recipe supports only "
+            "DataKind.WEIGHTS or DataKind.WEIGHT_DIFF. Configure the aggregator for a supported model-update kind."
+        )
+
+    if declared_kind is None or declared_kind == data_kind:
         return
 
-    client_context = f" for client {client_name!r}" if client_name else ""
+    if fixed_data_kind:
+        raise ValueError(
+            f"{recipe_name} requires a custom aggregator configured with "
+            f"expected_data_kind=DataKind.{data_kind.name}, but {type(aggregator).__name__} declares "
+            f"expected_data_kind=DataKind.{declared_kind.name}. Configure the custom aggregator for "
+            f"DataKind.{data_kind.name}, or omit it to use the built-in aggregator."
+        )
     raise ValueError(
-        f"{recipe_name} has incompatible model-update settings{client_context}: "
-        f"{data_kind_arg}=DataKind.{data_kind.name} makes the server aggregator expect {data_kind.value}, "
-        f"but params_transfer_type=TransferType.{transfer_type.name} makes the client executor produce "
-        f"{client_data_kind.value}. To use weight differences, set both "
-        f"{data_kind_arg}=DataKind.WEIGHT_DIFF and params_transfer_type=TransferType.DIFF. "
-        f"To use full weights, set both {data_kind_arg}=DataKind.WEIGHTS and "
-        "params_transfer_type=TransferType.FULL."
+        f"{recipe_name} has incompatible server aggregation settings: "
+        f"{data_kind_arg}=DataKind.{data_kind.name}, but aggregator "
+        f"{type(aggregator).__name__} declares expected_data_kind=DataKind.{declared_kind.name}. "
+        f"Use an aggregator configured for DataKind.{data_kind.name}, or set "
+        f"{data_kind_arg}=DataKind.{declared_kind.name}."
     )
 
 

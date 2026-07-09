@@ -47,8 +47,8 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
         train_args: Command line arguments to pass to the training script.
         aggregator: Custom aggregator for combining client updates. If None,
             uses InTimeAccumulateWeightedAggregator with aggregator_data_kind.
-        aggregator_data_kind: Data kind to use for the aggregator. Only DataKind.WEIGHTS is currently
-            supported because this recipe uses TransferType.FULL. Defaults to DataKind.WEIGHTS.
+        aggregator_data_kind: Data kind expected from client results. Clients that return differences
+            must label the result with FLModel.params_type=ParamsType.DIFF. Defaults to DataKind.WEIGHTS.
         launch_external_process: Whether to launch the script in external process. Defaults to False.
         command: If launch_external_process=True, command to run script (prepended to script).
             Defaults to "python3 -u".

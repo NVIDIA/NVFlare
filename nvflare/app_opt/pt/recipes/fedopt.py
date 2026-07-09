@@ -60,7 +60,7 @@ class FedOptRecipe(Recipe):
     After each round, the global model is updated using the specified optimizer and learning rate scheduler.
     The algorithm is proposed in Reddi et al. "Adaptive Federated Optimization." arXiv preprint arXiv:2003.00295 (2020).
 
-    Note: FedOpt is only implemented for params_transfer_type == TransferType.DIFF and DataKind.WEIGHT_DIFF in the aggregator.
+    Note: FedOpt requires client weight differences and DataKind.WEIGHT_DIFF in the aggregator.
 
     Args:
         name: Name of the federated learning job. Defaults to "fedopt".
@@ -174,7 +174,7 @@ class FedOptRecipe(Recipe):
             ensure_config_type_dict,
             recipe_model_to_job_model,
             validate_ckpt,
-            validate_data_kind_transfer_type,
+            validate_aggregator_data_kind,
         )
 
         validate_ckpt(self.initial_ckpt)
@@ -199,9 +199,8 @@ class FedOptRecipe(Recipe):
         self.client_memory_gc_rounds = v.client_memory_gc_rounds
         self.cuda_empty_cache = v.cuda_empty_cache
         self.enable_tensor_disk_offload = v.enable_tensor_disk_offload
-        validate_data_kind_transfer_type(
+        validate_aggregator_data_kind(
             data_kind=DataKind.WEIGHT_DIFF,
-            transfer_type=TransferType.DIFF,
             recipe_name=type(self).__name__,
             data_kind_arg="expected_data_kind",
             aggregator=self.aggregator,

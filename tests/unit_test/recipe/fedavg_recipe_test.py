@@ -20,7 +20,7 @@ import torch.nn as nn
 
 from nvflare.apis.dxo import DataKind
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
+from nvflare.apis.job_def import ALL_SITES
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
@@ -632,42 +632,17 @@ class TestFedAvgRecipeEarlyStopping:
 class TestFedAvgRecipeValidation:
     """Test FedAvgRecipe input validation."""
 
-    def test_weight_diff_requires_diff_transfer(self, mock_file_system, base_recipe_params, simple_model):
-        with pytest.raises(ValueError) as exc_info:
-            FedAvgRecipe(
-                name="test_weight_diff_with_full_transfer",
-                model=simple_model,
-                aggregator_data_kind=DataKind.WEIGHT_DIFF,
-                params_transfer_type=TransferType.FULL,
-                **base_recipe_params,
-            )
-
-        message = str(exc_info.value)
-        assert "incompatible model-update settings" in message
-        assert "aggregator_data_kind=DataKind.WEIGHT_DIFF" in message
-        assert "params_transfer_type=TransferType.DIFF" in message
-
-    def test_diff_transfer_requires_weight_diff(self, mock_file_system, base_recipe_params, simple_model):
-        with pytest.raises(ValueError, match="aggregator_data_kind=DataKind.WEIGHT_DIFF"):
-            FedAvgRecipe(
-                name="test_diff_transfer_with_weights",
-                model=simple_model,
-                aggregator_data_kind=DataKind.WEIGHTS,
-                params_transfer_type=TransferType.DIFF,
-                **base_recipe_params,
-            )
-
-    def test_weight_diff_with_diff_transfer_is_valid(self, mock_file_system, base_recipe_params, simple_model):
+    def test_weight_diff_with_full_transfer_is_valid(self, mock_file_system, base_recipe_params, simple_model):
         recipe = FedAvgRecipe(
             name="test_weight_diff",
             model=simple_model,
             aggregator_data_kind=DataKind.WEIGHT_DIFF,
-            params_transfer_type=TransferType.DIFF,
+            params_transfer_type=TransferType.FULL,
             **base_recipe_params,
         )
 
         assert recipe.aggregator_data_kind == DataKind.WEIGHT_DIFF
-        assert recipe.params_transfer_type == TransferType.DIFF
+        assert recipe.params_transfer_type == TransferType.FULL
 
     def test_custom_aggregator_declared_data_kind_must_match(self, mock_file_system, base_recipe_params, simple_model):
         aggregator = InTimeAccumulateWeightedAggregator(expected_data_kind=DataKind.WEIGHTS)
@@ -678,40 +653,8 @@ class TestFedAvgRecipeValidation:
                 model=simple_model,
                 aggregator=aggregator,
                 aggregator_data_kind=DataKind.WEIGHT_DIFF,
-                params_transfer_type=TransferType.DIFF,
                 **base_recipe_params,
             )
-
-    def test_per_site_transfer_mismatch_names_client(self, mock_file_system, base_recipe_params, simple_model):
-        with pytest.raises(ValueError) as exc_info:
-            FedAvgRecipe(
-                name="test_per_site_update_kind",
-                model=simple_model,
-                aggregator_data_kind=DataKind.WEIGHT_DIFF,
-                params_transfer_type=TransferType.DIFF,
-                per_site_config={
-                    "site-1": {"params_transfer_type": TransferType.DIFF},
-                    "site-2": {"params_transfer_type": TransferType.FULL},
-                },
-                **base_recipe_params,
-            )
-
-        assert "client 'site-2'" in str(exc_info.value)
-
-    def test_per_site_config_validates_only_deployed_sites(self, mock_file_system, base_recipe_params, simple_model):
-        recipe = FedAvgRecipe(
-            name="test_per_site_update_kind_targets",
-            model=simple_model,
-            aggregator_data_kind=DataKind.WEIGHT_DIFF,
-            params_transfer_type=TransferType.FULL,
-            per_site_config={
-                "site-1": {"params_transfer_type": TransferType.DIFF},
-                "site-2": {"params_transfer_type": TransferType.DIFF},
-            },
-            **base_recipe_params,
-        )
-
-        assert set(recipe.job._deploy_map) == {SERVER_SITE_NAME, "site-1", "site-2"}
 
     def test_invalid_aggregator_type_raises_validation_error(self, mock_file_system, base_recipe_params):
         """Test that invalid aggregator type raises Pydantic validation error."""

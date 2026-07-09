@@ -23,7 +23,6 @@ from model import ModerateCNN
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_opt.pt.recipes.fedavg_he import FedAvgRecipeWithHE
-from nvflare.client.config import TransferType
 from nvflare.recipe import ProdEnv, add_experiment_tracking
 
 
@@ -87,7 +86,6 @@ def main():
         train_script=os.path.join(os.path.dirname(__file__), "client.py"),
         train_args=f"--train_idx_root {train_idx_root} --num_workers {num_workers} --lr {lr} --batch_size {batch_size} --aggregation_epochs {aggregation_epochs}",
         aggregator_data_kind=DataKind.WEIGHT_DIFF,
-        params_transfer_type=TransferType.DIFF,
     )
     add_experiment_tracking(recipe, tracking_type="mlflow", tracking_config={"tracking_uri": args.tracking_uri})
 
