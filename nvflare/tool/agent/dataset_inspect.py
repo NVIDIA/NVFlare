@@ -15,8 +15,13 @@
 """Static dataset classification for `nvflare agent inspect`.
 
 Classifies a data-only directory as a tabular or image dataset and emits a
-metadata-only evidence block. It never emits cell values or pixel data and
-follows no symlinks. Read bounds: text and image reads are capped at
+metadata-only evidence block. It never emits values from rows classified
+as data and never emits pixel data, and follows no symlinks. The one
+inference in the block is the header row: names are emitted only under
+the strong rule (every numeric-bodied column non-numeric, names unique
+and non-empty), and a masked data row that satisfies all of that is
+emitted as names — by construction no inference can tell it from a
+header, so datasets with masked/sentinel first rows must declare names. Read bounds: text and image reads are capped at
 ``max_file_bytes`` each (worst case ``max_files x max_file_bytes``);
 parquet metadata reads parse only the file footer via pyarrow — they are
 not capped by ``max_file_bytes`` and are accounted in ``scan`` at file

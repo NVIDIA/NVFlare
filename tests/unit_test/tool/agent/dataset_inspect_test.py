@@ -278,6 +278,47 @@ def test_image_sites_report_their_formats(tmp_path):
     assert site["pixel_depth"] is None or site["pixel_depth"] == "uint8"
 
 
+def test_flare_job_with_data_keeps_code_priority(tmp_path):
+    # Codex repro: a FLARE job source beside CSV fixtures must never be
+    # overridden by dataset classification
+    (tmp_path / "job.py").write_text(
+        "from nvflare.recipe.fedstats import FedStatsRecipe\n\n\ndef main():\n    pass\n",
+        encoding="utf-8",
+    )
+    _write_site(tmp_path, "site-1", HEADER + ROWS)
+
+    result = inspect_path(tmp_path)
+
+    assert result["target_type"] != "tabular_dataset"
+    assert result["dataset"] is None
+
+
+def test_import_only_training_framework_keeps_code_priority(tmp_path):
+    # TensorFlow has no converter skill yet, but it is a real training
+    # framework, not a utility bucket: the dataset must not override it
+    (tmp_path / "train.py").write_text("import tensorflow as tf\n\n\ndef main():\n    pass\n", encoding="utf-8")
+    _write_site(tmp_path, "site-1", HEADER + ROWS)
+
+    result = inspect_path(tmp_path)
+
+    assert result["target_type"] != "tabular_dataset"
+    assert result["dataset"] is None
+    assert "nvflare-fed-stats" not in result["skill_selection"]["recommended_skills"]
+
+
+def test_distinct_masked_tokens_residual_is_the_documented_one(tmp_path):
+    # MASK_A,MASK_B over a numeric body satisfies every header signal and is
+    # emitted as names: the documented, by-construction residual. This test
+    # pins the boundary so any future rule change is deliberate.
+    _write_site(tmp_path, "site-1", "MASK_A,MASK_B\n1,2\n3,4\n")
+
+    result = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
+
+    site = result["sites"][0]
+    assert site["header"] == "present"
+    assert site["features"] == ["MASK_A", "MASK_B"]
+
+
 def test_symlinks_consume_walk_budget(tmp_path, monkeypatch):
     # Codex repro: symlink entries are traversal work and must count toward
     # the cap even though they are never followed

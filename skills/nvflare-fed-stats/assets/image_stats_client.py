@@ -61,7 +61,7 @@ class ImageIntensityStatistics(Statistics):
         site_dir = Path(self.data_root_dir) / site_name
         # ADAPTATION POINT: adjust discovery to the site's layout (recursive
         # globs, a datalist JSON, or format-specific extensions).
-        self.image_paths = sorted(p for p in site_dir.iterdir() if p.suffix.lower() in IMAGE_EXTENSIONS)
+        self.image_paths = sorted(p for p in site_dir.iterdir() if p.name.lower().endswith(IMAGE_EXTENSIONS))
         if not self.image_paths:
             raise ValueError(f"no image files found under {site_dir}")
         self.log_info(fl_ctx, f"site {site_name}: {len(self.image_paths)} image files")

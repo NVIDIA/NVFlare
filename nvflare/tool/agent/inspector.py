@@ -152,12 +152,14 @@ def inspect_path(
     target_type = _target_type(target, state, detected_framework, conversion_state)
 
     # Data-target classification runs when code classification found nothing,
-    # OR when it found only a framework with no converter skill (e.g. a small
-    # numpy/sklearn helper script inside a data root): scripts are optional
-    # stats intent evidence, and a data root must still route to fed-stats.
+    # OR when the only detected framework is a utility bucket (numpy): a
+    # small helper script inside a data root is optional stats intent
+    # evidence, not a training repo. Real code targets keep priority: FLARE
+    # job states, exported jobs, and genuine training frameworks (with or
+    # without a converter skill) are never overridden by a dataset.
     dataset = None
-    code_has_skill_route = bool(frameworks.recommended_skill_for(detected_framework))
-    if target.is_dir() and (target_type == "unknown_target" or not code_has_skill_route):
+    utility_only_code = target_type == "training_repository" and detected_framework in frameworks.UTILITY_FRAMEWORKS
+    if target.is_dir() and (target_type == "unknown_target" or utility_only_code):
         dataset = dataset_inspect.inspect_dataset(target, max_files=max_files, max_file_bytes=max_file_bytes)
         if dataset and dataset["modality"] in ("tabular", "image"):
             target_type = f"{dataset['modality']}_dataset"
