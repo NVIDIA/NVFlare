@@ -300,8 +300,10 @@ class TestSwarmLearningRecipeControllerConfig:
         ):
             with pytest.raises(ValueError, match="max_concurrent_submissions"):
                 SwarmLearningRecipe(**defaults, **invalid_max_concurrency)
-        with pytest.raises(ValueError, match="cannot override recipe-managed components: executor"):
+        with pytest.raises(ValueError, match="cannot override recipe-managed fields: executor"):
             SwarmLearningRecipe(**defaults, client_config_overrides={"executor": object()})
+        with pytest.raises(ValueError, match="cannot override recipe-managed fields: min_responses_required"):
+            SwarmLearningRecipe(**defaults, client_config_overrides={"min_responses_required": 5})
         with pytest.raises(TypeError, match="server_config_overrides must be a dict"):
             SwarmLearningRecipe(**defaults, server_config_overrides=[])
         with pytest.raises(TypeError, match="server_config_overrides keys must be strings"):

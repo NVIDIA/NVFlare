@@ -544,10 +544,10 @@ shallow-merged last, so an overlapping dictionary value intentionally wins over
 the named parameter. ``round_timeout`` remains available as a compatibility
 shortcut for setting both acknowledgment timeouts when their explicit parameters
 are omitted. ``client_config_overrides`` cannot replace the recipe-managed
-executor, aggregator, persistor, or shareable generator; use
-``BaseSwarmLearningRecipe`` when custom components are required. Set
-``min_clients`` only through the named parameter so the scheduler, server
-controller, and client aggregation quorums remain aligned.
+executor, aggregator, persistor, shareable generator, or
+``min_responses_required``; use ``BaseSwarmLearningRecipe`` for custom components
+or quorum settings. Set ``min_clients`` only through the named parameter so the
+scheduler, server controller, and client aggregation quorums remain aligned.
 
 For advanced customization, use ``BaseSwarmLearningRecipe`` with explicit server and client configurations:
 

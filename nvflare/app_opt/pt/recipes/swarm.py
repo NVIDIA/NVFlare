@@ -35,7 +35,9 @@ logger = logging.getLogger(__name__)
 
 _VALID_PIPE_TYPES = ("cell_pipe", "file_pipe")
 _RECIPE_MANAGED_SERVER_CONFIG_KEYS = frozenset({"min_clients"})
-_RECIPE_MANAGED_CLIENT_CONFIG_KEYS = frozenset({"executor", "aggregator", "persistor", "shareable_generator"})
+_RECIPE_MANAGED_CLIENT_CONFIG_KEYS = frozenset(
+    {"executor", "aggregator", "persistor", "shareable_generator", "min_responses_required"}
+)
 
 
 class _SwarmValidator(BaseModel):
@@ -154,8 +156,9 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
             scheduler, server-controller, and client aggregation quorums aligned.
         client_config_overrides: Advanced shallow overrides for ``SwarmClientConfig``.
             Values here take precedence over named constructor parameters. Recipe-managed
-            components (executor, aggregator, persistor, and shareable generator) cannot
-            be replaced through this dictionary; use ``BaseSwarmLearningRecipe`` instead.
+            fields (executor, aggregator, persistor, shareable generator, and
+            ``min_responses_required``) cannot be replaced through this dictionary; use
+            ``BaseSwarmLearningRecipe`` for custom components or quorum settings.
         pipe_type: Pipe used for communication between the NVFlare client process
             and the external training process when ``launch_external_process=True``.
             Accepted values:
@@ -254,8 +257,8 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         if protected_overrides:
             fields = ", ".join(sorted(protected_overrides))
             raise ValueError(
-                f"client_config_overrides cannot override recipe-managed components: {fields}. "
-                "Use BaseSwarmLearningRecipe to provide custom components."
+                f"client_config_overrides cannot override recipe-managed fields: {fields}. "
+                "Use named recipe parameters for quorum settings or BaseSwarmLearningRecipe for custom components."
             )
 
         if pipe_type not in _VALID_PIPE_TYPES:

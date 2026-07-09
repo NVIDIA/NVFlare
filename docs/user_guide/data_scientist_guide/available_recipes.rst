@@ -871,10 +871,10 @@ For advanced controller settings, ``server_config_overrides`` and
 ``client_config_overrides`` are shallow-merged into ``SwarmServerConfig`` and
 ``SwarmClientConfig`` after the named parameters. Overlapping dictionary values
 therefore take precedence over the documented named API. Client overrides cannot
-replace the recipe-managed executor, aggregator, persistor, or shareable generator;
-use ``BaseSwarmLearningRecipe`` when custom components are required. Server overrides
-cannot replace ``min_clients``; set it through the named parameter so all scheduler
-and workflow quorum settings remain aligned.
+replace the recipe-managed executor, aggregator, persistor, shareable generator, or
+``min_responses_required``; use ``BaseSwarmLearningRecipe`` for custom components or
+quorum settings. Server overrides cannot replace ``min_clients``; set it through the
+named parameter so all scheduler and workflow quorum settings remain aligned.
 
 
 Edge Recipes
