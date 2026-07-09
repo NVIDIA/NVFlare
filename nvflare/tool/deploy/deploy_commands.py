@@ -35,6 +35,7 @@ from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.x509.oid import NameOID
 
+from nvflare.app_opt.job_launcher.study_runtime import RESERVED_DOCKER_KWARGS
 from nvflare.tool.cli_output import output_error_message, output_ok, print_human
 
 RUNTIME_DOCKER = "docker"
@@ -52,6 +53,7 @@ RESOURCES_JSON_DEFAULT = "resources.json.default"
 RESOURCES_JSON = "resources.json"
 COMM_CONFIG_JSON = "comm_config.json"
 STUDY_DATA_YAML = "study_data.yaml"
+STUDY_RUNTIME_YAML = "study_runtime.yaml"
 
 HELM_CHART_DIR = "helm_chart"
 START_SH = "start.sh"
@@ -90,25 +92,34 @@ BUILTIN_LAUNCHER_PATHS = {
 BUILTIN_RESOURCE_MANAGER_PATHS = {GPU_RESOURCE_MANAGER, PASSTHROUGH_RESOURCE_MANAGER}
 BUILTIN_RESOURCE_CONSUMER_PATHS = {GPU_RESOURCE_CONSUMER}
 RESOURCE_CONSUMER_IDS = {"resource_consumer"}
-DOCKER_RESERVED_KWARGS = {
-    "volumes",
-    "mounts",
-    "network",
-    "environment",
-    "command",
-    "name",
-    "detach",
-    "user",
-    "working_dir",
-}
+# single source of truth for launcher-owned containers.run kwargs
+DOCKER_RESERVED_KWARGS = RESERVED_DOCKER_KWARGS
 
-STUDY_DATA_TEMPLATE = """# Study data mapping used by Docker and Kubernetes job launchers.
+STUDY_RUNTIME_TEMPLATE = """# Per-study runtime configuration used by Docker and Kubernetes job launchers.
+# Everything a study gets at this site lives in this file: data mounts, env
+# vars, secret-backed env vars and file mounts, and (K8s only) a pod template.
 # Example:
-# default:
-#   training:
-#     source: /data/training    # Docker: host path; K8s: PVC claim name
-#     mode: ro                  # ro or rw
-{}
+# studies:
+#   default:
+#     container:
+#       image: registry.example.com/nvflare-job:2.9   # site default job image; job meta image wins
+#     datasets:
+#       training:
+#         source: /data/training     # Docker: host path; K8s: PVC claim name
+#         mode: ro                   # ro or rw
+#     env:
+#       DB_HOST: postgres.svc
+#     secret_env:
+#       DB_PASSWORD: {source: study-db, key: password}  # K8s: Secret name/key; Docker: launcher env var
+#     secret_mounts:
+#       db-ca:
+#         source: study-db-ca        # K8s: Secret name; Docker: host path
+#         mount_path: /var/run/nvflare/secrets/db-ca
+#     pod_template: pod_specs/job-pod.yaml              # K8s only; path relative to local/
+#     docker_kwargs:                                    # Docker only; containers.run kwargs
+#       shm_size: 8g
+format_version: 2
+studies: {}
 """
 
 K8S_NAME_PATTERN = re.compile(r"^[a-z]([-a-z0-9]*[a-z0-9])?$")
@@ -644,7 +655,7 @@ def _prepare_docker(kit_info: KitInfo, final_output: Path, config: dict[str, Any
     if kit_info.role == ROLE_SERVER:
         _relocate_server_storage_to_workspace(kit_info.kit_dir, WORKSPACE_MOUNT_PATH)
     _patch_comm_config_for_docker(kit_info.kit_dir)
-    _ensure_study_data_template(kit_info.kit_dir)
+    _ensure_study_runtime_template(kit_info.kit_dir)
     _remove_start_scripts(kit_info.kit_dir, keep={DOCKER_START_SH})
     start_script = _write_docker_start_script(kit_info, docker_image=docker_image, network=network)
 
@@ -671,23 +682,23 @@ def _prepare_k8s(kit_info: KitInfo, final_output: Path, config: dict[str, Any]) 
     launcher_path = K8S_SERVER_LAUNCHER if kit_info.role == ROLE_SERVER else K8S_CLIENT_LAUNCHER
     launcher_args = {
         "config_file_path": job_launcher.get("config_file_path"),
-        "study_data_pvc_file_path": f"{workspace_mount_path}/local/{STUDY_DATA_YAML}",
         "namespace": namespace,
         "default_python_path": job_launcher.get("default_python_path", K8S_PARENT_PYTHON_PATH),
         "workspace_mount_path": workspace_mount_path,
     }
+    if (kit_info.kit_dir / "local" / STUDY_DATA_YAML).exists():
+        # legacy v1 kit: keep the study data mounts working; new kits use study_runtime.yaml
+        launcher_args["study_data_pvc_file_path"] = f"{workspace_mount_path}/local/{STUDY_DATA_YAML}"
     if "pending_timeout" in job_launcher:
         launcher_args["pending_timeout"] = job_launcher["pending_timeout"]
     if job_launcher.get("job_pod_security_context"):
         launcher_args["security_context"] = job_launcher["job_pod_security_context"]
     if job_launcher.get("image_pull_secrets") is not None:
         launcher_args["image_pull_secrets"] = job_launcher["image_pull_secrets"]
-    if "study_job_spec_file_path" in job_launcher:
-        launcher_args["study_job_spec_file_path"] = job_launcher["study_job_spec_file_path"]
 
     _patch_resources(kit_info.kit_dir, "k8s_launcher", launcher_path, launcher_args)
     _patch_comm_config_for_k8s(kit_info.kit_dir, kit_info.role, kit_info.name, parent_port, server_service_name)
-    _ensure_study_data_template(kit_info.kit_dir)
+    _ensure_study_runtime_template(kit_info.kit_dir)
     if kit_info.role == ROLE_SERVER:
         _relocate_server_storage_to_workspace(kit_info.kit_dir, workspace_mount_path)
     _remove_start_scripts(kit_info.kit_dir, keep=set())
@@ -746,7 +757,8 @@ def _validate_runtime_config(runtime: str, config: dict[str, Any]) -> None:
                 _fail(
                     "INVALID_CONFIG",
                     f"default_job_container_kwargs contains reserved keys: {sorted(reserved)}",
-                    "Remove keys controlled by DockerJobLauncher.",
+                    "Remove keys controlled by DockerJobLauncher. For a site default job image, "
+                    "set studies.<study>.container.image in local/study_runtime.yaml.",
                 )
     elif runtime == RUNTIME_K8S:
         _validate_allowed_keys(
@@ -778,7 +790,6 @@ def _validate_runtime_config(runtime: str, config: dict[str, Any]) -> None:
                 "default_python_path",
                 "job_pod_security_context",
                 "image_pull_secrets",
-                "study_job_spec_file_path",
             },
             "job_launcher",
         )
@@ -799,7 +810,6 @@ def _validate_runtime_config(runtime: str, config: dict[str, Any]) -> None:
         _optional_non_negative_int(job_launcher, "pending_timeout", "job_launcher")
         _optional_mapping(job_launcher, "job_pod_security_context", "job_launcher")
         _optional_k8s_secret_name_list(job_launcher, "image_pull_secrets", "job launcher image pull references")
-        _optional_str(job_launcher, "study_job_spec_file_path", "job_launcher")
 
 
 def _validate_kit(kit_dir: Path) -> KitInfo:
@@ -1034,10 +1044,14 @@ def _internal_resources(comm_config: dict[str, Any]) -> dict[str, Any]:
     return resources
 
 
-def _ensure_study_data_template(kit_dir: Path) -> None:
-    path = kit_dir / "local" / STUDY_DATA_YAML
-    if not path.exists():
-        path.write_text(STUDY_DATA_TEMPLATE, encoding="utf-8")
+def _ensure_study_runtime_template(kit_dir: Path) -> None:
+    local_dir = kit_dir / "local"
+    if (local_dir / STUDY_RUNTIME_YAML).exists():
+        return
+    if (local_dir / STUDY_DATA_YAML).exists():
+        # legacy v1 kit: study_data.yaml and study_runtime.yaml must not coexist
+        return
+    (local_dir / STUDY_RUNTIME_YAML).write_text(STUDY_RUNTIME_TEMPLATE, encoding="utf-8")
 
 
 def _remove_start_scripts(kit_dir: Path, keep: set[str]) -> None:
