@@ -332,6 +332,16 @@ class TestPOCCommands:
             },
         }
 
+    def test_write_poc_docker_study_runtime_rejects_legacy_kit(self, tmp_path):
+        kit_dir = tmp_path / "prod_00" / "site-1"
+        local_dir = kit_dir / "local"
+        local_dir.mkdir(parents=True)
+        (local_dir / "study_data.yaml").write_text("default: {}\n", encoding="utf-8")
+
+        with pytest.raises(CLIException, match="must not coexist"):
+            poc_commands._write_poc_docker_study_runtime(kit_dir, str(tmp_path / "poc"))
+        assert not (local_dir / "study_runtime.yaml").exists()
+
     def test_local_provision_keeps_project_config_after_prepare_project_mutation(self, monkeypatch, tmp_path):
         project_config = collections.OrderedDict(
             {
