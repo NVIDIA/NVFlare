@@ -3200,6 +3200,8 @@ def show_campaign_status(args: argparse.Namespace, job: Path) -> int:
         plateau_threshold=args.plateau_threshold,
         plateau_min_delta=args.plateau_min_delta,
         hard_crash_threshold=args.hard_crash_threshold,
+        exploration_batch_size=args.exploration_batch_size,
+        family_repeat_limit=args.family_repeat_limit,
         pending_manifest_count=len(pending),
         persist=False,
     )

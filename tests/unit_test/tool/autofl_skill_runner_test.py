@@ -1744,6 +1744,37 @@ def test_explicit_mutable_campaign_settings_persist_and_uncapped_removes_cap(tmp
     assert metadata["settings"]["max_candidates"] is None
 
 
+def test_status_reuses_persisted_guard_settings(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+
+    assert (
+        runner.main(
+            [
+                "status",
+                str(job),
+                "--exploration-batch-size",
+                "5",
+                "--family-repeat-limit",
+                "9",
+            ]
+        )
+        == 0
+    )
+    observed = {}
+    original_write_state = runner.write_state
+
+    def capture_write_state(*args, **kwargs):
+        observed.update(kwargs)
+        return original_write_state(*args, **kwargs)
+
+    monkeypatch.setattr(runner, "write_state", capture_write_state)
+
+    assert runner.main(["status", str(job)]) == 0
+    assert observed["exploration_batch_size"] == 5
+    assert observed["family_repeat_limit"] == 9
+
+
 def test_explicit_immutable_campaign_setting_change_is_rejected(tmp_path, monkeypatch):
     runner = _load_runner()
     job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
