@@ -508,6 +508,53 @@ class TestMultiBackend:
                 assert not isinstance(getattr(cb, "__self__", None), InProcessClientAPI), f"leak on {topic}"
 
 
+class TestClosedApiOutgoingGate:
+    """A closed API must not publish onto the singleton bus (zombie-trainer containment).
+
+    finalize() can abandon a still-running daemon trainer after the bounded join; that
+    thread still holds the API object and may resume later. Its send()/log() must DROP --
+    not publish (a successor job's backend is now subscribed to the same topics), and not
+    raise (an exception would hit TaskScriptRunner's catch-all, which fires TOPIC_ABORT
+    onto the singleton bus and would poison the successor)."""
+
+    def test_finalize_closes_api_and_late_send_log_are_dropped(self, clean_databus, custom_dir):
+        backend, _ = _initialized_backend(custom_dir)
+        api = backend._client_api
+        backend.finalize(FLContext())
+        assert api.closed is True
+
+        published = []
+        clean_databus.subscribe([TOPIC_LOCAL_RESULT, TOPIC_LOG_DATA], lambda t, d, b: published.append((t, d)))
+
+        # the zombie resumes: neither call may publish or raise
+        api.send(None)
+        api.log("accuracy", 0.99, "SCALAR")
+
+        assert published == []
+
+    def test_closed_receive_returns_none_fast(self, clean_databus, custom_dir):
+        backend, _ = _initialized_backend(custom_dir)
+        api = backend._client_api
+        backend.finalize(FLContext())
+
+        start = time.monotonic()
+        assert api.receive(timeout=10.0) is None
+        assert time.monotonic() - start < 1.0, "closed receive must not wait out its timeout"
+
+    def test_open_api_still_publishes(self, clean_databus, custom_dir):
+        # the gate must not over-drop: an open API's log still lands on the bus
+        backend, _ = _initialized_backend(custom_dir)
+        try:
+            api = backend._client_api
+            api.rank = "0"
+            published = []
+            clean_databus.subscribe([TOPIC_LOG_DATA], lambda t, d, b: published.append(d))
+            api.log("accuracy", 0.99, "SCALAR")
+            assert len(published) == 1
+        finally:
+            backend.finalize(FLContext())
+
+
 class TestLogRouting:
     def test_log_data_routes_through_executor_fire_log_analytics(self, clean_databus, custom_dir):
         executor = MagicMock()

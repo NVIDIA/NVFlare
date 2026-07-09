@@ -63,6 +63,7 @@ class InProcessClientAPI(APISpec):
         self.stop_reason = ""
         self.abort = False
         self.stop = False
+        self.closed = False
         self.rank = None
         self.receive_called = False  # to check if users have call received for a new model
 
@@ -113,7 +114,25 @@ class InProcessClientAPI(APISpec):
         if gc_rounds > 0:
             self.logger.info(f"Memory management enabled: cleanup every {gc_rounds} round(s)")
 
+    def _dropped_because_closed(self, what: str) -> bool:
+        """Outgoing-publication gate for a closed API.
+
+        After close(), this instance belongs to a job that has ended, but an abandoned
+        trainer thread may still hold it and resume later. Its publications must not land
+        on the singleton DataBus where a successor job's backend is now subscribed. The
+        gate DROPS (with a warning) instead of raising: an exception would propagate into
+        TaskScriptRunner's catch-all, which fires TOPIC_ABORT onto the same singleton bus
+        and would poison the successor -- the exact cross-job leak this gate prevents.
+        """
+        if not self.closed:
+            return False
+        self.logger.warning(f"dropping {what}: this Client API is closed (its job has ended)")
+        return True
+
     def receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
+        if self.closed:
+            # closed API: behave as stopped -- the trainer's is_running()/receive loop exits
+            return None
         result = self.__receive(timeout)
         if result is not None:
             self.receive_called = True
@@ -146,6 +165,8 @@ class InProcessClientAPI(APISpec):
         return self.fl_model
 
     def send(self, model: FLModel, clear_cache: bool = True) -> None:
+        if self._dropped_because_closed("result send"):
+            return
         if self.__continue_job():
             self.logger.info("Try to send local model back to peer ")
 
@@ -221,6 +242,8 @@ class InProcessClientAPI(APISpec):
         return self.meta.get(ConfigKey.TASK_NAME) == self.client_config.get_submit_model_task()
 
     def log(self, key: str, value: Any, data_type: AnalyticsDataType, **kwargs):
+        if self._dropped_because_closed(f"metric log '{key}'"):
+            return
         if self.rank != "0":
             raise RuntimeError("only rank 0 can call log!")
         msg = dict(key=key, value=value, data_type=data_type, **kwargs)
@@ -282,14 +305,17 @@ class InProcessClientAPI(APISpec):
         self.stop_reason = "API shutdown called."
 
     def close(self):
-        """Unsubscribes this API instance's DataBus callbacks.
+        """Detaches this API instance from the singleton DataBus, in both directions.
 
-        The DataBus is a process singleton: without this, a finished job's API instance
-        stays subscribed to TOPIC_GLOBAL_RESULT for the process lifetime, so every later
-        job's task publish also lands on the dead instance and pins its latest global
-        model in memory. Called by the owning executor/backend at teardown; safe to call
-        more than once (unsubscribe of an absent callback is a no-op).
+        Incoming: unsubscribes its callbacks -- without this, a finished job's API stays
+        subscribed to TOPIC_GLOBAL_RESULT for the process lifetime, so every later job's
+        task publish also lands on the dead instance and pins its latest global model.
+        Outgoing: marks the instance closed so send()/log() DROP instead of publishing --
+        an abandoned trainer thread that resumes after its job ended must not feed results
+        or metrics to a successor job's backend. Called by the owning executor/backend at
+        teardown; idempotent.
         """
+        self.closed = True
         self.data_bus.unsubscribe(TOPIC_GLOBAL_RESULT, self.__receive_callback)
         self.data_bus.unsubscribe(TOPIC_ABORT, self.__ask_to_abort)
         self.data_bus.unsubscribe(TOPIC_STOP, self.__ask_to_abort)

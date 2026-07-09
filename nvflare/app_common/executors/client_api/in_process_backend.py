@@ -271,7 +271,8 @@ class InProcessBackend(ClientAPIBackendSpec):
                 if thread.is_alive():
                     self.logger.error(
                         f"in-process trainer thread did not stop within {_TRAINER_STOP_JOIN_TIMEOUT}s "
-                        f"after TOPIC_STOP; abandoning it (daemon thread, will not block process exit)"
+                        f"after TOPIC_STOP; abandoning it (daemon thread, will not block process exit; "
+                        f"its API is closed, so any later send/log from it is dropped)"
                     )
         except Exception:
             self.logger.error(secure_format_traceback())
