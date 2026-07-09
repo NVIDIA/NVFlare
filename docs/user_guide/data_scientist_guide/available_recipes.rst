@@ -419,6 +419,8 @@ PyTorch Cyclic
         num_rounds=5,
         model=MyModel(),
         train_script="client.py",
+        task_assignment_timeout=30,
+        shutdown_timeout=120.0,  # External client process only
     )
     env = SimEnv(num_clients=2)
     run = recipe.execute(env)
@@ -426,6 +428,25 @@ PyTorch Cyclic
 **Examples:**
 
 - `examples/hello-world/hello-cyclic <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-cyclic>`_
+
+``task_assignment_timeout`` configures the server ``CyclicController`` and
+``shutdown_timeout`` configures the client ``ScriptRunner``. For controller or
+runner options that do not have named recipe parameters, use
+``server_config_overrides`` or ``client_config_overrides``. These dictionaries
+are shallow-merged after the named parameters, so overlapping dictionary values
+take precedence. ``task_check_period`` must be positive when overridden:
+
+.. code-block:: python
+
+    recipe = CyclicRecipe(
+        name="cyclic-advanced",
+        min_clients=2,
+        model=MyModel(),
+        train_script="client.py",
+        task_assignment_timeout=30,
+        server_config_overrides={"task_check_period": 1.0},
+        client_config_overrides={"launch_once": False},
+    )
 
 TensorFlow Cyclic
 -----------------
@@ -849,7 +870,11 @@ Decentralized federated learning without a central server.
         num_rounds=5,
         train_script="client.py",
         initial_ckpt="/path/to/pretrained.pt",  # Optional: pre-trained weights
-        round_timeout=3600,  # P2P model-transfer ACK budget (seconds); increase for large models
+        progress_timeout=7200,
+        learn_task_timeout=None,  # No training-task time limit
+        learn_task_ack_timeout=3600,
+        final_result_ack_timeout=3600,
+        max_concurrent_submissions=1,
     )
     env = SimEnv(num_clients=3)
     run = recipe.execute(env)
@@ -857,8 +882,12 @@ Decentralized federated learning without a central server.
 .. note::
    For large models (>2 GB), tune the following parameters:
 
-   - ``round_timeout`` (default 3600 s): P2P model-transfer ACK budget between peers.
-     Increase for 7B+ models where P2P tensor streaming can take several minutes.
+   - ``learn_task_timeout`` (default ``None``): maximum training-task duration.
+   - ``learn_task_ack_timeout`` and ``final_result_ack_timeout``: P2P model-transfer
+     acknowledgment budgets. The ``round_timeout`` compatibility shortcut sets both
+     when their explicit parameters are omitted.
+   - ``progress_timeout`` (default 3600 s): maximum time without workflow progress.
+   - ``max_concurrent_submissions`` (default 1, minimum 1): concurrent aggregation submissions.
    - ``pipe_type`` (default ``"cell_pipe"``): set to ``"file_pipe"`` when cell networking
      is unavailable or for third-party subprocess integrations.
    - ``submit_result_timeout``, ``download_complete_timeout``,
@@ -866,6 +895,15 @@ Decentralized federated learning without a central server.
      ``recipe.add_client_config({...})``. ``max_resends`` defaults to finite
      value ``3`` and can be overridden the same way — see
      :ref:`timeout_troubleshooting`.
+
+For advanced controller settings, ``server_config_overrides`` and
+``client_config_overrides`` are shallow-merged into ``SwarmServerConfig`` and
+``SwarmClientConfig`` after the named parameters. Overlapping dictionary values
+therefore take precedence over the documented named API. Client overrides cannot
+replace the recipe-managed executor, aggregator, persistor, shareable generator, or
+``min_responses_required``; use ``BaseSwarmLearningRecipe`` for custom components or
+quorum settings. Server overrides cannot replace ``min_clients``; set it through the
+named parameter so all scheduler and workflow quorum settings remain aligned.
 
 
 Edge Recipes
