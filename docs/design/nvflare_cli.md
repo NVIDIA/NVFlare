@@ -251,14 +251,10 @@ Current state: users have been using interactive console shell commands (`cat`, 
 
 When client-side log streaming to the server is enabled, client logs are treated as server-side stored job logs. `nvflare job logs` does not connect to client sites directly and does not execute shell commands on client machines. It asks the server for the job log content that the server has locally for the requested site target.
 
-Client log streaming is enabled by the job, not by `nvflare job logs`. The portable job-level pattern is:
+Client log streaming is enabled by the job, not by `nvflare job logs`. For Recipe jobs, use:
 
 ```python
-from nvflare.app_common.logging.job_log_receiver import JobLogReceiver
-from nvflare.app_common.logging.job_log_streamer import JobLogStreamer
-
-recipe.job.to_clients(JobLogStreamer())
-recipe.job.to_server(JobLogReceiver())
+recipe.enable_log_streaming("log.txt")
 ```
 
 `JobLogStreamer` runs in each client job process, tails the configured job log

@@ -446,23 +446,9 @@ def add_cross_site_evaluation(
         add_cross_site_evaluation(recipe)
         ```
 
-    Example (TensorFlow - Component-based alternative):
-        ```python
-        from nvflare.app_opt.tf.recipes import FedAvgRecipe
-        from nvflare.app_opt.tf.tf_validator import TFValidator
-        from nvflare.recipe.utils import add_cross_site_evaluation
-
-        recipe = FedAvgRecipe(
-            name="my-job", min_clients=2, num_rounds=3,
-            model=MyTFModel(), train_script="client.py"
-        )
-
-        add_cross_site_evaluation(recipe)
-
-        # Optional: manually add TFValidator for component-based validation
-        validator = TFValidator(model=my_model, data_loader=test_loader)
-        recipe.job.to_clients(validator, tasks=["validate"])
-        ```
+    TensorFlow component-based validators are executors, not plain components.
+    Use the lower-level Job API when explicit ``TFValidator`` placement is required;
+    Recipe-based jobs should use the Client API pattern above.
 
     Args:
         recipe: Recipe instance to augment with cross-site evaluation.

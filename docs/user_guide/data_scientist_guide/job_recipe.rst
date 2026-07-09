@@ -227,8 +227,8 @@ Recipe Metadata
 ---------------
 
 Use ``set_recipe_meta`` to add generated job metadata from a recipe without
-mutating ``recipe.job.job.meta_props`` directly. The helper sets one
-``JobMetaKey`` metadata entry at a time:
+mutating nested generated-job metadata directly. The helper sets one ``JobMetaKey``
+metadata entry at a time:
 
 .. code-block:: python
 
