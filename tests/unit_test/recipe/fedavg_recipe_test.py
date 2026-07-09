@@ -20,7 +20,7 @@ import torch.nn as nn
 
 from nvflare.apis.dxo import DataKind
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.job_def import ALL_SITES
+from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor

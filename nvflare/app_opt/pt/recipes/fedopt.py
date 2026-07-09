@@ -173,8 +173,8 @@ class FedOptRecipe(Recipe):
         from nvflare.recipe.utils import (
             ensure_config_type_dict,
             recipe_model_to_job_model,
-            validate_ckpt,
             validate_aggregator_data_kind,
+            validate_ckpt,
         )
 
         validate_ckpt(self.initial_ckpt)
