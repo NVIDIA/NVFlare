@@ -96,6 +96,7 @@ from nvflare.fuel.utils.secret_utils import (
     warn_on_potential_secrets,
     warn_on_unsupported_secret_ref_keys,
     warn_on_unsupported_secret_refs,
+    warn_on_unsupported_secret_refs_outside_keys,
 )
 from nvflare.job_config.api import FedJob
 from nvflare.job_config.defs import FilterType
@@ -220,8 +221,11 @@ class Recipe(ABC):
             "extra_env",
             "run_config",
             "device_training_params",
+            "per_site_config",
         }
     )
+
+    _SUPPORTED_PER_SITE_SECRET_REF_KEYS = None
 
     def __init__(self, job: FedJob):
         """This is base class of a recipe. Recipes are implemented by jobs.
@@ -265,7 +269,15 @@ class Recipe(ABC):
                 context = f"recipe parameter '{attr}'"
                 warn_on_potential_secrets(value, context=context)
                 if attr in self._UNSUPPORTED_SECRET_REF_ATTRS:
-                    warn_on_unsupported_secret_refs(value, context=context)
+                    if attr == "per_site_config" and self._SUPPORTED_PER_SITE_SECRET_REF_KEYS is not None:
+                        warn_on_unsupported_secret_refs_outside_keys(
+                            value,
+                            supported_value_keys=self._SUPPORTED_PER_SITE_SECRET_REF_KEYS,
+                            supported_value_depth=2,
+                            context=context,
+                        )
+                    else:
+                        warn_on_unsupported_secret_refs(value, context=context)
 
     def process_env(self, env: ExecEnv):
         """Process environment-specific configuration.
@@ -287,6 +299,15 @@ class Recipe(ABC):
         docstring for the recommended alternatives.
         """
         warn_on_potential_secrets(config, context="per_site_config")
+        if self._SUPPORTED_PER_SITE_SECRET_REF_KEYS is not None:
+            warn_on_unsupported_secret_refs_outside_keys(
+                config,
+                supported_value_keys=self._SUPPORTED_PER_SITE_SECRET_REF_KEYS,
+                supported_value_depth=2,
+                context="per_site_config",
+            )
+        else:
+            warn_on_unsupported_secret_refs(config, context="per_site_config")
         self._helper_per_site_config = dict(config)
         self._apply_per_site_config(dict(self._helper_per_site_config))
 

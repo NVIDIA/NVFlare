@@ -18,7 +18,6 @@ from pydantic import BaseModel, field_validator
 
 from nvflare.app_common.workflows.model_controller import ModelController
 from nvflare.client.config import ExchangeFormat
-from nvflare.fuel.utils.secret_utils import warn_on_unsupported_secret_refs_outside_keys
 from nvflare.job_config.base_fed_job import BaseFedJob
 from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 from nvflare.recipe.spec import Recipe
@@ -54,6 +53,7 @@ class EvalController(ModelController):
 
 
 class FedEvalRecipe(Recipe):
+    _SUPPORTED_PER_SITE_SECRET_REF_KEYS = frozenset({"command", "eval_args"})
     """A recipe for federated evaluation of a PyTorch model across multiple sites.
 
     This recipe sets up a federated evaluation workflow where a global model
@@ -151,11 +151,6 @@ class FedEvalRecipe(Recipe):
         self.server_expected_format = server_expected_format
         self.validation_timeout = validation_timeout
         self.per_site_config = per_site_config
-        warn_on_unsupported_secret_refs_outside_keys(
-            self.per_site_config,
-            supported_value_keys={"command", "eval_args"},
-            context="recipe parameter 'per_site_config'",
-        )
         self.client_memory_gc_rounds = client_memory_gc_rounds
         self.cuda_empty_cache = cuda_empty_cache
 

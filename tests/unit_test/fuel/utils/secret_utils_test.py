@@ -85,7 +85,7 @@ class TestSecretRef:
 
     def test_resolve_file_ref(self, tmp_path):
         secret_file = tmp_path / "api-key"
-        secret_file.write_text("file-secret-value")
+        secret_file.write_text("file-secret-value\n")
 
         assert resolve_secret_refs(secret_file_ref(str(secret_file)), env={}) == "file-secret-value"
 
@@ -361,11 +361,20 @@ class TestUnsupportedSecretRefs:
         assert not warn_on_unsupported_secret_refs_outside_keys(
             {"site-1": {"train_args": f"--api-key {reference}"}},
             supported_value_keys={"train_args"},
+            supported_value_depth=2,
             context="per_site_config",
         )
+        with pytest.warns(UnsupportedSecretRefWarning):
+            assert warn_on_unsupported_secret_refs_outside_keys(
+                {"site-1": {"subsection": {"train_args": reference}}},
+                supported_value_keys={"train_args"},
+                supported_value_depth=2,
+                context="per_site_config",
+            )
         with pytest.warns(UnsupportedSecretRefWarning, match="train_args"):
             assert warn_on_unsupported_secret_refs_outside_keys(
                 {"site-1": {"train_script": reference}},
                 supported_value_keys={"train_args"},
+                supported_value_depth=2,
                 context="per_site_config",
             )

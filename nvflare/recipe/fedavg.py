@@ -25,7 +25,6 @@ from nvflare.app_common.app_constant import DefaultCheckpointFileName
 from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.constants import FrameworkType
-from nvflare.fuel.utils.secret_utils import warn_on_unsupported_secret_refs_outside_keys
 from nvflare.job_config.base_fed_job import BaseFedJob
 from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.recipe.spec import Recipe
@@ -71,6 +70,7 @@ class _FedAvgValidator(BaseModel):
 
 
 class FedAvgRecipe(Recipe):
+    _SUPPORTED_PER_SITE_SECRET_REF_KEYS = frozenset({"command", "train_args"})
     """Unified FedAvg recipe for PyTorch, TensorFlow, and Scikit-learn.
 
     FedAvg is a fundamental federated learning algorithm that aggregates model updates
@@ -281,11 +281,6 @@ class FedAvgRecipe(Recipe):
         self.per_site_config = v.per_site_config
         self._validate_per_site_config(self.per_site_config)
         self._validate_aggregator_data_kind()
-        warn_on_unsupported_secret_refs_outside_keys(
-            self.per_site_config,
-            supported_value_keys={"command", "train_args"},
-            context="recipe parameter 'per_site_config'",
-        )
         self.launch_once = v.launch_once
         self.shutdown_timeout = v.shutdown_timeout
         self.key_metric = v.key_metric

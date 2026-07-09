@@ -70,7 +70,9 @@ from nvflare.fuel.utils.secret_utils import (
     secret_file_ref,
     secret_ref,
     warn_on_potential_secrets,
+    warn_on_unsupported_secret_ref_keys,
     warn_on_unsupported_secret_refs,
+    warn_on_unsupported_secret_refs_outside_keys,
 )
 
 __all__ = [
@@ -85,4 +87,6 @@ __all__ = [
     "find_potential_secrets",
     "warn_on_potential_secrets",
     "warn_on_unsupported_secret_refs",
+    "warn_on_unsupported_secret_ref_keys",
+    "warn_on_unsupported_secret_refs_outside_keys",
 ]

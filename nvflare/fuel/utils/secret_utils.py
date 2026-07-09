@@ -123,8 +123,8 @@ def secret_file_ref(path: str) -> str:
 
     This is intended for secrets projected as files, including Kubernetes Secret volume keys.
     The path itself is stored in the generated job config; the file content is read only on the
-    executing site at runtime. The file content is injected exactly as stored, including any
-    trailing newline.
+    executing site at runtime. One trailing newline commonly added by secret-file tooling is
+    removed before injection.
 
     Args:
         path: runtime path of the mounted secret file. Absolute paths are strongly recommended;
@@ -186,7 +186,7 @@ def resolve_secret_refs(value: Any, env: Optional[Mapping[str, str]] = None) -> 
             raise ValueError("cannot resolve secret reference: invalid secret reference syntax")
         try:
             with open(path, encoding="utf-8") as f:
-                return f.read()
+                return f.read().removesuffix("\n")
         except (OSError, UnicodeError, ValueError):
             raise ValueError(
                 f"cannot resolve secret file reference for path {path!r}: "
@@ -620,20 +620,24 @@ def warn_on_unsupported_secret_ref_keys(value: Any, context: str) -> bool:
     return True
 
 
-def _contains_secret_ref_outside_keys(value: Any, supported_value_keys: frozenset[str]) -> bool:
+def _contains_secret_ref_outside_keys(
+    value: Any, supported_value_keys: frozenset[str], supported_value_depth: int
+) -> bool:
     if isinstance(value, str):
         return has_secret_refs(value)
     if isinstance(value, Mapping):
         for key, item in value.items():
             if _contains_secret_ref(key):
                 return True
-            if isinstance(key, str) and key in supported_value_keys:
+            if supported_value_depth == 1 and isinstance(key, str) and key in supported_value_keys:
                 continue
-            if _contains_secret_ref_outside_keys(item, supported_value_keys):
+            if _contains_secret_ref_outside_keys(item, supported_value_keys, max(supported_value_depth - 1, 0)):
                 return True
         return False
     if isinstance(value, (list, tuple)):
-        return any(_contains_secret_ref_outside_keys(item, supported_value_keys) for item in value)
+        return any(
+            _contains_secret_ref_outside_keys(item, supported_value_keys, supported_value_depth) for item in value
+        )
     return False
 
 
@@ -641,9 +645,14 @@ def warn_on_unsupported_secret_refs_outside_keys(
     value: Any,
     supported_value_keys: set[str],
     context: str,
+    supported_value_depth: int = 1,
 ) -> bool:
-    """Warn when references occur outside explicitly supported mapping values."""
-    if not _contains_secret_ref_outside_keys(value, frozenset(supported_value_keys)):
+    """Warn when references occur outside explicitly supported mapping values.
+
+    ``supported_value_depth`` controls the mapping depth at which supported keys are exempted.
+    Per-site configuration uses depth 2 for its site key and immediate field values.
+    """
+    if not _contains_secret_ref_outside_keys(value, frozenset(supported_value_keys), supported_value_depth):
         return False
     supported = ", ".join(sorted(supported_value_keys))
     _emit_safe_warning(
