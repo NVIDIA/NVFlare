@@ -63,7 +63,18 @@ statistic_configs = {
 - DICOM requires `pydicom` (or MONAI's ITK reader); NIfTI requires
   `nibabel`. Preflight the import for the format actually present before
   generating the job, exactly like the fastdigest rule: on failure, fail
-  closed with the product error, never silently skip files.
+  closed with the product error, never silently skip files. Any format
+  whose loader yields a pixel array is supported — the loader is the only
+  gate.
+- CT DICOM correctness: stored values become Hounsfield Units only after
+  `RescaleSlope * value + RescaleIntercept`; apply the rescale in the
+  loader and use a declared HU range (e.g. `[-1024, 3072]`) — never
+  histogram raw stored values as calibrated intensities.
+- Count semantics for medical formats: `count` is files, which for DICOM
+  series means slices (not studies/patients) and for NIfTI means whole
+  volumes; say which in the report. Cross-site intensity histograms also
+  confound scanner/protocol calibration with population differences —
+  include that caveat alongside the case-mix one.
 
 ## Validation Specifics
 

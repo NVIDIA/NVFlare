@@ -635,13 +635,15 @@
     {
       "id": "fedstats-image-dicom-dependency",
       "prompt": "I have chest X-ray DICOM folders at each of my 3 hospitals under /data/xray/site-{1,2,3}. Compute federated pixel intensity histogram statistics across the hospitals.",
-      "expected_output": "The skill triggers on the image path: it identifies DICOM as the format, preflights the DICOM loader dependency (pydicom or MONAI's ITK reader) before generating the job, and on a missing loader fails closed with the product error and the required dependency named — it never silently skips files, guesses a different format, or improvises statistics without the loader. With the loader available, it generates the image-intensity Statistics client from the image template with count, failure_count, and histogram, taking the intensity range from the pixel bit depth.",
+      "expected_output": "The skill triggers on the image path: it identifies DICOM as the format, preflights the DICOM loader dependency (pydicom or MONAI's ITK reader) before generating the job, and on a missing loader fails closed with the product error and the required dependency named — it never silently skips files, guesses a different format, or improvises statistics without the loader. With the loader available, it generates the image-intensity Statistics client from the image template with count, failure_count, and histogram, taking the intensity range from the pixel bit depth, applying the DICOM rescale (RescaleSlope/RescaleIntercept) in the loader with a declared Hounsfield range for CT, and stating that count means slices for DICOM series.",
       "files": [],
       "assertions": [
         "The agent routes to the image path and identifies DICOM as the format requiring pydicom or an ITK-based reader.",
         "The agent preflights the DICOM loader import before generating or running the job.",
         "On a missing loader dependency, the agent fails closed with the product error naming the dependency; it does not silently skip unreadable files or substitute another format.",
-        "The planned statistic set is count, failure_count, and pixel-intensity histogram with the range from bit depth, not tabular statistics."
+        "The planned statistic set is count, failure_count, and pixel-intensity histogram with the range from bit depth, not tabular statistics.",
+        "For CT data the agent applies the Hounsfield rescale in the loader and uses a declared HU range instead of histogramming raw stored values.",
+        "The report states that count means files (slices for DICOM series), not studies or patients."
       ],
       "nvflare": {
         "expected_skill": "nvflare-fed-stats",
@@ -657,6 +659,14 @@
           {
             "id": "report-product-error",
             "description": "fails closed with the product error naming the missing loader dependency"
+          },
+          {
+            "id": "ct-hounsfield-rescale",
+            "description": "applies RescaleSlope/RescaleIntercept with a declared HU range for CT rather than histogramming raw stored values"
+          },
+          {
+            "id": "count-semantics-stated",
+            "description": "states whether count means slices, volumes, or files for the medical format at hand"
           }
         ],
         "prohibited_behavior": [
