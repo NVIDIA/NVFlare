@@ -87,7 +87,13 @@ statistic_configs = {
 
 ## Validation Specifics
 
-The ladder is unchanged; the statistics rungs adapt as:
+The ladder is unchanged; the statistics rungs adapt as below. Runtime
+facts (where output lands, execute semantics) come from
+`stats-job-validation.md` — load it instead of reading NVFLARE library
+source; the output JSON is written under
+`<workspace>/<job-name>/server/simulate_job/<stats_output_path>`.
+
+The statistics rungs:
 
 - **Completeness** — the output hierarchy is
   `{"intensity": {statistic: {site: {dataset: value}}}}` with every site

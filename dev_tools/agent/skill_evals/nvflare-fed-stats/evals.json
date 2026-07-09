@@ -620,7 +620,8 @@
         "The grayscale conversion policy is stated in the report.",
         "The corrupt file at site-1 is reported via failure_count as a data-quality finding (per-site value; the Global failure_count row is not trusted), and the run is not treated as failed because of it.",
         "Per-site histogram parity is validated with an independent recompute, and Global histogram bins equal the element-wise sum of the site bins.",
-        "The report contains only aggregates — no pixel data and no patient-identifying file listings."
+        "The report contains only aggregates — no pixel data and no patient-identifying file listings.",
+        "The agent takes runtime facts (output JSON location, execute semantics) from the skill references rather than reading NVFLARE library source in site-packages."
       ],
       "nvflare": {
         "expected_skill": "nvflare-fed-stats",
@@ -652,6 +653,10 @@
           {
             "id": "approximate-counts-verified",
             "description": "verifies site sizes directly (or re-runs inspect with raised limits) when counts_approximate is true, before bin-cap decisions"
+          },
+          {
+            "id": "references-before-library-source",
+            "description": "loads the skill references for runtime facts (output location, hierarchy) instead of exploring NVFLARE library source"
           }
         ],
         "prohibited_behavior": [
