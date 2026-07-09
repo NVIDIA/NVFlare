@@ -82,11 +82,12 @@ def test_sim_env_validation():
     assert env.num_threads == 3
 
 
-def test_sim_env_process_workspace_override(tmp_path, monkeypatch):
+def test_sim_env_process_workspace_override_takes_precedence(tmp_path, monkeypatch):
     job = _make_job()
     isolated_workspace = tmp_path / "isolated"
     monkeypatch.setenv(SIMULATOR_WORKSPACE_ROOT_ENV_VAR, str(isolated_workspace))
-    env = SimEnv(num_clients=2, workspace_root=str(tmp_path / "configured"))
+    with pytest.warns(RuntimeWarning, match="overrides SimEnv workspace_root"):
+        env = SimEnv(num_clients=2, workspace_root=str(tmp_path / "configured"))
 
     mock_run = _deploy_with_mocked_simulator(env, job)
 
