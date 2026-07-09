@@ -158,7 +158,9 @@ def test_mixed_modality_is_reported_but_not_routed(tmp_path):
 
     assert dataset["modality"] == "mixed"
     assert result["target_type"] == "unknown_target"
-    assert "nvflare-fed-stats" not in result["skill_selection"]["recommended_skills"]
+    # mixed is the ambiguous case: it routes to orient, never to fed-stats
+    # and never to an empty recommendation
+    assert result["skill_selection"]["recommended_skills"] == ["nvflare-orient"]
 
 
 def test_dtype_drift_with_same_names_is_a_mismatch(tmp_path):
@@ -286,7 +288,7 @@ def test_image_only_site_among_tabular_sites_is_mixed_and_unrouted(tmp_path):
 
     assert dataset["modality"] == "mixed"
     assert result["target_type"] == "unknown_target"
-    assert "nvflare-fed-stats" not in result["skill_selection"]["recommended_skills"]
+    assert result["skill_selection"]["recommended_skills"] == ["nvflare-orient"]
     image_site = [s for s in dataset["sites"] if s["name"] == "site-99"][0]
     assert image_site["image_files"] == 1 and image_site["tabular_files"] == 0
 
@@ -304,6 +306,22 @@ def test_image_dataset_with_companion_labels_stays_image(tmp_path):
 
     assert dataset["modality"] == "image"
     assert dataset["sites"][0]["tabular_companions"] == 1
+
+
+def test_three_label_files_per_site_stays_image(tmp_path):
+    # train/val/test label files are common companion metadata
+    for site in ("site-1", "site-2"):
+        d = tmp_path / site
+        d.mkdir()
+        for i in range(12):
+            (d / f"scan_{i}.png").write_bytes(b"\x89PNG not really")
+        for split in ("train", "val", "test"):
+            (d / f"labels_{split}.csv").write_text(HEADER + ROWS, encoding="utf-8")
+
+    dataset = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
+
+    assert dataset["modality"] == "image"
+    assert dataset["sites"][0]["tabular_companions"] == 3
 
 
 def test_same_width_shard_header_drift_is_flagged(tmp_path):

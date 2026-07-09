@@ -27,8 +27,9 @@ Dataset block contract (all keys always present per modality):
 - ``modality``: ``tabular`` | ``image`` | ``mixed``, decided per site, not
   by file-count share. Targeted shapes: a tabular dataset tolerates stray
   images (<= 2 per site, e.g. exported plots); an image dataset tolerates
-  companion tabular metadata (<= 2 files per site, e.g. labels.csv,
-  flagged ``tabular_companions`` and never a statistics target); anything
+  companion tabular metadata (<= 4 files per site, e.g. train/val/test
+  label files, flagged ``tabular_companions``, never a statistics
+  target); anything
   else — an image-only site among tabular sites, or materially both — is
   ``mixed``, reported but not routed (``target_type`` stays
   ``unknown_target``).
@@ -81,8 +82,9 @@ MAX_WALK_ENTRIES = 50_000
 # - a tabular site tolerates at most this many stray images (exported plots);
 STRAY_MAX_IMAGES_PER_SITE = 2
 # - an image site tolerates at most this many tabular files as companion
-#   metadata (labels.csv beside the scans), reported but never a stats target.
-COMPANION_MAX_TABULAR_PER_SITE = 2
+#   metadata (train/val/test label files beside the scans are common),
+#   reported but never a stats target.
+COMPANION_MAX_TABULAR_PER_SITE = 4
 
 HEADER_PRESENT = "present"
 # Per the fed-stats contract: a first row is a header only when at least one

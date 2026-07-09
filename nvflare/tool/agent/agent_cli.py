@@ -165,10 +165,12 @@ def _handle_agent_inspect_cmd(args, handle_schema_flag, output_error_message, ou
         idempotent=True,
     )
     inspect_kwargs = {"redact": getattr(args, "redact", "on") != "off"}
-    if getattr(args, "max_files", None):
-        inspect_kwargs["max_files"] = args.max_files
-    if getattr(args, "max_file_bytes", None):
-        inspect_kwargs["max_file_bytes"] = args.max_file_bytes
+    max_files = getattr(args, "max_files", None)
+    if max_files and max_files > 0:
+        inspect_kwargs["max_files"] = max_files
+    max_file_bytes = getattr(args, "max_file_bytes", None)
+    if max_file_bytes and max_file_bytes > 0:
+        inspect_kwargs["max_file_bytes"] = max_file_bytes
     try:
         data = inspect_path(args.path, **inspect_kwargs)
     except FileNotFoundError as e:
