@@ -20,9 +20,7 @@ from nvflare.fuel.sec.admin_cert import AdminCertValidationError, validate_admin
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys
 
 
-def _make_admin_cert(
-    role="lead", common_name="alice@nvidia.com", org="nvidia", ca=False, extra_extensions=None
-):
+def _make_admin_cert(role="lead", common_name="alice@nvidia.com", org="nvidia", ca=False, extra_extensions=None):
     root_key, root_pub_key = generate_keys()
     root_cert = generate_cert(
         subject=Identity("root", "nvidia"),

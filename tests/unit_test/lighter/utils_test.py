@@ -535,9 +535,7 @@ class TestVerifyFolderSignature:
 
         sign_folders(str(folder), client_pri_key, crt_path=str(client_crt_path))
 
-        verified, signers = verify_folder_signature_and_get_signers(
-            str(folder), str(root_ca_path), single_signer=False
-        )
+        verified, signers = verify_folder_signature_and_get_signers(str(folder), str(root_ca_path), single_signer=False)
 
         assert verified is True
         assert signers == [("client", "nvidia", "self_defined")]
