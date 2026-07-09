@@ -20,7 +20,9 @@ from unittest.mock import patch
 
 import pytest
 
+from nvflare.apis.dxo import DataKind
 from nvflare.apis.job_def import ALL_SITES
+from nvflare.client.config import TransferType
 
 torch = pytest.importorskip("torch")
 
@@ -60,6 +62,44 @@ class TestSwarmLearningRecipe:
         )
 
         assert recipe.job is not None
+
+    def test_weight_diff_with_diff_transfer_is_valid(self, mock_file_system, simple_pt_model):
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+
+        recipe = SwarmLearningRecipe(
+            name="test_swarm_weight_diff",
+            model=simple_pt_model,
+            num_rounds=5,
+            train_script="train.py",
+            min_clients=2,
+            expected_data_kind=DataKind.WEIGHT_DIFF,
+            params_transfer_type=TransferType.DIFF,
+        )
+
+        assert recipe.job is not None
+
+    @pytest.mark.parametrize(
+        "expected_data_kind,params_transfer_type",
+        [
+            (DataKind.WEIGHT_DIFF, TransferType.FULL),
+            (DataKind.WEIGHTS, TransferType.DIFF),
+        ],
+    )
+    def test_incompatible_update_kind_rejected(
+        self, mock_file_system, simple_pt_model, expected_data_kind, params_transfer_type
+    ):
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+
+        with pytest.raises(ValueError, match="incompatible model-update settings"):
+            SwarmLearningRecipe(
+                name="test_swarm_update_kind_mismatch",
+                model=simple_pt_model,
+                num_rounds=5,
+                train_script="train.py",
+                min_clients=2,
+                expected_data_kind=expected_data_kind,
+                params_transfer_type=params_transfer_type,
+            )
 
     def test_import_from_old_location_backward_compat(self, mock_file_system, simple_pt_model):
         """Test importing from old location (backward compatibility)."""

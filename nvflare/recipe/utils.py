@@ -20,7 +20,9 @@ import warnings
 from typing import Any, Dict, List, Optional
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
+from nvflare.apis.dxo import DataKind
 from nvflare.apis.job_def import USER_SETTABLE_JOB_META_KEYS, JobMetaKey
+from nvflare.client.config import TransferType
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.job_config.api import FedJob
 from nvflare.job_config.fed_job_config import FedJobConfig
@@ -65,6 +67,74 @@ MODEL_LOCATOR_REGISTRY = {
 
 # User-settable keys whose values are dicts keyed by site name with dict values.
 _SITE_KEYED_META_KEYS = frozenset({JobMetaKey.RESOURCE_SPEC, JobMetaKey.JOB_LAUNCHER_SPEC})
+
+
+def validate_data_kind_transfer_type(
+    *,
+    data_kind: Optional[DataKind],
+    transfer_type: TransferType,
+    recipe_name: str,
+    data_kind_arg: str = "aggregator_data_kind",
+    aggregator: Any = None,
+    client_name: Optional[str] = None,
+    require_data_kind: bool = False,
+) -> None:
+    """Validate that client output and server aggregation use the same model-update kind."""
+    declared_kind = getattr(aggregator, "expected_data_kind", None)
+    if declared_kind is None:
+        assembler = getattr(aggregator, "assembler", None)
+        get_expected_data_kind = getattr(assembler, "get_expected_data_kind", None)
+        if callable(get_expected_data_kind):
+            declared_kind = get_expected_data_kind()
+
+    if data_kind is None:
+        data_kind = declared_kind
+    else:
+        data_kind = DataKind(data_kind)
+
+    if data_kind is not None and declared_kind is not None and not isinstance(declared_kind, dict):
+        declared_kind = DataKind(declared_kind)
+        if declared_kind != data_kind:
+            declared_transfer_type = TransferType.DIFF if declared_kind == DataKind.WEIGHT_DIFF else TransferType.FULL
+            raise ValueError(
+                f"{recipe_name} has incompatible server aggregation settings: "
+                f"{data_kind_arg}=DataKind.{data_kind.name}, but aggregator "
+                f"{type(aggregator).__name__} declares expected_data_kind=DataKind.{declared_kind.name}. "
+                f"Use an aggregator configured for DataKind.{data_kind.name}, or set "
+                f"{data_kind_arg}=DataKind.{declared_kind.name} and "
+                f"params_transfer_type=TransferType.{declared_transfer_type.name}."
+            )
+
+    if data_kind is None:
+        if require_data_kind:
+            raise ValueError(
+                f"{recipe_name} requires {data_kind_arg} to be DataKind.WEIGHTS or DataKind.WEIGHT_DIFF "
+                "when using its built-in aggregator."
+            )
+        return
+
+    data_kind = DataKind(data_kind)
+    transfer_type = TransferType(transfer_type)
+    if data_kind not in (DataKind.WEIGHTS, DataKind.WEIGHT_DIFF):
+        raise ValueError(
+            f"{recipe_name} does not support {data_kind_arg}=DataKind.{data_kind.name}; "
+            "use DataKind.WEIGHTS or DataKind.WEIGHT_DIFF."
+        )
+
+    client_data_kind = DataKind.WEIGHT_DIFF if transfer_type == TransferType.DIFF else DataKind.WEIGHTS
+    if data_kind == client_data_kind:
+        return
+
+    client_context = f" for client {client_name!r}" if client_name else ""
+    raise ValueError(
+        f"{recipe_name} has incompatible model-update settings{client_context}: "
+        f"{data_kind_arg}=DataKind.{data_kind.name} makes the server aggregator expect {data_kind.value}, "
+        f"but params_transfer_type=TransferType.{transfer_type.name} makes the client executor produce "
+        f"{client_data_kind.value}. To use weight differences, set both "
+        f"{data_kind_arg}=DataKind.WEIGHT_DIFF and params_transfer_type=TransferType.DIFF. "
+        f"To use full weights, set both {data_kind_arg}=DataKind.WEIGHTS and "
+        "params_transfer_type=TransferType.FULL."
+    )
 
 
 def merge_config_overrides(defaults: Dict[str, Any], overrides: Optional[Dict[str, Any]], name: str) -> Dict[str, Any]:

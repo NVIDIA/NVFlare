@@ -179,6 +179,82 @@ FedAvg with secure aggregation using homomorphic encryption.
 
 - `examples/advanced/cifar10/pt/cifar10-real-world#secure-aggregation-using-homomorphic-encryption <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/cifar10/pt/cifar10-real-world#42-secure-aggregation-using-homomorphic-encryption>`_
 
+WEIGHT_DIFF Compatibility
+-------------------------
+
+``DataKind.WEIGHT_DIFF`` is supported only when the client executor sends parameter
+differences and the server aggregation path accepts differences. Recipe construction
+validates these settings where both are configurable.
+
+.. list-table:: Recipe and aggregator support
+   :header-rows: 1
+   :widths: 28 30 12 30
+
+   * - Recipe
+     - Server aggregation path
+     - Support
+     - Required configuration
+   * - Unified, PyTorch, TensorFlow, and NumPy ``FedAvgRecipe``; PyTorch FedProx
+     - Built-in ``FedAvg`` streaming aggregation
+     - Yes
+     - ``aggregator_data_kind=DataKind.WEIGHT_DIFF`` and
+       ``params_transfer_type=TransferType.DIFF``
+   * - ``FedAvgRecipe`` with a custom ``ModelAggregator``
+     - User-provided aggregator
+     - Conditional
+     - Use the same pair as FedAvg. The custom aggregator must accept difference models
+       and preserve ``ParamsType.DIFF`` in its aggregate result.
+   * - ``FedAvgRecipeWithHE``
+     - ``HEInTimeAccumulateWeightedAggregator``
+     - Yes
+     - ``aggregator_data_kind=DataKind.WEIGHT_DIFF`` and
+       ``params_transfer_type=TransferType.DIFF``
+   * - PyTorch ``FedOptRecipe``
+     - ``InTimeAccumulateWeightedAggregator``
+     - Yes
+     - Always configured for ``WEIGHT_DIFF`` and ``DIFF`` by the recipe.
+   * - TensorFlow ``FedOptRecipe``
+     - Built-in ``FedAvg`` streaming aggregation with FedOpt model update
+     - Yes
+     - ``params_transfer_type=TransferType.DIFF``; there is no separate
+       ``aggregator_data_kind`` parameter.
+   * - ``SwarmLearningRecipe``
+     - ``InTimeAccumulateWeightedAggregator``
+     - Yes
+     - ``expected_data_kind=DataKind.WEIGHT_DIFF`` and
+       ``params_transfer_type=TransferType.DIFF``
+   * - ``SklearnFedAvgRecipe``
+     - Built-in ``FedAvg`` streaming aggregation
+     - No
+     - This recipe currently fixes client transfer to ``TransferType.FULL``.
+
+The standard ``InTimeAccumulateWeightedAggregator`` and
+``HEInTimeAccumulateWeightedAggregator`` accept both ``WEIGHTS`` and ``WEIGHT_DIFF``
+when their ``expected_data_kind`` is configured accordingly. Aggregators that declare
+``expected_data_kind`` are checked against the recipe setting during construction.
+
+For example, configure PyTorch FedAvg with differences as follows:
+
+.. code-block:: python
+
+    from nvflare.apis.dxo import DataKind
+    from nvflare.app_opt.pt.recipes import FedAvgRecipe
+    from nvflare.client.config import TransferType
+
+    recipe = FedAvgRecipe(
+        name="fedavg-diff",
+        min_clients=2,
+        num_rounds=5,
+        model=MyModel(),
+        train_script="client.py",
+        aggregator_data_kind=DataKind.WEIGHT_DIFF,
+        params_transfer_type=TransferType.DIFF,
+    )
+
+If ``per_site_config`` overrides ``params_transfer_type``, every configured site must
+also use ``TransferType.DIFF``. A mismatch raises an error that names the affected site
+and shows both valid setting pairs.
+
 
 FedProx
 =======

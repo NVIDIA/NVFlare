@@ -51,13 +51,15 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         train_args: Command line arguments to pass to the training script.
         aggregator: Aggregator for combining client updates. If None,
             uses InTimeAccumulateWeightedAggregator with aggregator_data_kind.
-        aggregator_data_kind: Data kind to use for the aggregator. Defaults to DataKind.WEIGHTS.
+        aggregator_data_kind: Data kind to use for the aggregator. Must match params_transfer_type:
+            use WEIGHTS with FULL or WEIGHT_DIFF with DIFF. Defaults to DataKind.WEIGHTS.
         launch_external_process (bool): Whether to launch the script in external process. Defaults to False.
         command (str): If launch_external_process=True, command to run script (prepended to script). Defaults to "python3".
         framework (str): The framework to use for the training script. Defaults to FrameworkType.TENSORFLOW.
         server_expected_format (str): What format to exchange the parameters between server and client.
         params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
-            DIFF means that only the difference is sent. Defaults to TransferType.FULL.
+            DIFF means that only the difference is sent. Must match aggregator_data_kind.
+            Defaults to TransferType.FULL.
         model_persistor: Custom model persistor. If None, TFModelPersistor will be used.
         per_site_config: Per-site configuration for the federated learning job. Dictionary mapping
             site names to configuration dicts. Each config dict can contain optional overrides:

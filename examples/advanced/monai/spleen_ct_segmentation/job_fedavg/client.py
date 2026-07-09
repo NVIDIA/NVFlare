@@ -20,6 +20,7 @@ from monai.fl.utils.exchange_object import ExchangeObject
 
 # (1) import nvflare client API
 import nvflare.client as flare
+from nvflare.app_common.abstract.fl_model import ParamsType
 from nvflare.app_opt.monai import decomposers
 from nvflare.client.tracking import SummaryWriter
 
@@ -94,6 +95,7 @@ def main():
         # Convert MONAI ExchangeObject back to NVFlare FLModel
         output_model = flare.FLModel(
             params=updated_weights.weights,
+            params_type=ParamsType.DIFF if args.send_weight_diff else ParamsType.FULL,
             metrics=updated_weights.statistics if updated_weights.statistics else {},
             meta={
                 "weight_type": updated_weights.weight_type.value if updated_weights.weight_type else "WEIGHTS",

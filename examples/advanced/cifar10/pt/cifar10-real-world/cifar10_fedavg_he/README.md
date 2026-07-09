@@ -137,6 +137,8 @@ The `job.py` script uses `FedAvgRecipeWithHE` which automatically configures HE 
 
 ```python
 from nvflare.app_opt.pt.recipes.fedavg_he import FedAvgRecipeWithHE
+from nvflare.apis.dxo import DataKind
+from nvflare.client.config import TransferType
 
 recipe = FedAvgRecipeWithHE(
     name="cifar10_fedavg_he",
@@ -147,6 +149,7 @@ recipe = FedAvgRecipeWithHE(
     model=ModerateCNN(),
     train_script="client.py",
     aggregator_data_kind=DataKind.WEIGHT_DIFF,
+    params_transfer_type=TransferType.DIFF,
     encrypt_layers=None  # None = encrypt all layers (default)
 )
 ```
@@ -300,4 +303,3 @@ This is expected! HE adds 2-3x overhead. For faster experiments without privacy 
 - [Secure Provisioning Guide](https://nvflare.readthedocs.io/en/main/programming_guide/provisioning_system.html)
 - [FedAvg Paper](https://arxiv.org/abs/1602.05629)
 - [TenSEAL Library](https://github.com/OpenMined/TenSEAL) - Used by NVFlare for HE
-

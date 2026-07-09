@@ -186,6 +186,9 @@ With the Recipe API, **there is no need to write custom server code**. The feder
 The `FedAvgRecipe` combines the client training script with DP parameters:
 
 ```python
+from nvflare.apis.dxo import DataKind
+from nvflare.client.config import TransferType
+
 recipe = FedAvgRecipe(
     name="hello-dp",
     min_clients=n_clients,
@@ -193,11 +196,19 @@ recipe = FedAvgRecipe(
     model=TabularMLP(input_dim=29, hidden_dims=[64, 32], output_dim=2),
     train_script="client.py",
     train_args=f"--batch_size {batch_size} --target_epsilon {target_epsilon} --n_clients {n_clients}",
+    aggregator_data_kind=DataKind.WEIGHT_DIFF,
+    params_transfer_type=TransferType.DIFF,
 )
 
 env = SimEnv(num_clients=n_clients)
 recipe.execute(env=env)
 ```
+
+DP-SGD protects each client's local training, while `TransferType.DIFF` sends only the
+DP-trained model change for server aggregation. The two update-kind settings are a pair:
+`aggregator_data_kind=DataKind.WEIGHT_DIFF` configures the server expectation and
+`params_transfer_type=TransferType.DIFF` configures the client output. A recipe with only
+one of these settings fails immediately with an actionable configuration error.
 
 ### Model Input Options
 
@@ -285,7 +296,7 @@ Differential Privacy involves a trade-off between privacy and model utility. The
 * **Model Distribution**: Global model sent to clients
 * **Local Training**: Each client trains with DP-SGD using Opacus
 * **Privacy Tracking**: Cumulative epsilon (ε) logged for each client
-* **Aggregation**: DP-trained models aggregated on server
+* **Aggregation**: DP-trained weight differences aggregated on server
 
 #### Completion
 * **Final Model**: Trained model with privacy guarantees

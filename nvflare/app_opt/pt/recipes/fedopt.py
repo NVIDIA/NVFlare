@@ -170,7 +170,12 @@ class FedOptRecipe(Recipe):
         self.initial_ckpt = v.initial_ckpt
 
         # Validate inputs using shared utilities
-        from nvflare.recipe.utils import ensure_config_type_dict, recipe_model_to_job_model, validate_ckpt
+        from nvflare.recipe.utils import (
+            ensure_config_type_dict,
+            recipe_model_to_job_model,
+            validate_ckpt,
+            validate_data_kind_transfer_type,
+        )
 
         validate_ckpt(self.initial_ckpt)
         if isinstance(self.model, dict):
@@ -194,6 +199,13 @@ class FedOptRecipe(Recipe):
         self.client_memory_gc_rounds = v.client_memory_gc_rounds
         self.cuda_empty_cache = v.cuda_empty_cache
         self.enable_tensor_disk_offload = v.enable_tensor_disk_offload
+        validate_data_kind_transfer_type(
+            data_kind=DataKind.WEIGHT_DIFF,
+            transfer_type=TransferType.DIFF,
+            recipe_name=type(self).__name__,
+            data_kind_arg="expected_data_kind",
+            aggregator=self.aggregator,
+        )
         if self.enable_tensor_disk_offload and self.server_expected_format != ExchangeFormat.PYTORCH:
             warnings.warn(
                 "enable_tensor_disk_offload=True only applies to streamed PyTorch tensors. "

@@ -19,6 +19,8 @@ from unittest.mock import patch
 import pytest
 from pydantic import ValidationError
 
+from nvflare.apis.dxo import DataKind
+
 
 @pytest.fixture
 def mock_file_system():
@@ -58,6 +60,17 @@ class TestSklearnFedAvgRecipe:
 
         assert recipe.name == "test_sklearn"
         assert recipe.job is not None
+
+    def test_weight_diff_rejected_because_clients_use_full_transfer(self, mock_file_system, base_recipe_params):
+        from nvflare.app_opt.sklearn.recipes.fedavg import SklearnFedAvgRecipe
+
+        with pytest.raises(ValueError, match="params_transfer_type=TransferType.DIFF"):
+            SklearnFedAvgRecipe(
+                name="test_sklearn_weight_diff",
+                model_params={"n_classes": 2},
+                aggregator_data_kind=DataKind.WEIGHT_DIFF,
+                **base_recipe_params,
+            )
 
     def test_model_path_parameter_accepted(self, mock_file_system, base_recipe_params):
         """Test that model_path argument is accepted."""
