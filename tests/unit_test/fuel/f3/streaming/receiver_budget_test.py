@@ -238,20 +238,27 @@ class TestMultiRefIdleEscape:
 
 
 class TestConcurrentSameIdCreation:
-    def test_owner_and_table_stay_consistent_under_concurrent_creation(self):
-        # P1 pin (reproduced by review): with registration and table insertion in separate
-        # critical sections, two concurrent same-id constructors could leave the live
-        # transaction without outcome ownership -- and record the retired transaction's
-        # DELETED outcome as if it were the live attempt.
+    def test_concurrent_same_id_creation_has_exactly_one_winner(self):
+        # P1 pin (reproduced by review, then simplified by design): tx_ids are
+        # attempt-scoped, so racing same-id constructors resolve to exactly ONE
+        # registered transaction (which owns its outcome slot) and clean ValueErrors
+        # for every loser -- no interleaving can separate the live transaction from
+        # its ownership, and no loser leaves any trace.
         import threading as th
 
         service = _make_service()
-        for _ in range(30):
+        for round_no in range(30):
+            tid = f"TX-RACE2-{round_no}"
             barrier = th.Barrier(2)
+            results = []
 
             def create():
                 barrier.wait()
-                service.new_transaction(cell=Mock(), timeout=10.0, num_receivers=1, tx_id="TX-RACE2")
+                try:
+                    service.new_transaction(cell=Mock(), timeout=10.0, num_receivers=1, tx_id=tid)
+                    results.append("won")
+                except ValueError:
+                    results.append("rejected")
 
             threads = [th.Thread(target=create) for _ in range(2)]
             for t in threads:
@@ -259,12 +266,12 @@ class TestConcurrentSameIdCreation:
             for t in threads:
                 t.join(5.0)
 
-            live = service._tx_table["TX-RACE2"]
+            assert sorted(results) == ["rejected", "won"], f"round {round_no}: {results}"
+            live = service._tx_table[tid]
             with service._outcome_lock:
-                owner = service._outcome_owners.get("TX-RACE2")
+                owner = service._outcome_owners.get(tid)
             assert owner is live, "the live transaction must own its outcome slot"
-            # the retired constructor's DELETED outcome must never be recorded for the id
-            assert service.get_transaction_outcome("TX-RACE2") is None
+            assert service.get_transaction_outcome(tid) is None
 
 
 class TestShutdownCreationAtomicity:

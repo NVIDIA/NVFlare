@@ -258,9 +258,13 @@ class TestProducerSide:
         old_terminal = _pull_to_terminal(service, rid, "r1", confirm_capable=True)
         old_nonce = serve_nonce(old_terminal)
 
-        # the transfer is retried: same tx_id, same ref_id -- a NEW life
-        service.new_transaction(cell=Mock(), timeout=10.0, num_receivers=1, tx_id="TX-LIFE")
-        rid2 = service.add_object("TX-LIFE", MockDownloadable([b"chunk"]), ref_id="R-LIFE")
+        # the transfer is retried as a NEW attempt (tx_ids are attempt-scoped, never
+        # reused) that re-serves the SAME ref_id -- the real pattern is PASS_THROUGH
+        # re-emission, where the ref_id was minted before registration and re-added.
+        # First retire the old attempt so the rid can be re-registered.
+        service.delete_transaction(tx1)
+        tx2 = service.new_transaction(cell=Mock(), timeout=10.0, num_receivers=1, tx_id="TX-LIFE-2")
+        rid2 = service.add_object(tx2, MockDownloadable([b"chunk"]), ref_id="R-LIFE")
         assert rid2 == rid
         new_terminal = _pull_to_terminal(service, rid, "r1", confirm_capable=True)  # new pending serve exists
 

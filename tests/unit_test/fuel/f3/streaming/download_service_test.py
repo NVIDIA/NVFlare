@@ -529,7 +529,6 @@ class TestDownloadService:
         # sanity: the owning transaction still records (guard does not over-drop)
         live_tx = Mock()
         live_tx.tid = "tx-live"
-        live_tx._record_forbidden = False  # Mock auto-attrs are truthy; a real live tx is not forbidden
         live_outcome = Mock()
         live_outcome.tx_id = "tx-live"
         live_outcome.expired.return_value = False

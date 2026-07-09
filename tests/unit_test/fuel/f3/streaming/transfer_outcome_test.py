@@ -201,67 +201,6 @@ class TestTransactionOutcome:
         with service._outcome_lock:
             assert tx_id not in service._outcome_owners, "ownership must be consumed"
 
-    def test_retry_waits_for_mid_settlement_generation(self):
-        """P1 pin: the monitor pops a finishing transaction from _tx_table BEFORE running
-        its callbacks; a retry reusing the tx_id in that gap must not take ownership until
-        that settlement fully completes. Generations are strictly serialized -- every
-        old-generation emission happens before the retry exists -- because the alternative
-        (gating emissions on a superseded flag) is an unwinnable check-then-emit race."""
-        from functools import partial
-        from unittest.mock import Mock
-
-        service = make_isolated_download_service()
-        service._tx_monitor = Mock()
-        cell = Mock()
-        events = []
-        cb_entered = threading.Event()
-        cb_release = threading.Event()
-
-        def slow_outcome_cb(outcome):
-            cb_entered.set()
-            cb_release.wait(10.0)  # hold settlement open while the retry tries to register
-            events.append("old_outcome_cb")
-
-        service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-MID", outcome_cb=slow_outcome_cb)
-        obj = _stub_obj()
-        service.add_object("TX-MID", obj)
-        with service._tx_lock:
-            old_tx = service._tx_table.pop("TX-MID")  # monitor termination step 1
-
-        settler = threading.Thread(
-            target=lambda: old_tx.transaction_done(
-                TransactionDoneStatus.FINISHED, on_outcome=partial(service._record_outcome, tx=old_tx)
-            )
-        )
-        retrier = threading.Thread(
-            target=lambda: (
-                service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-MID"),
-                events.append("retry_registered"),
-            )
-        )
-        try:
-            settler.start()
-            assert cb_entered.wait(5.0)
-
-            # the retry lands mid-settlement: it must block, not register
-            retrier.start()
-            retrier.join(0.5)
-            assert retrier.is_alive(), "retry must not take ownership while the old generation is settling"
-        finally:
-            cb_release.set()
-            settler.join(5.0)
-            retrier.join(5.0)
-        assert not retrier.is_alive()
-
-        # strict serialization: every old-generation emission precedes the retry
-        assert events == ["old_outcome_cb", "retry_registered"]
-        assert obj.released
-        # the old generation's recorded outcome was purged at retry registration
-        assert service.get_transaction_outcome("TX-MID") is None
-        with service._tx_lock:
-            with service._outcome_lock:
-                assert service._tx_table["TX-MID"] is service._outcome_owners["TX-MID"]
-
     def test_on_outcome_fires_after_callbacks_and_release(self):
         # settle-then-record: recording (which releases waiters) happens only after the
         # callback chain and source release complete, so an upper layer acting on
@@ -400,58 +339,111 @@ class TestServiceOutcomeTable:
         assert outcome.completed
         assert outcome.done_status == TransactionDoneStatus.DELETED
 
-    def test_reused_tx_id_does_not_surface_stale_outcome(self):
-        # retry with the same explicit tx_id (design: tx_id = transfer_id, retries reuse it)
+    def test_new_transaction_rejects_live_id(self):
+        """tx_ids are attempt-scoped: registering an id that names a LIVE transaction
+        raises immediately -- and, unlike the old retire-on-reuse design, the live
+        transaction is completely undisturbed (no callbacks, no release, still servable)."""
         from unittest.mock import Mock
 
         service = make_isolated_download_service()
-        service._tx_monitor = Mock()  # suppress real monitor thread start
+        service._tx_monitor = Mock()
         cell = Mock()
-        try:
-            first = service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-REUSE")
-            service.delete_transaction(first)
-            assert service.get_transaction_outcome("TX-REUSE") is not None
+        done, outcome_cbs = [], []
+        service.new_transaction(
+            cell=cell,
+            timeout=10.0,
+            num_receivers=1,
+            tx_id="TX-DUP",
+            transaction_done_cb=lambda tid, status, base_objs, **kw: done.append(status),
+            outcome_cb=lambda outcome: outcome_cbs.append(outcome),
+        )
+        obj = _stub_obj()
+        rid = service.add_object("TX-DUP", obj)
 
-            second = service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-REUSE")
-            assert second == "TX-REUSE"
-            # the stale terminal outcome of the previous owner is purged
-            assert service.get_transaction_outcome("TX-REUSE") is None
-        finally:
-            service.shutdown()
+        with pytest.raises(ValueError, match="already in use"):
+            service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-DUP")
 
-    def test_reusing_tx_id_from_own_settlement_callback_raises(self):
-        # a settlement callback that synchronously retries its own tx_id would deadlock
-        # (the retry must wait for a settlement that cannot complete until the callback
-        # returns), so it gets an immediate error instead
+        # the duplicate attempt left no trace on the live transaction
+        assert rid in service._ref_table
+        assert not obj.released
+        assert done == [] and outcome_cbs == []
+        with service._tx_lock:
+            with service._outcome_lock:
+                assert service._tx_table["TX-DUP"] is service._outcome_owners["TX-DUP"]
+
+    def test_new_transaction_rejects_settling_and_receipted_id(self):
+        """The duplicate check covers the id's whole lifetime: live (above), SETTLING
+        (popped from _tx_table, ownership not yet consumed), and RECEIPTED (outcome
+        retained for TX_OUTCOME_TTL). Only receipt expiry frees a used id."""
+        from functools import partial
         from unittest.mock import Mock
 
         service = make_isolated_download_service()
-        service._tx_monitor = Mock()  # suppress real monitor thread start
+        service._tx_monitor = Mock()
         cell = Mock()
-        errors = []
+        service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-LIFE")
+        with service._tx_lock:
+            old_tx = service._tx_table.pop("TX-LIFE")  # monitor termination step 1
 
-        def retry_inline(outcome):
+        # mid-settlement: ownership still registered
+        with pytest.raises(ValueError, match="already in use"):
+            service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-LIFE")
+
+        old_tx.transaction_done(TransactionDoneStatus.FINISHED, on_outcome=partial(service._record_outcome, tx=old_tx))
+
+        # receipted: the verdict is retained and the id stays excluded
+        assert service.get_transaction_outcome("TX-LIFE") is not None
+        with pytest.raises(ValueError, match="already in use"):
+            service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-LIFE")
+
+        # receipt expiry (TTL) frees the id -- checked INLINE by new_transaction, so an
+        # expired-but-unswept receipt does not stretch the exclusion window
+        recorded = service.get_transaction_outcome("TX-LIFE")
+        assert recorded is not None
+        with service._outcome_lock:
+            service._tx_outcomes["TX-LIFE"] = dataclasses.replace(
+                recorded, timestamp=recorded.timestamp - service.TX_OUTCOME_TTL - 1
+            )
+        assert service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-LIFE") == "TX-LIFE"
+
+    def test_settlement_callback_can_create_transactions_but_not_its_own_id(self):
+        """Settlement runs outside all service locks, so callbacks may freely call back
+        in and create NEW transactions; recreating the settling transaction's own id is
+        rejected like any other in-use id (its ownership is consumed only after the
+        callbacks, in on_outcome)."""
+        from unittest.mock import Mock
+
+        service = make_isolated_download_service()
+        service._tx_monitor = Mock()
+        cell = Mock()
+        errors, created = [], []
+
+        def cb(outcome):
             try:
-                service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-REENT")
-            except RuntimeError as e:
+                service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-SELF")
+            except ValueError as e:
                 errors.append(str(e))
+            created.append(service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-OTHER"))
 
-        service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-REENT", outcome_cb=retry_inline)
-        service.delete_transaction("TX-REENT")
-        assert len(errors) == 1 and "settlement callback" in errors[0]
+        service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-SELF", outcome_cb=cb)
+        service.delete_transaction("TX-SELF")
 
-    def test_dead_settled_owner_is_reclaimed(self):
-        """Falsification pin (P-S3): if outcome recording itself fails, the generation is
-        settled (event set) but its ownership was never consumed. A retry must reclaim
-        that dead slot -- before the fix it hot-spun forever, because Event.wait returns
-        True immediately for a set event so the bounded-wait escape never fired."""
+        assert len(errors) == 1 and "already in use" in errors[0]
+        assert created == ["TX-OTHER"]
+        with service._tx_lock:
+            assert "TX-OTHER" in service._tx_table
+
+    def test_recording_failure_leaves_id_unusable_and_shutdown_frees_waiters(self):
+        """If outcome recording itself fails abnormally, ownership is never consumed:
+        the id stays excluded (fail-safe -- fresh uuids never collide with it) and its
+        waiter is released by shutdown, the terminal never-hang backstop."""
         from unittest.mock import Mock
 
         service = make_isolated_download_service()
         service._tx_monitor = Mock()
         cell = Mock()
         service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-DEAD")
-        stranded_waiter = service.get_transfer_waiter("TX-DEAD")
+        stranded = service.get_transfer_waiter("TX-DEAD")
 
         def exploding_record(outcome, tx):
             raise RuntimeError("recording blew up")
@@ -461,126 +453,50 @@ class TestServiceOutcomeTable:
             service.delete_transaction("TX-DEAD")  # settles; recording fails; owner never consumed
         finally:
             del service._record_outcome  # restore the inherited classmethod
-        with service._outcome_lock:
-            assert "TX-DEAD" in service._outcome_owners, "precondition: dead owner still registered"
-        assert not stranded_waiter.done(), "precondition: the dead generation's waiter is stranded"
+        assert not stranded.done()
+        with pytest.raises(ValueError, match="already in use"):
+            service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-DEAD")
 
-        registered = []
-        retrier = threading.Thread(
-            target=lambda: registered.append(
-                service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-DEAD")
-            )
-        )
-        retrier.start()
-        retrier.join(5.0)
-        assert not retrier.is_alive(), "retry must reclaim a settled-but-unconsumed owner, not spin"
-        assert registered == ["TX-DEAD"]
-        with service._tx_lock:
-            with service._outcome_lock:
-                assert service._tx_table["TX-DEAD"] is service._outcome_owners["TX-DEAD"]
-        # the dead generation's waiters are abandoned with None at reclaim (its verdict
-        # was lost) -- NOT inherited and later resolved with the retry's outcome
-        assert stranded_waiter.done() and stranded_waiter.outcome is None
+        service.shutdown()
+        assert stranded.done() and stranded.outcome is None
 
-    def test_shutdown_settlement_serializes_same_id_retry(self):
-        """Falsification pin (P-S4): shutdown used to clear ownership markers BEFORE its
-        deferred settlements ran, so a same-id retry landing in that window found the id
-        free and returned while the old generation's emissions were still to come.
-        Ownership markers now survive until each settlement consumes them."""
+    def test_waiter_during_shutdown_settlement_window_resolves_immediately(self):
+        """shutdown() clears ownership atomically with the table teardown, so a
+        get_transfer_waiter call landing in the deferred-settlement window finds the
+        id unknown and resolves None IMMEDIATELY -- it never parks, so it can never
+        be stranded by the settlements still running."""
         from unittest.mock import Mock
 
         service = make_isolated_download_service()
         service._tx_monitor = Mock()
         cell = Mock()
-        events = []
         cb_entered = threading.Event()
         cb_release = threading.Event()
 
         def gated_done_cb(tid, status, base_objs, **kw):
             cb_entered.set()
             cb_release.wait(10.0)
-            events.append("old_done_cb")
 
         service.new_transaction(
-            cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-SHUT", transaction_done_cb=gated_done_cb
+            cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-WIN", transaction_done_cb=gated_done_cb
         )
         shutter = threading.Thread(target=service.shutdown)
-        retrier = threading.Thread(
-            target=lambda: (
-                service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-SHUT"),
-                events.append("retry_registered"),
-            )
-        )
         try:
             shutter.start()
-            assert cb_entered.wait(5.0)  # shutdown is now mid-settlement, outside its locks
+            assert cb_entered.wait(5.0)  # locked teardown done; deferred settlement in flight
 
-            retrier.start()
-            retrier.join(0.5)
-            assert retrier.is_alive(), "retry must serialize behind shutdown's in-flight settlement"
+            waiter = service.get_transfer_waiter("TX-WIN")
+            assert waiter.done() and waiter.outcome is None, "window waiter must resolve immediately"
         finally:
             cb_release.set()
             shutter.join(5.0)
-            retrier.join(5.0)
-        assert not retrier.is_alive()
-        assert events == ["old_done_cb", "retry_registered"]
-        # shutdown still drops the old generation's verdict (nothing records after shutdown)
-        # while the post-shutdown registration owns the slot cleanly
-        with service._tx_lock:
-            with service._outcome_lock:
-                assert service._tx_table["TX-SHUT"] is service._outcome_owners["TX-SHUT"]
-
-    def test_hung_retirement_of_live_transaction_fails_bounded(self):
-        """P1 pin: retiring a LIVE prior transaction used to settle it inline on the
-        caller's thread, so a hung callback in the old generation hung the retry forever
-        -- the settlement bound only covered generations already settling elsewhere.
-        Retirement now settles on its own thread and the retry takes the same bounded
-        wait as any mid-settlement predecessor."""
-        from unittest.mock import Mock
-
-        service = make_isolated_download_service()
-        service._tx_monitor = Mock()
-        service.SETTLEMENT_WAIT_TIMEOUT = 0.3
-        cell = Mock()
-        cb_release = threading.Event()
-
-        def hung_done_cb(tid, status, base_objs, **kw):
-            cb_release.wait(10.0)
-
-        service.new_transaction(
-            cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-HUNG", transaction_done_cb=hung_done_cb
-        )
-        errors = []
-
-        def retry():
-            try:
-                service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-HUNG")
-            except RuntimeError as e:
-                errors.append(str(e))
-
-        retrier = threading.Thread(target=retry)
-        try:
-            retrier.start()
-            retrier.join(5.0)
-            assert not retrier.is_alive(), "retry must fail after the bound, not hang on the hung retirement"
-            assert len(errors) == 1 and "did not settle" in errors[0]
-        finally:
-            cb_release.set()
-        # once the abandoned settlement eventually completes, the id is usable again
-        for _ in range(50):
-            with service._outcome_lock:
-                consumed = "TX-HUNG" not in service._outcome_owners
-            if consumed:
-                break
-            time.sleep(0.1)
-        assert service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-HUNG") == "TX-HUNG"
+        assert not shutter.is_alive()
 
     def test_inflight_budget_pass_drains_before_settlement(self):
-        """P1 pin: the monitor re-checks table identity, releases _tx_lock, then runs
-        budget enforcement -- a retry could retire and settle the transaction while
-        enforcement was mid-flight, and enforcement then emitted FAILED terminal
-        progress under the reused tx_id. Operations now register with the activity
-        gate and settlement drains them before emitting or registering the retry."""
+        """The monitor re-checks table identity, releases _tx_lock, then runs budget
+        enforcement outside it. Settlement drains such in-flight operations (activity
+        gate) before snapshotting the outcome: the enforcement's verdicts are COUNTED
+        in the receipt, and none of its emissions land after the transaction settled."""
         from unittest.mock import Mock
 
         service = make_isolated_download_service()
@@ -603,146 +519,36 @@ class TestServiceOutcomeTable:
             receiver_ids=("r1",),
             receiver_acquire_timeout=5.0,
             progress_cb=lambda **kw: events.append(("old_progress", kw.get("state"))),
+            outcome_cb=lambda outcome: events.append("outcome_recorded"),
         )
         obj = _stub_obj()
         obj.downloaded_to_one = gated_downloaded_to_one
         service.add_object("TX-BUDGET", obj)
 
         monitor = threading.Thread(target=run_monitor_once, args=(service,), kwargs={"now": time.time() + 100.0})
-        retrier = threading.Thread(
-            target=lambda: (
-                service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-BUDGET"),
-                events.append("retry_registered"),
-            )
-        )
+        deleter = threading.Thread(target=service.delete_transaction, args=("TX-BUDGET",))
         try:
             monitor.start()
             assert cb_entered.wait(5.0), "budget enforcement must have finalized r1 as FAILED"
 
-            # the retry lands while enforcement is mid-flight: it must drain first
-            retrier.start()
-            retrier.join(0.5)
-            assert retrier.is_alive(), "retry must not register while a budget pass is in flight"
+            # settlement lands while enforcement is mid-flight: it must drain first
+            deleter.start()
+            deleter.join(0.5)
+            assert deleter.is_alive(), "settlement must not proceed while a budget pass is in flight"
         finally:
             cb_release.set()
             monitor.join(5.0)
-            retrier.join(5.0)
-        assert not retrier.is_alive()
+            deleter.join(5.0)
+        assert not deleter.is_alive()
 
-        # every old-generation emission -- including enforcement's FAILED terminal
-        # progress -- happened strictly before the retry registered
-        retry_at = events.index("retry_registered")
-        old_emissions = [i for i, e in enumerate(events) if e != "retry_registered"]
-        assert old_emissions and all(i < retry_at for i in old_emissions), f"stale emission after retry: {events}"
-        assert ("old_progress", TransferProgressState.FAILED) in events
-
-    def test_waiter_parked_during_shutdown_settlement_window_resolves(self):
-        """P1 pin: shutdown resolves the waiters it sees and keeps ownership markers for
-        serialization -- but a get_transfer_waiter call in the settlement window (after
-        shutdown's locked teardown, before the deferred settlement consumes ownership)
-        found the marker, parked, and hung forever: the record-forbidden branch consumed
-        ownership without draining waiters. Every ownership-consuming path drains now."""
-        from unittest.mock import Mock
-
-        service = make_isolated_download_service()
-        service._tx_monitor = Mock()
-        cell = Mock()
-        cb_entered = threading.Event()
-        cb_release = threading.Event()
-
-        def gated_done_cb(tid, status, base_objs, **kw):
-            cb_entered.set()
-            cb_release.wait(10.0)
-
-        service.new_transaction(
-            cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-WIN", transaction_done_cb=gated_done_cb
-        )
-        shutter = threading.Thread(target=service.shutdown)
-        try:
-            shutter.start()
-            assert cb_entered.wait(5.0)  # locked teardown done; deferred settlement in flight
-
-            # the ownership marker is still visible, so this waiter parks instead of
-            # resolving immediately -- it must be drained when settlement consumes
-            # ownership, not stranded
-            waiter = service.get_transfer_waiter("TX-WIN")
-            assert not waiter.done(), "precondition: the waiter parked inside the window"
-        finally:
-            cb_release.set()
-            shutter.join(5.0)
-        outcome = waiter.wait(timeout=5.0)
-        assert waiter.done(), "window waiter must never hang past shutdown settlement"
-        assert outcome is None, "shutdown drops verdicts: the window waiter resolves to None"
-
-    def test_retry_gives_up_if_previous_generation_never_settles(self):
-        # ownership was taken but settlement never runs (a hung terminator): a retry
-        # must fail loudly after the bounded wait, never register ambiguously
-        from unittest.mock import Mock
-
-        service = make_isolated_download_service()
-        service._tx_monitor = Mock()  # suppress real monitor thread start
-        cell = Mock()
-        service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-STUCK")
-        with service._tx_lock:
-            service._tx_table.pop("TX-STUCK")  # popped for termination; settlement never follows
-
-        service.SETTLEMENT_WAIT_TIMEOUT = 0.2
-        with pytest.raises(RuntimeError, match="did not settle"):
-            service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-STUCK")
-        # and it did not register: the stuck generation still owns the slot
-        with service._tx_lock:
-            assert "TX-STUCK" not in service._tx_table
-
-    def test_reusing_active_tx_id_retires_prior_transaction(self):
-        # reusing a tx_id while the prior transaction is still LIVE must retire it,
-        # not orphan it: a plain _tx_table overwrite would leave the old refs servable
-        # in _ref_table forever (the monitor only sees _tx_table) and never release
-        # the old sources via transaction_done
-        from unittest.mock import Mock
-
-        service = make_isolated_download_service()
-        service._tx_monitor = Mock()  # suppress real monitor thread start
-        cell = Mock()
-        done = []
-        try:
-            outcome_cbs = []
-            first = service.new_transaction(
-                cell=cell,
-                timeout=10.0,
-                num_receivers=1,
-                tx_id="TX-DUP",
-                transaction_done_cb=lambda tid, status, base_objs, **kw: done.append((tid, status)),
-                outcome_cb=lambda outcome: outcome_cbs.append(outcome),
-            )
-            obj = _stub_obj()
-            rid = service.add_object(first, obj)
-            assert rid in service._ref_table
-            gen1_waiter = service.get_transfer_waiter(first)
-
-            second = service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-DUP")
-            assert second == "TX-DUP"
-
-            # waiters bind to the generation that records while they wait: the retired
-            # generation resolved this waiter with its own (non-completed) verdict
-            # before the retry registered
-            gen1_outcome = gen1_waiter.wait(timeout=1.0)
-            assert gen1_outcome is not None and not gen1_outcome.completed
-
-            # the prior live transaction was retired and fully settled BEFORE the retry
-            # registered: refs unservable, sources released, and ALL its terminal
-            # emissions -- cleanup and outcome alike -- ran while the tx_id still
-            # unambiguously named it (generations are strictly serialized)
-            assert rid not in service._ref_table
-            assert obj.released
-            assert done == [("TX-DUP", TransactionDoneStatus.DELETED)]
-            assert len(outcome_cbs) == 1 and not outcome_cbs[0].completed
-            # its terminal outcome does not shadow the live retry
-            assert service.get_transaction_outcome("TX-DUP") is None
-            # the live tx is the new owner
-            assert service._tx_table["TX-DUP"] is service._outcome_owners["TX-DUP"]
-            assert service._tx_table["TX-DUP"] is not None
-        finally:
-            service.shutdown()
+        # the enforcement's emissions all precede outcome recording, and its verdict
+        # was counted: r1 books as FAILED in the receipt
+        recorded_at = events.index("outcome_recorded")
+        assert events.index("old_downloaded_to_one") < recorded_at
+        assert events.index(("old_progress", TransferProgressState.FAILED)) < recorded_at
+        outcome = service.get_transaction_outcome("TX-BUDGET")
+        assert outcome is not None and not outcome.completed
+        assert outcome.refs[0].receiver_statuses.get("r1") == DownloadStatus.FAILED
 
     def test_unknown_transaction_has_no_outcome(self):
         service = make_isolated_download_service()

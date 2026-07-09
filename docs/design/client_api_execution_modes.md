@@ -501,9 +501,12 @@ For Cell/FOBS-backed streaming, the Client API backend should set:
 
 - `MessageHeaderKey.MSG_ROOT_ID = transfer_id`
 - `MessageHeaderKey.MSG_ROOT_TTL = transfer_timeout`
-- DownloadService `tx_id = transfer_id` when a single transaction is used
+- DownloadService transaction ids are **attempt-scoped and never reused** (duplicate
+  registration raises): each attempt gets a fresh `download_tx_id`, and the manifest
+  carries the `transfer_id -> download_tx_id/download_ref_id` mapping. `transfer_id`
+  is the stable cross-attempt identity and never doubles as an F3 transaction id.
 
-If multiple DownloadService transactions are needed, the manifest must carry the mapping from transfer_id to all download_tx_id and download_ref_id values.
+The manifest must carry the mapping from transfer_id to all download_tx_id and download_ref_id values (one or many transactions alike).
 
 **Result send state machine.** The happy path runs down the left; any state can branch to a terminal failure on the right. The producer (trainer) is held alive until a terminal state is reached.
 
@@ -548,6 +551,7 @@ The producer-facing wait is then an awaitable facade over those signals: `flare.
 - The executor must treat duplicate RESULT_READY messages as idempotent.
 - If the result was already accepted, reply with the current state rather than creating a second result or second transfer.
 - Payload download retries happen inside the data-plane mechanism and must not create a new result_id.
+- A re-offered payload transfer (transfer-level retry) is a NEW DownloadService transaction under the same transfer_id; F3 tx_ids are attempt-scoped and are never reused across attempts.
 - TASK_READY redelivery is idempotent by task id (see Control Protocol).
 
 **Failure and timeout rules:**
