@@ -46,8 +46,8 @@ nvflare deploy prepare \
 ```
 
 The prepared kits include `startup/start_docker.sh`, Docker launcher resources,
-and a `local/study_data.yaml` template. The generated start script creates the
-Docker network if needed.
+and a `local/study_runtime.yaml` template. The generated start script creates
+the Docker network if needed.
 
 ## Step 3: Add /etc/hosts entries (if needed)
 
