@@ -752,7 +752,7 @@ def test_stage_k8_creates_configmap_secret_and_patches_chart(tmp_path, capsys, m
     assert "next_step: Start the server/client parent pod with the helm_command." in out
     assert f"helm_command: helm upgrade --install site-1 {output / 'helm_chart'} --namespace flare" in out
     assert "cleanup_step: After Helm uninstall, remove the staged credentials with the cleanup_command." in out
-    assert f"nvflare deploy k8s unstage {output}" in out
+    assert f"cleanup_command: nvflare deploy k8s unstage {output} --kubectl kubectl" in out
 
 
 def test_stage_k8_uses_explicit_resource_names_and_namespace(tmp_path, capsys, monkeypatch):
@@ -832,7 +832,7 @@ def test_unstage_k8_deletes_staged_objects_and_clears_chart_values(tmp_path, cap
         "startup": {"secretName": None, "items": []},
     }
     assert "status: unstaged" in out
-    assert "startup_secret: nvflare-startup-site-1" in out
+    assert "startup_secret" not in out
 
 
 def test_unstage_k8_uses_recorded_custom_names_namespace_and_oc(tmp_path, capsys, monkeypatch):
@@ -930,7 +930,7 @@ def test_unstage_k8_reports_kubectl_failure_and_keeps_retry_state(tmp_path, caps
 
     err = capsys.readouterr().err
     assert "KUBECTL_FAILED" in err
-    assert "kubectl delete secret/nvflare-startup-site-1 configmap/nvflare-local-site-1" in err
+    assert "kubectl delete 'secret/<staged-name>' configmap/nvflare-local-site-1" in err
     assert "boom" in err
     values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
     assert values["workspaceConfig"]["namespace"] == "nvflare"
@@ -959,7 +959,7 @@ def test_unstage_k8_rejects_target_that_differs_from_recorded_state(tmp_path, ca
         unstage_k8_deployment(_unstage_k8_args(output, namespace="wrong-ns"))
 
     err = capsys.readouterr().err
-    assert "does not match the staged value 'recorded-ns'" in err
+    assert "does not match the value recorded by stage" in err
     assert calls == []
     values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
     assert values["workspaceConfig"]["namespace"] == "recorded-ns"
@@ -1080,7 +1080,7 @@ def test_stage_k8_reuses_recorded_bindings_and_rejects_changes(tmp_path, capsys,
         stage_k8_deployment(_stage_k8_args(output, startup_secret="different-startup"))
 
     err = capsys.readouterr().err
-    assert "already staged with startup Secret 'manual-startup'" in err
+    assert "already staged with a different startup Secret" in err
     assert "deploy k8 unstage" in err
     assert calls == []
 

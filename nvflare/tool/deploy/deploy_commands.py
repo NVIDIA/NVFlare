@@ -227,7 +227,7 @@ def stage_k8_deployment(args) -> None:
     _kubectl_apply(_configmap_manifest(local_configmap, namespace, local_bundle["data"]), kubectl)
     _kubectl_apply(_secret_manifest(startup_secret, namespace, startup_bundle["data"]), kubectl)
     helm_command = _k8_stage_helm_command(kit, namespace)
-    cleanup_command = _k8_unstage_command(kit, namespace, local_configmap, startup_secret, kubectl)
+    cleanup_command = _k8_unstage_command(kit, kubectl)
 
     output_ok(
         {
@@ -254,17 +254,25 @@ def unstage_k8_deployment(args) -> None:
 
     # Delete the credential-bearing Secret first. Passing both exact
     # kind/name references in one command lets kubectl attempt both deletions.
-    _kubectl(
-        [
-            kubectl,
-            "delete",
-            f"secret/{startup_secret}",
-            f"configmap/{local_configmap}",
-            "--namespace",
-            namespace,
-            "--ignore-not-found=true",
-        ]
-    )
+    delete_cmd = [
+        kubectl,
+        "delete",
+        f"secret/{startup_secret}",
+        f"configmap/{local_configmap}",
+        "--namespace",
+        namespace,
+        "--ignore-not-found=true",
+    ]
+    error_cmd = [
+        kubectl,
+        "delete",
+        "secret/<staged-name>",
+        f"configmap/{local_configmap}",
+        "--namespace",
+        namespace,
+        "--ignore-not-found=true",
+    ]
+    _kubectl(delete_cmd, error_cmd=error_cmd)
     _clear_k8_stage_values(kit, namespace, local_configmap, startup_secret)
 
     output_ok(
@@ -273,7 +281,6 @@ def unstage_k8_deployment(args) -> None:
             "namespace": namespace,
             "prepared_kit": str(kit),
             "local_configmap": local_configmap,
-            "startup_secret": startup_secret,
             "helm_values": str(kit / HELM_CHART_DIR / "values.yaml"),
             "kubectl": kubectl,
         }
@@ -414,7 +421,7 @@ def _reject_k8_stage_binding_change(label: str, staged_value: Any, requested_val
     if staged_value and requested_value and staged_value != requested_value:
         _fail(
             "INVALID_ARGS",
-            f"Prepared kit is already staged with {label} {staged_value!r}.",
+            f"Prepared kit is already staged with a different {label}.",
             "Run nvflare deploy k8 unstage before changing staged resource names or namespace.",
         )
 
@@ -423,7 +430,7 @@ def _reject_k8_unstage_target_mismatch(label: str, staged_value: Any, requested_
     if staged_value and requested_value and staged_value != requested_value:
         _fail(
             "INVALID_ARGS",
-            f"Requested {label} {requested_value!r} does not match the staged value {staged_value!r}.",
+            f"Requested {label} does not match the value recorded by stage.",
             "Omit the override to use the target recorded by stage.",
         )
 
@@ -581,7 +588,7 @@ def _k8_stage_helm_command(kit: Path, namespace: str) -> str:
     return _format_command(["helm", "upgrade", "--install", release_name, str(chart_dir), "--namespace", namespace])
 
 
-def _k8_unstage_command(kit: Path, namespace: str, local_configmap: str, startup_secret: str, kubectl: str) -> str:
+def _k8_unstage_command(kit: Path, kubectl: str) -> str:
     return _format_command(
         [
             "nvflare",
@@ -589,12 +596,6 @@ def _k8_unstage_command(kit: Path, namespace: str, local_configmap: str, startup
             "k8s",
             "unstage",
             str(kit),
-            "--namespace",
-            namespace,
-            "--local-configmap",
-            local_configmap,
-            "--startup-secret",
-            startup_secret,
             "--kubectl",
             kubectl,
         ]
@@ -1545,7 +1546,9 @@ def _kubectl_apply(manifest: dict[str, Any], kubectl: str) -> subprocess.Complet
     return _kubectl(["kubectl", "apply", "-f", "-"], input_text=payload)
 
 
-def _kubectl(cmd: list[str], input_text: str | None = None) -> subprocess.CompletedProcess:
+def _kubectl(
+    cmd: list[str], input_text: str | None = None, error_cmd: list[str] | None = None
+) -> subprocess.CompletedProcess:
     try:
         result = subprocess.run(
             cmd,
@@ -1564,7 +1567,7 @@ def _kubectl(cmd: list[str], input_text: str | None = None) -> subprocess.Comple
 
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "").strip()
-        message = f"Kubernetes command failed: {_format_command(cmd)}"
+        message = f"Kubernetes command failed: {_format_command(error_cmd if error_cmd is not None else cmd)}"
         if detail:
             message = f"{message}\n{detail}"
         _fail("KUBECTL_FAILED", message, "Check kubectl access, namespace, and resource quotas.")

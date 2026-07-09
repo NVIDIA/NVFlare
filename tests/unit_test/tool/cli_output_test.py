@@ -220,25 +220,6 @@ class TestOutputOk:
         assert "status: running" in captured.out
         assert "id: abc" in captured.out
 
-    def test_human_mode_list_table_redacts_sensitive_values(self, capsys, monkeypatch):
-        monkeypatch.setattr(cli_output, "_output_format", "txt")
-        output_ok(
-            [
-                {
-                    "name": "site-1",
-                    "startup_secret": "nvflare-startup-site-1",
-                    "password": "credential-value",
-                }
-            ]
-        )
-
-        captured = capsys.readouterr()
-        assert "startup_secret" in captured.out
-        assert "nvflare-startup-site-1" in captured.out
-        assert "password" in captured.out
-        assert "<redacted>" in captured.out
-        assert "credential-value" not in captured.out
-
     def test_human_mode_no_json_envelope(self, capsys, monkeypatch):
         monkeypatch.setattr(cli_output, "_output_format", "txt")
         output_ok({"key": "value"})

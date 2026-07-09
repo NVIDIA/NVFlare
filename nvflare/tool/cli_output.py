@@ -222,9 +222,6 @@ def _render_table(data: Any) -> None:
             keys = list(safe_table_data[0].keys())
             widths = [max(len(k), max(len(str(r.get(k, ""))) for r in safe_table_data)) for k in keys]
             header = "  ".join(k.ljust(w) for k, w in zip(keys, widths))
-            # Safe: header contains only field names from recursively sanitized table data.
-            # codeql[py/clear-text-logging-sensitive-data]
-            # lgtm[py/clear-text-logging-sensitive-data]
             print(header)
             print("-" * len(header))
             for safe_table_row in safe_table_data:
