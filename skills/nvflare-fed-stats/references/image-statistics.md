@@ -10,8 +10,6 @@ the tabular template.
 `nvflare agent inspect <path> --format json` classifies image data:
 `target_type: image_dataset` with a `dataset` block carrying the extension
 census, per-site file counts, and a sampled `pixel_depth` (e.g. `uint8`).
-Check the census first: PNG/JPEG/BMP/TIFF proceed; `.dcm`/`.nii` formats
-are reported as not yet supported (see Loaders And Dependencies).
 Route on that output rather than re-deriving it; `counts_approximate:
 true` means the walk hit its file limit — verify site counts directly
 before bin-cap decisions. Datalist-JSON layouts may classify as
@@ -62,12 +60,10 @@ statistic_configs = {
 - PIL (Pillow) covers PNG/JPEG/BMP/TIFF and is the template default, with
   grayscale conversion before histogramming — state that policy in the
   report; per-channel statistics are not supported in this version.
-- DICOM and NIfTI are NOT supported in this version: they need dedicated
-  loaders (pydicom/nibabel/ITK) plus domain handling this skill does not
-  yet encode (Hounsfield rescale for CT, slice-vs-study count semantics).
-  When the dataset block's `file_census` shows `.dcm`/`.nii`/`.nii.gz`,
-  report the format as not yet supported — never improvise a loader or
-  histogram raw stored values as if they were calibrated intensities.
+- DICOM requires `pydicom` (or MONAI's ITK reader); NIfTI requires
+  `nibabel`. Preflight the import for the format actually present before
+  generating the job, exactly like the fastdigest rule: on failure, fail
+  closed with the product error, never silently skip files.
 
 ## Validation Specifics
 

@@ -31,8 +31,8 @@ no interaction, no user statistics code.
 Use when the user asks to compute statistics, data summaries, histograms,
 or quantiles across federated sites for tabular data (CSV, parquet, or any
 pandas-representable form) or image datasets (PNG/JPEG/BMP/TIFF folders;
-DICOM/NIfTI are not yet supported — report, never improvise a loader),
-with or without an accompanying README/notes or statistics script. Supported for tabular:
+DICOM/NIfTI with the matching loader dependency), with or without an
+accompanying README/notes or statistics script. Supported for tabular:
 count, sum, mean, stddev, var, histogram, quantile, and noise-protected
 min/max (variance and stddev are distinct — never substitute one for the
 other); for images: count, failure_count, and pixel-intensity histograms.
