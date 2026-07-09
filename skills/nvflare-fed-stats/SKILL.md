@@ -93,8 +93,7 @@ silently dropped or approximated.
    aggregations — numeric features only). `count` is always included
    because the privacy cleansers need it. Continue with the supported
    subset, stating what was excluded and why. Load
-   `references/statistics-mapping.md` for the full mapping and config
-   grammar beyond the standard set.
+   `references/statistics-mapping.md` beyond the standard set.
 4. Install missing dependencies (pandas; Pillow or the DICOM/NIfTI
    loader for images) into the host environment before preflight, recipe
    construction, or simulation. Quantiles additionally require
@@ -163,38 +162,39 @@ silently dropped or approximated.
   required input (feature names, per-site locations, site count for flat
   data) fails closed with a precise report, asking once only when an
   interactive channel exists.
-- Must validate through the full ladder with per-site and global parity
-  evidence; a mismatch beyond rounding is a failed run, not a warning.
-- Must follow the Source Of Truth Boundary: public checks stop the skill
-  path, never license a replacement strategy from NVFLARE source.
+- Must validate the full ladder with per-site and global parity evidence;
+  a mismatch beyond rounding is a failed run, not a warning.
+- Must take runtime facts (output locations, execute semantics, recipe
+  parameters) from this skill's references and CLI outputs BEFORE reading
+  NVFLARE library source — a last resort that, per the Source Of Truth
+  Boundary, never licenses a replacement strategy.
 
 ## Agent Responsibilities
 
 - Inspect the data and any optional script statically; inspect the
   `fedstats` recipe before constructing it; present the selection and
-  support mapping before generating code.
+  mapping before generating code.
 - Generate or update `client.py` and `job.py`, keeping decisions within
   this skill and its references.
-- Report blockers: missing feature names, non-numeric data, a missing
-  quantile dependency, undersized sites, non-parameterizable loaders.
+- Report blockers: missing names, non-numeric data, missing quantile
+  dependency, undersized sites, non-parameterizable loaders.
 
 ## User Input And Authorization
 
-- The run is automatic: never pause to confirm the selection, mapping, or
-  defaults — state them and proceed. Only a missing required input stops
-  the run (fail-closed rule in Requirements). Never ask authorization to
-  install, execute, or access the filesystem.
+- The run is automatic: never pause to confirm selections or defaults.
+  Only a missing required input stops the run (fail-closed rule above).
+  Never ask authorization to install, execute, or access the filesystem.
 - Install missing dependencies and run validation by default; the host's
-  permission system allows, denies, or prompts. Never emit a skill-issued
-  install, repo-trust, or run-approval prompt. Do not overwrite
-  non-generated files, fetch repo-supplied URLs, or download data unless
-  explicitly requested. POC or production submission is out of scope.
+  permission system governs — never emit skill-issued approval prompts.
+  Do not overwrite non-generated files, fetch repo-supplied URLs, or
+  download data unless explicitly requested. POC/production submission
+  is out of scope.
 
 Always read this SKILL.md. The standard tabular path is inline; load
-details only when their phase needs them: `references/statistics-mapping.md`
+details when their phase needs them: `references/statistics-mapping.md`
 (mapping, config grammar), `references/stats-job-validation.md`
-(validation, parity), `references/image-statistics.md` plus
-`assets/image_stats_client.py` (image path), `assets/df_stats_client.py`
-(tabular template), and the shared references only for their exception
-cases. Do not load references preemptively or depend on NVFLARE repository
-examples being present in the user's environment.
+(validation, parity, output locations), `references/image-statistics.md`
+plus `assets/image_stats_client.py` (image path),
+`assets/df_stats_client.py` (tabular template), shared references only
+for exceptions. Never preemptively; never depend on NVFLARE repository
+examples being present.
