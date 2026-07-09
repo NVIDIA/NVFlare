@@ -120,6 +120,7 @@ K8S_SECRET_NAME_MAX_LENGTH = 253
 HELM_RELEASE_NAME_MAX_LENGTH = 53
 DEFAULT_K8S_SERVER_SERVICE_NAME = "nvflare-server"
 K8_STAGE_VALUES_KEY = "workspaceConfig"
+K8_STAGE_NAMESPACE_KEY = "namespace"
 K8_STAGE_LOCAL_KEY = "local"
 K8_STAGE_STARTUP_KEY = "startup"
 K8_STAGE_OBJECT_NAME_MAX_LENGTH = 253
@@ -160,6 +161,7 @@ def prepare_deployment(args) -> None:
         )
     if output.exists() and not output.is_dir():
         _fail("INVALID_ARGS", f"Output path exists and is not a directory: {output}", "Choose a directory path.")
+    _reject_replacing_staged_k8_output(output)
 
     parent_dir = output.parent
     try:
@@ -212,16 +214,20 @@ def stage_k8_deployment(args) -> None:
     _warn_if_large_k8_object("ConfigMap", local_configmap, local_bundle["encoded_size"])
     _warn_if_large_k8_object("Secret", startup_secret, startup_bundle["encoded_size"])
 
-    _kubectl_apply(_configmap_manifest(local_configmap, namespace, local_bundle["data"]), kubectl)
-    _kubectl_apply(_secret_manifest(startup_secret, namespace, startup_bundle["data"]), kubectl)
+    # Record every cleanup target before changing the cluster. If apply only
+    # partially succeeds, ``unstage`` can still remove the exact objects.
     _patch_k8_stage_values(
         kit=kit,
+        namespace=namespace,
         local_configmap=local_configmap,
         local_items=local_bundle["items"],
         startup_secret=startup_secret,
         startup_items=startup_bundle["items"],
     )
+    _kubectl_apply(_configmap_manifest(local_configmap, namespace, local_bundle["data"]), kubectl)
+    _kubectl_apply(_secret_manifest(startup_secret, namespace, startup_bundle["data"]), kubectl)
     helm_command = _k8_stage_helm_command(kit, namespace)
+    cleanup_command = _k8_unstage_command(kit, namespace, local_configmap, startup_secret, kubectl)
 
     output_ok(
         {
@@ -235,6 +241,41 @@ def stage_k8_deployment(args) -> None:
             "kubectl": kubectl,
             "next_step": "Start the server/client parent pod with the helm_command.",
             "helm_command": helm_command,
+            "cleanup_step": "After Helm uninstall, remove the staged credentials with the cleanup_command.",
+            "cleanup_command": cleanup_command,
+        }
+    )
+
+
+def unstage_k8_deployment(args) -> None:
+    kit, namespace, local_configmap, startup_secret = _resolve_k8_unstage_inputs(args)
+    _validate_k8_unstage_inputs(kit, namespace, local_configmap, startup_secret)
+    kubectl = _resolve_kubectl(args)
+
+    # Delete the credential-bearing Secret first. Passing both exact
+    # kind/name references in one command lets kubectl attempt both deletions.
+    _kubectl(
+        [
+            kubectl,
+            "delete",
+            f"secret/{startup_secret}",
+            f"configmap/{local_configmap}",
+            "--namespace",
+            namespace,
+            "--ignore-not-found=true",
+        ]
+    )
+    _clear_k8_stage_values(kit, namespace, local_configmap, startup_secret)
+
+    output_ok(
+        {
+            "status": "unstaged",
+            "namespace": namespace,
+            "prepared_kit": str(kit),
+            "local_configmap": local_configmap,
+            "startup_secret": startup_secret,
+            "helm_values": str(kit / HELM_CHART_DIR / "values.yaml"),
+            "kubectl": kubectl,
         }
     )
 
@@ -256,6 +297,69 @@ def _resolve_prepare_inputs(args) -> tuple[Path, str | None, Path]:
 
 
 def _resolve_k8_stage_inputs(args) -> tuple[Path, str, str, str]:
+    kit = _resolve_k8_kit(args, "stage")
+    values = _load_k8_stage_values(kit)
+    stage_state = _read_k8_stage_state(values)
+    requested_namespace = getattr(args, "namespace", None)
+    requested_local_configmap = getattr(args, "local_configmap", None)
+    requested_startup_secret = getattr(args, "startup_secret", None)
+    if (
+        not requested_namespace
+        and not stage_state.get(K8_STAGE_NAMESPACE_KEY)
+        and (stage_state.get("local_configmap") or stage_state.get("startup_secret"))
+    ):
+        _fail(
+            "INVALID_ARGS",
+            "The existing staged resource names do not include their Kubernetes namespace.",
+            "Pass the original stage namespace with --namespace before restaging this legacy prepared kit.",
+        )
+    _reject_k8_stage_binding_change("namespace", stage_state.get(K8_STAGE_NAMESPACE_KEY), requested_namespace)
+    _reject_k8_stage_binding_change("local ConfigMap", stage_state.get("local_configmap"), requested_local_configmap)
+    _reject_k8_stage_binding_change("startup Secret", stage_state.get("startup_secret"), requested_startup_secret)
+
+    namespace = (
+        requested_namespace or stage_state.get(K8_STAGE_NAMESPACE_KEY) or _read_k8_launcher_namespace(kit) or "default"
+    )
+    local_configmap = requested_local_configmap or stage_state.get("local_configmap")
+    startup_secret = requested_startup_secret or stage_state.get("startup_secret")
+    if not local_configmap or not startup_secret:
+        default_local_configmap, default_startup_secret = _default_k8_stage_resource_names(kit, values)
+        local_configmap = local_configmap or default_local_configmap
+        startup_secret = startup_secret or default_startup_secret
+    return kit, namespace, local_configmap, startup_secret
+
+
+def _resolve_k8_unstage_inputs(args) -> tuple[Path, str, str, str]:
+    kit = _resolve_k8_kit(args, "unstage")
+    values = _load_k8_stage_values(kit)
+    stage_state = _read_k8_stage_state(values)
+    requested_namespace = getattr(args, "namespace", None)
+    requested_local_configmap = getattr(args, "local_configmap", None)
+    requested_startup_secret = getattr(args, "startup_secret", None)
+    _reject_k8_unstage_target_mismatch("namespace", stage_state.get(K8_STAGE_NAMESPACE_KEY), requested_namespace)
+    _reject_k8_unstage_target_mismatch("local ConfigMap", stage_state.get("local_configmap"), requested_local_configmap)
+    _reject_k8_unstage_target_mismatch("startup Secret", stage_state.get("startup_secret"), requested_startup_secret)
+
+    namespace = requested_namespace or stage_state.get(K8_STAGE_NAMESPACE_KEY)
+    local_configmap = requested_local_configmap or stage_state.get("local_configmap")
+    startup_secret = requested_startup_secret or stage_state.get("startup_secret")
+
+    if not namespace:
+        _fail(
+            "INVALID_ARGS",
+            "The staged Kubernetes namespace is not recorded in the prepared kit.",
+            "Pass the namespace used by stage with --namespace.",
+        )
+    if not local_configmap or not startup_secret:
+        _fail(
+            "INVALID_ARGS",
+            "The staged ConfigMap and Secret names are not recorded in the prepared kit.",
+            "Pass the exact staged names with --local-configmap and --startup-secret.",
+        )
+    return kit, namespace, local_configmap, startup_secret
+
+
+def _resolve_k8_kit(args, action: str) -> Path:
     positional_kit = getattr(args, "kit", None)
     flag_kit = getattr(args, "kit_flag", None)
     if positional_kit and flag_kit:
@@ -265,19 +369,63 @@ def _resolve_k8_stage_inputs(args) -> tuple[Path, str, str, str]:
         _fail(
             "INVALID_ARGS",
             "Missing prepared startup kit directory.",
-            "Run nvflare deploy k8 stage <prepared-kit-dir>.",
+            f"Run nvflare deploy k8 {action} <prepared-kit-dir>.",
+        )
+    return Path(kit_arg).expanduser().resolve()
+
+
+def _reject_replacing_staged_k8_output(output: Path) -> None:
+    if not (output / HELM_CHART_DIR / "values.yaml").is_file():
+        return
+
+    values = _load_k8_stage_values(output)
+    stage_state = _read_k8_stage_state(values)
+    if stage_state.get("local_configmap") or stage_state.get("startup_secret"):
+        _fail(
+            "OUTPUT_STAGED",
+            f"Prepared Kubernetes output still has staged resources: {output}",
+            f"After Helm uninstall, run nvflare deploy k8 unstage {output} before replacing this output.",
         )
 
-    kit = Path(kit_arg).expanduser().resolve()
-    values = _load_k8_stage_values(kit)
-    namespace = getattr(args, "namespace", None) or _read_k8_launcher_namespace(kit) or "default"
-    local_configmap = getattr(args, "local_configmap", None)
-    startup_secret = getattr(args, "startup_secret", None)
-    if not local_configmap or not startup_secret:
-        default_local_configmap, default_startup_secret = _default_k8_stage_resource_names(kit, values)
-        local_configmap = local_configmap or default_local_configmap
-        startup_secret = startup_secret or default_startup_secret
-    return kit, namespace, local_configmap, startup_secret
+
+def _read_k8_stage_state(values: dict[str, Any]) -> dict[str, Any]:
+    workspace_config = values.get(K8_STAGE_VALUES_KEY)
+    if workspace_config is None:
+        return {}
+    if not isinstance(workspace_config, dict):
+        _fail("INVALID_KIT", "helm_chart/values.yaml workspaceConfig must be a mapping.", "Fix the prepared chart.")
+
+    local = workspace_config.get(K8_STAGE_LOCAL_KEY) or {}
+    startup = workspace_config.get(K8_STAGE_STARTUP_KEY) or {}
+    if not isinstance(local, dict) or not isinstance(startup, dict):
+        _fail(
+            "INVALID_KIT",
+            "helm_chart/values.yaml workspaceConfig local/startup entries must be mappings.",
+            "Fix the prepared chart.",
+        )
+    return {
+        K8_STAGE_NAMESPACE_KEY: workspace_config.get(K8_STAGE_NAMESPACE_KEY),
+        "local_configmap": local.get("configMapName"),
+        "startup_secret": startup.get("secretName"),
+    }
+
+
+def _reject_k8_stage_binding_change(label: str, staged_value: Any, requested_value: Any) -> None:
+    if staged_value and requested_value and staged_value != requested_value:
+        _fail(
+            "INVALID_ARGS",
+            f"Prepared kit is already staged with {label} {staged_value!r}.",
+            "Run nvflare deploy k8 unstage before changing staged resource names or namespace.",
+        )
+
+
+def _reject_k8_unstage_target_mismatch(label: str, staged_value: Any, requested_value: Any) -> None:
+    if staged_value and requested_value and staged_value != requested_value:
+        _fail(
+            "INVALID_ARGS",
+            f"Requested {label} {requested_value!r} does not match the staged value {staged_value!r}.",
+            "Omit the override to use the target recorded by stage.",
+        )
 
 
 def _validate_k8_stage_inputs(kit: Path, namespace: str, local_configmap: str, startup_secret: str) -> None:
@@ -328,6 +476,36 @@ def _validate_k8_stage_inputs(kit: Path, namespace: str, local_configmap: str, s
         "startup Secret name",
         error_code="INVALID_ARGS",
         hint="Use a valid --startup-secret value.",
+    )
+
+
+def _validate_k8_unstage_inputs(kit: Path, namespace: str, local_configmap: str, startup_secret: str) -> None:
+    if not kit.is_dir():
+        _fail("INVALID_KIT", f"Prepared kit directory does not exist: {kit}", "Provide an existing prepared K8s kit.")
+    if not (kit / HELM_CHART_DIR / "values.yaml").is_file():
+        _fail(
+            "INVALID_KIT",
+            f"Missing Helm values file: {kit / HELM_CHART_DIR / 'values.yaml'}",
+            "Provide the prepared K8s kit used for staging.",
+        )
+    _validate_k8s_namespace(
+        {"namespace": namespace},
+        "namespace",
+        "deploy k8 unstage",
+        error_code="INVALID_ARGS",
+        hint="Use the namespace passed to stage.",
+    )
+    _validate_k8s_secret_name(
+        local_configmap,
+        "local ConfigMap name",
+        error_code="INVALID_ARGS",
+        hint="Use the exact ConfigMap name passed to stage.",
+    )
+    _validate_k8s_secret_name(
+        startup_secret,
+        "startup Secret name",
+        error_code="INVALID_ARGS",
+        hint="Use the exact Secret name passed to stage.",
     )
 
 
@@ -401,6 +579,26 @@ def _k8_stage_helm_command(kit: Path, namespace: str) -> str:
     release_name = _k8s_release_name(str(raw_name))
     chart_dir = kit / HELM_CHART_DIR
     return _format_command(["helm", "upgrade", "--install", release_name, str(chart_dir), "--namespace", namespace])
+
+
+def _k8_unstage_command(kit: Path, namespace: str, local_configmap: str, startup_secret: str, kubectl: str) -> str:
+    return _format_command(
+        [
+            "nvflare",
+            "deploy",
+            "k8s",
+            "unstage",
+            str(kit),
+            "--namespace",
+            namespace,
+            "--local-configmap",
+            local_configmap,
+            "--startup-secret",
+            startup_secret,
+            "--kubectl",
+            kubectl,
+        ]
+    )
 
 
 def _resolve_output_path(kit: Path, output_arg: str | None, runtime: str) -> Path:
@@ -1054,6 +1252,7 @@ def _write_server_helm_chart(
             }
         },
         "workspaceConfig": {
+            "namespace": None,
             "local": {"configMapName": None, "items": []},
             "startup": {"secretName": None, "items": []},
         },
@@ -1124,6 +1323,7 @@ def _write_client_helm_chart(
             }
         },
         "workspaceConfig": {
+            "namespace": None,
             "local": {"configMapName": None, "items": []},
             "startup": {"secretName": None, "items": []},
         },
@@ -1272,6 +1472,7 @@ def _secret_manifest(name: str, namespace: str, data: dict[str, str]) -> dict[st
 
 def _patch_k8_stage_values(
     kit: Path,
+    namespace: str,
     local_configmap: str,
     local_items: list[dict[str, str]],
     startup_secret: str,
@@ -1279,7 +1480,11 @@ def _patch_k8_stage_values(
 ) -> None:
     values_path = kit / HELM_CHART_DIR / "values.yaml"
     values = _load_k8_stage_values(kit)
-    workspace_config = values.setdefault(K8_STAGE_VALUES_KEY, {})
+    workspace_config = values.get(K8_STAGE_VALUES_KEY)
+    if workspace_config is None:
+        workspace_config = {}
+        values[K8_STAGE_VALUES_KEY] = workspace_config
+    workspace_config[K8_STAGE_NAMESPACE_KEY] = namespace
     workspace_config[K8_STAGE_LOCAL_KEY] = {
         "configMapName": local_configmap,
         "items": local_items,
@@ -1289,6 +1494,40 @@ def _patch_k8_stage_values(
         "items": startup_items,
     }
     _write_yaml(values_path, values)
+
+
+def _clear_k8_stage_values(kit: Path, namespace: str, local_configmap: str, startup_secret: str) -> None:
+    values_path = kit / HELM_CHART_DIR / "values.yaml"
+    values = _load_k8_stage_values(kit)
+    workspace_config = values.get(K8_STAGE_VALUES_KEY)
+    if not isinstance(workspace_config, dict):
+        return
+
+    changed = False
+    local = workspace_config.get(K8_STAGE_LOCAL_KEY)
+    if isinstance(local, dict) and local.get("configMapName") == local_configmap:
+        workspace_config[K8_STAGE_LOCAL_KEY] = {"configMapName": None, "items": []}
+        changed = True
+
+    startup = workspace_config.get(K8_STAGE_STARTUP_KEY)
+    if isinstance(startup, dict) and startup.get("secretName") == startup_secret:
+        workspace_config[K8_STAGE_STARTUP_KEY] = {"secretName": None, "items": []}
+        changed = True
+
+    local = workspace_config.get(K8_STAGE_LOCAL_KEY) or {}
+    startup = workspace_config.get(K8_STAGE_STARTUP_KEY) or {}
+    if (
+        isinstance(local, dict)
+        and isinstance(startup, dict)
+        and not local.get("configMapName")
+        and not startup.get("secretName")
+        and workspace_config.get(K8_STAGE_NAMESPACE_KEY) == namespace
+    ):
+        workspace_config[K8_STAGE_NAMESPACE_KEY] = None
+        changed = True
+
+    if changed:
+        _write_yaml(values_path, values)
 
 
 def _warn_if_large_k8_object(kind: str, name: str, encoded_size: int) -> None:
