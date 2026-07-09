@@ -149,6 +149,10 @@ Utility helpers:
    Add cross-site evaluation to a training recipe when the recipe/framework
    supports it.
 
+``add_final_global_evaluation(recipe, participating_clients=None, validation_timeout=6000)``
+   Add a final evaluation of a PyTorch recipe's persisted global model without
+   asking clients to submit their local models.
+
 Per-Site And Metadata Helpers
 -----------------------------
 

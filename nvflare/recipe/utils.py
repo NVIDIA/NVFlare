@@ -299,6 +299,66 @@ def add_experiment_tracking(
         recipe._add_to_client_apps(client_receiver, clients=clients, id="client_receiver")
 
 
+def add_final_global_evaluation(
+    recipe: Recipe,
+    participating_clients: Optional[List[str]] = None,
+    validation_timeout: int = 6000,
+) -> None:
+    """Evaluate a PyTorch recipe's final global model on selected clients.
+
+    Unlike full cross-site evaluation, this helper does not ask clients to
+    submit their local models. It locates the recipe's persisted global model
+    and sends only that model for validation after training.
+
+    Args:
+        recipe: PyTorch recipe to augment with final global model evaluation.
+        participating_clients: Optional client names to run validation. If not
+            provided, all clients connected when the controller starts are used.
+        validation_timeout: Timeout in seconds for validation tasks.
+
+    Raises:
+        ValueError: If the recipe is not PyTorch or has no model persistor.
+        RuntimeError: If a cross-site evaluation workflow is already configured.
+    """
+    from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
+    from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
+    from nvflare.app_opt.pt.file_model_locator import PTFileModelLocator
+    from nvflare.job_config.script_runner import FrameworkType
+
+    if getattr(recipe, "_cse_added", False) or _has_cross_site_eval_workflow(recipe.job):
+        raise RuntimeError("a cross-site evaluation workflow is already configured for this recipe")
+
+    if getattr(recipe, "framework", None) != FrameworkType.PYTORCH:
+        raise ValueError("final global evaluation currently supports PyTorch recipes only")
+
+    comp_ids = getattr(recipe.job, "comp_ids", None)
+    if not isinstance(comp_ids, dict):
+        raise ValueError("final global evaluation requires a recipe that tracks component IDs")
+
+    model_locator_id = comp_ids.get("locator_id", "")
+    if not model_locator_id:
+        persistor_id = comp_ids.get("persistor_id", "")
+        if not persistor_id:
+            raise ValueError("final global evaluation requires a PyTorch model persistor")
+        model_locator_id = recipe.job.to_server(
+            PTFileModelLocator(pt_persistor_id=persistor_id), id="final_model_locator"
+        )
+        if not isinstance(model_locator_id, str) or not model_locator_id:
+            raise RuntimeError("failed to register the final global model locator")
+        comp_ids["locator_id"] = model_locator_id
+
+    recipe.job.to_server(ValidationJsonGenerator())
+    recipe.job.to_server(
+        CrossSiteModelEval(
+            model_locator_id=model_locator_id,
+            submit_model_task_name="",
+            validation_timeout=validation_timeout,
+            participating_clients=participating_clients,
+        )
+    )
+    recipe._cse_added = True
+
+
 def add_cross_site_evaluation(
     recipe: Recipe,
     submit_model_timeout: int = 600,

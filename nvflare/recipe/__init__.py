@@ -18,7 +18,13 @@ from .poc_env import PocEnv
 from .prod_env import ProdEnv
 from .run import Run
 from .sim_env import SimEnv
-from .utils import add_cross_site_evaluation, add_experiment_tracking, set_per_site_config, set_recipe_meta
+from .utils import (
+    add_cross_site_evaluation,
+    add_experiment_tracking,
+    add_final_global_evaluation,
+    set_per_site_config,
+    set_recipe_meta,
+)
 
 __all__ = [
     "SimEnv",
@@ -27,6 +33,7 @@ __all__ = [
     "Run",
     "add_experiment_tracking",
     "add_cross_site_evaluation",
+    "add_final_global_evaluation",
     "set_per_site_config",
     "set_recipe_meta",
     "FedAvgRecipe",
