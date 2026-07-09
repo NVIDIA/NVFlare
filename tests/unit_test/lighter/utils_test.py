@@ -409,6 +409,17 @@ class TestVerifyFolderSignature:
         with pytest.raises(ValueError, match="symbolic links are not allowed"):
             sign_folders(folder, client_pri_key)
 
+    def test_sign_and_verify_reject_symlinked_root(self, tmp_path):
+        folder, root_ca_path, client_crt_path, client_pri_key, _ = self._setup_certs_and_folder(tmp_path)
+        sign_folders(folder, client_pri_key, crt_path=client_crt_path)
+        real_folder = tmp_path / "real_folder"
+        os.rename(folder, real_folder)
+        os.symlink(real_folder, folder, target_is_directory=True)
+
+        with pytest.raises(ValueError, match="signed folder must not be a symbolic link"):
+            sign_folders(folder, client_pri_key)
+        assert verify_folder_signature(folder, root_ca_path, single_signer=False) is False
+
     def test_verify_folder_signature_fails_when_signature_file_missing(self, tmp_path):
         """Verify returns False when a directory has no signature file."""
         folder, root_ca_path, client_crt_path, client_pri_key, _ = self._setup_certs_and_folder(tmp_path)
