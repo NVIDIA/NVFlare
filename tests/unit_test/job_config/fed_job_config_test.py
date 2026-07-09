@@ -34,6 +34,20 @@ class TestFedJobConfig:
                 imports = list(job_config.locate_imports(sf, dest_file=dest_file.name))
         assert imports == expected
 
+    def test_copy_ext_script_finds_top_level_import_in_parent_directory(self, tmp_path, monkeypatch):
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        (tmp_path / "custom_layers.py").write_text("class PlainAdder:\n    pass\n", encoding="utf-8")
+        (project_dir / "client.py").write_text("from custom_layers import PlainAdder\n", encoding="utf-8")
+        monkeypatch.chdir(project_dir)
+
+        custom_dir = tmp_path / "exported" / "custom"
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+        job_config._copy_ext_scripts(str(custom_dir), ["client.py"])
+
+        assert (custom_dir / "client.py").is_file()
+        assert (custom_dir / "custom_layers.py").is_file()
+
     def test_trim_whitespace(self):
         job_config = FedJobConfig(job_name="job_name", min_clients=1)
         expected = "site-0,site-1"

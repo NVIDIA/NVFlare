@@ -303,7 +303,7 @@ class FedJobConfig:
 
     def _copy_source_file(self, custom_dir, module, source_file, dest_file):
         os.makedirs(custom_dir, exist_ok=True)
-        source_dir = os.path.dirname(source_file)
+        source_dir = os.path.dirname(os.path.abspath(source_file))
         with open(source_file, "r") as sf:
             import_lines = list(self.locate_imports(sf, dest_file))
         for line in import_lines:
@@ -322,8 +322,11 @@ class FedJobConfig:
                 self._get_custom_file(custom_dir, import_module, import_source_file)
             else:
                 # Handle the import from outside the module
-                size = len(module.split(".")) - 1
-                source_root = os.sep.join(source_dir.split(os.sep)[0:-size])
+                module_depth = len(module.split(".")) - 1
+                source_root = source_dir
+                # The same directory was already checked, so the fallback must climb at least once.
+                for _ in range(max(module_depth, 1)):
+                    source_root = os.path.dirname(source_root)
                 import_source_file = os.path.join(source_root, import_source.replace(".", os.sep) + ".py")
                 if os.path.exists(import_source_file):
                     self._get_custom_file(custom_dir, import_module, import_source_file)
