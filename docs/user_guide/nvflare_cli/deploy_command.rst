@@ -277,6 +277,8 @@ OpenShift with ``oc``. It:
 - patches ``helm_chart/values.yaml`` so the parent pod mounts the ConfigMap at
   ``workspace_mount_path/local`` and the Secret at
   ``workspace_mount_path/startup``
+- records the resolved namespace and object names so they can be removed by
+  ``nvflare deploy k8s unstage``
 
 The resource names default to ``nvflare-local-<site>`` and
 ``nvflare-startup-<site>``. Override them with ``--local-configmap`` and
@@ -285,11 +287,49 @@ prepared kit's ``K8sJobLauncher`` config, or ``default`` when unavailable.
 
 After this staging command succeeds, run the printed ``helm_command`` or the
 equivalent ``helm upgrade --install`` command for the prepared chart to start
-the parent server or client pod.
+the parent server or client pod. The command also prints a ``cleanup_command``
+for use after Helm uninstall.
 
 The generated Helm chart still mounts the configured workspace PVC at the
 workspace root. The ConfigMap and Secret only replace the ``local/`` and
 ``startup/`` subdirectories.
+
+**************
+K8s Unstaging
+**************
+
+The ConfigMap and Secret created by ``nvflare deploy k8s stage`` are not part
+of the generated Helm release. After uninstalling the release, run
+``nvflare deploy k8s unstage`` so this staged participant identity Secret is
+not left in the cluster:
+
+.. code-block:: shell
+
+   helm uninstall site-1 --namespace nvflare
+   nvflare deploy k8s unstage ./site-1-k8s
+
+``unstage`` reads the exact namespace and resource names recorded by the most
+recent ``stage`` command, deletes the Secret and ConfigMap, and
+clears their references from ``helm_chart/values.yaml``. Deletion uses exact
+names and is safe when either object has already been removed.
+
+Run ``unstage`` before replacing the same prepared output with another
+``nvflare deploy prepare`` command. Prepare refuses to overwrite a chart that
+still records staged resources because doing so would lose their cleanup
+targets.
+
+For a kit staged by an older NVFlare version that did not record its namespace,
+pass the original namespace explicitly:
+
+.. code-block:: shell
+
+   nvflare deploy k8s unstage ./site-1-k8s --namespace nvflare
+
+You can also pass ``--local-configmap`` and ``--startup-secret`` to clean up
+legacy or partially staged resources whose names are not recorded. Use
+``--kubectl oc`` or ``KUBECTL=oc`` for OpenShift. Run ``unstage`` only after
+the Helm release has been uninstalled; an installed parent pod still depends
+on these volumes.
 
 **********
 Job Images
