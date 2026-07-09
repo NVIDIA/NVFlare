@@ -348,6 +348,7 @@ def validate_auth_headers(
     token_verifier: TokenVerifier,
     logger,
     client_fqcn_resolver: Optional[Callable[[str, str], Optional[str]]] = None,
+    local_cell_fqcn: Optional[str] = None,
 ):
     """Validate auth headers from messages that go through the server.
 
@@ -357,6 +358,9 @@ def validate_auth_headers(
         client_fqcn_resolver: optional resolver used to bind a client token to its registered CellNet origin.
             Return None only when the token/name cannot be resolved; return MISSING_CLIENT_FQCN for a registered
             client with no stored origin so validation fails closed.
+        local_cell_fqcn: the FQCN of the cell that owns this auth filter. Used to bypass auth ONLY for a
+            cellnet ``bye`` that actually terminates at this cell (DESTINATION == local_cell_fqcn). When None,
+            the bye bypass never triggers and byes fall through to the normal auth check.
 
     Returns:
     """
@@ -374,23 +378,25 @@ def validate_auth_headers(
 
     # Cellnet protocol-level goodbye is broadcast by Cell.stop() with an empty
     # Message() that carries no FL-level auth headers. Only bypass auth when the
-    # message is for the immediate (direct-neighbor) recipient, i.e. TO_CELL ==
-    # DESTINATION. If it would be forwarded onward (TO_CELL != DESTINATION), a
-    # remote unauthenticated peer could craft a bye with DESTINATION pointing
-    # at a downstream cell whose _peer_goodbye would then drop the immediate
-    # endpoint (the server/relay) from its agents dict — fall through to the
-    # normal auth check in that case. The explicit ``to_cell is not None``
-    # check rejects crafted messages that omit both headers (None == None
-    # would otherwise pass).
-    to_cell = message.get_header(MessageHeaderKey.TO_CELL)
+    # bye actually TERMINATES at this cell, i.e. DESTINATION == this cell's own
+    # FQCN. This is the true "direct-neighbor" property: the in-filter runs
+    # before CoreCell's forward decision (``if destination != my_fqcn: forward``),
+    # so a bye whose DESTINATION is this cell is handled locally by
+    # _peer_goodbye and never forwarded. A crafted bye that names some OTHER
+    # cell as DESTINATION (to have this cell forward it and evict that cell's
+    # upstream agent) has DESTINATION != local_cell_fqcn and falls through to the
+    # normal auth check. Comparing DESTINATION to a sender-controlled TO_CELL
+    # header would NOT give this guarantee, since both are attacker-controlled;
+    # only comparing against the receiver's own FQCN does. When local_cell_fqcn
+    # is unknown (None), the bypass never triggers (byes get normal auth).
     destination = message.get_header(MessageHeaderKey.DESTINATION)
     if (
         topic == CellChannelTopic.Bye
         and channel == CellChannel.CELLNET
-        and to_cell is not None
-        and to_cell == destination
+        and local_cell_fqcn is not None
+        and destination == local_cell_fqcn
     ):
-        logger.debug(f"skip direct-neighbor cellnet bye {topic=} {channel=}")
+        logger.debug(f"skip direct-neighbor cellnet bye {topic=} {channel=} {destination=}")
         return None
 
     client_name = message.get_header(CellMessageHeaderKeys.CLIENT_NAME)

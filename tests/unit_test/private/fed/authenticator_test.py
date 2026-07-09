@@ -17,7 +17,7 @@ import logging
 import pytest
 
 from nvflare.apis.fl_constant import ServerCommandNames
-from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.defs import CellChannel, CellChannelTopic, MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC
 from nvflare.private.defs import CellMessageHeaderKeys
@@ -143,3 +143,54 @@ def test_validate_auth_headers_rejects_registered_token_with_missing_origin_bind
 
 def test_validate_auth_headers_keeps_compatibility_when_origin_cannot_be_resolved():
     assert _validate("site-b", lambda _client_name, _token: None) is None
+
+
+def _make_bye_message(destination, to_cell=None):
+    # Cellnet Cell.stop() broadcasts an empty Message() carrying no FL auth headers;
+    # the transport stamps DESTINATION/TO_CELL. A crafted bye can set them to anything.
+    headers = {
+        MessageHeaderKey.CHANNEL: CellChannel.CELLNET,
+        MessageHeaderKey.TOPIC: CellChannelTopic.Bye,
+        MessageHeaderKey.ORIGIN: "attacker",
+        MessageHeaderKey.DESTINATION: destination,
+    }
+    if to_cell is not None:
+        headers[MessageHeaderKey.TO_CELL] = to_cell
+    return Message(headers=headers)
+
+
+def _validate_bye(destination, local_cell_fqcn, to_cell=None):
+    return validate_auth_headers(
+        message=_make_bye_message(destination, to_cell=to_cell),
+        token_verifier=_TokenVerifier(),
+        logger=logging.getLogger(__name__),
+        local_cell_fqcn=local_cell_fqcn,
+    )
+
+
+def test_validate_auth_headers_bypasses_bye_terminating_at_this_cell():
+    # A legitimate bye is a direct-neighbor message: DESTINATION == the receiving cell's own FQCN.
+    assert _validate_bye(destination="server", local_cell_fqcn="server") is None
+
+
+def test_validate_auth_headers_rejects_forwarded_bye_for_other_cell():
+    # A crafted bye that names another cell as DESTINATION (so this cell would forward it and evict
+    # that cell's upstream agent) must NOT bypass auth — DESTINATION != this cell's FQCN.
+    reply = _validate_bye(destination="site-1", local_cell_fqcn="server")
+
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.UNAUTHENTICATED
+
+
+def test_validate_auth_headers_rejects_bye_forged_to_cell_matching_destination():
+    # The old guard compared two sender-controlled headers (TO_CELL == DESTINATION); an attacker can
+    # satisfy that while DESTINATION still points at another cell. The FQCN-based guard rejects it.
+    reply = _validate_bye(destination="site-1", local_cell_fqcn="server", to_cell="site-1")
+
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.UNAUTHENTICATED
+
+
+def test_validate_auth_headers_does_not_bypass_bye_when_local_fqcn_unknown():
+    # Without a known local FQCN the bypass must not trigger (fail closed).
+    reply = _validate_bye(destination="server", local_cell_fqcn=None)
+
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.UNAUTHENTICATED
