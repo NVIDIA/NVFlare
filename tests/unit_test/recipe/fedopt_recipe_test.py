@@ -92,6 +92,26 @@ class TestPTFedOptRecipe:
         assert recipe.model == simple_model
         assert recipe.job is not None
 
+    def test_custom_aggregator_must_support_weight_diff(self, mock_file_system, base_recipe_params, simple_model):
+        from nvflare.apis.dxo import DataKind
+        from nvflare.app_common.aggregators import InTimeAccumulateWeightedAggregator
+        from nvflare.app_opt.pt.recipes.fedopt import FedOptRecipe
+
+        aggregator = InTimeAccumulateWeightedAggregator(expected_data_kind=DataKind.WEIGHTS)
+
+        with pytest.raises(ValueError) as exc_info:
+            FedOptRecipe(
+                name="test_fedopt_aggregator_kind",
+                model=simple_model,
+                aggregator=aggregator,
+                **base_recipe_params,
+            )
+
+        message = str(exc_info.value)
+        assert "requires a custom aggregator configured with expected_data_kind=DataKind.WEIGHT_DIFF" in message
+        assert "omit it to use the built-in aggregator" in message
+        assert "params_transfer_type" not in message
+
     def test_enable_tensor_disk_offload_configures_controller(self, mock_file_system, base_recipe_params, simple_model):
         """Test PT FedOptRecipe passes tensor disk offload settings to ScatterAndGather."""
         from nvflare.apis.job_def import SERVER_SITE_NAME
