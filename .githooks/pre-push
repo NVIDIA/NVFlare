@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# NVFLARE pre-push hook: block a push when the agent skill lint finds anything,
+# so the skills checked into GitHub stay clean.
+#
+# Enable once per clone:
+#     git config core.hooksPath .githooks
+#
+# The lint is fast and dependency-light; it covers skills/ and the eval suites
+# under dev_tools/agent/skill_evals/. The same check runs in `./runtest.sh -s`
+# and in CI. Bypass in an emergency with `git push --no-verify`.
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+
+# Nothing to check if this repo has no skills root.
+if [ ! -d "$repo_root/skills" ]; then
+    exit 0
+fi
+
+# The lint imports the checks package, which requires PyYAML. Probe it first so
+# a missing dep gives an actionable message instead of a confusing traceback.
+if ! python3 -c "import yaml" >/dev/null 2>&1; then
+    echo "pre-push: PyYAML missing -- the agent skill lint cannot run."
+    echo "          Activate your nvflare dev environment or run: pip install pyyaml"
+    echo "          Emergency bypass: git push --no-verify"
+    exit 1
+fi
+
+echo "pre-push: running agent skill lint (python -m dev_tools.agent.skills.checks)..."
+if ! python3 -m dev_tools.agent.skills.checks --skills-root "$repo_root/skills"; then
+    echo ""
+    echo "pre-push: agent skill lint failed. Fix the findings above (or run"
+    echo "          ./runtest.sh -s) before pushing. Emergency bypass:"
+    echo "          git push --no-verify"
+    exit 1
+fi
+echo "pre-push: agent skill lint clean."

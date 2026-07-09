@@ -214,6 +214,7 @@ def add_experiment_tracking(
     tracking_config: Optional[dict] = None,
     client_side: bool = False,
     server_side: bool = True,
+    clients: Optional[List[str]] = None,
 ):
     """Add experiment tracking to a recipe.
 
@@ -223,8 +224,16 @@ def add_experiment_tracking(
         recipe: Recipe instance to augment with experiment tracking.
         tracking_type: Type of tracking to enable ("mlflow", "tensorboard", or "wandb").
         tracking_config: Optional configuration dict for the tracking receiver.
-        client_side: If True, add tracking to all clients (each client tracks locally).
+        client_side: If True, add tracking to clients (each client tracks locally).
         server_side: If True, add tracking to server (aggregates metrics from all clients). Default: True.
+        clients: Optional list of client names for client-side tracking. If None, the
+            client-side receiver is added to all clients. Only valid with client_side=True.
+            To give sites different receiver configs (e.g. per-site tracking_uri), call this
+            function once per site with that site's tracking_config and clients=[site].
+            Targeting specific clients requires the recipe's client apps to be per-site
+            (e.g. recipes constructed with the per_site_config constructor argument), and
+            each name must match an existing per-site client app; with the default
+            all-clients topology or unknown site names, targeted placement raises ValueError.
 
     Examples:
         # Server-side tracking (default - federated metrics)
@@ -235,6 +244,16 @@ def add_experiment_tracking(
 
         # Both server and client tracking
         add_experiment_tracking(recipe, "mlflow", {...}, client_side=True, server_side=True)
+
+        # Per-site client tracking configs (one call per site)
+        add_experiment_tracking(
+            recipe, "mlflow", {"tracking_uri": "file:///tmp/site-1/mlruns"},
+            client_side=True, server_side=False, clients=["site-1"],
+        )
+        add_experiment_tracking(
+            recipe, "mlflow", {"tracking_uri": "file:///tmp/site-2/mlruns"},
+            client_side=True, server_side=False, clients=["site-2"],
+        )
     """
     tracking_config = tracking_config or {}
     if tracking_type not in TRACKING_REGISTRY:
@@ -242,6 +261,14 @@ def add_experiment_tracking(
 
     if not server_side and not client_side:
         raise ValueError("At least one of server_side or client_side must be True")
+
+    if clients is not None:
+        if not client_side:
+            raise ValueError("clients is only used for client-side tracking; set client_side=True")
+        if not isinstance(clients, list) or not all(isinstance(c, str) for c in clients):
+            raise TypeError(f"clients must be a list of str, got {clients!r}")
+        if not clients:
+            raise ValueError("clients must not be empty; omit it to add tracking to all clients")
 
     _, flag = optional_import(TRACKING_REGISTRY[tracking_type]["package"])
     if not flag:
@@ -267,7 +294,9 @@ def add_experiment_tracking(
             client_config["events"] = [ANALYTIC_EVENT_TYPE]
 
         client_receiver = receiver_class(**client_config)
-        recipe.job.to_clients(client_receiver, id="client_receiver")
+        # Route through the recipe placement layer so existing per-site client apps
+        # are preserved (to_clients would target ALL_SITES even when per-site apps exist).
+        recipe._add_to_client_apps(client_receiver, clients=clients, id="client_receiver")
 
 
 def add_cross_site_evaluation(

@@ -756,3 +756,69 @@ class TestRecipePerSiteConfigHelper:
 
         with pytest.raises(TypeError, match=match):
             set_per_site_config(BasicRecipe(), config)
+
+
+class TestClientPlacementHardening:
+    """Test _add_to_client_apps validation through the public clients=-taking helpers.
+
+    These guards fix pre-existing silent failures: targeting specific clients while
+    the job has an all-clients app used to silently drop the placement at export,
+    and malformed clients values were silently ignored or iterated per character.
+    """
+
+    def _make_recipe(self, name="test_placement_hardening"):
+        from nvflare.recipe.spec import Recipe
+
+        return Recipe(FedJob(name=name, min_clients=1))
+
+    def test_targeted_config_rejects_all_clients_topology(self):
+        recipe = self._make_recipe()
+        # Default recipe topology: one client app for all clients.
+        recipe.job.to_clients({"executor_standin": True})
+
+        with pytest.raises(ValueError, match="applies to all clients"):
+            recipe.add_client_config({"timeout": 600}, clients=["site-1"])
+
+    def test_targeted_file_rejects_all_clients_topology(self, tmp_path):
+        src_file = tmp_path / "wrapper.sh"
+        src_file.write_text("#!/bin/sh\n")
+        recipe = self._make_recipe()
+        recipe.job.to_clients({"executor_standin": True})
+
+        with pytest.raises(ValueError, match="applies to all clients"):
+            recipe.add_client_file(str(src_file), clients=["site-1"])
+
+    def test_targeted_config_works_with_per_site_topology(self):
+        recipe = self._make_recipe()
+        recipe.job.to({"site_arg": 1}, "site-1")
+        recipe.job.to({"site_arg": 2}, "site-2")
+
+        recipe.add_client_config({"timeout": 600}, clients=["site-1"])
+
+        assert recipe.job._deploy_map["site-1"].app_config.additional_params["timeout"] == 600
+        assert "timeout" not in recipe.job._deploy_map["site-2"].app_config.additional_params
+
+    def test_targeted_config_rejects_unknown_site_with_per_site_topology(self):
+        recipe = self._make_recipe()
+        recipe.job.to({"site_arg": 1}, "site-1")
+        recipe.job.to({"site_arg": 2}, "site-2")
+
+        with pytest.raises(ValueError, match=r"unknown client site.*site-3"):
+            recipe.add_client_config({"timeout": 600}, clients=["site-3"])
+
+    def test_clients_must_be_a_list(self):
+        recipe = self._make_recipe()
+        # A bare string would otherwise iterate per character and create per-char apps.
+        with pytest.raises(TypeError, match="must be a list"):
+            recipe.add_client_config({"timeout": 600}, clients="site-1")
+
+    def test_clients_must_not_be_empty(self):
+        recipe = self._make_recipe()
+        with pytest.raises(ValueError, match="must not be empty"):
+            recipe.add_client_config({"timeout": 600}, clients=[])
+
+    @pytest.mark.parametrize("bad_site", ["server", "@ALL"])
+    def test_clients_must_name_client_sites(self, bad_site):
+        recipe = self._make_recipe()
+        with pytest.raises(ValueError, match="invalid client name"):
+            recipe.add_client_config({"timeout": 600}, clients=[bad_site])

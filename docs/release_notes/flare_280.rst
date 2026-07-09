@@ -400,7 +400,6 @@ Compatibility and Migration Notes
 - The deprecated FLAdminAPI surface has been removed. Use the FLARE API,
   Recipe environments, and ``nvflare`` CLI workflows for new automation.
 - HA/Overseer code has been removed from the 2.8 branch.
-
 See the :ref:`migration_guide` for additional API and configuration migration
 notes.
 

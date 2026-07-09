@@ -2,10 +2,7 @@ include versioneer.py
 include nvflare/_version.py
 include nvflare/libs/*.so
 include nvflare/fuel/utils/*.json
-recursive-include skills *
-# Build-time only: AgentSkillsBuildPy loads this frontmatter validator to build the
-# bundled-skills manifest. Needed in the sdist so wheels can build from an sdist; it is
-# not installed into the wheel (dev_tools is excluded from packages in setup.py).
-include dev_tools/agent/skills/checks/frontmatter.py
+global-exclude *.py[co]
+global-exclude __pycache__
 recursive-include nvflare/lighter/templates *
 recursive-include nvflare/tool/deploy/templates *

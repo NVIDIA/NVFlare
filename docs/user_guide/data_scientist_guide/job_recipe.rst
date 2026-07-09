@@ -10,6 +10,8 @@ Job Recipes provide a simplified abstraction that hides the complexity of low-le
 .. note::
    This is a technical preview. Not all algorithms are currently implemented with recipes.
 
+For the stable public Recipe surface, see :ref:`recipe_api`.
+
 
 Motivation for Using JobRecipe
 ------------------------------
@@ -166,15 +168,15 @@ Metrics Artifacts
 
 Training aggregation recipes write standard metrics artifacts when their server
 workflow reports round-level aggregation metrics. See
-:ref:`recipe_metrics_artifacts` for the schema, security behavior, and artifact
-discovery contract.
+:ref:`recipe_metrics_artifacts` for the schema, security behavior, and how
+tools locate the artifacts.
 
 Per-Site Configuration
 ----------------------
 
 Some recipes accept site-keyed configuration so that each site can use different
-arguments, scripts, data loaders, or validators. For recipes that implement this
-helper contract, use ``set_per_site_config`` to attach the site-keyed input after
+arguments, scripts, data loaders, or validators. For recipes that support this
+helper, use ``set_per_site_config`` to attach the site-keyed input after
 creating the recipe:
 
 .. code-block:: python
@@ -257,7 +259,7 @@ mutating ``recipe.job.job.meta_props`` directly. The helper sets one
 
 The settable keys are exactly the members of
 :data:`nvflare.apis.job_def.USER_SETTABLE_JOB_META_KEYS`; other enum members
-and raw strings are not accepted. Each key has a value shape contract:
+and raw strings are not accepted. Each key expects a specific value shape:
 
 * ``JobMetaKey.RESOURCE_SPEC`` (``resource_spec``): per-site resource
   requirements -- a dict keyed by site name with dict values.
@@ -289,12 +291,14 @@ in ``meta.json``, and non-finite floating-point values such as ``NaN`` and
 
 .. note::
 
-   ``resource_spec`` can also be populated per site via
-   ``recipe.job.job.add_resource_spec(...)``. If you set ``RESOURCE_SPEC``
-   through ``set_recipe_meta``, the ``meta_props`` value replaces those
-   per-site specs in the generated ``meta.json``; a warning is emitted for
-   specs already registered when the helper is called, but specs added
-   afterwards are overridden without one.
+   Per-site resource specs may also exist on the underlying generated job
+   (registered through the lower-level job object's ``add_resource_spec``,
+   an internal path -- prefer ``set_recipe_meta`` in recipe scripts; see
+   :ref:`recipe_api`). If you set ``RESOURCE_SPEC`` through
+   ``set_recipe_meta``, the ``meta_props`` value replaces those per-site
+   specs in the generated ``meta.json``; a warning is emitted for specs
+   already registered when the helper is called, but specs added afterwards
+   are overridden without one.
 
 If the same key already exists in ``meta_props``, ``set_recipe_meta`` replaces
 that value.
@@ -302,6 +306,13 @@ that value.
 The helper does not validate runtime resource availability, production
 enrollment, or whether sites named in metadata are present for a run. The
 execution environment and deployment still determine which sites are present.
+
+For a complete production example, see the
+:github_nvflare_link:`Recipe job on Kubernetes clients <examples/advanced/recipe-k8s>`.
+It uses ``ProdEnv`` to submit a PyTorch CIFAR-10 job to ``site-1`` and
+``site-2`` in separate Kubernetes clusters, keeps GPU requirements in
+``resource_spec``, and places the per-cluster job images and container
+settings in ``launcher_spec``.
 
 Execution Environments
 ----------------------
