@@ -174,6 +174,23 @@ Merge order (later wins):
   should set `automountServiceAccountToken: false`, since the token is never used and the Databricks design mints
   tokens launcher-side via TokenRequest instead.
 
+## Future: Per-Study Default Job Image
+
+The job image is currently the one runtime resource the site does not own: it must come from job `meta.json`, and
+`pod_template` deliberately cannot set the main container image (the FLARE-owned overlay replaces it). Follow-up
+direction, recorded from PR review:
+
+- `container.image` next to the existing `container.name` — a typed key, so it behaves identically on Docker and
+  Kubernetes (unlike `pod_template`).
+- Resolution: job-supplied image → study `container.image` → error. Only the "or raise" step in each launcher
+  changes; the merge order is untouched.
+- Job-supplied image wins by default; an enforce/pin mode for sites that forbid job-supplied images can come later.
+- A site-supplied image is site-trusted content and is not BYOC-gated the way job-supplied images are.
+- Re-read-per-launch means a site can roll a study to a new image version without restarting the parent.
+- Include the Docker cleanup: `image` in `default_job_container_kwargs` passes init validation today but fails at
+  launch (duplicate `image` argument to `containers.run`); it should be rejected at init. `docker_spec["image"]`
+  remains the legitimate job image selector and must not trip the reserved-keys warning.
+
 ## Parsing, Compatibility, Migration
 
 ```text
