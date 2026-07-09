@@ -52,8 +52,10 @@ statistic_configs = {
   16-bit, `[0, 1]` for normalized floats. Use the dataset block's sampled
   `pixel_depth` and state the choice; a user/README declaration overrides.
 - The bin-cap cleanser compares bins to the site's *image count* (not pixel
-  count): 20 bins needs >200 images per site. Size the default bin count to
-  the smallest site and state the choice, exactly as in the tabular path.
+  count): 20 bins needs >200 images per site. Size the default bin count
+  using the dataset block's `site["image_files"]` — NOT `data_files`,
+  which also counts companion label files — against the smallest site,
+  and state the choice, exactly as in the tabular path.
 
 ## Loaders And Dependencies
 

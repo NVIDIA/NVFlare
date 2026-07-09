@@ -175,6 +175,26 @@ def test_dtype_drift_with_same_names_is_a_mismatch(tmp_path):
     assert agreement["mismatches"][0]["issue"] == "dtypes_differ"
 
 
+def test_symlinks_consume_walk_budget(tmp_path, monkeypatch):
+    # Codex repro: symlink entries are traversal work and must count toward
+    # the cap even though they are never followed
+    import os
+
+    import nvflare.tool.agent.dataset_inspect as di
+
+    monkeypatch.setattr(di, "MAX_WALK_ENTRIES", 10)
+    d = tmp_path / "site-1"
+    d.mkdir()
+    target = d / "real.csv"
+    target.write_text(HEADER + ROWS, encoding="utf-8")
+    for i in range(30):
+        os.symlink(target, d / f"link_{i:03d}.csv")
+
+    groups, census, truncated = di._collect_data_files(tmp_path, max_files=250)
+
+    assert truncated is True
+
+
 def test_directory_only_tree_is_bounded(tmp_path, monkeypatch):
     import nvflare.tool.agent.dataset_inspect as di
 

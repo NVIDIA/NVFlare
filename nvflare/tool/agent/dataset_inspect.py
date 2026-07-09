@@ -67,6 +67,7 @@ different costs and are kept separate on purpose.
 
 import csv
 import io
+from itertools import islice
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -195,18 +196,25 @@ def _collect_data_files(root: Path, max_files: int):
     stack = [root]
     while stack:
         directory = stack.pop()
+        # consume a bounded number of entries BEFORE sorting, so a huge
+        # directory cannot defeat the traversal cap with an unbounded
+        # listing; within the budget the sorted order stays deterministic
+        budget = MAX_WALK_ENTRIES - entries_seen + 1
         try:
-            children = sorted(directory.iterdir(), key=lambda p: p.name, reverse=True)
+            raw_children = list(islice(directory.iterdir(), max(budget, 0)))
         except OSError:
             continue
+        children = sorted(raw_children, key=lambda p: p.name, reverse=True)
         for child in children:
-            if child.is_symlink():
-                continue
+            # symlinks consume walk budget too (they are traversal work),
+            # they are just never followed
             entries_seen += 1
             if entries_seen > MAX_WALK_ENTRIES:
                 truncated = True
                 stack.clear()
                 break
+            if child.is_symlink():
+                continue
             if child.is_dir():
                 stack.append(child)
                 continue
