@@ -131,6 +131,54 @@
       }
     },
     {
+      "id": "fedstats-flat-auto-split",
+      "prompt": "Here is my patients CSV — one combined file, not split by site yet. Compute federated statistics across 3 simulated sites.",
+      "expected_output": "An automatic run over a flat single-source dataset: inspect classifies it as tabular with layout flat (one '.' site), the requested site count (3) comes from the prompt, the agent creates deterministic seeded per-site partitions (never sharing the full data across sites and never inventing a site count), then proceeds exactly like the pre-split path: default selection, FedStatsRecipe with 3 sites, validation with per-site and global parity computed against the seeded partitions, and a per-site plus Global report.",
+      "files": [
+        "files/patients-flat/data.csv"
+      ],
+      "assertions": [
+        "The agent takes the site count (3) from the request; with no site count stated it would fail closed rather than guess.",
+        "The agent creates deterministic seeded per-site partitions of the flat CSV; every site trains on its own partition, not the full data.",
+        "The partition seed and split policy are stated in the report.",
+        "Per-site parity is computed against the same seeded partitions used by the job.",
+        "The rest of the run matches the pre-split path: count included, privacy filters at defaults and stated, aggregates-only reporting."
+      ],
+      "nvflare": {
+        "expected_skill": "nvflare-fed-stats",
+        "mandatory_behavior": [
+          {
+            "id": "flat-layout-first-class",
+            "description": "treats a flat single-source dataset as a normal input: site count from the request or declaration, deterministic seeded partitions"
+          },
+          {
+            "id": "site-count-from-request",
+            "description": "derives the site count from the request or a declaration and fails closed when absent"
+          },
+          {
+            "id": "seeded-partition-statement",
+            "description": "states the partition seed and split policy in the report"
+          }
+        ],
+        "prohibited_behavior": [
+          {
+            "id": "no-shared-full-data",
+            "description": "does not give every site the full dataset unless explicitly requested"
+          },
+          {
+            "id": "no-invented-site-count",
+            "description": "does not invent a site count when the request does not supply one"
+          }
+        ],
+        "process_metrics": [
+          {
+            "id": "first_pass_accepted",
+            "description": "whether the split and run complete without user correction"
+          }
+        ]
+      }
+    },
+    {
       "id": "fedstats-prompt-feature-names",
       "prompt": "Run federated statistics across my 3 sites. The CSVs have no header row; the columns are, in order: age, sex, bmi, smoker, systolic_bp, diastolic_bp, heart_rate, respiratory_rate, temperature_c, spo2, glucose_mg_dl, hba1c_pct, total_cholesterol, hdl, ldl, triglycerides, creatinine, egfr, hemoglobin, wbc_count, platelet_count, sodium, potassium, num_prior_admissions, length_of_stay_days, diagnosis_group, readmitted_30d.",
       "expected_output": "A fully automatic run that uses the prompt-supplied feature names for the headerless CSVs (passed explicitly to the read call, for example names=[...]), computes the default statistic set over the numeric features, and reports per-site and Global aggregates.",

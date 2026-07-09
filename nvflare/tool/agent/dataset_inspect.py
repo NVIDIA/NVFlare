@@ -34,7 +34,10 @@ Dataset block contract (all keys always present per modality):
   tabular sites, materially both modalities, or a dead file-count tie —
   is ``mixed``, reported but not routed (``target_type`` stays
   ``unknown_target``).
-- ``layout``: ``per_site_directories`` | ``flat``.
+- ``layout``: ``per_site_directories`` | ``flat`` |
+  ``root_and_site_directories`` (root-level data files coexist with site
+  directories — ambiguous site mapping, an ask/fail-closed input for the
+  consumer; the root group appears as site ``.``).
 - ``file_census``: extension -> count (bounded; see ``counts_approximate``).
 - ``counts_approximate``: true when a walk limit was hit.
 - ``scan``: ``files_read`` / ``bytes_read`` performed by this classification.
@@ -50,7 +53,9 @@ Dataset block contract (all keys always present per modality):
     with the site schema flags ``shard_schema_consistent: false``), parquet
     shards are exact metadata sums when the shards agree on schema.
     Feature names are sanitized: control characters stripped and length
-    capped (``feature_names_truncated`` marks a cap hit).
+    capped (``feature_names_truncated`` marks a cap hit). Dtype classes
+    are inferred from a bounded row sample; a full-file reader (pandas at
+    job runtime) can disagree when anomalies appear past the sample.
   - image: ``pixel_depth`` from one sample when an optional loader exists.
 - ``schema_agreement`` (tabular): compares feature names, column counts,
   AND dtype classes across sites; any drift is a ``mismatch`` with per-site
@@ -131,9 +136,18 @@ def inspect_dataset(root: Path, max_files: int, max_file_bytes: int) -> Optional
                 site["tabular_companions"] = len(tabular_files)
         sites.append(site)
 
+    site_names = {s["name"] for s in sites}
+    if site_names == {"."}:
+        layout = "flat"
+    elif "." in site_names:
+        # root-level data files coexist with site directories: the site
+        # mapping is ambiguous and the consumer must resolve it explicitly
+        layout = "root_and_site_directories"
+    else:
+        layout = "per_site_directories"
     dataset: Dict = {
         "modality": modality,
-        "layout": "per_site_directories" if any(s["name"] != "." for s in sites) else "flat",
+        "layout": layout,
         "file_census": {ext: census[ext] for ext in sorted(census)},
         "counts_approximate": truncated,
         "scan": reads,

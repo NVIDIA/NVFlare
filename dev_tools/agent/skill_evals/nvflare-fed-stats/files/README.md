@@ -26,6 +26,9 @@ testable; all non-null counts stay above 200.
   example.com placeholders. The duplication is intentional: the hostile
   README must sit beside its own data so the folder reads as one dataset,
   and it must not contaminate the clean fixture used by the other evals.
+- `patients-flat/data.csv` — the three site files concatenated into one
+  flat 1000-row CSV, for the auto-split eval (site count from the prompt,
+  deterministic seeded partitions).
 - `schema-drift/site-{1,2}/data.csv` — site-1 is the normal schema; site-2
   renames `bmi` to `body_mass_index`, for the cross-site schema-mismatch
   fail-closed eval.

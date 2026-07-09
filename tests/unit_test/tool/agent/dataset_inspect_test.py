@@ -175,6 +175,16 @@ def test_dtype_drift_with_same_names_is_a_mismatch(tmp_path):
     assert agreement["mismatches"][0]["issue"] == "dtypes_differ"
 
 
+def test_root_files_beside_site_dirs_is_ambiguous_layout(tmp_path):
+    _write_site(tmp_path, "site-1", HEADER + ROWS)
+    (tmp_path / "all_data.csv").write_text(HEADER + ROWS, encoding="utf-8")
+
+    result = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
+
+    assert result["layout"] == "root_and_site_directories"
+    assert "." in {s["name"] for s in result["sites"]}
+
+
 def test_symlinks_consume_walk_budget(tmp_path, monkeypatch):
     # Codex repro: symlink entries are traversal work and must count toward
     # the cap even though they are never followed

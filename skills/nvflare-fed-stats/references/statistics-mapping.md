@@ -68,7 +68,9 @@ Expand the config automatically and state the expansion in the report.
   set an explicit `range` only when a script, README declaration, or user
   answer provides one. Without a declared range the controller estimates the
   global range internally from noise-protected min/max, so bin edges are
-  approximate; state that caveat in the report. Do not invent domain bounds
+  approximate AND vary between runs (the noise is re-drawn) — state both
+  caveats in the report and recommend a declared range when reproducible
+  bins matter. Do not invent domain bounds
   from column names or from scanning the data's own extremes. The bin-cap
   cleanser withholds any site histogram whose bins are not under
   `max_bins_percent`% of the site's row count (20 bins needs >200 rows);
@@ -110,6 +112,14 @@ encryption, or custom privacy filters are out of scope.
 - Feature names: header row or explicitly supplied names only, per the
   SKILL.md rule; with supplied names, pass them to the read call
   (`pd.read_csv(..., names=feature_names)`).
+- Layout `root_and_site_directories` (root-level data files beside site
+  directories, root group reported as site `.`): the site mapping is
+  ambiguous — fail closed with a precise report (or ask once) rather than
+  treating `.` as a site or silently ignoring the root files.
+- Sampled dtypes can drift from runtime dtypes: inspect samples a bounded
+  number of rows, pandas reads whole files, so late anomalies (sentinel
+  strings) can drop at runtime a feature the sample called numeric — the
+  completeness rung's missing-feature check names this cause.
 - Sharded sites: the dataset block's `row_count` aggregates a site's
   tabular files and is marked `row_count_approximate` whenever a site has
   more than one file (per-shard headers are unknowable); verify sizes

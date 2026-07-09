@@ -16,7 +16,9 @@ before bin-cap decisions. Datalist-JSON layouts may classify as
 `unknown_target`; read the datalist as declared layout evidence in that
 case. Companion tabular metadata (a `labels.csv` beside the scans) keeps
 the dataset `image` and appears per site as `tabular_companions`: mention
-it in the report, never treat it as a statistics target. Genuinely mixed
+it in the report, never treat it as a statistics target — but offer a
+follow-up tabular statistics run over the labels (label shift across
+sites is a classic QA question). Genuinely mixed
 data — an image-only site among tabular sites, or materially both
 modalities — reports `modality: mixed` without routing (`target_type`
 stays `unknown_target`): read the dataset block, report the split, and
