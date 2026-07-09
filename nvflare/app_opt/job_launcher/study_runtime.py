@@ -38,7 +38,7 @@ SUPPORTED_FORMAT_VERSION = 2
 DATASET_TYPE_MOUNT = "mount"
 _RESERVED_DATASET_TYPES = {"databricks"}
 
-_STUDY_KEYS = {"container", "pod_template", "datasets", "env", "secret_env", "secret_mounts"}
+_STUDY_KEYS = {"container", "pod_template", "docker_kwargs", "datasets", "env", "secret_env", "secret_mounts"}
 _MOUNT_DATASET_KEYS = {"type", "source", "mode"}
 _SECRET_ENV_KEYS = {"source", "key"}
 _SECRET_MOUNT_KEYS = {"source", "mount_path", "mode", "items"}
@@ -49,6 +49,24 @@ _VALID_NAME = re.compile(r"^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$")
 # variables from workspace_cell_transfer). A study value would be silently overridden
 # or break workspace transfer, so both env and secret_env reject them up front.
 _RESERVED_ENV_NAMES = frozenset({"PYTHONPATH", "NVFL_WORKSPACE_OWNER_FQCN", "NVFL_WORKSPACE_TRANSFER_TOKEN"})
+
+# Docker containers.run kwargs owned by the launcher (the docker launcher and deploy
+# validation enforce the same set for site-level default_job_container_kwargs).
+RESERVED_DOCKER_KWARGS = frozenset(
+    {
+        "volumes",
+        "mounts",
+        "network",
+        "environment",
+        "command",
+        "name",
+        "detach",
+        "auto_remove",
+        "user",
+        "working_dir",
+        "image",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -76,6 +94,7 @@ class StudyRuntime:
     secret_mounts: list = field(default_factory=list)  # list[SecretMount]
     container_image: Optional[str] = None
     pod_template: Optional[dict] = None
+    docker_kwargs: dict = field(default_factory=dict)
 
 
 def study_runtime_file_path(workspace_root: str) -> str:
@@ -147,6 +166,19 @@ def _parse_pod_template(value, file_path: str, allow_pod_template: bool) -> dict
         template_path = os.path.join(os.path.dirname(file_path), *rel_path.split("/"))
         return _load_pod_template_file(template_path, file_path)
     return _validate_pod_template(value, "inline pod_template", file_path)
+
+
+def _parse_docker_kwargs(study: str, entry, file_path: str, allow_docker_kwargs: bool) -> dict:
+    label = f"studies.{study}.docker_kwargs"
+    if not allow_docker_kwargs:
+        raise _error(file_path, "docker_kwargs is Docker-only and is not supported by this launcher.")
+    entry = _require_dict(entry, label, file_path)
+    reserved = sorted(RESERVED_DOCKER_KWARGS & set(entry))
+    if reserved:
+        raise _error(file_path, f"{label} must not contain launcher-owned key(s) {reserved}.")
+    for key in entry:
+        _require_str(key, f"{label} key", file_path)
+    return dict(entry)
 
 
 def _parse_container(study: str, entry, file_path: str) -> str:
@@ -259,7 +291,12 @@ def _parse_secret_mounts(study: str, entry, file_path: str, allow_secret_mount_i
 
 
 def _parse_study(
-    study: str, entry, file_path: str, allow_pod_template: bool, allow_secret_mount_items: bool
+    study: str,
+    entry,
+    file_path: str,
+    allow_pod_template: bool,
+    allow_secret_mount_items: bool,
+    allow_docker_kwargs: bool,
 ) -> StudyRuntime:
     _require_name(study, "study name", file_path)
     entry = _require_dict(entry, f"studies.{study}", file_path)
@@ -270,6 +307,8 @@ def _parse_study(
         runtime.container_image = _parse_container(study, entry["container"], file_path)
     if "pod_template" in entry:
         runtime.pod_template = _parse_pod_template(entry["pod_template"], file_path, allow_pod_template)
+    if "docker_kwargs" in entry:
+        runtime.docker_kwargs = _parse_docker_kwargs(study, entry["docker_kwargs"], file_path, allow_docker_kwargs)
     if "datasets" in entry:
         datasets = _require_dict(entry["datasets"], f"studies.{study}.datasets", file_path)
         runtime.datasets = [
@@ -291,6 +330,7 @@ def load_study_runtime_file(
     file_path: str,
     allow_pod_template: bool = True,
     allow_secret_mount_items: bool = True,
+    allow_docker_kwargs: bool = True,
     logger: Optional[logging.Logger] = None,
 ) -> dict:
     """Parse local/study_runtime.yaml (strict v2). Returns {study: StudyRuntime}."""
@@ -321,6 +361,7 @@ def load_study_runtime_file(
             file_path,
             allow_pod_template=allow_pod_template,
             allow_secret_mount_items=allow_secret_mount_items,
+            allow_docker_kwargs=allow_docker_kwargs,
         )
         for study, entry in studies.items()
     }

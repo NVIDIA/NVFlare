@@ -55,10 +55,19 @@ class _Mount(dict):
 
 _docker_types.Mount = _Mount
 
+_docker_models = ModuleType("docker.models")
+_docker_models_containers = ModuleType("docker.models.containers")
+_docker_models_containers.RUN_CREATE_KWARGS = ["labels"]
+_docker_models_containers.RUN_HOST_CONFIG_KWARGS = ["shm_size", "ipc_mode", "device_requests"]
+_docker_models.containers = _docker_models_containers
+_docker_mock.models = _docker_models
+
 for _mod_name, _mod_obj in [
     ("docker", _docker_mock),
     ("docker.errors", _docker_errors),
     ("docker.types", _docker_types),
+    ("docker.models", _docker_models),
+    ("docker.models.containers", _docker_models_containers),
 ]:
     sys.modules[_mod_name] = _mod_obj
 
@@ -1302,6 +1311,99 @@ class TestDockerJobLauncherStudyRuntime:
         fl_ctx, _ = _make_fl_ctx()
         with pytest.raises(RuntimeError, match="container.image"):
             launcher.launch_job(_make_job_meta(study="study-a", docker_spec={"image": None}), fl_ctx)
+        dc.containers.run.assert_not_called()
+
+    def test_docker_kwargs_applied_to_job_container(self, tmp_path):
+        self._write_study_runtime(
+            tmp_path,
+            "format_version: 2\n"
+            "studies:\n"
+            "  study-a:\n"
+            "    docker_kwargs:\n"
+            "      shm_size: 8g\n"
+            "      ipc_mode: host\n",
+        )
+        launcher, dc = self._make_v2_launcher(tmp_path)
+
+        fl_ctx, _ = _make_fl_ctx()
+        launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
+
+        call_kwargs = dc.containers.run.call_args[1]
+        assert call_kwargs["shm_size"] == "8g"
+        assert call_kwargs["ipc_mode"] == "host"
+
+    def test_job_level_kwargs_win_over_study_docker_kwargs(self, tmp_path):
+        self._write_study_runtime(
+            tmp_path,
+            "format_version: 2\nstudies:\n  study-a:\n    docker_kwargs:\n      shm_size: 8g\n",
+        )
+        launcher, dc = self._make_v2_launcher(tmp_path)
+
+        fl_ctx, _ = _make_fl_ctx()
+        launcher.launch_job(_make_job_meta(study="study-a", docker_spec={"shm_size": "2g"}), fl_ctx)
+
+        assert dc.containers.run.call_args[1]["shm_size"] == "2g"
+
+    def test_study_docker_kwargs_win_over_site_defaults(self, tmp_path):
+        self._write_study_runtime(
+            tmp_path,
+            "format_version: 2\nstudies:\n  study-a:\n    docker_kwargs:\n      shm_size: 8g\n",
+        )
+        launcher = _make_launcher(default_job_container_kwargs={"shm_size": "1g", "labels": {"site": "a"}})
+        launcher.WORKSPACE_MOUNT = str(tmp_path)
+        dc = launcher._docker_client
+        container = MagicMock()
+        container.id = "abc123"
+        dc.containers.run.return_value = container
+        dc.containers.get.return_value = _make_container("running")
+
+        fl_ctx, _ = _make_fl_ctx()
+        launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
+
+        call_kwargs = dc.containers.run.call_args[1]
+        assert call_kwargs["shm_size"] == "8g"
+        assert call_kwargs["labels"] == {"site": "a"}
+
+    def test_job_num_of_gpus_wins_over_study_device_requests(self, tmp_path):
+        self._write_study_runtime(
+            tmp_path,
+            "format_version: 2\n"
+            "studies:\n"
+            "  study-a:\n"
+            "    docker_kwargs:\n"
+            "      device_requests:\n"
+            "        - Count: 4\n"
+            "          Capabilities: [[gpu]]\n",
+        )
+        launcher, dc = self._make_v2_launcher(tmp_path)
+
+        fl_ctx, _ = _make_fl_ctx()
+        launcher.launch_job(_make_job_meta(study="study-a", docker_spec={"num_of_gpus": 1}), fl_ctx)
+
+        assert dc.containers.run.call_args[1]["device_requests"] == [{"Count": 1, "Capabilities": [["gpu"]]}]
+
+    def test_docker_kwargs_reserved_key_rejected(self, tmp_path):
+        self._write_study_runtime(
+            tmp_path,
+            "format_version: 2\nstudies:\n  study-a:\n    docker_kwargs:\n      environment: {A: b}\n",
+        )
+        launcher, dc = self._make_v2_launcher(tmp_path)
+
+        fl_ctx, _ = _make_fl_ctx()
+        with pytest.raises(ValueError, match="launcher-owned"):
+            launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
+        dc.containers.run.assert_not_called()
+
+    def test_docker_kwargs_unknown_sdk_key_rejected(self, tmp_path):
+        self._write_study_runtime(
+            tmp_path,
+            "format_version: 2\nstudies:\n  study-a:\n    docker_kwargs:\n      shm_szie: 8g\n",
+        )
+        launcher, dc = self._make_v2_launcher(tmp_path)
+
+        fl_ctx, _ = _make_fl_ctx()
+        with pytest.raises(RuntimeError, match="not supported by the installed Docker SDK"):
+            launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
         dc.containers.run.assert_not_called()
 
     def test_conflicts_with_v1_file(self, tmp_path):

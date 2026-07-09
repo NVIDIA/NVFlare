@@ -261,7 +261,7 @@ Docker-specific runtime flags live under `launcher_spec[site][docker]`. Resource
 
 New jobs should put launcher/container settings in `launcher_spec` and scheduler resource requests such as `num_of_gpus` in `resource_spec`. Do not use `resource_spec[site][docker]` for new metadata; that shape mixes scheduler resources with launcher settings and was only part of earlier migration experiments.
 
-Job-level `launcher_spec[site][docker]` is merged with site-level defaults from `default_job_container_kwargs` in `local/resources.json`; job-level wins on conflict. Reserved keys controlled by the launcher (`volumes`, `mounts`, `network`, `environment`, `command`, `name`, `detach`, `user`, `working_dir`, and — for site defaults — `image`) cannot be overridden; a site default job image belongs in `studies.<study>.container.image` in `local/study_runtime.yaml`.
+Job-level `launcher_spec[site][docker]` is merged with site-level defaults from `default_job_container_kwargs` in `local/resources.json` and the study's `docker_kwargs` from `local/study_runtime.yaml` (precedence: site defaults → study → job; job wins on conflict). Reserved keys controlled by the launcher (`volumes`, `mounts`, `network`, `environment`, `command`, `name`, `detach`, `user`, `working_dir`, and — outside job specs — `image`) cannot be overridden; a site default job image belongs in `studies.<study>.container.image` in `local/study_runtime.yaml`.
 
 Site-level default environment variables can be set with `default_job_env` in `local/resources.json`. Launcher-controlled variables like `USER`, `HOME`, and `PYTHONPATH` still take precedence.
 

@@ -40,6 +40,7 @@ from nvflare.app_opt.job_launcher.study_data import (
     should_mount_study_data,
 )
 from nvflare.app_opt.job_launcher.study_runtime import (
+    RESERVED_DOCKER_KWARGS,
     STUDY_RUNTIME_FILE,
     load_study_runtime_file,
     resolve_study_runtime,
@@ -77,9 +78,9 @@ _RESERVED_CONTAINER_KWARGS = {
     "user",
     "working_dir",
 }
-# "image" is additionally reserved for site-level defaults only: jobs select their
-# image through docker_spec["image"], so it must not trip the job-spec warning.
-_RESERVED_DEFAULT_KWARGS = _RESERVED_CONTAINER_KWARGS | {"image"}
+# Site-level defaults and study docker_kwargs additionally reserve "image": jobs select
+# their image through docker_spec["image"], so it must not trip the job-spec warning.
+_RESERVED_DEFAULT_KWARGS = RESERVED_DOCKER_KWARGS
 
 
 def _sanitize_container_name(name: str) -> str:
@@ -452,7 +453,29 @@ class DockerJobLauncher(JobLauncherSpec):
         runtime_map = load_study_runtime_file(
             runtime_file, allow_pod_template=False, allow_secret_mount_items=False, logger=self.logger
         )
-        return resolve_study_runtime(runtime_map, study, runtime_file, logger=self.logger)
+        study_runtime = resolve_study_runtime(runtime_map, study, runtime_file, logger=self.logger)
+        self._validate_docker_kwargs_keys(study_runtime.docker_kwargs, runtime_file)
+        return study_runtime
+
+    def _validate_docker_kwargs_keys(self, docker_kwargs: dict, runtime_file: str) -> None:
+        """Fail fast on kwargs the installed Docker SDK does not model.
+
+        Without this, unknown keys surface as a TypeError from containers.run at
+        every job launch. Skipped when the SDK does not expose its kwargs lists.
+        """
+        if not docker_kwargs:
+            return
+        try:
+            from docker.models.containers import RUN_CREATE_KWARGS, RUN_HOST_CONFIG_KWARGS
+        except ImportError:
+            return
+        known = set(RUN_CREATE_KWARGS) | set(RUN_HOST_CONFIG_KWARGS)
+        unknown = sorted(set(docker_kwargs) - known)
+        if unknown:
+            raise RuntimeError(
+                f"study runtime file '{runtime_file}': docker_kwargs key(s) {unknown} are not supported "
+                "by the installed Docker SDK"
+            )
 
     def _get_docker_client(self):
         if self._docker_client is None:
@@ -599,15 +622,18 @@ class DockerJobLauncher(JobLauncherSpec):
                 f"{sorted(reserved_in_spec)} — ignored (controlled by the launcher)"
             )
         job_container_kwargs = {k: v for k, v in docker_spec.items() if k not in _NON_CONTAINER_KEYS}
-        merged_container_kwargs = {**self.default_job_container_kwargs, **job_container_kwargs}
+        study_docker_kwargs = study_runtime.docker_kwargs if study_runtime is not None else {}
+        merged_container_kwargs = {**self.default_job_container_kwargs, **study_docker_kwargs, **job_container_kwargs}
 
         # GPU precedence:
         # 1. explicit job-level device_requests in docker_spec
         # 2. job-level num_of_gpus translated to device_requests
-        # 3. site-level default device_requests from default_job_container_kwargs
+        # 3. study-level device_requests from docker_kwargs in study_runtime.yaml
+        # 4. site-level default device_requests from default_job_container_kwargs
         #
         # This preserves the documented rule that job-level resource_spec takes precedence
-        # over site-level defaults, while still allowing fine-grained device_requests overrides.
+        # over study and site-level defaults, while still allowing fine-grained
+        # device_requests overrides.
         if num_gpus and "device_requests" not in job_container_kwargs:
             merged_container_kwargs["device_requests"] = [{"Count": num_gpus, "Capabilities": [["gpu"]]}]
 

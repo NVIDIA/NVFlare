@@ -2555,6 +2555,22 @@ spec:
         finally:
             _exit_patches(patches)
 
+    def test_docker_kwargs_rejected_on_k8s(self, tmp_path):
+        patches = _make_k8s_launcher_patches(patch_open=False)
+        launcher, mock_api = self._setup_v2(
+            patches,
+            tmp_path,
+            "format_version: 2\nstudies:\n  study-a:\n    docker_kwargs:\n      shm_size: 8g\n",
+        )
+        try:
+            with pytest.raises(ValueError, match="Docker-only"):
+                launcher.launch_job(
+                    _make_launch_job_meta(study="study-a"), _make_launch_fl_ctx(workspace=str(tmp_path))
+                )
+            mock_api.create_namespaced_pod.assert_not_called()
+        finally:
+            _exit_patches(patches)
+
     def test_multi_container_template_without_typed_entries_uses_first_container(self, tmp_path):
         patches = _make_k8s_launcher_patches(patch_open=False)
         launcher, mock_api = self._setup_v2(

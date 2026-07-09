@@ -125,6 +125,8 @@ STUDY_RUNTIME_TEMPLATE = """# Per-study runtime configuration used by Docker and
 #         source: study-db-ca        # K8s: Secret name; Docker: host path
 #         mount_path: /var/run/nvflare/secrets/db-ca
 #     pod_template: pod_specs/job-pod.yaml              # K8s only; path relative to local/
+#     docker_kwargs:                                    # Docker only; containers.run kwargs
+#       shm_size: 8g
 format_version: 2
 studies: {}
 """

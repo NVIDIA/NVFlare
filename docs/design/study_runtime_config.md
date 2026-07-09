@@ -52,6 +52,10 @@ studies:
 
     pod_template: lung_cancer_pod.yaml   # K8s only; path relative to local/, or inline pod mapping
 
+    docker_kwargs:                       # Docker only; extra containers.run kwargs
+      shm_size: 8g
+      ipc_mode: host
+
     datasets:
       reference:                         # type defaults to "mount" == v1 semantics
         source: nvfldata
@@ -141,6 +145,7 @@ Kubernetes:
 - `pod_template`: inline mapping or path relative to `local/`; becomes the study's base manifest. Templates mark
   the main container with the `nvflare_job` sentinel; the launcher renames it to the per-job generated name
   (`container-<job-id>`).
+- `docker_kwargs`: hard error (Docker-only).
 
 Docker:
 
@@ -151,6 +156,11 @@ Docker:
   (Kubernetes-only Secret projection) — point `source` at a directory containing only the intended files.
 - `container.image`: site default job image, same resolution as Kubernetes. `pod_template`: hard error (K8s-only).
   `type: databricks`: deferred.
+- `docker_kwargs`: extra Docker SDK `containers.run` kwargs — the Docker escape hatch, symmetric to `pod_template`
+  (and a hard error on Kubernetes). Merge precedence: site `default_job_container_kwargs` → study `docker_kwargs`
+  → job `launcher_spec[site][docker]` (job wins, including GPU requests). Launcher-owned keys are parse-time hard
+  errors; remaining keys are validated against the installed Docker SDK's accepted kwargs at launch, so a typo
+  fails with a config error instead of a TypeError from `containers.run`.
 
 ## Pod Templates
 
@@ -169,8 +179,9 @@ Merge order (later wins):
   the main container must be marked with the `nvflare_job` sentinel — otherwise launch fails. (The existing
   `containers[0]` fallback would silently give a sidecar the study's `secret_env` or site-default image.)
 - The template is the escape hatch for cluster-shaped needs (service accounts, tolerations, affinity, sidecars,
-  admission annotations); the typed schema covers the portable rest. The built-in default manifest stays in code —
-  it carries the launch invariants; there is no editable default template file.
+  admission annotations); the typed schema covers the portable rest, and `docker_kwargs` is the Docker-side
+  equivalent — exactly one escape hatch per launcher. The built-in default manifest stays in code — it carries the
+  launch invariants; there is no editable default template file.
 - Per-study service accounts (`pod_template.spec.serviceAccountName`) work on today's machinery — the client parent
   and job pod already run under different SAs (Helm SA vs namespace default), and the job pod needs zero RBAC: it
   never calls the K8s API (CP↔CJ traffic is cellnet; Secrets and volumes are mounted by the kubelet; image pulls
@@ -197,7 +208,8 @@ both present (or v2 + legacy launcher args) → hard error
 - `format_version: 2` required — the gate for future format evolution.
 - Hard errors: unknown top-level keys, unknown per-study keys, unknown dataset `type`, a key in both `env` and
   `secret_env`, an `env` or `secret_env` name that is launcher-owned (`PYTHONPATH`, the workspace-transfer
-  variables), v1/v2 coexistence.
+  variables), launcher-owned keys in `docker_kwargs`, launcher-mismatched keys (`pod_template` on Docker,
+  `docker_kwargs` on Kubernetes), v1/v2 coexistence.
 - Missing referenced Secrets are not validated pre-launch (the launcher holds no Secret-read RBAC); the pending-pod
   failure classification already fails the job fast (`CreateContainerConfigError`, `FailedMount`).
 - Migration is wholesale: move all studies to `study_runtime.yaml`, delete `study_data.yaml` and any

@@ -193,6 +193,41 @@ class TestLoadStudyRuntimeFile:
                 )
             )
 
+    def test_docker_kwargs_parsed(self, tmp_path):
+        runtime_map = load_study_runtime_file(
+            _write(
+                tmp_path,
+                "format_version: 2\n"
+                "studies:\n"
+                "  study-a:\n"
+                "    docker_kwargs:\n"
+                "      shm_size: 8g\n"
+                "      device_requests:\n"
+                "        - Count: 1\n"
+                "          Capabilities: [[gpu]]\n",
+            )
+        )
+        assert runtime_map["study-a"].docker_kwargs == {
+            "shm_size": "8g",
+            "device_requests": [{"Count": 1, "Capabilities": [["gpu"]]}],
+        }
+
+    def test_docker_kwargs_reserved_key_rejected(self, tmp_path):
+        with pytest.raises(ValueError, match="launcher-owned"):
+            load_study_runtime_file(
+                _write(
+                    tmp_path,
+                    "format_version: 2\nstudies:\n  study-a:\n    docker_kwargs:\n      image: sneaky:v1\n",
+                )
+            )
+
+    def test_docker_kwargs_rejected_when_not_allowed(self, tmp_path):
+        with pytest.raises(ValueError, match="Docker-only"):
+            load_study_runtime_file(
+                _write(tmp_path, "format_version: 2\nstudies:\n  study-a:\n    docker_kwargs:\n      shm_size: 8g\n"),
+                allow_docker_kwargs=False,
+            )
+
     def test_env_value_must_be_scalar(self, tmp_path):
         with pytest.raises(ValueError, match="scalar"):
             load_study_runtime_file(
