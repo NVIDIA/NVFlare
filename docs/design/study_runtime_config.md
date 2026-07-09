@@ -165,9 +165,9 @@ Merge order (later wins):
 
 - Typed entries merge by name onto the main container, located via the `nvflare_job` sentinel.
 - FLARE-owned fields sit on top of both layers; neither template nor typed schema can break launch invariants.
-- Guardrail: if typed entries are configured and a template has multiple containers, the main container must be
-  marked with the `nvflare_job` sentinel — otherwise launch fails. (The existing `containers[0]` fallback would
-  silently give a sidecar the study's `secret_env`.)
+- Guardrail: if typed entries (including `container.image`) are configured and a template has multiple containers,
+  the main container must be marked with the `nvflare_job` sentinel — otherwise launch fails. (The existing
+  `containers[0]` fallback would silently give a sidecar the study's `secret_env` or site-default image.)
 - The template is the escape hatch for cluster-shaped needs (service accounts, tolerations, affinity, sidecars,
   admission annotations); the typed schema covers the portable rest. The built-in default manifest stays in code —
   it carries the launch invariants; there is no editable default template file.

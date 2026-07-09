@@ -2521,6 +2521,40 @@ spec:
         finally:
             _exit_patches(patches)
 
+    def test_container_image_with_unmarked_multi_container_template_fails(self, tmp_path):
+        # the site-default image must not land on a fallback-selected sidecar
+        patches = _make_k8s_launcher_patches(patch_open=False)
+        launcher, mock_api = self._setup_v2(
+            patches,
+            tmp_path,
+            "format_version: 2\n"
+            "studies:\n"
+            "  study-a:\n"
+            "    container:\n"
+            "      image: registry.example.com/study:v9\n"
+            "    pod_template: multi.yaml\n",
+            pod_templates={
+                "multi.yaml": (
+                    "apiVersion: v1\n"
+                    "kind: Pod\n"
+                    "spec:\n"
+                    "  containers:\n"
+                    "    - name: log-forwarder\n"
+                    "      image: a\n"
+                    "    - name: trainer\n"
+                    "      image: b\n"
+                )
+            },
+        )
+        try:
+            with pytest.raises(ValueError, match="mark the main container"):
+                launcher.launch_job(
+                    _make_launch_job_meta(image=None, study="study-a"), _make_launch_fl_ctx(workspace=str(tmp_path))
+                )
+            mock_api.create_namespaced_pod.assert_not_called()
+        finally:
+            _exit_patches(patches)
+
     def test_multi_container_template_without_typed_entries_uses_first_container(self, tmp_path):
         patches = _make_k8s_launcher_patches(patch_open=False)
         launcher, mock_api = self._setup_v2(

@@ -1103,7 +1103,11 @@ class K8sJobLauncher(JobLauncherSpec):
                         {"name": ref.name, "source": ref.source, "key": ref.key} for ref in study_runtime.secret_env
                     ]
                 if pod_manifest_template is not None and (
-                    data_mounts or study_runtime.env or study_runtime.secret_env or study_runtime.secret_mounts
+                    data_mounts
+                    or study_runtime.env
+                    or study_runtime.secret_env
+                    or study_runtime.secret_mounts
+                    or study_runtime.container_image
                 ):
                     job_config["require_main_container"] = True
             if self.image_pull_secrets:
