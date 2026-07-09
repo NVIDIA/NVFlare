@@ -1358,7 +1358,12 @@ class DownloadService:
                 # shutdown() forbade this generation from recording: its ownership
                 # marker (kept so same-id retries serialize behind its settlement) is
                 # consumed above, but its verdict is dropped -- nothing records after
-                # shutdown, and its waiters were already resolved to None.
+                # shutdown. Waiters shutdown saw were resolved to None then; one that
+                # parked DURING the settlement window (the surviving marker made the
+                # id look live to get_transfer_waiter) is drained here, or it would
+                # hang forever: every path that consumes ownership must drain waiters.
+                for waiter in cls._tx_waiters.pop(outcome.tx_id, ()):
+                    waiter._resolve(None)
                 return
             cls._tx_outcomes[outcome.tx_id] = outcome
             # resolve the awaitable facade: waiters are TransferWaiter objects (no user code

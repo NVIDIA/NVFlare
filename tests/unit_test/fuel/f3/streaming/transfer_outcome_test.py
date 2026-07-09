@@ -636,6 +636,44 @@ class TestServiceOutcomeTable:
         assert old_emissions and all(i < retry_at for i in old_emissions), f"stale emission after retry: {events}"
         assert ("old_progress", TransferProgressState.FAILED) in events
 
+    def test_waiter_parked_during_shutdown_settlement_window_resolves(self):
+        """P1 pin: shutdown resolves the waiters it sees and keeps ownership markers for
+        serialization -- but a get_transfer_waiter call in the settlement window (after
+        shutdown's locked teardown, before the deferred settlement consumes ownership)
+        found the marker, parked, and hung forever: the record-forbidden branch consumed
+        ownership without draining waiters. Every ownership-consuming path drains now."""
+        from unittest.mock import Mock
+
+        service = make_isolated_download_service()
+        service._tx_monitor = Mock()
+        cell = Mock()
+        cb_entered = threading.Event()
+        cb_release = threading.Event()
+
+        def gated_done_cb(tid, status, base_objs, **kw):
+            cb_entered.set()
+            cb_release.wait(10.0)
+
+        service.new_transaction(
+            cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-WIN", transaction_done_cb=gated_done_cb
+        )
+        shutter = threading.Thread(target=service.shutdown)
+        try:
+            shutter.start()
+            assert cb_entered.wait(5.0)  # locked teardown done; deferred settlement in flight
+
+            # the ownership marker is still visible, so this waiter parks instead of
+            # resolving immediately -- it must be drained when settlement consumes
+            # ownership, not stranded
+            waiter = service.get_transfer_waiter("TX-WIN")
+            assert not waiter.done(), "precondition: the waiter parked inside the window"
+        finally:
+            cb_release.set()
+            shutter.join(5.0)
+        outcome = waiter.wait(timeout=5.0)
+        assert waiter.done(), "window waiter must never hang past shutdown settlement"
+        assert outcome is None, "shutdown drops verdicts: the window waiter resolves to None"
+
     def test_retry_gives_up_if_previous_generation_never_settles(self):
         # ownership was taken but settlement never runs (a hung terminator): a retry
         # must fail loudly after the bounded wait, never register ambiguously
