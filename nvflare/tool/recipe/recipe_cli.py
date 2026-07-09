@@ -604,14 +604,13 @@ def _privacy_compatible(entry: dict, parameters: list, recipe_cls) -> list:
 def _client_requirements(entry: dict, parameters: list) -> dict:
     by_name = {p["name"]: p for p in parameters}
     per_site_config = by_name.get("per_site_config")
-    site_list = by_name.get("sites") or by_name.get("client_ids")
     requirements = {
         "state_exchange": entry.get("state_exchange"),
         "requires_training_script": "train_script" in by_name,
         "requires_per_site_config": bool(per_site_config and per_site_config["required"]),
-        "requires_site_list": site_list is not None,
+        "requires_site_list": "sites" in by_name,
     }
-    for name in ("min_clients", "sites", "client_ids", "label_owner", "client_ranks"):
+    for name in ("min_clients", "sites", "label_owner", "client_ranks"):
         parameter = by_name.get(name)
         if parameter:
             requirements[name] = {

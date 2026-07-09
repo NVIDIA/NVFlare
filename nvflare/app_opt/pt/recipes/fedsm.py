@@ -30,8 +30,9 @@ class FedSMRecipe(Recipe):
     FULL bundle containing global and selector weight differences plus the full
     personalized model. They may also return selector optimizer state.
 
-    Unlike FedAvg, FedSM requires the complete client identity set before job
-    construction. For now every configured client participates in every round.
+    Unlike FedAvg, FedSM requires the complete site set before job construction.
+    The recipe creates one client app per site, and every configured site
+    participates in every round.
     """
 
     def __init__(
@@ -40,12 +41,12 @@ class FedSMRecipe(Recipe):
         name: str = "fedsm",
         model: Union[Any, Dict[str, Any]],
         selector_model: Union[Any, Dict[str, Any]],
-        client_ids: List[str],
+        sites: List[str],
         min_clients: int,
         num_rounds: int = 2,
         train_script: str,
         train_args: str = "",
-        client_id_label_mapping: Optional[Dict[str, int]] = None,
+        site_label_mapping: Optional[Dict[str, int]] = None,
         soft_pull_lambda: float = 0.7,
         initial_ckpt: Optional[str] = None,
         launch_external_process: bool = False,
@@ -61,25 +62,25 @@ class FedSMRecipe(Recipe):
             raise ValueError("FedSMRecipe requires model")
         if selector_model is None:
             raise ValueError("FedSMRecipe requires selector_model")
-        if not isinstance(client_ids, list) or not client_ids:
-            raise ValueError("client_ids must be a non-empty list of unique client names")
-        if any(not isinstance(client_id, str) or not client_id for client_id in client_ids):
-            raise ValueError("client_ids must contain non-empty strings")
-        if len(client_ids) != len(set(client_ids)):
-            raise ValueError("client_ids must be a non-empty list of unique client names")
-        if min_clients != len(client_ids):
+        if not isinstance(sites, list) or not sites:
+            raise ValueError("sites must be a non-empty list of unique site names")
+        if any(not isinstance(site, str) or not site for site in sites):
+            raise ValueError("sites must contain non-empty strings")
+        if len(sites) != len(set(sites)):
+            raise ValueError("sites must be a non-empty list of unique site names")
+        if min_clients != len(sites):
             raise ValueError(
-                "FedSMRecipe currently requires min_clients to equal len(client_ids) "
+                "FedSMRecipe currently requires min_clients to equal len(sites) "
                 "so every personalized model participates in each SoftPull update"
             )
         if server_expected_format != ExchangeFormat.PYTORCH:
             raise ValueError("FedSMRecipe requires server_expected_format=ExchangeFormat.PYTORCH")
 
-        mapping = client_id_label_mapping or {client_id: index for index, client_id in enumerate(client_ids)}
-        if set(mapping) != set(client_ids):
-            raise ValueError("client_id_label_mapping keys must exactly match client_ids")
-        if set(mapping.values()) != set(range(len(client_ids))):
-            raise ValueError("client_id_label_mapping values must be contiguous selector labels starting at 0")
+        mapping = site_label_mapping or {site: index for index, site in enumerate(sites)}
+        if set(mapping) != set(sites):
+            raise ValueError("site_label_mapping keys must exactly match sites")
+        if set(mapping.values()) != set(range(len(sites))):
+            raise ValueError("site_label_mapping values must be contiguous selector labels starting at 0")
 
         from nvflare.recipe.utils import prepare_initial_ckpt, recipe_model_to_job_model, validate_ckpt
 
@@ -92,12 +93,12 @@ class FedSMRecipe(Recipe):
         self.name = name
         self.model = model
         self.selector_model = selector_model
-        self.client_ids = list(client_ids)
+        self.sites = list(sites)
         self.min_clients = min_clients
         self.num_rounds = num_rounds
         self.train_script = train_script
         self.train_args = train_args
-        self.client_id_label_mapping = dict(mapping)
+        self.site_label_mapping = dict(mapping)
         self.soft_pull_lambda = soft_pull_lambda
         self.initial_ckpt = initial_ckpt
         self.server_expected_format = server_expected_format
@@ -107,7 +108,7 @@ class FedSMRecipe(Recipe):
         persistor = PTFedSMModelPersistor(
             model=model,
             selector_model=selector_model,
-            client_ids=client_ids,
+            client_ids=sites,
             source_ckpt_file_full_name=ckpt_path,
         )
         persistor_id = job.to_server(persistor, id="persistor")
@@ -123,19 +124,25 @@ class FedSMRecipe(Recipe):
         )
         job.to_server(controller)
 
-        executor = ScriptRunner(
-            script=train_script,
-            script_args=train_args,
-            launch_external_process=launch_external_process,
-            command=command,
-            framework=FrameworkType.PYTORCH,
-            server_expected_format=server_expected_format,
-            params_transfer_type=TransferType.FULL,
-            launch_once=launch_once,
-            shutdown_timeout=shutdown_timeout,
-            memory_gc_rounds=client_memory_gc_rounds,
-            cuda_empty_cache=cuda_empty_cache,
-        )
-        job.to_clients(executor)
+        for site in sites:
+            executor = ScriptRunner(
+                script=train_script,
+                script_args=train_args,
+                launch_external_process=launch_external_process,
+                command=command,
+                framework=FrameworkType.PYTORCH,
+                server_expected_format=server_expected_format,
+                params_transfer_type=TransferType.FULL,
+                launch_once=launch_once,
+                shutdown_timeout=shutdown_timeout,
+                memory_gc_rounds=client_memory_gc_rounds,
+                cuda_empty_cache=cuda_empty_cache,
+            )
+            job.to(executor, site)
 
         super().__init__(job)
+
+    def configured_sites(self) -> List[str]:
+        if self._helper_per_site_config is not None:
+            return super().configured_sites()
+        return list(self.sites)

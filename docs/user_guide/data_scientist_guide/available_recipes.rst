@@ -220,7 +220,7 @@ a global model, one personalized model per client, and a selector model.
         name="fedsm-pt",
         model=MyModel(),
         selector_model=MySelector(num_classes=3),
-        client_ids=["site-1", "site-2", "site-3"],
+        sites=["site-1", "site-2", "site-3"],
         min_clients=3,
         num_rounds=10,
         train_script="client.py",
@@ -232,7 +232,7 @@ The client script uses ``PTFedSMHelper.load_bundle()`` before its task-specific 
 differences; the personalized entry is a full model. Selector optimizer state is synchronized when the helper
 is given an optimizer.
 
-FedSM currently requires every configured ``client_id`` to participate in every round. FedSM and FedCE are
+FedSM currently requires every configured site to participate in every round. FedSM and FedCE are
 separate recipes and cannot be enabled together as independent features.
 
 

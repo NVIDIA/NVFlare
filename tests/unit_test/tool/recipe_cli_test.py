@@ -519,7 +519,7 @@ def test_recipe_show_fedprox_documents_fedavg_constructor(monkeypatch, capsys):
     assert "same recipe constructor as fedavg-pt" in data["notes"][0]
 
 
-def test_recipe_show_fedsm_reports_required_client_ids(monkeypatch, capsys):
+def test_recipe_show_fedsm_reports_required_sites(monkeypatch, capsys):
     import json
 
     from nvflare.tool import cli_output
@@ -532,7 +532,7 @@ def test_recipe_show_fedsm_reports_required_client_ids(monkeypatch, capsys):
     payload = json.loads(capsys.readouterr().out)
     requirements = payload["data"]["client_requirements"]
     assert requirements["requires_site_list"] is True
-    assert requirements["client_ids"] == {"required": True, "default": None}
+    assert requirements["sites"] == {"required": True, "default": None}
 
 
 def test_recipe_show_uses_static_metadata_when_optional_dependency_is_missing(monkeypatch, capsys):
