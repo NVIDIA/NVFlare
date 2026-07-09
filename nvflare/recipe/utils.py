@@ -238,7 +238,9 @@ def add_experiment_tracking(
     Args:
         recipe: Recipe instance to augment with experiment tracking.
         tracking_type: Type of tracking to enable ("mlflow", "tensorboard", or "wandb").
-        tracking_config: Optional configuration dict for the tracking receiver.
+        tracking_config: Optional configuration dict for the tracking receiver. For MLflow,
+            omitting this uses a local file store and derives ``experiment_name`` and
+            ``run_name`` from the recipe name.
         client_side: If True, add tracking to clients (each client tracks locally).
         server_side: If True, add tracking to server (aggregates metrics from all clients). Default: True.
         clients: Optional list of client names for client-side tracking. If None, the
@@ -251,11 +253,11 @@ def add_experiment_tracking(
             all-clients topology or unknown site names, targeted placement raises ValueError.
 
     Examples:
-        # Server-side tracking (default - federated metrics)
-        add_experiment_tracking(recipe, "mlflow", {"tracking_uri": "..."})
+        # Server-side MLflow tracking with local storage and recipe-derived names
+        add_experiment_tracking(recipe, "mlflow")
 
         # Client-side tracking only (each client tracks independently)
-        add_experiment_tracking(recipe, "mlflow", {...}, client_side=True, server_side=False)
+        add_experiment_tracking(recipe, "mlflow", client_side=True, server_side=False)
 
         # Both server and client tracking
         add_experiment_tracking(recipe, "mlflow", {...}, client_side=True, server_side=True)
@@ -270,9 +272,20 @@ def add_experiment_tracking(
             client_side=True, server_side=False, clients=["site-2"],
         )
     """
-    tracking_config = tracking_config or {}
     if tracking_type not in TRACKING_REGISTRY:
         raise ValueError(f"Invalid tracking type: {tracking_type}")
+
+    tracking_config = copy.deepcopy(tracking_config) if tracking_config else {}
+    if tracking_type == "mlflow":
+        kw_args = tracking_config.get("kw_args")
+        if kw_args is None:
+            kw_args = {}
+            tracking_config["kw_args"] = kw_args
+        elif not isinstance(kw_args, dict):
+            raise TypeError(f"MLflow kw_args must be a dict, got {type(kw_args).__name__}")
+        recipe_name = getattr(recipe, "name", None) or getattr(recipe.job, "name", None) or "nvflare"
+        kw_args.setdefault("experiment_name", f"{recipe_name}-experiment")
+        kw_args.setdefault("run_name", f"{recipe_name}-Client")
 
     if not server_side and not client_side:
         raise ValueError("At least one of server_side or client_side must be True")

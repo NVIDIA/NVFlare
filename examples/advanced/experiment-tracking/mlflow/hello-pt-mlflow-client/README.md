@@ -36,18 +36,11 @@ recipe = FedAvgRecipe(
     train_script="client.py",
 )
 
-# Add an MLflow receiver to every client, but not to the server.
-# With tracking_uri=None, each receiver creates a store in its local job workspace.
+# Add an MLflow receiver to every client, but not to the server. With no
+# tracking_config, each receiver creates a local store and uses recipe-derived names.
 add_experiment_tracking(
     recipe,
     "mlflow",
-    tracking_config={
-        "tracking_uri": None,
-        "kw_args": {
-            "experiment_name": "nvflare-fedavg-experiment",
-            "run_name": "nvflare-fedavg-client",
-        },
-    },
     client_side=True,
     server_side=False,
 )
@@ -56,10 +49,20 @@ env = SimEnv(num_clients=2)
 run = recipe.execute(env)
 ```
 
+Only the placement flags are needed here because this example intentionally
+tracks on clients. For default server-side MLflow tracking, the complete call is:
+
+```python
+add_experiment_tracking(recipe, "mlflow")
+```
+
 **Key points**:
 - `client_side=True, server_side=False` keeps metric handling on the clients.
 - The helper configures receivers to listen to local events rather than federated `fed.` events.
-- `tracking_uri=None` resolves to a separate MLflow store in each client's job workspace.
+- Omitting `tracking_config` uses `tracking_uri=None`, which resolves to a separate MLflow store in each client's job workspace.
+- The default `experiment_name` and configured run-name suffix are
+  `fedavg_mlflow_client-experiment` and `fedavg_mlflow_client-Client`; the
+  receiver adds site and job identifiers to the final run name.
 - Sites can use explicit local paths or remote MLflow servers when their deployment requires them.
 
 ## Setup

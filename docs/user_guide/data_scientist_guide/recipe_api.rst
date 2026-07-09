@@ -143,7 +143,10 @@ Utility helpers:
    Add supported experiment tracking receivers such as TensorBoard, MLflow, or
    Weights & Biases. With ``client_side=True``, ``clients`` limits which sites
    receive the client-side receiver; call once per site with different
-   ``tracking_config`` values for per-site tracking destinations.
+   ``tracking_config`` values for per-site tracking destinations. For MLflow,
+   omitting ``tracking_config`` uses local storage and defaults the experiment
+   and run-name suffix to ``<recipe-name>-experiment`` and
+   ``<recipe-name>-Client``.
 
 ``add_cross_site_evaluation(recipe, submit_model_timeout=600, validation_timeout=6000, participating_clients=None)``
    Add cross-site evaluation to a training recipe when the recipe/framework

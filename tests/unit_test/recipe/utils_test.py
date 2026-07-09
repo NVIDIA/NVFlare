@@ -662,6 +662,61 @@ class TestAddExperimentTrackingClients:
     def _make_recipe(self, name="test_tracking_clients"):
         return Recipe(FedJob(name=name, min_clients=1))
 
+    @pytest.fixture
+    def dummy_mlflow(self, monkeypatch):
+        """Replace MLflow with a dependency-free receiver while retaining MLflow defaults."""
+        import nvflare.recipe.utils as utils_mod
+
+        monkeypatch.setitem(
+            utils_mod.TRACKING_REGISTRY,
+            "mlflow",
+            {"package": "json", "receiver_module": "argparse", "receiver_class": "Namespace"},
+        )
+
+    def test_mlflow_defaults_derive_from_recipe_name(self, dummy_mlflow):
+        from nvflare.recipe.utils import add_experiment_tracking
+
+        recipe = self._make_recipe("named_job")
+
+        add_experiment_tracking(recipe, "mlflow")
+
+        receiver = recipe.job._deploy_map["server"].app_config.components["receiver"]
+        assert receiver.kw_args == {
+            "experiment_name": "named_job-experiment",
+            "run_name": "named_job-Client",
+        }
+
+    def test_mlflow_client_tracking_can_omit_config(self, dummy_mlflow):
+        from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
+        from nvflare.apis.job_def import ALL_SITES
+        from nvflare.recipe.utils import add_experiment_tracking
+
+        recipe = self._make_recipe("client_job")
+
+        add_experiment_tracking(recipe, "mlflow", client_side=True, server_side=False)
+
+        receiver = recipe.job._deploy_map[ALL_SITES].app_config.components["client_receiver"]
+        assert receiver.kw_args == {
+            "experiment_name": "client_job-experiment",
+            "run_name": "client_job-Client",
+        }
+        assert receiver.events == [ANALYTIC_EVENT_TYPE]
+
+    def test_mlflow_defaults_preserve_explicit_values_and_input(self, dummy_mlflow):
+        from nvflare.recipe.utils import add_experiment_tracking
+
+        recipe = self._make_recipe("named_job")
+        config = {"kw_args": {"experiment_name": "custom-experiment"}}
+
+        add_experiment_tracking(recipe, "mlflow", config)
+
+        receiver = recipe.job._deploy_map["server"].app_config.components["receiver"]
+        assert receiver.kw_args == {
+            "experiment_name": "custom-experiment",
+            "run_name": "named_job-Client",
+        }
+        assert config == {"kw_args": {"experiment_name": "custom-experiment"}}
+
     def test_client_side_tracking_specific_clients(self, dummy_tracking):
         from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
         from nvflare.apis.job_def import ALL_SITES
