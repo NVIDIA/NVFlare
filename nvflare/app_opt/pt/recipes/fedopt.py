@@ -205,6 +205,7 @@ class FedOptRecipe(Recipe):
             recipe_name=type(self).__name__,
             data_kind_arg="expected_data_kind",
             aggregator=self.aggregator,
+            fixed_data_kind=True,
         )
         if self.enable_tensor_disk_offload and self.server_expected_format != ExchangeFormat.PYTORCH:
             warnings.warn(

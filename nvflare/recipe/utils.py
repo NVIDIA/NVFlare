@@ -78,8 +78,14 @@ def validate_data_kind_transfer_type(
     aggregator: Any = None,
     client_name: Optional[str] = None,
     require_data_kind: bool = False,
+    fixed_data_kind: bool = False,
 ) -> None:
-    """Validate that client output and server aggregation use the same model-update kind."""
+    """Validate that client output and server aggregation use the same model-update kind.
+
+    ``fixed_data_kind`` is for recipes such as FedOpt that do not expose the update-kind
+    settings. Its error guidance tells users to replace or reconfigure their custom
+    aggregator instead of suggesting recipe arguments they cannot change.
+    """
     declared_kind = getattr(aggregator, "expected_data_kind", None)
     if declared_kind is None:
         assembler = getattr(aggregator, "assembler", None)
@@ -87,14 +93,31 @@ def validate_data_kind_transfer_type(
         if callable(get_expected_data_kind):
             declared_kind = get_expected_data_kind()
 
-    if data_kind is None:
-        data_kind = declared_kind
-    else:
-        data_kind = DataKind(data_kind)
+    if isinstance(declared_kind, dict):
+        if len(declared_kind) != 1:
+            raise ValueError(
+                f"{recipe_name} cannot validate aggregator {type(aggregator).__name__}: "
+                f"expected_data_kind declares {len(declared_kind)} entries, but the recipe expects a single "
+                "model-update DataKind. Configure the aggregator with one expected_data_kind entry."
+            )
+        declared_kind = next(iter(declared_kind.values()))
 
-    if data_kind is not None and declared_kind is not None and not isinstance(declared_kind, dict):
+    if declared_kind is not None:
         declared_kind = DataKind(declared_kind)
+    if data_kind is not None:
+        data_kind = DataKind(data_kind)
+    else:
+        data_kind = declared_kind
+
+    if data_kind is not None and declared_kind is not None:
         if declared_kind != data_kind:
+            if fixed_data_kind:
+                raise ValueError(
+                    f"{recipe_name} requires a custom aggregator configured with "
+                    f"expected_data_kind=DataKind.{data_kind.name}, but {type(aggregator).__name__} declares "
+                    f"expected_data_kind=DataKind.{declared_kind.name}. Configure the custom aggregator for "
+                    f"DataKind.{data_kind.name}, or omit it to use the built-in aggregator."
+                )
             declared_transfer_type = TransferType.DIFF if declared_kind == DataKind.WEIGHT_DIFF else TransferType.FULL
             raise ValueError(
                 f"{recipe_name} has incompatible server aggregation settings: "
@@ -113,7 +136,6 @@ def validate_data_kind_transfer_type(
             )
         return
 
-    data_kind = DataKind(data_kind)
     transfer_type = TransferType(transfer_type)
     if data_kind not in (DataKind.WEIGHTS, DataKind.WEIGHT_DIFF):
         raise ValueError(

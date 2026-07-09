@@ -698,6 +698,21 @@ class TestFedAvgRecipeValidation:
 
         assert "client 'site-2'" in str(exc_info.value)
 
+    def test_per_site_config_validates_only_deployed_sites(self, mock_file_system, base_recipe_params, simple_model):
+        recipe = FedAvgRecipe(
+            name="test_per_site_update_kind_targets",
+            model=simple_model,
+            aggregator_data_kind=DataKind.WEIGHT_DIFF,
+            params_transfer_type=TransferType.FULL,
+            per_site_config={
+                "site-1": {"params_transfer_type": TransferType.DIFF},
+                "site-2": {"params_transfer_type": TransferType.DIFF},
+            },
+            **base_recipe_params,
+        )
+
+        assert set(recipe.job._deploy_map) == {SERVER_SITE_NAME, "site-1", "site-2"}
+
     def test_invalid_aggregator_type_raises_validation_error(self, mock_file_system, base_recipe_params):
         """Test that invalid aggregator type raises Pydantic validation error."""
         from pydantic import ValidationError

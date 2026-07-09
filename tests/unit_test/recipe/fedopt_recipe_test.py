@@ -99,13 +99,18 @@ class TestPTFedOptRecipe:
 
         aggregator = InTimeAccumulateWeightedAggregator(expected_data_kind=DataKind.WEIGHTS)
 
-        with pytest.raises(ValueError, match="incompatible server aggregation settings"):
+        with pytest.raises(ValueError) as exc_info:
             FedOptRecipe(
                 name="test_fedopt_aggregator_kind",
                 model=simple_model,
                 aggregator=aggregator,
                 **base_recipe_params,
             )
+
+        message = str(exc_info.value)
+        assert "requires a custom aggregator configured with expected_data_kind=DataKind.WEIGHT_DIFF" in message
+        assert "omit it to use the built-in aggregator" in message
+        assert "params_transfer_type" not in message
 
     def test_enable_tensor_disk_offload_configures_controller(self, mock_file_system, base_recipe_params, simple_model):
         """Test PT FedOptRecipe passes tensor disk offload settings to ScatterAndGather."""
