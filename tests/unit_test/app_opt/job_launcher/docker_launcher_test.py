@@ -1271,6 +1271,39 @@ class TestDockerJobLauncherStudyRuntime:
             launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
         dc.containers.run.assert_not_called()
 
+    def test_study_container_image_used_when_job_meta_has_none(self, tmp_path):
+        self._write_study_runtime(
+            tmp_path,
+            "format_version: 2\nstudies:\n  study-a:\n    container:\n      image: registry.example.com/study:v9\n",
+        )
+        launcher, dc = self._make_v2_launcher(tmp_path)
+
+        fl_ctx, _ = _make_fl_ctx()
+        launcher.launch_job(_make_job_meta(study="study-a", docker_spec={"image": None}), fl_ctx)
+
+        assert dc.containers.run.call_args[0][0] == "registry.example.com/study:v9"
+
+    def test_job_meta_image_wins_over_study_container_image(self, tmp_path):
+        self._write_study_runtime(
+            tmp_path,
+            "format_version: 2\nstudies:\n  study-a:\n    container:\n      image: registry.example.com/study:v9\n",
+        )
+        launcher, dc = self._make_v2_launcher(tmp_path)
+
+        fl_ctx, _ = _make_fl_ctx()
+        launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
+
+        assert dc.containers.run.call_args[0][0] == "nvflare/nvflare:test"
+
+    def test_missing_image_error_mentions_study_runtime(self, tmp_path):
+        self._write_study_runtime(tmp_path, "format_version: 2\nstudies: {}\n")
+        launcher, dc = self._make_v2_launcher(tmp_path)
+
+        fl_ctx, _ = _make_fl_ctx()
+        with pytest.raises(RuntimeError, match="container.image"):
+            launcher.launch_job(_make_job_meta(study="study-a", docker_spec={"image": None}), fl_ctx)
+        dc.containers.run.assert_not_called()
+
     def test_conflicts_with_v1_file(self, tmp_path):
         self._write_study_runtime(tmp_path, "format_version: 2\nstudies: {}\n")
         (tmp_path / "local" / "study_data.yaml").write_text("study-a: {}\n", encoding="utf-8")

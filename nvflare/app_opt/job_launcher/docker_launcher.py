@@ -496,13 +496,19 @@ class DockerJobLauncher(JobLauncherSpec):
                 f"launcher_spec docker image for site '{site_name}' must be a string, "
                 f"got {type(job_image).__name__}: {job_image!r}"
             )
+        study = job_meta.get(JobMetaKey.STUDY.value)
+        study_runtime = self._resolve_study_runtime(study)
+        if not job_image and study_runtime is not None:
+            # job-supplied image wins; the study's container.image is the site default
+            job_image = study_runtime.container_image
         if not job_image:
             raise RuntimeError(
                 f"DockerJobLauncher is configured for site '{site_name}' but no job image "
                 f"was specified in meta.json for this site. "
                 f"Set launcher_spec['{site_name}']['docker']['image'] (preferred), "
                 f"launcher_spec['default']['docker']['image'] (shared default), "
-                f"or resource_spec['{site_name}']['docker']['image'] (legacy)."
+                f"resource_spec['{site_name}']['docker']['image'] (legacy), "
+                f"or studies.<study>.container.image in local/study_runtime.yaml (site default)."
             )
 
         workspace = self.workspace
@@ -539,8 +545,6 @@ class DockerJobLauncher(JobLauncherSpec):
             raise RuntimeError(f"launcher_spec['{site_name}']['docker']['python_path'] must be a non-empty string")
         command = [python_path, "-u", "-m", exe_module] + module_args_list
 
-        study = job_meta.get(JobMetaKey.STUDY.value)
-        study_runtime = self._resolve_study_runtime(study)
         site_env = {}
         if study_runtime is not None:
             site_env.update(study_runtime.env)

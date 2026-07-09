@@ -2006,7 +2006,7 @@ spec:
       secret:
         secretName: old-startup-secret
   containers:
-    - name: trainer
+    - name: nvflare_job
       image: template-image
       imagePullPolicy: IfNotPresent
       env:
@@ -2034,8 +2034,6 @@ spec:
             "format_version: 2\n"
             "studies:\n"
             "  study-a:\n"
-            "    container:\n"
-            "      name: trainer\n"
             "    pod_template: pod_specs/study-a-pod.yaml\n"
             "    datasets:\n"
             "      training:\n"
@@ -2085,7 +2083,7 @@ spec:
             assert volume_map[training_volume]["persistentVolumeClaim"]["claimName"] == "study-train-pvc"
 
             job_container = manifest["spec"]["containers"][0]
-            assert job_container["name"] == "trainer"
+            assert job_container["name"] == f"container-{_EXPECTED_JOB_ID}"
             assert job_container["image"] == "repo/nvflare-job:v2"
             assert job_container["command"] == ["/usr/bin/python3"]
             assert job_container["imagePullPolicy"] == "IfNotPresent"
@@ -2375,18 +2373,50 @@ spec:
         finally:
             _exit_patches(patches)
 
-    def test_study_runtime_container_name_sets_main_container(self, tmp_path):
+    def test_study_container_image_used_when_job_meta_has_none(self, tmp_path):
         patches = _make_k8s_launcher_patches(patch_open=False)
         launcher, mock_api = self._setup_v2(
             patches,
             tmp_path,
-            "format_version: 2\nstudies:\n  study-a:\n    container:\n      name: study-a-job\n",
+            "format_version: 2\nstudies:\n  study-a:\n    container:\n      image: registry.example.com/study:v9\n",
         )
         try:
-            launcher.launch_job(_make_launch_job_meta(study="study-a"), _make_launch_fl_ctx(workspace=str(tmp_path)))
+            launcher.launch_job(
+                _make_launch_job_meta(image=None, study="study-a"), _make_launch_fl_ctx(workspace=str(tmp_path))
+            )
 
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
-            assert manifest["spec"]["containers"][0]["name"] == "study-a-job"
+            assert manifest["spec"]["containers"][0]["image"] == "registry.example.com/study:v9"
+        finally:
+            _exit_patches(patches)
+
+    def test_job_meta_image_wins_over_study_container_image(self, tmp_path):
+        patches = _make_k8s_launcher_patches(patch_open=False)
+        launcher, mock_api = self._setup_v2(
+            patches,
+            tmp_path,
+            "format_version: 2\nstudies:\n  study-a:\n    container:\n      image: registry.example.com/study:v9\n",
+        )
+        try:
+            launcher.launch_job(
+                _make_launch_job_meta(image="repo/job-image:v1", study="study-a"),
+                _make_launch_fl_ctx(workspace=str(tmp_path)),
+            )
+
+            manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
+            assert manifest["spec"]["containers"][0]["image"] == "repo/job-image:v1"
+        finally:
+            _exit_patches(patches)
+
+    def test_missing_image_error_mentions_study_runtime(self, tmp_path):
+        patches = _make_k8s_launcher_patches(patch_open=False)
+        launcher, mock_api = self._setup_v2(patches, tmp_path, "format_version: 2\nstudies: {}\n")
+        try:
+            with pytest.raises(RuntimeError, match="container.image"):
+                launcher.launch_job(
+                    _make_launch_job_meta(image=None, study="study-a"), _make_launch_fl_ctx(workspace=str(tmp_path))
+                )
+            mock_api.create_namespaced_pod.assert_not_called()
         finally:
             _exit_patches(patches)
 
@@ -2527,8 +2557,6 @@ spec:
             "format_version: 2\n"
             "studies:\n"
             "  study-a:\n"
-            "    container:\n"
-            "      name: trainer\n"
             "    pod_template: multi.yaml\n"
             "    secret_env:\n"
             "      DB_PASSWORD: {source: study-db, key: password}\n",
@@ -2538,7 +2566,7 @@ spec:
                     "kind: Pod\n"
                     "spec:\n"
                     "  containers:\n"
-                    "    - name: trainer\n"
+                    "    - name: nvflare_job\n"
                     "      image: a\n"
                     "      env:\n"
                     "        - name: KEEP_ME\n"
@@ -2555,7 +2583,7 @@ spec:
 
             manifest = mock_api.create_namespaced_pod.call_args.kwargs["body"]
             trainer = manifest["spec"]["containers"][0]
-            assert trainer["name"] == "trainer"
+            assert trainer["name"] == f"container-{_EXPECTED_JOB_ID}"
             env_items = {e["name"]: e for e in trainer["env"]}
             assert env_items["KEEP_ME"]["value"] == "yes"
             # the typed secret_env entry replaces the template's plaintext entry by name

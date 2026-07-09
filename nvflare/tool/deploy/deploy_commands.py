@@ -109,6 +109,8 @@ STUDY_RUNTIME_TEMPLATE = """# Per-study runtime configuration used by Docker and
 # Example:
 # studies:
 #   default:
+#     container:
+#       image: registry.example.com/nvflare-job:2.9   # site default job image; job meta image wins
 #     datasets:
 #       training:
 #         source: /data/training     # Docker: host path; K8s: PVC claim name

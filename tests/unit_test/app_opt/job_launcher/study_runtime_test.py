@@ -34,7 +34,7 @@ format_version: 2
 studies:
   lung-cancer:
     container:
-      name: lung-cancer-job
+      image: registry.example.com/lung-cancer:v3
 
     pod_template: lung_cancer_pod.yaml
 
@@ -73,7 +73,7 @@ class TestLoadStudyRuntimeFile:
         runtime_map = load_study_runtime_file(_write(tmp_path, FULL_EXAMPLE))
 
         runtime = runtime_map["lung-cancer"]
-        assert runtime.container_name == "lung-cancer-job"
+        assert runtime.container_image == "registry.example.com/lung-cancer:v3"
         assert runtime.pod_template["spec"]["serviceAccountName"] == "study-sa"
         datasets = {d.dataset: d for d in runtime.datasets}
         assert datasets["reference"].source == "nvfldata"
@@ -199,11 +199,16 @@ class TestLoadStudyRuntimeFile:
                 _write(tmp_path, "format_version: 2\nstudies:\n  study-a:\n    env:\n      DB: {host: x}\n")
             )
 
-    def test_container_name_must_be_rfc1123(self, tmp_path):
-        with pytest.raises(ValueError, match="RFC 1123"):
+    def test_container_name_key_rejected(self, tmp_path):
+        # the main container is identified via the nvflare_job template sentinel, not config
+        with pytest.raises(ValueError, match="name"):
             load_study_runtime_file(
-                _write(tmp_path, "format_version: 2\nstudies:\n  study-a:\n    container:\n      name: bad_name\n")
+                _write(tmp_path, "format_version: 2\nstudies:\n  study-a:\n    container:\n      name: my-job\n")
             )
+
+    def test_container_requires_image(self, tmp_path):
+        with pytest.raises(ValueError, match="container.image"):
+            load_study_runtime_file(_write(tmp_path, "format_version: 2\nstudies:\n  study-a:\n    container: {}\n"))
 
     def test_secret_mount_mode_rw_rejected(self, tmp_path):
         with pytest.raises(ValueError, match="read-only"):

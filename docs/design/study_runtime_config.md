@@ -48,7 +48,7 @@ format_version: 2
 studies:
   lung-cancer:
     container:
-      name: lung-cancer-job              # optional stable main-container name (RFC 1123 label)
+      image: registry.example.com/nvflare-job:2.9   # optional site default job image
 
     pod_template: lung_cancer_pod.yaml   # K8s only; path relative to local/, or inline pod mapping
 
@@ -134,9 +134,13 @@ Kubernetes:
 - `type: mount` dataset: `source` is a PVC claim name.
 - `secret_env.*`: emitted as `valueFrom.secretKeyRef` (`source` = Secret name, `key` = key) on the main container.
 - `secret_mounts.*`: Secret projected as a read-only volume at `mount_path`.
-- `container.name`: stable per-study main-container name (RFC 1123 validated). Default stays the per-job generated
-  name; templates may instead mark the main container with the `nvflare_job` sentinel.
-- `pod_template`: inline mapping or path relative to `local/`; becomes the study's base manifest.
+- `container.image`: site default job image, used when the submitted job's `launcher_spec` provides none. A
+  job-supplied image always wins (subject to the site's BYOC authorization for job-supplied content — a
+  site-supplied image is site-trusted and not BYOC-gated). Re-read-per-launch means a site can roll a study to a
+  new image without restarting the parent.
+- `pod_template`: inline mapping or path relative to `local/`; becomes the study's base manifest. Templates mark
+  the main container with the `nvflare_job` sentinel; the launcher renames it to the per-job generated name
+  (`container-<job-id>`).
 
 Docker:
 
@@ -145,7 +149,8 @@ Docker:
 - `secret_env.*.source`: parent-process env pass-through (`key` unused); pluggable site secret backend later.
 - `secret_mounts.*.source`: host path bind-mounted read-only at `mount_path`. `items` is a hard error
   (Kubernetes-only Secret projection) — point `source` at a directory containing only the intended files.
-- `container.name`: ignored. `pod_template`: hard error (K8s-only). `type: databricks`: deferred.
+- `container.image`: site default job image, same resolution as Kubernetes. `pod_template`: hard error (K8s-only).
+  `type: databricks`: deferred.
 
 ## Pod Templates
 
@@ -158,11 +163,11 @@ Merge order (later wins):
                         transfer env, resources, restartPolicy: Never
 ```
 
-- Typed entries merge by name onto the main container, located via `container.name` or the `nvflare_job` sentinel.
+- Typed entries merge by name onto the main container, located via the `nvflare_job` sentinel.
 - FLARE-owned fields sit on top of both layers; neither template nor typed schema can break launch invariants.
-- Guardrail: if typed entries (including an explicit `container.name`) are configured and a template has multiple
-  containers, the main container must be identifiable — otherwise launch fails. (The existing `containers[0]`
-  fallback would silently give a sidecar the study's `secret_env`.)
+- Guardrail: if typed entries are configured and a template has multiple containers, the main container must be
+  marked with the `nvflare_job` sentinel — otherwise launch fails. (The existing `containers[0]` fallback would
+  silently give a sidecar the study's `secret_env`.)
 - The template is the escape hatch for cluster-shaped needs (service accounts, tolerations, affinity, sidecars,
   admission annotations); the typed schema covers the portable rest. The built-in default manifest stays in code —
   it carries the launch invariants; there is no editable default template file.
@@ -174,23 +179,12 @@ Merge order (later wins):
   should set `automountServiceAccountToken: false`, since the token is never used and the Databricks design mints
   tokens launcher-side via TokenRequest instead.
 
-## Future: Per-Study Default Job Image
+## Future: Image Enforce Mode
 
-FLARE-3027. The job image is currently the one runtime resource the site does not own: it must come from job `meta.json`, and
-`pod_template` deliberately cannot set the main container image (the FLARE-owned overlay replaces it). Follow-up
-direction, recorded from PR review:
-
-- `container.image` next to the existing `container.name` — a typed key, so it behaves identically on Docker and
-  Kubernetes (unlike `pod_template`).
-- Resolution: job-supplied image → study `container.image` → error. Only the "or raise" step in each launcher
-  changes; the merge order is untouched.
-- Job-supplied image wins by default; an enforce/pin mode for sites that forbid job-supplied images can come later.
-- A site-supplied image is site-trusted content and is not BYOC-gated the way job-supplied images are.
-- Re-read-per-launch means a site can roll a study to a new image version without restarting the parent.
-
-(The related Docker cleanup — `image` in `default_job_container_kwargs` passed init validation but failed every
-launch with a duplicate `containers.run` argument — is already fixed: init now rejects it, while
-`docker_spec["image"]` remains the legitimate job image selector.)
+`container.image` (implemented) is the site default job image; resolution is job-supplied image → study
+`container.image` → error. FLARE-3027 tracks the follow-up enforce/pin mode for sites that want to forbid
+job-supplied images entirely; BYOC gating of job-supplied images belongs to the separate launcher BYOC
+enforcement work.
 
 ## Parsing, Compatibility, Migration
 
@@ -258,7 +252,7 @@ Trainer reads a fixed cohort     → dataset provider (future; requires material
 
 ## Implementation Order
 
-1. FLARE-2972: strict v2 parser; `env`, `secret_env`, `secret_mounts`, `container.name`, `pod_template`
+1. FLARE-2972: strict v2 parser; `env`, `secret_env`, `secret_mounts`, `container.image`, `pod_template`
    (inline + path); auto-discovery + v1-coexistence hard error; remove `study_job_spec_file_path`, its map file,
    and the `resources.json`-scraping transfer excludes; Docker + K8s emission; merge order + main-container
    guardrail.

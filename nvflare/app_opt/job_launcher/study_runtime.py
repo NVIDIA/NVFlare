@@ -44,7 +44,6 @@ _SECRET_ENV_KEYS = {"source", "key"}
 _SECRET_MOUNT_KEYS = {"source", "mount_path", "mode", "items"}
 
 _VALID_NAME = re.compile(r"^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$")
-_RFC1123_LABEL = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 
 # Env names the launchers own at job launch (PYTHONPATH and the workspace-transfer
 # variables from workspace_cell_transfer). A study value would be silently overridden
@@ -75,7 +74,7 @@ class StudyRuntime:
     env: dict = field(default_factory=dict)
     secret_env: list = field(default_factory=list)  # list[SecretEnvRef]
     secret_mounts: list = field(default_factory=list)  # list[SecretMount]
-    container_name: Optional[str] = None
+    container_image: Optional[str] = None
     pod_template: Optional[dict] = None
 
 
@@ -151,12 +150,10 @@ def _parse_pod_template(value, file_path: str, allow_pod_template: bool) -> dict
 
 
 def _parse_container(study: str, entry, file_path: str) -> str:
-    entry = _require_dict(entry, f"studies.{study}.container", file_path)
-    _require_known_keys(entry, {"name"}, f"studies.{study}.container", file_path)
-    name = _require_str(entry.get("name"), f"studies.{study}.container.name", file_path)
-    if not _RFC1123_LABEL.match(name):
-        raise _error(file_path, f"studies.{study}.container.name {name!r} is not a valid RFC 1123 label.")
-    return name
+    label = f"studies.{study}.container"
+    entry = _require_dict(entry, label, file_path)
+    _require_known_keys(entry, {"image"}, label, file_path)
+    return _require_str(entry.get("image"), f"{label}.image", file_path)
 
 
 def _parse_dataset(study: str, dataset: str, entry, file_path: str) -> StudyDatasetMount:
@@ -265,7 +262,7 @@ def _parse_study(
 
     runtime = StudyRuntime(study=study)
     if "container" in entry:
-        runtime.container_name = _parse_container(study, entry["container"], file_path)
+        runtime.container_image = _parse_container(study, entry["container"], file_path)
     if "pod_template" in entry:
         runtime.pod_template = _parse_pod_template(entry["pod_template"], file_path, allow_pod_template)
     if "datasets" in entry:

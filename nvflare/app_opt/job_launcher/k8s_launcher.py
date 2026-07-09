@@ -989,17 +989,21 @@ class K8sJobLauncher(JobLauncherSpec):
             job_ephemeral_storage = self.ephemeral_storage
         if not isinstance(job_ephemeral_storage, str) or not job_ephemeral_storage:
             raise RuntimeError(f"launcher_spec['{site_name}']['k8s']['ephemeral_storage'] must be a non-empty string")
+        study = job_meta.get(JobMetaKey.STUDY.value)
+        workspace_root = args.workspace
+        study_runtime = self._resolve_study_runtime(workspace_root, study)
+        if not job_image and study_runtime is not None:
+            # job-supplied image wins; the study's container.image is the site default
+            job_image = study_runtime.container_image
         if not job_image:
             raise RuntimeError(
                 f"K8sJobLauncher is configured for site '{site_name}' but no job image "
                 f"was specified in meta.json for this site. "
                 f"Set launcher_spec['{site_name}']['k8s']['image'] (preferred), "
                 f"launcher_spec['default']['k8s']['image'] (shared default), "
-                f"or resource_spec['{site_name}']['k8s']['image'] (legacy)."
+                f"resource_spec['{site_name}']['k8s']['image'] (legacy), "
+                f"or studies.<study>.container.image in local/study_runtime.yaml (site default)."
             )
-        study = job_meta.get(JobMetaKey.STUDY.value)
-        workspace_root = args.workspace
-        study_runtime = self._resolve_study_runtime(workspace_root, study)
         if study_runtime is not None:
             pod_manifest_template = study_runtime.pod_template
             data_mounts = study_runtime.datasets
@@ -1083,13 +1087,10 @@ class K8sJobLauncher(JobLauncherSpec):
                 volume_list.append({"name": volume_name, "secret": secret_source})
                 volume_mount_list.append({"name": volume_name, "mountPath": secret_mount.mount_path, "readOnly": True})
 
-            container_name = f"container-{job_id}"
-            if study_runtime is not None and study_runtime.container_name:
-                container_name = study_runtime.container_name
             job_config = {
                 "name": pod_name,
                 "image": job_image,
-                "container_name": container_name,
+                "container_name": f"container-{job_id}",
                 "command": job_cmd,
                 "volume_mount_list": volume_mount_list,
                 "volume_list": volume_list,
@@ -1102,11 +1103,7 @@ class K8sJobLauncher(JobLauncherSpec):
                         {"name": ref.name, "source": ref.source, "key": ref.key} for ref in study_runtime.secret_env
                     ]
                 if pod_manifest_template is not None and (
-                    data_mounts
-                    or study_runtime.env
-                    or study_runtime.secret_env
-                    or study_runtime.secret_mounts
-                    or study_runtime.container_name
+                    data_mounts or study_runtime.env or study_runtime.secret_env or study_runtime.secret_mounts
                 ):
                     job_config["require_main_container"] = True
             if self.image_pull_secrets:

@@ -404,7 +404,7 @@ referenced pod template files) take effect on the next job.
 Study-specific configuration:
 
 - v1 (`study_data_pvc_file_path`): use the built-in pod manifest and add matching study-data PVC mounts under `/data/<study>/<dataset>`.
-- v2 (`local/study_runtime.yaml`): all study runtime config — datasets, env, secret-backed env vars and mounts, main container name, and per-study pod template — comes from the one file. If typed entries are configured and a multi-container template has no identifiable main container (`container.name` or the `nvflare_job` sentinel), the launch fails rather than falling back to the first container.
+- v2 (`local/study_runtime.yaml`): all study runtime config — datasets, env, secret-backed env vars and mounts, site default job image (`container.image`; a job-supplied image wins), and per-study pod template — comes from the one file. If typed entries are configured and a multi-container template has no main container marked with the `nvflare_job` sentinel, the launch fails rather than falling back to the first container.
 
 When a Pod template is used, `workspace-job` and `startup-kit` remain launcher-owned reserved names. Any same-named template `spec.volumes` or selected job-container `volumeMounts` are replaced by the launcher-generated `emptyDir` workspace and startup-kit Secret mounts. Other named template volumes and mounts are preserved.
 
