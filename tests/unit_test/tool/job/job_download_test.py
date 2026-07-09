@@ -142,6 +142,99 @@ class TestJobDownload:
         assert envelope["data"]["artifacts"]["global_model"] == str(model_path)
         assert "global_model" not in envelope["data"]["missing_artifacts"]
 
+    def test_download_does_not_treat_client_checkpoint_as_global_model(self, tmp_path, capsys):
+        download_path = tmp_path / "results"
+        client_dir = download_path / "site-1"
+        client_dir.mkdir(parents=True)
+        (client_dir / "FL_global_model.pt").write_text("client model")
+
+        _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert "global_model" not in envelope["data"]["artifacts"]
+        assert "global_model" in envelope["data"]["missing_artifacts"]
+
+    def test_download_discovers_global_model_from_workspace_root(self, tmp_path, capsys):
+        download_path = tmp_path / "results"
+        workspace_dir = download_path / "workspace"
+        workspace_dir.mkdir(parents=True)
+        model_path = workspace_dir / "FL_global_model.pt"
+        model_path.write_text("server model")
+
+        _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert envelope["data"]["artifacts"]["global_model"] == str(model_path)
+
+    def test_download_prefers_canonical_root_model_over_client_checkpoint(self, tmp_path, capsys):
+        download_path = tmp_path / "results"
+        client_dir = download_path / "site-1"
+        client_dir.mkdir(parents=True)
+        root_model = download_path / "global_model.pt"
+        root_model.write_text("server model")
+        (client_dir / "FL_global_model.pt").write_text("client model")
+
+        _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert envelope["data"]["artifacts"]["global_model"] == str(root_model)
+
+    def test_download_prefers_server_model_over_alphabetically_earlier_client_dir(self, tmp_path, capsys):
+        download_path = tmp_path / "results"
+        client_dir = download_path / "app_client-1"
+        server_dir = download_path / "server"
+        client_dir.mkdir(parents=True)
+        server_dir.mkdir()
+        (client_dir / "FL_global_model.pt").write_text("client model")
+        server_model = server_dir / "global_model.pt"
+        server_model.write_text("server model")
+
+        _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert envelope["data"]["artifacts"]["global_model"] == str(server_model)
+
+    def test_download_manifest_resolves_custom_global_model_name(self, tmp_path, capsys):
+        download_path = tmp_path / "results"
+        workspace_dir = download_path / "workspace"
+        server_dir = workspace_dir / "app_server"
+        server_dir.mkdir(parents=True)
+        custom_model = server_dir / "production-checkpoint.bin"
+        custom_model.write_text("server model")
+        (workspace_dir / "artifact_manifest.json").write_text(
+            json.dumps({"schema_version": "1", "artifacts": {"global_model": "app_server/production-checkpoint.bin"}})
+        )
+
+        _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert envelope["data"]["artifacts"]["global_model"] == str(custom_model)
+        assert "global_model" not in envelope["data"]["missing_artifacts"]
+
+    def test_download_does_not_fall_back_when_manifest_target_is_missing(self, tmp_path, capsys):
+        download_path = tmp_path / "results"
+        workspace_dir = download_path / "workspace"
+        workspace_dir.mkdir(parents=True)
+        (workspace_dir / "FL_global_model.pt").write_text("server model")
+        (workspace_dir / "artifact_manifest.json").write_text(
+            json.dumps({"schema_version": "1", "artifacts": {"global_model": "missing-model.pt"}})
+        )
+
+        _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert "global_model" not in envelope["data"]["artifacts"]
+        assert "global_model" in envelope["data"]["missing_artifacts"]
+
+    def test_download_ignores_client_artifact_manifest(self, tmp_path, capsys):
+        download_path = tmp_path / "results"
+        client_dir = download_path / "site-1"
+        client_dir.mkdir(parents=True)
+        client_model = client_dir / "client-checkpoint.bin"
+        client_model.write_text("client model")
+        (client_dir / "artifact_manifest.json").write_text(
+            json.dumps({"schema_version": "1", "artifacts": {"global_model": client_model.name}})
+        )
+
+        _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
+
+        assert "global_model" not in envelope["data"]["artifacts"]
+        assert "global_model" in envelope["data"]["missing_artifacts"]
+
     def test_download_discovers_metrics_artifacts_and_client_logs(self, tmp_path, capsys):
         """metrics artifacts and client log.txt files are reported from the local download path."""
         download_path = tmp_path / "results"
@@ -184,8 +277,9 @@ class TestJobDownload:
         _, envelope = self._download_json(self._make_args(output_dir=tmp_path / "dest"), download_path, capsys)
 
         artifacts = envelope["data"]["artifacts"]
-        assert artifacts["global_model"] == str(model_path)
+        assert "global_model" not in artifacts
         assert artifacts["metrics_summary"] == str(metrics_path)
+        assert "global_model" in envelope["data"]["missing_artifacts"]
         assert "client_logs" not in artifacts
         assert "client_logs" in envelope["data"]["missing_artifacts"]
 
