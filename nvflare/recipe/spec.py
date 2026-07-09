@@ -542,6 +542,61 @@ class Recipe(ABC):
             self._add_to_client_apps(JobLogStreamer(log_file_name=name))
         self.job.to_server(JobLogReceiver())
 
+    def enable_tensor_streaming(
+        self,
+        format: str = "pytorch",
+        tasks: Optional[List[str]] = None,
+        tensor_send_timeout: float = 30.0,
+        wait_send_task_data_all_clients_timeout: float = 300.0,
+    ) -> None:
+        """Enable tensor streaming between the server and all client apps.
+
+        The same exchange format, task names, and per-transfer timeout are used
+        on both sides. The format must match the recipe's
+        ``server_expected_format`` when the recipe declares one.
+
+        Args:
+            format: Tensor exchange format. Defaults to ``"pytorch"``
+                (``ExchangeFormat.PYTORCH``).
+            tasks: Task names whose tensors should be streamed. ``None`` uses
+                the streamers' default ``["train"]``.
+            tensor_send_timeout: Timeout in seconds for each tensor transfer.
+            wait_send_task_data_all_clients_timeout: Maximum time in seconds
+                for the server to wait for all clients to receive task tensors.
+
+        Raises:
+            ValueError: If ``format`` does not match a declared
+                ``server_expected_format``.
+        """
+        from nvflare.app_opt.tensor_stream.client import TensorClientStreamer
+        from nvflare.app_opt.tensor_stream.server import TensorServerStreamer
+
+        server_expected_format = getattr(self, "server_expected_format", None)
+        if server_expected_format is not None and format != server_expected_format:
+            raise ValueError(
+                f"tensor streaming format {format!r} must match server_expected_format {server_expected_format!r}"
+            )
+
+        server_tasks = list(tasks) if tasks is not None else None
+        client_tasks = list(tasks) if tasks is not None else None
+        self.job.to_server(
+            TensorServerStreamer(
+                format=format,
+                tasks=server_tasks,
+                tensor_send_timeout=tensor_send_timeout,
+                wait_send_task_data_all_clients_timeout=wait_send_task_data_all_clients_timeout,
+            ),
+            id="tensor_server_streamer",
+        )
+        self._add_to_client_apps(
+            TensorClientStreamer(
+                format=format,
+                tasks=client_tasks,
+                tensor_send_timeout=tensor_send_timeout,
+            ),
+            id="tensor_client_streamer",
+        )
+
     def add_decomposers(self, decomposers: List[Union[str, Decomposer]]):
         """Add decomposers to the job
 

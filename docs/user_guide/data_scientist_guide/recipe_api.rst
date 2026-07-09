@@ -133,6 +133,10 @@ Shared helpers:
    Add the default Recipe log-streaming components. If no file names are given,
    the recipe streams ``log.json``.
 
+``recipe.enable_tensor_streaming(format="pytorch", tasks=None, tensor_send_timeout=30.0, wait_send_task_data_all_clients_timeout=300.0)``
+   Add matching tensor-streaming components to the server and all generated
+   client apps. The format must match the recipe's ``server_expected_format``.
+
 Utility helpers:
 
 ``add_experiment_tracking(recipe, tracking_type, tracking_config=None, client_side=False, server_side=True, clients=None)``
