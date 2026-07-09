@@ -523,3 +523,167 @@ class TestCrossSiteEvalIdempotency:
         add_cross_site_evaluation(recipe, participating_clients=participating_clients)
 
         assert captured_kwargs["participating_clients"] == participating_clients
+
+
+class TestAddExperimentTrackingClients:
+    """Test client targeting and per-site configs in add_experiment_tracking."""
+
+    @pytest.fixture
+    def dummy_tracking(self, monkeypatch):
+        """Register a dependency-free tracking type backed by types.SimpleNamespace."""
+        import nvflare.recipe.utils as utils_mod
+
+        monkeypatch.setitem(
+            utils_mod.TRACKING_REGISTRY,
+            "dummy",
+            # json is always importable; argparse.Namespace(**config) acts as the receiver
+            # (unlike types.SimpleNamespace it exposes __module__, so it also survives export).
+            {"package": "json", "receiver_module": "argparse", "receiver_class": "Namespace"},
+        )
+        return "dummy"
+
+    def _make_recipe(self, name="test_tracking_clients"):
+        return Recipe(FedJob(name=name, min_clients=1))
+
+    def test_client_side_tracking_specific_clients(self, dummy_tracking):
+        from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
+        from nvflare.apis.job_def import ALL_SITES
+        from nvflare.recipe.utils import add_experiment_tracking
+
+        recipe = self._make_recipe()
+        add_experiment_tracking(
+            recipe,
+            dummy_tracking,
+            {"tracking_uri": "file:///tmp/site-1/mlruns"},
+            client_side=True,
+            server_side=False,
+            clients=["site-1"],
+        )
+
+        receiver = recipe.job._deploy_map["site-1"].app_config.components["client_receiver"]
+        assert receiver.tracking_uri == "file:///tmp/site-1/mlruns"
+        # Local (non-federated) analytics events are configured by default.
+        assert receiver.events == [ANALYTIC_EVENT_TYPE]
+        assert ALL_SITES not in recipe.job._deploy_map
+
+    def test_client_side_tracking_per_site_configs(self, dummy_tracking):
+        from nvflare.recipe.utils import add_experiment_tracking
+
+        recipe = self._make_recipe()
+        # Real recipes have per-site client apps (e.g. from per_site_config) before
+        # tracking is added; targeting only existing sites is enforced.
+        for site in ("site-1", "site-2"):
+            recipe.job.to({"site_arg": site}, site)
+        for site in ("site-1", "site-2"):
+            add_experiment_tracking(
+                recipe,
+                dummy_tracking,
+                {"tracking_uri": f"file:///tmp/{site}/mlruns"},
+                client_side=True,
+                server_side=False,
+                clients=[site],
+            )
+
+        for site in ("site-1", "site-2"):
+            receiver = recipe.job._deploy_map[site].app_config.components["client_receiver"]
+            assert receiver.tracking_uri == f"file:///tmp/{site}/mlruns"
+
+    def test_client_side_tracking_all_clients_by_default(self, dummy_tracking):
+        from nvflare.apis.job_def import ALL_SITES
+        from nvflare.recipe.utils import add_experiment_tracking
+
+        recipe = self._make_recipe()
+        add_experiment_tracking(recipe, dummy_tracking, {"tracking_uri": "u"}, client_side=True, server_side=False)
+
+        receiver = recipe.job._deploy_map[ALL_SITES].app_config.components["client_receiver"]
+        assert receiver.tracking_uri == "u"
+
+    def test_server_side_tracking_unaffected_by_clients_feature(self, dummy_tracking):
+        from nvflare.recipe.utils import add_experiment_tracking
+
+        recipe = self._make_recipe()
+        add_experiment_tracking(recipe, dummy_tracking, {"tracking_uri": "u"})
+
+        components = recipe.job._deploy_map["server"].app_config.components
+        assert components["receiver"].tracking_uri == "u"
+        # Server receiver keeps federated (default) events.
+        assert not hasattr(components["receiver"], "events")
+
+    def test_clients_without_client_side_raises(self, dummy_tracking):
+        from nvflare.recipe.utils import add_experiment_tracking
+
+        recipe = self._make_recipe()
+        with pytest.raises(ValueError, match="client_side=True"):
+            add_experiment_tracking(recipe, dummy_tracking, {"tracking_uri": "u"}, clients=["site-1"])
+
+    @pytest.mark.parametrize("bad_clients", ["site-1", [1, 2], [None]])
+    def test_clients_must_be_list_of_str(self, dummy_tracking, bad_clients):
+        from nvflare.recipe.utils import add_experiment_tracking
+
+        recipe = self._make_recipe()
+        with pytest.raises(TypeError, match="clients must be a list of str"):
+            add_experiment_tracking(
+                recipe, dummy_tracking, {"tracking_uri": "u"}, client_side=True, clients=bad_clients
+            )
+
+    def test_clients_empty_list_raises(self, dummy_tracking):
+        from nvflare.recipe.utils import add_experiment_tracking
+
+        recipe = self._make_recipe()
+        with pytest.raises(ValueError, match="must not be empty"):
+            add_experiment_tracking(recipe, dummy_tracking, {"tracking_uri": "u"}, client_side=True, clients=[])
+
+    def test_clients_targeting_rejects_unknown_site(self, dummy_tracking):
+        from nvflare.recipe.utils import add_experiment_tracking
+
+        recipe = self._make_recipe()
+        recipe.job.to({"site_arg": 1}, "site-1")
+        recipe.job.to({"site_arg": 2}, "site-2")
+
+        with pytest.raises(ValueError, match="unknown client site"):
+            add_experiment_tracking(
+                recipe,
+                dummy_tracking,
+                {"tracking_uri": "u"},
+                client_side=True,
+                server_side=False,
+                clients=["site-3"],
+            )
+
+    def test_clients_targeting_rejects_all_sites_topology(self, dummy_tracking):
+        from nvflare.recipe.utils import add_experiment_tracking
+
+        recipe = self._make_recipe()
+        # Default recipe topology: one client app for all clients.
+        recipe.job.to_clients({"executor_standin": True})
+
+        with pytest.raises(ValueError, match="applies to all clients"):
+            add_experiment_tracking(
+                recipe,
+                dummy_tracking,
+                {"tracking_uri": "u"},
+                client_side=True,
+                server_side=False,
+                clients=["site-1"],
+            )
+
+    def test_per_site_client_receiver_survives_export(self, dummy_tracking, tmp_path):
+        from nvflare.recipe.utils import add_experiment_tracking
+
+        recipe = self._make_recipe("test_tracking_export")
+        recipe.job.to_server({"server_arg": True})
+        add_experiment_tracking(
+            recipe,
+            dummy_tracking,
+            {"tracking_uri": "file:///tmp/site-1/mlruns"},
+            client_side=True,
+            server_side=False,
+            clients=["site-1"],
+        )
+
+        recipe.job.export_job(str(tmp_path))
+        with open(tmp_path / "test_tracking_export" / "app_site-1" / "config" / "config_fed_client.json") as f:
+            client_cfg = json.load(f)
+
+        entry = next(c for c in client_cfg["components"] if c["id"] == "client_receiver")
+        assert entry["path"].endswith("Namespace")
