@@ -35,6 +35,7 @@ from nvflare.tool.deploy.deploy_commands import (
     _k8s_release_name,
     prepare_deployment,
     stage_k8_deployment,
+    unstage_k8_deployment,
 )
 
 
@@ -194,6 +195,10 @@ def _stage_k8_args(kit, **overrides):
     }
     args.update(overrides)
     return argparse.Namespace(**args)
+
+
+def _unstage_k8_args(kit, **overrides):
+    return _stage_k8_args(kit, **overrides)
 
 
 def _capture_kubectl(monkeypatch, returncode=0, fail_on=None):
@@ -687,6 +692,7 @@ def test_prepare_k8s_client_writes_chart_and_launcher_config(tmp_path, capsys):
     assert values["persistence"]["workspace"]["volumeName"] == "workspace"
     assert values["persistence"]["workspace"]["mountPath"] == "/workspace"
     assert values["workspaceConfig"] == {
+        "namespace": None,
         "local": {"configMapName": None, "items": []},
         "startup": {"secretName": None, "items": []},
     }
@@ -745,6 +751,8 @@ def test_stage_k8_creates_configmap_secret_and_patches_chart(tmp_path, capsys, m
     assert {"fed_client.json", "client.crt", "client.key", "rootCA.pem"} <= startup_paths
     assert "next_step: Start the server/client parent pod with the helm_command." in out
     assert f"helm_command: helm upgrade --install site-1 {output / 'helm_chart'} --namespace flare" in out
+    assert "cleanup_step: After Helm uninstall, remove the staged credentials with the cleanup_command." in out
+    assert f"cleanup_command: nvflare deploy k8s unstage {output} --kubectl kubectl" in out
 
 
 def test_stage_k8_uses_explicit_resource_names_and_namespace(tmp_path, capsys, monkeypatch):
@@ -780,6 +788,340 @@ def test_stage_k8_uses_explicit_resource_names_and_namespace(tmp_path, capsys, m
     values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
     assert values["workspaceConfig"]["local"]["configMapName"] == "manual-local"
     assert values["workspaceConfig"]["startup"]["secretName"] == "manual-startup"
+
+
+def test_unstage_k8_deletes_staged_objects_and_clears_chart_values(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "namespace": "flare",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+    calls = _capture_kubectl(monkeypatch)
+    stage_k8_deployment(_stage_k8_args(output))
+    capsys.readouterr()
+    calls.clear()
+
+    # Cleanup must not depend on source folders that are no longer intact.
+    shutil.rmtree(output / "local")
+    shutil.rmtree(output / "startup")
+    unstage_k8_deployment(_unstage_k8_args(output))
+    out = capsys.readouterr().out
+
+    assert [cmd for cmd, _kwargs in calls] == [
+        [
+            "kubectl",
+            "delete",
+            "secret/nvflare-startup-site-1",
+            "configmap/nvflare-local-site-1",
+            "--namespace",
+            "flare",
+            "--ignore-not-found=true",
+        ]
+    ]
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    assert values["workspaceConfig"] == {
+        "namespace": None,
+        "local": {"configMapName": None, "items": []},
+        "startup": {"secretName": None, "items": []},
+    }
+    assert "status: unstaged" in out
+    assert "startup_secret" not in out
+
+
+def test_unstage_k8_uses_recorded_custom_names_namespace_and_oc(tmp_path, capsys, monkeypatch):
+    kit = _make_server_kit(tmp_path)
+    output = tmp_path / "server-k8s"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "namespace": "prepared-ns",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+    calls = _capture_kubectl(monkeypatch)
+    stage_k8_deployment(
+        _stage_k8_args(
+            output,
+            namespace="runtime-ns",
+            local_configmap="manual-local",
+            startup_secret="manual-startup",
+            kubectl="oc",
+        )
+    )
+    capsys.readouterr()
+    calls.clear()
+
+    unstage_k8_deployment(_unstage_k8_args(output, kubectl="oc"))
+    capsys.readouterr()
+
+    assert [cmd for cmd, _kwargs in calls] == [
+        [
+            "oc",
+            "delete",
+            "secret/manual-startup",
+            "configmap/manual-local",
+            "--namespace",
+            "runtime-ns",
+            "--ignore-not-found=true",
+        ]
+    ]
+
+
+def test_unstage_k8_is_idempotent_with_exact_inputs(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+    calls = _capture_kubectl(monkeypatch)
+    stage_k8_deployment(_stage_k8_args(output, namespace="nvflare"))
+    capsys.readouterr()
+    calls.clear()
+    args = _unstage_k8_args(
+        output,
+        namespace="nvflare",
+        local_configmap="nvflare-local-site-1",
+        startup_secret="nvflare-startup-site-1",
+    )
+
+    unstage_k8_deployment(args)
+    unstage_k8_deployment(args)
+    capsys.readouterr()
+
+    assert len(calls) == 2
+    assert all("--ignore-not-found=true" in cmd for cmd, _kwargs in calls)
+
+
+def test_unstage_k8_reports_kubectl_failure_and_keeps_retry_state(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+    _capture_kubectl(monkeypatch)
+    stage_k8_deployment(_stage_k8_args(output, namespace="nvflare"))
+    capsys.readouterr()
+    _capture_kubectl(monkeypatch, fail_on=lambda cmd: "delete" in cmd)
+
+    with pytest.raises(SystemExit):
+        unstage_k8_deployment(_unstage_k8_args(output))
+
+    err = capsys.readouterr().err
+    assert "KUBECTL_FAILED" in err
+    assert "kubectl delete 'secret/<staged-name>' configmap/nvflare-local-site-1" in err
+    assert "boom" in err
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    assert values["workspaceConfig"]["namespace"] == "nvflare"
+    assert values["workspaceConfig"]["local"]["configMapName"] == "nvflare-local-site-1"
+    assert values["workspaceConfig"]["startup"]["secretName"] == "nvflare-startup-site-1"
+
+
+def test_unstage_k8_rejects_target_that_differs_from_recorded_state(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+    calls = _capture_kubectl(monkeypatch)
+    stage_k8_deployment(_stage_k8_args(output, namespace="recorded-ns"))
+    capsys.readouterr()
+    calls.clear()
+
+    with pytest.raises(SystemExit):
+        unstage_k8_deployment(_unstage_k8_args(output, namespace="wrong-ns"))
+
+    err = capsys.readouterr().err
+    assert "does not match the value recorded by stage" in err
+    assert calls == []
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    assert values["workspaceConfig"]["namespace"] == "recorded-ns"
+    assert values["workspaceConfig"]["startup"]["secretName"] == "nvflare-startup-site-1"
+
+
+@pytest.mark.parametrize("replacement_runtime", ["k8s", "docker"])
+def test_prepare_k8_rejects_replacing_output_with_staged_resources(tmp_path, capsys, monkeypatch, replacement_runtime):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+    config = {
+        "runtime": "k8s",
+        "parent": {"docker_image": "repo/nvflare:dev"},
+    }
+    _run_prepare(kit, output, config)
+    capsys.readouterr()
+    _capture_kubectl(monkeypatch)
+    stage_k8_deployment(
+        _stage_k8_args(
+            output,
+            namespace="runtime-ns",
+            local_configmap="manual-local",
+            startup_secret="manual-startup",
+        )
+    )
+    capsys.readouterr()
+
+    replacement_config = {
+        "runtime": replacement_runtime,
+        "parent": {"docker_image": "repo/nvflare:dev"},
+    }
+    with pytest.raises(SystemExit):
+        _run_prepare(kit, output, replacement_config)
+
+    err = capsys.readouterr().err
+    assert "OUTPUT_STAGED" in err
+    assert "deploy k8 unstage" in err
+    values = yaml.safe_load((output / "helm_chart" / "values.yaml").read_text())
+    assert values["workspaceConfig"]["namespace"] == "runtime-ns"
+    assert values["workspaceConfig"]["local"]["configMapName"] == "manual-local"
+    assert values["workspaceConfig"]["startup"]["secretName"] == "manual-startup"
+
+
+def test_stage_k8_legacy_recorded_names_require_explicit_namespace(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "namespace": "prepared-ns",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+    calls = _capture_kubectl(monkeypatch)
+    stage_k8_deployment(_stage_k8_args(output, namespace="runtime-ns"))
+    capsys.readouterr()
+    values_path = output / "helm_chart" / "values.yaml"
+    values = yaml.safe_load(values_path.read_text())
+    values["workspaceConfig"].pop("namespace")
+    values_path.write_text(yaml.safe_dump(values, sort_keys=False))
+    calls.clear()
+
+    with pytest.raises(SystemExit):
+        stage_k8_deployment(_stage_k8_args(output))
+
+    err = capsys.readouterr().err
+    assert "existing staged resource names do not include their Kubernetes namespace" in err
+    assert "--namespace" in err
+    assert calls == []
+
+    stage_k8_deployment(_stage_k8_args(output, namespace="runtime-ns"))
+    capsys.readouterr()
+    assert [
+        manifest["metadata"]["namespace"] for _cmd, kwargs in calls for manifest in [yaml.safe_load(kwargs["input"])]
+    ] == [
+        "runtime-ns",
+        "runtime-ns",
+    ]
+
+
+def test_stage_k8_reuses_recorded_bindings_and_rejects_changes(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-k8s"
+    _run_prepare(
+        kit,
+        output,
+        {
+            "runtime": "k8s",
+            "parent": {"docker_image": "repo/nvflare:dev"},
+        },
+    )
+    capsys.readouterr()
+    calls = _capture_kubectl(monkeypatch)
+    stage_k8_deployment(
+        _stage_k8_args(
+            output,
+            namespace="runtime-ns",
+            local_configmap="manual-local",
+            startup_secret="manual-startup",
+        )
+    )
+    capsys.readouterr()
+    calls.clear()
+
+    stage_k8_deployment(_stage_k8_args(output))
+    capsys.readouterr()
+    manifests = [yaml.safe_load(kwargs["input"]) for _cmd, kwargs in calls]
+    assert [manifest["metadata"] for manifest in manifests] == [
+        {"name": "manual-local", "namespace": "runtime-ns"},
+        {"name": "manual-startup", "namespace": "runtime-ns"},
+    ]
+
+    calls.clear()
+    with pytest.raises(SystemExit):
+        stage_k8_deployment(_stage_k8_args(output, startup_secret="different-startup"))
+
+    err = capsys.readouterr().err
+    assert "already staged with a different startup Secret" in err
+    assert "deploy k8 unstage" in err
+    assert calls == []
+
+
+@pytest.mark.parametrize("alias", ["k8", "k8s"])
+def test_deploy_cli_routes_k8_unstage(alias, monkeypatch):
+    from nvflare.tool.deploy import deploy_commands
+    from nvflare.tool.deploy.deploy_cli import def_deploy_cli_parser, handle_deploy_cmd
+
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="sub_command")
+    def_deploy_cli_parser(subparsers)
+    args = parser.parse_args(
+        [
+            "deploy",
+            alias,
+            "unstage",
+            "/tmp/prepared-kit",
+            "--namespace",
+            "nvflare",
+            "--local-configmap",
+            "local-name",
+            "--startup-secret",
+            "startup-name",
+            "--kubectl",
+            "oc",
+        ]
+    )
+    calls = []
+    monkeypatch.setattr(deploy_commands, "unstage_k8_deployment", lambda actual_args: calls.append(actual_args))
+
+    handle_deploy_cmd(args)
+
+    assert args.deploy_sub_cmd == alias
+    assert args.deploy_k8_sub_cmd == "unstage"
+    assert args.kit == "/tmp/prepared-kit"
+    assert args.namespace == "nvflare"
+    assert args.local_configmap == "local-name"
+    assert args.startup_secret == "startup-name"
+    assert args.kubectl == "oc"
+    assert calls == [args]
 
 
 def test_stage_k8_reports_kubectl_failure(tmp_path, capsys, monkeypatch):
