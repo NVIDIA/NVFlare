@@ -519,7 +519,11 @@ Use ``SwarmLearningRecipe`` for a streamlined swarm learning setup:
         num_rounds=10,
         train_script="train.py",
         train_args={"batch_size": 32, "epochs": 5},
-        round_timeout=3600,   # P2P model-transfer ACK budget; increase for large models (7B+)
+        progress_timeout=7200,
+        learn_task_timeout=None,       # No per-task time limit
+        learn_task_ack_timeout=3600,   # P2P task-transfer ACK budget
+        final_result_ack_timeout=3600, # P2P final-result ACK budget
+        max_concurrent_submissions=1,
     )
 
     # Configure large model parameters if needed (server-side only)
@@ -532,6 +536,18 @@ Use ``SwarmLearningRecipe`` for a streamlined swarm learning setup:
     # Run in simulation
     env = SimEnv(num_clients=3)
     recipe.execute(env)
+
+The named parameters are the preferred API. For less common
+``SwarmServerConfig`` or ``SwarmClientConfig`` fields, pass
+``server_config_overrides`` or ``client_config_overrides``. The dictionaries are
+shallow-merged last, so an overlapping dictionary value intentionally wins over
+the named parameter. ``round_timeout`` remains available as a compatibility
+shortcut for setting both acknowledgment timeouts when their explicit parameters
+are omitted. ``client_config_overrides`` cannot replace the recipe-managed
+executor, aggregator, persistor, shareable generator, or
+``min_responses_required``; use ``BaseSwarmLearningRecipe`` for custom components
+or quorum settings. Set ``min_clients`` only through the named parameter so the
+scheduler, server controller, and client aggregation quorums remain aligned.
 
 For advanced customization, use ``BaseSwarmLearningRecipe`` with explicit server and client configurations:
 
@@ -562,8 +578,8 @@ For advanced customization, use ``BaseSwarmLearningRecipe`` with explicit server
 .. note::
    When using ``BaseSwarmLearningRecipe`` with explicit ``SwarmClientConfig``, set
    ``learn_task_ack_timeout`` and ``final_result_ack_timeout`` manually for large
-   models.  With ``SwarmLearningRecipe``, set ``round_timeout`` instead — it wires
-   both values for you.
+   models. With ``SwarmLearningRecipe``, prefer the corresponding named parameters;
+   ``round_timeout`` can still set both values as a compatibility shortcut.
 
 Client Dropout Tolerance (min_clients)
 ---------------------------------------

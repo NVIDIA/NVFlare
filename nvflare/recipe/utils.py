@@ -67,6 +67,21 @@ MODEL_LOCATOR_REGISTRY = {
 _SITE_KEYED_META_KEYS = frozenset({JobMetaKey.RESOURCE_SPEC, JobMetaKey.JOB_LAUNCHER_SPEC})
 
 
+def merge_config_overrides(defaults: Dict[str, Any], overrides: Optional[Dict[str, Any]], name: str) -> Dict[str, Any]:
+    """Return a shallow merge of recipe defaults and user overrides."""
+    if overrides is None:
+        return dict(defaults)
+    if not isinstance(overrides, dict):
+        raise TypeError(f"{name} must be a dict, but got {type(overrides).__name__}")
+    for key in overrides:
+        if not isinstance(key, str):
+            raise TypeError(f"{name} keys must be strings, but got {type(key).__name__}")
+
+    result = dict(defaults)
+    result.update(overrides)
+    return result
+
+
 def _normalize_recipe_meta_key(key: Any) -> str:
     if not isinstance(key, JobMetaKey):
         raise TypeError(f"recipe meta key must be a JobMetaKey, got {type(key).__name__}")
