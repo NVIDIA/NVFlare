@@ -48,7 +48,7 @@ class SwarmServerConfig:
         private_p2p: bool = True,
         aggr_clients=None,
         train_clients=None,
-        min_clients=None,
+        min_clients: int = 0,
     ):
         self.num_rounds = num_rounds
         self.start_round = start_round
