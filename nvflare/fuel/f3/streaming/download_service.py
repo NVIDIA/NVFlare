@@ -687,10 +687,15 @@ class _Transaction:
         self.progress_interval = float(progress_interval)
         self.refs = []
         self._refs_lock = threading.RLock()
-        # set by a retry that takes ownership of this tx_id while this transaction is
-        # still terminating (already out of _tx_table, not yet settled): its transfer-
-        # facing emissions must be suppressed -- their tx_id now names the live retry
-        self._superseded_by_retry = False
+        # set once settlement (transaction_done) has fully completed: callbacks emitted,
+        # sources released, outcome recorded or dropped. A retry reusing this tx_id waits
+        # for this before taking ownership, so generations of a tx_id never overlap.
+        self._settled = threading.Event()
+        self._settling_thread = None
+        # set by shutdown() (under _outcome_lock): this transaction's verdict must be
+        # dropped, but its ownership marker stays until settlement consumes it, so a
+        # same-id retry still serializes behind the in-flight settlement
+        self._record_forbidden = False
         # receivers that have issued at least one pull on ANY ref (monotonic; the
         # transaction-level PAYLOAD_ACQUIRED fact the acquire budget and the facade read),
         # and each receiver's last activity anywhere on the transaction (what the idle
@@ -741,16 +746,9 @@ class _Transaction:
         with self._refs_lock:
             return list(self.refs)
 
-    def timed_out(self):
-        """Called when the transaction is timed out.
-
-        Returns:
-
-        """
-        self.transaction_done(TransactionDoneStatus.TIMEOUT)
-
-    def mark_superseded(self):
-        self._superseded_by_retry = True
+    def wait_settled(self, timeout: float) -> bool:
+        """Waits until this transaction's settlement has fully completed."""
+        return self._settled.wait(timeout)
 
     @property
     def has_receiver_budgets(self) -> bool:
@@ -794,7 +792,7 @@ class _Transaction:
                     return False
         return True
 
-    def transaction_done(self, status: str, on_outcome=None, superseded: bool = False) -> TransferOutcome:
+    def transaction_done(self, status: str, on_outcome=None) -> TransferOutcome:
         """Called when the transaction is finished.
 
         Returns the aggregate TransferOutcome (see transfer_outcome.py): COMPLETED only
@@ -809,33 +807,34 @@ class _Transaction:
         stops the producer process) can never preempt the callback chain or the
         release of the sources.
 
-        superseded (a retry took over this transaction's reused tx_id, passed as an arg
-        by the retirement path or set via mark_superseded() by a retry that lands while
-        this transaction is mid-settlement) suppresses the TRANSFER-FACING emissions —
-        terminal progress and outcome_cb — because their tx_id now names the LIVE retry
-        and consumers keyed by tx_id would misattribute them. The CLEANUP surfaces always
-        run regardless: transaction_done_cb (in-tree callers use it to delete temp files,
-        e.g. workspace_cell_transfer._cleanup_transfer_files), per-object
-        obj.transaction_done, and release(). The superseded state is re-read at each
-        emission gate, narrowing the window for a retry that lands mid-settlement.
+        Settlement runs exactly once per transaction (every terminator first unlinks it
+        from _tx_table under _tx_lock), and a retry reusing this tx_id cannot take
+        ownership until settlement has fully completed (new_transaction waits on the
+        settled event, set in the finally below). Every emission here therefore happens
+        strictly before any successor generation of the tx_id exists and can never be
+        misattributed to one -- no emission needs to be suppressed or gated.
         """
-        refs = self.snapshot_refs()
-
-        # Compute the aggregate outcome from locked per-receiver snapshots before any
-        # user callback can observe (or mutate the world around) this transaction.
-        outcome = compute_transfer_outcome(
-            tx_id=self.tid,
-            done_status=status,
-            num_receivers=self.num_receivers,
-            min_receivers=self.min_receivers,
-            receiver_ids=self.receiver_ids,
-            refs=[RefOutcome(ref_id=ref.rid, receiver_statuses=ref.snapshot_receiver_statuses()) for ref in refs],
-            timestamp=time.time(),
-        )
-
+        # recorded so a settlement callback that synchronously reuses this tx_id gets an
+        # immediate error instead of deadlocking on its own settlement
+        self._settling_thread = threading.get_ident()
+        outcome = None
         try:
+            refs = self.snapshot_refs()
+
+            # Compute the aggregate outcome from locked per-receiver snapshots before any
+            # user callback can observe (or mutate the world around) this transaction.
+            outcome = compute_transfer_outcome(
+                tx_id=self.tid,
+                done_status=status,
+                num_receivers=self.num_receivers,
+                min_receivers=self.min_receivers,
+                receiver_ids=self.receiver_ids,
+                refs=[RefOutcome(ref_id=ref.rid, receiver_statuses=ref.snapshot_receiver_statuses()) for ref in refs],
+                timestamp=time.time(),
+            )
+
             progress_state = self._progress_state_for_transaction_status(status)
-            if progress_state and not (superseded or self._superseded_by_retry):
+            if progress_state:
                 for ref in refs:
                     ref.emit_terminal_progress_for_started_receivers(progress_state)
 
@@ -865,8 +864,6 @@ class _Transaction:
                     status,
                 )
 
-            # CLEANUP surface, not transfer-facing: always runs, superseded or not --
-            # in-tree callers delete their temp files here
             if self.transaction_done_cb:
                 _invoke_cb_safely(
                     self.logger,
@@ -878,9 +875,7 @@ class _Transaction:
                     **self.cb_kwargs,
                 )
 
-            # transfer-facing: gate re-read here so a retry that took ownership while the
-            # callbacks above ran is still respected
-            if self.outcome_cb and not (superseded or self._superseded_by_retry):
+            if self.outcome_cb:
                 _invoke_cb_safely(self.logger, f"transfer outcome callback for tx {self.tid}", self.outcome_cb, outcome)
 
             # Release source objects after the callback so the callback can still
@@ -893,8 +888,14 @@ class _Transaction:
             # fully settled: callbacks done, sources released. In a finally so that no
             # exception anywhere above (including on the monitor thread) can leave the
             # outcome unrecorded, the waiter pending forever, and ownership registered.
-            if on_outcome:
+            if on_outcome and outcome is not None:
                 _invoke_cb_safely(self.logger, f"outcome recording for tx {self.tid}", on_outcome, outcome)
+            # only now -- callbacks emitted, sources released, outcome recorded, waiters
+            # resolved -- may a same-id retry blocked in new_transaction take ownership.
+            # Set even if outcome computation itself raised: an unsettleable transaction
+            # would poison its tx_id forever (a settled-but-unconsumed owner is instead
+            # reclaimed by the next same-id new_transaction).
+            self._settled.set()
 
         return outcome
 
@@ -1005,15 +1006,20 @@ class DownloadService:
     # The transaction object currently entitled to record the outcome for its tx_id
     # (registered by new_transaction). tx_ids are deliberately reused by retries
     # (design: stable transfer ids make retries idempotent), so recording checks
-    # OBJECT identity against this map: a transaction that terminates concurrently
-    # with a same-id retry is no longer the owner and cannot record its stale outcome
-    # over the live one. Guarded by _outcome_lock.
+    # OBJECT identity against this map. An entry doubles as the mid-settlement marker
+    # that serializes generations: a same-id retry waits until the registered owner
+    # has fully settled (and its entry is consumed) before taking the slot.
+    # Guarded by _outcome_lock.
     _outcome_owners = {}
     # Waiters blocked on a transaction's terminal outcome (the awaitable facade). Guarded by
     # _outcome_lock; resolved inside _record_outcome so a waiter can never miss the outcome.
     _tx_waiters = {}
     _outcome_lock = threading.Lock()
     TX_OUTCOME_TTL = 1800.0
+    # How long new_transaction will wait for a mid-settlement previous generation of a
+    # reused tx_id before giving up. Settlement is normally milliseconds; this only
+    # expires if a settlement callback hangs (which also hangs the monitor thread).
+    SETTLEMENT_WAIT_TIMEOUT = 60.0
     _logger = None
     _tx_monitor = None
     _tx_lock = threading.Lock()
@@ -1071,50 +1077,78 @@ class DownloadService:
             receiver_acquire_timeout=receiver_acquire_timeout,
             receiver_idle_timeout=receiver_idle_timeout,
         )
-        old_tx = None
-        # Ownership and table registration are ONE atomic step (_tx_lock nests
-        # _outcome_lock here; no path nests them in the reverse order). With separate
-        # critical sections, two concurrent same-id constructors could interleave so
-        # that the transaction left in _tx_table is not the outcome owner -- the live
-        # transaction could then never record, while the retired one recorded its
-        # DELETED outcome as if it were the live attempt.
-        with cls._tx_lock:
-            with cls._outcome_lock:
-                # a reused tx_id must not surface the previous owner's outcome: purge any
-                # recorded outcome and take ownership. Ownership is taken before the tx
-                # becomes monitor-visible, so a tx the monitor can terminate always owns
-                # its outcome slot. A previous owner still registered here is either live
-                # in _tx_table (retired below) or MID-SETTLEMENT -- already popped from
-                # the table by the monitor/delete path but still running its callbacks;
-                # mark it superseded so its remaining transfer-facing emissions are
-                # suppressed (their tx_id now names this retry).
-                prev_owner = cls._outcome_owners.get(tx.tid)
-                if prev_owner is not None and prev_owner is not tx:
-                    prev_owner.mark_superseded()
-                cls._tx_outcomes.pop(tx.tid, None)
-                cls._outcome_owners[tx.tid] = tx
-            old_tx = cls._tx_table.get(tx.tid)
-            if old_tx:
-                # A retry reusing a tx_id supersedes a still-live prior transaction.
-                # Retire it now: a plain overwrite would orphan it -- the monitor only
-                # discovers transactions through _tx_table, so the old refs would stay
-                # servable in _ref_table forever and the old sources would never be
-                # released via transaction_done.
-                cls._delete_tx(old_tx)
-            cls._tx_table[tx.tid] = tx
+        # Generations of a reused tx_id are strictly SERIALIZED: this transaction may
+        # not take ownership until every previous generation has fully settled -- all
+        # of its terminal emissions (progress, done/outcome callbacks, source release)
+        # happen strictly before this one exists, so none can be misattributed to it.
+        # (The alternative -- letting generations overlap and gating the old one's
+        # emissions on a superseded flag -- is inherently racy: the check and the
+        # emission cannot be made atomic without holding a lock across user callbacks,
+        # which would deadlock callbacks that call back into this service.)
+        # Scope: this serializes the TERMINAL surfaces. A data-plane event already
+        # executing against the old generation when it is retired (an in-flight serve's
+        # produce(), a monitor budget pass) may still finish after the retry registers;
+        # such stragglers cannot alter any recorded verdict -- the outcome is computed
+        # from locked snapshots at settlement and recording is ownership-guarded.
+        deadline = time.time() + cls.SETTLEMENT_WAIT_TIMEOUT
+        while True:
+            old_tx = None
+            settling = None
+            # Ownership and table registration are ONE atomic step (_tx_lock nests
+            # _outcome_lock here; no path nests them in the reverse order), so a tx the
+            # monitor can terminate always owns its outcome slot.
+            with cls._tx_lock:
+                old_tx = cls._tx_table.get(tx.tid)
+                if old_tx is None:
+                    with cls._outcome_lock:
+                        settling = cls._outcome_owners.get(tx.tid)
+                        if settling is None or settling._settled.is_set():
+                            # The id is free -- or its owner is DEAD: fully settled yet
+                            # still registered, meaning its recording step failed
+                            # abnormally and never consumed ownership. Reclaim it: all
+                            # of its emissions are over, and waiting on it would spin
+                            # forever (its settled event is already set). A reused
+                            # tx_id must not surface a previous generation's outcome:
+                            # purge any recorded outcome, then take ownership and
+                            # become monitor-visible atomically.
+                            cls._tx_outcomes.pop(tx.tid, None)
+                            cls._outcome_owners[tx.tid] = tx
+                            cls._tx_table[tx.tid] = tx
+                            return tx.tid
+                else:
+                    # A retry reusing a tx_id retires a still-live prior transaction.
+                    # A plain overwrite would orphan it: the monitor only discovers
+                    # transactions through _tx_table, so the old refs would stay
+                    # servable in _ref_table forever and the old sources would never
+                    # be released via transaction_done.
+                    cls._delete_tx(old_tx)
 
-        if old_tx:
-            # terminal callbacks run outside the lock, as in delete_transaction(). The
-            # retired transaction is marked superseded: its sources are released, but its
-            # transfer-facing emissions (progress, done/outcome callbacks) are suppressed
-            # -- their reused tx_id now names the live retry -- and its outcome record is
-            # dropped by the owner guard. The retry is authoritative.
-            old_tx.transaction_done(
-                TransactionDoneStatus.DELETED,
-                on_outcome=functools.partial(cls._record_outcome, tx=old_tx),
-                superseded=True,
-            )
-        return tx.tid
+            if old_tx is not None:
+                # settle the retired generation inline (terminal callbacks outside the
+                # lock, as in delete_transaction) to completion before registering: its
+                # outcome records normally and registration purges it above. Re-arm the
+                # deadline: retirement ran arbitrary user callbacks, and the bound is
+                # per-generation, not per-call.
+                old_tx.transaction_done(
+                    TransactionDoneStatus.DELETED,
+                    on_outcome=functools.partial(cls._record_outcome, tx=old_tx),
+                )
+                deadline = time.time() + cls.SETTLEMENT_WAIT_TIMEOUT
+                continue
+
+            # A previous generation is MID-SETTLEMENT: already popped from _tx_table by
+            # the monitor/delete path but still running its callbacks. Wait for it to
+            # settle -- outside all locks -- then re-check.
+            if settling._settling_thread == threading.get_ident() and not settling._settled.is_set():
+                raise RuntimeError(
+                    f"cannot create transaction {tx.tid}: its tx_id is being reused from within "
+                    f"a settlement callback of its own previous generation"
+                )
+            if not settling.wait_settled(max(0.0, deadline - time.time())):
+                raise RuntimeError(
+                    f"cannot create transaction {tx.tid}: the previous transaction with this "
+                    f"tx_id did not settle within {cls.SETTLEMENT_WAIT_TIMEOUT}s"
+                )
 
     @classmethod
     def add_object(
@@ -1158,9 +1192,9 @@ class DownloadService:
         # Table teardown and ownership teardown are ONE atomic step (_tx_lock nesting
         # _outcome_lock, the same order new_transaction uses; no reverse nesting exists).
         # With separate critical sections, a new_transaction landing in the gap between
-        # them would register itself into both tables -- and the ownership clear below
-        # would then wipe the LIVE transaction's ownership, leaving it in _tx_table but
-        # unable to ever record its outcome (found by property falsification, P-C).
+        # them would register itself into both tables -- and the ownership forfeit below
+        # would then hit the LIVE transaction, leaving it in _tx_table but unable to
+        # ever record its outcome (found by property falsification, P-C).
         with cls._tx_lock:
             tx_list = list(cls._tx_table.values())
             for tx in tx_list:
@@ -1168,12 +1202,16 @@ class DownloadService:
             cls._finished_refs.clear()
 
             with cls._outcome_lock:
-                # drop recorded outcomes and clear outcome ownership. A monitor iteration
-                # mid-termination that blocked on _outcome_lock finds its ownership gone
-                # once it acquires the lock, so its outcome drops in _record_outcome --
-                # the owner guard alone gates post-shutdown recording.
+                # Drop recorded outcomes and forbid every registered owner (live or
+                # mid-settlement) from recording -- but keep the ownership markers:
+                # each is consumed by its own settlement, so a same-id new_transaction
+                # racing this shutdown still serializes behind the in-flight
+                # settlement instead of registering into its emission window. (An
+                # ownership CLEAR here would let that retry find the id free and
+                # return while the deferred settlements below still emit.)
                 cls._tx_outcomes.clear()
-                cls._outcome_owners.clear()
+                for owner in cls._outcome_owners.values():
+                    owner._record_forbidden = True
                 # unblock the awaitable facade: waiters resolve to None (service shut down
                 # before the transaction terminated), never hang
                 for waiters in cls._tx_waiters.values():
@@ -1187,7 +1225,7 @@ class DownloadService:
             cls._initialized_cells.clear()
 
         for tx in tx_list:
-            tx.transaction_done(TransactionDoneStatus.DELETED)
+            tx.transaction_done(TransactionDoneStatus.DELETED, on_outcome=functools.partial(cls._record_outcome, tx=tx))
 
     @classmethod
     def _delete_tx(cls, tx: _Transaction, tombstone_finished_refs: bool = False):
@@ -1208,6 +1246,12 @@ class DownloadService:
 
         Safe to call before or after termination: a waiter created after the outcome was
         recorded resolves immediately from the outcome table.
+
+        Waiters bind to the GENERATION of the tx_id that records while they wait: a
+        waiter attached before a same-id retry resolves with the retired generation's
+        (non-completed) outcome the moment that generation settles -- each attempt's
+        awaiter gets that attempt's verdict; a retrying caller re-acquires a waiter for
+        the new attempt.
         """
         waiter = TransferWaiter(transaction_id, service=cls)
         with cls._outcome_lock:
@@ -1243,16 +1287,17 @@ class DownloadService:
         # recording is legal only for the transaction that owns the outcome slot.
         with cls._outcome_lock:
             if cls._outcome_owners.get(outcome.tx_id) is not tx:
-                # This outcome belongs to a dead generation and must be dropped:
-                #   - a newer same-tx_id transaction (a retry) took ownership while this
-                #     one was terminating, or
-                #   - ownership was cleared by shutdown() (which also clears the
-                #     outcome table) or consumed by a prior terminal record.
-                # This single guard closes the stale-outcome race across shutdown and
-                # re-init: a recorder that blocked on _outcome_lock during shutdown and
-                # wins the lock afterward finds it no longer owns the slot and drops here.
+                # ownership was already consumed (a prior terminal record) or reclaimed
+                # (a retry took over a slot whose owner was fully settled but never
+                # consumed it): this recording is stale and must be dropped
                 return
             cls._outcome_owners.pop(outcome.tx_id, None)
+            if tx._record_forbidden:
+                # shutdown() forbade this generation from recording: its ownership
+                # marker (kept so same-id retries serialize behind its settlement) is
+                # consumed above, but its verdict is dropped -- nothing records after
+                # shutdown, and its waiters were already resolved to None.
+                return
             cls._tx_outcomes[outcome.tx_id] = outcome
             # resolve the awaitable facade: waiters are TransferWaiter objects (no user code
             # runs in _resolve), so setting them under the lock is safe and race-free

@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import dataclasses
+import threading
 import time
 
 import pytest
@@ -200,42 +201,66 @@ class TestTransactionOutcome:
         with service._outcome_lock:
             assert tx_id not in service._outcome_owners, "ownership must be consumed"
 
-    def test_mid_settlement_retry_suppresses_stale_transfer_emissions(self):
+    def test_retry_waits_for_mid_settlement_generation(self):
         """P1 pin: the monitor pops a finishing transaction from _tx_table BEFORE running
-        its callbacks; a retry registering the same tx_id in that gap is not seen by the
-        retire path (old tx not in table). The retry now marks the previous owner
-        superseded, so its in-flight transaction_done suppresses outcome_cb/progress --
-        while cleanup (done_cb, release) still runs."""
+        its callbacks; a retry reusing the tx_id in that gap must not take ownership until
+        that settlement fully completes. Generations are strictly serialized -- every
+        old-generation emission happens before the retry exists -- because the alternative
+        (gating emissions on a superseded flag) is an unwinnable check-then-emit race."""
         from functools import partial
         from unittest.mock import Mock
 
         service = make_isolated_download_service()
         service._tx_monitor = Mock()
         cell = Mock()
-        done, outcome_cbs = [], []
-        service.new_transaction(
-            cell=cell,
-            timeout=10.0,
-            num_receivers=1,
-            tx_id="TX-MID",
-            transaction_done_cb=lambda tid, status, base_objs, **kw: done.append(status),
-            outcome_cb=lambda outcome: outcome_cbs.append(outcome),
-        )
+        events = []
+        cb_entered = threading.Event()
+        cb_release = threading.Event()
+
+        def slow_outcome_cb(outcome):
+            cb_entered.set()
+            cb_release.wait(10.0)  # hold settlement open while the retry tries to register
+            events.append("old_outcome_cb")
+
+        service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-MID", outcome_cb=slow_outcome_cb)
         obj = _stub_obj()
         service.add_object("TX-MID", obj)
         with service._tx_lock:
             old_tx = service._tx_table.pop("TX-MID")  # monitor termination step 1
 
-        # the retry lands in the settlement gap
-        service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-MID")
+        settler = threading.Thread(
+            target=lambda: old_tx.transaction_done(
+                TransactionDoneStatus.FINISHED, on_outcome=partial(service._record_outcome, tx=old_tx)
+            )
+        )
+        retrier = threading.Thread(
+            target=lambda: (
+                service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-MID"),
+                events.append("retry_registered"),
+            )
+        )
+        try:
+            settler.start()
+            assert cb_entered.wait(5.0)
 
-        # the old generation now runs its (already started) termination
-        old_tx.transaction_done(TransactionDoneStatus.FINISHED, on_outcome=partial(service._record_outcome, tx=old_tx))
+            # the retry lands mid-settlement: it must block, not register
+            retrier.start()
+            retrier.join(0.5)
+            assert retrier.is_alive(), "retry must not take ownership while the old generation is settling"
+        finally:
+            cb_release.set()
+            settler.join(5.0)
+            retrier.join(5.0)
+        assert not retrier.is_alive()
 
-        assert outcome_cbs == [], "stale transfer-facing outcome_cb must be suppressed"
-        assert done == [TransactionDoneStatus.FINISHED], "cleanup callback still runs"
-        assert obj.released, "sources still released"
-        assert service.get_transaction_outcome("TX-MID") is None, "stale outcome not recorded"
+        # strict serialization: every old-generation emission precedes the retry
+        assert events == ["old_outcome_cb", "retry_registered"]
+        assert obj.released
+        # the old generation's recorded outcome was purged at retry registration
+        assert service.get_transaction_outcome("TX-MID") is None
+        with service._tx_lock:
+            with service._outcome_lock:
+                assert service._tx_table["TX-MID"] is service._outcome_owners["TX-MID"]
 
     def test_on_outcome_fires_after_callbacks_and_release(self):
         # settle-then-record: recording (which releases waiters) happens only after the
@@ -394,33 +419,130 @@ class TestServiceOutcomeTable:
         finally:
             service.shutdown()
 
-    def test_stale_owner_cannot_record_over_live_retry(self):
-        # the record-after-purge race: termination removes the old tx from _tx_table,
-        # a retry takes ownership of the same tx_id, THEN the old transaction records its
-        # outcome — it must not shadow the live retry
-        from functools import partial
+    def test_reusing_tx_id_from_own_settlement_callback_raises(self):
+        # a settlement callback that synchronously retries its own tx_id would deadlock
+        # (the retry must wait for a settlement that cannot complete until the callback
+        # returns), so it gets an immediate error instead
         from unittest.mock import Mock
 
         service = make_isolated_download_service()
         service._tx_monitor = Mock()  # suppress real monitor thread start
         cell = Mock()
+        errors = []
+
+        def retry_inline(outcome):
+            try:
+                service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-REENT")
+            except RuntimeError as e:
+                errors.append(str(e))
+
+        service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-REENT", outcome_cb=retry_inline)
+        service.delete_transaction("TX-REENT")
+        assert len(errors) == 1 and "settlement callback" in errors[0]
+
+    def test_dead_settled_owner_is_reclaimed(self):
+        """Falsification pin (P-S3): if outcome recording itself fails, the generation is
+        settled (event set) but its ownership was never consumed. A retry must reclaim
+        that dead slot -- before the fix it hot-spun forever, because Event.wait returns
+        True immediately for a set event so the bounded-wait escape never fired."""
+        from unittest.mock import Mock
+
+        service = make_isolated_download_service()
+        service._tx_monitor = Mock()
+        cell = Mock()
+        service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-DEAD")
+
+        def exploding_record(outcome, tx):
+            raise RuntimeError("recording blew up")
+
+        service._record_outcome = exploding_record
         try:
-            service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-RACE")
-            with service._tx_lock:
-                old_tx = service._tx_table.pop("TX-RACE")  # termination step 1, as the monitor does
-
-            # the retry takes ownership of the id before the old transaction records
-            service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-RACE")
-
-            # the old transaction now finishes terminating and tries to record
-            old_tx.transaction_done(
-                TransactionDoneStatus.DELETED, on_outcome=partial(service._record_outcome, tx=old_tx)
-            )
-
-            # the live retry is unaffected: no stale terminal outcome surfaces
-            assert service.get_transaction_outcome("TX-RACE") is None
+            service.delete_transaction("TX-DEAD")  # settles; recording fails; owner never consumed
         finally:
-            service.shutdown()
+            del service._record_outcome  # restore the inherited classmethod
+        with service._outcome_lock:
+            assert "TX-DEAD" in service._outcome_owners, "precondition: dead owner still registered"
+
+        registered = []
+        retrier = threading.Thread(
+            target=lambda: registered.append(
+                service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-DEAD")
+            )
+        )
+        retrier.start()
+        retrier.join(5.0)
+        assert not retrier.is_alive(), "retry must reclaim a settled-but-unconsumed owner, not spin"
+        assert registered == ["TX-DEAD"]
+        with service._tx_lock:
+            with service._outcome_lock:
+                assert service._tx_table["TX-DEAD"] is service._outcome_owners["TX-DEAD"]
+
+    def test_shutdown_settlement_serializes_same_id_retry(self):
+        """Falsification pin (P-S4): shutdown used to clear ownership markers BEFORE its
+        deferred settlements ran, so a same-id retry landing in that window found the id
+        free and returned while the old generation's emissions were still to come.
+        Ownership markers now survive until each settlement consumes them."""
+        from unittest.mock import Mock
+
+        service = make_isolated_download_service()
+        service._tx_monitor = Mock()
+        cell = Mock()
+        events = []
+        cb_entered = threading.Event()
+        cb_release = threading.Event()
+
+        def gated_done_cb(tid, status, base_objs, **kw):
+            cb_entered.set()
+            cb_release.wait(10.0)
+            events.append("old_done_cb")
+
+        service.new_transaction(
+            cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-SHUT", transaction_done_cb=gated_done_cb
+        )
+        shutter = threading.Thread(target=service.shutdown)
+        retrier = threading.Thread(
+            target=lambda: (
+                service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-SHUT"),
+                events.append("retry_registered"),
+            )
+        )
+        try:
+            shutter.start()
+            assert cb_entered.wait(5.0)  # shutdown is now mid-settlement, outside its locks
+
+            retrier.start()
+            retrier.join(0.5)
+            assert retrier.is_alive(), "retry must serialize behind shutdown's in-flight settlement"
+        finally:
+            cb_release.set()
+            shutter.join(5.0)
+            retrier.join(5.0)
+        assert not retrier.is_alive()
+        assert events == ["old_done_cb", "retry_registered"]
+        # shutdown still drops the old generation's verdict (nothing records after shutdown)
+        # while the post-shutdown registration owns the slot cleanly
+        with service._tx_lock:
+            with service._outcome_lock:
+                assert service._tx_table["TX-SHUT"] is service._outcome_owners["TX-SHUT"]
+
+    def test_retry_gives_up_if_previous_generation_never_settles(self):
+        # ownership was taken but settlement never runs (a hung terminator): a retry
+        # must fail loudly after the bounded wait, never register ambiguously
+        from unittest.mock import Mock
+
+        service = make_isolated_download_service()
+        service._tx_monitor = Mock()  # suppress real monitor thread start
+        cell = Mock()
+        service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-STUCK")
+        with service._tx_lock:
+            service._tx_table.pop("TX-STUCK")  # popped for termination; settlement never follows
+
+        service.SETTLEMENT_WAIT_TIMEOUT = 0.2
+        with pytest.raises(RuntimeError, match="did not settle"):
+            service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-STUCK")
+        # and it did not register: the stuck generation still owns the slot
+        with service._tx_lock:
+            assert "TX-STUCK" not in service._tx_table
 
     def test_reusing_active_tx_id_retires_prior_transaction(self):
         # reusing a tx_id while the prior transaction is still LIVE must retire it,
@@ -446,18 +568,25 @@ class TestServiceOutcomeTable:
             obj = _stub_obj()
             rid = service.add_object(first, obj)
             assert rid in service._ref_table
+            gen1_waiter = service.get_transfer_waiter(first)
 
             second = service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-DUP")
             assert second == "TX-DUP"
 
-            # the prior live transaction was retired: refs unservable, sources released.
-            # CLEANUP surfaces still run (transaction_done_cb deletes temp files in real
-            # callers) -- but the TRANSFER-FACING outcome_cb is suppressed (superseded):
-            # its reused tx_id now names the live retry and would misattribute
+            # waiters bind to the generation that records while they wait: the retired
+            # generation resolved this waiter with its own (non-completed) verdict
+            # before the retry registered
+            gen1_outcome = gen1_waiter.wait(timeout=1.0)
+            assert gen1_outcome is not None and not gen1_outcome.completed
+
+            # the prior live transaction was retired and fully settled BEFORE the retry
+            # registered: refs unservable, sources released, and ALL its terminal
+            # emissions -- cleanup and outcome alike -- ran while the tx_id still
+            # unambiguously named it (generations are strictly serialized)
             assert rid not in service._ref_table
             assert obj.released
             assert done == [("TX-DUP", TransactionDoneStatus.DELETED)]
-            assert outcome_cbs == []
+            assert len(outcome_cbs) == 1 and not outcome_cbs[0].completed
             # its terminal outcome does not shadow the live retry
             assert service.get_transaction_outcome("TX-DUP") is None
             # the live tx is the new owner
