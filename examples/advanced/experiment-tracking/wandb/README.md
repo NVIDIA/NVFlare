@@ -152,9 +152,13 @@ add_experiment_tracking(recipe, "wandb", tracking_config=wandb_config)
 
 ```python
 # Each client logs to its own WandB run
-for site_name in ["site-1", "site-2"]:
-    receiver = WandBReceiver(**client_config)
-    recipe.job.to(receiver, site_name, id="wandb_receiver")
+add_experiment_tracking(
+    recipe,
+    "wandb",
+    tracking_config=client_config,
+    client_side=True,
+    server_side=False,
+)
 ```
 
 **Event Flow**:
