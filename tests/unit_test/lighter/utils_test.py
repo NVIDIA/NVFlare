@@ -387,6 +387,28 @@ class TestVerifyFolderSignature:
             f.write(b"tampered content")
         assert verify_folder_signature(folder, root_ca_path, single_signer=False) is False
 
+    def test_verify_folder_signature_fails_when_subdirectory_replaced_by_symlink(self, tmp_path):
+        folder, root_ca_path, client_crt_path, client_pri_key, _ = self._setup_certs_and_folder(tmp_path)
+        sign_folders(folder, client_pri_key, crt_path=client_crt_path)
+
+        replacement = tmp_path / "replacement"
+        replacement.mkdir()
+        (replacement / "nested.txt").write_bytes(b"tampered content")
+        subdir = os.path.join(folder, "subdir")
+        shutil.rmtree(subdir)
+        os.symlink(replacement, subdir, target_is_directory=True)
+
+        assert verify_folder_signature(folder, root_ca_path, single_signer=False) is False
+
+    def test_sign_folders_rejects_symlinks(self, tmp_path):
+        folder, _root_ca_path, _client_crt_path, client_pri_key, _ = self._setup_certs_and_folder(tmp_path)
+        target = tmp_path / "target.txt"
+        target.write_bytes(b"content")
+        os.symlink(target, os.path.join(folder, "link.txt"))
+
+        with pytest.raises(ValueError, match="symbolic links are not allowed"):
+            sign_folders(folder, client_pri_key)
+
     def test_verify_folder_signature_fails_when_signature_file_missing(self, tmp_path):
         """Verify returns False when a directory has no signature file."""
         folder, root_ca_path, client_crt_path, client_pri_key, _ = self._setup_certs_and_folder(tmp_path)
