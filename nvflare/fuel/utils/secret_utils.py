@@ -371,11 +371,55 @@ def _is_exempt_value(value: str) -> bool:
     return _looks_like_path(v)
 
 
-def _split_tokens(text: str) -> List[str]:
+def _split_token_variants(text: str) -> List[List[str]]:
+    """Return tokenizations needed to conservatively scan command-like text."""
     try:
-        return shlex.split(text, posix=True)
+        return [shlex.split(text, posix=True)]
     except ValueError:
-        return text.split()
+        # Recipe parameters can contain incomplete shell quoting while they are being composed.
+        # A plain whitespace split can separate the value of a secret-named flag from the rest of
+        # its unterminated quoted span and make the detector miss it. Conversely, an unmatched
+        # quote before a flag can make a lenient tokenizer absorb the flag into one token. Scan
+        # both interpretations; findings are deduplicated before they are returned.
+        lenient_tokens = _split_tokens_leniently(text)
+        whitespace_tokens = text.split()
+        if lenient_tokens == whitespace_tokens:
+            return [lenient_tokens]
+        return [lenient_tokens, whitespace_tokens]
+
+
+def _split_tokens_leniently(text: str) -> List[str]:
+    """Best-effort shell tokenization that keeps unterminated quoted spans together."""
+    tokens: List[str] = []
+    token: List[str] = []
+    quote = None
+    escaped = False
+
+    for char in text:
+        if escaped:
+            token.append(char)
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        elif quote:
+            if char == quote:
+                quote = None
+            else:
+                token.append(char)
+        elif char in {"'", '"'}:
+            quote = char
+        elif char.isspace():
+            if token:
+                tokens.append("".join(token))
+                token = []
+        else:
+            token.append(char)
+
+    if escaped:
+        token.append("\\")
+    if token:
+        tokens.append("".join(token))
+    return tokens
 
 
 def _iter_flag_findings(tokens: List[str], location: str):
@@ -468,13 +512,13 @@ def _scan_string(text: str, location: str, findings: List[SecretFinding]) -> Non
     for reason, pattern in _KNOWN_TOKEN_PATTERNS:
         for match in pattern.finditer(text):
             findings.append(SecretFinding(location, reason, _mask(match.group(0))))
-    tokens = _split_tokens(text)
-    findings.extend(_iter_flag_findings(tokens, location))
     findings.extend(_iter_assignment_findings(text, location))
-    for token in tokens:
-        finding = _entropy_finding(token, location)
-        if finding:
-            findings.append(finding)
+    for tokens in _split_token_variants(text):
+        findings.extend(_iter_flag_findings(tokens, location))
+        for token in tokens:
+            finding = _entropy_finding(token, location)
+            if finding:
+                findings.append(finding)
 
 
 def _scan_value(value: Any, location: str, findings: List[SecretFinding]) -> None:
@@ -538,13 +582,15 @@ def find_potential_secrets(value: Any, location: str = "value") -> List[SecretFi
 
 
 def _emit_safe_warning(message: str, category: type[Warning]) -> None:
-    """Emit a warning without attributing it to a user source line that might contain a secret."""
+    """Emit a warning without exposing a caller source line that may contain a secret.
+
+    Warning-as-error policies are deliberately neutralized for these diagnostics. Letting the
+    warning exception escape would render caller frames in a traceback, including an inline recipe
+    parameter containing the very secret this scanner is trying to keep out of logs.
+    """
     try:
         warnings.warn_explicit(message, category, filename="<nvflare-secret-scan>", lineno=1)
     except category:
-        # A global ``-W error`` policy would otherwise turn the warning into a traceback that can
-        # render the caller's inline recipe source. Re-emit this security diagnostic as a warning
-        # from the synthetic location instead of allowing that source-bearing exception to escape.
         with warnings.catch_warnings():
             warnings.simplefilter("always", category)
             warnings.warn_explicit(message, category, filename="<nvflare-secret-scan>", lineno=1)
@@ -629,7 +675,14 @@ def _contains_secret_ref_outside_keys(
         for key, item in value.items():
             if _contains_secret_ref(key):
                 return True
-            if supported_value_depth == 1 and isinstance(key, str) and key in supported_value_keys:
+            if (
+                supported_value_depth == 1
+                and isinstance(key, str)
+                and key in supported_value_keys
+                and isinstance(item, str)
+            ):
+                # These runtime boundaries consume direct string fields. Do not exempt a nested
+                # mapping/list merely because its parent happens to use a supported field name.
                 continue
             if _contains_secret_ref_outside_keys(item, supported_value_keys, max(supported_value_depth - 1, 0)):
                 return True

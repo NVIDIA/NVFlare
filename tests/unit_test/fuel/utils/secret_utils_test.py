@@ -299,6 +299,16 @@ class TestFindPotentialSecrets:
         find_potential_secrets(value, location="test")
         assert time.monotonic() - start < 1.0
 
+    def test_unterminated_quoted_flag_value_is_scanned_as_one_value(self):
+        findings = find_potential_secrets('--password "short secret value', location="test")
+
+        assert any(finding.reason == "value of a secret-named flag" for finding in findings)
+
+    def test_unterminated_quote_before_flag_does_not_hide_flag(self):
+        findings = find_potential_secrets('"legacy --password hunter22x', location="test")
+
+        assert any(finding.reason == "value of a secret-named flag" for finding in findings)
+
 
 class TestWarnOnPotentialSecrets:
     def test_warns_with_context_and_no_leak(self):
@@ -320,16 +330,18 @@ class TestWarnOnPotentialSecrets:
         assert not [w for w in record if issubclass(w.category, PotentialSecretWarning)]
 
     def test_warning_as_error_is_safely_reemitted_without_raising(self):
+        secret_value = "actualSecret123"
         with warnings.catch_warnings(record=True) as record:
             warnings.simplefilter("error", PotentialSecretWarning)
             findings = warn_on_potential_secrets(
-                {"password": "actualSecret123"},
+                {"password": secret_value},
                 context="add_client_config config",
             )
 
         assert findings
         assert len(record) == 1
         assert record[0].filename == "<nvflare-secret-scan>"
+        assert secret_value not in str(record[0].message)
 
 
 class TestUnsupportedSecretRefs:
@@ -367,6 +379,13 @@ class TestUnsupportedSecretRefs:
         with pytest.warns(UnsupportedSecretRefWarning):
             assert warn_on_unsupported_secret_refs_outside_keys(
                 {"site-1": {"subsection": {"train_args": reference}}},
+                supported_value_keys={"train_args"},
+                supported_value_depth=2,
+                context="per_site_config",
+            )
+        with pytest.warns(UnsupportedSecretRefWarning):
+            assert warn_on_unsupported_secret_refs_outside_keys(
+                {"site-1": {"train_args": {"nested": reference}}},
                 supported_value_keys={"train_args"},
                 supported_value_depth=2,
                 context="per_site_config",
