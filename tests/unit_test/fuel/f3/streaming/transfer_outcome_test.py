@@ -451,6 +451,7 @@ class TestServiceOutcomeTable:
         service._tx_monitor = Mock()
         cell = Mock()
         service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-DEAD")
+        stranded_waiter = service.get_transfer_waiter("TX-DEAD")
 
         def exploding_record(outcome, tx):
             raise RuntimeError("recording blew up")
@@ -462,6 +463,7 @@ class TestServiceOutcomeTable:
             del service._record_outcome  # restore the inherited classmethod
         with service._outcome_lock:
             assert "TX-DEAD" in service._outcome_owners, "precondition: dead owner still registered"
+        assert not stranded_waiter.done(), "precondition: the dead generation's waiter is stranded"
 
         registered = []
         retrier = threading.Thread(
@@ -476,6 +478,9 @@ class TestServiceOutcomeTable:
         with service._tx_lock:
             with service._outcome_lock:
                 assert service._tx_table["TX-DEAD"] is service._outcome_owners["TX-DEAD"]
+        # the dead generation's waiters are abandoned with None at reclaim (its verdict
+        # was lost) -- NOT inherited and later resolved with the retry's outcome
+        assert stranded_waiter.done() and stranded_waiter.outcome is None
 
     def test_shutdown_settlement_serializes_same_id_retry(self):
         """Falsification pin (P-S4): shutdown used to clear ownership markers BEFORE its
@@ -524,6 +529,112 @@ class TestServiceOutcomeTable:
         with service._tx_lock:
             with service._outcome_lock:
                 assert service._tx_table["TX-SHUT"] is service._outcome_owners["TX-SHUT"]
+
+    def test_hung_retirement_of_live_transaction_fails_bounded(self):
+        """P1 pin: retiring a LIVE prior transaction used to settle it inline on the
+        caller's thread, so a hung callback in the old generation hung the retry forever
+        -- the settlement bound only covered generations already settling elsewhere.
+        Retirement now settles on its own thread and the retry takes the same bounded
+        wait as any mid-settlement predecessor."""
+        from unittest.mock import Mock
+
+        service = make_isolated_download_service()
+        service._tx_monitor = Mock()
+        service.SETTLEMENT_WAIT_TIMEOUT = 0.3
+        cell = Mock()
+        cb_release = threading.Event()
+
+        def hung_done_cb(tid, status, base_objs, **kw):
+            cb_release.wait(10.0)
+
+        service.new_transaction(
+            cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-HUNG", transaction_done_cb=hung_done_cb
+        )
+        errors = []
+
+        def retry():
+            try:
+                service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-HUNG")
+            except RuntimeError as e:
+                errors.append(str(e))
+
+        retrier = threading.Thread(target=retry)
+        try:
+            retrier.start()
+            retrier.join(5.0)
+            assert not retrier.is_alive(), "retry must fail after the bound, not hang on the hung retirement"
+            assert len(errors) == 1 and "did not settle" in errors[0]
+        finally:
+            cb_release.set()
+        # once the abandoned settlement eventually completes, the id is usable again
+        for _ in range(50):
+            with service._outcome_lock:
+                consumed = "TX-HUNG" not in service._outcome_owners
+            if consumed:
+                break
+            time.sleep(0.1)
+        assert service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-HUNG") == "TX-HUNG"
+
+    def test_inflight_budget_pass_drains_before_settlement(self):
+        """P1 pin: the monitor re-checks table identity, releases _tx_lock, then runs
+        budget enforcement -- a retry could retire and settle the transaction while
+        enforcement was mid-flight, and enforcement then emitted FAILED terminal
+        progress under the reused tx_id. Operations now register with the activity
+        gate and settlement drains them before emitting or registering the retry."""
+        from unittest.mock import Mock
+
+        service = make_isolated_download_service()
+        service._tx_monitor = Mock()
+        cell = Mock()
+        events = []
+        cb_entered = threading.Event()
+        cb_release = threading.Event()
+
+        def gated_downloaded_to_one(receiver, status):
+            cb_entered.set()
+            cb_release.wait(10.0)
+            events.append("old_downloaded_to_one")
+
+        service.new_transaction(
+            cell=cell,
+            timeout=1000.0,
+            num_receivers=1,
+            tx_id="TX-BUDGET",
+            receiver_ids=("r1",),
+            receiver_acquire_timeout=5.0,
+            progress_cb=lambda **kw: events.append(("old_progress", kw.get("state"))),
+        )
+        obj = _stub_obj()
+        obj.downloaded_to_one = gated_downloaded_to_one
+        service.add_object("TX-BUDGET", obj)
+
+        monitor = threading.Thread(target=run_monitor_once, args=(service,), kwargs={"now": time.time() + 100.0})
+        retrier = threading.Thread(
+            target=lambda: (
+                service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-BUDGET"),
+                events.append("retry_registered"),
+            )
+        )
+        try:
+            monitor.start()
+            assert cb_entered.wait(5.0), "budget enforcement must have finalized r1 as FAILED"
+
+            # the retry lands while enforcement is mid-flight: it must drain first
+            retrier.start()
+            retrier.join(0.5)
+            assert retrier.is_alive(), "retry must not register while a budget pass is in flight"
+        finally:
+            cb_release.set()
+            monitor.join(5.0)
+            retrier.join(5.0)
+        assert not retrier.is_alive()
+
+        # every old-generation emission -- including enforcement's FAILED terminal
+        # progress -- happened strictly before the retry registered
+        retry_at = events.index("retry_registered")
+        old_emissions = [i for i, e in enumerate(events) if e != "retry_registered"]
+        assert old_emissions and all(i < retry_at for i in old_emissions), f"stale emission after retry: {events}"
+        assert ("old_progress", TransferProgressState.FAILED) in events
 
     def test_retry_gives_up_if_previous_generation_never_settles(self):
         # ownership was taken but settlement never runs (a hung terminator): a retry
