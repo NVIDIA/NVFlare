@@ -509,7 +509,7 @@ class TestVerifyFolderSignature:
 
         assert verify_folder_signature(str(folder), str(root_ca_path), single_signer=False) is False
 
-    def test_verify_folder_signature_rejects_submitter_cert_with_unknown_role(self, tmp_path):
+    def test_verify_folder_signature_accepts_submitter_cert_with_custom_role(self, tmp_path):
         root_pri_key, root_pub_key = lighter_utils.generate_keys()
         client_pri_key, client_pub_key = lighter_utils.generate_keys()
         root_cert = lighter_generate_cert(
@@ -520,7 +520,7 @@ class TestVerifyFolderSignature:
             ca=True,
         )
         client_cert = lighter_generate_cert(
-            subject=Identity("client", "nvidia", "admin"),
+            subject=Identity("client", "nvidia", "self_defined"),
             issuer=Identity("root", "nvidia"),
             signing_pri_key=root_pri_key,
             subject_pub_key=client_pub_key,
@@ -535,7 +535,12 @@ class TestVerifyFolderSignature:
 
         sign_folders(str(folder), client_pri_key, crt_path=str(client_crt_path))
 
-        assert verify_folder_signature(str(folder), str(root_ca_path), single_signer=False) is False
+        verified, signers = verify_folder_signature_and_get_signers(
+            str(folder), str(root_ca_path), single_signer=False
+        )
+
+        assert verified is True
+        assert signers == [("client", "nvidia", "self_defined")]
 
 
 @pytest.mark.xdist_group(name="lighter_utils_group")
