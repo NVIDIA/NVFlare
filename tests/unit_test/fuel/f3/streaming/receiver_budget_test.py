@@ -267,7 +267,87 @@ class TestConcurrentSameIdCreation:
             assert service.get_transaction_outcome("TX-RACE2") is None
 
 
+class TestShutdownCreationAtomicity:
+    def test_shutdown_gap_cannot_orphan_a_concurrent_new_transaction(self):
+        """P-C pin (found by property falsification): shutdown() used to clear _tx_table and
+        _outcome_owners in SEPARATE critical sections; a new_transaction landing in the gap
+        registered into both, and the ownership clear then wiped the live transaction's
+        ownership -- live in _tx_table, outcome unrecordable forever. The teardown is now one
+        atomic step, so a concurrent creator lands fully before it (torn down) or fully after
+        it (live AND owning). Deterministic: shutdown's _outcome_lock acquire is held open to
+        give the racer its best possible window."""
+        import threading as th
+
+        service = _make_service()
+        # warm up: the first new_transaction pays one-time ConfigService resolution for the
+        # budget defaults -- without this the racer misses the deterministic gap window
+        warm = service.new_transaction(cell=Mock(), timeout=1.0, num_receivers=1)
+        service.delete_transaction(warm)
+
+        gap_open = th.Event()
+        racer_done = th.Event()
+        real_lock = th.Lock()
+
+        class CoordLock:
+            """Pauses the shutdown thread's first _outcome_lock acquire until the racer had
+            its chance -- pre-fix this deterministically reproduced the orphaning."""
+
+            _tripped = False
+
+            def acquire(self, *a, **k):
+                if th.current_thread().name == "shutdownT" and not CoordLock._tripped:
+                    CoordLock._tripped = True
+                    # the discriminator is LOCK STATE, not time: post-fix, shutdown holds
+                    # _tx_lock here (atomic teardown) so the racer cannot land in any gap --
+                    # skip waiting. Pre-fix _tx_lock is free: hold the gap open until the
+                    # racer's new_transaction completes, however slow its cold start is.
+                    if not service._tx_lock.locked():
+                        gap_open.set()
+                        racer_done.wait(20.0)
+                return real_lock.acquire(*a, **k)
+
+            def release(self, *a, **k):
+                return real_lock.release(*a, **k)
+
+            def __enter__(self):
+                self.acquire()
+                return self
+
+            def __exit__(self, *exc):
+                self.release()
+
+        service._outcome_lock = CoordLock()
+
+        def racer():
+            # pre-fix: released only when the gap is open. Post-fix the gap never opens;
+            # the racer proceeds after a short grace and simply lands after the atomic
+            # teardown (blocked on _tx_lock if it races it).
+            gap_open.wait(0.5)
+            service.new_transaction(cell=Mock(), timeout=100.0, num_receivers=1, tx_id="TX-GAP")
+            racer_done.set()
+
+        shut = th.Thread(target=service.shutdown, name="shutdownT")
+        race = th.Thread(target=racer)
+        shut.start()
+        race.start()
+        shut.join(10.0)
+        race.join(10.0)
+        assert not shut.is_alive() and not race.is_alive()
+
+        # the invariant: whatever the ordering, a tx live in _tx_table owns its outcome slot
+        live = service._tx_table.get("TX-GAP")
+        assert live is not None, "the racer's transaction must exist (it ran after teardown)"
+        with service._outcome_lock:
+            owner = service._outcome_owners.get("TX-GAP")
+        assert owner is live, "a live transaction must own its outcome slot even across shutdown"
+
+        # and its outcome is recordable: terminate it and read the verdict
+        service.delete_transaction("TX-GAP")
+        assert service.get_transaction_outcome("TX-GAP") is not None
+
+
 class TestConfigResolution:
+
     def test_budget_config_var_supplies_default(self):
         service = _make_service()
         with patch.object(ds_module.ConfigService, "get_float_var", return_value=42.0) as gv:

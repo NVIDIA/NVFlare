@@ -1131,25 +1131,31 @@ class DownloadService:
         Returns: None
 
         """
+        # Table teardown and ownership teardown are ONE atomic step (_tx_lock nesting
+        # _outcome_lock, the same order new_transaction uses; no reverse nesting exists).
+        # With separate critical sections, a new_transaction landing in the gap between
+        # them would register itself into both tables -- and the ownership clear below
+        # would then wipe the LIVE transaction's ownership, leaving it in _tx_table but
+        # unable to ever record its outcome (found by property falsification, P-C).
         with cls._tx_lock:
             tx_list = list(cls._tx_table.values())
             for tx in tx_list:
                 cls._delete_tx(tx)
             cls._finished_refs.clear()
 
-        with cls._outcome_lock:
-            # drop recorded outcomes and clear outcome ownership. A monitor iteration
-            # mid-termination that blocked on _outcome_lock finds its ownership gone
-            # once it acquires the lock, so its outcome drops in _record_outcome --
-            # the owner guard alone gates post-shutdown recording.
-            cls._tx_outcomes.clear()
-            cls._outcome_owners.clear()
-            # unblock the awaitable facade: waiters resolve to None (service shut down
-            # before the transaction terminated), never hang
-            for waiters in cls._tx_waiters.values():
-                for waiter in waiters:
-                    waiter._resolve(None)
-            cls._tx_waiters.clear()
+            with cls._outcome_lock:
+                # drop recorded outcomes and clear outcome ownership. A monitor iteration
+                # mid-termination that blocked on _outcome_lock finds its ownership gone
+                # once it acquires the lock, so its outcome drops in _record_outcome --
+                # the owner guard alone gates post-shutdown recording.
+                cls._tx_outcomes.clear()
+                cls._outcome_owners.clear()
+                # unblock the awaitable facade: waiters resolve to None (service shut down
+                # before the transaction terminated), never hang
+                for waiters in cls._tx_waiters.values():
+                    for waiter in waiters:
+                        waiter._resolve(None)
+                cls._tx_waiters.clear()
 
         with cls._init_lock:
             # Shutdown resets callback-registration state even when a cell is still
