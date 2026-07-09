@@ -331,9 +331,20 @@ def load_private_key_file(file_path):
         return serialization.load_pem_private_key(f.read(), password=None, backend=default_backend())
 
 
+def _check_for_symlinks(root, folders, files):
+    for name in folders + files:
+        path = os.path.join(root, name)
+        if os.path.islink(path):
+            raise ValueError(f"symbolic links are not allowed in signed folders: {path}")
+
+
 def sign_folders(folder, signing_pri_key, crt_path=None, max_depth=9999, signature_file=NVFLARE_SIG_FILE):
+    if os.path.islink(folder):
+        raise ValueError(f"signed folder must not be a symbolic link: {folder}")
+
     depth = 0
     for root, folders, files in os.walk(folder):
+        _check_for_symlinks(root, folders, files)
         depth = depth + 1
         signatures = dict()
         for file in files:
@@ -386,11 +397,15 @@ def verify_folder_signature_and_get_signers(
     """
 
     try:
+        if os.path.islink(src_folder):
+            return False, []
+
         root_ca_cert = load_crt(root_ca_path)
         root_ca_public_key = root_ca_cert.public_key()
         root_submitter = _cert_to_submitter(root_ca_cert)
         signers = {}
         for root, folders, files in os.walk(src_folder):
+            _check_for_symlinks(root, folders, files)
             try:
                 with open(os.path.join(root, signature_file), "rt") as f:
                     signatures = json.load(f)
