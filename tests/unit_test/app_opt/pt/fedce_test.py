@@ -17,7 +17,7 @@ import pytest
 torch = pytest.importorskip("torch")
 
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
-from nvflare.app_opt.pt.fedce import FedCEConstants, FedCEModelAggregator, PTFedCEHelper
+from nvflare.app_opt.pt.fedce import FedCEConstants, FedCEModelAggregator, PTFedCEHelper, _normalize
 
 
 def _result(client, update, minus_score, round_number=0):
@@ -110,3 +110,109 @@ def test_fedce_helper_builds_minus_model_and_attaches_score():
 
     assert minus_model.weight.item() == pytest.approx(12.0)
     assert result.meta[FedCEConstants.MINUS_MODEL_SCORE] == pytest.approx(0.8)
+
+
+def test_fedce_helper_reads_weight_and_handles_non_trainable_buffers():
+    class BufferedModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.weight = torch.nn.Parameter(torch.tensor([10.0]))
+            self.register_buffer("counter", torch.tensor([3], dtype=torch.int64))
+            self.register_buffer("untouched", torch.tensor([4], dtype=torch.int64))
+
+    global_model = FLModel(meta={FedCEConstants.CONTRIBUTION_WEIGHTS: {"site-1": 0.4}})
+    assert PTFedCEHelper.get_contribution_weight(global_model, "site-1") == pytest.approx(0.4)
+    assert PTFedCEHelper.get_contribution_weight(global_model, "site-2", default=0.2) == pytest.approx(0.2)
+
+    model = BufferedModel()
+    minus_model = PTFedCEHelper.make_minus_model(
+        model,
+        {"weight": torch.tensor([4.0]), "counter": torch.tensor([99], dtype=torch.int64)},
+        contribution_weight=0.25,
+    )
+
+    assert minus_model.counter.item() == 3
+    assert minus_model.untouched.item() == 4
+    assert minus_model.weight.item() == pytest.approx(12.0)
+
+
+@pytest.mark.parametrize("weight", [-0.1, 1.0])
+def test_fedce_helper_rejects_invalid_contribution_weight(weight):
+    with pytest.raises(ValueError, match="contribution_weight must be"):
+        PTFedCEHelper.make_minus_model(torch.nn.Linear(1, 1), {}, weight)
+
+
+@pytest.mark.parametrize("values", [[], [float("nan")], [float("inf")]])
+def test_fedce_normalize_rejects_invalid_values(values):
+    with pytest.raises(ValueError):
+        _normalize(values, epsilon=1e-6)
+
+
+def test_fedce_aggregator_validates_configuration_and_results():
+    with pytest.raises(ValueError, match="mode must be"):
+        FedCEModelAggregator(mode="invalid")
+    with pytest.raises(ValueError, match="epsilon must be"):
+        FedCEModelAggregator(epsilon=0.0)
+
+    aggregator = FedCEModelAggregator()
+    with pytest.raises(ValueError, match="missing FLModel.meta"):
+        aggregator.accept_model(
+            FLModel(
+                params={"weight": torch.tensor([1.0])},
+                params_type=ParamsType.DIFF,
+                meta={FedCEConstants.MINUS_MODEL_SCORE: 1.0},
+            )
+        )
+    with pytest.raises(ValueError, match="empty parameters"):
+        aggregator.accept_model(
+            FLModel(
+                params={},
+                params_type=ParamsType.DIFF,
+                meta={"client_name": "site-1", FedCEConstants.MINUS_MODEL_SCORE: 1.0},
+            )
+        )
+    with pytest.raises(ValueError, match="empty result set"):
+        aggregator.aggregate_model()
+
+    result = _result("site-1", [1.0], 1.0)
+    aggregator.accept_model(result)
+    with pytest.raises(ValueError, match="more than one result"):
+        aggregator.accept_model(result)
+
+
+def test_fedce_times_mode_handles_zero_updates_and_aggregates_metrics():
+    aggregator = FedCEModelAggregator(mode="times")
+    site_1 = _result("site-1", [0.0, 0.0], 0.8)
+    site_1.metrics = {"accuracy": 0.5, "label": "ignored"}
+    site_2 = _result("site-2", [1.0, 0.0], 0.2)
+    site_2.metrics = {"accuracy": 1.0, "label": "ignored"}
+    aggregator.accept_model(site_1)
+    aggregator.accept_model(site_2)
+
+    result = aggregator.aggregate_model()
+
+    weights = result.meta[FedCEConstants.CONTRIBUTION_WEIGHTS]
+    expected_accuracy = 0.5 * weights["site-1"] + weights["site-2"]
+    assert result.metrics["accuracy"] == pytest.approx(expected_accuracy)
+    assert "label" not in result.metrics
+    assert result.meta["nr_aggregated"] == 2
+
+
+def test_fedce_rejects_updates_without_common_trainable_parameters():
+    aggregator = FedCEModelAggregator(trainable_param_names=["missing"])
+    aggregator.accept_model(_result("site-1", [1.0], 0.5))
+    aggregator.accept_model(_result("site-2", [2.0], 0.5))
+
+    with pytest.raises(ValueError, match="no common trainable parameters"):
+        aggregator.aggregate_model()
+
+
+def test_fedce_materializes_lazy_parameters():
+    class LazyValue:
+        @staticmethod
+        def materialize():
+            return torch.tensor([1.0, 2.0])
+
+    flattened = FedCEModelAggregator._flatten_params({"weight": LazyValue()}, ["weight"])
+
+    assert flattened.tolist() == [1.0, 2.0]

@@ -87,6 +87,46 @@ def test_fedsm_recipe_requires_exact_label_mapping():
         )
 
 
+@pytest.mark.parametrize(
+    ("overrides", "match"),
+    [
+        ({"model": None}, "requires model"),
+        ({"selector_model": None}, "requires selector_model"),
+        ({"sites": []}, "non-empty list"),
+        ({"sites": [""], "min_clients": 1}, "non-empty strings"),
+        ({"sites": ["site-1", "site-1"]}, "unique site names"),
+        ({"server_expected_format": ExchangeFormat.NUMPY}, "requires server_expected_format"),
+        ({"site_label_mapping": {"site-1": 1, "site-2": 2}}, "contiguous selector labels"),
+    ],
+)
+def test_fedsm_recipe_validates_contract(overrides, match):
+    model, selector = _models()
+    kwargs = {
+        "model": model,
+        "selector_model": selector,
+        "sites": ["site-1", "site-2"],
+        "min_clients": 2,
+        "train_script": __file__,
+    }
+    kwargs.update(overrides)
+
+    with pytest.raises(ValueError, match=match):
+        FedSMRecipe(**kwargs)
+
+
+def test_fedsm_recipe_accepts_dict_model_configs():
+    recipe = FedSMRecipe(
+        model={"class_path": "torch.nn.Linear", "args": {"in_features": 2, "out_features": 1}},
+        selector_model={"path": "torch.nn.Linear", "args": {"in_features": 2, "out_features": 2}},
+        sites=["site-1"],
+        min_clients=1,
+        train_script=__file__,
+    )
+
+    assert recipe.model["path"] == "torch.nn.Linear"
+    assert recipe.selector_model["path"] == "torch.nn.Linear"
+
+
 def test_fedsm_recipe_supports_pr_4862_targeted_client_helpers():
     model, selector = _models()
     recipe = FedSMRecipe(
@@ -98,8 +138,18 @@ def test_fedsm_recipe_supports_pr_4862_targeted_client_helpers():
     )
 
     recipe.add_client_config({"site_setting": 1}, clients=["site-1"])
+    assert recipe.configured_sites() == ["site-1", "site-2"]
+    recipe.set_per_site_config({"site-1": {}, "site-2": {}})
+    assert recipe.configured_sites() == ["site-1", "site-2"]
     with pytest.raises(ValueError, match="unknown client site"):
         recipe.add_client_config({"site_setting": 3}, clients=["site-3"])
+
+
+def test_pt_recipe_package_lazy_loads_fedce_and_fedsm():
+    import nvflare.app_opt.pt.recipes as recipes
+
+    assert recipes.__getattr__("FedCERecipe") is FedCERecipe
+    assert recipes.__getattr__("FedSMRecipe") is FedSMRecipe
 
 
 def test_fedce_and_fedsm_recipes_export_server_components(tmp_path):
