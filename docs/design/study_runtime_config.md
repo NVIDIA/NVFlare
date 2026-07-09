@@ -176,7 +176,7 @@ Merge order (later wins):
 
 ## Future: Per-Study Default Job Image
 
-The job image is currently the one runtime resource the site does not own: it must come from job `meta.json`, and
+FLARE-3027. The job image is currently the one runtime resource the site does not own: it must come from job `meta.json`, and
 `pod_template` deliberately cannot set the main container image (the FLARE-owned overlay replaces it). Follow-up
 direction, recorded from PR review:
 
