@@ -75,8 +75,8 @@ silently dropped or approximated.
    only when an interactive channel exists); never invent or auto-number
    names. A `schema_agreement` mismatch fails closed naming the differing
    sites; `counts_approximate: true` means verify site sizes before
-   bin-cap decisions. When the installed CLI predates the dataset block,
-   the rules it implements live in `references/statistics-mapping.md`.
+   bin-cap decisions. On 2.8.x CLIs (no dataset block yet), apply the
+   same rules directly from `references/statistics-mapping.md`.
    Read any statistics script or notebook as optional intent evidence
    (statistics, read options, splits, histogram ranges) without importing
    or executing it.

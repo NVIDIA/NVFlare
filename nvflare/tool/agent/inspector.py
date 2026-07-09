@@ -1212,7 +1212,9 @@ def _skill_selection(
     elif dataset and dataset.get("modality") in ("tabular", "image"):
         # A data-only target routes to federated statistics.
         recommended.append("nvflare-fed-stats")
-    if state.findings or _has_problematic_skips(state):
+    if (state.findings or _has_problematic_skips(state)) and "nvflare-fed-stats" not in recommended:
+        # A classified dataset already has its routing; a second
+        # recommendation would force the consumer to pick.
         recommended.append("nvflare-orient")
 
     return {

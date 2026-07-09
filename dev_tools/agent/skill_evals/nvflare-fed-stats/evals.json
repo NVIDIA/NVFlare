@@ -559,7 +559,7 @@
     {
       "id": "fedstats-image-intensity-basic",
       "prompt": "Compute federated statistics across my 3 imaging sites. Each site folder holds its own PNG scans. I want a 10-bin pixel intensity histogram plus image counts, and tell me if any files are unreadable.",
-      "expected_output": "An automatic image-path run: the agent detects an image dataset, generates an image-intensity Statistics client from the image template (Pillow loader, grayscale conversion stated), configures count, failure_count, and histogram with 10 bins over [0, 256] from the 8-bit depth, verifies 10 bins clears the bin-cap cleanser for the smallest site (110 images), runs the simulator once, validates completeness plus per-site and global histogram parity (Global bins equal the sum of site bins), and reports per-site and Global aggregates including the corrupt file at site-1 surfacing as failure_count=1 (noting failure_count is a per-site diagnostic whose Global row does not accumulate round-2 failures).",
+      "expected_output": "An automatic image-path run: the agent detects an image dataset, generates an image-intensity Statistics client from the image template (Pillow loader, grayscale conversion stated), configures count, failure_count, and histogram with 10 bins over [0, 256] from the 8-bit depth, notes that the default inspect walk truncates this 331-file dataset (counts_approximate: true) and therefore verifies per-site image counts directly or re-runs inspect with a raised --max-files before confirming 10 bins clears the bin-cap cleanser for the smallest site (110 images), runs the simulator once, validates completeness plus per-site and global histogram parity (Global bins equal the sum of site bins), and reports per-site and Global aggregates including the corrupt file at site-1 surfacing as failure_count=1 (noting failure_count is a per-site diagnostic whose Global row does not accumulate round-2 failures).",
       "files": [
         "files/images-intensity/site-1",
         "files/images-intensity/site-2",
@@ -568,7 +568,7 @@
       "assertions": [
         "The agent detects the image modality via inspect (target_type: image_dataset) and generates the client from the image template as a Statistics implementation, not DFStatisticsCore.",
         "statistic_configs contains count, failure_count, and histogram with 10 bins and range [0, 256] derived from the 8-bit pixel depth (stated, not guessed from file names).",
-        "The agent checks the bin count against the bin-cap cleanser using the image count of the smallest site.",
+        "Because the fixture exceeds the default inspect walk cap (counts_approximate: true), the agent does not trust the block's per-site image counts: it verifies counts directly or re-runs inspect with --max-files raised before the bin-cap decision.",
         "The grayscale conversion policy is stated in the report.",
         "The corrupt file at site-1 is reported via failure_count as a data-quality finding (per-site value; the Global failure_count row is not trusted), and the run is not treated as failed because of it.",
         "Per-site histogram parity is validated with an independent recompute, and Global histogram bins equal the element-wise sum of the site bins.",
@@ -600,6 +600,10 @@
           {
             "id": "image-parity-check",
             "description": "validates per-site histogram parity by independent recompute and Global bins as the sum of site bins"
+          },
+          {
+            "id": "approximate-counts-verified",
+            "description": "verifies site sizes directly (or re-runs inspect with raised limits) when counts_approximate is true, before bin-cap decisions"
           }
         ],
         "prohibited_behavior": [

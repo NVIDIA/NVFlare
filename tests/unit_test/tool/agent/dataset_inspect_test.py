@@ -364,6 +364,37 @@ def test_inspect_path_routes_image_dataset_to_fed_stats(tmp_path):
     assert result["skill_selection"]["recommended_skills"] == ["nvflare-fed-stats"]
 
 
+def test_truncated_dataset_recommends_only_fed_stats(tmp_path, monkeypatch):
+    # A classified dataset keeps a single recommendation even when the walk
+    # truncated (classification_incomplete would otherwise add orient).
+    import nvflare.tool.agent.inspector as inspector_module
+
+    monkeypatch.setattr(inspector_module, "DEFAULT_MAX_FILES", 3)
+    d = tmp_path / "site-1"
+    d.mkdir()
+    for i in range(10):
+        (d / f"part_{i}.csv").write_text(HEADER + ROWS, encoding="utf-8")
+
+    result = inspect_path(tmp_path, max_files=3)
+
+    assert result["target_type"] == "tabular_dataset"
+    assert result["skill_selection"]["recommended_skills"] == ["nvflare-fed-stats"]
+
+
+def test_inspect_path_max_files_flows_to_dataset_walk(tmp_path):
+    d = tmp_path / "site-1"
+    d.mkdir()
+    for i in range(10):
+        (d / f"part_{i}.csv").write_text(HEADER + ROWS, encoding="utf-8")
+
+    capped = inspect_path(tmp_path, max_files=3)
+    uncapped = inspect_path(tmp_path, max_files=250)
+
+    assert capped["dataset"]["counts_approximate"] is True
+    assert uncapped["dataset"]["counts_approximate"] is False
+    assert uncapped["dataset"]["sites"][0]["data_files"] == 10
+
+
 def test_inspect_path_keeps_code_classification_priority(tmp_path):
     # A training repo that also contains CSVs stays a code target: dataset
     # classification only runs when code classification found nothing.
