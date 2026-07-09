@@ -41,15 +41,15 @@ def _make_admin_cert(role="lead", common_name="alice@nvidia.com", ca=False, extr
     return root_cert, admin_cert
 
 
-@pytest.mark.parametrize("role", ["project_admin", "org_admin", "lead", "member"])
-def test_validate_admin_leaf_cert_accepts_flare_roles(role):
+@pytest.mark.parametrize("role", ["project_admin", "org_admin", "lead", "member", "self_defined"])
+def test_validate_admin_leaf_cert_accepts_builtin_and_custom_roles(role):
     _root_cert, admin_cert = _make_admin_cert(role=role)
 
     validate_admin_leaf_cert(admin_cert)
 
 
-def test_validate_admin_leaf_cert_rejects_unknown_role():
-    _root_cert, admin_cert = _make_admin_cert(role="admin")
+def test_validate_admin_leaf_cert_rejects_missing_role():
+    _root_cert, admin_cert = _make_admin_cert(role=None)
 
     with pytest.raises(AdminCertValidationError, match="unstructuredName"):
         validate_admin_leaf_cert(admin_cert)

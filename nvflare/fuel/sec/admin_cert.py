@@ -16,7 +16,6 @@ from cryptography import x509
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
 ADMIN_CERT_PLACEHOLDER_CN = "nvflare-admin"
-ALLOWED_FLARE_ADMIN_ROLES = {"project_admin", "org_admin", "lead", "member"}
 
 
 class AdminCertValidationError(ValueError):
@@ -35,11 +34,9 @@ def validate_admin_leaf_cert(cert: x509.Certificate, reject_placeholder_cn: bool
         raise AdminCertValidationError("admin certificate commonName must be a real admin identity")
 
     _require_subject_attr(cert, NameOID.ORGANIZATION_NAME, "organizationName")
-    role = _require_subject_attr(cert, NameOID.UNSTRUCTURED_NAME, "unstructuredName")
-    if role not in ALLOWED_FLARE_ADMIN_ROLES:
-        raise AdminCertValidationError(
-            f"admin certificate subject unstructuredName must be one of {sorted(ALLOWED_FLARE_ADMIN_ROLES)}"
-        )
+    # Role must be present but is not restricted to built-in roles: provisioning
+    # supports custom roles, and unknown roles fail closed in authorization.
+    _require_subject_attr(cert, NameOID.UNSTRUCTURED_NAME, "unstructuredName")
 
     _reject_ca_leaf(cert)
     _validate_key_usage(cert)
