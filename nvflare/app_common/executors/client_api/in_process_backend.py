@@ -280,25 +280,38 @@ class InProcessBackend(ClientAPIBackendSpec):
             self._unwind()
 
     def _unwind(self) -> None:
-        """Releases DataBus state so nothing leaks into later jobs (DataBus is a process singleton)."""
-        try:
-            if self._data_bus is not None:
-                if self._subscribed:
-                    self._data_bus.unsubscribe(TOPIC_LOCAL_RESULT, self._local_result_callback)
-                    self._data_bus.unsubscribe(TOPIC_LOG_DATA, self._log_result_callback)
-                    self._data_bus.unsubscribe(TOPIC_ABORT, self._to_abort_callback)
-                    self._data_bus.unsubscribe(TOPIC_STOP, self._to_abort_callback)
-                    self._subscribed = False
-                if self._client_api is not None:
-                    # detach the API's own subscriptions too: the singleton bus would otherwise
-                    # keep the dead instance subscribed to TOPIC_GLOBAL_RESULT, pinning each
-                    # later job's global model via the dead object
-                    self._client_api.close()
-                    if self._data_bus.get_data(CLIENT_API_KEY) is self._client_api:
-                        # only clear our own entry: a later backend may have installed its API
-                        self._data_bus.put_data(CLIENT_API_KEY, None)
-        except Exception:
-            self.logger.error(secure_format_traceback())
+        """Releases DataBus state so nothing leaks into later jobs (DataBus is a process singleton).
+
+        Each step is individually best-effort: a failure in one must not skip the others.
+        """
+        # close the API FIRST: it detaches the API's own subscriptions (the singleton bus would
+        # otherwise keep the dead instance subscribed to TOPIC_GLOBAL_RESULT, pinning each later
+        # job's global model) and sets the closed gate that stops an abandoned trainer from
+        # publishing into a successor job -- the one step that must not be skipped by a failure
+        # elsewhere in the teardown
+        if self._client_api is not None:
+            try:
+                self._client_api.close()
+            except Exception:
+                self.logger.error(secure_format_traceback())
+            try:
+                if self._data_bus is not None and self._data_bus.get_data(CLIENT_API_KEY) is self._client_api:
+                    # only clear our own entry: a later backend may have installed its API
+                    self._data_bus.put_data(CLIENT_API_KEY, None)
+            except Exception:
+                self.logger.error(secure_format_traceback())
+        if self._data_bus is not None and self._subscribed:
+            for topic, callback in (
+                (TOPIC_LOCAL_RESULT, self._local_result_callback),
+                (TOPIC_LOG_DATA, self._log_result_callback),
+                (TOPIC_ABORT, self._to_abort_callback),
+                (TOPIC_STOP, self._to_abort_callback),
+            ):
+                try:
+                    self._data_bus.unsubscribe(topic, callback)
+                except Exception:
+                    self.logger.error(secure_format_traceback())
+            self._subscribed = False
         self._client_api = None
 
     def _prepare_task_meta(self, fl_ctx: FLContext, task_name: Optional[str]) -> dict:

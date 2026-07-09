@@ -258,6 +258,36 @@ class TestInitializeAndFinalize:
 
         assert "unsubscribe failed" in caplog.text
 
+    def test_unwind_closes_api_even_when_unsubscribe_fails(self, caplog):
+        """close() sets the zombie-containment gate (and detaches the API's own subscriptions);
+        a failing backend unsubscribe must not skip it -- unwind is best-effort per step."""
+        backend = InProcessBackend()
+        backend._data_bus = Mock()
+        backend._data_bus.unsubscribe.side_effect = RuntimeError("unsubscribe failed")
+        backend._data_bus.get_data.return_value = None
+        backend._subscribed = True
+        api = Mock()
+        backend._client_api = api
+
+        backend._unwind()
+
+        api.close.assert_called_once()
+        # every unsubscribe was still attempted, not abandoned at the first failure
+        assert backend._data_bus.unsubscribe.call_count == 4
+        assert "unsubscribe failed" in caplog.text
+
+    def test_finalize_cleans_backend_state_even_when_close_fails(self, clean_databus, custom_dir, caplog):
+        """The reverse direction: a failing close() must not skip the CLIENT_API_KEY clear or
+        the backend's own unsubscribes."""
+        backend, _ = _initialized_backend(custom_dir)
+        backend._client_api.close = Mock(side_effect=RuntimeError("close failed"))
+
+        backend.finalize(FLContext())
+
+        assert "close failed" in caplog.text
+        assert clean_databus.get_data(CLIENT_API_KEY) is None
+        assert not _backend_callbacks_subscribed(clean_databus, backend)
+
 
 class TestExecute:
     def test_execute_round_trip(self, clean_databus, custom_dir):
