@@ -618,6 +618,18 @@ nvflare deploy k8s stage "$PREPARED_KIT" --namespace "$NAMESPACE" --kubectl oc
 
 `nvflare deploy k8 stage` is accepted as an alias. After this command succeeds,
 run the printed `helm_command` or the equivalent Helm install command below.
+The staged objects are not part of the Helm release. During teardown, uninstall
+the release first and then run the printed `cleanup_command` so the identity
+Secret is removed:
+
+``` bash
+helm uninstall nvflare-server --namespace "$NAMESPACE"
+nvflare deploy k8s unstage "$PREPARED_KIT" --kubectl oc
+```
+
+The prepared kit records the namespace and exact resource names used by
+`stage`. For kits staged by an older NVFlare version, also pass the original
+`--namespace` to `unstage`.
 
 ### Install Helm Charts
 

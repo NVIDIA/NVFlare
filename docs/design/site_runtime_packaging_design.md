@@ -475,7 +475,11 @@ manage the Kubernetes cluster. The generated Helm chart is the deployment
 artifact, and the site admin applies it to an existing cluster with standard
 K8s/Helm tooling such as `helm install` or `helm upgrade`. If the site admin
 uses `nvflare deploy k8s stage`, that staging command is run before the Helm
-install/upgrade command.
+install/upgrade command. The staged ConfigMap and Secret are deliberately kept
+out of the Helm release so identity material is not copied into Helm release
+storage. The staging command records their exact names and namespace, and the
+site admin runs `nvflare deploy k8s unstage` after Helm uninstall to delete both
+objects and clear their chart references.
 
 ## Runtime Communication Patching
 

@@ -440,7 +440,20 @@ Use ``--kubectl oc`` when staging into OpenShift with ``oc`` instead of
 the workspace root for writable runtime state such as jobs, snapshots, logs, and
 ``transfer/``. After this staging command succeeds, run the printed
 ``helm_command`` or the equivalent ``helm upgrade --install`` command for the
-prepared chart.
+prepared chart. The staged ConfigMap and Secret are separate from the Helm
+release. After uninstalling the release, run the printed ``cleanup_command``
+or the equivalent command below to remove them:
+
+.. code-block:: bash
+
+   helm uninstall "$RELEASE_NAME" --namespace "$NAMESPACE"
+   nvflare deploy k8s unstage "$PREPARED_KIT"
+
+The stage command records the namespace and exact resource names in the
+prepared chart values, so they do not need to be repeated. Pass
+``--namespace`` when cleaning up a kit staged by an older NVFlare version that
+did not record it. Run unstage after Helm uninstall because the parent pod
+depends on the staged volumes while it is installed.
 
 The dynamically launched job pod does **not** mount this workspace PVC. Each job
 pod receives its own writable ``emptyDir`` mounted at the configured workspace
@@ -1050,7 +1063,19 @@ Reprovisioning and Upgrades
 Provisioned certificates, local config, server communication settings, and
 prepared Kubernetes parent-Service settings are tied to the provisioned project
 state. If you change ``project.yml``, server host names, ports, participants,
-or ``k8s.yaml`` settings:
+or ``k8s.yaml`` settings, first clean up ConfigMap/Secret staging when that
+method is in use:
+
+.. code-block:: bash
+
+   helm uninstall "$RELEASE_NAME" --namespace "$NAMESPACE"
+   nvflare deploy k8s unstage "$PREPARED_KIT"
+
+Unstage before replacing the prepared output so its recorded namespace and
+exact cleanup names remain available. ``deploy prepare`` refuses to overwrite
+a chart that still references staged resources.
+
+Then:
 
 #. Run ``nvflare provision`` again.
 #. Run ``nvflare deploy prepare`` again for every affected participant.
@@ -1059,10 +1084,11 @@ or ``k8s.yaml`` settings:
    site directory holding job history and snapshots, and any log files at the
    workspace root. Client workspace PVCs typically have little to preserve
    beyond optional logs.
-#. Replace the staged ``startup/`` and ``local/`` folders on the participant's
-   workspace PVC. Remove stale copies first so old certificates or config files
-   do not remain.
-#. Run ``helm upgrade`` for the affected release.
+#. Restage ``startup/`` and ``local/`` using the selected method. For the PVC
+   method, replace those folders on the participant's workspace PVC and remove
+   stale copies first. For the ConfigMap/Secret method, run
+   ``nvflare deploy k8s stage`` on the new prepared kit.
+#. Run ``helm upgrade --install`` for the affected release.
 
 Do not reuse an old staged ``startup/`` or ``local/`` folder after
 reprovisioning.
@@ -1212,6 +1238,15 @@ To stop a participant installed by Helm:
 
    helm uninstall server -n "$NAMESPACE"
    helm uninstall site-1 -n "$NAMESPACE"
+
+If the participants used ConfigMap/Secret staging, remove those objects after
+uninstalling the Helm releases. They are not owned by Helm, and the startup
+Secret contains the participant's identity keys and certificates:
+
+.. code-block:: bash
+
+   nvflare deploy k8s unstage ./server-k8s --namespace "$NAMESPACE"
+   nvflare deploy k8s unstage ./site-1-k8s --namespace "$NAMESPACE"
 
 Delete the namespace only if it is dedicated to this deployment:
 
