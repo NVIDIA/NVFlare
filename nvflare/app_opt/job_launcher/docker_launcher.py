@@ -612,8 +612,9 @@ class DockerJobLauncher(JobLauncherSpec):
         # backward compatibility. num_of_gpus falls back to flat resource_spec[site] (Option 4).
         # Site-level defaults (default_job_container_kwargs) are merged in; job-level takes precedence on conflict.
         _site_rs = (job_meta.get(JobMetaKey.RESOURCE_SPEC.value) or {}).get(site_name) or {}
-        _flat_gpus = 0 if any(k in _site_rs for k in ("process", "docker", "k8s")) else _site_rs.get("num_of_gpus", 0)
-        num_gpus = docker_spec["num_of_gpus"] if "num_of_gpus" in docker_spec else _flat_gpus
+        _flat_rs = {} if any(k in _site_rs for k in ("process", "docker", "k8s")) else _site_rs
+        num_gpus = docker_spec["num_of_gpus"] if "num_of_gpus" in docker_spec else _flat_rs.get("num_of_gpus", 0)
+        job_gpus_specified = "num_of_gpus" in docker_spec or "num_of_gpus" in _flat_rs
         _NON_CONTAINER_KEYS = {"num_of_gpus", "image", "python_path"} | _RESERVED_CONTAINER_KWARGS
         reserved_in_spec = _RESERVED_CONTAINER_KWARGS & set(docker_spec.keys())
         if reserved_in_spec:
@@ -627,15 +628,19 @@ class DockerJobLauncher(JobLauncherSpec):
 
         # GPU precedence:
         # 1. explicit job-level device_requests in docker_spec
-        # 2. job-level num_of_gpus translated to device_requests
+        # 2. job-level num_of_gpus translated to device_requests; an explicit 0 declines
+        #    GPUs and drops any study/site-inherited device_requests
         # 3. study-level device_requests from docker_kwargs in study_runtime.yaml
         # 4. site-level default device_requests from default_job_container_kwargs
         #
         # This preserves the documented rule that job-level resource_spec takes precedence
         # over study and site-level defaults, while still allowing fine-grained
         # device_requests overrides.
-        if num_gpus and "device_requests" not in job_container_kwargs:
-            merged_container_kwargs["device_requests"] = [{"Count": num_gpus, "Capabilities": [["gpu"]]}]
+        if "device_requests" not in job_container_kwargs:
+            if num_gpus:
+                merged_container_kwargs["device_requests"] = [{"Count": num_gpus, "Capabilities": [["gpu"]]}]
+            elif job_gpus_specified:
+                merged_container_kwargs.pop("device_requests", None)
 
         # Give the job an isolated workspace view. The root tmpfs must be writable by the non-root
         # container user because server job startup may create ephemeral storage dirs such as

@@ -1382,6 +1382,42 @@ class TestDockerJobLauncherStudyRuntime:
 
         assert dc.containers.run.call_args[1]["device_requests"] == [{"Count": 1, "Capabilities": [["gpu"]]}]
 
+    def test_explicit_zero_gpus_drops_study_device_requests(self, tmp_path):
+        self._write_study_runtime(
+            tmp_path,
+            "format_version: 2\n"
+            "studies:\n"
+            "  study-a:\n"
+            "    docker_kwargs:\n"
+            "      device_requests:\n"
+            "        - Count: 4\n"
+            "          Capabilities: [[gpu]]\n",
+        )
+        launcher, dc = self._make_v2_launcher(tmp_path)
+
+        fl_ctx, _ = _make_fl_ctx()
+        launcher.launch_job(_make_job_meta(study="study-a", docker_spec={"num_of_gpus": 0}), fl_ctx)
+
+        assert "device_requests" not in dc.containers.run.call_args[1]
+
+    def test_unspecified_job_gpus_keep_study_device_requests(self, tmp_path):
+        self._write_study_runtime(
+            tmp_path,
+            "format_version: 2\n"
+            "studies:\n"
+            "  study-a:\n"
+            "    docker_kwargs:\n"
+            "      device_requests:\n"
+            "        - Count: 4\n"
+            "          Capabilities: [[gpu]]\n",
+        )
+        launcher, dc = self._make_v2_launcher(tmp_path)
+
+        fl_ctx, _ = _make_fl_ctx()
+        launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
+
+        assert dc.containers.run.call_args[1]["device_requests"] == [{"Count": 4, "Capabilities": [["gpu"]]}]
+
     def test_docker_kwargs_reserved_key_rejected(self, tmp_path):
         self._write_study_runtime(
             tmp_path,
