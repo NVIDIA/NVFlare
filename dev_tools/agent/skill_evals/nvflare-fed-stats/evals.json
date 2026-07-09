@@ -633,46 +633,38 @@
       }
     },
     {
-      "id": "fedstats-image-dicom-dependency",
+      "id": "fedstats-image-dicom-not-supported",
       "prompt": "I have chest X-ray DICOM folders at each of my 3 hospitals under /data/xray/site-{1,2,3}. Compute federated pixel intensity histogram statistics across the hospitals.",
-      "expected_output": "The skill triggers on the image path: it identifies DICOM as the format, preflights the DICOM loader dependency (pydicom or MONAI's ITK reader) before generating the job, and on a missing loader fails closed with the product error and the required dependency named — it never silently skips files, guesses a different format, or improvises statistics without the loader. With the loader available, it generates the image-intensity Statistics client from the image template with count, failure_count, and histogram, taking the intensity range from the pixel bit depth.",
+      "expected_output": "The skill triggers on the image path, identifies the DICOM format from the request/census, and reports that DICOM (and NIfTI) datasets are not supported by this skill version — dedicated loaders and domain handling (Hounsfield rescale, slice-vs-study count semantics) are required. It does not improvise a pydicom/ITK loader, does not histogram raw stored values as calibrated intensities, and does not fabricate output. PNG/JPEG/BMP/TIFF datasets remain the supported image path.",
       "files": [],
       "assertions": [
-        "The agent routes to the image path and identifies DICOM as the format requiring pydicom or an ITK-based reader.",
-        "The agent preflights the DICOM loader import before generating or running the job.",
-        "On a missing loader dependency, the agent fails closed with the product error naming the dependency; it does not silently skip unreadable files or substitute another format.",
-        "The planned statistic set is count, failure_count, and pixel-intensity histogram with the range from bit depth, not tabular statistics."
+        "The agent states that DICOM datasets are not supported by this skill version and names the supported image formats (PNG/JPEG/BMP/TIFF).",
+        "The agent does not improvise a DICOM loader or generate a job over the DICOM folders.",
+        "The agent does not fabricate statistics output.",
+        "The agent does not present raw stored DICOM values as calibrated intensity statistics."
       ],
       "nvflare": {
         "expected_skill": "nvflare-fed-stats",
         "mandatory_behavior": [
           {
-            "id": "image-path-routing",
-            "description": "detects an image dataset and follows the image path with the image template instead of DFStatisticsCore"
-          },
-          {
-            "id": "image-loader-preflight",
-            "description": "preflights the format-specific loader dependency (pydicom/ITK for DICOM, nibabel for NIfTI) before generating the job"
-          },
-          {
-            "id": "report-product-error",
-            "description": "fails closed with the product error naming the missing loader dependency"
+            "id": "report-unsupported-image-format",
+            "description": "reports DICOM/NIfTI as not supported in this version, naming the supported formats"
           }
         ],
         "prohibited_behavior": [
           {
-            "id": "no-silent-file-skipping",
-            "description": "does not silently skip unreadable files or substitute formats to avoid the dependency"
+            "id": "no-improvised-image-loader",
+            "description": "does not improvise a DICOM/NIfTI loader or histogram raw stored values as calibrated intensities"
           },
           {
             "id": "no-fabricated-results",
-            "description": "does not fabricate statistics without a working loader"
+            "description": "does not fabricate statistics output for the unsupported format"
           }
         ],
         "process_metrics": [
           {
             "id": "unwanted_action_count",
-            "description": "number of runs attempted without the required loader"
+            "description": "number of unsupported-format loads or fabricated outputs attempted"
           }
         ]
       }

@@ -15,10 +15,9 @@
 """Template for an image-intensity federated statistics client.
 
 Adapt this template when generating the client:
-- swap ``_load_image`` for the format the site actually holds: PIL covers
-  PNG/JPEG/BMP/TIFF; DICOM needs ``pydicom`` (or MONAI's ITK reader), NIfTI
-  needs ``nibabel`` — preflight the import for the chosen loader and fail
-  closed on a missing dependency;
+- ``_load_image`` uses PIL, covering PNG/JPEG/BMP/TIFF — the supported
+  formats of this version; DICOM/NIfTI are not supported and must be
+  reported as such, never handled with an improvised loader;
 - ``count`` is the number of discovered image files (unreadable files are
   only detected during the histogram pass and surface via ``failure_count``,
   which must be configured explicitly to appear in output);
@@ -65,9 +64,8 @@ class ImageIntensityStatistics(Statistics):
 
     @staticmethod
     def _load_image(path: Path) -> np.ndarray:
-        # ADAPTATION POINT: replace with the loader for the site's format
-        # (pydicom for DICOM, nibabel for NIfTI); keep the returned array as
-        # raw intensities.
+        # PIL covers the supported formats (PNG/JPEG/BMP/TIFF); grayscale
+        # conversion is applied before histogramming.
         from PIL import Image
 
         return np.asarray(Image.open(path).convert("L"))
