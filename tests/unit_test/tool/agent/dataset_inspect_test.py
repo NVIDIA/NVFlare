@@ -185,6 +185,44 @@ def test_root_files_beside_site_dirs_is_ambiguous_layout(tmp_path):
     assert "." in {s["name"] for s in result["sites"]}
 
 
+def test_masked_first_row_does_not_leak_as_feature_names(tmp_path):
+    # Codex repro: one text token over one numeric column is a masked data
+    # row, not a header - emitting it would leak cell values as names
+    _write_site(tmp_path, "site-1", "SUPPRESSED,100\n1,200\n2,300\n")
+
+    result = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
+
+    site = result["sites"][0]
+    assert site["header"] == "ambiguous"
+    assert site["features"] is None
+    assert "SUPPRESSED" not in str(result)
+
+
+def test_wide_schema_sets_columns_truncated(tmp_path):
+    header = ",".join(f"c{i}" for i in range(513))
+    row = ",".join(str(i) for i in range(513))
+    _write_site(tmp_path, "site-1", header + "\n" + row + "\n" + row + "\n")
+
+    result = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
+
+    site = result["sites"][0]
+    assert site["column_count"] == 512
+    assert site["columns_truncated"] is True
+
+
+def test_sample_capped_row_count_is_exact_without_trailing_newline(tmp_path):
+    # 201 data rows, no final newline: the line-count fallback must include
+    # the unterminated last line and stay exact (not approximate)
+    body = "\n".join(f"{30 + (i % 40)},job,{100 + i}" for i in range(201))
+    _write_site(tmp_path, "site-1", HEADER + body)
+
+    result = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
+
+    site = result["sites"][0]
+    assert site["row_count"] == 201
+    assert site["row_count_approximate"] is False
+
+
 def test_symlinks_consume_walk_budget(tmp_path, monkeypatch):
     # Codex repro: symlink entries are traversal work and must count toward
     # the cap even though they are never followed

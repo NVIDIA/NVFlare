@@ -79,9 +79,10 @@ reported as a helper, not as part of the deployable NVFLARE job.
   them around the global mean; confirm `count`, `sum`, and `mean` were all
   configured as prerequisites (see the dependency-expansion rule in
   statistics-mapping.md).
-- **Histogram withheld at a site** — the bin-cap cleanser requires bins to be
-  under `max_bins_percent`% of the site's row count (20 bins needs >200
-  rows); reduce the bin count and rerun, or report the withholding.
+- **Histogram withheld at a site** — the bin-cap cleanser requires bins to
+  be under round(`max_bins_percent`% of the site's effective row count);
+  with defaults, 20 bins first passes at 206 rows. Reduce the bin count and
+  rerun, or report the withholding.
 - **Schema mismatch across sites** — pre-split site files must share one
   schema; on differing headers or column counts, fail closed and report the
   differing sites instead of intersecting columns silently.

@@ -118,7 +118,7 @@ silently dropped or approximated.
    script, declaration, or user answer (images: from bit depth) —
    otherwise the controller estimates it from noise-protected min/max.
    Reduce default bins when small sites demand it (bin-cap cleanser: 20
-   bins needs >200 rows per site) and report the choice. `StatsJob` wires
+   bins needs 206+ rows per site) and report the choice. `StatsJob` wires
    the privacy filters by default: keep them at their defaults
    (`min_count=10`, `min_noise_level=0.1`, `max_noise_level=0.3`,
    `max_bins_percent=10`) and state the applied values.

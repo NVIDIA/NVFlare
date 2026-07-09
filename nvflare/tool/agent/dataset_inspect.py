@@ -53,7 +53,10 @@ Dataset block contract (all keys always present per modality):
     with the site schema flags ``shard_schema_consistent: false``), parquet
     shards are exact metadata sums when the shards agree on schema.
     Feature names are sanitized: control characters stripped and length
-    capped (``feature_names_truncated`` marks a cap hit). Dtype classes
+    capped (``feature_names_truncated`` marks a cap hit); schemas wider
+    than the column cap set ``columns_truncated`` — drift past the cap is
+    invisible. ``header: present`` requires every numeric-bodied column
+    to carry a non-numeric first value. Dtype classes
     are inferred from a bounded row sample; a full-file reader (pandas at
     job runtime) can disagree when anomalies appear past the sample.
   - image: ``pixel_depth`` from one sample when an optional loader exists.
@@ -94,10 +97,15 @@ STRAY_MAX_IMAGES_PER_SITE = 2
 COMPANION_MAX_TABULAR_PER_SITE = 4
 
 HEADER_PRESENT = "present"
-# Per the fed-stats contract: a first row is a header only when at least one
-# column shows text over an otherwise-numeric column. Anything else (all
-# numeric, or text over text columns) cannot be distinguished from data, so
-# the caller must obtain declared names or an explicit header statement.
+# Per the fed-stats contract: a first row is a header only when EVERY
+# numeric-bodied column carries a non-numeric first value (weaker evidence,
+# like one text token over one numeric column, can be a masked data row and
+# emitting it would leak cell values as feature names). Anything else cannot
+# be distinguished from data, so the caller must obtain declared names or an
+# explicit header statement. Residual risk: a first data row that is
+# non-numeric in every numeric column is indistinguishable from a header by
+# construction - datasets with masked/sentinel first rows should declare
+# names.
 HEADER_AMBIGUOUS = "ambiguous"
 
 # float() accepts nan/inf tokens; a column of literal "nan" strings is not
@@ -292,8 +300,11 @@ def _tabular_schema(files: List[Path], max_file_bytes: int, reads: Dict[str, int
     text = raw.decode("utf-8", errors="replace")
     delimiter = "\t" if target.suffix.lower() == ".tsv" else ","
     rows = []
+    columns_truncated = False
     for row in csv.reader(io.StringIO(text), delimiter=delimiter):
         if row:
+            if len(row) > MAX_SCHEMA_COLUMNS:
+                columns_truncated = True
             rows.append(row[:MAX_SCHEMA_COLUMNS])
         if len(rows) >= MAX_SAMPLE_ROWS:
             break
@@ -303,21 +314,27 @@ def _tabular_schema(files: List[Path], max_file_bytes: int, reads: Dict[str, int
     column_count = len(rows[0])
     body = [r for r in rows[1:] if len(r) == column_count]
     numeric = [_column_is_numeric(body, j) for j in range(column_count)]
-    header = HEADER_AMBIGUOUS
-    for j in range(column_count):
-        if numeric[j] and not _numeric_token(rows[0][j]):
-            header = HEADER_PRESENT
-            break
+    # Header evidence must be strong: EVERY numeric-bodied column carries a
+    # non-numeric first value. A single text token over one numeric column
+    # (e.g. a masked first data row like "SUPPRESSED,100") is NOT a header -
+    # emitting it would leak cell values as feature names.
+    numeric_columns = [j for j in range(column_count) if numeric[j]]
+    if numeric_columns and all(not _numeric_token(rows[0][j]) for j in numeric_columns):
+        header = HEADER_PRESENT
+    else:
+        header = HEADER_AMBIGUOUS
 
     features = None
     names_truncated = False
     if header == HEADER_PRESENT:
         features, names_truncated = _sanitize_names(rows[0])
 
-    # rows in the schema file, within the byte cap
+    # rows in the schema file, within the byte cap; the line-count fallback
+    # adds the final unterminated line so uncapped counts stay exact
     data_rows = len(rows) - (1 if header == HEADER_PRESENT else 0)
     if len(rows) >= MAX_SAMPLE_ROWS or capped:
-        data_rows = max(data_rows, text.count("\n") - (1 if header == HEADER_PRESENT else 0))
+        line_count = text.count("\n") + (1 if text and not text.endswith("\n") else 0)
+        data_rows = max(data_rows, line_count - (1 if header == HEADER_PRESENT else 0))
     approximate = capped
     shards_consistent = True
     # sharded site: aggregate line counts across the remaining files; per-shard
@@ -361,6 +378,8 @@ def _tabular_schema(files: List[Path], max_file_bytes: int, reads: Dict[str, int
     )
     if names_truncated:
         schema["feature_names_truncated"] = True
+    if columns_truncated:
+        schema["columns_truncated"] = True
     if not shards_consistent:
         schema["shard_schema_consistent"] = False
     return schema
@@ -428,6 +447,8 @@ def _parquet_schema(files: List[Path], reads: Dict[str, int]) -> dict:
         reads["bytes_read"] += target.stat().st_size  # footer read; size is the upper bound
         total_rows += parquet_file.metadata.num_rows
         arrow_schema = parquet_file.schema_arrow
+        if len(arrow_schema.names) > MAX_SCHEMA_COLUMNS:
+            schema["columns_truncated"] = True
         shard_names, _ = _sanitize_names(list(arrow_schema.names)[:MAX_SCHEMA_COLUMNS])
         shard_dtypes = [
             "numeric" if (pa.types.is_integer(field.type) or pa.types.is_floating(field.type)) else "text"

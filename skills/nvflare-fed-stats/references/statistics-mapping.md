@@ -73,7 +73,9 @@ Expand the config automatically and state the expansion in the report.
   bins matter. Do not invent domain bounds
   from column names or from scanning the data's own extremes. The bin-cap
   cleanser withholds any site histogram whose bins are not under
-  `max_bins_percent`% of the site's row count (20 bins needs >200 rows);
+  `max_bins_percent`% of the site's row count — strictly, bins must be
+  under round(10% of the effective count), so 20 bins first passes at 206
+  rows;
   size the default bin count to the smallest site and report the choice.
 - `quantile`: `"*"` or per-feature keys map to the list of percentiles in
   `[0, 1]`. Requires the `fastdigest` package (Rust toolchain needed to
