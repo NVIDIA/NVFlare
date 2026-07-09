@@ -86,6 +86,67 @@ def test_directory_without_data_files_returns_none(tmp_path):
     assert inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024) is None
 
 
+def test_sharded_site_aggregates_rows_and_marks_approximate(tmp_path):
+    d = tmp_path / "site-1"
+    d.mkdir()
+    (d / "part-0.csv").write_text(HEADER + ROWS, encoding="utf-8")
+    (d / "part-1.csv").write_text(ROWS, encoding="utf-8")
+
+    result = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
+
+    site = result["sites"][0]
+    assert site["data_files"] == 2
+    # 4 data rows in the schema shard + 4 lines in the second shard
+    assert site["row_count"] == 8
+    assert site["row_count_approximate"] is True
+
+
+def test_dataset_scan_accounts_for_reads(tmp_path):
+    _write_site(tmp_path, "site-1", HEADER + ROWS)
+
+    result = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
+
+    assert result["scan"]["files_read"] == 1
+    assert result["scan"]["bytes_read"] == len((HEADER + ROWS).encode())
+
+
+def test_non_data_clutter_does_not_exhaust_the_data_file_limit(tmp_path):
+    d = tmp_path / "site-1"
+    d.mkdir()
+    for i in range(20):
+        (d / f"note_{i}.txt").write_text("clutter", encoding="utf-8")
+    (d / "zz_data.csv").write_text(HEADER + ROWS, encoding="utf-8")
+
+    result = inspect_dataset(tmp_path, max_files=5, max_file_bytes=512 * 1024)
+
+    assert result is not None
+    assert result["modality"] == "tabular"
+    assert result["counts_approximate"] is False
+
+
+def test_parquet_without_reader_marks_schema_unavailable(tmp_path, monkeypatch):
+    import builtins
+
+    real_import = builtins.__import__
+
+    def no_pyarrow(name, *args, **kwargs):
+        if name.startswith("pyarrow"):
+            raise ImportError("pyarrow unavailable")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", no_pyarrow)
+    d = tmp_path / "site-1"
+    d.mkdir()
+    (d / "data.parquet").write_bytes(b"PAR1 not really")
+
+    result = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
+
+    site = result["sites"][0]
+    assert site["format"] == "parquet"
+    assert site["schema_available"] is False
+    assert site["features"] is None
+
+
 def test_file_limit_marks_counts_approximate(tmp_path):
     d = tmp_path / "site-1"
     d.mkdir()

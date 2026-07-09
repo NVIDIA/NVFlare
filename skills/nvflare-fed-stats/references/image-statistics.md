@@ -14,8 +14,10 @@ Route on that output rather than re-deriving it; `counts_approximate:
 true` means the walk hit its file limit — verify site counts directly
 before bin-cap decisions. Datalist-JSON layouts may classify as
 `unknown_target`; read the datalist as declared layout evidence in that
-case. Mixed tabular+image requests are two runs; report that and run them
-separately.
+case. Mixed tabular+image data reports `modality: mixed` without routing
+(`target_type` stays `unknown_target` and no skill is recommended): read
+the dataset block, report the split, and run the two modalities as two
+separate jobs.
 
 ## Supported Statistics (Image)
 
@@ -33,8 +35,9 @@ statistic_configs = {
   files are only detected during the histogram pass, so `count` includes
   them and `failure_count` reports them.
 - `failure_count` is per-site diagnostic only: failures detected during the
-  round-2 histogram pass do not accumulate into the `Global` row (a product
-  timing quirk) — report per-site values and sum them yourself.
+  round-2 histogram pass do not accumulate into the `Global` row (product
+  defect, tracked as NVFlare issue #4876) — report per-site values and sum
+  them yourself until it is fixed.
 - mean/sum/stddev/var/quantile/min/max over image sets are not supported by
   this skill version: report them as unsupported for image data rather than
   improvising pixel-pooled implementations.

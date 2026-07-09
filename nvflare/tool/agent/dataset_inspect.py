@@ -31,6 +31,7 @@ TABULAR_EXTENSIONS = {".csv", ".tsv", ".parquet"}
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".dcm", ".nii"}
 MAX_SAMPLE_ROWS = 200
 MAX_SCHEMA_COLUMNS = 512
+MAX_WALK_ENTRIES = 50_000
 
 HEADER_PRESENT = "present"
 # Per the fed-stats contract: a first row is a header only when at least one
@@ -52,16 +53,19 @@ def inspect_dataset(root: Path, max_files: int, max_file_bytes: int) -> Optional
     else:
         modality = "tabular" if tabular_count > image_count else "image"
 
+    # Dataset classification reads data bytes (bounded, metadata-only);
+    # account for every read so the inspection stays auditable.
+    reads = {"files_read": 0, "bytes_read": 0}
     sites = []
     for name in sorted(groups):
         files = groups[name]
         site: Dict = {"name": name, "data_files": len(files)}
         if modality == "tabular":
-            schema = _tabular_schema(files, max_file_bytes)
+            schema = _tabular_schema(files, max_file_bytes, reads)
             if schema is not None:
                 site.update(schema)
         elif modality == "image":
-            site["pixel_depth"] = _sample_pixel_depth(files)
+            site["pixel_depth"] = _sample_pixel_depth(files, reads)
         sites.append(site)
 
     dataset: Dict = {
@@ -69,6 +73,7 @@ def inspect_dataset(root: Path, max_files: int, max_file_bytes: int) -> Optional
         "layout": "per_site_directories" if any(s["name"] != "." for s in sites) else "flat",
         "file_census": {ext: census[ext] for ext in sorted(census)},
         "counts_approximate": truncated,
+        "scan": reads,
         "sites": sites,
     }
     if modality == "tabular":
@@ -77,10 +82,16 @@ def inspect_dataset(root: Path, max_files: int, max_file_bytes: int) -> Optional
 
 
 def _collect_data_files(root: Path, max_files: int):
-    """Bounded, sorted, symlink-free walk grouping data files by top-level dir."""
+    """Bounded, sorted, symlink-free walk grouping data files by top-level dir.
+
+    The ``max_files`` limit counts *data* files, so non-data clutter cannot
+    exhaust the budget before any data file is seen; ``MAX_WALK_ENTRIES``
+    separately bounds total traversal work.
+    """
     groups: Dict[str, List[Path]] = {}
     census: Dict[str, int] = {}
-    visited = 0
+    data_files_seen = 0
+    entries_seen = 0
     truncated = False
     stack = [root]
     while stack:
@@ -97,13 +108,19 @@ def _collect_data_files(root: Path, max_files: int):
                 continue
             if not child.is_file():
                 continue
-            visited += 1
-            if visited > max_files:
+            entries_seen += 1
+            if entries_seen > MAX_WALK_ENTRIES:
                 truncated = True
-                return groups, census, truncated
+                stack.clear()
+                break
             ext = _data_extension(child)
             if ext is None:
                 continue
+            data_files_seen += 1
+            if data_files_seen > max_files:
+                truncated = True
+                stack.clear()
+                break
             census[ext] = census.get(ext, 0) + 1
             rel = child.relative_to(root)
             group = rel.parts[0] if len(rel.parts) > 1 else "."
@@ -123,17 +140,15 @@ def _data_extension(path: Path) -> Optional[str]:
     return None
 
 
-def _tabular_schema(files: List[Path], max_file_bytes: int) -> Optional[dict]:
-    """Schema metadata for a site's first tabular file: names/dtypes, no values."""
-    target = next((f for f in files if f.suffix.lower() in {".csv", ".tsv"}), None)
-    if target is None:
-        # parquet-only site: schema needs an optional reader; report format only
-        return {"format": "parquet", "header": None, "features": None, "dtypes": None}
-    try:
-        raw = target.open("rb").read(max_file_bytes)
-    except OSError:
+def _tabular_schema(files: List[Path], max_file_bytes: int, reads: Dict[str, int]) -> Optional[dict]:
+    """Schema metadata for a site: names/dtypes from the first file, rows from all."""
+    text_files = [f for f in files if f.suffix.lower() in {".csv", ".tsv"}]
+    if not text_files:
+        return _parquet_schema(files, reads)
+    target = text_files[0]
+    raw, capped = _read_bounded(target, max_file_bytes, reads)
+    if raw is None:
         return None
-    capped = len(raw) >= max_file_bytes
     text = raw.decode("utf-8", errors="replace")
     delimiter = "\t" if target.suffix.lower() == ".tsv" else ","
     rows = []
@@ -156,10 +171,22 @@ def _tabular_schema(files: List[Path], max_file_bytes: int) -> Optional[dict]:
 
     dtypes = ["numeric" if numeric[j] else "text" for j in range(column_count)]
     features = [cell.strip() for cell in rows[0]] if header == HEADER_PRESENT else None
-    # row count within the byte cap; approximate when the cap was hit
+    # rows in the first file, within the byte cap
     data_rows = len(rows) - (1 if header == HEADER_PRESENT else 0)
     if len(rows) >= MAX_SAMPLE_ROWS or capped:
         data_rows = max(data_rows, text.count("\n") - (1 if header == HEADER_PRESENT else 0))
+    approximate = capped
+    # a sharded site: aggregate line counts across the remaining files; the
+    # per-shard header presence is unknowable, so the total is approximate
+    for extra in text_files[1:]:
+        extra_raw, extra_capped = _read_bounded(extra, max_file_bytes, reads)
+        if extra_raw is None:
+            approximate = True
+            continue
+        data_rows += extra_raw.decode("utf-8", errors="replace").count("\n")
+        approximate = True
+        if extra_capped:
+            approximate = True
     return {
         "format": target.suffix.lower().lstrip("."),
         "header": header,
@@ -167,8 +194,61 @@ def _tabular_schema(files: List[Path], max_file_bytes: int) -> Optional[dict]:
         "features": features,
         "dtypes": dtypes,
         "row_count": data_rows,
-        "row_count_approximate": capped,
+        "row_count_approximate": approximate,
     }
+
+
+def _read_bounded(path: Path, max_file_bytes: int, reads: Dict[str, int]):
+    try:
+        raw = path.open("rb").read(max_file_bytes)
+    except OSError:
+        return None, False
+    reads["files_read"] += 1
+    reads["bytes_read"] += len(raw)
+    return raw, len(raw) >= max_file_bytes
+
+
+def _parquet_schema(files: List[Path], reads: Dict[str, int]) -> dict:
+    """Parquet metadata via optional pyarrow; explicit fallback marker without it."""
+    base = {"format": "parquet", "header": None, "features": None, "dtypes": None}
+    try:
+        import pyarrow.parquet as pq
+    except ImportError:
+        # No reader available: the caller must obtain declared names or fail
+        # closed, exactly like an ambiguous header.
+        base["schema_available"] = False
+        return base
+    target = next((f for f in files if f.suffix.lower() == ".parquet"), None)
+    if target is None:
+        base["schema_available"] = False
+        return base
+    try:
+        parquet_file = pq.ParquetFile(target)
+        schema = parquet_file.schema_arrow
+        row_count = parquet_file.metadata.num_rows
+    except Exception:
+        base["schema_available"] = False
+        return base
+    reads["files_read"] += 1
+    reads["bytes_read"] += target.stat().st_size  # footer read; size is the upper bound
+    dtypes = []
+    import pyarrow as pa
+
+    for field in schema:
+        is_numeric = pa.types.is_integer(field.type) or pa.types.is_floating(field.type)
+        dtypes.append("numeric" if is_numeric else "text")
+    base.update(
+        {
+            "schema_available": True,
+            "header": HEADER_PRESENT,
+            "column_count": len(schema.names),
+            "features": list(schema.names)[:MAX_SCHEMA_COLUMNS],
+            "dtypes": dtypes[:MAX_SCHEMA_COLUMNS],
+            "row_count": row_count,
+            "row_count_approximate": False,
+        }
+    )
+    return base
 
 
 def _column_is_numeric(body: List[List[str]], index: int) -> bool:
@@ -207,7 +287,7 @@ def _schema_agreement(sites: List[dict]) -> dict:
     return {"status": "mismatch" if mismatches else "consistent", "mismatches": mismatches}
 
 
-def _sample_pixel_depth(files: List[Path]) -> Optional[str]:
+def _sample_pixel_depth(files: List[Path], reads: Dict[str, int]) -> Optional[str]:
     """Bit-depth class of one sample image, when an optional loader exists."""
     try:
         from PIL import Image
@@ -219,6 +299,9 @@ def _sample_pixel_depth(files: List[Path]) -> Optional[str]:
         try:
             with Image.open(path) as img:
                 mode = img.mode
+            reads["files_read"] += 1
+            # PIL reads lazily; the file size is the upper bound of the read
+            reads["bytes_read"] += path.stat().st_size
             return {"L": "uint8", "RGB": "uint8", "RGBA": "uint8", "I;16": "uint16", "I": "int32", "F": "float"}.get(
                 mode, mode
             )

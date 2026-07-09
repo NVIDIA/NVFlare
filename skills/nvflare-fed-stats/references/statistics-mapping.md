@@ -110,6 +110,13 @@ encryption, or custom privacy filters are out of scope.
 - Feature names: header row or explicitly supplied names only, per the
   SKILL.md rule; with supplied names, pass them to the read call
   (`pd.read_csv(..., names=feature_names)`).
+- Sharded sites: the dataset block's `row_count` aggregates a site's
+  tabular files and is marked `row_count_approximate` whenever a site has
+  more than one file (per-shard headers are unknowable); verify sizes
+  directly before bin-cap decisions when approximate.
+- Parquet: the dataset block carries names, dtype classes, and exact row
+  counts when `schema_available` is true (pyarrow present); when false,
+  treat it like an ambiguous header — declared names or fail closed.
 - Header heuristic, precisely: treat the first row as a header when at
   least one column's first value does not parse as that column's inferred
   dtype from the remaining rows (classic text-names-over-numeric-data).
