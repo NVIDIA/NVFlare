@@ -54,6 +54,7 @@ from nvflare.fuel.utils.pipe.cell_pipe import (
     _HEADER_MSG_ID,
     _HEADER_MSG_TYPE,
     _HEADER_REQ_ID,
+    _METRIC_CHANNEL,
     CellPipe,
     _cell_fqcn,
     _from_cell_message,
@@ -319,9 +320,12 @@ def test_stream_progress_is_fire_and_forget():
     pipe.cell.send_request.assert_not_called()
 
 
-def test_metric_disables_stream_reliability_but_keeps_request_reply():
+@pytest.mark.parametrize("topic", [Topic.METRIC, "_metrics_sender"])
+def test_metric_channel_disables_stream_reliability_but_keeps_request_reply(topic):
+    # covers both the Client API metric topic and the legacy MetricsSender topic
     pipe = _make_pipe()
-    msg = _make_msg(topic=Topic.METRIC)
+    pipe.channel = _METRIC_CHANNEL
+    msg = _make_msg(topic=topic)
 
     assert pipe.send(msg, timeout=1.0) is True
 
@@ -329,10 +333,12 @@ def test_metric_disables_stream_reliability_but_keeps_request_reply():
     assert pipe.cell.send_request.call_args.kwargs["reliable"] is False
 
 
-def test_non_metric_uses_configured_stream_reliability():
+def test_non_metric_channel_uses_configured_stream_reliability():
+    # a task that happens to be named "metric" on another pipe channel keeps
+    # the configured transport reliability
     pipe = _make_pipe()
 
-    assert pipe.send(_make_msg(), timeout=1.0) is True
+    assert pipe.send(_make_msg(topic=Topic.METRIC), timeout=1.0) is True
 
     assert pipe.cell.send_request.call_args.kwargs["reliable"] is None
 

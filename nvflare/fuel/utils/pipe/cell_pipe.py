@@ -30,7 +30,7 @@ from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.sec.authn import set_add_auth_headers_filters
 from nvflare.fuel.utils.attributes_exportable import ExportMode
 from nvflare.fuel.utils.config_service import search_file
-from nvflare.fuel.utils.constants import Mode
+from nvflare.fuel.utils.constants import Mode, PipeChannelName
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.validation_utils import check_object_type, check_str
 
@@ -44,6 +44,8 @@ _HEADER_MSG_ID = _PREFIX + "msg_id"
 _HEADER_REQ_ID = _PREFIX + "req_id"
 _HEADER_START_TIME = _PREFIX + "start"
 _HEADER_HB_SEQ = _PREFIX + "hb_seq"
+
+_METRIC_CHANNEL = _PREFIX + PipeChannelName.METRIC
 
 _logger = logging.getLogger(__name__)
 
@@ -499,10 +501,16 @@ class CellPipe(Pipe):
             progress_wait_cb=getattr(msg, "_progress_wait_cb", None),
             num_receivers=num_receivers,
             receiver_ids=receiver_ids,
-            # Metrics are already protected by the pipe request/reply and retry
-            # path. Avoid the additional per-stream retry/terminal-ACK round trip
-            # that serializes high-frequency metric logging.
-            reliable=False if msg.topic == Topic.METRIC else None,
+            # Everything requested over the metric pipe channel is small
+            # telemetry (metric records of either the Client API "metric" topic
+            # or the legacy MetricsSender topic) or a tiny optional control
+            # message, all already confirmed by this request/reply exchange and
+            # retried by the PipeHandler. Disable per-stream retry/terminal-ACK
+            # reliability there: it only adds a round trip that serializes
+            # high-frequency metric logging. Scoping by channel (not topic)
+            # keeps transport reliability for a task that happens to be named
+            # "metric" on the task pipe.
+            reliable=False if self.channel == _METRIC_CHANNEL else None,
         )
         if reply:
             rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
