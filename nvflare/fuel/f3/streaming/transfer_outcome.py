@@ -89,6 +89,9 @@ class TransferOutcomeReason:
     DELETED = "deleted"
     UNKNOWN_RECEIVER_COUNT = "unknown_receiver_count"
     UNKNOWN_DONE_STATUS = "unknown_done_status"
+    # the verdict computation itself failed: settlement recorded a fail-closed
+    # placeholder so ownership is consumed and waiters resolve
+    COMPUTATION_FAILED = "computation_failed"
 
 
 @dataclass(frozen=True)

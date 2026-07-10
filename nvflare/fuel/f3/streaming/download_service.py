@@ -31,6 +31,7 @@ from nvflare.fuel.f3.streaming.transfer_outcome import (  # noqa: F401 (re-expor
     RefOutcome,
     TransactionDoneStatus,
     TransferOutcome,
+    TransferOutcomeReason,
     compute_transfer_outcome,
     terminal_state_for_done_status,
 )
@@ -745,6 +746,25 @@ class _Transaction:
         with self._refs_lock:
             return list(self.refs)
 
+    def _fail_closed_outcome(self, done_status: str) -> Optional[TransferOutcome]:
+        """Direct fail-closed verdict for when compute_transfer_outcome itself raised:
+        full transaction metadata, honest reason, empty refs (certifies nothing)."""
+        try:
+            return TransferOutcome(
+                tx_id=self.tid,
+                status=TransferProgressState.FAILED,
+                reason=TransferOutcomeReason.COMPUTATION_FAILED,
+                done_status=done_status,
+                num_receivers=self.num_receivers,
+                refs=(),
+                timestamp=time.time(),
+                min_receivers=self.min_receivers,
+                receiver_ids=self.receiver_ids,
+            )
+        except Exception as ex:
+            self.logger.error(f"fail-closed verdict for tx {self.tid} could not be built: {ex}")
+            return None
+
     def begin_op(self) -> bool:
         """Registers an in-flight operation (serve, confirm, budget pass).
 
@@ -833,21 +853,30 @@ class _Transaction:
             self.logger.warning(
                 f"tx {self.tid}: in-flight operations did not drain within {OP_DRAIN_TIMEOUT}s; settling anyway"
             )
+        refs = self.snapshot_refs()
         outcome = None
         try:
-            refs = self.snapshot_refs()
-
             # Compute the aggregate outcome from locked per-receiver snapshots before any
-            # user callback can observe (or mutate the world around) this transaction.
-            outcome = compute_transfer_outcome(
-                tx_id=self.tid,
-                done_status=status,
-                num_receivers=self.num_receivers,
-                min_receivers=self.min_receivers,
-                receiver_ids=self.receiver_ids,
-                refs=[RefOutcome(ref_id=ref.rid, receiver_statuses=ref.snapshot_receiver_statuses()) for ref in refs],
-                timestamp=time.time(),
-            )
+            # user callback can observe (or mutate the world around) this transaction. A
+            # computation failure must not skip the cleanup emissions below, so it is
+            # contained here and the verdict falls back at recording time.
+            try:
+                outcome = compute_transfer_outcome(
+                    tx_id=self.tid,
+                    done_status=status,
+                    num_receivers=self.num_receivers,
+                    min_receivers=self.min_receivers,
+                    receiver_ids=self.receiver_ids,
+                    refs=[
+                        RefOutcome(ref_id=ref.rid, receiver_statuses=ref.snapshot_receiver_statuses()) for ref in refs
+                    ],
+                    timestamp=time.time(),
+                )
+            except Exception as ex:
+                self.logger.error(f"outcome computation for tx {self.tid} raised: {secure_format_exception(ex)}")
+                # the fail-closed verdict is built HERE so it flows through outcome_cb
+                # like any verdict (the callback contract holds even on this path)
+                outcome = self._fail_closed_outcome(status)
 
             progress_state = self._progress_state_for_transaction_status(status)
             if progress_state:
@@ -891,33 +920,27 @@ class _Transaction:
                     **self.cb_kwargs,
                 )
 
-            if self.outcome_cb:
+            if outcome is not None and self.outcome_cb:
                 _invoke_cb_safely(self.logger, f"transfer outcome callback for tx {self.tid}", self.outcome_cb, outcome)
-
-            # release after the callback (so it can still observe the sources); each
+        except Exception as ex:
+            # the ceremony must never raise: a propagating exception would kill the
+            # monitor thread and skip the terminator's marker sync
+            self.logger.error(f"settlement of tx {self.tid} raised: {secure_format_exception(ex)}")
+        finally:
+            # PHASE: source release -- independent of everything above, so no failure
+            # in the verdict or the callbacks can pin the sources in memory; each
             # release is guarded so one raising release() cannot skip its siblings
             for ref in refs:
                 _invoke_cb_safely(self.logger, f"release of {type(ref.obj)} for tx {self.tid}", ref.obj.release)
-        except Exception as ex:
-            # the ceremony must never raise: a propagating exception would kill the
-            # monitor thread and skip the terminator's marker sync (the finally below
-            # still records a fail-closed verdict)
-            self.logger.error(f"settlement of tx {self.tid} raised: {secure_format_exception(ex)}")
-        finally:
-            # in a finally: no exception above may leave the outcome unrecorded and
-            # waiters pending
+
+            # PHASE: recording -- runs last and cannot raise: the fallback is direct
+            # dataclass construction (never the computation that may just have failed),
+            # so ownership is consumed and waiters resolve no matter what happened above
             if outcome is None:
-                # outcome computation itself raised: record a fail-closed verdict so
-                # ownership is consumed and waiters resolve (empty refs cannot certify
-                # anything and exercises only trivial construction paths)
-                outcome = compute_transfer_outcome(
-                    tx_id=self.tid,
-                    done_status=status,
-                    num_receivers=self.num_receivers,
-                    refs=[],
-                    timestamp=time.time(),
-                )
-            if on_outcome:
+                # last-resort belt: an exception between the computation handler and
+                # here left no verdict at all
+                outcome = self._fail_closed_outcome(status)
+            if on_outcome and outcome is not None:
                 _invoke_cb_safely(self.logger, f"outcome recording for tx {self.tid}", on_outcome, outcome)
             self._settlement_complete = True
 

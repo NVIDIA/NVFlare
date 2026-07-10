@@ -561,28 +561,190 @@ class TestServiceOutcomeTable:
         service = make_isolated_download_service()
         service._tx_monitor = Mock()
         cell = Mock()
-        service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-COMPUTE")
         obj = _stub_obj()
+        outcome_cbs = []
+        released_when_outcome_cb_ran = []
+
+        def capture_outcome(outcome):
+            outcome_cbs.append(outcome)
+            released_when_outcome_cb_ran.append(obj.released)
+
+        service.new_transaction(
+            cell=cell,
+            timeout=10.0,
+            num_receivers=1,
+            tx_id="TX-COMPUTE",
+            receiver_ids=("r1",),
+            min_receivers=1,
+            outcome_cb=capture_outcome,
+        )
         service.add_object("TX-COMPUTE", obj)
-        waiter = service.get_transfer_waiter("TX-COMPUTE")
+        waiters = [service.get_transfer_waiter("TX-COMPUTE") for _ in range(3)]
 
-        real_compute = ds_module.compute_transfer_outcome
-        calls = {"n": 0}
+        def always_exploding(*args, **kwargs):
+            raise RuntimeError("outcome computation blew up")
 
-        def exploding_first_call(*args, **kwargs):
-            calls["n"] += 1
-            if calls["n"] == 1:
-                raise RuntimeError("outcome computation blew up")
-            return real_compute(*args, **kwargs)
-
-        with patch.object(ds_module, "compute_transfer_outcome", side_effect=exploding_first_call):
+        # PERSISTENT failure (review round 10: a one-shot failure masks a fallback
+        # that reuses the same failing function)
+        with patch.object(ds_module, "compute_transfer_outcome", side_effect=always_exploding):
             service.delete_transaction("TX-COMPUTE")
 
-        outcome = waiter.wait(timeout=5.0)
-        assert outcome is not None, "waiters must resolve even when outcome computation raises"
+        outcomes = [waiter.wait(timeout=5.0) for waiter in waiters]
+        outcome = outcomes[0]
+        assert outcome is not None, "waiters must resolve even when outcome computation raises persistently"
+        assert all(o is outcome for o in outcomes), "all parked waiters must receive the same recorded receipt"
+        late_waiter = service.get_transfer_waiter("TX-COMPUTE")
+        assert late_waiter.done() and late_waiter.wait(timeout=0) is outcome
         assert not outcome.completed, "the fallback verdict must be fail-closed"
         with service._outcome_lock:
             assert "TX-COMPUTE" not in service._outcome_owners, "ownership must be consumed"
+        # cleanup surfaces still ran: sources freed, per-object hook fired
+        assert obj.released, "source release must run even when the verdict computation fails"
+        assert obj.transaction_done_calls, "obj.transaction_done must run even when the verdict computation fails"
+        # codex P2/P3: the outcome_cb contract holds on the fail-closed path, with
+        # metadata preserved and an honest reason
+        assert len(outcome_cbs) == 1
+        assert released_when_outcome_cb_ran == [False], "outcome_cb must run before source release"
+        assert outcome_cbs[0].reason == TransferOutcomeReason.COMPUTATION_FAILED
+        assert outcome_cbs[0].receiver_ids == ("r1",)
+        assert outcome_cbs[0].min_receivers == 1
+        assert outcome.reason == TransferOutcomeReason.COMPUTATION_FAILED
+        assert outcome.receiver_ids == ("r1",)
+        assert outcome.min_receivers == 1
+        # TX-COMPUTE's own termination marker is released (same-id re-registration
+        # stays blocked by the retained receipt, which is intentional)
+        with service._tx_lock:
+            assert "TX-COMPUTE" not in service._leaked_ops
+
+    @pytest.mark.parametrize(
+        "terminal_path,expected_done_status",
+        [
+            ("finished", TransactionDoneStatus.FINISHED),
+            ("timeout", TransactionDoneStatus.TIMEOUT),
+        ],
+    )
+    def test_monitor_terminal_paths_survive_persistent_outcome_computation_failure(
+        self, terminal_path, expected_done_status
+    ):
+        """A bad verdict computation must not kill the real monitor termination paths.
+
+        FINISHED and TIMEOUT are classified by the monitor rather than by an explicit
+        delete call, so both must still release sources, record a fail-closed receipt,
+        resolve waiters, and retire ownership/termination markers.
+        """
+        from unittest.mock import Mock, patch
+
+        import nvflare.fuel.f3.streaming.download_service as ds_module
+
+        service = make_isolated_download_service()
+        service._tx_monitor = Mock()
+        cell = Mock()
+        tx_id = service.new_transaction(cell=cell, timeout=10.0, num_receivers=1)
+        obj = _stub_obj()
+        rid = service.add_object(tx_id, obj)
+        if terminal_path == "finished":
+            with service._tx_lock:
+                ref = service._ref_table[rid]
+            ref.obj_downloaded("r1", DownloadStatus.SUCCESS)
+            monitor_now = time.time()
+        else:
+            with service._tx_lock:
+                tx = service._tx_table[tx_id]
+            monitor_now = tx.last_active_time + tx.timeout + 1.0
+        waiter = service.get_transfer_waiter(tx_id)
+
+        with patch.object(ds_module, "compute_transfer_outcome", side_effect=RuntimeError("persistent failure")):
+            run_monitor_once(service, now=monitor_now)
+
+        outcome = waiter.wait(timeout=5.0)
+        assert outcome is not None
+        assert outcome.status == TransferProgressState.FAILED
+        assert outcome.reason == TransferOutcomeReason.COMPUTATION_FAILED
+        assert outcome.done_status == expected_done_status
+        assert obj.released
+        assert obj.transaction_done_calls == [(tx_id, expected_done_status)]
+        with service._outcome_lock:
+            assert tx_id not in service._outcome_owners
+        with service._tx_lock:
+            assert tx_id not in service._leaked_ops
+
+    def test_computation_failure_with_drain_leak_keeps_id_excluded_until_operation_exits(self):
+        """The fail-closed settlement and drain-leak protections must compose: the
+        waiter resolves even though an operation missed the drain deadline, but the old
+        tx_id remains excluded after receipt expiry until that operation really exits.
+        """
+        from unittest.mock import Mock, patch
+
+        import nvflare.fuel.f3.streaming.download_service as ds_module
+
+        service = make_isolated_download_service()
+        service._tx_monitor = Mock()
+        cell = Mock()
+        tx_id = "TX-COMPUTE-LEAK"
+        service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id=tx_id)
+        service.add_object(tx_id, _stub_obj())
+        with service._tx_lock:
+            tx = service._tx_table[tx_id]
+        assert tx.begin_op()
+        waiter = service.get_transfer_waiter(tx_id)
+
+        saved = ds_module.OP_DRAIN_TIMEOUT
+        ds_module.OP_DRAIN_TIMEOUT = 0.05
+        try:
+            with patch.object(ds_module, "compute_transfer_outcome", side_effect=RuntimeError("persistent failure")):
+                service.delete_transaction(tx_id)
+        finally:
+            ds_module.OP_DRAIN_TIMEOUT = saved
+
+        outcome = waiter.wait(timeout=5.0)
+        assert outcome is not None and outcome.reason == TransferOutcomeReason.COMPUTATION_FAILED
+        with service._tx_lock:
+            assert service._leaked_ops.get(tx_id) is tx
+
+        # Receipt expiry alone is insufficient while an old operation can still emit.
+        with service._outcome_lock:
+            service._tx_outcomes[tx_id] = dataclasses.replace(
+                service._tx_outcomes[tx_id], timestamp=time.time() - service.TX_OUTCOME_TTL - 1
+            )
+        with pytest.raises(ValueError, match="has not fully terminated"):
+            service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id=tx_id)
+
+        tx.end_op()
+        assert service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id=tx_id) == tx_id
+
+    def test_compound_computation_and_release_failures_still_settle_all_sources(self):
+        """Real cleanup failures can stack: verdict computation may fail while one
+        source's release hook also raises. Neither failure may skip sibling cleanup or
+        strand the waiter/ownership marker.
+        """
+        from unittest.mock import Mock, patch
+
+        import nvflare.fuel.f3.streaming.download_service as ds_module
+
+        service = make_isolated_download_service()
+        service._tx_monitor = Mock()
+        cell = Mock()
+        tx_id = service.new_transaction(cell=cell, timeout=10.0, num_receivers=1)
+        first = _stub_obj()
+        second = _stub_obj()
+        first.release = Mock(side_effect=RuntimeError("first release failed"))
+        service.add_object(tx_id, first)
+        service.add_object(tx_id, second)
+        waiter = service.get_transfer_waiter(tx_id)
+
+        with patch.object(ds_module, "compute_transfer_outcome", side_effect=RuntimeError("persistent failure")):
+            service.delete_transaction(tx_id)
+
+        outcome = waiter.wait(timeout=5.0)
+        assert outcome is not None and outcome.reason == TransferOutcomeReason.COMPUTATION_FAILED
+        first.release.assert_called_once_with()
+        assert second.released, "one raising release must not skip sibling cleanup"
+        assert first.transaction_done_calls == [(tx_id, TransactionDoneStatus.DELETED)]
+        assert second.transaction_done_calls == [(tx_id, TransactionDoneStatus.DELETED)]
+        with service._outcome_lock:
+            assert tx_id not in service._outcome_owners
+        with service._tx_lock:
+            assert tx_id not in service._leaked_ops
 
     def test_receipt_ttl_starts_at_recording_not_at_verdict(self):
         """P1 pin: the outcome timestamp is captured before the settlement callbacks
