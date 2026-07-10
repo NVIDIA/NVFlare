@@ -28,7 +28,16 @@ simulator run: output completeness, per-site parity, and global parity.
 6. **Per-site parity** — recompute reference statistics for one site with an
    agent-authored pandas snippet over that site's partition (never by
    executing the user's original script) and compare against that site's
-   values in the output JSON. The controller rounds every persisted value to
+   values in the output JSON. Probe before parsing: print the actual top
+   two levels of the output JSON plus one leaf per statistic BEFORE
+   writing the checker, and derive shapes from the file, never from
+   guessed keys. Leaf shapes inside
+   `{feature: {statistic: {site: {dataset: value}}}}`:
+   - scalar statistics (count/sum/mean/stddev/var/min/max): a plain
+     number, not a nested object;
+   - histogram: a list of `[low_edge, high_edge, sample_count]` triples —
+     there is no `"bins"` key;
+   - quantile: a `{percentile: value}` mapping. The controller rounds every persisted value to
    its `precision` (4 digits by default), so compare count exactly and round
    float references (sum, mean, stddev — pandas `std()` ddof=1) to that
    precision before an exact compare; histogram bin counts must match when an

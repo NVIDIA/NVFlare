@@ -99,7 +99,9 @@ The statistics rungs:
 
 - **Completeness** — the output hierarchy is
   `{"intensity": {statistic: {site: {dataset: value}}}}` with every site
-  plus `Global` under each configured statistic.
+  plus `Global` under each configured statistic; histogram leaves are
+  lists of `[low, high, count]` triples, counts are plain integers —
+  probe the actual JSON before writing any checker.
 - **Per-site parity** — recompute one site's histogram with an
   agent-authored snippet (same loader, same grayscale conversion, same
   bins/range) and compare bin counts exactly; count must equal the site's

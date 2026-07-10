@@ -22,7 +22,8 @@
         "Any agent-authored output checker, parity checker, or summary script lives under tools/ or validation/ and is reported as a helper, not as part of the deployable job.",
         "The report includes per-feature missing rates per site and flags hba1c_pct's divergent missingness at site-2 (about 12% versus 1-2% elsewhere).",
         "The report includes the case-mix caveat that Global pools sites with different case mixes.",
-        "Privacy filters are described as disclosure-risk reductions, not as privacy guarantees."
+        "Privacy filters are described as disclosure-risk reductions, not as privacy guarantees.",
+        "The parity/completeness checker derives JSON leaf shapes from the actual output file (probe first); it does not guess keys such as ['bins'] or treat scalar counts as nested objects."
       ],
       "nvflare": {
         "expected_skill": "nvflare-fed-stats",
@@ -86,6 +87,10 @@
           {
             "id": "global-parity-check",
             "description": "recomputes the global reference over the union of site partitions and confirms the weighted Global aggregation"
+          },
+          {
+            "id": "checker-derives-shapes-from-output",
+            "description": "probes the actual output JSON before writing parity/completeness checkers and derives leaf shapes from the file, never from guessed keys"
           }
         ],
         "prohibited_behavior": [
@@ -622,7 +627,8 @@
         "Per-site histogram parity is validated with an independent recompute, and Global histogram bins equal the element-wise sum of the site bins.",
         "The report contains only aggregates — no pixel data and no patient-identifying file listings.",
         "The agent takes runtime facts (output JSON location, execute semantics) from the skill references rather than reading NVFLARE library source in site-packages.",
-        "Dependency preflights are modality-scoped (no pandas probe for an image dataset) and use non-raising checks."
+        "Dependency preflights are modality-scoped (no pandas probe for an image dataset) and use non-raising checks.",
+        "The parity/completeness checker derives JSON leaf shapes from the actual output file (probe first); it does not guess keys such as ['bins'] or treat scalar counts as nested objects."
       ],
       "nvflare": {
         "expected_skill": "nvflare-fed-stats",
@@ -658,6 +664,10 @@
           {
             "id": "references-before-library-source",
             "description": "loads the skill references for runtime facts (output location, hierarchy) instead of exploring NVFLARE library source"
+          },
+          {
+            "id": "checker-derives-shapes-from-output",
+            "description": "probes the actual output JSON before writing parity/completeness checkers and derives leaf shapes from the file, never from guessed keys"
           }
         ],
         "prohibited_behavior": [
