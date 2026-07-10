@@ -1771,6 +1771,15 @@ files instead of inferring paths from server locations or assuming a fixed layou
 `download_path`. Agents must treat `artifact_discovery: "skipped"` as "not inspected",
 not as proof that expected artifacts are absent.
 
+Global-model discovery is provenance-aware. Common model filenames are considered
+only at the downloaded result root or in canonical server-owned `workspace`,
+`server`, and `app_server` locations; files in client subtrees are not candidates.
+An `artifact_manifest.json` in a canonical server-owned location can identify a
+custom filename. Its schema-version-`1` `artifacts.global_model` value is relative
+to the manifest and must resolve inside the download tree without symlinks. A
+present manifest is authoritative, so invalid or absent targets do not fall back to
+filename matching.
+
 ### Add `nvflare study`
 
 All `nvflare study` commands connect to the server and require a startup kit to be
