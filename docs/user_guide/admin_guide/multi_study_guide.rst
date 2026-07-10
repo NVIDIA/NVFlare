@@ -66,7 +66,8 @@ Validation rules:
 - Admins listed in a study must reference existing admin participants.
 - Study names use lowercase alphanumeric characters plus hyphens or underscores, 1-63 characters, and must start and end with an alphanumeric character.
 - ``"default"`` is reserved and cannot be used as a study name.
-- Provisioning generates ``study_registry.json`` in the server's ``local/`` folder.
+- Provisioning generates ``study_registry.json`` in the server's ``local/`` folder, which seeds the
+  runtime registry on first server start (see :ref:`updating_studies`).
 
 Per-Study Role Resolution
 =========================
@@ -151,12 +152,21 @@ Multi-study is suited for scenarios where organizations share trust (same PKI, s
 want logical isolation of experiments. For stronger isolation — separate PKI, separate blast
 radius — use separate NVFlare deployments.
 
+.. _updating_studies:
+
 Updating Studies
 ================
 
 Study site enrollment and user membership can be updated at runtime using the ``nvflare study``
 command family without reprovisioning or restarting the server. See :ref:`study_command` for the
 full command reference.
+
+Runtime study mutations are persisted to ``study_registry.json`` in the server workspace root, not
+in the ``local/`` folder. The provisioned copy under ``local/`` is only a first-start seed: once a
+runtime mutation has been persisted, the workspace-root copy is authoritative, shadows the seed,
+and survives server restarts. Because writes never target ``local/``, runtime study management also
+works in deployments where ``local/`` is mounted read-only, such as Kubernetes deployments that
+stage ``local/`` as a ConfigMap.
 
 Changing the core study definition (adding new studies or altering the base provisioned
 configuration) requires reprovisioning and a server restart.

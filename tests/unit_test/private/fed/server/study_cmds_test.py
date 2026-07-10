@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
+import os
 from contextlib import contextmanager
 from copy import deepcopy
 from unittest.mock import MagicMock, patch
@@ -19,6 +21,7 @@ from unittest.mock import MagicMock, patch
 from nvflare.apis.client import Client, ClientPropKey
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
+from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.private.fed.server.study_cmds import StudyCommandModule
@@ -99,7 +102,8 @@ def _mutation_ctx(initial_config=None):
         patch("nvflare.private.fed.server.study_cmds.StudyRegistryService.initialize"),
         # Make isinstance(engine, ServerEngine) pass for MagicMock engines
         patch("nvflare.private.fed.server.study_cmds.ServerEngine", MagicMock),
-        patch.object(StudyCommandModule, "_registry_path", return_value="/fake/path"),
+        patch.object(StudyCommandModule, "_registry_read_path", return_value="/fake/path"),
+        patch.object(StudyCommandModule, "_registry_write_path", return_value="/fake/path"),
         patch.object(StudyCommandModule, "_load_registry_config", side_effect=lambda _: deepcopy(initial_config)),
         patch.object(StudyCommandModule, "_write_registry_config"),
     ):
@@ -872,7 +876,8 @@ def _mutation_ctx_with_write_tracker(initial_config=None):
         patch("nvflare.private.fed.server.study_cmds.StudyRegistryService.release_lock"),
         patch("nvflare.private.fed.server.study_cmds.StudyRegistryService.initialize"),
         patch("nvflare.private.fed.server.study_cmds.ServerEngine", MagicMock),
-        patch.object(StudyCommandModule, "_registry_path", return_value="/fake/path"),
+        patch.object(StudyCommandModule, "_registry_read_path", return_value="/fake/path"),
+        patch.object(StudyCommandModule, "_registry_write_path", return_value="/fake/path"),
         patch.object(StudyCommandModule, "_load_registry_config", side_effect=lambda _: deepcopy(initial_config)),
         patch.object(StudyCommandModule, "_write_registry_config") as mock_write,
     ):
@@ -909,3 +914,70 @@ class TestAtomicityGuarantee:
             self._module().cmd_add_study_site(conn, ["add_study_site", "ghost", "--sites", "site-new"])
         assert conn.last_reply["error_code"] == "STUDY_NOT_FOUND"
         mock_write.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Section 13: persistence path — read-only local/ dir (K8s staged ConfigMap)
+# ---------------------------------------------------------------------------
+
+
+@contextmanager
+def _service_ctx():
+    """Patches locking and publish, but leaves path resolution and disk I/O real."""
+    with (
+        patch("nvflare.private.fed.server.study_cmds.StudyRegistryService.acquire_lock", return_value=True),
+        patch("nvflare.private.fed.server.study_cmds.StudyRegistryService.release_lock"),
+        patch("nvflare.private.fed.server.study_cmds.StudyRegistryService.initialize"),
+        patch("nvflare.private.fed.server.study_cmds.ServerEngine", MagicMock),
+    ):
+        yield
+
+
+class TestRegistryPersistencePath:
+    @staticmethod
+    def _make_engine_with_workspace(tmp_path, site_map):
+        (tmp_path / "startup").mkdir()
+        (tmp_path / "local").mkdir()
+        engine = _make_engine(site_map)
+        engine.get_workspace.return_value = Workspace(str(tmp_path))
+        return engine
+
+    def test_mutation_with_read_only_local_seeds_from_local_and_persists_to_root(self, tmp_path):
+        engine = self._make_engine_with_workspace(tmp_path, {"site-a": "org_a"})
+        seed = {
+            "format_version": "1.0",
+            "studies": {"seed-study": {"site_orgs": {"org_a": ["site-a"]}, "admins": ["admin@example.com"]}},
+        }
+        (tmp_path / "local" / "study_registry.json").write_text(json.dumps(seed))
+        os.chmod(tmp_path / "local", 0o555)
+        try:
+            conn = _FakeConnection(role="project_admin", org="project", engine=engine)
+            with _service_ctx():
+                StudyCommandModule().cmd_register_study(
+                    conn, ["register_study", "study1", "--site-org", "org_a:site-a"]
+                )
+            assert not (conn.last_reply or {}).get("error_code"), conn.last_reply
+            persisted = json.loads((tmp_path / "study_registry.json").read_text())
+            assert set(persisted["studies"]) == {"seed-study", "study1"}
+            assert json.loads((tmp_path / "local" / "study_registry.json").read_text()) == seed
+        finally:
+            os.chmod(tmp_path / "local", 0o755)
+
+    def test_root_copy_shadows_local_seed(self, tmp_path):
+        engine = self._make_engine_with_workspace(tmp_path, {"site-a": "org_a"})
+        seed = {
+            "format_version": "1.0",
+            "studies": {"seed-study": {"site_orgs": {"org_a": ["site-a"]}, "admins": ["admin@example.com"]}},
+        }
+        root_state = {
+            "format_version": "1.0",
+            "studies": {"root-study": {"site_orgs": {"org_a": ["site-a"]}, "admins": ["admin@example.com"]}},
+        }
+        (tmp_path / "local" / "study_registry.json").write_text(json.dumps(seed))
+        (tmp_path / "study_registry.json").write_text(json.dumps(root_state))
+        conn = _FakeConnection(role="project_admin", org="project", engine=engine)
+        with _service_ctx():
+            StudyCommandModule().cmd_register_study(conn, ["register_study", "study1", "--site-org", "org_a:site-a"])
+        assert not (conn.last_reply or {}).get("error_code"), conn.last_reply
+        persisted = json.loads((tmp_path / "study_registry.json").read_text())
+        assert set(persisted["studies"]) == {"root-study", "study1"}
