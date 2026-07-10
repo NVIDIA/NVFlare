@@ -228,6 +228,19 @@ def test_report_refuses_pending_campaign_state(tmp_path, monkeypatch):
         reporter.generate(reporter.parse_args([str(tmp_path), "--confirm-interrupted"]))
 
 
+def test_report_refuses_pending_manifest_named_only_in_campaign_state(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    state_path = tmp_path / ".nvflare/autofl/campaign_state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["pending_candidate_manifest"] = ".nvflare/autofl/candidates/pending/candidate_manifest.json"
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    monkeypatch.setattr(reporter, "refresh_plot", lambda *args, **kwargs: None)
+
+    with pytest.raises(ValueError, match="campaign state names"):
+        reporter.generate(reporter.parse_args([str(tmp_path), "--confirm-interrupted"]))
+
+
 @pytest.mark.parametrize("status", ["prepared", "ready_for_external_execution"])
 def test_report_refuses_pending_candidate_manifests(tmp_path, monkeypatch, status):
     reporter = _load_reporter()
@@ -239,6 +252,52 @@ def test_report_refuses_pending_candidate_manifests(tmp_path, monkeypatch, statu
 
     with pytest.raises(ValueError, match="candidate manifests remain prepared"):
         reporter.generate(reporter.parse_args([str(tmp_path), "--confirm-interrupted"]))
+
+
+@pytest.mark.parametrize("content", ["", '{"status":', "[]"])
+def test_report_refuses_unreadable_candidate_manifests(tmp_path, monkeypatch, content):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    manifest_path = tmp_path / ".nvflare/autofl/candidates/unreadable/candidate_manifest.json"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text(content, encoding="utf-8")
+    monkeypatch.setattr(reporter, "refresh_plot", lambda *args, **kwargs: None)
+
+    with pytest.raises(ValueError, match="candidate manifests could not be read"):
+        reporter.generate(reporter.parse_args([str(tmp_path), "--confirm-interrupted"]))
+
+
+def test_report_checks_ledger_referenced_candidate_manifest(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    rows = _write_campaign(tmp_path)
+    manifest_path = tmp_path / "external/candidate_manifest.json"
+    manifest_path.parent.mkdir()
+    manifest_path.write_text(json.dumps({"status": "prepared"}), encoding="utf-8")
+    rows[2]["candidate_manifest"] = str(manifest_path.relative_to(tmp_path))
+    _write_rows(tmp_path, rows)
+    monkeypatch.setattr(reporter, "refresh_plot", lambda *args, **kwargs: None)
+
+    with pytest.raises(ValueError, match="candidate manifests remain prepared"):
+        reporter.generate(reporter.parse_args([str(tmp_path)]))
+
+
+def test_pending_refusal_does_not_refresh_progress_plot(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    rows = _write_campaign(tmp_path)
+    rows.append(_row("candidate", "pending_algo"))
+    _write_rows(tmp_path, rows)
+    progress_path = tmp_path / "progress.png"
+    original_progress = progress_path.read_bytes()
+
+    def mutate_progress(*args, **kwargs):
+        progress_path.write_bytes(b"mutated")
+
+    monkeypatch.setattr(reporter, "refresh_plot", mutate_progress)
+
+    with pytest.raises(ValueError, match="finalize or abandon pending candidates"):
+        reporter.generate(reporter.parse_args([str(tmp_path)]))
+
+    assert progress_path.read_bytes() == original_progress
 
 
 def test_pending_candidate_returns_cli_exit_2(tmp_path, monkeypatch, capsys):
@@ -322,6 +381,43 @@ def test_discard_only_campaign_has_observed_but_no_retained_best(tmp_path, monke
     assert summary["best_observed"]["name"] == "unretained_gain"
     assert "No scored result was retained" in report
     assert "Best retained candidate" not in report
+
+
+def test_baseline_named_discard_cannot_become_baseline_or_retained_best(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    _write_rows(
+        tmp_path,
+        [
+            _row("discard", "baseline_plus_prox", "0.900000"),
+            _row("baseline", "control", "0.500000"),
+            _row("keep", "retained_candidate", "0.700000", base_candidate="control"),
+        ],
+    )
+
+    summary = _generate(reporter, tmp_path, monkeypatch)
+    report = tmp_path.joinpath("autofl_final_report.md").read_text(encoding="utf-8")
+
+    assert summary["baseline"]["name"] == "control"
+    assert summary["best"]["name"] == "retained_candidate"
+    assert summary["best_observed"]["name"] == "baseline_plus_prox"
+    assert any("baseline_plus_prox was not retained" in warning for warning in summary["warnings"])
+    assert "Best retained candidate: `retained_candidate`" in report
+
+
+def test_zero_runtime_is_rendered_as_not_available(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    rows = _write_campaign(tmp_path)
+    for row in rows:
+        row["runtime_seconds"] = ""
+    _write_rows(tmp_path, rows)
+
+    summary = _generate(reporter, tmp_path, monkeypatch)
+    report = tmp_path.joinpath("autofl_final_report.md").read_text(encoding="utf-8")
+
+    assert summary["runtime_seconds"] == 0
+    assert f"across `{len(rows)}` ledger rows in `n/a`." in report
+    assert "- Total recorded runtime: `n/a`" in report
 
 
 def test_report_warns_about_executed_budget_and_test_metric(tmp_path, monkeypatch):

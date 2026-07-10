@@ -51,6 +51,8 @@ the artifact is not a valid PNG, the helper preserves the artifact, records a
 warning and `artifacts.progress_plot_available=false`, and still writes the
 Markdown and JSON reports without embedding the broken image. It does not
 modify source, candidate manifests, `results.tsv`, or campaign state.
+All relative helper path options, including `--plotter`, resolve from the
+campaign job directory rather than the shell's current working directory.
 
 ## Interrupted Campaigns
 
@@ -66,7 +68,9 @@ This records a reporting-time interruption assertion; it does not rewrite the
 campaign state or pretend the runner finalized cleanly. It bypasses only stale
 stop state. A `candidate` ledger row, pending-candidate state, or a manifest in
 `prepared` or `ready_for_external_execution` status always blocks finalization;
-the agent must finalize or abandon that candidate first.
+an unreadable candidate manifest also blocks because its completion status
+cannot be established. The agent must finalize or abandon that candidate
+first.
 
 ## Report Contract
 

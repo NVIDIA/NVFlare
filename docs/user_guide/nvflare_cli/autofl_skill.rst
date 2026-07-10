@@ -165,12 +165,16 @@ The deterministic helper can also be invoked directly by an agent:
    python "$CODEX_HOME/skills/nvflare-autofl-report/scripts/generate_report.py" \
        <job-dir>
 
+Relative helper path arguments, including ``--plotter``, resolve from
+``<job-dir>`` rather than the invoking shell's current working directory.
+
 If a process was abruptly interrupted and campaign state still appears active,
 the agent must first independently confirm that execution has stopped.  It may
 then add ``--confirm-interrupted``.  This records the reporting assertion but
 does not mutate campaign state.  It bypasses only stale stop state; it never
 bypasses pending state, ``candidate`` ledger rows, or prepared candidate
-manifests.
+manifests.  An unreadable candidate manifest also blocks finalization because
+its completion status cannot be established.
 
 The report distinguishes the imported budget in ``autofl.yaml`` from the exact
 arguments that ran.  It warns when the selected candidate changed training

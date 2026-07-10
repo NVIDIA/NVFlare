@@ -273,7 +273,11 @@ confirm interruption after execution is independently checked; the report
 records that assertion without rewriting history. This confirmation bypasses
 only stale stop state. Pending state, `candidate` ledger rows, or manifests in
 `prepared`/`ready_for_external_execution` status block finalization until the
-active skill finalizes or abandons them.
+active skill finalizes or abandons them. Unreadable manifests block as well,
+because report generation cannot prove that their candidates were finalized.
+
+Relative report-helper paths, including an overridden plotter, resolve from
+the campaign directory so agent execution is independent of shell location.
 
 Plotting is optional report evidence. A missing plotting dependency or invalid
 PNG does not suppress the Markdown and JSON artifacts: the helper preserves the

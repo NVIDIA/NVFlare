@@ -96,7 +96,10 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--progress", default="progress.png")
     parser.add_argument("--output", default="autofl_final_report.md")
     parser.add_argument("--summary-json", default="autofl_report_summary.json")
-    parser.add_argument("--plotter", help="override path to nvflare-autofl plot_progress.py")
+    parser.add_argument(
+        "--plotter",
+        help="override path to nvflare-autofl plot_progress.py; relative paths resolve from campaign_dir",
+    )
     parser.add_argument("--mode", choices=["max", "min"], help="override objective direction")
     parser.add_argument("--metric", help="override optimization metric label")
     parser.add_argument("--confirm-interrupted", action="store_true", help="confirm an abruptly interrupted campaign")
@@ -261,23 +264,27 @@ def is_finalized_scored_record(record: RunRecord) -> bool:
     return is_baseline(record) or record.status in FINALIZED_SCORE_STATUSES
 
 
-def pending_manifest_paths(campaign_root: Path, records: Sequence[RunRecord]) -> List[Path]:
+def candidate_manifest_evidence(
+    campaign_root: Path, records: Sequence[RunRecord]
+) -> Tuple[List[Path], List[Tuple[Path, str]]]:
     candidates_root = campaign_root / ".nvflare" / "autofl" / "candidates"
     paths = set(candidates_root.glob("*/candidate_manifest.json")) if candidates_root.is_dir() else set()
     paths.update(
         resolve_path(campaign_root, record.candidate_manifest) for record in records if record.candidate_manifest
     )
     pending = []
+    unreadable = []
     for path in sorted(paths):
         if not path.is_file():
             continue
         try:
             manifest = load_json(path)
-        except ValueError:
+        except ValueError as exc:
+            unreadable.append((path, str(exc)))
             continue
         if str(manifest.get("status") or "").strip().lower() in PENDING_MANIFEST_STATUSES:
             pending.append(path)
-    return pending
+    return pending, unreadable
 
 
 def verify_no_pending_candidates(campaign_root: Path, state: Dict[str, Any], records: Sequence[RunRecord]) -> None:
@@ -295,12 +302,17 @@ def verify_no_pending_candidates(campaign_root: Path, state: Dict[str, Any], rec
             rows += f", and {len(ledger_rows) - 5} more"
         evidence.append(f"results.tsv contains pending candidate rows: {rows}")
 
-    manifests = pending_manifest_paths(campaign_root, records)
+    manifests, unreadable_manifests = candidate_manifest_evidence(campaign_root, records)
     if manifests:
         paths = ", ".join(str(path.resolve()) for path in manifests[:3])
         if len(manifests) > 3:
             paths += f", and {len(manifests) - 3} more"
         evidence.append(f"candidate manifests remain prepared for execution: {paths}")
+    if unreadable_manifests:
+        details = "; ".join(f"{path.resolve()} ({error})" for path, error in unreadable_manifests[:3])
+        if len(unreadable_manifests) > 3:
+            details += f"; and {len(unreadable_manifests) - 3} more"
+        evidence.append(f"candidate manifests could not be read and may contain unfinished work: {details}")
 
     if evidence:
         raise ValueError(
@@ -315,7 +327,9 @@ def scored_records(records: Iterable[RunRecord]) -> List[RunRecord]:
 
 
 def select_baseline(records: Sequence[RunRecord]) -> Optional[RunRecord]:
-    return next((record for record in records if is_baseline(record) and is_finalized_scored_record(record)), None)
+    return next(
+        (record for record in records if record.status == "baseline" and is_finalized_scored_record(record)), None
+    )
 
 
 def select_best(records: Sequence[RunRecord], mode: str, retained_only: bool = False) -> Optional[RunRecord]:
@@ -323,11 +337,7 @@ def select_best(records: Sequence[RunRecord], mode: str, retained_only: bool = F
         record
         for record in records
         if is_finalized_scored_record(record)
-        and (
-            (is_baseline(record) or record.status in RETAINED_STATUSES)
-            if retained_only
-            else (is_baseline(record) or record.status in FINALIZED_SCORE_STATUSES)
-        )
+        and (record.status in RETAINED_STATUSES if retained_only else record.status in FINALIZED_SCORE_STATUSES)
     ]
     if not candidates:
         return None
@@ -716,6 +726,7 @@ def report_markdown(summary: Dict[str, Any], records: Sequence[RunRecord], max_n
     baseline = summary["baseline"]
     best = summary["best"]
     counts = summary["status_counts"]
+    runtime_label = format_runtime(summary["runtime_seconds"]) or "n/a"
     lines = [
         "# Auto-FL Final Report",
         "",
@@ -723,7 +734,7 @@ def report_markdown(summary: Dict[str, Any], records: Sequence[RunRecord], max_n
         "",
         f"The stopped campaign optimized `{summary['objective']['optimization_metric']}` in "
         f"`{summary['environment']}` mode. It evaluated `{summary['candidate_attempts']}` candidate attempts "
-        f"across `{len(records)}` ledger rows in `{format_runtime(summary['runtime_seconds'])}`.",
+        f"across `{len(records)}` ledger rows in `{runtime_label}`.",
         "",
     ]
     if best:
@@ -827,8 +838,6 @@ def report_markdown(summary: Dict[str, Any], records: Sequence[RunRecord], max_n
             for candidate in item["candidate_results"]:
                 if candidate["status"] == "crash":
                     result = "crash"
-                elif candidate["status"] == "candidate":
-                    result = "pending"
                 else:
                     result = format_score(candidate["score"])
                 evidence_items.append(f"{candidate['name']}={result}")
@@ -860,7 +869,7 @@ def report_markdown(summary: Dict[str, Any], records: Sequence[RunRecord], max_n
             "",
             "## Runtime And Reliability",
             "",
-            f"- Total recorded runtime: `{format_runtime(summary['runtime_seconds'])}`",
+            f"- Total recorded runtime: `{runtime_label}`",
             f"- Status counts: `{json.dumps(counts, sort_keys=True)}`",
             f"- Scored comparable runs: `{summary['scored_runs']}`",
             f"- Crashes: `{counts.get('crash', 0)}`",

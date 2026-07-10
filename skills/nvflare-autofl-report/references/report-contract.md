@@ -25,8 +25,10 @@ may explicitly confirm interruption. This assertion is report provenance only:
 it must not mutate campaign state. `--confirm-interrupted` bypasses only stale
 stop state. Finalization is refused when campaign state reports pending work,
 the ledger has a `candidate` row, or an available manifest remains `prepared`
-or `ready_for_external_execution`. Finalize or abandon such candidates before
-generating an authoritative report.
+or `ready_for_external_execution`. An available but unreadable manifest also
+blocks finalization because the helper cannot prove that its candidate is
+complete. Finalize or abandon such candidates before generating an
+authoritative report.
 
 ## Candidate Lineage
 
@@ -93,6 +95,9 @@ The JSON summary remains `nvflare.autofl.report.v1` and includes
 invalid existing PNG produce warnings and `progress_plot_available=false`, but
 do not suppress the Markdown or JSON report. The invalid or failed plot
 artifact is preserved and is not embedded in Markdown.
+
+All relative helper path arguments, including `--plotter`, resolve from the
+campaign directory rather than the invoking shell's current working directory.
 
 Report generation must be independent of Git and must not edit campaign source,
 the ledger, manifests, or state.
