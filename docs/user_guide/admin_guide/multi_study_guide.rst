@@ -11,8 +11,9 @@ sites participate and what role each admin user has. Study-aware job and client-
 are scoped to the active study. The default study (``"default"``) is the fallback session context:
 it uses the certificate-based role and scopes visibility to jobs in the default study.
 
-If ``studies:`` is absent from ``project.yml``, the deployment is single-tenant and only the
-``default`` study can be used at login.
+If ``studies:`` is absent from ``project.yml``, the deployment starts single-tenant: only the
+``default`` study can be used at login until studies are registered at runtime (see
+:ref:`updating_studies`).
 
 Configuring Studies in project.yml
 ==================================
@@ -157,9 +158,11 @@ radius — use separate NVFlare deployments.
 Updating Studies
 ================
 
-Study site enrollment and user membership can be updated at runtime using the ``nvflare study``
-command family without reprovisioning or restarting the server. See :ref:`study_command` for the
-full command reference.
+Studies can be created, updated, and removed at runtime using the ``nvflare study`` command family
+without reprovisioning or restarting the server: ``register`` creates or merges a study,
+``add-site`` / ``remove-site`` change site enrollment, ``add-user`` / ``remove-user`` manage
+study-user membership, and ``remove`` deletes a study. See :ref:`study_command` for the full
+command reference.
 
 Runtime study mutations are persisted to ``study_registry.json`` in the server workspace root, not
 in the ``local/`` folder. The provisioned copy under ``local/`` is only a first-start seed: once a
@@ -168,5 +171,6 @@ and survives server restarts. Because writes never target ``local/``, runtime st
 works in deployments where ``local/`` is mounted read-only, such as Kubernetes deployments that
 stage ``local/`` as a ConfigMap.
 
-Changing the core study definition (adding new studies or altering the base provisioned
-configuration) requires reprovisioning and a server restart.
+Runtime study management operates on already-provisioned participants: adding new client sites or
+admin identities to the deployment still requires provisioning, since those need certificates
+issued for them. Studies can only enroll sites and users that exist in the deployment.
