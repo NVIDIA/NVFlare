@@ -261,6 +261,40 @@ class TestJobDownload:
         assert "global_model" not in envelope["data"]["artifacts"]
         assert "global_model" in envelope["data"]["missing_artifacts"]
 
+    def test_manifest_global_model_rejects_alternate_case_self_target(self, tmp_path):
+        from nvflare.tool.job.job_cli import _manifest_global_model
+
+        download_path = tmp_path / "results"
+        workspace_dir = download_path / "workspace"
+        workspace_dir.mkdir(parents=True)
+        manifest_path = workspace_dir / "artifact_manifest.json"
+        alternate_case_path = workspace_dir / "ARTIFACT_MANIFEST.JSON"
+        manifest_path.write_text(
+            json.dumps({"schema_version": "1", "artifacts": {"global_model": alternate_case_path.name}})
+        )
+        if not alternate_case_path.exists():
+            try:
+                os.link(manifest_path, alternate_case_path)
+            except OSError:
+                pytest.skip("filesystem does not support hard links")
+
+        assert os.path.samefile(manifest_path, alternate_case_path)
+        assert _manifest_global_model(str(download_path), [(0, str(manifest_path))]) == (True, None)
+
+    def test_manifest_global_model_rejects_samefile_error(self, tmp_path):
+        from nvflare.tool.job.job_cli import _manifest_global_model
+
+        download_path = tmp_path / "results"
+        workspace_dir = download_path / "workspace"
+        workspace_dir.mkdir(parents=True)
+        model_path = workspace_dir / "custom-model.pt"
+        model_path.write_text("server model")
+        manifest_path = workspace_dir / "artifact_manifest.json"
+        manifest_path.write_text(json.dumps({"schema_version": "1", "artifacts": {"global_model": model_path.name}}))
+
+        with patch("nvflare.tool.job.job_cli.os.path.samefile", side_effect=OSError):
+            assert _manifest_global_model(str(download_path), [(0, str(manifest_path))]) == (True, None)
+
     def test_download_manifest_rejects_parent_path(self, tmp_path, capsys):
         download_path = tmp_path / "results"
         workspace_dir = download_path / "workspace"

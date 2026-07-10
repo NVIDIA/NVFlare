@@ -1223,11 +1223,12 @@ def _manifest_global_model(download_path: str, manifest_paths: List[Tuple[int, s
 
     candidate_path = os.path.normpath(os.path.join(os.path.dirname(manifest_path), model_path))
     root_real_path = os.path.realpath(download_path)
-    if (
-        os.path.normcase(candidate_path) == os.path.normcase(manifest_path)
-        or not _is_path_within(root_real_path, candidate_path)
-        or not os.path.isfile(candidate_path)
-    ):
+    if not _is_path_within(root_real_path, candidate_path) or not os.path.isfile(candidate_path):
+        return True, None
+    try:
+        if os.path.samefile(candidate_path, manifest_path):
+            return True, None
+    except OSError:
         return True, None
 
     # Reject a symlink at any level, matching the normal artifact traversal's
