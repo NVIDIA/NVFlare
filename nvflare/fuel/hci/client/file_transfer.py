@@ -309,6 +309,23 @@ class FileTransferModule(CommandModule):
 
         # sign folders and files (skip gracefully when key is absent — e.g. simulator)
         api = ctx.get_api()
+        ensure_client_cert_valid = getattr(api, "ensure_client_cert_valid", None)
+        if ensure_client_cert_valid:
+            try:
+                ensure_client_cert_valid()
+            except Exception as e:
+                return {"status": APIStatus.ERROR_RUNTIME, "details": f"Failed to refresh admin certificate: {e}"}
+            if getattr(api, "cell", None) is None:
+                try:
+                    api.connect()
+                    login_result = api.login()
+                except Exception as e:
+                    return {
+                        "status": APIStatus.ERROR_RUNTIME,
+                        "details": f"Failed to reconnect with refreshed admin certificate: {e}",
+                    }
+                if login_result.get("status") != APIStatus.SUCCESS:
+                    return login_result
         client_key_file_path = api.client_key
         if client_key_file_path and os.path.exists(client_key_file_path) and api.client_cert:
             try:
@@ -325,6 +342,8 @@ class FileTransferModule(CommandModule):
 
         folder_name = split_path(full_path)[1]
         parts = [cmd_entry.full_command_name(), folder_name]
+        if getattr(api, "ephemeral_admin_cert_config", None):
+            parts.append("--ephemeral-admin-cert")
         parts.extend(submit_args)
         command = join_args(parts)
         sender = _FileSender(out_file)

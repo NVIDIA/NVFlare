@@ -59,6 +59,7 @@ class PropKey:
     # ever shipped with the previous name.
     ALLOW_LOG_STREAMING = "allow_log_streaming"
     CONN_SECURITY = "connection_security"
+    EPHEMERAL_ADMIN_CERT = "ephemeral_admin_cert"
     AUTH_IDENTITY = "auth_identity"
     CUSTOM_CA_CERT = "custom_ca_cert"
     SCHEME = "scheme"

@@ -135,6 +135,7 @@ class CheckServerAvailable(CheckRule):
             host = admin["host"]
             port = admin["port"]
             scheme = admin.get("scheme", "grpc")
+            uses_ephemeral_admin_cert = bool(admin.get("ephemeral_admin_cert"))
         else:
             # For client/server, the FL server endpoint is in servers[0].service.target
             servers = fed_config.get("servers", [])
@@ -152,25 +153,30 @@ class CheckServerAvailable(CheckRule):
                 )
             host, port = target.split(":")[0], int(target.split(":")[1])
             scheme = get_communication_scheme(package_path, nvf_config, default_scheme="grpc")
+            uses_ephemeral_admin_cert = False
 
-        # Check connectivity based on the communication scheme
-        if scheme in ["grpc", "agrpc"]:
-            if not check_grpc_server_running(startup=startup, host=host, port=int(port)):
-                return CheckResult(
-                    f"Can't connect to {scheme} server ({host}:{port})",
-                    "Please check if server is up.",
-                )
-        elif scheme in ["http", "https", "tcp", "stcp"]:
-            # HTTP/HTTPS use WebSocket, TCP/STCP use raw sockets - both checked via socket connection
-            if not check_socket_server_running(startup=startup, host=host, port=int(port), scheme=scheme):
-                return CheckResult(
-                    f"Can't connect to {scheme} server ({host}:{port})",
-                    "Please check if server is up.",
-                )
-        else:
+        supported_schemes = {"grpc", "agrpc", "http", "https", "tcp", "stcp"}
+        if scheme not in supported_schemes:
             return CheckResult(
                 f"Unsupported communication scheme: {scheme}",
                 f"Scheme '{scheme}' is not supported for connectivity check.",
+            )
+
+        # Check connectivity based on the communication scheme
+        if uses_ephemeral_admin_cert:
+            # Preflight must not trigger interactive SSO. A TCP connection proves
+            # endpoint reachability; the real command validates mTLS after login.
+            server_running = check_socket_server_running(startup=startup, host=host, port=int(port), scheme="tcp")
+        elif scheme in ["grpc", "agrpc"]:
+            server_running = check_grpc_server_running(startup=startup, host=host, port=int(port))
+        else:
+            server_running = check_socket_server_running(startup=startup, host=host, port=int(port), scheme=scheme)
+
+        if not server_running:
+            probe = "TCP reachability" if uses_ephemeral_admin_cert else scheme
+            return CheckResult(
+                f"Can't connect to {scheme} server ({host}:{port}) using {probe}",
+                "Please check if server is up.",
             )
 
         return CheckResult(CHECK_PASSED, "N/A")

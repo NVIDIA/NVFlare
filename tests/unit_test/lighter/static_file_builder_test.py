@@ -21,7 +21,7 @@ from nvflare.app_common.default_component_policy import DEFAULT_CLASS_ALLOW_LIST
 from nvflare.lighter.constants import CtxKey
 from nvflare.lighter.ctx import ProvisionContext
 from nvflare.lighter.entity import Participant, Project
-from nvflare.lighter.impl.static_file import StaticFileBuilder
+from nvflare.lighter.impl.static_file import StaticFileBuilder, _modify_fed_admin_config
 
 
 class _FakeCtx:
@@ -99,6 +99,43 @@ class TestStaticFileBuilder:
     def test_scheme(self, scheme):
         builder = StaticFileBuilder(scheme=scheme)
         assert builder.scheme == scheme
+
+    def test_ephemeral_admin_cert_config_omits_static_client_cert_material(self):
+        config = _modify_fed_admin_config(
+            json.dumps(
+                {
+                    "admin": {
+                        "username": "admin@example.com",
+                        "client_key": "client.key",
+                        "client_cert": "client.crt",
+                        "ca_cert": "rootCA.pem",
+                    }
+                }
+            ),
+            ephemeral_admin_cert={
+                "provider": "step_ca",
+                "renewal_window": 60,
+                "provider_config": {
+                    "ca_url": "https://step-ca.example.com",
+                    "provisioner": "nvflare-admin-oidc",
+                },
+            },
+        )
+
+        admin = json.loads(config)["admin"]
+        assert "client_key" not in admin
+        assert "client_cert" not in admin
+        assert admin["username"] == ""
+        assert admin["uid_source"] == "cert"
+        assert admin["ca_cert"] == "rootCA.pem"
+        assert admin["ephemeral_admin_cert"] == {
+            "provider": "step_ca",
+            "renewal_window": 60,
+            "provider_config": {
+                "ca_url": "https://step-ca.example.com",
+                "provisioner": "nvflare-admin-oidc",
+            },
+        }
 
     def test_build_server_emits_study_registry_when_studies_exist(self, tmp_path):
         server = Participant(type="server", name="server1", org="org")

@@ -45,6 +45,19 @@ def _make_poc_admin_startup_kit(parent: Path, name: str = "admin@nvidia.com") ->
     return kit_dir
 
 
+def _make_ephemeral_cert_admin_startup_kit(parent: Path, name: str = "sso-admin-kit") -> Path:
+    kit_dir = parent / name
+    startup_dir = kit_dir / "startup"
+    startup_dir.mkdir(parents=True)
+    (startup_dir / "fed_admin.json").write_text(
+        '{"admin": {"username": "", "uid_source": "cert", "ephemeral_admin_cert": '
+        '{"provider": "step_ca", "provider_config": '
+        '{"ca_url": "https://step-ca.example.com", "provisioner": "nvflare-admin-oidc"}}}}\n'
+    )
+    (startup_dir / "rootCA.pem").write_text("dummy root ca\n")
+    return kit_dir
+
+
 def _make_site_startup_kit(parent: Path, name: str = "site-1") -> Path:
     kit_dir = parent / name
     startup_dir = kit_dir / "startup"
@@ -196,6 +209,21 @@ class TestStartupKitRegistryConfig:
         updated = kit_config.set_active_startup_kit(config, "project_admin")
 
         assert updated.get("startup_kits.active") == "project_admin"
+
+    def test_ephemeral_cert_admin_startup_kit_does_not_require_static_client_cert(self, tmp_path):
+        from nvflare.tool.kit import kit_config
+
+        kit_dir = _make_ephemeral_cert_admin_startup_kit(tmp_path, "sso-admin-kit")
+        config = CF.parse_string("version = 2")
+
+        updated = kit_config.add_startup_kit_entry(config, "ephemeral_cert_admin", str(kit_dir))
+
+        assert _entry_path(updated, "ephemeral_cert_admin") == kit_dir.resolve()
+        assert kit_config.validate_admin_startup_kit(str(kit_dir / "startup")) == str(kit_dir.resolve())
+        metadata = kit_config.inspect_startup_kit_metadata(str(kit_dir))
+        assert metadata["certificate"]["status"] == "runtime_issued"
+        assert metadata["credential_source"] == "ephemeral_admin_cert"
+        assert metadata["findings"] == []
 
     def test_set_active_rejects_unknown_id_without_mutating_active(self, tmp_path):
         from nvflare.tool.kit import kit_config
