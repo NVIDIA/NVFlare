@@ -52,7 +52,15 @@ def reset_config_service():
     ConfigService.reset()
 
 
-def _make_fl_ctx(component_config, node_path="component", job_meta=None, workspace=None, job_id=None):
+def _make_fl_ctx(
+    component_config,
+    node_path="component",
+    job_meta=None,
+    workspace=None,
+    job_id=None,
+    app_root=None,
+    workspace_root=None,
+):
     fl_ctx = FLContext()
     fl_ctx.set_prop(FLContextKey.COMPONENT_CONFIG, component_config, private=True, sticky=False)
     if job_meta is not None:
@@ -61,6 +69,10 @@ def _make_fl_ctx(component_config, node_path="component", job_meta=None, workspa
         fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True, sticky=False)
     if job_id is not None:
         fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job_id, private=True, sticky=False)
+    if app_root is not None:
+        fl_ctx.set_prop(FLContextKey.APP_ROOT, app_root, private=True, sticky=False)
+    if workspace_root is not None:
+        fl_ctx.set_prop(FLContextKey.WORKSPACE_ROOT, workspace_root, private=True, sticky=False)
     node = Node(component_config)
     node.paths = node_path.split(".")
     fl_ctx.set_prop(FLContextKey.COMPONENT_NODE, node, private=True, sticky=False)
@@ -377,6 +389,33 @@ def test_wildcard_audit_does_not_collapse_distinct_current_job_ids(monkeypatch):
 
     assert audit.call_count == 2
     assert [call.kwargs["ref"] for call in audit.call_args_list] == ["job-1", "job-2"]
+
+
+@pytest.mark.parametrize("job_id", ["simulate_job", None])
+@pytest.mark.parametrize("root_key", ["app_root", "workspace_root"])
+def test_wildcard_warning_does_not_collapse_simulator_runs_with_shared_or_missing_job_id(
+    root_key, job_id, tmp_path, monkeypatch, caplog
+):
+    _set_class_allow_list([ALLOW_ALL])
+    audit = MagicMock(return_value=None)
+    monkeypatch.setattr(AuditService, "add_event", audit)
+    authorizer = ComponentPathAuthorizer()
+    run_1_root = tmp_path / "run-1" / "simulate_job" / "app_server"
+    run_2_root = tmp_path / "run-2" / "simulate_job" / "app_server"
+
+    with caplog.at_level("WARNING"):
+        for component_path in ("custom.Component", "another.Component"):
+            authorizer.handle_event(
+                EventType.BEFORE_BUILD_COMPONENT,
+                _make_fl_ctx({"path": component_path}, job_id=job_id, **{root_key: run_1_root}),
+            )
+        authorizer.handle_event(
+            EventType.BEFORE_BUILD_COMPONENT,
+            _make_fl_ctx({"path": "custom.Component"}, job_id=job_id, **{root_key: run_2_root}),
+        )
+
+    assert audit.call_count == 3
+    assert caplog.text.count("remaining allow-list entries are ignored") == 2
 
 
 def test_warn_mode_logs_audits_and_allows_component_missing_from_allow_list(caplog, monkeypatch):

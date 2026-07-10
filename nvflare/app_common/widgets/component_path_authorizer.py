@@ -247,8 +247,13 @@ class ComponentPathAuthorizer(Widget):
 
     def _get_audit_scope(self, fl_ctx: Optional[FLContext] = None, workspace=None):
         job_id = self._get_job_id(fl_ctx)
+        job_path = self._get_job_path(fl_ctx=fl_ctx, workspace=workspace)
         if job_id:
+            if job_path:
+                return ("job", str(job_id), job_path)
             return ("job", str(job_id))
+        if job_path:
+            return ("job_path", job_path)
 
         if fl_ctx:
             engine = fl_ctx.get_engine()
@@ -261,6 +266,25 @@ class ComponentPathAuthorizer(Widget):
         if fl_ctx:
             return ("context", id(fl_ctx))
         return ("authorizer", id(self))
+
+    @staticmethod
+    def _get_job_path(fl_ctx: Optional[FLContext] = None, workspace=None):
+        if fl_ctx:
+            app_root = fl_ctx.get_prop(FLContextKey.APP_ROOT)
+            if isinstance(app_root, (str, os.PathLike)) and app_root:
+                return ("app_root", os.path.abspath(os.fspath(app_root)))
+
+            workspace_root = fl_ctx.get_prop(FLContextKey.WORKSPACE_ROOT)
+            if isinstance(workspace_root, (str, os.PathLike)) and workspace_root:
+                return ("workspace_root", os.path.abspath(os.fspath(workspace_root)))
+
+            if workspace is None:
+                workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+        if workspace and hasattr(workspace, "get_root_dir"):
+            workspace_root = workspace.get_root_dir()
+            if isinstance(workspace_root, (str, os.PathLike)) and workspace_root:
+                return ("workspace_root", os.path.abspath(os.fspath(workspace_root)))
+        return None
 
     @staticmethod
     def _get_job_id(fl_ctx: Optional[FLContext]):
