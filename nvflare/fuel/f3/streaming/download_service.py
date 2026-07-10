@@ -704,6 +704,10 @@ class _Transaction:
         self._ops_cond = threading.Condition(threading.Lock())
         self._active_ops = 0
         self._ops_closed = False
+        # set in transaction_done's finally. A _leaked_ops marker is releasable only
+        # when this is True AND no operations are in flight: "no ops" alone does not
+        # mean quiet -- settlement callbacks can still be emitting.
+        self._settlement_complete = False
         # receivers that have issued at least one pull on ANY ref (monotonic; the
         # transaction-level PAYLOAD_ACQUIRED fact the acquire budget and the facade read),
         # and each receiver's last activity anywhere on the transaction (what the idle
@@ -898,6 +902,7 @@ class _Transaction:
             # waiters pending
             if on_outcome and outcome is not None:
                 _invoke_cb_safely(self.logger, f"outcome recording for tx {self.tid}", on_outcome, outcome)
+            self._settlement_complete = True
 
         return outcome
 
@@ -1090,10 +1095,10 @@ class DownloadService:
             if leaked is not None:
                 with leaked._ops_cond:
                     still_in_flight = leaked._active_ops > 0
-                if still_in_flight:
+                if still_in_flight or not leaked._settlement_complete:
                     raise ValueError(
-                        f"transaction id {tx.tid} still has in-flight operations from a previous "
-                        f"attempt (its settlement drain timed out): use a new id"
+                        f"transaction id {tx.tid} from a previous attempt has not fully terminated "
+                        f"(settlement still running or operations still in flight): use a new id"
                     )
                 cls._leaked_ops.pop(tx.tid, None)
             with cls._outcome_lock:
@@ -1196,7 +1201,7 @@ class DownloadService:
         with tx._ops_cond:
             leaked = tx._active_ops > 0
         with cls._tx_lock:
-            if leaked:
+            if leaked or not tx._settlement_complete:
                 cls._leaked_ops[tx.tid] = tx
             elif cls._leaked_ops.get(tx.tid) is tx:
                 cls._leaked_ops.pop(tx.tid, None)
@@ -1204,7 +1209,7 @@ class DownloadService:
     @classmethod
     def _reap_leaked_ops(cls):
         with cls._tx_lock:
-            for tid in [t for t, tx in cls._leaked_ops.items() if tx._active_ops <= 0]:
+            for tid in [t for t, tx in cls._leaked_ops.items() if tx._settlement_complete and tx._active_ops <= 0]:
                 cls._leaked_ops.pop(tid, None)
 
     @classmethod

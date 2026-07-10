@@ -437,7 +437,7 @@ class TestServiceOutcomeTable:
             service._tx_outcomes["TX-LEAK"] = dataclasses.replace(
                 recorded, timestamp=recorded.timestamp - service.TX_OUTCOME_TTL - 1
             )
-        with pytest.raises(ValueError, match="in-flight operations from a previous attempt"):
+        with pytest.raises(ValueError, match="has not fully terminated"):
             service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-LEAK")
 
         # the leaked operation exits: the id becomes usable
@@ -533,7 +533,7 @@ class TestServiceOutcomeTable:
             assert cb_entered.wait(5.0)  # drain timed out; deferred settlement mid-window
 
             # the leaked operation could still emit: its id must NOT look free
-            with pytest.raises(ValueError, match="in-flight operations"):
+            with pytest.raises(ValueError, match="has not fully terminated"):
                 service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-SHUTLEAK")
         finally:
             cb_release.set()
@@ -542,12 +542,50 @@ class TestServiceOutcomeTable:
         assert not shutter.is_alive()
 
         # still excluded after shutdown while the operation is in flight
-        with pytest.raises(ValueError, match="in-flight operations"):
+        with pytest.raises(ValueError, match="has not fully terminated"):
             service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-SHUTLEAK")
 
         # the operation exits: the id frees
         tx.end_op()
         assert service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-SHUTLEAK") == "TX-SHUTLEAK"
+
+    def test_shutdown_window_rejects_id_during_clean_settlement(self):
+        """P1 pin: the shutdown pre-registration used to be releasable whenever
+        _active_ops == 0 -- but settlement callbacks are not operations, so a same-id
+        constructor could pop the marker MID-transaction_done and register while the
+        old outcome_cb was still about to fire under the id. The marker now needs
+        settlement_complete AND zero operations to release."""
+        from unittest.mock import Mock
+
+        service = make_isolated_download_service()
+        service._tx_monitor = Mock()
+        cell = Mock()
+        cb_entered = threading.Event()
+        cb_release = threading.Event()
+
+        def gated_done_cb(tid, status, base_objs, **kw):
+            cb_entered.set()
+            cb_release.wait(10.0)
+
+        service.new_transaction(
+            cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-CLEANSET", transaction_done_cb=gated_done_cb
+        )
+        # NOTE: no in-flight operation -- the clean-settlement case the ops-only
+        # release condition missed
+        shutter = threading.Thread(target=service.shutdown)
+        try:
+            shutter.start()
+            assert cb_entered.wait(5.0)  # settlement mid-callbacks, _active_ops == 0
+
+            with pytest.raises(ValueError, match="has not fully terminated"):
+                service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-CLEANSET")
+        finally:
+            cb_release.set()
+            shutter.join(5.0)
+        assert not shutter.is_alive()
+
+        # settlement complete, no operations: the id frees
+        assert service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-CLEANSET") == "TX-CLEANSET"
 
     def test_waiter_during_shutdown_settlement_window_resolves_immediately(self):
         """shutdown() clears ownership atomically with the table teardown, so a
