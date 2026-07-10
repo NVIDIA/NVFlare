@@ -104,10 +104,6 @@ class ComponentPathAuthorizer(Widget):
 
         self.logger.warning(message)
 
-    def _get_allow_list(self, fl_ctx: Optional[FLContext] = None, workspace=None):
-        allow_list, _ = self._get_policy(fl_ctx=fl_ctx, workspace=workspace)
-        return allow_list
-
     def _get_policy(self, fl_ctx: Optional[FLContext] = None, workspace=None):
         resources_file = self._get_resources_file_path(fl_ctx=fl_ctx, workspace=workspace)
         if resources_file:
@@ -116,13 +112,10 @@ class ComponentPathAuthorizer(Widget):
         resources = ConfigService.get_section(SystemConfigs.RESOURCES_CONF)
         return self._get_policy_from_resources(resources)
 
-    def _get_allow_list_from_file(self, resources_file):
-        allow_list, _ = self._get_policy_from_file(resources_file)
-        return allow_list
-
     def _get_policy_from_file(self, resources_file):
         cache_key = os.path.abspath(resources_file)
 
+        # cache entries are (file_signature, allow_list, enforcement_mode)
         with self._allow_list_cache_lock:
             stat_result = os.stat(cache_key)
             cache_signature = self._make_file_signature(stat_result)
@@ -142,11 +135,6 @@ class ComponentPathAuthorizer(Widget):
     @staticmethod
     def _make_file_signature(stat_result):
         return (stat_result.st_mtime_ns, stat_result.st_size, stat_result.st_ino, stat_result.st_dev)
-
-    @classmethod
-    def _get_allow_list_from_resources(cls, resources):
-        allow_list, _ = cls._get_policy_from_resources(resources)
-        return allow_list
 
     @classmethod
     def _get_policy_from_resources(cls, resources):

@@ -161,7 +161,8 @@ def test_workspace_class_allow_list_file_is_read_while_cache_lock_held(tmp_path,
 
     monkeypatch.setattr("nvflare.app_common.widgets.component_path_authorizer.json.load", record_json_load)
 
-    assert authorizer._get_allow_list_from_file(str(resources_file)) == ["nvflare.app_common.widgets."]
+    allow_list, _ = authorizer._get_policy_from_file(str(resources_file))
+    assert allow_list == ["nvflare.app_common.widgets."]
     assert load_lock_states == [True]
 
 
