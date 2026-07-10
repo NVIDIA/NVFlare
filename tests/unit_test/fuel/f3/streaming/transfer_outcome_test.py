@@ -614,7 +614,7 @@ class TestServiceOutcomeTable:
         # TX-COMPUTE's own termination marker is released (same-id re-registration
         # stays blocked by the retained receipt, which is intentional)
         with service._tx_lock:
-            assert "TX-COMPUTE" not in service._leaked_ops
+            assert "TX-COMPUTE" not in service._terminating_txs
 
     @pytest.mark.parametrize(
         "terminal_path,expected_done_status",
@@ -666,7 +666,7 @@ class TestServiceOutcomeTable:
         with service._outcome_lock:
             assert tx_id not in service._outcome_owners
         with service._tx_lock:
-            assert tx_id not in service._leaked_ops
+            assert tx_id not in service._terminating_txs
 
     def test_computation_failure_with_drain_leak_keeps_id_excluded_until_operation_exits(self):
         """The fail-closed settlement and drain-leak protections must compose: the
@@ -699,7 +699,7 @@ class TestServiceOutcomeTable:
         outcome = waiter.wait(timeout=5.0)
         assert outcome is not None and outcome.reason == TransferOutcomeReason.COMPUTATION_FAILED
         with service._tx_lock:
-            assert service._leaked_ops.get(tx_id) is tx
+            assert service._terminating_txs.get(tx_id) is tx
 
         # Receipt expiry alone is insufficient while an old operation can still emit.
         with service._outcome_lock:
@@ -744,7 +744,7 @@ class TestServiceOutcomeTable:
         with service._outcome_lock:
             assert tx_id not in service._outcome_owners
         with service._tx_lock:
-            assert tx_id not in service._leaked_ops
+            assert tx_id not in service._terminating_txs
 
     def test_receipt_ttl_starts_at_recording_not_at_verdict(self):
         """P1 pin: the outcome timestamp is captured before the settlement callbacks
@@ -810,7 +810,7 @@ class TestServiceOutcomeTable:
         with pytest.raises(ValueError, match="has not fully terminated"):
             service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-AGEDLEAK")
         with service._tx_lock:
-            assert service._leaked_ops.get("TX-AGEDLEAK") is tx
+            assert service._terminating_txs.get("TX-AGEDLEAK") is tx
 
         tx.end_op()
         assert service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-AGEDLEAK") == "TX-AGEDLEAK"
@@ -839,7 +839,7 @@ class TestServiceOutcomeTable:
             deleter.start()
             assert cb_entered.wait(5.0)
             with service._tx_lock:
-                assert "TX-UNLINK" in service._leaked_ops, "marker must exist mid-settlement on the delete path"
+                assert "TX-UNLINK" in service._terminating_txs, "marker must exist mid-settlement on the delete path"
             with pytest.raises(ValueError, match="has not fully terminated"):
                 service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-UNLINK")
         finally:

@@ -219,7 +219,7 @@ RECEIVER_IDLE_TIMEOUT_CONFIG_VAR = "streaming_receiver_idle_timeout"
 
 # How long settlement waits for in-flight operations to drain. Only a hung user
 # callback can exhaust it; settlement then proceeds with a warning, and the id
-# stays excluded until the leaked operation exits (see _leaked_ops).
+# stays excluded until the leaked operation exits (see _terminating_txs).
 OP_DRAIN_TIMEOUT = 60.0
 
 
@@ -706,7 +706,7 @@ class _Transaction:
         self._ops_cond = threading.Condition(threading.Lock())
         self._active_ops = 0
         self._ops_closed = False
-        # set in transaction_done's finally. A _leaked_ops marker is releasable only
+        # set in transaction_done's finally. A _terminating_txs marker is releasable only
         # when this is True AND no operations are in flight: "no ops" alone does not
         # mean quiet -- settlement callbacks can still be emitting.
         self._settlement_complete = False
@@ -1063,9 +1063,9 @@ class DownloadService:
     # operations remain -- the id stays excluded from registration through the whole
     # termination window and any drain-leaked tail, even past receipt expiry (a
     # leaked emission must never land under a recycled id). Released by
-    # _update_leaked_ops, the registration check, or the monitor reap.
+    # _sync_termination_marker, the registration check, or the monitor reap.
     # Guarded by _tx_lock.
-    _leaked_ops = {}
+    _terminating_txs = {}
     _outcome_lock = threading.Lock()
     TX_OUTCOME_TTL = 1800.0
     _logger = None
@@ -1130,11 +1130,11 @@ class DownloadService:
         # caller's application-level transfer id, which never enters this service),
         # so nothing a dying attempt emits can be confused with a live successor.
         # A duplicate id is rejected while live, settling, receipted
-        # (TX_OUTCOME_TTL), or leaked (see _leaked_ops). Registration is one atomic
+        # (TX_OUTCOME_TTL), or leaked (see _terminating_txs). Registration is one atomic
         # step -- ownership and table entry together, _tx_lock nesting _outcome_lock
         # (no path nests them in the reverse order).
         with cls._tx_lock:
-            leaked = cls._leaked_ops.get(tx.tid)
+            leaked = cls._terminating_txs.get(tx.tid)
             if leaked is not None:
                 with leaked._ops_cond:
                     still_in_flight = leaked._active_ops > 0
@@ -1143,7 +1143,7 @@ class DownloadService:
                         f"transaction id {tx.tid} from a previous attempt has not fully terminated "
                         f"(settlement still running or operations still in flight): use a new id"
                     )
-                cls._leaked_ops.pop(tx.tid, None)
+                cls._terminating_txs.pop(tx.tid, None)
             with cls._outcome_lock:
                 # expire an unswept receipt inline: the exclusion window is exactly
                 # TX_OUTCOME_TTL, not TTL plus a sweep cycle
@@ -1192,7 +1192,7 @@ class DownloadService:
 
         if tx:
             tx.transaction_done(TransactionDoneStatus.DELETED, on_outcome=functools.partial(cls._record_outcome, tx=tx))
-            cls._update_leaked_ops(tx)
+            cls._sync_termination_marker(tx)
 
     @classmethod
     def shutdown(cls):
@@ -1228,10 +1228,10 @@ class DownloadService:
 
         for tx in tx_list:
             tx.transaction_done(TransactionDoneStatus.DELETED)
-            cls._update_leaked_ops(tx)
+            cls._sync_termination_marker(tx)
 
     @classmethod
-    def _update_leaked_ops(cls, tx: _Transaction):
+    def _sync_termination_marker(cls, tx: _Transaction):
         """Called by every terminator after settlement: release the termination marker
         (installed at unlink) once settlement completed and no operations remain, or
         sustain it while a drain-leaked operation is still in flight."""
@@ -1239,21 +1239,21 @@ class DownloadService:
             leaked = tx._active_ops > 0
         with cls._tx_lock:
             if leaked or not tx._settlement_complete:
-                cls._leaked_ops[tx.tid] = tx
-            elif cls._leaked_ops.get(tx.tid) is tx:
-                cls._leaked_ops.pop(tx.tid, None)
+                cls._terminating_txs[tx.tid] = tx
+            elif cls._terminating_txs.get(tx.tid) is tx:
+                cls._terminating_txs.pop(tx.tid, None)
 
     @classmethod
-    def _reap_leaked_ops(cls):
+    def _reap_termination_markers(cls):
         with cls._tx_lock:
             released = []
-            for tid, tx in cls._leaked_ops.items():
+            for tid, tx in cls._terminating_txs.items():
                 with tx._ops_cond:  # _tx_lock -> _ops_cond is the established order
                     done = tx._settlement_complete and tx._active_ops <= 0
                 if done:
                     released.append(tid)
             for tid in released:
-                cls._leaked_ops.pop(tid, None)
+                cls._terminating_txs.pop(tid, None)
 
     @classmethod
     def _delete_tx(cls, tx: _Transaction, tombstone_finished_refs: bool = False):
@@ -1261,9 +1261,9 @@ class DownloadService:
         # install the termination marker at unlink, for EVERY terminator: it covers
         # the whole settlement window and the leaked-operation tail in one mechanism,
         # releasable only when settlement completed AND no operations are in flight
-        # (_update_leaked_ops / the duplicate check / the monitor reap). Ownership and
+        # (_sync_termination_marker / the duplicate check / the monitor reap). Ownership and
         # receipt exclusions still exist but no longer carry the window alone.
-        cls._leaked_ops[tx.tid] = tx
+        cls._terminating_txs[tx.tid] = tx
 
         # remove all refs
         now = time.time() if tombstone_finished_refs else None
@@ -1574,19 +1574,19 @@ class DownloadService:
                 cls._expire_finished_refs(now)
 
             cls._expire_outcomes(now)
-            cls._reap_leaked_ops()
+            cls._reap_termination_markers()
 
             for tx in expired_tx:
                 tx.transaction_done(
                     TransactionDoneStatus.TIMEOUT, on_outcome=functools.partial(cls._record_outcome, tx=tx)
                 )
-                cls._update_leaked_ops(tx)
+                cls._sync_termination_marker(tx)
 
             for tx in finished_tx:
                 tx.transaction_done(
                     TransactionDoneStatus.FINISHED, on_outcome=functools.partial(cls._record_outcome, tx=tx)
                 )
-                cls._update_leaked_ops(tx)
+                cls._sync_termination_marker(tx)
 
             time.sleep(5.0)
 
