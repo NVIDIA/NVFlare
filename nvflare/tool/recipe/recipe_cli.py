@@ -51,6 +51,17 @@ _DOCUMENTED_RECIPE_SPECS = {
         "aggregation": "weighted_average",
         "state_exchange": "full_model",
     },
+    "fedce-pt": {
+        "module": "nvflare.app_opt.pt.recipes.fedce",
+        "class": "FedCERecipe",
+        "description": "PyTorch federated training via client contribution estimation (FedCE).",
+        "framework": "pytorch",
+        "algorithm": "fedce",
+        "aggregation": "contribution_weighted_average",
+        "state_exchange": "weight_diff",
+        "heterogeneity_support": ["non_iid", "contribution_fairness"],
+        "notes": ["Client scripts must return fedce_minus_val metadata; FedCE is not a passive FedAvg flag."],
+    },
     "fedavg-tf": {
         "module": "nvflare.app_opt.tf.recipes.fedavg",
         "class": "FedAvgRecipe",

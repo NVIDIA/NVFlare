@@ -480,8 +480,9 @@ def test_recipe_catalog_includes_all_documented_recipe_variants():
     catalog = _load_catalog()
     names = {entry["name"] for entry in catalog}
 
-    assert len(_DOCUMENTED_RECIPE_SPECS) == 21
+    assert len(_DOCUMENTED_RECIPE_SPECS) == 22
     assert set(_DOCUMENTED_RECIPE_SPECS).issubset(names)
+    assert "fedce-pt" in names
 
 
 def test_recipe_list_filters_documented_recipe_variants_without_optional_dependencies(monkeypatch, capsys):
