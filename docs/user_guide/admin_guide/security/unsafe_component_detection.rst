@@ -74,13 +74,13 @@ Use the Built-in Component Path Authorizer
 When BYOC is disabled, NVFLARE runs a built-in component path authorization check while parsing job
 configuration. Sites get this protection without installing an authorizer component in ``resources.json``. The built-in
 policy allows only class paths that match ``class_allow_list`` in the site's top-level ``resources.json`` or
-``resources.json.default``. There is no default allow list; if ``class_allow_list`` is not configured, the effective list
-is empty and non-BYOC component builds fail with an explicit setup error.
+``resources.json.default``. If ``class_allow_list`` is not configured, NVFLARE uses the curated built-in default shown
+below. An explicitly configured list replaces that default.
 
-Migration note for upgrades: startup kits created before this policy may not contain ``class_allow_list``. Before running
-non-BYOC jobs after upgrade, add a top-level ``class_allow_list`` to each site's ``resources.json`` or
-``resources.json.default``. Use the provisioned list below as the starting point for NVFLARE built-in components. Add
-site-local package prefixes only after reviewing the classes that should be loadable in non-BYOC jobs.
+Migration note for upgrades: startup kits created before this policy may not contain ``class_allow_list``. Such sites use
+the built-in default automatically. Add a top-level ``class_allow_list`` to each site's ``resources.json`` or
+``resources.json.default`` only when the site needs to replace the default, for example to authorize reviewed site-local
+classes for non-BYOC jobs.
 
 The check is applied to every component config built through the NVFLARE JSON configuration flow, including component configs
 nested at any depth inside another component's ``args``. It also checks component configs inside dictionaries and lists before
@@ -111,9 +111,8 @@ the allow-list check was bypassed. Use ``"warn"`` and ``"*"`` only as temporary 
 Provisioned ``resources.json.default`` Results
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 When provisioning generates startup kits, the server and client ``resources.json.default`` files include the following
-top-level ``class_allow_list``. This list is provisioned configuration, not a hard-coded fallback in
-``ComponentPathAuthorizer``. Operators can edit it in ``resources.json`` or ``resources.json.default`` to match the classes
-their non-BYOC jobs are allowed to load.
+top-level ``class_allow_list``. It is also the built-in fallback when the setting is omitted. Operators can replace it in
+``resources.json`` or ``resources.json.default`` to match the classes their non-BYOC jobs are allowed to load.
 
 .. code-block:: json
 

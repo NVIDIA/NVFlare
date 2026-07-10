@@ -23,12 +23,12 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeComponentError
+from nvflare.app_common.default_component_policy import DEFAULT_CLASS_ALLOW_LIST
 from nvflare.app_common.widgets.component_path_authorizer import (
     ALLOW_ALL,
     CLASS_ALLOW_LIST,
     CLASS_LIST_ENFORCEMENT_MODE,
-    ENFORCEMENT_MODE_ENFORCE,
-    ENFORCEMENT_MODE_WARN,
+    ClassListEnforcementMode,
     ComponentPathAuthorizer,
 )
 from nvflare.fuel.sec.audit import AuditService
@@ -70,6 +70,8 @@ def _set_class_allow_list(allow_list):
 
 
 def _set_class_policy(allow_list, enforcement_mode):
+    if isinstance(enforcement_mode, ClassListEnforcementMode):
+        enforcement_mode = enforcement_mode.value
     ConfigService.add_section(
         SystemConfigs.RESOURCES_CONF,
         {CLASS_ALLOW_LIST: allow_list, CLASS_LIST_ENFORCEMENT_MODE: enforcement_mode},
@@ -193,25 +195,30 @@ def test_allows_component_from_config_service_resources():
     authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
 
 
-def test_rejects_component_without_default_allow_list():
+def test_uses_default_allow_list_when_resources_are_not_initialized():
     authorizer = ComponentPathAuthorizer()
-    fl_ctx = _make_fl_ctx({"path": "nvflare.app_common.widgets.metric_relay.MetricRelay"})
+    fl_ctx = _make_fl_ctx({"path": DEFAULT_CLASS_ALLOW_LIST[0]})
 
-    with pytest.raises(UnsafeComponentError, match="class_allow_list.*not configured.*Non-BYOC"):
-        authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
+    authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
 
 
-def test_rejects_component_when_workspace_resources_missing_class_allow_list(tmp_path):
+def test_uses_default_allow_list_when_workspace_resources_omit_class_allow_list(tmp_path):
     resources_file = tmp_path / "resources.json"
     resources_file.write_text(json.dumps({"format_version": 2}))
     authorizer = ComponentPathAuthorizer()
     fl_ctx = _make_fl_ctx(
-        {"path": "nvflare.app_common.widgets.metric_relay.MetricRelay"},
+        {"path": DEFAULT_CLASS_ALLOW_LIST[0]},
         workspace=_FakeWorkspace(resources_file),
     )
 
-    with pytest.raises(UnsafeComponentError, match="class_allow_list.*not configured.*resources.json"):
-        authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
+    authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
+
+
+def test_default_enforcement_mode_rejects_component_missing_from_default_allow_list():
+    authorizer = ComponentPathAuthorizer()
+
+    with pytest.raises(UnsafeComponentError, match="custom.Component.*allow_list"):
+        authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, _make_fl_ctx({"path": "custom.Component"}))
 
 
 def test_rejects_component_missing_from_allow_list():
@@ -241,7 +248,7 @@ def test_wildcard_allows_any_component_and_deduplicates_when_auditor_returns_non
 
 
 def test_warn_mode_logs_and_allows_component_missing_from_allow_list(caplog):
-    _set_class_policy(["nvflare."], ENFORCEMENT_MODE_WARN)
+    _set_class_policy(["nvflare."], ClassListEnforcementMode.WARN)
     authorizer = ComponentPathAuthorizer()
     fl_ctx = _make_fl_ctx({"path": "subprocess.Popen"}, node_path="component.args.child")
 
@@ -250,11 +257,11 @@ def test_warn_mode_logs_and_allows_component_missing_from_allow_list(caplog):
 
     assert "subprocess.Popen" in caplog.text
     assert "component.args.child" in caplog.text
-    assert f"{CLASS_LIST_ENFORCEMENT_MODE} is '{ENFORCEMENT_MODE_WARN}'" in caplog.text
+    assert f"{CLASS_LIST_ENFORCEMENT_MODE} is '{ClassListEnforcementMode.WARN.value}'" in caplog.text
 
 
 def test_warn_mode_does_not_log_for_allowed_component(caplog):
-    _set_class_policy(["nvflare."], ENFORCEMENT_MODE_WARN)
+    _set_class_policy(["nvflare."], ClassListEnforcementMode.WARN)
     authorizer = ComponentPathAuthorizer()
 
     with caplog.at_level("WARNING"):
@@ -267,7 +274,7 @@ def test_warn_mode_does_not_log_for_allowed_component(caplog):
 
 
 def test_explicit_enforce_mode_rejects_component_missing_from_allow_list():
-    _set_class_policy(["nvflare."], ENFORCEMENT_MODE_ENFORCE)
+    _set_class_policy(["nvflare."], ClassListEnforcementMode.ENFORCE)
     authorizer = ComponentPathAuthorizer()
 
     with pytest.raises(UnsafeComponentError, match="subprocess.Popen.*allow_list"):
@@ -280,7 +287,7 @@ def test_warn_mode_from_workspace_resources_logs_and_allows(tmp_path, caplog):
         json.dumps(
             {
                 CLASS_ALLOW_LIST: ["nvflare."],
-                CLASS_LIST_ENFORCEMENT_MODE: ENFORCEMENT_MODE_WARN,
+                CLASS_LIST_ENFORCEMENT_MODE: ClassListEnforcementMode.WARN.value,
             }
         )
     )
@@ -291,7 +298,22 @@ def test_warn_mode_from_workspace_resources_logs_and_allows(tmp_path, caplog):
         authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
 
     assert "custom.Component" in caplog.text
-    assert ENFORCEMENT_MODE_WARN in caplog.text
+    assert ClassListEnforcementMode.WARN.value in caplog.text
+
+
+def test_warn_mode_uses_default_allow_list_when_class_allow_list_is_omitted(tmp_path, caplog):
+    resources_file = tmp_path / "resources.json"
+    resources_file.write_text(
+        json.dumps({"format_version": 2, CLASS_LIST_ENFORCEMENT_MODE: ClassListEnforcementMode.WARN.value})
+    )
+    authorizer = ComponentPathAuthorizer()
+    fl_ctx = _make_fl_ctx({"path": "custom.Component"}, workspace=_FakeWorkspace(resources_file))
+
+    with caplog.at_level("WARNING"):
+        authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
+
+    assert "custom.Component" in caplog.text
+    assert ClassListEnforcementMode.WARN.value in caplog.text
 
 
 def test_skips_allow_list_check_for_byoc_job():

@@ -15,6 +15,7 @@
 import json
 import os
 import threading
+from enum import Enum
 from typing import Optional
 
 from nvflare.apis.app_validation import AppValidationKey
@@ -22,18 +23,21 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeComponentError
+from nvflare.app_common.default_component_policy import DEFAULT_CLASS_ALLOW_LIST
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.widgets.widget import Widget
 
 CLASS_ALLOW_LIST = "class_allow_list"
 CLASS_LIST_ENFORCEMENT_MODE = "class_list_enforcement_mode"
-ENFORCEMENT_MODE_ENFORCE = "enforce"
-ENFORCEMENT_MODE_WARN = "warn"
 ALLOW_ALL = "*"
 
-_VALID_ENFORCEMENT_MODES = (ENFORCEMENT_MODE_ENFORCE, ENFORCEMENT_MODE_WARN)
 _ALLOW_ALL_AUDIT_ACTION = "component_authorization.class_allow_list_disabled"
+
+
+class ClassListEnforcementMode(str, Enum):
+    ENFORCE = "enforce"
+    WARN = "warn"
 
 
 class ComponentPathAuthorizer(Widget):
@@ -74,9 +78,10 @@ class ComponentPathAuthorizer(Widget):
         if not any(self._path_matches_prefix(component_path, prefix) for prefix in allow_list):
             node_path = node.path() if node else ""
             message = f"Component '{component_path}' at config path '{node_path}' is not in allow_list"
-            if enforcement_mode == ENFORCEMENT_MODE_WARN:
+            if enforcement_mode == ClassListEnforcementMode.WARN:
                 self.logger.warning(
-                    f"{message}; allowing it because {CLASS_LIST_ENFORCEMENT_MODE} is '{ENFORCEMENT_MODE_WARN}'"
+                    f"{message}; allowing it because {CLASS_LIST_ENFORCEMENT_MODE} is "
+                    f"'{ClassListEnforcementMode.WARN.value}'"
                 )
                 return
             raise UnsafeComponentError(message)
@@ -138,23 +143,24 @@ class ComponentPathAuthorizer(Widget):
 
     @classmethod
     def _get_policy_from_resources(cls, resources):
-        if not isinstance(resources, dict) or CLASS_ALLOW_LIST not in resources:
-            raise UnsafeComponentError(
-                f"{CLASS_ALLOW_LIST} is not configured in resources.json or resources.json.default. "
-                f"Non-BYOC jobs require a top-level {CLASS_ALLOW_LIST}; add allowed class path prefixes "
-                'such as "nvflare." to site resources, or enable BYOC for jobs that load custom code.'
-            )
+        if resources is None:
+            resources = {}
+        elif not isinstance(resources, dict):
+            raise UnsafeComponentError(f"resources must be dict but got {type(resources)}")
 
-        allow_list = resources.get(CLASS_ALLOW_LIST)
+        allow_list = resources.get(CLASS_ALLOW_LIST, list(DEFAULT_CLASS_ALLOW_LIST))
         if not isinstance(allow_list, list):
             raise UnsafeComponentError(f"{CLASS_ALLOW_LIST} must be list but got {type(allow_list)}")
 
-        enforcement_mode = resources.get(CLASS_LIST_ENFORCEMENT_MODE, ENFORCEMENT_MODE_ENFORCE)
+        enforcement_mode = resources.get(CLASS_LIST_ENFORCEMENT_MODE, ClassListEnforcementMode.ENFORCE.value)
         if not isinstance(enforcement_mode, str):
             raise UnsafeComponentError(f"{CLASS_LIST_ENFORCEMENT_MODE} must be str but got {type(enforcement_mode)}")
-        if enforcement_mode not in _VALID_ENFORCEMENT_MODES:
+        try:
+            enforcement_mode = ClassListEnforcementMode(enforcement_mode)
+        except ValueError:
+            valid_modes = tuple(mode.value for mode in ClassListEnforcementMode)
             raise UnsafeComponentError(
-                f"{CLASS_LIST_ENFORCEMENT_MODE} must be one of {_VALID_ENFORCEMENT_MODES} but got '{enforcement_mode}'"
+                f"{CLASS_LIST_ENFORCEMENT_MODE} must be one of {valid_modes} but got '{enforcement_mode}'"
             )
         try:
             return cls._normalize_allow_list(allow_list), enforcement_mode

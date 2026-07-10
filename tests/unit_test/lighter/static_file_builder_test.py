@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 
+from nvflare.app_common.default_component_policy import DEFAULT_CLASS_ALLOW_LIST
 from nvflare.lighter.constants import CtxKey
 from nvflare.lighter.entity import Participant, Project
 from nvflare.lighter.impl.static_file import StaticFileBuilder
@@ -275,6 +276,7 @@ class TestStaticFileBuilder:
             "nvflare.app_opt.xgboost.tree_based.model_persistor.XGBModelPersistor",
             "nvflare.app_opt.xgboost.tree_based.shareable_generator.XGBModelShareableGenerator",
         ]
+        assert expected_paths == list(DEFAULT_CLASS_ALLOW_LIST)
         for resource_key in ("local_client_resources", "local_server_resources"):
             resource_template = template[resource_key]
             assert _extract_class_allow_list(resource_template) == expected_paths
