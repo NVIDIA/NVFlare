@@ -404,9 +404,27 @@ class TestJobLogs:
             cmd_job_logs(_make_args(max_bytes=3))
 
         data = json.loads(capsys.readouterr().out)["data"]
-        assert data["logs"] == {"server": "abc"}
+        assert data["logs"] == {"server": "def"}
         assert data["logs_truncated"] is True
         assert data["sites"]["server"]["bytes"] == 3
+
+    def test_logs_tail_then_max_bytes_keeps_true_final_error_line(self, capsys):
+        from nvflare.tool.job.job_cli import cmd_job_logs
+
+        mock_sess = MagicMock()
+        mock_sess.get_job_logs.return_value = {
+            "logs": {
+                "server": "outside tail\ntraceback line one\ntraceback line two\nFINAL ERROR\n",
+            }
+        }
+
+        with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
+            cmd_job_logs(_make_args(tail=3, max_bytes=len("line two\nFINAL ERROR\n")))
+
+        data = json.loads(capsys.readouterr().out)["data"]
+        assert data["logs"] == {"server": "line two\nFINAL ERROR\n"}
+        assert data["logs"]["server"].endswith("FINAL ERROR\n")
+        assert data["logs_truncated"] is True
 
     def test_logs_invalid_since_exits_4(self, capsys):
         from nvflare.tool.job.job_cli import cmd_job_logs

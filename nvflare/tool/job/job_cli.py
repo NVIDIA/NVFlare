@@ -2055,7 +2055,9 @@ def _truncate_log_bytes(text: str, max_bytes: int):
     encoded = text.encode("utf-8")
     if len(encoded) <= max_bytes:
         return text, False
-    return encoded[:max_bytes].decode("utf-8", errors="ignore"), True
+    if max_bytes == 0:
+        return "", True
+    return encoded[-max_bytes:].decode("utf-8", errors="ignore"), True
 
 
 def _line_count(text: str) -> int:
