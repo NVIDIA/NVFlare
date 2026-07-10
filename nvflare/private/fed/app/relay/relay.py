@@ -221,6 +221,7 @@ def main(args):
             cb=_validate_auth_headers,
             token_verifier=token_verifier,
             logger=logger,
+            local_cell_fqcn=my_fqcn,
         )
 
     logger.info(f"Successfully authenticated to {server_identity}: {token=} {ssid=}")
@@ -232,13 +233,16 @@ def main(args):
     logger.info(f"Relay {my_fqcn} stopped.")
 
 
-def _validate_auth_headers(message: CellMessage, token_verifier: TokenVerifier, logger):
-    """Validate auth headers from messages that go through the server.
+def _validate_auth_headers(message: CellMessage, token_verifier: TokenVerifier, logger, local_cell_fqcn=None):
+    """Validate auth headers from messages that go through the relay.
     Args:
         message: the message to validate
+        token_verifier: verifier for the token and signature
+        logger: logger
+        local_cell_fqcn: FQCN of this relay's cell, used to scope the cellnet bye auth bypass
     Returns:
     """
-    return validate_auth_headers(message, token_verifier, logger)
+    return validate_auth_headers(message, token_verifier, logger, local_cell_fqcn=local_cell_fqcn)
 
 
 if __name__ == "__main__":
