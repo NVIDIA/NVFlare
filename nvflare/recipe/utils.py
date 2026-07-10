@@ -368,7 +368,6 @@ def add_experiment_tracking(
             raise TypeError(f"MLflow kw_args must be a dict, got {type(kw_args).__name__}")
         recipe_name = getattr(recipe, "name", None) or getattr(recipe.job, "name", None) or "nvflare"
         kw_args.setdefault("experiment_name", f"{recipe_name}-experiment")
-        kw_args.setdefault("run_name", f"{recipe_name}-Client")
 
     if not server_side and not client_side:
         raise ValueError("At least one of server_side or client_side must be True")
@@ -392,7 +391,10 @@ def add_experiment_tracking(
 
     # Add server-side tracking
     if server_side:
-        receiver = receiver_class(**tracking_config)
+        server_config = copy.deepcopy(tracking_config)
+        if tracking_type == "mlflow":
+            server_config["kw_args"].setdefault("run_name", f"{recipe_name}-Server")
+        receiver = receiver_class(**server_config)
         recipe.job.to_server(receiver, "receiver")
 
     # Add client-side tracking
@@ -400,6 +402,8 @@ def add_experiment_tracking(
         # For client-side tracking, need to configure local events
         # Deep copy to avoid shared mutable state (tracking_config may contain nested dicts)
         client_config = copy.deepcopy(tracking_config)
+        if tracking_type == "mlflow":
+            client_config["kw_args"].setdefault("run_name", f"{recipe_name}-Client")
         # Override events to track local analytics (not federated)
         if "events" not in client_config:
             client_config["events"] = [ANALYTIC_EVENT_TYPE]
@@ -425,7 +429,8 @@ def add_final_global_evaluation(
         recipe: PyTorch recipe to augment with final global model evaluation.
         participating_clients: Optional client names to run validation. If not
             provided, all clients connected when the controller starts are used.
-        validation_timeout: Timeout in seconds for validation tasks.
+        validation_timeout: Timeout in seconds for validation tasks. Defaults to
+            6000, matching ``CrossSiteModelEval``'s existing default.
 
     Raises:
         TypeError: If ``participating_clients`` is not a list of strings.

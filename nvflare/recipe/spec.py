@@ -192,6 +192,8 @@ class Recipe(ABC):
         """
         self.job = job
         self._helper_per_site_config = None
+        self._tensor_streaming_added = False
+        self._cse_added = False
 
     def process_env(self, env: ExecEnv):
         """Process environment-specific configuration.

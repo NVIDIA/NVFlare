@@ -191,7 +191,7 @@ class TestExperimentTrackingRecipes:
 
             runs = client.search_runs([experiment.experiment_id])
             assert len(runs) == 2
-            assert all(run.info.run_name.endswith("test_mlflow-Client") for run in runs)
+            assert all(run.info.run_name.endswith("test_mlflow-Server") for run in runs)
 
     def test_mlflow_client_tracking_defaults_integration(self, cifar10_data_root):
         """Test zero-config client-side MLflow tracking creates one local store per site."""

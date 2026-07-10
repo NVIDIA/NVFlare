@@ -601,12 +601,37 @@ class TestFinalGlobalEvaluation:
         job.comp_ids = comp_ids
         return SimpleNamespace(job=job, framework=framework or FrameworkType.PYTORCH)
 
-    def test_adds_locator_generator_and_final_eval_controller(self):
-        from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
+    @pytest.fixture
+    def recording_cross_site_eval(self, monkeypatch):
+        from nvflare.app_common.workflows import cross_site_model_eval
         from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
+
+        captured_kwargs = []
+
+        class RecordingCrossSiteModelEval(CrossSiteModelEval):
+            def __init__(self, *args, **kwargs):
+                captured_kwargs.append(dict(kwargs))
+                super().__init__(*args, **kwargs)
+
+        monkeypatch.setattr(cross_site_model_eval, "CrossSiteModelEval", RecordingCrossSiteModelEval)
+        return captured_kwargs, RecordingCrossSiteModelEval
+
+    def test_default_validation_timeout_matches_controller(self):
+        import inspect
+
+        from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
+        from nvflare.recipe import add_final_global_evaluation
+
+        helper_default = inspect.signature(add_final_global_evaluation).parameters["validation_timeout"].default
+        controller_default = inspect.signature(CrossSiteModelEval).parameters["validation_timeout"].default
+        assert helper_default == controller_default == 6000
+
+    def test_adds_locator_generator_and_final_eval_controller(self, recording_cross_site_eval):
+        from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
         from nvflare.app_opt.pt.file_model_locator import PTFileModelLocator
         from nvflare.recipe import add_final_global_evaluation
 
+        captured_kwargs, controller_type = recording_cross_site_eval
         recipe = self._make_recipe({"persistor_id": "persistor"})
         recipe.job.to_server.side_effect = ["final_model_locator", None, None]
 
@@ -617,27 +642,37 @@ class TestFinalGlobalEvaluation:
         assert calls[0].kwargs == {"id": "final_model_locator"}
         assert isinstance(calls[1].args[0], ValidationJsonGenerator)
         controller = calls[2].args[0]
-        assert isinstance(controller, CrossSiteModelEval)
-        assert controller._model_locator_id == "final_model_locator"
-        assert controller._submit_model_task_name == ""
-        assert controller._participating_clients == ["site-1"]
-        assert controller._validation_timeout == 42
+        assert isinstance(controller, controller_type)
+        assert captured_kwargs == [
+            {
+                "model_locator_id": "final_model_locator",
+                "submit_model_task_name": "",
+                "validation_timeout": 42,
+                "participating_clients": ["site-1"],
+            }
+        ]
         assert recipe.job.comp_ids["locator_id"] == "final_model_locator"
         assert recipe._cse_added is True
 
-    def test_reuses_existing_model_locator(self):
-        from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
+    def test_reuses_existing_model_locator(self, recording_cross_site_eval):
         from nvflare.recipe import add_final_global_evaluation
 
+        captured_kwargs, controller_type = recording_cross_site_eval
         recipe = self._make_recipe({"persistor_id": "persistor", "locator_id": "existing_locator"})
 
         add_final_global_evaluation(recipe)
 
         assert recipe.job.to_server.call_count == 2
         controller = recipe.job.to_server.call_args_list[-1].args[0]
-        assert isinstance(controller, CrossSiteModelEval)
-        assert controller._model_locator_id == "existing_locator"
-        assert controller._participating_clients is None
+        assert isinstance(controller, controller_type)
+        assert captured_kwargs == [
+            {
+                "model_locator_id": "existing_locator",
+                "submit_model_task_name": "",
+                "validation_timeout": 6000,
+                "participating_clients": None,
+            }
+        ]
 
     @pytest.mark.parametrize(
         "participating_clients, error_type",
@@ -744,7 +779,7 @@ class TestAddExperimentTrackingClients:
         receiver = recipe.job._deploy_map["server"].app_config.components["receiver"]
         assert receiver.kw_args == {
             "experiment_name": "named_job-experiment",
-            "run_name": "named_job-Client",
+            "run_name": "named_job-Server",
         }
 
     def test_mlflow_client_tracking_can_omit_config(self, dummy_mlflow):
@@ -774,9 +809,22 @@ class TestAddExperimentTrackingClients:
         receiver = recipe.job._deploy_map["server"].app_config.components["receiver"]
         assert receiver.kw_args == {
             "experiment_name": "custom-experiment",
-            "run_name": "named_job-Client",
+            "run_name": "named_job-Server",
         }
         assert config == {"kw_args": {"experiment_name": "custom-experiment"}}
+
+    def test_mlflow_both_sides_use_side_specific_default_run_names(self, dummy_mlflow):
+        from nvflare.apis.job_def import ALL_SITES
+        from nvflare.recipe.utils import add_experiment_tracking
+
+        recipe = self._make_recipe("both_sides")
+
+        add_experiment_tracking(recipe, "mlflow", client_side=True)
+
+        server_receiver = recipe.job._deploy_map["server"].app_config.components["receiver"]
+        client_receiver = recipe.job._deploy_map[ALL_SITES].app_config.components["client_receiver"]
+        assert server_receiver.kw_args["run_name"] == "both_sides-Server"
+        assert client_receiver.kw_args["run_name"] == "both_sides-Client"
 
     def test_client_side_tracking_specific_clients(self, dummy_tracking):
         from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
