@@ -19,6 +19,8 @@ from unittest.mock import patch
 import pytest
 from pydantic import ValidationError
 
+from nvflare.apis.dxo import DataKind
+
 
 @pytest.fixture
 def mock_file_system():
@@ -58,6 +60,18 @@ class TestSklearnFedAvgRecipe:
 
         assert recipe.name == "test_sklearn"
         assert recipe.job is not None
+
+    def test_weight_diff_is_allowed_for_clients_that_return_diffs(self, mock_file_system, base_recipe_params):
+        from nvflare.app_opt.sklearn.recipes.fedavg import SklearnFedAvgRecipe
+
+        recipe = SklearnFedAvgRecipe(
+            name="test_sklearn_weight_diff",
+            model_params={"n_classes": 2},
+            aggregator_data_kind=DataKind.WEIGHT_DIFF,
+            **base_recipe_params,
+        )
+
+        assert recipe.aggregator_data_kind == DataKind.WEIGHT_DIFF
 
     def test_model_path_parameter_accepted(self, mock_file_system, base_recipe_params):
         """Test that model_path argument is accepted."""

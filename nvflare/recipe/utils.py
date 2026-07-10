@@ -20,6 +20,7 @@ import warnings
 from typing import Any, Dict, List, Optional
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
+from nvflare.apis.dxo import DataKind
 from nvflare.apis.job_def import USER_SETTABLE_JOB_META_KEYS, JobMetaKey
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.job_config.api import FedJob
@@ -65,6 +66,88 @@ MODEL_LOCATOR_REGISTRY = {
 
 # User-settable keys whose values are dicts keyed by site name with dict values.
 _SITE_KEYED_META_KEYS = frozenset({JobMetaKey.RESOURCE_SPEC, JobMetaKey.JOB_LAUNCHER_SPEC})
+
+
+def validate_aggregator_data_kind(
+    *,
+    data_kind: Optional[DataKind],
+    recipe_name: str,
+    data_kind_arg: str = "aggregator_data_kind",
+    aggregator: Any = None,
+    require_data_kind: bool = False,
+    fixed_data_kind: bool = False,
+) -> None:
+    """Validate recipe-owned server aggregation data-kind settings.
+
+    ``fixed_data_kind`` is for recipes such as FedOpt that do not expose the update-kind
+    settings. Its error guidance tells users to replace or reconfigure their custom
+    aggregator instead of suggesting recipe arguments they cannot change.
+
+    This intentionally does not infer the client result kind from ``TransferType``.
+    ``FLModel.params_type`` is the authoritative description of a client result, and a
+    recipe cannot inspect an arbitrary training script at construction time.
+    """
+    declared_kind = getattr(aggregator, "expected_data_kind", None)
+    if declared_kind is None:
+        assembler = getattr(aggregator, "assembler", None)
+        get_expected_data_kind = getattr(assembler, "get_expected_data_kind", None)
+        if callable(get_expected_data_kind):
+            declared_kind = get_expected_data_kind()
+
+    if isinstance(declared_kind, dict):
+        if len(declared_kind) != 1:
+            raise ValueError(
+                f"{recipe_name} cannot validate aggregator {type(aggregator).__name__}: "
+                f"expected_data_kind declares {len(declared_kind)} entries, but the recipe expects a single "
+                "model-update DataKind. Configure the aggregator with one expected_data_kind entry."
+            )
+        declared_kind = next(iter(declared_kind.values()))
+
+    if declared_kind is not None:
+        declared_kind = DataKind(declared_kind)
+    if data_kind is not None:
+        data_kind = DataKind(data_kind)
+    else:
+        data_kind = declared_kind
+
+    if data_kind is None:
+        if require_data_kind:
+            raise ValueError(
+                f"{recipe_name} requires {data_kind_arg} to be DataKind.WEIGHTS or DataKind.WEIGHT_DIFF "
+                "when using its built-in aggregator."
+            )
+        return
+
+    if data_kind not in (DataKind.WEIGHTS, DataKind.WEIGHT_DIFF):
+        raise ValueError(
+            f"{recipe_name} does not support {data_kind_arg}=DataKind.{data_kind.name}; "
+            "use DataKind.WEIGHTS or DataKind.WEIGHT_DIFF."
+        )
+
+    if declared_kind not in (None, DataKind.WEIGHTS, DataKind.WEIGHT_DIFF):
+        raise ValueError(
+            f"{recipe_name} cannot use aggregator {type(aggregator).__name__}: it declares "
+            f"expected_data_kind=DataKind.{declared_kind.name}, but the recipe supports only "
+            "DataKind.WEIGHTS or DataKind.WEIGHT_DIFF. Configure the aggregator for a supported model-update kind."
+        )
+
+    if declared_kind is None or declared_kind == data_kind:
+        return
+
+    if fixed_data_kind:
+        raise ValueError(
+            f"{recipe_name} requires a custom aggregator configured with "
+            f"expected_data_kind=DataKind.{data_kind.name}, but {type(aggregator).__name__} declares "
+            f"expected_data_kind=DataKind.{declared_kind.name}. Configure the custom aggregator for "
+            f"DataKind.{data_kind.name}, or omit it to use the built-in aggregator."
+        )
+    raise ValueError(
+        f"{recipe_name} has incompatible server aggregation settings: "
+        f"{data_kind_arg}=DataKind.{data_kind.name}, but aggregator "
+        f"{type(aggregator).__name__} declares expected_data_kind=DataKind.{declared_kind.name}. "
+        f"Use an aggregator configured for DataKind.{data_kind.name}, or set "
+        f"{data_kind_arg}=DataKind.{declared_kind.name}."
+    )
 
 
 def merge_config_overrides(defaults: Dict[str, Any], overrides: Optional[Dict[str, Any]], name: str) -> Dict[str, Any]:
