@@ -221,14 +221,13 @@ def _shield_quoted_secret_ref_composites(command: str, marker_prefix: str):
     parts = []
     index = 0
 
-    while index < len(command):
-        quote = command[index]
-        if quote not in {"'", '"'}:
-            parts.append(quote)
-            index += 1
-            continue
+    def _is_quote_opener(position: int) -> bool:
+        if position == 0:
+            return True
+        return command[position - 1].isspace() or command[position - 1] in "=([{,:"
 
-        end = index + 1
+    def _find_quote(start: int, quote: str) -> int:
+        end = start
         while end < len(command):
             if command[end] == "\\" and end + 1 < len(command):
                 end += 2
@@ -236,17 +235,39 @@ def _shield_quoted_secret_ref_composites(command: str, marker_prefix: str):
                 break
             else:
                 end += 1
+        return end
+
+    while index < len(command):
+        quote = command[index]
+        if quote not in {"'", '"'}:
+            parts.append(quote)
+            index += 1
+            continue
+
+        end = _find_quote(index + 1, quote)
 
         if end < len(command) and marker_prefix in command[index + 1 : end]:
             marker = f"{quoted_prefix}{len(quoted_values)}__"
             quoted_values.append((marker, command[index + 1 : end]))
             parts.append(marker)
             index = end + 1
+        elif not _is_quote_opener(index):
+            # Apostrophes and stray quotes embedded in an unquoted token are literal under the
+            # runner's legacy whitespace split. Advancing one character lets a later real opener
+            # use the same delimiter. The secret-bearing-span case above deliberately comes first
+            # to retain support for shell-style concatenation such as ``prefix"Bearer ${secret:X}"``.
+            parts.append(quote)
+            index += 1
+        elif end < len(command):
+            # Keep matched non-secret-ref quoting byte-for-byte compatible with legacy splitting.
+            # Skipping the entire pair also prevents its closing delimiter from being mistaken for
+            # the opener of a later span.
+            parts.append(command[index : end + 1])
+            index = end + 1
         else:
-            # Keep non-secret-ref quoting byte-for-byte compatible with legacy splitting.
-            span_end = end + 1 if end < len(command) else len(command)
-            parts.append(command[index:span_end])
-            index = span_end
+            # Preserve an unmatched quote byte-for-byte, but continue from the next character.
+            parts.append(quote)
+            index += 1
 
     return "".join(parts), quoted_values
 

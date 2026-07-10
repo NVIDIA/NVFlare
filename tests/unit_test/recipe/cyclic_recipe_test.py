@@ -68,14 +68,16 @@ class TestBaseCyclicRecipe:
     def test_warns_on_secret_in_client_config_overrides(self, mock_file_system, base_recipe_params, simple_model):
         secret = "ghp_" + "Ab1" * 12
 
+        recipe = BaseCyclicRecipe(
+            name="secret_override",
+            model=PTModel(model=simple_model),
+            client_config_overrides={"command": secret},
+            framework=FrameworkType.PYTORCH,
+            **base_recipe_params,
+        )
+
         with pytest.warns(PotentialSecretWarning) as record:
-            BaseCyclicRecipe(
-                name="secret_override",
-                model=PTModel(model=simple_model),
-                client_config_overrides={"command": secret},
-                framework=FrameworkType.PYTORCH,
-                **base_recipe_params,
-            )
+            recipe._warn_potential_secrets_in_params()
 
         messages = [str(warning.message) for warning in record]
         assert any("client_config_overrides" in message for message in messages)

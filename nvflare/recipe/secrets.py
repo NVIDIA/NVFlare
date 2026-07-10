@@ -38,13 +38,19 @@ runtime boundaries:
 
 * command arguments consumed by NVFlare's task script runner or subprocess launcher (including
   recipe ``train_args``, ``task_args``, and ``eval_args`` that use those runners); these resolve
-  after argument tokenization, immediately before the script or process starts;
+  after argument tokenization, immediately before the script or process starts. The subprocess
+  launcher rejects references in command strings for directly invoked or leading-``env``-wrapped
+  ``sh``/``bash`` and PowerShell. This is a targeted safeguard, not a general code-interpreter
+  detector: never put a reference in any argument another program will parse as code, including
+  another shell, a shell hidden behind a different wrapper, or ``python -c``. Read those secrets
+  from the child environment or a mounted file instead;
 * values explicitly read from a runtime job JSON file with
   :func:`nvflare.utils.configs.get_job_config_value` or its
   :func:`nvflare.utils.configs.get_client_config_value` and
   :func:`nvflare.utils.configs.get_server_config_value` wrappers. A typical recipe adds a
   top-level value with ``add_client_config`` or ``add_server_config``; nested strings resolve
-  when that value is read.
+  when that value is read. Internal client-launcher timeout/count overrides are written into a
+  subprocess runtime config and therefore reject references instead of resolving them.
 
 Environment references are read from the executing process's environment; file references are
 read from that site's filesystem. Resolved values stay in runtime memory and are not written back
@@ -52,9 +58,10 @@ to generated configuration. Dictionary keys are not resolved. Arbitrary componen
 arguments, metadata, custom files, and other job artifacts do not resolve references. Read secrets
 inside user code for those cases. Mounted-file reference paths cannot contain whitespace or braces.
 
-Recipes automatically scan their parameters and emit :class:`PotentialSecretWarning` when a
-value looks like an actual secret. Detection is best-effort and does not make a supplied value
-safe. A valid reference in an explicitly unsupported parameter emits
+Recipes automatically scan their parameters before export or run and emit
+:class:`PotentialSecretWarning` when a value looks like an actual secret. Detection is
+best-effort and does not make a supplied value safe. A valid reference in an explicitly
+unsupported parameter emits
 :class:`UnsupportedSecretRefWarning`. See
 :func:`nvflare.fuel.utils.secret_utils.find_potential_secrets` for the heuristics.
 """

@@ -82,8 +82,10 @@ class TestFedEvalRecipe:
         params = dict(base_recipe_params)
         params["eval_args"] = "--password hunter22x"
 
+        recipe = FedEvalRecipe(name="secret_eval", model=model, **params)
+
         with pytest.warns(PotentialSecretWarning, match="eval_args"):
-            FedEvalRecipe(name="secret_eval", model=model, **params)
+            recipe._warn_potential_secrets_in_params()
 
     def test_external_command_secret_ref_is_supported(self, mock_file_system, base_recipe_params, simple_model):
         model, _ = simple_model

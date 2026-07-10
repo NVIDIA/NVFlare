@@ -243,7 +243,7 @@ class Recipe(ABC):
             :func:`nvflare.recipe.secrets.secret_file_ref` at a supported runtime boundary.
             See :mod:`nvflare.recipe.secrets` for the supported parameter locations.
 
-            Recipes scan their parameters with heuristics and emit
+            Before export or run, recipes scan their parameters with heuristics and emit
             :class:`nvflare.recipe.secrets.PotentialSecretWarning` when a value looks like an
             actual secret. The scan is best-effort: absence of a warning does not prove a
             parameter is safe to share.
@@ -254,14 +254,13 @@ class Recipe(ABC):
         self.job = job
         self._helper_per_site_config = None
         warn_on_potential_secrets(getattr(job, "name", None), context="recipe parameter 'name'")
-        self._warn_potential_secrets_in_params()
 
     def _warn_potential_secrets_in_params(self):
         """Warn if common recipe parameters look like they contain actual secret values.
 
-        Runs on conventional parameter attributes that concrete recipes retain before
-        calling ``Recipe.__init__``. Recipes that transform a parameter before calling
-        this constructor validate that original value explicitly.
+        Runs immediately before export or run on conventional parameter attributes that
+        concrete recipes retain. Recipes that transform a parameter before calling this
+        constructor validate that original value explicitly.
         """
         for attr in self._SECRET_PARAMETER_ATTRS:
             value = getattr(self, attr, None)

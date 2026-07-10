@@ -208,11 +208,12 @@ values. A secret's environment-variable name, a reference placeholder, or the
 path to a mounted secret file is configuration and can be supplied. The secret
 value itself must remain at the executing site.
 
-To catch mistakes, recipes scan their parameters with heuristics (well-known
-token formats, password-like flag and key names, high-entropy strings) and
-emit a ``nvflare.recipe.secrets.PotentialSecretWarning`` when a value looks
-like an actual secret. ``recipe.export()`` additionally scans the generated
-config files of the exported job. The scan is best-effort: it neither finds
+To catch mistakes, recipes scan their current parameters before export or run
+with heuristics (well-known token formats, password-like flag and key names,
+high-entropy strings) and emit a
+``nvflare.recipe.secrets.PotentialSecretWarning`` when a value looks like an
+actual secret. ``recipe.export()`` additionally scans the generated config
+files of the exported job. The scan is best-effort: it neither finds
 every possible credential nor makes a supplied value safe. Absence of a
 warning does not prove that a parameter is safe. Investigate each warning and
 keep any actual secret at the site, using a reference only at a supported
@@ -264,7 +265,13 @@ There are two supported ways to make a secret available at runtime:
     ordinary configuration variables first, tokenizes the command, and then
     resolves each reference immediately before the script or process starts.
     Resolving after tokenization keeps a secret containing spaces in one
-    argument.
+    argument. The subprocess launcher rejects references in command strings for
+    directly invoked or leading-``env``-wrapped ``sh``/``bash`` and PowerShell.
+    This is a targeted safeguard, not a general code-interpreter detector. Never
+    put a reference in any argument another program will parse as code, including
+    another shell, a shell hidden behind a different wrapper, or ``python -c``.
+    Pass the secret through the child environment or read it from a mounted file
+    inside the invoked command instead.
 
   * Values explicitly read from a runtime job JSON file with
     ``get_job_config_value``, ``get_client_config_value``, or
@@ -274,7 +281,10 @@ There are two supported ways to make a secret available at runtime:
     resolve recursively when the value is read; dictionary keys are not resolved.
     These raw-file helpers do not expand ordinary placeholders such as
     ``{SITE_NAME}``, so do not combine those placeholders in a value consumed
-    this way.
+    this way. Internal client-launcher timeout/count overrides are copied into a
+    subprocess runtime config and therefore reject secret references instead of
+    resolving them. Use references for values that site component code reads
+    directly through these getters.
 
   Arbitrary component constructor arguments, job metadata, packaged custom
   files, and other job artifacts keep references as placeholders and are not

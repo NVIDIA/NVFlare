@@ -52,19 +52,21 @@ def _no_secret_warnings(record):
 
 class TestRecipeSecretScanning:
     def test_train_args_with_token_warns_without_leaking(self, make_recipe):
+        recipe = make_recipe(train_args=f"--api_key {FAKE_GITHUB_TOKEN}")
         with pytest.warns(PotentialSecretWarning) as record:
-            make_recipe(train_args=f"--api_key {FAKE_GITHUB_TOKEN}")
+            recipe._warn_potential_secrets_in_params()
         messages = [str(w.message) for w in record]
         assert any("train_args" in m for m in messages)
         assert all(FAKE_GITHUB_TOKEN not in m for m in messages)
 
     def test_external_command_with_token_warns_without_leaking(self, make_recipe):
         password = "hunter22x"
+        recipe = make_recipe(
+            launch_external_process=True,
+            command=f"env API_PASSWORD={password} python3 -u",
+        )
         with pytest.warns(PotentialSecretWarning) as record:
-            make_recipe(
-                launch_external_process=True,
-                command=f"env API_PASSWORD={password} python3 -u",
-            )
+            recipe._warn_potential_secrets_in_params()
         messages = [str(w.message) for w in record]
         assert any("command" in message for message in messages)
         assert all(password not in message for message in messages)
@@ -72,26 +74,29 @@ class TestRecipeSecretScanning:
     def test_external_command_secret_ref_assignment_is_safe(self, make_recipe):
         with warnings.catch_warnings(record=True) as record:
             warnings.simplefilter("always")
-            make_recipe(
+            recipe = make_recipe(
                 launch_external_process=True,
                 command="env API_PASSWORD=${secret:API_PASSWORD} python3 -u",
             )
+            recipe._warn_potential_secrets_in_params()
         assert _no_secret_warnings(record)
 
     def test_clean_train_args_no_warning(self, make_recipe):
         with warnings.catch_warnings(record=True) as record:
             warnings.simplefilter("always")
-            make_recipe(train_args="--epochs 5 --lr 0.1 --data_path /data/site-1")
+            recipe = make_recipe(train_args="--epochs 5 --lr 0.1 --data_path /data/site-1")
+            recipe._warn_potential_secrets_in_params()
         assert _no_secret_warnings(record)
 
     def test_per_site_config_with_password_warns(self, make_recipe):
+        recipe = make_recipe(
+            per_site_config={
+                "site-1": {"train_args": "--password hunter22x"},
+                "site-2": {"train_args": "--epochs 5"},
+            }
+        )
         with pytest.warns(PotentialSecretWarning) as record:
-            make_recipe(
-                per_site_config={
-                    "site-1": {"train_args": "--password hunter22x"},
-                    "site-2": {"train_args": "--epochs 5"},
-                }
-            )
+            recipe._warn_potential_secrets_in_params()
         messages = [str(w.message) for w in record]
         assert any("per_site_config" in m for m in messages)
         assert all("hunter22x" not in m for m in messages)
@@ -134,9 +139,7 @@ class TestRecipeSecretScanning:
             recipe.export(str(tmp_path), **{params_name: params})
 
     def test_export_scans_generated_config_files(self, make_recipe, tmp_path):
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", PotentialSecretWarning)  # constructor warning is tested elsewhere
-            recipe = make_recipe(train_args=f"--api_key {FAKE_GITHUB_TOKEN}")
+        recipe = make_recipe(train_args=f"--api_key {FAKE_GITHUB_TOKEN}")
         with pytest.warns(PotentialSecretWarning) as record:
             recipe.export(str(tmp_path))
         messages = [str(w.message) for w in record]
@@ -153,6 +156,17 @@ class TestRecipeSecretScanning:
             run = recipe.run(env)
 
         assert run.get_job_id() == "job-id"
+
+    def test_warning_ignored_during_construction_is_emitted_on_run(self, make_recipe):
+        env = MagicMock()
+        env.deploy.return_value = "job-id"
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", PotentialSecretWarning)
+            recipe = make_recipe(train_args=f"--api-key {FAKE_GITHUB_TOKEN}")
+
+        with pytest.warns(PotentialSecretWarning, match="train_args"):
+            recipe.run(env)
 
 
 class TestSecretRefEndToEnd:

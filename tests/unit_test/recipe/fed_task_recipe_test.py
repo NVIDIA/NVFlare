@@ -39,38 +39,44 @@ class TestFedTaskRecipe:
     def test_warns_on_secret_in_task_args(self, temp_task_script):
         secret = "ghp_" + "Ab1" * 12
 
+        recipe = FedTaskRecipe(
+            name="secret_task",
+            task_name="embed",
+            min_clients=1,
+            task_script=temp_task_script,
+            task_args=f"--api-key {secret}",
+        )
+
         with pytest.warns(PotentialSecretWarning) as record:
-            FedTaskRecipe(
-                name="secret_task",
-                task_name="embed",
-                min_clients=1,
-                task_script=temp_task_script,
-                task_args=f"--api-key {secret}",
-            )
+            recipe._warn_potential_secrets_in_params()
 
         messages = [str(warning.message) for warning in record]
         assert any("task_args" in message for message in messages)
         assert all(secret not in message for message in messages)
 
     def test_warns_on_secret_in_task_payload(self, temp_task_script):
+        recipe = FedTaskRecipe(
+            name="secret_payload",
+            task_name="embed",
+            min_clients=1,
+            task_script=temp_task_script,
+            task_data={"auth_token": "abcd1234efgh"},
+        )
+
         with pytest.warns(PotentialSecretWarning, match="task_data"):
-            FedTaskRecipe(
-                name="secret_payload",
-                task_name="embed",
-                min_clients=1,
-                task_script=temp_task_script,
-                task_data={"auth_token": "abcd1234efgh"},
-            )
+            recipe._warn_potential_secrets_in_params()
 
     def test_warns_when_task_payload_uses_unsupported_secret_ref(self, temp_task_script):
+        recipe = FedTaskRecipe(
+            name="secret_ref_payload",
+            task_name="embed",
+            min_clients=1,
+            task_script=temp_task_script,
+            task_data={"auth_token": secret_ref("API_TOKEN")},
+        )
+
         with pytest.warns(UnsupportedSecretRefWarning, match="task_data"):
-            FedTaskRecipe(
-                name="secret_ref_payload",
-                task_name="embed",
-                min_clients=1,
-                task_script=temp_task_script,
-                task_data={"auth_token": secret_ref("API_TOKEN")},
-            )
+            recipe._warn_potential_secrets_in_params()
 
     def test_initializes_model_free_one_round_task(self, temp_task_script):
         recipe = FedTaskRecipe(

@@ -128,6 +128,47 @@ class TestSecretRef:
         with pytest.raises(ValueError, match="invalid secret reference syntax"):
             resolve_secret_refs(tokens[1], env={"BADNAME": "must-not-resolve"})
 
+    @pytest.mark.parametrize(
+        ("command", "expected"),
+        [
+            (
+                '--publisher O\'Reilly --authorization "Bearer ${secret:TOKEN}"',
+                ["--publisher", "O'Reilly", "--authorization", "Bearer ${secret:TOKEN}"],
+            ),
+            (
+                "--note unmatched\"quote --authorization 'Bearer ${secret:TOKEN}'",
+                ["--note", 'unmatched"quote', "--authorization", "Bearer ${secret:TOKEN}"],
+            ),
+            (
+                '--note unmatched"quote --authorization "Bearer ${secret:TOKEN}"',
+                ["--note", 'unmatched"quote', "--authorization", "Bearer ${secret:TOKEN}"],
+            ),
+            (
+                '--authorization="Bearer ${secret:TOKEN}"',
+                ["--authorization=Bearer ${secret:TOKEN}"],
+            ),
+            (
+                '--authorization=prefix"Bearer ${secret:TOKEN}"',
+                ["--authorization=prefixBearer ${secret:TOKEN}"],
+            ),
+        ],
+    )
+    def test_command_tokenization_finds_quoted_secret_ref_after_unmatched_quote(self, command, expected):
+        tokens = split_command_preserving_secret_refs(command, posix=False, group_secret_ref_quotes=True)
+
+        assert tokens == expected
+
+    def test_command_tokenization_preserves_balanced_non_secret_quotes_around_unquoted_ref(self):
+        for quoted in ('"one"', '"one "', '"one:"'):
+            command = f'--a {quoted} --b ${{secret:TOKEN}} --c "two"'
+            tokens = split_command_preserving_secret_refs(
+                command,
+                posix=False,
+                group_secret_ref_quotes=True,
+            )
+
+            assert tokens == command.split()
+
     def test_resolve_missing_env_var_raises_without_leaking(self):
         with pytest.raises(ValueError) as exc_info:
             resolve_secret_refs("--key ${secret:MISSING_VAR}", env={"OTHER": "other-value"})

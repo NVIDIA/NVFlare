@@ -71,6 +71,7 @@ class TestConfigUtils:
             with open(config_file, "w") as f:
                 json.dump({"service": {"token": placeholder}}, f)
 
+            assert get_client_config_value(fl_ctx, "service", resolve_refs=False) == {"token": placeholder}
             assert get_client_config_value(fl_ctx, "service") == {"token": "client-secret-value"}
             with open(config_file) as f:
                 assert json.load(f)["service"]["token"] == placeholder

@@ -225,6 +225,110 @@ class TestSubprocessLauncher:
                 "__test_task", DXO(DataKind.WEIGHTS, {}).to_shareable(), self._make_fl_ctx(str(tmp_path)), Signal()
             )
 
+    @pytest.mark.parametrize(
+        "script",
+        [
+            "sh -c 'echo ${secret:TEST_SECRET_REF_VAR}'",
+            "/bin/bash -lc 'echo ${secret:TEST_SECRET_REF_VAR}'",
+            "bash --rcfile /tmp/bashrc -c 'echo ${secret:TEST_SECRET_REF_VAR}'",
+            r'"C:\Program Files\Git\bin\BASH.EXE" -c "echo ${secret:TEST_SECRET_REF_VAR}"',
+            "env FOO=bar sh -c 'echo ${secret:TEST_SECRET_REF_VAR}'",
+            "env -- FOO=bar sh -c 'echo ${secret:TEST_SECRET_REF_VAR}'",
+            "env -- OUTER=1 env -- INNER=2 sh -c 'echo ${secret:TEST_SECRET_REF_VAR}'",
+            "/usr/bin/env -i FOO=bar /bin/bash -c 'echo ${secret:TEST_SECRET_REF_VAR}'",
+            "env --unknown-option value sh -c 'echo ${secret:TEST_SECRET_REF_VAR}'",
+            "env -S \"bash -c 'echo ${secret:TEST_SECRET_REF_VAR}'\"",
+            r'"C:\Program Files\PowerShell\7\PwSh.ExE" -CoMmAnD "Write-Output ${secret:TEST_SECRET_REF_VAR}"',
+            "pwsh -Command 'Invoke-Expression ${secret:TEST_SECRET_REF_VAR}'",
+            "pwsh -Bogus value -Command 'Invoke-Expression ${secret:TEST_SECRET_REF_VAR}'",
+            "pwsh -EncodedCommand ${secret:TEST_SECRET_REF_VAR}",
+            "pwsh -enc ${secret:TEST_SECRET_REF_VAR}",
+        ],
+    )
+    def test_start_external_process_rejects_secret_ref_in_nested_command(self, monkeypatch, tmp_path, script):
+        popen = Mock()
+        monkeypatch.setattr("nvflare.app_common.launchers.subprocess_launcher.subprocess.Popen", popen)
+        monkeypatch.setenv("TEST_SECRET_REF_VAR", "'; injected-command #")
+        launcher = SubprocessLauncher(script, launch_once=False)
+        launcher._app_dir = str(tmp_path)
+
+        with pytest.raises(ValueError, match="nested interpreter command strings"):
+            launcher.launch_task(
+                "__test_task", DXO(DataKind.WEIGHTS, {}).to_shareable(), self._make_fl_ctx(str(tmp_path)), Signal()
+            )
+
+        popen.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "script,expected_command",
+        [
+            (
+                "bash train.sh ${secret:TEST_SECRET_REF_VAR}",
+                ["bash", "train.sh", "resolved secret"],
+            ),
+            (
+                "pwsh -File train.ps1 ${secret:TEST_SECRET_REF_VAR}",
+                ["pwsh", "-File", "train.ps1", "resolved secret"],
+            ),
+            (
+                "env -- API_TOKEN=${secret:TEST_SECRET_REF_VAR} sh -c 'echo \"$API_TOKEN\"'",
+                ["env", "--", "API_TOKEN=resolved secret", "sh", "-c", 'echo "$API_TOKEN"'],
+            ),
+            (
+                "echo python -c ${secret:TEST_SECRET_REF_VAR}",
+                ["echo", "python", "-c", "resolved secret"],
+            ),
+            (
+                "python train.py --label node -e ${secret:TEST_SECRET_REF_VAR}",
+                ["python", "train.py", "--label", "node", "-e", "resolved secret"],
+            ),
+            (
+                "pwsh train.ps1 -Command ${secret:TEST_SECRET_REF_VAR}",
+                ["pwsh", "train.ps1", "-Command", "resolved secret"],
+            ),
+        ],
+    )
+    def test_start_external_process_allows_secret_ref_in_interpreter_argv(
+        self, monkeypatch, tmp_path, script, expected_command
+    ):
+        popen_calls = []
+
+        class _Proc:
+            pid = 1234
+            stdout = BufferedReader(BytesIO(b""))
+
+            def __init__(self, *args, **kwargs):
+                popen_calls.append({"args": args, "kwargs": kwargs})
+
+        monkeypatch.setattr("nvflare.app_common.launchers.subprocess_launcher.subprocess.Popen", _Proc)
+        monkeypatch.setenv("TEST_SECRET_REF_VAR", "resolved secret")
+        launcher = SubprocessLauncher(script, launch_once=False)
+        launcher._app_dir = str(tmp_path)
+
+        launcher.launch_task(
+            "__test_task", DXO(DataKind.WEIGHTS, {}).to_shareable(), self._make_fl_ctx(str(tmp_path)), Signal()
+        )
+        launcher._log_thread.join()
+
+        assert popen_calls[0]["args"][0] == expected_command
+
+    def test_clean_up_rejects_secret_ref_in_nested_command(self, monkeypatch):
+        popen = Mock()
+        launcher = SubprocessLauncher(
+            "python train.py",
+            launch_once=False,
+            clean_up_script="env FOO=bar bash -c 'echo ${secret:TEST_SECRET_REF_VAR}'",
+        )
+        launcher._process = Mock()
+        launcher._log_thread = Mock()
+        launcher._terminate_process = Mock()
+        monkeypatch.setattr("nvflare.app_common.launchers.subprocess_launcher.subprocess.Popen", popen)
+
+        with pytest.raises(ValueError, match="nested interpreter command strings"):
+            launcher._stop_external_process()
+
+        popen.assert_not_called()
+
     def test_stop_external_process_terminates_posix_process_group(self, monkeypatch):
         killpg_calls = []
 
