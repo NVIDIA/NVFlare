@@ -1042,6 +1042,13 @@ class DownloadService:
     # Waiters blocked on a transaction's terminal outcome (the awaitable facade). Guarded by
     # _outcome_lock; resolved inside _record_outcome so a waiter can never miss the outcome.
     _tx_waiters = {}
+    # Transactions whose settlement drain TIMED OUT: an operation (a hung serve or
+    # budget-pass callback) is still in flight past OP_DRAIN_TIMEOUT and may resume
+    # and emit later. Its tx_id stays excluded from registration -- even after the
+    # receipt expires -- until every such operation has exited, so a leaked emission
+    # can never land under a recycled id. Entries are reaped by the monitor and by
+    # the registration check once the op count reaches zero. Guarded by _tx_lock.
+    _leaked_ops = {}
     _outcome_lock = threading.Lock()
     TX_OUTCOME_TTL = 1800.0
     _logger = None
@@ -1101,20 +1108,32 @@ class DownloadService:
             receiver_acquire_timeout=receiver_acquire_timeout,
             receiver_idle_timeout=receiver_idle_timeout,
         )
-        # tx_ids are ATTEMPT-SCOPED and never reused: a retry of the same logical
-        # transfer is a NEW transaction with a new id (the stable cross-attempt
-        # identity is the application-level transfer id carried in the caller's
-        # metadata -- it never enters this service). Uniqueness is what makes every
-        # emission of a terminated transaction attributable to it alone, forever:
+        # tx_ids are ATTEMPT-SCOPED and single-use while known: a retry of the same
+        # logical transfer is a NEW transaction with a new id (the stable
+        # cross-attempt identity is the application-level transfer id carried in the
+        # caller's metadata -- it never enters this service). Uniqueness is what
+        # makes every emission of a terminated transaction attributable to it alone:
         # nothing a dying attempt does can be confused with a live successor, so no
         # suppression, generation serialization, or settlement waiting is needed.
         # Registration is therefore a single atomic step: ownership and table entry
         # together (_tx_lock nests _outcome_lock here; no path nests them in the
         # reverse order), so a tx the monitor can terminate always owns its outcome
-        # slot -- and a duplicate id is rejected while it is live, still settling, or
-        # its receipt is retained (receipts expire after TX_OUTCOME_TTL, which bounds
-        # the exclusion window for caller-supplied ids).
+        # slot. A duplicate id is rejected while it is live, still settling, its
+        # receipt is retained (TX_OUTCOME_TTL bounds that window for caller-supplied
+        # ids; the default fresh uuid never collides), or a drain-timeout leak from a
+        # previous attempt is still in flight -- the id becomes reusable only after
+        # the receipt expired AND every old operation exited.
         with cls._tx_lock:
+            leaked = cls._leaked_ops.get(tx.tid)
+            if leaked is not None:
+                with leaked._ops_cond:
+                    still_in_flight = leaked._active_ops > 0
+                if still_in_flight:
+                    raise ValueError(
+                        f"transaction id {tx.tid} still has in-flight operations from a previous "
+                        f"attempt (its settlement drain timed out): use a new id"
+                    )
+                cls._leaked_ops.pop(tx.tid, None)
             with cls._outcome_lock:
                 # an expired-but-unswept receipt does not exclude the id: expire it
                 # here (receipts are swept lazily and by the monitor, so without this
@@ -1164,6 +1183,7 @@ class DownloadService:
 
         if tx:
             tx.transaction_done(TransactionDoneStatus.DELETED, on_outcome=functools.partial(cls._record_outcome, tx=tx))
+            cls._register_leaked_ops(tx)
 
     @classmethod
     def shutdown(cls):
@@ -1207,6 +1227,23 @@ class DownloadService:
 
         for tx in tx_list:
             tx.transaction_done(TransactionDoneStatus.DELETED)
+            cls._register_leaked_ops(tx)
+
+    @classmethod
+    def _register_leaked_ops(cls, tx: _Transaction):
+        """Called by every terminator after settlement: if the drain timed out and
+        operations are still in flight, exclude the id until they exit."""
+        with tx._ops_cond:
+            leaked = tx._active_ops > 0
+        if leaked:
+            with cls._tx_lock:
+                cls._leaked_ops[tx.tid] = tx
+
+    @classmethod
+    def _reap_leaked_ops(cls):
+        with cls._tx_lock:
+            for tid in [t for t, tx in cls._leaked_ops.items() if tx._active_ops <= 0]:
+                cls._leaked_ops.pop(tid, None)
 
     @classmethod
     def _delete_tx(cls, tx: _Transaction, tombstone_finished_refs: bool = False):
@@ -1524,16 +1561,19 @@ class DownloadService:
                 cls._expire_finished_refs(now)
 
             cls._expire_outcomes(now)
+            cls._reap_leaked_ops()
 
             for tx in expired_tx:
                 tx.transaction_done(
                     TransactionDoneStatus.TIMEOUT, on_outcome=functools.partial(cls._record_outcome, tx=tx)
                 )
+                cls._register_leaked_ops(tx)
 
             for tx in finished_tx:
                 tx.transaction_done(
                     TransactionDoneStatus.FINISHED, on_outcome=functools.partial(cls._record_outcome, tx=tx)
                 )
+                cls._register_leaked_ops(tx)
 
             time.sleep(5.0)
 

@@ -406,6 +406,44 @@ class TestServiceOutcomeTable:
             )
         assert service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-LIFE") == "TX-LIFE"
 
+    def test_drain_leak_poisons_id_until_operation_exits(self):
+        """P1 pin: a drain-timeout leak (operation hung past OP_DRAIN_TIMEOUT) may resume
+        and emit later -- so its tx_id must stay excluded from registration even after
+        the receipt expires, until every leaked operation has exited. Otherwise the
+        leaked emission could land under a recycled id."""
+        from unittest.mock import Mock
+
+        import nvflare.fuel.f3.streaming.download_service as ds_module
+
+        service = make_isolated_download_service()
+        service._tx_monitor = Mock()
+        cell = Mock()
+        service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-LEAK")
+        with service._tx_lock:
+            tx = service._tx_table["TX-LEAK"]
+        assert tx.begin_op()  # an in-flight operation (serve/budget pass) that will hang
+
+        saved = ds_module.OP_DRAIN_TIMEOUT
+        ds_module.OP_DRAIN_TIMEOUT = 0.2
+        try:
+            service.delete_transaction("TX-LEAK")  # drain times out; settles anyway (logged)
+        finally:
+            ds_module.OP_DRAIN_TIMEOUT = saved
+
+        # force-expire the receipt: the id must STILL be excluded by the leak
+        recorded = service.get_transaction_outcome("TX-LEAK")
+        assert recorded is not None
+        with service._outcome_lock:
+            service._tx_outcomes["TX-LEAK"] = dataclasses.replace(
+                recorded, timestamp=recorded.timestamp - service.TX_OUTCOME_TTL - 1
+            )
+        with pytest.raises(ValueError, match="in-flight operations from a previous attempt"):
+            service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-LEAK")
+
+        # the leaked operation exits: the id becomes usable
+        tx.end_op()
+        assert service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-LEAK") == "TX-LEAK"
+
     def test_settlement_callback_can_create_transactions_but_not_its_own_id(self):
         """Settlement runs outside all service locks, so callbacks may freely call back
         in and create NEW transactions; recreating the settling transaction's own id is

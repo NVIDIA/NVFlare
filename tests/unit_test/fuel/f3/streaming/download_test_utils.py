@@ -87,6 +87,7 @@ def make_isolated_download_service():
         _tx_outcomes = {}
         _outcome_owners = {}
         _tx_waiters = {}
+        _leaked_ops = {}
         _outcome_lock = threading.Lock()
         _logger = Mock()
         _tx_lock = threading.Lock()
