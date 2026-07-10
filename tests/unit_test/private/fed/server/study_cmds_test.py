@@ -92,18 +92,25 @@ def _make_engine(site_map: dict):
 
 
 @contextmanager
-def _mutation_ctx(initial_config=None):
-    """Patches all I/O and locking so _with_mutation runs without disk access."""
-    if initial_config is None:
-        initial_config = _EMPTY_REGISTRY
+def _service_ctx():
+    """Patches StudyRegistryService locking/publish; leaves path resolution and disk I/O real."""
     with (
         patch("nvflare.private.fed.server.study_cmds.StudyRegistryService.acquire_lock", return_value=True),
         patch("nvflare.private.fed.server.study_cmds.StudyRegistryService.release_lock"),
         patch("nvflare.private.fed.server.study_cmds.StudyRegistryService.initialize"),
         # Make isinstance(engine, ServerEngine) pass for MagicMock engines
         patch("nvflare.private.fed.server.study_cmds.ServerEngine", MagicMock),
-        patch.object(StudyCommandModule, "_registry_read_path", return_value="/fake/path"),
-        patch.object(StudyCommandModule, "_registry_write_path", return_value="/fake/path"),
+    ):
+        yield
+
+
+@contextmanager
+def _mutation_ctx(initial_config=None):
+    """Patches all I/O and locking so _with_mutation runs without disk access."""
+    if initial_config is None:
+        initial_config = _EMPTY_REGISTRY
+    with (
+        _service_ctx(),
         patch.object(StudyCommandModule, "_load_registry_config", side_effect=lambda _: deepcopy(initial_config)),
         patch.object(StudyCommandModule, "_write_registry_config"),
     ):
@@ -872,12 +879,7 @@ def _mutation_ctx_with_write_tracker(initial_config=None):
     if initial_config is None:
         initial_config = _EMPTY_REGISTRY
     with (
-        patch("nvflare.private.fed.server.study_cmds.StudyRegistryService.acquire_lock", return_value=True),
-        patch("nvflare.private.fed.server.study_cmds.StudyRegistryService.release_lock"),
-        patch("nvflare.private.fed.server.study_cmds.StudyRegistryService.initialize"),
-        patch("nvflare.private.fed.server.study_cmds.ServerEngine", MagicMock),
-        patch.object(StudyCommandModule, "_registry_read_path", return_value="/fake/path"),
-        patch.object(StudyCommandModule, "_registry_write_path", return_value="/fake/path"),
+        _service_ctx(),
         patch.object(StudyCommandModule, "_load_registry_config", side_effect=lambda _: deepcopy(initial_config)),
         patch.object(StudyCommandModule, "_write_registry_config") as mock_write,
     ):
@@ -921,18 +923,6 @@ class TestAtomicityGuarantee:
 # ---------------------------------------------------------------------------
 
 
-@contextmanager
-def _service_ctx():
-    """Patches locking and publish, but leaves path resolution and disk I/O real."""
-    with (
-        patch("nvflare.private.fed.server.study_cmds.StudyRegistryService.acquire_lock", return_value=True),
-        patch("nvflare.private.fed.server.study_cmds.StudyRegistryService.release_lock"),
-        patch("nvflare.private.fed.server.study_cmds.StudyRegistryService.initialize"),
-        patch("nvflare.private.fed.server.study_cmds.ServerEngine", MagicMock),
-    ):
-        yield
-
-
 class TestRegistryPersistencePath:
     @staticmethod
     def _make_engine_with_workspace(tmp_path, site_map):
@@ -942,22 +932,29 @@ class TestRegistryPersistencePath:
         engine.get_workspace.return_value = Workspace(str(tmp_path))
         return engine
 
+    @staticmethod
+    def _registry_config(*studies):
+        return {
+            "format_version": "1.0",
+            "studies": {s: {"site_orgs": {"org_a": ["site-a"]}, "admins": ["admin@example.com"]} for s in studies},
+        }
+
+    @staticmethod
+    def _register_study1(tmp_path, engine):
+        """Registers study1 with real path resolution and disk I/O; returns the persisted root registry."""
+        conn = _FakeConnection(role="project_admin", org="project", engine=engine)
+        with _service_ctx():
+            StudyCommandModule().cmd_register_study(conn, ["register_study", "study1", "--site-org", "org_a:site-a"])
+        assert not (conn.last_reply or {}).get("error_code"), conn.last_reply
+        return json.loads((tmp_path / "study_registry.json").read_text())
+
     def test_mutation_with_read_only_local_seeds_from_local_and_persists_to_root(self, tmp_path):
         engine = self._make_engine_with_workspace(tmp_path, {"site-a": "org_a"})
-        seed = {
-            "format_version": "1.0",
-            "studies": {"seed-study": {"site_orgs": {"org_a": ["site-a"]}, "admins": ["admin@example.com"]}},
-        }
+        seed = self._registry_config("seed-study")
         (tmp_path / "local" / "study_registry.json").write_text(json.dumps(seed))
         os.chmod(tmp_path / "local", 0o555)
         try:
-            conn = _FakeConnection(role="project_admin", org="project", engine=engine)
-            with _service_ctx():
-                StudyCommandModule().cmd_register_study(
-                    conn, ["register_study", "study1", "--site-org", "org_a:site-a"]
-                )
-            assert not (conn.last_reply or {}).get("error_code"), conn.last_reply
-            persisted = json.loads((tmp_path / "study_registry.json").read_text())
+            persisted = self._register_study1(tmp_path, engine)
             assert set(persisted["studies"]) == {"seed-study", "study1"}
             assert json.loads((tmp_path / "local" / "study_registry.json").read_text()) == seed
         finally:
@@ -965,19 +962,7 @@ class TestRegistryPersistencePath:
 
     def test_root_copy_shadows_local_seed(self, tmp_path):
         engine = self._make_engine_with_workspace(tmp_path, {"site-a": "org_a"})
-        seed = {
-            "format_version": "1.0",
-            "studies": {"seed-study": {"site_orgs": {"org_a": ["site-a"]}, "admins": ["admin@example.com"]}},
-        }
-        root_state = {
-            "format_version": "1.0",
-            "studies": {"root-study": {"site_orgs": {"org_a": ["site-a"]}, "admins": ["admin@example.com"]}},
-        }
-        (tmp_path / "local" / "study_registry.json").write_text(json.dumps(seed))
-        (tmp_path / "study_registry.json").write_text(json.dumps(root_state))
-        conn = _FakeConnection(role="project_admin", org="project", engine=engine)
-        with _service_ctx():
-            StudyCommandModule().cmd_register_study(conn, ["register_study", "study1", "--site-org", "org_a:site-a"])
-        assert not (conn.last_reply or {}).get("error_code"), conn.last_reply
-        persisted = json.loads((tmp_path / "study_registry.json").read_text())
+        (tmp_path / "local" / "study_registry.json").write_text(json.dumps(self._registry_config("seed-study")))
+        (tmp_path / "study_registry.json").write_text(json.dumps(self._registry_config("root-study")))
+        persisted = self._register_study1(tmp_path, engine)
         assert set(persisted["studies"]) == {"root-study", "study1"}

@@ -19,7 +19,7 @@ from copy import deepcopy
 from typing import Dict, List, Tuple
 
 from nvflare.apis.client import ClientPropKey
-from nvflare.apis.fl_constant import AdminCommandNames, WorkspaceConstants
+from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.apis.utils.format_check import name_check
@@ -247,15 +247,6 @@ class StudyCommandModule(CommandModule, CommandUtil):
         }
 
     @staticmethod
-    def _registry_read_path(engine: ServerEngine) -> str:
-        return engine.get_workspace().get_study_registry_file_path()
-
-    @staticmethod
-    def _registry_write_path(engine: ServerEngine) -> str:
-        # always write to the workspace root: the site config dir may be a read-only mount
-        return engine.get_workspace().get_file_path_in_root(WorkspaceConstants.STUDY_REGISTRY_CONFIG)
-
-    @staticmethod
     def _load_registry_config(path: str) -> dict:
         if not os.path.exists(path):
             return {"format_version": StudyRegistry.FORMAT_VERSION, "studies": {}}
@@ -424,7 +415,8 @@ class StudyCommandModule(CommandModule, CommandUtil):
             if not isinstance(engine, ServerEngine):
                 raise TypeError(f"engine must be ServerEngine but got {type(engine)}")
 
-            config = self._load_registry_config(self._registry_read_path(engine))
+            workspace = engine.get_workspace()
+            config = self._load_registry_config(workspace.get_study_registry_file_path())
             working = deepcopy(config)
             payload = mutation_cb(engine, working)
             if payload is None:
@@ -434,7 +426,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
                 self._reply(conn, payload)
                 return
             new_registry = StudyRegistry(working)
-            self._write_registry_config(self._registry_write_path(engine), working)
+            self._write_registry_config(workspace.get_study_registry_write_path(), working)
             StudyRegistryService.initialize(new_registry)
             self._reply(conn, payload)
         except Exception as e:
