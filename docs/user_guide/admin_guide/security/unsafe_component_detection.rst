@@ -103,6 +103,11 @@ Python package boundary, for example ``"nvflare."``. Entries without a trailing 
 and are matched exactly or on a ``.`` boundary. For example, ``"nvflare"`` is rejected as ambiguous, and ``"nvflare."`` does
 not match ``"nvflareevil.module.Component"``.
 
+The adjacent ``class_list_enforcement_mode`` setting accepts ``"enforce"`` (the default) or ``"warn"``. In ``"warn"``
+mode, a component outside ``class_allow_list`` is allowed to load and a warning is logged. If ``"*"`` appears anywhere in
+``class_allow_list``, all component classes are allowed, the remaining entries are ignored, and an audit event records that
+the allow-list check was bypassed. Use ``"warn"`` and ``"*"`` only as temporary migration aids in trusted environments.
+
 Provisioned ``resources.json.default`` Results
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 When provisioning generates startup kits, the server and client ``resources.json.default`` files include the following
@@ -114,6 +119,7 @@ their non-BYOC jobs are allowed to load.
 
     {
         "format_version": 2,
+        "class_list_enforcement_mode": "enforce",
         "class_allow_list": [
             "nvflare.app_common.aggregators.collect_and_assemble_model_aggregator.CollectAndAssembleModelAggregator",
             "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",

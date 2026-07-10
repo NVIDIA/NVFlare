@@ -22,10 +22,18 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeComponentError
+from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.widgets.widget import Widget
 
 CLASS_ALLOW_LIST = "class_allow_list"
+CLASS_LIST_ENFORCEMENT_MODE = "class_list_enforcement_mode"
+ENFORCEMENT_MODE_ENFORCE = "enforce"
+ENFORCEMENT_MODE_WARN = "warn"
+ALLOW_ALL = "*"
+
+_VALID_ENFORCEMENT_MODES = (ENFORCEMENT_MODE_ENFORCE, ENFORCEMENT_MODE_WARN)
+_ALLOW_ALL_AUDIT_ACTION = "component_authorization.class_allow_list_disabled"
 
 
 class ComponentPathAuthorizer(Widget):
@@ -34,6 +42,8 @@ class ComponentPathAuthorizer(Widget):
         super().__init__()
         self._allow_list_cache = {}
         self._allow_list_cache_lock = threading.Lock()
+        self._allow_all_audit_keys = set()
+        self._allow_all_audit_lock = threading.Lock()
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type != EventType.BEFORE_BUILD_COMPONENT:
@@ -56,22 +66,62 @@ class ComponentPathAuthorizer(Widget):
         if component_path is None:
             return
 
-        allow_list = self._get_allow_list(fl_ctx=fl_ctx, workspace=workspace)
+        allow_list, enforcement_mode = self._get_policy(fl_ctx=fl_ctx, workspace=workspace)
+        if ALLOW_ALL in allow_list:
+            self._audit_allow_all(fl_ctx=fl_ctx, workspace=workspace)
+            return
+
         if not any(self._path_matches_prefix(component_path, prefix) for prefix in allow_list):
             node_path = node.path() if node else ""
-            raise UnsafeComponentError(
-                f"Component '{component_path}' at config path '{node_path}' is not in allow_list"
+            message = f"Component '{component_path}' at config path '{node_path}' is not in allow_list"
+            if enforcement_mode == ENFORCEMENT_MODE_WARN:
+                self.logger.warning(
+                    f"{message}; allowing it because {CLASS_LIST_ENFORCEMENT_MODE} is '{ENFORCEMENT_MODE_WARN}'"
+                )
+                return
+            raise UnsafeComponentError(message)
+
+    def _audit_allow_all(self, fl_ctx: Optional[FLContext] = None, workspace=None):
+        resources_file = self._get_resources_file_path(fl_ctx=fl_ctx, workspace=workspace)
+        source = os.path.abspath(resources_file) if resources_file else SystemConfigs.RESOURCES_CONF
+        job_id = fl_ctx.get_job_id() if fl_ctx else ""
+        audit_key = (job_id, source)
+        message = (
+            f"{CLASS_ALLOW_LIST} contains '{ALLOW_ALL}'; all component classes are allowed and "
+            "the remaining allow-list entries are ignored"
+        )
+
+        with self._allow_all_audit_lock:
+            if audit_key in self._allow_all_audit_keys:
+                return
+            event_id = AuditService.add_event(
+                user=fl_ctx.get_identity_name() if fl_ctx and fl_ctx.get_identity_name() else "system",
+                action=_ALLOW_ALL_AUDIT_ACTION,
+                ref=job_id or "",
+                msg=message,
             )
+            if event_id:
+                self._allow_all_audit_keys.add(audit_key)
+
+        self.logger.warning(message)
 
     def _get_allow_list(self, fl_ctx: Optional[FLContext] = None, workspace=None):
+        allow_list, _ = self._get_policy(fl_ctx=fl_ctx, workspace=workspace)
+        return allow_list
+
+    def _get_policy(self, fl_ctx: Optional[FLContext] = None, workspace=None):
         resources_file = self._get_resources_file_path(fl_ctx=fl_ctx, workspace=workspace)
         if resources_file:
-            return self._get_allow_list_from_file(resources_file)
+            return self._get_policy_from_file(resources_file)
 
         resources = ConfigService.get_section(SystemConfigs.RESOURCES_CONF)
-        return self._get_allow_list_from_resources(resources)
+        return self._get_policy_from_resources(resources)
 
     def _get_allow_list_from_file(self, resources_file):
+        allow_list, _ = self._get_policy_from_file(resources_file)
+        return allow_list
+
+    def _get_policy_from_file(self, resources_file):
         cache_key = os.path.abspath(resources_file)
 
         with self._allow_list_cache_lock:
@@ -79,16 +129,16 @@ class ComponentPathAuthorizer(Widget):
             cache_signature = self._make_file_signature(stat_result)
             cached = self._allow_list_cache.get(cache_key)
             if cached and cached[0] == cache_signature:
-                return cached[1]
+                return cached[1], cached[2]
 
             with open(cache_key, "rt") as f:
                 resources = json.load(f)
                 cache_signature = self._make_file_signature(os.fstat(f.fileno()))
-            allow_list = self._get_allow_list_from_resources(resources)
+            allow_list, enforcement_mode = self._get_policy_from_resources(resources)
 
-            self._allow_list_cache[cache_key] = (cache_signature, allow_list)
+            self._allow_list_cache[cache_key] = (cache_signature, allow_list, enforcement_mode)
 
-        return allow_list
+        return allow_list, enforcement_mode
 
     @staticmethod
     def _make_file_signature(stat_result):
@@ -96,6 +146,11 @@ class ComponentPathAuthorizer(Widget):
 
     @classmethod
     def _get_allow_list_from_resources(cls, resources):
+        allow_list, _ = cls._get_policy_from_resources(resources)
+        return allow_list
+
+    @classmethod
+    def _get_policy_from_resources(cls, resources):
         if not isinstance(resources, dict) or CLASS_ALLOW_LIST not in resources:
             raise UnsafeComponentError(
                 f"{CLASS_ALLOW_LIST} is not configured in resources.json or resources.json.default. "
@@ -106,8 +161,16 @@ class ComponentPathAuthorizer(Widget):
         allow_list = resources.get(CLASS_ALLOW_LIST)
         if not isinstance(allow_list, list):
             raise UnsafeComponentError(f"{CLASS_ALLOW_LIST} must be list but got {type(allow_list)}")
+
+        enforcement_mode = resources.get(CLASS_LIST_ENFORCEMENT_MODE, ENFORCEMENT_MODE_ENFORCE)
+        if not isinstance(enforcement_mode, str):
+            raise UnsafeComponentError(f"{CLASS_LIST_ENFORCEMENT_MODE} must be str but got {type(enforcement_mode)}")
+        if enforcement_mode not in _VALID_ENFORCEMENT_MODES:
+            raise UnsafeComponentError(
+                f"{CLASS_LIST_ENFORCEMENT_MODE} must be one of {_VALID_ENFORCEMENT_MODES} but got '{enforcement_mode}'"
+            )
         try:
-            return cls._normalize_allow_list(allow_list)
+            return cls._normalize_allow_list(allow_list), enforcement_mode
         except (TypeError, ValueError) as ex:
             raise UnsafeComponentError(str(ex))
 
@@ -134,6 +197,9 @@ class ComponentPathAuthorizer(Widget):
 
     @classmethod
     def _normalize_allow_list(cls, allow_list):
+        if ALLOW_ALL in allow_list:
+            return [ALLOW_ALL]
+
         result = []
         for prefix in allow_list:
             prefix = cls._validate_prefix(prefix)

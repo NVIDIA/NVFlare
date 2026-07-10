@@ -66,6 +66,7 @@ readme_fs: |
 local_client_resources: |
   {
     "format_version": 2,
+    "class_list_enforcement_mode": "enforce",
     "class_allow_list": [
       "nvflare.app_common.aggregators.collect_and_assemble_model_aggregator.CollectAndAssembleModelAggregator",
       "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",
@@ -268,6 +269,7 @@ sample_privacy: |
 local_server_resources: |
   {
       "format_version": 2,
+      "class_list_enforcement_mode": "enforce",
       "class_allow_list": [
           "nvflare.app_common.aggregators.collect_and_assemble_model_aggregator.CollectAndAssembleModelAggregator",
           "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",

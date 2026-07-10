@@ -414,6 +414,68 @@ Compatibility and Migration Notes
   run as BYOC jobs. Built-in ``ObjectEncoder`` configurations continue to work
   for non-BYOC jobs.
 
+Class allow-list migration from 2.7
+-----------------------------------
+
+NVFLARE 2.8 adds built-in component class authorization for non-BYOC jobs. Sites
+migrating applications from 2.7 must configure a top-level ``class_allow_list``
+in each server and client ``resources.json`` or ``resources.json.default``.
+The adjacent ``class_list_enforcement_mode`` setting accepts ``"enforce"`` or
+``"warn"`` and defaults to ``"enforce"`` when omitted.
+
+BYOC-enabled users and jobs keep the same behavior they had in 2.7. The built-in
+class allow-list check is skipped for BYOC jobs, so these settings do not change
+which job-provided classes they can load.
+
+For non-BYOC applications, the recommended migration is to keep enforcement
+enabled and add each reviewed application class. A trailing ``.`` authorizes a
+whole package; an entry without it represents a fully qualified class path.
+
+.. code-block:: json
+
+    {
+        "format_version": 2,
+        "class_list_enforcement_mode": "enforce",
+        "class_allow_list": [
+            "my_app.executors.CustomExecutor",
+            "my_app.filters."
+        ]
+    }
+
+To preserve the unrestricted 2.7 behavior temporarily, use ``"*"``. When the
+wildcard is present, all component classes are allowed, all other entries in
+``class_allow_list`` are ignored, and NVFLARE records an audit event stating
+that class allow-list enforcement was bypassed.
+
+.. code-block:: json
+
+    {
+        "format_version": 2,
+        "class_list_enforcement_mode": "enforce",
+        "class_allow_list": ["*"]
+    }
+
+Alternatively, ``"warn"`` mode can be used while inventorying the classes an
+application needs. Classes outside the configured list are allowed to load, but
+NVFLARE logs a warning for every unmatched class. After adding the reviewed
+classes to the list, change the mode to ``"enforce"``.
+
+.. code-block:: json
+
+    {
+        "format_version": 2,
+        "class_list_enforcement_mode": "warn",
+        "class_allow_list": [
+            "nvflare.",
+            "my_app.executors.CustomExecutor"
+        ]
+    }
+
+Both ``"*"`` and ``"warn"`` relax the 2.8 protection and should be used only as
+migration aids in trusted environments. A missing or malformed
+``class_allow_list`` remains a configuration error for non-BYOC jobs in either
+enforcement mode.
+
 See the :ref:`migration_guide` for additional API and configuration migration
 notes.
 
