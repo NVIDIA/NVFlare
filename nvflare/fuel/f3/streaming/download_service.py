@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import dataclasses
 import functools
 import threading
 import time
@@ -1018,10 +1019,13 @@ class DownloadService:
     # Waiters blocked on a transaction's terminal outcome (the awaitable facade). Guarded by
     # _outcome_lock; resolved inside _record_outcome so a waiter can never miss the outcome.
     _tx_waiters = {}
-    # Transactions whose settlement drain timed out with operations still in flight:
-    # the tx_id stays excluded from registration -- even past receipt expiry -- until
-    # every such operation exits (a leaked emission must never land under a recycled
-    # id). Reaped by the monitor and the registration check. Guarded by _tx_lock.
+    # Termination markers: installed by _delete_tx at unlink (every terminator) and
+    # releasable only when the transaction's settlement completed AND no in-flight
+    # operations remain -- the id stays excluded from registration through the whole
+    # termination window and any drain-leaked tail, even past receipt expiry (a
+    # leaked emission must never land under a recycled id). Released by
+    # _update_leaked_ops, the registration check, or the monitor reap.
+    # Guarded by _tx_lock.
     _leaked_ops = {}
     _outcome_lock = threading.Lock()
     TX_OUTCOME_TTL = 1800.0
@@ -1165,13 +1169,9 @@ class DownloadService:
             cls._finished_refs.clear()
 
             with cls._outcome_lock:
-                # Pre-register every registered owner (live and mid-settlement) as a
-                # potential leak BEFORE clearing its ownership/receipt exclusions: the
-                # deferred settlements below run outside the locks, and a drain-leaked
-                # operation's id must never look free in that window. Post-settlement
-                # _update_leaked_ops releases the ids whose operations drained.
-                for owner in cls._outcome_owners.values():
-                    cls._leaked_ops[owner.tid] = owner
+                # every id being torn down already carries its termination marker
+                # (installed by _delete_tx at unlink), so clearing the ownership and
+                # receipt exclusions here cannot expose an id mid-settlement.
                 # Clearing ownership is what stops recording: a settlement mid-flight
                 # on another thread finds its entry gone at _record_outcome and drops.
                 cls._tx_outcomes.clear()
@@ -1193,11 +1193,9 @@ class DownloadService:
 
     @classmethod
     def _update_leaked_ops(cls, tx: _Transaction):
-        """Called by every terminator after settlement: keep the id excluded while
-        drain-leaked operations are in flight, release the exclusion once none are.
-        shutdown() PRE-registers its transactions under the locks -- it clears the
-        ownership and receipt exclusions up front, so waiting until after settlement
-        would leave a window where a leaked operation's id looks free."""
+        """Called by every terminator after settlement: release the termination marker
+        (installed at unlink) once settlement completed and no operations remain, or
+        sustain it while a drain-leaked operation is still in flight."""
         with tx._ops_cond:
             leaked = tx._active_ops > 0
         with cls._tx_lock:
@@ -1215,6 +1213,12 @@ class DownloadService:
     @classmethod
     def _delete_tx(cls, tx: _Transaction, tombstone_finished_refs: bool = False):
         cls._tx_table.pop(tx.tid, None)
+        # install the termination marker at unlink, for EVERY terminator: it covers
+        # the whole settlement window and the leaked-operation tail in one mechanism,
+        # releasable only when settlement completed AND no operations are in flight
+        # (_update_leaked_ops / the duplicate check / the monitor reap). Ownership and
+        # receipt exclusions still exist but no longer carry the window alone.
+        cls._leaked_ops[tx.tid] = tx
 
         # remove all refs
         now = time.time() if tombstone_finished_refs else None
@@ -1269,6 +1273,10 @@ class DownloadService:
                 # ownership consumed (prior record) or cleared (shutdown): stale, drop
                 return
             cls._outcome_owners.pop(outcome.tx_id, None)
+            # re-stamp at recording time: the TTL retention window starts when the
+            # receipt becomes queryable, not when the verdict was computed -- a slow
+            # settlement must not record a receipt that is already expired
+            outcome = dataclasses.replace(outcome, timestamp=time.time())
             cls._tx_outcomes[outcome.tx_id] = outcome
             # resolve the awaitable facade: waiters are TransferWaiter objects (no user code
             # runs in _resolve), so setting them under the lock is safe and race-free

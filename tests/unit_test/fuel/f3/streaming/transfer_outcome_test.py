@@ -466,7 +466,7 @@ class TestServiceOutcomeTable:
         service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-SELF", outcome_cb=cb)
         service.delete_transaction("TX-SELF")
 
-        assert len(errors) == 1 and "already in use" in errors[0]
+        assert len(errors) == 1 and "has not fully terminated" in errors[0]
         assert created == ["TX-OTHER"]
         with service._tx_lock:
             assert "TX-OTHER" in service._tx_table
@@ -548,6 +548,107 @@ class TestServiceOutcomeTable:
         # the operation exits: the id frees
         tx.end_op()
         assert service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-SHUTLEAK") == "TX-SHUTLEAK"
+
+    def test_receipt_ttl_starts_at_recording_not_at_verdict(self):
+        """P1 pin: the outcome timestamp is captured before the settlement callbacks
+        run -- a settlement slower than TX_OUTCOME_TTL used to record a receipt that
+        was EXPIRED at birth, which the inline expiry then handed to a same-id
+        constructor in the gap before the terminator's marker sync. Receipts are now
+        re-stamped at recording time ("kept 30 min" from recording)."""
+        from unittest.mock import Mock
+
+        service = make_isolated_download_service()
+        service._tx_monitor = Mock()
+        service.TX_OUTCOME_TTL = 0.2
+        cell = Mock()
+
+        def slow_done_cb(tid, status, base_objs, **kw):
+            time.sleep(0.4)  # slower than the (patched) TTL
+
+        service.new_transaction(
+            cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-AGED", transaction_done_cb=slow_done_cb
+        )
+        service.delete_transaction("TX-AGED")
+
+        # the receipt is fresh from RECORDING: queryable, and it excludes the id
+        assert service.get_transaction_outcome("TX-AGED") is not None
+        with pytest.raises(ValueError, match="already in use"):
+            service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-AGED")
+
+    def test_aged_receipt_with_leaked_op_cannot_expose_id(self):
+        """P1 pin (reviewer's exact sequence): slow settlement past the TTL WITH a
+        drain-leaked operation -- the id must stay excluded end to end; before the
+        marker moved to _delete_tx, a constructor could slip between ownership
+        consumption and the marker sync, and the old marker then overlapped the live
+        replacement."""
+        from unittest.mock import Mock
+
+        import nvflare.fuel.f3.streaming.download_service as ds_module
+
+        service = make_isolated_download_service()
+        service._tx_monitor = Mock()
+        service.TX_OUTCOME_TTL = 0.2
+        cell = Mock()
+        service.new_transaction(
+            cell=cell,
+            timeout=10.0,
+            num_receivers=1,
+            tx_id="TX-AGEDLEAK",
+            transaction_done_cb=lambda tid, status, base_objs, **kw: time.sleep(0.4),
+        )
+        with service._tx_lock:
+            tx = service._tx_table["TX-AGEDLEAK"]
+        assert tx.begin_op()  # the leak
+
+        saved = ds_module.OP_DRAIN_TIMEOUT
+        ds_module.OP_DRAIN_TIMEOUT = 0.1
+        try:
+            service.delete_transaction("TX-AGEDLEAK")
+        finally:
+            ds_module.OP_DRAIN_TIMEOUT = saved
+
+        # settlement complete, receipt aged past the (patched) TTL -- the leaked op
+        # still excludes the id, and no overlap state can form
+        time.sleep(0.25)
+        with pytest.raises(ValueError, match="has not fully terminated"):
+            service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-AGEDLEAK")
+        with service._tx_lock:
+            assert service._leaked_ops.get("TX-AGEDLEAK") is tx
+
+        tx.end_op()
+        assert service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-AGEDLEAK") == "TX-AGEDLEAK"
+
+    def test_marker_installed_at_unlink_for_every_terminator(self):
+        """The termination marker is installed by _delete_tx itself, so EVERY
+        terminator's id is covered for its whole settlement window -- not just
+        shutdown's."""
+        from unittest.mock import Mock
+
+        service = make_isolated_download_service()
+        service._tx_monitor = Mock()
+        cell = Mock()
+        cb_entered = threading.Event()
+        cb_release = threading.Event()
+
+        def gated_done_cb(tid, status, base_objs, **kw):
+            cb_entered.set()
+            cb_release.wait(10.0)
+
+        service.new_transaction(
+            cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-UNLINK", transaction_done_cb=gated_done_cb
+        )
+        deleter = threading.Thread(target=service.delete_transaction, args=("TX-UNLINK",))
+        try:
+            deleter.start()
+            assert cb_entered.wait(5.0)
+            with service._tx_lock:
+                assert "TX-UNLINK" in service._leaked_ops, "marker must exist mid-settlement on the delete path"
+            with pytest.raises(ValueError, match="has not fully terminated"):
+                service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-UNLINK")
+        finally:
+            cb_release.set()
+            deleter.join(5.0)
+        assert not deleter.is_alive()
 
     def test_shutdown_window_rejects_id_during_clean_settlement(self):
         """P1 pin: the shutdown pre-registration used to be releasable whenever

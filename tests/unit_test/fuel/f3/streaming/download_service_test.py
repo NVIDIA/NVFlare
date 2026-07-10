@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import threading
+import time
 from typing import Any
 from unittest.mock import Mock, patch
 
@@ -28,6 +29,7 @@ from nvflare.fuel.f3.streaming.download_service import (
     ProduceRC,
     TransactionDoneStatus,
 )
+from nvflare.fuel.f3.streaming.transfer_outcome import compute_transfer_outcome
 from nvflare.fuel.utils.network_utils import get_open_ports
 from tests.unit_test.fuel.f3.streaming.download_test_utils import (
     MockDownloadable,
@@ -529,12 +531,12 @@ class TestDownloadService:
         # sanity: the owning transaction still records (guard does not over-drop)
         live_tx = Mock()
         live_tx.tid = "tx-live"
-        live_outcome = Mock()
-        live_outcome.tx_id = "tx-live"
-        live_outcome.expired.return_value = False
+        live_outcome = compute_transfer_outcome("tx-live", TransactionDoneStatus.FINISHED, 1, [], time.time())
         service._outcome_owners["tx-live"] = live_tx
         service._record_outcome(live_outcome, tx=live_tx)
-        assert service.get_transaction_outcome("tx-live") is live_outcome
+        recorded = service.get_transaction_outcome("tx-live")
+        # recording re-stamps the receipt (TTL starts at recording), so compare identity-free
+        assert recorded is not None and recorded.tx_id == "tx-live" and recorded.done_status == live_outcome.done_status
 
     def test_raising_download_callbacks_do_not_break_serving_path(self):
         """Raising downloaded_to_one/downloaded_to_all must not propagate into serving.
