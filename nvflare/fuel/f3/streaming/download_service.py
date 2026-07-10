@@ -215,10 +215,9 @@ def _receiver_confirm_enabled() -> bool:
 RECEIVER_ACQUIRE_TIMEOUT_CONFIG_VAR = "streaming_receiver_acquire_timeout"
 RECEIVER_IDLE_TIMEOUT_CONFIG_VAR = "streaming_receiver_idle_timeout"
 
-# How long settlement waits for in-flight operations (serves, confirms, budget passes)
-# against the transaction to drain before emitting its terminal surfaces. Only a hung
-# user callback inside such an operation can exhaust this; settlement then proceeds
-# with a warning (the straggler may emit late, but can no longer be prevented).
+# How long settlement waits for in-flight operations to drain. Only a hung user
+# callback can exhaust it; settlement then proceeds with a warning, and the id
+# stays excluded until the leaked operation exits (see _leaked_ops).
 OP_DRAIN_TIMEOUT = 60.0
 
 
@@ -268,11 +267,10 @@ class _Ref:
     def _finalize_receiver(
         self, to_receiver: str, status: str, require_pending: bool = False, nonce: Optional[str] = None
     ) -> bool:
-        # Status recording is guarded so terminal-outcome snapshots taken on the
-        # monitor thread never observe a half-updated map; user callbacks run
-        # outside the lock. The whole decision (dedup, pending-guard, pending pop,
-        # record, all-done latch) is one critical section, so a duplicate serve can
-        # never resurrect a pending entry around a racing finalization.
+        # Recording is guarded so outcome snapshots never observe a half-updated map;
+        # user callbacks run outside the lock. Dedup, pending-guard, pop, record, and
+        # the all-done latch are ONE critical section, so a duplicate serve can never
+        # resurrect a pending entry around a racing finalization.
         with self._progress_lock:
             if to_receiver in self.receiver_statuses:
                 return False
@@ -400,9 +398,8 @@ class _Ref:
             self._receiver_activity[receiver] = now
         tx = self.tx
         with tx._stats_lock:
-            # transaction-level liveness: budgets judge idleness across the WHOLE
-            # transaction, so a receiver that finished one ref and went silent cannot
-            # escape a sibling ref's budgets (it has no per-ref timestamp there)
+            # tx-level activity: budgets judge the whole transaction (see the
+            # _receiver_last_active field comment)
             tx._acquired_receivers.add(receiver)
             tx._receiver_last_active[receiver] = now
 
@@ -694,10 +691,9 @@ class _Transaction:
         self.refs = []
         self._refs_lock = threading.RLock()
         # The activity gate: serves, confirms, and monitor budget passes register as
-        # in-flight operations; settlement closes the gate and drains them before
-        # snapshotting the outcome, so an operation finishing during termination is
-        # counted in the verdict and nothing emits against the transaction after it
-        # has settled.
+        # in-flight operations; settlement closes and drains the gate before the
+        # outcome snapshot, so late finishes are counted and nothing emits against a
+        # settled transaction.
         self._ops_cond = threading.Condition(threading.Lock())
         self._active_ops = 0
         self._ops_closed = False
@@ -710,11 +706,6 @@ class _Transaction:
         self.logger = get_obj_logger(self)
 
     def mark_active(self):
-        """Called to update the last active time of the transaction.
-
-        Returns:
-
-        """
         self.last_active_time = time.time()
 
     def add_total_bytes(self, byte_count: int):
@@ -732,15 +723,7 @@ class _Transaction:
         obj: Downloadable,
         ref_id=None,
     ):
-        """Add a large object (to be downloaded) to the transaction.
-
-        Args:
-            obj: the large object to be downloaded
-            ref_id: the ref id to be used, if specified
-
-        Returns:
-
-        """
+        """Adds a large object (to be downloaded) to the transaction; returns its ref."""
         with self._refs_lock:
             r = _Ref(self, obj, ref_id)
             self.refs.append(r)
@@ -825,28 +808,16 @@ class _Transaction:
         return True
 
     def transaction_done(self, status: str, on_outcome=None) -> TransferOutcome:
-        """Called when the transaction is finished.
+        """Settles the transaction; returns the aggregate TransferOutcome.
 
-        Returns the aggregate TransferOutcome (see transfer_outcome.py): COMPLETED only
-        when every expected receiver succeeded — TransactionDoneStatus.FINISHED alone
-        does not certify that. The existing transaction_done_cb contract is unchanged
-        except that callback exceptions no longer propagate (they would kill the
-        monitor thread and skip source release).
-
-        on_outcome (used by DownloadService to record the outcome and release waiters)
-        is invoked LAST — after terminal progress, the done/outcome callbacks, and
-        source release — so an upper layer that acts on waiter.wait() returning (e.g.
-        stops the producer process) can never preempt the callback chain or the
-        release of the sources.
-
-        Settlement runs exactly once per transaction: every terminator first unlinks it
-        from _tx_table under _tx_lock, so exactly one caller runs this. tx_ids are
-        never reused (new_transaction rejects duplicates), so every emission here is
-        attributable to this transaction alone, forever.
+        COMPLETED only when every expected receiver succeeded — FINISHED alone does
+        not certify that. Callback exceptions never propagate (they would kill the
+        monitor thread and skip source release). on_outcome (records the outcome,
+        releasing waiters) is invoked LAST, so acting on waiter.wait() returning can
+        never preempt the callback chain or source release. Runs exactly once per
+        transaction: every terminator unlinks it from _tx_table first.
         """
-        # Drain in-flight operations BEFORE snapshotting the outcome: an operation that
-        # finishes during the drain is counted in the verdict, and nothing can emit
-        # against the transaction after it has settled.
+        # drain the activity gate first: in-flight results count in the verdict
         if not self._drain_ops(OP_DRAIN_TIMEOUT):
             self.logger.warning(
                 f"tx {self.tid}: in-flight operations did not drain within {OP_DRAIN_TIMEOUT}s; settling anyway"
@@ -912,16 +883,13 @@ class _Transaction:
             if self.outcome_cb:
                 _invoke_cb_safely(self.logger, f"transfer outcome callback for tx {self.tid}", self.outcome_cb, outcome)
 
-            # Release source objects after the callback so the callback can still
-            # reference them. Each release is guarded: a raising custom release() must
-            # not skip its siblings -- nor, via the finally below, outcome recording.
+            # release after the callback (so it can still observe the sources); each
+            # release is guarded so one raising release() cannot skip its siblings
             for ref in refs:
                 _invoke_cb_safely(self.logger, f"release of {type(ref.obj)} for tx {self.tid}", ref.obj.release)
         finally:
-            # Record the outcome (and release waiters) only now that the transaction is
-            # fully settled: callbacks done, sources released. In a finally so that no
-            # exception anywhere above (including on the monitor thread) can leave the
-            # outcome unrecorded and the waiter pending forever.
+            # in a finally: no exception above may leave the outcome unrecorded and
+            # waiters pending
             if on_outcome and outcome is not None:
                 _invoke_cb_safely(self.logger, f"outcome recording for tx {self.tid}", on_outcome, outcome)
 
@@ -1031,23 +999,18 @@ class DownloadService:
     # time so producers can query the aggregate result after termination. Guarded by
     # its own lock so outcome polling never contends with the chunk-serving _tx_lock.
     _tx_outcomes = {}
-    # The transaction object entitled to record the outcome for its tx_id (registered
-    # by new_transaction, consumed by _record_outcome). Recording checks OBJECT
-    # identity against this map: a recorder that lost its entry -- shutdown cleared
-    # ownership, or a prior terminal record already consumed it -- drops its outcome
-    # instead of recording stale truth. An entry also marks the id as in-use to
-    # new_transaction's duplicate check while the transaction is settling.
-    # Guarded by _outcome_lock.
+    # The transaction entitled to record the outcome for its tx_id (registered by
+    # new_transaction, consumed by _record_outcome; object-identity checked, so a
+    # recorder whose entry is gone drops its stale outcome). Also marks the id as
+    # in-use while the transaction is settling. Guarded by _outcome_lock.
     _outcome_owners = {}
     # Waiters blocked on a transaction's terminal outcome (the awaitable facade). Guarded by
     # _outcome_lock; resolved inside _record_outcome so a waiter can never miss the outcome.
     _tx_waiters = {}
-    # Transactions whose settlement drain TIMED OUT: an operation (a hung serve or
-    # budget-pass callback) is still in flight past OP_DRAIN_TIMEOUT and may resume
-    # and emit later. Its tx_id stays excluded from registration -- even after the
-    # receipt expires -- until every such operation has exited, so a leaked emission
-    # can never land under a recycled id. Entries are reaped by the monitor and by
-    # the registration check once the op count reaches zero. Guarded by _tx_lock.
+    # Transactions whose settlement drain timed out with operations still in flight:
+    # the tx_id stays excluded from registration -- even past receipt expiry -- until
+    # every such operation exits (a leaked emission must never land under a recycled
+    # id). Reaped by the monitor and the registration check. Guarded by _tx_lock.
     _leaked_ops = {}
     _outcome_lock = threading.Lock()
     TX_OUTCOME_TTL = 1800.0
@@ -1108,21 +1071,14 @@ class DownloadService:
             receiver_acquire_timeout=receiver_acquire_timeout,
             receiver_idle_timeout=receiver_idle_timeout,
         )
-        # tx_ids are ATTEMPT-SCOPED and single-use while known: a retry of the same
-        # logical transfer is a NEW transaction with a new id (the stable
-        # cross-attempt identity is the application-level transfer id carried in the
-        # caller's metadata -- it never enters this service). Uniqueness is what
-        # makes every emission of a terminated transaction attributable to it alone:
-        # nothing a dying attempt does can be confused with a live successor, so no
-        # suppression, generation serialization, or settlement waiting is needed.
-        # Registration is therefore a single atomic step: ownership and table entry
-        # together (_tx_lock nests _outcome_lock here; no path nests them in the
-        # reverse order), so a tx the monitor can terminate always owns its outcome
-        # slot. A duplicate id is rejected while it is live, still settling, its
-        # receipt is retained (TX_OUTCOME_TTL bounds that window for caller-supplied
-        # ids; the default fresh uuid never collides), or a drain-timeout leak from a
-        # previous attempt is still in flight -- the id becomes reusable only after
-        # the receipt expired AND every old operation exited.
+        # tx_ids are ATTEMPT-SCOPED and single-use while known: a retry is a NEW
+        # transaction with a new id (the stable cross-attempt identity is the
+        # caller's application-level transfer id, which never enters this service),
+        # so nothing a dying attempt emits can be confused with a live successor.
+        # A duplicate id is rejected while live, settling, receipted
+        # (TX_OUTCOME_TTL), or leaked (see _leaked_ops). Registration is one atomic
+        # step -- ownership and table entry together, _tx_lock nesting _outcome_lock
+        # (no path nests them in the reverse order).
         with cls._tx_lock:
             leaked = cls._leaked_ops.get(tx.tid)
             if leaked is not None:
@@ -1135,9 +1091,8 @@ class DownloadService:
                     )
                 cls._leaked_ops.pop(tx.tid, None)
             with cls._outcome_lock:
-                # an expired-but-unswept receipt does not exclude the id: expire it
-                # here (receipts are swept lazily and by the monitor, so without this
-                # the exclusion window would stretch to TTL + a sweep cycle)
+                # expire an unswept receipt inline: the exclusion window is exactly
+                # TX_OUTCOME_TTL, not TTL plus a sweep cycle
                 receipt = cls._tx_outcomes.get(tx.tid)
                 if receipt is not None and receipt.expired(time.time(), cls.TX_OUTCOME_TTL):
                     cls._tx_outcomes.pop(tx.tid, None)
@@ -1187,17 +1142,11 @@ class DownloadService:
 
     @classmethod
     def shutdown(cls):
-        """Shutdown and clean up resources.
-
-        Returns: None
-
-        """
-        # Table teardown and ownership teardown are ONE atomic step (_tx_lock nesting
-        # _outcome_lock, the same order new_transaction uses; no reverse nesting exists).
-        # With separate critical sections, a new_transaction landing in the gap between
-        # them would register itself into both tables -- and the ownership forfeit below
-        # would then hit the LIVE transaction, leaving it in _tx_table but unable to
-        # ever record its outcome (found by property falsification, P-C).
+        """Shuts down the service: terminates all transactions, drops all state."""
+        # Table and ownership teardown are ONE atomic step (_tx_lock nesting
+        # _outcome_lock): a registration landing between separate critical sections
+        # would enter both tables and then lose its ownership, leaving a live
+        # transaction that can never record.
         with cls._tx_lock:
             tx_list = list(cls._tx_table.values())
             for tx in tx_list:
@@ -1205,16 +1154,11 @@ class DownloadService:
             cls._finished_refs.clear()
 
             with cls._outcome_lock:
-                # Drop recorded outcomes and clear outcome ownership: a settlement
-                # mid-flight on another thread finds its ownership gone once it reaches
-                # _record_outcome, so nothing records after shutdown -- the owner guard
-                # alone gates post-shutdown recording. (tx_ids are never reused, so a
-                # new_transaction racing this shutdown registers under a DIFFERENT id
-                # and cannot collide with the deferred settlements below.)
+                # Clearing ownership is what stops recording: a settlement mid-flight
+                # on another thread finds its entry gone at _record_outcome and drops.
                 cls._tx_outcomes.clear()
                 cls._outcome_owners.clear()
-                # unblock the awaitable facade: waiters resolve to None (service shut down
-                # before the transaction terminated), never hang
+                # waiters resolve to None rather than hang
                 for waiters in cls._tx_waiters.values():
                     for waiter in waiters:
                         waiter._resolve(None)
@@ -1275,10 +1219,8 @@ class DownloadService:
                 waiter._resolve(existing)
                 return waiter
             if transaction_id not in cls._outcome_owners:
-                # unknown, already-forgotten (outcome expired) or shut down: nothing will
-                # ever record an outcome for this id, so resolving with None immediately is
-                # the only way to honor "waiters can never hang". Race-free: _record_outcome
-                # swaps ownership -> recorded outcome under this same lock.
+                # unknown/expired/shut-down: nothing will ever record for this id --
+                # resolve None now (waiters never hang); race-free under this lock
                 waiter._resolve(None)
                 return waiter
             cls._tx_waiters.setdefault(transaction_id, []).append(waiter)
@@ -1301,9 +1243,7 @@ class DownloadService:
         # recording is legal only for the transaction that owns the outcome slot.
         with cls._outcome_lock:
             if cls._outcome_owners.get(outcome.tx_id) is not tx:
-                # ownership was already consumed (a prior terminal record) or cleared
-                # by shutdown(): this recording is stale and must be dropped -- the
-                # owner guard alone gates post-shutdown recording
+                # ownership consumed (prior record) or cleared (shutdown): stale, drop
                 return
             cls._outcome_owners.pop(outcome.tx_id, None)
             cls._tx_outcomes[outcome.tx_id] = outcome
@@ -1396,9 +1336,8 @@ class DownloadService:
         with cls._tx_lock:
             ref = cls._ref_table.get(rid)
             if ref is not None and not ref.tx.begin_op():
-                # the transaction is settling/settled: this serve must not start against
-                # it (its emissions would land after settlement) -- fall through to the
-                # tombstone/missing handling exactly as if the ref were already gone
+                # settling/settled: a serve must not start against it -- treat the ref
+                # as already gone (tombstone/missing handling)
                 ref = None
             if not ref:
                 finished_status = cls._get_finished_ref_status(rid, requester)
@@ -1524,9 +1463,7 @@ class DownloadService:
                 budget_txs = [tx for tx in cls._tx_table.values() if tx.has_receiver_budgets]
             for tx in budget_txs:
                 with cls._tx_lock:
-                    # deleted/replaced since the snapshot, or already settling: do not
-                    # touch a dead tx -- begin_op makes the check binding, since
-                    # settlement drains registered operations before emitting
+                    # dead or settling tx: skip (begin_op makes the table check binding)
                     live = cls._tx_table.get(tx.tid) is tx and tx.begin_op()
                 if not live:
                     continue
