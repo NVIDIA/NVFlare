@@ -115,14 +115,14 @@ class TestGetOrCreate:
 
 
 class TestWorkspaceTransferManager:
-    def test_workspace_bundle_excludes_internal_study_data_map(self):
+    def test_workspace_bundle_excludes_internal_study_config_files(self):
         with tempfile.TemporaryDirectory() as ws_root, tempfile.TemporaryDirectory() as tmp:
             _make_workspace(ws_root, JOB_ID)
             _write_file(
                 os.path.join(ws_root, "local", "study_data.yaml"),
                 b"study-a:\n  training:\n    source: nvfldata\n    mode: ro\n",
             )
-            _write_file(os.path.join(ws_root, "local", "study_job_spec.yaml"), b"study-a: study-a-pod.yaml\n")
+            _write_file(os.path.join(ws_root, "local", "study_runtime.yaml"), b"format_version: 2\nstudies: {}\n")
             _write_file(os.path.join(ws_root, "local", "custom", "helper.py"), b"VALUE = 1\n")
             zip_path = os.path.join(tmp, "workspace.zip")
 
@@ -134,9 +134,9 @@ class TestWorkspaceTransferManager:
             assert "local/custom/helper.py" in names
             assert f"{JOB_ID}/app/config/config_train.json" in names
             assert "local/study_data.yaml" not in names
-            assert "local/study_job_spec.yaml" not in names
+            assert "local/study_runtime.yaml" not in names
 
-    def test_workspace_bundle_excludes_configured_study_job_spec_and_templates(self):
+    def test_workspace_bundle_excludes_legacy_custom_study_data_path(self):
         with tempfile.TemporaryDirectory() as ws_root, tempfile.TemporaryDirectory() as tmp:
             _make_workspace(ws_root, JOB_ID)
             resource_config = {
@@ -147,19 +147,37 @@ class TestWorkspaceTransferManager:
                         "args": {
                             "workspace_mount_path": "/workspace",
                             "study_data_pvc_file_path": "/workspace/local/custom_data.yaml",
-                            "study_job_spec_file_path": "/workspace/local/configs/custom_study_jobs.yaml",
                         },
                     }
                 ]
             }
             _write_file(os.path.join(ws_root, "local", "resources.json"), json.dumps(resource_config).encode())
             _write_file(os.path.join(ws_root, "local", "custom_data.yaml"), b"study-a: {}\n")
+            _write_file(os.path.join(ws_root, "local", "custom", "helper.py"), b"VALUE = 1\n")
+            zip_path = os.path.join(tmp, "workspace.zip")
+
+            _zip_workspace_to_file(ws_root, JOB_ID, zip_path)
+
+            with zipfile.ZipFile(zip_path) as zf:
+                names = set(zf.namelist())
+            assert "local/resources.json" in names
+            assert "local/custom/helper.py" in names
+            assert "local/custom_data.yaml" not in names
+
+    def test_workspace_bundle_excludes_study_runtime_pod_templates(self):
+        with tempfile.TemporaryDirectory() as ws_root, tempfile.TemporaryDirectory() as tmp:
+            _make_workspace(ws_root, JOB_ID)
             _write_file(
-                os.path.join(ws_root, "local", "configs", "custom_study_jobs.yaml"),
-                b"study-a: ../pod_specs/h100-pod.yaml\nstudy-b: /workspace/local/pod_specs/abs-pod.yaml\n",
+                os.path.join(ws_root, "local", "study_runtime.yaml"),
+                b"format_version: 2\n"
+                b"studies:\n"
+                b"  study-a:\n"
+                b"    pod_template: pod_specs/h100-pod.yaml\n"
+                b"  study-b:\n"
+                b"    pod_template:\n"
+                b"      spec: {}\n",
             )
             _write_file(os.path.join(ws_root, "local", "pod_specs", "h100-pod.yaml"), b"kind: Pod\n")
-            _write_file(os.path.join(ws_root, "local", "pod_specs", "abs-pod.yaml"), b"kind: Pod\n")
             _write_file(os.path.join(ws_root, "local", "custom", "helper.py"), b"VALUE = 1\n")
             zip_path = os.path.join(tmp, "workspace.zip")
 
@@ -170,10 +188,8 @@ class TestWorkspaceTransferManager:
             assert "local/resources.json" in names
             assert "local/custom/helper.py" in names
             assert f"{JOB_ID}/app/config/config_train.json" in names
-            assert "local/custom_data.yaml" not in names
-            assert "local/configs/custom_study_jobs.yaml" not in names
+            assert "local/study_runtime.yaml" not in names
             assert "local/pod_specs/h100-pod.yaml" not in names
-            assert "local/pod_specs/abs-pod.yaml" not in names
 
     def test_prepare_download_returns_ref_for_valid_token(self, monkeypatch):
         with tempfile.TemporaryDirectory() as ws_root:

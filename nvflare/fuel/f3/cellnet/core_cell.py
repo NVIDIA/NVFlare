@@ -28,6 +28,8 @@ from nvflare.fuel.f3.cellnet.credential_manager import CredentialManager
 from nvflare.fuel.f3.cellnet.defs import (
     AbortRun,
     AuthenticationError,
+    CellChannel,
+    CellChannelTopic,
     CellPropertyKey,
     InvalidRequest,
     InvalidSession,
@@ -60,9 +62,7 @@ from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
-_CHANNEL = "cellnet.channel"
 _TOPIC_BULK = "bulk"
-_TOPIC_BYE = "bye"
 _SM_CHANNEL = "credential_manager"
 _SM_TOPIC = "key_exchange"
 
@@ -197,7 +197,7 @@ class _BulkSender:
         tms = [m.to_dict() for m in messages_to_send]
         bulk_msg = Message(None, tms)
         send_errs = self.cell.fire_and_forget(
-            channel=_CHANNEL, topic=_TOPIC_BULK, targets=[self.target], message=bulk_msg
+            channel=CellChannel.CELLNET, topic=_TOPIC_BULK, targets=[self.target], message=bulk_msg
         )
         if send_errs[self.target]:
             log_messaging_error(
@@ -497,8 +497,8 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         self.adhoc_connector_lock = threading.Lock()
         self.root_change_lock = threading.Lock()
 
-        self.register_request_cb(channel=_CHANNEL, topic=_TOPIC_BULK, cb=self._receive_bulk_message)
-        self.register_request_cb(channel=_CHANNEL, topic=_TOPIC_BYE, cb=self._peer_goodbye)
+        self.register_request_cb(channel=CellChannel.CELLNET, topic=_TOPIC_BULK, cb=self._receive_bulk_message)
+        self.register_request_cb(channel=CellChannel.CELLNET, topic=CellChannelTopic.Bye, cb=self._peer_goodbye)
 
         self.cleanup_waiter = None
         self.msg_stats_pool = StatsPoolManager.add_time_hist_pool(
@@ -647,7 +647,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             self._create_bb_external_connector()
         elif not parent_url and self.root_url:
             # A cell configured with only a root URL (e.g. a CellPipe cell named
-            # <site>.<token>.<mode> that joins the cellnet at the root) has no
+            # <site>.cellpipe~plain~<token>~<mode> that joins the cellnet at the root) has no
             # other way to connect, regardless of its generation.
             self._create_bb_external_connector()
 
@@ -974,8 +974,8 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 targets = [peer_name for peer_name in self.agents.keys()]
                 self.logger.debug(f"broadcasting goodbye to {targets}")
                 self.broadcast_request(
-                    channel=_CHANNEL,
-                    topic=_TOPIC_BYE,
+                    channel=CellChannel.CELLNET,
+                    topic=CellChannelTopic.Bye,
                     targets=targets,
                     request=Message(),
                     timeout=0.5,
@@ -1178,10 +1178,13 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 agent = self.agents.get(parent_fqcn)
                 if agent:
                     return agent.endpoint
-                # I'm not connected to my FQCN parent: cells with hierarchical
-                # names (e.g. CellPipe cells named <site>.<token>.<mode>) connect
-                # to an ancestor or to the root instead. Fall through to the
-                # generic resolution below.
+                # I'm not connected to my FQCN parent: some hierarchical cells
+                # connect to an ancestor or to the root instead (e.g. CellPipe
+                # cells named <site>.cellpipe~plain~<token>~<mode> that connect to
+                # the server root). This fall-through is load-bearing for such cells - see
+                # test_pipe_cell_reaches_peer_through_server_root in
+                # core_cell_routing_test.py. Fall through to the generic
+                # resolution below.
                 self.logger.debug(f"{self.my_info.fqcn}: no connection to parent {parent_fqcn}")
 
         # not the same family, or no direct path within the family

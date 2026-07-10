@@ -101,6 +101,7 @@ class FedAvgRecipe(Recipe):
             Must implement accept_model(), aggregate_model(), reset_stats() methods.
             If None, uses built-in memory-efficient weighted averaging. Defaults to None.
         aggregator_data_kind: Data kind for aggregation (DataKind.WEIGHTS or DataKind.WEIGHT_DIFF).
+            When a custom aggregator declares expected_data_kind, the declaration must match.
             Kept for backward compatibility. Defaults to DataKind.WEIGHTS.
         launch_external_process: Whether to launch the script in external process. Defaults to False.
         command: If launch_external_process=True, command to run script (prepended to script).
@@ -113,7 +114,8 @@ class FedAvgRecipe(Recipe):
         server_expected_format: What format to exchange the parameters between server and client.
             Defaults to ExchangeFormat.NUMPY.
         params_transfer_type: How to transfer the parameters. FULL means the whole model parameters
-            are sent. DIFF means that only the difference is sent. Defaults to TransferType.FULL.
+            are sent. DIFF enables automatic difference calculation for full-model client results.
+            A client's FLModel.params_type remains authoritative. Defaults to TransferType.FULL.
         model_persistor: Custom model persistor for any framework. If None, uses the
             framework's default persistor when one is available.
         per_site_config: Per-site configuration for the federated learning job. Dictionary mapping
@@ -269,6 +271,7 @@ class FedAvgRecipe(Recipe):
         self.model_persistor = v.model_persistor
         self.per_site_config = v.per_site_config
         self._validate_per_site_config(self.per_site_config)
+        self._validate_aggregator_data_kind()
         self.launch_once = v.launch_once
         self.shutdown_timeout = v.shutdown_timeout
         self.key_metric = v.key_metric
@@ -448,6 +451,16 @@ class FedAvgRecipe(Recipe):
                 )
             if not isinstance(site_config, dict):
                 raise ValueError(f"per_site_config['{site_name}'] must be a dict, got {type(site_config).__name__}")
+
+    def _validate_aggregator_data_kind(self) -> None:
+        from nvflare.recipe.utils import validate_aggregator_data_kind
+
+        validate_aggregator_data_kind(
+            data_kind=self.aggregator_data_kind,
+            recipe_name=type(self).__name__,
+            aggregator=self.aggregator,
+            require_data_kind=self.aggregator is None,
+        )
 
     def _get_model_params(self) -> Optional[Dict]:
         """Convert model to dict of params.

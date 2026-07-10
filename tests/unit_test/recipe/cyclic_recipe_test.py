@@ -19,6 +19,7 @@ from unittest.mock import patch
 import pytest
 import torch.nn as nn
 
+from nvflare.apis.job_def import ALL_SITES
 from nvflare.app_opt.pt.job_config.model import PTModel
 from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.recipe.cyclic import CyclicRecipe as BaseCyclicRecipe
@@ -153,6 +154,39 @@ class TestBaseCyclicRecipeAttributes:
             **base_recipe_params,
         )
         assert recipe.min_clients == base_recipe_params["min_clients"]
+
+
+class TestCyclicRecipeControllerConfig:
+    """Test named server/client timeouts and advanced config overrides."""
+
+    def test_pt_recipe_parameters_and_override_precedence(self, mock_file_system, base_recipe_params, simple_model):
+        from nvflare.app_opt.pt.recipes.cyclic import CyclicRecipe as PTCyclicRecipe
+
+        recipe = PTCyclicRecipe(
+            name="test_pt_cyclic_config",
+            model=simple_model,
+            launch_external_process=True,
+            task_assignment_timeout=30,
+            shutdown_timeout=45.0,
+            server_config_overrides={"task_assignment_timeout": 60, "task_check_period": 2.0},
+            client_config_overrides={"shutdown_timeout": 90.0, "launch_once": False},
+            **base_recipe_params,
+        )
+
+        controller = recipe.job._deploy_map["server"].app_config.workflows[0].controller
+        launcher = recipe.job._deploy_map[ALL_SITES].app_config.components["launcher"]
+        assert controller.task_assignment_timeout == 60
+        assert controller._task_check_period == 2.0
+        assert launcher._shutdown_timeout == 90.0
+        assert launcher._launch_once is False
+
+        with pytest.raises(ValueError, match="task_check_period"):
+            PTCyclicRecipe(
+                name="test_invalid_task_check_period",
+                model=simple_model,
+                server_config_overrides={"task_check_period": 0},
+                **base_recipe_params,
+            )
 
 
 class TestPTCyclicRecipe:
