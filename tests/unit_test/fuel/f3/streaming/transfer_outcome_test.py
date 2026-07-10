@@ -549,6 +549,41 @@ class TestServiceOutcomeTable:
         tx.end_op()
         assert service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-SHUTLEAK") == "TX-SHUTLEAK"
 
+    def test_outcome_computation_failure_still_records_fail_closed(self):
+        """Greptile pin: if compute_transfer_outcome itself raises, settlement used to
+        skip recording entirely -- ownership stayed consumed-never, and a waiter parked
+        on the id hung until shutdown. The finally now records a fail-closed fallback
+        verdict (empty refs certify nothing), so waiters always resolve."""
+        from unittest.mock import Mock, patch
+
+        import nvflare.fuel.f3.streaming.download_service as ds_module
+
+        service = make_isolated_download_service()
+        service._tx_monitor = Mock()
+        cell = Mock()
+        service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-COMPUTE")
+        obj = _stub_obj()
+        service.add_object("TX-COMPUTE", obj)
+        waiter = service.get_transfer_waiter("TX-COMPUTE")
+
+        real_compute = ds_module.compute_transfer_outcome
+        calls = {"n": 0}
+
+        def exploding_first_call(*args, **kwargs):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("outcome computation blew up")
+            return real_compute(*args, **kwargs)
+
+        with patch.object(ds_module, "compute_transfer_outcome", side_effect=exploding_first_call):
+            service.delete_transaction("TX-COMPUTE")
+
+        outcome = waiter.wait(timeout=5.0)
+        assert outcome is not None, "waiters must resolve even when outcome computation raises"
+        assert not outcome.completed, "the fallback verdict must be fail-closed"
+        with service._outcome_lock:
+            assert "TX-COMPUTE" not in service._outcome_owners, "ownership must be consumed"
+
     def test_receipt_ttl_starts_at_recording_not_at_verdict(self):
         """P1 pin: the outcome timestamp is captured before the settlement callbacks
         run -- a settlement slower than TX_OUTCOME_TTL used to record a receipt that

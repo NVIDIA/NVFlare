@@ -898,10 +898,26 @@ class _Transaction:
             # release is guarded so one raising release() cannot skip its siblings
             for ref in refs:
                 _invoke_cb_safely(self.logger, f"release of {type(ref.obj)} for tx {self.tid}", ref.obj.release)
+        except Exception as ex:
+            # the ceremony must never raise: a propagating exception would kill the
+            # monitor thread and skip the terminator's marker sync (the finally below
+            # still records a fail-closed verdict)
+            self.logger.error(f"settlement of tx {self.tid} raised: {secure_format_exception(ex)}")
         finally:
             # in a finally: no exception above may leave the outcome unrecorded and
             # waiters pending
-            if on_outcome and outcome is not None:
+            if outcome is None:
+                # outcome computation itself raised: record a fail-closed verdict so
+                # ownership is consumed and waiters resolve (empty refs cannot certify
+                # anything and exercises only trivial construction paths)
+                outcome = compute_transfer_outcome(
+                    tx_id=self.tid,
+                    done_status=status,
+                    num_receivers=self.num_receivers,
+                    refs=[],
+                    timestamp=time.time(),
+                )
+            if on_outcome:
                 _invoke_cb_safely(self.logger, f"outcome recording for tx {self.tid}", on_outcome, outcome)
             self._settlement_complete = True
 
@@ -1207,7 +1223,13 @@ class DownloadService:
     @classmethod
     def _reap_leaked_ops(cls):
         with cls._tx_lock:
-            for tid in [t for t, tx in cls._leaked_ops.items() if tx._settlement_complete and tx._active_ops <= 0]:
+            released = []
+            for tid, tx in cls._leaked_ops.items():
+                with tx._ops_cond:  # _tx_lock -> _ops_cond is the established order
+                    done = tx._settlement_complete and tx._active_ops <= 0
+                if done:
+                    released.append(tid)
+            for tid in released:
                 cls._leaked_ops.pop(tid, None)
 
     @classmethod
