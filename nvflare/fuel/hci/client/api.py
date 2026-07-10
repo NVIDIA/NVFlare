@@ -459,6 +459,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             cb=validate_auth_headers,
             token_verifier=token_verifier,
             logger=self.logger,
+            local_cell_fqcn=self.cell.get_fqcn(),
         )
         self.debug(f"Successfully authenticated to {self.server_identity}: {token=} {ssid=}")
 
