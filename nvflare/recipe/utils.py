@@ -20,6 +20,7 @@ import warnings
 from typing import Any, Dict, List, Optional
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
+from nvflare.apis.dxo import DataKind
 from nvflare.apis.job_def import USER_SETTABLE_JOB_META_KEYS, JobMetaKey
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.job_config.api import FedJob
@@ -65,6 +66,103 @@ MODEL_LOCATOR_REGISTRY = {
 
 # User-settable keys whose values are dicts keyed by site name with dict values.
 _SITE_KEYED_META_KEYS = frozenset({JobMetaKey.RESOURCE_SPEC, JobMetaKey.JOB_LAUNCHER_SPEC})
+
+
+def validate_aggregator_data_kind(
+    *,
+    data_kind: Optional[DataKind],
+    recipe_name: str,
+    data_kind_arg: str = "aggregator_data_kind",
+    aggregator: Any = None,
+    require_data_kind: bool = False,
+    fixed_data_kind: bool = False,
+) -> None:
+    """Validate recipe-owned server aggregation data-kind settings.
+
+    ``fixed_data_kind`` is for recipes such as FedOpt that do not expose the update-kind
+    settings. Its error guidance tells users to replace or reconfigure their custom
+    aggregator instead of suggesting recipe arguments they cannot change.
+
+    This intentionally does not infer the client result kind from ``TransferType``.
+    ``FLModel.params_type`` is the authoritative description of a client result, and a
+    recipe cannot inspect an arbitrary training script at construction time.
+    """
+    declared_kind = getattr(aggregator, "expected_data_kind", None)
+    if declared_kind is None:
+        assembler = getattr(aggregator, "assembler", None)
+        get_expected_data_kind = getattr(assembler, "get_expected_data_kind", None)
+        if callable(get_expected_data_kind):
+            declared_kind = get_expected_data_kind()
+
+    if isinstance(declared_kind, dict):
+        if len(declared_kind) != 1:
+            raise ValueError(
+                f"{recipe_name} cannot validate aggregator {type(aggregator).__name__}: "
+                f"expected_data_kind declares {len(declared_kind)} entries, but the recipe expects a single "
+                "model-update DataKind. Configure the aggregator with one expected_data_kind entry."
+            )
+        declared_kind = next(iter(declared_kind.values()))
+
+    if declared_kind is not None:
+        declared_kind = DataKind(declared_kind)
+    if data_kind is not None:
+        data_kind = DataKind(data_kind)
+    else:
+        data_kind = declared_kind
+
+    if data_kind is None:
+        if require_data_kind:
+            raise ValueError(
+                f"{recipe_name} requires {data_kind_arg} to be DataKind.WEIGHTS or DataKind.WEIGHT_DIFF "
+                "when using its built-in aggregator."
+            )
+        return
+
+    if data_kind not in (DataKind.WEIGHTS, DataKind.WEIGHT_DIFF):
+        raise ValueError(
+            f"{recipe_name} does not support {data_kind_arg}=DataKind.{data_kind.name}; "
+            "use DataKind.WEIGHTS or DataKind.WEIGHT_DIFF."
+        )
+
+    if declared_kind not in (None, DataKind.WEIGHTS, DataKind.WEIGHT_DIFF):
+        raise ValueError(
+            f"{recipe_name} cannot use aggregator {type(aggregator).__name__}: it declares "
+            f"expected_data_kind=DataKind.{declared_kind.name}, but the recipe supports only "
+            "DataKind.WEIGHTS or DataKind.WEIGHT_DIFF. Configure the aggregator for a supported model-update kind."
+        )
+
+    if declared_kind is None or declared_kind == data_kind:
+        return
+
+    if fixed_data_kind:
+        raise ValueError(
+            f"{recipe_name} requires a custom aggregator configured with "
+            f"expected_data_kind=DataKind.{data_kind.name}, but {type(aggregator).__name__} declares "
+            f"expected_data_kind=DataKind.{declared_kind.name}. Configure the custom aggregator for "
+            f"DataKind.{data_kind.name}, or omit it to use the built-in aggregator."
+        )
+    raise ValueError(
+        f"{recipe_name} has incompatible server aggregation settings: "
+        f"{data_kind_arg}=DataKind.{data_kind.name}, but aggregator "
+        f"{type(aggregator).__name__} declares expected_data_kind=DataKind.{declared_kind.name}. "
+        f"Use an aggregator configured for DataKind.{data_kind.name}, or set "
+        f"{data_kind_arg}=DataKind.{declared_kind.name}."
+    )
+
+
+def merge_config_overrides(defaults: Dict[str, Any], overrides: Optional[Dict[str, Any]], name: str) -> Dict[str, Any]:
+    """Return a shallow merge of recipe defaults and user overrides."""
+    if overrides is None:
+        return dict(defaults)
+    if not isinstance(overrides, dict):
+        raise TypeError(f"{name} must be a dict, but got {type(overrides).__name__}")
+    for key in overrides:
+        if not isinstance(key, str):
+            raise TypeError(f"{name} keys must be strings, but got {type(key).__name__}")
+
+    result = dict(defaults)
+    result.update(overrides)
+    return result
 
 
 def _normalize_recipe_meta_key(key: Any) -> str:
@@ -214,6 +312,7 @@ def add_experiment_tracking(
     tracking_config: Optional[dict] = None,
     client_side: bool = False,
     server_side: bool = True,
+    clients: Optional[List[str]] = None,
 ):
     """Add experiment tracking to a recipe.
 
@@ -223,8 +322,16 @@ def add_experiment_tracking(
         recipe: Recipe instance to augment with experiment tracking.
         tracking_type: Type of tracking to enable ("mlflow", "tensorboard", or "wandb").
         tracking_config: Optional configuration dict for the tracking receiver.
-        client_side: If True, add tracking to all clients (each client tracks locally).
+        client_side: If True, add tracking to clients (each client tracks locally).
         server_side: If True, add tracking to server (aggregates metrics from all clients). Default: True.
+        clients: Optional list of client names for client-side tracking. If None, the
+            client-side receiver is added to all clients. Only valid with client_side=True.
+            To give sites different receiver configs (e.g. per-site tracking_uri), call this
+            function once per site with that site's tracking_config and clients=[site].
+            Targeting specific clients requires the recipe's client apps to be per-site
+            (e.g. recipes constructed with the per_site_config constructor argument), and
+            each name must match an existing per-site client app; with the default
+            all-clients topology or unknown site names, targeted placement raises ValueError.
 
     Examples:
         # Server-side tracking (default - federated metrics)
@@ -235,6 +342,16 @@ def add_experiment_tracking(
 
         # Both server and client tracking
         add_experiment_tracking(recipe, "mlflow", {...}, client_side=True, server_side=True)
+
+        # Per-site client tracking configs (one call per site)
+        add_experiment_tracking(
+            recipe, "mlflow", {"tracking_uri": "file:///tmp/site-1/mlruns"},
+            client_side=True, server_side=False, clients=["site-1"],
+        )
+        add_experiment_tracking(
+            recipe, "mlflow", {"tracking_uri": "file:///tmp/site-2/mlruns"},
+            client_side=True, server_side=False, clients=["site-2"],
+        )
     """
     tracking_config = tracking_config or {}
     if tracking_type not in TRACKING_REGISTRY:
@@ -242,6 +359,14 @@ def add_experiment_tracking(
 
     if not server_side and not client_side:
         raise ValueError("At least one of server_side or client_side must be True")
+
+    if clients is not None:
+        if not client_side:
+            raise ValueError("clients is only used for client-side tracking; set client_side=True")
+        if not isinstance(clients, list) or not all(isinstance(c, str) for c in clients):
+            raise TypeError(f"clients must be a list of str, got {clients!r}")
+        if not clients:
+            raise ValueError("clients must not be empty; omit it to add tracking to all clients")
 
     _, flag = optional_import(TRACKING_REGISTRY[tracking_type]["package"])
     if not flag:
@@ -267,7 +392,9 @@ def add_experiment_tracking(
             client_config["events"] = [ANALYTIC_EVENT_TYPE]
 
         client_receiver = receiver_class(**client_config)
-        recipe.job.to_clients(client_receiver, id="client_receiver")
+        # Route through the recipe placement layer so existing per-site client apps
+        # are preserved (to_clients would target ALL_SITES even when per-site apps exist).
+        recipe._add_to_client_apps(client_receiver, clients=clients, id="client_receiver")
 
 
 def add_cross_site_evaluation(

@@ -199,18 +199,85 @@ def test_identity_resolver_rejects_admin_like_endpoint_without_authenticated_ide
         resolver.require_match("_admin_not-a-uuid", "admin@nvidia.com", "connection admin")
 
 
-def test_identity_resolver_maps_hierarchical_cell_pipe_cell_to_owner_identity():
-    # current CellPipe naming: <site>.<token>.<mode> resolves via the FQCN hierarchy
+def test_identity_resolver_maps_topology_cell_pipe_cell_to_owner_identity():
     resolver = CellIdentityResolver(local_fqcn="server", prefix_identity_map={"site-1": "site-1"})
 
-    assert resolver.resolve("site-1.8cb50f16-8158-46f6-a8d7-ec85b1f06c53.active") == "site-1"
-    assert resolver.resolve("site-1.8cb50f16-8158-46f6-a8d7-ec85b1f06c53.passive") == "site-1"
+    assert resolver.resolve("site-1.cellpipe~plain~8cb50f16-8158-46f6-a8d7-ec85b1f06c53~active") == "site-1"
+    assert resolver.resolve("site-1.cellpipe~plain~8cb50f16-8158-46f6-a8d7-ec85b1f06c53~passive") == "site-1"
 
 
-def test_identity_resolver_maps_hierarchical_cell_pipe_cell_behind_relay_to_owner_identity():
+def test_identity_resolver_maps_underscore_token_pipe_cell_to_site_identity():
+    # A root-connected pipe cell may carry "_" in its user-chosen token (e.g.
+    # FlareAgentWithCellPipe agent_id="ext_trainer"). The cellpipe~plain~ leaf
+    # is never alias-parsed: with a sparse identity map (provisioning omits
+    # identities equal to the name), the cell must resolve to its site, not to
+    # a fabricated alias owner such as "ext".
+    resolver = CellIdentityResolver(local_fqcn="server")
+
+    assert resolver.resolve("site-1.cellpipe~plain~ext_trainer~active") == "site-1"
+    assert resolver.resolve("site-1.cellpipe~plain~simulate_job~passive") == "site-1"
+
+
+def test_identity_resolver_cp_resolves_own_underscore_token_child_to_site_identity():
+    # The explicit leaf prefixes remove the old ambiguity: a CP resolving its
+    # own pipe child with an underscore token sees a plain (non-alias) leaf
+    # and resolves it to the site's identity, never to a fabricated alias
+    # owner such as "simulate".
+    resolver = CellIdentityResolver(local_fqcn="site-1")
+
+    assert resolver.resolve("site-1.cellpipe~plain~simulate_job~active") == "site-1"
+
+
+def test_identity_resolver_maps_relay_cell_pipe_cell_to_owner_identity():
     resolver = CellIdentityResolver(local_fqcn="relay-1", exact_identity_map={"relay-1": "relay-1"})
 
-    assert resolver.resolve("relay-1.site-1.job-123.active") == "site-1"
+    assert resolver.resolve("relay-1.cellpipe~alias~site-1~job-123~active") == "site-1"
+    assert resolver.resolve("relay-1.site-1.cellpipe~plain~job-123~active") == "site-1"
+
+
+def test_identity_resolver_maps_relay_cell_pipe_alias_from_a_distant_cell():
+    # The explicit alias marker is authoritative at any depth, so a cell that
+    # is not the connected relay (e.g. the server during cert exchange) also
+    # resolves the alias to the owning site.
+    resolver = CellIdentityResolver(local_fqcn="server")
+
+    assert resolver.resolve("relay-1.cellpipe~alias~site-1~job-123~active") == "site-1"
+
+
+def test_identity_resolver_maps_nested_relay_alias_before_parent_identity():
+    # The server carries identity mappings for both a nested relay and its
+    # client. The explicit alias belongs to the client and must not inherit the
+    # first matching ancestor relay identity.
+    resolver = CellIdentityResolver(
+        local_fqcn="server",
+        prefix_identity_map={
+            "relay-1.relay-2": "relay-2",
+            "relay-1.relay-2.site-1": "site-1",
+        },
+    )
+
+    assert resolver.resolve("relay-1.relay-2.cellpipe~alias~site-1~job-123~active") == "site-1"
+
+
+def test_identity_resolver_maps_relay_alias_to_configured_owner_identity():
+    resolver = CellIdentityResolver(
+        local_fqcn="relay-1",
+        prefix_identity_map={"relay-1.site-1": "custom-site-cn"},
+        exact_identity_map={"relay-1": "relay-1"},
+    )
+
+    fqcn = "relay-1.cellpipe~alias~site-1~job-123~active"
+    assert resolver.resolve(fqcn) == "custom-site-cn"
+    resolver.require_match(fqcn, "custom-site-cn", "connection site-1 pipe")
+
+
+def test_identity_resolver_rejects_malformed_marked_alias():
+    resolver = CellIdentityResolver(local_fqcn="server", prefix_identity_map={"relay-1": "relay-1"})
+    fqcn = "relay-1.cellpipe~alias~malformed"
+
+    assert resolver.resolve(fqcn) is None
+    with pytest.raises(ValueError, match="does not resolve"):
+        resolver.require_match(fqcn, "relay-1", "connection malformed pipe")
 
 
 def test_identity_resolver_maps_legacy_cell_pipe_alias_to_owner_identity():
@@ -219,6 +286,12 @@ def test_identity_resolver_maps_legacy_cell_pipe_alias_to_owner_identity():
 
     assert resolver.resolve("site-1_8cb50f16-8158-46f6-a8d7-ec85b1f06c53_active") == "site-1"
     assert resolver.resolve("site-1_8cb50f16-8158-46f6-a8d7-ec85b1f06c53_passive") == "site-1"
+
+
+def test_identity_resolver_does_not_map_nested_legacy_alias_to_owner_identity():
+    resolver = CellIdentityResolver(local_fqcn="server")
+
+    assert resolver.resolve("relay-1.site-1_job-123_active") == "relay-1"
 
 
 def test_identity_resolver_maps_cell_pipe_alias_to_configured_owner_identity():
@@ -237,7 +310,7 @@ def test_identity_resolver_maps_cell_pipe_alias_owner_with_underscores_from_the_
 def test_identity_resolver_maps_dotted_cell_pipe_alias_to_owner_identity():
     resolver = CellIdentityResolver(local_fqcn="site-1")
 
-    assert resolver.resolve("site-1.site-1_job-123_passive") == "site-1"
+    assert resolver.resolve("site-1.cellpipe~alias~site-1~job-123~passive") == "site-1"
 
 
 def test_identity_resolver_does_not_treat_unconstrained_names_as_cell_pipe_aliases():
@@ -284,14 +357,14 @@ def test_mtls_handshake_rejects_spoofed_endpoint_identity():
     assert conn.closed
 
 
-def test_mtls_handshake_accepts_hierarchical_cell_pipe_cell_with_site_cert_identity():
+def test_mtls_handshake_accepts_topology_cell_pipe_cell_with_site_cert_identity():
     manager = _conn_manager(identity_map={"site-1": "site-1"})
     conn = _FakeConnection(peer_cn="site-1")
     sfm_conn = SfmConnection(conn, Endpoint("server"))
 
-    manager.update_endpoint(sfm_conn, {HandshakeKeys.ENDPOINT_NAME: "site-1.job-123.active"})
+    manager.update_endpoint(sfm_conn, {HandshakeKeys.ENDPOINT_NAME: "site-1.cellpipe~plain~job-123~active"})
 
-    assert "site-1.job-123.active" in manager.sfm_endpoints
+    assert "site-1.cellpipe~plain~job-123~active" in manager.sfm_endpoints
     assert not conn.closed
 
 

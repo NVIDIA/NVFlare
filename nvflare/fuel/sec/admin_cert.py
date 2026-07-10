@@ -16,7 +16,6 @@ from cryptography import x509
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
 ADMIN_CERT_PLACEHOLDER_CN = "nvflare-admin"
-ALLOWED_FLARE_ADMIN_ROLES = {"project_admin", "org_admin", "lead", "member"}
 
 
 class AdminCertValidationError(ValueError):
@@ -24,22 +23,18 @@ class AdminCertValidationError(ValueError):
 
 
 def validate_admin_leaf_cert(cert: x509.Certificate, reject_placeholder_cn: bool = True):
-    """Validate the FLARE admin certificate fields that relying parties consume.
+    """Validate the security-sensitive properties of a FLARE admin leaf certificate.
 
     Legacy FLARE leaf certs may omit KeyUsage and EKU. Treat absent extensions
     as unrestricted for compatibility, but enforce admin-client usage
-    constraints when the issuer includes them.
+    constraints when the issuer includes them. Organization and role are
+    optional authorization attributes: authentication must not require them or
+    constrain roles to a built-in list because authorization policy supports
+    custom roles.
     """
     common_name = _require_subject_attr(cert, NameOID.COMMON_NAME, "commonName")
     if reject_placeholder_cn and common_name == ADMIN_CERT_PLACEHOLDER_CN:
         raise AdminCertValidationError("admin certificate commonName must be a real admin identity")
-
-    _require_subject_attr(cert, NameOID.ORGANIZATION_NAME, "organizationName")
-    role = _require_subject_attr(cert, NameOID.UNSTRUCTURED_NAME, "unstructuredName")
-    if role not in ALLOWED_FLARE_ADMIN_ROLES:
-        raise AdminCertValidationError(
-            f"admin certificate subject unstructuredName must be one of {sorted(ALLOWED_FLARE_ADMIN_ROLES)}"
-        )
 
     _reject_ca_leaf(cert)
     _validate_key_usage(cert)

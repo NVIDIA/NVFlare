@@ -26,13 +26,18 @@ from nvflare.app_common.ccwf.comps.simple_model_shareable_generator import Simpl
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
 from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.pipe.file_pipe import FilePipe
+from nvflare.fuel.utils.validation_utils import check_positive_int, check_positive_number
 from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.recipe.spec import Recipe
-from nvflare.recipe.utils import validate_ckpt
+from nvflare.recipe.utils import merge_config_overrides, validate_aggregator_data_kind, validate_ckpt
 
 logger = logging.getLogger(__name__)
 
 _VALID_PIPE_TYPES = ("cell_pipe", "file_pipe")
+_RECIPE_MANAGED_SERVER_CONFIG_KEYS = frozenset({"min_clients"})
+_RECIPE_MANAGED_CLIENT_CONFIG_KEYS = frozenset(
+    {"executor", "aggregator", "persistor", "shareable_generator", "min_responses_required"}
+)
 
 
 class _SwarmValidator(BaseModel):
@@ -116,11 +121,11 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
             gc.collect() was called unconditionally after each trainer submission. Set to 0 to disable.
         cuda_empty_cache: Call torch.cuda.empty_cache() during cleanup. Defaults to False.
         expected_data_kind: The data kind the aggregator expects from clients. Defaults to
-            DataKind.WEIGHTS for full-weight FedAvg. Use DataKind.WEIGHT_DIFF when clients
-            send parameter deltas (e.g. LoRA adapter diffs with params_transfer_type=DIFF).
+            DataKind.WEIGHTS for full-weight FedAvg. Clients returning differences must label
+            their result with FLModel.params_type=ParamsType.DIFF.
         params_transfer_type: How parameters are transferred between client script and NVFlare.
-            FULL sends the entire parameter state each round; DIFF sends only the delta.
-            Defaults to FULL. Must match the ParamsType used in the training script.
+            DIFF enables automatic difference calculation for full-model client results.
+            A client's FLModel.params_type remains authoritative. Defaults to FULL.
         start_task_timeout: Seconds to wait for the starting client to acknowledge the start
             task. Increase for large models that need time to load. Defaults to 300.
         progress_timeout: Seconds of no progress from any client before the workflow is
@@ -134,6 +139,26 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
             for large models (7B+) where P2P transfer can take minutes.  Does NOT cap
             per-round training time (learn_task_timeout remains unbounded by default).
             Defaults to 3600 (matching progress_timeout).
+        learn_task_timeout: Maximum seconds allowed for a learning task. ``None`` means
+            no limit. Defaults to None.
+        max_concurrent_submissions: Maximum number of concurrent result submissions
+            accepted by the aggregation client. Must be at least 1. Defaults to 1.
+        learn_task_abort_timeout: Seconds to wait for a learning task to stop after an
+            abort request. Must be positive when specified. ``None`` uses the Swarm
+            client controller default.
+        learn_task_ack_timeout: Seconds to wait for acknowledgment when dispatching a
+            learning task. ``None`` uses ``round_timeout`` for backward compatibility.
+        final_result_ack_timeout: Seconds to wait for clients to acknowledge the final
+            result. ``None`` uses ``round_timeout`` for backward compatibility.
+        server_config_overrides: Advanced shallow overrides for ``SwarmServerConfig``.
+            Values here take precedence over named constructor parameters, except
+            ``min_clients``, which must be set through the named parameter to keep
+            scheduler, server-controller, and client aggregation quorums aligned.
+        client_config_overrides: Advanced shallow overrides for ``SwarmClientConfig``.
+            Values here take precedence over named constructor parameters. Recipe-managed
+            fields (executor, aggregator, persistor, shareable generator, and
+            ``min_responses_required``) cannot be replaced through this dictionary; use
+            ``BaseSwarmLearningRecipe`` for custom components or quorum settings.
         pipe_type: Pipe used for communication between the NVFlare client process
             and the external training process when ``launch_external_process=True``.
             Accepted values:
@@ -202,10 +227,39 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         progress_timeout: float = 3600,
         max_status_report_interval: float = 300,
         round_timeout: float = 3600,
+        learn_task_timeout: Optional[float] = None,
+        max_concurrent_submissions: int = 1,
+        learn_task_abort_timeout: Optional[float] = None,
+        learn_task_ack_timeout: Optional[float] = None,
+        final_result_ack_timeout: Optional[float] = None,
+        server_config_overrides: Optional[Dict[str, Any]] = None,
+        client_config_overrides: Optional[Dict[str, Any]] = None,
         pipe_type: str = "cell_pipe",
         pipe_root_path: Optional[str] = None,
     ):
         _SwarmValidator(initial_ckpt=initial_ckpt)
+
+        validated_server_config_overrides = merge_config_overrides(
+            {}, server_config_overrides, "server_config_overrides"
+        )
+        protected_server_overrides = _RECIPE_MANAGED_SERVER_CONFIG_KEYS.intersection(validated_server_config_overrides)
+        if protected_server_overrides:
+            fields = ", ".join(sorted(protected_server_overrides))
+            raise ValueError(
+                f"server_config_overrides cannot override recipe-managed fields: {fields}. "
+                "Set min_clients directly on SwarmLearningRecipe to keep all quorum settings aligned."
+            )
+
+        validated_client_config_overrides = merge_config_overrides(
+            {}, client_config_overrides, "client_config_overrides"
+        )
+        protected_overrides = _RECIPE_MANAGED_CLIENT_CONFIG_KEYS.intersection(validated_client_config_overrides)
+        if protected_overrides:
+            fields = ", ".join(sorted(protected_overrides))
+            raise ValueError(
+                f"client_config_overrides cannot override recipe-managed fields: {fields}. "
+                "Use named recipe parameters for quorum settings or BaseSwarmLearningRecipe for custom components."
+            )
 
         if pipe_type not in _VALID_PIPE_TYPES:
             raise ValueError(f"pipe_type must be one of {_VALID_PIPE_TYPES}, got '{pipe_type}'")
@@ -225,6 +279,13 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
                 "pipe_type='file_pipe' has no effect when launch_external_process=False "
                 "(in-process mode does not use pipes)"
             )
+
+        validate_aggregator_data_kind(
+            data_kind=expected_data_kind,
+            recipe_name=type(self).__name__,
+            data_kind_arg="expected_data_kind",
+            require_data_kind=True,
+        )
 
         task_pipe = None
         if pipe_type == "file_pipe":
@@ -274,15 +335,21 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         job = CCWFJob(name=name, min_clients=min_clients)
         ckpt_path = prepare_initial_ckpt(initial_ckpt, job)
 
-        server_config = SwarmServerConfig(
-            num_rounds=num_rounds,
-            start_task_timeout=start_task_timeout,
-            progress_timeout=progress_timeout,
-            max_status_report_interval=max_status_report_interval,
-            min_clients=min_clients,
+        server_config_args = merge_config_overrides(
+            {
+                "num_rounds": num_rounds,
+                "start_task_timeout": start_task_timeout,
+                "progress_timeout": progress_timeout,
+                "max_status_report_interval": max_status_report_interval,
+                "min_clients": min_clients,
+            },
+            validated_server_config_overrides,
+            "server_config_overrides",
         )
-        client_config = SwarmClientConfig(
-            executor=ScriptRunner(
+        server_config = SwarmServerConfig(**server_config_args)
+
+        client_config_args = {
+            "executor": ScriptRunner(
                 script=train_script,
                 launch_external_process=launch_external_process,
                 command=command,
@@ -292,17 +359,31 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
                 task_pipe=task_pipe,
                 **train_args,
             ),
-            aggregator=aggregator,
-            persistor=PTFileModelPersistor(model=model, source_ckpt_file_full_name=ckpt_path),
-            shareable_generator=SimpleModelShareableGenerator(),
-            memory_gc_rounds=memory_gc_rounds,
-            cuda_empty_cache=cuda_empty_cache,
-            min_responses_required=min_clients,
-            learn_task_ack_timeout=round_timeout,
-            final_result_ack_timeout=round_timeout,
-            # learn_task_timeout intentionally not set — inherits None (unbounded) from
-            # SwarmClientConfig default.  Capping per-round training time via round_timeout
-            # would regress long-running training on slow hardware or for 70B+ models.
+            "aggregator": aggregator,
+            "persistor": PTFileModelPersistor(model=model, source_ckpt_file_full_name=ckpt_path),
+            "shareable_generator": SimpleModelShareableGenerator(),
+            "memory_gc_rounds": memory_gc_rounds,
+            "cuda_empty_cache": cuda_empty_cache,
+            "min_responses_required": min_clients,
+            "learn_task_timeout": learn_task_timeout,
+            "max_concurrent_submissions": max_concurrent_submissions,
+            "learn_task_ack_timeout": (round_timeout if learn_task_ack_timeout is None else learn_task_ack_timeout),
+            "final_result_ack_timeout": (
+                round_timeout if final_result_ack_timeout is None else final_result_ack_timeout
+            ),
+        }
+        if learn_task_abort_timeout is not None:
+            client_config_args["learn_task_abort_timeout"] = learn_task_abort_timeout
+        client_config_args = merge_config_overrides(
+            client_config_args,
+            validated_client_config_overrides,
+            "client_config_overrides",
         )
+        check_positive_int("max_concurrent_submissions", client_config_args["max_concurrent_submissions"])
+        if client_config_args.get("learn_task_timeout") is not None:
+            check_positive_number("learn_task_timeout", client_config_args["learn_task_timeout"])
+        if client_config_args.get("learn_task_abort_timeout") is not None:
+            check_positive_number("learn_task_abort_timeout", client_config_args["learn_task_abort_timeout"])
+        client_config = SwarmClientConfig(**client_config_args)
 
         BaseSwarmLearningRecipe.__init__(self, name, server_config, client_config, cse_config, job=job)
