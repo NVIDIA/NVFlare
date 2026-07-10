@@ -94,22 +94,22 @@ python job.py
 
 Since each site has its own MLflow receiver, metrics are stored separately:
 
-With the example's `tracking_uri=None`, the store is created under each site's
-job-result directory as `<site-workspace>/<job-id>/mlflow`. Under the default
-simulation workspace, use `find` to locate the generated directory:
+With the example's `tracking_uri=None`, a SQLite store is created under each
+site's job-result directory as `<site-workspace>/<job-id>/mlflow.db`. Under the
+default simulation workspace, use `find` to locate the generated database:
 
 ### View Site-1 Metrics:
 ```bash
-find /tmp/nvflare/jobs/workdir/fedavg_mlflow_client/site-1 -type d -name mlflow
-mlflow ui --backend-store-uri <site-1-mlflow-directory>
+find /tmp/nvflare/jobs/workdir/fedavg_mlflow_client/site-1 -type f -name mlflow.db
+mlflow ui --backend-store-uri sqlite:////absolute/path/to/site-1/mlflow.db
 ```
 
 Open browser to `http://localhost:5000`
 
 ### View Site-2 Metrics:
 ```bash
-find /tmp/nvflare/jobs/workdir/fedavg_mlflow_client/site-2 -type d -name mlflow
-mlflow ui --backend-store-uri <site-2-mlflow-directory> --port 5001
+find /tmp/nvflare/jobs/workdir/fedavg_mlflow_client/site-2 -type f -name mlflow.db
+mlflow ui --backend-store-uri sqlite:////absolute/path/to/site-2/mlflow.db --port 5001
 ```
 
 Open browser to `http://localhost:5001`
