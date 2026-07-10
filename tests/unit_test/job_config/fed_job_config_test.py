@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+import sys
 from unittest.mock import Mock, patch
 
 import pytest
@@ -61,6 +62,42 @@ class TestFedJobConfig:
         job_config._copy_ext_scripts(str(custom_dir), ["client.py"])
 
         assert (custom_dir / "helper.py").is_file()
+
+    def test_copy_ext_scripts_reject_distinct_absolute_sources_with_same_destination(self, tmp_path, monkeypatch):
+        first_dir = tmp_path / "first"
+        second_dir = tmp_path / "second"
+        first_dir.mkdir()
+        second_dir.mkdir()
+        first_script = first_dir / "client.py"
+        second_script = second_dir / "client.py"
+        first_script.write_text("SOURCE = 'first'\n", encoding="utf-8")
+        second_script.write_text("SOURCE = 'second'\n", encoding="utf-8")
+        monkeypatch.setattr(sys, "path", [])
+
+        custom_dir = tmp_path / "exported" / "custom"
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+
+        with pytest.raises(ValueError, match="map to the same destination"):
+            job_config._copy_ext_scripts(str(custom_dir), [str(first_script), str(second_script)])
+        assert (custom_dir / "client.py").read_text(encoding="utf-8") == "SOURCE = 'first'\n"
+
+    def test_copy_ext_script_accepts_absolute_symlink_alias_within_sys_path(self, tmp_path, monkeypatch):
+        source_root = tmp_path / "source"
+        source_root.mkdir()
+        source_file = source_root / "client.py"
+        source_file.write_text("VALUE = 1\n", encoding="utf-8")
+        source_alias = tmp_path / "source_alias"
+        try:
+            source_alias.symlink_to(source_root, target_is_directory=True)
+        except OSError as e:
+            pytest.skip(f"symlinks are not available: {e}")
+        monkeypatch.setattr(sys, "path", [str(source_root)])
+
+        custom_dir = tmp_path / "exported" / "custom"
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+        job_config._copy_ext_scripts(str(custom_dir), [str(source_alias / "client.py")])
+
+        assert (custom_dir / "client.py").read_text(encoding="utf-8") == "VALUE = 1\n"
 
     def test_absolute_import_does_not_resolve_to_package_sibling(self, tmp_path, monkeypatch):
         package_dir = tmp_path / "pkg"

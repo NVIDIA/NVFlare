@@ -69,6 +69,7 @@ class FedJobConfig:
         self.resource_specs: Dict[str, Dict] = {}
 
         self.custom_modules = []
+        self._copied_source_by_dest = {}
         self.logger = get_obj_logger(self)
 
     def set_app_packages(self, app_packages: List[str]):
@@ -155,6 +156,7 @@ class FedJobConfig:
 
         for app_name, fed_app in self.fed_apps.items():
             self.custom_modules = []
+            self._copied_source_by_dest = {}
             config_dir = os.path.join(job_dir, app_name, CONFIG)
             custom_dir = os.path.join(job_dir, app_name, CUSTOM)
             os.makedirs(config_dir, exist_ok=True)
@@ -258,9 +260,13 @@ class FedJobConfig:
         for script in ext_scripts:
             if os.path.exists(script):
                 if os.path.isabs(script):
-                    relative_script = self._get_relative_script(script)
+                    source_file = self._resolved_path(script)
+                    relative_script = self._get_relative_script(source_file)
+                    source_path_for_root = source_file
                 else:
+                    source_file = script
                     relative_script = script
+                    source_path_for_root = os.path.abspath(script)
                 relative_script = os.path.normpath(relative_script)
                 if (
                     relative_script in ("", os.curdir)
@@ -276,22 +282,22 @@ class FedJobConfig:
                     module_path = os.path.dirname(module_path)
                 module = module_path.replace(os.sep, ".")
                 path_depth = len(module_path.split(os.sep))
-                if os.path.basename(script) != "__init__.py":
+                if os.path.basename(source_file) != "__init__.py":
                     path_depth -= 1
-                source_root = os.path.dirname(os.path.abspath(script))
+                source_root = os.path.dirname(source_path_for_root)
                 for _ in range(max(path_depth, 1)):
                     source_root = os.path.dirname(source_root)
-                self._copy_source_file(custom_dir, module, script, dest_file, source_root=source_root)
+                self._copy_source_file(custom_dir, module, source_file, dest_file, source_root=source_root)
 
     def _copy_ext_dirs(self, custom_dir, app_config: BaseAppConfig):
         for dir in app_config.ext_dirs:
             shutil.copytree(dir, custom_dir, dirs_exist_ok=True)
 
     def _get_relative_script(self, script):
-        script_path = os.path.abspath(script)
+        script_path = self._resolved_path(script)
         package_path = None
         for path in sys.path:
-            path = os.path.abspath(path or os.curdir)
+            path = self._resolved_path(path or os.curdir)
             if self._is_path_within(script_path, path):
                 if package_path is None or len(path) > len(package_path):
                     package_path = path
@@ -353,6 +359,22 @@ class FedJobConfig:
             raise ValueError(f"Source path '{source_file}' resolves outside the allowed source root '{source_root}'")
         return source_file, source_root
 
+    def _check_destination_collision(self, source_file, dest_file):
+        existing_source = self._copied_source_by_dest.get(dest_file)
+        if not existing_source:
+            return
+
+        sources_are_same = source_file == existing_source
+        if not sources_are_same:
+            try:
+                sources_are_same = os.path.samefile(source_file, existing_source)
+            except OSError:
+                sources_are_same = False
+        if not sources_are_same:
+            raise ValueError(
+                f"Source paths '{existing_source}' and '{source_file}' map to the same destination '{dest_file}'"
+            )
+
     def _validate_copy_paths(self, custom_dir, source_file, source_root, dest_file):
         os.makedirs(custom_dir, exist_ok=True)
         source_file, source_root = self._validate_source_path(source_file, source_root)
@@ -368,6 +390,7 @@ class FedJobConfig:
                 paths_are_same = False
         if paths_are_same:
             raise ValueError(f"Source and destination resolve to the same file: {source_file}")
+        self._check_destination_collision(source_file, dest_file)
         return source_file, source_root, dest_file
 
     def _get_custom_file(self, custom_dir, module, source_file, source_root=None):
@@ -377,7 +400,7 @@ class FedJobConfig:
         source_file, source_root = self._validate_source_path(source_file, source_root)
 
         package = module_parts[0]
-        if package in FL_PACKAGES or package in self.app_packages or module in self.custom_modules:
+        if package in FL_PACKAGES or package in self.app_packages:
             return
 
         if os.path.basename(source_file) == "__init__.py":
@@ -385,6 +408,10 @@ class FedJobConfig:
         else:
             dest = os.path.join(*module_parts) + ".py"
         dest_file = os.path.join(custom_dir, dest)
+
+        if module in self.custom_modules:
+            self._validate_copy_paths(custom_dir, source_file, source_root, dest_file)
+            return
 
         self.custom_modules.append(module)
         try:
@@ -425,6 +452,7 @@ class FedJobConfig:
                 import_specs = list(self.locate_imports(sf))
 
         os.makedirs(os.path.dirname(dest_file), exist_ok=True)
+        self._copied_source_by_dest[dest_file] = source_file
         shutil.copyfile(source_file, dest_file)
 
         source_dir = os.path.dirname(source_file)
