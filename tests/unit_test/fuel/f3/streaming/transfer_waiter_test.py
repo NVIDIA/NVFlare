@@ -27,7 +27,7 @@ from unittest.mock import Mock, patch
 from nvflare.fuel.f3.streaming import download_service as ds_module
 from nvflare.fuel.f3.streaming.download_service import DownloadStatus, TransferWaiter
 from tests.unit_test.fuel.f3.streaming.download_test_utils import MockDownloadable, confirm_request
-from tests.unit_test.fuel.f3.streaming.download_test_utils import make_confirm_test_service as _make_service
+from tests.unit_test.fuel.f3.streaming.download_test_utils import make_service_no_monitor as _make_service
 from tests.unit_test.fuel.f3.streaming.download_test_utils import pull_to_terminal as _pull_to_terminal
 from tests.unit_test.fuel.f3.streaming.download_test_utils import run_monitor_once, serve_nonce
 

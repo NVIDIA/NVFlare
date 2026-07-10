@@ -96,8 +96,12 @@ def make_isolated_download_service():
     return IsolatedDownloadService
 
 
-def make_confirm_test_service():
-    """An isolated service with the real monitor thread suppressed (budget/confirm/waiter tests)."""
+def make_service_no_monitor():
+    """An isolated service with the real monitor thread suppressed.
+
+    Not confirm-specific: use for any test that must not race the real 5s monitor
+    loop (budgets, confirms, waiters, lifecycle); drive monitor passes explicitly
+    via run_monitor_once."""
     service = make_isolated_download_service()
     service._tx_monitor = Mock()
     return service

@@ -652,12 +652,19 @@ class _Transaction:
         else:
             self.tid = "T" + str(uuid.uuid4())
         self.timeout = timeout
+        self.logger = get_obj_logger(self)
 
         # Expected receiver identities. Optional: when provided they enable the acquire
         # budget (a receiver that never issues its first pull can be failed) and, if
         # num_receivers is unknown (0), supply the receiver count.
         if receiver_ids:
+            given = len(receiver_ids)
             receiver_ids = tuple(dict.fromkeys(str(r) for r in receiver_ids))  # dedup, keep order
+            if len(receiver_ids) != given:
+                # almost certainly a caller bug: it believes there are more distinct receivers
+                self.logger.warning(
+                    f"tx {self.tid}: duplicate receiver_ids deduplicated ({given} -> {len(receiver_ids)})"
+                )
             if num_receivers and num_receivers != len(receiver_ids):
                 raise ValueError(
                     f"num_receivers ({num_receivers}) does not match receiver_ids count ({len(receiver_ids)})"
@@ -703,7 +710,6 @@ class _Transaction:
         # budget judges -- per-ref timestamps would let a multi-ref receiver escape)
         self._acquired_receivers = set()
         self._receiver_last_active = {}
-        self.logger = get_obj_logger(self)
 
     def mark_active(self):
         self.last_active_time = time.time()
@@ -1138,7 +1144,7 @@ class DownloadService:
 
         if tx:
             tx.transaction_done(TransactionDoneStatus.DELETED, on_outcome=functools.partial(cls._record_outcome, tx=tx))
-            cls._register_leaked_ops(tx)
+            cls._update_leaked_ops(tx)
 
     @classmethod
     def shutdown(cls):
@@ -1154,6 +1160,13 @@ class DownloadService:
             cls._finished_refs.clear()
 
             with cls._outcome_lock:
+                # Pre-register every registered owner (live and mid-settlement) as a
+                # potential leak BEFORE clearing its ownership/receipt exclusions: the
+                # deferred settlements below run outside the locks, and a drain-leaked
+                # operation's id must never look free in that window. Post-settlement
+                # _update_leaked_ops releases the ids whose operations drained.
+                for owner in cls._outcome_owners.values():
+                    cls._leaked_ops[owner.tid] = owner
                 # Clearing ownership is what stops recording: a settlement mid-flight
                 # on another thread finds its entry gone at _record_outcome and drops.
                 cls._tx_outcomes.clear()
@@ -1171,17 +1184,22 @@ class DownloadService:
 
         for tx in tx_list:
             tx.transaction_done(TransactionDoneStatus.DELETED)
-            cls._register_leaked_ops(tx)
+            cls._update_leaked_ops(tx)
 
     @classmethod
-    def _register_leaked_ops(cls, tx: _Transaction):
-        """Called by every terminator after settlement: if the drain timed out and
-        operations are still in flight, exclude the id until they exit."""
+    def _update_leaked_ops(cls, tx: _Transaction):
+        """Called by every terminator after settlement: keep the id excluded while
+        drain-leaked operations are in flight, release the exclusion once none are.
+        shutdown() PRE-registers its transactions under the locks -- it clears the
+        ownership and receipt exclusions up front, so waiting until after settlement
+        would leave a window where a leaked operation's id looks free."""
         with tx._ops_cond:
             leaked = tx._active_ops > 0
-        if leaked:
-            with cls._tx_lock:
+        with cls._tx_lock:
+            if leaked:
                 cls._leaked_ops[tx.tid] = tx
+            elif cls._leaked_ops.get(tx.tid) is tx:
+                cls._leaked_ops.pop(tx.tid, None)
 
     @classmethod
     def _reap_leaked_ops(cls):
@@ -1504,13 +1522,13 @@ class DownloadService:
                 tx.transaction_done(
                     TransactionDoneStatus.TIMEOUT, on_outcome=functools.partial(cls._record_outcome, tx=tx)
                 )
-                cls._register_leaked_ops(tx)
+                cls._update_leaked_ops(tx)
 
             for tx in finished_tx:
                 tx.transaction_done(
                     TransactionDoneStatus.FINISHED, on_outcome=functools.partial(cls._record_outcome, tx=tx)
                 )
-                cls._register_leaked_ops(tx)
+                cls._update_leaked_ops(tx)
 
             time.sleep(5.0)
 

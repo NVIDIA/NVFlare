@@ -498,6 +498,57 @@ class TestServiceOutcomeTable:
         service.shutdown()
         assert stranded.done() and stranded.outcome is None
 
+    def test_shutdown_window_keeps_leaked_id_excluded(self):
+        """P1 pin: shutdown clears the ownership and receipt exclusions up front, and
+        leak registration used to run only AFTER the deferred settlement -- so a
+        drain-leaked id looked free for that whole window and a replacement could
+        register while the leaked operation was still able to emit. Shutdown now
+        pre-registers every owner as a potential leak under the locks."""
+        from unittest.mock import Mock
+
+        import nvflare.fuel.f3.streaming.download_service as ds_module
+
+        service = make_isolated_download_service()
+        service._tx_monitor = Mock()
+        cell = Mock()
+        cb_entered = threading.Event()
+        cb_release = threading.Event()
+
+        def gated_done_cb(tid, status, base_objs, **kw):
+            cb_entered.set()
+            cb_release.wait(10.0)
+
+        service.new_transaction(
+            cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-SHUTLEAK", transaction_done_cb=gated_done_cb
+        )
+        with service._tx_lock:
+            tx = service._tx_table["TX-SHUTLEAK"]
+        assert tx.begin_op()  # an in-flight operation that will outlive the drain
+
+        saved = ds_module.OP_DRAIN_TIMEOUT
+        ds_module.OP_DRAIN_TIMEOUT = 0.2
+        shutter = threading.Thread(target=service.shutdown)
+        try:
+            shutter.start()
+            assert cb_entered.wait(5.0)  # drain timed out; deferred settlement mid-window
+
+            # the leaked operation could still emit: its id must NOT look free
+            with pytest.raises(ValueError, match="in-flight operations"):
+                service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-SHUTLEAK")
+        finally:
+            cb_release.set()
+            shutter.join(5.0)
+            ds_module.OP_DRAIN_TIMEOUT = saved
+        assert not shutter.is_alive()
+
+        # still excluded after shutdown while the operation is in flight
+        with pytest.raises(ValueError, match="in-flight operations"):
+            service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-SHUTLEAK")
+
+        # the operation exits: the id frees
+        tx.end_op()
+        assert service.new_transaction(cell=cell, timeout=10.0, num_receivers=1, tx_id="TX-SHUTLEAK") == "TX-SHUTLEAK"
+
     def test_waiter_during_shutdown_settlement_window_resolves_immediately(self):
         """shutdown() clears ownership atomically with the table teardown, so a
         get_transfer_waiter call landing in the deferred-settlement window finds the

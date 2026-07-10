@@ -11,6 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""DIRECTORY-WIDE fixtures: the autouse fixture below applies to EVERY test in
+tests/unit_test/fuel/f3/streaming/, including tests that never touch confirms.
+A new test here never exercises the real ConfigService read of the confirm
+kill-switch; patch _receiver_confirm_cached explicitly if you need the legacy
+(confirm-off) path or the real config read."""
 
 from unittest.mock import patch
 

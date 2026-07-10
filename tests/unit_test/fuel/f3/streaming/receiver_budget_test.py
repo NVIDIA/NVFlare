@@ -30,7 +30,7 @@ from nvflare.fuel.f3.streaming import download_service as ds_module
 from nvflare.fuel.f3.streaming.download_service import DownloadStatus
 from nvflare.fuel.f3.streaming.transfer_outcome import TransferOutcomeReason, compute_transfer_outcome
 from tests.unit_test.fuel.f3.streaming.download_test_utils import MockDownloadable, confirm_request
-from tests.unit_test.fuel.f3.streaming.download_test_utils import make_confirm_test_service as _make_service
+from tests.unit_test.fuel.f3.streaming.download_test_utils import make_service_no_monitor as _make_service
 from tests.unit_test.fuel.f3.streaming.download_test_utils import pull_request
 from tests.unit_test.fuel.f3.streaming.download_test_utils import pull_to_terminal as _pull_to_terminal
 from tests.unit_test.fuel.f3.streaming.download_test_utils import run_monitor_once, serve_nonce
@@ -380,12 +380,17 @@ class TestConfigResolution:
 
 
 class TestTransactionValidation:
-    def test_receiver_ids_derive_num_receivers(self):
+    def test_receiver_ids_derive_num_receivers(self, caplog):
+        import logging
+
         service = _make_service()
-        tx_id = service.new_transaction(cell=Mock(), timeout=10.0, num_receivers=0, receiver_ids=("a", "b", "a"))
+        with caplog.at_level(logging.WARNING):
+            tx_id = service.new_transaction(cell=Mock(), timeout=10.0, num_receivers=0, receiver_ids=("a", "b", "a"))
         tx = service._tx_table[tx_id]
         assert tx.receiver_ids == ("a", "b")  # deduped, order kept
         assert tx.num_receivers == 2
+        # review-requested pin: duplicates are almost certainly a caller bug -- warn
+        assert any("deduplicated" in r.message for r in caplog.records)
 
     def test_receiver_ids_num_receivers_mismatch_raises(self):
         service = _make_service()

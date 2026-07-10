@@ -36,7 +36,7 @@ from nvflare.fuel.f3.streaming import download_service as ds_module
 from nvflare.fuel.f3.streaming.download_service import Consumer, DownloadStatus, ProduceRC, _PropKey, download_object
 from tests.unit_test.fuel.f3.streaming.download_test_utils import MockDownloadable
 from tests.unit_test.fuel.f3.streaming.download_test_utils import confirm_request as _confirm_request
-from tests.unit_test.fuel.f3.streaming.download_test_utils import make_confirm_test_service as _make_service
+from tests.unit_test.fuel.f3.streaming.download_test_utils import make_service_no_monitor as _make_service
 from tests.unit_test.fuel.f3.streaming.download_test_utils import pull_request as _pull_request
 from tests.unit_test.fuel.f3.streaming.download_test_utils import pull_to_terminal as _pull_to_terminal
 from tests.unit_test.fuel.f3.streaming.download_test_utils import run_monitor_once, serve_nonce
@@ -277,6 +277,26 @@ class TestProducerSide:
         # the NEW life's confirmation (correct nonce) finalizes
         service._handle_download(_confirm_request(rid, "r1", DownloadStatus.SUCCESS, serve_nonce(new_terminal)))
         assert ref.snapshot_receiver_statuses() == {"r1": DownloadStatus.SUCCESS}
+
+    def test_confirm_message_dispatches_to_confirm_handling_not_pull(self):
+        # review-requested pin: a message carrying the CONFIRM key must route to
+        # _handle_confirm and never fall through to pull handling -- a fall-through
+        # would treat the confirm as an initial pull request (state=None) and
+        # re-serve the object from the beginning
+        service = _make_service()
+        tx1 = service.new_transaction(cell=Mock(), timeout=10.0, num_receivers=1)
+        obj = MockDownloadable([b"chunk"])
+        rid = service.add_object(tx1, obj, ref_id="R-DISPATCH")
+
+        reply = service._handle_download(_confirm_request(rid, "r1", DownloadStatus.SUCCESS, "bogus-nonce"))
+
+        # confirm-path reply: bare OK, no chunk payload -- and produce() never ran
+        assert reply.payload is None or _PropKey.DATA not in (reply.payload or {})
+        assert obj.current_chunk == 0
+        ref = _ref(service, rid)
+        # the unsolicited confirm was dropped by confirm handling (no pending serve)
+        assert ref.snapshot_receiver_statuses() == {}
+        assert ref.snapshot_pending_confirms() == {}
 
     def test_late_confirm_for_unknown_ref_is_dropped_ok(self):
         service = _make_service()
