@@ -200,11 +200,16 @@ accepts only explicit metric-field or final-evaluation lines and records the
 selected line number. The ledger is replaced atomically so a failed write cannot
 leave a partial campaign record.
 
-Simulation runs use campaign-scoped result names and lock every deterministic
-simulator result root before cleanup and execution. A simulation that cannot
-resolve a monitored result root fails before launch. POC and production results
-are accepted only after the materialized candidate is re-imported and its fixed
-comparison budget is verified again.
+Each simulation trial runs in an isolated temporary simulator workspace that
+the runner injects through the process-level
+`NVFLARE_SIMULATOR_WORKSPACE_ROOT` override, so concurrent campaigns cannot
+share or delete each other's artifacts. Result names stay campaign-scoped and
+named result roots are locked during execution. A recipe without a literal job
+name may run, but its result root must resolve afterwards to the printed
+result path or the sole changed workspace child; ambiguous or out-of-workspace
+results fail closed. POC and production results are accepted only after the
+materialized candidate is re-imported and its fixed comparison budget is
+verified again.
 
 ## Skill Implementation Boundary
 
