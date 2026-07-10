@@ -273,8 +273,8 @@ The runtime config controls site-level Kubernetes settings:
   to every dynamically launched job pod for this prepared site. Configure this
   during deployment preparation when job images live in a private registry; job
   authors still only specify the job image in ``meta.json``.
-  ``study_job_spec_file_path`` can point to a YAML file that maps study names to
-  Kubernetes Pod template files for dynamically launched job pods.
+  Study-specific Pod templates for dynamically launched job pods are configured
+  per study in ``local/study_runtime.yaml`` via ``pod_template``.
   ``pending_timeout`` is in seconds. It controls how long a dynamically launched
   job pod can stay in ``Pending`` or ``Unknown`` before the launcher deletes it
   and reports the run as an execution exception. The admin ``list_jobs`` command
@@ -440,7 +440,20 @@ Use ``--kubectl oc`` when staging into OpenShift with ``oc`` instead of
 the workspace root for writable runtime state such as jobs, snapshots, logs, and
 ``transfer/``. After this staging command succeeds, run the printed
 ``helm_command`` or the equivalent ``helm upgrade --install`` command for the
-prepared chart.
+prepared chart. The staged ConfigMap and Secret are separate from the Helm
+release. After uninstalling the release, run the printed ``cleanup_command``
+or the equivalent command below to remove them:
+
+.. code-block:: bash
+
+   helm uninstall "$RELEASE_NAME" --namespace "$NAMESPACE"
+   nvflare deploy k8s unstage "$PREPARED_KIT"
+
+The stage command records the namespace and exact resource names in the
+prepared chart values, so they do not need to be repeated. Pass
+``--namespace`` when cleaning up a kit staged by an older NVFlare version that
+did not record it. Run unstage after Helm uninstall because the parent pod
+depends on the staged volumes while it is installed.
 
 The dynamically launched job pod does **not** mount this workspace PVC. Each job
 pod receives its own writable ``emptyDir`` mounted at the configured workspace
@@ -456,52 +469,57 @@ Study Data PVC
 --------------
 
 Study data PVCs are separate from the parent workspace PVC. Configure optional
-study data mappings in ``local/study_data.yaml`` inside the prepared kit before
-copying ``local/`` into the workspace PVC. If the kit is already staged, edit
-the file on the PVC or restage ``local/``.
+study data mappings in ``local/study_runtime.yaml`` inside the prepared kit
+before copying ``local/`` into the workspace PVC (``nvflare deploy prepare``
+writes a commented template; the launcher auto-discovers the file, so no
+launcher arguments are needed). If the kit is already staged, edit the file on
+the PVC or restage ``local/``.
 
-``nvflare deploy prepare`` writes the K8s launcher's
-``study_data_pvc_file_path`` as ``<workspace_mount_path>/local/study_data.yaml``
-in the prepared ``local/resources.json.default``. Before staging the prepared
-kit or starting the parent pod, you can edit that launcher config to use a
-different ``study_data_pvc_file_path``, remove it entirely, and/or add
-``study_job_spec_file_path`` for study-specific Pod templates. Any mapping or
-template files referenced by these fields must be staged with ``local/`` or
-otherwise exist at the configured in-pod paths.
-
-Example ``study_data.yaml``:
+Example ``study_runtime.yaml``:
 
 .. code-block:: yaml
 
-   default:
-     data:
-       source: nvfldata
-       mode: ro
+   format_version: 2
+   studies:
+     default:
+       datasets:
+         data:
+           source: nvfldata
+           mode: ro
 
-For Kubernetes, each ``source`` value is a PVC claim name. The job pod mounts
-the dataset at ``/data/<study>/<dataset>``, for example
-``/data/default/data``. ``mode`` must be ``ro`` or ``rw``. Missing
-``study_data.yaml`` files or missing entries for a job's study mean no
-study-data PVCs are mounted for that job.
+For Kubernetes, each dataset ``source`` value is a PVC claim name. The job pod
+mounts the dataset at ``/data/<study>/<dataset>``, for example
+``/data/default/data``. ``mode`` must be ``ro`` or ``rw``. Missing entries for
+a job's study mean no study-data PVCs are mounted for that job. The same file
+also configures per-study env vars, secret-backed env vars and mounts, and Pod
+templates; the launcher re-reads it on every job launch. Any template files
+referenced by ``pod_template`` must be staged with ``local/``.
 
-When ``study_job_spec_file_path`` is configured, matching jobs use the
-study-specific Pod template. If no ``study_data_pvc_file_path`` is configured,
-the template does not receive additional study-data mounts. If both are
-configured and the job study has matching entries in both files, the template is
-used and the study-data PVCs are added as extra volume mounts; the launcher logs
-a warning for this combination. The launcher always replaces template
-``workspace-job`` and ``startup-kit`` volumes and job-container mounts with its
-generated workspace ``emptyDir`` and startup-kit Secret mounts.
+Legacy v1 kits that still use ``local/study_data.yaml`` keep working:
+``nvflare deploy prepare`` then emits the launcher's
+``study_data_pvc_file_path`` pointing at that file and does not write a
+``study_runtime.yaml`` template. The two files must not coexist; to migrate,
+move all studies into ``study_runtime.yaml`` and delete ``study_data.yaml``.
+
+When a study's ``local/study_runtime.yaml`` entry sets ``pod_template``,
+matching jobs use the study-specific Pod template, and ``datasets`` entries
+from the same study are added as PVC volume mounts. The launcher always
+replaces template ``workspace-job`` and ``startup-kit`` volumes and
+job-container mounts with its generated workspace ``emptyDir`` and startup-kit
+Secret mounts.
 
 Minimal Study Job Pod Template
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Use ``study_job_spec_file_path`` to point the launcher to a study-to-template
-mapping file:
+Reference the template per study in ``local/study_runtime.yaml`` (paths resolve
+relative to ``local/``; an inline pod mapping is also accepted):
 
 .. code-block:: yaml
 
-   study-a: pod_specs/default-job-pod.yaml
+   format_version: 2
+   studies:
+     study-a:
+       pod_template: pod_specs/default-job-pod.yaml
 
 The following ``pod_specs/default-job-pod.yaml`` starts with the minimal Pod
 template and shows common optional fields, including a node selector for an H100
@@ -513,7 +531,7 @@ Before setting the selector, verify the exact label value in your cluster:
    $ kubectl get nodes -L nvidia.com/gpu.product,nvidia.com/gpu.count,nvidia.com/gpu.present
 
 If you omit the optional fields and keep only the ``nvflare_job`` container, the
-study uses ``study_job_spec_file_path`` while keeping the same effective job pod
+study uses its ``pod_template`` while keeping the same effective job pod
 manifest as the built-in launcher behavior:
 
 .. code-block:: yaml
@@ -1045,7 +1063,19 @@ Reprovisioning and Upgrades
 Provisioned certificates, local config, server communication settings, and
 prepared Kubernetes parent-Service settings are tied to the provisioned project
 state. If you change ``project.yml``, server host names, ports, participants,
-or ``k8s.yaml`` settings:
+or ``k8s.yaml`` settings, first clean up ConfigMap/Secret staging when that
+method is in use:
+
+.. code-block:: bash
+
+   helm uninstall "$RELEASE_NAME" --namespace "$NAMESPACE"
+   nvflare deploy k8s unstage "$PREPARED_KIT"
+
+Unstage before replacing the prepared output so its recorded namespace and
+exact cleanup names remain available. ``deploy prepare`` refuses to overwrite
+a chart that still references staged resources.
+
+Then:
 
 #. Run ``nvflare provision`` again.
 #. Run ``nvflare deploy prepare`` again for every affected participant.
@@ -1054,10 +1084,11 @@ or ``k8s.yaml`` settings:
    site directory holding job history and snapshots, and any log files at the
    workspace root. Client workspace PVCs typically have little to preserve
    beyond optional logs.
-#. Replace the staged ``startup/`` and ``local/`` folders on the participant's
-   workspace PVC. Remove stale copies first so old certificates or config files
-   do not remain.
-#. Run ``helm upgrade`` for the affected release.
+#. Restage ``startup/`` and ``local/`` using the selected method. For the PVC
+   method, replace those folders on the participant's workspace PVC and remove
+   stale copies first. For the ConfigMap/Secret method, run
+   ``nvflare deploy k8s stage`` on the new prepared kit.
+#. Run ``helm upgrade --install`` for the affected release.
 
 Do not reuse an old staged ``startup/`` or ``local/`` folder after
 reprovisioning.
@@ -1207,6 +1238,15 @@ To stop a participant installed by Helm:
 
    helm uninstall server -n "$NAMESPACE"
    helm uninstall site-1 -n "$NAMESPACE"
+
+If the participants used ConfigMap/Secret staging, remove those objects after
+uninstalling the Helm releases. They are not owned by Helm, and the startup
+Secret contains the participant's identity keys and certificates:
+
+.. code-block:: bash
+
+   nvflare deploy k8s unstage ./server-k8s --namespace "$NAMESPACE"
+   nvflare deploy k8s unstage ./site-1-k8s --namespace "$NAMESPACE"
 
 Delete the namespace only if it is dedicated to this deployment:
 

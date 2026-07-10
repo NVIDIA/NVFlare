@@ -23,6 +23,7 @@ import time
 import traceback
 from contextlib import contextmanager
 from functools import partial
+from pathlib import PurePath
 from tempfile import mkdtemp
 from typing import List, Optional, Tuple
 
@@ -129,6 +130,7 @@ _JOB_DOWNLOAD_GLOBAL_MODEL_NAMES = (
     "model_global.json",
     "model_global.joblib",
 )
+_JOB_DOWNLOAD_ARTIFACT_MANIFEST = "artifact_manifest.json"
 _JOB_DOWNLOAD_EXPECTED_ARTIFACTS = ("global_model", "metrics_summary", "client_logs")
 
 
@@ -1173,16 +1175,91 @@ def _site_name_from_log_path(download_path: str, log_path: str) -> Optional[str]
     return parent
 
 
+def _canonical_server_artifact_rank(download_path: str, artifact_path: str) -> Optional[int]:
+    """Rank known server-owned locations without treating client subtrees as authoritative."""
+    try:
+        rel_path = os.path.relpath(artifact_path, download_path)
+    except ValueError:
+        return None
+
+    rel_parts = rel_path.split(os.sep)
+    parent_parts = rel_parts[:-1]
+    if not parent_parts:
+        # Retain compatibility with callers that pass a server result directory
+        # directly instead of the outer job download directory.
+        return 1
+
+    if parent_parts[0].lower() == "workspace":
+        parent_parts = parent_parts[1:]
+        if not parent_parts:
+            return 0
+
+    first_parent = parent_parts[0].lower()
+    if first_parent == "app_server":
+        return 2
+    if first_parent == "server":
+        return 3
+    return None
+
+
+def _manifest_global_model(download_path: str, manifest_paths: List[Tuple[int, str]]) -> Tuple[bool, Optional[str]]:
+    if not manifest_paths:
+        return False, None
+
+    _, manifest_path = min(manifest_paths, key=lambda item: (item[0], os.path.relpath(item[1], download_path)))
+    try:
+        with open(manifest_path, encoding="utf-8") as file:
+            manifest = json.load(file)
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return True, None
+
+    manifest_version = manifest.get("schema_version") if isinstance(manifest, dict) else None
+    manifest_artifacts = manifest.get("artifacts") if isinstance(manifest, dict) else None
+    model_path = manifest_artifacts.get("global_model") if isinstance(manifest_artifacts, dict) else None
+    if manifest_version != "1" or not isinstance(model_path, str) or not model_path:
+        return True, None
+    if os.path.isabs(model_path) or ".." in PurePath(model_path).parts:
+        return True, None
+
+    candidate_path = os.path.normpath(os.path.join(os.path.dirname(manifest_path), model_path))
+    root_real_path = os.path.realpath(download_path)
+    if not _is_path_within(root_real_path, candidate_path) or not os.path.isfile(candidate_path):
+        return True, None
+    try:
+        if os.path.samefile(candidate_path, manifest_path):
+            return True, None
+    except OSError:
+        return True, None
+
+    # Reject a symlink at any level, matching the normal artifact traversal's
+    # containment guarantees.
+    rel_candidate = os.path.relpath(candidate_path, download_path)
+    current_path = download_path
+    for part in rel_candidate.split(os.sep):
+        current_path = os.path.join(current_path, part)
+        if os.path.islink(current_path):
+            return True, None
+    return True, candidate_path
+
+
 def _discover_job_download_artifacts(download_path: str) -> Tuple[dict, List[str]]:
     artifacts = {}
     client_logs = {}
+    global_model_candidates = []
+    manifest_paths = []
 
     for file_path in _iter_files_under(download_path):
         file_name = os.path.basename(file_path)
-        if file_name in _JOB_DOWNLOAD_GLOBAL_MODEL_NAMES and "global_model" not in artifacts:
-            artifacts["global_model"] = file_path
+        server_rank = _canonical_server_artifact_rank(download_path, file_path)
+        if file_name == _JOB_DOWNLOAD_ARTIFACT_MANIFEST and server_rank is not None:
+            manifest_paths.append((server_rank, file_path))
             continue
-        elif file_name == "metrics_summary.json" and "metrics_summary" not in artifacts:
+        if file_name in _JOB_DOWNLOAD_GLOBAL_MODEL_NAMES and server_rank is not None:
+            name_rank = _JOB_DOWNLOAD_GLOBAL_MODEL_NAMES.index(file_name)
+            rel_path = os.path.relpath(file_path, download_path)
+            global_model_candidates.append(((server_rank, name_rank, rel_path), file_path))
+            continue
+        if file_name == "metrics_summary.json" and "metrics_summary" not in artifacts:
             artifacts["metrics_summary"] = file_path
             continue
         elif file_name == "round_metrics.jsonl" and "round_metrics" not in artifacts:
@@ -1194,6 +1271,13 @@ def _discover_job_download_artifacts(download_path: str) -> Tuple[dict, List[str
         site_name = _site_name_from_log_path(download_path, file_path)
         if site_name and site_name not in client_logs:
             client_logs[site_name] = file_path
+
+    manifest_present, manifest_model = _manifest_global_model(download_path, manifest_paths)
+    if manifest_model:
+        artifacts["global_model"] = manifest_model
+    elif not manifest_present and global_model_candidates:
+        _, model_path = min(global_model_candidates, key=lambda item: item[0])
+        artifacts["global_model"] = model_path
     if client_logs:
         artifacts["client_logs"] = client_logs
 

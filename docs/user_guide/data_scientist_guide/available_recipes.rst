@@ -179,6 +179,93 @@ FedAvg with secure aggregation using homomorphic encryption.
 
 - `examples/advanced/cifar10/pt/cifar10-real-world#secure-aggregation-using-homomorphic-encryption <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/cifar10/pt/cifar10-real-world#42-secure-aggregation-using-homomorphic-encryption>`_
 
+WEIGHT_DIFF Compatibility
+-------------------------
+
+``DataKind.WEIGHT_DIFF`` is supported only when the client executor sends parameter
+differences and the server aggregation path accepts differences. A client's
+``FLModel.params_type`` is the authoritative description of its result. Recipe construction
+cannot inspect an arbitrary training script, so it validates only recipe-owned server settings,
+such as supported data kinds and a custom aggregator's declared ``expected_data_kind``.
+
+.. list-table:: Recipe and aggregator support
+   :header-rows: 1
+   :widths: 28 30 12 30
+
+   * - Recipe
+     - Server aggregation path
+     - Support
+     - Required configuration
+   * - Unified, PyTorch, TensorFlow, and NumPy ``FedAvgRecipe``; PyTorch FedProx
+     - Built-in ``FedAvg`` streaming aggregation
+     - Yes
+     - Set ``aggregator_data_kind=DataKind.WEIGHT_DIFF`` and return
+       ``FLModel(params_type=ParamsType.DIFF)`` from the client.
+   * - ``FedAvgRecipe`` with a custom ``ModelAggregator``
+     - User-provided aggregator
+     - Conditional
+     - The client returns ``ParamsType.DIFF``. The custom aggregator must accept difference
+       models and preserve ``ParamsType.DIFF`` in its aggregate result. If it declares
+       ``expected_data_kind``, it must declare ``DataKind.WEIGHT_DIFF``.
+   * - ``FedAvgRecipeWithHE``
+     - ``HEInTimeAccumulateWeightedAggregator``
+     - Yes
+     - Set ``aggregator_data_kind=DataKind.WEIGHT_DIFF`` and return
+       ``FLModel(params_type=ParamsType.DIFF)`` from the client.
+   * - PyTorch ``FedOptRecipe``
+     - ``InTimeAccumulateWeightedAggregator``
+     - Yes
+     - The recipe fixes its aggregation path to ``WEIGHT_DIFF``. If a custom aggregator
+       declares ``expected_data_kind``, it must declare ``DataKind.WEIGHT_DIFF``.
+   * - TensorFlow ``FedOptRecipe``
+     - Built-in ``FedAvg`` streaming aggregation with FedOpt model update
+     - Yes
+     - Return ``FLModel(params_type=ParamsType.DIFF)`` from the client; there is no separate
+       ``aggregator_data_kind`` parameter.
+   * - ``SwarmLearningRecipe``
+     - ``InTimeAccumulateWeightedAggregator``
+     - Yes
+     - Set ``expected_data_kind=DataKind.WEIGHT_DIFF`` and return
+       ``FLModel(params_type=ParamsType.DIFF)`` from the client.
+   * - ``SklearnFedAvgRecipe``
+     - Built-in ``FedAvg`` streaming aggregation
+     - Conditional
+     - The client script must compute the difference and return
+       ``FLModel(params_type=ParamsType.DIFF)`` explicitly.
+
+The standard ``InTimeAccumulateWeightedAggregator`` and
+``HEInTimeAccumulateWeightedAggregator`` accept both ``WEIGHTS`` and ``WEIGHT_DIFF``
+when their ``expected_data_kind`` is configured accordingly. Aggregators that declare
+``expected_data_kind`` are checked against the recipe setting during construction.
+
+For example, configure PyTorch FedAvg with differences as follows:
+
+.. code-block:: python
+
+    from nvflare.apis.dxo import DataKind
+    from nvflare.app_opt.pt.recipes import FedAvgRecipe
+
+    recipe = FedAvgRecipe(
+        name="fedavg-diff",
+        min_clients=2,
+        num_rounds=5,
+        model=MyModel(),
+        train_script="client.py",
+        aggregator_data_kind=DataKind.WEIGHT_DIFF,
+    )
+
+The client script must compute local minus global parameters and return them explicitly:
+
+.. code-block:: python
+
+    import nvflare.client as flare
+    from nvflare.app_common.abstract.fl_model import ParamsType
+
+    flare.send(flare.FLModel(params=model_diff, params_type=ParamsType.DIFF))
+
+If a custom aggregator declares an incompatible ``expected_data_kind``, recipe construction
+raises an error naming both the configured and declared kinds and how to align them.
+
 
 FedProx
 =======

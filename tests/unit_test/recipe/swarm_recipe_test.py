@@ -20,6 +20,7 @@ from unittest.mock import patch
 
 import pytest
 
+from nvflare.apis.dxo import DataKind
 from nvflare.apis.job_def import ALL_SITES
 
 torch = pytest.importorskip("torch")
@@ -57,6 +58,20 @@ class TestSwarmLearningRecipe:
             num_rounds=5,
             train_script="train.py",
             min_clients=2,
+        )
+
+        assert recipe.job is not None
+
+    def test_weight_diff_with_default_transfer_is_valid(self, mock_file_system, simple_pt_model):
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+
+        recipe = SwarmLearningRecipe(
+            name="test_swarm_weight_diff",
+            model=simple_pt_model,
+            num_rounds=5,
+            train_script="train.py",
+            min_clients=2,
+            expected_data_kind=DataKind.WEIGHT_DIFF,
         )
 
         assert recipe.job is not None
