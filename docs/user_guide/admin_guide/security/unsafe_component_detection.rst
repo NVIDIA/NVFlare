@@ -104,9 +104,12 @@ and are matched exactly or on a ``.`` boundary. For example, ``"nvflare"`` is re
 not match ``"nvflareevil.module.Component"``.
 
 The adjacent ``class_list_enforcement_mode`` setting accepts ``"enforce"`` (the default) or ``"warn"``. In ``"warn"``
-mode, a component outside ``class_allow_list`` is allowed to load and a warning is logged. If ``"*"`` appears anywhere in
-``class_allow_list``, all component classes are allowed, the remaining entries are ignored, and an audit event records that
-the allow-list check was bypassed. Use ``"warn"`` and ``"*"`` only as temporary migration aids in trusted environments.
+mode, a component outside ``class_allow_list`` is allowed to load, a context-rich warning is logged, and one audit event is
+recorded per job and unmatched class path. If ``"*"`` appears anywhere in ``class_allow_list``, all component classes are
+allowed, the remaining entries are ignored, and an audit event records the policy source and that the allow-list check was
+bypassed; the enforcement mode has no effect in this case. Failed audit writes are retried on later matching component
+checks without repeating the wildcard warning. Simulator runs use warning logs because their auditor is a no-op. Use
+``"warn"`` and ``"*"`` only as temporary migration aids in trusted environments.
 
 Provisioned ``resources.json.default`` Results
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

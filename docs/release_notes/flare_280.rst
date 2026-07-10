@@ -449,7 +449,8 @@ class path.
 To preserve the unrestricted 2.7 behavior temporarily, use ``"*"``. When the
 wildcard is present, all component classes are allowed, all other entries in
 ``class_allow_list`` are ignored, and NVFLARE records an audit event stating
-that class allow-list enforcement was bypassed.
+that class allow-list enforcement was bypassed. The enforcement mode has no
+effect when ``"*"`` is present.
 
 .. code-block:: json
 
@@ -461,8 +462,9 @@ that class allow-list enforcement was bypassed.
 Alternatively, ``"warn"`` mode can be used while inventorying the classes an
 application needs. If ``class_allow_list`` is omitted, the built-in default list
 is used. Classes outside the effective list are allowed to load, but NVFLARE
-logs a warning for every unmatched class. After adding the reviewed classes to
-the list, change the mode to ``"enforce"``.
+logs a context-rich warning for every unmatched class and records one audit
+event per job and class path. After adding the reviewed classes to the list,
+change the mode to ``"enforce"``.
 
 .. code-block:: json
 
@@ -474,7 +476,9 @@ the list, change the mode to ``"enforce"``.
 Both ``"*"`` and ``"warn"`` relax the 2.8 protection and should be used only as
 migration aids in trusted environments. An explicitly configured malformed
 ``class_allow_list`` remains a configuration error for non-BYOC jobs in either
-enforcement mode.
+enforcement mode. Audit writes are retried on later matching component checks
+when the audit service is temporarily unavailable. Simulator runs use warning
+logs because their auditor is a no-op.
 
 See the :ref:`migration_guide` for additional API and configuration migration
 notes.

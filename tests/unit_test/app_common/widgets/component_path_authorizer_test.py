@@ -52,13 +52,15 @@ def reset_config_service():
     ConfigService.reset()
 
 
-def _make_fl_ctx(component_config, node_path="component", job_meta=None, workspace=None):
+def _make_fl_ctx(component_config, node_path="component", job_meta=None, workspace=None, job_id=None):
     fl_ctx = FLContext()
     fl_ctx.set_prop(FLContextKey.COMPONENT_CONFIG, component_config, private=True, sticky=False)
     if job_meta is not None:
         fl_ctx.set_prop(FLContextKey.JOB_META, job_meta, private=True, sticky=False)
     if workspace is not None:
         fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True, sticky=False)
+    if job_id is not None:
+        fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job_id, private=True, sticky=False)
     node = Node(component_config)
     node.paths = node_path.split(".")
     fl_ctx.set_prop(FLContextKey.COMPONENT_NODE, node, private=True, sticky=False)
@@ -230,27 +232,117 @@ def test_rejects_component_missing_from_allow_list():
         authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
 
 
-def test_wildcard_allows_any_component_and_deduplicates_when_auditor_returns_none(monkeypatch, caplog):
+def test_wildcard_retries_failed_audit_without_repeating_warning(monkeypatch, caplog):
     _set_class_allow_list([None, ALLOW_ALL, "not-a-valid-prefix"])
-    audit = MagicMock(return_value=None)
+    audit = MagicMock(side_effect=[None, "event-id"])
     monkeypatch.setattr(AuditService, "add_event", audit)
     authorizer = ComponentPathAuthorizer()
 
     with caplog.at_level("WARNING"):
-        authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, _make_fl_ctx({"path": "subprocess.Popen"}))
-        authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, _make_fl_ctx({"path": "custom.Component"}))
+        authorizer.handle_event(
+            EventType.BEFORE_BUILD_COMPONENT, _make_fl_ctx({"path": "subprocess.Popen"}, job_id="job-1")
+        )
+        authorizer.handle_event(
+            EventType.BEFORE_BUILD_COMPONENT, _make_fl_ctx({"path": "custom.Component"}, job_id="job-1")
+        )
+        authorizer.handle_event(
+            EventType.BEFORE_BUILD_COMPONENT, _make_fl_ctx({"path": "another.Component"}, job_id="job-1")
+        )
 
-    audit.assert_called_once()
+    assert audit.call_count == 2
     assert caplog.text.count("remaining allow-list entries are ignored") == 1
     assert audit.call_args.kwargs["action"] == "component_authorization.class_allow_list_disabled"
     assert "contains '*'" in audit.call_args.kwargs["msg"]
     assert "remaining allow-list entries are ignored" in audit.call_args.kwargs["msg"]
+    assert "policy source: resources" in audit.call_args.kwargs["msg"]
 
 
-def test_warn_mode_logs_and_allows_component_missing_from_allow_list(caplog):
-    _set_class_policy(["nvflare."], ClassListEnforcementMode.WARN)
+def test_workspace_wildcard_uses_cached_policy_and_includes_source_in_audit(tmp_path, monkeypatch):
+    resources_file = tmp_path / "resources.json"
+    resources_file.write_text(json.dumps({CLASS_ALLOW_LIST: [ALLOW_ALL]}))
+    audit = MagicMock(return_value="event-id")
+    monkeypatch.setattr(AuditService, "add_event", audit)
     authorizer = ComponentPathAuthorizer()
-    fl_ctx = _make_fl_ctx({"path": "subprocess.Popen"}, node_path="component.args.child")
+
+    authorizer.handle_event(
+        EventType.BEFORE_BUILD_COMPONENT,
+        _make_fl_ctx({"path": "custom.Component"}, workspace=_FakeWorkspace(resources_file), job_id="job-1"),
+    )
+    authorizer.handle_event(
+        EventType.BEFORE_BUILD_COMPONENT,
+        _make_fl_ctx({"path": "another.Component"}, workspace=_FakeWorkspace(resources_file), job_id="job-1"),
+    )
+
+    audit.assert_called_once()
+    assert str(resources_file) in audit.call_args.kwargs["msg"]
+
+
+def test_wildcard_resolves_workspace_resources_once(tmp_path, monkeypatch):
+    resources_file = tmp_path / "resources.json"
+    resources_file.write_text(json.dumps({CLASS_ALLOW_LIST: [ALLOW_ALL]}))
+    workspace = MagicMock()
+    workspace.get_resources_file_path.return_value = str(resources_file)
+    monkeypatch.setattr(AuditService, "add_event", MagicMock(return_value="event-id"))
+
+    ComponentPathAuthorizer().handle_event(
+        EventType.BEFORE_BUILD_COMPONENT,
+        _make_fl_ctx({"path": "custom.Component"}, workspace=workspace, job_id="job-1"),
+    )
+
+    workspace.get_resources_file_path.assert_called_once()
+
+
+def test_wildcard_audit_io_occurs_outside_state_lock(monkeypatch):
+    _set_class_allow_list([ALLOW_ALL])
+    authorizer = ComponentPathAuthorizer()
+
+    class RecordingLock:
+        def __init__(self):
+            self.locked = False
+
+        def __enter__(self):
+            self.locked = True
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            self.locked = False
+
+    lock = RecordingLock()
+    authorizer._audit_state_lock = lock
+
+    def audit_event(**kwargs):
+        assert not lock.locked
+        return "event-id"
+
+    monkeypatch.setattr(AuditService, "add_event", audit_event)
+
+    authorizer.handle_event(
+        EventType.BEFORE_BUILD_COMPONENT, _make_fl_ctx({"path": "custom.Component"}, job_id="job-1")
+    )
+
+
+def test_wildcard_audit_does_not_collapse_distinct_current_job_ids(monkeypatch):
+    _set_class_allow_list([ALLOW_ALL])
+    audit = MagicMock(return_value="event-id")
+    monkeypatch.setattr(AuditService, "add_event", audit)
+    authorizer = ComponentPathAuthorizer()
+
+    authorizer.handle_event(
+        EventType.BEFORE_BUILD_COMPONENT, _make_fl_ctx({"path": "custom.Component"}, job_id="job-1")
+    )
+    authorizer.handle_event(
+        EventType.BEFORE_BUILD_COMPONENT, _make_fl_ctx({"path": "custom.Component"}, job_id="job-2")
+    )
+
+    assert audit.call_count == 2
+    assert [call.kwargs["ref"] for call in audit.call_args_list] == ["job-1", "job-2"]
+
+
+def test_warn_mode_logs_audits_and_allows_component_missing_from_allow_list(caplog, monkeypatch):
+    _set_class_policy(["nvflare."], ClassListEnforcementMode.WARN)
+    audit = MagicMock(return_value="event-id")
+    monkeypatch.setattr(AuditService, "add_event", audit)
+    authorizer = ComponentPathAuthorizer()
+    fl_ctx = _make_fl_ctx({"path": "subprocess.Popen"}, node_path="component.args.child", job_id="job-1")
 
     with caplog.at_level("WARNING"):
         authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
@@ -258,6 +350,41 @@ def test_warn_mode_logs_and_allows_component_missing_from_allow_list(caplog):
     assert "subprocess.Popen" in caplog.text
     assert "component.args.child" in caplog.text
     assert f"{CLASS_LIST_ENFORCEMENT_MODE} is '{ClassListEnforcementMode.WARN.value}'" in caplog.text
+    audit.assert_called_once()
+    assert audit.call_args.kwargs["action"] == "component_authorization.unlisted_class_allowed"
+    assert "subprocess.Popen" in audit.call_args.kwargs["msg"]
+    assert "policy source: resources" in audit.call_args.kwargs["msg"]
+
+
+def test_warn_mode_audit_is_deduplicated_per_job_and_component_but_warning_is_not(caplog, monkeypatch):
+    _set_class_policy(["nvflare."], ClassListEnforcementMode.WARN)
+    audit = MagicMock(return_value="event-id")
+    monkeypatch.setattr(AuditService, "add_event", audit)
+    authorizer = ComponentPathAuthorizer()
+
+    with caplog.at_level("WARNING"):
+        for component_path in ("custom.Component", "custom.Component", "another.Component"):
+            authorizer.handle_event(
+                EventType.BEFORE_BUILD_COMPONENT, _make_fl_ctx({"path": component_path}, job_id="job-1")
+            )
+
+    assert audit.call_count == 2
+    assert caplog.text.count("custom.Component") == 2
+    assert caplog.text.count("another.Component") == 1
+
+
+def test_warn_mode_uses_fl_context_logging(monkeypatch):
+    _set_class_policy(["nvflare."], ClassListEnforcementMode.WARN)
+    authorizer = ComponentPathAuthorizer()
+    log_warning = MagicMock()
+    monkeypatch.setattr(authorizer, "log_warning", log_warning)
+    fl_ctx = _make_fl_ctx({"path": "custom.Component"}, job_id="job-1")
+
+    authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
+
+    log_warning.assert_called_once()
+    assert log_warning.call_args.kwargs["fl_ctx"] is fl_ctx
+    assert log_warning.call_args.kwargs["fire_event"] is False
 
 
 def test_warn_mode_does_not_log_for_allowed_component(caplog):
@@ -490,7 +617,19 @@ def test_empty_allow_list_rejects_component():
 
 
 @pytest.mark.parametrize(
-    "component_config", [{}, {"path": ""}, {"path": 1}, {"class_path": ""}, {"class_path": 1}, {"name": ""}, []]
+    "component_config",
+    [
+        {},
+        {"path": ""},
+        {"path": 1},
+        {"path": "subprocess"},
+        {"path": "subprocess.Popen\nforged.log.Entry"},
+        {"path": "subprocess.-Popen"},
+        {"class_path": ""},
+        {"class_path": 1},
+        {"name": ""},
+        [],
+    ],
 )
 def test_rejects_invalid_component_config(component_config):
     _set_class_allow_list(["nvflare."])
