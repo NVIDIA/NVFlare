@@ -179,6 +179,37 @@ FedAvg with secure aggregation using homomorphic encryption.
 
 - `examples/advanced/cifar10/pt/cifar10-real-world#secure-aggregation-using-homomorphic-encryption <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/cifar10/pt/cifar10-real-world#42-secure-aggregation-using-homomorphic-encryption>`_
 
+FedSM
+=====
+
+``FedSMRecipe`` implements personalized federated learning with SoftPull for PyTorch. It jointly manages
+a global model, one personalized model per client, and a selector model.
+
+.. code-block:: python
+
+    from nvflare.app_opt.pt.recipes import FedSMRecipe
+
+    recipe = FedSMRecipe(
+        name="fedsm-pt",
+        model=MyModel(),
+        selector_model=MySelector(num_classes=3),
+        sites=["site-1", "site-2", "site-3"],
+        min_clients=3,
+        num_rounds=10,
+        train_script="client.py",
+        soft_pull_lambda=0.7,
+    )
+
+The client script uses ``PTFedSMHelper.load_bundle()`` before its task-specific training loops and
+``PTFedSMHelper.build_result()`` afterward. Global and selector entries in the returned bundle are model
+differences; the personalized entry is a full model. Selector optimizer state is synchronized when the helper
+is given an optimizer.
+
+FedSM currently requires every configured site to participate in every round and is a dedicated algorithm
+rather than a passive option on ``FedAvgRecipe``. FedSM checkpoints use PyTorch's restricted weights-only
+loader by default. Set ``load_weights_only=False`` only when resuming a trusted checkpoint whose metadata
+contains types that the restricted loader does not support.
+
 WEIGHT_DIFF Compatibility
 -------------------------
 
