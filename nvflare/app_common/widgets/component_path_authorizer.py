@@ -48,6 +48,7 @@ class ComponentPathAuthorizer(Widget):
         self._allow_list_cache_lock = threading.Lock()
         self._allow_all_audit_keys = set()
         self._allow_all_audit_lock = threading.Lock()
+        self._warned_default_allow_list = False
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type != EventType.BEFORE_BUILD_COMPONENT:
@@ -141,14 +142,17 @@ class ComponentPathAuthorizer(Widget):
     def _make_file_signature(stat_result):
         return (stat_result.st_mtime_ns, stat_result.st_size, stat_result.st_ino, stat_result.st_dev)
 
-    @classmethod
-    def _get_policy_from_resources(cls, resources):
+    def _get_policy_from_resources(self, resources):
         if resources is None:
             resources = {}
         elif not isinstance(resources, dict):
             raise UnsafeComponentError(f"resources must be dict but got {type(resources)}")
 
-        allow_list = resources.get(CLASS_ALLOW_LIST, list(DEFAULT_CLASS_ALLOW_LIST))
+        if CLASS_ALLOW_LIST in resources:
+            allow_list = resources.get(CLASS_ALLOW_LIST)
+        else:
+            allow_list = list(DEFAULT_CLASS_ALLOW_LIST)
+            self._warn_default_allow_list_once()
         if not isinstance(allow_list, list):
             raise UnsafeComponentError(f"{CLASS_ALLOW_LIST} must be list but got {type(allow_list)}")
 
@@ -163,9 +167,21 @@ class ComponentPathAuthorizer(Widget):
                 f"{CLASS_LIST_ENFORCEMENT_MODE} must be one of {valid_modes} but got '{enforcement_mode}'"
             )
         try:
-            return cls._normalize_allow_list(allow_list), enforcement_mode
+            return self._normalize_allow_list(allow_list), enforcement_mode
         except (TypeError, ValueError) as ex:
             raise UnsafeComponentError(str(ex))
+
+    def _warn_default_allow_list_once(self):
+        # plain check-then-set: a rare duplicate log is harmless, and this must
+        # not take _allow_list_cache_lock (already held on the file-cache path)
+        if self._warned_default_allow_list:
+            return
+        self._warned_default_allow_list = True
+        self.logger.warning(
+            f"{CLASS_ALLOW_LIST} is not configured in resources.json or resources.json.default; "
+            f"using the built-in default list of {len(DEFAULT_CLASS_ALLOW_LIST)} NVFLARE component classes. "
+            f"Configure a top-level {CLASS_ALLOW_LIST} in site resources to replace the default."
+        )
 
     @staticmethod
     def _get_resources_file_path(fl_ctx: Optional[FLContext] = None, workspace=None):
