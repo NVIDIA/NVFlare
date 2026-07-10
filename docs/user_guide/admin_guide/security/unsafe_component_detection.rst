@@ -75,7 +75,7 @@ When BYOC is disabled, NVFLARE runs a built-in component path authorization chec
 configuration. Sites get this protection without installing an authorizer component in ``resources.json``. The built-in
 policy allows only class paths that match ``class_allow_list`` in the site's top-level ``resources.json`` or
 ``resources.json.default``. If ``class_allow_list`` is not configured, NVFLARE uses the curated built-in default shown
-below. An explicitly configured list replaces that default.
+below and records an audit event for the implicit policy decision. An explicitly configured list replaces that default.
 
 Migration note for upgrades: startup kits created before this policy may not contain ``class_allow_list``. Such sites use
 the built-in default automatically. Add a top-level ``class_allow_list`` to each site's ``resources.json`` or
@@ -116,6 +116,10 @@ Provisioned ``resources.json.default`` Results
 When provisioning generates startup kits, the server and client ``resources.json.default`` files include the following
 top-level ``class_allow_list``. It is also the built-in fallback when the setting is omitted. Operators can replace it in
 ``resources.json`` or ``resources.json.default`` to match the classes their non-BYOC jobs are allowed to load.
+
+Every class in ``DEFAULT_CLASS_ALLOW_LIST`` must remain safe to import and construct with untrusted, job-controlled
+arguments. Future additions to the default list require review under this security bar, including constructor side effects
+and any argument values that could trigger file, process, network, deserialization, or other privileged operations.
 
 .. code-block:: json
 

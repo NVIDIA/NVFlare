@@ -165,7 +165,7 @@ def test_workspace_class_allow_list_file_is_read_while_cache_lock_held(tmp_path,
 
     monkeypatch.setattr("nvflare.app_common.widgets.component_path_authorizer.json.load", record_json_load)
 
-    allow_list, _ = authorizer._get_policy_from_file(str(resources_file))
+    allow_list, _, _ = authorizer._get_policy_from_file(str(resources_file))
     assert allow_list == ["nvflare.app_common.widgets."]
     assert load_lock_states == [True]
 
@@ -204,16 +204,58 @@ def test_uses_default_allow_list_when_resources_are_not_initialized():
     authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
 
 
-def test_uses_default_allow_list_when_workspace_resources_omit_class_allow_list(tmp_path):
+def test_implicit_default_allow_list_is_audited_and_warned_once_per_job(monkeypatch, caplog):
+    audit = MagicMock(return_value="event-id")
+    monkeypatch.setattr(AuditService, "add_event", audit)
+    authorizer = ComponentPathAuthorizer()
+
+    with caplog.at_level("WARNING"):
+        authorizer.handle_event(
+            EventType.BEFORE_BUILD_COMPONENT,
+            _make_fl_ctx({"path": DEFAULT_CLASS_ALLOW_LIST[0]}, job_id="job-1"),
+        )
+        authorizer.handle_event(
+            EventType.BEFORE_BUILD_COMPONENT,
+            _make_fl_ctx({"path": DEFAULT_CLASS_ALLOW_LIST[1]}, job_id="job-1"),
+        )
+
+    audit.assert_called_once()
+    assert audit.call_args.kwargs["action"] == "component_authorization.default_class_allow_list_used"
+    assert "using the built-in default list" in audit.call_args.kwargs["msg"]
+    assert "policy source: resources" in audit.call_args.kwargs["msg"]
+    assert caplog.text.count("using the built-in default list") == 1
+
+
+def test_explicit_allow_list_does_not_emit_default_policy_audit(monkeypatch):
+    component_path = "nvflare.app_common.widgets.metric_relay.MetricRelay"
+    _set_class_allow_list([component_path])
+    audit = MagicMock(return_value="event-id")
+    monkeypatch.setattr(AuditService, "add_event", audit)
+
+    ComponentPathAuthorizer().handle_event(
+        EventType.BEFORE_BUILD_COMPONENT,
+        _make_fl_ctx({"path": component_path}, job_id="job-1"),
+    )
+
+    audit.assert_not_called()
+
+
+def test_uses_default_allow_list_when_workspace_resources_omit_class_allow_list(tmp_path, monkeypatch):
     resources_file = tmp_path / "resources.json"
     resources_file.write_text(json.dumps({"format_version": 2}))
+    audit = MagicMock(return_value="event-id")
+    monkeypatch.setattr(AuditService, "add_event", audit)
     authorizer = ComponentPathAuthorizer()
     fl_ctx = _make_fl_ctx(
         {"path": DEFAULT_CLASS_ALLOW_LIST[0]},
         workspace=_FakeWorkspace(resources_file),
+        job_id="job-1",
     )
 
     authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
+
+    audit.assert_called_once()
+    assert str(resources_file) in audit.call_args.kwargs["msg"]
 
 
 def test_default_enforcement_mode_rejects_component_missing_from_default_allow_list():
