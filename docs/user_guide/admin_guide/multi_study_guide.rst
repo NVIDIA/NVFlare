@@ -158,11 +158,19 @@ radius — use separate NVFlare deployments.
 Updating Studies
 ================
 
-Studies can be created, updated, and removed at runtime using the ``nvflare study`` command family
-without reprovisioning or restarting the server: ``register`` creates or merges a study,
-``add-site`` / ``remove-site`` change site enrollment, ``add-user`` / ``remove-user`` manage
-study-user membership, and ``remove`` deletes a study. See :ref:`study_command` for the full
-command reference.
+The ``nvflare study`` command family manages the server-side study registry at runtime, without
+reprovisioning or restarting the server: ``register`` creates or merges a study, ``add-site`` /
+``remove-site`` change site enrollment, ``add-user`` / ``remove-user`` manage study-user
+membership, and ``remove`` deletes a study. See :ref:`study_command` for the full command
+reference.
+
+These commands change only the server's view of a study — enrollment, login membership, and job
+scoping. They do not configure the participating sites: sites must already be provisioned and
+connected to be enrolled (adding a new site or admin identity to the deployment still requires
+provisioning, since certificates must be issued), and per-site runtime resources for a study —
+data mounts, job images, and related settings in each site's ``local/study_runtime.yaml`` — are
+managed by each site's operator, not by these commands. Until a site defines runtime resources for
+a study, jobs for that study run at that site without any study-specific data mounts or settings.
 
 Runtime study mutations are persisted to ``study_registry.json`` in the server workspace root, not
 in the ``local/`` folder. The provisioned copy under ``local/`` is only a first-start seed: once a
@@ -170,7 +178,3 @@ runtime mutation has been persisted, the workspace-root copy is authoritative, s
 and survives server restarts. Because writes never target ``local/``, runtime study management also
 works in deployments where ``local/`` is mounted read-only, such as Kubernetes deployments that
 stage ``local/`` as a ConfigMap.
-
-Runtime study management operates on already-provisioned participants: adding new client sites or
-admin identities to the deployment still requires provisioning, since those need certificates
-issued for them. Studies can only enroll sites and users that exist in the deployment.
