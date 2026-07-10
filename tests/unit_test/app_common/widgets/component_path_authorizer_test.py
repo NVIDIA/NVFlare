@@ -222,16 +222,18 @@ def test_rejects_component_missing_from_allow_list():
         authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
 
 
-def test_wildcard_allows_any_component_ignores_other_entries_and_writes_one_audit_event(monkeypatch):
+def test_wildcard_allows_any_component_and_deduplicates_when_auditor_returns_none(monkeypatch, caplog):
     _set_class_allow_list([None, ALLOW_ALL, "not-a-valid-prefix"])
-    audit = MagicMock(return_value="event-id")
+    audit = MagicMock(return_value=None)
     monkeypatch.setattr(AuditService, "add_event", audit)
     authorizer = ComponentPathAuthorizer()
 
-    authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, _make_fl_ctx({"path": "subprocess.Popen"}))
-    authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, _make_fl_ctx({"path": "custom.Component"}))
+    with caplog.at_level("WARNING"):
+        authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, _make_fl_ctx({"path": "subprocess.Popen"}))
+        authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, _make_fl_ctx({"path": "custom.Component"}))
 
     audit.assert_called_once()
+    assert caplog.text.count("remaining allow-list entries are ignored") == 1
     assert audit.call_args.kwargs["action"] == "component_authorization.class_allow_list_disabled"
     assert "contains '*'" in audit.call_args.kwargs["msg"]
     assert "remaining allow-list entries are ignored" in audit.call_args.kwargs["msg"]

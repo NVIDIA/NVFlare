@@ -94,14 +94,13 @@ class ComponentPathAuthorizer(Widget):
         with self._allow_all_audit_lock:
             if audit_key in self._allow_all_audit_keys:
                 return
-            event_id = AuditService.add_event(
+            AuditService.add_event(
                 user=fl_ctx.get_identity_name() if fl_ctx and fl_ctx.get_identity_name() else "system",
                 action=_ALLOW_ALL_AUDIT_ACTION,
                 ref=job_id or "",
                 msg=message,
             )
-            if event_id:
-                self._allow_all_audit_keys.add(audit_key)
+            self._allow_all_audit_keys.add(audit_key)
 
         self.logger.warning(message)
 
