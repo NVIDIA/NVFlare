@@ -499,6 +499,10 @@ class CellPipe(Pipe):
             progress_wait_cb=getattr(msg, "_progress_wait_cb", None),
             num_receivers=num_receivers,
             receiver_ids=receiver_ids,
+            # Metrics are already protected by the pipe request/reply and retry
+            # path. Avoid the additional per-stream retry/terminal-ACK round trip
+            # that serializes high-frequency metric logging.
+            reliable=False if msg.topic == Topic.METRIC else None,
         )
         if reply:
             rc = reply.get_header(MessageHeaderKey.RETURN_CODE)

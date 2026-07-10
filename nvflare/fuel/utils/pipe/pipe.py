@@ -30,6 +30,7 @@ class Topic(object):
     ABORT = "_ABORT_"
     END = "_END_"
     HEARTBEAT = "_HEARTBEAT_"
+    METRIC = "metric"
     PEER_GONE = "_PEER_GONE_"
     STREAM_PROGRESS = STREAM_PROGRESS_TOPIC
 

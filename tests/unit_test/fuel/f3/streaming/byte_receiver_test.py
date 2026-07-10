@@ -561,30 +561,40 @@ def test_completed_task_ttl_keeps_longer_local_retry_window(monkeypatch):
     assert task.completed_task_ttl == 35.0
 
 
-def test_non_reliable_trailing_ack_is_optional_and_debug_only(caplog):
-    # the non-reliable sender finishes at send-completion and never waits for
-    # the trailing ACK, so its delivery failure at teardown must not ERROR
-    cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={"site-1": "target_unreachable"}))
+def test_non_reliable_final_chunk_does_not_send_trailing_ack():
+    cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={}))
     message = _make_chunk("site-1", sid=530, seq=0, data_type=StreamDataType.FINAL, payload=b"abc", reliable=False)
     task = RxTask.find_or_create_task(message, cell)
 
-    with caplog.at_level(logging.DEBUG, logger="nvflare.fuel.f3.streaming.byte_receiver"):
-        assert task.process_chunk(message) is True
+    assert task.process_chunk(message) is True
+    task.ack_interval = 1
+    assert task.read(1) == b"a"
+    assert task.read(2) == b"bc"
 
     assert task.completed is True
-    assert cell.fire_and_forget.call_args.kwargs == {"optional": True}
-    trailing_ack = cell.fire_and_forget.call_args.args[3]
-    assert trailing_ack.get_header(StreamHeaderKey.SEQUENCE) == 0
-    assert trailing_ack.get_header(StreamHeaderKey.OFFSET) == 3
-    assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
-    assert "failed to ack seq 0" in caplog.text
+    cell.fire_and_forget.assert_not_called()
+
+
+def test_non_reliable_midstream_read_sends_flow_control_ack():
+    cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={}))
+    message = _make_chunk("site-1", sid=531, seq=0, data_type=StreamDataType.CHUNK, payload=b"abc", reliable=False)
+    task = RxTask.find_or_create_task(message, cell)
+    task.ack_interval = 1
+
+    assert task.process_chunk(message) is True
+    assert task.read(3) == b"abc"
+
+    assert cell.fire_and_forget.call_args.kwargs == {"optional": False}
+    flow_control_ack = cell.fire_and_forget.call_args.args[3]
+    assert flow_control_ack.get_header(StreamHeaderKey.SEQUENCE) == 0
+    assert flow_control_ack.get_header(StreamHeaderKey.OFFSET) == 3
 
 
 def test_non_reliable_midstream_flow_control_ack_remains_required():
     # before completion the sender may be blocked on the flow-control window,
     # so mid-stream ACKs stay required
     cell = SimpleNamespace(fire_and_forget=MagicMock(return_value={}))
-    task = RxTask(sid=531, origin="site-1", cell=cell, reliable=False)
+    task = RxTask(sid=543, origin="site-1", cell=cell, reliable=False)
 
     assert task._send_ack(offset=10, seq=2) is True
 

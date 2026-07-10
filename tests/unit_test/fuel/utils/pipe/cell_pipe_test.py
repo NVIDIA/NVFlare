@@ -319,6 +319,24 @@ def test_stream_progress_is_fire_and_forget():
     pipe.cell.send_request.assert_not_called()
 
 
+def test_metric_disables_stream_reliability_but_keeps_request_reply():
+    pipe = _make_pipe()
+    msg = _make_msg(topic=Topic.METRIC)
+
+    assert pipe.send(msg, timeout=1.0) is True
+
+    pipe.cell.fire_and_forget.assert_not_called()
+    assert pipe.cell.send_request.call_args.kwargs["reliable"] is False
+
+
+def test_non_metric_uses_configured_stream_reliability():
+    pipe = _make_pipe()
+
+    assert pipe.send(_make_msg(), timeout=1.0) is True
+
+    assert pipe.cell.send_request.call_args.kwargs["reliable"] is None
+
+
 def test_stream_progress_does_not_update_peer_active_time():
     pipe = _make_pipe()
     pipe.last_peer_active_time = 123.0

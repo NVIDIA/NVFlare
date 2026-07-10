@@ -64,6 +64,38 @@ def test_encode_message_can_stamp_receiver_ids_for_multi_receiver_download_refs(
     assert captured[FOBSContextKey.RECEIVER_IDS] == ["receiver-a", "receiver-b"]
 
 
+def test_send_request_forwards_stream_reliability_override():
+    cell = _make_cell()
+    cell._encode_message = MagicMock()
+    cell._send_one_request = MagicMock(return_value=Message(headers={}, payload=None))
+    request = Message(headers={}, payload=None)
+
+    cell._send_request(channel="metric", target="site-1", topic="metric", request=request, reliable=False)
+
+    assert cell._send_one_request.call_args.kwargs["reliable"] is False
+
+
+def test_send_one_request_forwards_stream_reliability_override(monkeypatch):
+    cell = _make_cell()
+
+    def _conditional_wait(_event, _timeout, _abort_signal):
+        waiter = next(iter(cell.requests_dict.values()))
+        waiter.receiving_future = _ReplyFuture()
+        return WaiterRC.IS_SET
+
+    monkeypatch.setattr(cell_module, "conditional_wait", _conditional_wait)
+
+    cell._send_one_request(
+        channel="metric",
+        target="site-1",
+        topic="metric",
+        request=Message(headers={}, payload=None),
+        reliable=False,
+    )
+
+    assert cell.send_blob.call_args.kwargs["reliable"] is False
+
+
 def test_remote_processing_wait_continues_without_resend_while_progress_callback_is_true(monkeypatch):
     cell = _make_cell()
     waits = []

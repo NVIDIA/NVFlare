@@ -49,7 +49,7 @@ from nvflare.fuel.utils.fobs.decomposers.via_downloader import (
 )
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
-from nvflare.fuel.utils.pipe.pipe import Message, Mode, Pipe
+from nvflare.fuel.utils.pipe.pipe import Message, Mode, Pipe, Topic
 from nvflare.fuel.utils.pipe.pipe_handler import PipeHandler
 from nvflare.private.fed.utils.fed_utils import register_ext_decomposers
 
@@ -1145,7 +1145,7 @@ class FlareAgent:
         if not self.metric_pipe_handler:
             raise RuntimeError("metric pipe is not available")
 
-        msg = Message.new_request(topic="metric", data=record)
+        msg = Message.new_request(topic=Topic.METRIC, data=record)
         return self.metric_pipe_handler.send_to_peer(msg, self.submit_result_timeout)
 
 

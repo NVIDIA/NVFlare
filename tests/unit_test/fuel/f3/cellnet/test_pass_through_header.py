@@ -166,6 +166,21 @@ class TestAdapterPassThroughHeader:
             captured.get(FOBSContextKey.PASS_THROUGH) is True
         ), "decode_ctx must contain PASS_THROUGH=True when the message header carries it"
 
+    @pytest.mark.parametrize("reliable", [False, True])
+    def test_reply_uses_request_stream_reliability(self, reliable):
+        captured = {}
+        adapter = _make_adapter(captured)
+        headers = _headers_without_pass_through(stream_req_id="stream-1")
+        headers[StreamHeaderKey.RELIABLE] = reliable
+
+        with (
+            patch("nvflare.fuel.f3.cellnet.cell.decode_payload"),
+            patch("nvflare.fuel.f3.cellnet.cell.encode_payload"),
+        ):
+            adapter.call(_make_future(headers))
+
+        assert adapter.cell.send_blob.call_args.kwargs["reliable"] is reliable
+
     def test_no_header_sets_pass_through_false_in_decode_ctx(self):
         """No PASS_THROUGH header (Swarm P2P messages) → decode_ctx[PASS_THROUGH] = False.
 

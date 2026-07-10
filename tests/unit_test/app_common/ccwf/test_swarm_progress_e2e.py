@@ -83,7 +83,7 @@ class _CellStackFake:
             ctx.update(props)
         return ctx
 
-    def send_blob(self, channel, topic, target, message, secure=False, optional=False):
+    def send_blob(self, channel, topic, target, message, secure=False, optional=False, reliable=None):
         self.sent_blobs.append((channel, topic, target, message))
         return _ReadyStreamFuture()
 

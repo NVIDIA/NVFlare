@@ -315,12 +315,11 @@ class RxTask:
                     ack_seq = self.seq
                     with self.ack_lock:
                         needs_ack = ack_seq != self.seq_ack or ack_offset > self.offset_ack
-                if needs_ack:
+                # A reliable sender needs the terminal ACK to retire its retry
+                # state. A non-reliable sender completes after its final send,
+                # so a trailing ACK only adds an unnecessary round trip.
+                if self.reliable and needs_ack:
                     ack_to_send = (ack_offset, ack_seq)
-                # completed also marks the trailing and post-completion
-                # flow-control ACKs of a non-reliable stream as advisory: the
-                # non-reliable sender finishes at send-completion and never
-                # waits for them (see _send_ack).
                 self.completed = True
                 if self.reliable:
                     schedule_remove = True
@@ -479,8 +478,13 @@ class RxTask:
 
             with self.ack_lock:
                 ack_lag = self.offset - self.offset_ack
-                final_ack_needed = final_chunk_consumed and (self.offset > self.offset_ack or self.seq > self.seq_ack)
-            if ack_lag >= self.ack_interval or final_ack_needed:
+                flow_control_ack_needed = not self.completed and ack_lag >= self.ack_interval
+                final_ack_needed = (
+                    self.reliable
+                    and final_chunk_consumed
+                    and (self.offset > self.offset_ack or self.seq > self.seq_ack)
+                )
+            if flow_control_ack_needed or final_ack_needed:
                 ack_to_send = (self.offset, self.seq)
 
             if self.stream_future:
@@ -515,10 +519,10 @@ class RxTask:
         # For a reliable stream, only a re-ACK at or behind state that was sent successfully
         # is optional: the first final ACK is still required even though stop() has already
         # marked the receive task completed, and a failed first attempt keeps retries at
-        # ERROR. For a non-reliable stream every ACK after completion is advisory - the
-        # sender finishes at send-completion and never waits for them. Note "already acked"
-        # means accepted by the first hop, not delivered end-to-end; a mid-route drop is
-        # still surfaced by the sender's own retry timeout.
+        # ERROR. Non-reliable streams can still send required mid-stream flow-control ACKs,
+        # but do not automatically send a terminal ACK. Note "already acked" means accepted
+        # by the first hop, not delivered end-to-end; a mid-route drop is still surfaced by
+        # the sender's own retry timeout.
         with self.ack_lock:
             already_acked = seq <= self.seq_ack and offset <= self.offset_ack
         optional = self.completed and (already_acked or not self.reliable)

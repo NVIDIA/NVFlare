@@ -17,7 +17,7 @@ import copy
 import os
 import threading
 import uuid
-from typing import Dict, List, Union
+from typing import Dict, List, Optional, Union
 
 from nvflare.apis.fl_constant import ServerCommandNames
 from nvflare.apis.signal import Signal
@@ -126,6 +126,7 @@ class Adapter:
         req_id = request.get_header(MessageHeaderKey.REQ_ID, "")
         secure = request.get_header(MessageHeaderKey.SECURE, False)
         optional = request.get_header(MessageHeaderKey.OPTIONAL, False)
+        reliable = request.get_header(StreamHeaderKey.RELIABLE, None)
         self.logger.debug(f"{stream_req_id=}: on {channel=}, {topic=}")
         response = self.cb(request, *args, **kwargs)
         self.logger.debug(f"response available: {stream_req_id=}: on {channel=}, {topic=}")
@@ -146,7 +147,13 @@ class Adapter:
         encode_payload(response, StreamHeaderKey.PAYLOAD_ENCODING, fobs_ctx=self.cell.get_fobs_context())
         self.logger.debug(f"sending: {stream_req_id=}: {response.headers=}, target={origin}")
         reply_future = self.cell.send_blob(
-            CellChannel.RETURN_ONLY, f"{channel}:{topic}", origin, response, secure, optional
+            channel=CellChannel.RETURN_ONLY,
+            topic=f"{channel}:{topic}",
+            target=origin,
+            message=response,
+            secure=secure,
+            optional=optional,
+            reliable=reliable,
         )
         self.logger.debug(f"Done sending: {stream_req_id=}: {reply_future=}")
 
@@ -363,6 +370,7 @@ class Cell(StreamCell):
         progress_wait_cb=None,
         num_receivers=1,
         receiver_ids=None,
+        reliable: Optional[bool] = None,
     ):
         """Stream one request to the target
 
@@ -375,13 +383,24 @@ class Cell(StreamCell):
             secure: is P2P security to be applied
             optional: is the message optional
             abort_signal: signal to abort the message
+            reliable: whether failed or unacknowledged stream chunks should be retried.
+                If not specified, this is read from comm_config.json.
 
         Returns: reply data
 
         """
         self._encode_message(request, abort_signal, num_receivers=num_receivers, receiver_ids=receiver_ids)
         return self._send_one_request(
-            channel, target, topic, request, timeout, secure, optional, abort_signal, progress_wait_cb
+            channel=channel,
+            target=target,
+            topic=topic,
+            request=request,
+            timeout=timeout,
+            secure=secure,
+            optional=optional,
+            abort_signal=abort_signal,
+            progress_wait_cb=progress_wait_cb,
+            reliable=reliable,
         )
 
     def _send_one_request(
@@ -395,6 +414,7 @@ class Cell(StreamCell):
         optional=False,
         abort_signal=None,
         progress_wait_cb=None,
+        reliable: Optional[bool] = None,
     ):
         req_id = str(uuid.uuid4())
         request.add_headers({StreamHeaderKey.STREAM_REQ_ID: req_id})
@@ -407,7 +427,13 @@ class Cell(StreamCell):
 
         try:
             future = self.send_blob(
-                channel=channel, topic=topic, target=target, message=request, secure=secure, optional=optional
+                channel=channel,
+                topic=topic,
+                target=target,
+                message=request,
+                secure=secure,
+                optional=optional,
+                reliable=reliable,
             )
 
             self.logger.debug(f"{req_id=}: Waiting starts")
