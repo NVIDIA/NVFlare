@@ -92,13 +92,14 @@ silently dropped or approximated.
    unsupported (categorical `value_counts`/`nunique`, correlations, custom
    aggregations — numeric features only). `count` is always included
    because the privacy cleansers need it. Continue with the supported
-   subset, stating what was excluded and why. Load
+   subset, stating what was excluded and why; load
    `references/statistics-mapping.md` beyond the standard set.
-4. Install missing dependencies (pandas; Pillow or the DICOM/NIfTI
-   loader for images) into the host environment before preflight, recipe
-   construction, or simulation. Quantiles additionally require
-   `fastdigest` (Rust toolchain to build): preflight the import before
-   including them; on failure, fail that statistic closed, report the
+4. Install missing dependencies for the detected modality only — tabular
+   needs pandas; images need Pillow or the format loader, never pandas —
+   before recipe construction or simulation, preflighting with a
+   non-raising check (`importlib.util.find_spec`), not a raising import.
+   Quantiles additionally require `fastdigest` (Rust toolchain to build):
+   same preflight; on failure, fail that statistic closed, report the
    product error, and complete the rest. Load the shared
    `dependency-install.md` only when an install is needed.
 5. Generate `client.py` from `assets/df_stats_client.py`: a
@@ -150,10 +151,9 @@ silently dropped or approximated.
   them, including to make min/max exact; requested min/max are honored
   only as noise-protected estimates, reported as such. Statistics outside
   the supported set are reported as unsupported.
-- Must include `count` in `statistic_configs`; selecting `stddev` or `var`
-  also requires `sum` and `mean` (prerequisites for the global second
-  round — expand automatically and state it). State the applied default
-  selection when the user expressed no explicit choice.
+- Must include `count` in `statistic_configs`; `stddev`/`var` also require
+  `sum` and `mean` (global second-round prerequisites — expand and state
+  it). State the applied default selection when the user expressed none.
 - Must set per-feature histogram ranges only from a script, declaration,
   or user answer; otherwise omit `range` (global range is then estimated
   from noise-protected min/max, stated in the report).

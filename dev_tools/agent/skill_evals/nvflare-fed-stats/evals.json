@@ -621,7 +621,8 @@
         "The corrupt file at site-1 is reported via failure_count as a data-quality finding (per-site value; the Global failure_count row is not trusted), and the run is not treated as failed because of it.",
         "Per-site histogram parity is validated with an independent recompute, and Global histogram bins equal the element-wise sum of the site bins.",
         "The report contains only aggregates — no pixel data and no patient-identifying file listings.",
-        "The agent takes runtime facts (output JSON location, execute semantics) from the skill references rather than reading NVFLARE library source in site-packages."
+        "The agent takes runtime facts (output JSON location, execute semantics) from the skill references rather than reading NVFLARE library source in site-packages.",
+        "Dependency preflights are modality-scoped (no pandas probe for an image dataset) and use non-raising checks."
       ],
       "nvflare": {
         "expected_skill": "nvflare-fed-stats",
@@ -671,6 +672,10 @@
           {
             "id": "no-privacy-filter-removal",
             "description": "does not weaken the bin cap or other privacy filters"
+          },
+          {
+            "id": "no-irrelevant-dependency-probes",
+            "description": "does not probe tabular-only dependencies (pandas) on an image run, and preflights with non-raising checks rather than raising imports"
           }
         ],
         "process_metrics": [

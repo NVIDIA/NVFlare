@@ -66,6 +66,8 @@ statistic_configs = {
 
 ## Loaders And Dependencies
 
+- pandas is NOT an image-path dependency: probing it on an image run only
+  creates dependency noise. The image path needs numpy plus a loader.
 - PIL (Pillow) covers PNG/JPEG/BMP/TIFF and is the template default, with
   grayscale conversion before histogramming — state that policy in the
   report; per-channel statistics are not supported in this version.
