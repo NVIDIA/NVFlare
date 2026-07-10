@@ -748,6 +748,11 @@ def test_run_without_deterministic_result_root_records_actionable_failure(tmp_pa
     job = tmp_path / "job.py"
     job.write_text("print('done')\n", encoding="utf-8")
     monkeypatch.setattr(runner, "run", lambda *args, **kwargs: (0, "done\n", 0.1))
+    monkeypatch.setattr(
+        runner,
+        "probe_simulator_workspace_override_support",
+        lambda *args, **kwargs: {"version": "2.9.0", "supported": True},
+    )
 
     record = runner.run_job(
         runner.JobRun("candidate", [], "candidate"),
@@ -766,6 +771,97 @@ def test_run_without_deterministic_result_root_records_actionable_failure(tmp_pa
 
     assert record.status == "crash"
     assert "print the direct simulator result directory" in record.failure_reason
+
+
+def test_run_without_result_root_blames_nvflare_without_workspace_override(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job = tmp_path / "job.py"
+    job.write_text("print('done')\n", encoding="utf-8")
+    monkeypatch.setattr(runner, "run", lambda *args, **kwargs: (0, "done\n", 0.1))
+    monkeypatch.setattr(
+        runner,
+        "probe_simulator_workspace_override_support",
+        lambda *args, **kwargs: {"version": "2.8.0", "supported": False},
+    )
+
+    record = runner.run_job(
+        runner.JobRun("candidate", [], "candidate"),
+        python=sys.executable,
+        job=job,
+        cwd=tmp_path,
+        help_text="",
+        fixed_args=[],
+        base_args=[],
+        output_root=tmp_path / "runs",
+        timeout=10,
+        simulator_no_progress_timeout=0,
+        metrics=["accuracy"],
+        config={"job": {}},
+    )
+
+    assert record.status == "crash"
+    assert "installed nvflare (2.8.0) does not honor NVFLARE_SIMULATOR_WORKSPACE_ROOT" in record.failure_reason
+    assert f"nvflare>={runner.SIMULATOR_WORKSPACE_OVERRIDE_MIN_NVFLARE_VERSION}" in record.failure_reason
+    assert "print the direct simulator result directory" not in record.failure_reason
+
+
+def test_unresolved_result_dir_failure_reason_uses_version_when_probe_is_inconclusive(tmp_path, monkeypatch):
+    runner = _load_runner()
+    probes = {}
+
+    def fake_probe(*args, **kwargs):
+        return probes["result"]
+
+    monkeypatch.setattr(runner, "probe_simulator_workspace_override_support", fake_probe)
+
+    probes["result"] = {"version": "2.6.2", "supported": None}
+    reason = runner.unresolved_result_dir_failure_reason(sys.executable, tmp_path)
+    assert "installed nvflare (2.6.2) does not honor" in reason
+    assert f"nvflare>={runner.SIMULATOR_WORKSPACE_OVERRIDE_MIN_NVFLARE_VERSION}" in reason
+
+    probes["result"] = {"version": "", "supported": None}
+    assert "print the direct simulator result directory" in runner.unresolved_result_dir_failure_reason(
+        sys.executable, tmp_path
+    )
+
+    probes["result"] = {"version": "2.8.0", "supported": True}
+    assert "print the direct simulator result directory" in runner.unresolved_result_dir_failure_reason(
+        sys.executable, tmp_path
+    )
+
+
+def test_probe_simulator_workspace_override_support_inspects_installed_sim_env(tmp_path):
+    runner = _load_runner()
+    sim_env = tmp_path / "nvflare" / "recipe" / "sim_env.py"
+    sim_env.parent.mkdir(parents=True)
+    tmp_path.joinpath("nvflare", "__init__.py").write_text("", encoding="utf-8")
+    sim_env.parent.joinpath("__init__.py").write_text("", encoding="utf-8")
+
+    sim_env.write_text("WORKSPACE_ROOT = '/tmp/nvflare/simulation'\n", encoding="utf-8")
+    probe = runner.probe_simulator_workspace_override_support(sys.executable, tmp_path)
+    assert probe["supported"] is False
+
+    sim_env.write_text(
+        "SIMULATOR_WORKSPACE_ROOT_ENV_VAR = 'NVFLARE_SIMULATOR_WORKSPACE_ROOT'\n",
+        encoding="utf-8",
+    )
+    probe = runner.probe_simulator_workspace_override_support(sys.executable, tmp_path)
+    assert probe["supported"] is True
+
+    probe = runner.probe_simulator_workspace_override_support(str(tmp_path / "missing-python"), tmp_path)
+    assert probe == {"version": "", "supported": None}
+
+
+def test_nvflare_version_predates_workspace_override():
+    runner = _load_runner()
+
+    assert runner.nvflare_version_predates_workspace_override("2.8.0")
+    assert runner.nvflare_version_predates_workspace_override("2.7.1+160.g67022752b")
+    assert not runner.nvflare_version_predates_workspace_override("2.9.0")
+    assert not runner.nvflare_version_predates_workspace_override("2.10.0rc1")
+    assert not runner.nvflare_version_predates_workspace_override("3.0.0")
+    assert not runner.nvflare_version_predates_workspace_override("")
+    assert not runner.nvflare_version_predates_workspace_override("unknown")
 
 
 def test_run_discovers_and_persists_printed_unnamed_simulator_root(tmp_path, monkeypatch):

@@ -127,6 +127,8 @@ DEFAULT_SIMULATOR_NO_PROGRESS_TIMEOUT = 240
 DEFAULT_JOB_HELP_TIMEOUT = 30
 MAX_CAPTURED_PROCESS_OUTPUT = 1024 * 1024
 SIMULATOR_WORKSPACE_ROOT_ENV_VAR = "NVFLARE_SIMULATOR_WORKSPACE_ROOT"
+SIMULATOR_WORKSPACE_OVERRIDE_MIN_NVFLARE_VERSION = "2.9.0"
+DEFAULT_WORKSPACE_OVERRIDE_PROBE_TIMEOUT = 30
 CAMPAIGN_LOCK_PATH = ".nvflare/autofl/campaign.lock"
 
 FIXED_BUDGET_TO_CLI = {
@@ -2030,6 +2032,76 @@ def changed_simulator_roots(simulator_base: Path, before: Dict[Path, int]) -> Li
     return sorted(path for path, modified in after.items() if before.get(path) != modified)
 
 
+def probe_simulator_workspace_override_support(
+    python: str, cwd: Path, timeout: int = DEFAULT_WORKSPACE_OVERRIDE_PROBE_TIMEOUT
+) -> Dict[str, Any]:
+    """Ask the campaign interpreter whether its nvflare honors the simulator workspace override.
+
+    Returns ``supported`` as True/False when ``nvflare.recipe.sim_env`` is importable, and None when the
+    probe is inconclusive (nvflare missing, import error, timeout); ``version`` is "" when unknown.
+    """
+
+    script = (
+        "import json\n"
+        "try:\n"
+        "    from importlib import metadata\n"
+        "    version = metadata.version('nvflare')\n"
+        "except Exception:\n"
+        "    version = ''\n"
+        "try:\n"
+        "    from nvflare.recipe import sim_env\n"
+        f"    supported = getattr(sim_env, 'SIMULATOR_WORKSPACE_ROOT_ENV_VAR', '') == {SIMULATOR_WORKSPACE_ROOT_ENV_VAR!r}\n"
+        "except Exception:\n"
+        "    supported = None\n"
+        "print(json.dumps({'version': version, 'supported': supported}))\n"
+    )
+    try:
+        completed = subprocess.run(
+            [python, "-c", script],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=True,
+        )
+        payload = json.loads(completed.stdout.strip().splitlines()[-1])
+    except (OSError, subprocess.SubprocessError, ValueError, IndexError):
+        return {"version": "", "supported": None}
+    if not isinstance(payload, dict):
+        return {"version": "", "supported": None}
+    version = payload.get("version")
+    supported = payload.get("supported")
+    return {
+        "version": version.strip() if isinstance(version, str) else "",
+        "supported": supported if isinstance(supported, bool) else None,
+    }
+
+
+def nvflare_version_predates_workspace_override(version: str) -> bool:
+    match = re.match(r"(\d+)\.(\d+)", version or "")
+    if not match:
+        return False
+    minimum = tuple(int(part) for part in SIMULATOR_WORKSPACE_OVERRIDE_MIN_NVFLARE_VERSION.split(".")[:2])
+    return (int(match.group(1)), int(match.group(2))) < minimum
+
+
+def unresolved_result_dir_failure_reason(python: str, cwd: Path) -> str:
+    probe = probe_simulator_workspace_override_support(python, cwd)
+    supported = probe["supported"]
+    version = probe["version"]
+    outdated = supported is False or (supported is None and nvflare_version_predates_workspace_override(version))
+    if outdated:
+        return (
+            f"job exited successfully but the installed nvflare ({version or 'unknown version'}) does not honor "
+            f"{SIMULATOR_WORKSPACE_ROOT_ENV_VAR}, so simulator results were written outside the isolated trial "
+            f"workspace; upgrade to nvflare>={SIMULATOR_WORKSPACE_OVERRIDE_MIN_NVFLARE_VERSION}"
+        )
+    return (
+        "job exited successfully but no deterministic NVFlare result directory was resolved; "
+        "expose a literal job name, support --name, or print the direct simulator result directory"
+    )
+
+
 def run_job(
     run_def: JobRun,
     *,
@@ -2107,10 +2179,7 @@ def run_job(
             run_def.failure_reason = f"exit_code={rc}"
     elif result_dir is None:
         run_def.status = "crash"
-        run_def.failure_reason = (
-            "job exited successfully but no deterministic NVFlare result directory was resolved; "
-            "expose a literal job name, support --name, or print the direct simulator result directory"
-        )
+        run_def.failure_reason = unresolved_result_dir_failure_reason(python, cwd)
     else:
         artifact_root = artifact_dir.parent
         evidence = extract_metric_evidence(artifact_root, metrics)
