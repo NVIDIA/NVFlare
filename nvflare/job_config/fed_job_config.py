@@ -433,7 +433,9 @@ class FedJobConfig:
             if not import_module:
                 continue
             import_path = os.path.join(*self._module_parts(import_module)) + ".py"
-            search_roots = [source_root] if level else [source_dir, source_root]
+            search_roots = [source_root]
+            if level == 0 and "." not in module and os.path.basename(source_file) != "__init__.py":
+                search_roots.insert(0, source_dir)
             checked_roots = set()
             for search_root in search_roots:
                 search_root = self._resolved_path(search_root)
