@@ -124,14 +124,15 @@ silently dropped or approximated.
    `min_noise_level=0.1`, `max_noise_level=0.3`, `max_bins_percent=10`)
    and state the applied values.
 7. Validate in a ladder per the shared `validation-evidence.md`: compile
-   checks, recipe construction, one simulator run, then the
-   statistics-specific rungs — output completeness; per-site parity
-   against an independent recompute on that partition; global parity
-   against a recompute over the union of partitions. Agent-authored
-   checkers go under `tools/` or `validation/`, reported as helpers, never
-   as part of the deployable job. Use `references/stats-job-validation.md`
-   for the hierarchy, parity procedure, and failures; stop at the first
-   failed rung and report the product error.
+   checks, recipe construction, one simulator run, then output
+   completeness — the output JSON exists, parses, and covers every
+   configured statistic per feature, site, and Global — using ephemeral
+   commands only. Generate NO validation scripts or helper files: the
+   only files this skill leaves behind are `client.py` and `job.py`.
+   Deeper numeric verification (per-site/global parity) is owned by
+   offline test harnesses, documented in
+   `references/stats-job-validation.md` for whoever runs it; stop at the
+   first failed rung and report the product error.
 8. Report the selection and mapping outcomes, changed files, validation
    status, applied privacy parameters, per-feature missing rates with
    cross-site divergence flagged (`count` is non-null, so missingness
@@ -159,8 +160,8 @@ silently dropped or approximated.
   required input (feature names, per-site locations, flat-data site
   count) fails closed with a precise report, asking once only when an
   interactive channel exists.
-- Must validate the full ladder with per-site and global parity evidence;
-  a mismatch beyond rounding is a failed run, not a warning.
+- Must verify output completeness with ephemeral commands and leave no
+  generated files beyond `client.py` and `job.py`.
 - Must take runtime facts (output locations, execute semantics, recipe
   parameters) from this skill's references and CLI outputs BEFORE reading
   NVFLARE library source — a last resort that never licenses a

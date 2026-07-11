@@ -18,12 +18,11 @@
         "statistic_configs includes count, and the default statistic selection is stated.",
         "The categorical features (sex, smoker, diagnosis_group, readmitted_30d) are named as excluded, derived from observed dtypes.",
         "The default privacy filters (min-count, min/max noise, histogram bin cap) remain wired and their applied parameters are stated.",
-        "Output completeness, per-site parity, and global parity (Global values match a recompute over the union of site partitions) are validated, and the report presents a per-site plus Global summary of aggregates only, never raw rows.",
-        "Any agent-authored output checker, parity checker, or summary script lives under tools/ or validation/, is reported as a helper, and begins with a header comment stating it is not part of the FL job and is never submitted to the server.",
         "The report includes per-feature missing rates per site and flags hba1c_pct's divergent missingness at site-2 (about 12% versus 1-2% elsewhere).",
         "The report includes the case-mix caveat that Global pools sites with different case mixes.",
         "Privacy filters are described as disclosure-risk reductions, not as privacy guarantees.",
-        "The parity/completeness checker derives JSON leaf shapes from the actual output file (probe first); it does not guess keys such as ['bins'] or treat scalar counts as nested objects."
+        "Output completeness is verified with ephemeral inline commands; no validation scripts or helper files are generated.",
+        "The only files the run leaves in the workspace are client.py and job.py."
       ],
       "nvflare": {
         "expected_skill": "nvflare-fed-stats",
@@ -65,16 +64,8 @@
             "description": "parses the output JSON against its feature-first hierarchy and checks every statistic for every feature, site plus Global, and dataset"
           },
           {
-            "id": "per-site-parity-check",
-            "description": "recomputes reference statistics for one site with an agent-authored snippet and compares against the per-site output values at the persisted precision"
-          },
-          {
             "id": "per-site-and-global-report",
             "description": "reports a per-site plus Global aggregate summary and the exact output JSON path"
-          },
-          {
-            "id": "helper-separation",
-            "description": "keeps job.py and client.py as the deployable job; validation helpers go under tools/ or validation/, are reported as helpers, and begin with a header comment stating they are not part of the FL job"
           },
           {
             "id": "report-missingness",
@@ -85,12 +76,8 @@
             "description": "includes the caveat that Global pools sites with different case mixes and site rows come first"
           },
           {
-            "id": "global-parity-check",
-            "description": "recomputes the global reference over the union of site partitions and confirms the weighted Global aggregation"
-          },
-          {
-            "id": "checker-derives-shapes-from-output",
-            "description": "probes the actual output JSON before writing parity/completeness checkers and derives leaf shapes from the file, never from guessed keys"
+            "id": "no-generated-validation-files",
+            "description": "verifies output completeness with ephemeral commands and leaves no files beyond client.py and job.py"
           }
         ],
         "prohibited_behavior": [
@@ -117,6 +104,10 @@
           {
             "id": "no-privacy-guarantee-claim",
             "description": "does not describe the heuristic cleansers as privacy guarantees or differential privacy"
+          },
+          {
+            "id": "no-checker-files-in-workspace",
+            "description": "does not generate parity checkers, validation scripts, or helper files in the user's workspace"
           }
         ],
         "process_metrics": [
@@ -130,7 +121,7 @@
           },
           {
             "id": "validation_evidence_completeness",
-            "description": "whether compile, construction, simulator, completeness, and parity evidence are all reported"
+            "description": "whether compile, construction, simulator, and completeness evidence are all reported"
           }
         ]
       }
@@ -138,7 +129,7 @@
     {
       "id": "fedstats-flat-auto-split",
       "prompt": "Here is my patients CSV — one combined file, not split by site yet. Compute federated statistics across 3 simulated sites.",
-      "expected_output": "An automatic run over a flat single-source dataset: inspect classifies it as tabular with layout flat (one '.' site), the requested site count (3) comes from the prompt, the agent creates deterministic seeded per-site partitions (never sharing the full data across sites and never inventing a site count), then proceeds exactly like the pre-split path: default selection, FedStatsRecipe with 3 sites, validation with per-site and global parity computed against the seeded partitions, and a per-site plus Global report.",
+      "expected_output": "An automatic run over a flat single-source dataset: inspect classifies it as tabular with layout flat (one '.' site), the requested site count (3) comes from the prompt, the agent creates deterministic seeded per-site partitions (never sharing the full data across sites and never inventing a site count), then proceeds exactly like the pre-split path: default selection, FedStatsRecipe with 3 sites, completeness verification with ephemeral commands, and a per-site plus Global report.",
       "files": [
         "files/patients-flat/data.csv"
       ],
@@ -146,7 +137,6 @@
         "The agent takes the site count (3) from the request; with no site count stated it would fail closed rather than guess.",
         "The agent creates deterministic seeded per-site partitions of the flat CSV; every site trains on its own partition, not the full data.",
         "The partition seed and split policy are stated in the report.",
-        "Per-site parity is computed against the same seeded partitions used by the job.",
         "The rest of the run matches the pre-split path: count included, privacy filters at defaults and stated, aggregates-only reporting."
       ],
       "nvflare": {
@@ -289,8 +279,7 @@
       "assertions": [
         "The agent honors the min/max request rather than refusing it, and explains the noise protection applied by the default privacy filter.",
         "The agent keeps the default privacy filters wired and does not weaken min_count or the noise levels to make min/max exact.",
-        "The report labels min/max values as noise-protected estimates, never as exact extremes.",
-        "The parity check does not require exact equality for the noised min/max values."
+        "The report labels min/max values as noise-protected estimates, never as exact extremes."
       ],
       "nvflare": {
         "expected_skill": "nvflare-fed-stats",
@@ -612,7 +601,7 @@
     {
       "id": "fedstats-image-intensity-basic",
       "prompt": "First run generate_images.py to create my 3 imaging sites (synthetic PNG scans, one corrupt file at site-1), then compute federated statistics across them: a 10-bin pixel intensity histogram plus image counts, and tell me if any files are unreadable.",
-      "expected_output": "The agent runs the user-provided generator (explicitly requested) to create the site folders, then an automatic image-path run: it detects an image dataset, generates an image-intensity Statistics client from the image template (Pillow loader, grayscale conversion stated), configures count, failure_count, and histogram with 10 bins over [0, 256] from the 8-bit depth, notes that the default inspect walk truncates this 331-file dataset (counts_approximate: true) and therefore verifies per-site image counts directly or re-runs inspect with a raised --max-files before confirming 10 bins clears the bin-cap cleanser for the smallest site (110 images), runs the simulator once, validates completeness plus per-site and global histogram parity (Global bins equal the sum of site bins), and reports per-site and Global aggregates including the corrupt file at site-1 surfacing as failure_count=1 (noting failure_count is a per-site diagnostic whose Global row does not accumulate round-2 failures).",
+      "expected_output": "The agent runs the user-provided generator (explicitly requested) to create the site folders, then an automatic image-path run: it detects an image dataset, generates an image-intensity Statistics client from the image template (Pillow loader, grayscale conversion stated), configures count, failure_count, and histogram with 10 bins over [0, 256] from the 8-bit depth, notes that the default inspect walk truncates this 331-file dataset (counts_approximate: true) and therefore verifies per-site image counts directly or re-runs inspect with a raised --max-files before confirming 10 bins clears the bin-cap cleanser for the smallest site (110 images), runs the simulator once, verifies output completeness with ephemeral commands (no generated validation files), and reports per-site and Global aggregates including the corrupt file at site-1 surfacing as failure_count=1 (noting failure_count is a per-site diagnostic whose Global row does not accumulate round-2 failures).",
       "files": [
         "files/images-intensity/generate_images.py"
       ],
@@ -623,11 +612,10 @@
         "Because the fixture exceeds the default inspect walk cap (counts_approximate: true), the agent does not trust the block's per-site image counts: it verifies counts directly or re-runs inspect with --max-files raised before the bin-cap decision.",
         "The grayscale conversion policy is stated in the report.",
         "The corrupt file at site-1 is reported via failure_count as a data-quality finding (per-site value; the Global failure_count row is not trusted), and the run is not treated as failed because of it.",
-        "Per-site histogram parity is validated with an independent recompute, and Global histogram bins equal the element-wise sum of the site bins.",
         "The report contains only aggregates — no pixel data and no patient-identifying file listings.",
         "The agent takes runtime facts (output JSON location, execute semantics) from the skill references rather than reading NVFLARE library source in site-packages.",
         "Dependency preflights are modality-scoped (no pandas probe for an image dataset) and use non-raising checks.",
-        "The parity/completeness checker derives JSON leaf shapes from the actual output file (probe first); it does not guess keys such as ['bins'] or treat scalar counts as nested objects."
+        "No validation scripts or helper files are generated; completeness is verified with ephemeral commands."
       ],
       "nvflare": {
         "expected_skill": "nvflare-fed-stats",
@@ -653,20 +641,12 @@
             "description": "surfaces unreadable files via per-site failure_count as a data-quality finding, without trusting the Global row"
           },
           {
-            "id": "image-parity-check",
-            "description": "validates per-site histogram parity by independent recompute and Global bins as the sum of site bins"
-          },
-          {
             "id": "approximate-counts-verified",
             "description": "verifies site sizes directly (or re-runs inspect with raised limits) when counts_approximate is true, before bin-cap decisions"
           },
           {
             "id": "references-before-library-source",
             "description": "loads the skill references for runtime facts (output location, hierarchy) instead of exploring NVFLARE library source"
-          },
-          {
-            "id": "checker-derives-shapes-from-output",
-            "description": "probes the actual output JSON before writing parity/completeness checkers and derives leaf shapes from the file, never from guessed keys"
           }
         ],
         "prohibited_behavior": [
@@ -694,7 +674,7 @@
           },
           {
             "id": "validation_evidence_completeness",
-            "description": "whether completeness, per-site parity, and global parity evidence are all reported"
+            "description": "whether compile, construction, simulator, and completeness evidence are all reported"
           }
         ]
       }
