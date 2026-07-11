@@ -79,7 +79,16 @@ silently dropped or approximated.
    `references/statistics-mapping.md`. Read any statistics script or
    notebook as optional intent evidence (statistics, read options,
    splits, histogram ranges) without importing or executing it.
-3. Select statistics automatically and report the support mapping before
+3. Install missing dependencies for the detected modality only — tabular
+   needs pandas; images need Pillow or the format loader (pandas only for
+   an accepted companion-labels follow-up run) — before any import-level
+   preflight, exploratory data reading, recipe construction, or
+   simulation, preflighting with non-raising `importlib.util.find_spec`,
+   never a raising import. Quantiles additionally require `fastdigest`
+   (Rust toolchain to build): same preflight; on failure, fail that
+   statistic closed, report the product error, and complete the rest.
+   Load the shared `dependency-install.md` only when an install is needed.
+4. Select statistics automatically and report the support mapping before
    writing any code. Intent priority: explicit request, README/notes
    declaration, an existing script's computations; with none, apply the
    default set — count, sum, mean, stddev, histogram (images: count,
@@ -92,15 +101,6 @@ silently dropped or approximated.
    because the privacy cleansers need it. Continue with the supported
    subset, stating what was excluded and why; load
    `references/statistics-mapping.md` when requests exceed the standard set.
-4. Install missing dependencies for the detected modality only — tabular
-   needs pandas; the image path needs Pillow or the format loader (pandas
-   only for an accepted companion-labels follow-up run) — before recipe
-   construction or simulation, preflighting with a non-raising check
-   (`importlib.util.find_spec`), not a raising import.
-   Quantiles additionally require `fastdigest` (Rust toolchain to build):
-   same preflight; on failure, fail that statistic closed, report the
-   product error, and complete the rest. Load the shared
-   `dependency-install.md` only when an install is needed.
 5. Generate `client.py` — image path: from `assets/image_stats_client.py`
    per its reference; tabular: from `assets/df_stats_client.py`, a
    `DFStatisticsCore` subclass whose `load_data()` reads the user's data —
@@ -114,7 +114,7 @@ silently dropped or approximated.
    partitions unless shared data is explicitly requested.
 6. Run `nvflare recipe show fedstats --format json` and generate `job.py`
    constructing `FedStatsRecipe` (import from `nvflare.recipe.fedstats`)
-   with `SimEnv` and `statistic_configs` from step 3. Histograms default
+   with `SimEnv` and `statistic_configs` from step 4. Histograms default
    to 20 bins, no `range`; set an explicit per-feature `range` only from
    a script, declaration, or user answer (images: from bit depth) — else
    the controller estimates it from noise-protected min/max. Reduce
