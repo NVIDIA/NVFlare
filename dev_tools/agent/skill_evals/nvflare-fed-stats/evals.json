@@ -19,7 +19,7 @@
         "The categorical features (sex, smoker, diagnosis_group, readmitted_30d) are named as excluded, derived from observed dtypes.",
         "The default privacy filters (min-count, min/max noise, histogram bin cap) remain wired and their applied parameters are stated.",
         "Output completeness, per-site parity, and global parity (Global values match a recompute over the union of site partitions) are validated, and the report presents a per-site plus Global summary of aggregates only, never raw rows.",
-        "Any agent-authored output checker, parity checker, or summary script lives under tools/ or validation/ and is reported as a helper, not as part of the deployable job.",
+        "Any agent-authored output checker, parity checker, or summary script lives under tools/ or validation/, is reported as a helper, and begins with a header comment stating it is not part of the FL job and is never submitted to the server.",
         "The report includes per-feature missing rates per site and flags hba1c_pct's divergent missingness at site-2 (about 12% versus 1-2% elsewhere).",
         "The report includes the case-mix caveat that Global pools sites with different case mixes.",
         "Privacy filters are described as disclosure-risk reductions, not as privacy guarantees.",
@@ -74,7 +74,7 @@
           },
           {
             "id": "helper-separation",
-            "description": "keeps job.py and client.py as the deployable job; validation helpers go under tools/ or validation/ and are reported as helpers"
+            "description": "keeps job.py and client.py as the deployable job; validation helpers go under tools/ or validation/, are reported as helpers, and begin with a header comment stating they are not part of the FL job"
           },
           {
             "id": "report-missingness",
