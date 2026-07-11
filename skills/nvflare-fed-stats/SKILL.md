@@ -143,9 +143,9 @@ silently dropped or approximated.
 
 - Must derive feature names from a header row or user-supplied names
   only; headerless without names is ask-or-fail-closed — never invented.
-- Must compute statistics only for numeric features, naming exclusions
-  from observed dtypes (not prose), and report per-feature missing rates
-  with cross-site divergence flagged.
+- Numeric-only filtering is automatic in the product — never drop
+  columns up front; name exclusions from observed dtypes (not prose) and
+  report per-feature missing rates, flagging cross-site divergence.
 - Must keep the default privacy filters wired, never disabled or
   weakened (including to make min/max exact); requested min/max are
   honored only as noise-protected estimates. Unsupported is reported.
