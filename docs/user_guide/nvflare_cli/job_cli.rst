@@ -400,6 +400,28 @@ such as model, metrics, or client logs, that were not found locally. Missing
 artifacts do not make the command fail when the download itself succeeds.
 ``round_metrics`` is reported when the per-round JSONL artifact exists; it is
 optional because older jobs and jobs without aggregation metrics do not create it.
+
+Global-model discovery uses server provenance rather than the order of files in
+the download tree. Common model filenames are considered only in canonical
+server-owned locations such as ``workspace``, ``server``, and ``app_server``;
+client checkpoints are not labeled as the global model. Jobs that save the global
+model under a custom filename can place ``artifact_manifest.json`` in a canonical
+server-owned location. The manifest requires schema version ``1`` and a path
+relative to the manifest:
+
+.. code-block:: json
+
+   {
+     "schema_version": "1",
+     "artifacts": {
+       "global_model": "app_server/production-checkpoint.bin"
+     }
+   }
+
+Manifest paths must stay inside the downloaded job tree and cannot traverse
+symlinks. When a manifest is present, it is authoritative; the CLI does not fall
+back to filename guessing if the manifest is invalid or its target is absent.
+
 When ``artifact_discovery`` is ``skipped``, the CLI did not have a local
 directory to inspect, so ``artifacts`` and ``missing_artifacts`` are ``null``
 instead of claiming that expected artifacts were verified absent.

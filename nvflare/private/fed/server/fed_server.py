@@ -454,6 +454,7 @@ class FederatedServer(BaseServer):
             token_verifier=token_verifier,
             logger=self.logger,
             client_fqcn_resolver=self._resolve_client_fqcn_for_auth,
+            local_cell_fqcn=self.cell.get_fqcn() if getattr(self, "cell", None) else None,
         )
         if not reply:
             self._strip_peer_transit_reply_auth_headers(message)
