@@ -8,10 +8,11 @@ Adapt this template when generating the client:
   PNG/JPEG/BMP/TIFF; DICOM needs ``pydicom`` (or MONAI's ITK reader), NIfTI
   needs ``nibabel`` — preflight the import for the chosen loader and fail
   closed on a missing dependency;
-- ``count`` is the number of discovered image files (unreadable files are
-  only detected during the histogram pass and surface via ``failure_count``,
-  which must be configured explicitly to appear in output; failed paths
-  are deduplicated so retried passes cannot inflate the count);
+- ``count`` is the number of discovered image files; unreadable files are
+  detected up front by a cheap header verification in ``initialize()`` so
+  ``failure_count`` (which must be configured explicitly to appear in
+  output) is correct from the first statistics round, with the histogram
+  pass as a deduplicated backstop for decode-time failures;
 - grayscale conversion is applied before histogramming; state that policy in
   the report (multi-channel per-channel statistics are not supported here);
 - parameterize the data location by site identity; do not hardcode one
@@ -56,7 +57,29 @@ class ImageIntensityStatistics(Statistics):
         self.image_paths = sorted(p for p in site_dir.iterdir() if p.name.lower().endswith(IMAGE_EXTENSIONS))
         if not self.image_paths:
             raise ValueError(f"no image files found under {site_dir}")
-        self.log_info(fl_ctx, f"site {site_name}: {len(self.image_paths)} image files")
+        # cheap header verification up front, so failure_count is correct in
+        # the FIRST statistics round (histogramming only happens in round 2,
+        # after the server has already collected round-1 failure counts)
+        for path in self.image_paths:
+            if not self._verify_image(path):
+                self.failed_paths.add(path)
+        self.log_info(
+            fl_ctx,
+            f"site {site_name}: {len(self.image_paths)} image files, {len(self.failed_paths)} unreadable",
+        )
+
+    @staticmethod
+    def _verify_image(path: Path) -> bool:
+        # ADAPTATION POINT: swap for the format's cheap validity check when
+        # replacing the loader (e.g. pydicom.dcmread(stop_before_pixels=True)).
+        try:
+            from PIL import Image
+
+            with Image.open(path) as img:
+                img.verify()  # header check only; no full decode
+            return True
+        except Exception:
+            return False
 
     @staticmethod
     def _load_image(path: Path) -> np.ndarray:
