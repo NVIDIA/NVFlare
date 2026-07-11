@@ -1,8 +1,8 @@
 # Eval Fixtures
 
 All fixtures are authored for these evals; none contain real data. The
-patient rows are synthetic (the same seeded generator as the `flare_test`
-manual-test datasets, different seed), pre-split into three non-IID sites:
+patient rows are synthetic (seeded NumPy generation with plausible
+clinical correlations), pre-split into three non-IID sites:
 site-1 skews older and cardiovascular/renal, site-2 younger and
 metabolic/respiratory, site-3 is a smaller mixed community site. The
 27-feature schema has 23 numeric features (demographics, vitals, labs,
