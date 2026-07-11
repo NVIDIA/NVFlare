@@ -49,13 +49,17 @@ simulator run: output completeness, per-site parity, and global parity.
    presence and plausibility, never exact equality).
 7. **Global parity** — completeness proves fields exist; this rung proves
    the weighted aggregation is right. Recompute the global reference over
-   the union of all site partitions: `Global` count and sum exact; mean and
-   stddev (and var when configured) at the persisted precision, with the
-   pooled reference computed around the global mean using `(N - 1)`;
-   histogram bin counts equal to the sum of the site bin counts when an
-   explicit range was configured. A Global row that matches no
-   union-recompute is a failed run even when every per-site row is
-   correct.
+   the union of all site partitions, with the pooled reference computed
+   around the global mean using `(N - 1)`: `Global` count exact; histogram
+   bin counts equal to the sum of the site bin counts when an explicit
+   range was configured. Tolerances for the rounded statistics: sum and
+   mean within 1 ulp of the persisted precision; `stddev`/`var` within
+   site-count ulps (3 sites at precision 4 → up to 0.0003). The server
+   rounds each site's second-round variance term to the persisted
+   precision BEFORE summing, so the global stddev legitimately differs
+   from a full-precision recompute by a few ulps — that is double
+   rounding, not an aggregation bug. Anything beyond those bounds is a
+   failed run even when every per-site row is correct.
 
 ## Helper Separation
 
