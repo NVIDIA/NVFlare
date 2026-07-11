@@ -55,7 +55,11 @@ manual verification.
   (4 digits by default): compare count exactly and round float references
   (sum, mean, stddev — pandas `std()` ddof=1) to that precision before an
   exact compare; histogram bin counts must match when an explicit range
-  was configured. Two statistics are approximate by design and exempt
+  was configured. CAUTION: when `var` is configured, the per-site `var`
+  leaf is NOT the site's own variance — clients report the partial term
+  `Σ(x − μ_global)² / (N_total − 1)` for the global aggregation — so skip
+  per-site `var` leaves entirely (the Global check covers them); per-site
+  `stddev` IS the site's own stddev and compares exactly. Two statistics are approximate by design and exempt
   from exact parity: quantiles (t-digest sketch; coarse tolerance) and
   min/max (noise-protected; check presence and plausibility only).
 - **Global parity** — completeness proves fields exist; this check proves
@@ -64,13 +68,15 @@ manual verification.
   around the global mean using `(N - 1)`: `Global` count exact; histogram
   bin counts equal to the sum of the site bin counts when an explicit
   range was configured. Tolerances for the rounded statistics: sum and
-  mean within 1 ulp of the persisted precision; `stddev`/`var` within
-  site-count ulps (3 sites at precision 4 → up to 0.0003). The server
-  rounds each site's second-round variance term to the persisted
-  precision BEFORE summing, so the global stddev legitimately differs
-  from a full-precision recompute by a few ulps — double rounding, not an
-  aggregation bug. Anything beyond those bounds is a real mismatch even
-  when every per-site row is correct.
+  mean within 1 ulp of the persisted precision; `var` within site-count
+  ulps (the server rounds each site's second-round variance term to the
+  persisted precision BEFORE summing — double rounding, not an
+  aggregation bug). For Global `stddev`: when `var` is also configured,
+  check the exact identity `stddev == round(sqrt(var), precision)`; when
+  it is not, use the σ-scaled bound
+  `(site_count · ulp) / (2σ) + ulp`, since a variance error of N ulps
+  propagates to stddev as `err/(2σ)`. Anything beyond those bounds is a
+  real mismatch even when every per-site row is correct.
 
 ## Statistics-Specific Failures
 
