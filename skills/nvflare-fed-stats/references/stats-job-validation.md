@@ -13,7 +13,9 @@ harnesses, not performed by the skill.
 2. **Import preflight** — pandas import; re-verify the `fastdigest` import
    (first gated at selection time) only when quantiles are configured.
 3. **Recipe construction** — construct `FedStatsRecipe` with the generated
-   arguments without executing the job.
+   arguments without executing the job. The constructor returning without
+   error IS the pass signal; do not probe attributes of the recipe object
+   (it exposes no `name` and needs no inspection).
 4. **Simulator run** — execute `job.py` under `SimEnv`.
    `recipe.execute(env)` returns a run handle (`nvflare.recipe.run.Run` —
    note the module, not `spec`); you do not need it for validation:
@@ -23,7 +25,9 @@ harnesses, not performed by the skill.
    usually means `load_data()` cannot find a site's data path.
 5. **Output completeness** — run as ephemeral commands (inline python),
    never saved as script files: locate the output JSON under the simulator
-   workspace (`.../server/simulate_job/<stats_output_path>`), parse it, and
+   workspace (`.../server/simulate_job/<stats_output_path>`), print its
+   top two levels FIRST (the hierarchy is feature-first, not
+   statistic-first — probe before asserting, never guess keys), then
    assert against its actual hierarchy
    `{feature: {statistic: {site: {dataset: value}}}}`: every expected numeric
    feature appears at the top level; under each feature every configured
