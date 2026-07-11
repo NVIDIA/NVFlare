@@ -57,7 +57,8 @@ manual verification.
   exact compare; histogram bin counts must match when an explicit range
   was configured. CAUTION: when `var` is configured, the per-site `var`
   leaf is NOT the site's own variance — clients report the partial term
-  `Σ(x − μ_global)² / (N_total − 1)` for the global aggregation — so skip
+  `Σ(x − μ_global)² / (global_count − 1)`, where `global_count` is the
+  dataset's global non-null count, for the global aggregation — so skip
   per-site `var` leaves entirely (the Global check covers them); per-site
   `stddev` IS the site's own stddev and compares exactly. Two statistics are approximate by design and exempt
   from exact parity: quantiles (t-digest sketch; coarse tolerance) and
