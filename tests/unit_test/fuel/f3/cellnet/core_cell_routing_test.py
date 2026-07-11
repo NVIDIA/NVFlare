@@ -79,6 +79,18 @@ def test_cp_routes_to_root_connected_pipe_cell_through_server_root():
     assert ep.name == "server"
 
 
+def test_cp_routes_to_root_connected_pipe_cell_with_dotted_token_through_server_root():
+    # Dots are supported in VIA_ROOT tokens. They split the CellPipe name into
+    # multiple FQCN segments, but the first descendant segment still carries
+    # the explicit CellPipe marker and must receive the same root fall-through.
+    cell = _routing_cell("site-1", ["server", "site-1.job-123"])
+
+    ep = cell._try_find_ep("site-1.cellpipe~plain~agent.v2~active", None)
+
+    assert ep is not None
+    assert ep.name == "server"
+
+
 def test_cj_routes_to_root_connected_pipe_cell_via_cp():
     # First leg of the same path: the CJ ships the message to its connected
     # FQCN parent (the CP); the CP then hops to the server root.
@@ -90,10 +102,19 @@ def test_cj_routes_to_root_connected_pipe_cell_via_cp():
     assert ep.name == "site-1"
 
 
+def test_cj_routes_to_root_connected_pipe_cell_with_dotted_token_via_cp():
+    cell = _routing_cell("site-1.job-123", ["site-1", "server"])
+
+    ep = cell._try_find_ep("site-1.cellpipe~plain~agent.v2~active", None)
+
+    assert ep is not None
+    assert ep.name == "site-1"
+
+
 def test_ancestor_path_miss_for_regular_cell_does_not_fall_back_to_server_root():
     # A deeper ordinary descendant also keeps the original behavior when no
-    # cell on its path is connected. The VIA_ROOT exception is only for an
-    # unconnected direct CellPipe child.
+    # cell on its path is connected. The VIA_ROOT exception is only for a
+    # descendant whose first segment carries the explicit CellPipe marker.
     cell = _routing_cell("site-1", ["server"])
 
     ep = cell._try_find_ep("site-1.job-dead.worker", None)
