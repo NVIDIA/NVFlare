@@ -43,12 +43,14 @@ statistic_configs = {
 - `count` is the number of discovered image files, not pixels; unreadable
   files are only detected during the histogram pass, so `count` includes
   them and `failure_count` reports them.
-- `failure_count` is correct from round 1: the template verifies image
-  headers in `initialize()`, so unreadable files are counted before the
-  server's first collection and the `Global` row accumulates them. Only
-  decode-time failures first seen in the round-2 histogram pass miss the
-  `Global` row (product defect, NVFlare issue #4876) — for those, report
-  per-site values and sum them yourself.
+- `failure_count` is correct from round 1: `initialize()` verifies every
+  file with the same full-decode operation the histogram uses, so
+  unreadable files (broken headers AND broken pixel data) are counted
+  before the server's first collection and the `Global` row accumulates
+  them. Only transient read errors first seen in round 2 miss the `Global`
+  row (product defect, NVFlare issue #4876) — for those, report per-site
+  values and sum them yourself. Very large datasets may trade this
+  double-decode for round-2-only discovery; say so in the report.
 - mean/sum/stddev/var/quantile/min/max over image sets are not supported by
   this skill version: report them as unsupported for image data rather than
   improvising pixel-pooled implementations.
