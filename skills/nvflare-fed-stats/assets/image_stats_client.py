@@ -21,7 +21,8 @@ Adapt this template when generating the client:
   closed on a missing dependency;
 - ``count`` is the number of discovered image files (unreadable files are
   only detected during the histogram pass and surface via ``failure_count``,
-  which must be configured explicitly to appear in output);
+  which must be configured explicitly to appear in output; failed paths
+  are deduplicated so retried passes cannot inflate the count);
 - grayscale conversion is applied before histogramming; state that policy in
   the report (multi-channel per-channel statistics are not supported here);
 - parameterize the data location by site identity; do not hardcode one
@@ -54,7 +55,9 @@ class ImageIntensityStatistics(Statistics):
         self.data_root_dir = data_root_dir
         self.dataset_name = dataset_name
         self.image_paths: Optional[List[Path]] = None
-        self.failure_images = 0
+        # failed paths are deduplicated so a retried histogram() call cannot
+        # count the same unreadable file twice
+        self.failed_paths: set = set()
 
     def initialize(self, fl_ctx: FLContext):
         site_name = fl_ctx.get_identity_name()
@@ -82,7 +85,7 @@ class ImageIntensityStatistics(Statistics):
         return len(self.image_paths)
 
     def failure_count(self, dataset_name: str, feature_name: str) -> int:
-        return self.failure_images
+        return len(self.failed_paths)
 
     def histogram(
         self, dataset_name: str, feature_name: str, num_of_bins: int, global_min_value: float, global_max_value: float
@@ -95,7 +98,7 @@ class ImageIntensityStatistics(Statistics):
                 counts, edges = np.histogram(arr, bins=num_of_bins, range=(global_min_value, global_max_value))
                 totals += counts
             except Exception:
-                self.failure_images += 1
+                self.failed_paths.add(path)
         if edges is None:
             raise ValueError(f"no readable images for {dataset_name}/{feature_name}")
         bins = [
