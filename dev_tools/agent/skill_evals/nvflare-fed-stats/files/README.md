@@ -36,11 +36,11 @@ testable; all non-null counts stay above 200.
   site-3 is truncated to 60 rows so the bin-cap cleanser allows at most 5
   histogram bins, for the bin-reduction eval. Copies of the base site data
   are intentional, same isolation rationale as `readme-injection/`.
-- `images-intensity/site-{1,2,3}/` — 110 synthetic 8x8 grayscale PNGs per
-  site (seeded, site-shifted intensity means so per-site histograms differ)
-  plus one deliberately corrupt file at site-1 for failure_count. 110
-  images per site clears the bin-cap cleanser for the 10-bin histogram the
-  eval requests (bins must stay under 10% of a site's image count).
+- `images-intensity/generate_images.py` — generator the image eval asks
+  the agent to run first: creates 110 seeded 8x8 grayscale PNGs per site
+  (site-shifted intensity means) plus one corrupt file at site-1 for
+  failure_count. No binary image files are checked in; 110 images per
+  site clears the bin-cap cleanser for the eval's 10-bin histogram.
 
 Known eval coverage gap: parquet datasets (CLI dataset-block handling is
 unit-tested in dataset_inspect_test.py; no eval case exercises the parquet
