@@ -12,7 +12,11 @@ simulator run: output completeness, per-site parity, and global parity.
    (first gated at selection time) only when quantiles are configured.
 3. **Recipe construction** — construct `FedStatsRecipe` with the generated
    arguments without executing the job.
-4. **Simulator run** — execute `job.py` under `SimEnv`. The statistics job is
+4. **Simulator run** — execute `job.py` under `SimEnv`.
+   `recipe.execute(env)` returns a run handle (`nvflare.recipe.run.Run` —
+   note the module, not `spec`); you do not need it for validation:
+   success is determined by the completeness and parity rungs over the
+   output JSON, not by inspecting the handle. The statistics job is
    single-round and completes in seconds on typical tabular data; a hang
    usually means `load_data()` cannot find a site's data path.
 5. **Output completeness** — locate the output JSON under the simulator
