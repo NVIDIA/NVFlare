@@ -98,13 +98,25 @@ class ImageIntensityStatistics(Statistics):
     ) -> Histogram:
         totals = np.zeros((num_of_bins,), dtype=np.int64)
         edges = None
+        late_failures = 0
         for path in self.image_paths:
+            if path in self.failed_paths:
+                continue  # known-bad since initialize(); do not decode again
             try:
                 arr = self._load_image(path)
                 counts, edges = np.histogram(arr, bins=num_of_bins, range=(global_min_value, global_max_value))
                 totals += counts
             except Exception:
+                # passed verification but failed now: the data changed (or a
+                # transient read error) AFTER counts were already consumed by
+                # the privacy checks - warn loudly, the run should be repeated
                 self.failed_paths.add(path)
+                late_failures += 1
+        if late_failures:
+            self.logger.warning(
+                f"{late_failures} image(s) failed after passing verification; counts consumed by "
+                "privacy checks may overstate the histogram inputs - rerun the job for a consistent view"
+            )
         if edges is None:
             # every image at this site failed: round-1 count/failure_count
             # already surface the data-quality condition, so return

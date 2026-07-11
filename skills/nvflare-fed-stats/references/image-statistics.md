@@ -47,9 +47,12 @@ statistic_configs = {
   file with the same full-decode operation the histogram uses, so
   unreadable files (broken headers AND broken pixel data) are counted
   before the server's first collection and the `Global` row accumulates
-  them. Only transient read errors first seen in round 2 miss the `Global`
-  row (product defect, NVFlare issue #4876) — for those, report per-site
-  values and sum them yourself. Very large datasets may trade this
+  them. A file failing AFTER verification (mutated or transiently
+  unreadable between rounds) is warned about at runtime — counts already
+  consumed by the privacy checks may overstate the effective histogram
+  inputs, so the report must relay the warning and recommend a rerun
+  (the cleanser/statistics ordering question is product-side, tracked
+  with NVFlare issue #4876). Very large datasets may trade the
   double-decode for round-2-only discovery; say so in the report.
 - mean/sum/stddev/var/quantile/min/max over image sets are not supported by
   this skill version: report them as unsupported for image data rather than
