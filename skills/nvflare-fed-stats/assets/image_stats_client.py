@@ -106,7 +106,11 @@ class ImageIntensityStatistics(Statistics):
             except Exception:
                 self.failed_paths.add(path)
         if edges is None:
-            raise ValueError(f"no readable images for {dataset_name}/{feature_name}")
+            # every image at this site failed: round-1 count/failure_count
+            # already surface the data-quality condition, so return
+            # zero-count bins instead of aborting the federated job for the
+            # healthy sites
+            _, edges = np.histogram(np.empty(0), bins=num_of_bins, range=(global_min_value, global_max_value))
         bins = [
             Bin(low_value=float(edges[j]), high_value=float(edges[j + 1]), sample_count=int(totals[j]))
             for j in range(num_of_bins)
