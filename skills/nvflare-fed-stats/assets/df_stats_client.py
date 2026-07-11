@@ -16,7 +16,10 @@ Adapt this template when generating the client:
 - parameterize the data location by site identity; do not hardcode one
   site's absolute path;
 - do not port statistic computations from any script: ``DFStatisticsCore``
-  computes every supported statistic from the returned DataFrames.
+  computes every supported statistic from the returned DataFrames;
+- return the DataFrame as loaded, including non-numeric columns: the
+  product's executor filters to numeric features itself — never drop
+  columns here.
 """
 
 from typing import Dict, Optional

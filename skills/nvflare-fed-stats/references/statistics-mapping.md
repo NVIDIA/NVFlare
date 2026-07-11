@@ -159,9 +159,11 @@ encryption, or custom privacy filters are out of scope.
   encodings (report any imputation: it shifts every downstream statistic).
   DELETE summary computation — describe/agg/groupby aggregations,
   histogram/quantile/variance math.
-- Numeric features only. Determine dtypes from a bounded read of rows,
-  `df.columns`/`select_dtypes` usage in source, or supplied metadata. Name
-  every excluded non-numeric feature in the report.
+- Numeric features only — enforced by the PRODUCT, not by generated code:
+  the statistics executor filters features to numeric dtypes itself, so
+  `load_data()` returns the full DataFrame including text columns; do not
+  drop columns in the client. The skill's job is to KNOW the exclusions
+  (from observed dtypes) and name them in the report.
 - `count` is the non-null count (pandas `Series.count()`), so per-feature
   denominators shrink with missingness. Always report per-feature missing
   rates per site and flag features whose missingness diverges across sites
