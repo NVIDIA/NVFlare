@@ -128,24 +128,24 @@ silently dropped or approximated.
    completeness — the output JSON exists, parses, and covers every
    configured statistic per feature, site, and Global — using ephemeral
    commands only. Generate NO validation scripts or helper files: beyond
-   `client.py`, `job.py`, and user-requested data preparation (e.g.
-   seeded partitions for flat data), the skill leaves nothing behind.
-   Deeper numeric verification (parity) is harness-owned, documented in
-   `references/stats-job-validation.md`; stop at the first failed rung
-   and report the product error.
+   `client.py`, `job.py`, and user-requested data preparation (seeded
+   partitions for flat data), the skill leaves nothing behind. Numeric
+   parity is harness-owned (`references/stats-job-validation.md`); stop
+   at the first failed rung and report the product error.
 8. Report the selection and mapping outcomes, changed files, validation
-   status, applied privacy parameters, per-feature missing rates with
-   cross-site divergence flagged (`count` is non-null, so missingness
-   shifts denominators), and a compact per-site and global summary
-   (aggregates only — never raw rows or values) with the output JSON
-   path and the case-mix caveat: compare site rows before Global.
+   status — stating numeric parity was NOT verified (harness-owned) —
+   applied privacy parameters, per-feature missing rates with cross-site
+   divergence flagged (`count` is non-null, so missingness shifts
+   denominators), and a compact per-site and global summary (aggregates
+   only — never raw rows or values) with the output JSON path and the
+   case-mix caveat: compare site rows before Global.
 
 ## Requirements
 
 - Must derive feature names from a header row or user-supplied names
   only; headerless without names is ask-or-fail-closed — never invented.
-- Name non-numeric exclusions from observed dtypes (not prose) and
-  report per-feature missing rates, flagging cross-site divergence.
+- Name non-numeric exclusions from observed dtypes (not prose); report
+  per-feature missing rates, flagging cross-site divergence.
 - Must keep the default privacy filters wired, never disabled or
   weakened (including to make min/max exact); requested min/max are
   honored only as noise-protected estimates. Unsupported is reported.
@@ -160,8 +160,8 @@ silently dropped or approximated.
   required input (feature names, per-site locations, flat-data site
   count) fails closed with a precise report, asking once only when an
   interactive channel exists.
-- Must verify output completeness with ephemeral commands; no generated
-  files beyond `client.py`, `job.py`, and user-requested data prep.
+- Must verify completeness with ephemeral commands; no generated files
+  beyond `client.py`, `job.py`, and user-requested data prep.
 - Must take runtime facts (output locations, execute semantics, recipe
   parameters) from this skill's references and CLI outputs BEFORE reading
   NVFLARE library source — a last resort that never licenses a
@@ -181,8 +181,8 @@ silently dropped or approximated.
 
 ## User Input And Authorization
 
-- The run is automatic: never pause to confirm selections or defaults.
-  Only a missing required input stops the run (fail-closed rule above).
+- The run is automatic: never pause to confirm selections or defaults;
+  only a missing required input stops the run (fail-closed rule above).
   Never ask authorization to install, execute, or access the filesystem.
 - Install missing dependencies and run validation by default; the host's
   permission system governs — never emit skill-issued approval prompts.
@@ -193,8 +193,8 @@ silently dropped or approximated.
 Always read this SKILL.md. The standard tabular path is inline; load
 details when their phase needs them: `references/statistics-mapping.md`
 (mapping, config grammar), `references/stats-job-validation.md`
-(validation, parity, output locations), `references/image-statistics.md`
-plus `assets/image_stats_client.py` (image path),
-`assets/df_stats_client.py` (tabular template), shared references only
-for exceptions. Never preemptively; never depend on NVFLARE repository
-examples being present.
+(validation, output locations, harness parity contract),
+`references/image-statistics.md` plus `assets/image_stats_client.py`
+(image path), `assets/df_stats_client.py` (tabular template), shared
+references only for exceptions. Never preemptively; never depend on
+NVFLARE repository examples being present.

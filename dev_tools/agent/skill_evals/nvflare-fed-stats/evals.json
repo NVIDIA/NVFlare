@@ -22,7 +22,8 @@
         "The report includes the case-mix caveat that Global pools sites with different case mixes.",
         "Privacy filters are described as disclosure-risk reductions, not as privacy guarantees.",
         "Output completeness is verified with ephemeral inline commands; no validation scripts or helper files are generated.",
-        "The only files the run leaves in the workspace are client.py and job.py."
+        "The only files the run leaves in the workspace are client.py and job.py.",
+        "The report explicitly states that numeric parity was not verified (harness-owned), so the user knows the verification boundary."
       ],
       "nvflare": {
         "expected_skill": "nvflare-fed-stats",
@@ -78,6 +79,10 @@
           {
             "id": "no-generated-validation-files",
             "description": "verifies output completeness with ephemeral commands and leaves no files beyond client.py and job.py"
+          },
+          {
+            "id": "parity-boundary-disclosed",
+            "description": "states in the report that numeric parity was not verified and is harness-owned"
           }
         ],
         "prohibited_behavior": [

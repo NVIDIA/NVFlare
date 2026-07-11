@@ -17,8 +17,8 @@ harnesses, not performed by the skill.
 4. **Simulator run** — execute `job.py` under `SimEnv`.
    `recipe.execute(env)` returns a run handle (`nvflare.recipe.run.Run` —
    note the module, not `spec`); you do not need it for validation:
-   success is determined by the completeness and parity rungs over the
-   output JSON, not by inspecting the handle. The statistics job is
+   success is determined by the completeness rung over the output JSON,
+   not by inspecting the handle. The statistics job is
    single-round and completes in seconds on typical tabular data; a hang
    usually means `load_data()` cannot find a site's data path.
 5. **Output completeness** — run as ephemeral commands (inline python),
@@ -32,47 +32,45 @@ harnesses, not performed by the skill.
    with a small partition may be the `min_count` cleanser working as designed
    — check the site's count before calling it a failure, and report the
    withholding either way.
+
 ## Offline Parity Verification (harness-owned)
 
 The skill does NOT perform parity verification and generates no checker
-files; the procedure below documents the contract for offline test
-harnesses and manual verification.
+files; this section documents the contract for offline test harnesses and
+manual verification.
 
-6. **Per-site parity** — recompute reference statistics for one site with
-   an independent pandas computation over that site's partition (never by
-   executing the user's original script) and compare against that site's
-   values in the output JSON. Probe before parsing: print the actual top
-   two levels of the output JSON plus one leaf per statistic BEFORE
-   writing the checker, and derive shapes from the file, never from
-   guessed keys. Leaf shapes inside
-   `{feature: {statistic: {site: {dataset: value}}}}`:
-   - scalar statistics (count/sum/mean/stddev/var/min/max): a plain
-     number, not a nested object;
-   - histogram: a list of `[low_edge, high_edge, sample_count]` triples —
-     there is no `"bins"` key;
-   - quantile: a `{percentile: value}` mapping. The controller rounds every persisted value to
-   its `precision` (4 digits by default), so compare count exactly and round
-   float references (sum, mean, stddev — pandas `std()` ddof=1) to that
-   precision before an exact compare; histogram bin counts must match when an
-   explicit range was configured. A mismatch beyond rounding is a failed
-   run — fix the generation, do not loosen the comparison. Two
-   statistics are approximate by design and exempt from exact parity:
-   quantiles (t-digest sketch; compare within a coarse tolerance) and
-   min/max (the default privacy filter adds calibrated noise; check
-   presence and plausibility, never exact equality).
-7. **Global parity** — completeness proves fields exist; this rung proves
-   the weighted aggregation is right. Recompute the global reference over
-   the union of all site partitions, with the pooled reference computed
-   around the global mean using `(N - 1)`: `Global` count exact; histogram
-   bin counts equal to the sum of the site bin counts when an explicit
-   range was configured. Tolerances for the rounded statistics: sum and
-   mean within 1 ulp of the persisted precision; `stddev`/`var` within
-   site-count ulps (3 sites at precision 4 → up to 0.0003). The server
-   rounds each site's second-round variance term to the persisted
-   precision BEFORE summing, so the global stddev legitimately differs
-   from a full-precision recompute by a few ulps — that is double
-   rounding, not an aggregation bug. Anything beyond those bounds is a
-   failed run even when every per-site row is correct.
+- **Probe before parsing** — print the actual top two levels of the
+  output JSON plus one leaf per statistic before writing any comparison;
+  derive shapes from the file, never from guessed keys. Leaf shapes
+  inside `{feature: {statistic: {site: {dataset: value}}}}`:
+  - scalar statistics (count/sum/mean/stddev/var/min/max): a plain
+    number, not a nested object;
+  - histogram: a list of `[low_edge, high_edge, sample_count]` triples —
+    there is no `"bins"` key;
+  - quantile: a `{percentile: value}` mapping.
+- **Per-site parity** — recompute reference statistics for one site with
+  an independent pandas computation over that site's partition (never by
+  executing the user's original script) and compare against that site's
+  values. The controller rounds every persisted value to its `precision`
+  (4 digits by default): compare count exactly and round float references
+  (sum, mean, stddev — pandas `std()` ddof=1) to that precision before an
+  exact compare; histogram bin counts must match when an explicit range
+  was configured. Two statistics are approximate by design and exempt
+  from exact parity: quantiles (t-digest sketch; coarse tolerance) and
+  min/max (noise-protected; check presence and plausibility only).
+- **Global parity** — completeness proves fields exist; this check proves
+  the weighted aggregation is right. Recompute the global reference over
+  the union of all site partitions, with the pooled reference computed
+  around the global mean using `(N - 1)`: `Global` count exact; histogram
+  bin counts equal to the sum of the site bin counts when an explicit
+  range was configured. Tolerances for the rounded statistics: sum and
+  mean within 1 ulp of the persisted precision; `stddev`/`var` within
+  site-count ulps (3 sites at precision 4 → up to 0.0003). The server
+  rounds each site's second-round variance term to the persisted
+  precision BEFORE summing, so the global stddev legitimately differs
+  from a full-precision recompute by a few ulps — double rounding, not an
+  aggregation bug. Anything beyond those bounds is a real mismatch even
+  when every per-site row is correct.
 
 ## Statistics-Specific Failures
 
@@ -117,6 +115,8 @@ harnesses and manual verification.
 
 Report: the mapping outcomes (supported / noise-protected / unsupported),
 changed files (`client.py` and `job.py` only), each ladder rung's status,
+the explicit note that numeric parity was NOT verified (harness-owned;
+contract above) so the user knows the verification boundary,
 the applied privacy parameters
 (described as heuristic disclosure-risk reductions, never as privacy
 guarantees), per-feature missing rates per site with cross-site divergence
