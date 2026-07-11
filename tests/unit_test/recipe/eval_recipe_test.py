@@ -21,6 +21,8 @@ from unittest.mock import patch
 
 import pytest
 
+from nvflare.fuel.utils.secret_utils import PotentialSecretWarning
+
 
 @pytest.fixture
 def mock_file_system():
@@ -35,6 +37,31 @@ def mock_file_system():
 
 class TestNumpyCrossSiteEvalRecipe:
     """Test cases for NumpyCrossSiteEvalRecipe."""
+
+    def test_warns_on_secret_in_eval_args(self, mock_file_system):
+        from nvflare.app_common.np.recipes.cross_site_eval import NumpyCrossSiteEvalRecipe
+
+        with pytest.warns(PotentialSecretWarning, match="eval_args"):
+            NumpyCrossSiteEvalRecipe(
+                name="secret_cse",
+                min_clients=2,
+                eval_script="evaluate.py",
+                eval_args="--password hunter22x",
+            )
+
+    def test_warns_on_secret_assignment_in_external_command(self, mock_file_system):
+        from nvflare.app_common.np.recipes.cross_site_eval import NumpyCrossSiteEvalRecipe
+
+        with pytest.warns(PotentialSecretWarning, match="command") as record:
+            NumpyCrossSiteEvalRecipe(
+                name="secret_command_cse",
+                min_clients=2,
+                eval_script="evaluate.py",
+                launch_external_process=True,
+                command="env API_PASSWORD=hunter22x python3 -u",
+            )
+
+        assert all("hunter22x" not in str(warning.message) for warning in record)
 
     def test_basic_initialization(self, mock_file_system):
         """Test NumpyCrossSiteEvalRecipe basic initialization."""

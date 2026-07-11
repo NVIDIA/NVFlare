@@ -15,12 +15,15 @@
 import os
 import shutil
 import sys
+import tempfile
 import unittest
+from unittest.mock import patch
 
 import pytest
 
 from nvflare.app_common.executors.task_script_runner import TaskScriptRunner
 from nvflare.client.in_process.api import TOPIC_ABORT, TOPIC_STOP
+from nvflare.fuel.utils.secret_utils import secret_file_ref
 
 
 class TestTaskScriptRunner(unittest.TestCase):
@@ -56,6 +59,103 @@ class TestTaskScriptRunner(unittest.TestCase):
 
         self.assertTrue(wrapper.script_full_path.endswith(script_path))
         self._assert_argv_path(wrapper, os.path.join(self.nvflare_root, "nvflare", "cli.py"), ["--batch_size", "4"])
+
+    def test_secret_ref_args_resolved_from_env(self):
+        script_path = "nvflare/cli.py"
+        script_args = "--api_key ${secret:TEST_SECRET_REF_VAR}"
+        wrapper = TaskScriptRunner(custom_dir=self.nvflare_root, script_path=script_path, script_args=script_args)
+
+        with patch.dict(os.environ, {"TEST_SECRET_REF_VAR": "resolved secret"}):
+            argv = wrapper.get_sys_argv()
+
+        # the value from the site env is injected as a single argument, even with whitespace
+        assert argv[1:] == ["--api_key", "resolved secret"]
+        # the configured args (what job configs carry) still hold only the placeholder
+        assert "${secret:TEST_SECRET_REF_VAR}" in wrapper.script_args
+        assert "resolved secret" not in wrapper.script_args
+
+    def test_secret_ref_in_quoted_composite_argument(self):
+        wrapper = TaskScriptRunner(
+            custom_dir=self.nvflare_root,
+            script_path="nvflare/cli.py",
+            script_args='--authorization "Bearer ${secret:TEST_SECRET_REF_VAR}"',
+        )
+
+        with patch.dict(os.environ, {"TEST_SECRET_REF_VAR": "resolved secret"}):
+            argv = wrapper.get_sys_argv()
+
+        assert argv[1:] == ["--authorization", "Bearer resolved secret"]
+
+    def test_secret_ref_does_not_change_unrelated_backslashes_or_quotes(self):
+        wrapper = TaskScriptRunner(
+            custom_dir=self.nvflare_root,
+            script_path="nvflare/cli.py",
+            script_args=(
+                r'--regex \d+ --path C:\data\x --legacy "two words" '
+                r'--authorization "Bearer ${secret:TEST_SECRET_REF_VAR}"'
+            ),
+        )
+
+        with patch.dict(os.environ, {"TEST_SECRET_REF_VAR": "resolved"}):
+            argv = wrapper.get_sys_argv()
+
+        assert argv[1:] == [
+            "--regex",
+            r"\d+",
+            "--path",
+            r"C:\data\x",
+            "--legacy",
+            '"two',
+            'words"',
+            "--authorization",
+            "Bearer resolved",
+        ]
+
+    def test_secret_file_ref_content_is_one_argument(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            secret_path = os.path.join(temp_dir, "api-key")
+            with open(secret_path, "w", encoding="utf-8") as secret_file:
+                secret_file.write("resolved secret --not-option")
+
+            placeholder = secret_file_ref(secret_path)
+            wrapper = TaskScriptRunner(
+                custom_dir=self.nvflare_root,
+                script_path="nvflare/cli.py",
+                script_args=f"--api_key {placeholder}",
+            )
+
+            argv = wrapper.get_sys_argv()
+
+        assert argv[1:] == ["--api_key", "resolved secret --not-option"]
+        assert placeholder in wrapper.script_args
+        assert "resolved secret" not in wrapper.script_args
+
+    def test_secret_ref_args_missing_env_var_raises(self):
+        script_path = "nvflare/cli.py"
+        script_args = "--api_key ${secret:TEST_UNSET_SECRET_VAR}"
+        wrapper = TaskScriptRunner(custom_dir=self.nvflare_root, script_path=script_path, script_args=script_args)
+
+        os.environ.pop("TEST_UNSET_SECRET_VAR", None)
+        with pytest.raises(ValueError, match="TEST_UNSET_SECRET_VAR"):
+            wrapper.get_sys_argv()
+
+    def test_run_restores_sys_argv_when_script_fails(self):
+        wrapper = TaskScriptRunner(
+            custom_dir=self.nvflare_root,
+            script_path="nvflare/cli.py",
+            script_args="--api_key ${secret:TEST_SECRET_REF_VAR}",
+            redirect_print_to_log=False,
+        )
+        original_argv = sys.argv
+
+        with patch.dict(os.environ, {"TEST_SECRET_REF_VAR": "resolved secret"}):
+            with patch(
+                "nvflare.app_common.executors.task_script_runner.runpy.run_path", side_effect=RuntimeError("boom")
+            ):
+                with pytest.raises(RuntimeError, match="boom"):
+                    wrapper.run()
+
+        assert sys.argv is original_argv
 
     def test_app_scripts_with_sub_dirs1(self):
         # curr_dir = os.getcwd()
