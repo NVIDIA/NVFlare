@@ -428,57 +428,67 @@ BYOC-enabled users and jobs keep the same behavior they had in 2.7. The built-in
 class allow-list check is skipped for BYOC jobs, so these settings do not change
 which job-provided classes they can load.
 
-For non-BYOC applications that use custom classes, the recommended migration is
-to keep enforcement enabled and add each reviewed application class to the
-provisioned list. An explicitly configured list replaces the built-in default,
-so retain the built-in entries that the application needs. A trailing ``.``
-authorizes a whole package; an entry without it represents a fully qualified
-class path.
+Choose the migration path that matches who owns the component trust boundary
+and how much discovery the application still needs:
 
-.. code-block:: json
+1. **Upgrader with custom components: built-in default list + warn, then
+   reviewed prefixes + enforce.** Start by omitting ``class_allow_list`` so the
+   built-in default remains effective, and set ``class_list_enforcement_mode``
+   to ``"warn"``. Run representative jobs, read the warnings for unmatched
+   custom classes, and review those classes. Then configure an explicit list
+   containing the required built-in entries plus the reviewed custom class or
+   package prefixes, and switch the mode to ``"enforce"``. This path lets the
+   application continue running while the operator builds a least-privilege
+   policy.
 
-    {
-        "format_version": 2,
-        "class_allow_list": [
-            "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather",
-            "my_app.executors.CustomExecutor",
-            "my_app.filters."
-        ]
-    }
+   .. code-block:: json
 
-To preserve the unrestricted 2.7 behavior temporarily, use ``"*"``. When the
-wildcard is present, all component classes are allowed, all other entries in
-``class_allow_list`` are ignored, and NVFLARE records an audit event stating
-that class allow-list enforcement was bypassed. The enforcement mode has no
-effect when ``"*"`` is present.
+       {
+           "format_version": 2,
+           "class_list_enforcement_mode": "warn"
+       }
 
-.. code-block:: json
+2. **Operator who owns the trust boundary: wildcard + either mode.** Configure
+   ``class_allow_list`` as ``["*"]`` when the site operator deliberately accepts
+   every component class. The enforcement mode is irrelevant when the wildcard
+   is present: all other list entries are ignored, and an audit event records
+   that the operator selected the unrestricted policy and identifies its policy
+   source.
 
-    {
-        "format_version": 2,
-        "class_allow_list": ["*"]
-    }
+   .. code-block:: json
 
-Alternatively, ``"warn"`` mode can be used while inventorying the classes an
-application needs. If ``class_allow_list`` is omitted, the built-in default list
-is used. Classes outside the effective list are allowed to load, but NVFLARE
-logs a context-rich warning for every unmatched class and records one audit
-event per job and class path. After adding the reviewed classes to the list,
-change the mode to ``"enforce"``.
+       {
+           "format_version": 2,
+           "class_allow_list": ["*"]
+       }
 
-.. code-block:: json
+3. **Locked-down production: curated prefixes + enforce.** Configure only the
+   reviewed built-in and application classes or package prefixes the site needs,
+   and use ``"enforce"``. An explicitly configured list replaces the built-in
+   default, so copy any required built-in entries into the curated list. A
+   trailing ``.`` authorizes a whole package; an entry without it represents a
+   fully qualified class path.
 
-    {
-        "format_version": 2,
-        "class_list_enforcement_mode": "warn"
-    }
+   .. code-block:: json
 
-Both ``"*"`` and ``"warn"`` relax the 2.8 protection and should be used only as
-migration aids in trusted environments. An explicitly configured malformed
-``class_allow_list`` remains a configuration error for non-BYOC jobs in either
-enforcement mode. Audit writes are retried on later matching component checks
-when the audit service is temporarily unavailable. Simulator runs use warning
-logs because their auditor is a no-op.
+       {
+           "format_version": 2,
+           "class_list_enforcement_mode": "enforce",
+           "class_allow_list": [
+               "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather",
+               "my_app.executors.CustomExecutor",
+               "my_app.filters."
+           ]
+       }
+
+``"warn"`` relaxes the 2.8 protection and should be used only as a discovery
+step in a trusted migration environment. ``"*"`` is an explicit decision to
+place the component trust boundary outside this allow-list check; use it only
+when the site operator accepts that responsibility. An explicitly configured
+malformed ``class_allow_list`` remains a configuration error for non-BYOC jobs
+in either enforcement mode. Audit writes are retried on later matching
+component checks when the audit service is temporarily unavailable. Simulator
+runs use warning logs because their auditor is a no-op.
 
 See the :ref:`migration_guide` for additional API and configuration migration
 notes.
