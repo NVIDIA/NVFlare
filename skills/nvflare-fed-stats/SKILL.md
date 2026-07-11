@@ -36,7 +36,7 @@ README/notes or statistics script. Supported for tabular: count, sum,
 mean, stddev, var, histogram, quantile, noise-protected min/max (variance
 and stddev are distinct — never substitute one for the other); for
 images: count, failure_count, pixel-intensity histograms. Both paths use
-`FedStatsRecipe` generation, simulator validation, and parity checking.
+`FedStatsRecipe` generation, simulator validation, completeness checks.
 
 ## Do Not Use When
 
@@ -127,12 +127,12 @@ silently dropped or approximated.
    checks, recipe construction, one simulator run, then output
    completeness — the output JSON exists, parses, and covers every
    configured statistic per feature, site, and Global — using ephemeral
-   commands only. Generate NO validation scripts or helper files: the
-   only files this skill leaves behind are `client.py` and `job.py`.
-   Deeper numeric verification (per-site/global parity) is owned by
-   offline test harnesses, documented in
-   `references/stats-job-validation.md` for whoever runs it; stop at the
-   first failed rung and report the product error.
+   commands only. Generate NO validation scripts or helper files: beyond
+   `client.py`, `job.py`, and user-requested data preparation (e.g.
+   seeded partitions for flat data), the skill leaves nothing behind.
+   Deeper numeric verification (parity) is harness-owned, documented in
+   `references/stats-job-validation.md`; stop at the first failed rung
+   and report the product error.
 8. Report the selection and mapping outcomes, changed files, validation
    status, applied privacy parameters, per-feature missing rates with
    cross-site divergence flagged (`count` is non-null, so missingness
@@ -160,8 +160,8 @@ silently dropped or approximated.
   required input (feature names, per-site locations, flat-data site
   count) fails closed with a precise report, asking once only when an
   interactive channel exists.
-- Must verify output completeness with ephemeral commands and leave no
-  generated files beyond `client.py` and `job.py`.
+- Must verify output completeness with ephemeral commands; no generated
+  files beyond `client.py`, `job.py`, and user-requested data prep.
 - Must take runtime facts (output locations, execute semantics, recipe
   parameters) from this skill's references and CLI outputs BEFORE reading
   NVFLARE library source — a last resort that never licenses a

@@ -105,13 +105,12 @@ The statistics rungs:
   `{"intensity": {statistic: {site: {dataset: value}}}}` with every site
   plus `Global` under each configured statistic; histogram leaves are
   lists of `[low, high, count]` triples, counts are plain integers —
-  probe the actual JSON before writing any checker.
-- **Per-site parity** — recompute one site's histogram with an
-  agent-authored snippet (same loader, same grayscale conversion, same
-  bins/range) and compare bin counts exactly; count must equal the site's
-  discovered-file count.
-- **Global parity** — `Global` histogram bin counts equal the element-wise
-  sum of the site bin counts; `Global` count equals the sum of site counts.
+  probe the actual JSON shapes before parsing (ephemeral commands only).
+- **Parity (harness-owned, not performed by the skill)** — for offline
+  verification: recompute one site's histogram independently (same
+  loader, same grayscale conversion, same bins/range) and compare bin
+  counts exactly; `Global` histogram bins equal the element-wise sum of
+  the site bins, and `Global` count the sum of site counts.
 - **Failure reporting** — nonzero `failure_count` at a site is a data-quality
   finding to report (corrupt or unreadable files), not a run failure; the
   affected images are simply absent from that site's histogram.

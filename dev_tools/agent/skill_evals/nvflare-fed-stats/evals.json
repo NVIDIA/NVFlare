@@ -4,7 +4,7 @@
     {
       "id": "fedstats-per-site-and-global",
       "prompt": "I'd like to calculate each site's stats (assuming those will be calculated by the separate hospitals), but also create a fed stats job to calculate the federated stats across all sites. Here is the dataset folder with site-1, site-2, and site-3.",
-      "expected_output": "One automatic FedStatsRecipe run that satisfies both asks: the agent explains that per-site statistics are computed locally at each site and the federated job aggregates them, generates a DFStatisticsCore client parameterized by site identity over the pre-split site directories, runs the simulator once, validates output completeness, per-site parity, and global aggregation parity, and reports a per-site x Global table (aggregates only), the excluded categorical features, the default privacy filters applied, and the exact output JSON path.",
+      "expected_output": "One automatic FedStatsRecipe run that satisfies both asks: the agent explains that per-site statistics are computed locally at each site and the federated job aggregates them, generates a DFStatisticsCore client parameterized by site identity over the pre-split site directories, runs the simulator once, verifies output completeness with ephemeral commands (no generated validation files), and reports a per-site x Global table (aggregates only), the excluded categorical features, the default privacy filters applied, and the exact output JSON path.",
       "files": [
         "files/patients-with-header/site-1/data.csv",
         "files/patients-with-header/site-2/data.csv",
@@ -670,7 +670,7 @@
         "process_metrics": [
           {
             "id": "first_pass_accepted",
-            "description": "whether the image run completes with correct config and parity without user correction"
+            "description": "whether the image run completes with correct config without user correction"
           },
           {
             "id": "validation_evidence_completeness",
