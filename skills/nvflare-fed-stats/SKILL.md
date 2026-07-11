@@ -136,38 +136,38 @@ silently dropped or approximated.
    status, applied privacy parameters, per-feature missing rates with
    cross-site divergence flagged (`count` is non-null, so missingness
    shifts denominators), and a compact per-site and global summary
-   (aggregates only — never raw rows or values) with the output JSON path
-   and the case-mix caveat: Global pools different case mixes; compare
-   site rows first.
+   (aggregates only — never raw rows or values) with the output JSON
+   path and the case-mix caveat: compare site rows before Global.
 
 ## Requirements
 
-- Must derive feature names from a header row or user-supplied names;
-  headerless without names is ask-or-fail-closed — never invented.
+- Must derive feature names from a header row or user-supplied names
+  only; headerless without names is ask-or-fail-closed — never invented.
 - Must compute statistics only for numeric features, naming exclusions
-  from observed dtypes, not prose, and must report per-feature missing
-  rates, flagging cross-site divergence.
-- Must keep the default privacy filters wired, never disabled or weakened
-  (including to make min/max exact); requested min/max are honored only
-  as noise-protected estimates, reported as such. Unsupported statistics
-  are reported as unsupported.
-- Must include `count` in `statistic_configs`; `stddev`/`var` also require
-  `sum` and `mean` (global second-round prerequisites — expand and state
-  it). State the applied default selection when the user expressed none.
+  from observed dtypes (not prose), and report per-feature missing rates
+  with cross-site divergence flagged.
+- Must keep the default privacy filters wired, never disabled or
+  weakened (including to make min/max exact); requested min/max are
+  honored only as noise-protected estimates. Unsupported is reported.
+- Must include `count`; `stddev`/`var` also require `sum` and `mean`
+  (second-round prerequisites — expand and state it). State the applied
+  default selection when the user expressed none.
 - Must set per-feature histogram ranges only from a script, declaration,
-  or user answer; otherwise omit `range` (global range is then estimated
-  from noise-protected min/max, stated in the report).
+  or user answer; otherwise omit `range` (estimated from noise-protected
+  min/max, stated in the report).
 - Must keep raw data private: aggregates only, never rows or cell values.
 - Must run without interactive pauses when inputs suffice; a missing
-  required input (feature names, per-site locations, site count for flat
-  data) fails closed with a precise report, asking once only when an
+  required input (feature names, per-site locations, flat-data site
+  count) fails closed with a precise report, asking once only when an
   interactive channel exists.
 - Must validate the full ladder with per-site and global parity evidence;
   a mismatch beyond rounding is a failed run, not a warning.
 - Must take runtime facts (output locations, execute semantics, recipe
   parameters) from this skill's references and CLI outputs BEFORE reading
-  NVFLARE library source — a last resort that, per the Source Of Truth
-  Boundary, never licenses a replacement strategy.
+  NVFLARE library source — a last resort that never licenses a
+  replacement strategy (Source Of Truth Boundary); when source must be
+  read, locate modules by grepping the installed tree, never by guessing
+  import paths.
 
 ## Agent Responsibilities
 
