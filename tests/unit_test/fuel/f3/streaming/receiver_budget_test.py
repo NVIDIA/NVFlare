@@ -392,6 +392,18 @@ class TestTransactionValidation:
         # review-requested pin: duplicates are almost certainly a caller bug -- warn
         assert any("deduplicated" in r.message for r in caplog.records)
 
+    def test_budget_wider_than_transaction_timeout_warns(self, caplog):
+        # review-requested pin: a budget >= the transaction timeout can never fire
+        # (the whole-attempt clock wins) -- dead config must be loud, not silent
+        import logging
+
+        service = _make_service()
+        with caplog.at_level(logging.WARNING):
+            service.new_transaction(
+                cell=Mock(), timeout=10.0, num_receivers=1, receiver_ids=("r1",), receiver_idle_timeout=10.0
+            )
+        assert any("can never fire" in r.message for r in caplog.records)
+
     def test_receiver_ids_num_receivers_mismatch_raises(self):
         service = _make_service()
         with pytest.raises(ValueError, match="does not match"):

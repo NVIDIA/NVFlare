@@ -100,6 +100,15 @@ added to the transaction.
 
 Unlike with Object Streamer that the object owner pushes small objects to the recipients; with Object Downloader,
 each recipient pulls the data from the object owner.
+
+Per-receiver lifecycle on the producer side::
+
+    unseen --first pull--> acquired --terminal serve--> final           (legacy receiver)
+    unseen --first pull--> acquired --terminal serve--> provisional --confirm--> final
+    unseen --acquire budget--> final(FAILED)
+    acquired/provisional --idle budget or transaction TTL--> final(FAILED)
+
+Final statuses feed the aggregate TransferOutcome (the receipt) at settlement.
 """
 
 
@@ -214,6 +223,10 @@ def _receiver_confirm_enabled() -> bool:
 # Per-(transfer, receiver) budgets. System defaults resolved from config vars; explicit
 # per-transaction values win. None (unset everywhere) disables enforcement for that budget --
 # the whole-transaction timeout then remains the only backstop, exactly today's behavior.
+# SIZING: the idle budget must exceed the receiver's worst-case quiet period while healthy --
+# at least its chunk-retry backoff ceiling (~60s) plus terminal store/finalization time --
+# or it manufactures failures for slow-but-healthy receivers. Budgets longer than the
+# transaction timeout can never fire (warned at creation).
 RECEIVER_ACQUIRE_TIMEOUT_CONFIG_VAR = "streaming_receiver_acquire_timeout"
 RECEIVER_IDLE_TIMEOUT_CONFIG_VAR = "streaming_receiver_idle_timeout"
 
@@ -685,6 +698,16 @@ class _Transaction:
             receiver_acquire_timeout, RECEIVER_ACQUIRE_TIMEOUT_CONFIG_VAR
         )
         self.receiver_idle_timeout = _resolve_receiver_budget(receiver_idle_timeout, RECEIVER_IDLE_TIMEOUT_CONFIG_VAR)
+        for name, budget in (
+            ("receiver_acquire_timeout", self.receiver_acquire_timeout),
+            ("receiver_idle_timeout", self.receiver_idle_timeout),
+        ):
+            if budget is not None and budget >= timeout:
+                # the whole-transaction clock fires first: this budget is dead config
+                self.logger.warning(
+                    f"tx {self.tid}: {name}={budget}s >= transaction timeout={timeout}s -- "
+                    f"the budget can never fire and is effectively disabled"
+                )
         self.num_receivers = num_receivers
         self.last_active_time = time.time()
         self.start_time = time.time()
@@ -1027,7 +1050,9 @@ class TransferWaiter:
                 the producer exits. Timed-out/deleted outcomes get no linger.
 
         Returns: the TransferOutcome; None if the wait timed out (transfer still in flight)
-        or the service shut down before the transaction terminated.
+        or the service shut down before the transaction terminated. Disambiguate the two
+        None cases with done(): True means terminally resolved with no outcome (nothing
+        will ever record for this id -- do not re-wait); False means still in flight.
         """
         if not self._event.wait(timeout):
             return None
