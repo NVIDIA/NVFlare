@@ -96,11 +96,17 @@ class FedAvgRecipe(Recipe):
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
         train_script: Path to the training script that will be executed on each client.
-        train_args: Command line arguments to pass to the training script.
+        train_args: Command line arguments to pass to the training script. Written in clear
+            text into the generated job config, so it must never contain actual secret values
+            (a PotentialSecretWarning is emitted if it looks like it does). To pass a secret,
+            use :func:`nvflare.recipe.secrets.secret_ref` for a site environment variable or
+            :func:`nvflare.recipe.secrets.secret_file_ref` for a mounted secret file. The
+            executing site resolves the placeholder at runtime.
         aggregator: Custom aggregator (ModelAggregator) for combining client model updates.
             Must implement accept_model(), aggregate_model(), reset_stats() methods.
             If None, uses built-in memory-efficient weighted averaging. Defaults to None.
         aggregator_data_kind: Data kind for aggregation (DataKind.WEIGHTS or DataKind.WEIGHT_DIFF).
+            When a custom aggregator declares expected_data_kind, the declaration must match.
             Kept for backward compatibility. Defaults to DataKind.WEIGHTS.
         launch_external_process: Whether to launch the script in external process. Defaults to False.
         command: If launch_external_process=True, command to run script (prepended to script).
@@ -113,7 +119,8 @@ class FedAvgRecipe(Recipe):
         server_expected_format: What format to exchange the parameters between server and client.
             Defaults to ExchangeFormat.NUMPY.
         params_transfer_type: How to transfer the parameters. FULL means the whole model parameters
-            are sent. DIFF means that only the difference is sent. Defaults to TransferType.FULL.
+            are sent. DIFF enables automatic difference calculation for full-model client results.
+            A client's FLModel.params_type remains authoritative. Defaults to TransferType.FULL.
         model_persistor: Custom model persistor for any framework. If None, uses the
             framework's default persistor when one is available.
         per_site_config: Per-site configuration for the federated learning job. Dictionary mapping
@@ -128,6 +135,9 @@ class FedAvgRecipe(Recipe):
             - launch_once (bool): Whether to launch external process once or per task
             - shutdown_timeout (float): Shutdown timeout in seconds
             If not provided, the same configuration will be used for all clients.
+            Like train_args, per-site values are written in clear text into the generated job
+            config and must never contain actual secret values; see
+            :mod:`nvflare.recipe.secrets` for how to pass secrets safely.
         launch_once: Whether the external process will be launched only once at the beginning
             or on each task. Only used if `launch_external_process` is True. Defaults to True.
         shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
@@ -158,6 +168,8 @@ class FedAvgRecipe(Recipe):
         If you want to use a custom aggregator, you can pass it in the aggregator parameter.
         The custom aggregator must be a subclass of the Aggregator class.
     """
+
+    _SUPPORTED_PER_SITE_SECRET_REF_KEYS = frozenset({"command", "train_args"})
 
     def __init__(
         self,
@@ -269,6 +281,7 @@ class FedAvgRecipe(Recipe):
         self.model_persistor = v.model_persistor
         self.per_site_config = v.per_site_config
         self._validate_per_site_config(self.per_site_config)
+        self._validate_aggregator_data_kind()
         self.launch_once = v.launch_once
         self.shutdown_timeout = v.shutdown_timeout
         self.key_metric = v.key_metric
@@ -448,6 +461,16 @@ class FedAvgRecipe(Recipe):
                 )
             if not isinstance(site_config, dict):
                 raise ValueError(f"per_site_config['{site_name}'] must be a dict, got {type(site_config).__name__}")
+
+    def _validate_aggregator_data_kind(self) -> None:
+        from nvflare.recipe.utils import validate_aggregator_data_kind
+
+        validate_aggregator_data_kind(
+            data_kind=self.aggregator_data_kind,
+            recipe_name=type(self).__name__,
+            aggregator=self.aggregator,
+            require_data_kind=self.aggregator is None,
+        )
 
     def _get_model_params(self) -> Optional[Dict]:
         """Convert model to dict of params.

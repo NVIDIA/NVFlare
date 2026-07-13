@@ -93,6 +93,18 @@ class TestInProcessClientAPI(unittest.TestCase):
             TOPIC_STOP,
         ]
 
+    def test_close_unsubscribes_api_callbacks(self):
+        data_bus = DataBus()
+        data_bus.subscribers.clear()
+        client_api = InProcessClientAPI(self.task_metadata)
+
+        client_api.close()
+        client_api.close()  # idempotent
+
+        assert TOPIC_GLOBAL_RESULT not in data_bus.subscribers
+        assert TOPIC_ABORT not in data_bus.subscribers
+        assert TOPIC_STOP not in data_bus.subscribers
+
     def test_memory_management_defaults(self):
         """Test that memory management is disabled by default."""
         client_api = InProcessClientAPI(self.task_metadata)

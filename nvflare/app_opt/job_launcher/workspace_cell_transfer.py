@@ -71,7 +71,7 @@ BOOTSTRAP_CONNECT_TIMEOUT = 30.0
 BOOTSTRAP_CONNECT_POLL_INTERVAL = 0.1
 
 _BOOTSTRAP_CELL_PREFIX = "ws_transfer_"
-_DEFAULT_WORKSPACE_DOWNLOAD_EXCLUDES = frozenset({"local/study_data.yaml", "local/study_job_spec.yaml"})
+_DEFAULT_WORKSPACE_DOWNLOAD_EXCLUDES = frozenset({"local/study_data.yaml", "local/study_runtime.yaml"})
 _RESOURCE_CONFIG_NAMES = ("resources.json", "resources.json.default")
 _K8S_LAUNCHER_COMPONENT_ID = "k8s_launcher"
 
@@ -97,9 +97,7 @@ def _safe_rel_path(path: str) -> str | None:
     return normalized
 
 
-def _config_path_to_workspace_rel(
-    path: str, workspace_root: str, workspace_mount_path: str | None = None
-) -> str | None:
+def _config_path_to_workspace_rel(path, workspace_root: str, workspace_mount_path=None) -> str | None:
     if not isinstance(path, str) or not path:
         return None
     normalized = path.replace("\\", "/").replace(os.sep, "/")
@@ -117,23 +115,21 @@ def _config_path_to_workspace_rel(
     return None
 
 
-def _load_resource_config(path: str) -> dict | None:
-    try:
-        with open(path, "rt") as f:
-            resource_config = json.load(f)
-    except FileNotFoundError:
-        return None
-    except Exception as e:
-        logger.debug("could not inspect resource config '%s' for workspace download excludes: %s", path, e)
-        return None
-    return resource_config if isinstance(resource_config, dict) else None
-
-
-def _iter_k8s_launcher_args(workspace_root: str):
+def _add_legacy_study_data_excludes(excluded_paths: set[str], workspace_root: str) -> None:
+    """Exclude a legacy kit's custom study_data_pvc_file_path from job workspace bundles."""
     local_dir = os.path.join(workspace_root, "local")
     for resource_config_name in _RESOURCE_CONFIG_NAMES:
-        resource_config = _load_resource_config(os.path.join(local_dir, resource_config_name))
-        if not resource_config:
+        try:
+            with open(os.path.join(local_dir, resource_config_name), "rt") as f:
+                resource_config = json.load(f)
+        except FileNotFoundError:
+            continue
+        except Exception as e:
+            logger.debug(
+                "could not inspect resource config '%s' for workspace download excludes: %s", resource_config_name, e
+            )
+            continue
+        if not isinstance(resource_config, dict):
             continue
         components = resource_config.get("components")
         if not isinstance(components, list):
@@ -142,60 +138,46 @@ def _iter_k8s_launcher_args(workspace_root: str):
             if not isinstance(component, dict) or component.get("id") != _K8S_LAUNCHER_COMPONENT_ID:
                 continue
             args = component.get("args")
-            if isinstance(args, dict):
-                yield args
+            if not isinstance(args, dict):
+                continue
+            rel_path = _config_path_to_workspace_rel(
+                args.get("study_data_pvc_file_path"), workspace_root, args.get("workspace_mount_path")
+            )
+            if rel_path:
+                excluded_paths.add(rel_path)
 
 
-def _resolve_study_job_spec_entry_rel(
-    pod_spec_file: str, mapping_rel_path: str, workspace_root: str, workspace_mount_path: str | None
-) -> str | None:
-    if not isinstance(pod_spec_file, str) or not pod_spec_file:
-        return None
-    if posixpath.isabs(pod_spec_file):
-        return _config_path_to_workspace_rel(pod_spec_file, workspace_root, workspace_mount_path)
-    mapping_dir = str(PurePosixPath(mapping_rel_path).parent)
-    if mapping_dir == ".":
-        mapping_dir = ""
-    return _safe_rel_path(posixpath.join(mapping_dir, pod_spec_file.replace("\\", "/").replace(os.sep, "/")))
-
-
-def _add_study_job_spec_excludes(
-    excluded_paths: set[str], workspace_root: str, mapping_rel_path: str, workspace_mount_path: str | None
-) -> None:
-    mapping_abs_path = os.path.join(workspace_root, *PurePosixPath(mapping_rel_path).parts)
+def _add_study_runtime_excludes(excluded_paths: set[str], workspace_root: str) -> None:
+    """Exclude pod template files referenced by path from local/study_runtime.yaml."""
+    runtime_path = os.path.join(workspace_root, "local", "study_runtime.yaml")
     try:
-        with open(mapping_abs_path, "rt") as f:
-            study_job_spec = yaml.safe_load(f)
+        with open(runtime_path, "rt") as f:
+            study_runtime = yaml.safe_load(f)
     except FileNotFoundError:
         return
     except Exception as e:
-        logger.debug("could not inspect study job spec '%s' for workspace download excludes: %s", mapping_abs_path, e)
+        logger.debug("could not inspect study runtime '%s' for workspace download excludes: %s", runtime_path, e)
         return
-    if not isinstance(study_job_spec, dict):
+    if not isinstance(study_runtime, dict):
         return
-    for pod_spec_file in study_job_spec.values():
-        pod_spec_rel_path = _resolve_study_job_spec_entry_rel(
-            pod_spec_file, mapping_rel_path, workspace_root, workspace_mount_path
-        )
-        if pod_spec_rel_path:
-            excluded_paths.add(pod_spec_rel_path)
+    studies = study_runtime.get("studies")
+    if not isinstance(studies, dict):
+        return
+    for study_config in studies.values():
+        if not isinstance(study_config, dict):
+            continue
+        pod_template = study_config.get("pod_template")
+        if not isinstance(pod_template, str) or not pod_template:
+            continue
+        pod_template_rel_path = _safe_rel_path(posixpath.join("local", pod_template))
+        if pod_template_rel_path:
+            excluded_paths.add(pod_template_rel_path)
 
 
 def _workspace_download_excludes(workspace_root: str) -> frozenset[str]:
     excluded_paths = set(_DEFAULT_WORKSPACE_DOWNLOAD_EXCLUDES)
-    for args in _iter_k8s_launcher_args(workspace_root):
-        workspace_mount_path = args.get("workspace_mount_path")
-        study_data_rel_path = _config_path_to_workspace_rel(
-            args.get("study_data_pvc_file_path"), workspace_root, workspace_mount_path
-        )
-        if study_data_rel_path:
-            excluded_paths.add(study_data_rel_path)
-        study_job_spec_rel_path = _config_path_to_workspace_rel(
-            args.get("study_job_spec_file_path"), workspace_root, workspace_mount_path
-        )
-        if study_job_spec_rel_path:
-            excluded_paths.add(study_job_spec_rel_path)
-            _add_study_job_spec_excludes(excluded_paths, workspace_root, study_job_spec_rel_path, workspace_mount_path)
+    _add_legacy_study_data_excludes(excluded_paths, workspace_root)
+    _add_study_runtime_excludes(excluded_paths, workspace_root)
     return frozenset(excluded_paths)
 
 

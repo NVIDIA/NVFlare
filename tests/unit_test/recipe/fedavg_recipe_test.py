@@ -13,16 +13,19 @@
 # limitations under the License.
 
 import json
+import warnings
 from unittest.mock import MagicMock, patch
 
 import pytest
 import torch.nn as nn
 
+from nvflare.apis.dxo import DataKind
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
+from nvflare.app_common.aggregators import InTimeAccumulateWeightedAggregator
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
 from nvflare.app_common.app_constant import DefaultCheckpointFileName
 from nvflare.app_common.executors.client_api_launcher_executor import ClientAPILauncherExecutor
@@ -31,10 +34,12 @@ from nvflare.app_common.np.recipes import NumpyFedAvgRecipe
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.widgets.metrics_artifact_writer import MetricsArtifactWriter
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.client.config import ConfigKey
+from nvflare.client.config import ConfigKey, TransferType
 from nvflare.client.constants import CLIENT_API_CONFIG
 from nvflare.fuel.utils.class_utils import instantiate_class
+from nvflare.fuel.utils.secret_utils import UnsupportedSecretRefWarning
 from nvflare.job_config.base_fed_job import BaseFedJob
+from nvflare.recipe.fedavg import FedAvgRecipe as BaseFedAvgRecipe
 
 
 class SimpleTestModel(nn.Module):
@@ -222,6 +227,25 @@ def _run_exported_external_process_executor_startup(executor_config, config_dir,
 
 
 class TestFedAvgRecipe:
+    def test_class_docstrings_are_preserved(self):
+        assert BaseFedAvgRecipe.__doc__
+        assert FedAvgRecipe.__doc__
+
+    def test_external_command_secret_ref_is_supported(self, mock_file_system, base_recipe_params, simple_model):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UnsupportedSecretRefWarning)
+            FedAvgRecipe(
+                name="command_secret_ref",
+                model=simple_model,
+                per_site_config={
+                    "site-1": {
+                        "launch_external_process": True,
+                        "command": "env API_TOKEN=${secret:API_TOKEN} python3 -u",
+                    }
+                },
+                **base_recipe_params,
+            )
+
     """Test cases for FedAvgRecipe class."""
 
     def test_default_aggregator_initialization(self, mock_file_system, base_recipe_params, simple_model):
@@ -629,6 +653,30 @@ class TestFedAvgRecipeEarlyStopping:
 
 class TestFedAvgRecipeValidation:
     """Test FedAvgRecipe input validation."""
+
+    def test_weight_diff_with_full_transfer_is_valid(self, mock_file_system, base_recipe_params, simple_model):
+        recipe = FedAvgRecipe(
+            name="test_weight_diff",
+            model=simple_model,
+            aggregator_data_kind=DataKind.WEIGHT_DIFF,
+            params_transfer_type=TransferType.FULL,
+            **base_recipe_params,
+        )
+
+        assert recipe.aggregator_data_kind == DataKind.WEIGHT_DIFF
+        assert recipe.params_transfer_type == TransferType.FULL
+
+    def test_custom_aggregator_declared_data_kind_must_match(self, mock_file_system, base_recipe_params, simple_model):
+        aggregator = InTimeAccumulateWeightedAggregator(expected_data_kind=DataKind.WEIGHTS)
+
+        with pytest.raises(ValueError, match="incompatible server aggregation settings"):
+            FedAvgRecipe(
+                name="test_custom_aggregator_data_kind",
+                model=simple_model,
+                aggregator=aggregator,
+                aggregator_data_kind=DataKind.WEIGHT_DIFF,
+                **base_recipe_params,
+            )
 
     def test_invalid_aggregator_type_raises_validation_error(self, mock_file_system, base_recipe_params):
         """Test that invalid aggregator type raises Pydantic validation error."""
