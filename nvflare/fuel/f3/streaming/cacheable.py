@@ -13,7 +13,7 @@
 # limitations under the License.
 import threading
 from abc import abstractmethod
-from typing import Any, List, Tuple
+from typing import Any, List, Optional, Tuple
 
 from nvflare.fuel.f3.streaming.download_service import Consumer, Downloadable, DownloadService, ProduceRC
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -27,8 +27,8 @@ class _StateKey:
 
 class CacheableObject(Downloadable):
     """This class provides cache capability for managing chunks generated during streaming.
-    When the object is to be sent to multiple sites, each chunk is generated only once and cached for other
-    sites. Once all sites received the chunk, it's removed from the cache.
+    When the object is to be sent to multiple receivers, each chunk is generated only once and cached for other
+    receivers. Once all receivers received the chunk, it's removed from the cache.
 
     """
 
@@ -45,7 +45,7 @@ class CacheableObject(Downloadable):
         check_non_negative_int("max_chunk_size", max_chunk_size)
         self.max_chunk_size = max_chunk_size
         self.size = self.get_item_count()
-        self.cache = [(None, 0)] * self.size
+        self.cache: list[tuple[Optional[bytes], int]] = [(None, 0)] * self.size
         self.lock = threading.Lock()
         self.num_receivers = 0
         self.logger = get_obj_logger(self)
@@ -74,35 +74,78 @@ class CacheableObject(Downloadable):
     def set_transaction(self, tx_id, ref_id):
         tx_info = DownloadService.get_transaction_info(tx_id)
         self.num_receivers = tx_info.num_receivers
-        self.logger.debug(f"set transaction info: {tx_id=}, {ref_id=} {self.num_receivers=}")
+        self.logger.info(f"set transaction info: {tx_id=}, {ref_id=} {self.num_receivers=}")
 
     def downloaded_to_all(self):
-        self.logger.debug(f"object has been downloaded to all {self.num_receivers} sites - clear cache")
+        self.logger.info(f"object has been downloaded to all {self.num_receivers} receivers - clear cache")
         self.clear_cache()
 
     def transaction_done(self, transaction_id: str, status: str):
         self.clear_cache()
 
     def clear_cache(self):
+        """Clear the chunk cache only.
+
+        Does NOT touch base_obj — the source object is released separately
+        via release() after the transaction_done_cb has been invoked, so the
+        callback can still observe the original data if needed.
+        """
         with self.lock:
             self.cache = None
 
+    def release(self):
+        """Drop the reference to the source object.
+
+        Called by _Transaction.transaction_done() AFTER the transaction_done_cb
+        fires.  Setting base_obj to None drops the last infrastructure reference
+        to the source data (e.g. a 5 GiB numpy dict), allowing it to be
+        reclaimed by the GC immediately rather than waiting for a future cycle.
+
+        Overrides Downloadable.release() (which is a no-op by default).
+        """
+        with self.lock:
+            self.base_obj = None
+
     def _get_item(self, index: int, requester: str) -> bytes:
         with self.lock:
-            if not self.cache:
-                # the cache has been cleared
-                data = None
-            else:
-                data, _ = self.cache[index]
+            cache_available = bool(self.cache)
+            data = None if not cache_available else self.cache[index][0]
+            base_obj = self.base_obj  # snapshot under lock for thread-safety
 
-            if data is None:
-                data = self.produce_item(index)
-                if self.cache:
-                    self.cache[index] = (data, 0)
-                    self.logger.info(f"created and cached item {index} for {requester}: {len(data)} bytes")
-            else:
-                self.logger.info(f"got item {index} from cache for {requester}")
+        if not cache_available:
+            if base_obj is None:
+                # release() was already called — no new chunk requests should
+                # arrive after transaction_done(), but guard defensively.
+                raise RuntimeError(f"item {index} requested after base_obj released for {requester}")
+            # produce_item() reads self.base_obj internally and is called outside
+            # the lock.  A concurrent release() could set self.base_obj to None
+            # between the guard above and produce_item's first read.  In practice
+            # this window cannot open: release() is only invoked from
+            # transaction_done_cb, which fires after the download service confirms
+            # all chunks have been delivered — i.e. after this code path has
+            # already returned.  The guard above handles the only truly invalid
+            # state (request arriving after a completed transaction).
+            return self.produce_item(index)
+
+        if data is not None:
+            self.logger.debug(f"got item {index} from cache for {requester}")
             return data
+
+        # Produce outside the lock so concurrent receivers aren't blocked.
+        # If two receivers produce the same item simultaneously, the first
+        # to re-acquire the lock stores its result; the second uses it.
+        data = self.produce_item(index)
+
+        with self.lock:
+            if self.cache:
+                existing, count = self.cache[index]
+                if existing is None:
+                    self.cache[index] = (data, count)
+                    self.logger.debug(f"created and cached item {index} for {requester}: {len(data)} bytes")
+                else:
+                    data = existing
+                    self.logger.debug(f"got item {index} from cache for {requester} (produced concurrently)")
+        return data
 
     def _adjust_cache(self, start: int, count: int):
         with self.lock:
@@ -114,7 +157,7 @@ class CacheableObject(Downloadable):
                 data, num_received = self.cache[i]
                 num_received += 1
                 if num_received >= self.num_receivers:
-                    self.logger.info(f"item {i} was received by {num_received} sites - clear cache")
+                    self.logger.debug(f"item {i} was received by {num_received} receivers - clear cache")
                     self.cache[i] = (None, num_received)
                 else:
                     self.cache[i] = (data, num_received)
@@ -147,7 +190,7 @@ class CacheableObject(Downloadable):
             else:
                 break
 
-        self.logger.info(f"produced {len(result)} items for {requester}: {total_size} bytes")
+        self.logger.debug(f"produced {len(result)} items for {requester}: {total_size} bytes")
         return ProduceRC.OK, result, {_StateKey.START: start, _StateKey.COUNT: len(result)}
 
 

@@ -360,6 +360,9 @@ class Cell(StreamCell):
         secure=False,
         optional=False,
         abort_signal: Signal = None,
+        progress_wait_cb=None,
+        num_receivers=1,
+        receiver_ids=None,
         send_complete_cb=None,
         **cb_kwargs,
     ):
@@ -378,9 +381,19 @@ class Cell(StreamCell):
         Returns: reply data
 
         """
-        self._encode_message(request, abort_signal)
+        self._encode_message(request, abort_signal, num_receivers=num_receivers, receiver_ids=receiver_ids)
         return self._send_one_request(
-            channel, target, topic, request, timeout, secure, optional, abort_signal, send_complete_cb, **cb_kwargs
+            channel,
+            target,
+            topic,
+            request,
+            timeout,
+            secure,
+            optional,
+            abort_signal,
+            progress_wait_cb,
+            send_complete_cb,
+            **cb_kwargs,
         )
 
     def _send_one_request(
@@ -393,6 +406,7 @@ class Cell(StreamCell):
         secure=False,
         optional=False,
         abort_signal=None,
+        progress_wait_cb=None,
         send_complete_cb=None,
         **cb_kwargs,
     ):
