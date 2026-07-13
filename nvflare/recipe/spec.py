@@ -251,7 +251,7 @@ class Recipe(ABC):
         Args:
             job: the job that implements the recipe.
         """
-        self.job = job
+        self._job = job
         self._helper_per_site_config = None
         self._tensor_streaming_added = False
         self._cse_added = False
@@ -335,7 +335,7 @@ class Recipe(ABC):
 
     def _snapshot_additional_params(self) -> Dict[str, Dict]:
         snapshot = {}
-        deploy_map = getattr(self.job, "_deploy_map", {})
+        deploy_map = getattr(self._job, "_deploy_map", {})
         for target, app in deploy_map.items():
             app_config = getattr(app, "app_config", None)
             if app_config is None:
@@ -346,7 +346,7 @@ class Recipe(ABC):
         return snapshot
 
     def _restore_additional_params(self, snapshot: Dict[str, Dict]) -> None:
-        deploy_map = getattr(self.job, "_deploy_map", {})
+        deploy_map = getattr(self._job, "_deploy_map", {})
         for target, app in deploy_map.items():
             app_config = getattr(app, "app_config", None)
             if app_config is None:
@@ -358,7 +358,7 @@ class Recipe(ABC):
                 params.update(original)
 
     def _replace_additional_params_for_targets(self, targets: List[str], new_params: dict) -> None:
-        deploy_map = getattr(self.job, "_deploy_map", {})
+        deploy_map = getattr(self._job, "_deploy_map", {})
         for target in targets:
             app = deploy_map.get(target)
             if app is None:
@@ -398,7 +398,7 @@ class Recipe(ABC):
         try:
             if server_exec_params is not None:
                 if server_exec_params:
-                    self.job.to_server(server_exec_params)
+                    self._job.to_server(server_exec_params)
                 else:
                     # Preserve the long-standing "empty dict means temporarily clear params"
                     # behavior rather than treating {} as a no-op.
@@ -408,7 +408,7 @@ class Recipe(ABC):
                 if client_exec_params:
                     self._add_to_client_apps(client_exec_params)
                 else:
-                    client_targets = [target for target in getattr(self.job, "_deploy_map", {}) if target != "server"]
+                    client_targets = [target for target in getattr(self._job, "_deploy_map", {}) if target != "server"]
                     self._replace_additional_params_for_targets(client_targets, {})
             yield
         finally:
@@ -437,7 +437,7 @@ class Recipe(ABC):
 
         # FedJob has no public API to list per-site deploy targets, so we inspect
         # private deploy map to preserve existing per-site client topology.
-        deploy_map = getattr(self.job, "_deploy_map", {})
+        deploy_map = getattr(self._job, "_deploy_map", {})
         existing_client_sites = [
             target
             for target in deploy_map.keys()
@@ -447,9 +447,9 @@ class Recipe(ABC):
         if clients is None:
             if existing_client_sites:
                 for site in existing_client_sites:
-                    self.job.to(obj, site, **kwargs)
+                    self._job.to(obj, site, **kwargs)
             else:
-                self.job.to_clients(obj, **kwargs)
+                self._job.to_clients(obj, **kwargs)
         else:
             # A bare string would iterate per character; an empty list would be a silent no-op.
             if not isinstance(clients, list):
@@ -480,7 +480,7 @@ class Recipe(ABC):
                         f"only for {sorted(existing_client_sites)}"
                     )
             for client in clients:
-                self.job.to(obj, client, **kwargs)
+                self._job.to(obj, client, **kwargs)
 
     def add_client_input_filter(
         self, filter: Filter, tasks: Optional[List[str]] = None, clients: Optional[List[str]] = None
@@ -569,7 +569,7 @@ class Recipe(ABC):
         Returns: None
 
         """
-        self.job.to_server(filter, filter_type=FilterType.TASK_DATA, tasks=tasks)
+        self._job.to_server(filter, filter_type=FilterType.TASK_DATA, tasks=tasks)
 
     def add_server_input_filter(self, filter: Filter, tasks: Optional[List[str]] = None):
         """Add a filter to server for incoming task result from clients. .
@@ -581,7 +581,7 @@ class Recipe(ABC):
         Returns: None
 
         """
-        self.job.to_server(filter, filter_type=FilterType.TASK_RESULT, tasks=tasks)
+        self._job.to_server(filter, filter_type=FilterType.TASK_RESULT, tasks=tasks)
 
     def add_server_config(self, config: Dict):
         """Add top-level configuration parameters to config_fed_server.json.
@@ -602,7 +602,7 @@ class Recipe(ABC):
 
         warn_on_potential_secrets(config, context="add_server_config config")
         warn_on_unsupported_secret_ref_keys(config, context="add_server_config config")
-        self.job.to_server(config)
+        self._job.to_server(config)
 
     def add_server_file(self, file_path: str):
         """Add a file or directory to server app.
@@ -623,7 +623,7 @@ class Recipe(ABC):
         if not isinstance(file_path, str):
             raise TypeError(f"file_path must be a str, got {type(file_path).__name__}")
 
-        self.job.to_server(file_path)
+        self._job.to_server(file_path)
 
     @staticmethod
     def _get_full_class_name(obj):
@@ -662,7 +662,7 @@ class Recipe(ABC):
 
         for name in file_names:
             self._add_to_client_apps(JobLogStreamer(log_file_name=name))
-        self.job.to_server(JobLogReceiver())
+        self._job.to_server(JobLogReceiver())
 
     def enable_tensor_streaming(
         self,
@@ -712,7 +712,7 @@ class Recipe(ABC):
 
         server_tasks = list(tasks) if tasks is not None else None
         client_tasks = list(tasks) if tasks is not None else None
-        self.job.to_server(
+        self._job.to_server(
             TensorServerStreamer(
                 format=format,
                 tasks=server_tasks,
@@ -753,7 +753,7 @@ class Recipe(ABC):
             else:
                 raise TypeError(f"decomposer must be str or Decomposer, got {type(d).__name__}")
 
-        self.job.to_server(DecomposerRegister(class_names), id="decomposer_reg")
+        self._job.to_server(DecomposerRegister(class_names), id="decomposer_reg")
         self._add_to_client_apps(DecomposerRegister(class_names), id="decomposer_reg")
 
     def _warn_potential_secrets_in_exported_job(self, job_dir: str) -> None:
@@ -765,7 +765,7 @@ class Recipe(ABC):
         """
         warn_on_potential_secrets_in_job_dir(
             job_dir=job_dir,
-            job_name=getattr(self.job, "name", None),
+            job_name=getattr(self._job, "name", None),
             context="exported job file",
         )
 
@@ -797,7 +797,7 @@ class Recipe(ABC):
         with self._temporary_exec_params(server_exec_params=server_exec_params, client_exec_params=client_exec_params):
             if env is not None:
                 self.process_env(env)
-            self.job.export_job(job_dir)
+            self._job.export_job(job_dir)
         self._warn_potential_secrets_in_exported_job(job_dir)
 
     def run(
@@ -816,7 +816,7 @@ class Recipe(ABC):
         self._warn_potential_secrets_in_params()
         with self._temporary_exec_params(server_exec_params=server_exec_params, client_exec_params=client_exec_params):
             self.process_env(env)
-            job_id = env.deploy(self.job)
+            job_id = env.deploy(self._job)
             from nvflare.recipe.run import Run
 
             return Run(env, job_id)

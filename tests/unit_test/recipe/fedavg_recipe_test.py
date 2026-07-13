@@ -159,17 +159,17 @@ def assert_recipe_basics(recipe, expected_name, expected_params):
     assert recipe.train_args == expected_params.get("train_args", "--epochs 10")
     assert recipe.min_clients == expected_params.get("min_clients", 2)
     assert recipe.num_rounds == expected_params.get("num_rounds", 5)
-    assert recipe.job is not None
-    assert recipe.job.name == expected_name
+    assert recipe._job is not None
+    assert recipe._job.name == expected_name
 
 
 def get_model_selector(recipe):
-    server_app = recipe.job._deploy_map[SERVER_SITE_NAME]
+    server_app = recipe._job._deploy_map[SERVER_SITE_NAME]
     return server_app.app_config.components.get("model_selector")
 
 
 def get_server_component(recipe, component_id):
-    server_app = recipe.job._deploy_map[SERVER_SITE_NAME]
+    server_app = recipe._job._deploy_map[SERVER_SITE_NAME]
     return server_app.app_config.components.get(component_id)
 
 
@@ -179,7 +179,7 @@ def get_server_component_from_job(job, component_id):
 
 
 def get_server_controller(recipe):
-    server_app = recipe.job._deploy_map[SERVER_SITE_NAME]
+    server_app = recipe._job._deploy_map[SERVER_SITE_NAME]
     return server_app.app_config.workflows[0].controller
 
 
@@ -440,7 +440,7 @@ class TestNumpyFedAvgRecipe:
         assert recipe.name == "test_numpy"
         assert recipe.min_clients == 2
         assert recipe.num_rounds == 3
-        assert recipe.job is not None
+        assert recipe._job is not None
 
     def test_numpy_recipe_with_early_stopping(self, mock_file_system):
         """Test NumpyFedAvgRecipe with early stopping configuration."""
@@ -723,7 +723,7 @@ class TestFedAvgRecipeValidation:
             **base_recipe_params,
         )
 
-        site_app = recipe.job._deploy_map.get("site-1")
+        site_app = recipe._job._deploy_map.get("site-1")
         assert site_app is not None
         launcher = site_app.app_config.components.get("launcher")
         assert launcher is not None
@@ -739,10 +739,10 @@ class TestFedAvgRecipeValidation:
             **base_recipe_params,
         )
 
-        persistor_id = recipe.job.comp_ids.get("persistor_id", "")
+        persistor_id = recipe._job.comp_ids.get("persistor_id", "")
         assert persistor_id
-        assert "locator_id" not in recipe.job.comp_ids
-        server_app = recipe.job._deploy_map.get(SERVER_SITE_NAME)
+        assert "locator_id" not in recipe._job.comp_ids
+        server_app = recipe._job._deploy_map.get(SERVER_SITE_NAME)
         assert server_app is not None
         assert persistor_id in server_app.app_config.components
 
@@ -759,10 +759,10 @@ class TestFedAvgRecipeValidation:
             **base_recipe_params,
         )
 
-        assert recipe.job.comp_ids.get("persistor_id", "")
-        locator_id = recipe.job.comp_ids.get("locator_id", "")
+        assert recipe._job.comp_ids.get("persistor_id", "")
+        locator_id = recipe._job.comp_ids.get("locator_id", "")
         assert locator_id
-        server_app = recipe.job._deploy_map.get(SERVER_SITE_NAME)
+        server_app = recipe._job._deploy_map.get(SERVER_SITE_NAME)
         assert server_app is not None
         assert server_app.app_config.components.get(locator_id) is locator
 
@@ -916,7 +916,7 @@ class TestFedAvgRecipeInitialCkpt:
         )
 
         assert recipe.initial_ckpt == "/abs/path/to/model.npy"
-        server_app = recipe.job._deploy_map[SERVER_SITE_NAME]
+        server_app = recipe._job._deploy_map[SERVER_SITE_NAME]
         persistor = server_app.app_config.components.get("persistor")
         assert isinstance(persistor, NPModelPersistor)
         assert persistor.source_ckpt_file_full_name == "/abs/path/to/model.npy"
@@ -938,7 +938,7 @@ class TestFedAvgRecipeInitialCkpt:
             **base_recipe_params,
         )
 
-        server_app = recipe.job._deploy_map[SERVER_SITE_NAME]
+        server_app = recipe._job._deploy_map[SERVER_SITE_NAME]
         persistor = server_app.app_config.components.get("persistor")
         assert isinstance(persistor, NPModelPersistor)
         assert persistor.model == [1.0, 2.0, 3.0]

@@ -303,8 +303,8 @@ class EdgeFedBuffRecipe(Recipe):
                 f"invalid {DEVICE_SIMULATION_ENV_KEY} in env: expect SimulationConfig but got {type(simulation_config)}"
             )
 
-        assert isinstance(self.job, EdgeJob)
-        self._configure_simulation(self.job, simulation_config)
+        assert isinstance(self._job, EdgeJob)
+        self._configure_simulation(self._job, simulation_config)
 
     def create_job(self) -> EdgeJob:
         """Create a new EdgeJob instance for cross-edge federated learning.

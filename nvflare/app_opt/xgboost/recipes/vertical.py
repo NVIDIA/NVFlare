@@ -255,8 +255,8 @@ class XGBVerticalRecipe(Recipe):
             self.client_ranks = {client_name: rank for rank, client_name in enumerate(ranked_clients)}
 
         # Configure the job
-        self.job = self.configure()
-        Recipe.__init__(self, self.job)
+        job = self.configure()
+        Recipe.__init__(self, job)
 
     def configure(self):
         """Configure the federated job for vertical XGBoost training."""

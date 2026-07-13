@@ -208,8 +208,8 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
 
         # Check if validation task is explicitly configured (not just via wildcard)
         has_explicit_validator = False
-        if hasattr(self.job, "_deploy_map"):
-            for target, app in self.job._deploy_map.items():
+        if hasattr(self._job, "_deploy_map"):
+            for target, app in self._job._deploy_map.items():
                 if target == "server":
                     continue
 
@@ -229,4 +229,4 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
         if not has_explicit_validator:
             # No explicit validator found - add NPValidator for cross-site evaluation
             validator = NPValidator()
-            self.job.to_clients(validator, tasks=[AppConstants.TASK_VALIDATION])
+            self._job.to_clients(validator, tasks=[AppConstants.TASK_VALIDATION])

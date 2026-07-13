@@ -543,8 +543,8 @@ class TestMultiStudySessionIntegration:
 
         recipe = _make_numpy_recipe("prod-env-study-a")
         env = ProdEnv(startup_kit_location=admin_root, username=MAIN_ADMIN, study="study-a", login_timeout=2.0)
-        recipe.process_env(env)
-        job_id = env.deploy(recipe.job)
+        run = recipe.execute(env)
+        job_id = run.job_id
         study_a_session = new_secure_session(MAIN_ADMIN, admin_root, study="study-a")
         multi_study_system["sessions"].append(study_a_session)
 

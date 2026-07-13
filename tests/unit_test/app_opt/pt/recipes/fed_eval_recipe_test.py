@@ -70,8 +70,8 @@ def assert_recipe_basics(recipe, expected_name, expected_params):
     assert recipe.eval_script == expected_params.get("eval_script", "mock_eval_script.py")
     assert recipe.eval_args == expected_params.get("eval_args", "--batch_size 32")
     assert recipe.min_clients == expected_params.get("min_clients", 2)
-    assert recipe.job is not None
-    assert recipe.job.name == expected_name
+    assert recipe._job is not None
+    assert recipe._job.name == expected_name
 
 
 class TestFedEvalRecipe:
@@ -123,7 +123,7 @@ class TestFedEvalRecipe:
         recipe = FedEvalRecipe(model=model, **base_recipe_params)
 
         assert recipe.name == "eval"
-        assert recipe.job.name == "eval"
+        assert recipe._job.name == "eval"
 
     def test_custom_command(self, mock_file_system, base_recipe_params, simple_model):
         """Test FedEvalRecipe with custom command."""

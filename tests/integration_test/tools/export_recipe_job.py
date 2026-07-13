@@ -129,7 +129,7 @@ def export_recipe_from_job_py(recipe_dir: str, output_dir: str, recipe_args: Opt
         exported job matches what a real run would produce.
         """
         if server_exec_params:
-            self.job.to_server(server_exec_params)
+            self._job.to_server(server_exec_params)
         if client_exec_params:
             self._add_to_client_apps(client_exec_params)
         # Match real Recipe.execute behavior so export matches runtime configuration.
@@ -189,7 +189,7 @@ def export_recipe_from_job_py(recipe_dir: str, output_dir: str, recipe_args: Opt
         if src_dir is not None:
             # Copy CONTENTS of src/ directly into app/custom/ (not as a subdirectory)
             # This way imports like "from data.xxx" work with just /local/custom in PYTHONPATH
-            job_name = recipe.job.name
+            job_name = recipe.name
             job_custom_dir = os.path.join(output_abs_path, job_name, "app", "custom")
             if os.path.exists(job_custom_dir):
                 for item in os.listdir(src_dir):

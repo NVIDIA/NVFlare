@@ -223,8 +223,8 @@ class XGBBaggingRecipe(Recipe):
             )
 
         # Configure the job
-        self.job = self.configure()
-        Recipe.__init__(self, self.job)
+        job = self.configure()
+        Recipe.__init__(self, job)
 
     def configure(self):
         """Configure the federated job for XGBoost tree-based training."""

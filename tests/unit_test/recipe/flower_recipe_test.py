@@ -52,7 +52,7 @@ def test_flower_recipe_accepts_compatible_flwr_version(flwr_version):
         with patch("nvflare.app_opt.flower.recipe._create_flower_job", return_value=fake_job) as mock_flower_job:
             recipe = FlowerRecipe(flower_content="mock_flower_content")
 
-    assert recipe.job is fake_job
+    assert recipe._job is fake_job
     kwargs = mock_flower_job.call_args.kwargs
     assert kwargs["extra_env"] == {CLIENT_API_TYPE_KEY: ClientAPIType.EX_PROCESS_API.value}
 
@@ -65,7 +65,7 @@ def test_flower_recipe_forwards_run_config():
         with patch("nvflare.app_opt.flower.recipe._create_flower_job", return_value=fake_job) as mock_flower_job:
             recipe = FlowerRecipe(flower_content="mock_flower_content", run_config=run_config)
 
-    assert recipe.job is fake_job
+    assert recipe._job is fake_job
     kwargs = mock_flower_job.call_args.kwargs
     assert kwargs["run_config"] == run_config
 
@@ -106,7 +106,7 @@ def test_flower_recipe_merges_extra_env(flwr_version):
         with patch("nvflare.app_opt.flower.recipe._create_flower_job", return_value=fake_job) as mock_flower_job:
             recipe = FlowerRecipe(flower_content="mock_flower_content", extra_env=user_env)
 
-    assert recipe.job is fake_job
+    assert recipe._job is fake_job
     kwargs = mock_flower_job.call_args.kwargs
     assert kwargs["extra_env"]["MY_VAR"] == "123"
     assert kwargs["extra_env"][CLIENT_API_TYPE_KEY] == ClientAPIType.EX_PROCESS_API.value
@@ -136,7 +136,7 @@ def test_flower_recipe_with_predeployed_path(flwr_version):
         with patch("nvflare.app_opt.flower.recipe._create_flower_job", return_value=fake_job) as mock_flower_job:
             recipe = FlowerRecipe(flower_app_path="/opt/flower_apps/my_app")
 
-    assert recipe.job is fake_job
+    assert recipe._job is fake_job
     kwargs = mock_flower_job.call_args.kwargs
     assert kwargs["flower_app_path"] == "/opt/flower_apps/my_app"
     assert kwargs["flower_content"] is None

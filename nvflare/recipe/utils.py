@@ -211,10 +211,10 @@ def _normalize_recipe_meta_value(key: JobMetaKey, key_str: str, value: Any) -> A
 
 
 def _get_recipe_job_config(recipe: Recipe) -> FedJobConfig:
-    job = getattr(recipe, "job", None)
+    job = getattr(recipe, "_job", None)
     job_config = getattr(job, "job", None)
     if not isinstance(job_config, FedJobConfig):
-        raise TypeError("recipe must provide a FedJob through recipe.job")
+        raise TypeError("recipe must be backed by a FedJob")
     return job_config
 
 
@@ -378,7 +378,7 @@ def add_experiment_tracking(
             tracking_config["kw_args"] = kw_args
         elif not isinstance(kw_args, dict):
             raise TypeError(f"MLflow kw_args must be a dict, got {type(kw_args).__name__}")
-        recipe_name = getattr(recipe, "name", None) or getattr(recipe.job, "name", None) or "nvflare"
+        recipe_name = getattr(recipe, "name", None) or getattr(recipe._job, "name", None) or "nvflare"
         kw_args.setdefault("experiment_name", f"{recipe_name}-experiment")
 
     if not server_side and not client_side:
@@ -407,7 +407,7 @@ def add_experiment_tracking(
         if tracking_type == "mlflow":
             server_config["kw_args"].setdefault("run_name", f"{recipe_name}-Server")
         receiver = receiver_class(**server_config)
-        recipe.job.to_server(receiver, "receiver")
+        recipe._job.to_server(receiver, "receiver")
 
     # Add client-side tracking
     if client_side:
@@ -455,7 +455,7 @@ def add_final_global_evaluation(
     from nvflare.app_opt.pt.file_model_locator import PTFileModelLocator
     from nvflare.job_config.script_runner import FrameworkType
 
-    if getattr(recipe, "_cse_added", False) or _has_cross_site_eval_workflow(recipe.job):
+    if getattr(recipe, "_cse_added", False) or _has_cross_site_eval_workflow(recipe._job):
         raise RuntimeError("a cross-site evaluation workflow is already configured for this recipe")
 
     if getattr(recipe, "framework", None) != FrameworkType.PYTORCH:
@@ -469,7 +469,7 @@ def add_final_global_evaluation(
         if not participating_clients:
             raise ValueError("participating_clients must not be empty; use None to evaluate on all clients")
 
-    comp_ids = getattr(recipe.job, "comp_ids", None)
+    comp_ids = getattr(recipe._job, "comp_ids", None)
     if not isinstance(comp_ids, dict):
         raise ValueError("final global evaluation requires a recipe that tracks component IDs")
 
@@ -478,15 +478,15 @@ def add_final_global_evaluation(
         persistor_id = comp_ids.get("persistor_id", "")
         if not persistor_id:
             raise ValueError("final global evaluation requires a PyTorch model persistor")
-        model_locator_id = recipe.job.to_server(
+        model_locator_id = recipe._job.to_server(
             PTFileModelLocator(pt_persistor_id=persistor_id), id="final_model_locator"
         )
         if not isinstance(model_locator_id, str) or not model_locator_id:
             raise RuntimeError("failed to register the final global model locator")
         comp_ids["locator_id"] = model_locator_id
 
-    recipe.job.to_server(ValidationJsonGenerator())
-    recipe.job.to_server(
+    recipe._job.to_server(ValidationJsonGenerator())
+    recipe._job.to_server(
         CrossSiteModelEval(
             model_locator_id=model_locator_id,
             submit_model_task_name="",
@@ -621,7 +621,7 @@ def add_cross_site_evaluation(
     # Idempotency check: prevent multiple calls on the same recipe.
     # Keep the explicit flag fast-path, but also verify server workflow state so
     # protection remains effective even if dynamic attributes are lost.
-    if getattr(recipe, "_cse_added", False) or _has_cross_site_eval_workflow(recipe.job):
+    if getattr(recipe, "_cse_added", False) or _has_cross_site_eval_workflow(recipe._job):
         name = recipe.name if hasattr(recipe, "name") else "cross-site-evaluation job"
         raise RuntimeError(
             f"Cross-site evaluation has already been added to recipe '{name}'. "
@@ -672,12 +672,12 @@ def add_cross_site_evaluation(
     locator_kwargs = {}
     if locator_config["persistor_param"] is not None:
         # For frameworks requiring persistor_id (PyTorch, TensorFlow), get it from comp_ids
-        if hasattr(recipe.job, "comp_ids"):
-            persistor_id = recipe.job.comp_ids.get("persistor_id", "")
+        if hasattr(recipe._job, "comp_ids"):
+            persistor_id = recipe._job.comp_ids.get("persistor_id", "")
             if not persistor_id:
                 raise ValueError(
                     f"Cross-site evaluation requires a persistor for {framework_to_locator[framework]} recipes, "
-                    f"but no persistor_id found in recipe.job.comp_ids. "
+                    "but no persistor_id was found in the generated job. "
                     f"Ensure your recipe includes a model to create a persistor."
                 )
             locator_kwargs[locator_config["persistor_param"]] = persistor_id
@@ -688,10 +688,10 @@ def add_cross_site_evaluation(
             )
 
     model_locator = locator_class(**locator_kwargs)
-    model_locator_id = recipe.job.to_server(model_locator)
+    model_locator_id = recipe._job.to_server(model_locator)
 
     # Add validation JSON generator
-    recipe.job.to_server(ValidationJsonGenerator())
+    recipe._job.to_server(ValidationJsonGenerator())
 
     # Create and add cross-site evaluation controller
     eval_controller = CrossSiteModelEval(
@@ -700,7 +700,7 @@ def add_cross_site_evaluation(
         validation_timeout=validation_timeout,
         participating_clients=participating_clients,
     )
-    recipe.job.to_server(eval_controller)
+    recipe._job.to_server(eval_controller)
 
     # Let recipe handle framework-specific validator setup if needed
     # NumPy recipes implement add_cse_validator_if_needed() to add NPValidator automatically
