@@ -21,8 +21,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from nvflare.apis.dxo import DataKind
 from nvflare.apis.job_def import JobMetaKey
+from nvflare.fuel.utils.secret_utils import PotentialSecretWarning, UnsupportedSecretRefWarning
 from nvflare.job_config.api import FedJob
+from nvflare.recipe import secret_ref
 from nvflare.recipe.spec import Recipe
 from nvflare.recipe.utils import (
     extract_persistor_id,
@@ -30,6 +33,7 @@ from nvflare.recipe.utils import (
     resolve_initial_ckpt,
     set_recipe_meta,
     setup_custom_persistor,
+    validate_aggregator_data_kind,
     validate_ckpt,
 )
 
@@ -86,6 +90,65 @@ class TestValidateCkpt:
         """Relative path in subdirectory that doesn't exist should raise."""
         with pytest.raises(ValueError, match="does not exist locally"):
             validate_ckpt("checkpoints/non_existent.pt")
+
+
+class TestValidateAggregatorDataKind:
+    class DeclaredAggregator:
+        def __init__(self, expected_data_kind):
+            self.expected_data_kind = expected_data_kind
+
+    def test_single_entry_declared_kind_is_normalized(self):
+        aggregator = self.DeclaredAggregator({"model": "WEIGHT_DIFF"})
+
+        validate_aggregator_data_kind(
+            data_kind=None,
+            recipe_name="TestRecipe",
+            aggregator=aggregator,
+        )
+
+    @pytest.mark.parametrize("declared_kind", [{}, {"model": DataKind.WEIGHTS, "metrics": DataKind.METRICS}])
+    def test_non_single_declared_kind_has_targeted_error(self, declared_kind):
+        aggregator = self.DeclaredAggregator(declared_kind)
+
+        with pytest.raises(ValueError, match="recipe expects a single model-update DataKind"):
+            validate_aggregator_data_kind(
+                data_kind=DataKind.WEIGHTS,
+                recipe_name="TestRecipe",
+                aggregator=aggregator,
+            )
+
+    def test_declared_kind_can_come_from_assembler(self):
+        assembler = MagicMock()
+        assembler.get_expected_data_kind.return_value = DataKind.WEIGHT_DIFF
+        aggregator = MagicMock(spec=["assembler"])
+        aggregator.assembler = assembler
+
+        validate_aggregator_data_kind(
+            data_kind=DataKind.WEIGHT_DIFF,
+            recipe_name="TestRecipe",
+            aggregator=aggregator,
+        )
+
+    def test_required_data_kind_rejects_none(self):
+        with pytest.raises(ValueError, match="requires aggregator_data_kind"):
+            validate_aggregator_data_kind(
+                data_kind=None,
+                recipe_name="TestRecipe",
+                require_data_kind=True,
+            )
+
+    def test_optional_data_kind_allows_none(self):
+        validate_aggregator_data_kind(
+            data_kind=None,
+            recipe_name="TestRecipe",
+        )
+
+    def test_unsupported_data_kind_is_rejected(self):
+        with pytest.raises(ValueError, match="does not support aggregator_data_kind=DataKind.METRICS"):
+            validate_aggregator_data_kind(
+                data_kind=DataKind.METRICS,
+                recipe_name="TestRecipe",
+            )
 
 
 class TestPrepareInitialCkpt:
@@ -305,6 +368,13 @@ class TestRecipeMetaHelper:
         assert exported_meta["scope"] == "private"
         assert exported_meta["custom_props"] == {"team": "research"}
         assert exported_meta["owner"] == "alice"
+
+    def test_set_recipe_meta_warns_for_secret_and_unsupported_ref(self):
+        recipe = self._make_recipe("test_recipe_meta_secret", min_clients=1)
+        with pytest.warns(PotentialSecretWarning, match="custom_props"):
+            set_recipe_meta(recipe, JobMetaKey.CUSTOM_PROPS, {"password": "hunter22x"})
+        with pytest.warns(UnsupportedSecretRefWarning, match="custom_props"):
+            set_recipe_meta(recipe, JobMetaKey.CUSTOM_PROPS, {"token": secret_ref("API_TOKEN")})
 
     def test_set_recipe_meta_warns_and_overrides_registered_resource_specs(self, tmp_path):
         recipe = self._make_recipe("test_recipe_meta_resource_conflict", min_clients=2)
@@ -544,6 +614,17 @@ class TestAddExperimentTrackingClients:
 
     def _make_recipe(self, name="test_tracking_clients"):
         return Recipe(FedJob(name=name, min_clients=1))
+
+    def test_tracking_config_warns_for_secret_and_unsupported_ref(self, dummy_tracking):
+        from nvflare.recipe.utils import add_experiment_tracking
+
+        recipe = self._make_recipe()
+        with pytest.warns(PotentialSecretWarning, match="tracking_config"):
+            add_experiment_tracking(recipe, dummy_tracking, {"password": "hunter22x"})
+
+        recipe = self._make_recipe()
+        with pytest.warns(UnsupportedSecretRefWarning, match="tracking_config"):
+            add_experiment_tracking(recipe, dummy_tracking, {"token": secret_ref("API_TOKEN")})
 
     def test_client_side_tracking_specific_clients(self, dummy_tracking):
         from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE

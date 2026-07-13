@@ -17,6 +17,7 @@ from .fedavg import FedAvgRecipe
 from .poc_env import PocEnv
 from .prod_env import ProdEnv
 from .run import Run
+from .secrets import PotentialSecretWarning, UnsupportedSecretRefWarning, secret_file_ref, secret_ref
 from .sim_env import SimEnv
 from .utils import add_cross_site_evaluation, add_experiment_tracking, set_per_site_config, set_recipe_meta
 
@@ -31,4 +32,8 @@ __all__ = [
     "set_recipe_meta",
     "FedAvgRecipe",
     "FedTaskRecipe",
+    "PotentialSecretWarning",
+    "UnsupportedSecretRefWarning",
+    "secret_ref",
+    "secret_file_ref",
 ]

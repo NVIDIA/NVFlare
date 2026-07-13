@@ -530,14 +530,14 @@ nvflare deploy prepare workspace/<project>/prod_00/site-1 \
 
 After preparation, verify that `local/resources.json.default` contains `k8s_launcher`. Server kits should use `nvflare.app_opt.job_launcher.k8s_launcher.ServerK8sJobLauncher` and client kits should use `nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher`. For in-cluster deployments, `config_file_path` should be `null` or empty so the launcher uses the parent pod's ServiceAccount token. NVFlare handles Kubernetes Python client 36.x token values that already include the `bearer` scheme prefix.
 
-Before staging or starting the parent pods, you may edit the prepared
-`local/resources.json.default` launcher args for study-specific job pod behavior.
-`nvflare deploy prepare` sets `study_data_pvc_file_path` to
-`<workspace_mount_path>/local/study_data.yaml` by default. You can change that
-path, remove it when no study-data PVC mounts should be added, and/or add
-`study_job_spec_file_path` to point to a study-to-Pod-template mapping file.
-Stage any referenced mapping and pod template files with `local/`, or make sure
-they exist at the configured in-pod paths.
+Before staging or starting the parent pods, you may edit the generated
+`local/study_runtime.yaml` — the auto-discovered file for per-study datasets,
+env vars, secrets, and Pod templates (`studies.<study>.pod_template`); no
+launcher arguments are needed. For legacy kits that still carry
+`local/study_data.yaml`, `nvflare deploy prepare` instead sets
+`study_data_pvc_file_path` to `<workspace_mount_path>/local/study_data.yaml`;
+the two files must not coexist. Stage any referenced pod template files with
+`local/`.
 
 ### Create PVCs and Stage Kits
 

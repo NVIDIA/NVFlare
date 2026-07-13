@@ -56,11 +56,16 @@ class _FedOptValidator(BaseModel):
 class FedOptRecipe(Recipe):
     """A recipe for implementing Federated Optimization (FedOpt) in NVFlare.
 
+    Recipe parameters, including ``train_args``, ``optimizer_args``, and
+    ``lr_scheduler_args``, must never contain actual secret values. Read secrets from site
+    environment variables or mounted files; references are supported only where documented in
+    :mod:`nvflare.recipe.secrets`.
+
     FedOpt is a federated learning algorithm that optimizes the global model using a server-side optimizer and learning rate scheduler.
     After each round, the global model is updated using the specified optimizer and learning rate scheduler.
     The algorithm is proposed in Reddi et al. "Adaptive Federated Optimization." arXiv preprint arXiv:2003.00295 (2020).
 
-    Note: FedOpt is only implemented for params_transfer_type == TransferType.DIFF and DataKind.WEIGHT_DIFF in the aggregator.
+    Note: FedOpt requires client weight differences and DataKind.WEIGHT_DIFF in the aggregator.
 
     Args:
         name: Name of the federated learning job. Defaults to "fedopt".
@@ -170,7 +175,12 @@ class FedOptRecipe(Recipe):
         self.initial_ckpt = v.initial_ckpt
 
         # Validate inputs using shared utilities
-        from nvflare.recipe.utils import ensure_config_type_dict, recipe_model_to_job_model, validate_ckpt
+        from nvflare.recipe.utils import (
+            ensure_config_type_dict,
+            recipe_model_to_job_model,
+            validate_aggregator_data_kind,
+            validate_ckpt,
+        )
 
         validate_ckpt(self.initial_ckpt)
         if isinstance(self.model, dict):
@@ -194,6 +204,13 @@ class FedOptRecipe(Recipe):
         self.client_memory_gc_rounds = v.client_memory_gc_rounds
         self.cuda_empty_cache = v.cuda_empty_cache
         self.enable_tensor_disk_offload = v.enable_tensor_disk_offload
+        validate_aggregator_data_kind(
+            data_kind=DataKind.WEIGHT_DIFF,
+            recipe_name=type(self).__name__,
+            data_kind_arg="expected_data_kind",
+            aggregator=self.aggregator,
+            fixed_data_kind=True,
+        )
         if self.enable_tensor_disk_offload and self.server_expected_format != ExchangeFormat.PYTORCH:
             warnings.warn(
                 "enable_tensor_disk_offload=True only applies to streamed PyTorch tensors. "

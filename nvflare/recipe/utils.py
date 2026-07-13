@@ -20,8 +20,10 @@ import warnings
 from typing import Any, Dict, List, Optional
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
+from nvflare.apis.dxo import DataKind
 from nvflare.apis.job_def import USER_SETTABLE_JOB_META_KEYS, JobMetaKey
 from nvflare.fuel.utils.import_utils import optional_import
+from nvflare.fuel.utils.secret_utils import warn_on_potential_secrets, warn_on_unsupported_secret_refs
 from nvflare.job_config.api import FedJob
 from nvflare.job_config.fed_job_config import FedJobConfig
 from nvflare.recipe.spec import Recipe
@@ -65,6 +67,88 @@ MODEL_LOCATOR_REGISTRY = {
 
 # User-settable keys whose values are dicts keyed by site name with dict values.
 _SITE_KEYED_META_KEYS = frozenset({JobMetaKey.RESOURCE_SPEC, JobMetaKey.JOB_LAUNCHER_SPEC})
+
+
+def validate_aggregator_data_kind(
+    *,
+    data_kind: Optional[DataKind],
+    recipe_name: str,
+    data_kind_arg: str = "aggregator_data_kind",
+    aggregator: Any = None,
+    require_data_kind: bool = False,
+    fixed_data_kind: bool = False,
+) -> None:
+    """Validate recipe-owned server aggregation data-kind settings.
+
+    ``fixed_data_kind`` is for recipes such as FedOpt that do not expose the update-kind
+    settings. Its error guidance tells users to replace or reconfigure their custom
+    aggregator instead of suggesting recipe arguments they cannot change.
+
+    This intentionally does not infer the client result kind from ``TransferType``.
+    ``FLModel.params_type`` is the authoritative description of a client result, and a
+    recipe cannot inspect an arbitrary training script at construction time.
+    """
+    declared_kind = getattr(aggregator, "expected_data_kind", None)
+    if declared_kind is None:
+        assembler = getattr(aggregator, "assembler", None)
+        get_expected_data_kind = getattr(assembler, "get_expected_data_kind", None)
+        if callable(get_expected_data_kind):
+            declared_kind = get_expected_data_kind()
+
+    if isinstance(declared_kind, dict):
+        if len(declared_kind) != 1:
+            raise ValueError(
+                f"{recipe_name} cannot validate aggregator {type(aggregator).__name__}: "
+                f"expected_data_kind declares {len(declared_kind)} entries, but the recipe expects a single "
+                "model-update DataKind. Configure the aggregator with one expected_data_kind entry."
+            )
+        declared_kind = next(iter(declared_kind.values()))
+
+    if declared_kind is not None:
+        declared_kind = DataKind(declared_kind)
+    if data_kind is not None:
+        data_kind = DataKind(data_kind)
+    else:
+        data_kind = declared_kind
+
+    if data_kind is None:
+        if require_data_kind:
+            raise ValueError(
+                f"{recipe_name} requires {data_kind_arg} to be DataKind.WEIGHTS or DataKind.WEIGHT_DIFF "
+                "when using its built-in aggregator."
+            )
+        return
+
+    if data_kind not in (DataKind.WEIGHTS, DataKind.WEIGHT_DIFF):
+        raise ValueError(
+            f"{recipe_name} does not support {data_kind_arg}=DataKind.{data_kind.name}; "
+            "use DataKind.WEIGHTS or DataKind.WEIGHT_DIFF."
+        )
+
+    if declared_kind not in (None, DataKind.WEIGHTS, DataKind.WEIGHT_DIFF):
+        raise ValueError(
+            f"{recipe_name} cannot use aggregator {type(aggregator).__name__}: it declares "
+            f"expected_data_kind=DataKind.{declared_kind.name}, but the recipe supports only "
+            "DataKind.WEIGHTS or DataKind.WEIGHT_DIFF. Configure the aggregator for a supported model-update kind."
+        )
+
+    if declared_kind is None or declared_kind == data_kind:
+        return
+
+    if fixed_data_kind:
+        raise ValueError(
+            f"{recipe_name} requires a custom aggregator configured with "
+            f"expected_data_kind=DataKind.{data_kind.name}, but {type(aggregator).__name__} declares "
+            f"expected_data_kind=DataKind.{declared_kind.name}. Configure the custom aggregator for "
+            f"DataKind.{data_kind.name}, or omit it to use the built-in aggregator."
+        )
+    raise ValueError(
+        f"{recipe_name} has incompatible server aggregation settings: "
+        f"{data_kind_arg}=DataKind.{data_kind.name}, but aggregator "
+        f"{type(aggregator).__name__} declares expected_data_kind=DataKind.{declared_kind.name}. "
+        f"Use an aggregator configured for DataKind.{data_kind.name}, or set "
+        f"{data_kind_arg}=DataKind.{declared_kind.name}."
+    )
 
 
 def merge_config_overrides(defaults: Dict[str, Any], overrides: Optional[Dict[str, Any]], name: str) -> Dict[str, Any]:
@@ -151,10 +235,13 @@ def set_recipe_meta(recipe: Recipe, key: JobMetaKey, value: Any) -> None:
     completely JSON-serializable, cannot contain non-finite floats, and have
     their keys coerced to strings as they will appear in ``meta.json``. The
     value is stored in ``meta_props`` and replaces any existing ``meta_props``
-    value for that key.
+    value for that key. Metadata is emitted in clear text in ``meta.json`` and
+    must never contain actual secret values; see :mod:`nvflare.recipe.secrets`.
     """
     key_str = _normalize_recipe_meta_key(key)
     normalized_value = _normalize_recipe_meta_value(key, key_str, value)
+    warn_on_potential_secrets(normalized_value, context=f"recipe metadata '{key_str}'")
+    warn_on_unsupported_secret_refs(normalized_value, context=f"recipe metadata '{key_str}'")
     job_config = _get_recipe_job_config(recipe)
 
     # RESOURCE_SPEC also has a dedicated FedJobConfig field (populated via
@@ -197,7 +284,9 @@ def set_per_site_config(recipe: Recipe, config: Dict[str, Dict]) -> None:
 
     Each recipe is responsible for validating and interpreting the fields inside
     each site's dictionary. The execution environment still controls which
-    clients are present for a run.
+    clients are present for a run. Per-site values become part of the generated
+    job definition and must never contain actual secret values; see
+    :mod:`nvflare.recipe.secrets`.
     """
     recipe.set_per_site_config(_validate_per_site_config_shape(config))
 
@@ -238,7 +327,10 @@ def add_experiment_tracking(
     Args:
         recipe: Recipe instance to augment with experiment tracking.
         tracking_type: Type of tracking to enable ("mlflow", "tensorboard", or "wandb").
-        tracking_config: Optional configuration dict for the tracking receiver.
+        tracking_config: Optional configuration dict for the tracking receiver. It becomes
+            part of the generated job definition and must never contain actual credentials;
+            configure authentication through the executing site's environment or a mounted
+            secret instead.
         client_side: If True, add tracking to clients (each client tracks locally).
         server_side: If True, add tracking to server (aggregates metrics from all clients). Default: True.
         clients: Optional list of client names for client-side tracking. If None, the
@@ -271,6 +363,8 @@ def add_experiment_tracking(
         )
     """
     tracking_config = tracking_config or {}
+    warn_on_potential_secrets(tracking_config, context="tracking_config")
+    warn_on_unsupported_secret_refs(tracking_config, context="tracking_config")
     if tracking_type not in TRACKING_REGISTRY:
         raise ValueError(f"Invalid tracking type: {tracking_type}")
 

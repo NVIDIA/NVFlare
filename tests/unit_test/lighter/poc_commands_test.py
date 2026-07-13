@@ -315,19 +315,32 @@ class TestPOCCommands:
         assert len(calls) == 2
         assert {workspace for _kit, _config, workspace in calls} == {str(tmp_path)}
 
-    def test_write_poc_docker_study_data_maps_workspace_data(self, tmp_path):
+    def test_write_poc_docker_study_runtime_maps_workspace_data(self, tmp_path):
         kit_dir = tmp_path / "prod_00" / "site-1"
         local_dir = kit_dir / "local"
         local_dir.mkdir(parents=True)
-        study_data_file = local_dir / "study_data.yaml"
-        study_data_file.write_text("{}\n", encoding="utf-8")
+        study_runtime_file = local_dir / "study_runtime.yaml"
+        study_runtime_file.write_text("format_version: 2\nstudies: {}\n", encoding="utf-8")
 
         poc_workspace = tmp_path / "poc"
-        poc_commands._write_poc_docker_study_data(kit_dir, str(poc_workspace))
+        poc_commands._write_poc_docker_study_runtime(kit_dir, str(poc_workspace))
 
-        assert yaml.safe_load(study_data_file.read_text(encoding="utf-8")) == {
-            "default": {"poc": {"source": os.path.realpath(poc_workspace / "data"), "mode": "rw"}}
+        assert yaml.safe_load(study_runtime_file.read_text(encoding="utf-8")) == {
+            "format_version": 2,
+            "studies": {
+                "default": {"datasets": {"poc": {"source": os.path.realpath(poc_workspace / "data"), "mode": "rw"}}}
+            },
         }
+
+    def test_write_poc_docker_study_runtime_rejects_legacy_kit(self, tmp_path):
+        kit_dir = tmp_path / "prod_00" / "site-1"
+        local_dir = kit_dir / "local"
+        local_dir.mkdir(parents=True)
+        (local_dir / "study_data.yaml").write_text("default: {}\n", encoding="utf-8")
+
+        with pytest.raises(CLIException, match="must not coexist"):
+            poc_commands._write_poc_docker_study_runtime(kit_dir, str(tmp_path / "poc"))
+        assert not (local_dir / "study_runtime.yaml").exists()
 
     def test_local_provision_keeps_project_config_after_prepare_project_mutation(self, monkeypatch, tmp_path):
         project_config = collections.OrderedDict(

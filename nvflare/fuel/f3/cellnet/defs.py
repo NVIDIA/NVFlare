@@ -167,12 +167,14 @@ class CellChannel:
     RETURN_ONLY = "return_only"
     EDGE_REQUEST = "edge_request"
     HCI = "hci_channel"
+    CELLNET = "cellnet.channel"
 
 
 class CellChannelTopic:
 
     Challenge = "challenge"
     Register = "register"
+    Bye = "bye"
     Quit = "quit"
     GET_TASK = "get_task"
     SUBMIT_RESULT = "submit_result"

@@ -26,10 +26,15 @@ from nvflare.app_common.ccwf.comps.simple_model_shareable_generator import Simpl
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
 from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.pipe.file_pipe import FilePipe
+from nvflare.fuel.utils.secret_utils import (
+    warn_on_potential_secrets,
+    warn_on_unsupported_secret_refs,
+    warn_on_unsupported_secret_refs_outside_keys,
+)
 from nvflare.fuel.utils.validation_utils import check_positive_int, check_positive_number
 from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.recipe.spec import Recipe
-from nvflare.recipe.utils import merge_config_overrides, validate_ckpt
+from nvflare.recipe.utils import merge_config_overrides, validate_aggregator_data_kind, validate_ckpt
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +60,11 @@ class _SwarmValidator(BaseModel):
 
 class BaseSwarmLearningRecipe(Recipe):
     """Base recipe for Swarm Learning (framework-agnostic).
+
+    Server, client, and cross-site-evaluation config values become part of the generated
+    job definition and must never contain actual secrets. Read secrets from site environment
+    variables or mounted files; references are supported only where documented in
+    :mod:`nvflare.recipe.secrets`.
 
     Args:
         name: Name of the federated learning job.
@@ -97,7 +107,9 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         initial_ckpt: Path to a pre-trained checkpoint file (.pt, .pth). Can be:
             - Relative path: file will be bundled into the job's custom/ directory.
             - Absolute path: treated as a server-side path, used as-is at runtime.
-        train_args: Additional arguments for the training script.
+        train_args: Additional arguments for the training script. The dictionary is stored
+            in the job definition and must not contain actual secret values; see
+            :mod:`nvflare.recipe.secrets` for safe runtime references.
         do_cross_site_eval: Whether to perform cross-site evaluation. When combined with
             ``launch_external_process=True``, the trained model is loaded from the
             persistor on disk (saved by PTFileModelPersistor after each round).  Two
@@ -121,11 +133,11 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
             gc.collect() was called unconditionally after each trainer submission. Set to 0 to disable.
         cuda_empty_cache: Call torch.cuda.empty_cache() during cleanup. Defaults to False.
         expected_data_kind: The data kind the aggregator expects from clients. Defaults to
-            DataKind.WEIGHTS for full-weight FedAvg. Use DataKind.WEIGHT_DIFF when clients
-            send parameter deltas (e.g. LoRA adapter diffs with params_transfer_type=DIFF).
+            DataKind.WEIGHTS for full-weight FedAvg. Clients returning differences must label
+            their result with FLModel.params_type=ParamsType.DIFF.
         params_transfer_type: How parameters are transferred between client script and NVFlare.
-            FULL sends the entire parameter state each round; DIFF sends only the delta.
-            Defaults to FULL. Must match the ParamsType used in the training script.
+            DIFF enables automatic difference calculation for full-model client results.
+            A client's FLModel.params_type remains authoritative. Defaults to FULL.
         start_task_timeout: Seconds to wait for the starting client to acknowledge the start
             task. Increase for large models that need time to load. Defaults to 300.
         progress_timeout: Seconds of no progress from any client before the workflow is
@@ -154,11 +166,13 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
             Values here take precedence over named constructor parameters, except
             ``min_clients``, which must be set through the named parameter to keep
             scheduler, server-controller, and client aggregation quorums aligned.
+            This dictionary is stored in the job definition and must not contain secrets.
         client_config_overrides: Advanced shallow overrides for ``SwarmClientConfig``.
             Values here take precedence over named constructor parameters. Recipe-managed
             fields (executor, aggregator, persistor, shareable generator, and
             ``min_responses_required``) cannot be replaced through this dictionary; use
             ``BaseSwarmLearningRecipe`` for custom components or quorum settings.
+            This dictionary is stored in the job definition and must not contain secrets.
         pipe_type: Pipe used for communication between the NVFlare client process
             and the external training process when ``launch_external_process=True``.
             Accepted values:
@@ -238,6 +252,33 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         pipe_root_path: Optional[str] = None,
     ):
         _SwarmValidator(initial_ckpt=initial_ckpt)
+        warn_on_potential_secrets(command, context="recipe parameter 'command'")
+
+        if train_args:
+            warn_on_potential_secrets(train_args, context="recipe parameter 'train_args'")
+            warn_on_unsupported_secret_refs_outside_keys(
+                train_args,
+                supported_value_keys={"script_args"},
+                context="recipe parameter 'train_args'",
+            )
+        if server_config_overrides:
+            warn_on_potential_secrets(
+                server_config_overrides,
+                context="recipe parameter 'server_config_overrides'",
+            )
+            warn_on_unsupported_secret_refs(
+                server_config_overrides,
+                context="recipe parameter 'server_config_overrides'",
+            )
+        if client_config_overrides:
+            warn_on_potential_secrets(
+                client_config_overrides,
+                context="recipe parameter 'client_config_overrides'",
+            )
+            warn_on_unsupported_secret_refs(
+                client_config_overrides,
+                context="recipe parameter 'client_config_overrides'",
+            )
 
         validated_server_config_overrides = merge_config_overrides(
             {}, server_config_overrides, "server_config_overrides"
@@ -279,6 +320,13 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
                 "pipe_type='file_pipe' has no effect when launch_external_process=False "
                 "(in-process mode does not use pipes)"
             )
+
+        validate_aggregator_data_kind(
+            data_kind=expected_data_kind,
+            recipe_name=type(self).__name__,
+            data_kind_arg="expected_data_kind",
+            require_data_kind=True,
+        )
 
         task_pipe = None
         if pipe_type == "file_pipe":

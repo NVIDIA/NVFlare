@@ -27,6 +27,17 @@ from nvflare.private.fed.server.job_runner import JobRunner
 from nvflare.private.fed.server.message_send import ClientReply
 
 
+def _patch_job_runner_sleep(side_effect):
+    """Patch the ``time`` name bound inside the job_runner module only.
+
+    Patching ``job_runner.time.sleep`` would mutate the process-global ``time``
+    module, so a leftover daemon thread from another test in the same worker
+    calling ``time.sleep`` would run the side effect and trip the loop's stop
+    condition early (FLARE-3034).
+    """
+    return patch("nvflare.private.fed.server.job_runner.time", **{"sleep.side_effect": side_effect})
+
+
 def _make_runner_inputs(num_clients=1):
     runner = JobRunner(workspace_root="/tmp")
     runner.log_info = MagicMock()
@@ -254,7 +265,7 @@ def test_job_complete_process_saves_workspace_before_publishing_aborted_status()
     def _stop_after_first_pass(_):
         runner.ask_to_stop = True
 
-    with patch("nvflare.private.fed.server.job_runner.time.sleep", side_effect=_stop_after_first_pass):
+    with _patch_job_runner_sleep(_stop_after_first_pass):
         runner._job_complete_process(engine)
 
     completion_ctx.set_prop.assert_called_once_with(FLContextKey.CURRENT_JOB_ID, "job-1")
@@ -467,7 +478,7 @@ def test_job_complete_process_fires_job_aborted_for_aborted_launcher_return_code
     def _stop_after_first_pass(_):
         runner.ask_to_stop = True
 
-    with patch("nvflare.private.fed.server.job_runner.time.sleep", side_effect=_stop_after_first_pass):
+    with _patch_job_runner_sleep(_stop_after_first_pass):
         runner._job_complete_process(engine)
 
     runner._save_workspace.assert_called_once_with(completion_ctx)
@@ -510,7 +521,7 @@ def test_job_complete_process_keeps_processing_jobs_when_save_workspace_fails():
     def _stop_after_first_pass(_):
         runner.ask_to_stop = True
 
-    with patch("nvflare.private.fed.server.job_runner.time.sleep", side_effect=_stop_after_first_pass):
+    with _patch_job_runner_sleep(_stop_after_first_pass):
         runner._job_complete_process(engine)
 
     assert runner._save_workspace.call_args_list == [call(first_ctx), call(second_ctx)]
@@ -565,7 +576,7 @@ def test_job_complete_process_retries_save_without_recomputing_finished_status()
         if sleep_count == 2:
             runner.ask_to_stop = True
 
-    with patch("nvflare.private.fed.server.job_runner.time.sleep", side_effect=_stop_after_second_pass):
+    with _patch_job_runner_sleep(_stop_after_second_pass):
         runner._job_complete_process(engine)
 
     assert runner._save_workspace.call_args_list == [call(first_ctx), call(second_ctx)]
@@ -614,7 +625,7 @@ def test_job_complete_process_retries_status_publish_without_resaving_workspace(
         if sleep_count == 2:
             runner.ask_to_stop = True
 
-    with patch("nvflare.private.fed.server.job_runner.time.sleep", side_effect=_stop_after_second_pass):
+    with _patch_job_runner_sleep(_stop_after_second_pass):
         runner._job_complete_process(engine)
 
     runner._save_workspace.assert_called_once_with(first_ctx)
