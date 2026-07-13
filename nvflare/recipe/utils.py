@@ -327,10 +327,12 @@ def add_experiment_tracking(
     Args:
         recipe: Recipe instance to augment with experiment tracking.
         tracking_type: Type of tracking to enable ("mlflow", "tensorboard", or "wandb").
-        tracking_config: Optional configuration dict for the tracking receiver. It becomes
-            part of the generated job definition and must never contain actual credentials;
-            configure authentication through the executing site's environment or a mounted
-            secret instead.
+        tracking_config: Optional configuration dict for the tracking receiver. For MLflow,
+            omitting this uses a local file store and derives ``experiment_name`` and
+            ``run_name`` from the recipe name. The configuration becomes part of the
+            generated job definition and must never contain actual credentials; configure
+            authentication through the executing site's environment or a mounted secret
+            instead.
         client_side: If True, add tracking to clients (each client tracks locally).
         server_side: If True, add tracking to server (aggregates metrics from all clients). Default: True.
         clients: Optional list of client names for client-side tracking. If None, the
@@ -343,11 +345,11 @@ def add_experiment_tracking(
             all-clients topology or unknown site names, targeted placement raises ValueError.
 
     Examples:
-        # Server-side tracking (default - federated metrics)
-        add_experiment_tracking(recipe, "mlflow", {"tracking_uri": "..."})
+        # Server-side MLflow tracking with local storage and recipe-derived names
+        add_experiment_tracking(recipe, "mlflow")
 
         # Client-side tracking only (each client tracks independently)
-        add_experiment_tracking(recipe, "mlflow", {...}, client_side=True, server_side=False)
+        add_experiment_tracking(recipe, "mlflow", client_side=True, server_side=False)
 
         # Both server and client tracking
         add_experiment_tracking(recipe, "mlflow", {...}, client_side=True, server_side=True)
@@ -367,6 +369,17 @@ def add_experiment_tracking(
     warn_on_unsupported_secret_refs(tracking_config, context="tracking_config")
     if tracking_type not in TRACKING_REGISTRY:
         raise ValueError(f"Invalid tracking type: {tracking_type}")
+
+    tracking_config = copy.deepcopy(tracking_config) if tracking_config else {}
+    if tracking_type == "mlflow":
+        kw_args = tracking_config.get("kw_args")
+        if kw_args is None:
+            kw_args = {}
+            tracking_config["kw_args"] = kw_args
+        elif not isinstance(kw_args, dict):
+            raise TypeError(f"MLflow kw_args must be a dict, got {type(kw_args).__name__}")
+        recipe_name = getattr(recipe, "name", None) or getattr(recipe.job, "name", None) or "nvflare"
+        kw_args.setdefault("experiment_name", f"{recipe_name}-experiment")
 
     if not server_side and not client_side:
         raise ValueError("At least one of server_side or client_side must be True")
@@ -390,7 +403,10 @@ def add_experiment_tracking(
 
     # Add server-side tracking
     if server_side:
-        receiver = receiver_class(**tracking_config)
+        server_config = copy.deepcopy(tracking_config)
+        if tracking_type == "mlflow":
+            server_config["kw_args"].setdefault("run_name", f"{recipe_name}-Server")
+        receiver = receiver_class(**server_config)
         recipe.job.to_server(receiver, "receiver")
 
     # Add client-side tracking
@@ -398,6 +414,8 @@ def add_experiment_tracking(
         # For client-side tracking, need to configure local events
         # Deep copy to avoid shared mutable state (tracking_config may contain nested dicts)
         client_config = copy.deepcopy(tracking_config)
+        if tracking_type == "mlflow":
+            client_config["kw_args"].setdefault("run_name", f"{recipe_name}-Client")
         # Override events to track local analytics (not federated)
         if "events" not in client_config:
             client_config["events"] = [ANALYTIC_EVENT_TYPE]
@@ -406,6 +424,77 @@ def add_experiment_tracking(
         # Route through the recipe placement layer so existing per-site client apps
         # are preserved (to_clients would target ALL_SITES even when per-site apps exist).
         recipe._add_to_client_apps(client_receiver, clients=clients, id="client_receiver")
+
+
+def add_final_global_evaluation(
+    recipe: Recipe,
+    participating_clients: Optional[List[str]] = None,
+    validation_timeout: int = 6000,
+) -> None:
+    """Evaluate a PyTorch recipe's final global model on selected clients.
+
+    Unlike full cross-site evaluation, this helper does not ask clients to
+    submit their local models. It locates the recipe's persisted global model
+    and sends only that model for validation after training.
+
+    Args:
+        recipe: PyTorch recipe to augment with final global model evaluation.
+        participating_clients: Optional client names to run validation. If not
+            provided, all clients connected when the controller starts are used.
+        validation_timeout: Timeout in seconds for validation tasks. Defaults to
+            6000, matching ``CrossSiteModelEval``'s existing default.
+
+    Raises:
+        TypeError: If ``participating_clients`` is not a list of strings.
+        ValueError: If ``participating_clients`` is empty, the recipe is not
+            PyTorch, or the recipe has no model persistor.
+        RuntimeError: If a cross-site evaluation workflow is already configured.
+    """
+    from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
+    from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
+    from nvflare.app_opt.pt.file_model_locator import PTFileModelLocator
+    from nvflare.job_config.script_runner import FrameworkType
+
+    if getattr(recipe, "_cse_added", False) or _has_cross_site_eval_workflow(recipe.job):
+        raise RuntimeError("a cross-site evaluation workflow is already configured for this recipe")
+
+    if getattr(recipe, "framework", None) != FrameworkType.PYTORCH:
+        raise ValueError("final global evaluation currently supports PyTorch recipes only")
+
+    if participating_clients is not None:
+        if not isinstance(participating_clients, list) or not all(
+            isinstance(client, str) for client in participating_clients
+        ):
+            raise TypeError(f"participating_clients must be a list of str, got {participating_clients!r}")
+        if not participating_clients:
+            raise ValueError("participating_clients must not be empty; use None to evaluate on all clients")
+
+    comp_ids = getattr(recipe.job, "comp_ids", None)
+    if not isinstance(comp_ids, dict):
+        raise ValueError("final global evaluation requires a recipe that tracks component IDs")
+
+    model_locator_id = comp_ids.get("locator_id", "")
+    if not model_locator_id:
+        persistor_id = comp_ids.get("persistor_id", "")
+        if not persistor_id:
+            raise ValueError("final global evaluation requires a PyTorch model persistor")
+        model_locator_id = recipe.job.to_server(
+            PTFileModelLocator(pt_persistor_id=persistor_id), id="final_model_locator"
+        )
+        if not isinstance(model_locator_id, str) or not model_locator_id:
+            raise RuntimeError("failed to register the final global model locator")
+        comp_ids["locator_id"] = model_locator_id
+
+    recipe.job.to_server(ValidationJsonGenerator())
+    recipe.job.to_server(
+        CrossSiteModelEval(
+            model_locator_id=model_locator_id,
+            submit_model_task_name="",
+            validation_timeout=validation_timeout,
+            participating_clients=participating_clients,
+        )
+    )
+    recipe._cse_added = True
 
 
 def add_cross_site_evaluation(
@@ -495,23 +584,9 @@ def add_cross_site_evaluation(
         add_cross_site_evaluation(recipe)
         ```
 
-    Example (TensorFlow - Component-based alternative):
-        ```python
-        from nvflare.app_opt.tf.recipes import FedAvgRecipe
-        from nvflare.app_opt.tf.tf_validator import TFValidator
-        from nvflare.recipe.utils import add_cross_site_evaluation
-
-        recipe = FedAvgRecipe(
-            name="my-job", min_clients=2, num_rounds=3,
-            model=MyTFModel(), train_script="client.py"
-        )
-
-        add_cross_site_evaluation(recipe)
-
-        # Optional: manually add TFValidator for component-based validation
-        validator = TFValidator(model=my_model, data_loader=test_loader)
-        recipe.job.to_clients(validator, tasks=["validate"])
-        ```
+    TensorFlow component-based validators are executors, not plain components.
+    Use the lower-level Job API when explicit ``TFValidator`` placement is required;
+    Recipe-based jobs should use the Client API pattern above.
 
     Args:
         recipe: Recipe instance to augment with cross-site evaluation.
