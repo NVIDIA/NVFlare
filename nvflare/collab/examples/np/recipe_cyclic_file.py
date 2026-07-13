@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from nvflare.collab.examples import export_recipe
+from nvflare.collab.examples.np.cyclic_file import prepare_data_dir
 from nvflare.collab.examples.np.mains.client import NPTrainer
 from nvflare.collab.examples.np.mains.strategies.cyclic import NPCyclic
 from nvflare.collab.sys.recipe import CollabRecipe
@@ -27,7 +28,7 @@ def _make_recipe(job_name):
         server=NPCyclic(initial_model="initial_model.npy", num_rounds=2),
         client=NPTrainer(delta=1.0),
     )
-    recipe.set_server_resource_dirs({"data": "/Users/yanc/NVFlare/sandbox/data"})
+    recipe.set_server_resource_dirs({"data": prepare_data_dir("initial_model.npy")})
     return recipe
 
 

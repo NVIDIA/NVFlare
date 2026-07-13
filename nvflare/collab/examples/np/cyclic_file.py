@@ -12,12 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
+import os
+
+import numpy as np
 
 from nvflare.collab.api.utils import simple_logging
 from nvflare.collab.examples import get_experiment_root
 from nvflare.collab.examples.np.mains.client import NPTrainer
 from nvflare.collab.examples.np.mains.strategies.cyclic import NPCyclic
+from nvflare.collab.examples.np.mains.utils import save_np_model
 from nvflare.collab.sim.simulator import Simulator
+
+
+def prepare_data_dir(initial_model_file: str) -> str:
+    data_dir = os.path.join(get_experiment_root(), "cyclic_file_data")
+    os.makedirs(data_dir, exist_ok=True)
+    save_np_model(np.array([1.0, 2.0, 3.0]), os.path.join(data_dir, initial_model_file))
+    return data_dir
 
 
 def main():
@@ -31,7 +42,7 @@ def main():
         num_clients=2,
     )
 
-    simulator.set_server_resource_dirs({"data": "/Users/yanc/NVFlare/sandbox/data"})
+    simulator.set_server_resource_dirs({"data": prepare_data_dir("initial_model.npy")})
 
     final_result = simulator.run()
     print(f"final model: {final_result}")

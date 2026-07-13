@@ -11,10 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import sys
+from types import ModuleType
 from typing import List
 
 from nvflare.collab.api.app import App, ClientApp, ServerApp
 from nvflare.collab.api.filter import FilterChain
+from nvflare.collab.api.module_wrapper import ModuleWrapper
 from nvflare.fuel.utils.validation_utils import check_positive_int, check_positive_number, check_str
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import ExecEnv, Recipe
@@ -28,8 +31,8 @@ class CollabRecipe(Recipe):
     def __init__(
         self,
         job_name: str,
-        server: object,
-        client: object,
+        server: object = None,
+        client: object = None,
         server_objects: dict[str, object] = None,
         client_objects: dict[str, object] = None,
         sync_task_timeout=5,
@@ -42,6 +45,19 @@ class CollabRecipe(Recipe):
         check_positive_int("max_call_threads_for_server", max_call_threads_for_server)
         check_positive_int("max_call_threads_for_client", max_call_threads_for_client)
         check_positive_int("min_clients", min_clients)
+
+        # When server/client are not specified, use the calling script's module
+        # (@collab.main / @collab.publish functions defined at module level).
+        # Raw modules are wrapped with ModuleWrapper to make them callable and
+        # serializable (only the importable module name is stored).
+        if server is None:
+            server = sys.modules["__main__"]
+        if client is None:
+            client = sys.modules["__main__"]
+        if isinstance(server, ModuleType):
+            server = ModuleWrapper(server)
+        if isinstance(client, ModuleType):
+            client = ModuleWrapper(client)
 
         self.job_name = job_name
         self.server_app = ServerApp(server)
