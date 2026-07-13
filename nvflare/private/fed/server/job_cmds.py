@@ -983,7 +983,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
         truncated = len(raw_data) > self.MAX_RETURNED_JOB_LOG_BYTES
         if truncated:
-            raw_data = raw_data[-self.MAX_RETURNED_JOB_LOG_BYTES :]
+            raw_data = raw_data[-self.MAX_RETURNED_JOB_LOG_BYTES :] if self.MAX_RETURNED_JOB_LOG_BYTES else b""
         text = raw_data.decode("utf-8", errors="replace")
         if truncated:
             text = f"... output truncated to last {self.MAX_RETURNED_JOB_LOG_BYTES} bytes ...\n{text}"

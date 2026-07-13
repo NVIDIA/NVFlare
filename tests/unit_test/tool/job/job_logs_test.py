@@ -408,6 +408,20 @@ class TestJobLogs:
         assert data["logs_truncated"] is True
         assert data["sites"]["server"]["bytes"] == 3
 
+    def test_logs_zero_max_bytes_returns_no_log_content(self, capsys):
+        from nvflare.tool.job.job_cli import cmd_job_logs
+
+        mock_sess = MagicMock()
+        mock_sess.get_job_logs.return_value = {"logs": {"server": "abcdef"}}
+
+        with patch("nvflare.tool.job.job_cli._session", side_effect=self._fake_session(mock_sess)):
+            cmd_job_logs(_make_args(max_bytes=0))
+
+        data = json.loads(capsys.readouterr().out)["data"]
+        assert data["logs"] == {"server": ""}
+        assert data["logs_truncated"] is True
+        assert data["sites"]["server"]["bytes"] == 0
+
     def test_logs_tail_then_max_bytes_keeps_true_final_error_line(self, capsys):
         from nvflare.tool.job.job_cli import cmd_job_logs
 

@@ -1404,6 +1404,14 @@ def test_get_job_log_truncates_large_output(tmp_path, monkeypatch):
     assert payload["logs"]["server"].endswith("aa\n" + "b" * 12 + "\n")
 
 
+def test_decode_job_log_data_honors_zero_byte_cap(monkeypatch):
+    monkeypatch.setattr(JobCommandModule, "MAX_RETURNED_JOB_LOG_BYTES", 0)
+
+    result = JobCommandModule()._decode_job_log_data(b"discard all log bytes")
+
+    assert result == "... output truncated to last 0 bytes ...\n"
+
+
 def test_collect_job_log_lines_keeps_true_end_past_byte_cap(tmp_path, monkeypatch):
     log_file = tmp_path / "long.log"
     log_file.write_text("old-data\n" * 4 + "FINAL ERROR\n", encoding="utf-8")
