@@ -197,9 +197,8 @@ def create_recipe(args: argparse.Namespace) -> FedAvgRecipe:
     # The client training script and the server-side PyTorch persistor both
     # import the model definition, so bundle it into every generated app.
     model_path = str(Path(__file__).with_name("model.py"))
-    recipe.job.add_file_to_server(model_path)
-    for site_name in client_sites:
-        recipe.job.add_file_to(model_path, site_name)
+    recipe.add_server_file(model_path)
+    recipe.add_client_file(model_path, clients=list(client_sites))
 
     # Scheduler-facing resource requirements stay separate from Kubernetes
     # container settings. K8sJobLauncher maps num_of_gpus to nvidia.com/gpu.
