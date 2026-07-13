@@ -82,6 +82,9 @@ def weighted_avg(client_results):
             continue
         valid_results[client_id] = result
 
+    if not valid_results:
+        raise RuntimeError(f"all {len(client_results)} client calls failed - see warnings above")
+
     all_weights = [result[0] for result in valid_results.values()]
     all_losses = [result[1] for result in valid_results.values()]
 

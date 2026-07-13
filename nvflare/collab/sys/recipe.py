@@ -17,7 +17,7 @@ from nvflare.collab.api.app import App, ClientApp, ServerApp
 from nvflare.collab.api.filter import FilterChain
 from nvflare.fuel.utils.validation_utils import check_positive_int, check_positive_number, check_str
 from nvflare.job_config.api import FedJob
-from nvflare.recipe.spec import Recipe
+from nvflare.recipe.spec import ExecEnv, Recipe
 
 from .controller import CollabController
 from .executor import CollabExecutor
@@ -47,6 +47,9 @@ class CollabRecipe(Recipe):
         self.server_app = ServerApp(server)
         self.client_app = ClientApp(client)
 
+        self.server_objects = dict(server_objects) if server_objects else None
+        self.client_objects = dict(client_objects) if client_objects else None
+
         if server_objects:
             for name, obj in server_objects.items():
                 self.server_app.add_collab_object(name, obj)
@@ -62,6 +65,23 @@ class CollabRecipe(Recipe):
 
         job = FedJob(name=self.job_name, min_clients=self.min_clients)
         Recipe.__init__(self, job)
+
+    def process_env(self, env: ExecEnv):
+        """Hand the recipe's collab objects to the execution environment.
+
+        Collab execution environments (InProcessEnv, MultiProcessEnv) build their
+        runtime from the same server/client objects the recipe is configured with,
+        so users only need to specify them on the recipe. Values explicitly set on
+        the env take precedence.
+        """
+        for attr, value in (
+            ("server", self.server_app.obj),
+            ("client", self.client_app.obj),
+            ("server_objects", self.server_objects),
+            ("client_objects", self.client_objects),
+        ):
+            if hasattr(env, attr) and getattr(env, attr) is None:
+                setattr(env, attr, value)
 
     def set_server_prop(self, name: str, value):
         self.server_app.set_prop(name, value)
