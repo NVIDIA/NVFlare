@@ -35,6 +35,8 @@ class MessageHeaderKey:
     CHANNEL = CELLNET_PREFIX + "channel"
     RETURN_CODE = CELLNET_PREFIX + "return_code"
     ERROR = CELLNET_PREFIX + "error"
+    # Marks a locally generated stream/decode failure, distinct from a remote callback exception.
+    PAYLOAD_PROCESSING_ERROR = CELLNET_PREFIX + "payload_processing_error"
     PAYLOAD_ENCODING = CELLNET_PREFIX + "payload_encoding"
     ROUTE = CELLNET_PREFIX + "route"
     ORIGINAL_HEADERS = CELLNET_PREFIX + "original_headers"

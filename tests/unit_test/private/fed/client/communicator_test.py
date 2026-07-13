@@ -18,7 +18,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.signal import Signal
-from nvflare.fuel.f3.cellnet.defs import ReturnCode
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import make_reply
 from nvflare.private.defs import ClientRegMsgKey
 from nvflare.private.fed.client.communicator import Communicator
@@ -45,7 +45,9 @@ def test_pull_task_process_exception_aborts_run(monkeypatch):
 
     error = "Declared blob size 2097152 exceeds configured limit 1048576"
     cell = MagicMock()
-    cell.send_request.return_value = make_reply(ReturnCode.PROCESS_EXCEPTION, error=error)
+    reply = make_reply(ReturnCode.PROCESS_EXCEPTION, error=error)
+    reply.set_header(MessageHeaderKey.PAYLOAD_PROCESSING_ERROR, True)
+    cell.send_request.return_value = reply
     communicator = Communicator(client_config={"client_name": "site-1"}, cell=cell)
     communicator.engine = engine
     monkeypatch.setattr("nvflare.private.fed.client.communicator.determine_parent_fqcn", lambda *_args: "server")
@@ -57,3 +59,23 @@ def test_pull_task_process_exception_aborts_run(monkeypatch):
     assert error in fl_ctx.get_prop(FLContextKey.EVENT_DATA)
     engine.fire_event.assert_called_once_with(EventType.FATAL_SYSTEM_ERROR, fl_ctx)
     assert cell.send_request.call_args.kwargs["target"] == "server.job-1"
+
+
+def test_pull_task_generic_process_exception_retries(monkeypatch):
+    engine = MagicMock()
+    abort_signal = Signal()
+    fl_ctx = FLContextManager(engine=engine, identity_name="site-1", job_id="job-1").new_context()
+    fl_ctx.set_prop(FLContextKey.RUN_ABORT_SIGNAL, abort_signal, private=True, sticky=False)
+
+    cell = MagicMock()
+    cell.send_request.return_value = make_reply(ReturnCode.PROCESS_EXCEPTION, error="task callback failed")
+    communicator = Communicator(client_config={"client_name": "site-1"}, cell=cell)
+    communicator.engine = engine
+    monkeypatch.setattr("nvflare.private.fed.client.communicator.determine_parent_fqcn", lambda *_args: "server")
+
+    task = communicator.pull_task("project", "token", "ssid", fl_ctx)
+
+    assert task is None
+    assert not abort_signal.triggered
+    assert fl_ctx.get_prop(FLContextKey.EVENT_DATA) is None
+    engine.fire_event.assert_not_called()

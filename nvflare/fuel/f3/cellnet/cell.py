@@ -345,7 +345,9 @@ class Cell(StreamCell):
         detail = secure_format_exception(error)
         msg = f"{phase} stream failed for {channel}/{topic} with {target}: {detail}"
         self.logger.error(msg)
-        return make_reply(ReturnCode.PROCESS_EXCEPTION, error=msg)
+        reply = make_reply(ReturnCode.PROCESS_EXCEPTION, error=msg)
+        reply.set_header(MessageHeaderKey.PAYLOAD_PROCESSING_ERROR, True)
+        return reply
 
     def _encode_message(self, msg: Message, abort_signal, num_receivers=1, receiver_ids=None) -> int:
         try:
@@ -506,6 +508,7 @@ class Cell(StreamCell):
                 msg = f"failed to decode reply payload for {channel}/{topic} from {target}: {detail}"
                 self.logger.error(msg)
                 waiter.result = make_reply(ReturnCode.PROCESS_EXCEPTION, error=msg)
+                waiter.result.set_header(MessageHeaderKey.PAYLOAD_PROCESSING_ERROR, True)
             self.logger.debug(f"{req_id=}: return result {waiter.result=}")
             return self._get_result(req_id)
         except Exception as ex:

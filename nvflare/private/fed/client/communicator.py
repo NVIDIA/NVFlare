@@ -459,7 +459,10 @@ class Communicator:
         elif return_code == ReturnCode.AUTHENTICATION_ERROR:
             self.logger.warning("get_task request authentication failed.")
             task = None
-        elif return_code == ReturnCode.PROCESS_EXCEPTION:
+        # Remote callback process exceptions remain retryable; only local stream/decode failures are fatal.
+        elif return_code == ReturnCode.PROCESS_EXCEPTION and task.get_header(
+            MessageHeaderKey.PAYLOAD_PROCESSING_ERROR, False
+        ):
             error = task.get_header(MessageHeaderKey.ERROR, "unknown task payload processing error")
             reason = f"Failed to receive task from {parent_fqcn}: {error}"
             self.logger.error(reason)

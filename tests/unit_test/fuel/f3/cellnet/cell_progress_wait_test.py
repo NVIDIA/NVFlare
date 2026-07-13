@@ -17,7 +17,7 @@ from unittest.mock import MagicMock
 import nvflare.fuel.f3.cellnet.cell as cell_module
 from nvflare.apis.signal import Signal
 from nvflare.fuel.f3.cellnet.cell import Cell
-from nvflare.fuel.f3.cellnet.defs import ReturnCode
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.waiter_utils import WaiterRC
@@ -182,7 +182,74 @@ def test_receiving_wait_does_not_extend_stream_future_error(monkeypatch):
 
     assert result.get_header(cell_module.MessageHeaderKey.RETURN_CODE) == ReturnCode.PROCESS_EXCEPTION
     assert "stream failed" in result.get_header(cell_module.MessageHeaderKey.ERROR)
+    assert result.get_header(MessageHeaderKey.PAYLOAD_PROCESSING_ERROR)
     progress_wait_cb.assert_not_called()
+
+
+def test_sending_stream_future_error_returns_payload_processing_error():
+    cell = _make_cell()
+    future = MagicMock(error=RuntimeError("request stream failed"))
+    cell.send_blob.return_value = future
+    cell._future_wait.return_value = False
+
+    result = cell._send_one_request(
+        channel="task",
+        target="site-1",
+        topic="train",
+        request=Message(headers={}, payload=None),
+        timeout=1.0,
+        abort_signal=Signal(),
+    )
+
+    assert result.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.PROCESS_EXCEPTION
+    assert "request stream failed" in result.get_header(MessageHeaderKey.ERROR)
+    assert result.get_header(MessageHeaderKey.PAYLOAD_PROCESSING_ERROR)
+    assert cell.requests_dict == {}
+
+
+def test_sending_timeout_without_stream_error_remains_timeout():
+    cell = _make_cell()
+    cell.send_blob.return_value = MagicMock(error=None)
+    cell._future_wait.return_value = False
+
+    result = cell._send_one_request(
+        channel="task",
+        target="site-1",
+        topic="train",
+        request=Message(headers={}, payload=None),
+        timeout=1.0,
+        abort_signal=Signal(),
+    )
+
+    assert result.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.TIMEOUT
+    assert result.get_header(MessageHeaderKey.PAYLOAD_PROCESSING_ERROR) is None
+    assert cell.requests_dict == {}
+
+
+def test_reply_decode_error_returns_payload_processing_error(monkeypatch):
+    cell = _make_cell()
+
+    def _conditional_wait(_event, _timeout, _abort_signal):
+        waiter = next(iter(cell.requests_dict.values()))
+        waiter.receiving_future = _ReplyFuture()
+        return WaiterRC.IS_SET
+
+    monkeypatch.setattr(cell_module, "conditional_wait", _conditional_wait)
+    monkeypatch.setattr(cell_module, "decode_payload", MagicMock(side_effect=RuntimeError("decode failed")))
+
+    result = cell._send_one_request(
+        channel="task",
+        target="site-1",
+        topic="train",
+        request=Message(headers={}, payload=None),
+        timeout=1.0,
+        abort_signal=Signal(),
+    )
+
+    assert result.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.PROCESS_EXCEPTION
+    assert "decode failed" in result.get_header(MessageHeaderKey.ERROR)
+    assert result.get_header(MessageHeaderKey.PAYLOAD_PROCESSING_ERROR)
+    assert cell.requests_dict == {}
 
 
 def test_remote_processing_wait_returns_timeout_when_progress_callback_is_false(monkeypatch):
