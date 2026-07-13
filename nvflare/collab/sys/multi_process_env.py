@@ -181,7 +181,7 @@ class MultiProcessEnv(ExecEnv):
 
         if self._check_poc_running():
             print("  → Stopping existing POC services...")
-            self.stop(clean_poc=True)
+            self.stop(clean_up=True)
 
         print("  → Preparing POC workspace...")
         prepare_poc_provision(
@@ -228,11 +228,11 @@ class MultiProcessEnv(ExecEnv):
 
         return True
 
-    def stop(self, clean_poc: bool = False):
+    def stop(self, clean_up: bool = False) -> None:
         """Stop and optionally clean the POC environment.
 
         Args:
-            clean_poc: Whether to clean the POC workspace. Defaults to False.
+            clean_up: Whether to clean the POC workspace. Defaults to False.
         """
         project_config, service_config = setup_service_config(self.poc_workspace)
 
@@ -252,7 +252,7 @@ class MultiProcessEnv(ExecEnv):
                 time.sleep(1)
                 count += 1
 
-            if clean_poc:
+            if clean_up:
                 if poc_running:
                     print(
                         f"Warning: POC still running after {STOP_POC_TIMEOUT} seconds, "

@@ -158,5 +158,5 @@ if __name__ == "__main__":
     finally:
         print()
         print("Cleaning up POC environment...")
-        env.stop(clean_poc=True)
+        env.stop(clean_up=True)
         print("Done.")
