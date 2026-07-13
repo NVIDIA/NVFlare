@@ -167,36 +167,40 @@ class _ScaffoldHandler:
     def finish_round(self, pl_module: "pl.LightningModule") -> dict:
         if not self._active:
             return {}
-        if self._pending_lr is not None:
-            raise RuntimeError(
-                "Automatic Lightning SCAFFOLD support observed an optimizer step, but Lightning did not call "
-                "on_train_batch_end to apply the final model correction. Training may have been interrupted "
-                "between optimizer hooks, or a Lightning plugin may have changed the documented hook sequence."
-            )
-        num_steps = self.num_steps
-        if num_steps == 0:
-            raise RuntimeError(
-                "Automatic Lightning SCAFFOLD support requires at least one completed optimizer step per round."
-            )
-        if not math.isfinite(self._lr_sum) or self._lr_sum <= 0.0:
-            raise RuntimeError(
-                "Automatic Lightning SCAFFOLD support requires positive total learning-rate exposure per round, "
-                f"but the {num_steps} completed optimizer steps summed to {self._lr_sum}."
-            )
+        try:
+            if self._pending_lr is not None:
+                raise RuntimeError(
+                    "Automatic Lightning SCAFFOLD support observed an optimizer step, but Lightning did not call "
+                    "on_train_batch_end to apply the final model correction. Training may have been interrupted "
+                    "between optimizer hooks, or a Lightning plugin may have changed the documented hook sequence."
+                )
+            num_steps = self.num_steps
+            if num_steps == 0:
+                raise RuntimeError(
+                    "Automatic Lightning SCAFFOLD support requires at least one completed optimizer step per round."
+                )
+            if not math.isfinite(self._lr_sum) or self._lr_sum <= 0.0:
+                raise RuntimeError(
+                    "Automatic Lightning SCAFFOLD support requires positive total learning-rate exposure per round, "
+                    f"but the {num_steps} completed optimizer steps summed to {self._lr_sum}."
+                )
 
-        average_lr = self._lr_sum / num_steps
-        self._helper.terms_update(
-            model=pl_module,
-            curr_lr=average_lr,
-            c_global_para=self._c_global_para,
-            c_local_para=self._c_local_para,
-            model_global=self._model_global,
-        )
-        result = {AlgorithmConstants.SCAFFOLD_CTRL_DIFF: self._helper.get_delta_controls()}
+            average_lr = self._lr_sum / num_steps
+            self._helper.terms_update(
+                model=pl_module,
+                curr_lr=average_lr,
+                c_global_para=self._c_global_para,
+                c_local_para=self._c_local_para,
+                model_global=self._model_global,
+            )
+            return {AlgorithmConstants.SCAFFOLD_CTRL_DIFF: self._helper.get_delta_controls()}
+        finally:
+            self._clear_round_state()
 
+    def _clear_round_state(self) -> None:
         self._active = False
         self._model_global = None
         self._c_global_para = None
         self._c_local_para = None
         self._pending_lr = None
-        return result
+        self._lr_sum = 0.0

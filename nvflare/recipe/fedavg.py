@@ -347,20 +347,10 @@ class FedAvgRecipe(Recipe):
         model_aggregator = self._get_model_aggregator()
 
         # Add controller with InTime aggregation and all features
-        controller = FedAvg(
-            num_clients=self.min_clients,
-            num_rounds=self.num_rounds,
+        controller = self._create_controller(
             persistor_id=persistor_id,
-            model=model_params,
-            save_filename=self.save_filename,
-            aggregator=model_aggregator,
-            stop_cond=self.stop_cond,
-            patience=self.patience,
-            task_name="train",
-            exclude_vars=self.exclude_vars,
-            aggregation_weights=self.aggregation_weights,
-            memory_gc_rounds=self.server_memory_gc_rounds,
-            enable_tensor_disk_offload=self.enable_tensor_disk_offload,
+            model_params=model_params,
+            model_aggregator=model_aggregator,
         )
         job.to_server(controller)
 
@@ -410,6 +400,29 @@ class FedAvgRecipe(Recipe):
         }
         for site_name, runner in runners.items():
             self._job.to(runner, site_name)
+
+    def _get_controller_kwargs(self) -> Dict[str, Any]:
+        """Return framework-specific arguments for the FedAvg controller."""
+        return {}
+
+    def _create_controller(self, persistor_id: str, model_params, model_aggregator) -> FedAvg:
+        """Create the server controller, allowing framework recipes to extend it."""
+        return FedAvg(
+            num_clients=self.min_clients,
+            num_rounds=self.num_rounds,
+            persistor_id=persistor_id,
+            model=model_params,
+            save_filename=self.save_filename,
+            aggregator=model_aggregator,
+            stop_cond=self.stop_cond,
+            patience=self.patience,
+            task_name="train",
+            exclude_vars=self.exclude_vars,
+            aggregation_weights=self.aggregation_weights,
+            memory_gc_rounds=self.server_memory_gc_rounds,
+            enable_tensor_disk_offload=self.enable_tensor_disk_offload,
+            **self._get_controller_kwargs(),
+        )
 
     @staticmethod
     def _resolve_model_filenames(best_model_filename: Optional[str], save_filename: Optional[str]) -> tuple[str, str]:

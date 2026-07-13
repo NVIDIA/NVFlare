@@ -336,6 +336,30 @@ class TestFedAvgRecipe:
         recipe._ensure_client_apps_prepared()
         assert recipe._job.clients == ["site-1", "site-2"]
 
+    @pytest.mark.parametrize(("fedprox_mu", "expected"), [(None, None), (0.0, None), (0.2, 0.2)])
+    def test_fedprox_mu_configures_pt_controller(
+        self, mock_file_system, base_recipe_params, simple_model, fedprox_mu, expected
+    ):
+        recipe = FedAvgRecipe(
+            name="test_fedprox",
+            model=simple_model,
+            fedprox_mu=fedprox_mu,
+            **base_recipe_params,
+        )
+
+        assert recipe.fedprox_mu == expected
+        assert get_server_controller(recipe).fedprox_mu == expected
+
+    @pytest.mark.parametrize("fedprox_mu", [-0.1, float("inf"), float("nan"), True, "0.1"])
+    def test_fedprox_mu_rejects_invalid_values(self, mock_file_system, base_recipe_params, simple_model, fedprox_mu):
+        with pytest.raises((TypeError, ValueError), match="finite non-negative number"):
+            FedAvgRecipe(
+                name="test_invalid_fedprox",
+                model=simple_model,
+                fedprox_mu=fedprox_mu,
+                **base_recipe_params,
+            )
+
     def test_tensor_disk_offload_warns_when_server_format_is_not_pytorch(
         self, mock_file_system, base_recipe_params, simple_model
     ):

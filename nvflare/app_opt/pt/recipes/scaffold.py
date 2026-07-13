@@ -17,6 +17,7 @@ from typing import Any, Optional, Union
 
 from pydantic import BaseModel
 
+from nvflare.app_common.utils.fedprox_utils import normalize_fedprox_mu
 from nvflare.app_common.workflows.scaffold import Scaffold
 from nvflare.app_opt.pt.job_config.base_fed_job import BaseFedJob
 from nvflare.app_opt.pt.job_config.model import PTModel
@@ -93,6 +94,9 @@ class ScaffoldRecipe(Recipe):
         enable_tensor_disk_offload (bool): Download streamed PyTorch tensors to disk on the server during
             receive/aggregation instead of holding them in memory, reducing server memory pressure for
             large models. Requires server_expected_format=ExchangeFormat.PYTORCH. Defaults to False.
+        fedprox_mu: Positive FedProx proximal coefficient. Patched PyTorch Lightning clients apply
+            the proximal gradient together with SCAFFOLD automatically. ``None`` or ``0.0`` preserves
+            SCAFFOLD behavior. Defaults to None.
     Example:
         ```python
         recipe = ScaffoldRecipe(
@@ -124,7 +128,10 @@ class ScaffoldRecipe(Recipe):
         client_memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
         enable_tensor_disk_offload: bool = False,
+        fedprox_mu: Optional[float] = None,
     ):
+        fedprox_mu = normalize_fedprox_mu(fedprox_mu)
+
         # Validate inputs internally
         v = _ScaffoldValidator(
             name=name,
@@ -167,6 +174,7 @@ class ScaffoldRecipe(Recipe):
         self.client_memory_gc_rounds = v.client_memory_gc_rounds
         self.cuda_empty_cache = v.cuda_empty_cache
         self.enable_tensor_disk_offload = v.enable_tensor_disk_offload
+        self.fedprox_mu = fedprox_mu
         if self.enable_tensor_disk_offload and self.server_expected_format != ExchangeFormat.PYTORCH:
             warnings.warn(
                 "enable_tensor_disk_offload=True only applies to streamed PyTorch tensors. "
@@ -205,6 +213,7 @@ class ScaffoldRecipe(Recipe):
             persistor_id=persistor_id,
             memory_gc_rounds=self.server_memory_gc_rounds,
             enable_tensor_disk_offload=self.enable_tensor_disk_offload,
+            fedprox_mu=self.fedprox_mu,
         )
         # Send the controller to the server
         job.to_server(controller)

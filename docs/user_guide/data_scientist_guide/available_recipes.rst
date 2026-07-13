@@ -280,10 +280,17 @@ raises an error naming both the configured and declared kinds and how to align t
 FedProx
 =======
 
-FedProx is FedAvg with a proximal term added to the client loss function to handle data heterogeneity.
-It uses the standard FedAvgRecipe with the FedProx loss helper on the client side.
+FedProx is FedAvg with a proximal term added to client optimization to handle data heterogeneity.
+It uses the standard PyTorch ``FedAvgRecipe`` with a positive ``fedprox_mu``. Patched PyTorch Lightning
+clients apply the term automatically; other client loops can continue to use the FedProx loss helper directly.
 Because PyTorch FedProx uses ``FedAvgRecipe``, it also supports ``enable_tensor_disk_offload=True`` for
 streamed PyTorch tensor updates, with the same behavior and constraints as PyTorch FedAvg.
+
+.. warning::
+
+    Setting ``fedprox_mu`` configures server metadata; it does not modify an unpatched or raw PyTorch client.
+    Such clients must integrate ``PTFedProxLoss`` explicitly or they will continue to optimize the ordinary
+    local loss as FedAvg clients.
 
 PyTorch FedProx
 ---------------
@@ -293,32 +300,47 @@ PyTorch FedProx
     from nvflare.app_opt.pt.recipes import FedAvgRecipe
     from nvflare.recipe import SimEnv
 
-    # FedProx uses FedAvgRecipe with FedProxLoss in the client training script
     recipe = FedAvgRecipe(
         name="fedprox-pt",
         min_clients=2,
         num_rounds=5,
         model=MyModel(),
         train_script="client.py",
-        train_args="--fedproxloss_mu 0.01",  # Pass mu parameter to client
+        fedprox_mu=0.01,
     )
     env = SimEnv(num_clients=2)
     run = recipe.execute(env)
 
-In your client training script, use the FedProxLoss helper:
+For a PyTorch Lightning client patched with ``nvflare.client.lightning.patch``, no loss or training-loop change
+is needed. The patch reads ``fedprox_mu`` from each received model and adds
+``mu * (local_parameter - global_parameter)`` to every dense gradient after accumulation and AMP unscaling but
+before gradient clipping. The loss returned or logged by ``training_step`` excludes this automatically injected
+term, while optimization includes its exact gradient.
+
+While a positive coefficient is active, the patch keeps an additional device-resident snapshot of every
+optimizer-owned trainable parameter for the duration of the round. Account for this extra memory when sizing
+large models.
+
+Custom controllers can schedule the coefficient by sending ``FEDPROX_MU`` on every training round after the
+schedule starts. Positive values activate FedProx and may change between rounds; an explicit ``0.0`` disables it
+for that round without allocating the snapshot. Omitting the key after it has been observed raises a contract
+error instead of silently falling back to FedAvg. The fixed recipe interface remains unchanged: constructor-level
+``None`` or ``0.0`` disables FedProx and omits the metadata.
+
+The automatic path supports Lightning automatic optimization with one optimizer and ``precision="32-true"``
+or ``precision="bf16-mixed"``. It rejects scaler-backed precision, closure-based LBFGS, sparse gradients, and
+mid-round trainability changes. For an unpatched or manual client loop, use ``PTFedProxLoss`` explicitly:
 
 .. code-block:: python
 
     from nvflare.app_opt.pt import PTFedProxLoss
 
-    # In training loop:
     fedprox_loss = PTFedProxLoss(mu=fedproxloss_mu)
     for data, target in train_loader:
         optimizer.zero_grad()
         output = model(data)
         ce_loss = criterion(output, target)
-        # Add FedProx regularization term
-        prox_loss = fedprox_loss(model)
+        prox_loss = fedprox_loss(model, global_model)
         loss = ce_loss + prox_loss
         loss.backward()
         optimizer.step()
@@ -461,6 +483,22 @@ automatic optimization with one optimizer whose parameter groups use the same fi
 rate at each step and have positive total learning-rate exposure per round. Supported precision modes are
 ``32-true`` and ``bf16-mixed``. Manual optimization must use an explicit receive/train/send loop without
 ``flare.patch`` and integrate ``PTScaffoldHelper`` directly.
+
+SCAFFOLD can be combined with automatic FedProx by setting ``fedprox_mu`` on the same recipe:
+
+.. code-block:: python
+
+    recipe = ScaffoldRecipe(
+        name="scaffold-fedprox-pt",
+        min_clients=2,
+        num_rounds=5,
+        model=MyModel(),
+        train_script="client.py",
+        fedprox_mu=0.01,
+    )
+
+The patched Lightning client injects the FedProx gradient before the optimizer step and retains SCAFFOLD's
+post-step model correction and returned control difference.
 
 .. note::
 

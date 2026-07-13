@@ -13,13 +13,14 @@
 # limitations under the License.
 
 import copy
-from typing import List
+from typing import List, Optional
 
 import numpy as np
 
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.app_constant import AlgorithmConstants, AppConstants
+from nvflare.app_common.utils.fedprox_utils import normalize_fedprox_mu, set_fedprox_metadata
 from nvflare.app_common.utils.tensor_disk_offload_context import cleanup_tensor_disk_offload, setup_tensor_disk_offload
 
 from .base_fedavg import (
@@ -76,11 +77,14 @@ class Scaffold(BaseFedAvg):
         enable_tensor_disk_offload (bool, optional): Download tensors to disk during FOBS streaming
             instead of holding them in memory, reducing server memory pressure for large models.
             Only applies to streamed PyTorch tensor payloads. Defaults to False.
+        fedprox_mu (float or None, optional): Positive FedProx proximal coefficient sent to
+            compatible clients. ``None`` or ``0.0`` disables FedProx. Defaults to None.
     """
 
-    def __init__(self, *args, enable_tensor_disk_offload: bool = False, **kwargs):
+    def __init__(self, *args, enable_tensor_disk_offload: bool = False, fedprox_mu: Optional[float] = None, **kwargs):
         super().__init__(*args, **kwargs)
         self.enable_tensor_disk_offload = enable_tensor_disk_offload
+        self.fedprox_mu = normalize_fedprox_mu(fedprox_mu)
 
     def initialize(self, fl_ctx):
         super().initialize(fl_ctx)
@@ -121,6 +125,7 @@ class Scaffold(BaseFedAvg):
 
             # Add SCAFFOLD global control terms to global model meta
             global_model = self.model
+            set_fedprox_metadata(global_model, self.fedprox_mu)
             global_model.meta[AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL] = self._global_ctrl_weights
 
             results = self.send_model_and_wait(targets=clients, data=global_model)

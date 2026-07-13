@@ -30,7 +30,9 @@ from nvflare.app_opt.lightning.algorithm import _AlgorithmHandlerManager, _Algor
 from nvflare.app_opt.lightning.api import FLCallback
 from nvflare.app_opt.lightning.api import patch as lightning_patch
 from nvflare.app_opt.lightning.callbacks import RestoreState
+from nvflare.app_opt.lightning.fedprox import _FedProxHandler
 from nvflare.app_opt.lightning.scaffold import _ScaffoldHandler, _StateDictSnapshot
+from nvflare.app_opt.pt.fedproxloss import PTFedProxLoss
 from nvflare.client.config import ConfigKey
 
 
@@ -86,6 +88,10 @@ def _scaffold_model(model: nn.Module, controls=None) -> FLModel:
     if controls is None:
         controls = _zero_controls(model)
     return FLModel(meta={AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL: controls})
+
+
+def _fedprox_model(mu=0.1) -> FLModel:
+    return FLModel(meta={AlgorithmConstants.FEDPROX_MU: mu})
 
 
 def _trainer(*optimizers, precision="32-true"):
@@ -195,19 +201,23 @@ def test_patch_is_idempotent():
     assert len([cb for cb in trainer.callbacks if isinstance(cb, RestoreState)]) == 1
 
 
-def test_algorithm_handler_manager_does_not_load_scaffold_for_fedavg():
+def test_algorithm_handler_manager_does_not_load_handlers_for_fedavg():
     module = SimpleNet()
     optimizer = torch.optim.SGD(module.parameters(), lr=0.1)
     manager = _AlgorithmHandlerManager()
 
-    with patch("nvflare.app_opt.lightning.algorithm._create_scaffold_handler") as create_handler:
+    with (
+        patch("nvflare.app_opt.lightning.algorithm._create_scaffold_handler") as create_scaffold,
+        patch("nvflare.app_opt.lightning.algorithm._create_fedprox_handler") as create_fedprox,
+    ):
         manager.start_round(_trainer(optimizer), module, FLModel(meta={}))
         manager.before_optimizer_step(optimizer)
         manager.after_train_batch(module)
         result = manager.finish_round(module)
 
-    create_handler.assert_not_called()
-    assert manager._handler is None
+    create_scaffold.assert_not_called()
+    create_fedprox.assert_not_called()
+    assert manager._handlers == {}
     assert result == _AlgorithmResult()
 
 
@@ -217,7 +227,7 @@ def test_algorithm_handler_manager_loads_scaffold_lazily_and_preserves_later_rou
     manager = _AlgorithmHandlerManager()
 
     manager.start_round(_trainer(optimizer), module, _scaffold_model(module))
-    handler = manager._handler
+    handler = manager._handlers[AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL]
     manager.before_optimizer_step(optimizer)
     manager.after_train_batch(module)
     result = manager.finish_round(module)
@@ -227,6 +237,354 @@ def test_algorithm_handler_manager_loads_scaffold_lazily_and_preserves_later_rou
     assert AlgorithmConstants.SCAFFOLD_CTRL_DIFF in result.metadata
     with pytest.raises(RuntimeError, match="active in an earlier training round"):
         manager.start_round(_trainer(optimizer), module, FLModel(meta={}))
+
+
+def test_algorithm_handler_manager_composes_scaffold_and_fedprox():
+    module = SimpleNet()
+    optimizer = torch.optim.SGD(module.parameters(), lr=0.1)
+    manager = _AlgorithmHandlerManager()
+    input_model = FLModel(
+        meta={
+            AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL: _zero_controls(module),
+            AlgorithmConstants.FEDPROX_MU: 0.2,
+        }
+    )
+
+    manager.start_round(_trainer(optimizer), module, input_model)
+    manager.before_optimizer_step(optimizer)
+    optimizer.step()
+    manager.after_train_batch(module)
+    result = manager.finish_round(module)
+
+    assert list(manager._handlers) == [
+        AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL,
+        AlgorithmConstants.FEDPROX_MU,
+    ]
+    assert result.num_steps == 1
+    assert AlgorithmConstants.SCAFFOLD_CTRL_DIFF in result.metadata
+
+
+def test_algorithm_handler_manager_composes_scaffold_with_explicitly_disabled_fedprox():
+    module = SimpleNet()
+    optimizer = torch.optim.SGD(module.parameters(), lr=0.1)
+    manager = _AlgorithmHandlerManager()
+    input_model = FLModel(
+        meta={
+            AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL: _zero_controls(module),
+            AlgorithmConstants.FEDPROX_MU: 0.0,
+        }
+    )
+
+    manager.start_round(_trainer(optimizer), module, input_model)
+    manager.before_optimizer_step(optimizer)
+    optimizer.step()
+    manager.after_train_batch(module)
+    result = manager.finish_round(module)
+
+    fedprox_handler = manager._handlers[AlgorithmConstants.FEDPROX_MU]
+    assert fedprox_handler.active is False
+    assert fedprox_handler._global_parameters is None
+    assert result.num_steps == 1
+    assert AlgorithmConstants.SCAFFOLD_CTRL_DIFF in result.metadata
+
+
+class _FakeAlgorithmHandler:
+    def __init__(self, num_steps, metadata=None, error=None):
+        self.active = True
+        self.num_steps = num_steps
+        self.metadata = metadata or {}
+        self.error = error
+        self.finished = False
+
+    def finish_round(self, pl_module):
+        self.finished = True
+        if self.error:
+            raise self.error
+        return self.metadata
+
+
+def test_algorithm_handler_manager_rejects_inconsistent_step_counts():
+    manager = _AlgorithmHandlerManager()
+    manager._handlers = {
+        "one": _FakeAlgorithmHandler(1, {}),
+        "two": _FakeAlgorithmHandler(2, {}),
+    }
+
+    with pytest.raises(RuntimeError, match="inconsistent completed optimizer step counts"):
+        manager.finish_round(SimpleNet())
+
+
+def test_algorithm_handler_manager_rejects_metadata_collisions():
+    manager = _AlgorithmHandlerManager()
+    manager._handlers = {
+        "one": _FakeAlgorithmHandler(1, {"reserved": 1}),
+        "two": _FakeAlgorithmHandler(1, {"reserved": 2}),
+    }
+
+    with pytest.raises(RuntimeError, match="conflicting metadata keys"):
+        manager.finish_round(SimpleNet())
+
+
+def test_algorithm_handler_manager_logs_secondary_errors_and_finishes_every_handler(caplog):
+    first = _FakeAlgorithmHandler(1, error=RuntimeError("first handler failed"))
+    second = _FakeAlgorithmHandler(1, error=ValueError("second handler failed"))
+    manager = _AlgorithmHandlerManager()
+    manager._handlers = {"one": first, "two": second}
+
+    with caplog.at_level(logging.ERROR, logger="nvflare.app_opt.lightning.algorithm"):
+        with pytest.raises(RuntimeError, match="first handler failed"):
+            manager.finish_round(SimpleNet())
+
+    assert first.finished is True
+    assert second.finished is True
+    assert "second handler failed" in caplog.text
+
+
+def test_fedprox_handler_matches_explicit_loss_with_momentum():
+    torch.manual_seed(7)
+    automatic_model = SimpleNet()
+    explicit_model = SimpleNet()
+    explicit_model.load_state_dict(automatic_model.state_dict())
+    global_model = SimpleNet()
+    global_model.load_state_dict(automatic_model.state_dict())
+    automatic_optimizer = torch.optim.SGD(automatic_model.parameters(), lr=0.05, momentum=0.9)
+    explicit_optimizer = torch.optim.SGD(explicit_model.parameters(), lr=0.05, momentum=0.9)
+    handler = _FedProxHandler()
+    handler.start_round(_trainer(automatic_optimizer), automatic_model, _fedprox_model(mu=0.3))
+    criterion = PTFedProxLoss(mu=0.3)
+
+    inputs = torch.randn(3, 4)
+    targets = torch.randn(3, 2)
+    for _ in range(2):
+        automatic_optimizer.zero_grad()
+        F.mse_loss(automatic_model.fc(inputs), targets).backward()
+        handler.before_optimizer_step(automatic_optimizer)
+        automatic_optimizer.step()
+        handler.after_train_batch(automatic_model)
+
+        explicit_optimizer.zero_grad()
+        explicit_loss = F.mse_loss(explicit_model.fc(inputs), targets) + criterion(explicit_model, global_model)
+        explicit_loss.backward()
+        explicit_optimizer.step()
+
+    assert handler.num_steps == 2
+    for automatic_parameter, explicit_parameter in zip(automatic_model.parameters(), explicit_model.parameters()):
+        assert torch.allclose(automatic_parameter, explicit_parameter, atol=1e-7, rtol=1e-6)
+    assert handler.finish_round(automatic_model) == {}
+    assert handler._global_parameters is None
+
+
+@pytest.mark.parametrize("invalid_mu", [-0.1, float("inf"), float("nan"), True, "0.1"])
+def test_fedprox_handler_rejects_invalid_metadata(invalid_mu):
+    module = SimpleNet()
+    optimizer = torch.optim.SGD(module.parameters(), lr=0.1)
+
+    with pytest.raises(RuntimeError, match="finite non-negative number"):
+        _FedProxHandler().start_round(_trainer(optimizer), module, _fedprox_model(invalid_mu))
+
+
+def test_fedprox_handler_allows_positive_mu_change_but_rejects_later_missing_metadata():
+    module = SimpleNet()
+    optimizer = torch.optim.SGD(module.parameters(), lr=0.1)
+    handler = _FedProxHandler()
+
+    for mu in (0.1, 0.4):
+        handler.start_round(_trainer(optimizer), module, _fedprox_model(mu))
+        handler.before_optimizer_step(optimizer)
+        optimizer.step()
+        handler.after_train_batch(module)
+        handler.finish_round(module)
+
+    with pytest.raises(RuntimeError, match="metadata was received in an earlier training round"):
+        handler.start_round(_trainer(optimizer), module, FLModel(meta={}))
+
+
+def test_fedprox_handler_explicit_zero_disables_without_optimizer_validation_or_step():
+    module = SimpleNet()
+    module.automatic_optimization = False
+    handler = _FedProxHandler()
+
+    handler.start_round(_trainer(), module, _fedprox_model(0.0))
+    module.fc.weight.grad = torch.ones_like(module.fc.weight)
+    original_gradient = module.fc.weight.grad.clone()
+    handler.before_optimizer_step(None)
+    handler.after_train_batch(module)
+
+    assert handler.active is False
+    assert handler.num_steps == 0
+    assert handler._global_parameters is None
+    assert torch.equal(module.fc.weight.grad, original_gradient)
+    assert handler.finish_round(module) == {}
+
+
+def test_fedprox_handler_supports_zero_positive_zero_positive_schedule():
+    module = SimpleNet()
+    optimizer = torch.optim.SGD(module.parameters(), lr=0.1)
+    handler = _FedProxHandler()
+
+    handler.start_round(_trainer(), module, _fedprox_model(0.0))
+    assert handler.active is False
+    assert handler._global_parameters is None
+    assert handler.finish_round(module) == {}
+
+    handler.start_round(_trainer(optimizer), module, _fedprox_model(0.1))
+    first_snapshot = {name: value.clone() for name, value in handler._global_parameters.items()}
+    handler.before_optimizer_step(optimizer)
+    optimizer.step()
+    handler.after_train_batch(module)
+    handler.finish_round(module)
+
+    handler.start_round(_trainer(), module, _fedprox_model(0.0))
+    assert handler.active is False
+    assert handler._global_parameters is None
+    with torch.no_grad():
+        for parameter in module.parameters():
+            parameter.add_(1.0)
+    assert handler.finish_round(module) == {}
+
+    handler.start_round(_trainer(optimizer), module, _fedprox_model(0.4))
+    assert handler.active is True
+    assert handler._mu == 0.4
+    assert any(
+        not torch.equal(handler._global_parameters[name], first_snapshot[name]) for name in handler._global_parameters
+    )
+    handler.before_optimizer_step(optimizer)
+    optimizer.step()
+    handler.after_train_batch(module)
+    handler.finish_round(module)
+
+
+def test_fedprox_handler_rejects_missing_metadata_after_explicit_zero():
+    handler = _FedProxHandler()
+    handler.start_round(_trainer(), SimpleNet(), _fedprox_model(0.0))
+
+    with pytest.raises(RuntimeError, match="explicit 0.0"):
+        handler.start_round(_trainer(), SimpleNet(), FLModel(meta={}))
+
+
+def test_fedprox_handler_snapshots_only_optimizer_owned_trainable_parameters():
+    module = BatchNormNet()
+    module.fc.bias.requires_grad_(False)
+    optimizer = torch.optim.SGD(module.parameters(), lr=0.1)
+    handler = _FedProxHandler()
+    handler.start_round(_trainer(optimizer), module, _fedprox_model())
+
+    snapshot_keys = set(handler._global_parameters)
+    expected_keys = {name for name, parameter in module.named_parameters() if parameter.requires_grad}
+    assert snapshot_keys == expected_keys
+    assert snapshot_keys.isdisjoint(dict(module.named_buffers()))
+    assert "fc.bias" not in snapshot_keys
+
+    with torch.no_grad():
+        for parameter in module.parameters():
+            parameter.add_(1.0)
+    handler.before_optimizer_step(optimizer)
+    assert module.fc.bias.grad is None
+    for name, parameter in module.named_parameters():
+        if parameter.requires_grad:
+            assert torch.allclose(parameter.grad, torch.full_like(parameter, 0.1))
+    optimizer.step()
+    handler.after_train_batch(module)
+    handler.finish_round(module)
+
+
+def test_fedprox_handler_rejects_manual_optimization():
+    module = SimpleNet()
+    module.automatic_optimization = False
+    optimizer = torch.optim.SGD(module.parameters(), lr=0.1)
+
+    with pytest.raises(RuntimeError, match="requires automatic optimization"):
+        _FedProxHandler().start_round(_trainer(optimizer), module, _fedprox_model())
+
+
+@pytest.mark.parametrize("precision", ["16-mixed", "64-true"])
+def test_fedprox_handler_rejects_unsupported_precision(precision):
+    module = SimpleNet()
+    optimizer = torch.optim.SGD(module.parameters(), lr=0.1)
+
+    with pytest.raises(RuntimeError, match="requires trainer.precision"):
+        _FedProxHandler().start_round(_trainer(optimizer, precision=precision), module, _fedprox_model())
+
+
+def test_fedprox_handler_rejects_scaler_backed_precision():
+    module = SimpleNet()
+    optimizer = torch.optim.SGD(module.parameters(), lr=0.1)
+    trainer = _trainer(optimizer)
+    trainer.precision_plugin = SimpleNamespace(scaler=object())
+
+    with pytest.raises(RuntimeError, match="scaler-backed precision"):
+        _FedProxHandler().start_round(trainer, module, _fedprox_model())
+
+
+def test_fedprox_handler_rejects_multiple_optimizers():
+    module = SimpleNet()
+    optimizers = [torch.optim.SGD(module.parameters(), lr=0.1) for _ in range(2)]
+
+    with pytest.raises(RuntimeError, match="exactly one optimizer"):
+        _FedProxHandler().start_round(_trainer(*optimizers), module, _fedprox_model())
+
+
+@pytest.mark.parametrize("optimizer_class", [torch.optim.LBFGS, torch.optim.SparseAdam])
+def test_fedprox_handler_rejects_unsupported_optimizer(optimizer_class):
+    module = SimpleNet()
+    optimizer = optimizer_class(module.parameters())
+
+    with pytest.raises(RuntimeError, match="does not support"):
+        _FedProxHandler().start_round(_trainer(optimizer), module, _fedprox_model())
+
+
+def test_fedprox_handler_rejects_optimizer_parameters_outside_module():
+    module = SimpleNet()
+    optimizer = torch.optim.SGD([nn.Parameter(torch.ones(1))], lr=0.1)
+
+    with pytest.raises(RuntimeError, match="not owned by the LightningModule"):
+        _FedProxHandler().start_round(_trainer(optimizer), module, _fedprox_model())
+
+
+def test_fedprox_handler_rejects_sparse_gradients_before_mutation():
+    module = SimpleNet()
+    optimizer = torch.optim.SGD(module.parameters(), lr=0.1)
+    handler = _FedProxHandler()
+    handler.start_round(_trainer(optimizer), module, _fedprox_model())
+    module.fc.weight.grad = torch.sparse_coo_tensor(
+        torch.tensor([[0], [0]]), torch.tensor([1.0]), size=module.fc.weight.shape
+    )
+
+    with pytest.raises(RuntimeError, match="requires dense gradients"):
+        handler.before_optimizer_step(optimizer)
+
+
+def test_fedprox_handler_rejects_mid_round_trainability_change():
+    module = SimpleNet()
+    optimizer = torch.optim.SGD(module.parameters(), lr=0.1)
+    handler = _FedProxHandler()
+    handler.start_round(_trainer(optimizer), module, _fedprox_model())
+    module.fc.bias.requires_grad_(False)
+
+    with pytest.raises(RuntimeError, match="trainability change"):
+        handler.before_optimizer_step(optimizer)
+
+
+def test_fedprox_handler_rejects_round_without_completed_step_and_cleans_snapshot():
+    module = SimpleNet()
+    optimizer = torch.optim.SGD(module.parameters(), lr=0.1)
+    handler = _FedProxHandler()
+    handler.start_round(_trainer(optimizer), module, _fedprox_model())
+
+    with pytest.raises(RuntimeError, match="at least one completed optimizer step"):
+        handler.finish_round(module)
+    assert handler._global_parameters is None
+
+
+def test_fedprox_handler_explains_interrupted_optimizer_hook_sequence():
+    module = SimpleNet()
+    optimizer = torch.optim.SGD(module.parameters(), lr=0.1)
+    handler = _FedProxHandler()
+    handler.start_round(_trainer(optimizer), module, _fedprox_model())
+    handler.before_optimizer_step(optimizer)
+
+    with pytest.raises(RuntimeError, match="did not call on_train_batch_end"):
+        handler.finish_round(module)
 
 
 def test_scaffold_handler_is_noop_without_scaffold_metadata():
@@ -566,6 +924,24 @@ def test_scaffold_handler_rejects_round_without_optimizer_step():
 
     with pytest.raises(RuntimeError, match="at least one completed optimizer step"):
         handler.finish_round(module)
+    assert handler.active is False
+    assert handler._model_global is None
+
+
+def test_scaffold_handler_cleans_round_state_when_terms_update_fails():
+    module = SimpleNet()
+    optimizer = torch.optim.SGD(module.parameters(), lr=0.1)
+    handler = _ScaffoldHandler()
+    handler.start_round(_trainer(optimizer), module, _scaffold_model(module))
+    handler.before_optimizer_step(optimizer)
+    handler.after_train_batch(module)
+
+    with patch.object(handler._helper, "terms_update", side_effect=RuntimeError("terms update failed")):
+        with pytest.raises(RuntimeError, match="terms update failed"):
+            handler.finish_round(module)
+
+    assert handler.active is False
+    assert handler._model_global is None
 
 
 def test_scaffold_handler_explains_interrupted_optimizer_hook_sequence():
@@ -725,11 +1101,53 @@ def test_mid_fit_validation_collects_metrics_without_receiving_or_reloading_mode
     assert callback.metrics == {"val_loss": 0.5}
 
 
-def test_real_lightning_fit_with_gradient_accumulation_returns_scaffold_controls():
+def test_real_lightning_fit_with_fedprox_and_gradient_accumulation():
     module = TinyLightningNet()
     input_model = FLModel(
         params=_clone_state_dict(module),
-        meta={AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL: _zero_controls(module)},
+        meta={AlgorithmConstants.FEDPROX_MU: 0.2},
+    )
+    train_loader = DataLoader(TensorDataset(torch.randn(4, 2), torch.tensor([0, 1, 0, 1])), batch_size=1)
+
+    with (
+        patch("nvflare.app_opt.lightning.api.init"),
+        patch("nvflare.app_opt.lightning.api.get_config", return_value={}),
+        patch("nvflare.app_opt.lightning.api.receive", return_value=input_model),
+        patch("nvflare.app_opt.lightning.api.is_train", return_value=True),
+        patch("nvflare.app_opt.lightning.api.is_evaluate", return_value=False),
+        patch("nvflare.app_opt.lightning.api.is_submit_model", return_value=False),
+        patch("nvflare.app_opt.lightning.api.send") as send,
+        patch("nvflare.app_opt.lightning.api.clear"),
+    ):
+        callback = FLCallback(rank=0)
+        trainer = pl.Trainer(
+            max_epochs=1,
+            accumulate_grad_batches=2,
+            callbacks=[callback],
+            logger=False,
+            enable_checkpointing=False,
+            enable_progress_bar=False,
+            enable_model_summary=False,
+            num_sanity_val_steps=0,
+        )
+        trainer.fit(module, train_dataloaders=train_loader)
+
+    output_model = send.call_args.args[0]
+    assert output_model.meta[MetaKey.NUM_STEPS_CURRENT_ROUND] == 2
+    assert AlgorithmConstants.SCAFFOLD_CTRL_DIFF not in output_model.meta
+    handler = callback._algorithm_handler_manager._handlers[AlgorithmConstants.FEDPROX_MU]
+    assert handler.active is False
+    assert handler._global_parameters is None
+
+
+def test_real_lightning_fit_with_scaffold_fedprox_and_gradient_accumulation_returns_controls():
+    module = TinyLightningNet()
+    input_model = FLModel(
+        params=_clone_state_dict(module),
+        meta={
+            AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL: _zero_controls(module),
+            AlgorithmConstants.FEDPROX_MU: 0.2,
+        },
     )
     train_loader = DataLoader(TensorDataset(torch.randn(4, 2), torch.tensor([0, 1, 0, 1])), batch_size=1, shuffle=False)
 
@@ -759,14 +1177,20 @@ def test_real_lightning_fit_with_gradient_accumulation_returns_scaffold_controls
     output_model = send.call_args.args[0]
     assert AlgorithmConstants.SCAFFOLD_CTRL_DIFF in output_model.meta
     assert output_model.meta[MetaKey.NUM_STEPS_CURRENT_ROUND] == 2
-    assert callback._algorithm_handler_manager._handler._helper.cnt == 2
+    scaffold_handler = callback._algorithm_handler_manager._handlers[AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL]
+    fedprox_handler = callback._algorithm_handler_manager._handlers[AlgorithmConstants.FEDPROX_MU]
+    assert scaffold_handler._helper.cnt == 2
+    assert fedprox_handler.active is False
 
 
 def test_real_lightning_train_with_evaluation_reuses_scaffold_model_and_returns_metrics():
     module = TinyLightningNet()
     input_model = FLModel(
         params=_clone_state_dict(module),
-        meta={AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL: _zero_controls(module)},
+        meta={
+            AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL: _zero_controls(module),
+            AlgorithmConstants.FEDPROX_MU: 0.2,
+        },
     )
     loader = DataLoader(TensorDataset(torch.randn(4, 2), torch.tensor([0, 1, 0, 1])), batch_size=1, shuffle=False)
 
