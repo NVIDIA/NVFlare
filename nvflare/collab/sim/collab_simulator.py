@@ -23,8 +23,8 @@ from nvflare.collab.api.constants import MAKE_CLIENT_APP_METHOD, BackendType
 from nvflare.collab.api.dec import get_object_publish_interface
 from nvflare.collab.api.proxy_utils import create_proxy_with_children
 from nvflare.collab.api.run_server import run_server
-from nvflare.collab.api.subprocess_backend import SubprocessBackend
-from nvflare.collab.sim.backend import SimBackend
+from nvflare.collab.backends.subprocess_backend import SubprocessBackend
+from nvflare.collab.backends.sim_backend import SimBackend
 from nvflare.collab.sim.ws import SimWorkspace
 from nvflare.collab.sys.subprocess_launcher import SubprocessLauncher
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell

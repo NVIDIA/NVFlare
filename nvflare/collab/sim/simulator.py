@@ -22,7 +22,7 @@ from nvflare.collab.api.constants import MAKE_CLIENT_APP_METHOD, BackendType
 from nvflare.collab.api.dec import get_object_publish_interface
 from nvflare.collab.api.proxy import Proxy
 from nvflare.collab.api.run_server import run_server
-from nvflare.collab.sim.backend import SimBackend
+from nvflare.collab.backends.sim_backend import SimBackend
 from nvflare.collab.sim.ws import SimWorkspace
 from nvflare.fuel.utils.log_utils import get_obj_logger
 

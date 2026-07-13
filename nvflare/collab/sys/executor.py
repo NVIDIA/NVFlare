@@ -26,10 +26,10 @@ from nvflare.collab.api.app import ClientApp
 from nvflare.collab.api.constants import MAKE_CLIENT_APP_METHOD, BackendType
 from nvflare.collab.api.proxy import Proxy
 from nvflare.collab.utils.decomposers import register_available_decomposers
+from nvflare.collab.backends.flare_backend import FlareBackend
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 
 from .adaptor import CollabAdaptor
-from .backend import FlareBackend
 from .constants import SYNC_TASK_NAME, SyncKey
 from .subprocess_launcher import SubprocessLauncher
 from .utils import prepare_for_remote_call, prepare_for_subprocess_call

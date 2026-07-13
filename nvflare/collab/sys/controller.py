@@ -25,10 +25,10 @@ from nvflare.collab.api.app import ServerApp
 from nvflare.collab.api.constants import BackendType
 from nvflare.collab.api.proxy import Proxy
 from nvflare.collab.api.run_server import run_server
+from nvflare.collab.backends.flare_backend import FlareBackend
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 
 from .adaptor import CollabAdaptor
-from .backend import FlareBackend
 from .constants import SYNC_TASK_NAME, SyncKey
 from .utils import prepare_for_remote_call
 from .ws import FlareWorkspace

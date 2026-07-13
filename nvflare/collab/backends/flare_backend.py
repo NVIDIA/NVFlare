@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.collab.api.backend import Backend
+from nvflare.collab.backends.backend import Backend
 from nvflare.collab.api.call_opt import CallOption
 from nvflare.collab.api.ctx import set_call_context
 from nvflare.collab.api.gcc import GroupCallContext
@@ -20,7 +20,7 @@ from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.message import Message
 from nvflare.security.logging import secure_log_traceback
 
-from .constants import MSG_CHANNEL, MSG_TOPIC, CallReplyKey, ObjectCallKey
+from nvflare.collab.sys.constants import MSG_CHANNEL, MSG_TOPIC, CallReplyKey, ObjectCallKey
 
 
 class FlareBackend(Backend):

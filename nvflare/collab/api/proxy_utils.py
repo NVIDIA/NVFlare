@@ -20,7 +20,7 @@ between AppRunner (simulation path) and CollabExecutor (FLARE path).
 
 from typing import Dict, Optional
 
-from nvflare.collab.api.backend import Backend
+from nvflare.collab.backends.backend import Backend
 from nvflare.collab.api.proxy import Proxy
 
 

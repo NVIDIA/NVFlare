@@ -520,7 +520,7 @@ class Backend:
         pass
 ```
 
-### SimBackend (`nvflare/collab/sim/backend.py`)
+### SimBackend (`nvflare/collab/backends/sim_backend.py`)
 
 Thread-based backend for simulation.
 
@@ -543,7 +543,7 @@ Thread-based backend for simulation.
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### FlareBackend (`nvflare/collab/sys/backend.py`)
+### FlareBackend (`nvflare/collab/backends/flare_backend.py`)
 
 CellNet-based backend for distributed execution.
 
@@ -1048,14 +1048,18 @@ nvflare/collab/
 │   ├── proxy_list.py      # ProxyList
 │   └── run_server.py      # Server execution logic
 │
+├── backends/              # Backend Layer
+│   ├── backend.py         # Backend (abstract base)
+│   ├── sim_backend.py     # SimBackend (in-process threads)
+│   ├── subprocess_backend.py  # SubprocessBackend (worker subprocess)
+│   └── flare_backend.py   # FlareBackend (CellNet, distributed)
+│
 ├── sim/                   # Simulation Layer
-│   ├── backend.py         # SimBackend
 │   ├── collab_simulator.py    # CollabSimulator
 │   └── in_process_env.py         # InProcessEnv
 │
 ├── sys/                   # System/Runtime Layer
 │   ├── adaptor.py         # CollabAdaptor
-│   ├── backend.py         # FlareBackend
 │   ├── controller.py      # CollabController
 │   ├── executor.py        # CollabExecutor
 │   ├── multi_process_env.py         # MultiProcessEnv
