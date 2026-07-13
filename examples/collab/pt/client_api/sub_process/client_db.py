@@ -18,7 +18,7 @@ This example uses dist.broadcast to sync model parameters across ranks.
 This is more efficient than checkpoint-based sync (no disk I/O).
 
 Launch with:
-    torchrun --nproc_per_node=2 -m nvflare.collab.sys.worker ...
+    torchrun --nproc_per_node=2 -m nvflare.collab.flare.worker ...
 """
 
 import torch

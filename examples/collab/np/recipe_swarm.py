@@ -13,7 +13,7 @@
 # limitations under the License.
 from collab import export_recipe
 from collab.np.mains.swarm import NPSwarm, NPSwarmClient
-from nvflare.collab.sys.recipe import CollabRecipe
+from nvflare.collab.flare.recipe import CollabRecipe
 
 
 def main():

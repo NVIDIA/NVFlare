@@ -213,7 +213,7 @@ as standard NVFlare. The framework automatically routes to `CollabClientAPI` via
 
 ### Core Components
 
-#### CollabRecipe (`nvflare/collab/sys/recipe.py`)
+#### CollabRecipe (`nvflare/collab/flare/recipe.py`)
 
 Job configuration and orchestration entry point.
 
@@ -475,7 +475,7 @@ In-process thread-based simulation.
 - No network overhead
 - Shared memory between components
 
-### MultiProcessEnv (`nvflare/collab/sys/multi_process_env.py`)
+### MultiProcessEnv (`nvflare/collab/flare/multi_process_env.py`)
 
 Multi-process **local** execution using POC infrastructure.
 
@@ -584,7 +584,7 @@ CellNet-based backend for distributed execution.
 
 ### Components
 
-#### SubprocessLauncher (`nvflare/collab/sys/subprocess_launcher.py`)
+#### SubprocessLauncher (`nvflare/collab/flare/subprocess_launcher.py`)
 
 Runs within `CollabExecutor` to manage subprocess.
 
@@ -607,7 +607,7 @@ launcher.stop()
 - Forward method calls to worker
 - Manage subprocess lifecycle
 
-#### CollabWorker (`nvflare/collab/sys/worker.py`)
+#### CollabWorker (`nvflare/collab/flare/worker.py`)
 
 Runs in the subprocess, connects back to parent. Supports two execution modes:
 
@@ -712,7 +712,7 @@ Server calls `execute()`/`stop()` on CollabClientAPI. Worker runs user script di
 │  │                          SubprocessLauncher                                     │ │
 │  │                                                                                 │ │
 │  │  1. Set ENV vars: COLLAB_PARENT_URL, COLLAB_PARENT_FQCN, COLLAB_CLIENT_CLASS, etc.      │ │
-│  │  2. Spawn: torchrun --nproc_per_node=4 -m nvflare.collab.sys.worker my_training   │ │
+│  │  2. Spawn: torchrun --nproc_per_node=4 -m nvflare.collab.flare.worker my_training   │ │
 │  │  3. Wait for ready signal                                                       │ │
 │  │  4. Forward calls via CellNet (collab_worker/call)                                │ │
 │  │                                                                                 │ │
@@ -1059,7 +1059,7 @@ nvflare/collab/
 │   ├── in_process_env.py  # InProcessEnv
 │   └── ws.py              # LocalWorkspace
 │
-├── sys/                   # System/Runtime Layer
+├── flare/                 # FLARE-Runtime Integration Layer
 │   ├── adaptor.py         # CollabAdaptor
 │   ├── controller.py      # CollabController
 │   ├── executor.py        # CollabExecutor
@@ -1478,7 +1478,7 @@ recipe.execute(env)
 
 ```python
 # client.py - works for single-node and multi-node
-from nvflare.collab.sys.worker import get_client_api
+from nvflare.collab.flare.worker import get_client_api
 import torch.distributed as dist
 
 flare = get_client_api()

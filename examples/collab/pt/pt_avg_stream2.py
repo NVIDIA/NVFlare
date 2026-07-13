@@ -21,7 +21,7 @@ from nvflare.collab.api.utils import simple_logging
 from collab import get_experiment_root
 from collab.pt.utils import parse_state_dict
 from nvflare.collab.local.runner import InProcessRunner
-from nvflare.collab.sys.downloader import Downloader, download_tensors
+from nvflare.collab.flare.downloader import Downloader, download_tensors
 from nvflare.collab.utils.tensor_receiver import TensorReceiver
 from nvflare.fuel.utils.log_utils import get_obj_logger
 

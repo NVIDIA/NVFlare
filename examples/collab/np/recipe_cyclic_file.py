@@ -15,7 +15,7 @@ from collab import export_recipe
 from collab.np.cyclic_file import prepare_data_dir
 from collab.np.mains.client import NPTrainer
 from collab.np.mains.strategies.cyclic import NPCyclic
-from nvflare.collab.sys.recipe import CollabRecipe
+from nvflare.collab.flare.recipe import CollabRecipe
 
 
 def main():

@@ -14,7 +14,7 @@
 from nvflare.app_opt.pt.decomposers import TensorDecomposer
 from collab import export_recipe
 from collab.pt.pt_avg_filter import PTFedAvg, PTTrainer
-from nvflare.collab.sys.recipe import CollabRecipe
+from nvflare.collab.flare.recipe import CollabRecipe
 
 
 def main():

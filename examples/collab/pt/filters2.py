@@ -14,7 +14,7 @@
 from typing import Any
 
 from nvflare.collab import collab
-from nvflare.collab.sys.downloader import Downloader, download_tensors
+from nvflare.collab.flare.downloader import Downloader, download_tensors
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 

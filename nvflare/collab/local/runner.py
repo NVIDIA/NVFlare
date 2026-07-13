@@ -26,7 +26,7 @@ from nvflare.collab.api.run_server import run_server
 from nvflare.collab.backends.subprocess_backend import SubprocessBackend
 from nvflare.collab.backends.local_backend import LocalBackend
 from nvflare.collab.local.ws import LocalWorkspace
-from nvflare.collab.sys.subprocess_launcher import SubprocessLauncher
+from nvflare.collab.flare.subprocess_launcher import SubprocessLauncher
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.utils.log_utils import get_obj_logger
 

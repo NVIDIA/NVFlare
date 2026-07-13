@@ -13,7 +13,7 @@
 # limitations under the License.
 from collab import export_recipe
 from collab.pt.pt_avg_stream import PTFedAvgStream, PTTrainer
-from nvflare.collab.sys.recipe import CollabRecipe
+from nvflare.collab.flare.recipe import CollabRecipe
 
 
 def main():

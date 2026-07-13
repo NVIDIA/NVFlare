@@ -13,7 +13,7 @@
 # limitations under the License.
 from nvflare.collab import collab
 from nvflare.collab.api.gcc import GroupCallContext
-from nvflare.collab.sys.downloader import download_tensors
+from nvflare.collab.flare.downloader import download_tensors
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
