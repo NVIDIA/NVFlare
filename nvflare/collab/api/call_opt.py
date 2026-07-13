@@ -17,7 +17,7 @@ class CallOption:
         self,
         expect_result: bool = True,
         blocking: bool = True,
-        timeout: float = 5.0,
+        timeout: float = 60.0,
         secure: bool = False,
         optional: bool = False,
         target=None,
