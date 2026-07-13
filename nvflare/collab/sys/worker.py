@@ -377,9 +377,10 @@ class CollabWorker:
                 register_available_decomposers()
 
                 # Create CollabClientAPI instance
-                from nvflare.client.in_process.publish_api import CollabClientAPI
+                from nvflare.client.in_process.collab_api import CollabClientAPI
 
                 _client_api = CollabClientAPI()
+                _client_api._sys_info["site_name"] = self.site_name
                 self.training_app = _client_api
 
                 # Create CellNet and register handlers
@@ -398,24 +399,29 @@ class CollabWorker:
                 self.logger.info("Rank 0: CellNet ready, running training script...")
             else:
                 # Other ranks: create a local CollabClientAPI for DDP sync
-                from nvflare.client.in_process.publish_api import CollabClientAPI
+                from nvflare.client.in_process.collab_api import CollabClientAPI
 
                 _client_api = CollabClientAPI()
+                _client_api._sys_info["site_name"] = self.site_name
                 self.logger.info(f"Rank {self.rank}: running training script (will sync with rank 0)")
 
-            # IMPORTANT: When running with -m, this module may be pre-imported into sys.modules
-            # before execution starts. The pre-imported version has _client_api=None.
-            # We need to update the existing module's _client_api attribute so that when
-            # client scripts import it, they get the correct instance.
+            # Set up the unified Client API pattern:
+            # 1. Set environment variable so nvflare.client uses Collab API
+            # 2. Set the global API instance in the Collab client API module
+            os.environ["CLIENT_API_TYPE"] = "COLLAB_SUBPROCESS_API"
+
+            from nvflare.client.in_process import collab_client_api_module
+
+            collab_client_api_module.set_api(_client_api)
+
+            # Also update the legacy worker module for backward compatibility
             import sys
 
             worker_module_name = "nvflare.collab.sys.worker"
             worker_module = sys.modules.get(worker_module_name)
             if worker_module:
-                # Update the existing module's _client_api attribute
                 worker_module._client_api = _client_api
             else:
-                # Module not in sys.modules yet - register __main__ as the worker module
                 this_module = sys.modules.get("__main__")
                 if this_module:
                     sys.modules[worker_module_name] = this_module

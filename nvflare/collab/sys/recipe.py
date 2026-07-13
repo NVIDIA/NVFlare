@@ -16,11 +16,11 @@ import inspect
 import os
 import sys
 from types import ModuleType
-from typing import List
+from typing import Dict, List, Optional
 
 from nvflare.collab.api.app import App, ClientApp, ServerApp
 from nvflare.collab.api.filter import FilterChain
-from nvflare.collab.api.module_wrapper import ModuleWrapper
+from nvflare.collab.api.module_wrapper import ModuleWrapper, get_importable_module_name
 from nvflare.fuel.utils.validation_utils import check_positive_int, check_positive_number, check_str
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import ExecEnv, Recipe
@@ -29,78 +29,132 @@ from .controller import CollabController
 from .executor import CollabExecutor
 
 
+def _get_caller_module(stack_level: int = 2) -> Optional[ModuleType]:
+    """Get the module of the caller."""
+    frame = inspect.currentframe()
+    try:
+        for _ in range(stack_level):
+            if frame is not None:
+                frame = frame.f_back
+        if frame is not None:
+            module_name = frame.f_globals.get("__name__", "__main__")
+            return sys.modules.get(module_name)
+    finally:
+        del frame
+    return None
+
+
+def _wrap_if_module(obj):
+    """Wrap a module so its decorated functions can be used as app methods."""
+    if isinstance(obj, ModuleType):
+        return ModuleWrapper(obj)
+    return obj
+
+
 class CollabRecipe(Recipe):
 
     def __init__(
         self,
         job_name: str,
-        server: object = None,
-        client: object = None,
-        server_objects: dict[str, object] = None,
-        client_objects: dict[str, object] = None,
+        server: Optional[object] = None,
+        client: Optional[object] = None,
+        server_objects: Optional[Dict[str, object]] = None,
+        client_objects: Optional[Dict[str, object]] = None,
         sync_task_timeout=5,
         max_call_threads_for_server=100,
         max_call_threads_for_client=100,
         min_clients: int = 1,
+        inprocess: bool = True,
+        run_cmd: Optional[str] = None,
+        training_module: Optional[str] = None,
+        subprocess_timeout: float = 300.0,
     ):
+        """Create a recipe for in-process or subprocess collaborative training."""
         check_str("job_name", job_name)
         check_positive_number("sync_task_timeout", sync_task_timeout)
         check_positive_int("max_call_threads_for_server", max_call_threads_for_server)
         check_positive_int("max_call_threads_for_client", max_call_threads_for_client)
         check_positive_int("min_clients", min_clients)
 
-        # When server/client are not specified, use the calling script's module
+        # When server/client are not specified, use the caller's module
         # (@collab.main / @collab.publish functions defined at module level).
         # Raw modules are wrapped with ModuleWrapper to make them callable and
         # serializable (only the importable module name is stored).
-        if server is None:
-            server = sys.modules["__main__"]
-        if client is None:
-            client = sys.modules["__main__"]
-        if isinstance(server, ModuleType):
-            server = ModuleWrapper(server)
-        if isinstance(client, ModuleType):
-            client = ModuleWrapper(client)
+        if server is None or client is None:
+            caller_module = _get_caller_module(stack_level=2)
+            if server is None:
+                server = caller_module
+            if client is None:
+                client = caller_module
 
         self.job_name = job_name
-        self.server_app = ServerApp(server)
-        self.client_app = ClientApp(client)
+        self.server = _wrap_if_module(server)
+        self.client = _wrap_if_module(client)
+        self.server_objects = {k: _wrap_if_module(v) for k, v in server_objects.items()} if server_objects else None
+        self.client_objects = {k: _wrap_if_module(v) for k, v in client_objects.items()} if client_objects else None
+        self.server_app = ServerApp(self.server)
+        self.client_app = ClientApp(self.client)
 
-        self.server_objects = dict(server_objects) if server_objects else None
-        self.client_objects = dict(client_objects) if client_objects else None
-
-        if server_objects:
-            for name, obj in server_objects.items():
+        if self.server_objects:
+            for name, obj in self.server_objects.items():
                 self.server_app.add_collab_object(name, obj)
 
-        if client_objects:
-            for name, obj in client_objects.items():
+        if self.client_objects:
+            for name, obj in self.client_objects.items():
                 self.client_app.add_collab_object(name, obj)
 
         self.sync_task_timeout = sync_task_timeout
         self.max_call_threads_for_server = max_call_threads_for_server
         self.max_call_threads_for_client = max_call_threads_for_client
         self.min_clients = min_clients
+        self.inprocess = inprocess
+        self.run_cmd = run_cmd
+        self.subprocess_timeout = subprocess_timeout
+        self.training_module = training_module or self._detect_training_module(self.client)
 
         job = FedJob(name=self.job_name, min_clients=self.min_clients)
         Recipe.__init__(self, job)
 
+    def _detect_training_module(self, client_obj) -> Optional[str]:
+        """Detect the importable training module used by a subprocess worker."""
+        if self.inprocess:
+            return None
+
+        if isinstance(client_obj, ModuleWrapper):
+            return client_obj.module_name
+
+        if hasattr(client_obj, "__class__") and hasattr(client_obj.__class__, "__module__"):
+            module_name = client_obj.__class__.__module__
+            if module_name and not module_name.startswith("builtins"):
+                module = sys.modules.get(module_name)
+                return get_importable_module_name(module) if module else module_name
+
+        raise RuntimeError(
+            f"Failed to auto-detect training module from client object {type(client_obj)}. "
+            "This is an internal error - please report it."
+        )
+
     def process_env(self, env: ExecEnv):
-        """Hand the recipe's collab objects to the execution environment.
+        """Hand the recipe's collab objects and execution settings to the env.
 
         Collab execution environments (InProcessEnv, MultiProcessEnv) build their
         runtime from the same server/client objects the recipe is configured with,
-        so users only need to specify them on the recipe. Values explicitly set on
-        the env take precedence.
+        so users only need to specify them on the recipe. Objects explicitly set
+        on the env take precedence; subprocess/exec-mode settings specified on
+        the recipe are authoritative.
         """
         for attr, value in (
-            ("server", self.server_app.obj),
-            ("client", self.client_app.obj),
+            ("server", self.server),
+            ("client", self.client),
             ("server_objects", self.server_objects),
             ("client_objects", self.client_objects),
         ):
             if hasattr(env, attr) and getattr(env, attr) is None:
                 setattr(env, attr, value)
+
+        for attr in ("inprocess", "run_cmd", "training_module", "subprocess_timeout"):
+            if hasattr(env, attr):
+                setattr(env, attr, getattr(self, attr))
 
     def set_server_prop(self, name: str, value):
         self.server_app.set_prop(name, value)
@@ -176,6 +230,10 @@ class CollabRecipe(Recipe):
             max_call_threads=self.max_call_threads_for_client,
             props=self.client_app.get_props(),
             resource_dirs=self.client_app.get_resource_dirs(),
+            inprocess=self.inprocess,
+            run_cmd=self.run_cmd,
+            training_module=self.training_module,
+            subprocess_timeout=self.subprocess_timeout,
         )
         job.to_clients(executor, id="executor", tasks=["*"])
 

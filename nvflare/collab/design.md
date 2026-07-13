@@ -190,9 +190,9 @@ def fed_avg(self):
         weights = aggregate(results)
     collab.clients.stop()  # Signal clients to stop
 
-# Client-side (client.py) - runs top-to-bottom, no decorators
-from nvflare.collab.sys.worker import get_client_api
-flare = get_client_api()
+# Client-side (client.py) - SAME import as standard NVFlare Client API!
+import nvflare.client as flare  # Works for Collab and standard FLARE
+
 flare.init()
 
 while flare.is_running():
@@ -203,6 +203,9 @@ while flare.is_running():
     output_model = FLModel(params=new_weights, metrics={"loss": loss})
     flare.send(output_model)
 ```
+
+**Key Feature**: The client training script uses `import nvflare.client as flare` - the **same import**
+as standard NVFlare. The framework automatically routes to `CollabClientAPI` via environment variables.
 
 ---
 
@@ -228,7 +231,7 @@ recipe = CollabRecipe(
     max_call_threads_for_client=100,
 )
 
-# Client API: pass the CollabClientAPI bridge as the client
+# Client API (explicit training_module for subprocess)
 from nvflare.client.in_process.collab_api import CollabClientAPI
 
 recipe = CollabRecipe(
@@ -239,21 +242,21 @@ recipe = CollabRecipe(
 )
 ```
 
-> **Note:** Execution mode is **not** a recipe parameter. In-process vs subprocess
-> execution (`inprocess`, `run_cmd`, `subprocess_timeout`) is configured on the
-> **execution environment** (`InProcessEnv`) — see "Layer 3: Execution Environment Layer".
-
 **Key Parameters:**
 
 | Parameter | Description |
 |-----------|-------------|
 | `job_name` | Name of the generated FLARE job |
-| `server` | Server object/module with `@collab.main` methods |
-| `client` | Client object/module with `@collab.publish` methods, or `CollabClientAPI()` |
+| `server` | Server object/module with `@collab.main` methods (defaults to the caller's module) |
+| `client` | Client object/module with `@collab.publish` methods, or `CollabClientAPI()` (defaults to the caller's module) |
 | `server_objects` / `client_objects` | Optional dicts of extra named objects on each side |
 | `min_clients` | Minimum number of clients required to start |
 | `sync_task_timeout` | Timeout (seconds) for synchronous task coordination |
 | `max_call_threads_for_server` / `max_call_threads_for_client` | Thread-pool sizes for remote calls |
+| `inprocess` | True (default) runs client code in-process; False launches a subprocess worker |
+| `run_cmd` | Subprocess launcher command (e.g., `torchrun --nproc_per_node=4`) |
+| `training_module` | Importable training module for the subprocess worker (auto-detected from `client` if omitted) |
+| `subprocess_timeout` | Timeout (seconds) for subprocess operations |
 
 **Key Responsibilities:**
 - Wrap the server/client objects or modules into `ServerApp` / `ClientApp` (via `ModuleWrapper`)
@@ -355,14 +358,23 @@ Client API pattern.
 | **In-Process** | Direct variable storage | Simple simulation, no subprocess |
 | **Subprocess** | Queue-based bridging | Multi-GPU (torchrun), DDP |
 
-**In-Process Mode (Simple Adapter):**
+**In-Process Mode (Simple Adapter with Contextvars):**
 
 ```python
-# No queues, no threading - just variable assignment
+# No queues, no threading - uses contextvars for client isolation
+from contextvars import ContextVar
+
+_current_api: ContextVar = ContextVar("collab_client_api", default=None)
+
 class CollabClientAPI:
-    @collab
+    @collab.publish
     def execute(self, fl_model, ...):
         self._current_model = fl_model    # Store for receive()
+
+        # Set API instance in context variable (per-client isolation)
+        os.environ["CLIENT_API_TYPE"] = "COLLAB_IN_PROCESS_API"
+        _current_api.set(self)
+
         self._training_func()             # User code runs here
         return self._result               # Return what send() stored
     
@@ -372,6 +384,10 @@ class CollabClientAPI:
     def send(self, model):
         self._result = model              # Direct storage
 ```
+
+**Why Contextvars?** When running multiple clients in the same process (SimEnv), each client
+needs its own isolated `CollabClientAPI` instance. Python's `contextvars` provides this isolation
+without global state pollution.
 
 **Subprocess Mode (Queue-Based):**
 
@@ -620,6 +636,13 @@ Runs in the subprocess, connects back to parent. Supports two execution modes:
 - For Collab API: Load module, wait for RPC calls
 - For Client API: Instantiate `CollabClientAPI`, run user script
 - Handle DDP rank coordination (only rank 0 communicates)
+
+**Key Implementation Details for DDP:**
+- Rank 0 connects to parent, signals ready, handles RPC calls
+- Non-rank-0 processes run training script but skip FL communication
+- `receive()` returns `None` immediately for non-rank-0 (prevents deadlock)
+- `is_running()` always returns `True` for non-rank-0 (relies on broadcast from rank 0)
+- All ranks must use helper functions (e.g., `receive_with_checkpoint()`) to synchronize
 
 ### Subprocess Architecture
 
@@ -924,6 +947,29 @@ CollabRecipe
 
 ## Execution Modes
 
+### All Supported Combinations
+
+Collab supports 8 execution combinations across two dimensions:
+- **Environment**: InProcessEnv (simulation) vs MultiProcessEnv/production (real deployment)
+- **Execution**: In-process vs Subprocess
+- **API Pattern**: Collab API (@collab.publish) vs Client API (receive/send)
+
+| # | Environment | Execution | API Pattern | Code Path |
+|---|-------------|-----------|-------------|-----------|
+| 1 | **InProcessEnv** | In-process | Client API | CollabSimulator → SimBackend → CollabClientAPI.execute() → contextvars |
+| 2 | **InProcessEnv** | Subprocess | Client API | CollabSimulator → SubprocessBackend → CollabWorker → `import nvflare.client` |
+| 3 | **InProcessEnv** | In-process | Collab API | CollabSimulator → SimBackend → direct @collab.publish calls |
+| 4 | **InProcessEnv** | Subprocess | Collab API | CollabSimulator → SubprocessBackend → CollabWorker → RPC calls |
+| 5 | **MultiProcessEnv** | In-process | Client API | CollabExecutor → prepare_for_remote_call → CollabClientAPI.execute() |
+| 6 | **MultiProcessEnv** | Subprocess | Client API | CollabExecutor → SubprocessLauncher → CollabWorker → `import nvflare.client` |
+| 7 | **MultiProcessEnv** | In-process | Collab API | CollabExecutor → prepare_for_remote_call → direct @collab.publish calls |
+| 8 | **MultiProcessEnv** | Subprocess | Collab API | CollabExecutor → SubprocessLauncher → CollabWorker → RPC calls |
+
+**Multi-GPU (DDP) Considerations:**
+- Subprocess modes (2, 4, 6, 8) support multi-GPU via `torchrun`
+- Collab API subprocess (4, 8): Only rank 0 receives RPC calls; must coordinate with other ranks
+- Client API subprocess (2, 6): All ranks run the training script; only rank 0 communicates with server
+
 ### Mode 1: In-Process Simulation (InProcessEnv)
 
 ```python
@@ -1047,27 +1093,207 @@ cd examples
 PYTHONPATH=. python collab/pt/collab_api/in_process/collab_fedavg_train.py
 ```
 
+Client API (receive/send) examples under `examples/collab/pt/client_api/`:
+
+```
+client_api/
+├── in_process/           # In-process Client API
+│   ├── server.py         # @collab.main server with execute()/stop()
+│   ├── client.py         # Training with `import nvflare.client as flare`
+│   └── job.py            # CollabRecipe with CollabClientAPI + set_training_func
+│
+└── sub_process/          # Subprocess Client API (multi-GPU/DDP)
+    ├── server.py         # @collab.main server
+    ├── client.py         # DDP training with checkpoint sync
+    ├── client_db.py      # DDP training with dist.broadcast sync
+    ├── job.py            # CollabRecipe for checkpoint sync example
+    ├── job_db.py         # CollabRecipe for dist.broadcast example
+    ├── ddp_utils.py      # Helper functions for DDP synchronization
+    ├── distributed_train.py             # Standalone torchrun DDP script
+    └── sim_distributed_fedavg_train.py  # Standalone DDP simulation
+```
+
 ---
 
 ## Implementation Notes
 
+### Unified Client API Architecture
+
+The Client API uses a single import (`import nvflare.client as flare`) that works across
+all execution modes. This is achieved through environment-based routing:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                    Unified Client API: One Import, Multiple Backends                 │
+│                                                                                      │
+│   User Code:  import nvflare.client as flare                                        │
+│               flare.init() → flare.receive() → flare.send()                         │
+│                                          │                                           │
+│                                          ▼                                           │
+│   ┌──────────────────────────────────────────────────────────────────────────────┐  │
+│   │                         nvflare.client.api.init()                             │  │
+│   │                                                                               │  │
+│   │   Checks CLIENT_API_TYPE environment variable                                 │  │
+│   │                                                                               │  │
+│   │   ┌────────────────────────────────────────────────────────────────────────┐ │  │
+│   │   │                                                                        │ │  │
+│   │   │   IN_PROCESS_API        → InProcessClientAPI (DataBus)                 │ │  │
+│   │   │   EX_PROCESS_API        → ExProcessClientAPI (config file)             │ │  │
+│   │   │   COLLAB_IN_PROCESS_API → CollabClientAPI (contextvars)                │ │  │
+│   │   │   COLLAB_SUBPROCESS_API → CollabClientAPI (contextvars)                │ │  │
+│   │   │                                                                        │ │  │
+│   │   └────────────────────────────────────────────────────────────────────────┘ │  │
+│   └──────────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                      │
+│   Collab modes use collab_client_api_module.get_api(), returning the                │
+│   CollabClientAPI instance set via contextvars (proper per-client isolation)        │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Key Files:**
+- `nvflare/client/api.py` - Entry point, routes based on `CLIENT_API_TYPE`
+- `nvflare/client/api_context.py` - `ClientAPIType` enum, `APIContext` creation
+- `nvflare/client/in_process/collab_client_api_module.py` - Contextvars-based global state
+- `nvflare/client/in_process/collab_api.py` - `CollabClientAPI` implementation
+
 ### Client API Mode: Key Implementation Details
 
-1. **`make_client_app()` Method**: Required for Client API mode because `CollabClientAPI` contains
+1. **Unified Import Pattern**: User training scripts use `import nvflare.client as flare` which
+   works for both standard NVFlare and Collab. The framework sets `CLIENT_API_TYPE` environment
+   variable before running user code, routing API calls to the correct implementation.
+
+2. **Contextvars for Isolation**: When multiple clients run in the same process (SimEnv),
+   each client's `CollabClientAPI` instance is stored in a `ContextVar`. This provides proper
+   isolation without global state pollution.
+
+3. **`make_client_app()` Method**: Required for Client API mode because `CollabClientAPI` contains
    unpickleable objects (threading `Queue`, `Lock`). The simulator calls this method to create
    fresh instances for each client instead of using `deepcopy()`.
 
-2. **`get_client_api()` Function**: Enables user scripts to access the `CollabClientAPI` instance
-   created by `CollabWorker`. This bridges the gap between the worker's internal state and the
-   user's training script.
+4. **Subprocess API Setup**: `CollabWorker` in Client API mode:
+   - Creates `CollabClientAPI` instance
+   - Sets `_sys_info["site_name"]` for proper client identification
+   - Sets `CLIENT_API_TYPE=COLLAB_SUBPROCESS_API`
+   - Calls `collab_client_api_module.set_api(api)` to set contextvars
+   - Runs user script via `runpy.run_module()`
 
-3. **Module Import Handling**: When Python runs with `-m nvflare.collab.sys.worker`, the module
-   may be pre-imported. The worker explicitly updates `sys.modules['nvflare.collab.sys.worker']._client_api`
-   to ensure `get_client_api()` returns the correct instance.
-
-4. **DDP Rank Coordination**: In Client API mode with DDP, only rank 0 communicates with the
+5. **DDP Rank Coordination**: In Client API mode with DDP, only rank 0 communicates with the
    server (via `receive()`/`send()`). Other ranks must participate in collective operations
    (like `dist.broadcast`) but don't directly interact with the FL system.
+
+6. **Non-Rank-0 Behavior in Subprocess Mode**: For subprocess DDP training:
+   - `receive()` returns `None` immediately for non-rank-0 processes (they sync via `dist.broadcast`)
+   - `is_running()` always returns `True` for non-rank-0 (they rely on rank 0 to broadcast stop signal)
+   - This prevents deadlocks where non-rank-0 would block waiting for server communication
+
+### DDP Synchronization Patterns
+
+When using Client API with DDP (subprocess mode), all ranks must participate in collective
+operations, but only rank 0 communicates with the FL server. This creates a synchronization
+challenge that can easily lead to deadlocks.
+
+**The Problem:**
+
+```
+┌───────────────────────────────────────────────────────────────────────────────────────┐
+│                    DDP Deadlock Scenario (What to Avoid)                               │
+│                                                                                        │
+│   Rank 0                              Rank 1, 2, 3...                                 │
+│   ────────                            ────────────────                                │
+│   flare.receive()  ← BLOCKS           Running training code...                        │
+│   waiting for server                  ...                                             │
+│                                       dist.broadcast() ← BLOCKS                       │
+│                                       waiting for rank 0                              │
+│                                                                                        │
+│   DEADLOCK: Rank 0 waits for server, other ranks wait for rank 0                      │
+└───────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**The Solution:**
+
+Collab provides helper functions in `ddp_utils.py` that handle synchronization correctly:
+
+```
+┌───────────────────────────────────────────────────────────────────────────────────────┐
+│                    Correct DDP Pattern with Helper Functions                           │
+│                                                                                        │
+│   Rank 0                              Rank 1, 2, 3...                                 │
+│   ────────                            ────────────────                                │
+│   1. flare.receive() → returns None   1. flare.receive() → returns None immediately  │
+│      or model from server                                                              │
+│                                                                                        │
+│   2. dist.barrier() ←─────────────────── dist.barrier()                               │
+│      (all ranks sync here)                                                             │
+│                                                                                        │
+│   3. Broadcast "continue" signal      3. Receive signal                               │
+│   4. If continuing:                   4. If continuing:                               │
+│      - Save checkpoint                   - Load checkpoint                            │
+│                                                                                        │
+│   5. dist.barrier() ←─────────────────── dist.barrier()                               │
+│                                                                                        │
+│   6. All ranks have model, proceed with DDP training                                  │
+│                                                                                        │
+│   7. Only rank 0 calls flare.send()   7. Other ranks skip send                        │
+└───────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Helper Functions (`nvflare/collab/examples/pt/client_api/sub_process/ddp_utils.py`)
+
+| Function | Description |
+|----------|-------------|
+| `receive_with_checkpoint()` | Uses temp files to sync model across ranks |
+| `receive_with_broadcast()` | Uses `dist.broadcast` to sync model parameters |
+
+**Option 1: Checkpoint-Based Sync**
+
+```python
+from ddp_utils import receive_with_checkpoint
+
+while True:
+    input_model, running = receive_with_checkpoint(rank, net)
+    if not running:
+        break
+
+    # All ranks have synchronized model
+    ddp_model = DDP(net)
+    # ... training ...
+
+    if rank == 0:
+        flare.send(output_model)
+```
+
+**Pros:** Simple, works with any model size
+**Cons:** Filesystem I/O overhead, requires shared filesystem
+
+**Option 2: dist.broadcast Sync**
+
+```python
+from ddp_utils import receive_with_broadcast
+
+while True:
+    input_model, running = receive_with_broadcast(rank, net)
+    if not running:
+        break
+
+    # All ranks have synchronized model
+    ddp_model = DDP(net)
+    # ... training ...
+
+    if rank == 0:
+        flare.send(output_model)
+```
+
+**Pros:** No filesystem I/O, direct GPU-to-GPU transfer (with NCCL)
+**Cons:** May use more GPU memory for large models
+
+**Choosing a Method:**
+
+| Scenario | Recommended Method |
+|----------|-------------------|
+| Small to medium models, NCCL backend | `receive_with_broadcast()` |
+| Very large models, memory constrained | `receive_with_checkpoint()` |
+| Mixed CPU/GPU, Gloo backend | `receive_with_checkpoint()` |
+| Shared filesystem available | Either works |
 
 ### Key Environment Variables
 
@@ -1078,6 +1304,22 @@ PYTHONPATH=. python collab/pt/collab_api/in_process/collab_fedavg_train.py
 | `COLLAB_SITE_NAME` | Client site name (e.g., `site-1`) |
 | `COLLAB_WORKER_ID` | Worker ID within the site |
 | `COLLAB_CLIENT_CLASS` | Client class name (determines execution mode) |
+| `CLIENT_API_TYPE` | Routes `nvflare.client` to correct implementation |
+
+**CLIENT_API_TYPE Values:**
+
+| Value | Description |
+|-------|-------------|
+| `IN_PROCESS_API` | Standard NVFlare in-process (DataBus-based) |
+| `EX_PROCESS_API` | Standard NVFlare external process (config file) |
+| `COLLAB_IN_PROCESS_API` | Collab in-process (contextvars-based) |
+| `COLLAB_SUBPROCESS_API` | Collab subprocess (contextvars-based) |
+
+This environment variable enables the **unified import pattern**:
+```python
+import nvflare.client as flare  # Works for all modes!
+```
+The `nvflare.client.api.init()` function checks `CLIENT_API_TYPE` and routes to the appropriate implementation.
 
 ---
 
@@ -1471,10 +1713,22 @@ class CheckpointManager:
 ### Implementation Checklist
 
 **Client API Enhancements:**
-- [x] Subprocess mode with queue-based bridging (Done)
-- [ ] In-process mode with direct variable adapter (no queues/threading)
-- [ ] `set_training_func()` for registering training callback
-- [ ] Mode auto-detection based on `inprocess` flag
+- [x] Subprocess mode with queue-based bridging
+- [x] In-process mode with direct variable adapter (no queues/threading)
+- [x] `set_training_func()` for registering training callback
+- [x] Mode auto-detection based on `inprocess` flag
+- [x] Contextvars-based API isolation for multiple clients in same process
+- [x] Unified `import nvflare.client as flare` pattern for all modes
+- [x] `CLIENT_API_TYPE` environment variable routing
+- [x] Non-rank-0 `receive()` returns immediately (prevents deadlock)
+- [x] Non-rank-0 `is_running()` always returns True (relies on broadcast)
+
+**DDP Synchronization Helpers:**
+- [x] `receive_with_checkpoint()` - checkpoint file-based model sync
+- [x] `receive_with_broadcast()` - `dist.broadcast` based model sync
+- [x] Site-specific checkpoint paths (avoids multi-client conflicts)
+- [x] Graceful shutdown without `target_unreachable` warnings
+- [x] Worker output visible in terminal (not hidden in debug logs)
 
 **HPC Support:**
 - [ ] `HpcEnv` execution environment
@@ -1745,4 +1999,3 @@ torch.save(personal_model.state_dict(), f"personal_{site_name}.pt")
 ## Additional Future Considerations
 
 1. **S3-API Model Transfer**: Offload large model transfers to object storage
-

@@ -42,7 +42,7 @@ from typing import Any, Dict, Optional
 from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.client.api_spec import APISpec
-from nvflare.collab.api.dec import collab
+from nvflare.collab.api.dec import publish
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
@@ -62,7 +62,7 @@ class CollabClientAPI(APISpec):
 
     def _init_queues(self):
         """Initialize queues and locks. Called by __init__ and make_client_app."""
-        # Queues for bridging collab calls to receive/send pattern
+        # Queues for bridging collab calls to receive/send pattern (subprocess mode)
         self._call_queue: Queue = Queue()  # Server's call arrives here
         self._result_queue: Queue = Queue()  # Client's result goes here
 
@@ -80,9 +80,45 @@ class CollabClientAPI(APISpec):
 
         # DDP support
         self._rank = "0"
+        self._current_round = 0  # Track round for non-rank-0 processes
 
         # Lock for thread safety
         self._lock = threading.Lock()
+
+        # In-process mode support
+        self._training_func = None  # User's training function
+        self._inprocess = False  # Whether running in-process
+        self._inprocess_result: Optional[FLModel] = None  # Result from send() in in-process mode
+
+    def set_training_func(self, func):
+        """Set the training function for in-process mode.
+
+        In in-process mode, this function is called by execute() to run
+        the client's training logic. The function should use receive()
+        and send() to communicate with the server.
+
+        Args:
+            func: A callable that takes (flare) as argument, where flare
+                  is this CollabClientAPI instance. The function should:
+                  - Call flare.is_running() to check if training should continue
+                  - Call flare.receive() to get model from server
+                  - Perform training
+                  - Call flare.send(result) to return results
+
+        Example:
+            def training_loop(flare):
+                while flare.is_running():
+                    model = flare.receive()
+                    if model is None:
+                        break
+                    # train...
+                    flare.send(result)
+
+            api = CollabClientAPI()
+            api.set_training_func(training_loop)
+        """
+        self._training_func = func
+        self._inprocess = True  # Enable in-process mode when training func is set
 
     def make_client_app(self, site_name: str, backend_type):
         """Create a new CollabClientAPI instance for a client site.
@@ -101,13 +137,21 @@ class CollabClientAPI(APISpec):
 
         # Create a fresh instance with new queues/locks
         new_api = CollabClientAPI()
+
+        # Set site name for this client
+        new_api._sys_info["site_name"] = site_name
+
+        # Preserve training function for in-process mode
+        if self._training_func:
+            new_api.set_training_func(self._training_func)
+
         return ClientApp(new_api)
 
     # =========================================================================
     # Collab methods - Server calls these
     # =========================================================================
 
-    @collab
+    @publish
     def execute(
         self,
         fl_model: Optional[FLModel] = None,
@@ -131,10 +175,12 @@ class CollabClientAPI(APISpec):
         Returns:
             The FLModel result from client's send() call.
         """
-        # Update system info
+        # Update system info (don't overwrite site_name if already set)
         with self._lock:
-            self._sys_info["job_id"] = job_id
-            self._sys_info["site_name"] = site_name
+            if job_id:
+                self._sys_info["job_id"] = job_id
+            if site_name:
+                self._sys_info["site_name"] = site_name
 
         # None model signals end of job
         if fl_model is None:
@@ -146,6 +192,30 @@ class CollabClientAPI(APISpec):
 
         self.logger.debug(f"Received task '{task_name}' from server")
 
+        # In-process mode: call training function directly
+        if self._inprocess and self._training_func:
+            # Store model for receive() to return
+            self._current_model = fl_model
+            self._current_task_name = task_name
+            self._inprocess_result = None
+
+            # Set environment variable so nvflare.client uses Collab API
+            os.environ["CLIENT_API_TYPE"] = "COLLAB_IN_PROCESS_API"
+
+            # Set API instance in context variable (properly isolated per client)
+            from nvflare.client.in_process import collab_client_api_module
+
+            collab_client_api_module.set_api(self)
+
+            # Call the training function - it uses module-level flare.receive()/send()
+            self._training_func()
+
+            # Return what send() stored
+            result = self._inprocess_result
+            self.logger.debug(f"Returning result to server for task '{task_name}' (in-process)")
+            return result
+
+        # Subprocess mode: use queues
         # Put model where receive() can get it
         self._call_queue.put((fl_model, task_name))
 
@@ -155,7 +225,7 @@ class CollabClientAPI(APISpec):
         self.logger.debug(f"Returning result to server for task '{task_name}'")
         return result
 
-    @collab
+    @publish
     def stop(self):
         """Server calls this to signal job completion.
 
@@ -163,10 +233,12 @@ class CollabClientAPI(APISpec):
         """
         self.logger.info("Received stop signal from server")
         self._stopped = True
-        # Unblock any waiting receive()
-        self._call_queue.put((None, None))
 
-    @collab
+        # In subprocess mode: unblock any waiting receive()
+        if not self._inprocess:
+            self._call_queue.put((None, None))
+
+    @publish
     def abort(self, reason: str = ""):
         """Server calls this to abort the job.
 
@@ -197,13 +269,17 @@ class CollabClientAPI(APISpec):
     def receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
         """Receive model from server.
 
-        Blocks until server calls execute() with a model.
+        In subprocess mode:
+            - Rank 0: Blocks until server calls execute() with a model.
+            - Other ranks: Returns empty FLModel immediately (sync via checkpoint/barrier).
+        In in-process mode: Returns the model that execute() stored.
 
         Args:
-            timeout: Optional timeout in seconds.
+            timeout: Optional timeout in seconds (only for subprocess mode).
 
         Returns:
             The FLModel from server, or None if job ended/aborted.
+            For non-rank-0 in subprocess mode, returns empty FLModel.
 
         Raises:
             RuntimeError: If job was aborted.
@@ -214,6 +290,22 @@ class CollabClientAPI(APISpec):
         if self._stopped:
             return None
 
+        # In-process mode: return what execute() stored
+        if self._inprocess:
+            fl_model = self._current_model
+            self._receive_called = True
+            self.logger.debug(f"Received model for task '{self._current_task_name}' (in-process)")
+            return fl_model
+
+        # Subprocess mode: non-rank-0 returns None immediately
+        # They will sync with rank 0 via checkpoint file + dist.barrier()
+        # This matches existing ExProcessClientAPI behavior
+        if self._rank != "0":
+            self._receive_called = True
+            self.logger.debug(f"Rank {self._rank}: returning None (will sync with rank 0)")
+            return None
+
+        # Rank 0: get from queue (blocks until server sends)
         try:
             if timeout is not None:
                 item = self._call_queue.get(timeout=timeout)
@@ -233,6 +325,8 @@ class CollabClientAPI(APISpec):
         self._current_model = fl_model
         self._current_task_name = task_name
         self._receive_called = True
+        # Track round for non-rank-0 processes
+        self._current_round = getattr(fl_model, "current_round", 0)
 
         self.logger.debug(f"Received model for task '{task_name}'")
         return fl_model
@@ -240,7 +334,8 @@ class CollabClientAPI(APISpec):
     def send(self, model: FLModel, clear_cache: bool = True) -> None:
         """Send result back to server.
 
-        Completes the execute() collab call, returning the result to server.
+        In subprocess mode: Puts result in queue for execute() to return.
+        In in-process mode: Stores result for execute() to return.
 
         Args:
             model: The FLModel result to send back.
@@ -257,8 +352,12 @@ class CollabClientAPI(APISpec):
 
         self.logger.debug(f"Sending result for task '{self._current_task_name}'")
 
-        # Put result where execute() can return it
-        self._result_queue.put(model)
+        # In-process mode: store result for execute() to return
+        if self._inprocess:
+            self._inprocess_result = model
+        else:
+            # Subprocess mode: put result in queue
+            self._result_queue.put(model)
 
         if clear_cache:
             self._current_model = None
@@ -270,6 +369,10 @@ class CollabClientAPI(APISpec):
 
         Returns True if server is still sending tasks.
         Returns False if server signaled stop or job ended.
+
+        For DDP (subprocess mode):
+            - Rank 0: Checks actual server status
+            - Other ranks: Always returns True (sync stop via dist.broadcast)
 
         Returns:
             True if running, False otherwise.
@@ -283,18 +386,12 @@ class CollabClientAPI(APISpec):
         if self._stopped:
             return False
 
-        # Try to peek at the queue with a short timeout
-        # This mimics the ex_process behavior of trying to receive
-        if self._current_model is not None:
-            # We already have a model waiting to be processed
+        # Subprocess mode: non-rank-0 always returns True
+        # The training code should sync stop condition from rank 0 via dist.broadcast
+        if not self._inprocess and self._rank != "0":
             return True
 
-        try:
-            # Non-blocking check - just see if we're stopped
-            # The actual blocking happens in receive()
-            return not self._stopped
-        except Exception:
-            return False
+        return True
 
     def system_info(self) -> Dict:
         """Get NVFlare system information.

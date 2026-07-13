@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from nvflare.apis.client import Client, from_dict
 from nvflare.apis.event_type import EventType
@@ -25,16 +25,19 @@ from nvflare.apis.signal import Signal
 from nvflare.collab.api.app import ClientApp
 from nvflare.collab.api.constants import MAKE_CLIENT_APP_METHOD, BackendType
 from nvflare.collab.api.proxy import Proxy
+from nvflare.collab.utils.decomposers import register_available_decomposers
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 
 from .adaptor import CollabAdaptor
 from .backend import FlareBackend
 from .constants import SYNC_TASK_NAME, SyncKey
-from .utils import prepare_for_remote_call
+from .subprocess_launcher import SubprocessLauncher
+from .utils import prepare_for_remote_call, prepare_for_subprocess_call
 from .ws import FlareWorkspace
 
 
 class CollabExecutor(Executor, CollabAdaptor):
+    """Client executor supporting both in-process and subprocess training."""
 
     def __init__(
         self,
@@ -47,6 +50,10 @@ class CollabExecutor(Executor, CollabAdaptor):
         props: Dict[str, Any] = None,
         resource_dirs: Dict[str, str] = None,
         max_call_threads=100,
+        inprocess: bool = True,
+        run_cmd: Optional[str] = None,
+        training_module: Optional[str] = None,
+        subprocess_timeout: float = 300.0,
     ):
         Executor.__init__(self)
         CollabAdaptor.__init__(
@@ -65,16 +72,21 @@ class CollabExecutor(Executor, CollabAdaptor):
         self.client_app = None
         self.client_ctx = None
         self.thread_executor = ThreadPoolExecutor(max_workers=max_call_threads, thread_name_prefix="collab_call")
+        self.inprocess = inprocess
+        self.run_cmd = run_cmd
+        self.training_module = training_module
+        self.subprocess_timeout = subprocess_timeout
+        self._subprocess_launcher: Optional[SubprocessLauncher] = None
+
+        if not inprocess and not training_module:
+            raise ValueError("training_module is required when inprocess=False")
 
     def _handle_start_run(self, event_type: str, fl_ctx: FLContext):
-        fl_ctx.set_prop(FLContextKey.COLLAB_MODE, True, private=True, sticky=True)
-
         # Register FOBS decomposers (e.g. torch.Tensor) so collab objects can be
         # serialized over CellNet in the distributed (FlareBackend) path, matching
         # the in-process simulator and subprocess worker.
-        from nvflare.collab.utils.decomposers import register_available_decomposers
-
         register_available_decomposers()
+        fl_ctx.set_prop(FLContextKey.COLLAB_MODE, True, private=True, sticky=True)
 
         engine = fl_ctx.get_engine()
         client_obj = engine.get_component(self.client_obj_id)
@@ -88,6 +100,8 @@ class CollabExecutor(Executor, CollabAdaptor):
 
         # If the app contains "make_client_app" method, call it to make the app instance!
         make_client_app_f = getattr(app, MAKE_CLIENT_APP_METHOD, None)
+        if not make_client_app_f:
+            make_client_app_f = getattr(app.obj, MAKE_CLIENT_APP_METHOD, None)
         if make_client_app_f and callable(make_client_app_f):
             app = make_client_app_f(client_name, BackendType.FLARE)
             if not isinstance(app, ClientApp):
@@ -102,6 +116,11 @@ class CollabExecutor(Executor, CollabAdaptor):
             self.system_panic(err, fl_ctx)
 
     def _handle_end_run(self, event_type: str, fl_ctx: FLContext):
+        if self._subprocess_launcher:
+            self.logger.info("Stopping subprocess worker...")
+            self._subprocess_launcher.stop()
+            self._subprocess_launcher = None
+
         if self.client_ctx:
             self.logger.info(f"finalizing client app {self.client_app.name}")
             self.client_app.finalize(self.client_ctx)
@@ -182,12 +201,22 @@ class CollabExecutor(Executor, CollabAdaptor):
 
         engine = fl_ctx.get_engine()
         cell = engine.get_cell()
+        client_name = fl_ctx.get_identity_name()
 
-        prepare_for_remote_call(
-            cell=cell,
-            app=self.client_app,
-            logger=self.logger,
-        )
+        if self.inprocess:
+            prepare_for_remote_call(
+                cell=cell,
+                app=self.client_app,
+                logger=self.logger,
+            )
+        else:
+            self._start_subprocess_worker(cell, client_name)
+            prepare_for_subprocess_call(
+                cell=cell,
+                app=self.client_app,
+                subprocess_launcher=self._subprocess_launcher,
+                logger=self.logger,
+            )
 
         # build proxies
         job_id = fl_ctx.get_job_id()
@@ -211,3 +240,35 @@ class CollabExecutor(Executor, CollabAdaptor):
         reply = make_reply(ReturnCode.OK)
         reply[SyncKey.COLLAB_INTERFACE] = client_collab_interface
         return reply
+
+    def _detect_client_class(self) -> Optional[str]:
+        """Return the client class name for class-based client APIs."""
+        from nvflare.collab.api.module_wrapper import ModuleWrapper
+
+        client_obj = self.client_app.obj
+        if isinstance(client_obj, ModuleWrapper):
+            return None
+        return client_obj.__class__.__name__
+
+    def _start_subprocess_worker(self, cell, client_name: str):
+        """Start the worker that hosts the user's training module."""
+        self.logger.info(f"Starting subprocess worker for {client_name}...")
+        self.logger.info(f"  Training module: {self.training_module}")
+        if self.run_cmd:
+            self.logger.info(f"  Run command: {self.run_cmd}")
+
+        client_class = self._detect_client_class()
+        if client_class:
+            self.logger.info(f"  Client class: {client_class}")
+
+        self._subprocess_launcher = SubprocessLauncher(
+            site_name=client_name,
+            training_module=self.training_module,
+            parent_cell=cell,
+            run_cmd=self.run_cmd,
+            subprocess_timeout=self.subprocess_timeout,
+            client_class=client_class,
+        )
+
+        if not self._subprocess_launcher.start():
+            raise RuntimeError("Failed to start subprocess worker")

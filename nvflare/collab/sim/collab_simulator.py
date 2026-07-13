@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional, Tuple, Union
@@ -432,6 +433,9 @@ class AppRunner:
             launcher.stop()
 
         self._subprocess_launchers.clear()
+
+        # Brief pause to allow CellNet to finish pending operations
+        time.sleep(0.5)
 
         # Stop client cells
         for site_name, cell in self._client_cells.items():

@@ -28,7 +28,9 @@ User's training code remains unchanged - they just use @collab.publish as normal
 
 import os
 import shlex
+import shutil
 import subprocess
+import sys
 import threading
 from typing import Any, Dict, List, Optional
 
@@ -47,7 +49,6 @@ from .worker import (
     WORKER_CALL_TOPIC,
     WORKER_CHANNEL,
     WORKER_READY_TOPIC,
-    WORKER_SHUTDOWN_TOPIC,
 )
 
 # Default timeout values (can be overridden via constructor)
@@ -228,6 +229,14 @@ class SubprocessLauncher:
             # Launcher-based execution (e.g., torchrun, mpirun)
             run_cmd_parts = shlex.split(self.run_cmd)
 
+            # Resolve the launcher binary: prefer PATH, then the current
+            # interpreter's bin dir (venv scripts like torchrun may not be on PATH)
+            launcher = run_cmd_parts[0]
+            if not os.path.isabs(launcher) and shutil.which(launcher) is None:
+                candidate = os.path.join(os.path.dirname(sys.executable), launcher)
+                if os.path.isfile(candidate):
+                    run_cmd_parts[0] = candidate
+
             # Check if this is torchrun and inject unique --master-port
             if run_cmd_parts and "torchrun" in run_cmd_parts[0]:
                 # Calculate unique port for this site
@@ -236,8 +245,9 @@ class SubprocessLauncher:
 
             return run_cmd_parts + ["-m", worker_module, self.training_module]
         else:
-            # Direct Python execution
-            return ["python", "-m", worker_module, self.training_module]
+            # Direct Python execution: use the current interpreter, not a bare
+            # "python" (which may not exist on PATH, e.g. python3-only installs)
+            return [sys.executable, "-m", worker_module, self.training_module]
 
     def start(self) -> bool:
         """Start the worker subprocess.
@@ -358,26 +368,22 @@ class SubprocessLauncher:
         """Stop the worker subprocess."""
         self.logger.info("Stopping worker subprocess")
 
-        # Send shutdown signal if worker is ready
-        if self._ready_event.is_set() and self._worker_fqcn:
-            try:
-                self.parent_cell.send_request(
-                    channel=WORKER_CHANNEL,
-                    topic=WORKER_SHUTDOWN_TOPIC,
-                    target=self._worker_fqcn,
-                    request=Message(payload={}),
-                    timeout=self.shutdown_timeout,
-                )
-            except Exception as e:
-                self.logger.warning(f"Error sending shutdown signal: {e}")
-
-        # Terminate process if still running
+        # Wait for process to exit gracefully, then terminate if needed
         if self._process:
             try:
-                self._process.terminate()
-                self._process.wait(timeout=self.process_wait_timeout)
-            except subprocess.TimeoutExpired:
-                self._process.kill()
+                # First, wait a short time for graceful exit
+                exit_code = self._process.poll()
+                if exit_code is None:
+                    # Process still running, wait a bit more
+                    try:
+                        self._process.wait(timeout=2.0)
+                    except subprocess.TimeoutExpired:
+                        # Still running after wait, terminate
+                        self._process.terminate()
+                        try:
+                            self._process.wait(timeout=self.process_wait_timeout)
+                        except subprocess.TimeoutExpired:
+                            self._process.kill()
             except Exception as e:
                 self.logger.warning(f"Error terminating process: {e}")
 

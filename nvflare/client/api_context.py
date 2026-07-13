@@ -31,6 +31,8 @@ data_bus = DataBus()
 class ClientAPIType(Enum):
     IN_PROCESS_API = "IN_PROCESS_API"
     EX_PROCESS_API = "EX_PROCESS_API"
+    COLLAB_IN_PROCESS_API = "COLLAB_IN_PROCESS_API"  # Collab Client API (in-process mode)
+    COLLAB_SUBPROCESS_API = "COLLAB_SUBPROCESS_API"  # Collab Client API (subprocess/torchrun mode)
 
 
 class APIContext:
@@ -58,6 +60,17 @@ class APIContext:
             api = data_bus.get_data(CLIENT_API_KEY)
             if not isinstance(api, InProcessClientAPI):
                 raise RuntimeError(f"api {api} is not a valid InProcessClientAPI")
+            return api
+        elif api_type in (ClientAPIType.COLLAB_IN_PROCESS_API, ClientAPIType.COLLAB_SUBPROCESS_API):
+            # Collab Client API - instance is set by CollabClientAPI.execute() or CollabWorker
+            from nvflare.client.in_process.collab_client_api_module import get_api
+
+            api = get_api()
+            if api is None:
+                raise RuntimeError(
+                    "Collab Client API not initialized. Make sure the training code is "
+                    "running within CollabRecipe.execute() or Collab simulator."
+                )
             return api
         else:
             return ExProcessClientAPI(config_file=self.config_file)

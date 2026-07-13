@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import logging
+from contextvars import ContextVar
 from threading import Lock
 from typing import Any, Dict, Optional, Union
 
@@ -26,6 +27,7 @@ from .api_context import APIContext
 global_context_lock = Lock()
 context_dict = {}
 default_context = None
+collab_context: ContextVar[Optional[APIContext]] = ContextVar("collab_context", default=None)
 
 
 def get_context(ctx: Optional[APIContext] = None) -> APIContext:
@@ -43,6 +45,9 @@ def get_context(ctx: Optional[APIContext] = None) -> APIContext:
     """
     if ctx:
         return ctx
+    local_collab_context = collab_context.get()
+    if local_collab_context:
+        return local_collab_context
     elif default_context:
         return default_context
     else:
@@ -61,6 +66,9 @@ def init(rank: Optional[Union[str, int]] = None, config_file: Optional[str] = No
     Returns:
         APIContext
     """
+    import os
+
+    from .api_spec import CLIENT_API_TYPE_KEY
 
     # subsequent logic assumes rank is a string
     if rank is not None:
@@ -71,9 +79,22 @@ def init(rank: Optional[Union[str, int]] = None, config_file: Optional[str] = No
         else:
             raise ValueError(f"rank must be a string or an integer but got {type(rank)}")
 
+    # Check if we're in Collab mode - Collab uses contextvars for proper isolation
+    # so we don't need global caching (which would break multi-client scenarios)
+    api_type = os.environ.get(CLIENT_API_TYPE_KEY, "")
+    is_collab_mode = api_type.startswith("COLLAB_")
+
     with global_context_lock:
         global context_dict
         global default_context
+
+        if is_collab_mode:
+            # Collab mode: always create fresh context (API is isolated via contextvars)
+            local_ctx = APIContext(rank=rank, config_file=config_file)
+            collab_context.set(local_ctx)
+            return local_ctx
+
+        # Standard mode: use caching
         local_ctx = context_dict.get((rank, config_file))
 
         if local_ctx is None:
