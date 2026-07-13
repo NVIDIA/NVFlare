@@ -181,6 +181,11 @@ class EvaluatorConfig:
 class EdgeFedBuffRecipe(Recipe):
     """Recipe class for cross-edge federated learning using NVFlare's hierarchical edge system.
 
+    Recipe parameters and nested manager configuration values become part of the generated
+    job definition and must never contain actual secrets. Read secrets from site environment
+    variables or mounted files; references are supported only where documented in
+    :mod:`nvflare.recipe.secrets`.
+
     This class provides a high-level interface for configuring cross-edge
     federated learning jobs. It configures the necessary components
     including model managers, device managers, evaluators, and device simulation settings.

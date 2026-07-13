@@ -23,7 +23,9 @@ import pytest
 
 from nvflare.apis.dxo import DataKind
 from nvflare.apis.job_def import JobMetaKey
+from nvflare.fuel.utils.secret_utils import PotentialSecretWarning, UnsupportedSecretRefWarning
 from nvflare.job_config.api import FedJob
+from nvflare.recipe import secret_ref
 from nvflare.recipe.spec import Recipe
 from nvflare.recipe.utils import (
     extract_persistor_id,
@@ -367,6 +369,13 @@ class TestRecipeMetaHelper:
         assert exported_meta["custom_props"] == {"team": "research"}
         assert exported_meta["owner"] == "alice"
 
+    def test_set_recipe_meta_warns_for_secret_and_unsupported_ref(self):
+        recipe = self._make_recipe("test_recipe_meta_secret", min_clients=1)
+        with pytest.warns(PotentialSecretWarning, match="custom_props"):
+            set_recipe_meta(recipe, JobMetaKey.CUSTOM_PROPS, {"password": "hunter22x"})
+        with pytest.warns(UnsupportedSecretRefWarning, match="custom_props"):
+            set_recipe_meta(recipe, JobMetaKey.CUSTOM_PROPS, {"token": secret_ref("API_TOKEN")})
+
     def test_set_recipe_meta_warns_and_overrides_registered_resource_specs(self, tmp_path):
         recipe = self._make_recipe("test_recipe_meta_resource_conflict", min_clients=2)
         recipe.job.job.add_resource_spec("base-site", {"num_of_gpus": 0})
@@ -605,6 +614,17 @@ class TestAddExperimentTrackingClients:
 
     def _make_recipe(self, name="test_tracking_clients"):
         return Recipe(FedJob(name=name, min_clients=1))
+
+    def test_tracking_config_warns_for_secret_and_unsupported_ref(self, dummy_tracking):
+        from nvflare.recipe.utils import add_experiment_tracking
+
+        recipe = self._make_recipe()
+        with pytest.warns(PotentialSecretWarning, match="tracking_config"):
+            add_experiment_tracking(recipe, dummy_tracking, {"password": "hunter22x"})
+
+        recipe = self._make_recipe()
+        with pytest.warns(UnsupportedSecretRefWarning, match="tracking_config"):
+            add_experiment_tracking(recipe, dummy_tracking, {"token": secret_ref("API_TOKEN")})
 
     def test_client_side_tracking_specific_clients(self, dummy_tracking):
         from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE

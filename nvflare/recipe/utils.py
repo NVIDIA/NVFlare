@@ -23,6 +23,7 @@ from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.apis.dxo import DataKind
 from nvflare.apis.job_def import USER_SETTABLE_JOB_META_KEYS, JobMetaKey
 from nvflare.fuel.utils.import_utils import optional_import
+from nvflare.fuel.utils.secret_utils import warn_on_potential_secrets, warn_on_unsupported_secret_refs
 from nvflare.job_config.api import FedJob
 from nvflare.job_config.fed_job_config import FedJobConfig
 from nvflare.recipe.spec import Recipe
@@ -234,10 +235,13 @@ def set_recipe_meta(recipe: Recipe, key: JobMetaKey, value: Any) -> None:
     completely JSON-serializable, cannot contain non-finite floats, and have
     their keys coerced to strings as they will appear in ``meta.json``. The
     value is stored in ``meta_props`` and replaces any existing ``meta_props``
-    value for that key.
+    value for that key. Metadata is emitted in clear text in ``meta.json`` and
+    must never contain actual secret values; see :mod:`nvflare.recipe.secrets`.
     """
     key_str = _normalize_recipe_meta_key(key)
     normalized_value = _normalize_recipe_meta_value(key, key_str, value)
+    warn_on_potential_secrets(normalized_value, context=f"recipe metadata '{key_str}'")
+    warn_on_unsupported_secret_refs(normalized_value, context=f"recipe metadata '{key_str}'")
     job_config = _get_recipe_job_config(recipe)
 
     # RESOURCE_SPEC also has a dedicated FedJobConfig field (populated via
@@ -280,7 +284,9 @@ def set_per_site_config(recipe: Recipe, config: Dict[str, Dict]) -> None:
 
     Each recipe is responsible for validating and interpreting the fields inside
     each site's dictionary. The execution environment still controls which
-    clients are present for a run.
+    clients are present for a run. Per-site values become part of the generated
+    job definition and must never contain actual secret values; see
+    :mod:`nvflare.recipe.secrets`.
     """
     recipe.set_per_site_config(_validate_per_site_config_shape(config))
 
@@ -321,7 +327,10 @@ def add_experiment_tracking(
     Args:
         recipe: Recipe instance to augment with experiment tracking.
         tracking_type: Type of tracking to enable ("mlflow", "tensorboard", or "wandb").
-        tracking_config: Optional configuration dict for the tracking receiver.
+        tracking_config: Optional configuration dict for the tracking receiver. It becomes
+            part of the generated job definition and must never contain actual credentials;
+            configure authentication through the executing site's environment or a mounted
+            secret instead.
         client_side: If True, add tracking to clients (each client tracks locally).
         server_side: If True, add tracking to server (aggregates metrics from all clients). Default: True.
         clients: Optional list of client names for client-side tracking. If None, the
@@ -354,6 +363,8 @@ def add_experiment_tracking(
         )
     """
     tracking_config = tracking_config or {}
+    warn_on_potential_secrets(tracking_config, context="tracking_config")
+    warn_on_unsupported_secret_refs(tracking_config, context="tracking_config")
     if tracking_type not in TRACKING_REGISTRY:
         raise ValueError(f"Invalid tracking type: {tracking_type}")
 

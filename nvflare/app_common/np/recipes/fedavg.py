@@ -24,6 +24,10 @@ from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
 class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
     """A recipe for implementing Federated Averaging (FedAvg) with NumPy in NVFlare.
 
+    Recipe parameters, including ``train_args`` and nested ``per_site_config`` values,
+    must never contain actual secrets. Read secrets from site environment variables or mounted
+    files; references are supported only where documented in :mod:`nvflare.recipe.secrets`.
+
     FedAvg is a fundamental federated learning algorithm that aggregates model updates
     from multiple clients by computing a weighted average based on the amount of local
     training data. This recipe sets up a complete federated learning workflow with
@@ -61,7 +65,8 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
         params_transfer_type (str): How to transfer the parameters. DIFF enables automatic difference
             calculation for full-model client results. A client's FLModel.params_type remains authoritative.
             Defaults to TransferType.FULL.
-        per_site_config: Per-site configuration for the federated learning job.
+        per_site_config: Per-site configuration for the federated learning job. Nested
+            values become part of the generated job definition and must not contain secrets.
         launch_once: Whether external process is launched once or per task. Defaults to True.
         shutdown_timeout: Seconds to wait before shutdown. Defaults to 0.0.
         key_metric: Metric used to determine if the model is globally best. Defaults to "accuracy".
