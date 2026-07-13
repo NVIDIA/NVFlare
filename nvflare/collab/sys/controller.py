@@ -79,6 +79,13 @@ class CollabController(Controller, CollabAdaptor):
         self.thread_executor = ThreadPoolExecutor(max_workers=max_call_threads, thread_name_prefix="collab_call")
 
     def start_controller(self, fl_ctx: FLContext):
+        # Register FOBS decomposers (e.g. torch.Tensor) so collab objects can be
+        # serialized over CellNet in the distributed (FlareBackend) path, matching
+        # the in-process simulator and subprocess worker.
+        from nvflare.collab.utils.decomposers import register_available_decomposers
+
+        register_available_decomposers()
+
         engine = fl_ctx.get_engine()
 
         server_obj = engine.get_component(self.server_obj_id)

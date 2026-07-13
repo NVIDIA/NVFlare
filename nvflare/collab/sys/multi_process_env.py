@@ -234,7 +234,12 @@ class MultiProcessEnv(ExecEnv):
         Args:
             clean_up: Whether to clean the POC workspace. Defaults to False.
         """
-        project_config, service_config = setup_service_config(self.poc_workspace)
+        try:
+            project_config, service_config = setup_service_config(self.poc_workspace)
+        except Exception:
+            # Workspace is not present (never started, or already stopped/cleaned).
+            # stop() is idempotent - nothing to do.
+            return
 
         try:
             print("Stopping existing POC services...")

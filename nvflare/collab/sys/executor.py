@@ -68,6 +68,14 @@ class CollabExecutor(Executor, CollabAdaptor):
 
     def _handle_start_run(self, event_type: str, fl_ctx: FLContext):
         fl_ctx.set_prop(FLContextKey.COLLAB_MODE, True, private=True, sticky=True)
+
+        # Register FOBS decomposers (e.g. torch.Tensor) so collab objects can be
+        # serialized over CellNet in the distributed (FlareBackend) path, matching
+        # the in-process simulator and subprocess worker.
+        from nvflare.collab.utils.decomposers import register_available_decomposers
+
+        register_available_decomposers()
+
         engine = fl_ctx.get_engine()
         client_obj = engine.get_component(self.client_obj_id)
         if not client_obj:

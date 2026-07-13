@@ -11,6 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import importlib
+import inspect
+import os
 import sys
 from types import ModuleType
 from typing import List
@@ -175,7 +178,41 @@ class CollabRecipe(Recipe):
             resource_dirs=self.client_app.get_resource_dirs(),
         )
         job.to_clients(executor, id="executor", tasks=["*"])
+
+        # Ship the user-provided server/client code into each app's "custom" folder.
+        # A collab job runs user-defined objects (the server/client and any collab
+        # objects), so it is inherently bring-your-own-code (BYOC): the code must
+        # travel with the job, and the job is authorized via the BYOC right rather
+        # than the site class allow-list (which cannot enumerate arbitrary user
+        # classes). Adding a custom folder is what marks the job as BYOC.
+        for src in self._user_source_files([self.server_app.obj] + list((self.server_objects or {}).values())):
+            job.add_file_to_server(src, app_folder_type="custom")
+        for src in self._user_source_files([self.client_app.obj] + list((self.client_objects or {}).values())):
+            job.add_file_to_clients(src, app_folder_type="custom")
         return job
+
+    @staticmethod
+    def _user_source_files(objs) -> List[str]:
+        """Resolve the source .py files backing the given user objects (deduplicated).
+
+        Objects whose source cannot be located (e.g. built-ins or C extensions) are
+        skipped.
+        """
+        files = []
+        for obj in objs:
+            if obj is None:
+                continue
+            try:
+                if isinstance(obj, ModuleWrapper):
+                    target = importlib.import_module(obj.module_name)
+                else:
+                    target = type(obj)
+                src = inspect.getfile(target)
+            except (TypeError, OSError, ImportError, ValueError):
+                continue
+            if src and os.path.isfile(src) and src not in files:
+                files.append(src)
+        return files
 
     def _create_app_args(self, app: App, to_f):
         # collab objs
