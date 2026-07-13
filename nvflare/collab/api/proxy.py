@@ -124,8 +124,10 @@ class Proxy:
 
         """
         # self.logger.debug(f"trying to find interface for {func_name}")
+        # Note: a zero-arg method has an empty params list, so "no entry" must be
+        # distinguished from "no params" with an explicit None check.
         args = self.target_interface.get(func_name) if self.target_interface else None
-        if args:
+        if args is not None:
             return self, args
 
         # try children
@@ -134,7 +136,7 @@ class Proxy:
         the_name = None
         for n, c in self.children.items():
             args = c.target_interface.get(func_name) if c.target_interface else None
-            if not args:
+            if args is None:
                 continue
 
             # self.logger.debug(f"found interface for func {func_name}: defined in child {n}")
@@ -172,7 +174,7 @@ class Proxy:
         if not p:
             raise RuntimeError(f"target {self.target_name} does not have method '{func_name}'")
 
-        if func_itf:
+        if func_itf is not None:
             # check args and turn them to kwargs
             num_call_args = len(args) + len(kwargs)
             if num_call_args > len(func_itf):
