@@ -54,6 +54,10 @@ class _XGBHistogramValidator(BaseModel):
 class XGBHorizontalRecipe(Recipe):
     """XGBoost Horizontal Federated Learning Recipe.
 
+    Recipe parameters, including ``xgb_params`` and nested ``per_site_config`` values,
+    must never contain actual secrets. Read secrets from site environment variables or mounted
+    files; references are supported only where documented in :mod:`nvflare.recipe.secrets`.
+
     This recipe implements horizontal federated XGBoost using histogram-based algorithms.
     In horizontal federated learning, each client has different samples with the same features.
     The histogram-based approach enables efficient gradient boosting by computing histograms
@@ -78,6 +82,7 @@ class XGBHorizontalRecipe(Recipe):
         metrics_writer_id (str, optional): ID of the metrics writer component. Default is 'metrics_writer'.
         per_site_config (dict): Per-site configuration mapping site names to config dicts.
             Each config dict must contain 'data_loader' key with XGBDataLoader instance.
+            Nested values become part of the generated job definition and must not contain secrets.
             Example: {"site-1": {"data_loader": CSVDataLoader(...)}, "site-2": {...}}
 
     Example:
@@ -117,6 +122,8 @@ class XGBHorizontalRecipe(Recipe):
         - TensorBoard tracking is automatically configured for both server and clients.
         - Executor and metrics components are automatically added to all clients.
     """
+
+    _UNSUPPORTED_SECRET_REF_ATTRS = Recipe._UNSUPPORTED_SECRET_REF_ATTRS | {"per_site_config"}
 
     def __init__(
         self,

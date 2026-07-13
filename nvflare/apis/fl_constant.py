@@ -453,6 +453,7 @@ class WorkspaceConstants:
     PRIVACY_CONFIG = "privacy.json"
     SAMPLE_PRIVACY_CONFIG = PRIVACY_CONFIG + ".sample"
     JOB_RESOURCES_CONFIG = "job_resources.json"
+    STUDY_REGISTRY_CONFIG = "study_registry.json"
 
     ADMIN_STARTUP_CONFIG = "fed_admin.json"
 

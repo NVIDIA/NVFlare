@@ -96,7 +96,12 @@ class FedAvgRecipe(Recipe):
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
         train_script: Path to the training script that will be executed on each client.
-        train_args: Command line arguments to pass to the training script.
+        train_args: Command line arguments to pass to the training script. Written in clear
+            text into the generated job config, so it must never contain actual secret values
+            (a PotentialSecretWarning is emitted if it looks like it does). To pass a secret,
+            use :func:`nvflare.recipe.secrets.secret_ref` for a site environment variable or
+            :func:`nvflare.recipe.secrets.secret_file_ref` for a mounted secret file. The
+            executing site resolves the placeholder at runtime.
         aggregator: Custom aggregator (ModelAggregator) for combining client model updates.
             Must implement accept_model(), aggregate_model(), reset_stats() methods.
             If None, uses built-in memory-efficient weighted averaging. Defaults to None.
@@ -130,6 +135,9 @@ class FedAvgRecipe(Recipe):
             - launch_once (bool): Whether to launch external process once or per task
             - shutdown_timeout (float): Shutdown timeout in seconds
             If not provided, the same configuration will be used for all clients.
+            Like train_args, per-site values are written in clear text into the generated job
+            config and must never contain actual secret values; see
+            :mod:`nvflare.recipe.secrets` for how to pass secrets safely.
         launch_once: Whether the external process will be launched only once at the beginning
             or on each task. Only used if `launch_external_process` is True. Defaults to True.
         shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
@@ -160,6 +168,8 @@ class FedAvgRecipe(Recipe):
         If you want to use a custom aggregator, you can pass it in the aggregator parameter.
         The custom aggregator must be a subclass of the Aggregator class.
     """
+
+    _SUPPORTED_PER_SITE_SECRET_REF_KEYS = frozenset({"command", "train_args"})
 
     def __init__(
         self,
