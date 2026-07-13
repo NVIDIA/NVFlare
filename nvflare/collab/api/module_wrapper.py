@@ -148,7 +148,7 @@ class ModuleWrapper:
                     state and will be set up by __setstate__ during unpickling.
 
         Note:
-            For JSON config serialization (PocEnv), we store the module name as
+            For JSON config serialization (MultiProcessEnv), we store the module name as
             self._module which matches the 'module' parameter. FLARE's _get_args()
             looks for param or _param in __dict__, so _module matches 'module'.
 
@@ -161,12 +161,12 @@ class ModuleWrapper:
             return
 
         if isinstance(module, ModuleType):
-            # Direct module object (SimEnv, in-process usage)
+            # Direct module object (InProcessEnv, in-process usage)
             # Use get_importable_module_name to handle __main__ case
             self._module = get_importable_module_name(module)
             self._setup_methods(module)
         elif isinstance(module, str):
-            # Module name string (PocEnv, JSON config reconstruction)
+            # Module name string (MultiProcessEnv, JSON config reconstruction)
             self._module = module
             actual_module = importlib.import_module(module)
             self._setup_methods(actual_module)

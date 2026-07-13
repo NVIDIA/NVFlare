@@ -4,7 +4,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 
 from nvflare.collab import collab
-from nvflare.collab.sim import SimEnv
+from nvflare.collab.sim import InProcessEnv
 from nvflare.collab.sys.recipe import CollabRecipe
 
 # 1. Define Model, Data, and Training Function
@@ -114,7 +114,7 @@ if __name__ == "__main__":
         client=client,
         min_clients=5,
     )
-    env = SimEnv(num_clients=5)
+    env = InProcessEnv(num_clients=5)
 
     run = recipe.execute(env)
 

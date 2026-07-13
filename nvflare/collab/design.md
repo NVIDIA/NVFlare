@@ -40,7 +40,7 @@ works in BOTH in-process and subprocess modes**.
 ┌─────────────────────────────────────────────────────────────────────────────────────┐
 │                               EXECUTION ENVIRONMENT LAYER                            │
 │                                                                                      │
-│   SimEnv (in-process threads)     │    PocEnv (multi-process local)                 │
+│   InProcessEnv (in-process threads)     │    MultiProcessEnv (multi-process local)                 │
 │   CollabSimulator                    │    POC Infrastructure                           │
 └─────────────────────────────────────────────────────────────────────────────────────┘
                                           │
@@ -115,7 +115,7 @@ works in BOTH in-process and subprocess modes**.
 │                         │         │     │                                 │
 │ • @collab.publish runs in   │         │     │ • SubprocessLauncher spawns     │
 │   same process          │         │     │   CollabWorker process             │
-│ • Direct method calls   │         │     │ • Uses launcher_cmd (torchrun)  │
+│ • Direct method calls   │         │     │ • Uses run_cmd (torchrun)       │
 │ • InProcessWriter for   │         │     │ • CellNet for communication     │
 │   tracking              │         │     │ • SubprocessWriter for tracking │
 └─────────────────────────┘         │     └─────────────────────────────────┘
@@ -129,7 +129,7 @@ works in BOTH in-process and subprocess modes**.
     │  • Single-GPU training         │  • Multi-GPU (torchrun DDP)       │
     │  • Simple algorithms           │  • Multi-node training            │
     │  • Quick prototyping           │  • Custom launchers               │
-    │  • SimEnv simulation           │  • Isolated execution             │
+    │  • InProcessEnv simulation           │  • Isolated execution             │
     │                                │                                   │
     └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -191,7 +191,7 @@ def fed_avg(self):
     collab.clients.stop()  # Signal clients to stop
 
 # Client-side (client.py) - runs top-to-bottom, no decorators
-from nvflare.publish.sys.worker import get_client_api
+from nvflare.collab.sys.worker import get_client_api
 flare = get_client_api()
 flare.init()
 
@@ -215,47 +215,50 @@ while flare.is_running():
 Job configuration and orchestration entry point.
 
 ```python
-# Collab API (auto-detects training module from client)
+# Collab API: the recipe binds the server & client objects/modules
 recipe = CollabRecipe(
     job_name="fedavg",
+    server=server_module,      # Module/object with @collab.main
+    client=client_module,      # Module/object with @collab.publish
     min_clients=5,
-    server=server_module,      # Module with @collab.main
-    client=client_module,      # Module with @collab.publish
-    inprocess=True,            # or False for subprocess
-    run_cmd="torchrun --nproc_per_node=4",
-    tracking_type="tensorboard",
+    server_objects=None,       # optional: extra named server-side objects
+    client_objects=None,       # optional: extra named client-side objects
+    sync_task_timeout=5,
+    max_call_threads_for_server=100,
+    max_call_threads_for_client=100,
 )
 
-# Client API (explicit training_module for subprocess)
-from nvflare.client.in_process.publish_api import CollabClientAPI
+# Client API: pass the CollabClientAPI bridge as the client
+from nvflare.client.in_process.collab_api import CollabClientAPI
 
 recipe = CollabRecipe(
     job_name="fedavg",
-    min_clients=2,
     server=FedAvg(),           # Server with @collab.main calling execute()/stop()
-    client=CollabClientAPI(),     # Client API bridge
-    inprocess=False,
-    run_cmd="torchrun --nproc_per_node=2",
-    training_module="my_package.client",  # Explicit path to client script
+    client=CollabClientAPI(),  # Client API bridge
+    min_clients=2,
 )
 ```
+
+> **Note:** Execution mode is **not** a recipe parameter. In-process vs subprocess
+> execution (`inprocess`, `run_cmd`, `subprocess_timeout`) is configured on the
+> **execution environment** (`InProcessEnv`) — see "Layer 3: Execution Environment Layer".
 
 **Key Parameters:**
 
 | Parameter | Description |
 |-----------|-------------|
-| `server` | Server object with `@collab.main` methods |
-| `client` | Client object with `@collab.publish` methods, or `CollabClientAPI()` |
-| `inprocess` | True for in-process, False for subprocess |
-| `run_cmd` | Subprocess launcher command (e.g., `torchrun --nproc_per_node=4`) |
-| `training_module` | Explicit training module path (required for Client API) |
+| `job_name` | Name of the generated FLARE job |
+| `server` | Server object/module with `@collab.main` methods |
+| `client` | Client object/module with `@collab.publish` methods, or `CollabClientAPI()` |
+| `server_objects` / `client_objects` | Optional dicts of extra named objects on each side |
+| `min_clients` | Minimum number of clients required to start |
+| `sync_task_timeout` | Timeout (seconds) for synchronous task coordination |
+| `max_call_threads_for_server` / `max_call_threads_for_client` | Thread-pool sizes for remote calls |
 
 **Key Responsibilities:**
-- Auto-detect and wrap modules with `ModuleWrapper`
-- Configure execution mode (in-process vs subprocess)
-- Set up tracking configuration
-- Generate FLARE job configuration
-- Pass `training_module` to subprocess launcher
+- Wrap the server/client objects or modules into `ServerApp` / `ClientApp` (via `ModuleWrapper`)
+- Discover the `@collab.main` / `@collab.publish` / `@collab.init` methods
+- Generate the FLARE job configuration (`CollabController` + `CollabExecutor` components)
 
 #### ModuleWrapper (`nvflare/collab/api/module_wrapper.py`)
 
@@ -282,7 +285,7 @@ App
 └── ClientApp  - Wraps client object, discovers @collab.publish methods
 ```
 
-#### Proxy & ProxyList (`nvflare/collab/api/proxy.py`)
+#### Proxy (`nvflare/collab/api/proxy.py`) & ProxyList (`nvflare/collab/api/proxy_list.py`)
 
 Remote callable abstraction.
 
@@ -421,23 +424,21 @@ class CollabClientAPI:
 Abstract base class for execution environments.
 
 ```python
-class ExecEnv:
-    def deploy(self, recipe: CollabRecipe) -> Run:
-        """Deploy and execute the job"""
-        pass
-    
-    def stop(self):
-        """Stop the environment"""
-        pass
+# Defined in nvflare.recipe.spec; implemented by InProcessEnv and MultiProcessEnv.
+class ExecEnv(ABC):
+    @abstractmethod
+    def deploy(self, job: FedJob) -> str:
+        """Deploy and run the generated job; returns the run id."""
+        ...
 ```
 
-### SimEnv (`nvflare/collab/sim/sim_env.py`)
+### InProcessEnv (`nvflare/collab/sim/in_process_env.py`)
 
 In-process thread-based simulation.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                          SimEnv                                  │
+│                          InProcessEnv                                  │
 │                                                                  │
 │  ┌─────────────────┐    ┌─────────────────────────────────────┐ │
 │  │   CollabSimulator  │    │          ThreadPoolExecutor          │ │
@@ -458,16 +459,16 @@ In-process thread-based simulation.
 - No network overhead
 - Shared memory between components
 
-### PocEnv (`nvflare/collab/sys/poc_env.py`)
+### MultiProcessEnv (`nvflare/collab/sys/multi_process_env.py`)
 
 Multi-process **local** execution using POC infrastructure.
 
-> **Note**: PocEnv runs everything on a **single machine** for local development and testing.
+> **Note**: MultiProcessEnv runs everything on a **single machine** for local development and testing.
 > Server and clients are co-located only for convenience - in production, they are distributed.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    PocEnv (Single Machine)                       │
+│                    MultiProcessEnv (Single Machine)                       │
 │                                                                  │
 │  ┌──────────────────────────────────────────────────────────┐   │
 │  │                    POC Infrastructure                     │   │
@@ -576,7 +577,7 @@ launcher = SubprocessLauncher(
     site_name="site-1",
     training_module="my_training",
     parent_cell=cell,
-    launcher_cmd="torchrun --nproc_per_node=4",
+    run_cmd="torchrun --nproc_per_node=4",
     subprocess_timeout=300.0,
 )
 launcher.start()
@@ -688,7 +689,7 @@ Server calls `execute()`/`stop()` on CollabClientAPI. Worker runs user script di
 │  │                          SubprocessLauncher                                     │ │
 │  │                                                                                 │ │
 │  │  1. Set ENV vars: COLLAB_PARENT_URL, COLLAB_PARENT_FQCN, COLLAB_CLIENT_CLASS, etc.      │ │
-│  │  2. Spawn: torchrun --nproc_per_node=4 -m nvflare.publish.sys.worker my_training   │ │
+│  │  2. Spawn: torchrun --nproc_per_node=4 -m nvflare.collab.sys.worker my_training   │ │
 │  │  3. Wait for ready signal                                                       │ │
 │  │  4. Forward calls via CellNet (collab_worker/call)                                │ │
 │  │                                                                                 │ │
@@ -749,7 +750,7 @@ auto-detect the execution mode and use the appropriate underlying mechanism.
 
 User Code (same API regardless of execution mode):
 ┌─────────────────────────────────────────────────────────────────────────────────────┐
-│  from nvflare.publish.tracking import SummaryWriter  # or mlflow, wandb                 │
+│  from nvflare.collab.tracking import SummaryWriter  # or mlflow, wandb                 │
 │  writer = SummaryWriter()                                                            │
 │  writer.add_scalar("loss", 0.5, global_step=100)                                     │
 └─────────────────────────────────────────────────────────────────────────────────────┘
@@ -834,17 +835,17 @@ User Code (same API regardless of execution mode):
 
 ```python
 # TensorBoard (same API as torch.utils.tensorboard)
-from nvflare.publish.tracking import SummaryWriter
+from nvflare.collab.tracking import SummaryWriter
 writer = SummaryWriter()
 writer.add_scalar("train/loss", loss, global_step=step)
 
 # MLflow (same API as mlflow)
-from nvflare.publish.tracking import mlflow
+from nvflare.collab.tracking import mlflow
 mlflow.log_metric("loss", 0.5, step=100)
 mlflow.log_param("lr", 0.001)
 
 # W&B (same API as wandb)
-from nvflare.publish.tracking import wandb
+from nvflare.collab.tracking import wandb
 wandb.init(project="my-project")
 wandb.log({"loss": 0.5, "accuracy": 0.9})
 ```
@@ -923,11 +924,11 @@ CollabRecipe
 
 ## Execution Modes
 
-### Mode 1: In-Process Simulation (SimEnv)
+### Mode 1: In-Process Simulation (InProcessEnv)
 
 ```python
-recipe = CollabRecipe(job_name="fedavg", min_clients=5)
-env = SimEnv(num_clients=5)
+recipe = CollabRecipe(job_name="fedavg", server=server_module, client=client_module, min_clients=5)
+env = InProcessEnv(num_clients=5)
 run = recipe.execute(env)
 ```
 
@@ -935,11 +936,11 @@ run = recipe.execute(env)
 - Fast iteration
 - No subprocess, no CellNet
 
-### Mode 2: Multi-Process POC (PocEnv)
+### Mode 2: Multi-Process POC (MultiProcessEnv)
 
 ```python
-recipe = CollabRecipe(job_name="fedavg", min_clients=3)
-env = PocEnv(num_clients=3)
+recipe = CollabRecipe(job_name="fedavg", server=server_module, client=client_module, min_clients=3)
+env = MultiProcessEnv(num_clients=3)
 run = recipe.execute(env)
 ```
 
@@ -947,17 +948,16 @@ run = recipe.execute(env)
 - Real FLARE runtime
 - CellNet communication
 
-### Mode 3: Subprocess with Multi-GPU (PocEnv + subprocess)
+### Mode 3: Subprocess with Multi-GPU (InProcessEnv + subprocess)
 
 ```python
-recipe = CollabRecipe(
-    job_name="fedavg",
-    min_clients=2,
+recipe = CollabRecipe(job_name="fedavg", server=server_module, client=client_module, min_clients=2)
+# Subprocess/DDP launch is configured on the env, not the recipe:
+env = InProcessEnv(
+    num_clients=2,
     inprocess=False,
     run_cmd="torchrun --nproc_per_node=4",
-    # training_module auto-detected from client
 )
-env = PocEnv(num_clients=2)
 run = recipe.execute(env)
 ```
 
@@ -965,10 +965,12 @@ run = recipe.execute(env)
 - torchrun manages DDP across GPUs
 - CollabWorker coordinates with parent
 
-### Mode 4: Production Distributed
+### Mode 4: Production Distributed (MultiHostEnv - planned)
 
 ```python
 recipe = CollabRecipe(...)
+# Planned: MultiHostEnv — clients on different hosts; requires host/port
+# configuration (provisioned endpoints), unlike InProcessEnv/MultiProcessEnv.
 # Server: Deploy to cloud VM or on-premise server
 # Clients: Deploy to each participating site (K8s, HPC, VM)
 # Connection: mTLS, certificates provisioned for each site
@@ -985,31 +987,32 @@ recipe = CollabRecipe(...)
 
 ```
 nvflare/collab/
-├── DESIGN.md              # This document
+├── design.md              # This document
 ├── __init__.py            # Package exports
 │
 ├── api/                   # API Layer
 │   ├── app.py             # App, ServerApp, ClientApp
 │   ├── call_opt.py        # CallOption
 │   ├── constants.py       # API constants
-│   ├── context.py         # Execution context
+│   ├── ctx.py             # Execution context
 │   ├── dec.py             # Decorators (@collab.main, @collab.publish)
 │   ├── group.py           # Group (parallel invocation)
 │   ├── module_wrapper.py  # ModuleWrapper
-│   ├── proxy.py           # Proxy, ProxyList
+│   ├── proxy.py           # Proxy
+│   ├── proxy_list.py      # ProxyList
 │   └── run_server.py      # Server execution logic
 │
 ├── sim/                   # Simulation Layer
 │   ├── backend.py         # SimBackend
 │   ├── collab_simulator.py    # CollabSimulator
-│   └── sim_env.py         # SimEnv
+│   └── in_process_env.py         # InProcessEnv
 │
 ├── sys/                   # System/Runtime Layer
 │   ├── adaptor.py         # CollabAdaptor
 │   ├── backend.py         # FlareBackend
 │   ├── controller.py      # CollabController
 │   ├── executor.py        # CollabExecutor
-│   ├── poc_env.py         # PocEnv
+│   ├── multi_process_env.py         # MultiProcessEnv
 │   ├── recipe.py          # CollabRecipe
 │   ├── subprocess_launcher.py  # SubprocessLauncher
 │   ├── utils.py           # System utilities
@@ -1028,21 +1031,32 @@ nvflare/collab/
 │   └── wandb_writer.py    # W&B-compatible API
 │
 └── examples/              # Examples
-    └── pt/
-        ├── collab_api/               # Decorator-based (@collab.publish) examples
-        │   ├── in_process/
-        │   │   ├── collab_fedavg_train.py
-        │   │   ├── collab_fedavg_no_class.py
-        │   │   └── simulate_fedavg_train.py
-        │   └── sub_process/
-        │       └── distributed_train.py
+    ├── np/                # NumPy examples
+    │   ├── mains/         # @collab.main / @collab.publish modules (+ strategies/)
+    │   ├── recipes/       # Recipe builders
+    │   └── *.py           # Runnable scripts (fed_avg_*, cyclic*, swarm, recipe_*)
+    │
+    └── pt/                # PyTorch examples
+        ├── *.py           # Runnable scripts (pt_avg_*, recipe_pt_*, filters*, utils)
+        ├── collab_api/    # Decorator-based (@collab.publish) examples
+        │   └── in_process/
+        │       ├── collab_fedavg_train.py
+        │       ├── collab_fedavg_train_poc.py
+        │       ├── collab_fedavg_no_class.py
+        │       ├── collab_fedavg_no_class_server.py
+        │       ├── collab_fedavg_no_class_client.py
+        │       ├── collab_fedavg_no_class_job.py
+        │       ├── collab_fedavg_no_class_poc.py
+        │       ├── simulate_fedavg_train.py
+        │       ├── simulate_mp_fedavg_train.py
+        │       ├── simulate_parallel_fedavg_train.py
+        │       ├── ray_train.py
+        │       └── train.py
         │
-        └── client_api/               # Receive/send pattern examples
+        └── client_api/    # Receive/send (Client API) examples
             └── sub_process/
-                ├── server.py         # @collab.main server with execute()/stop()
-                ├── client.py         # Client script using receive()/send()
-                ├── job.py            # CollabRecipe with CollabClientAPI
-                └── sim_distributed_fedavg_train.py  # Standalone DDP simulation
+                ├── distributed_train.py
+                └── sim_distributed_fedavg_train.py
 ```
 
 ---
@@ -1059,8 +1073,8 @@ nvflare/collab/
    created by `CollabWorker`. This bridges the gap between the worker's internal state and the
    user's training script.
 
-3. **Module Import Handling**: When Python runs with `-m nvflare.publish.sys.worker`, the module
-   may be pre-imported. The worker explicitly updates `sys.modules['nvflare.publish.sys.worker']._client_api`
+3. **Module Import Handling**: When Python runs with `-m nvflare.collab.sys.worker`, the module
+   may be pre-imported. The worker explicitly updates `sys.modules['nvflare.collab.sys.worker']._client_api`
    to ensure `get_client_api()` returns the correct instance.
 
 4. **DDP Rank Coordination**: In Client API mode with DDP, only rank 0 communicates with the
@@ -1160,9 +1174,12 @@ recipe = CollabRecipe(
     job_name="fedavg_hpc",
     server=FedAvg(),
     client=CollabClientAPI(),
-    training_module="my_training.client",
+    min_clients=5,
+)
+# Proposed HpcEnv would carry the launch/scheduler configuration:
+env = HpcEnv(
+    num_clients=5,
     inprocess=False,
-    # HPC-specific configuration
     run_cmd="srun torchrun --nproc_per_node=8 --nnodes=$SLURM_NNODES",
     hpc_config={
         "scheduler": "slurm",
@@ -1172,7 +1189,6 @@ recipe = CollabRecipe(
         "time_limit": "4:00:00",
     },
 )
-env = HpcEnv(num_clients=5)
 recipe.execute(env)
 ```
 
@@ -1227,7 +1243,7 @@ recipe.execute(env)
 
 ```python
 # client.py - works for single-node and multi-node
-from nvflare.publish.sys.worker import get_client_api
+from nvflare.collab.sys.worker import get_client_api
 import torch.distributed as dist
 
 flare = get_client_api()

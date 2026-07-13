@@ -8,9 +8,9 @@ CollabRecipe auto-wraps modules with ModuleWrapper!
 """
 
 # Import the separate server and client modules
-from nvflare.collab.examples.pt.publish_api.in_process import collab_fedavg_no_class_client as client_module
-from nvflare.collab.examples.pt.publish_api.in_process import collab_fedavg_no_class_server as server_module
-from nvflare.collab.sim import SimEnv
+from nvflare.collab.examples.pt.collab_api.in_process import collab_fedavg_no_class_client as client_module
+from nvflare.collab.examples.pt.collab_api.in_process import collab_fedavg_no_class_server as server_module
+from nvflare.collab.sim import InProcessEnv
 from nvflare.collab.sys.recipe import CollabRecipe
 
 if __name__ == "__main__":
@@ -23,7 +23,7 @@ if __name__ == "__main__":
         min_clients=5,
     )
 
-    env = SimEnv(num_clients=5)
+    env = InProcessEnv(num_clients=5)
     run = recipe.execute(env)
 
     print()

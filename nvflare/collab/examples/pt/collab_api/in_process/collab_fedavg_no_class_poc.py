@@ -1,9 +1,9 @@
-"""Federated Averaging with Collab using PocEnv - NO CLASSES NEEDED!
+"""Federated Averaging with Collab using MultiProcessEnv - NO CLASSES NEEDED!
 
-This demonstrates using Collab with standalone functions and PocEnv for
+This demonstrates using Collab with standalone functions and MultiProcessEnv for
 multi-process execution with FlareBackend.
 
-Unlike SimEnv (in-process threads), PocEnv launches separate OS processes
+Unlike InProcessEnv (in-process threads), MultiProcessEnv launches separate OS processes
 that communicate via CellNet - more realistic for testing.
 """
 
@@ -15,7 +15,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 
 from nvflare.collab import collab
-from nvflare.collab.sys import PocEnv
+from nvflare.collab.sys import MultiProcessEnv
 from nvflare.collab.sys.recipe import CollabRecipe
 
 print("Done.")
@@ -133,7 +133,7 @@ def fed_avg():
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("Collab PocEnv Example: No-class FedAvg (standalone functions)")
+    print("Collab MultiProcessEnv Example: No-class FedAvg (standalone functions)")
     print("=" * 60)
     print("  This runs multiple processes with CellNet communication.")
     print("  First-time setup may take a moment...")
@@ -141,7 +141,7 @@ if __name__ == "__main__":
 
     # CollabRecipe auto-detects the caller's module
     recipe = CollabRecipe(job_name="fedavg_no_class_poc", min_clients=5)
-    env = PocEnv(num_clients=5)
+    env = MultiProcessEnv(num_clients=5)
 
     try:
         run = recipe.execute(env)

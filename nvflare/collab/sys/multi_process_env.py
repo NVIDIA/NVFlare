@@ -41,8 +41,8 @@ SERVICE_START_TIMEOUT = 3
 DEFAULT_ADMIN_USER = "admin@nvidia.com"
 
 
-class _PocEnvValidator(BaseModel):
-    """Validator for PocEnv parameters."""
+class _MultiProcessEnvValidator(BaseModel):
+    """Validator for MultiProcessEnv parameters."""
 
     num_clients: Optional[conint(gt=0)] = None
     clients: Optional[List[str]] = None
@@ -76,25 +76,25 @@ class _PocEnvValidator(BaseModel):
         return self
 
 
-class PocEnv(ExecEnv):
+class MultiProcessEnv(ExecEnv):
     """Proof of Concept execution environment for Collab using FlareBackend.
 
     This environment sets up a POC deployment on a single machine with multiple
-    processes representing the server and clients. Unlike SimEnv (in-process threads),
-    PocEnv runs actual separate processes that communicate via CellNet using
+    processes representing the server and clients. Unlike InProcessEnv (in-process threads),
+    MultiProcessEnv runs actual separate processes that communicate via CellNet using
     the FlareBackend.
 
-    This provides a more realistic testing environment than SimEnv while still
+    This provides a more realistic testing environment than InProcessEnv while still
     being lightweight enough for development and debugging.
 
-    Key differences from SimEnv:
-    - SimEnv: In-process threads, SimBackend (direct function calls)
-    - PocEnv: Separate processes, FlareBackend (CellNet communication)
+    Key differences from InProcessEnv:
+    - InProcessEnv: In-process threads, SimBackend (direct function calls)
+    - MultiProcessEnv: Separate processes, FlareBackend (CellNet communication)
 
     The CollabController and CollabExecutor components (defined in CollabRecipe) use
     FlareBackend internally when running in this environment.
 
-    Note: This is nvflare.collab.sys.PocEnv, distinct from nvflare.recipe.PocEnv.
+    Note: This is nvflare.collab.sys.MultiProcessEnv, distinct from nvflare.recipe.PocEnv.
     """
 
     def __init__(
@@ -135,7 +135,7 @@ class PocEnv(ExecEnv):
         """
         super().__init__(extra)
 
-        v = _PocEnvValidator(
+        v = _MultiProcessEnvValidator(
             num_clients=num_clients,
             clients=clients,
             gpu_ids=gpu_ids,
@@ -176,7 +176,7 @@ class PocEnv(ExecEnv):
             str: Job ID.
         """
         print(f"\n{'='*60}")
-        print("Collab PocEnv: Starting multi-process deployment")
+        print("Collab MultiProcessEnv: Starting multi-process deployment")
         print(f"{'='*60}")
 
         if self._check_poc_running():

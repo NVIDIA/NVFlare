@@ -12,7 +12,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 
 from nvflare.collab import collab
-from nvflare.collab.sim import SimEnv
+from nvflare.collab.sim import InProcessEnv
 from nvflare.collab.sys.recipe import CollabRecipe
 
 # =============================================================================
@@ -130,7 +130,7 @@ def fed_avg():
 if __name__ == "__main__":
     # That's it! CollabRecipe uses the caller's module automatically
     recipe = CollabRecipe(job_name="fedavg_no_class", min_clients=5)
-    env = SimEnv(num_clients=5)
+    env = InProcessEnv(num_clients=5)
 
     run = recipe.execute(env)
 

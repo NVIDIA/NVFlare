@@ -17,14 +17,14 @@
 import os
 from typing import Dict, Optional, Tuple, Union
 
-from nvflare.collab.sim.publish_simulator import CollabSimulator
+from nvflare.collab.sim.collab_simulator import CollabSimulator
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import ExecEnv
 
 WORKSPACE_ROOT = "/tmp/nvflare/collab_simulation"
 
 
-class SimEnv(ExecEnv):
+class InProcessEnv(ExecEnv):
     """Simulation execution environment for Collab using the Collab Simulator.
 
     This environment runs federated learning jobs using the Collab simulation
@@ -96,9 +96,9 @@ class SimEnv(ExecEnv):
 
         print(f"\n{'='*60}")
         if self.inprocess:
-            print("Collab SimEnv: Starting in-process simulation")
+            print("Collab InProcessEnv: Starting in-process simulation")
         else:
-            print("Collab SimEnv: Starting subprocess simulation")
+            print("Collab InProcessEnv: Starting subprocess simulation")
             if self.run_cmd:
                 print(f"  Run command: {self.run_cmd}")
         print(f"{'='*60}")
@@ -135,7 +135,7 @@ class SimEnv(ExecEnv):
     def get_job_status(self, job_id: str) -> Optional[str]:
         """Get job status - not fully supported in Collab simulation environment."""
         print(
-            f"Note: get_status returns None in Collab SimEnv. "
+            f"Note: get_status returns None in Collab InProcessEnv. "
             f"Logs can be found at {os.path.join(self.workspace_root, job_id)}"
         )
         return None
@@ -155,5 +155,5 @@ class SimEnv(ExecEnv):
             str: The result workspace path.
         """
         if self.workspace_root is None:
-            raise RuntimeError("Simulation workspace_root is None - SimEnv may not be properly initialized")
+            raise RuntimeError("Simulation workspace_root is None - InProcessEnv may not be properly initialized")
         return os.path.join(self.workspace_root, job_id)
