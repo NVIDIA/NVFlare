@@ -1283,6 +1283,11 @@ All standard recipes support these timeout parameters (fedavg.py, cyclic.py):
      - 10
      - Timeout for cyclic task assignment (CyclicRecipe only)
 
+``CyclicRecipe`` exposes both parameters directly. Its advanced
+``server_config_overrides`` and ``client_config_overrides`` dictionaries target
+``CyclicController`` and ``ScriptRunner``, respectively. They use a shallow merge
+and take precedence over overlapping named parameters.
+
 Evaluation Recipe Timeouts
 --------------------------
 

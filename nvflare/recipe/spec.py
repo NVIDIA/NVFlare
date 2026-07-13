@@ -91,6 +91,13 @@ def _peek_recipe_args() -> tuple:
 from nvflare.apis.filter import Filter
 from nvflare.app_common.widgets.decomposer_reg import DecomposerRegister
 from nvflare.fuel.utils.fobs import Decomposer
+from nvflare.fuel.utils.job_secret_scanner import warn_on_potential_secrets_in_job_dir
+from nvflare.fuel.utils.secret_utils import (
+    warn_on_potential_secrets,
+    warn_on_unsupported_secret_ref_keys,
+    warn_on_unsupported_secret_refs,
+    warn_on_unsupported_secret_refs_outside_keys,
+)
 from nvflare.job_config.api import FedJob
 from nvflare.job_config.defs import FilterType
 
@@ -183,15 +190,93 @@ class ExecEnv(ABC):
 
 class Recipe(ABC):
 
+    _SECRET_PARAMETER_ATTRS = (
+        "train_args",
+        "eval_args",
+        "task_args",
+        "command",
+        "task_data",
+        "task_meta",
+        "per_site_config",
+        "server_config_overrides",
+        "client_config_overrides",
+        "optimizer_args",
+        "lr_scheduler_args",
+        "xgb_params",
+        "statistic_configs",
+        "extra_env",
+        "run_config",
+        "device_training_params",
+    )
+
+    _UNSUPPORTED_SECRET_REF_ATTRS = frozenset(
+        {
+            "task_data",
+            "task_meta",
+            "server_config_overrides",
+            "optimizer_args",
+            "lr_scheduler_args",
+            "xgb_params",
+            "statistic_configs",
+            "extra_env",
+            "run_config",
+            "device_training_params",
+            "per_site_config",
+        }
+    )
+
+    _SUPPORTED_PER_SITE_SECRET_REF_KEYS = None
+
     def __init__(self, job: FedJob):
         """This is base class of a recipe. Recipes are implemented by jobs.
         A concrete recipe must provide the job for recipe implementation.
+
+        Security contract -- no secrets in recipe parameters:
+            Recipe parameters (``train_args``, ``task_args``, ``eval_args``,
+            ``per_site_config``, config overrides, dicts passed to
+            ``add_client_config``/``add_server_config``, exec params, etc.) can be written in
+            clear text into generated job configuration. These parameters and their nested
+            values must never contain actual passwords, API keys, tokens, private keys, or
+            other credentials. Instead, read secrets from site environment variables or
+            mounted secret files inside your code, or pass a placeholder created with
+            :func:`nvflare.recipe.secrets.secret_ref` or
+            :func:`nvflare.recipe.secrets.secret_file_ref` at a supported runtime boundary.
+            See :mod:`nvflare.recipe.secrets` for the supported parameter locations.
+
+            Before export or run, recipes scan their parameters with heuristics and emit
+            :class:`nvflare.recipe.secrets.PotentialSecretWarning` when a value looks like an
+            actual secret. The scan is best-effort: absence of a warning does not prove a
+            parameter is safe to share.
 
         Args:
             job: the job that implements the recipe.
         """
         self.job = job
         self._helper_per_site_config = None
+        warn_on_potential_secrets(getattr(job, "name", None), context="recipe parameter 'name'")
+
+    def _warn_potential_secrets_in_params(self):
+        """Warn if common recipe parameters look like they contain actual secret values.
+
+        Runs immediately before export or run on conventional parameter attributes that
+        concrete recipes retain. Recipes that transform a parameter before calling this
+        constructor validate that original value explicitly.
+        """
+        for attr in self._SECRET_PARAMETER_ATTRS:
+            value = getattr(self, attr, None)
+            if value is not None:
+                context = f"recipe parameter '{attr}'"
+                warn_on_potential_secrets(value, context=context)
+                if attr in self._UNSUPPORTED_SECRET_REF_ATTRS:
+                    if attr == "per_site_config" and self._SUPPORTED_PER_SITE_SECRET_REF_KEYS is not None:
+                        warn_on_unsupported_secret_refs_outside_keys(
+                            value,
+                            supported_value_keys=self._SUPPORTED_PER_SITE_SECRET_REF_KEYS,
+                            supported_value_depth=2,
+                            context=context,
+                        )
+                    else:
+                        warn_on_unsupported_secret_refs(value, context=context)
 
     def process_env(self, env: ExecEnv):
         """Process environment-specific configuration.
@@ -207,7 +292,21 @@ class Recipe(ABC):
         The generic helper validates only the site-keyed shape. Recipes that
         need to map fields into generated app config, command arguments, data
         loaders, or validators should override ``_apply_per_site_config``.
+
+        Per-site config values end up in the generated job configuration in clear
+        text and must never contain actual secret values; see the Recipe class
+        docstring for the recommended alternatives.
         """
+        warn_on_potential_secrets(config, context="per_site_config")
+        if self._SUPPORTED_PER_SITE_SECRET_REF_KEYS is not None:
+            warn_on_unsupported_secret_refs_outside_keys(
+                config,
+                supported_value_keys=self._SUPPORTED_PER_SITE_SECRET_REF_KEYS,
+                supported_value_depth=2,
+                context="per_site_config",
+            )
+        else:
+            warn_on_unsupported_secret_refs(config, context="per_site_config")
         self._helper_per_site_config = dict(config)
         self._apply_per_site_config(dict(self._helper_per_site_config))
 
@@ -283,6 +382,13 @@ class Recipe(ABC):
 
         Any original additional_params are restored when the context exits.
         """
+        if server_exec_params:
+            warn_on_potential_secrets(server_exec_params, context="server_exec_params")
+            warn_on_unsupported_secret_ref_keys(server_exec_params, context="server_exec_params")
+        if client_exec_params:
+            warn_on_potential_secrets(client_exec_params, context="client_exec_params")
+            warn_on_unsupported_secret_ref_keys(client_exec_params, context="client_exec_params")
+
         params_snapshot = None
         if server_exec_params is not None or client_exec_params is not None:
             params_snapshot = self._snapshot_additional_params()
@@ -314,26 +420,63 @@ class Recipe(ABC):
             obj: Object to add to clients.
             clients: Optional list of specific client names. If None, applies to all clients.
             **kwargs: Extra options forwarded to `job.to()`/`job.to_clients()`.
-        """
-        if clients is None:
-            from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
-            from nvflare.job_config.defs import JobTargetType
 
-            # FedJob has no public API to list per-site deploy targets, so we inspect
-            # private deploy map to preserve existing per-site client topology.
-            deploy_map = getattr(self.job, "_deploy_map", {})
-            existing_client_sites = [
-                target
-                for target in deploy_map.keys()
-                if target not in [ALL_SITES, SERVER_SITE_NAME]
-                and JobTargetType.get_target_type(target) == JobTargetType.CLIENT
-            ]
+        Raises:
+            TypeError: If clients is not a list.
+            ValueError: If clients is empty or contains a non-client name; if specific
+                clients are targeted while the recipe's client app applies to all clients
+                (per-site placement cannot be expressed in the generated job in that
+                topology); or if clients names a site with no existing client app while
+                per-site client apps exist (that would deploy a bare, executor-less app
+                to that site).
+        """
+        from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
+        from nvflare.job_config.defs import JobTargetType
+
+        # FedJob has no public API to list per-site deploy targets, so we inspect
+        # private deploy map to preserve existing per-site client topology.
+        deploy_map = getattr(self.job, "_deploy_map", {})
+        existing_client_sites = [
+            target
+            for target in deploy_map.keys()
+            if target not in [ALL_SITES, SERVER_SITE_NAME]
+            and JobTargetType.get_target_type(target) == JobTargetType.CLIENT
+        ]
+        if clients is None:
             if existing_client_sites:
                 for site in existing_client_sites:
                     self.job.to(obj, site, **kwargs)
             else:
                 self.job.to_clients(obj, **kwargs)
         else:
+            # A bare string would iterate per character; an empty list would be a silent no-op.
+            if not isinstance(clients, list):
+                raise TypeError(f"clients must be a list of client names, got {type(clients).__name__}")
+            if not clients:
+                raise ValueError("clients must not be empty; omit it to apply to all clients")
+            for client in clients:
+                if not isinstance(client, str) or client in (ALL_SITES, SERVER_SITE_NAME):
+                    raise ValueError(f"invalid client name {client!r}: client names must name specific client sites")
+            if ALL_SITES in deploy_map:
+                # The generated job has one client app deployed to all clients. Exporting
+                # both an all-clients app and per-site apps is not expressible (the
+                # all-clients app wins and per-site apps are dropped), so fail loudly
+                # instead of silently losing the placement.
+                raise ValueError(
+                    "cannot target specific clients: this recipe's client app applies to all clients. "
+                    "Construct the recipe with per-site client apps (e.g. the per_site_config constructor "
+                    "argument on recipes that support it) or omit clients to apply to all clients."
+                )
+            if existing_client_sites:
+                # Targeting a site with no app would create a bare, executor-less app for
+                # that site in the exported job — the same class of quiet misconfiguration
+                # as the ALL_SITES case above, so fail loudly instead.
+                unknown = [c for c in clients if c not in existing_client_sites]
+                if unknown:
+                    raise ValueError(
+                        f"unknown client site(s) {unknown}: this recipe has per-site client apps "
+                        f"only for {sorted(existing_client_sites)}"
+                    )
             for client in clients:
                 self.job.to(obj, client, **kwargs)
 
@@ -370,6 +513,11 @@ class Recipe(ABC):
     def add_client_config(self, config: Dict, clients: Optional[List[str]] = None):
         """Add top-level configuration parameters to config_fed_client.json.
 
+        The config values are written in clear text into the generated
+        ``config_fed_client.json`` and must never contain actual secret values;
+        a ``PotentialSecretWarning`` is emitted for values that look like secrets.
+        See the Recipe class docstring for the recommended alternatives.
+
         Args:
             config: Dictionary of configuration parameters to add.
             clients: Optional list of specific client names. If None, applies to all clients.
@@ -380,6 +528,8 @@ class Recipe(ABC):
         if not isinstance(config, dict):
             raise TypeError(f"config must be a dict, got {type(config).__name__}")
 
+        warn_on_potential_secrets(config, context="add_client_config config")
+        warn_on_unsupported_secret_ref_keys(config, context="add_client_config config")
         self._add_to_client_apps(config, clients=clients)
 
     def add_client_file(self, file_path: str, clients: Optional[List[str]] = None):
@@ -434,6 +584,11 @@ class Recipe(ABC):
     def add_server_config(self, config: Dict):
         """Add top-level configuration parameters to config_fed_server.json.
 
+        The config values are written in clear text into the generated
+        ``config_fed_server.json`` and must never contain actual secret values;
+        a ``PotentialSecretWarning`` is emitted for values that look like secrets.
+        See the Recipe class docstring for the recommended alternatives.
+
         Args:
             config: Dictionary of configuration parameters to add.
 
@@ -443,6 +598,8 @@ class Recipe(ABC):
         if not isinstance(config, dict):
             raise TypeError(f"config must be a dict, got {type(config).__name__}")
 
+        warn_on_potential_secrets(config, context="add_server_config config")
+        warn_on_unsupported_secret_ref_keys(config, context="add_server_config config")
         self.job.to_server(config)
 
     def add_server_file(self, file_path: str):
@@ -530,6 +687,19 @@ class Recipe(ABC):
         self.job.to_server(DecomposerRegister(class_names), id="decomposer_reg")
         self._add_to_client_apps(DecomposerRegister(class_names), id="decomposer_reg")
 
+    def _warn_potential_secrets_in_exported_job(self, job_dir: str) -> None:
+        """Scan the exported job's generated config files for secret-looking values.
+
+        This is a last-line best-effort check on the artifacts actually produced;
+        it does not redact values or make a job folder safe. Only generated JSON
+        config files are scanned -- user code bundled under ``custom/`` is not.
+        """
+        warn_on_potential_secrets_in_job_dir(
+            job_dir=job_dir,
+            job_name=getattr(self.job, "name", None),
+            context="exported job file",
+        )
+
     def export(
         self,
         job_dir: str,
@@ -538,6 +708,12 @@ class Recipe(ABC):
         env: Optional[ExecEnv] = None,
     ):
         """Export the recipe to a job definition.
+
+        Recipe parameters can appear in the exported job folder in clear text. Generated
+        config files are scanned and a ``PotentialSecretWarning`` is emitted for values that
+        look like actual secrets. This best-effort scan does not redact values or prove that
+        an export is safe; callers must follow the Recipe no-secret contract. See the Recipe
+        class docstring for how to pass references instead.
 
         Args:
             job_dir: directory where the job will be exported to.
@@ -548,10 +724,12 @@ class Recipe(ABC):
         Returns: None
 
         """
+        self._warn_potential_secrets_in_params()
         with self._temporary_exec_params(server_exec_params=server_exec_params, client_exec_params=client_exec_params):
             if env is not None:
                 self.process_env(env)
             self.job.export_job(job_dir)
+        self._warn_potential_secrets_in_exported_job(job_dir)
 
     def run(
         self, env: ExecEnv, server_exec_params: Optional[dict] = None, client_exec_params: Optional[dict] = None
@@ -566,6 +744,7 @@ class Recipe(ABC):
         Returns: Run to get job ID and execution results
 
         """
+        self._warn_potential_secrets_in_params()
         with self._temporary_exec_params(server_exec_params=server_exec_params, client_exec_params=client_exec_params):
             self.process_env(env)
             job_id = env.deploy(self.job)

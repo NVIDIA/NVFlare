@@ -20,7 +20,7 @@ from nvflare.fuel.sec.admin_cert import AdminCertValidationError, validate_admin
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys
 
 
-def _make_admin_cert(role="lead", common_name="alice@nvidia.com", ca=False, extra_extensions=None):
+def _make_admin_cert(role="lead", common_name="alice@nvidia.com", org="nvidia", ca=False, extra_extensions=None):
     root_key, root_pub_key = generate_keys()
     root_cert = generate_cert(
         subject=Identity("root", "nvidia"),
@@ -31,7 +31,7 @@ def _make_admin_cert(role="lead", common_name="alice@nvidia.com", ca=False, extr
     )
     admin_key, admin_pub_key = generate_keys()
     admin_cert = generate_cert(
-        subject=Identity(common_name, "nvidia", role),
+        subject=Identity(common_name, org, role),
         issuer=Identity("root", "nvidia"),
         signing_pri_key=root_key,
         subject_pub_key=admin_pub_key,
@@ -48,11 +48,22 @@ def test_validate_admin_leaf_cert_accepts_flare_roles(role):
     validate_admin_leaf_cert(admin_cert)
 
 
-def test_validate_admin_leaf_cert_rejects_unknown_role():
-    _root_cert, admin_cert = _make_admin_cert(role="admin")
+def test_validate_admin_leaf_cert_accepts_custom_role():
+    _root_cert, admin_cert = _make_admin_cert(role="self_defined")
 
-    with pytest.raises(AdminCertValidationError, match="unstructuredName"):
-        validate_admin_leaf_cert(admin_cert)
+    validate_admin_leaf_cert(admin_cert)
+
+
+def test_validate_admin_leaf_cert_accepts_missing_organization():
+    _root_cert, admin_cert = _make_admin_cert(org=None)
+
+    validate_admin_leaf_cert(admin_cert)
+
+
+def test_validate_admin_leaf_cert_accepts_missing_role():
+    _root_cert, admin_cert = _make_admin_cert(role=None)
+
+    validate_admin_leaf_cert(admin_cert)
 
 
 def test_validate_admin_leaf_cert_rejects_ca_cert():

@@ -16,6 +16,7 @@ from typing import Optional, Type, Union
 
 from nvflare.apis.fl_constant import SystemVarName
 from nvflare.app_common.abstract.launcher import Launcher
+from nvflare.app_common.executors.client_api_executor import ALL_EXECUTION_MODES, ClientAPIExecutor, ExecutionMode
 from nvflare.app_common.executors.client_api_launcher_executor import ClientAPILauncherExecutor
 from nvflare.app_common.executors.in_process_client_api_executor import InProcessClientAPIExecutor
 from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
@@ -64,6 +65,7 @@ class BaseScriptRunner:
         shutdown_timeout: float = 0.0,
         memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
+        execution_mode: Optional[str] = None,
     ):
         """BaseScriptRunner is used with FedJob API to run or launch a script.
 
@@ -78,7 +80,11 @@ class BaseScriptRunner:
 
         Args:
             script (str): Script to run. For in-process must be a python script path. For ex-process can be any script support by `command`.
-            script_args (str): Optional arguments for script (appended to script).
+            script_args (str): Optional arguments for script (appended to script). The string is written in
+                clear text into the generated job config, so it must never contain actual secret values;
+                use :func:`nvflare.recipe.secrets.secret_ref` for a site environment variable or
+                :func:`nvflare.recipe.secrets.secret_file_ref` for a mounted secret file. The
+                executing site resolves the placeholder at runtime.
             launch_external_process (bool): Whether to launch the script in external process. Defaults to False.
             command (str): If launch_external_process=True, command to run script (prepended to script). Defaults to "python3".
             framework (str): Framework is used to determine the `params_exchange_format`. Defaults to FrameworkType.PYTORCH.
@@ -116,6 +122,16 @@ class BaseScriptRunner:
 
             shutdown_timeout (float): If provided, will wait for this number of seconds before shutdown.
                 Only used if `launch_external_process` is True. Defaults to 0.0.
+
+            execution_mode (Optional[str]): Selects the new ClientAPIExecutor
+                (design: docs/design/client_api_execution_modes.md) instead of the legacy
+                executor stack. Currently only "in_process" is available; "external_process"
+                and "attach" land with their backends. When set, the params boundary is
+                pass-through (no ParamsConverters): `framework`,
+                `server_expected_format` and `params_transfer_type` are not used, and the
+                legacy stack args (`launch_external_process`, `executor`, `task_pipe`,
+                `launcher`, `metric_relay`, `metric_pipe`) must not be set. Defaults to None
+                (legacy behavior, unchanged).
         """
         self._script = script
         self._script_args = script_args
@@ -128,9 +144,37 @@ class BaseScriptRunner:
         self._launch_once = launch_once
         self._shutdown_timeout = shutdown_timeout
 
+        if execution_mode is not None:
+            if execution_mode not in ALL_EXECUTION_MODES:
+                raise ValueError(f"invalid execution_mode '{execution_mode}': must be one of {ALL_EXECUTION_MODES}")
+            if execution_mode != ExecutionMode.IN_PROCESS:
+                raise ValueError(
+                    f"execution_mode '{execution_mode}' is not yet available via ScriptRunner: "
+                    f"only '{ExecutionMode.IN_PROCESS}' is supported until the corresponding backend lands"
+                )
+            conflicts = {
+                "launch_external_process": launch_external_process or None,
+                "executor": executor,
+                "task_pipe": task_pipe,
+                "launcher": launcher,
+                "metric_relay": metric_relay,
+                "metric_pipe": metric_pipe,
+            }
+            set_conflicts = [name for name, value in conflicts.items() if value]
+            if set_conflicts:
+                raise ValueError(
+                    f"execution_mode is mutually exclusive with the legacy executor stack args: {set_conflicts}"
+                )
+        self._execution_mode = execution_mode
+
         self._params_exchange_format = None
 
-        if self._framework == FrameworkType.PYTORCH:
+        # The new-executor path is pass-through (no ParamsConverters), so the
+        # framework format resolution -- including its torch/tensorflow import checks -- is
+        # skipped entirely when execution_mode is set.
+        if execution_mode is not None:
+            pass
+        elif self._framework == FrameworkType.PYTORCH:
             _, torch_ok = optional_import(module="torch")
             if torch_ok:
                 self._params_exchange_format = ExchangeFormat.PYTORCH
@@ -207,6 +251,18 @@ class BaseScriptRunner:
         job.check_kwargs(args_to_check=kwargs, args_expected={"tasks": False})
         tasks = kwargs.get("tasks", ["*"])
         comp_ids = {}
+
+        if self._execution_mode is not None:
+            executor = ClientAPIExecutor(
+                execution_mode=self._execution_mode,
+                task_script_path=self._script,
+                task_script_args=self._script_args,
+                memory_gc_rounds=self._memory_gc_rounds,
+                cuda_empty_cache=self._cuda_empty_cache,
+            )
+            job.add_executor(executor, tasks=tasks, ctx=ctx)
+            job.add_resources(resources=[self._script], ctx=ctx)
+            return comp_ids
 
         if self._launch_external_process:
             task_pipe = self._task_pipe if self._task_pipe else self._create_cell_pipe()
@@ -320,6 +376,7 @@ class ScriptRunner(BaseScriptRunner):
         shutdown_timeout: float = 0.0,
         memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
+        execution_mode: Optional[str] = None,
     ):
         """ScriptRunner is used with FedJob API to run or launch a script.
 
@@ -328,7 +385,11 @@ class ScriptRunner(BaseScriptRunner):
 
         Args:
             script (str): Script to run. For in-process must be a python script path. For ex-process can be any script support by `command`.
-            script_args (str): Optional arguments for script (appended to script).
+            script_args (str): Optional arguments for script (appended to script). The string is written in
+                clear text into the generated job config, so it must never contain actual secret values;
+                use :func:`nvflare.recipe.secrets.secret_ref` for a site environment variable or
+                :func:`nvflare.recipe.secrets.secret_file_ref` for a mounted secret file. The
+                executing site resolves the placeholder at runtime.
             launch_external_process (bool): Whether to launch the script in external process. Defaults to False.
             command (str): If launch_external_process=True, command to run script (prepended to script). Defaults to "python3".
             framework (str): Framework is used to determine the `params_exchange_format`. Defaults to FrameworkType.PYTORCH.
@@ -343,6 +404,9 @@ class ScriptRunner(BaseScriptRunner):
                 or on each task. Only used if `launch_external_process` is True. Defaults to True.
             shutdown_timeout (float): If provided, will wait for this number of seconds before shutdown.
                 Only used if `launch_external_process` is True. Defaults to 0.0.
+            execution_mode (Optional[str]): Selects the new ClientAPIExecutor instead of the
+                legacy executor stack; only "in_process" is currently available. See
+                BaseScriptRunner for the full contract. Defaults to None (legacy behavior).
         """
         super().__init__(
             script=script,
@@ -358,4 +422,5 @@ class ScriptRunner(BaseScriptRunner):
             shutdown_timeout=shutdown_timeout,
             memory_gc_rounds=memory_gc_rounds,
             cuda_empty_cache=cuda_empty_cache,
+            execution_mode=execution_mode,
         )

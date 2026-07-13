@@ -25,6 +25,10 @@ from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
 class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
     """A recipe for implementing Federated Averaging (FedAvg) with Scikit-learn.
 
+    Recipe parameters, including ``train_args`` and nested ``per_site_config`` values,
+    must never contain actual secrets. Read secrets from site environment variables or mounted
+    files; references are supported only where documented in :mod:`nvflare.recipe.secrets`.
+
     This recipe sets up a complete federated learning workflow with memory-efficient
     InTime aggregation, specifically designed for scikit-learn models.
 
@@ -47,13 +51,15 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
         train_args: Command line arguments to pass to the training script.
         aggregator: Custom aggregator for combining client updates. If None,
             uses InTimeAccumulateWeightedAggregator with aggregator_data_kind.
-        aggregator_data_kind: Data kind to use for the aggregator. Defaults to DataKind.WEIGHTS.
+        aggregator_data_kind: Data kind expected from client results. Clients that return differences
+            must label the result with FLModel.params_type=ParamsType.DIFF. Defaults to DataKind.WEIGHTS.
         launch_external_process: Whether to launch the script in external process. Defaults to False.
         command: If launch_external_process=True, command to run script (prepended to script).
             Defaults to "python3 -u".
         per_site_config: Per-site configuration for the federated learning job. Dictionary mapping
             site names to configuration dicts. If not provided, the same configuration will be used
-            for all clients.
+            for all clients. Nested values become part of the generated job definition and must not
+            contain secrets.
         key_metric: Metric used to determine if the model is globally best. If validation metrics are
             a dict, key_metric selects the metric used for global model selection. Defaults to "accuracy".
         launch_once: Whether the external process will be launched only once at the beginning

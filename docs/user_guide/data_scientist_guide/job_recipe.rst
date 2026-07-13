@@ -223,6 +223,23 @@ data loaders, validators, or other recipe behavior.
    ``data_path`` or ``batch_size``. For FedAvg, pass those values through
    ``train_args`` unless your recipe explicitly documents another shape.
 
+No Secrets In Recipe Parameters
+-------------------------------
+
+Recipe parameters are job definition, not secret storage. Values such as
+``train_args``, ``task_args``, ``eval_args``, ``per_site_config``, config
+override dictionaries, execution parameters, and dictionaries passed to
+``add_client_config`` or ``add_server_config`` can be serialized in clear text
+into the generated job. They must never contain actual passwords, API keys,
+tokens, private keys, or other credentials.
+
+Recipes emit ``PotentialSecretWarning`` when a supplied value looks like an
+actual secret, but this heuristic check cannot prove that a value is safe.
+Keep the value at the executing site. Use ``secret_ref`` for a site environment
+variable or ``secret_file_ref`` for a mounted secret file only at a supported
+runtime boundary. See :ref:`recipe_secrets` for the supported locations,
+examples, and deployment guidance.
+
 Recipe Metadata
 ---------------
 
@@ -306,6 +323,13 @@ that value.
 The helper does not validate runtime resource availability, production
 enrollment, or whether sites named in metadata are present for a run. The
 execution environment and deployment still determine which sites are present.
+
+For a complete production example, see the
+:github_nvflare_link:`Recipe job on Kubernetes clients <examples/advanced/recipe-k8s>`.
+It uses ``ProdEnv`` to submit a PyTorch CIFAR-10 job to ``site-1`` and
+``site-2`` in separate Kubernetes clusters, keeps GPU requirements in
+``resource_spec``, and places the per-cluster job images and container
+settings in ``launcher_spec``.
 
 Execution Environments
 ----------------------

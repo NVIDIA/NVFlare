@@ -317,3 +317,58 @@ class TestScriptRunnerMemoryManagement:
         assert runner._memory_gc_rounds == 1
         assert runner._cuda_empty_cache is True
         assert runner._framework == framework
+
+
+class TestExecutionModeSelection:
+    """execution_mode selects the new ClientAPIExecutor (design: client_api_execution_modes.md)."""
+
+    def test_in_process_mode_constructs_without_framework_imports(self):
+        # the new path is pass-through (no ParamsConverters), so the default
+        # framework=PYTORCH must NOT trigger the torch import check
+        runner = ScriptRunner(script="train.py", execution_mode="in_process")
+        assert runner._execution_mode == "in_process"
+        assert runner._params_exchange_format is None
+
+    def test_invalid_mode_rejected(self):
+        with pytest.raises(ValueError, match="invalid execution_mode"):
+            ScriptRunner(script="train.py", execution_mode="bogus")
+
+    @pytest.mark.parametrize("mode", ["external_process", "attach"])
+    def test_not_yet_available_modes_fail_at_build_time(self, mode):
+        # fail when the job is BUILT, not when the backend panics at START_RUN
+        with pytest.raises(ValueError, match="not yet available"):
+            ScriptRunner(script="train.py", execution_mode=mode)
+
+    def test_conflicts_with_legacy_stack_args(self):
+        with pytest.raises(ValueError, match="mutually exclusive.*launch_external_process"):
+            ScriptRunner(script="train.py", execution_mode="in_process", launch_external_process=True)
+
+    def test_default_none_preserves_legacy_behavior(self):
+        runner = ScriptRunner(script="train.py", script_args="--epochs 10", framework=FrameworkType.NUMPY)
+        assert runner._execution_mode is None
+
+    def test_add_to_fed_job_wires_client_api_executor(self):
+        from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
+        from nvflare.job_config.api import FedJob
+
+        with patch("os.path.isfile", return_value=True), patch("os.path.exists", return_value=True):
+            job = FedJob(name="smoke")
+            runner = ScriptRunner(
+                script="client.py", script_args="--update_type full", execution_mode="in_process", memory_gc_rounds=2
+            )
+            job.to(runner, "site-1", tasks=["train"])
+
+        app = job._deploy_map["site-1"]
+        executors = app.app_config.executors
+        assert len(executors) == 1
+        executor = executors[0].executor
+        assert isinstance(executor, ClientAPIExecutor)
+        # the exact args the simulator smoke test validated end-to-end
+        assert executor._execution_mode == "in_process"
+        assert executor._task_script_path == "client.py"
+        assert executor._task_script_args == "--update_type full"
+        assert executor._memory_gc_rounds == 2
+        # no legacy stack components (pipes/launcher/relay) were added
+        assert app.app_config.components == {}
+        # the script rides along as an app resource
+        assert "client.py" in app.app_config.ext_scripts

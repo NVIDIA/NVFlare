@@ -55,10 +55,19 @@ class _Mount(dict):
 
 _docker_types.Mount = _Mount
 
+_docker_models = ModuleType("docker.models")
+_docker_models_containers = ModuleType("docker.models.containers")
+_docker_models_containers.RUN_CREATE_KWARGS = ["labels"]
+_docker_models_containers.RUN_HOST_CONFIG_KWARGS = ["shm_size", "ipc_mode", "device_requests"]
+_docker_models.containers = _docker_models_containers
+_docker_mock.models = _docker_models
+
 for _mod_name, _mod_obj in [
     ("docker", _docker_mock),
     ("docker.errors", _docker_errors),
     ("docker.types", _docker_types),
+    ("docker.models", _docker_models),
+    ("docker.models.containers", _docker_models_containers),
 ]:
     sys.modules[_mod_name] = _mod_obj
 
@@ -451,6 +460,9 @@ class TestDockerJobLauncherInit:
             "auto_remove",
             "user",
             "working_dir",
+            # image is job-selected via docker_spec; a site-level default would
+            # collide with the positional image arg at containers.run time
+            "image",
         ):
             with pytest.raises(ValueError, match="reserved"):
                 _make_launcher(default_job_container_kwargs={reserved: "anything"})
@@ -698,7 +710,10 @@ class TestDockerJobLauncherLaunchJob:
         with patch(
             "nvflare.app_opt.job_launcher.docker_launcher.load_study_data_file", return_value=study_data
         ) as mock_load:
-            with patch("nvflare.app_opt.job_launcher.docker_launcher.os.path.exists", return_value=True):
+            with patch(
+                "nvflare.app_opt.job_launcher.docker_launcher.os.path.exists",
+                side_effect=lambda path: not path.endswith("study_runtime.yaml"),
+            ):
                 launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
 
         mock_load.assert_called_once_with("/var/tmp/nvflare/workspace/local/study_data.yaml", logger=launcher.logger)
@@ -762,12 +777,14 @@ class TestDockerJobLauncherLaunchJob:
         dc.containers.get.return_value = _make_container("running")
         study_data = {"study-a": {"training": {"source": "/host/not-mounted-in-parent", "mode": "ro"}}}
 
+        def _exists(path):
+            if path.endswith("study_runtime.yaml"):
+                return False
+            raise AssertionError("host source should be left for Docker to validate")
+
         fl_ctx, _ = _make_fl_ctx()
         with patch("nvflare.app_opt.job_launcher.docker_launcher.load_study_data_file", return_value=study_data):
-            with patch(
-                "nvflare.app_opt.job_launcher.docker_launcher.os.path.exists",
-                side_effect=AssertionError("host source should be left for Docker to validate"),
-            ):
+            with patch("nvflare.app_opt.job_launcher.docker_launcher.os.path.exists", side_effect=_exists):
                 launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
 
         mounts_by_target = _mounts_by_target(dc.containers.run.call_args[1]["mounts"])
@@ -810,7 +827,10 @@ class TestDockerJobLauncherLaunchJob:
 
         fl_ctx, _ = _make_fl_ctx()
         with patch("nvflare.app_opt.job_launcher.docker_launcher.load_study_data_file", return_value=study_data):
-            with patch("nvflare.app_opt.job_launcher.docker_launcher.os.path.exists", return_value=True):
+            with patch(
+                "nvflare.app_opt.job_launcher.docker_launcher.os.path.exists",
+                side_effect=lambda path: not path.endswith("study_runtime.yaml"),
+            ):
                 launcher.launch_job(_make_job_meta(study="default"), fl_ctx)
 
         mounts_by_target = _mounts_by_target(dc.containers.run.call_args[1]["mounts"])
@@ -1139,3 +1159,307 @@ class TestGetModuleArgs:
         launcher = _make_launcher(cls=ServerDockerJobLauncher)
         result = launcher.get_module_args({})
         assert isinstance(result, dict)
+
+
+# ---------------------------------------------------------------------------
+# DockerJobLauncher — study_runtime.yaml (v2)
+# ---------------------------------------------------------------------------
+
+
+class TestDockerJobLauncherStudyRuntime:
+    def _write_study_runtime(self, tmp_path, text):
+        local_dir = tmp_path / "local"
+        local_dir.mkdir(parents=True, exist_ok=True)
+        (local_dir / "study_runtime.yaml").write_text(text, encoding="utf-8")
+
+    def _make_v2_launcher(self, tmp_path):
+        launcher = _make_launcher()
+        launcher.WORKSPACE_MOUNT = str(tmp_path)
+        dc = launcher._docker_client
+        container = MagicMock()
+        container.id = "abc123"
+        dc.containers.run.return_value = container
+        dc.containers.get.return_value = _make_container("running")
+        return launcher, dc
+
+    def test_env_and_secret_env_injected(self, tmp_path, monkeypatch):
+        self._write_study_runtime(
+            tmp_path,
+            "format_version: 2\n"
+            "studies:\n"
+            "  study-a:\n"
+            "    env:\n"
+            "      DB_HOST: postgres.internal\n"
+            "      USER: site-user\n"
+            "    secret_env:\n"
+            "      DB_PASSWORD: {source: NVFL_STUDY_A_DB_PASSWORD, key: password}\n",
+        )
+        monkeypatch.setenv("NVFL_STUDY_A_DB_PASSWORD", "s3cret")
+        launcher, dc = self._make_v2_launcher(tmp_path)
+
+        fl_ctx, _ = _make_fl_ctx()
+        launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
+
+        environment = dc.containers.run.call_args[1]["environment"]
+        assert environment["DB_HOST"] == "postgres.internal"
+        assert environment["DB_PASSWORD"] == "s3cret"
+        # launcher-controlled variables win over site-provided ones
+        assert environment["USER"] != "site-user"
+
+    def test_missing_secret_env_source_raises(self, tmp_path, monkeypatch):
+        self._write_study_runtime(
+            tmp_path,
+            "format_version: 2\n"
+            "studies:\n"
+            "  study-a:\n"
+            "    secret_env:\n"
+            "      DB_PASSWORD: {source: NVFL_STUDY_A_MISSING, key: password}\n",
+        )
+        monkeypatch.delenv("NVFL_STUDY_A_MISSING", raising=False)
+        launcher, dc = self._make_v2_launcher(tmp_path)
+
+        fl_ctx, _ = _make_fl_ctx()
+        with pytest.raises(RuntimeError, match="NVFL_STUDY_A_MISSING"):
+            launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
+        dc.containers.run.assert_not_called()
+
+    def test_datasets_and_secret_mounts_bind_mounted(self, tmp_path):
+        self._write_study_runtime(
+            tmp_path,
+            "format_version: 2\n"
+            "studies:\n"
+            "  study-a:\n"
+            "    datasets:\n"
+            "      training:\n"
+            "        source: /host/data/train\n"
+            "        mode: ro\n"
+            "    secret_mounts:\n"
+            "      db-ca:\n"
+            "        source: /host/secrets/db-ca\n"
+            "        mount_path: /var/run/nvflare/secrets/db-ca\n",
+        )
+        launcher, dc = self._make_v2_launcher(tmp_path)
+
+        fl_ctx, _ = _make_fl_ctx()
+        launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
+
+        mounts_by_target = _mounts_by_target(dc.containers.run.call_args[1]["mounts"])
+        assert mounts_by_target["/data/study-a/training"] == {
+            "Target": "/data/study-a/training",
+            "Source": "/host/data/train",
+            "Type": "bind",
+            "ReadOnly": True,
+        }
+        assert mounts_by_target["/var/run/nvflare/secrets/db-ca"] == {
+            "Target": "/var/run/nvflare/secrets/db-ca",
+            "Source": "/host/secrets/db-ca",
+            "Type": "bind",
+            "ReadOnly": True,
+        }
+
+    def test_rejects_secret_mount_items(self, tmp_path):
+        # items is a K8s Secret projection concept; on Docker the admin scopes the
+        # source directory instead. Silently mounting the whole directory would
+        # expose sibling files the site tried to project out.
+        self._write_study_runtime(
+            tmp_path,
+            "format_version: 2\n"
+            "studies:\n"
+            "  study-a:\n"
+            "    secret_mounts:\n"
+            "      db-ca:\n"
+            "        source: /host/secrets\n"
+            "        mount_path: /var/run/nvflare/secrets/db-ca\n"
+            "        items:\n"
+            "          ca.crt: ca.crt\n",
+        )
+        launcher, dc = self._make_v2_launcher(tmp_path)
+
+        fl_ctx, _ = _make_fl_ctx()
+        with pytest.raises(ValueError, match="Kubernetes-only"):
+            launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
+        dc.containers.run.assert_not_called()
+
+    def test_study_container_image_used_when_job_meta_has_none(self, tmp_path):
+        self._write_study_runtime(
+            tmp_path,
+            "format_version: 2\nstudies:\n  study-a:\n    container:\n      image: registry.example.com/study:v9\n",
+        )
+        launcher, dc = self._make_v2_launcher(tmp_path)
+
+        fl_ctx, _ = _make_fl_ctx()
+        launcher.launch_job(_make_job_meta(study="study-a", docker_spec={"image": None}), fl_ctx)
+
+        assert dc.containers.run.call_args[0][0] == "registry.example.com/study:v9"
+
+    def test_job_meta_image_wins_over_study_container_image(self, tmp_path):
+        self._write_study_runtime(
+            tmp_path,
+            "format_version: 2\nstudies:\n  study-a:\n    container:\n      image: registry.example.com/study:v9\n",
+        )
+        launcher, dc = self._make_v2_launcher(tmp_path)
+
+        fl_ctx, _ = _make_fl_ctx()
+        launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
+
+        assert dc.containers.run.call_args[0][0] == "nvflare/nvflare:test"
+
+    def test_missing_image_error_mentions_study_runtime(self, tmp_path):
+        self._write_study_runtime(tmp_path, "format_version: 2\nstudies: {}\n")
+        launcher, dc = self._make_v2_launcher(tmp_path)
+
+        fl_ctx, _ = _make_fl_ctx()
+        with pytest.raises(RuntimeError, match="container.image"):
+            launcher.launch_job(_make_job_meta(study="study-a", docker_spec={"image": None}), fl_ctx)
+        dc.containers.run.assert_not_called()
+
+    def test_docker_kwargs_applied_to_job_container(self, tmp_path):
+        self._write_study_runtime(
+            tmp_path,
+            "format_version: 2\n"
+            "studies:\n"
+            "  study-a:\n"
+            "    docker_kwargs:\n"
+            "      shm_size: 8g\n"
+            "      ipc_mode: host\n",
+        )
+        launcher, dc = self._make_v2_launcher(tmp_path)
+
+        fl_ctx, _ = _make_fl_ctx()
+        launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
+
+        call_kwargs = dc.containers.run.call_args[1]
+        assert call_kwargs["shm_size"] == "8g"
+        assert call_kwargs["ipc_mode"] == "host"
+
+    def test_job_level_kwargs_win_over_study_docker_kwargs(self, tmp_path):
+        self._write_study_runtime(
+            tmp_path,
+            "format_version: 2\nstudies:\n  study-a:\n    docker_kwargs:\n      shm_size: 8g\n",
+        )
+        launcher, dc = self._make_v2_launcher(tmp_path)
+
+        fl_ctx, _ = _make_fl_ctx()
+        launcher.launch_job(_make_job_meta(study="study-a", docker_spec={"shm_size": "2g"}), fl_ctx)
+
+        assert dc.containers.run.call_args[1]["shm_size"] == "2g"
+
+    def test_study_docker_kwargs_win_over_site_defaults(self, tmp_path):
+        self._write_study_runtime(
+            tmp_path,
+            "format_version: 2\nstudies:\n  study-a:\n    docker_kwargs:\n      shm_size: 8g\n",
+        )
+        launcher = _make_launcher(default_job_container_kwargs={"shm_size": "1g", "labels": {"site": "a"}})
+        launcher.WORKSPACE_MOUNT = str(tmp_path)
+        dc = launcher._docker_client
+        container = MagicMock()
+        container.id = "abc123"
+        dc.containers.run.return_value = container
+        dc.containers.get.return_value = _make_container("running")
+
+        fl_ctx, _ = _make_fl_ctx()
+        launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
+
+        call_kwargs = dc.containers.run.call_args[1]
+        assert call_kwargs["shm_size"] == "8g"
+        assert call_kwargs["labels"] == {"site": "a"}
+
+    def test_job_num_of_gpus_wins_over_study_device_requests(self, tmp_path):
+        self._write_study_runtime(
+            tmp_path,
+            "format_version: 2\n"
+            "studies:\n"
+            "  study-a:\n"
+            "    docker_kwargs:\n"
+            "      device_requests:\n"
+            "        - Count: 4\n"
+            "          Capabilities: [[gpu]]\n",
+        )
+        launcher, dc = self._make_v2_launcher(tmp_path)
+
+        fl_ctx, _ = _make_fl_ctx()
+        launcher.launch_job(_make_job_meta(study="study-a", docker_spec={"num_of_gpus": 1}), fl_ctx)
+
+        assert dc.containers.run.call_args[1]["device_requests"] == [{"Count": 1, "Capabilities": [["gpu"]]}]
+
+    def test_explicit_zero_gpus_drops_study_device_requests(self, tmp_path):
+        self._write_study_runtime(
+            tmp_path,
+            "format_version: 2\n"
+            "studies:\n"
+            "  study-a:\n"
+            "    docker_kwargs:\n"
+            "      device_requests:\n"
+            "        - Count: 4\n"
+            "          Capabilities: [[gpu]]\n",
+        )
+        launcher, dc = self._make_v2_launcher(tmp_path)
+
+        fl_ctx, _ = _make_fl_ctx()
+        launcher.launch_job(_make_job_meta(study="study-a", docker_spec={"num_of_gpus": 0}), fl_ctx)
+
+        assert "device_requests" not in dc.containers.run.call_args[1]
+
+    def test_unspecified_job_gpus_keep_study_device_requests(self, tmp_path):
+        self._write_study_runtime(
+            tmp_path,
+            "format_version: 2\n"
+            "studies:\n"
+            "  study-a:\n"
+            "    docker_kwargs:\n"
+            "      device_requests:\n"
+            "        - Count: 4\n"
+            "          Capabilities: [[gpu]]\n",
+        )
+        launcher, dc = self._make_v2_launcher(tmp_path)
+
+        fl_ctx, _ = _make_fl_ctx()
+        launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
+
+        assert dc.containers.run.call_args[1]["device_requests"] == [{"Count": 4, "Capabilities": [["gpu"]]}]
+
+    def test_docker_kwargs_reserved_key_rejected(self, tmp_path):
+        self._write_study_runtime(
+            tmp_path,
+            "format_version: 2\nstudies:\n  study-a:\n    docker_kwargs:\n      environment: {A: b}\n",
+        )
+        launcher, dc = self._make_v2_launcher(tmp_path)
+
+        fl_ctx, _ = _make_fl_ctx()
+        with pytest.raises(ValueError, match="launcher-owned"):
+            launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
+        dc.containers.run.assert_not_called()
+
+    def test_docker_kwargs_unknown_sdk_key_rejected(self, tmp_path):
+        self._write_study_runtime(
+            tmp_path,
+            "format_version: 2\nstudies:\n  study-a:\n    docker_kwargs:\n      shm_szie: 8g\n",
+        )
+        launcher, dc = self._make_v2_launcher(tmp_path)
+
+        fl_ctx, _ = _make_fl_ctx()
+        with pytest.raises(RuntimeError, match="not supported by the installed Docker SDK"):
+            launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
+        dc.containers.run.assert_not_called()
+
+    def test_conflicts_with_v1_file(self, tmp_path):
+        self._write_study_runtime(tmp_path, "format_version: 2\nstudies: {}\n")
+        (tmp_path / "local" / "study_data.yaml").write_text("study-a: {}\n", encoding="utf-8")
+        launcher, dc = self._make_v2_launcher(tmp_path)
+
+        fl_ctx, _ = _make_fl_ctx()
+        with pytest.raises(RuntimeError, match="cannot be combined"):
+            launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
+        dc.containers.run.assert_not_called()
+
+    def test_rejects_pod_template(self, tmp_path):
+        self._write_study_runtime(
+            tmp_path,
+            "format_version: 2\n" "studies:\n" "  study-a:\n" "    pod_template:\n" "      spec: {}\n",
+        )
+        launcher, dc = self._make_v2_launcher(tmp_path)
+
+        fl_ctx, _ = _make_fl_ctx()
+        with pytest.raises(ValueError, match="Kubernetes-only"):
+            launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
+        dc.containers.run.assert_not_called()
