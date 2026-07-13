@@ -24,8 +24,8 @@ from nvflare.collab.api.dec import get_object_publish_interface
 from nvflare.collab.api.proxy_utils import create_proxy_with_children
 from nvflare.collab.api.run_server import run_server
 from nvflare.collab.backends.subprocess_backend import SubprocessBackend
-from nvflare.collab.backends.sim_backend import SimBackend
-from nvflare.collab.sim.ws import SimWorkspace
+from nvflare.collab.backends.local_backend import LocalBackend
+from nvflare.collab.local.ws import LocalWorkspace
 from nvflare.collab.sys.subprocess_launcher import SubprocessLauncher
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -44,7 +44,7 @@ class AppRunner:
     def _prepare_app_backends(self, app: App, site_name: str = None):
         """Create backend instances for an app.
 
-        For in-process mode, creates SimBackend instances.
+        For in-process mode, creates LocalBackend instances.
         For subprocess mode, creates SubprocessBackend instances that route
         calls to the worker subprocess via CellNet.
 
@@ -65,11 +65,11 @@ class AppRunner:
             for name, obj in targets.items():
                 bes[name] = SubprocessBackend(launcher, self.abort_signal, self.thread_executor, target_name=name)
         else:
-            # In-process mode: use SimBackend for direct execution
-            bes = {"": SimBackend("", app, app, self.abort_signal, self.thread_executor)}
+            # In-process mode: use LocalBackend for direct execution
+            bes = {"": LocalBackend("", app, app, self.abort_signal, self.thread_executor)}
             targets = app.get_collab_objects()
             for name, obj in targets.items():
-                bes[name] = SimBackend(name, app, obj, self.abort_signal, self.thread_executor)
+                bes[name] = LocalBackend(name, app, obj, self.abort_signal, self.thread_executor)
         return bes
 
     def _prepare_proxy(self, for_app: App, target_app: App, backends: dict):
@@ -142,7 +142,7 @@ class AppRunner:
             # Check the underlying object
             make_client_app_f = getattr(self.client_app.obj, MAKE_CLIENT_APP_METHOD, None)
         if make_client_app_f and callable(make_client_app_f):
-            app = make_client_app_f(site_name, BackendType.SIMULATION)
+            app = make_client_app_f(site_name, BackendType.LOCAL)
             if not isinstance(app, ClientApp):
                 raise RuntimeError(f"result returned by {MAKE_CLIENT_APP_METHOD} must be ClientApp but got {type(app)}")
         else:
@@ -157,7 +157,7 @@ class AppRunner:
 
         app.name = site_name
         app.set_fqn(fqn)
-        app.set_backend_type(BackendType.SIMULATION)
+        app.set_backend_type(BackendType.LOCAL)
         return app
 
     def _prepare_proxies(self, for_app: App, server_app: App, client_apps: dict, backends: dict):
@@ -211,7 +211,7 @@ class AppRunner:
         self.abort_signal = Signal()
         server_app.name = "server"
         server_app.set_fqn(server_app.name)
-        server_app.set_backend_type(BackendType.SIMULATION)
+        server_app.set_backend_type(BackendType.LOCAL)
         self.server_app = server_app
         self.client_app = client_app
         self.thread_executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="collab_call")
@@ -286,7 +286,7 @@ class AppRunner:
         # Set up client apps with proxies
         for name, app in self.client_apps.items():
             server_proxy, client_proxies = self._prepare_proxies(app, self.server_app, self.client_apps, backends)
-            ws = SimWorkspace(
+            ws = LocalWorkspace(
                 root_dir=self.root_dir,
                 experiment_name=self.experiment_name,
                 site_name=name,
@@ -298,7 +298,7 @@ class AppRunner:
         server_proxy, client_proxies = self._prepare_proxies(
             self.server_app, self.server_app, self.client_apps, backends
         )
-        ws = SimWorkspace(
+        ws = LocalWorkspace(
             root_dir=self.root_dir,
             experiment_name=self.experiment_name,
             site_name=self.server_app.name,
@@ -496,7 +496,7 @@ class AppRunner:
         return result
 
 
-class CollabSimulator:
+class InProcessRunner:
     """High-level Collab simulation runner.
 
     Provides a simple API to run Collab simulations with server and client objects.
@@ -519,7 +519,7 @@ class CollabSimulator:
         training_module: Optional[str] = None,
         subprocess_timeout: float = 300.0,
     ):
-        """Initialize CollabSimulator.
+        """Initialize InProcessRunner.
 
         Args:
             root_dir: Root directory for simulation output.

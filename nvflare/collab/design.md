@@ -41,14 +41,14 @@ works in BOTH in-process and subprocess modes**.
 │                               EXECUTION ENVIRONMENT LAYER                            │
 │                                                                                      │
 │   InProcessEnv (in-process threads)     │    MultiProcessEnv (multi-process local)                 │
-│   CollabSimulator                    │    POC Infrastructure                           │
+│   InProcessRunner                    │    POC Infrastructure                           │
 └─────────────────────────────────────────────────────────────────────────────────────┘
                                           │
                                           ▼
 ┌─────────────────────────────────────────────────────────────────────────────────────┐
 │                                   BACKEND LAYER                                      │
 │                                                                                      │
-│   SimBackend (thread-based)       │    FlareBackend (CellNet-based)                 │
+│   LocalBackend (thread-based)       │    FlareBackend (CellNet-based)                 │
 │   Direct function calls           │    Network communication                        │
 └─────────────────────────────────────────────────────────────────────────────────────┘
                                           │
@@ -448,7 +448,7 @@ class ExecEnv(ABC):
         ...
 ```
 
-### InProcessEnv (`nvflare/collab/sim/in_process_env.py`)
+### InProcessEnv (`nvflare/collab/local/in_process_env.py`)
 
 In-process thread-based simulation.
 
@@ -457,7 +457,7 @@ In-process thread-based simulation.
 │                          InProcessEnv                                  │
 │                                                                  │
 │  ┌─────────────────┐    ┌─────────────────────────────────────┐ │
-│  │   CollabSimulator  │    │          ThreadPoolExecutor          │ │
+│  │   InProcessRunner  │    │          ThreadPoolExecutor          │ │
 │  │                 │    │                                      │ │
 │  │  - Simulates    │    │  Thread-1: site-1 ClientApp          │ │
 │  │    server &     │    │  Thread-2: site-2 ClientApp          │ │
@@ -465,7 +465,7 @@ In-process thread-based simulation.
 │  │                 │    │  ...                                 │ │
 │  └─────────────────┘    └─────────────────────────────────────┘ │
 │                                                                  │
-│  Backend: SimBackend (direct function calls)                     │
+│  Backend: LocalBackend (direct function calls)                     │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -520,13 +520,13 @@ class Backend:
         pass
 ```
 
-### SimBackend (`nvflare/collab/backends/sim_backend.py`)
+### LocalBackend (`nvflare/collab/backends/sim_backend.py`)
 
 Thread-based backend for simulation.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        SimBackend                                │
+│                        LocalBackend                                │
 │                                                                  │
 │  Server Thread                    Client Threads                 │
 │  ┌──────────────┐                ┌──────────────┐               │
@@ -956,10 +956,10 @@ Collab supports 8 execution combinations across two dimensions:
 
 | # | Environment | Execution | API Pattern | Code Path |
 |---|-------------|-----------|-------------|-----------|
-| 1 | **InProcessEnv** | In-process | Client API | CollabSimulator → SimBackend → CollabClientAPI.execute() → contextvars |
-| 2 | **InProcessEnv** | Subprocess | Client API | CollabSimulator → SubprocessBackend → CollabWorker → `import nvflare.client` |
-| 3 | **InProcessEnv** | In-process | Collab API | CollabSimulator → SimBackend → direct @collab.publish calls |
-| 4 | **InProcessEnv** | Subprocess | Collab API | CollabSimulator → SubprocessBackend → CollabWorker → RPC calls |
+| 1 | **InProcessEnv** | In-process | Client API | InProcessRunner → LocalBackend → CollabClientAPI.execute() → contextvars |
+| 2 | **InProcessEnv** | Subprocess | Client API | InProcessRunner → SubprocessBackend → CollabWorker → `import nvflare.client` |
+| 3 | **InProcessEnv** | In-process | Collab API | InProcessRunner → LocalBackend → direct @collab.publish calls |
+| 4 | **InProcessEnv** | Subprocess | Collab API | InProcessRunner → SubprocessBackend → CollabWorker → RPC calls |
 | 5 | **MultiProcessEnv** | In-process | Client API | CollabExecutor → prepare_for_remote_call → CollabClientAPI.execute() |
 | 6 | **MultiProcessEnv** | Subprocess | Client API | CollabExecutor → SubprocessLauncher → CollabWorker → `import nvflare.client` |
 | 7 | **MultiProcessEnv** | In-process | Collab API | CollabExecutor → prepare_for_remote_call → direct @collab.publish calls |
@@ -1050,13 +1050,14 @@ nvflare/collab/
 │
 ├── backends/              # Backend Layer
 │   ├── backend.py         # Backend (abstract base)
-│   ├── sim_backend.py     # SimBackend (in-process threads)
+│   ├── sim_backend.py     # LocalBackend (in-process threads)
 │   ├── subprocess_backend.py  # SubprocessBackend (worker subprocess)
 │   └── flare_backend.py   # FlareBackend (CellNet, distributed)
 │
-├── sim/                   # Simulation Layer
-│   ├── collab_simulator.py    # CollabSimulator
-│   └── in_process_env.py         # InProcessEnv
+├── local/                 # Local (in-process) Execution Layer
+│   ├── runner.py          # InProcessRunner (runs collab apps in one process)
+│   ├── in_process_env.py  # InProcessEnv
+│   └── ws.py              # LocalWorkspace
 │
 ├── sys/                   # System/Runtime Layer
 │   ├── adaptor.py         # CollabAdaptor

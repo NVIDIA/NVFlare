@@ -81,7 +81,7 @@ class CollabController(Controller, CollabAdaptor):
     def start_controller(self, fl_ctx: FLContext):
         # Register FOBS decomposers (e.g. torch.Tensor) so collab objects can be
         # serialized over CellNet in the distributed (FlareBackend) path, matching
-        # the in-process simulator and subprocess worker.
+        # the in-process runner and subprocess worker.
         from nvflare.collab.utils.decomposers import register_available_decomposers
 
         register_available_decomposers()

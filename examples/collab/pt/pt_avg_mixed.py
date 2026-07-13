@@ -27,7 +27,7 @@ from collab.np.mains.utils import parse_state_dict as parse_np
 from collab.pt.utils import add as add_pt
 from collab.pt.utils import div as div_pt
 from collab.pt.utils import parse_state_dict as parse_pt
-from nvflare.collab.sim.simulator import Simulator
+from nvflare.collab.local.runner import InProcessRunner
 from nvflare.collab.sys.downloader import Downloader, download_arrays, download_tensors
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
@@ -209,7 +209,7 @@ def main():
 
     client = PTTrainer(delta=1.0)
 
-    simulator = Simulator(
+    runner = InProcessRunner(
         root_dir=get_experiment_root(),
         experiment_name="fedavg_mixed",
         server=server,
@@ -217,7 +217,7 @@ def main():
         num_clients=2,
     )
 
-    result = simulator.run()
+    result = runner.run()
     print(f"Final result: {result}")
 
 

@@ -18,13 +18,13 @@ from collab import get_experiment_root
 from collab.np.mains.client import NPHierarchicalTrainer
 from collab.np.mains.strategies.avg_h import NPHierarchicalFedAvg
 from collab.np.mains.widgets import MetricReceiver
-from nvflare.collab.sim.simulator import Simulator
+from nvflare.collab.local.runner import InProcessRunner
 
 
 def main():
     simple_logging(logging.DEBUG)
 
-    simulator = Simulator(
+    runner = InProcessRunner(
         root_dir=get_experiment_root(),
         experiment_name="fedavg_h",
         server=NPHierarchicalFedAvg(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=3),
@@ -33,7 +33,7 @@ def main():
         num_clients=(3, 2),
     )
 
-    result = simulator.run()
+    result = runner.run()
     print(f"Final Result: {result}")
 
 

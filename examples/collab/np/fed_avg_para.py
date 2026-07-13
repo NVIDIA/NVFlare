@@ -18,7 +18,7 @@ from collab import get_experiment_root
 from collab.np.mains.client import NPTrainer
 from collab.np.mains.strategies.avg_para import NPFedAvgParallel
 from collab.np.mains.widgets import MetricReceiver
-from nvflare.collab.sim.simulator import Simulator
+from nvflare.collab.local.runner import InProcessRunner
 
 
 def main():
@@ -26,7 +26,7 @@ def main():
 
     server = NPFedAvgParallel(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12]], num_rounds=2)
 
-    simulator = Simulator(
+    runner = InProcessRunner(
         root_dir=get_experiment_root(),
         experiment_name="fedavg_para",
         server=server,
@@ -35,7 +35,7 @@ def main():
         num_clients=10,
     )
 
-    result = simulator.run()
+    result = runner.run()
     print(f"Final result: {result}")
 
 

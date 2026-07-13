@@ -18,7 +18,7 @@ from collab import get_experiment_root
 from collab.np.mains.client import NPTrainer
 from collab.np.mains.strategies.avg_para_tc import NPFedAvgParallelWithTrafficControl
 from collab.np.mains.widgets import MetricReceiver
-from nvflare.collab.sim.simulator import Simulator
+from nvflare.collab.local.runner import InProcessRunner
 
 
 def main():
@@ -30,7 +30,7 @@ def main():
         parallel=3,
     )
 
-    simulator = Simulator(
+    runner = InProcessRunner(
         root_dir=get_experiment_root(),
         experiment_name="fedavg_para_tc",
         server=server,
@@ -39,7 +39,7 @@ def main():
         num_clients=10,
     )
 
-    result = simulator.run()
+    result = runner.run()
     print(f"Final result: {result}")
 
 

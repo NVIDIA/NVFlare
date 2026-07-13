@@ -28,7 +28,7 @@ class FilterDirection:
 
 
 class BackendType:
-    SIMULATION = "simulation"
+    LOCAL = "local"
     FLARE = "flare"
 
 

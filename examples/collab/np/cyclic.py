@@ -17,13 +17,13 @@ from nvflare.collab.api.utils import simple_logging
 from collab import get_experiment_root
 from collab.np.mains.client import NPTrainer
 from collab.np.mains.strategies.cyclic import NPCyclic
-from nvflare.collab.sim.simulator import Simulator
+from nvflare.collab.local.runner import InProcessRunner
 
 
 def main():
     simple_logging(logging.DEBUG)
 
-    simulator = Simulator(
+    runner = InProcessRunner(
         root_dir=get_experiment_root(),
         experiment_name="cyclic",
         server=NPCyclic(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=2),
@@ -31,7 +31,7 @@ def main():
         num_clients=2,
     )
 
-    final_result = simulator.run()
+    final_result = runner.run()
     print(f"final model: {final_result}")
 
 

@@ -19,7 +19,7 @@ from collab import get_experiment_root
 from collab.np.mains.client import NPTrainer
 from collab.np.mains.strategies.avg_para import NPFedAvgParallel
 from collab.np.mains.strategies.cyclic import NPCyclic
-from nvflare.collab.sim.simulator import Simulator
+from nvflare.collab.local.runner import InProcessRunner
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
@@ -56,7 +56,7 @@ def main():
 
     server = Controller(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], cyclic_rounds=2, avg_rounds=3)
 
-    simulator = Simulator(
+    runner = InProcessRunner(
         root_dir=get_experiment_root(),
         experiment_name=exp_name,
         server=server,
@@ -64,7 +64,7 @@ def main():
         num_clients=3,
     )
 
-    final_result = simulator.run()
+    final_result = runner.run()
     print(f"final model: {final_result}")
 
 

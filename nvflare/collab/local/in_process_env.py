@@ -12,20 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Collab Simulation Environment using nvflare.collab.sim.Simulator."""
+"""Collab in-process execution environment using nvflare.collab.local.runner.InProcessRunner."""
 
 import os
 from typing import Dict, Optional, Tuple, Union
 
-from nvflare.collab.sim.collab_simulator import CollabSimulator
+from nvflare.collab.local.runner import InProcessRunner
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import ExecEnv
 
-WORKSPACE_ROOT = "/tmp/nvflare/collab_simulation"
+WORKSPACE_ROOT = "/tmp/nvflare/collab_local"
 
 
 class InProcessEnv(ExecEnv):
-    """Simulation execution environment for Collab using the Collab Simulator.
+    """In-process execution environment for Collab using InProcessRunner.
 
     This environment runs federated learning jobs using the Collab simulation
     backend. Supports both in-process simulation and subprocess execution
@@ -79,10 +79,10 @@ class InProcessEnv(ExecEnv):
         self.subprocess_timeout = subprocess_timeout
         self.training_module = None  # Auto-detected from recipe, not user-facing
 
-        self._simulator: Optional[CollabSimulator] = None
+        self._runner: Optional[InProcessRunner] = None
 
     def deploy(self, job: FedJob) -> str:
-        """Deploy a FedJob using the Collab Simulator.
+        """Deploy a FedJob using the InProcessRunner.
 
         Args:
             job: The FedJob to deploy.
@@ -102,9 +102,9 @@ class InProcessEnv(ExecEnv):
             if self.run_cmd:
                 print(f"  Run command: {self.run_cmd}")
         print(f"{'='*60}")
-        print(f"  → Creating simulator with {self.num_clients} clients...")
+        print(f"  → Creating runner with {self.num_clients} clients...")
 
-        self._simulator = CollabSimulator(
+        self._runner = InProcessRunner(
             root_dir=root_dir,
             experiment_name=experiment_name,
             server=self.server,
@@ -124,7 +124,7 @@ class InProcessEnv(ExecEnv):
         print(f"{'='*60}\n")
 
         # Run the simulation
-        self._simulator.run()
+        self._runner.run()
 
         print(f"\n{'='*60}")
         print("  → Simulation completed")

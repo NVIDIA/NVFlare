@@ -96,7 +96,7 @@ class App:
         return self._backend_type
 
     def set_backend_type(self, t: str):
-        valid_types = [BackendType.SIMULATION, BackendType.FLARE]
+        valid_types = [BackendType.LOCAL, BackendType.FLARE]
         if t not in valid_types:
             raise ValueError(f"bad backend type: {t}: must be one of {valid_types}")
         self._backend_type = t

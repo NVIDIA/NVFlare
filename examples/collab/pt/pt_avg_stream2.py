@@ -20,7 +20,7 @@ from nvflare.collab.api.constants import BackendType
 from nvflare.collab.api.utils import simple_logging
 from collab import get_experiment_root
 from collab.pt.utils import parse_state_dict
-from nvflare.collab.sim.simulator import Simulator
+from nvflare.collab.local.runner import InProcessRunner
 from nvflare.collab.sys.downloader import Downloader, download_tensors
 from nvflare.collab.utils.tensor_receiver import TensorReceiver
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -146,7 +146,7 @@ def main():
 
     client = PTTrainer(delta=1.0)
 
-    simulator = Simulator(
+    runner = InProcessRunner(
         root_dir=get_experiment_root(),
         experiment_name="pt_fedavg_stream2",
         server=server,
@@ -154,7 +154,7 @@ def main():
         num_clients=2,
     )
 
-    result = simulator.run()
+    result = runner.run()
     print(f"final result: {result}")
 
 

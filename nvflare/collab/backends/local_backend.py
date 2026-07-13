@@ -31,7 +31,7 @@ class _Waiter(threading.Event):
         self.result = None
 
 
-class SimBackend(Backend):
+class LocalBackend(Backend):
 
     def __init__(self, target_obj_name: str, target_app: App, target_obj, abort_signal, thread_executor):
         Backend.__init__(self, abort_signal)

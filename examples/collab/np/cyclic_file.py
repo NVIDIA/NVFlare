@@ -21,7 +21,7 @@ from collab import get_experiment_root
 from collab.np.mains.client import NPTrainer
 from collab.np.mains.strategies.cyclic import NPCyclic
 from collab.np.mains.utils import save_np_model
-from nvflare.collab.sim.simulator import Simulator
+from nvflare.collab.local.runner import InProcessRunner
 
 
 def prepare_data_dir(initial_model_file: str) -> str:
@@ -34,7 +34,7 @@ def prepare_data_dir(initial_model_file: str) -> str:
 def main():
     simple_logging(logging.DEBUG)
 
-    simulator = Simulator(
+    runner = InProcessRunner(
         root_dir=get_experiment_root(),
         experiment_name="cyclic_file",
         server=NPCyclic(initial_model="initial_model.npy", num_rounds=2),
@@ -42,9 +42,9 @@ def main():
         num_clients=2,
     )
 
-    simulator.set_server_resource_dirs({"data": prepare_data_dir("initial_model.npy")})
+    runner.set_server_resource_dirs({"data": prepare_data_dir("initial_model.npy")})
 
-    final_result = simulator.run()
+    final_result = runner.run()
     print(f"final model: {final_result}")
 
 

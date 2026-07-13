@@ -18,7 +18,7 @@ from collab import get_experiment_root
 from collab.np.mains.client import NPTrainer
 from collab.np.mains.strategies.avg_seq import NPFedAvgSequential
 from collab.np.mains.widgets import MetricReceiver
-from nvflare.collab.sim.simulator import Simulator
+from nvflare.collab.local.runner import InProcessRunner
 
 
 def main():
@@ -29,7 +29,7 @@ def main():
         initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]],
     )
 
-    simulator = Simulator(
+    runner = InProcessRunner(
         root_dir=get_experiment_root(),
         experiment_name="fedavg_seq",
         server=server,
@@ -37,10 +37,10 @@ def main():
         server_objects={"metric_receiver": MetricReceiver()},
         num_clients=2,
     )
-    simulator.set_server_prop("client_weight_config", {"site-1": 70, "site-2": 100})
-    simulator.set_client_prop("client_delta", {"site-1": 1.0, "site-2": 2.0})
+    runner.set_server_prop("client_weight_config", {"site-1": 70, "site-2": 100})
+    runner.set_client_prop("client_delta", {"site-1": 1.0, "site-2": 2.0})
 
-    result = simulator.run()
+    result = runner.run()
     print(f"Final result: {result}")
 
 

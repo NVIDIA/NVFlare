@@ -88,7 +88,7 @@ class MultiProcessEnv(ExecEnv):
     being lightweight enough for development and debugging.
 
     Key differences from InProcessEnv:
-    - InProcessEnv: In-process threads, SimBackend (direct function calls)
+    - InProcessEnv: In-process threads, LocalBackend (direct function calls)
     - MultiProcessEnv: Separate processes, FlareBackend (CellNet communication)
 
     The CollabController and CollabExecutor components (defined in CollabRecipe) use

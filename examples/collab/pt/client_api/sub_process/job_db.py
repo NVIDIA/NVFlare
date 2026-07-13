@@ -24,7 +24,7 @@ import argparse
 
 from nvflare.client.in_process.collab_api import CollabClientAPI
 from collab.pt.client_api.sub_process.server import FedAvg
-from nvflare.collab.sim.in_process_env import InProcessEnv
+from nvflare.collab.local.in_process_env import InProcessEnv
 from nvflare.collab.sys.recipe import CollabRecipe
 
 
@@ -64,7 +64,7 @@ def main():
     )
 
     # Create simulation environment
-    env = InProcessEnv(num_clients=args.clients, workspace_root="/tmp/nvflare/collab_simulation")
+    env = InProcessEnv(num_clients=args.clients, workspace_root="/tmp/nvflare/collab_local")
 
     # Execute
     result = recipe.execute(env)

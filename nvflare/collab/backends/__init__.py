@@ -21,7 +21,7 @@ eager re-exports here would create a circular import.
 
 _EXPORTS = {
     "Backend": ".backend",
-    "SimBackend": ".sim_backend",
+    "LocalBackend": ".local_backend",
     "SubprocessBackend": ".subprocess_backend",
     "FlareBackend": ".flare_backend",
 }

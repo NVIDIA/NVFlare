@@ -16,13 +16,13 @@ import logging
 from nvflare.collab.api.utils import simple_logging
 from collab import get_experiment_root
 from collab.np.mains.swarm import NPSwarm, NPSwarmClient
-from nvflare.collab.sim.simulator import Simulator
+from nvflare.collab.local.runner import InProcessRunner
 
 
 def main():
     simple_logging(logging.DEBUG)
 
-    simulator = Simulator(
+    runner = InProcessRunner(
         root_dir=get_experiment_root(),
         experiment_name="swarm",
         server=NPSwarm(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=5),
@@ -30,7 +30,7 @@ def main():
         num_clients=3,
     )
 
-    result = simulator.run()
+    result = runner.run()
     print(f"Final result: {result}")
 
 

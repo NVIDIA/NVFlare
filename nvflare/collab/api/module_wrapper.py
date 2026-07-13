@@ -236,7 +236,7 @@ class ModuleWrapper:
         return method.__get__(self, type(self))
 
     def __deepcopy__(self, memo):
-        """Support deepcopy for SimBackend."""
+        """Support deepcopy for LocalBackend."""
         module = importlib.import_module(self._module)
         return ModuleWrapper(module)
 

@@ -16,7 +16,7 @@ import os.path
 from nvflare.collab.api.workspace import Workspace
 
 
-class SimWorkspace(Workspace):
+class LocalWorkspace(Workspace):
 
     def __init__(self, root_dir: str, experiment_name: str, exp_id: str, site_name: str):
         super().__init__()
