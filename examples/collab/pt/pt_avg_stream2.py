@@ -20,8 +20,8 @@ from nvflare.collab.api.constants import BackendType
 from nvflare.collab.api.utils import simple_logging
 from collab import get_experiment_root
 from collab.pt.utils import parse_state_dict
-from nvflare.collab.backends.local.runner import InProcessRunner
-from nvflare.collab.backends.flare.downloader import Downloader, download_tensors
+from nvflare.collab.runtime.local.runner import InProcessRunner
+from nvflare.collab.runtime.flare.downloader import Downloader, download_tensors
 from nvflare.collab.utils.tensor_receiver import TensorReceiver
 from nvflare.fuel.utils.log_utils import get_obj_logger
 

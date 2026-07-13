@@ -25,7 +25,7 @@ from nvflare.collab.api.app import ServerApp
 from nvflare.collab.api.constants import BackendType
 from nvflare.collab.api.proxy import Proxy
 from nvflare.collab.api.run_server import run_server
-from nvflare.collab.backends.flare_backend import FlareBackend
+from nvflare.collab.runtime.flare_backend import FlareBackend
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 
 from .adaptor import CollabAdaptor

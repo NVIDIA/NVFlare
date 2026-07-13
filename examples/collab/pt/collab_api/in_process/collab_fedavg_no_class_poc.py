@@ -15,8 +15,8 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 
 from nvflare.collab import collab
-from nvflare.collab.backends.flare import MultiProcessEnv
-from nvflare.collab.backends.flare.recipe import CollabRecipe
+from nvflare.collab.runtime.flare import MultiProcessEnv
+from nvflare.collab.runtime.flare.recipe import CollabRecipe
 
 print("Done.")
 

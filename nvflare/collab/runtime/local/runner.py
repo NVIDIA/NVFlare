@@ -23,10 +23,10 @@ from nvflare.collab.api.constants import MAKE_CLIENT_APP_METHOD, BackendType
 from nvflare.collab.api.dec import get_object_publish_interface
 from nvflare.collab.api.proxy_utils import create_proxy_with_children
 from nvflare.collab.api.run_server import run_server
-from nvflare.collab.backends.subprocess_backend import SubprocessBackend
-from nvflare.collab.backends.local_backend import LocalBackend
-from nvflare.collab.backends.local.ws import LocalWorkspace
-from nvflare.collab.backends.flare.subprocess_launcher import SubprocessLauncher
+from nvflare.collab.runtime.subprocess_backend import SubprocessBackend
+from nvflare.collab.runtime.local_backend import LocalBackend
+from nvflare.collab.runtime.local.ws import LocalWorkspace
+from nvflare.collab.runtime.flare.subprocess_launcher import SubprocessLauncher
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.utils.log_utils import get_obj_logger
 

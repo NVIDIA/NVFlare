@@ -18,7 +18,7 @@ from nvflare.collab.api.utils import simple_logging
 from collab import get_experiment_root
 from collab.np.mains.client import NPTrainer
 from collab.np.mains.strategies.cyclic import NPCyclic
-from nvflare.collab.backends.local.runner import AppRunner
+from nvflare.collab.runtime.local.runner import AppRunner
 
 
 def main():

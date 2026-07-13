@@ -18,7 +18,7 @@ This example uses checkpoint files to sync model parameters across ranks.
 Simple and works everywhere, but has disk I/O overhead.
 
 Launch with:
-    torchrun --nproc_per_node=2 -m nvflare.collab.backends.flare.worker ...
+    torchrun --nproc_per_node=2 -m nvflare.collab.runtime.flare.worker ...
 """
 
 import torch

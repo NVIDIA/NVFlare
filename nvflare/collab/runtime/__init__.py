@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Collab backends: implementations of remote object calls for each execution mode.
+"""Collab runtime: backend implementations and per-mode execution machinery.
 
 Exports are resolved lazily (PEP 562): backend implementations import from the
 api layer, and the api layer imports the abstract Backend from this package, so

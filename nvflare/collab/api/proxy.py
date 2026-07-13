@@ -15,7 +15,7 @@ import copy
 
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
-from nvflare.collab.backends.backend import Backend
+from nvflare.collab.runtime.backend import Backend
 from .call_opt import CallOption
 from .utils import check_call_args
 

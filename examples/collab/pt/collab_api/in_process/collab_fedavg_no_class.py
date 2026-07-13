@@ -12,8 +12,8 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 
 from nvflare.collab import collab
-from nvflare.collab.backends.local import InProcessEnv
-from nvflare.collab.backends.flare.recipe import CollabRecipe
+from nvflare.collab.runtime.local import InProcessEnv
+from nvflare.collab.runtime.flare.recipe import CollabRecipe
 
 # =============================================================================
 # Define Model (same as simulate_parallel_fedavg_train.py)

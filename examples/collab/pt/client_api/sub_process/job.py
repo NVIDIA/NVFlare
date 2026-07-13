@@ -23,8 +23,8 @@ import argparse
 
 from nvflare.client.in_process.collab_api import CollabClientAPI
 from collab.pt.client_api.sub_process.server import FedAvg
-from nvflare.collab.backends.local import InProcessEnv
-from nvflare.collab.backends.flare.recipe import CollabRecipe
+from nvflare.collab.runtime.local import InProcessEnv
+from nvflare.collab.runtime.flare.recipe import CollabRecipe
 
 
 def main():

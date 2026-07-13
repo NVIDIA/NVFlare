@@ -255,8 +255,8 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 
 from nvflare.collab import collab                       # + Add Collab imports
-from nvflare.collab.backends.local import InProcessEnv                # +
-from nvflare.collab.backends.flare.recipe import CollabRecipe      # +
+from nvflare.collab.runtime.local import InProcessEnv                # +
+from nvflare.collab.runtime.flare.recipe import CollabRecipe      # +
 ```
 
 **Changes:**
@@ -488,8 +488,8 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 
 from nvflare.collab import collab                       # + Add Collab imports
-from nvflare.collab.backends.local import InProcessEnv                # +
-from nvflare.collab.backends.flare.recipe import CollabRecipe      # +
+from nvflare.collab.runtime.local import InProcessEnv                # +
+from nvflare.collab.runtime.flare.recipe import CollabRecipe      # +
 ```
 
 **Changes:**

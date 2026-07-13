@@ -19,7 +19,7 @@ from collab.np.mains.client import NPTrainer
 from collab.np.mains.filters import AddNoiseToModel, Print
 from collab.np.mains.strategies.avg_intime import NPFedAvgInTime
 from collab.np.mains.widgets import MetricReceiver
-from nvflare.collab.backends.local.runner import InProcessRunner
+from nvflare.collab.runtime.local.runner import InProcessRunner
 
 
 def main():

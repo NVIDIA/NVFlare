@@ -19,7 +19,7 @@ from collab.pt.filters import (
     OutgoingModelResultFilter,
 )
 from collab.pt.pt_avg_filter import PTFedAvg, PTTrainer
-from nvflare.collab.backends.flare.recipe import CollabRecipe
+from nvflare.collab.runtime.flare.recipe import CollabRecipe
 
 
 def main():

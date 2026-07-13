@@ -15,7 +15,7 @@ from collab import export_recipe
 from collab.np.mains.client import NPHierarchicalTrainer
 from collab.np.mains.strategies.avg_h import NPHierarchicalFedAvg
 from collab.np.mains.widgets import MetricReceiver
-from nvflare.collab.backends.flare.recipe import CollabRecipe
+from nvflare.collab.runtime.flare.recipe import CollabRecipe
 
 
 def main():

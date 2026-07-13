@@ -18,7 +18,7 @@ from collab import get_experiment_root
 from collab.np.mains.client import NPTrainer
 from collab.np.mains.strategies.avg_para_tc import NPFedAvgParallelWithTrafficControl
 from collab.np.mains.widgets import MetricReceiver
-from nvflare.collab.backends.local.runner import InProcessRunner
+from nvflare.collab.runtime.local.runner import InProcessRunner
 
 
 def main():
