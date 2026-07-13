@@ -22,6 +22,7 @@ import pytest
 
 from nvflare.apis.dxo import DataKind
 from nvflare.apis.job_def import ALL_SITES
+from nvflare.fuel.utils.secret_utils import PotentialSecretWarning
 
 torch = pytest.importorskip("torch")
 
@@ -47,6 +48,35 @@ def simple_pt_model():
 
 class TestSwarmLearningRecipe:
     """Test cases for SwarmLearningRecipe."""
+
+    def test_warns_on_secret_in_train_args(self, mock_file_system, simple_pt_model):
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+
+        with pytest.warns(PotentialSecretWarning, match="train_args"):
+            SwarmLearningRecipe(
+                name="secret_swarm",
+                model=simple_pt_model,
+                num_rounds=1,
+                train_script="train.py",
+                min_clients=2,
+                train_args={"script_args": "--password hunter22x"},
+            )
+
+    def test_warns_on_secret_assignment_in_external_command(self, mock_file_system, simple_pt_model):
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+
+        with pytest.warns(PotentialSecretWarning, match="command") as record:
+            SwarmLearningRecipe(
+                name="secret_command_swarm",
+                model=simple_pt_model,
+                num_rounds=1,
+                train_script="train.py",
+                min_clients=2,
+                launch_external_process=True,
+                command="env API_PASSWORD=hunter22x python3 -u",
+            )
+
+        assert all("hunter22x" not in str(warning.message) for warning in record)
 
     def test_import_from_new_location(self, mock_file_system, simple_pt_model):
         """Test importing from new location (app_opt/pt/recipes)."""

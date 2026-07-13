@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+import warnings
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -36,7 +37,9 @@ from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.client.config import ConfigKey, TransferType
 from nvflare.client.constants import CLIENT_API_CONFIG
 from nvflare.fuel.utils.class_utils import instantiate_class
+from nvflare.fuel.utils.secret_utils import UnsupportedSecretRefWarning
 from nvflare.job_config.base_fed_job import BaseFedJob
+from nvflare.recipe.fedavg import FedAvgRecipe as BaseFedAvgRecipe
 
 
 class SimpleTestModel(nn.Module):
@@ -224,6 +227,25 @@ def _run_exported_external_process_executor_startup(executor_config, config_dir,
 
 
 class TestFedAvgRecipe:
+    def test_class_docstrings_are_preserved(self):
+        assert BaseFedAvgRecipe.__doc__
+        assert FedAvgRecipe.__doc__
+
+    def test_external_command_secret_ref_is_supported(self, mock_file_system, base_recipe_params, simple_model):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UnsupportedSecretRefWarning)
+            FedAvgRecipe(
+                name="command_secret_ref",
+                model=simple_model,
+                per_site_config={
+                    "site-1": {
+                        "launch_external_process": True,
+                        "command": "env API_TOKEN=${secret:API_TOKEN} python3 -u",
+                    }
+                },
+                **base_recipe_params,
+            )
+
     """Test cases for FedAvgRecipe class."""
 
     def test_default_aggregator_initialization(self, mock_file_system, base_recipe_params, simple_model):

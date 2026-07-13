@@ -80,7 +80,11 @@ class BaseScriptRunner:
 
         Args:
             script (str): Script to run. For in-process must be a python script path. For ex-process can be any script support by `command`.
-            script_args (str): Optional arguments for script (appended to script).
+            script_args (str): Optional arguments for script (appended to script). The string is written in
+                clear text into the generated job config, so it must never contain actual secret values;
+                use :func:`nvflare.recipe.secrets.secret_ref` for a site environment variable or
+                :func:`nvflare.recipe.secrets.secret_file_ref` for a mounted secret file. The
+                executing site resolves the placeholder at runtime.
             launch_external_process (bool): Whether to launch the script in external process. Defaults to False.
             command (str): If launch_external_process=True, command to run script (prepended to script). Defaults to "python3".
             framework (str): Framework is used to determine the `params_exchange_format`. Defaults to FrameworkType.PYTORCH.
@@ -381,7 +385,11 @@ class ScriptRunner(BaseScriptRunner):
 
         Args:
             script (str): Script to run. For in-process must be a python script path. For ex-process can be any script support by `command`.
-            script_args (str): Optional arguments for script (appended to script).
+            script_args (str): Optional arguments for script (appended to script). The string is written in
+                clear text into the generated job config, so it must never contain actual secret values;
+                use :func:`nvflare.recipe.secrets.secret_ref` for a site environment variable or
+                :func:`nvflare.recipe.secrets.secret_file_ref` for a mounted secret file. The
+                executing site resolves the placeholder at runtime.
             launch_external_process (bool): Whether to launch the script in external process. Defaults to False.
             command (str): If launch_external_process=True, command to run script (prepended to script). Defaults to "python3".
             framework (str): Framework is used to determine the `params_exchange_format`. Defaults to FrameworkType.PYTORCH.

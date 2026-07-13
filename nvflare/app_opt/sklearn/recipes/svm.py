@@ -43,6 +43,10 @@ class _SVMValidator(BaseModel):
 class SVMFedAvgRecipe(FedAvgRecipe):
     """A recipe for Federated SVM with Scikit-learn.
 
+    Recipe parameters, including ``train_args`` and nested ``per_site_config`` values,
+    must never contain actual secrets. Read secrets from site environment variables or mounted
+    files; references are supported only where documented in :mod:`nvflare.recipe.secrets`.
+
     This recipe implements federated SVM training using support vector aggregation.
     Unlike iterative algorithms, SVM training only requires one round:
     - Round 0: Each client trains a local SVM and sends their support vectors
@@ -76,7 +80,8 @@ class SVMFedAvgRecipe(FedAvgRecipe):
             Defaults to "python3 -u".
         per_site_config: Per-site configuration for the federated learning job. Dictionary mapping
             site names to configuration dicts. If not provided, the same configuration will be used
-            for all clients.
+            for all clients. Nested values become part of the generated job definition and must not
+            contain secrets.
         key_metric: Metric used to determine if the model is globally best. If validation metrics are
             a dict, key_metric selects the metric used for global model selection. Defaults to "AUC"
             (which corresponds to the ROC AUC score sent by the SVM client in round 1).

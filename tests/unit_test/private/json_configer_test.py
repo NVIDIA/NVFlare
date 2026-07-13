@@ -23,12 +23,14 @@ from nvflare.apis.fl_constant import FLContextKey, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.app_common.executors.multi_process_executor import MultiProcessExecutor, WorkerComponentBuilder
+from nvflare.app_common.executors.task_script_runner import TaskScriptRunner
 from nvflare.app_common.widgets.component_path_authorizer import CLASS_ALLOW_LIST, ComponentPathAuthorizer
 from nvflare.fuel.common.excepts import ComponentNotAuthorized
 from nvflare.fuel.common.multi_process_executor_constants import CommunicationMetaData
 from nvflare.fuel.utils import class_utils
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.json_scanner import Node
+from nvflare.fuel.utils.secret_utils import secret_file_ref
 from nvflare.private.fed.app.client.sub_worker_process import SubWorkerExecutor
 from nvflare.private.fed.client.client_run_manager import ClientRunManager
 from nvflare.private.fed.server.server_engine import ServerEngine
@@ -108,12 +110,13 @@ class FakeWorkspace:
 
 
 class _NestedComponentConfigurator(JsonConfigurator):
-    def __init__(self, config_file_name):
+    def __init__(self, config_file_name, sys_vars=None):
         super().__init__(
             config_file_name=config_file_name,
             base_pkgs=["nvflare"],
             module_names=["apis"],
             exclude_libs=True,
+            sys_vars=sys_vars,
         )
         self.component = None
 
@@ -183,6 +186,71 @@ def _make_authorized_configurator(config_file):
         authorizer=ComponentPathAuthorizer(),
     )
     return configurator
+
+
+def test_configure_expands_system_vars_but_preserves_secret_refs_for_runtime_consumers(tmp_path):
+    secret_file = tmp_path / "mounted-api-key"
+    secret_file.write_text("file-secret-value")
+    unresolved_key = "${secret:KEY_MUST_NOT_BE_RESOLVED}"
+    config_file = tmp_path / "config.json"
+    _write_component_config(
+        config_file,
+        {
+            "path": _component_path(ContainerComponent),
+            "args": {
+                "settings": {
+                    "mixed": "--site {SITE_NAME} --api-key ${secret:TEST_CONFIG_API_KEY}",
+                    "nested": [secret_file_ref(str(secret_file)), {"token": "${secret:TEST_CONFIG_SECOND_KEY}"}],
+                    unresolved_key: "plain-value",
+                }
+            },
+        },
+    )
+    config_data = json.loads(config_file.read_text())
+    config_data["custom_config"] = {"token": "${secret:TEST_CONFIG_API_KEY}"}
+    config_file.write_text(json.dumps(config_data))
+
+    configurator = _NestedComponentConfigurator(str(config_file), sys_vars={"SITE_NAME": "site-1"})
+    configurator.configure()
+
+    assert configurator.component.settings == {
+        "mixed": "--site site-1 --api-key ${secret:TEST_CONFIG_API_KEY}",
+        "nested": [secret_file_ref(str(secret_file)), {"token": "${secret:TEST_CONFIG_SECOND_KEY}"}],
+        unresolved_key: "plain-value",
+    }
+    assert configurator.config_data["custom_config"] == {"token": "${secret:TEST_CONFIG_API_KEY}"}
+
+
+def test_configured_in_process_executor_resolves_file_ref_only_at_script_start(tmp_path):
+    script_file = tmp_path / "train.py"
+    script_file.write_text("pass\n")
+    secret_file = tmp_path / "api-key"
+    secret_file.write_text("resolved secret --not-option")
+    placeholder = secret_file_ref(str(secret_file))
+    config_file = tmp_path / "config.json"
+    _write_component_config(
+        config_file,
+        {
+            "path": "nvflare.app_common.executors.in_process_client_api_executor.InProcessClientAPIExecutor",
+            "args": {
+                "task_script_path": "train.py",
+                "task_script_args": f"--site {{SITE_NAME}} --api-key {placeholder}",
+            },
+        },
+    )
+
+    configurator = _NestedComponentConfigurator(str(config_file), sys_vars={"SITE_NAME": "site-1"})
+    configurator.configure()
+
+    assert configurator.component._task_script_args == f"--site site-1 --api-key {placeholder}"
+    runner = TaskScriptRunner(
+        custom_dir=str(tmp_path),
+        script_path=configurator.component._task_script_path,
+        script_args=configurator.component._task_script_args,
+    )
+    assert runner.get_sys_argv()[1:] == ["--site", "site-1", "--api-key", "resolved secret --not-option"]
+    assert placeholder in configurator.component._task_script_args
+    assert "resolved secret" not in configurator.component._task_script_args
 
 
 def _record_load_class_calls(monkeypatch):
