@@ -40,17 +40,17 @@ statistic_configs = {
 }
 ```
 
-- `count` is the number of discovered image files, not pixels; unreadable
-  files are only detected during the histogram pass, so `count` includes
-  them and `failure_count` reports them.
+- `count` is the number of discovered image files, not pixels; it includes
+  unreadable files, which `failure_count` reports.
 - `failure_count` is correct from round 1: `initialize()` verifies every
   file with the same full-decode operation the histogram uses, so
   unreadable files (broken headers AND broken pixel data) are counted
   before the server's first collection and the `Global` row accumulates
   them. A file failing AFTER verification (mutated or transiently
-  unreadable between rounds) is warned about at runtime — counts already
-  consumed by the privacy checks may overstate the effective histogram
-  inputs, so the report must relay the warning and recommend a rerun
+  unreadable between rounds) fails the round closed — the template raises
+  instead of releasing a histogram whose min-count/bin-cap screening was
+  computed on counts that no longer match the readable images. Report the
+  product error and recommend a rerun; never weaken the raise to a warning
   (the cleanser/statistics ordering question is product-side, tracked
   with NVFlare issue #4876). Very large datasets may trade the
   double-decode for round-2-only discovery; say so in the report.
