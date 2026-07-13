@@ -42,9 +42,9 @@ def get_importable_module_name(module: ModuleType) -> str:
         An importable module name string
 
     Example:
-        # When running: python nvflare/collab/examples/test.py
+        # When running: python path/to/my_module.py
         # module.__name__ = '__main__'
-        # Returns: 'nvflare.collab.examples.test'
+        # Returns: 'my_pkg.my_module' (or 'my_module')
     """
     module_name = module.__name__
 
@@ -61,7 +61,7 @@ def get_importable_module_name(module: ModuleType) -> str:
         )
 
     # Convert file path to module name
-    # e.g., /path/to/nvflare/collab/examples/test.py -> nvflare.collab.examples.test
+    # e.g., /path/to/my_pkg/my_module.py -> my_pkg.my_module
     module_file = os.path.abspath(module_file)
 
     # Remove .py extension
@@ -96,7 +96,7 @@ def get_importable_module_name(module: ModuleType) -> str:
         )
 
     # Prefer the longest path (most qualified) - this ensures we get
-    # 'nvflare.collab.examples.test' instead of just 'test'
+    # 'my_pkg.my_module' (or 'my_module') instead of just 'test'
     # Also prioritize paths that start with 'nvflare.' as they're more likely
     # to be the correct package path for this project
     def score_candidate(name):

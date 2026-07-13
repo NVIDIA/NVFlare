@@ -1030,33 +1030,21 @@ nvflare/collab/
 │   ├── tensorboard_writer.py # TensorBoard-compatible API
 │   └── wandb_writer.py    # W&B-compatible API
 │
-└── examples/              # Examples
-    ├── np/                # NumPy examples
-    │   ├── mains/         # @collab.main / @collab.publish modules (+ strategies/)
-    │   ├── recipes/       # Recipe builders
-    │   └── *.py           # Runnable scripts (fed_avg_*, cyclic*, swarm, recipe_*)
-    │
-    └── pt/                # PyTorch examples
-        ├── *.py           # Runnable scripts (pt_avg_*, recipe_pt_*, filters*, utils)
-        ├── collab_api/    # Decorator-based (@collab.publish) examples
-        │   └── in_process/
-        │       ├── collab_fedavg_train.py
-        │       ├── collab_fedavg_train_poc.py
-        │       ├── collab_fedavg_no_class.py
-        │       ├── collab_fedavg_no_class_server.py
-        │       ├── collab_fedavg_no_class_client.py
-        │       ├── collab_fedavg_no_class_job.py
-        │       ├── collab_fedavg_no_class_poc.py
-        │       ├── simulate_fedavg_train.py
-        │       ├── simulate_mp_fedavg_train.py
-        │       ├── simulate_parallel_fedavg_train.py
-        │       ├── ray_train.py
-        │       └── train.py
-        │
-        └── client_api/    # Receive/send (Client API) examples
-            └── sub_process/
-                ├── distributed_train.py
-                └── sim_distributed_fedavg_train.py
+└── (no examples here — see "Examples" below)
+```
+
+---
+
+## Examples
+
+Runnable examples live at the repository top level under `examples/collab/`
+(a `np/` NumPy tree and a `pt/` PyTorch tree). They import each other via the
+`collab.*` package path, so run them with the `examples/` directory on
+`PYTHONPATH`:
+
+```bash
+cd examples
+PYTHONPATH=. python collab/pt/collab_api/in_process/collab_fedavg_train.py
 ```
 
 ---
