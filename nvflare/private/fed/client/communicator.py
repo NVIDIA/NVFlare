@@ -459,6 +459,17 @@ class Communicator:
         elif return_code == ReturnCode.AUTHENTICATION_ERROR:
             self.logger.warning("get_task request authentication failed.")
             task = None
+        elif return_code == ReturnCode.PROCESS_EXCEPTION:
+            error = task.get_header(MessageHeaderKey.ERROR, "unknown task payload processing error")
+            reason = f"Failed to receive task from {parent_fqcn}: {error}"
+            self.logger.error(reason)
+            fl_ctx.set_prop(FLContextKey.EVENT_DATA, reason, private=True, sticky=False)
+            run_abort_signal = fl_ctx.get_run_abort_signal()
+            if run_abort_signal:
+                run_abort_signal.trigger(True)
+            if self.engine:
+                self.engine.fire_event(EventType.FATAL_SYSTEM_ERROR, fl_ctx)
+            task = None
         else:
             self.logger.warning(f"Failed to get_task from {parent_fqcn}. Will try it again.")
             task = None

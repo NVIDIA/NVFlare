@@ -105,6 +105,20 @@ class BlobHandler:
         else:
             future.set_exception(error)
 
+    def _fail_and_notify(
+        self,
+        stream: Stream,
+        future: StreamFuture,
+        error: StreamError,
+        args: tuple,
+        kwargs: dict,
+    ):
+        self._fail(stream, future, error)
+        # A declared-size rejection happens before the normal callback is scheduled. Notify the
+        # registered callback with the failed future so request/reply users can stop waiting and
+        # surface the exact stream error to their caller.
+        callback_thread_pool.submit(self._run_blob_cb, future, stream, args, kwargs)
+
     def _store_chunk(self, blob_task: BlobTask, buf: BytesAlike, buf_size: int, thread_id: int) -> bool:
         length = len(buf)
         if blob_task.pre_allocated:
@@ -153,12 +167,12 @@ class BlobHandler:
         try:
             blob_task = BlobTask(future, stream, self.max_blob_size)
         except StreamError as ex:
-            self._fail(stream, future, ex)
+            self._fail_and_notify(stream, future, ex, args, kwargs)
             return 0
         except MemoryError as ex:
             error = StreamError(f"Unable to allocate buffer for declared blob size {stream.get_size()}")
             error.__cause__ = ex
-            self._fail(stream, future, error)
+            self._fail_and_notify(stream, future, error, args, kwargs)
             return 0
 
         stream_thread_pool.submit(self._read_stream, blob_task)

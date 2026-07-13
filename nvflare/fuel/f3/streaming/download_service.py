@@ -1137,7 +1137,11 @@ def download_object(
                         f"[DOWNLOAD_FAILED] Max retries ({max_retries}) exhausted for {from_fqcn}, "
                         f"ref={ref_id}. Giving up."
                     )
-            consumer.download_failed(ref_id, f"error requesting data from {from_fqcn} after {duration} secs: {rc}")
+            reason = f"error requesting data from {from_fqcn} after {duration} secs: {rc}"
+            remote_error = reply.get_header(MessageHeaderKey.ERROR)
+            if remote_error:
+                reason = f"{reason}: {remote_error}"
+            consumer.download_failed(ref_id, reason)
             _emit_progress("failed", force=True)
             return
 

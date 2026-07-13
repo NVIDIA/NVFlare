@@ -804,7 +804,7 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         )
         if err:
             self.logger.error(f"failed to download from {fqcn} for source {ref}: {err}")
-            raise RuntimeError(f"failed to download from {fqcn}")
+            raise RuntimeError(f"failed to download from {fqcn}: {err}")
         else:
             self.logger.debug(f"downloaded {len(items)} items successfully")
         return items

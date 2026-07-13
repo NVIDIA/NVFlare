@@ -155,6 +155,18 @@ class TestViaDownloaderRecomposeLazyRefGuard:
             decomposer.recompose({EncKey.TYPE: EncType.REF, EncKey.DATA: "T0"}, manager)
 
 
+def test_download_from_remote_cell_preserves_download_error(monkeypatch):
+    decomposer = _DummyViaDownloader()
+    error = "Declared blob size 2097152 exceeds configured limit 1048576"
+    monkeypatch.setattr(decomposer, "download", lambda **_kwargs: (error, None))
+
+    with pytest.raises(RuntimeError, match=error):
+        decomposer._download_from_remote_cell(
+            {fobs.FOBSContextKey.CELL: object()},
+            {"fqcn": "server.job", "ref_id": "ref-1"},
+        )
+
+
 class TestViaDownloaderTimeoutPolicy:
     def test_create_downloader_uses_generic_default_when_no_timeouts_are_configured(self, monkeypatch):
         observed = {}

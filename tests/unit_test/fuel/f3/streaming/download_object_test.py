@@ -53,7 +53,7 @@ class MockConsumer(Consumer):
         self.failure_reason = reason
 
 
-def _make_reply(rc: str, status=None, data=None, state=None) -> Message:
+def _make_reply(rc: str, status=None, data=None, state=None, error=None) -> Message:
     """Build a Message that mimics what cell.send_request returns."""
     payload = {}
     if status is not None:
@@ -65,6 +65,8 @@ def _make_reply(rc: str, status=None, data=None, state=None) -> Message:
 
     msg = Message()
     msg.set_header(MessageHeaderKey.RETURN_CODE, rc)
+    if error:
+        msg.set_header(MessageHeaderKey.ERROR, error)
     msg.payload = payload
     return msg
 
@@ -302,6 +304,19 @@ class TestDownloadObject:
 
         assert consumer.failed
         assert not consumer.completed
+        assert cell.send_request.call_count == 1
+
+    def test_non_timeout_error_preserves_remote_error(self, cell, consumer):
+        """The caller needs the stream rejection reason to report an actionable task failure."""
+        cell.send_request.return_value = _make_reply(
+            ReturnCode.PROCESS_EXCEPTION,
+            error="Declared blob size 2097152 exceeds configured limit 1048576",
+        )
+
+        download_object("server.site-1", "ref-001", 10.0, cell, consumer)
+
+        assert consumer.failed
+        assert "Declared blob size 2097152 exceeds configured limit 1048576" in consumer.failure_reason
         assert cell.send_request.call_count == 1
 
     def test_producer_error(self, cell, consumer):

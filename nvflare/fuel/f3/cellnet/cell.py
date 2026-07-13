@@ -337,6 +337,16 @@ class Cell(StreamCell):
         else:
             return True
 
+    def _make_stream_error_reply(self, future, phase: str, target: str, channel: str, topic: str):
+        error = getattr(future, "error", None)
+        if not error:
+            return None
+
+        detail = secure_format_exception(error)
+        msg = f"{phase} stream failed for {channel}/{topic} with {target}: {detail}"
+        self.logger.error(msg)
+        return make_reply(ReturnCode.PROCESS_EXCEPTION, error=msg)
+
     def _encode_message(self, msg: Message, abort_signal, num_receivers=1, receiver_ids=None) -> int:
         try:
             props = {
@@ -417,6 +427,10 @@ class Cell(StreamCell):
             self.logger.debug(f"{req_id=}: entering sending wait {timeout=}")
             sending_complete = self._future_wait(future, timeout, abort_signal)
             if not sending_complete:
+                error_reply = self._make_stream_error_reply(future, "request", target, channel, topic)
+                if error_reply:
+                    waiter.result = error_reply
+                    return self._get_result(req_id)
                 self.logger.debug(f"{req_id=}: sending timeout {timeout=}")
                 return self._get_result(req_id)
 
@@ -458,7 +472,7 @@ class Cell(StreamCell):
                     self.logger.info(f"{req_id=}: receiving aborted {timeout=}")
                     return self._get_result(req_id)
                 if getattr(r_future, "error", None):
-                    self.logger.info(f"{req_id=}: receiving failed with stream error")
+                    waiter.result = self._make_stream_error_reply(r_future, "reply", target, channel, topic)
                     return self._get_result(req_id)
                 if progress_wait_cb:
                     # The same bounded progress policy applies after the first byte: a streamed reply body can still
@@ -479,13 +493,19 @@ class Cell(StreamCell):
             pt = bool(waiter.result.get_header(MessageHeaderKey.PASS_THROUGH, False))
             if channel in self.decode_pass_through_channels:
                 pt = True
-            decode_payload(
-                waiter.result,
-                encoding_key=StreamHeaderKey.PAYLOAD_ENCODING,
-                fobs_ctx=self.get_fobs_context(
-                    props={FOBSContextKey.ABORT_SIGNAL: abort_signal, FOBSContextKey.PASS_THROUGH: pt}
-                ),
-            )
+            try:
+                decode_payload(
+                    waiter.result,
+                    encoding_key=StreamHeaderKey.PAYLOAD_ENCODING,
+                    fobs_ctx=self.get_fobs_context(
+                        props={FOBSContextKey.ABORT_SIGNAL: abort_signal, FOBSContextKey.PASS_THROUGH: pt}
+                    ),
+                )
+            except Exception as ex:
+                detail = secure_format_exception(ex)
+                msg = f"failed to decode reply payload for {channel}/{topic} from {target}: {detail}"
+                self.logger.error(msg)
+                waiter.result = make_reply(ReturnCode.PROCESS_EXCEPTION, error=msg)
             self.logger.debug(f"{req_id=}: return result {waiter.result=}")
             return self._get_result(req_id)
         except Exception as ex:

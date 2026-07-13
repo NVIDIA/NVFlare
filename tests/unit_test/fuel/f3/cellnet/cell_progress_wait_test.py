@@ -180,7 +180,8 @@ def test_receiving_wait_does_not_extend_stream_future_error(monkeypatch):
         progress_wait_cb=progress_wait_cb,
     )
 
-    assert result.get_header(cell_module.MessageHeaderKey.RETURN_CODE) == ReturnCode.TIMEOUT
+    assert result.get_header(cell_module.MessageHeaderKey.RETURN_CODE) == ReturnCode.PROCESS_EXCEPTION
+    assert "stream failed" in result.get_header(cell_module.MessageHeaderKey.ERROR)
     progress_wait_cb.assert_not_called()
 
 
