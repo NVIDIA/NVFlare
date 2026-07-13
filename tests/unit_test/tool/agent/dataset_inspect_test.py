@@ -560,6 +560,33 @@ def test_parquet_shard_schema_disagreement_is_a_mismatch(tmp_path):
     assert {"site": "site-1", "reference_site": "site-1", "issue": "shards_differ"} in agreement["mismatches"]
 
 
+def test_header_present_vs_ambiguous_same_width_is_header_presence_mismatch(tmp_path):
+    # Equal column counts, but only site-1 carries a header: alignment is
+    # unverifiable, and the label must not claim the widths differ.
+    _write_site(tmp_path, "site-1", HEADER + ROWS)
+    _write_site(tmp_path, "site-2", ROWS)
+
+    result = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
+
+    assert result["sites"][1]["header"] == "ambiguous"
+    agreement = result["schema_agreement"]
+    assert agreement["status"] == "mismatch"
+    assert agreement["mismatches"] == [
+        {"site": "site-2", "reference_site": "site-1", "issue": "header_presence_differs"}
+    ]
+
+
+def test_header_present_vs_ambiguous_different_width_is_column_count_mismatch(tmp_path):
+    _write_site(tmp_path, "site-1", HEADER + ROWS)
+    _write_site(tmp_path, "site-2", "39,100\n50,220\n")  # 2 columns, no header
+
+    result = inspect_dataset(tmp_path, max_files=250, max_file_bytes=512 * 1024)
+
+    agreement = result["schema_agreement"]
+    assert agreement["status"] == "mismatch"
+    assert agreement["mismatches"] == [{"site": "site-2", "reference_site": "site-1", "issue": "column_count_differs"}]
+
+
 def test_csv_shard_column_count_drift_is_flagged(tmp_path):
     d = tmp_path / "site-1"
     d.mkdir()

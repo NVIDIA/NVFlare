@@ -73,8 +73,10 @@ Dataset block contract (all keys always present per modality):
 - ``schema_agreement`` (tabular): compares feature names, column counts,
   AND dtype classes across sites; any drift is a ``mismatch`` with per-site
   issues (``feature_names_differ`` | ``column_count_differs`` |
-  ``dtypes_differ`` | ``shards_differ``, the last when shards inside one
-  site disagree — flagged per site as ``shard_schema_consistent: false``).
+  ``header_presence_differs`` (one site has a header, another is ambiguous
+  — alignment unverifiable even at equal widths) | ``dtypes_differ`` |
+  ``shards_differ``, the last when shards inside one site disagree —
+  flagged per site as ``shard_schema_consistent: false``).
 
 Walk bounds: ``max_files`` counts data files so non-data clutter cannot
 hide a dataset, and ``MAX_WALK_ENTRIES`` bounds total traversal (files and
@@ -420,7 +422,8 @@ def _sanitize_names(cells: List[str]) -> Tuple[List[str], bool]:
 
 def _read_bounded(path: Path, max_file_bytes: int, reads: Dict[str, int]):
     try:
-        raw = path.open("rb").read(max_file_bytes)
+        with path.open("rb") as f:
+            raw = f.read(max_file_bytes)
     except OSError:
         return None, False
     reads["files_read"] += 1
@@ -524,7 +527,10 @@ def _schema_agreement(sites: List[dict]) -> dict:
 
     Same feature names with drifting dtypes (income numeric at one site, text
     at another) is not analysis-ready for federated statistics, so dtype
-    drift is a mismatch, not a footnote.
+    drift is a mismatch, not a footnote. A header-bearing site next to a
+    header-ambiguous one is also a mismatch even at equal widths — column
+    alignment cannot be verified without names on both sides — labeled
+    ``header_presence_differs`` so it is not mistaken for a width drift.
     """
     reference = None
     mismatches = []
@@ -532,16 +538,23 @@ def _schema_agreement(sites: List[dict]) -> dict:
         if site.get("shard_schema_consistent") is False:
             mismatches.append({"site": site["name"], "reference_site": site["name"], "issue": "shards_differ"})
         names = tuple(site["features"]) if site.get("features") else None
-        signature = (names or site.get("column_count"), tuple(site["dtypes"]) if site.get("dtypes") else None)
-        if signature[0] is None:
+        count = len(names) if names is not None else site.get("column_count")
+        dtypes = tuple(site["dtypes"]) if site.get("dtypes") else None
+        if count is None:
             continue
+        signature = (names, count, dtypes)
         if reference is None:
             reference = (site["name"], signature)
             continue
         if signature == reference[1]:
             continue
-        if signature[0] != reference[1][0]:
-            issue = "feature_names_differ" if isinstance(signature[0], tuple) else "column_count_differs"
+        ref_names, ref_count, _ = reference[1]
+        if count != ref_count:
+            issue = "column_count_differs"
+        elif (names is None) != (ref_names is None):
+            issue = "header_presence_differs"
+        elif names != ref_names:
+            issue = "feature_names_differ"
         else:
             issue = "dtypes_differ"
         mismatches.append({"site": site["name"], "reference_site": reference[0], "issue": issue})
