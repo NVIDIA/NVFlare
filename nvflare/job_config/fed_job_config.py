@@ -25,6 +25,7 @@ from tempfile import TemporaryDirectory
 from typing import Dict, List
 
 from nvflare.fuel.utils.class_utils import get_component_init_parameters
+from nvflare.fuel.utils.job_secret_scanner import warn_on_potential_secrets_in_job_dir
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.validation_utils import check_object_type
 from nvflare.job_config.base_app_config import BaseAppConfig
@@ -173,6 +174,7 @@ class FedJobConfig:
     def simulator_run(self, workspace, clients=None, n_clients=None, threads=None, gpu=None, log_config=None):
         with TemporaryDirectory() as job_root:
             self.generate_job_config(job_root)
+            warn_on_potential_secrets_in_job_dir(job_root, job_name=self.job_name)
 
             try:
                 command = (

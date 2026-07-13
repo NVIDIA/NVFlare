@@ -230,7 +230,7 @@ def security_init(secure_train: bool, site_org: str, workspace: Workspace, app_v
         print("AuthorizationService error: {}".format(err))
         sys.exit(1)
 
-    studies_file = workspace.get_file_path_in_site_config("study_registry.json")
+    studies_file = workspace.get_study_registry_file_path()
     registry = None
     if os.path.exists(studies_file):
         with open(studies_file, "rt") as f:

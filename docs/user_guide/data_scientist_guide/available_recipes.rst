@@ -19,6 +19,16 @@ For model input formats, checkpoint behavior, and execution environments, see
 :ref:`job_recipe`. For common Recipe methods, helpers, and stable API behavior,
 see :ref:`recipe_api`.
 
+.. important::
+
+   Recipe arguments and helper configuration become part of the generated job
+   definition. Never put an actual password, token, API key, private key, or
+   other credential in any recipe parameter, including nested dictionaries.
+   Keep secrets in site environment variables or mounted secret files. Use
+   ``secret_ref`` or ``secret_file_ref`` only at supported runtime boundaries;
+   otherwise read the secret directly inside your training code. See
+   :ref:`recipe_secrets` for the supported locations.
+
 Fed Task
 ==============
 

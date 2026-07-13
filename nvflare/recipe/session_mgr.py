@@ -18,6 +18,7 @@ from typing import Dict, Optional
 
 from nvflare.fuel.flare_api.api_spec import MonitorReturnCode
 from nvflare.fuel.flare_api.flare_api import Session, new_secure_session
+from nvflare.fuel.utils.job_secret_scanner import warn_on_potential_secrets_in_job_dir
 from nvflare.job_config.api import FedJob
 
 
@@ -54,12 +55,15 @@ class SessionManager:
 
     def submit_job(self, job: FedJob) -> str:
         """Submit a job and return job ID."""
-        sess = self._get_session()
         with tempfile.TemporaryDirectory() as temp_dir:
             job.export_job(temp_dir)
+            warn_on_potential_secrets_in_job_dir(temp_dir, job_name=job.name)
             job_path = os.path.join(temp_dir, job.name)
-            job_id = sess.submit_job(job_path)
-            sess.close()
+            sess = self._get_session()
+            try:
+                job_id = sess.submit_job(job_path)
+            finally:
+                sess.close()
             print(f"Submitted job '{job.name}' with ID: {job_id}")
             return job_id
 
