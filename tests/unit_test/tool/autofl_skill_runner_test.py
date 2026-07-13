@@ -56,7 +56,7 @@ def _campaign_config():
     }
 
 
-def _initialize_fake_campaign(runner, tmp_path, monkeypatch, *, target_env="sim", baseline_score=0.5):
+def _initialize_fake_campaign(runner, tmp_path, monkeypatch, *, target_env="sim", baseline_score=0.5, mode=None):
     job = tmp_path / "job.py"
     client = tmp_path / "client.py"
     job.write_text("print('job')\n", encoding="utf-8")
@@ -81,6 +81,8 @@ def _initialize_fake_campaign(runner, tmp_path, monkeypatch, *, target_env="sim"
 
     monkeypatch.setattr(runner, "run_job", fake_run)
     argv = ["initialize", str(job), "--env", target_env, "--no-prefer-synthetic"]
+    if mode is not None:
+        argv.extend(["--mode", mode])
     assert runner.main(argv) == 0
     return job, client, config
 
@@ -1815,6 +1817,23 @@ def test_status_reuses_persisted_guard_settings(tmp_path, monkeypatch):
     assert runner.main(["status", str(job)]) == 0
     assert observed["exploration_batch_size"] == 5
     assert observed["family_repeat_limit"] == 9
+
+
+def test_status_restores_persisted_minimization_mode(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch, baseline_score=1.0, mode="min")
+    results_path = tmp_path / "results.tsv"
+    records = runner.load_results(results_path)
+    records.append(runner.RunRecord("keep", "lower_loss", 0.8, 1.0, "none", "lower loss", "python job.py", ""))
+    runner.write_results(results_path, records)
+
+    assert runner.main(["status", str(job)]) == 0
+
+    metadata = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign.json").read_text(encoding="utf-8"))
+    state = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_text(encoding="utf-8"))
+    assert metadata["settings"]["mode"] == "min"
+    assert state["best_score"] == pytest.approx(0.8)
+    assert runner.main(["status", str(job), "--mode", "max"]) == 2
 
 
 def test_explicit_immutable_campaign_setting_change_is_rejected(tmp_path, monkeypatch):
