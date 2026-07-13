@@ -212,8 +212,8 @@ class SubprocessLauncher:
             List of command arguments
 
         The command format depends on whether a run_cmd (launcher) is specified:
-        - Without run_cmd: python -m nvflare.collab.flare.worker <training_module>
-        - With run_cmd:    torchrun [opts] --master-port=X -m nvflare.collab.flare.worker <training_module>
+        - Without run_cmd: python -m nvflare.collab.backends.flare.worker <training_module>
+        - With run_cmd:    torchrun [opts] --master-port=X -m nvflare.collab.backends.flare.worker <training_module>
 
         For torchrun/mpirun style launchers, we use -m directly on the launcher
         since they invoke Python internally. This avoids the invalid command:
@@ -223,7 +223,7 @@ class SubprocessLauncher:
         a unique port (avoids conflicts in simulation mode).
         """
         # Worker module and training module as arguments
-        worker_module = "nvflare.collab.flare.worker"
+        worker_module = "nvflare.collab.backends.flare.worker"
 
         if self.run_cmd:
             # Launcher-based execution (e.g., torchrun, mpirun)

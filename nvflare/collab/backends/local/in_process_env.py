@@ -12,12 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Collab in-process execution environment using nvflare.collab.local.runner.InProcessRunner."""
+"""Collab in-process execution environment using nvflare.collab.backends.local.runner.InProcessRunner."""
 
 import os
 from typing import Dict, Optional, Tuple, Union
 
-from nvflare.collab.local.runner import InProcessRunner
+from nvflare.collab.backends.local.runner import InProcessRunner
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import ExecEnv
 

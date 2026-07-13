@@ -94,7 +94,7 @@ class MultiProcessEnv(ExecEnv):
     The CollabController and CollabExecutor components (defined in CollabRecipe) use
     FlareBackend internally when running in this environment.
 
-    Note: This is nvflare.collab.flare.MultiProcessEnv, distinct from nvflare.recipe.PocEnv.
+    Note: This is nvflare.collab.backends.flare.MultiProcessEnv, distinct from nvflare.recipe.PocEnv.
     """
 
     def __init__(

@@ -16,7 +16,7 @@ import logging
 from nvflare.collab.api.utils import simple_logging
 from collab import get_experiment_root
 from collab.np.mains.swarm import NPSwarm, NPSwarmClient
-from nvflare.collab.local.runner import InProcessRunner
+from nvflare.collab.backends.local.runner import InProcessRunner
 
 
 def main():

@@ -21,7 +21,7 @@ from collab import get_experiment_root
 from collab.np.mains.client import NPTrainer
 from collab.np.mains.strategies.cyclic import NPCyclic
 from collab.np.mains.utils import save_np_model
-from nvflare.collab.local.runner import InProcessRunner
+from nvflare.collab.backends.local.runner import InProcessRunner
 
 
 def prepare_data_dir(initial_model_file: str) -> str:

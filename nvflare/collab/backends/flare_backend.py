@@ -20,7 +20,7 @@ from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.message import Message
 from nvflare.security.logging import secure_log_traceback
 
-from nvflare.collab.flare.constants import MSG_CHANNEL, MSG_TOPIC, CallReplyKey, ObjectCallKey
+from nvflare.collab.backends.flare.constants import MSG_CHANNEL, MSG_TOPIC, CallReplyKey, ObjectCallKey
 
 
 class FlareBackend(Backend):

@@ -21,7 +21,7 @@ this directly - they just write normal @collab.publish decorated functions.
 Architecture:
     User writes:        train.py with @collab.publish decorated functions
 
-    CollabExecutor runs:   torchrun --nproc_per_node=4 -m nvflare.collab.flare.worker train
+    CollabExecutor runs:   torchrun --nproc_per_node=4 -m nvflare.collab.backends.flare.worker train
                                                     ↑ this module        ↑ user's module
 
     Environment vars (set by CollabExecutor, invisible to user):
@@ -93,7 +93,7 @@ def get_client_api():
         CollabClientAPI instance, or None if not in Client API mode.
 
     Example:
-        from nvflare.collab.flare.worker import get_client_api
+        from nvflare.collab.backends.flare.worker import get_client_api
 
         def main():
             flare = get_client_api()
@@ -116,7 +116,7 @@ def get_tracking_writer():
         The tracking writer, or None if not in subprocess mode or not configured.
 
     Example:
-        from nvflare.collab.flare.worker import get_tracking_writer
+        from nvflare.collab.backends.flare.worker import get_tracking_writer
 
         writer = get_tracking_writer()
         if writer:
@@ -417,7 +417,7 @@ class CollabWorker:
             # Also update the legacy worker module for backward compatibility
             import sys
 
-            worker_module_name = "nvflare.collab.flare.worker"
+            worker_module_name = "nvflare.collab.backends.flare.worker"
             worker_module = sys.modules.get(worker_module_name)
             if worker_module:
                 worker_module._client_api = _client_api
@@ -505,13 +505,13 @@ def main():
     """Entry point for Collab worker subprocess.
 
     Usage (by CollabExecutor, not directly by users):
-        torchrun --nproc_per_node=4 -m nvflare.collab.flare.worker my_training_module
+        torchrun --nproc_per_node=4 -m nvflare.collab.backends.flare.worker my_training_module
 
     The training module name is passed as a command-line argument.
     Connection details are passed via environment variables.
     """
     if len(sys.argv) < 2:
-        print("Usage: python -m nvflare.collab.flare.worker <training_module>")
+        print("Usage: python -m nvflare.collab.backends.flare.worker <training_module>")
         print()
         print("This module is used internally by CollabExecutor.")
         print("Users should not run this directly.")

@@ -19,7 +19,7 @@ from collab.np.mains.client import NPTrainer
 from collab.np.mains.strategies.avg_para import NPFedAvgParallel
 from collab.np.mains.strategies.cyclic import NPCyclic
 from collab.np.mains.utils import save_np_model
-from nvflare.collab.flare.recipe import CollabRecipe
+from nvflare.collab.backends.flare.recipe import CollabRecipe
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
