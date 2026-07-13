@@ -66,6 +66,11 @@ class _FedAvgRecipeWithHEValidator(BaseModel):
 class FedAvgRecipeWithHE(Recipe):
     """A recipe for implementing Federated Averaging (FedAvg) with Homomorphic Encryption (HE) in NVFlare.
 
+    Recipe parameters, including ``train_args``, become part of the generated job
+    definition and must never contain actual secret values. Read secrets from site environment
+    variables or mounted files; references are supported only where documented in
+    :mod:`nvflare.recipe.secrets`.
+
     FedAvg is a fundamental federated learning algorithm that aggregates model updates
     from multiple clients by computing a weighted average based on the amount of local
     training data. This recipe adds homomorphic encryption to preserve privacy during

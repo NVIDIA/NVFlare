@@ -63,6 +63,10 @@ class _XGBVerticalValidator(BaseModel):
 class XGBVerticalRecipe(Recipe):
     """XGBoost Vertical Federated Learning Recipe.
 
+    Recipe parameters, including ``xgb_params`` and nested ``per_site_config`` values,
+    must never contain actual secrets. Read secrets from site environment variables or mounted
+    files; references are supported only where documented in :mod:`nvflare.recipe.secrets`.
+
     This recipe implements vertical federated XGBoost where different clients have different features
     for the same samples. In vertical FL, data is split by columns (features) rather than rows (samples).
 
@@ -95,6 +99,7 @@ class XGBVerticalRecipe(Recipe):
         model_file_name (str, optional): Model file name. Default is 'test.model.json'.
         per_site_config (dict, optional): Per-site configuration mapping site names to config dicts.
             Each config dict must contain 'data_loader' key with XGBDataLoader instance.
+            Nested values become part of the generated job definition and must not contain secrets.
             Example: {"site-1": {"data_loader": VerticalDataLoader(...)}, "site-2": {...}}
 
     Example:
@@ -148,6 +153,8 @@ class XGBVerticalRecipe(Recipe):
         - Executor and metrics components are automatically added to all clients
         - TensorBoard tracking is automatically configured
     """
+
+    _UNSUPPORTED_SECRET_REF_ATTRS = Recipe._UNSUPPORTED_SECRET_REF_ATTRS | {"per_site_config"}
 
     def __init__(
         self,

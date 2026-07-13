@@ -21,6 +21,7 @@ from nvflare.client.in_process.api import TOPIC_ABORT
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.data_event.event_manager import EventManager
 from nvflare.fuel.utils.log_utils import get_module_logger
+from nvflare.fuel.utils.secret_utils import resolve_secret_refs, split_command_preserving_secret_refs
 
 print_fn = builtins.print
 
@@ -47,12 +48,11 @@ class TaskScriptRunner:
     def run(self):
         """Call the task_fn with any required arguments."""
         self.logger.info(f"start task run() with full path: {self.script_full_path}")
+        curr_argv = sys.argv
         try:
-            curr_argv = sys.argv
             builtins.print = log_print if self.redirect_print_to_log else print_fn
             sys.argv = self.get_sys_argv()
             runpy.run_path(self.script_full_path, run_name="__main__")
-            sys.argv = curr_argv
         except ImportError as ie:
             msg = "attempted relative import with no known parent package"
             if ie.msg == msg:
@@ -70,10 +70,26 @@ class TaskScriptRunner:
             self.event_manager.fire_event(TOPIC_ABORT, f"'{self.script_full_path}' is aborted, {msg}")
             raise e
         finally:
+            sys.argv = curr_argv
             builtins.print = print_fn
 
     def get_sys_argv(self):
-        args_list = [] if not self.script_args else self.script_args.split()
+        # Preserve the runner's legacy whitespace splitting for existing arguments. Only quoted
+        # spans containing a secret ref are grouped, so a composite such as
+        # "Bearer ${secret:TOKEN}" remains one argument without changing unrelated backslashes.
+        args_list = (
+            []
+            if not self.script_args
+            else split_command_preserving_secret_refs(
+                self.script_args,
+                posix=False,
+                group_secret_ref_quotes="${secret:" in self.script_args,
+            )
+        )
+        # Resolve ${secret:ENV_VAR} references from this site's environment after splitting,
+        # so injected values containing whitespace stay single arguments. The resolved values
+        # exist only in the argv handed to the script and must never be logged.
+        args_list = [resolve_secret_refs(arg) for arg in args_list]
         return [self.script_full_path] + args_list
 
     def get_script_full_path(self, custom_dir, script_path) -> str:

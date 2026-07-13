@@ -223,12 +223,29 @@ data loaders, validators, or other recipe behavior.
    ``data_path`` or ``batch_size``. For FedAvg, pass those values through
    ``train_args`` unless your recipe explicitly documents another shape.
 
+No Secrets In Recipe Parameters
+-------------------------------
+
+Recipe parameters are job definition, not secret storage. Values such as
+``train_args``, ``task_args``, ``eval_args``, ``per_site_config``, config
+override dictionaries, execution parameters, and dictionaries passed to
+``add_client_config`` or ``add_server_config`` can be serialized in clear text
+into the generated job. They must never contain actual passwords, API keys,
+tokens, private keys, or other credentials.
+
+Recipes emit ``PotentialSecretWarning`` when a supplied value looks like an
+actual secret, but this heuristic check cannot prove that a value is safe.
+Keep the value at the executing site. Use ``secret_ref`` for a site environment
+variable or ``secret_file_ref`` for a mounted secret file only at a supported
+runtime boundary. See :ref:`recipe_secrets` for the supported locations,
+examples, and deployment guidance.
+
 Recipe Metadata
 ---------------
 
 Use ``set_recipe_meta`` to add generated job metadata from a recipe without
-mutating ``recipe.job.job.meta_props`` directly. The helper sets one
-``JobMetaKey`` metadata entry at a time:
+mutating nested generated-job metadata directly. The helper sets one ``JobMetaKey``
+metadata entry at a time:
 
 .. code-block:: python
 

@@ -107,7 +107,7 @@ def main():
         # Use WEIGHT_DIFF for efficiency and consistency (required for SVTPrivacy filter)
         params_transfer_type=TransferType.DIFF,
     )
-    recipe.job.to_server({"server": {"heart_beat_timeout": DEFAULT_HEARTBEAT_TIMEOUT}})
+    recipe.add_server_config({"server": {"heart_beat_timeout": DEFAULT_HEARTBEAT_TIMEOUT}})
 
     # Enable TensorBoard tracking
     add_experiment_tracking(recipe, tracking_type="tensorboard")

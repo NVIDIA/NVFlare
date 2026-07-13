@@ -406,6 +406,89 @@ class TestRecipeConfigMethods:
         assert captured["server_obj"] is not captured["client_obj"]
 
 
+class TestRecipeTensorStreaming:
+    def _make_recipe(self):
+        from nvflare.recipe.spec import Recipe
+
+        return Recipe(FedJob(name="test_tensor_streaming", min_clients=1))
+
+    def test_enable_tensor_streaming_adds_matching_components(self):
+        from nvflare.apis.job_def import ALL_SITES
+        from nvflare.app_opt.tensor_stream.client import TensorClientStreamer
+        from nvflare.app_opt.tensor_stream.server import TensorServerStreamer
+        from nvflare.client.config import ExchangeFormat
+
+        recipe = self._make_recipe()
+        recipe.server_expected_format = ExchangeFormat.PYTORCH
+        tasks = ["train", "validate"]
+
+        recipe.enable_tensor_streaming(
+            format=ExchangeFormat.PYTORCH,
+            tasks=tasks,
+            tensor_send_timeout=45.0,
+            wait_send_task_data_all_clients_timeout=600.0,
+        )
+
+        server_streamer = recipe.job._deploy_map["server"].app_config.components["tensor_server_streamer"]
+        client_streamer = recipe.job._deploy_map[ALL_SITES].app_config.components["tensor_client_streamer"]
+        assert isinstance(server_streamer, TensorServerStreamer)
+        assert isinstance(client_streamer, TensorClientStreamer)
+        assert server_streamer.format == client_streamer.format == ExchangeFormat.PYTORCH
+        assert server_streamer.tasks == client_streamer.tasks == tasks
+        assert server_streamer.tasks is not tasks
+        assert client_streamer.tasks is not tasks
+        assert server_streamer.tensor_send_timeout == client_streamer.tensor_send_timeout == 45.0
+        assert server_streamer.wait_task_data_sent_to_all_clients_timeout == 600.0
+        assert recipe._tensor_streaming_added is True
+
+    def test_enable_tensor_streaming_uses_default_train_task(self):
+        from nvflare.apis.job_def import ALL_SITES
+
+        recipe = self._make_recipe()
+        recipe.enable_tensor_streaming()
+
+        server_streamer = recipe.job._deploy_map["server"].app_config.components["tensor_server_streamer"]
+        client_streamer = recipe.job._deploy_map[ALL_SITES].app_config.components["tensor_client_streamer"]
+        assert server_streamer.tasks == client_streamer.tasks == ["train"]
+
+    @pytest.mark.parametrize(
+        "tasks, error_type",
+        [
+            ("train", TypeError),
+            (("train",), TypeError),
+            ([1], TypeError),
+            ([], ValueError),
+        ],
+    )
+    def test_enable_tensor_streaming_validates_tasks(self, tasks, error_type):
+        recipe = self._make_recipe()
+
+        with pytest.raises(error_type, match="tasks must"):
+            recipe.enable_tensor_streaming(tasks=tasks)
+
+        assert recipe.job._deploy_map == {}
+
+    def test_enable_tensor_streaming_rejects_mismatched_format(self):
+        from nvflare.client.config import ExchangeFormat
+
+        recipe = self._make_recipe()
+        recipe.server_expected_format = ExchangeFormat.NUMPY
+
+        with pytest.raises(ValueError, match="must match server_expected_format"):
+            recipe.enable_tensor_streaming(format=ExchangeFormat.PYTORCH)
+
+        assert recipe.job._deploy_map == {}
+
+    def test_enable_tensor_streaming_rejects_duplicate_call(self):
+        recipe = self._make_recipe()
+        recipe.enable_tensor_streaming()
+
+        with pytest.raises(RuntimeError, match="already been enabled"):
+            recipe.enable_tensor_streaming()
+
+        assert len(recipe.job._deploy_map["server"].app_config.components) == 1
+
+
 class _DummyExecEnv:
     def __init__(self):
         self.extra = {}
