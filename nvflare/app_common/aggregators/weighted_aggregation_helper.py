@@ -71,6 +71,19 @@ def filter_aggregatable_metrics(
     return filtered
 
 
+class AggregationStatsKey:
+    """Keys of the per-round aggregation stats dict produced by WeightedAggregationHelper and aggregators."""
+
+    ROUND = "round"
+    ACCEPTED_CONTRIBUTIONS = "accepted_contributions"
+    CONTRIBUTORS = "contributors"
+    KEYS_AGGREGATED = "keys_aggregated"
+    KEYS_SEEN = "keys_seen"
+    FULLY_MATCHED_KEYS = "fully_matched_keys"
+    PARTIALLY_MATCHED_KEYS = "partially_matched_keys"
+    SKIPPED_KEYS = "skipped_keys"
+
+
 class WeightedAggregationHelper(object):
     def __init__(self, exclude_vars: Optional[str] = None, weigh_by_local_iter: bool = True):
         """Perform weighted aggregation.
@@ -92,11 +105,16 @@ class WeightedAggregationHelper(object):
         self.total = dict()
         self.counts = dict()
         self.history = list()
+        self.key_contribution_counts = dict()
+        self.skipped_keys = set()
+        self.last_aggregation_stats = None
 
     def reset_stats(self):
         self.total = dict()
         self.counts = dict()
         self.history = list()
+        self.key_contribution_counts = dict()
+        self.skipped_keys = set()
 
     @staticmethod
     def _is_pytorch_tensor(tensor):
@@ -108,7 +126,10 @@ class WeightedAggregationHelper(object):
         with self.lock:
             for k, v in data.items():
                 if self.exclude_vars is not None and self.exclude_vars.search(k):
+                    self.skipped_keys.add(k)
                     continue
+
+                self.key_contribution_counts[k] = self.key_contribution_counts.get(k, 0) + 1
 
                 # Disk-streamed payloads may pass lazy refs
                 # instead of in-memory tensors. If present, materialize() loads
@@ -178,8 +199,34 @@ class WeightedAggregationHelper(object):
                     # Fallback for non-PyTorch tensors (including encrypted tensors)
                     aggregated_dict[k] = v * (1.0 / self.counts[k])
 
+            self.last_aggregation_stats = self._compute_aggregation_stats()
             self.reset_stats()
             return aggregated_dict
+
+    def _compute_aggregation_stats(self) -> dict:
+        num_contributions = len(self.history)
+        keys_aggregated = len(self.total)
+        fully_matched = 0
+        if num_contributions > 0:
+            fully_matched = sum(1 for c in self.key_contribution_counts.values() if c == num_contributions)
+        return {
+            AggregationStatsKey.ACCEPTED_CONTRIBUTIONS: num_contributions,
+            AggregationStatsKey.CONTRIBUTORS: sorted({item["contributor_name"] for item in self.history}),
+            AggregationStatsKey.KEYS_AGGREGATED: keys_aggregated,
+            AggregationStatsKey.KEYS_SEEN: keys_aggregated + len(self.skipped_keys),
+            AggregationStatsKey.FULLY_MATCHED_KEYS: fully_matched,
+            AggregationStatsKey.PARTIALLY_MATCHED_KEYS: keys_aggregated - fully_matched,
+            AggregationStatsKey.SKIPPED_KEYS: len(self.skipped_keys),
+        }
+
+    def get_aggregation_stats(self) -> dict:
+        """Return key-matching stats of the contributions accumulated so far in this round.
+
+        A key is "fully matched" when every accepted contribution included it, "partially matched" when
+        only some contributions included it, and "skipped" when it was excluded by exclude_vars.
+        """
+        with self.lock:
+            return self._compute_aggregation_stats()
 
     def get_history(self):
         return self.history

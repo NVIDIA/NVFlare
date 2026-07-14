@@ -20,6 +20,7 @@ from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
 from nvflare.app_common.aggregators.weighted_aggregation_helper import (
+    AggregationStatsKey,
     WeightedAggregationHelper,
     filter_aggregatable_metrics,
 )
@@ -332,6 +333,11 @@ class FedAvg(BaseFedAvg):
             return result
         else:
             # Use built-in InTime aggregation
+            aggr_stats = self._aggr_helper.get_aggregation_stats()
+            aggr_stats[AggregationStatsKey.ROUND] = self.current_round
+            if self.fl_ctx:
+                self.fl_ctx.set_prop(AppConstants.AGGREGATION_STATS, aggr_stats, private=True, sticky=False)
+
             aggr_params = self._aggr_helper.get_result()
             aggr_metrics = self._aggr_metrics_helper.get_result() if self._all_metrics else None
             aggr_metrics = aggr_metrics or None
