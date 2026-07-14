@@ -46,6 +46,10 @@ class _FedAvgValidator(BaseModel):
     aggregator_data_kind: Optional[DataKind] = DataKind.WEIGHTS
     # Core parameters
     launch_external_process: bool
+    # New Client API execution mode (design: client_api_execution_modes.md). When set to
+    # "external_process", the client runs on ClientAPIExecutor + ExternalProcessBackend
+    # instead of the legacy launch_external_process stack.
+    execution_mode: Optional[str] = None
     command: str
     framework: FrameworkType
     server_expected_format: ExchangeFormat
@@ -186,6 +190,7 @@ class FedAvgRecipe(Recipe):
         aggregator_data_kind: Optional[DataKind] = DataKind.WEIGHTS,
         # Core parameters
         launch_external_process: bool = False,
+        execution_mode: Optional[str] = None,
         command: str = "python3 -u",
         framework: FrameworkType = FrameworkType.PYTORCH,
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
@@ -235,6 +240,7 @@ class FedAvgRecipe(Recipe):
             aggregator=aggregator,
             aggregator_data_kind=aggregator_data_kind,
             launch_external_process=launch_external_process,
+            execution_mode=execution_mode,
             command=command,
             framework=framework,
             server_expected_format=server_expected_format,
@@ -274,6 +280,7 @@ class FedAvgRecipe(Recipe):
         self.aggregator = v.aggregator
         self.aggregator_data_kind = v.aggregator_data_kind
         self.launch_external_process = v.launch_external_process
+        self.execution_mode = v.execution_mode
         self.command = v.command
         self.framework = v.framework
         self.server_expected_format = v.server_expected_format
@@ -395,7 +402,7 @@ class FedAvgRecipe(Recipe):
                     else self.shutdown_timeout
                 )
 
-                executor = ScriptRunner(
+                executor = self._make_script_runner(
                     script=script,
                     script_args=script_args,
                     launch_external_process=launch_external,
@@ -405,12 +412,10 @@ class FedAvgRecipe(Recipe):
                     params_transfer_type=transfer_type,
                     launch_once=launch_once,
                     shutdown_timeout=shutdown_timeout,
-                    memory_gc_rounds=self.client_memory_gc_rounds,
-                    cuda_empty_cache=self.cuda_empty_cache,
                 )
                 job.to(executor, site_name)
         else:
-            executor = ScriptRunner(
+            executor = self._make_script_runner(
                 script=self.train_script,
                 script_args=self.train_args,
                 launch_external_process=self.launch_external_process,
@@ -420,12 +425,54 @@ class FedAvgRecipe(Recipe):
                 params_transfer_type=self.params_transfer_type,
                 launch_once=self.launch_once,
                 shutdown_timeout=self.shutdown_timeout,
-                memory_gc_rounds=self.client_memory_gc_rounds,
-                cuda_empty_cache=self.cuda_empty_cache,
             )
             job.to_clients(executor)
 
         Recipe.__init__(self, job)
+
+    def _make_script_runner(
+        self,
+        *,
+        script,
+        script_args,
+        launch_external_process,
+        command,
+        framework,
+        server_expected_format,
+        params_transfer_type,
+        launch_once,
+        shutdown_timeout,
+    ):
+        """Build the client ScriptRunner. When execution_mode is set, route to the new
+        ClientAPIExecutor stack (external_process/in_process) instead of the legacy
+        launch_external_process launcher; framework/server_expected_format still drive the
+        client-edge conversion filter, so an unchanged framework client runs on either path."""
+        if self.execution_mode is not None:
+            return ScriptRunner(
+                script=script,
+                script_args=script_args,
+                execution_mode=self.execution_mode,
+                command=command,
+                framework=framework,
+                server_expected_format=server_expected_format,
+                launch_once=launch_once,
+                shutdown_timeout=shutdown_timeout,
+                memory_gc_rounds=self.client_memory_gc_rounds,
+                cuda_empty_cache=self.cuda_empty_cache,
+            )
+        return ScriptRunner(
+            script=script,
+            script_args=script_args,
+            launch_external_process=launch_external_process,
+            command=command,
+            framework=framework,
+            server_expected_format=server_expected_format,
+            params_transfer_type=params_transfer_type,
+            launch_once=launch_once,
+            shutdown_timeout=shutdown_timeout,
+            memory_gc_rounds=self.client_memory_gc_rounds,
+            cuda_empty_cache=self.cuda_empty_cache,
+        )
 
     @staticmethod
     def _resolve_model_filenames(best_model_filename: Optional[str], save_filename: Optional[str]) -> tuple[str, str]:

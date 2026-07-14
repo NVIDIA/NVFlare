@@ -17,6 +17,7 @@ import os
 from enum import Enum
 from typing import Optional
 
+from nvflare.client.cell.bootstrap import CELL_API_TYPE
 from nvflare.client.constants import CLIENT_API_CONFIG
 from nvflare.fuel.data_event.data_bus import DataBus
 
@@ -31,6 +32,10 @@ data_bus = DataBus()
 class ClientAPIType(Enum):
     IN_PROCESS_API = "IN_PROCESS_API"
     EX_PROCESS_API = "EX_PROCESS_API"
+    # external_process execution mode's trainer-side Cell engine (CellClientAPI): selected
+    # when NVFlare's ExternalProcessBackend launched this process. Reads its bootstrap config
+    # from the NVFLARE_CLIENT_API_BOOTSTRAP env var (not the legacy config_file).
+    CELL_API = CELL_API_TYPE
 
 
 class APIContext:
@@ -59,5 +64,11 @@ class APIContext:
             if not isinstance(api, InProcessClientAPI):
                 raise RuntimeError(f"api {api} is not a valid InProcessClientAPI")
             return api
+        elif api_type == ClientAPIType.CELL_API:
+            # Deferred import: the Cell engine pulls in cellnet/payload machinery the other
+            # API types never need; keep flare.init import-light for in_process/ex_process.
+            from nvflare.client.cell.api import CellClientAPI
+
+            return CellClientAPI()
         else:
             return ExProcessClientAPI(config_file=self.config_file)

@@ -71,13 +71,20 @@ def _backend_callbacks_subscribed(bus, backend) -> bool:
 
 @pytest.fixture(autouse=True)
 def clean_databus():
-    """The DataBus is a process singleton: isolate every test from prior subscriptions/data."""
+    """The DataBus is a process singleton: isolate every test from prior subscriptions/data.
+
+    Also reset the one-backend-per-DataBus guard registry, which is keyed on that same
+    singleton — a test that initializes without finalizing would otherwise leave its claim
+    and make the next test's initialize raise "already active".
+    """
     bus = DataBus()
     bus.subscribers.clear()
     bus.data_store.clear()
+    ipb_module._GUARD._active.clear()
     yield bus
     bus.subscribers.clear()
     bus.data_store.clear()
+    ipb_module._GUARD._active.clear()
 
 
 @pytest.fixture
@@ -480,20 +487,71 @@ class TestExecute:
         backend.handle_event("custom_event", FLContext())
 
 
-class TestMultiBackend:
-    def test_finalizing_backend_does_not_clear_successors_client_api(self, clean_databus, custom_dir):
-        """Backend A's teardown must not remove the CLIENT_API_KEY a later backend B installed."""
-        backend_a, _ = _initialized_backend(custom_dir)
-        backend_b, _ = _initialized_backend(custom_dir)
-        try:
-            api_b = backend_b._client_api
-            assert clean_databus.get_data(CLIENT_API_KEY) is api_b
+class TestSingleBackendGuard:
+    """V1 allows one in_process backend per client job: the process-singleton DataBus has a
+    single well-known CLIENT_API_KEY and fixed topics, so two in_process ClientAPIExecutors
+    in one job would silently overwrite each other (both trainers' flare.init() resolve the
+    last-installed API; one result fires both backends). A second backend is rejected
+    deterministically at initialize (-> executor system_panic). Mirrors the external_process
+    backend's one-backend-per-cell guard (shared SingleBackendGuard mechanism)."""
 
-            backend_a.finalize(FLContext())
-            assert clean_databus.get_data(CLIENT_API_KEY) is api_b
+    def test_second_backend_on_same_databus_is_rejected(self, clean_databus, custom_dir):
+        backend_1, _ = _initialized_backend(custom_dir)
+        try:
+            api_1 = backend_1._client_api
+            backend_2 = InProcessBackend()
+            fl_ctx = _make_fl_ctx(_make_engine(), custom_dir)
+            with pytest.raises(RuntimeError, match="already active"):
+                backend_2.initialize(_make_context(), fl_ctx)
+
+            # the loser's unwind must not disturb the winner: its CLIENT_API_KEY, its
+            # subscriptions, and its guard claim all survive
+            assert ipb_module._GUARD.owner_of(clean_databus) is backend_1
+            assert clean_databus.get_data(CLIENT_API_KEY) is api_1
+            assert _backend_callbacks_subscribed(clean_databus, backend_1)
+            assert backend_1._task_fn_thread.is_alive()
         finally:
-            backend_b.finalize(FLContext())
-        assert clean_databus.get_data(CLIENT_API_KEY) is None
+            backend_1.finalize(FLContext())
+        assert ipb_module._GUARD.owner_of(clean_databus) is None
+
+    def test_claim_released_on_finalize_for_the_next_job(self, clean_databus, custom_dir):
+        """Sequential jobs in one process (simulator) must reclaim the slot."""
+        backend_1, _ = _initialized_backend(custom_dir)
+        backend_1.finalize(FLContext())
+        assert ipb_module._GUARD.owner_of(clean_databus) is None
+
+        backend_2, _ = _initialized_backend(custom_dir)
+        try:
+            assert ipb_module._GUARD.owner_of(clean_databus) is backend_2
+        finally:
+            backend_2.finalize(FLContext())
+
+    def test_claim_released_on_failed_initialize(self, clean_databus, custom_dir, monkeypatch):
+        """A backend whose initialize raises must release its claim (self-unwind), or the
+        next backend in the process could never start."""
+
+        def raising_init(self, *args, **kwargs):
+            raise RuntimeError("late boom")
+
+        monkeypatch.setattr(InProcessClientAPI, "init", raising_init)
+        backend = InProcessBackend()
+        with pytest.raises(RuntimeError, match="late boom"):
+            backend.initialize(_make_context(), _make_fl_ctx(_make_engine(), custom_dir))
+
+        assert ipb_module._GUARD.owner_of(clean_databus) is None
+        # and the slot is genuinely free: with init restored, a fresh backend can claim it
+        monkeypatch.undo()
+        backend_2, _ = _initialized_backend(custom_dir)
+        try:
+            assert ipb_module._GUARD.owner_of(clean_databus) is backend_2
+        finally:
+            backend_2.finalize(FLContext())
+
+
+class TestBackendTeardown:
+    """Single-backend teardown invariants (the guard now forbids concurrent backends, so
+    the former 'successor's CLIENT_API_KEY survives A's finalize' case is gone — the DataBus
+    cleanup below still matters for sequential jobs in one process)."""
 
     def test_finalize_fires_stop_exactly_once(self, clean_databus, custom_dir):
         """Idempotency means no repeated side effects, not just no raise."""

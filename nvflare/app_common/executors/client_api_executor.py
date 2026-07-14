@@ -18,8 +18,11 @@ Design: docs/design/client_api_execution_modes.md ("What We Propose", "Overview"
 "Execution Modes", "Configuration Surface"). This module path is normative - job configs
 reference ``nvflare.app_common.executors.client_api_executor.ClientAPIExecutor``.
 
-Availability: ``in_process`` is fully supported. ``external_process`` and ``attach`` are
-not yet implemented; selecting them fails cleanly at job startup.
+Availability: ``in_process`` is fully supported. ``external_process`` has its CJ-side
+backend (launch/session/control plane); end-to-end use additionally needs the trainer-side
+Cell engine (trainer-engine PR) and the F3 payload layer (#4865), so jobs selecting it fail
+cleanly at launch/transfer time until those land. ``attach`` is not yet implemented;
+selecting it fails cleanly at job startup.
 
 Unlike the legacy executors (InProcessClientAPIExecutor / ClientAPILauncherExecutor), this
 surface has no parameter-conversion args (``params_exchange_format`` /
@@ -447,7 +450,11 @@ class ClientAPIExecutor(Executor):
         return InProcessBackend()
 
     def _create_external_process_backend(self) -> ClientAPIBackendSpec:
-        raise NotImplementedError("external_process execution mode is not yet implemented in this release")
+        # Deferred import: the backend pulls in subprocess/cell-protocol/payload machinery
+        # the other modes never need; the skeleton stays import-light.
+        from nvflare.app_common.executors.client_api.external_process_backend import ExternalProcessBackend
+
+        return ExternalProcessBackend()
 
     def _create_attach_backend(self) -> ClientAPIBackendSpec:
         raise NotImplementedError("attach execution mode is not yet implemented in this release")

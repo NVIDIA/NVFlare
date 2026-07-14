@@ -328,19 +328,26 @@ class TestConstructorValidation:
 
 
 class TestDispatch:
-    """in_process now resolves a real backend (EX-3); external_process/attach remain
-    skeleton-only: resolving those backends at START_RUN must fail the job cleanly
-    (system_panic naming the mode), and execute() must reply with an error instead of hanging.
-    in_process START_RUN without a valid task_script_path fails the same clean way, so the
-    all-modes panic tests below still hold."""
+    """in_process and external_process now resolve real backends; attach remains
+    skeleton-only: resolving its backend at START_RUN must fail the job cleanly
+    (system_panic naming the mode), and execute() must reply with an error instead of
+    hanging. in_process START_RUN without a valid task_script_path — and external_process
+    START_RUN without a workspace/cell — fail the same clean way, so the all-modes panic
+    tests below still hold."""
 
-    NOT_IMPLEMENTED_MODES = [ExecutionMode.EXTERNAL_PROCESS, ExecutionMode.ATTACH]
+    NOT_IMPLEMENTED_MODES = [ExecutionMode.ATTACH]
 
     def test_in_process_factory_returns_real_backend(self):
         from nvflare.app_common.executors.client_api.in_process_backend import InProcessBackend
 
         executor = ClientAPIExecutor(**MODE_KWARGS[ExecutionMode.IN_PROCESS])
         assert isinstance(executor._create_backend(), InProcessBackend)
+
+    def test_external_process_factory_returns_real_backend(self):
+        from nvflare.app_common.executors.client_api.external_process_backend import ExternalProcessBackend
+
+        executor = ClientAPIExecutor(**MODE_KWARGS[ExecutionMode.EXTERNAL_PROCESS])
+        assert isinstance(executor._create_backend(), ExternalProcessBackend)
 
     @pytest.mark.parametrize("mode", NOT_IMPLEMENTED_MODES)
     def test_backend_factory_raises_not_implemented(self, mode):

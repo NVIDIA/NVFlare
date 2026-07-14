@@ -333,11 +333,82 @@ class TestExecutionModeSelection:
         with pytest.raises(ValueError, match="invalid execution_mode"):
             ScriptRunner(script="train.py", execution_mode="bogus")
 
-    @pytest.mark.parametrize("mode", ["external_process", "attach"])
+    @pytest.mark.parametrize("mode", ["attach"])
     def test_not_yet_available_modes_fail_at_build_time(self, mode):
         # fail when the job is BUILT, not when the backend panics at START_RUN
         with pytest.raises(ValueError, match="not yet available"):
             ScriptRunner(script="train.py", execution_mode=mode)
+
+    def test_external_process_mode_available(self):
+        runner = ScriptRunner(script="train.py", execution_mode="external_process")
+        assert runner._execution_mode == "external_process"
+
+    @staticmethod
+    def _conversion_filters(app):
+        from nvflare.app_common.filters.params_converter_filter import ParamsConverterFilter
+
+        data, result = [], []
+        for _tasks, filters in app.task_data_filters:
+            data += [f for f in filters if isinstance(f, ParamsConverterFilter)]
+        for _tasks, filters in app.task_result_filters:
+            result += [f for f in filters if isinstance(f, ParamsConverterFilter)]
+        return data, result
+
+    @pytest.mark.parametrize("mode", ["in_process", "external_process"])
+    def test_pytorch_wires_client_edge_conversion_filters(self, mode):
+        # so an unchanged torch-expecting client (hello-pt) gets native tensors from
+        # flare.receive() while the wire/server stay numpy
+        from nvflare.app_opt.pt.numpy_params_converter import NumpyToPTParamsConverter, PTToNumpyParamsConverter
+        from nvflare.fuel.utils.constants import FrameworkType
+        from nvflare.job_config.api import FedJob
+
+        with patch("os.path.isfile", return_value=True), patch("os.path.exists", return_value=True):
+            job = FedJob(name="pt")
+            job.to(
+                ScriptRunner(script="c.py", execution_mode=mode, command="python -u", framework=FrameworkType.PYTORCH),
+                "site-1",
+                tasks=["train"],
+            )
+        data, result = self._conversion_filters(job._deploy_map["site-1"].app_config)
+        assert len(data) == 1 and isinstance(data[0].converter, NumpyToPTParamsConverter)
+        assert len(result) == 1 and isinstance(result[0].converter, PTToNumpyParamsConverter)
+
+    def test_numpy_wires_no_conversion_filters(self):
+        from nvflare.fuel.utils.constants import FrameworkType
+        from nvflare.job_config.api import FedJob
+
+        with patch("os.path.isfile", return_value=True), patch("os.path.exists", return_value=True):
+            job = FedJob(name="np")
+            job.to(
+                ScriptRunner(
+                    script="c.py", execution_mode="external_process", command="python -u", framework=FrameworkType.NUMPY
+                ),
+                "site-1",
+                tasks=["train"],
+            )
+        data, result = self._conversion_filters(job._deploy_map["site-1"].app_config)
+        assert data == [] and result == []
+
+    def test_add_to_fed_job_wires_external_process_executor_with_command(self):
+        from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
+        from nvflare.job_config.api import FedJob
+
+        with patch("os.path.isfile", return_value=True), patch("os.path.exists", return_value=True):
+            job = FedJob(name="smoke-ext")
+            runner = ScriptRunner(
+                script="client.py",
+                script_args="--update_type full",
+                execution_mode="external_process",
+                command="python3 -u",
+            )
+            job.to(runner, "site-1", tasks=["train"])
+
+        executor = job._deploy_map["site-1"].app_config.executors[0].executor
+        assert isinstance(executor, ClientAPIExecutor)
+        assert executor._execution_mode == "external_process"
+        # external_process names the trainer by a command (not an in-CJ task_script_path)
+        assert executor._command == "python3 -u custom/client.py --update_type full"
+        assert executor._task_script_path is None
 
     def test_conflicts_with_legacy_stack_args(self):
         with pytest.raises(ValueError, match="mutually exclusive.*launch_external_process"):

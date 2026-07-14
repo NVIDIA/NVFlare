@@ -116,6 +116,10 @@ class TestDefs:
             "RESULT_ID": "result_id",
             "TRANSFER_ID": "transfer_id",
             "MANIFEST": "manifest",
+            # added by the external_process backend PR (additions extend the vocabulary;
+            # renames of existing values remain protocol breaks)
+            "REPLY_TOPIC": "reply_topic",
+            "REF_IDS": "ref_ids",
         }
         assert _public_str_values(MsgKey) == expected
 

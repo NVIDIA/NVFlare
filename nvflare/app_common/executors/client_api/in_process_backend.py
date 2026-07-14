@@ -49,6 +49,7 @@ from nvflare.apis.utils.analytix_utils import create_analytic_dxo
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendContext, ClientAPIBackendSpec
+from nvflare.app_common.executors.client_api.single_backend import SingleBackendGuard
 from nvflare.app_common.executors.task_script_runner import TaskScriptRunner
 from nvflare.client.api_spec import CLIENT_API_KEY
 from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType
@@ -77,6 +78,16 @@ _RESULT_POLL_INTERVAL = 0.5
 # teardown forever.
 _TRAINER_STOP_JOIN_TIMEOUT = 30.0
 _NO_RESULT = object()
+
+# One live in_process backend per DataBus (V1): the DataBus is a process singleton with a
+# single well-known CLIENT_API_KEY and fixed topics, so two in_process ClientAPIExecutors
+# in one job would silently overwrite each other. Shared mechanism with the external_process
+# backend (keyed on the CJ Cell there); see single_backend.py.
+_GUARD = SingleBackendGuard(
+    mode="in_process",
+    remedy="configure a single ClientAPIExecutor for all of its tasks (they share the process "
+    "DataBus CLIENT_API_KEY and fixed topics)",
+)
 
 
 class InProcessBackend(ClientAPIBackendSpec):
@@ -110,6 +121,14 @@ class InProcessBackend(ClientAPIBackendSpec):
             self._engine = fl_ctx.get_engine()
 
             self._data_bus = DataBus()
+            # Claim the one-backend-per-DataBus slot BEFORE any subscribe/put_data, so a
+            # rejected second backend (another in_process ClientAPIExecutor in the same job)
+            # leaves the active backend's subscriptions and CLIENT_API_KEY untouched. The
+            # DataBus is a process singleton with one well-known key + fixed topics, so two
+            # backends would otherwise silently overwrite each other (last-writer-wins);
+            # this fails the misconfiguration fast at START_RUN. See SingleBackendGuard.
+            _GUARD.claim(self._data_bus, self)
+
             self._event_manager = EventManager(self._data_bus)
             self._data_bus.subscribe([TOPIC_LOCAL_RESULT], self._local_result_callback)
             self._data_bus.subscribe([TOPIC_LOG_DATA], self._log_result_callback)
@@ -313,6 +332,15 @@ class InProcessBackend(ClientAPIBackendSpec):
                     self.logger.error(secure_format_traceback())
             self._subscribed = False
         self._client_api = None
+        # release the one-backend-per-DataBus slot LAST, only if this backend holds it: a
+        # rejected second backend's unwind must not evict the active backend's claim, and a
+        # later sequential job (simulator reuse) must be able to reclaim. Runs on both the
+        # finalize path (finalize -> _unwind) and the failed-init path.
+        try:
+            if self._data_bus is not None:
+                _GUARD.release(self._data_bus, self)
+        except Exception:
+            self.logger.error(secure_format_traceback())
 
     def _prepare_task_meta(self, fl_ctx: FLContext, task_name: Optional[str]) -> dict:
         context = self._context

@@ -107,3 +107,11 @@ class MsgKey:
     TRANSFER_ID = "transfer_id"
     # RESULT_READY carries the payload manifest describing the result envelope.
     MANIFEST = "manifest"
+    # Reply-type messages (see the Topic docstring) ride Cell request replies; the reply
+    # body carries its protocol topic under this key so state machines can tell e.g.
+    # HELLO_ACCEPTED from HELLO_REJECTED without a separate wire message.
+    REPLY_TOPIC = "reply_topic"
+    # MODEL (TASK_READY) and MANIFEST (RESULT_READY) entries carry the F3 download ref ids
+    # of the payload under this key (the transfer_id -> ref_ids mapping of the design's
+    # Payload Lifecycle section).
+    REF_IDS = "ref_ids"
