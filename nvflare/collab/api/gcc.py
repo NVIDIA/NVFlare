@@ -16,12 +16,12 @@ import queue
 import threading
 
 from nvflare.apis.fl_exception import RunAborted
+from nvflare.collab.utils import check_context_support
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 from .call_opt import CallOption
 from .constants import CollabMethodArgName
 from .ctx import Context, set_call_context
-from nvflare.collab.utils import check_context_support
 
 _SHORT_WAIT = 1.0
 

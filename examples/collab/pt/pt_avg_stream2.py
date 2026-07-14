@@ -14,14 +14,13 @@
 import logging
 
 import torch
-
-from nvflare.collab import collab
-from nvflare.collab.api.constants import BackendType
-from nvflare.collab.utils import simple_logging
 from collab import get_experiment_root
 from collab.pt.utils import parse_state_dict
-from nvflare.collab.runtime.local.runner import InProcessRunner
+
+from nvflare.collab import InProcessRunner, collab
+from nvflare.collab.api.constants import BackendType
 from nvflare.collab.runtime.flare.downloader import Downloader, download_tensors
+from nvflare.collab.utils import simple_logging
 from nvflare.collab.utils.tensor_receiver import TensorReceiver
 from nvflare.fuel.utils.log_utils import get_obj_logger
 

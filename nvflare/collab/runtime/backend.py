@@ -14,12 +14,11 @@
 from abc import ABC, abstractmethod
 
 from nvflare.apis.signal import Signal
-from nvflare.fuel.utils.log_utils import get_obj_logger
-from nvflare.security.logging import secure_format_traceback
-
 from nvflare.collab.api.call_opt import CallOption
 from nvflare.collab.api.ctx import Context
 from nvflare.collab.api.gcc import GroupCallContext
+from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.security.logging import secure_format_traceback
 
 
 class Backend(ABC):

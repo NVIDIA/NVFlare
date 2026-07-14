@@ -256,7 +256,7 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from nvflare.collab import collab                       # + Add Collab imports
 from nvflare.collab.runtime.local import InProcessEnv                # +
-from nvflare.collab.runtime.flare.recipe import CollabRecipe      # +
+from nvflare.collab.recipe import CollabRecipe      # +
 ```
 
 **Changes:**
@@ -489,7 +489,7 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from nvflare.collab import collab                       # + Add Collab imports
 from nvflare.collab.runtime.local import InProcessEnv                # +
-from nvflare.collab.runtime.flare.recipe import CollabRecipe      # +
+from nvflare.collab.recipe import CollabRecipe      # +
 ```
 
 **Changes:**

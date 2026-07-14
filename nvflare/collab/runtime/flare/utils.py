@@ -18,8 +18,8 @@ from nvflare.collab.utils import check_call_args
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.message import Message
-
 from nvflare.security.logging import secure_log_traceback
+
 from .constants import MSG_CHANNEL, MSG_TOPIC, CallReplyKey, ObjectCallKey
 
 

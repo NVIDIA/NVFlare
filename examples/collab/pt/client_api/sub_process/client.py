@@ -25,12 +25,12 @@ import torch
 import torch.distributed as dist
 import torch.nn as nn
 import torch.optim as optim
+from collab.pt.client_api.sub_process.ddp_utils import receive_with_checkpoint
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader, TensorDataset
 from torch.utils.data.distributed import DistributedSampler
 
 import nvflare.client as flare
-from collab.pt.client_api.sub_process.ddp_utils import receive_with_checkpoint
 
 
 class SimpleModel(nn.Module):

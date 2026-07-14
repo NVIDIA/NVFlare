@@ -13,16 +13,16 @@
 # limitations under the License.
 from .constants import ContextKey
 from .ctx import get_call_context
-from .dec import main as dec_main
 from .dec import call_filter as dec_call_filter
 from .dec import classproperty
-from .dec import publish as dec_publish
 from .dec import final as dec_final
 from .dec import in_call_filter as dec_in_call_filter
 from .dec import in_result_filter as dec_in_result_filter
 from .dec import init as dec_init
+from .dec import main as dec_main
 from .dec import out_call_filter as dec_out_call_filter
 from .dec import out_result_filter as dec_out_result_filter
+from .dec import publish as dec_publish
 from .dec import result_filter as dec_result_filter
 from .proxy_list import ProxyList
 

@@ -14,8 +14,6 @@
 import logging
 import threading
 
-from nvflare.collab import collab
-from nvflare.collab.utils import simple_logging
 from collab import get_experiment_root
 from collab.np.mains.utils import add as add_np
 from collab.np.mains.utils import div as div_np
@@ -23,7 +21,9 @@ from collab.np.mains.utils import parse_state_dict as parse_np
 from collab.pt.utils import add as add_pt
 from collab.pt.utils import div as div_pt
 from collab.pt.utils import parse_state_dict as parse_pt
-from nvflare.collab.runtime.local.runner import InProcessRunner
+
+from nvflare.collab import InProcessRunner, collab
+from nvflare.collab.utils import simple_logging
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 

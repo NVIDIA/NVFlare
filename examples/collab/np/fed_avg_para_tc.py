@@ -13,12 +13,13 @@
 # limitations under the License.
 import logging
 
-from nvflare.collab.utils import simple_logging
 from collab import get_experiment_root
 from collab.np.mains.client import NPTrainer
 from collab.np.mains.strategies.avg_para_tc import NPFedAvgParallelWithTrafficControl
 from collab.np.mains.widgets import MetricReceiver
-from nvflare.collab.runtime.local.runner import InProcessRunner
+
+from nvflare.collab import InProcessRunner
+from nvflare.collab.utils import simple_logging
 
 
 def main():

@@ -13,13 +13,13 @@
 # limitations under the License.
 import os
 
-from nvflare.collab import collab
 from collab import export_recipe
 from collab.np.mains.client import NPTrainer
 from collab.np.mains.strategies.avg_para import NPFedAvgParallel
 from collab.np.mains.strategies.cyclic import NPCyclic
 from collab.np.mains.utils import save_np_model
-from nvflare.collab.runtime.flare.recipe import CollabRecipe
+
+from nvflare.collab import CollabRecipe, collab
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 

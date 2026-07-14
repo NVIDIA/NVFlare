@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from collab.np.mains.strategies.cyclic import NPCyclic
-from nvflare.collab.runtime.flare.recipe import CollabRecipe
+
+from nvflare.collab import CollabRecipe
 
 
 class CyclicRecipe(CollabRecipe):

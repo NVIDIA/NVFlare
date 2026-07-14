@@ -25,8 +25,8 @@ from nvflare.apis.signal import Signal
 from nvflare.collab.api.app import ClientApp
 from nvflare.collab.api.constants import MAKE_CLIENT_APP_METHOD, PER_SITE_CONFIG_PROP, BackendType
 from nvflare.collab.api.proxy import Proxy
-from nvflare.collab.utils.decomposers import register_available_decomposers
 from nvflare.collab.runtime.flare_backend import FlareBackend
+from nvflare.collab.utils.decomposers import register_available_decomposers
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 
 from .adaptor import CollabAdaptor

@@ -10,8 +10,8 @@ CollabRecipe auto-wraps modules with ModuleWrapper!
 # Import the separate server and client modules
 from collab.pt.collab_api.in_process import collab_fedavg_no_class_client as client_module
 from collab.pt.collab_api.in_process import collab_fedavg_no_class_server as server_module
-from nvflare.collab.runtime.local import InProcessEnv
-from nvflare.collab.runtime.flare.recipe import CollabRecipe
+
+from nvflare.collab import CollabRecipe, InProcessEnv
 
 if __name__ == "__main__":
     # Create recipe with separate server and client modules

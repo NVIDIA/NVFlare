@@ -13,7 +13,8 @@
 # limitations under the License.
 from collab import export_recipe
 from collab.np.mains.avg_stream import NPFedAvgStream, NPTrainer
-from nvflare.collab.runtime.flare.recipe import CollabRecipe
+
+from nvflare.collab import CollabRecipe
 
 
 def main():

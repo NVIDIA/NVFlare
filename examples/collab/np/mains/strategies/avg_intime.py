@@ -13,9 +13,10 @@
 # limitations under the License.
 import threading
 
+from collab.np.mains.utils import parse_array_def
+
 from nvflare.collab import collab
 from nvflare.collab.api.constants import ContextKey
-from collab.np.mains.utils import parse_array_def
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 

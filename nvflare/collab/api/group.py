@@ -15,6 +15,7 @@ import copy
 from typing import List
 
 from nvflare.apis.signal import Signal
+from nvflare.collab.utils import check_call_args
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 from .app import App
@@ -22,7 +23,6 @@ from .call_opt import CallOption
 from .ctx import Context
 from .gcc import GroupCallContext, ResultWaiter
 from .proxy import Proxy
-from nvflare.collab.utils import check_call_args
 
 
 class Group:

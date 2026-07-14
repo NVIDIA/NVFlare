@@ -22,10 +22,10 @@ Usage:
 
 import argparse
 
-from nvflare.client.in_process.collab_api import CollabClientAPI
 from collab.pt.client_api.sub_process.server import FedAvg
-from nvflare.collab.runtime.local.in_process_env import InProcessEnv
-from nvflare.collab.runtime.flare.recipe import CollabRecipe
+
+from nvflare.client.in_process.collab_api import CollabClientAPI
+from nvflare.collab import CollabRecipe, InProcessEnv
 
 
 def main():

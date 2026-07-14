@@ -24,9 +24,9 @@ The design maintains symmetry between FlareBackend (for remote CellNet calls)
 and SubprocessBackend (for local subprocess calls via CellNet).
 """
 
-from nvflare.collab.runtime.backend import Backend
 from nvflare.collab.api.call_opt import CallOption
 from nvflare.collab.api.gcc import GroupCallContext
+from nvflare.collab.runtime.backend import Backend
 
 
 class SubprocessBackend(Backend):

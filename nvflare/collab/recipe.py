@@ -22,12 +22,11 @@ from nvflare.collab.api.app import App, ClientApp, ServerApp
 from nvflare.collab.api.constants import PER_SITE_CONFIG_PROP
 from nvflare.collab.api.filter import FilterChain
 from nvflare.collab.api.module_wrapper import ModuleWrapper, get_importable_module_name
+from nvflare.collab.runtime.flare.controller import CollabController
+from nvflare.collab.runtime.flare.executor import CollabExecutor
 from nvflare.fuel.utils.validation_utils import check_positive_int, check_positive_number, check_str
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import ExecEnv, Recipe
-
-from .controller import CollabController
-from .executor import CollabExecutor
 
 
 def _get_caller_module(stack_level: int = 2) -> Optional[ModuleType]:

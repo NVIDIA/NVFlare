@@ -15,7 +15,8 @@ from collab import export_recipe
 from collab.np.mains.client import NPTrainer
 from collab.np.mains.strategies.avg_seq import NPFedAvgSequential
 from collab.np.mains.widgets import MetricReceiver
-from nvflare.collab.runtime.flare.recipe import CollabRecipe
+
+from nvflare.collab import CollabRecipe
 
 
 def main():

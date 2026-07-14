@@ -13,11 +13,11 @@
 # limitations under the License.
 import copy
 
+from nvflare.collab.runtime.backend import Backend
+from nvflare.collab.utils import check_call_args
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
-from nvflare.collab.runtime.backend import Backend
 from .call_opt import CallOption
-from nvflare.collab.utils import check_call_args
 
 
 class _ProxyCall:

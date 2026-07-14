@@ -14,8 +14,9 @@
 import os
 import random
 
-from nvflare.collab import collab
 from collab.np.mains.utils import load_np_model, parse_array_def, save_np_model
+
+from nvflare.collab import collab
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 

@@ -13,13 +13,13 @@
 # limitations under the License.
 import logging
 
-from nvflare.collab import collab
-from nvflare.collab.utils import simple_logging
 from collab import get_experiment_root
 from collab.np.mains.client import NPTrainer
 from collab.np.mains.strategies.avg_para import NPFedAvgParallel
 from collab.np.mains.strategies.cyclic import NPCyclic
-from nvflare.collab.runtime.local.runner import InProcessRunner
+
+from nvflare.collab import InProcessRunner, collab
+from nvflare.collab.utils import simple_logging
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 

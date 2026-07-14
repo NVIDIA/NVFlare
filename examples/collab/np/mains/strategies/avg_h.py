@@ -11,8 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.collab import collab
 from collab.np.mains.utils import parse_array_def
+
+from nvflare.collab import collab
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 

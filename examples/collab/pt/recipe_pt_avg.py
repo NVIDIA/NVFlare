@@ -11,10 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.app_opt.pt.decomposers import TensorDecomposer
 from collab import export_recipe
 from collab.pt.pt_avg_filter import PTFedAvg, PTTrainer
-from nvflare.collab.runtime.flare.recipe import CollabRecipe
+
+from nvflare.app_opt.pt.decomposers import TensorDecomposer
+from nvflare.collab import CollabRecipe
 
 
 def main():

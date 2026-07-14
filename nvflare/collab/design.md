@@ -213,7 +213,7 @@ as standard NVFlare. The framework automatically routes to `CollabClientAPI` via
 
 ### Core Components
 
-#### CollabRecipe (`nvflare/collab/runtime/flare/recipe.py`)
+#### CollabRecipe (`nvflare/collab/recipe.py`)
 
 Job configuration and orchestration entry point.
 
@@ -1034,7 +1034,9 @@ recipe = CollabRecipe(...)
 ```
 nvflare/collab/
 ├── design.md              # This document
-├── __init__.py            # Package exports
+├── __init__.py            # Top-level exports (lazily resolved): collab,
+│                          #   CollabRecipe, InProcessEnv, MultiProcessEnv, InProcessRunner
+├── recipe.py              # CollabRecipe (job definition entry point)
 │
 ├── api/                   # API Layer
 │   ├── app.py             # App, ServerApp, ClientApp
@@ -1055,7 +1057,8 @@ nvflare/collab/
 │   ├── flare_backend.py   # FlareBackend (CellNet, distributed)
 │   │
 │   ├── local/             # Local (in-process) execution
-│   │   ├── runner.py      # InProcessRunner (runs collab apps in one process)
+│   │   ├── app_runner.py  # AppRunner (execution engine)
+│   │   ├── runner.py      # InProcessRunner (user-facing wrapper)
 │   │   ├── in_process_env.py  # InProcessEnv
 │   │   └── ws.py          # LocalWorkspace
 │   │
@@ -1064,7 +1067,6 @@ nvflare/collab/
 │       ├── controller.py  # CollabController
 │       ├── executor.py    # CollabExecutor
 │       ├── multi_process_env.py    # MultiProcessEnv
-│       ├── recipe.py      # CollabRecipe
 │       ├── subprocess_launcher.py  # SubprocessLauncher
 │       ├── utils.py       # Remote/subprocess call plumbing
 │       ├── worker.py      # CollabWorker

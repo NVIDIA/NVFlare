@@ -3,9 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 
-from nvflare.collab import collab
-from nvflare.collab.runtime.local import InProcessEnv
-from nvflare.collab.runtime.flare.recipe import CollabRecipe
+from nvflare.collab import CollabRecipe, InProcessEnv, collab
 
 # 1. Define Model, Data, and Training Function
 

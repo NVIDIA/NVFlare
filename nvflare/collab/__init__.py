@@ -12,3 +12,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from .api.facade import facade as collab
+
+# The user-facing classes are exported here so users never need the runtime
+# package paths. Resolution is lazy (PEP 562): CollabRecipe and the execution
+# environments pull in FLARE job/runtime machinery, which client-side training
+# scripts that only need the `collab` facade should not pay for.
+_EXPORTS = {
+    "CollabRecipe": ".recipe",
+    "InProcessEnv": ".runtime.local.in_process_env",
+    "MultiProcessEnv": ".runtime.flare.multi_process_env",
+    "InProcessRunner": ".runtime.local.runner",
+}
+
+
+def __getattr__(name):
+    mod_path = _EXPORTS.get(name)
+    if mod_path is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    import importlib
+
+    module = importlib.import_module(mod_path, __package__)
+    return getattr(module, name)
+
+
+def __dir__():
+    return sorted(list(globals().keys()) + list(_EXPORTS.keys()))

@@ -15,9 +15,10 @@ import os.path
 import threading
 import uuid
 
+from collab.np.mains.utils import load_np_model, parse_array_def, save_np_model
+
 from nvflare.collab import collab
 from nvflare.collab.api.constants import BackendType
-from collab.np.mains.utils import load_np_model, parse_array_def, save_np_model
 from nvflare.collab.runtime.flare.downloader import Downloader, download_file
 from nvflare.fuel.utils.log_utils import get_obj_logger
 

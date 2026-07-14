@@ -52,11 +52,11 @@ Architecture:
 
 import argparse
 
-from nvflare.client.in_process.collab_api import CollabClientAPI
 from collab.pt.client_api.in_process.client import training_loop
 from collab.pt.client_api.in_process.server import FedAvg
-from nvflare.collab.runtime.local import InProcessEnv
-from nvflare.collab.runtime.flare.recipe import CollabRecipe
+
+from nvflare.client.in_process.collab_api import CollabClientAPI
+from nvflare.collab import CollabRecipe, InProcessEnv
 
 
 def main():
