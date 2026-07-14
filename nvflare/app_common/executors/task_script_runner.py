@@ -15,6 +15,7 @@ import builtins
 import os
 import runpy
 import sys
+import threading
 import traceback
 
 from nvflare.client.in_process.api import TOPIC_ABORT
@@ -22,8 +23,6 @@ from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.data_event.event_manager import EventManager
 from nvflare.fuel.utils.log_utils import get_module_logger
 from nvflare.fuel.utils.secret_utils import resolve_secret_refs, split_command_preserving_secret_refs
-
-print_fn = builtins.print
 
 
 class TaskScriptRunner:
@@ -44,14 +43,18 @@ class TaskScriptRunner:
         self.custom_dir = custom_dir
         self.script_path = script_path
         self.script_full_path = self.get_script_full_path(self.custom_dir, self.script_path)
+        self._runtime_lock = threading.Lock()
+        self._runtime_released = False
+        self._original_print = None
+        self._original_argv = None
+        self._original_argv_values = None
+        self._task_argv = None
 
     def run(self):
         """Call the task_fn with any required arguments."""
         self.logger.info(f"start task run() with full path: {self.script_full_path}")
-        curr_argv = sys.argv
         try:
-            builtins.print = log_print if self.redirect_print_to_log else print_fn
-            sys.argv = self.get_sys_argv()
+            self._activate_runtime(self.get_sys_argv())
             runpy.run_path(self.script_full_path, run_name="__main__")
         except ImportError as ie:
             msg = "attempted relative import with no known parent package"
@@ -70,8 +73,32 @@ class TaskScriptRunner:
             self.event_manager.fire_event(TOPIC_ABORT, f"'{self.script_full_path}' is aborted, {msg}")
             raise e
         finally:
-            sys.argv = curr_argv
-            builtins.print = print_fn
+            self.release_runtime()
+
+    def _activate_runtime(self, task_argv):
+        with self._runtime_lock:
+            # finalize() can release a trainer before its thread reaches this point.
+            if self._runtime_released:
+                return
+            self._original_argv = sys.argv
+            self._original_argv_values = list(sys.argv)
+            self._task_argv = task_argv
+            sys.argv = self._task_argv
+            if self.redirect_print_to_log:
+                self._original_print = builtins.print
+                builtins.print = log_print
+
+    def release_runtime(self):
+        """Restore globals owned by this runner, even when its thread must be abandoned."""
+        with self._runtime_lock:
+            first_release = not self._runtime_released
+            self._runtime_released = True
+            if first_release and self._original_print is not None:
+                builtins.print = self._original_print
+            if self._original_argv is not None:
+                self._original_argv[:] = self._original_argv_values
+                if first_release and sys.argv is self._task_argv:
+                    sys.argv = self._original_argv
 
     def get_sys_argv(self):
         # Preserve the runner's legacy whitespace splitting for existing arguments. Only quoted

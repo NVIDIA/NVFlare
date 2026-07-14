@@ -92,6 +92,7 @@ class InProcessBackend(ClientAPIBackendSpec):
         self._data_bus: Optional[DataBus] = None
         self._event_manager: Optional[EventManager] = None
         self._client_api: Optional[InProcessClientAPI] = None
+        self._task_fn_wrapper: Optional[TaskScriptRunner] = None
         self._task_fn_thread: Optional[threading.Thread] = None
         self._local_result = _NO_RESULT
         self._abort = False
@@ -119,7 +120,7 @@ class InProcessBackend(ClientAPIBackendSpec):
             workspace: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
             job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
             custom_dir = workspace.get_app_custom_dir(job_id)
-            task_fn_wrapper = TaskScriptRunner(
+            self._task_fn_wrapper = TaskScriptRunner(
                 custom_dir=custom_dir, script_path=task_script_path, script_args=context.task_script_args
             )
 
@@ -139,7 +140,7 @@ class InProcessBackend(ClientAPIBackendSpec):
             # thread would then block process exit even after finalize() gives up its
             # bounded join. finalize() still joins cooperatively first.
             self._task_fn_thread = threading.Thread(
-                target=task_fn_wrapper.run, name="client_api_in_process_trainer", daemon=True
+                target=self._task_fn_wrapper.run, name="client_api_in_process_trainer", daemon=True
             )
             self._task_fn_thread.start()
         except Exception:
@@ -274,6 +275,8 @@ class InProcessBackend(ClientAPIBackendSpec):
                         f"after TOPIC_STOP; abandoning it (daemon thread, will not block process exit; "
                         f"its API is closed, so any later send/log from it is dropped)"
                     )
+                    if self._task_fn_wrapper is not None:
+                        self._task_fn_wrapper.release_runtime()
         except Exception:
             self.logger.error(secure_format_traceback())
         finally:
