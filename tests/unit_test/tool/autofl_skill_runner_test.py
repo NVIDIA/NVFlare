@@ -481,6 +481,47 @@ def test_run_streams_partial_line_before_timeout(tmp_path):
 
 
 @pytest.mark.skipif(os.name == "nt", reason="process-group cleanup uses POSIX process groups")
+def test_run_terminates_inherited_stdout_descendant_after_leader_exits(tmp_path):
+    runner = _load_runner()
+    child_pid_path = tmp_path / "descendant.pid"
+    child_code = (
+        "import os, pathlib, time; "
+        f"pathlib.Path({str(child_pid_path)!r}).write_text(str(os.getpid())); "
+        "print('descendant started', flush=True); time.sleep(30)"
+    )
+    parent_code = (
+        "import subprocess, sys; "
+        f"subprocess.Popen([sys.executable, '-c', {child_code!r}]); "
+        "print('leader exits', flush=True)"
+    )
+
+    rc, output, runtime = runner.run(
+        [sys.executable, "-c", parent_code],
+        tmp_path,
+        timeout=1,
+        log_path=tmp_path / "run.log",
+    )
+
+    assert rc == 124
+    assert runtime < 5
+    assert "leader exits" in output
+    assert "descendant started" in tmp_path.joinpath("run.log").read_text(encoding="utf-8")
+    child_pid = int(child_pid_path.read_text(encoding="utf-8"))
+    deadline = runner.time.monotonic() + 5
+    while runner.time.monotonic() < deadline:
+        try:
+            os.kill(child_pid, 0)
+        except ProcessLookupError:
+            break
+        proc_stat = Path(f"/proc/{child_pid}/stat")
+        if proc_stat.is_file() and proc_stat.read_text(encoding="utf-8").split()[2] == "Z":
+            break
+        runner.time.sleep(0.05)
+    else:
+        pytest.fail(f"descendant process {child_pid} survived process-group cleanup")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="process-group cleanup uses POSIX process groups")
 @pytest.mark.parametrize("monitor_error", [KeyboardInterrupt(), RuntimeError("monitor failed")])
 def test_run_terminates_child_process_group_when_monitor_raises(tmp_path, monkeypatch, monitor_error):
     runner = _load_runner()
@@ -1444,6 +1485,70 @@ def test_code_candidate_keeps_improvement_and_restores_discard_without_git(tmp_p
     assert [record.status for record in records] == ["baseline", "keep", "discard"]
     assert records[1].changed_files == "client.py,new_algorithm.py"
     assert records[1].candidate_manifest.endswith("candidate_manifest.json")
+
+
+def test_candidate_runtime_source_drift_is_rejected_and_fully_restored(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, client, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch, baseline_score=0.8)
+    baseline_job = job.read_text(encoding="utf-8")
+    baseline_client = client.read_text(encoding="utf-8")
+    assert runner.main(["prepare", str(job), "--name", "runtime_drift", "--hypothesis", "improve code"]) == 0
+    candidate_dir = tmp_path / ".nvflare" / "autofl" / "candidates" / "runtime_drift"
+    candidate_dir.joinpath("source/client.py").write_text("ALGORITHM = 'candidate'\n", encoding="utf-8")
+
+    def mutate_during_run(run_def, **kwargs):
+        job.write_text("print('runtime mutation')\n", encoding="utf-8")
+        client.unlink()
+        tmp_path.joinpath("runtime_generated.py").write_text("VALUE = 'runtime'\n", encoding="utf-8")
+        return runner.RunRecord(
+            "candidate", run_def.name, 0.9, 1.0, "none", run_def.description, "python job.py", "/tmp/candidate"
+        )
+
+    monkeypatch.setattr(runner, "run_job", mutate_during_run)
+    assert runner.main(["evaluate", str(job)]) == 0
+
+    assert job.read_text(encoding="utf-8") == baseline_job
+    assert client.read_text(encoding="utf-8") == baseline_client
+    assert not tmp_path.joinpath("runtime_generated.py").exists()
+    manifest = json.loads(candidate_dir.joinpath("candidate_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["status"] == "crash"
+    assert manifest["result"]["score"] is None
+    assert "client.py" in manifest["result"]["failure_reason"]
+    assert "job.py" in manifest["result"]["failure_reason"]
+    assert "runtime_generated.py" in manifest["result"]["failure_reason"]
+    patch = candidate_dir.joinpath("candidate.patch").read_text(encoding="utf-8")
+    assert "client.py" in patch
+    assert "runtime mutation" not in patch
+    assert "runtime_generated.py" not in patch
+    records = runner.load_results(tmp_path / "results.tsv")
+    assert [(record.status, record.score) for record in records] == [("baseline", 0.8), ("crash", None)]
+
+
+def test_candidate_runtime_source_restore_failure_remains_pending(tmp_path, monkeypatch, capsys):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch, baseline_score=0.8)
+    assert runner.main(["prepare", str(job), "--name", "restore_failure", "--hypothesis", "improve code"]) == 0
+    candidate_dir = tmp_path / ".nvflare" / "autofl" / "candidates" / "restore_failure"
+    candidate_dir.joinpath("source/client.py").write_text("ALGORITHM = 'candidate'\n", encoding="utf-8")
+
+    def mutate_during_run(run_def, **kwargs):
+        job.write_text("print('runtime mutation')\n", encoding="utf-8")
+        return runner.RunRecord(
+            "candidate", run_def.name, 0.9, 1.0, "none", run_def.description, "python job.py", "/tmp/candidate"
+        )
+
+    monkeypatch.setattr(runner, "run_job", mutate_during_run)
+    monkeypatch.setattr(
+        runner,
+        "restore_managed_source_versions",
+        lambda *args, **kwargs: (_ for _ in ()).throw(OSError("simulated restore failure")),
+    )
+
+    assert runner.main(["evaluate", str(job)]) == 2
+    assert "candidate remains pending for recovery" in capsys.readouterr().err
+    manifest = json.loads(candidate_dir.joinpath("candidate_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["status"] == "prepared"
+    assert [record.status for record in runner.load_results(tmp_path / "results.tsv")] == ["baseline"]
 
 
 def test_candidate_rejects_unauthorized_existing_source_and_symlink(tmp_path, monkeypatch):

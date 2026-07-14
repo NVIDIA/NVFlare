@@ -308,7 +308,7 @@ def guard_state_for_rows(
     cap_source = "explicit" if cap is not None else "uncapped"
     stop_file_hits = existing_stop_files(stop_files or list(DEFAULT_STOP_FILES))
     batches = exploration_batches(rows, exploration_batch_size)
-    active_batch = batches[-1] if batches and batches[-1]["completion_index"] is None else None
+    active_batch = next((batch for batch in batches if batch["completion_index"] is None), None)
     plateau = plateau_status(rows, plateau_threshold, min_delta, mode, exploration_batch_size)
 
     decision = "continue"
@@ -397,7 +397,7 @@ def guard_state_for_rows(
         "best_score": best_score(rows, mode),
         "stop_files": stop_file_hits,
         "plateau": plateau,
-        "exploration_batch": batches[-1] if batches else None,
+        "exploration_batch": active_batch or (batches[-1] if batches else None),
         "required_exploration": (
             "source_backed_exploration" if next_action in {"run_literature_loop", "develop_literature_batch"} else None
         ),

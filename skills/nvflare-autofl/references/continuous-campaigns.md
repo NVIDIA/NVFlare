@@ -31,6 +31,10 @@ or abandon it explicitly; do not silently start another candidate. Invalid
 drafts are product friction to repair and reevaluate, not a reason to terminate
 the campaign.
 
+Managed source must remain unchanged while a candidate executes. Runtime source
+drift invalidates the score, restores the pre-candidate workspace, and records a
+counted `crash`; arbitrary filesystem side effects remain outside this check.
+
 During a long `evaluate` action, monitor the process plus
 `autofl_runs/<candidate>/run.log`. A live process with no final ledger row is a
 running candidate. If logs are temporarily quiet but CPU or GPU use and the
@@ -73,7 +77,7 @@ Common next actions:
   (geometric median, trimmed mean, sign gating, bucketed median) for
   benign-client campaigns. If no source-backed exploration is compatible with
   the job contract, record the reason in the literature event.
-- `develop_literature_batch`: the latest review's exploration batch is
+- `develop_literature_batch`: the earliest incomplete review's exploration batch is
   incomplete. Prepare and evaluate scored source-backed candidates linked to
   the review via `prepare --family <slug> --literature-event <id>` until
   `exploration_batch_size` of them (default 3, flag `--exploration-batch-size`,

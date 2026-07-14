@@ -185,6 +185,24 @@ def test_guard_exploration_batch_completion_resets_plateau_and_resumes_flow():
     assert state["plateau"]["scored_since_reset"] == 0
 
 
+def test_guard_keeps_earliest_incomplete_literature_batch_active():
+    guard = _load_guard()
+    rows = [_row("baseline", "baseline", "0.85")]
+    rows.append(_row("literature", "literature_review_1", "", diff_summary="literature review", lit="lit-0001"))
+    rows.append(_row("discard", "lit1_first", "0.84", kind="source_edit", family="fedprox", lit="lit-0001"))
+    rows.append(_row("literature", "literature_review_2", "", diff_summary="literature review", lit="lit-0002"))
+    rows.extend(
+        _row("discard", f"lit2_{idx}", "0.84", kind="source_edit", family="fednova", lit="lit-0002") for idx in range(3)
+    )
+
+    state = guard.guard_state_for_rows(rows, plateau_threshold=20)
+
+    assert state["reason"] == "literature_exploration_batch"
+    assert state["next_action"] == "develop_literature_batch"
+    assert state["exploration_batch"]["literature_event_id"] == "lit-0001"
+    assert state["exploration_batch"]["completed"] == 1
+
+
 def test_guard_family_repeat_limiter_requires_diversification():
     guard = _load_guard()
     rows = [_row("baseline", "baseline", "0.85")]

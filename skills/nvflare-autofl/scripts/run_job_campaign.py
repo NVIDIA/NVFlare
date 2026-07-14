@@ -311,38 +311,56 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     return args
 
 
-def terminate_process(process: subprocess.Popen) -> None:
-    if process.poll() is not None:
-        return
-    if os.name != "nt":
+def process_group_exists(process_group_id: int) -> bool:
+    try:
+        os.killpg(process_group_id, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def wait_for_process_tree(process: subprocess.Popen, process_group_id: Optional[int], timeout: float) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        leader_exited = process.poll() is not None
+        group_exited = process_group_id is None or not process_group_exists(process_group_id)
+        if leader_exited and group_exited:
+            return True
+        time.sleep(0.05)
+    return process.poll() is not None and (process_group_id is None or not process_group_exists(process_group_id))
+
+
+def terminate_process(process: subprocess.Popen, process_group_id: Optional[int] = None) -> None:
+    if os.name != "nt" and process_group_id is not None:
         try:
-            os.killpg(process.pid, signal.SIGTERM)
+            os.killpg(process_group_id, signal.SIGTERM)
         except ProcessLookupError:
-            return
+            if process.poll() is None:
+                process.terminate()
         except Exception:
-            process.terminate()
-    else:
+            if process.poll() is None:
+                process.terminate()
+    elif process.poll() is None:
         process.terminate()
-
-    try:
-        process.wait(timeout=10)
+    else:
         return
-    except subprocess.TimeoutExpired:
-        pass
 
-    if os.name != "nt":
+    if wait_for_process_tree(process, process_group_id, timeout=10):
+        return
+
+    if os.name != "nt" and process_group_id is not None:
         try:
-            os.killpg(process.pid, signal.SIGKILL)
+            os.killpg(process_group_id, signal.SIGKILL)
         except ProcessLookupError:
             return
         except Exception:
-            process.kill()
-    else:
+            if process.poll() is None:
+                process.kill()
+    elif process.poll() is None:
         process.kill()
-    try:
-        process.wait(timeout=10)
-    except subprocess.TimeoutExpired:
-        pass
+    wait_for_process_tree(process, process_group_id, timeout=10)
 
 
 def append_output_tail(current: str, value: str) -> str:
@@ -480,18 +498,37 @@ def run(
             start_new_session=os.name != "nt",
             env=env,
         )
+        process_group_id = process.pid if os.name != "nt" else None
         assert process.stdout is not None
         output_queue: queue.Queue[Optional[bytes]] = queue.Queue(maxsize=16)
+        stop_reader = threading.Event()
 
         def read_output() -> None:
             try:
                 while True:
-                    chunk = process.stdout.read(65536)
+                    try:
+                        chunk = process.stdout.read(65536)
+                    except (OSError, ValueError):
+                        if stop_reader.is_set():
+                            break
+                        raise
                     if not chunk:
                         break
-                    output_queue.put(chunk)
+                    while not stop_reader.is_set():
+                        try:
+                            output_queue.put(chunk, timeout=0.2)
+                            break
+                        except queue.Full:
+                            continue
+                    if stop_reader.is_set():
+                        break
             finally:
-                output_queue.put(None)
+                while not stop_reader.is_set():
+                    try:
+                        output_queue.put(None, timeout=0.2)
+                        break
+                    except queue.Full:
+                        continue
 
         reader = threading.Thread(target=read_output, name="autofl-process-output", daemon=True)
         reader.start()
@@ -504,12 +541,12 @@ def run(
                 now = time.monotonic()
                 if not timed_out and timeout and now - started > timeout:
                     timed_out = True
-                    terminate_process(process)
+                    terminate_process(process, process_group_id)
                 if not timed_out and not stall_message and simulator_stall_roots and now >= next_stall_check:
                     stall_message = simulator_stall_message(simulator_stall_roots) or ""
                     next_stall_check = now + stall_check_interval
                     if stall_message:
-                        terminate_process(process)
+                        terminate_process(process, process_group_id)
                     elif simulator_no_progress_timeout:
                         partial_aggregation_signature = simulator_partial_aggregation_signature_for_roots(
                             simulator_stall_roots
@@ -528,7 +565,7 @@ def run(
                                 "partial simulator aggregation made no server-side progress for "
                                 f"{int(now - last_partial_aggregation_seen)}s: {last_partial_aggregation_signature}"
                             )
-                            terminate_process(process)
+                            terminate_process(process, process_group_id)
                         progress_signature = simulator_progress_signature_for_roots(simulator_stall_roots)
                         if stall_message:
                             pass
@@ -544,7 +581,7 @@ def run(
                                 f"no simulator progress markers changed for {int(now - last_progress_seen)}s "
                                 f"across {', '.join(str(root) for root in simulator_stall_roots)}"
                             )
-                            terminate_process(process)
+                            terminate_process(process, process_group_id)
                         last_progress_check = now
                 try:
                     raw_chunk = output_queue.get(timeout=0.2)
@@ -577,8 +614,9 @@ def run(
                 return SIMULATOR_STALL_EXIT_CODE, output_tail, time.monotonic() - started
             return process.returncode or 0, output_tail, time.monotonic() - started
         finally:
-            terminate_process(process)
-            while reader.is_alive() or not output_queue.empty():
+            terminate_process(process, process_group_id)
+            reader_deadline = time.monotonic() + 10
+            while (reader.is_alive() or not output_queue.empty()) and time.monotonic() < reader_deadline:
                 try:
                     raw_chunk = output_queue.get(timeout=0.2)
                 except queue.Empty:
@@ -590,8 +628,9 @@ def run(
                     output_tail = append_output_tail(output_tail, chunk)
                     log_file.write(chunk)
             log_file.flush()
-            reader.join(timeout=10)
+            stop_reader.set()
             process.stdout.close()
+            reader.join(timeout=1)
 
 
 def read_yaml(path: Path) -> Dict[str, Any]:
@@ -703,6 +742,69 @@ def is_allowed_new_source(path: str, patterns: Sequence[str]) -> bool:
         posix_path.match(pattern) or (pattern.startswith("**/") and posix_path.match(pattern[3:]))
         for pattern in patterns
     )
+
+
+def managed_source_paths(workspace: Path, config: Dict[str, Any], extra_paths: Sequence[str] = ()) -> List[str]:
+    paths = set(allowed_edit_paths(config, workspace))
+    paths.update(safe_relative_path(workspace, value) for value in extra_paths)
+    create_patterns = allowed_create_patterns(config)
+    for directory, dir_names, file_names in os.walk(workspace, followlinks=False):
+        directory_path = Path(directory)
+        dir_names[:] = [
+            name
+            for name in dir_names
+            if name not in RESERVED_CANDIDATE_PATH_PARTS and not (directory_path / name).is_symlink()
+        ]
+        for name in file_names:
+            relative = (directory_path / name).relative_to(workspace).as_posix()
+            if is_allowed_new_source(relative, create_patterns):
+                paths.add(relative)
+    return sorted(paths)
+
+
+def capture_managed_source_versions(
+    workspace: Path, config: Dict[str, Any], extra_paths: Sequence[str] = ()
+) -> Dict[Path, Optional[bytes]]:
+    versions = {}
+    for relative in managed_source_paths(workspace, config, extra_paths):
+        path = workspace / relative
+        if path.is_symlink() or (path.exists() and not path.is_file()):
+            raise ValueError(f"campaign-managed source path is not a regular file: {path}")
+        versions[path] = path.read_bytes() if path.is_file() else None
+    return versions
+
+
+def managed_source_state(workspace: Path, config: Dict[str, Any], extra_paths: Sequence[str] = ()) -> Dict[str, str]:
+    state = {}
+    for relative in managed_source_paths(workspace, config, extra_paths):
+        path = workspace / relative
+        if path.is_symlink():
+            state[relative] = "symlink"
+        elif path.is_file():
+            state[relative] = sha256_bytes(path.read_bytes())
+        elif path.exists():
+            state[relative] = "non-file"
+        else:
+            state[relative] = "missing"
+    return state
+
+
+def managed_source_drift(expected: Dict[str, str], actual: Dict[str, str]) -> List[str]:
+    return sorted(path for path in set(expected) | set(actual) if expected.get(path) != actual.get(path))
+
+
+def restore_managed_source_versions(
+    workspace: Path, config: Dict[str, Any], versions: Dict[Path, Optional[bytes]]
+) -> None:
+    extra_paths = [path.relative_to(workspace).as_posix() for path in versions]
+    current_paths = managed_source_paths(workspace, config, extra_paths)
+    rollback = dict(versions)
+    for relative in current_paths:
+        rollback.setdefault(workspace / relative, None)
+    for path in rollback:
+        if path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path)
+    restore_file_versions(rollback)
 
 
 def file_map(root: Path) -> Dict[str, str]:
@@ -2928,6 +3030,8 @@ def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
     manifest, config, best_source, best_files, changed, created, patch = validate_candidate_for_evaluation(
         args, job, metadata, paths, manifest_path
     )
+    managed_versions = capture_managed_source_versions(workspace, config, [*changed, *created])
+    managed_paths = [path.relative_to(workspace).as_posix() for path in managed_versions]
     patch_path = manifest_path.parent / "candidate.patch"
     atomic_write_text(patch_path, patch)
     manifest.update(
@@ -2955,8 +3059,15 @@ def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
         if fixed_budget_hash(candidate_config) != metadata.get("fixed_budget_sha256"):
             raise ValueError("candidate changes budget.fixed_training_budget")
         candidate_config = candidate_campaign_config(candidate_config, config, args, schema)
-    except BaseException:
-        restore_best_source(workspace, best_source, best_files, changed, created)
+        expected_managed_state = managed_source_state(workspace, config, managed_paths)
+    except BaseException as error:
+        try:
+            restore_managed_source_versions(workspace, config, managed_versions)
+        except BaseException as rollback_error:
+            raise RuntimeError(
+                f"candidate validation failed ({error}); automatic managed-source rollback also failed "
+                f"({rollback_error})"
+            ) from rollback_error
         raise
 
     if args.target_env != "sim":
@@ -3003,11 +3114,36 @@ def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
             metrics=metric_extraction_order(config, args.metric),
             config=config,
         )
-    except BaseException:
-        restore_best_source(workspace, best_source, best_files, changed, created)
+    except BaseException as error:
+        try:
+            restore_managed_source_versions(workspace, config, managed_versions)
+        except BaseException as rollback_error:
+            raise RuntimeError(
+                f"candidate execution failed ({error}); automatic managed-source rollback also failed "
+                f"({rollback_error})"
+            ) from rollback_error
         raise
+    actual_managed_state = managed_source_state(workspace, config, expected_managed_state.keys())
+    runtime_drift = managed_source_drift(expected_managed_state, actual_managed_state)
+    if runtime_drift:
+        try:
+            restore_managed_source_versions(workspace, config, managed_versions)
+        except BaseException as rollback_error:
+            raise RuntimeError(
+                "candidate modified campaign-managed source during execution and automatic rollback failed "
+                f"({rollback_error}); candidate remains pending for recovery"
+            ) from rollback_error
+        drift_reason = f"candidate modified campaign-managed source during execution: {', '.join(runtime_drift)}"
+        run_record.status = "crash"
+        run_record.score = None
+        run_record.metric_name = ""
+        run_record.metric_source = ""
+        run_record.metric_artifact = ""
+        run_record.failure_reason = (
+            f"{run_record.failure_reason}; {drift_reason}" if run_record.failure_reason else drift_reason
+        )
     if run_record.status == INFRASTRUCTURE_RETRY:
-        restore_best_source(workspace, best_source, best_files, changed, created)
+        restore_managed_source_versions(workspace, config, managed_versions)
         manifest["status"] = "prepared"
         manifest["result"] = {"failure_reason": run_record.failure_reason}
         manifest["updated_at"] = utc_now()
