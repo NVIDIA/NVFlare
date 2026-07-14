@@ -838,6 +838,47 @@ class TestSecondReviewRegressions:
         summary = reporter.get_summary(make_ctx(engine))
         assert summary["status"] == JobStatusCode.SUCCESS
         assert summary["participation"]["participation_rate_percent"] == 100.0
+        # the reported basis must reflect what was actually used (PR review comment)
+        assert summary["participation"]["participation_basis"] == "completed_tasks"
+        # the consistency pattern must use the stats' accepted count, not the empty name set
+        assert summary["consistency"]["stable_rounds"] == 1
+
+    def test_idle_job_is_not_reported_as_success(self, tmp_path):
+        # a run that ends without any rounds or client tasks must not claim success (PR review comment)
+        engine = make_engine(tmp_path, ["site-1"])
+        reporter = JobStatsReporter()
+        reporter.handle_event(EventType.START_RUN, make_ctx(engine))
+        reporter.handle_event(EventType.END_RUN, make_ctx(engine))
+
+        summary = reporter.get_summary(make_ctx(engine))
+        assert summary["status"] == JobStatusCode.PARTIAL
+        assert "no rounds or client tasks were observed" in summary["status_reason"]
+
+    def test_counts_only_stats_rounds_have_consistent_patterns(self, tmp_path):
+        # two rounds with identical counts-only stats must be stable, with the accepted count
+        # taken from ACCEPTED_CONTRIBUTIONS rather than the (empty) contributor-name set
+        clients = ["site-1", "site-2"]
+        engine = make_engine(tmp_path, clients)
+        reporter = JobStatsReporter()
+        reporter.handle_event(EventType.START_RUN, make_ctx(engine))
+        for round_num in range(2):
+            reporter.handle_event(
+                AppEventType.ROUND_STARTED, make_ctx(engine, props={AppConstants.CURRENT_ROUND: round_num})
+            )
+            for client in clients:
+                fire_relay_leg(reporter, engine, round_num, client)
+            stats = make_aggr_stats(round_num, [], 5, 5, 5, 0, 0)
+            stats[AggregationStatsKey.ACCEPTED_CONTRIBUTIONS] = 2
+            reporter.handle_event(
+                AppEventType.AFTER_AGGREGATION,
+                make_ctx(engine, props={AppConstants.CURRENT_ROUND: round_num, AppConstants.AGGREGATION_STATS: stats}),
+            )
+        reporter.handle_event(EventType.END_RUN, make_ctx(engine))
+
+        summary = reporter.get_summary(make_ctx(engine))
+        assert summary["status"] == JobStatusCode.SUCCESS
+        assert summary["consistency"]["stable_rounds"] == 2
+        assert summary["consistency"]["inconsistent_rounds"] == []
 
     def test_summary_generation_failure_still_writes_report(self, tmp_path):
         # a bug in summary generation must degrade the report, never lose it entirely

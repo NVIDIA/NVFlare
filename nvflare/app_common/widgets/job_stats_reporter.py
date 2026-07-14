@@ -707,7 +707,6 @@ class JobStatsReporter(Widget):
         self._is_client = False
         self._all_clients = set()
         self._workflow_seq = 0
-        self._saw_acceptance_signal = False
         self._rounds: Dict[tuple, _RoundRecord] = {}  # (workflow_seq, round_num) -> record
         self._open_tasks: Dict[Tuple[str, str], _TaskRecord] = {}
         self._completed_task_keys = set()  # (client, task_id) pairs whose result was already processed
@@ -973,7 +972,6 @@ class JobStatsReporter(Widget):
             rec = self._get_or_create_round(round_num)
             rec.close(time.monotonic())
             if stats is not None:
-                self._saw_acceptance_signal = True
                 rec.aggr_stats = stats
                 contributors = stats.get(AggregationStatsKey.CONTRIBUTORS) or []
                 rec.accepted_clients.update(contributors)
@@ -988,7 +986,6 @@ class JobStatsReporter(Widget):
         if accepted is None:
             return
         with self._lock:
-            self._saw_acceptance_signal = True
             rec = self._get_or_create_round(round_num)
             self._all_clients.add(client_name)
             if accepted:
@@ -1221,6 +1218,10 @@ class JobStatsReporter(Widget):
             issues.append(f"rounds with missing/rejected contributions: {missing_rounds}")
         if issues:
             return JobStatusCode.PARTIAL, "; ".join(issues)
+        if not self._rounds and not self._completed_tasks and not self._open_tasks:
+            # the run ended cleanly but no FL work was ever observed; calling that a
+            # success would hide a job that silently did nothing
+            return JobStatusCode.PARTIAL, "no rounds or client tasks were observed during the run"
         return JobStatusCode.SUCCESS, "all targeted client contributions were accepted"
 
     @staticmethod
@@ -1228,8 +1229,11 @@ class JobStatsReporter(Widget):
         stats = rec.aggr_stats
         if not stats:
             return None
+        accepted = stats.get(AggregationStatsKey.ACCEPTED_CONTRIBUTIONS)
+        if accepted is None:
+            accepted = len(rec.accepted_clients)
         return (
-            len(rec.accepted_clients),
+            accepted,
             stats.get(AggregationStatsKey.KEYS_AGGREGATED),
             stats.get(AggregationStatsKey.FULLY_MATCHED_KEYS),
             stats.get(AggregationStatsKey.PARTIALLY_MATCHED_KEYS),
@@ -1491,6 +1495,15 @@ class JobStatsReporter(Widget):
                 | {r.client for r in incomplete}
                 | {c for rec in ordered_rounds for c in rec.rejected_clients}
             )
+            # report the basis actually used by _round_participants: acceptance when a round
+            # carried accepted/rejected names, completed-OK tasks otherwise
+            bases = {
+                "accepted_contributions" if (rec.accepted_clients or rec.rejected_clients) else "completed_tasks"
+                for rec in ordered_rounds
+                if rec.targeted_clients or rec.accepted_clients or rec.rejected_clients
+            }
+            participation_basis = "mixed" if len(bases) > 1 else next(iter(bases), "completed_tasks")
+
             job_duration = None
             if self._job_start_mono is not None:
                 job_duration = (self._job_end_mono or time.monotonic()) - self._job_start_mono
@@ -1532,9 +1545,7 @@ class JobStatsReporter(Widget):
                     "total_rounds": len(ordered_rounds),
                     "known_clients": sorted(self._all_clients),
                     "total_clients": len(self._all_clients),
-                    "participation_basis": (
-                        "accepted_contributions" if self._saw_acceptance_signal else "completed_tasks"
-                    ),
+                    "participation_basis": participation_basis,
                     "targeted_client_rounds": targeted,
                     "accepted_client_rounds": accepted,
                     "avg_clients_per_round": _mean_std([r["accepted_clients"] for r in round_rows]),
@@ -1801,8 +1812,8 @@ class JobStatsReporter(Widget):
             _format_table(
                 ["Server Metric", "Value"],
                 [
-                    ["Total Bytes Sent (server)", _format_mb(server_comm["total_sent_mb"])],
-                    ["Total Bytes Received (server)", _format_mb(server_comm["total_received_mb"])],
+                    ["Total Data Sent (server)", _format_mb(server_comm["total_sent_mb"])],
+                    ["Total Data Received (server)", _format_mb(server_comm["total_received_mb"])],
                     [
                         "Avg Upload Size per Client (model update, mean ± std)",
                         stats_cell(communication["model_update_size_mb"], " MB"),
