@@ -22,7 +22,7 @@ from .call_opt import CallOption
 from .ctx import Context
 from .gcc import GroupCallContext, ResultWaiter
 from .proxy import Proxy
-from .utils import check_call_args
+from nvflare.collab.utils import check_call_args
 
 
 class Group:

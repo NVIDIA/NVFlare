@@ -14,7 +14,7 @@
 from nvflare.collab.api.app import App
 from nvflare.collab.api.constants import CollabMethodArgName
 from nvflare.collab.api.dec import adjust_kwargs
-from nvflare.collab.api.utils import check_call_args
+from nvflare.collab.utils import check_call_args
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.message import Message

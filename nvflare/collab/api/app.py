@@ -33,7 +33,7 @@ from .dec import (
 )
 from .filter import CallFilter, FilterChain, ResultFilter
 from .proxy import Proxy
-from .utils import check_context_support, get_collab_object_name
+from nvflare.collab.utils import check_context_support, get_collab_object_name
 from .workspace import Workspace
 
 

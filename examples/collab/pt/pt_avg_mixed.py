@@ -19,7 +19,7 @@ import torch
 
 from nvflare.collab import collab
 from nvflare.collab.api.constants import BackendType
-from nvflare.collab.api.utils import simple_logging
+from nvflare.collab.utils import simple_logging
 from collab import get_experiment_root
 from collab.np.mains.utils import add as add_np
 from collab.np.mains.utils import div as div_np

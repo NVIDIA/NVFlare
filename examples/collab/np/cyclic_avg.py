@@ -14,7 +14,7 @@
 import logging
 
 from nvflare.collab import collab
-from nvflare.collab.api.utils import simple_logging
+from nvflare.collab.utils import simple_logging
 from collab import get_experiment_root
 from collab.np.mains.client import NPTrainer
 from collab.np.mains.strategies.avg_para import NPFedAvgParallel

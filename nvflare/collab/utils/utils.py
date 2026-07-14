@@ -15,7 +15,7 @@ import inspect
 import logging
 from typing import List
 
-from .constants import CollabMethodArgName
+from nvflare.collab.api.constants import CollabMethodArgName
 
 
 def check_optional_args(func, kwargs, arg_names: List[str]):

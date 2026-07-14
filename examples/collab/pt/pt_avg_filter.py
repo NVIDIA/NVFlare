@@ -14,7 +14,7 @@
 import logging
 
 from nvflare.collab import collab
-from nvflare.collab.api.utils import simple_logging
+from nvflare.collab.utils import simple_logging
 from collab import get_experiment_root
 from collab.pt.utils import add as add_pt
 from collab.pt.utils import div as div_pt

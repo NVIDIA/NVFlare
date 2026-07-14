@@ -13,7 +13,7 @@
 # limitations under the License.
 import logging
 
-from nvflare.collab.api.utils import simple_logging
+from nvflare.collab.utils import simple_logging
 from collab import get_experiment_root
 from collab.np.mains.client import NPTrainer
 from collab.np.mains.filters import AddNoiseToModel, Print

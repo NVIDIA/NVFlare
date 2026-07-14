@@ -17,7 +17,7 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 
 from nvflare.collab.runtime.backend import Backend
 from .call_opt import CallOption
-from .utils import check_call_args
+from nvflare.collab.utils import check_call_args
 
 
 class _ProxyCall:
