@@ -287,6 +287,10 @@ def set_per_site_config(recipe: Recipe, config: Dict[str, Dict]) -> None:
     clients are present for a run. Per-site values become part of the generated
     job definition and must never contain actual secret values; see
     :mod:`nvflare.recipe.secrets`.
+
+    The unified FedAvg family and PyTorch FedEvalRecipe apply this configuration
+    after construction and before export or execution. XGBoost recipes require
+    their per-site data loaders in the constructor and reject this helper.
     """
     recipe.set_per_site_config(_validate_per_site_config_shape(config))
 
@@ -340,7 +344,7 @@ def add_experiment_tracking(
             To give sites different receiver configs (e.g. per-site tracking_uri), call this
             function once per site with that site's tracking_config and clients=[site].
             Targeting specific clients requires the recipe's client apps to be per-site
-            (e.g. recipes constructed with the per_site_config constructor argument), and
+            (e.g. configured with set_per_site_config or a per_site_config constructor argument), and
             each name must match an existing per-site client app; with the default
             all-clients topology or unknown site names, targeted placement raises ValueError.
 

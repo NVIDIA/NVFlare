@@ -135,6 +135,8 @@ class FedAvgRecipe(Recipe):
             - launch_once (bool): Whether to launch external process once or per task
             - shutdown_timeout (float): Shutdown timeout in seconds
             If not provided, the same configuration will be used for all clients.
+            The same mapping may instead be applied after construction with
+            ``set_per_site_config``; call the helper before export or execution.
             Like train_args, per-site values are written in clear text into the generated job
             config and must never contain actual secret values; see
             :mod:`nvflare.recipe.secrets` for how to pass secrets safely.
@@ -360,72 +362,45 @@ class FedAvgRecipe(Recipe):
 
         if self.per_site_config is not None:
             for site_name, site_config in self.per_site_config.items():
-                # Use site-specific config or fall back to defaults
-                script = (
-                    site_config.get("train_script")
-                    if site_config.get("train_script") is not None
-                    else self.train_script
-                )
-                script_args = (
-                    site_config.get("train_args") if site_config.get("train_args") is not None else self.train_args
-                )
-                launch_external = (
-                    site_config.get("launch_external_process")
-                    if site_config.get("launch_external_process") is not None
-                    else self.launch_external_process
-                )
-                command = site_config.get("command") if site_config.get("command") is not None else self.command
-                framework = site_config.get("framework") if site_config.get("framework") is not None else self.framework
-                expected_format = (
-                    site_config.get("server_expected_format")
-                    if site_config.get("server_expected_format") is not None
-                    else self.server_expected_format
-                )
-                transfer_type = (
-                    site_config.get("params_transfer_type")
-                    if site_config.get("params_transfer_type") is not None
-                    else self.params_transfer_type
-                )
-                launch_once = (
-                    site_config.get("launch_once") if site_config.get("launch_once") is not None else self.launch_once
-                )
-                shutdown_timeout = (
-                    site_config.get("shutdown_timeout")
-                    if site_config.get("shutdown_timeout") is not None
-                    else self.shutdown_timeout
-                )
-
-                executor = ScriptRunner(
-                    script=script,
-                    script_args=script_args,
-                    launch_external_process=launch_external,
-                    command=command,
-                    framework=framework,
-                    server_expected_format=expected_format,
-                    params_transfer_type=transfer_type,
-                    launch_once=launch_once,
-                    shutdown_timeout=shutdown_timeout,
-                    memory_gc_rounds=self.client_memory_gc_rounds,
-                    cuda_empty_cache=self.cuda_empty_cache,
-                )
-                job.to(executor, site_name)
+                self._add_client_runner(job, site_name, site_config)
         else:
-            executor = ScriptRunner(
-                script=self.train_script,
-                script_args=self.train_args,
-                launch_external_process=self.launch_external_process,
-                command=self.command,
-                framework=self.framework,
-                server_expected_format=self.server_expected_format,
-                params_transfer_type=self.params_transfer_type,
-                launch_once=self.launch_once,
-                shutdown_timeout=self.shutdown_timeout,
-                memory_gc_rounds=self.client_memory_gc_rounds,
-                cuda_empty_cache=self.cuda_empty_cache,
-            )
-            job.to_clients(executor)
+            self._add_client_runner(job, ALL_SITES, {})
 
         Recipe.__init__(self, job)
+
+    @staticmethod
+    def _site_value(site_config: Dict, key: str, default: Any) -> Any:
+        value = site_config.get(key)
+        return default if value is None else value
+
+    def _create_client_runner(self, site_config: Dict) -> tuple[ScriptRunner, str]:
+        script = self._site_value(site_config, "train_script", self.train_script)
+        runner = ScriptRunner(
+            script=script,
+            script_args=self._site_value(site_config, "train_args", self.train_args),
+            launch_external_process=self._site_value(
+                site_config, "launch_external_process", self.launch_external_process
+            ),
+            command=self._site_value(site_config, "command", self.command),
+            framework=self._site_value(site_config, "framework", self.framework),
+            server_expected_format=self._site_value(site_config, "server_expected_format", self.server_expected_format),
+            params_transfer_type=self._site_value(site_config, "params_transfer_type", self.params_transfer_type),
+            launch_once=self._site_value(site_config, "launch_once", self.launch_once),
+            shutdown_timeout=self._site_value(site_config, "shutdown_timeout", self.shutdown_timeout),
+            memory_gc_rounds=self.client_memory_gc_rounds,
+            cuda_empty_cache=self.cuda_empty_cache,
+        )
+        return runner, script
+
+    def _add_client_runner(self, job: BaseFedJob, target: str, site_config: Dict) -> None:
+        runner, script = self._create_client_runner(site_config)
+        component_ids = job.to(runner, target)
+        self._record_client_runner(target, component_ids, script)
+
+    def _apply_per_site_config(self, config: Dict[str, Dict]) -> None:
+        """Replace the all-clients runner with site-specific FedAvg client apps."""
+        self._validate_per_site_config(config)
+        self._replace_client_runners_for_sites(config, self._add_client_runner)
 
     @staticmethod
     def _resolve_model_filenames(best_model_filename: Optional[str], save_filename: Optional[str]) -> tuple[str, str]:

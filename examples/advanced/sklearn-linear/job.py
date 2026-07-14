@@ -24,7 +24,7 @@ Per-Client Data Splits:
 import argparse
 
 from nvflare.app_opt.sklearn import SklearnFedAvgRecipe
-from nvflare.recipe import SimEnv
+from nvflare.recipe import SimEnv, set_per_site_config
 
 
 def define_parser():
@@ -85,7 +85,6 @@ def main():
 
     # Calculate per-client data splits (non-overlapping ranges)
     splits = calculate_data_splits(n_clients)
-    clients = [site_name for site_name in splits.keys()]
     per_site_config = {
         site_name: {
             "train_args": f"--data_path {data_path} --train_start {split['train_start']} "
@@ -108,12 +107,12 @@ def main():
             "fit_intercept": 1,
         },
         train_script="client.py",
-        per_site_config=per_site_config,
         key_metric="AUC",
     )
+    set_per_site_config(recipe, per_site_config)
 
     print("Executing recipe in simulation environment...")
-    env = SimEnv(clients=clients, num_threads=n_clients)
+    env = SimEnv(clients=recipe.configured_sites(), num_threads=n_clients)
     run = recipe.execute(env)
 
     print()

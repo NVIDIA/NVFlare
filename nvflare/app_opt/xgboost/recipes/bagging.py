@@ -100,9 +100,11 @@ class XGBBaggingRecipe(Recipe):
         lr_mode (str, optional): Learning rate mode ("uniform" or "scaled"). Default is "uniform".
         save_name (str, optional): Model save name. Default is "xgboost_model.json".
         data_loader_id (str, optional): ID of the data loader component. Default is "dataloader".
-        per_site_config (dict, optional): Per-site configuration mapping site names to config dicts.
+        per_site_config (dict): Required per-site configuration mapping site names to config dicts.
             Each config dict must contain 'data_loader' key with XGBDataLoader instance.
             Can optionally include 'lr_scale' for scaled learning rate mode.
+            This must be supplied to the constructor; ``set_per_site_config`` is not supported
+            because data loaders are needed while client apps are built.
             Nested values become part of the generated job definition and must not contain secrets.
             Example: {"site-1": {"data_loader": CSVDataLoader(...), "lr_scale": 0.5}, "site-2": {...}}
 
@@ -225,6 +227,12 @@ class XGBBaggingRecipe(Recipe):
         # Configure the job
         self.job = self.configure()
         Recipe.__init__(self, self.job)
+
+    def _apply_per_site_config(self, config: dict[str, dict]) -> None:
+        raise RuntimeError(
+            "XGBBaggingRecipe requires per_site_config during construction because data loaders are needed "
+            "to build each client app"
+        )
 
     def configure(self):
         """Configure the federated job for XGBoost tree-based training."""

@@ -82,6 +82,8 @@ class XGBHorizontalRecipe(Recipe):
         metrics_writer_id (str, optional): ID of the metrics writer component. Default is 'metrics_writer'.
         per_site_config (dict): Per-site configuration mapping site names to config dicts.
             Each config dict must contain 'data_loader' key with XGBDataLoader instance.
+            This must be supplied to the constructor; ``set_per_site_config`` is not supported
+            because data loaders are needed while client apps are built.
             Nested values become part of the generated job definition and must not contain secrets.
             Example: {"site-1": {"data_loader": CSVDataLoader(...)}, "site-2": {...}}
 
@@ -118,7 +120,7 @@ class XGBHorizontalRecipe(Recipe):
             run = recipe.execute(env)
 
     Note:
-        - Data loaders must be configured via per_site_config parameter.
+        - Data loaders must be configured via the constructor's per_site_config parameter.
         - TensorBoard tracking is automatically configured for both server and clients.
         - Executor and metrics components are automatically added to all clients.
     """
@@ -186,6 +188,12 @@ class XGBHorizontalRecipe(Recipe):
         # Configure the job
         self.job = self.configure()
         Recipe.__init__(self, self.job)
+
+    def _apply_per_site_config(self, config: dict[str, dict]) -> None:
+        raise RuntimeError(
+            "XGBHorizontalRecipe requires per_site_config during construction because data loaders are needed "
+            "to build each client app"
+        )
 
     def configure(self):
         """Configure the federated job for XGBoost histogram-based training."""

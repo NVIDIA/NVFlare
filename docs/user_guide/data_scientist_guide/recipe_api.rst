@@ -104,16 +104,19 @@ File packaging helpers:
    Bundle a file or directory into the generated server app package.
 
 Helpers that accept ``clients`` target specific generated client apps. This
-requires per-site client apps: construct the recipe with the
-``per_site_config`` constructor argument on recipes that support it, and each
-name in ``clients`` must match an existing per-site client app. With the
+requires per-site client apps: use ``set_per_site_config`` before targeting
+clients, or pass the ``per_site_config`` constructor argument on recipes that
+support it. Each name in ``clients`` must match an existing per-site client app. With the
 default all-clients topology, targeted calls raise an error rather than
 silently dropping the change from the generated job, and unknown site names
-raise an error rather than deploying a bare app to that site. Calling
-``set_per_site_config`` after construction records the configuration for
-``configured_sites()`` but does not yet rebuild an existing all-clients app
-into per-site apps; recipes will interpret helper-provided per-site config as
-follow-up work.
+raise an error rather than deploying a bare app to that site. For the unified
+FedAvg recipe family and PyTorch ``FedEvalRecipe``, calling
+``set_per_site_config`` after construction rebuilds the existing all-clients
+app into per-site apps while preserving client configuration, files, filters,
+and components added through Recipe APIs. This must be done before exporting
+or running the recipe. Other recipe families must implement their
+recipe-specific per-site configuration hook before the helper can change their
+generated jobs.
 
 Filter helpers:
 
@@ -172,7 +175,35 @@ For NVFlare 2.9, the public Recipe configuration surface also includes:
 ``set_per_site_config(recipe, config)``
    Provide site-keyed, recipe-specific configuration. Each concrete recipe
    interprets the site dictionaries for its own workflow. Nested values become
-   part of the job definition and must not contain secret values.
+   part of the job definition and must not contain secret values. Call the
+   helper before exporting or executing the recipe.
+
+   .. list-table:: Recipe support
+      :header-rows: 1
+      :widths: 24 46 30
+
+      * - Recipe family
+        - Per-site fields
+        - How to configure
+      * - Unified FedAvg and its PyTorch, TensorFlow, NumPy, and scikit-learn variants
+        - ``train_script``, ``train_args``, ``launch_external_process``,
+          ``command``, ``framework``, ``server_expected_format``,
+          ``params_transfer_type``, ``launch_once``, and ``shutdown_timeout``
+        - Helper or constructor
+      * - PyTorch ``FedEvalRecipe``
+        - ``eval_script``, ``eval_args``, ``launch_external_process``,
+          ``command``, and ``server_expected_format``
+        - Helper or constructor
+      * - XGBoost bagging, horizontal, and vertical recipes
+        - Required site data loaders, plus recipe-specific values such as
+          bagging ``lr_scale``
+        - Constructor only; these values are needed while building the job
+
+   On FedAvg and FedEval, the first helper call replaces the all-clients app
+   with one app per configured site while preserving files, filters,
+   components, and top-level client configuration already added through Recipe
+   APIs. The helper may be reapplied for the same site names. To change the
+   site set, create a new recipe.
 
 ``recipe.configured_sites()``
    Return top-level site names from helper-provided per-site config when

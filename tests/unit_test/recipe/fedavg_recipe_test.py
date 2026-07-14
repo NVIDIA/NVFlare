@@ -20,6 +20,7 @@ import pytest
 import torch.nn as nn
 
 from nvflare.apis.dxo import DataKind
+from nvflare.apis.filter import Filter
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
 from nvflare.app_common.abstract.fl_model import FLModel
@@ -30,6 +31,7 @@ from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
 from nvflare.app_common.app_constant import DefaultCheckpointFileName
 from nvflare.app_common.executors.client_api_launcher_executor import ClientAPILauncherExecutor
 from nvflare.app_common.executors.launcher_executor import LauncherExecutor
+from nvflare.app_common.logging.job_log_streamer import JobLogStreamer
 from nvflare.app_common.np.recipes import NumpyFedAvgRecipe
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.widgets.metrics_artifact_writer import MetricsArtifactWriter
@@ -39,6 +41,7 @@ from nvflare.client.constants import CLIENT_API_CONFIG
 from nvflare.fuel.utils.class_utils import instantiate_class
 from nvflare.fuel.utils.secret_utils import UnsupportedSecretRefWarning
 from nvflare.job_config.base_fed_job import BaseFedJob
+from nvflare.recipe import set_per_site_config
 from nvflare.recipe.fedavg import FedAvgRecipe as BaseFedAvgRecipe
 
 
@@ -52,6 +55,11 @@ class SimpleTestModel(nn.Module):
     def forward(self, x):
         x = self.lin(x)
         return x
+
+
+class PassThroughFilter(Filter):
+    def process(self, shareable, fl_ctx):
+        return shareable
 
 
 class MyAggregator(ModelAggregator):
@@ -181,6 +189,12 @@ def get_server_component_from_job(job, component_id):
 def get_server_controller(recipe):
     server_app = recipe.job._deploy_map[SERVER_SITE_NAME]
     return server_app.app_config.workflows[0].controller
+
+
+def get_client_executor(recipe, target):
+    executors = recipe.job._deploy_map[target].app_config.executors
+    assert len(executors) == 1
+    return executors[0].executor
 
 
 def _get_train_executor_config(client_config):
@@ -534,6 +548,23 @@ class TestNumpyFedAvgRecipe:
 
         assert recipe.per_site_config == per_site_config
 
+    def test_numpy_recipe_inherits_per_site_config_helper(self, mock_file_system):
+        recipe = NumpyFedAvgRecipe(
+            name="test_numpy_helper_per_site",
+            model=[1.0, 2.0],
+            min_clients=2,
+            train_script="client.py",
+        )
+
+        set_per_site_config(
+            recipe,
+            {"site-1": {"train_args": "--rank 1"}, "site-2": {"train_args": "--rank 2"}},
+        )
+
+        assert ALL_SITES not in recipe.job._deploy_map
+        assert get_client_executor(recipe, "site-1")._task_script_args == "--rank 1"
+        assert get_client_executor(recipe, "site-2")._task_script_args == "--rank 2"
+
     def test_numpy_recipe_with_none_model_raises_error(self, mock_file_system):
         """Test NumpyFedAvgRecipe with no model raises error."""
         with pytest.raises(ValueError, match="Must provide either model"):
@@ -649,6 +680,111 @@ class TestFedAvgRecipeEarlyStopping:
         )
 
         assert recipe.aggregation_weights == weights
+
+
+class TestFedAvgPerSiteConfigHelper:
+    def test_helper_exports_site_specific_apps(self, tmp_path):
+        train_script = tmp_path / "train.py"
+        train_script.write_text("# Dummy train script\n")
+        recipe = FedAvgRecipe(
+            name="test_helper_per_site_export",
+            model={"class_path": "model.SimpleNetwork", "args": {}},
+            train_script=str(train_script),
+            min_clients=2,
+            launch_external_process=True,
+        )
+        per_site_config = {
+            "site-1": {"train_args": "--rank 1"},
+            "site-2": {"train_args": "--rank 2"},
+        }
+        set_per_site_config(recipe, per_site_config)
+
+        export_root = tmp_path / "export"
+        recipe.export(job_dir=str(export_root))
+
+        job_root = export_root / recipe.name
+        runner_component_ids = {"pipe", "launcher", "metrics_pipe", "metric_relay", "config_preparer"}
+        for site_name, rank in (("site-1", 1), ("site-2", 2)):
+            with open(job_root / f"app_{site_name}" / "config" / "config_fed_client.json") as f:
+                client_config = json.load(f)
+            component_ids = [component["id"] for component in client_config["components"]]
+            assert runner_component_ids <= set(component_ids)
+            assert not any(f"{component_id}1" in component_ids for component_id in runner_component_ids)
+            launcher = next(component for component in client_config["components"] if component["id"] == "launcher")
+            assert f"--rank {rank}" in launcher["args"]["script"]
+
+        with pytest.raises(RuntimeError, match="cannot be changed after"):
+            set_per_site_config(recipe, per_site_config)
+        assert recipe.configured_sites() == ["site-1", "site-2"]
+
+    def test_helper_rebuilds_all_clients_app_and_preserves_public_additions(
+        self, mock_file_system, base_recipe_params, simple_model
+    ):
+        recipe = FedAvgRecipe(name="test_helper_per_site", model=simple_model, **base_recipe_params)
+        client_filter = PassThroughFilter()
+        recipe.add_client_config({"shared_setting": {"enabled": True}})
+        recipe.add_client_file("shared_helper.py")
+        recipe.add_client_input_filter(client_filter, tasks=["train"])
+        recipe.enable_log_streaming()
+
+        set_per_site_config(
+            recipe,
+            {
+                "site-1": {"train_args": "--data site-1"},
+                "site-2": {"train_args": "--data site-2"},
+            },
+        )
+
+        assert ALL_SITES not in recipe.job._deploy_map
+        assert recipe.job.clients == ["site-1", "site-2"]
+        assert recipe.configured_sites() == ["site-1", "site-2"]
+        assert recipe.per_site_config == {
+            "site-1": {"train_args": "--data site-1"},
+            "site-2": {"train_args": "--data site-2"},
+        }
+
+        for site_name in ("site-1", "site-2"):
+            app_config = recipe.job._deploy_map[site_name].app_config
+            assert app_config.additional_params == {"shared_setting": {"enabled": True}}
+            assert "shared_helper.py" in app_config.ext_scripts
+            assert app_config.ext_scripts.count(base_recipe_params["train_script"]) == 1
+            assert app_config.task_data_filters == [({"train"}, [client_filter])]
+            assert any(isinstance(component, JobLogStreamer) for component in app_config.components.values())
+
+        assert get_client_executor(recipe, "site-1")._task_script_args == "--data site-1"
+        assert get_client_executor(recipe, "site-2")._task_script_args == "--data site-2"
+
+        recipe.add_client_config({"site_only": True}, clients=["site-1"])
+        assert recipe.job._deploy_map["site-1"].app_config.additional_params["site_only"] is True
+        assert "site_only" not in recipe.job._deploy_map["site-2"].app_config.additional_params
+
+    def test_helper_reapplies_config_for_same_sites_and_preserves_targeted_additions(
+        self, mock_file_system, base_recipe_params, simple_model
+    ):
+        recipe = FedAvgRecipe(name="test_reapply_per_site", model=simple_model, **base_recipe_params)
+        set_per_site_config(recipe, {"site-1": {"train_args": "--old 1"}, "site-2": {"train_args": "--old 2"}})
+        recipe.add_client_config({"site_only": True}, clients=["site-1"])
+
+        set_per_site_config(recipe, {"site-1": {"train_args": "--new 1"}, "site-2": {"train_args": "--new 2"}})
+
+        assert get_client_executor(recipe, "site-1")._task_script_args == "--new 1"
+        assert get_client_executor(recipe, "site-2")._task_script_args == "--new 2"
+        assert recipe.job._deploy_map["site-1"].app_config.additional_params["site_only"] is True
+        assert "site_only" not in recipe.job._deploy_map["site-2"].app_config.additional_params
+
+    def test_helper_rejects_site_set_change_without_losing_previous_config(
+        self, mock_file_system, base_recipe_params, simple_model
+    ):
+        recipe = FedAvgRecipe(name="test_change_per_site", model=simple_model, **base_recipe_params)
+        original_config = {"site-1": {"train_args": "--rank 1"}, "site-2": {"train_args": "--rank 2"}}
+        set_per_site_config(recipe, original_config)
+
+        with pytest.raises(RuntimeError, match="cannot change the configured site names"):
+            set_per_site_config(recipe, {"site-1": {}, "site-3": {}})
+
+        assert recipe.configured_sites() == ["site-1", "site-2"]
+        assert recipe.per_site_config == original_config
+        assert set(recipe.job._deploy_map) == {SERVER_SITE_NAME, "site-1", "site-2"}
 
 
 class TestFedAvgRecipeValidation:

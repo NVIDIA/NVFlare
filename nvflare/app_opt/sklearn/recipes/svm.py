@@ -81,7 +81,8 @@ class SVMFedAvgRecipe(FedAvgRecipe):
         per_site_config: Per-site configuration for the federated learning job. Dictionary mapping
             site names to configuration dicts. If not provided, the same configuration will be used
             for all clients. Nested values become part of the generated job definition and must not
-            contain secrets.
+            contain secrets. It may also be applied with ``set_per_site_config`` after construction
+            and before export or execution.
         key_metric: Metric used to determine if the model is globally best. If validation metrics are
             a dict, key_metric selects the metric used for global model selection. Defaults to "AUC"
             (which corresponds to the ROC AUC score sent by the SVM client in round 1).

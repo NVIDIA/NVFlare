@@ -193,15 +193,17 @@ each site. In simulation, all clients share the host filesystem, so use the
 default `tracking_uri=None` behavior or configure distinct paths if the stores
 must remain physically separate.
 
-For different configuration at each site, construct the recipe with per-site
-client apps and then target each site explicitly:
+For different configuration at each site, use `set_per_site_config` before
+targeting each site explicitly:
 
 ```python
+from nvflare.recipe import set_per_site_config
+
 sites = ["site-1", "site-2"]
 recipe = FedAvgRecipe(
     ...,
-    per_site_config={site: {} for site in sites},
 )
+set_per_site_config(recipe, {site: {} for site in sites})
 
 for site in sites:
     add_experiment_tracking(
@@ -217,8 +219,10 @@ for site in sites:
     )
 ```
 
-Targeted `clients=[...]` placement requires `per_site_config` when the recipe is
-constructed; it cannot split an existing `@ALL` client app after the fact.
+Targeted `clients=[...]` placement requires per-site client apps. For FedAvg,
+`set_per_site_config` converts the initial `@ALL` client app before the recipe
+is exported or run; passing `per_site_config` to the constructor remains
+supported as well.
 
 ### Add Experiment Tags
 

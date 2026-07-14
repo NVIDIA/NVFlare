@@ -89,13 +89,16 @@ Modify `calculate_data_splits()` in `job.py` to implement different split strate
 - **Unbalanced splits**: Give clients different amounts of data (e.g., linear, exponential ratios)
 - **Overlapping validation**: Use different validation sets per client
 
-The key is passing a dict to `train_args`:
+The key is building site-specific `train_args` entries and applying them with
+`set_per_site_config`:
 ```python
-train_args = {
-    "site-1": "--data_path /data/HIGGS.csv --train_start 1100000 --train_end 3080000 ...",
-    "site-2": "--data_path /data/HIGGS.csv --train_start 3080000 --train_end 5060000 ...",
-    # ... more sites
+from nvflare.recipe import set_per_site_config
+
+per_site_config = {
+    "site-1": {"train_args": "--data_path /data/HIGGS.csv --train_start 1100000 --train_end 3080000 ..."},
+    "site-2": {"train_args": "--data_path /data/HIGGS.csv --train_start 3080000 --train_end 5060000 ..."},
 }
+set_per_site_config(recipe, per_site_config)
 ```
 
 **Alternative: Using Separate Data Files**
@@ -108,11 +111,12 @@ Instead of using data ranges, you can split your data into separate files for ea
 # - /data/site2_HIGGS.csv
 # - /data/site3_HIGGS.csv
 
-train_args = {
-    "site-1": "--data_path /data/site1_HIGGS.csv",
-    "site-2": "--data_path /data/site2_HIGGS.csv",
-    "site-3": "--data_path /data/site3_HIGGS.csv",
+per_site_config = {
+    "site-1": {"train_args": "--data_path /data/site1_HIGGS.csv"},
+    "site-2": {"train_args": "--data_path /data/site2_HIGGS.csv"},
+    "site-3": {"train_args": "--data_path /data/site3_HIGGS.csv"},
 }
+set_per_site_config(recipe, per_site_config)
 ```
 
 This replaces the old `prepare_job_config.sh` approach with a more flexible Python-based solution.

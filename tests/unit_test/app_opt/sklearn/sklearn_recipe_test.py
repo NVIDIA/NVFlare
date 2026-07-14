@@ -20,6 +20,8 @@ import pytest
 from pydantic import ValidationError
 
 from nvflare.apis.dxo import DataKind
+from nvflare.apis.job_def import ALL_SITES
+from nvflare.recipe import set_per_site_config
 
 
 @pytest.fixture
@@ -219,3 +221,38 @@ class TestSVMFedAvgRecipe:
                 kernel="rbf",
                 model_path="relative/path/svm.joblib",
             )
+
+
+def test_sklearn_recipe_family_inherits_per_site_config_helper(mock_file_system):
+    from nvflare.app_opt.sklearn.recipes.fedavg import SklearnFedAvgRecipe
+    from nvflare.app_opt.sklearn.recipes.kmeans import KMeansFedAvgRecipe
+    from nvflare.app_opt.sklearn.recipes.svm import SVMFedAvgRecipe
+
+    recipes = [
+        SklearnFedAvgRecipe(
+            name="test_sklearn_helper",
+            model_params={"n_classes": 2},
+            train_script="train.py",
+            min_clients=2,
+        ),
+        KMeansFedAvgRecipe(
+            name="test_kmeans_helper",
+            n_clusters=3,
+            train_script="train.py",
+            min_clients=2,
+        ),
+        SVMFedAvgRecipe(
+            name="test_svm_helper",
+            train_script="train.py",
+            min_clients=2,
+            kernel="rbf",
+        ),
+    ]
+
+    for recipe in recipes:
+        set_per_site_config(
+            recipe,
+            {"site-1": {"train_args": "--rank 1"}, "site-2": {"train_args": "--rank 2"}},
+        )
+        assert ALL_SITES not in recipe.job._deploy_map
+        assert recipe.configured_sites() == ["site-1", "site-2"]

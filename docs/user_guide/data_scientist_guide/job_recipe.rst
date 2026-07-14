@@ -183,6 +183,7 @@ creating the recipe:
 
    from nvflare.recipe import SimEnv, set_per_site_config
 
+   # Apply this to the FedAvg recipe created in the previous example.
    set_per_site_config(
        recipe,
        {
@@ -202,10 +203,20 @@ mean those sites are currently connected, validate production enrollment, or
 replace the execution environment.
 
 ``set_per_site_config`` stores the mapping and calls the recipe's per-site
-configuration hook. It does not by itself create client targets or rebuild an
-already generated job. A recipe must implement the hook for helper-provided
-per-site fields to affect generated app configuration, command-line arguments,
-data loaders, validators, or other recipe behavior.
+configuration hook. A recipe must implement that hook for helper-provided
+fields to affect generated app configuration, command-line arguments, data
+loaders, validators, or other recipe behavior.
+
+The unified FedAvg recipe family and PyTorch ``FedEvalRecipe`` implement this
+hook. Calling ``set_per_site_config`` before export or run replaces their
+all-clients app with one app per configured site and applies each site's
+supported training or evaluation runner overrides. Files, filters, components,
+and top-level client configuration already added through Recipe APIs are
+preserved. The helper can be reapplied for the same sites; create a new recipe
+to change the site set. Passing ``per_site_config`` to these recipes' constructors
+remains supported. XGBoost recipes require
+site-specific data loaders during construction and therefore continue to use
+their ``per_site_config`` constructor argument.
 
 .. important::
 
@@ -216,12 +227,11 @@ data loaders, validators, or other recipe behavior.
    configuration, command-line arguments, data loaders, validators, or other
    recipe-specific settings.
 
-   For example, FedAvg's current per-site support is through the legacy
-   ``FedAvgRecipe(per_site_config=...)`` constructor argument. That constructor
-   path understands per-site values such as ``train_args``, ``train_script``,
-   and ``command``. It does not automatically interpret arbitrary keys such as
-   ``data_path`` or ``batch_size``. For FedAvg, pass those values through
-   ``train_args`` unless your recipe explicitly documents another shape.
+   For example, FedAvg understands per-site values such as ``train_args``,
+   ``train_script``, and ``command`` through either this helper or its
+   ``per_site_config`` constructor argument. It does not automatically interpret
+   arbitrary keys such as ``data_path`` or ``batch_size``. Pass those values
+   through ``train_args`` unless your recipe explicitly documents another shape.
 
 No Secrets In Recipe Parameters
 -------------------------------

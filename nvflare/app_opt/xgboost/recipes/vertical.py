@@ -97,8 +97,10 @@ class XGBVerticalRecipe(Recipe):
         metrics_writer_id (str, optional): ID of the metrics writer component. Default is 'metrics_writer'.
         in_process (bool, optional): Whether to run in-process (required for vertical). Default is True.
         model_file_name (str, optional): Model file name. Default is 'test.model.json'.
-        per_site_config (dict, optional): Per-site configuration mapping site names to config dicts.
+        per_site_config (dict): Required per-site configuration mapping site names to config dicts.
             Each config dict must contain 'data_loader' key with XGBDataLoader instance.
+            This must be supplied to the constructor; ``set_per_site_config`` is not supported
+            because data loaders and client ranks are needed while the workflow is built.
             Nested values become part of the generated job definition and must not contain secrets.
             Example: {"site-1": {"data_loader": VerticalDataLoader(...)}, "site-2": {...}}
 
@@ -149,7 +151,7 @@ class XGBVerticalRecipe(Recipe):
         - Only one client should be designated as label_owner
         - All clients must have overlapping sample IDs (after PSI)
         - Uses histogram_v2 algorithm with data_split_mode=1 (vertical)
-        - Data loaders must be configured via per_site_config parameter
+        - Data loaders must be configured via the constructor's per_site_config parameter
         - Executor and metrics components are automatically added to all clients
         - TensorBoard tracking is automatically configured
     """
@@ -257,6 +259,12 @@ class XGBVerticalRecipe(Recipe):
         # Configure the job
         self.job = self.configure()
         Recipe.__init__(self, self.job)
+
+    def _apply_per_site_config(self, config: dict[str, dict]) -> None:
+        raise RuntimeError(
+            "XGBVerticalRecipe requires per_site_config during construction because data loaders and client ranks "
+            "are needed to build the workflow"
+        )
 
     def configure(self):
         """Configure the federated job for vertical XGBoost training."""

@@ -16,6 +16,7 @@ import pytest
 
 from nvflare.apis.job_def import SERVER_SITE_NAME
 from nvflare.app_common.widgets.metrics_artifact_writer import MetricsArtifactWriter
+from nvflare.recipe import set_per_site_config
 
 pytest.importorskip("xgboost")
 
@@ -64,3 +65,25 @@ def test_xgb_vertical_recipe_configures_metrics_artifact_writer():
     )
 
     assert isinstance(_get_metrics_writer(recipe), MetricsArtifactWriter)
+
+
+@pytest.mark.parametrize(
+    "recipe_name,recipe_kwargs",
+    [
+        ("XGBBaggingRecipe", {"name": "xgb_bagging", "min_clients": 2}),
+        ("XGBHorizontalRecipe", {"name": "xgb_horizontal", "min_clients": 2, "num_rounds": 1}),
+        (
+            "XGBVerticalRecipe",
+            {"name": "xgb_vertical", "min_clients": 2, "num_rounds": 1, "label_owner": "site-1"},
+        ),
+    ],
+)
+def test_xgb_recipes_reject_post_construction_per_site_config(recipe_name, recipe_kwargs):
+    recipes_module = __import__("nvflare.app_opt.xgboost.recipes", fromlist=[recipe_name])
+    recipe_cls = getattr(recipes_module, recipe_name)
+    recipe = recipe_cls(per_site_config=_per_site_config(), **recipe_kwargs)
+
+    with pytest.raises(RuntimeError, match="requires per_site_config during construction"):
+        set_per_site_config(recipe, _per_site_config())
+
+    assert recipe.configured_sites() == ["site-1", "site-2"]

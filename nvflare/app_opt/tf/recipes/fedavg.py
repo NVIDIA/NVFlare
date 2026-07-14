@@ -71,6 +71,8 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
             server_expected_format, params_transfer_type, launch_once, shutdown_timeout.
             Nested values become part of the generated job definition and must not contain secrets.
             If not provided, the same configuration will be used for all clients.
+            It may also be applied with ``set_per_site_config`` after construction and
+            before export or execution.
         launch_once: Whether the external process will be launched only once at the beginning
             or on each task. Only used if `launch_external_process` is True. Defaults to True.
         shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
