@@ -74,6 +74,7 @@ class ArgSpec:
     value_type: Optional[str] = None
     choices: Optional[List[Any]] = None
     action: Optional[str] = None
+    function_name: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -118,6 +119,32 @@ class DeterministicJobImporter:
         max_candidates: Optional[int] = None,
         job_args: Optional[Sequence[str]] = None,
     ) -> Dict[str, Any]:
+        """Return an ``autofl.yaml``-shaped config for ``job_path``."""
+
+        try:
+            return self._import_job(
+                job_path,
+                metric=metric,
+                mode=mode,
+                target_env=target_env,
+                max_candidates=max_candidates,
+                job_args=job_args,
+            )
+        except JobImportError:
+            raise
+        except (OSError, UnicodeError, SyntaxError, RecursionError) as e:
+            raise JobImportError(f"failed to parse {job_path}: {e}") from e
+
+    def _import_job(
+        self,
+        job_path: str,
+        *,
+        metric: Optional[str] = None,
+        mode: str = "max",
+        target_env: Optional[str] = None,
+        max_candidates: Optional[int] = None,
+        job_args: Optional[Sequence[str]] = None,
+    ) -> Dict[str, Any]:
         """Return an ``autofl.yaml``-shaped config for ``job_path``.
 
         Args:
@@ -137,18 +164,19 @@ class DeterministicJobImporter:
             raise JobImportError("mode must be 'max' or 'min'")
 
         source_path = self._resolve_job_path(job_path)
-        source_text = source_path.read_text(encoding="utf-8")
         try:
+            source_text = source_path.read_text(encoding="utf-8")
             tree = ast.parse(source_text, filename=str(source_path))
-        except SyntaxError as e:
+            index = _ImportIndex.from_tree(tree, source_text)
+        except (OSError, UnicodeError, SyntaxError, RecursionError) as e:
             raise JobImportError(f"failed to parse {source_path}: {e}") from e
 
-        index = _ImportIndex.from_tree(tree, source_text)
-        parser_args = _parser_args_with_cli_overrides(index.parser_args, job_args or [])
-        reachable_functions = _reachable_function_names(tree, parser_args)
+        parser_args, reachable_functions = _reachable_parser_args(tree, index, job_args or [])
         job_call = index.first_job_call(reachable_functions)
         env_call = index.first_env_call(reachable_functions)
-        train_script = self._resolve_train_script(source_path, job_call, index, parser_args, source_text)
+        train_script = self._resolve_train_script(
+            source_path, job_call, index, parser_args, source_text, reachable_functions
+        )
         train_args = _collect_argparse_args_from_file(train_script) if train_script else {}
         unresolved: List[Dict[str, str]] = []
 
@@ -286,6 +314,7 @@ class DeterministicJobImporter:
         index: "_ImportIndex",
         parser_args: Dict[str, ArgSpec],
         source_text: str,
+        reachable_functions: Set[str],
     ) -> Optional[Path]:
         if not job_call:
             return None
@@ -295,20 +324,30 @@ class DeterministicJobImporter:
             resolved = _resolve_value(train_script_node, job_call.assignments, parser_args, source_text)
             value = resolved.value
             if isinstance(value, str) and _is_resolved_path_string(resolved):
-                return _existing_path((source_path.parent / value).resolve())
+                return self._existing_train_script(source_path, value)
             return None
 
         script_paths = set()
         for runner_call in index.script_runner_calls:
+            if runner_call.function_name is not None and runner_call.function_name not in reachable_functions:
+                continue
             script_node = runner_call.keywords.get("script")
             if not script_node:
                 continue
             resolved = _resolve_value(script_node, runner_call.assignments, parser_args, source_text)
             if isinstance(resolved.value, str) and _is_resolved_path_string(resolved):
-                path = _existing_path((source_path.parent / resolved.value).resolve())
+                path = self._existing_train_script(source_path, resolved.value)
                 if path:
                     script_paths.add(path)
         return next(iter(script_paths)) if len(script_paths) == 1 else None
+
+    def _existing_train_script(self, source_path: Path, value: str) -> Optional[Path]:
+        path = (source_path.parent / value).resolve()
+        try:
+            path.relative_to(self.workspace_root)
+        except ValueError:
+            return None
+        return _existing_path(path)
 
     def _resolve_metric(
         self,
@@ -323,8 +362,12 @@ class DeterministicJobImporter:
             if isinstance(resolved.value, str) and not resolved.unresolved:
                 return resolved.value, resolved.source, None
             return "accuracy", "default", _unresolved("objective.metric", resolved.source)
-        if "key_metric" in parser_args and isinstance(parser_args["key_metric"].default, str):
-            return parser_args["key_metric"].default, "arg:key_metric", None
+        if "key_metric" in parser_args:
+            metric_arg = parser_args["key_metric"]
+            if isinstance(metric_arg.default, str) and not metric_arg.default_unresolved:
+                return metric_arg.default, "arg:key_metric", None
+            if metric_arg.default_unresolved:
+                return "accuracy", "default", _unresolved("objective.metric", metric_arg.default_source)
         return (
             "accuracy",
             "default",
@@ -496,6 +539,20 @@ def import_job_to_autofl_config(
     )
 
 
+def inspect_job_cli_flags(job_path: str, job_args: Optional[Sequence[str]] = None) -> List[str]:
+    """Return long argparse flags reachable from a job's deterministic entry path."""
+
+    path = Path(job_path).resolve()
+    try:
+        source_text = path.read_text(encoding="utf-8")
+        tree = ast.parse(source_text, filename=str(path))
+        index = _ImportIndex.from_tree(tree, source_text)
+    except (OSError, UnicodeError, SyntaxError, RecursionError) as e:
+        raise JobImportError(f"failed to parse {path}: {e}") from e
+    parser_args, _ = _reachable_parser_args(tree, index, job_args or [])
+    return sorted({flag for spec in parser_args.values() for flag in spec.flags if flag.startswith("--")})
+
+
 def dump_autofl_yaml(config: Dict[str, Any]) -> str:
     """Return deterministic YAML for an imported Auto-FL config."""
 
@@ -511,12 +568,12 @@ class _ImportIndex(ast.NodeVisitor):
     def __init__(self, source_text: str):
         self.source_text = source_text
         self.imports: Dict[str, str] = {}
-        self.parser_args: Dict[str, ArgSpec] = {}
+        self.parser_arg_definitions: Dict[str, List[ArgSpec]] = {}
         self.module_assignments: Dict[str, ast.AST] = {}
         self._local_assignments_stack: List[Dict[str, ast.AST]] = []
         self._function_stack: List[str] = []
-        self._argparse_parser_names: set[str] = set()
-        self._argparse_subparser_names: set[str] = set()
+        self._argparse_parser_names: Set[Tuple[Optional[str], str]] = set()
+        self._argparse_subparser_names: Set[Tuple[Optional[str], str]] = set()
         self.job_calls: List[CallInfo] = []
         self.unsupported_job_calls: List[CallInfo] = []
         self.script_runner_calls: List[CallInfo] = []
@@ -536,6 +593,20 @@ class _ImportIndex(ast.NodeVisitor):
 
     def first_unsupported_job_call(self) -> Optional[CallInfo]:
         return self.unsupported_job_calls[0] if self.unsupported_job_calls else None
+
+    def parser_args(self, reachable_functions: Optional[Set[str]] = None) -> Dict[str, ArgSpec]:
+        definitions = {}
+        for name, specs in self.parser_arg_definitions.items():
+            selected = [
+                spec
+                for spec in specs
+                if reachable_functions is None
+                or spec.function_name is None
+                or spec.function_name in reachable_functions
+            ]
+            if selected:
+                definitions[name] = selected
+        return _collapse_arg_specs(definitions)
 
     def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:
@@ -583,9 +654,9 @@ class _ImportIndex(ast.NodeVisitor):
     def visit_Call(self, node: ast.Call) -> None:
         call_name = _call_name(node.func)
         if self._is_argparse_add_argument_call(call_name):
-            arg_spec = _arg_spec_from_call(node)
+            arg_spec = _arg_spec_from_call(node, self._function_stack[-1] if self._function_stack else None)
             if arg_spec:
-                self.parser_args[arg_spec.name] = arg_spec
+                self.parser_arg_definitions.setdefault(arg_spec.name, []).append(arg_spec)
 
         resolved_name = self._resolve_import_path(call_name)
         short_name = resolved_name.split(".")[-1]
@@ -616,18 +687,23 @@ class _ImportIndex(ast.NodeVisitor):
         if not isinstance(value, ast.Call):
             return
         call_name = self._resolve_import_path(_call_name(value.func))
+        scope = self._function_stack[-1] if self._function_stack else None
         if call_name in {"argparse.ArgumentParser", "argparse._ArgumentGroup"}:
-            self._argparse_parser_names.add(target)
+            self._argparse_parser_names.add((scope, target))
             return
         owner, _, method = call_name.rpartition(".")
-        if method == "add_subparsers" and owner in self._argparse_parser_names:
-            self._argparse_subparser_names.add(target)
-        elif method == "add_parser" and owner in self._argparse_subparser_names:
-            self._argparse_parser_names.add(target)
+        if method == "add_subparsers" and self._is_known_argparse_name(owner, self._argparse_parser_names):
+            self._argparse_subparser_names.add((scope, target))
+        elif method == "add_parser" and self._is_known_argparse_name(owner, self._argparse_subparser_names):
+            self._argparse_parser_names.add((scope, target))
 
     def _is_argparse_add_argument_call(self, call_name: str) -> bool:
         owner, _, method = call_name.rpartition(".")
-        return method == "add_argument" and owner in self._argparse_parser_names
+        return method == "add_argument" and self._is_known_argparse_name(owner, self._argparse_parser_names)
+
+    def _is_known_argparse_name(self, name: str, names: Set[Tuple[Optional[str], str]]) -> bool:
+        scope = self._function_stack[-1] if self._function_stack else None
+        return (scope, name) in names or (None, name) in names
 
     def _resolve_import_path(self, call_name: str) -> str:
         if not call_name:
@@ -653,12 +729,67 @@ class _ImportIndex(ast.NodeVisitor):
 def _first_reachable_call(calls: Sequence[CallInfo], reachable_functions: Optional[Set[str]]) -> Optional[CallInfo]:
     if not calls:
         return None
-    if len(calls) == 1 or reachable_functions is None:
+    if reachable_functions is None:
         return calls[0]
     reachable_calls = [
         call for call in calls if call.function_name is None or call.function_name in reachable_functions
     ]
     return reachable_calls[0] if reachable_calls else None
+
+
+def _arg_spec_signature(spec: ArgSpec) -> Tuple[Any, ...]:
+    return (
+        spec.default,
+        spec.default_source,
+        spec.default_unresolved,
+        spec.value_type,
+        tuple(spec.choices) if spec.choices is not None else None,
+        spec.action,
+    )
+
+
+def _collapse_arg_specs(definitions: Dict[str, List[ArgSpec]]) -> Dict[str, ArgSpec]:
+    collapsed = {}
+    for name, specs in definitions.items():
+        flags = tuple(dict.fromkeys(flag for spec in specs for flag in spec.flags))
+        first = specs[0]
+        if all(_arg_spec_signature(spec) == _arg_spec_signature(first) for spec in specs[1:]):
+            collapsed[name] = ArgSpec(
+                name=name,
+                flags=flags,
+                default=first.default,
+                default_source=first.default_source,
+                default_unresolved=first.default_unresolved,
+                value_type=first.value_type,
+                choices=first.choices,
+                action=first.action,
+                function_name=first.function_name,
+            )
+            continue
+        same_value_type = all(spec.value_type == first.value_type for spec in specs[1:])
+        same_action = all(spec.action == first.action for spec in specs[1:])
+        same_choices = all(spec.choices == first.choices for spec in specs[1:])
+        collapsed[name] = ArgSpec(
+            name=name,
+            flags=flags,
+            default=None,
+            default_source="conflicting argparse definitions",
+            default_unresolved=True,
+            value_type=first.value_type if same_value_type else None,
+            choices=first.choices if same_choices else None,
+            action=first.action if same_action else None,
+        )
+    return collapsed
+
+
+def _reachable_parser_args(
+    tree: ast.AST, index: _ImportIndex, job_args: Sequence[str]
+) -> Tuple[Dict[str, ArgSpec], Set[str]]:
+    initial = _parser_args_with_cli_overrides(index.parser_args(), job_args)
+    reachable = _reachable_function_names(tree, initial)
+    parser_args = _parser_args_with_cli_overrides(index.parser_args(reachable), job_args)
+    reachable = _reachable_function_names(tree, parser_args)
+    return _parser_args_with_cli_overrides(index.parser_args(reachable), job_args), reachable
 
 
 def _parser_args_with_cli_overrides(parser_args: Dict[str, ArgSpec], job_args: Sequence[str]) -> Dict[str, ArgSpec]:
@@ -801,13 +932,16 @@ def _collect_argparse_args_from_file(path: Optional[Path]) -> Dict[str, ArgSpec]
     if not path or not path.exists():
         return {}
     try:
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    except SyntaxError:
+        source_text = path.read_text(encoding="utf-8")
+        tree = ast.parse(source_text, filename=str(path))
+        index = _ImportIndex.from_tree(tree, source_text)
+    except (OSError, UnicodeError, SyntaxError, RecursionError):
         return {}
-    return _ImportIndex.from_tree(tree, "").parser_args
+    parser_args, _ = _reachable_parser_args(tree, index, ())
+    return parser_args
 
 
-def _arg_spec_from_call(node: ast.Call) -> Optional[ArgSpec]:
+def _arg_spec_from_call(node: ast.Call, function_name: Optional[str]) -> Optional[ArgSpec]:
     flags = []
     positional_names = []
     for arg in node.args:
@@ -847,6 +981,7 @@ def _arg_spec_from_call(node: ast.Call) -> Optional[ArgSpec]:
         value_type=_call_name(keywords["type"]) if "type" in keywords else None,
         choices=_literal_sequence(keywords.get("choices")),
         action=action,
+        function_name=function_name,
     )
 
 

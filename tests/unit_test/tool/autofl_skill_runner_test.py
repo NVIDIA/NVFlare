@@ -480,6 +480,65 @@ def test_run_streams_partial_line_before_timeout(tmp_path):
     assert "partial output" in log_path.read_text(encoding="utf-8")
 
 
+@pytest.mark.skipif(os.name == "nt", reason="process-group cleanup uses POSIX process groups")
+@pytest.mark.parametrize("monitor_error", [KeyboardInterrupt(), RuntimeError("monitor failed")])
+def test_run_terminates_child_process_group_when_monitor_raises(tmp_path, monkeypatch, monitor_error):
+    runner = _load_runner()
+    pid_path = tmp_path / "child.pid"
+
+    def fail_monitor(_roots):
+        deadline = runner.time.monotonic() + 5
+        while not pid_path.exists() and runner.time.monotonic() < deadline:
+            runner.time.sleep(0.01)
+        raise monitor_error
+
+    monkeypatch.setattr(runner, "simulator_stall_message", fail_monitor)
+    with pytest.raises(type(monitor_error), match=str(monitor_error) if str(monitor_error) else None):
+        runner.run(
+            [
+                sys.executable,
+                "-c",
+                f"import os, pathlib, time; pathlib.Path({str(pid_path)!r}).write_text(str(os.getpid())); time.sleep(30)",
+            ],
+            tmp_path,
+            timeout=0,
+            log_path=tmp_path / "run.log",
+            simulator_stall_roots=[tmp_path / "simulation"],
+            stall_check_interval=0,
+        )
+
+    child_pid = int(pid_path.read_text(encoding="utf-8"))
+    with pytest.raises(ProcessLookupError):
+        os.kill(child_pid, 0)
+
+
+def test_run_keeps_complete_log_but_only_bounded_output_tail(tmp_path):
+    runner = _load_runner()
+    result_dir = tmp_path / "early-result"
+    log_path = tmp_path / "run.log"
+    payload_size = runner.MAX_CAPTURED_PROCESS_OUTPUT + 65536
+    script = (
+        f"print('Result can be found in : {result_dir}'); "
+        "print('PermissionError'); print('[Errno 1] Operation not permitted'); print('socket.bind'); "
+        f"print('x' * {payload_size})"
+    )
+
+    rc, output, _ = runner.run(
+        [sys.executable, "-c", script],
+        tmp_path,
+        timeout=10,
+        log_path=log_path,
+    )
+
+    printed_result, socket_failure = runner.scan_run_log(log_path, tmp_path)
+    assert rc == 0
+    assert len(output.encode("utf-8")) <= runner.MAX_CAPTURED_PROCESS_OUTPUT
+    assert log_path.stat().st_size > runner.MAX_CAPTURED_PROCESS_OUTPUT
+    assert "Result can be found" not in output
+    assert printed_result == result_dir.resolve()
+    assert socket_failure is True
+
+
 def test_job_help_discovers_flags_without_executing_job(tmp_path):
     runner = _load_runner()
     job = tmp_path / "job.py"
@@ -509,6 +568,40 @@ def test_job_help_returns_no_flags_for_non_argparse_job(tmp_path):
     job.write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
 
     assert runner.job_help(sys.executable, job, tmp_path, timeout=1) == ""
+
+
+def test_job_help_ignores_unrelated_builders_and_unreachable_parsers(tmp_path):
+    runner = _load_runner()
+    job = tmp_path / "job.py"
+    job.write_text(
+        """
+import argparse
+
+
+class Builder:
+    def add_argument(self, *args):
+        pass
+
+
+def unused_parser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--unused")
+
+
+def define_parser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--num_rounds", type=int, default=1)
+    Builder().add_argument("--not-argparse")
+    return parser.parse_args()
+
+
+def main():
+    define_parser()
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    assert runner.job_help(sys.executable, job, tmp_path) == "--num_rounds"
 
 
 def test_metric_extraction_prefers_structured_artifacts_then_known_text_logs(tmp_path):
@@ -746,28 +839,37 @@ def test_run_rejects_printed_result_outside_simulator_workspace(tmp_path, monkey
     assert record.score is None
 
 
-def test_simulator_root_lock_rejects_concurrent_campaign(tmp_path):
+def test_campaign_workspace_lock_rejects_concurrent_same_job_lifecycle(tmp_path):
     runner = _load_runner()
-    root = tmp_path / "simulation" / "shared-job"
+    job = tmp_path / "job.py"
+    job.write_text("print('job')\n", encoding="utf-8")
 
-    with runner.locked_simulator_roots([root]):
-        with pytest.raises(RuntimeError, match="already in use"):
-            with runner.locked_simulator_roots([root]):
-                pass
+    with runner.locked_campaign_workspace(tmp_path, "evaluate"):
+        result = subprocess.run(
+            [sys.executable, runner.__file__, "status", str(job)],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
 
-    assert not root.with_name(f".{root.name}.autofl.lock").exists()
+    assert result.returncode == 2
+    assert "campaign workspace is already in use" in result.stderr
 
 
-def test_simulator_workspace_lock_excludes_unnamed_and_named_campaigns(tmp_path):
+def test_campaign_workspace_locks_are_independent_and_release_after_exception(tmp_path):
     runner = _load_runner()
-    if runner.fcntl is None:
-        pytest.skip("fcntl workspace locking is unavailable")
-    simulator_base = tmp_path / "simulation"
+    first = tmp_path / "first"
+    second = tmp_path / "second"
 
-    with runner.locked_simulator_workspace(simulator_base, exclusive=True):
-        with pytest.raises(RuntimeError, match="conflicting named campaign"):
-            with runner.locked_simulator_workspace(simulator_base, exclusive=False):
-                pass
+    with pytest.raises(RuntimeError, match="injected lifecycle failure"):
+        with runner.locked_campaign_workspace(first, "evaluate"):
+            with runner.locked_campaign_workspace(second, "evaluate"):
+                raise RuntimeError("injected lifecycle failure")
+
+    with runner.locked_campaign_workspace(first, "status"):
+        with runner.locked_campaign_workspace(second, "status"):
+            pass
 
 
 def test_run_job_collects_configured_sim_result_and_standard_nvflare_text_metric(tmp_path):
@@ -1020,6 +1122,18 @@ def test_runner_uses_campaign_guard_threshold_defaults(tmp_path, monkeypatch):
     assert state["reason"] == "hard_repeated_crash_blocker"
     assert state["plateau"]["threshold"] == 3
     assert state["plateau"]["min_delta"] == pytest.approx(0.25)
+
+
+@pytest.mark.parametrize(
+    "option",
+    ["--hard-crash-threshold", "--exploration-batch-size", "--family-repeat-limit"],
+)
+def test_runner_rejects_negative_campaign_thresholds(option):
+    runner = _load_runner()
+    args = runner.parse_args(["status", "job.py", option, "-1"])
+
+    with pytest.raises(ValueError, match="must be non-negative"):
+        runner.validate_args(args)
 
 
 def test_small_retained_improvement_does_not_reset_plateau_clock(tmp_path):
@@ -1588,6 +1702,36 @@ def test_status_uses_persisted_custom_stop_file_in_job_directory(tmp_path, monke
     assert custom_state["final_response_allowed"] is True
 
 
+def test_stop_file_blocks_prepare_before_creating_candidate(tmp_path, monkeypatch, capsys):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    capsys.readouterr()
+    tmp_path.joinpath("STOP_AUTOFL").touch()
+
+    assert runner.main(["prepare", str(job), "--name", "blocked", "--hypothesis", "must not be materialized"]) == 2
+
+    assert "campaign is manually stopped" in capsys.readouterr().err
+    assert not tmp_path.joinpath(".nvflare/autofl/candidates/blocked").exists()
+
+
+def test_stop_file_blocks_evaluate_before_workspace_mutation(tmp_path, monkeypatch, capsys):
+    runner = _load_runner()
+    job, client, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    assert runner.main(["prepare", str(job), "--name", "blocked", "--hypothesis", "candidate code"]) == 0
+    draft = tmp_path / ".nvflare/autofl/candidates/blocked/source/client.py"
+    draft.write_text("ALGORITHM = 'candidate'\n", encoding="utf-8")
+    manifest = tmp_path / ".nvflare/autofl/candidates/blocked/candidate_manifest.json"
+    before_manifest = manifest.read_bytes()
+    capsys.readouterr()
+    tmp_path.joinpath("STOP_AUTOFL").touch()
+
+    assert runner.main(["evaluate", str(job)]) == 2
+
+    assert "campaign is manually stopped" in capsys.readouterr().err
+    assert client.read_text(encoding="utf-8") == "ALGORITHM = 'baseline'\n"
+    assert manifest.read_bytes() == before_manifest
+
+
 def test_initialize_retries_an_unscored_baseline(tmp_path, monkeypatch):
     runner = _load_runner()
     job = tmp_path / "job.py"
@@ -1972,6 +2116,14 @@ def test_import_job_config_forwards_minimization_mode(tmp_path, monkeypatch):
                 "unresolved": [{"field": "budget.fixed_training_budget.num_clients", "reason": "dynamic"}],
             },
             "safety-critical fields",
+        ),
+        (
+            {
+                "import": {"support": {"status": "supported"}},
+                "budget": {"fixed_training_budget": {"num_rounds": 1}},
+                "unresolved": [{"field": "objective.metric", "reason": "ambiguous argparse definitions"}],
+            },
+            "objective.metric",
         ),
     ],
 )

@@ -204,8 +204,10 @@ Each simulation trial runs in an isolated temporary simulator workspace that
 the runner injects through the process-level
 `NVFLARE_SIMULATOR_WORKSPACE_ROOT` override, so concurrent campaigns cannot
 share or delete each other's artifacts. Result names stay campaign-scoped and
-named result roots are locked during execution. A recipe without a literal job
-name may run, but its result root must resolve afterwards to the printed
+the runner holds one nonblocking lifecycle lock under each job's
+`.nvflare/autofl/` directory. A concurrent action for the same job exits with
+code 2; separate job workspaces remain independent. A recipe without a literal
+job name may run, but its result root must resolve afterwards to the printed
 result path or the sole changed workspace child; ambiguous or out-of-workspace
 results fail closed. POC and production results are accepted only after the
 materialized candidate is re-imported and its fixed comparison budget is

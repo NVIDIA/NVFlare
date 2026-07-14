@@ -96,6 +96,9 @@ The job directory contains the human-reviewable and reproducibility artifacts:
 
 A manual stop takes precedence over pending execution. If a candidate is
 pending, the agent abandons it safely before generating the final report.
+NVFlare serializes lifecycle actions for each job workspace. If another action
+is already active, the helper exits with code 2 and the agent retries after the
+active action finishes; separate job workspaces remain independent.
 
 Supported First Version
 =======================

@@ -14,9 +14,9 @@ baseline and candidate. Evaluation-only, statistics-only, and unsupported
 nested-application recipes stop during import with an actionable
 `import.support.reason`; they must not start a baseline.
 
-For simulator recipes without a literal name, the runner serializes discovery
-within that simulator workspace. It accepts a standard printed result path or
-the sole changed direct child of the workspace, validates that the root cannot
-escape the simulator directory, and persists the discovered name for cleanup,
+Every simulator trial receives an isolated temporary workspace. For recipes
+without a literal name, the runner accepts a standard printed result path or
+the sole changed direct child of that trial workspace, validates that the root
+cannot escape the workspace, and persists the discovered name for cleanup,
 stall monitoring, and subsequent candidates. Ambiguous or out-of-workspace
 results fail closed.

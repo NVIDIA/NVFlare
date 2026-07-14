@@ -296,6 +296,12 @@ def guard_state_for_rows(
     exploration_batch_size: int = DEFAULT_EXPLORATION_BATCH_SIZE,
     family_repeat_limit: int = DEFAULT_FAMILY_REPEAT_LIMIT,
 ) -> Dict[str, Any]:
+    if hard_crash_threshold < 0:
+        raise ValueError("hard_crash_threshold must be non-negative")
+    if exploration_batch_size < 0:
+        raise ValueError("exploration_batch_size must be non-negative")
+    if family_repeat_limit < 0:
+        raise ValueError("family_repeat_limit must be non-negative")
     attempts = comparable_attempts(rows)
     pending = pending_candidates(rows)
     cap = max_candidates
@@ -467,6 +473,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         raise ValueError("--plateau-threshold must be positive")
     if args.min_delta < 0:
         raise ValueError("--min-delta must be non-negative")
+    if args.hard_crash_threshold < 0:
+        raise ValueError("--hard-crash-threshold must be non-negative")
+    if args.exploration_batch_size < 0:
+        raise ValueError("--exploration-batch-size must be non-negative")
+    if args.family_repeat_limit < 0:
+        raise ValueError("--family-repeat-limit must be non-negative")
 
     results_path = Path(args.results).resolve()
     stop_files = args.stop_file if args.stop_file is not None else list(DEFAULT_STOP_FILES)

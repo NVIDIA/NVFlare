@@ -23,7 +23,6 @@ discarded candidates, and records reproducible campaign state and artifacts.
 from __future__ import annotations
 
 import argparse
-import ast
 import codecs
 import csv
 import difflib
@@ -50,7 +49,7 @@ from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tupl
 
 try:
     import fcntl
-except ImportError:  # pragma: no cover - Windows fallback keeps per-root locks
+except ImportError:  # pragma: no cover - Windows uses the exclusive-file fallback
     fcntl = None
 
 try:
@@ -114,7 +113,9 @@ SIMULATOR_PROGRESS_PATTERNS = (
 SIMULATOR_PROGRESS_LOG_LIMIT = 131072
 DEFAULT_SIMULATOR_NO_PROGRESS_TIMEOUT = 240
 DEFAULT_JOB_HELP_TIMEOUT = 30
+MAX_CAPTURED_PROCESS_OUTPUT = 1024 * 1024
 SIMULATOR_WORKSPACE_ROOT_ENV_VAR = "NVFLARE_SIMULATOR_WORKSPACE_ROOT"
+CAMPAIGN_LOCK_PATH = ".nvflare/autofl/campaign.lock"
 
 FIXED_BUDGET_TO_CLI = {
     "num_clients": "n_clients",
@@ -337,6 +338,17 @@ def terminate_process(process: subprocess.Popen) -> None:
             process.kill()
     else:
         process.kill()
+    try:
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        pass
+
+
+def append_output_tail(current: str, value: str) -> str:
+    combined = (current + value).encode("utf-8", errors="replace")
+    if len(combined) <= MAX_CAPTURED_PROCESS_OUTPUT:
+        return current + value
+    return combined[-MAX_CAPTURED_PROCESS_OUTPUT:].decode("utf-8", errors="ignore")
 
 
 def recent_text(path: Path, limit: int = SIMULATOR_STALL_LOG_LIMIT) -> str:
@@ -455,7 +467,7 @@ def run(
     last_partial_aggregation_seen = started
     last_partial_aggregation_signature = ""
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    chunks: List[str] = []
+    output_tail = ""
     with log_path.open("w", encoding="utf-8") as log_file:
         process = subprocess.Popen(
             argv,
@@ -468,7 +480,7 @@ def run(
             env=env,
         )
         assert process.stdout is not None
-        output_queue: queue.Queue[Optional[bytes]] = queue.Queue()
+        output_queue: queue.Queue[Optional[bytes]] = queue.Queue(maxsize=16)
 
         def read_output() -> None:
             try:
@@ -486,83 +498,99 @@ def run(
         output_finished = False
         timed_out = False
         stall_message = ""
-        while not output_finished or process.poll() is None:
-            now = time.monotonic()
-            if not timed_out and timeout and now - started > timeout:
-                timed_out = True
-                terminate_process(process)
-            if not timed_out and not stall_message and simulator_stall_roots and now >= next_stall_check:
-                stall_message = simulator_stall_message(simulator_stall_roots) or ""
-                next_stall_check = now + stall_check_interval
-                if stall_message:
+        try:
+            while not output_finished or process.poll() is None:
+                now = time.monotonic()
+                if not timed_out and timeout and now - started > timeout:
+                    timed_out = True
                     terminate_process(process)
-                elif simulator_no_progress_timeout:
-                    partial_aggregation_signature = simulator_partial_aggregation_signature_for_roots(
-                        simulator_stall_roots
-                    )
-                    if (
-                        partial_aggregation_signature
-                        and partial_aggregation_signature != last_partial_aggregation_signature
-                    ):
-                        last_partial_aggregation_signature = partial_aggregation_signature
-                        last_partial_aggregation_seen = now
-                    elif (
-                        last_partial_aggregation_signature
-                        and now - last_partial_aggregation_seen > simulator_no_progress_timeout
-                    ):
-                        stall_message = (
-                            "partial simulator aggregation made no server-side progress for "
-                            f"{int(now - last_partial_aggregation_seen)}s: {last_partial_aggregation_signature}"
-                        )
-                        terminate_process(process)
-                    progress_signature = simulator_progress_signature_for_roots(simulator_stall_roots)
+                if not timed_out and not stall_message and simulator_stall_roots and now >= next_stall_check:
+                    stall_message = simulator_stall_message(simulator_stall_roots) or ""
+                    next_stall_check = now + stall_check_interval
                     if stall_message:
-                        pass
-                    elif progress_signature and progress_signature != last_progress_signature:
-                        last_progress_signature = progress_signature
-                        last_progress_seen = now
-                    elif (
-                        last_progress_signature
-                        and now - last_progress_seen > simulator_no_progress_timeout
-                        and now - last_progress_check >= stall_check_interval
-                    ):
-                        stall_message = (
-                            f"no simulator progress markers changed for {int(now - last_progress_seen)}s "
-                            f"across {', '.join(str(root) for root in simulator_stall_roots)}"
-                        )
                         terminate_process(process)
-                    last_progress_check = now
-            try:
-                raw_chunk = output_queue.get(timeout=0.2)
-            except queue.Empty:
-                continue
-            if raw_chunk is None:
-                output_finished = True
-                continue
-            chunk = decoder.decode(raw_chunk)
-            if chunk:
-                chunks.append(chunk)
-                log_file.write(chunk)
+                    elif simulator_no_progress_timeout:
+                        partial_aggregation_signature = simulator_partial_aggregation_signature_for_roots(
+                            simulator_stall_roots
+                        )
+                        if (
+                            partial_aggregation_signature
+                            and partial_aggregation_signature != last_partial_aggregation_signature
+                        ):
+                            last_partial_aggregation_signature = partial_aggregation_signature
+                            last_partial_aggregation_seen = now
+                        elif (
+                            last_partial_aggregation_signature
+                            and now - last_partial_aggregation_seen > simulator_no_progress_timeout
+                        ):
+                            stall_message = (
+                                "partial simulator aggregation made no server-side progress for "
+                                f"{int(now - last_partial_aggregation_seen)}s: {last_partial_aggregation_signature}"
+                            )
+                            terminate_process(process)
+                        progress_signature = simulator_progress_signature_for_roots(simulator_stall_roots)
+                        if stall_message:
+                            pass
+                        elif progress_signature and progress_signature != last_progress_signature:
+                            last_progress_signature = progress_signature
+                            last_progress_seen = now
+                        elif (
+                            last_progress_signature
+                            and now - last_progress_seen > simulator_no_progress_timeout
+                            and now - last_progress_check >= stall_check_interval
+                        ):
+                            stall_message = (
+                                f"no simulator progress markers changed for {int(now - last_progress_seen)}s "
+                                f"across {', '.join(str(root) for root in simulator_stall_roots)}"
+                            )
+                            terminate_process(process)
+                        last_progress_check = now
+                try:
+                    raw_chunk = output_queue.get(timeout=0.2)
+                except queue.Empty:
+                    continue
+                if raw_chunk is None:
+                    output_finished = True
+                    continue
+                chunk = decoder.decode(raw_chunk)
+                if chunk:
+                    output_tail = append_output_tail(output_tail, chunk)
+                    log_file.write(chunk)
+                    log_file.flush()
+            remainder = decoder.decode(b"", final=True)
+            if remainder:
+                output_tail = append_output_tail(output_tail, remainder)
+                log_file.write(remainder)
                 log_file.flush()
-        reader.join(timeout=1)
-        remainder = decoder.decode(b"", final=True)
-        if remainder:
-            chunks.append(remainder)
-            log_file.write(remainder)
+            if timed_out:
+                timeout_msg = f"\nTIMEOUT after {timeout}s\n"
+                output_tail = append_output_tail(output_tail, timeout_msg)
+                log_file.write(timeout_msg)
+                log_file.flush()
+                return 124, output_tail, time.monotonic() - started
+            if stall_message:
+                stall_text = f"\nSIMULATOR_STALL: {stall_message}\n"
+                output_tail = append_output_tail(output_tail, stall_text)
+                log_file.write(stall_text)
+                log_file.flush()
+                return SIMULATOR_STALL_EXIT_CODE, output_tail, time.monotonic() - started
+            return process.returncode or 0, output_tail, time.monotonic() - started
+        finally:
+            terminate_process(process)
+            while reader.is_alive() or not output_queue.empty():
+                try:
+                    raw_chunk = output_queue.get(timeout=0.2)
+                except queue.Empty:
+                    continue
+                if raw_chunk is None:
+                    break
+                chunk = decoder.decode(raw_chunk)
+                if chunk:
+                    output_tail = append_output_tail(output_tail, chunk)
+                    log_file.write(chunk)
             log_file.flush()
-        if timed_out:
-            timeout_msg = f"\nTIMEOUT after {timeout}s\n"
-            chunks.append(timeout_msg)
-            log_file.write(timeout_msg)
-            log_file.flush()
-            return 124, "".join(chunks), time.monotonic() - started
-        if stall_message:
-            stall_text = f"\nSIMULATOR_STALL: {stall_message}\n"
-            chunks.append(stall_text)
-            log_file.write(stall_text)
-            log_file.flush()
-            return SIMULATOR_STALL_EXIT_CODE, "".join(chunks), time.monotonic() - started
-    return process.returncode or 0, "".join(chunks), time.monotonic() - started
+            reader.join(timeout=10)
+            process.stdout.close()
 
 
 def read_yaml(path: Path) -> Dict[str, Any]:
@@ -975,6 +1003,13 @@ def resolve_stop_files(cwd: Path, values: Optional[Sequence[str]]) -> List[str]:
     return [str(resolve_output_path(cwd, value)) for value in stop_files]
 
 
+def ensure_campaign_not_stopped(workspace: Path, args: argparse.Namespace, *, action: str) -> None:
+    existing = [path for value in resolve_stop_files(workspace, args.stop_file) if (path := Path(value)).exists()]
+    if existing:
+        paths = ", ".join(str(path) for path in existing)
+        raise ValueError(f"campaign is manually stopped by {paths}; remove the stop file before attempting to {action}")
+
+
 def extract_result_dir(output: str, cwd: Optional[Path] = None) -> Optional[Path]:
     patterns = [
         r"Result can be found in\s*:\s*(?P<path>\S+)",
@@ -991,6 +1026,34 @@ def extract_result_dir(output: str, cwd: Optional[Path] = None) -> Optional[Path
                 path = cwd / path
             return path.resolve()
     return None
+
+
+def sandbox_socket_failure_signals(text: str) -> Tuple[bool, bool, bool]:
+    text = text.lower()
+    return (
+        "permissionerror" in text,
+        "operation not permitted" in text or "[errno 1]" in text,
+        "socket" in text or "sock" in text or "get_open_ports" in text or ".bind(" in text,
+    )
+
+
+def scan_run_log(log_path: Path, cwd: Path) -> Tuple[Optional[Path], bool]:
+    result_dir = None
+    permission_error = False
+    operation_denied = False
+    socket_context = False
+    try:
+        with log_path.open("r", encoding="utf-8", errors="replace") as log_file:
+            for line in log_file:
+                if result_dir is None:
+                    result_dir = extract_result_dir(line, cwd)
+                signals = sandbox_socket_failure_signals(line)
+                permission_error = permission_error or signals[0]
+                operation_denied = operation_denied or signals[1]
+                socket_context = socket_context or signals[2]
+    except OSError:
+        return None, False
+    return result_dir, permission_error and operation_denied and socket_context
 
 
 def objective_contract(config: Dict[str, Any], requested_metric: Optional[str]) -> Dict[str, Any]:
@@ -1202,12 +1265,7 @@ def metric_search_description(artifact_root: Path, metrics: Sequence[str] | str)
 
 
 def is_sandbox_socket_failure(output: str) -> bool:
-    text = output.lower()
-    return (
-        "permissionerror" in text
-        and ("operation not permitted" in text or "[errno 1]" in text)
-        and ("socket" in text or "sock" in text or "get_open_ports" in text or ".bind(" in text)
-    )
+    return all(sandbox_socket_failure_signals(output))
 
 
 def is_nvflare_simulator_stall(output: str) -> bool:
@@ -1231,19 +1289,9 @@ def collect_artifacts(result_dir: Optional[Path], output_root: Path, name: str, 
 def job_help(python: str, job: Path, cwd: Path, timeout: int = DEFAULT_JOB_HELP_TIMEOUT) -> str:
     del python, cwd, timeout
     try:
-        tree = ast.parse(job.read_text(encoding="utf-8"), filename=str(job))
-    except (OSError, SyntaxError) as e:
+        flags = load_job_importer().inspect_job_cli_flags(str(job))
+    except (OSError, ValueError) as e:
         raise RuntimeError(f"cannot inspect job CLI flags in {job}: {e}") from e
-    flags = set()
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
-            continue
-        if node.func.attr != "add_argument":
-            continue
-        for argument in node.args:
-            if isinstance(argument, ast.Constant) and isinstance(argument.value, str):
-                if argument.value.startswith("--"):
-                    flags.add(argument.value)
     return " ".join(sorted(flags))
 
 
@@ -1713,50 +1761,51 @@ def expected_simulator_roots(
 
 
 @contextmanager
-def locked_simulator_roots(roots: Sequence[Path]) -> Iterator[None]:
-    lock_paths = []
+def locked_campaign_workspace(workspace: Path, action: str) -> Iterator[None]:
+    """Serialize lifecycle actions that share source, ledgers, and campaign state."""
+
+    lock_path = workspace / CAMPAIGN_LOCK_PATH
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    fallback = fcntl is None
+    descriptor = None
+    acquired = False
+    fallback_created = False
     try:
-        for root in sorted(set(roots), key=str):
-            root.parent.mkdir(parents=True, exist_ok=True)
-            lock_path = root.parent / f".{root.name}.autofl.lock"
+        if fallback:
             try:
                 descriptor = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+                acquired = True
+                fallback_created = True
             except FileExistsError as e:
                 raise RuntimeError(
-                    f"simulator result root is already in use: {root}; "
-                    f"wait for the other campaign or remove the stale lock {lock_path}"
+                    f"Auto-FL campaign workspace is already in use: {workspace}; "
+                    "wait for the active lifecycle action to finish, then retry"
                 ) from e
-            lock_paths.append(lock_path)
-            with os.fdopen(descriptor, "w", encoding="utf-8") as lock_file:
-                lock_file.write(json.dumps({"pid": os.getpid(), "workspace": str(Path.cwd().resolve())}) + "\n")
+        else:
+            descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
+            except BlockingIOError as e:
+                raise RuntimeError(
+                    f"Auto-FL campaign workspace is already in use: {workspace}; "
+                    "wait for the active lifecycle action to finish, then retry"
+                ) from e
+            os.ftruncate(descriptor, 0)
+        os.write(
+            descriptor,
+            (json.dumps({"pid": os.getpid(), "action": action, "workspace": str(workspace.resolve())}) + "\n").encode(
+                "utf-8"
+            ),
+        )
         yield
     finally:
-        for lock_path in reversed(lock_paths):
+        if descriptor is not None:
+            if not fallback and acquired:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+            os.close(descriptor)
+        if fallback_created:
             lock_path.unlink(missing_ok=True)
-
-
-@contextmanager
-def locked_simulator_workspace(simulator_base: Path, *, exclusive: bool) -> Iterator[None]:
-    """Coordinate unknown result roots with named jobs in the same simulator workspace."""
-
-    if fcntl is None:
-        yield
-        return
-    simulator_base.mkdir(parents=True, exist_ok=True)
-    lock_path = simulator_base / ".autofl-workspace.lock"
-    descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
-    operation = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
-    try:
-        try:
-            fcntl.flock(descriptor, operation | fcntl.LOCK_NB)
-        except BlockingIOError as e:
-            mode = "unnamed" if exclusive else "named"
-            raise RuntimeError(
-                f"simulator workspace is already in use by a conflicting {mode} campaign: {simulator_base}"
-            ) from e
-        yield
-    finally:
-        os.close(descriptor)
 
 
 def validated_printed_simulator_root(result_dir: Optional[Path], simulator_base: Path) -> Optional[Path]:
@@ -1812,41 +1861,39 @@ def run_job(
         )
         run_env = os.environ.copy()
         run_env[SIMULATOR_WORKSPACE_ROOT_ENV_VAR] = str(simulator_base)
-        with locked_simulator_workspace(simulator_base, exclusive=not simulator_roots):
-            with locked_simulator_roots(simulator_roots):
-                unnamed_root_snapshot = simulator_root_snapshot(simulator_base) if not simulator_roots else {}
-                rc, stdout, runtime = run(
-                    command,
-                    cwd,
-                    timeout,
-                    log_path,
-                    env=run_env,
-                    simulator_stall_roots=simulator_roots,
-                    simulator_no_progress_timeout=simulator_no_progress_timeout,
-                )
-                run_def.runtime_seconds = runtime
-                printed_result_dir = extract_result_dir(stdout, cwd)
-                existing_roots = [root.resolve() for root in simulator_roots if root.exists()]
-                result_dir = printed_result_dir if printed_result_dir in existing_roots else None
-                injected_root = (simulator_base / run_name).resolve() if name_args else None
-                if result_dir is None and injected_root in existing_roots:
-                    result_dir = injected_root
-                if result_dir is None and len(existing_roots) == 1:
-                    result_dir = existing_roots[0]
-                if result_dir is None and not simulator_roots:
-                    result_dir = validated_printed_simulator_root(printed_result_dir, simulator_base)
-                    if result_dir is None:
-                        changed_roots = changed_simulator_roots(simulator_base, unnamed_root_snapshot)
-                        if len(changed_roots) == 1:
-                            result_dir = changed_roots[0]
-                    if result_dir is not None:
-                        config.setdefault("artifacts", {})["simulator_result_name"] = result_dir.name
-                artifact_dir = collect_artifacts(result_dir, output_root, run_def.name, log_path)
+        unnamed_root_snapshot = simulator_root_snapshot(simulator_base) if not simulator_roots else {}
+        rc, stdout, runtime = run(
+            command,
+            cwd,
+            timeout,
+            log_path,
+            env=run_env,
+            simulator_stall_roots=simulator_roots,
+            simulator_no_progress_timeout=simulator_no_progress_timeout,
+        )
+        run_def.runtime_seconds = runtime
+        printed_result_dir, sandbox_socket_failure = scan_run_log(log_path, cwd)
+        existing_roots = [root.resolve() for root in simulator_roots if root.exists()]
+        result_dir = printed_result_dir if printed_result_dir in existing_roots else None
+        injected_root = (simulator_base / run_name).resolve() if name_args else None
+        if result_dir is None and injected_root in existing_roots:
+            result_dir = injected_root
+        if result_dir is None and len(existing_roots) == 1:
+            result_dir = existing_roots[0]
+        if result_dir is None and not simulator_roots:
+            result_dir = validated_printed_simulator_root(printed_result_dir, simulator_base)
+            if result_dir is None:
+                changed_roots = changed_simulator_roots(simulator_base, unnamed_root_snapshot)
+                if len(changed_roots) == 1:
+                    result_dir = changed_roots[0]
+            if result_dir is not None:
+                config.setdefault("artifacts", {})["simulator_result_name"] = result_dir.name
+        artifact_dir = collect_artifacts(result_dir, output_root, run_def.name, log_path)
     run_def.artifacts = str(artifact_dir)
 
     evidence = None
     if rc != 0:
-        if is_sandbox_socket_failure(stdout):
+        if sandbox_socket_failure:
             run_def.status = INFRASTRUCTURE_RETRY
             run_def.failure_reason = "sandbox/socket permission failure; rerun runner with escalated execution"
         elif is_nvflare_simulator_stall(stdout):
@@ -2363,7 +2410,7 @@ def campaign_admission_errors(config: Dict[str, Any]) -> List[str]:
         critical_fields = []
         for item in unresolved:
             field = item.get("field", "") if isinstance(item, dict) else ""
-            if field.startswith("budget.fixed_training_budget"):
+            if field == "objective.metric" or field.startswith("budget.fixed_training_budget"):
                 critical_fields.append(field)
         if critical_fields:
             errors.append(f"safety-critical fields are unresolved: {', '.join(sorted(set(critical_fields)))}")
@@ -2584,6 +2631,7 @@ def prepare_candidate(args: argparse.Namespace, job: Path) -> int:
     workspace = job.parent
     metadata = load_campaign_metadata(workspace, job)
     restore_campaign_settings(args, metadata)
+    ensure_campaign_not_stopped(workspace, args, action="prepare a candidate")
     paths = campaign_paths(args, job)
     records = load_results(paths["results"])
     if not any(record.status == "baseline" and record.score is not None for record in records):
@@ -2847,6 +2895,7 @@ def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
     workspace = job.parent
     metadata = load_campaign_metadata(workspace, job)
     restore_campaign_settings(args, metadata)
+    ensure_campaign_not_stopped(workspace, args, action="evaluate a candidate")
     paths = campaign_paths(args, job)
     manifest_path = Path(args.manifest).resolve() if args.manifest else None
     if manifest_path is None:
@@ -3242,6 +3291,10 @@ def validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--plateau-min-delta must be non-negative")
     if args.hard_crash_threshold < 0:
         raise ValueError("--hard-crash-threshold must be non-negative")
+    if args.exploration_batch_size < 0:
+        raise ValueError("--exploration-batch-size must be non-negative")
+    if args.family_repeat_limit < 0:
+        raise ValueError("--family-repeat-limit must be non-negative")
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -3260,7 +3313,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             "record": record_external_result,
             "status": show_campaign_status,
         }
-        return actions[args.action](args, job)
+        with locked_campaign_workspace(job.parent, args.action):
+            return actions[args.action](args, job)
     except (OSError, RuntimeError, ValueError) as e:
         print(f"Auto-FL {args.action} failed: {e}", file=sys.stderr)
         return 2

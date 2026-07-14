@@ -802,3 +802,139 @@ def test_import_selects_hello_numpy_cross_val_training_mode():
 def test_import_returns_clean_error_for_missing_job(tmp_path):
     with pytest.raises(job_importer.JobImportError, match="job.py not found"):
         import_job_to_autofl_config(str(tmp_path / "missing.py"), workspace_root=str(tmp_path))
+
+
+def test_conflicting_reachable_argparse_destinations_are_unresolved_until_explicitly_overridden(tmp_path):
+    tmp_path.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+import argparse
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+def define_parser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--num_rounds", dest="num_rounds", type=int, default=1)
+    parser.add_argument("--rounds", dest="num_rounds", type=int, default=2)
+    return parser.parse_args()
+
+
+def main():
+    args = define_parser()
+    recipe = FedAvgRecipe(name="demo", min_clients=2, num_rounds=args.num_rounds, train_script="client.py")
+    recipe.execute(SimEnv(num_clients=2))
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    ambiguous = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+    explicit = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path), job_args=["--rounds", "7"])
+
+    assert any(
+        item["field"] == "budget.fixed_training_budget.num_rounds"
+        and "conflicting argparse definitions" in item["reason"]
+        for item in ambiguous["unresolved"]
+    )
+    assert "num_rounds" not in ambiguous["budget"]["fixed_training_budget"]
+    assert explicit["budget"]["fixed_training_budget"]["num_rounds"] == 7
+    assert not any(item["field"] == "budget.fixed_training_budget.num_rounds" for item in explicit["unresolved"])
+
+
+def test_dynamic_key_metric_uses_documented_fallback_until_explicitly_overridden(tmp_path):
+    tmp_path.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        """
+import argparse
+import os
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+
+def define_parser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--key_metric", default=os.environ.get("METRIC"))
+    return parser.parse_args()
+
+
+def main():
+    args = define_parser()
+    recipe = FedAvgRecipe(
+        name="demo", min_clients=2, num_rounds=1, train_script="client.py", key_metric=args.key_metric
+    )
+    recipe.execute(SimEnv(num_clients=2))
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    fallback = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+    explicit = import_job_to_autofl_config(
+        str(job_path), workspace_root=str(tmp_path), job_args=["--key_metric", "val_auc"]
+    )
+
+    assert fallback["objective"]["metric"] == "accuracy"
+    assert fallback["objective"]["metric_contract_source"] == "default"
+    assert any(item["field"] == "objective.metric" for item in fallback["unresolved"])
+    assert explicit["objective"]["metric"] == "val_auc"
+    assert explicit["objective"]["metric_contract_source"] == "arg:key_metric"
+
+
+def test_train_script_outside_workspace_is_not_admitted_to_trust_contract(tmp_path):
+    outside_script = tmp_path.parent / f"{tmp_path.name}-external-client.py"
+    outside_script.write_text("print('external train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        f"""
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+recipe = FedAvgRecipe(
+    name="demo", min_clients=2, num_rounds=1, train_script="../{outside_script.name}"
+)
+recipe.execute(SimEnv(num_clients=2))
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert "train_script" not in config["job"]
+    assert str(outside_script) not in config["trust_contract"]["allowed_edit_paths"]
+    assert any(item["field"] == "job.train_script" for item in config["unresolved"])
+
+
+@pytest.mark.parametrize(
+    "contents",
+    [b"\xff\xfe", b"def broken(:\n", ("value = " + "(" * 10000 + "1" + ")" * 10000).encode("utf-8")],
+)
+def test_malformed_job_sources_raise_job_import_error(tmp_path, contents):
+    job_path = tmp_path / "job.py"
+    job_path.write_bytes(contents)
+
+    with pytest.raises(job_importer.JobImportError, match="failed to parse"):
+        import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+
+def test_importer_never_executes_job_source(tmp_path):
+    marker = tmp_path / "executed"
+    tmp_path.joinpath("client.py").write_text("print('train')\n", encoding="utf-8")
+    job_path = tmp_path / "job.py"
+    job_path.write_text(
+        f"""
+from pathlib import Path
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+from nvflare.recipe import SimEnv
+
+Path({str(marker)!r}).write_text("executed")
+recipe = FedAvgRecipe(name="demo", min_clients=2, num_rounds=1, train_script="client.py")
+recipe.execute(SimEnv(num_clients=2))
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    config = import_job_to_autofl_config(str(job_path), workspace_root=str(tmp_path))
+
+    assert config["import"]["support"]["status"] == "supported"
+    assert not marker.exists()

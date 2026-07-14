@@ -69,10 +69,10 @@ Treat `job.py`, generated `autofl.yaml`, and optional job-local
 `mutation_schema.yaml` as the campaign inputs — no example-specific runbooks,
 branches, or initialization scripts.
 
-Request escalated execution for the runner command because NVFLARE simulator
-runs create local sockets that fail inside the restricted Codex sandbox. Treat
-a reported sandbox/socket permission failure as an infrastructure retry, not a
-candidate result, and rerun the same command with escalated execution.
+Run helpers with normal permissions. Only when a simulation `initialize` or
+`evaluate` reports the exact `sandbox/socket permission failure` may the agent
+retry that same command with escalated execution. Never escalate unrelated
+permission errors or bypass POC/production authentication or policy.
 
 The helper owns deterministic import, source snapshots, candidate validation,
 execution, restoration, counting, ledger updates, campaign state, plotting,

@@ -19,6 +19,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 RESULT_FIELDS = [
     "status",
     "name",
@@ -84,6 +86,20 @@ def _row(
         "algorithm_family": family,
         "literature_event_id": lit,
     }
+
+
+def test_guard_cli_rejects_negative_safety_thresholds(tmp_path):
+    guard = _load_guard()
+    results = tmp_path / "results.tsv"
+    _write_results(results, [])
+
+    for option in ("--hard-crash-threshold", "--exploration-batch-size", "--family-repeat-limit"):
+        with pytest.raises(ValueError, match="must be non-negative"):
+            guard.main([str(results), option, "-1"])
+
+    for setting in ("hard_crash_threshold", "exploration_batch_size", "family_repeat_limit"):
+        with pytest.raises(ValueError, match="must be non-negative"):
+            guard.guard_state_for_rows([], **{setting: -1})
 
 
 def test_guard_continues_uncapped_before_plateau():

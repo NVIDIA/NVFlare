@@ -13,6 +13,10 @@ uncapped mode, a completed action, current best, plot, report, or exhausted loca
 tunable sweep is a checkpoint only. Execute `next_action` while
 `final_response_allowed=false`.
 
+Only one lifecycle action may own a job workspace at a time. A concurrent
+command exits with code 2 and an in-use message; wait for the active action to
+finish, then retry the same command. Different job workspaces remain independent.
+
 A prepared manifest is pending work. Edit its candidate source and evaluate it,
 or abandon it explicitly; do not silently start another candidate. Invalid
 drafts are product friction to repair and reevaluate, not a reason to terminate
@@ -45,8 +49,10 @@ Common next actions:
   returned candidate source directory.
 - `submit_baseline` or `submit_candidate`: use the standard POC/production job
   lifecycle, then call `record` with its job ID and artifacts.
-- `rerun_with_escalated_execution`: retry the same lifecycle action after
-  repairing runtime permissions; do not count it as a candidate.
+- `rerun_with_escalated_execution`: only after the runner reports the exact
+  simulation `sandbox/socket permission failure`, retry that same lifecycle
+  action with escalation; do not escalate unrelated failures or count the
+  retry as a candidate.
 - `run_literature_loop`: run a short source-backed literature pass and record
   it with `record --literature`; the runner assigns a persistent
   `literature_event_id` (`lit-0001` style) and a non-scored `literature` ledger
@@ -98,7 +104,7 @@ comparison budget qualify equally.
 
 For NVFLARE simulator runs, the server log can be quiet after it dispatches a
 round while individual clients are still training. Before declaring a stall,
-inspect the active simulator directory under `/tmp/nvflare/simulation/<run>` and
+inspect the isolated result directory reported in the active `run.log` and
 check `site-*/log.txt` or `site-*/log_fl.txt` for epoch, finished-training,
 download, or task-completion progress. If any client log or server aggregation
 marker advances within the expected candidate runtime, continue the same
