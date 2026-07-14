@@ -395,9 +395,6 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
         if status == ClientStatus.NOT_STARTED:
             return "Client app has not started."
 
-        if status == ClientStatus.STARTING:
-            return "Client app is starting, please wait for client to have started before abort."
-
         self.client_executor.abort_app(job_id)
 
         return "Abort signal has been sent to the client App."
