@@ -70,6 +70,7 @@ class InProcessEnv(ExecEnv):
         self.client = client
         self.server_objects = server_objects
         self.client_objects = client_objects
+        self.per_site_props = None  # Per-site app props, set via CollabRecipe.process_env
         self.max_workers = max_workers
         self.workspace_root = workspace_root
 
@@ -80,6 +81,7 @@ class InProcessEnv(ExecEnv):
         self.training_module = None  # Auto-detected from recipe, not user-facing
 
         self._runner: Optional[InProcessRunner] = None
+        self._job_status: Optional[str] = None
 
     def deploy(self, job: FedJob) -> str:
         """Deploy a FedJob using the InProcessRunner.
@@ -113,6 +115,7 @@ class InProcessEnv(ExecEnv):
             client_objects=self.client_objects,
             max_workers=self.max_workers,
             num_clients=self.num_clients,
+            per_site_props=self.per_site_props,
             # Subprocess options
             inprocess=self.inprocess,
             run_cmd=self.run_cmd,
@@ -123,8 +126,14 @@ class InProcessEnv(ExecEnv):
         print("  → Running simulation...")
         print(f"{'='*60}\n")
 
-        # Run the simulation
-        self._runner.run()
+        # Run the simulation. The run completes synchronously here, so the
+        # final job status is known as soon as deploy() returns.
+        try:
+            self._runner.run()
+            self._job_status = "FINISHED:COMPLETED"
+        except BaseException:
+            self._job_status = "FINISHED:EXECUTION_EXCEPTION"
+            raise
 
         print(f"\n{'='*60}")
         print("  → Simulation completed")
@@ -133,12 +142,8 @@ class InProcessEnv(ExecEnv):
         return experiment_name
 
     def get_job_status(self, job_id: str) -> Optional[str]:
-        """Get job status - not fully supported in Collab simulation environment."""
-        print(
-            f"Note: get_status returns None in Collab InProcessEnv. "
-            f"Logs can be found at {os.path.join(self.workspace_root, job_id)}"
-        )
-        return None
+        """Get the final status of the (synchronously completed) run."""
+        return self._job_status
 
     def abort_job(self, job_id: str) -> None:
         """Abort job - not supported in Collab simulation environment."""

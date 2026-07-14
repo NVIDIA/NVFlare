@@ -19,6 +19,7 @@ from types import ModuleType
 from typing import Dict, List, Optional
 
 from nvflare.collab.api.app import App, ClientApp, ServerApp
+from nvflare.collab.api.constants import PER_SITE_CONFIG_PROP
 from nvflare.collab.api.filter import FilterChain
 from nvflare.collab.api.module_wrapper import ModuleWrapper, get_importable_module_name
 from nvflare.fuel.utils.validation_utils import check_positive_int, check_positive_number, check_str
@@ -114,7 +115,19 @@ class CollabRecipe(Recipe):
 
         job = FedJob(name=self.job_name, min_clients=self.min_clients)
         self._finalized = False
+        self._per_site_config: Dict[str, dict] = {}
         Recipe.__init__(self, job)
+
+    def _apply_per_site_config(self, config: Dict[str, Dict]) -> None:
+        """Deliver per-site config values as per-site client app properties.
+
+        The values become app props for the matching site only, readable in
+        client code via ``collab.get_app_prop(name)``. Delivery is handled by
+        each execution path: the in-process runner applies them when creating
+        each site's app, and CollabExecutor applies its own site's entries at
+        start-run in FLARE deployments.
+        """
+        self._per_site_config = {site: dict(values) for site, values in config.items()}
 
     def _detect_training_module(self, client_obj) -> Optional[str]:
         """Detect the importable training module used by a subprocess worker."""
@@ -156,6 +169,9 @@ class CollabRecipe(Recipe):
         for attr in ("inprocess", "run_cmd", "training_module", "subprocess_timeout"):
             if hasattr(env, attr):
                 setattr(env, attr, getattr(self, attr))
+
+        if self._per_site_config and hasattr(env, "per_site_props") and getattr(env, "per_site_props") is None:
+            env.per_site_props = self._per_site_config
 
     def set_server_prop(self, name: str, value):
         self.server_app.set_prop(name, value)
@@ -236,7 +252,7 @@ class CollabRecipe(Recipe):
             incoming_result_filters=c_in_rf_arg,
             outgoing_result_filters=c_out_rf_arg,
             max_call_threads=self.max_call_threads_for_client,
-            props=self.client_app.get_props(),
+            props=self._client_props_with_per_site_config(),
             resource_dirs=self.client_app.get_resource_dirs(),
             inprocess=self.inprocess,
             run_cmd=self.run_cmd,
@@ -256,6 +272,17 @@ class CollabRecipe(Recipe):
         for src in self._user_source_files([self.client_app.obj] + list((self.client_objects or {}).values())):
             job.add_file_to_clients(src, app_folder_type="custom")
         return job
+
+    def _client_props_with_per_site_config(self) -> Dict[str, object]:
+        """Client app props for the executor, with per-site config attached.
+
+        The per-site map rides in the shared executor config under a reserved
+        key; each CollabExecutor resolves its own site's entries at start-run.
+        """
+        props = dict(self.client_app.get_props() or {})
+        if self._per_site_config:
+            props[PER_SITE_CONFIG_PROP] = self._per_site_config
+        return props
 
     @staticmethod
     def _user_source_files(objs) -> List[str]:

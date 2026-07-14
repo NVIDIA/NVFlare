@@ -91,7 +91,7 @@ class LocalBackend(Backend):
             raise RuntimeError(f"cannot find collab interface for object {self.target_obj_name}")
 
         func_itf = obj_itf.get(func_name)
-        if not func_itf:
+        if func_itf is None:
             raise RuntimeError(f"cannot find interface for func '{func_name}' of object {self.target_obj_name}")
 
         check_call_args(func_name, func_itf, [], kwargs)

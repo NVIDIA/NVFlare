@@ -33,3 +33,8 @@ class BackendType:
 
 
 MAKE_CLIENT_APP_METHOD = "make_client_app"
+
+
+# Reserved app-prop key carrying the recipe's per-site configuration.
+# Each execution path resolves its own site's entries into plain app props.
+PER_SITE_CONFIG_PROP = "__per_site_config__"

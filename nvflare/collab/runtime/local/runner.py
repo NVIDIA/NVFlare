@@ -158,6 +158,13 @@ class AppRunner:
         app.name = site_name
         app.set_fqn(fqn)
         app.set_backend_type(BackendType.LOCAL)
+
+        # Apply this site's entries from the recipe's per-site config as app
+        # props (readable via collab.get_app_prop).
+        site_props = self.per_site_props.get(site_name)
+        if site_props:
+            for name, value in site_props.items():
+                app.set_prop(name, value)
         return app
 
     def _prepare_proxies(self, for_app: App, server_app: App, client_apps: dict, backends: dict):
@@ -177,6 +184,7 @@ class AppRunner:
         client_app: ClientApp,
         max_workers: int = 100,
         num_clients: Union[int, Tuple[int, int]] = 2,
+        per_site_props: Optional[Dict[str, dict]] = None,
         # Subprocess execution options (like CollabExecutor)
         inprocess: bool = True,
         run_cmd: Optional[str] = None,
@@ -214,6 +222,7 @@ class AppRunner:
         server_app.set_backend_type(BackendType.LOCAL)
         self.server_app = server_app
         self.client_app = client_app
+        self.per_site_props = per_site_props or {}
         self.thread_executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="collab_call")
 
         # Subprocess options
@@ -513,6 +522,7 @@ class InProcessRunner:
         client_objects: Dict[str, object] = None,
         max_workers: int = 100,
         num_clients: Union[int, Tuple[int, int]] = 2,
+        per_site_props: Optional[Dict[str, dict]] = None,
         # Subprocess execution options
         inprocess: bool = True,
         run_cmd: Optional[str] = None,
@@ -543,6 +553,7 @@ class InProcessRunner:
         self.experiment_name = experiment_name
         self.max_workers = max_workers
         self.num_clients = num_clients
+        self.per_site_props = per_site_props
 
         # Subprocess options
         self.inprocess = inprocess
@@ -605,6 +616,7 @@ class InProcessRunner:
             client_app=self.client_app,
             max_workers=self.max_workers,
             num_clients=self.num_clients,
+            per_site_props=self.per_site_props,
             # Pass subprocess options
             inprocess=self.inprocess,
             run_cmd=self.run_cmd,

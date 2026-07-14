@@ -23,7 +23,7 @@ from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.collab.api.app import ClientApp
-from nvflare.collab.api.constants import MAKE_CLIENT_APP_METHOD, BackendType
+from nvflare.collab.api.constants import MAKE_CLIENT_APP_METHOD, PER_SITE_CONFIG_PROP, BackendType
 from nvflare.collab.api.proxy import Proxy
 from nvflare.collab.utils.decomposers import register_available_decomposers
 from nvflare.collab.runtime.flare_backend import FlareBackend
@@ -114,6 +114,14 @@ class CollabExecutor(Executor, CollabAdaptor):
         err = self.process_config(self.client_app, fl_ctx)
         if err:
             self.system_panic(err, fl_ctx)
+            return
+
+        # Resolve this site's entries from the recipe's per-site config into
+        # plain app props (readable via collab.get_app_prop).
+        per_site = self.client_app.get_prop(PER_SITE_CONFIG_PROP)
+        if per_site:
+            for name, value in (per_site.get(client_name) or {}).items():
+                self.client_app.set_prop(name, value)
 
     def _handle_end_run(self, event_type: str, fl_ctx: FLContext):
         if self._subprocess_launcher:
