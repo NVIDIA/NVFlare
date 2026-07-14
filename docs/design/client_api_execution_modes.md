@@ -2,11 +2,13 @@
 
 ## Status
 
-Proposal / design note. Epic: **FLARE-2698** (Client API and 3rd party integration refactoring, fix version 2.9.0).
+**Status: Approved** — implementation in progress for 2.9. Epic: **FLARE-2698** (Client API and 3rd party integration refactoring, fix version 2.9.0).
 
 Revision 2 (2026-07-01): incorporates review feedback — universal session setup, owner-death and receive-side contracts, forward-path payload lifecycle, cleanup policy definition, receiver-confirmed terminal outcome, per-receiver transfer budgets, configuration surface, attach auth hardening, and a re-sequenced migration plan.
 
 Revision 2.1 (2026-07-06): adds the filters-imply-materializing-hop rule to the payload lifecycle (per-(task,direction) granularity), conversion-filter placement details (site-scope filter ordering, DXO-meta round-trip state, mixed-format cost and bf16 limit, and what selects the regime — `server_expected_format` surviving as a recipe knob), the TensorStream disposition, and a CCWF caveat cross-referencing the materializing-hop rule (a wired conversion filter moves the producer role from the subprocess to the CJ). Claims verified against code.
+
+Revision 2.2 (2026-07-07): status set to Approved. Forward-path heartbeat exemption narrowed to the payload-materialization phase via a new TASK_PAYLOAD_READY control message (heartbeats stay authoritative while user code trains); `launch_once=False` moves to launch-scoped tokens (fresh binding material per launch, invalidated at process stop); explicit mapping between the lifecycle transfer states and the F3 `TransferOutcome` vocabulary; `ClientAPIBackendSpec` classified as internal; Open Questions annotated with their deciding PRs.
 
 ## Background
 
@@ -226,7 +228,9 @@ sequenceDiagram
         C->>E: task
         E->>T: TASK_READY (task_id, FLModel ref)
         T->>E: TASK_ACCEPTED
-        Note over T: pull task payload, then train()
+        Note over T: pull task payload
+        T->>E: TASK_PAYLOAD_READY
+        Note over T: train()
         T-->>E: LOG / HEARTBEAT
         T->>E: RESULT_READY (result_id, transfer_id, manifest)
         E->>T: RESULT_ACCEPTED (control ack, not payload done)
@@ -239,7 +243,10 @@ sequenceDiagram
 ```
 
 Sequence — `launch_once=False`. A fresh process per task; the HELLO handshake repeats
-each round (the job-scoped launch token is reused). The key difference: the per-task
+each round with fresh binding material — the CJ regenerates the launch token in the
+bootstrap config it already writes per launch, and stopping the previous process
+invalidates its token, so a stale process that survived termination cannot
+authenticate against a later launch (the token is launch-scoped, not job-scoped). The key difference: the per-task
 process stop **waits for the terminal transfer outcome** before killing the process —
 this is what replaces the legacy `download_complete_timeout` deferred stop:
 
@@ -250,8 +257,8 @@ sequenceDiagram
     participant T as Trainer
     loop each task
         C->>E: task
-        E->>T: write config + Popen(...) [new process]
-        Note over T: flare.init() (job-scoped token reused)
+        E->>T: write config (fresh launch token) + Popen(...) [new process]
+        Note over T: flare.init() (per-launch token)
         T->>E: HELLO (launch token)
         E->>T: HELLO_ACCEPTED (fresh session)
         E->>T: TASK_READY (task_id, FLModel ref)
@@ -260,7 +267,7 @@ sequenceDiagram
         Note over E,T: WAIT_TRANSFER_COMPLETE (hold process until terminal)
         E->>C: result
         E->>T: SHUTDOWN
-        Note over E,T: stop THIS process group,<br/>next task launches a new process
+        Note over E,T: stop THIS process group and invalidate its token,<br/>next task launches a new process
     end
 ```
 
@@ -307,6 +314,7 @@ sequenceDiagram
     C->>E: task
     E->>T: TASK_READY (task_id, FLModel ref)
     T->>E: TASK_ACCEPTED
+    T->>E: TASK_PAYLOAD_READY (payload pulled)
     T-->>E: LOG / HEARTBEAT (session lease)
     Note over T: train()
     T->>E: RESULT_READY (result_id, transfer_id, manifest)
@@ -410,7 +418,9 @@ subprocess behavior.)
 ```
 CJ -> trainer : TASK_READY     (task id, task name, FLModel ref, params)
 trainer -> CJ : TASK_ACCEPTED
-...trainer pulls task payload, trains...
+...trainer pulls task payload...
+trainer -> CJ : TASK_PAYLOAD_READY (task id — payload materialized or lazily held, training begins)
+...trainer trains (heartbeats continue autonomously)...
 trainer -> CJ : TASK_FAILED    (task id, reason — e.g. task payload download failed)   [failure path]
 trainer -> CJ : RESULT_READY   (result_id, transfer_id, manifest)
 CJ -> trainer : RESULT_ACCEPTED (or RESULT_REJECTED)
@@ -460,7 +470,7 @@ TASK_ACCEPTED acknowledges control receipt of the task message only — it does 
 - In external_process the executor has two liveness signals: process exit (waitpid on the process tree it owns) and heartbeat. Process exit is authoritative for "trainer is gone"; heartbeat covers a live-but-wedged trainer.
 - In attach the heartbeat lease is the only liveness signal the executor has.
 - **Precedence rule for transfers (result path):** active data-plane transfer progress counts as session liveness. While a session has an in-flight result transfer (WAIT_PAYLOAD_ACQUIRED/WAIT_TRANSFER_COMPLETE), the session lease does not expire on missed control heartbeats alone; the transfer's own idle/progress policy (shared F3 layer) governs, and only transfer failure/timeout or an explicit abort ends the session. This resolves the otherwise-contradictory pair "heartbeat timeout invalidates the session" vs "the executor must not revoke the session before terminal payload state" — and heartbeat false-positives during multi-GB result uploads are one failure class this design removes. (The legacy stack solved this with a dedicated STREAM_PROGRESS topic feeding transfer waits, deliberately separate from peer liveness; the same separation is preserved here, just owned by the shared transfer layer.)
-- **Precedence rule for the forward (task-delivery) path:** the same false-positive class exists in the *other* direction and needs its own rule, because the CJ cannot see forward bytes. When TASK_READY carries a lazy ref to a multi-GB global model, the control rank pulls those bytes **directly from the producer** (server job process); the CJ that owns the session/heartbeat lease is only a relay and observes no forward transfer (the producer's progress callback fires at the server, not the CJ). A control rank busy materializing 5 GB inside `flare.receive()` therefore has no in-flight-transfer signal to feed the rule above. Rule: **the CJ must not revoke the session on control-heartbeat timeout while a TASK_ACCEPTED is outstanding** — an accepted-but-not-yet-completed task means the trainer is legitimately working (materializing the payload and/or training), and forward materialization is bounded by the trainer-local pull policy (the shared F3 idle/timeout on the trainer→producer transfer), not by the control heartbeat. This is the forward analog of the result-path rule and closes the same 5GB-materialization false-positive that `progress_aware_streaming.md` documents on `task_payload_download`.
+- **Precedence rule for the forward (task-delivery) path:** the same false-positive class exists in the *other* direction and needs its own rule, because the CJ cannot see forward bytes. When TASK_READY carries a lazy ref to a multi-GB global model, the control rank pulls those bytes **directly from the producer** (server job process); the CJ that owns the session/heartbeat lease is only a relay and observes no forward transfer (the producer's progress callback fires at the server, not the CJ). A control rank busy materializing 5 GB inside `flare.receive()` therefore has no in-flight-transfer signal to feed the rule above. Rule: **the CJ must not revoke the session on control-heartbeat timeout during the payload-materialization phase — from TASK_ACCEPTED until the trainer sends TASK_PAYLOAD_READY (or TASK_FAILED)** — because materialization is bounded by the trainer-local pull policy (the shared F3 idle/timeout on the trainer→producer transfer), not by the control heartbeat; the CJ additionally bounds the phase with a materialization deadline derived as an envelope over that pull policy, so a trainer that dies mid-pull without emitting TASK_FAILED still fails the task instead of holding the session open. The exemption ends at TASK_PAYLOAD_READY: **while user code trains, heartbeats stay authoritative** — the trainer engine's heartbeat thread runs autonomously alongside training (the same autonomy the send path guarantees above), so a healthy trainer keeps its lease through arbitrarily long training and a wedged or dead one is detected at the normal heartbeat timeout rather than at the task timeout. This matters most in attach, where the heartbeat lease is the only liveness signal. This is the forward analog of the result-path rule and closes the same 5GB-materialization false-positive that `progress_aware_streaming.md` documents on `task_payload_download` — without disabling liveness for the (much longer) training phase.
 
 #### CJ Failure (Owner Death)
 
@@ -491,9 +501,12 @@ For Cell/FOBS-backed streaming, the Client API backend should set:
 
 - `MessageHeaderKey.MSG_ROOT_ID = transfer_id`
 - `MessageHeaderKey.MSG_ROOT_TTL = transfer_timeout`
-- DownloadService `tx_id = transfer_id` when a single transaction is used
+- DownloadService transaction ids are **attempt-scoped and never reused** (duplicate
+  registration raises): each attempt gets a fresh `download_tx_id`, and the manifest
+  carries the `transfer_id -> download_tx_id/download_ref_id` mapping. `transfer_id`
+  is the stable cross-attempt identity and never doubles as an F3 transaction id.
 
-If multiple DownloadService transactions are needed, the manifest must carry the mapping from transfer_id to all download_tx_id and download_ref_id values.
+The manifest must carry the mapping from transfer_id to all download_tx_id and download_ref_id values (one or many transactions alike).
 
 **Result send state machine.** The happy path runs down the left; any state can branch to a terminal failure on the right. The producer (trainer) is held alive until a terminal state is reached.
 
@@ -512,7 +525,7 @@ DONE_CLEANUP_ALLOWED [terminal — producer may exit and free payload]
 ABORT at any state ────────────────────────────────► ABORTED [terminal]
 ```
 
-**Terminal states are DONE_CLEANUP_ALLOWED (success), TRANSFER_FAILED, RESULT_REJECTED, and ABORTED.** (TRANSFER_COMPLETE / TRANSFER_FAILED are the transfer-layer outcomes the machine consumes; TRANSFER_COMPLETE moves the machine to DONE_CLEANUP_ALLOWED. Earlier drafts used the two vocabularies interchangeably; they are now distinct.) RESULT_ACCEPTED is reached well before cleanup is allowed — that gap is the whole point: an accepted control message is not a completed payload transfer.
+**Terminal states are DONE_CLEANUP_ALLOWED (success), TRANSFER_FAILED, RESULT_REJECTED, and ABORTED.** (TRANSFER_COMPLETE / TRANSFER_FAILED are the transfer-layer outcomes the machine consumes; TRANSFER_COMPLETE moves the machine to DONE_CLEANUP_ALLOWED. Earlier drafts used the two vocabularies interchangeably; they are now distinct.) The transfer layer itself reports a third, F3-native vocabulary: the aggregate `TransferOutcome.status` values COMPLETED / FAILED / ABORTED (`transfer_outcome.py`, reusing the TransferProgressState terminal set). The mapping at that boundary is fixed and total: TRANSFER_COMPLETE ⇔ COMPLETED; TRANSFER_FAILED ⇔ FAILED **or** ABORTED (the raw `done_status` and `reason` ride along for diagnostics, but the lifecycle machine does not branch on them). Receiver truth is applied *before* the mapping: a transaction deleted by routine cleanup after every expected receiver succeeded resolves COMPLETED, not ABORTED. RESULT_ACCEPTED is reached well before cleanup is allowed — that gap is the whole point: an accepted control message is not a completed payload transfer.
 
 Logical ownership:
 
@@ -538,6 +551,7 @@ The producer-facing wait is then an awaitable facade over those signals: `flare.
 - The executor must treat duplicate RESULT_READY messages as idempotent.
 - If the result was already accepted, reply with the current state rather than creating a second result or second transfer.
 - Payload download retries happen inside the data-plane mechanism and must not create a new result_id.
+- A re-offered payload transfer (transfer-level retry) is a NEW DownloadService transaction under the same transfer_id; F3 tx_ids are attempt-scoped and are never reused across attempts.
 - TASK_READY redelivery is idempotent by task id (see Control Protocol).
 
 **Failure and timeout rules:**
@@ -576,6 +590,7 @@ The forward direction — global model from server/CJ to the trainer — is wher
 - **TASK_READY is control-only.** It carries the task metadata and FLModel lazy refs; TASK_ACCEPTED acknowledges the control message, before any payload materialization — the same "accepted ≠ transferred" caveat as RESULT_ACCEPTED.
 - **The trainer's pull is governed by the same shared transfer policy.** `flare.receive()` materializes (or lazily holds) the model by pulling through the shared F3 path; idle/progress/timeout policy is the shared layer's, and the upstream producer (CJ relay or server job process) is held to the same producer-liveness rule — its refs stay alive until the trainer's pull reaches a terminal state.
 - **Trainer-side download failure is explicit.** If the task payload pull fails or times out, the trainer backend sends TASK_FAILED with the task id and reason; the executor fails or retries the task at the workflow's discretion. There is no silent hang and no ambiguous half-delivered task.
+- **Materialization completion is explicit.** When `flare.receive()` hands the task to user code (payload materialized, or lazily held), the trainer backend sends TASK_PAYLOAD_READY with the task id. TASK_PAYLOAD_READY or TASK_FAILED ends the payload-materialization phase — and with it the forward-path heartbeat exemption (see Heartbeat and Liveness); from that point the session lease is governed by heartbeats as normal while user code trains.
 - **No blind resend.** The CJ does not resend TASK_READY on a timer while the session is alive (Cell request/reply plus TASK_READY idempotency replace the Pipe resend loop that caused duplicate-delivery races).
 
 Relationship to `progress_aware_streaming.md`: that design's Phase-1 wait policies are hosted today in TaskExchanger (CJ-side forward waits) and FlareAgent (trainer-side reverse waits) over an internal Pipe topic — exactly the components this design retires. The progress-tracking substrate it defines (per-transfer progress in the shared F3 layer) is the part that survives and is what the waits here consume; the Pipe-topic delivery and TaskExchanger/FlareAgent wait owners die with the legacy stack. The forward-path contract above is the re-homed replacement: readiness comes from HELLO, delivery from Cell request/reply, and materialization waits from the shared transfer layer instead of resend suppression.
@@ -733,6 +748,8 @@ silently dropped. `task_script_path`/`task_script_args` (the in_process trainer
 entry point), the task-name mapping, and the memory knobs are carried forward from
 today's InProcessClientAPIExecutor/ScriptRunner so existing jobs map without loss.
 
+**`ClientAPIBackendSpec` is internal.** The mode backends behind the executor implement a single `ClientAPIBackendSpec` interface (in `client_api_executor.py`). Its surface is frozen early so the mode backends can be built in parallel, but it is an internal extension interface, not public API in 2.9: users select and configure modes only through the ClientAPIExecutor/ScriptRunner arguments above, and no third-party backend registration point is exposed (see the rejected general Client API Launcher under Alternatives Considered).
+
 **No parameter converters on the executor (per FLARE-2698).** The `params_exchange_format`,
 `params_transfer_type`, `server_expected_format`, and `from/to_nvflare_converter_id` arguments
 of the legacy executors are intentionally absent. Conversion between the framework-agnostic
@@ -811,7 +828,7 @@ One executor component, no pipes, no launcher, no MetricRelay: LOG messages arri
 
 ### Observability
 
-Each session exposes its lifecycle state for operators: session state (waiting HELLO / idle / task active / waiting transfer), current task_id/result_id/transfer_id, per-receiver transfer progress (from the shared layer's progress events), and last heartbeat. These surface through the standard job stats/log channels (CJ logs at state transitions with the ids above; stats pollable via the existing cell/job info mechanisms), so "why is this producer still alive" and "which receiver is stalled" are answerable from the site without a debugger.
+Each session exposes its lifecycle state for operators: session state (waiting HELLO / idle / task materializing / task active / waiting transfer), current task_id/result_id/transfer_id, per-receiver transfer progress (from the shared layer's progress events), and last heartbeat. These surface through the standard job stats/log channels (CJ logs at state transitions with the ids above; stats pollable via the existing cell/job info mechanisms), so "why is this producer still alive" and "which receiver is stalled" are answerable from the site without a debugger.
 
 ## Scenario Coverage
 
@@ -924,7 +941,7 @@ These three are not the same moment — they fire at different workflow stages �
 Two CCWF-specific policies still need to be set (not new transport):
 
 - **Fan-out (broadcast/CSE).** The producer stays alive until all N receivers pull; a stuck or dead receiver must not pin it forever. This is enforced with the per-receiver budgets above: each receiver stage gets a workflow-supplied expected-pull window, a receiver that exhausts its budget is marked failed for the aggregate outcome, and the workflow decides whether a partial fan-out (N-1 of N) is a usable result or a task failure. The transaction TTL is the envelope over the stage windows, plus a defined abort path.
-- **Disk offload.** Two distinct artifacts must not be conflated. The **producer** serves tensors from its in-memory source (a DownloadService ref, no producer-side disk file); that source is released only on the normalized terminal outcome, which is what keeps the subprocess alive long enough. The **receiver's** offloaded copy (e.g. safetensors written by the receiving side's FOBS decode) is the receiver's own storage, on its own GC lifecycle — it is not gated on the producer's outcome. The historical CCWF fragility was the *producer/subprocess* exiting before the peer finished pulling; that is fixed by the terminal-outcome gate on the producer's source. **Hard dependency:** safely re-enabling disk offload in CCWF requires the receiver-confirmed terminal status (Payload Lifecycle refinement #1, plan PR F3-2) — re-enabling on the current *producer-served EOF* outcome would reintroduce silent truncation (a receiver whose disk write fails after its last pull is invisible to the producer). This is a hard prerequisite, not merely "requires validation."
+- **Disk offload.** Two distinct artifacts must not be conflated. The **producer** serves tensors from its in-memory source (a DownloadService ref, no producer-side disk file); that source is released only on the normalized terminal outcome, which is what keeps the subprocess alive long enough. The **receiver's** offloaded copy (e.g. safetensors written by the receiving side's FOBS decode) is the receiver's own storage, on its own GC lifecycle — it is not gated on the producer's outcome. The historical CCWF fragility was the *producer/subprocess* exiting before the peer finished pulling; that is fixed by the terminal-outcome gate on the producer's source. **Hard dependency:** safely re-enabling disk offload in CCWF requires the receiver-confirmed terminal status (Payload Lifecycle refinement #1 — the receiver-confirmed completion wire change) — re-enabling on the current *producer-served EOF* outcome would reintroduce silent truncation (a receiver whose disk write fails after its last pull is invisible to the producer). This is a hard prerequisite, not merely "requires validation."
 
 ## Alternatives Considered
 
@@ -1020,12 +1037,13 @@ Core external_process and rank contract (steps 3–4):
 
 Session and failure contracts (steps 3–4):
 
-- external_process: a HELLO carrying a wrong/stale launch token is rejected (HELLO_REJECTED) and a stale trainer from a previous run cannot bind; attach: a bad token proof fails at HELLO_PROOF (see the attach auth tests)
+- external_process: a HELLO carrying a wrong/stale launch token is rejected (HELLO_REJECTED) and a stale trainer from a previous run cannot bind (under `launch_once=False`, the previous launch's token is invalidated at process stop, so a surviving per-task process cannot bind to the next launch); attach: a bad token proof fails at HELLO_PROOF (see the attach auth tests)
 - HELLO with a mismatched protocol version fails fast with a clear error
 - duplicate TASK_READY delivery does not double-deliver the task to user code
 - trainer-side task payload download failure produces TASK_FAILED, not a hang
 - CJ kill (SIGKILL) leads to trainer process-group self-termination within the grace period; CP reaping covers a disabled trainer-side grace
 - heartbeat loss during an active multi-GB transfer does not revoke the session while the transfer is progressing; transfer failure/timeout does
+- heartbeat loss during payload materialization (TASK_ACCEPTED outstanding, TASK_PAYLOAD_READY not yet sent) does not revoke the session; sustained heartbeat loss after TASK_PAYLOAD_READY, while user code trains, does
 - `flare.receive()` returns None on SHUTDOWN/job end; raises the session exception on ABORT and on session loss
 
 Payload lifecycle (steps 2, 4):
@@ -1050,11 +1068,13 @@ CCWF (step 6):
 
 ### Open Questions
 
-- Exact public argument names and migration aliases.
-- Scheduler batch helper library vs. standard wrapper component.
-- Exact factoring of shared code with IPCAgent/IPCExchanger.
-- Compatibility flag for selecting the legacy Pipe path during migration.
-- Whether partial fan-out (N-1 of N receivers succeeded) should be surfaceable to CCWF workflows as a usable result or always a task failure.
+Each open question is tracked to the work item that decides it; none blocks the interface freezes already landed.
+
+- Exact public argument names and migration aliases — decided at the `ClientAPIExecutor` interface freeze (the frozen constructor is the decision record) and the ScriptRunner `execution_mode` wiring.
+- Scheduler batch helper library vs. standard wrapper component — deferred to Migration Plan step 7 (Future Enhancements); not 2.9-blocking.
+- Exact factoring of shared code with IPCAgent/IPCExchanger — decided during the trainer-engine work, where the shared session/receive machinery gets its final home.
+- Compatibility flag for selecting the legacy Pipe path during migration — decided with the in_process/external_process backend wiring: whether legacy selection stays purely class-name-based (per the Compatibility section's keep-legacy story) or also gets an explicit flag.
+- Whether partial fan-out (N-1 of N receivers succeeded) is surfaceable to CCWF workflows as a usable result or always a task failure — decided by the per-receiver budget work's quorum surface (`min_receivers` / `quorum_met`: `completed` stays the strict all-receivers certificate) and surfaced to workflows in the CCWF refactor.
 
 ## Migration Plan
 
