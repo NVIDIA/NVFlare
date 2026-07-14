@@ -53,7 +53,9 @@ _STATUS_DISPLAY = {
 
 
 def _to_float(value) -> Optional[float]:
-    if value is None or isinstance(value, (dict, list, set, tuple)):
+    # bool is excluded: telemetry fields are measurements, and coercing True to 1.0 would
+    # fabricate plausible-looking samples out of malformed input
+    if value is None or isinstance(value, (bool, dict, list, set, tuple)):
         return None
     try:
         result = float(value)
@@ -150,10 +152,50 @@ def _sanitize_telemetry(value) -> dict:
             v = _to_float(resources.get(key))
             if v is not None:
                 clean[key] = v
+        plugged = resources.get("battery_plugged")
+        if isinstance(plugged, bool):
+            clean["battery_plugged"] = plugged
         telemetry["resources"] = clean
     else:
         telemetry["resources"] = {}
     return telemetry
+
+
+_AGGR_STATS_COUNT_KEYS = (
+    AggregationStatsKey.ACCEPTED_CONTRIBUTIONS,
+    AggregationStatsKey.KEYS_AGGREGATED,
+    AggregationStatsKey.KEYS_SEEN,
+    AggregationStatsKey.FULLY_MATCHED_KEYS,
+    AggregationStatsKey.PARTIALLY_MATCHED_KEYS,
+    AggregationStatsKey.SKIPPED_KEYS,
+)
+
+
+def _sanitize_aggregation_stats(value) -> Optional[dict]:
+    """Validate an AGGREGATION_STATS dict published on the FLContext.
+
+    The prop is an open contract that any (custom) aggregator may publish, so it gets the same
+    treatment as client telemetry: counts are coerced to non-negative ints, contributor names to
+    a list of strings (a bare string becomes a one-element list, not an iterable of characters),
+    and anything malformed is dropped so one bad value cannot corrupt or abort the report.
+    """
+    if not isinstance(value, dict):
+        return None
+    stats = {}
+    round_num = value.get(AggregationStatsKey.ROUND)
+    if isinstance(round_num, (int, str)) and not isinstance(round_num, bool):
+        stats[AggregationStatsKey.ROUND] = round_num
+    contributors = value.get(AggregationStatsKey.CONTRIBUTORS)
+    if isinstance(contributors, str):
+        contributors = [contributors]
+    if isinstance(contributors, (list, tuple, set, frozenset)):
+        stats[AggregationStatsKey.CONTRIBUTORS] = sorted(str(c) for c in contributors)
+    else:
+        stats[AggregationStatsKey.CONTRIBUTORS] = []
+    for key in _AGGR_STATS_COUNT_KEYS:
+        v = _to_float(value.get(key))
+        stats[key] = int(v) if v is not None and v >= 0 else None
+    return stats
 
 
 def _mean_std(values: List[float], precision: int = 1) -> str:
@@ -198,11 +240,30 @@ def _format_table(headers: List[str], rows: List[List[object]]) -> List[str]:
     return lines
 
 
+def _validate_report_filename(filename, arg_name: str):
+    """Reject filenames that would escape the job run directory (fails fast at config time)."""
+    if not isinstance(filename, str) or not filename:
+        raise ValueError(f"{arg_name} must be a non-empty string but got {filename!r}")
+    if os.path.isabs(filename):
+        raise ValueError(f"{arg_name} must be relative to the job run directory but got absolute path '{filename}'")
+    if ".." in filename.split(os.sep) or ".." in filename.split("/"):
+        raise ValueError(f"{arg_name} must not contain '..' components: '{filename}'")
+
+
 def _prepare_output_path(run_dir: str, filename: str) -> str:
-    """Build an output path and ensure a configured relative subdirectory exists."""
-    path = os.path.join(run_dir, filename)
+    """Resolve an output path strictly under the run directory and ensure its subdirectory exists."""
+    root = os.path.realpath(run_dir)
+    path = os.path.realpath(os.path.join(root, filename))
+    if os.path.commonpath([root, path]) != root:
+        raise ValueError(f"report filename '{filename}' must resolve under the job run directory")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     return path
+
+
+class _UnknownSizeError(Exception):
+    """Raised when a payload contains references whose true size cannot be determined."""
+
+    pass
 
 
 def _estimate_size_bytes(obj, seen=None) -> int:
@@ -211,6 +272,10 @@ def _estimate_size_bytes(obj, seen=None) -> int:
     Only containers are memoized (to guard against reference cycles); leaf values are counted on
     every occurrence so that shared immutables (interned ints/strings, [x] * n lists) are not
     collapsed to a single count.
+
+    Raises:
+        _UnknownSizeError: when the payload contains lazy/download references whose size cannot
+            be determined — better to report N/A than a few proxy-object bytes for a real model.
     """
     if obj is None:
         return 0
@@ -241,32 +306,43 @@ def _estimate_size_bytes(obj, seen=None) -> int:
             return int(numel()) * int(element_size())
         except Exception:
             pass
-    size = getattr(obj, "size", None)
-    if isinstance(size, int) and obj.__class__.__name__.endswith(("LazyRef", "DownloadRef")):
-        return size
+    if obj.__class__.__name__.endswith(("LazyRef", "DownloadRef")):
+        size = getattr(obj, "size", None)
+        if isinstance(size, int) and not isinstance(size, bool) and size >= 0:
+            return size
+        # disk-offloaded tensors (_LazyRef) point at a local file; a stat is cheap
+        file_path = getattr(obj, "file_path", None)
+        if isinstance(file_path, str):
+            try:
+                return os.path.getsize(file_path)
+            except OSError:
+                raise _UnknownSizeError()
+        raise _UnknownSizeError()
     try:
         return sys.getsizeof(obj)
     except Exception:
         return 0
 
 
+def _estimate_payload_mb(obj) -> Optional[float]:
+    """Payload size in MB, or None when it cannot be determined (e.g. unresolvable lazy refs)."""
+    try:
+        return _estimate_size_bytes(obj) / _MB
+    except _UnknownSizeError:
+        return None
+
+
 def _round_from_shareable(shareable) -> Optional[object]:
     """Extract the round from a task/result Shareable's header or cookie only.
 
-    Deliberately does NOT fall back to the FLContext CURRENT_ROUND prop: workflows like
-    ScatterAndGather set it sticky, so a later non-round workflow in the same job (e.g.
-    cross-site eval) would otherwise have its tasks attributed to a stale training round.
+    Deliberately does NOT fall back to the FLContext CURRENT_ROUND prop (on either side):
+    workflows like ScatterAndGather set it sticky, so a later non-round workflow in the same
+    job (e.g. cross-site eval) would otherwise have its tasks attributed to a stale round.
     """
     if not isinstance(shareable, Shareable):
         return None
     round_num = shareable.get_header(AppConstants.CURRENT_ROUND, None)
     return shareable.get_cookie(AppConstants.CONTRIBUTION_ROUND, round_num)
-
-
-def _extract_round(fl_ctx: FLContext, shareable: Optional[Shareable] = None):
-    round_num = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
-    from_shareable = _round_from_shareable(shareable)
-    return from_shareable if from_shareable is not None else round_num
 
 
 def _round_sort_key(round_num) -> tuple:
@@ -344,10 +420,11 @@ class _ResourceSampler:
             except Exception:
                 pass
         if self.pynvml:
+            pids = self._process_family_pids()
             gpu_percent = []
             gpu_memory_mb = []
             for handle in self.gpu_handles:
-                utilization, memory_mb = self._sample_process_gpu(handle)
+                utilization, memory_mb = self._sample_process_gpu(handle, pids)
                 if utilization is not None:
                     gpu_percent.append(utilization)
                 if memory_mb is not None:
@@ -358,38 +435,61 @@ class _ResourceSampler:
                 sample["gpu_memory_mb"] = sum(gpu_memory_mb)
         self.samples.append(sample)
 
-    def _sample_process_gpu(self, handle) -> Tuple[Optional[float], Optional[float]]:
-        """Return GPU utilization and memory for this client process on one device.
+    def _process_family_pids(self) -> set:
+        """This process plus its descendants.
+
+        Subprocess-mode training (ScriptRunner/launcher external process — the common Client API
+        setup) does its GPU work in a launched CHILD process, so scoping to os.getpid() alone
+        would miss it entirely.
+        """
+        pids = {os.getpid()}
+        if self.process:
+            try:
+                pids.update(child.pid for child in self.process.children(recursive=True))
+            except Exception:
+                pass
+        return pids
+
+    def _sample_process_gpu(self, handle, pids: set) -> Tuple[Optional[float], Optional[float]]:
+        """Return GPU utilization and memory for this client process family on one device.
 
         NVML's device utilization/memory APIs include unrelated processes. Prefer process
-        utilization/accounting APIs and process lists; if the installed driver does not expose
-        them, leave the metric unavailable instead of mislabeling device-wide activity as the
-        client's usage.
+        utilization/accounting APIs and process lists scoped to this process and its children;
+        if the installed driver does not expose them, leave the metric unavailable instead of
+        mislabeling device-wide activity as the client's usage.
         """
-        pid = os.getpid()
-        utilization = None
+        per_pid_util = {}
         process_util_fn = getattr(self.pynvml, "nvmlDeviceGetProcessUtilization", None)
         if callable(process_util_fn):
             try:
-                samples = [s for s in process_util_fn(handle, 0) if getattr(s, "pid", None) == pid]
-                if samples:
-                    latest = max(samples, key=lambda s: getattr(s, "timeStamp", 0))
-                    value = _to_float(getattr(latest, "smUtil", None))
-                    if value is not None and 0.0 <= value <= 100.0:
-                        utilization = value
+                for s in process_util_fn(handle, 0):
+                    pid = getattr(s, "pid", None)
+                    if pid not in pids:
+                        continue
+                    timestamp = getattr(s, "timeStamp", 0)
+                    value = _to_float(getattr(s, "smUtil", None))
+                    if value is None or not 0.0 <= value <= 100.0:
+                        continue
+                    prev = per_pid_util.get(pid)
+                    if prev is None or timestamp >= prev[0]:
+                        per_pid_util[pid] = (timestamp, value)
             except Exception:
-                pass
-        if utilization is None:
+                per_pid_util = {}
+        if not per_pid_util:
             accounting_fn = getattr(self.pynvml, "nvmlDeviceGetAccountingStats", None)
             if callable(accounting_fn):
-                try:
-                    value = _to_float(getattr(accounting_fn(handle, pid), "gpuUtilization", None))
-                    if value is not None and 0.0 <= value <= 100.0:
-                        utilization = value
-                except Exception:
-                    pass
+                for pid in pids:
+                    try:
+                        value = _to_float(getattr(accounting_fn(handle, pid), "gpuUtilization", None))
+                        if value is not None and 0.0 <= value <= 100.0:
+                            per_pid_util[pid] = (0, value)
+                    except Exception:
+                        continue
+        # utilization of the whole process family on this device (may exceed 100 with
+        # multiple worker processes, like process-level CPU%)
+        utilization = sum(v for _, v in per_pid_util.values()) if per_pid_util else None
 
-        memory_values = []
+        per_pid_memory = {}
         unavailable = getattr(self.pynvml, "NVML_VALUE_NOT_AVAILABLE", None)
         for names in (
             (
@@ -410,19 +510,20 @@ class _ResourceSampler:
                 continue
             try:
                 for process in process_fn(handle):
-                    if getattr(process, "pid", None) != pid:
+                    pid = getattr(process, "pid", None)
+                    if pid not in pids:
                         continue
                     used = getattr(process, "usedGpuMemory", None)
                     if used is None or used == unavailable:
                         continue
                     value = _to_float(used)
                     if value is not None and value >= 0.0:
-                        memory_values.append(value / _MB)
+                        # a process may appear in both the compute and graphics lists
+                        per_pid_memory[pid] = max(per_pid_memory.get(pid, 0.0), value / _MB)
             except Exception:
                 continue
 
-        # A process may appear in both NVML compute and graphics lists for the same device.
-        memory_mb = max(memory_values) if memory_values else None
+        memory_mb = sum(per_pid_memory.values()) if per_pid_memory else None
         return utilization, memory_mb
 
     def stop(self) -> dict:
@@ -453,19 +554,31 @@ class _ResourceSampler:
 
 
 class _RoundRecord:
-    def __init__(self, round_num, start_time: float, workflow: int = 0):
+    def __init__(self, round_num, start_mono: float, workflow: int = 0):
         self.round_num = round_num
         self.workflow = workflow
-        self.start_time = start_time
-        self.end_time: Optional[float] = None
+        # durations come from the monotonic clock (immune to NTP/clock adjustments);
+        # wall-clock timestamps are kept only for display in the JSON report
+        self.start_mono = start_mono
+        self.end_mono: Optional[float] = None
+        self.started_at = time.time()
+        self.ended_at: Optional[float] = None
         self.aggr_stats: Optional[dict] = None
         self.targeted_clients = set()
         self.accepted_clients = set()
         self.rejected_clients = set()
 
+    def close(self, end_mono: float):
+        self.end_mono = end_mono
+        self.ended_at = time.time()
+
+    @property
+    def is_open(self) -> bool:
+        return self.end_mono is None
+
     @property
     def duration(self) -> Optional[float]:
-        return None if self.end_time is None else self.end_time - self.start_time
+        return None if self.end_mono is None else self.end_mono - self.start_mono
 
 
 class _TaskRecord:
@@ -475,8 +588,8 @@ class _TaskRecord:
         task_id: str,
         task_name: str,
         round_num,
-        assigned_at: float,
-        payload_mb: float,
+        assigned_mono: float,
+        payload_mb: Optional[float],
         workflow: int = 0,
     ):
         self.client = client
@@ -484,7 +597,8 @@ class _TaskRecord:
         self.task_name = task_name
         self.round_num = round_num
         self.workflow = workflow
-        self.assigned_at = assigned_at
+        self.assigned_mono = assigned_mono
+        self.assigned_at = time.time()
         self.received_at = None
         self.payload_mb = payload_mb
         self.update_mb = None
@@ -499,13 +613,13 @@ class _TaskRecord:
 
     def complete(self, result: Optional[Shareable], telemetry: dict):
         self.received_at = time.time()
-        self.server_elapsed_time = self.received_at - self.assigned_at
+        self.server_elapsed_time = time.monotonic() - self.assigned_mono
         self.client_execution_time = telemetry.get("execution_time")
         self.client_processing_time = telemetry.get("client_processing_time")
         self.client_framework_overhead = telemetry.get("client_framework_overhead")
         self.update_mb = telemetry.get("update_size_mb")
         if self.update_mb is None and isinstance(result, Shareable):
-            self.update_mb = _estimate_size_bytes(result) / _MB
+            self.update_mb = _estimate_payload_mb(result)
         local_processing = self.client_processing_time
         if local_processing is None:
             local_processing = self.client_execution_time
@@ -571,6 +685,11 @@ class JobStatsReporter(Widget):
         super().__init__()
         if resource_sample_interval <= 0:
             raise ValueError("resource_sample_interval must be greater than 0")
+        _validate_report_filename(filename, "filename")
+        if json_filename is not None:
+            _validate_report_filename(json_filename, "json_filename")
+        if error_filename is not None:
+            _validate_report_filename(error_filename, "error_filename")
         self._filename = filename
         self._json_filename = json_filename
         self._error_filename = error_filename
@@ -582,6 +701,8 @@ class JobStatsReporter(Widget):
     def _reset(self):
         self._job_start_time = None
         self._job_end_time = None
+        self._job_start_mono = None
+        self._job_end_mono = None
         self._process_type = None
         self._is_client = False
         self._all_clients = set()
@@ -659,6 +780,7 @@ class JobStatsReporter(Widget):
         with self._lock:
             self._reset()
             self._job_start_time = time.time()
+            self._job_start_mono = time.monotonic()
             self._process_type = fl_ctx.get_prop(FLContextKey.PROCESS_TYPE)
             self._is_client = self._process_type in (ProcessType.CLIENT_PARENT, ProcessType.CLIENT_JOB)
             if not self._is_client:
@@ -676,9 +798,9 @@ class JobStatsReporter(Widget):
         task_data = fl_ctx.get_prop(FLContextKey.TASK_DATA)
         entry = {
             "task_name": fl_ctx.get_prop(FLContextKey.TASK_NAME),
-            "round": _extract_round(fl_ctx, task_data),
-            "processing_start_time": time.time(),
-            "input_size_mb": _estimate_size_bytes(task_data) / _MB,
+            "round": _round_from_shareable(task_data),
+            "processing_start_time": time.monotonic(),
+            "input_size_mb": _estimate_payload_mb(task_data),
             "sampler": None,
         }
         with self._lock:
@@ -693,16 +815,16 @@ class JobStatsReporter(Widget):
         if self._collect_resources:
             sampler = _ResourceSampler(self._resource_sample_interval)
             sampler.start()
-        now = time.time()
+        now = time.monotonic()
         with self._lock:
             info = self._client_task_info.setdefault(task_id, {})
             info.update(
                 {
                     "task_name": fl_ctx.get_prop(FLContextKey.TASK_NAME),
-                    "round": _extract_round(fl_ctx, task_data),
+                    "round": _round_from_shareable(task_data),
                     "processing_start_time": info.get("processing_start_time", now),
                     "execution_start_time": now,
-                    "input_size_mb": _estimate_size_bytes(task_data) / _MB,
+                    "input_size_mb": _estimate_payload_mb(task_data),
                     "sampler": sampler,
                 }
             )
@@ -726,7 +848,7 @@ class JobStatsReporter(Widget):
             telemetry = {
                 "round": info.get("round"),
                 "task_name": info.get("task_name"),
-                "execution_time": time.time() - start_time if start_time is not None else None,
+                "execution_time": time.monotonic() - start_time if start_time is not None else None,
                 "input_size_mb": info.get("input_size_mb"),
                 "resources": resources,
             }
@@ -748,13 +870,15 @@ class JobStatsReporter(Widget):
             info = self._client_task_info.get(task_id, {})
             processing_start = info.get("processing_start_time")
         if processing_start is not None:
-            telemetry["client_processing_time"] = time.time() - processing_start
+            telemetry["client_processing_time"] = time.monotonic() - processing_start
             execution_time = telemetry.get("execution_time")
             if execution_time is not None:
                 telemetry["client_framework_overhead"] = max(0.0, telemetry["client_processing_time"] - execution_time)
         result = fl_ctx.get_prop(FLContextKey.TASK_RESULT)
         if isinstance(result, Shareable):
-            telemetry["update_size_mb"] = _estimate_size_bytes(result) / _MB
+            update_mb = _estimate_payload_mb(result)
+            if update_mb is not None:
+                telemetry["update_size_mb"] = update_mb
             telemetry["return_code"] = result.get_return_code(default=ReturnCode.OK)
             error = result.get_header(ReservedHeaderKey.ERROR)
             if error:
@@ -793,30 +917,30 @@ class JobStatsReporter(Widget):
                 sampler.stop()
 
     def _handle_workflow_change(self):
-        now = time.time()
+        now = time.monotonic()
         with self._lock:
             self._workflow_seq += 1
             for rec in self._rounds.values():
-                if rec.end_time is None:
-                    rec.end_time = now
+                if rec.is_open:
+                    rec.close(now)
 
     def _close_open_rounds(self):
-        now = time.time()
+        now = time.monotonic()
         with self._lock:
             for rec in self._rounds.values():
-                if rec.end_time is None:
-                    rec.end_time = now
+                if rec.is_open:
+                    rec.close(now)
 
     def _handle_round_started(self, fl_ctx: FLContext):
         round_num = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
         if round_num is None:
             return
-        now = time.time()
+        now = time.monotonic()
         with self._lock:
             key = (self._workflow_seq, round_num)
             for rec in self._rounds.values():
-                if rec.end_time is None and (rec.workflow, rec.round_num) != key:
-                    rec.end_time = now
+                if rec.is_open and (rec.workflow, rec.round_num) != key:
+                    rec.close(now)
             if key not in self._rounds:
                 self._rounds[key] = _RoundRecord(round_num, now, workflow=self._workflow_seq)
 
@@ -826,27 +950,29 @@ class JobStatsReporter(Widget):
         with self._lock:
             rec = self._rounds.get((self._workflow_seq, round_num))
             if rec:
-                rec.end_time = time.time()
+                rec.close(time.monotonic())
 
     def _get_or_create_round(self, round_num) -> _RoundRecord:
         key = (self._workflow_seq, round_num)
         rec = self._rounds.get(key)
         if not rec:
-            rec = _RoundRecord(round_num, time.time(), workflow=self._workflow_seq)
+            rec = _RoundRecord(round_num, time.monotonic(), workflow=self._workflow_seq)
             self._rounds[key] = rec
         return rec
 
     def _handle_after_aggregation(self, fl_ctx: FLContext):
-        stats = fl_ctx.get_prop(AppConstants.AGGREGATION_STATS)
+        # sanitize before use: the AGGREGATION_STATS prop may be published by any custom
+        # aggregator, so it is as untrusted as client telemetry
+        stats = _sanitize_aggregation_stats(fl_ctx.get_prop(AppConstants.AGGREGATION_STATS))
         round_num = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
-        if isinstance(stats, dict):
-            round_num = stats.get(AggregationStatsKey.ROUND, round_num)
+        if stats is not None and stats.get(AggregationStatsKey.ROUND) is not None:
+            round_num = stats[AggregationStatsKey.ROUND]
         if round_num is None:
             return
         with self._lock:
             rec = self._get_or_create_round(round_num)
-            rec.end_time = time.time()
-            if isinstance(stats, dict):
+            rec.close(time.monotonic())
+            if stats is not None:
                 self._saw_acceptance_signal = True
                 rec.aggr_stats = stats
                 contributors = stats.get(AggregationStatsKey.CONTRIBUTORS) or []
@@ -891,17 +1017,17 @@ class JobStatsReporter(Widget):
         # Only trust the round carried by the task data itself; the FLContext CURRENT_ROUND
         # prop may be a stale sticky value from an earlier workflow in the same job.
         round_num = _round_from_shareable(task_data)
-        payload_mb = _estimate_size_bytes(task_data) / _MB
+        payload_mb = _estimate_payload_mb(task_data)
         with self._lock:
             if round_num is None and self._rounds:
                 # Some legacy workflows keep the round only on their controller context.
                 # Associate the assignment with the most recently started open round.
-                open_rounds = [rec for rec in self._rounds.values() if rec.end_time is None]
+                open_rounds = [rec for rec in self._rounds.values() if rec.is_open]
                 if open_rounds:
-                    round_num = max(open_rounds, key=lambda rec: rec.start_time).round_num
+                    round_num = max(open_rounds, key=lambda rec: rec.start_mono).round_num
             self._all_clients.add(client_name)
             self._open_tasks[(client_name, task_id)] = _TaskRecord(
-                client_name, task_id, task_name, round_num, time.time(), payload_mb, workflow=self._workflow_seq
+                client_name, task_id, task_name, round_num, time.monotonic(), payload_mb, workflow=self._workflow_seq
             )
             if round_num is not None:
                 self._get_or_create_round(round_num).targeted_clients.add(client_name)
@@ -944,8 +1070,8 @@ class JobStatsReporter(Widget):
                     task_id,
                     fl_ctx.get_prop(FLContextKey.TASK_NAME) or telemetry.get("task_name") or "unknown",
                     round_num,
-                    time.time(),
-                    telemetry.get("input_size_mb") or 0.0,
+                    time.monotonic(),
+                    telemetry.get("input_size_mb"),
                     workflow=self._workflow_seq,
                 )
             self._completed_task_keys.add(task_key)
@@ -961,16 +1087,9 @@ class JobStatsReporter(Widget):
         if client_name:
             with self._lock:
                 self._disconnected_clients.add(client_name)
-                self._error_details.append(
-                    {
-                        "client": client_name,
-                        "round": None,
-                        "task_id": None,
-                        "task_name": None,
-                        "code": "CLIENT_DISCONNECTED",
-                        "message": "client disconnected during the run",
-                    }
-                )
+                # record through _record_error so _client_errors and _error_details stay
+                # symmetric; _handle_reconnect scrubs both when the disconnect was transient
+                self._record_error(client_name, None, "CLIENT_DISCONNECTED", "client disconnected during the run")
 
     def _handle_reconnect(self, fl_ctx: FLContext):
         client_name = fl_ctx.get_prop(FLContextKey.RECONNECTED_CLIENT_NAME)
@@ -993,25 +1112,37 @@ class JobStatsReporter(Widget):
                     self._client_errors.pop(client_name, None)
 
     def _handle_end_run(self, fl_ctx: FLContext):
+        now_mono = time.monotonic()
         with self._lock:
             self._job_end_time = time.time()
+            self._job_end_mono = now_mono
             for rec in self._rounds.values():
-                if rec.end_time is None:
-                    rec.end_time = self._job_end_time
+                if rec.is_open:
+                    rec.close(now_mono)
             for rec in self._open_tasks.values():
                 self._record_error(rec.client, rec, "NO_RESULT", "task assigned but no result was received")
-        summary = self.get_summary(fl_ctx)
-        report = self.format_report(summary)
+        # A bug in summary generation must degrade the report, never lose it entirely.
+        summary = None
+        try:
+            summary = self.get_summary(fl_ctx)
+            report = self.format_report(summary)
+        except Exception as e:
+            self.log_exception(fl_ctx, "job stats summary generation failed", fire_event=False)
+            report = (
+                "NVFLARE Job Stats Run Summary\n\n"
+                f"Report generation failed with an internal error: {type(e).__name__}: {e}\n"
+                "See the server log for the full traceback.\n"
+            )
         run_dir = fl_ctx.get_engine().get_workspace().get_run_dir(fl_ctx.get_job_id())
         os.makedirs(run_dir, exist_ok=True)
         report_path = _prepare_output_path(run_dir, self._filename)
         with open(report_path, "w", encoding="utf-8") as f:
             f.write(report)
-        if self._json_filename:
+        if summary is not None and self._json_filename:
             json_path = _prepare_output_path(run_dir, self._json_filename)
             with open(json_path, "w", encoding="utf-8") as f:
                 json.dump(summary, f, indent=2, default=str)
-        if self._error_filename and summary["errors"]:
+        if summary is not None and self._error_filename and summary["errors"]:
             error_path = _prepare_output_path(run_dir, self._error_filename)
             with open(error_path, "w", encoding="utf-8") as f:
                 f.write(self.format_errors(summary["errors"]))
@@ -1031,11 +1162,14 @@ class JobStatsReporter(Widget):
     def _round_participants(rec: _RoundRecord, completed_by_round: Dict[tuple, set]) -> set:
         """Clients that participated in a round.
 
-        When the round saw acceptance activity (aggregation-based flows), participation means the
-        contribution was accepted. Rounds of workflows that never report acceptance (e.g.
-        relay/cyclic) are measured by tasks completed with an OK result instead.
+        When the round saw per-client acceptance information (accepted or rejected names),
+        participation means the contribution was accepted. Otherwise — relay/cyclic flows that
+        never report acceptance, or aggregators that publish stats without contributor names —
+        participation is measured by tasks completed with an OK result instead. The condition
+        deliberately keys on the NAME sets, not on aggr_stats being present, so a stats dict
+        without contributor names cannot zero out participation for a successful round.
         """
-        if rec.aggr_stats or rec.accepted_clients or rec.rejected_clients:
+        if rec.accepted_clients or rec.rejected_clients:
             return rec.accepted_clients
         return completed_by_round.get((rec.workflow, rec.round_num), set())
 
@@ -1130,7 +1264,8 @@ class JobStatsReporter(Widget):
             (None, "keys_aggregated", "fully_matched_keys", "partially_matched_keys", "skipped_keys")
         ):
             if key:
-                result[key] = _mean_std([float(p[index]) for p in known if p[index] is not None])
+                # _mean_std coerces via _to_float and skips anything non-numeric
+                result[key] = _mean_std([p[index] for p in known])
         return result
 
     def _get_consistency_summary(self, ordered_rounds: List[_RoundRecord]) -> dict:
@@ -1189,8 +1324,22 @@ class JobStatsReporter(Widget):
             if base_name not in totals:
                 continue
             found = True
-            totals[base_name][0] += sum(b.total for bins in pool.cat_bins.values() for b in bins if b)
-            totals[base_name][1] += sum(b.count for bins in pool.cat_bins.values() for b in bins if b)
+            # the cell may still be recording messages (END_RUN acks, heartbeats); hold the
+            # pool's own lock so a concurrent first-time category insert cannot break iteration
+            lock = getattr(pool, "update_lock", None)
+            try:
+                if lock is not None:
+                    with lock:
+                        pool_total = sum(b.total for bins in pool.cat_bins.values() for b in bins if b)
+                        pool_count = sum(b.count for bins in pool.cat_bins.values() for b in bins if b)
+                else:
+                    pool_total = sum(b.total for bins in pool.cat_bins.values() for b in bins if b)
+                    pool_count = sum(b.count for bins in pool.cat_bins.values() for b in bins if b)
+            except RuntimeError:
+                # dict changed size during iteration (no lock available); skip this pool
+                continue
+            totals[base_name][0] += pool_total
+            totals[base_name][1] += pool_count
         if not found:
             return {}
         return {
@@ -1207,7 +1356,8 @@ class JobStatsReporter(Widget):
         all_records = self._completed_tasks + list(self._open_tasks.values())
         for rec in all_records:
             item = clients.setdefault(rec.client, {"task_payloads": [], "model_updates": []})
-            item["task_payloads"].append(rec.payload_mb)
+            if rec.payload_mb is not None:
+                item["task_payloads"].append(rec.payload_mb)
             if rec.update_mb is not None:
                 item["model_updates"].append(rec.update_mb)
 
@@ -1277,6 +1427,10 @@ class JobStatsReporter(Widget):
                 row["battery_start_percent"] = battery_pairs[0][0]
                 row["battery_end_percent"] = battery_pairs[-1][1]
                 row["battery_used_percent"] = sum(max(0.0, start - end) for start, end in battery_pairs)
+            plugged_values = [r["battery_plugged"] for r in resources if isinstance(r.get("battery_plugged"), bool)]
+            if plugged_values:
+                # distinguishes "0% drain because charging" from genuine idle
+                row["battery_plugged"] = plugged_values[-1]
             result[client] = row
         return result
 
@@ -1310,8 +1464,8 @@ class JobStatsReporter(Widget):
                         "fully_matched_keys": stats.get(AggregationStatsKey.FULLY_MATCHED_KEYS),
                         "partially_matched_keys": stats.get(AggregationStatsKey.PARTIALLY_MATCHED_KEYS),
                         "skipped_keys": stats.get(AggregationStatsKey.SKIPPED_KEYS),
-                        "started_at": rec.start_time,
-                        "ended_at": rec.end_time,
+                        "started_at": rec.started_at,
+                        "ended_at": rec.ended_at,
                         "server_training_time": rec.duration,
                         "duration": rec.duration,
                         "aggregation_stats": dict(stats),
@@ -1338,8 +1492,8 @@ class JobStatsReporter(Widget):
                 | {c for rec in ordered_rounds for c in rec.rejected_clients}
             )
             job_duration = None
-            if self._job_start_time is not None:
-                job_duration = (self._job_end_time or time.time()) - self._job_start_time
+            if self._job_start_mono is not None:
+                job_duration = (self._job_end_mono or time.monotonic()) - self._job_start_mono
 
             task_rows = [rec.to_dict() for rec in self._completed_tasks + incomplete]
             computations = [
@@ -1715,11 +1869,7 @@ class JobStatsReporter(Widget):
                             self._format_resource(values.get("gpu_percent")),
                             self._format_resource(values.get("memory_rss_mb")),
                             self._format_resource(values.get("gpu_memory_mb")),
-                            (
-                                f"{values['battery_used_percent']:.1f}"
-                                if values.get("battery_used_percent") is not None
-                                else "N/A"
-                            ),
+                            self._format_battery(values),
                         ]
                         for client, values in resources.items()
                     ],
@@ -1746,6 +1896,15 @@ class JobStatsReporter(Widget):
     @staticmethod
     def _format_resource(value: Optional[dict]) -> str:
         return "N/A" if not value else f"{value['mean']:.1f} ± {value['stddev']:.1f}"
+
+    @staticmethod
+    def _format_battery(values: dict) -> str:
+        used = values.get("battery_used_percent")
+        if used is None:
+            return "N/A"
+        plugged = values.get("battery_plugged")
+        suffix = " (plugged in)" if plugged is True else " (on battery)" if plugged is False else ""
+        return f"{used:.1f}{suffix}"
 
     @staticmethod
     def format_errors(errors: List[dict]) -> str:

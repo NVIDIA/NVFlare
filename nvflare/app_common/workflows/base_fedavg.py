@@ -257,10 +257,18 @@ class BaseFedAvg(ModelController):
         self._results = []
         self._set_metrics_aggregation_info(aggr_result)
 
-        aggr_stats = compute_key_match_stats({_get_client_name(r): list(r.params or {}) for r in results})
-        aggr_stats[AggregationStatsKey.ROUND] = self.current_round
-        if self.fl_ctx:
-            self.fl_ctx.set_prop(AppConstants.AGGREGATION_STATS, aggr_stats, private=True, sticky=False)
+        # Reporting stats must never break a working aggregation: params is typed Any (custom
+        # aggregate_fn callers may use ndarrays etc.), so only dict params contribute key stats
+        # and any unexpected error is swallowed.
+        try:
+            contributions = {_get_client_name(r): list(r.params.keys()) for r in results if isinstance(r.params, dict)}
+            if contributions:
+                aggr_stats = compute_key_match_stats(contributions)
+                aggr_stats[AggregationStatsKey.ROUND] = self.current_round
+                if self.fl_ctx:
+                    self.fl_ctx.set_prop(AppConstants.AGGREGATION_STATS, aggr_stats, private=True, sticky=False)
+        except Exception as e:
+            self.debug(f"unable to compute aggregation key stats: {secure_format_exception(e)}")
 
         self.fire_event_with_data(
             AppEventType.AFTER_AGGREGATION, self.fl_ctx, AppConstants.AGGREGATION_RESULT, aggr_result

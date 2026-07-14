@@ -174,9 +174,13 @@ class DXOAggregator(FLComponent):
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
         self.log_info(fl_ctx, f"aggregating {self.aggregation_helper.get_len()} update(s) at round {current_round}")
         self.log_debug(fl_ctx, f"complete history {self.aggregation_helper.get_len()}")
-        self.last_aggregation_stats = self.aggregation_helper.get_aggregation_stats()
-        self.last_aggregation_stats[AggregationStatsKey.ROUND] = current_round
         aggregated_dict = self.aggregation_helper.get_result()
+        # get_result() snapshots the stats atomically with its reset (under the helper lock), so a
+        # concurrent accept() cannot be included in the model but omitted from the stats; reading
+        # the stats separately before get_result() would leave exactly that race window.
+        stats = dict(self.aggregation_helper.last_aggregation_stats or {})
+        stats[AggregationStatsKey.ROUND] = current_round
+        self.last_aggregation_stats = stats
         self.log_debug(fl_ctx, "End aggregation")
 
         dxo = DXO(data_kind=self.expected_data_kind, data=aggregated_dict)

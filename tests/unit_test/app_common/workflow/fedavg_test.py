@@ -226,6 +226,28 @@ class TestBaseFedAvgMetricsAggregationInfo:
         assert stats[AggregationStatsKey.PARTIALLY_MATCHED_KEYS] == 1
         assert stats[AggregationStatsKey.SKIPPED_KEYS] == 0
 
+    def test_aggregate_with_non_dict_params_does_not_crash(self):
+        """Key stats are reporting only: ndarray params with a custom aggregate_fn must not break aggregate()."""
+        controller = _TestBaseFedAvg()
+        controller.fl_ctx = FLContext()
+        controller.event = lambda _: None
+        controller.fire_event_with_data = lambda *args, **kwargs: None
+        controller.current_round = 1
+
+        results = [
+            FLModel(params=np.array([1.0]), current_round=1, meta={"client_name": "site-1"}),
+            FLModel(params=np.array([3.0]), current_round=1, meta={"client_name": "site-2"}),
+        ]
+
+        def custom_aggregate_fn(models):
+            return FLModel(params=np.mean([m.params for m in models], axis=0))
+
+        aggr_result = controller.aggregate(results, aggregate_fn=custom_aggregate_fn)
+
+        np.testing.assert_allclose(aggr_result.params, np.array([2.0]))
+        # no dict params -> no key stats published, and no crash
+        assert controller.fl_ctx.get_prop(AppConstants.AGGREGATION_STATS) is None
+
     def test_stop_condition_parsing(self):
         """Test that stop condition is correctly parsed."""
         controller = FedAvg(stop_cond="accuracy >= 80")

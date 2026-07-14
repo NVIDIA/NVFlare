@@ -780,5 +780,169 @@ class TestReviewFindingRegressions:
         assert eval_tasks[0]["round"] is None
 
 
+class TestSecondReviewRegressions:
+    def test_report_filenames_must_stay_under_run_dir(self):
+        # absolute or traversal filenames must be rejected at config time, not silently escape
+        with pytest.raises(ValueError):
+            JobStatsReporter(filename="/tmp/steal.log")
+        with pytest.raises(ValueError):
+            JobStatsReporter(error_filename="../outside/errors.log")
+        JobStatsReporter(filename="reports/summary.log")  # relative subdir is fine
+
+    def test_malformed_aggregation_stats_degrade_gracefully(self, tmp_path):
+        # string CONTRIBUTORS must not explode into per-character clients, and non-numeric
+        # counts must not abort report generation
+        clients = ["site-1"]
+        engine = make_engine(tmp_path, clients)
+        reporter = JobStatsReporter()
+        reporter.handle_event(EventType.START_RUN, make_ctx(engine))
+        reporter.handle_event(AppEventType.ROUND_STARTED, make_ctx(engine, props={AppConstants.CURRENT_ROUND: 0}))
+        fire_relay_leg(reporter, engine, 0, "site-1")
+        bad_stats = {
+            AggregationStatsKey.ROUND: 0,
+            AggregationStatsKey.CONTRIBUTORS: "site-1",  # bare string, not a list
+            AggregationStatsKey.KEYS_AGGREGATED: "N/A",  # non-numeric
+            AggregationStatsKey.FULLY_MATCHED_KEYS: [1, 2],  # unhashable if used raw
+        }
+        reporter.handle_event(
+            AppEventType.AFTER_AGGREGATION,
+            make_ctx(engine, props={AppConstants.CURRENT_ROUND: 0, AppConstants.AGGREGATION_STATS: bad_stats}),
+        )
+        reporter.handle_event(EventType.END_RUN, make_ctx(engine))
+
+        assert os.path.isfile(os.path.join(str(tmp_path), "job_stats_run_summary.log"))
+        summary = reporter.get_summary(make_ctx(engine))
+        assert summary["status"] == JobStatusCode.SUCCESS
+        assert summary["rounds"][0]["accepted_client_names"] == ["site-1"]  # not ['1','e','i','s','t','-']
+        assert summary["rounds"][0]["keys_aggregated"] is None
+        report = reporter.format_report(summary)
+        assert "Aggregation Consistency Across Rounds" in report
+
+    def test_stats_without_contributor_names_fall_back_to_completed_tasks(self, tmp_path):
+        # a custom aggregator publishing counts but no names must not zero out participation
+        clients = ["site-1", "site-2"]
+        engine = make_engine(tmp_path, clients)
+        reporter = JobStatsReporter()
+        reporter.handle_event(EventType.START_RUN, make_ctx(engine))
+        reporter.handle_event(AppEventType.ROUND_STARTED, make_ctx(engine, props={AppConstants.CURRENT_ROUND: 0}))
+        for client in clients:
+            fire_relay_leg(reporter, engine, 0, client)
+        stats = make_aggr_stats(0, [], 5, 5, 5, 0, 0)
+        stats[AggregationStatsKey.ACCEPTED_CONTRIBUTIONS] = 2  # counts known, names unknown
+        reporter.handle_event(
+            AppEventType.AFTER_AGGREGATION,
+            make_ctx(engine, props={AppConstants.CURRENT_ROUND: 0, AppConstants.AGGREGATION_STATS: stats}),
+        )
+        reporter.handle_event(EventType.END_RUN, make_ctx(engine))
+
+        summary = reporter.get_summary(make_ctx(engine))
+        assert summary["status"] == JobStatusCode.SUCCESS
+        assert summary["participation"]["participation_rate_percent"] == 100.0
+
+    def test_summary_generation_failure_still_writes_report(self, tmp_path):
+        # a bug in summary generation must degrade the report, never lose it entirely
+        engine = make_engine(tmp_path, ["site-1"])
+        reporter = JobStatsReporter()
+        reporter.handle_event(EventType.START_RUN, make_ctx(engine))
+        reporter.get_summary = Mock(side_effect=RuntimeError("boom"))
+        reporter.handle_event(EventType.END_RUN, make_ctx(engine))
+
+        report_file = os.path.join(str(tmp_path), "job_stats_run_summary.log")
+        assert os.path.isfile(report_file)
+        with open(report_file, encoding="utf-8") as f:
+            report = f.read()
+        assert "Report generation failed" in report
+        assert "RuntimeError" in report
+        assert not os.path.isfile(os.path.join(str(tmp_path), "job_stats_run_summary.json"))
+
+    def test_bool_telemetry_values_are_dropped(self):
+        from nvflare.app_common.widgets.job_stats_reporter import _sanitize_telemetry
+
+        telemetry = _sanitize_telemetry(
+            {
+                "execution_time": True,
+                "update_size_mb": False,
+                "resources": {
+                    "cpu_percent": {"count": True, "mean": True},
+                    "battery_start_percent": True,
+                    "battery_plugged": True,
+                },
+            }
+        )
+        assert "execution_time" not in telemetry
+        assert "update_size_mb" not in telemetry
+        assert "cpu_percent" not in telemetry["resources"]
+        assert "battery_start_percent" not in telemetry["resources"]
+        # battery_plugged is a genuine boolean field and must pass through
+        assert telemetry["resources"]["battery_plugged"] is True
+
+    def test_lazy_ref_payload_reports_unknown_size_not_zero(self, tmp_path):
+        from nvflare.app_common.widgets.job_stats_reporter import _estimate_payload_mb
+
+        class _FakeLazyRef:
+            pass  # exposes neither size nor file_path
+
+        # unknown -> None (rendered N/A), never a misleading few-bytes estimate
+        assert _estimate_payload_mb({"w": _FakeLazyRef()}) is None
+
+        class _FakeFileLazyRef:
+            def __init__(self, file_path):
+                self.file_path = file_path
+
+        blob = tmp_path / "tensor.bin"
+        blob.write_bytes(b"x" * 2048)
+        size_mb = _estimate_payload_mb({"w": _FakeFileLazyRef(str(blob))})
+        # 2048 bytes from the file stat + 1 byte for the "w" key
+        assert size_mb == pytest.approx(2049 / (1024.0 * 1024.0))
+
+    def test_reconnect_scrubs_client_errors_entry(self, tmp_path):
+        # disconnects now record into _client_errors; reconnect must scrub them symmetrically
+        engine = make_engine(tmp_path, ["site-1", "site-2"])
+        reporter = JobStatsReporter()
+        reporter.handle_event(EventType.START_RUN, make_ctx(engine))
+        reporter.handle_event(
+            EventType.CLIENT_DISCONNECTED, make_ctx(engine, props={FLContextKey.DISCONNECTED_CLIENT_NAME: "site-2"})
+        )
+        summary = reporter.get_summary(make_ctx(engine))
+        assert summary["participation"]["client_errors"] == {"site-2": ["CLIENT_DISCONNECTED"]}
+
+        reporter.handle_event(
+            EventType.CLIENT_RECONNECTED, make_ctx(engine, props={FLContextKey.RECONNECTED_CLIENT_NAME: "site-2"})
+        )
+        summary = reporter.get_summary(make_ctx(engine))
+        assert summary["participation"]["client_errors"] == {}
+        assert summary["errors"] == []
+        assert summary["participation"]["failed_clients"] == []
+
+    def test_gpu_sampler_includes_child_process_usage(self):
+        # subprocess-mode training does GPU work in a launched child pid
+        child_pid = 4242
+        process = MagicMock()
+        process.cpu_percent.side_effect = [0.0, 25.0]
+        process.memory_info.return_value = SimpleNamespace(rss=100 * 1024 * 1024)
+        process.children.return_value = [SimpleNamespace(pid=child_pid)]
+        fake_psutil = SimpleNamespace(Process=Mock(return_value=process), sensors_battery=Mock(return_value=None))
+        fake_pynvml = SimpleNamespace(
+            nvmlInit=Mock(),
+            nvmlShutdown=Mock(),
+            nvmlDeviceGetCount=Mock(return_value=1),
+            nvmlDeviceGetHandleByIndex=Mock(return_value="gpu-0"),
+            nvmlDeviceGetProcessUtilization=Mock(
+                return_value=[SimpleNamespace(pid=child_pid, smUtil=40.0, timeStamp=1)]
+            ),
+            nvmlDeviceGetComputeRunningProcesses=Mock(
+                return_value=[SimpleNamespace(pid=child_pid, usedGpuMemory=512 * 1024 * 1024)]
+            ),
+        )
+
+        with patch.dict("sys.modules", {"psutil": fake_psutil, "pynvml": fake_pynvml}):
+            sampler = _ResourceSampler(interval=60.0)
+            sampler.start()
+            resources = sampler.stop()
+
+        assert resources["gpu_percent"]["mean"] == 40.0
+        assert resources["gpu_memory_mb"]["mean"] == 512.0
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
