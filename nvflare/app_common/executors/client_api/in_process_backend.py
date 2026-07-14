@@ -87,6 +87,8 @@ _GUARD = SingleBackendGuard(
     mode="in_process",
     remedy="configure a single ClientAPIExecutor for all of its tasks (they share the process "
     "DataBus CLIENT_API_KEY and fixed topics)",
+    # the DataBus is a process singleton, so the enforced scope is the process, not the job
+    scope="process",
 )
 
 
@@ -161,9 +163,11 @@ class InProcessBackend(ClientAPIBackendSpec):
                 target=task_fn_wrapper.run, name="client_api_in_process_trainer", daemon=True
             )
             self._task_fn_thread.start()
-        except Exception:
+        except BaseException:
             # contract (backend_spec): initialize() self-unwinds its partial setup on failure;
-            # the executor does not call finalize() on a half-initialized backend.
+            # the executor does not call finalize() on a half-initialized backend. BaseException,
+            # not Exception: a KeyboardInterrupt/SystemExit between the guard claim and here must
+            # also release the process-scoped DataBus slot, or it stays blocked for the process.
             self._unwind()
             raise
 

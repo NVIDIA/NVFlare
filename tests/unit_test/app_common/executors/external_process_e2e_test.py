@@ -34,12 +34,6 @@ import textwrap
 import pytest
 
 import nvflare
-from nvflare.app_common.executors.client_api.payload_transfer import payload_layer_available
-
-pytestmark = pytest.mark.skipif(
-    not payload_layer_available(),
-    reason="requires the F3 payload layer (#4865) for external_process payload transfer",
-)
 
 # repo root of the nvflare under test, so the launched trainer subprocess imports THIS tree
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(nvflare.__file__)))

@@ -161,15 +161,21 @@ def bootstrap_path(tmp_path):
 def env(bootstrap_path, monkeypatch):
     cell = FakeCell()
     monkeypatch.setattr(cell_api, "Cell", MagicMock(return_value=cell))
-    monkeypatch.setattr(cell_api, "payload_layer_available", lambda: True)
     monkeypatch.setattr(cell_api, "TaskPayloadAttempt", FakeAttempt)
     FakeAttempt.reset()
-    # task/result payloads are faked at the seam; make fetch return a known FLModel shareable
+    # task/result payloads are faked at the seam; make fetch return a known FLModel shareable.
+    # Tests can inspect cell.fetch_calls (one entry per pull) and set cell.fetch_error to make
+    # the eager materialization fail.
     holder = {"task_shareable": FLModel(params={"w": [1.0]}, params_type=ParamsType.FULL)}
+    cell.fetch_calls = []
+    cell.fetch_error = None
 
     def fake_fetch(cell_, from_fqcn, ref_ids, abort_signal=None):
         from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 
+        cell.fetch_calls.append((from_fqcn, tuple(ref_ids), abort_signal))
+        if cell.fetch_error is not None:
+            raise cell.fetch_error
         return [FLModelUtils.to_shareable(holder["task_shareable"])]
 
     monkeypatch.setattr(cell_api, "fetch_result_payload", fake_fetch)
@@ -246,6 +252,58 @@ class TestReceiveSend:
             assert api.is_train() is True and api.is_evaluate() is False
             # the trainer told the CJ the payload materialized
             assert [f for f in env.fired if f[0] == Topic.TASK_PAYLOAD_READY]
+        finally:
+            api.shutdown()
+
+    def test_payload_materializes_eagerly_without_receive(self, bootstrap_path, env):
+        """The acquire budget expects the first pull promptly after TASK_READY: the pull
+        and TASK_PAYLOAD_READY must happen on the materializer thread, not wait for user
+        code to call receive()."""
+        import time as time_module
+
+        api = _init_api(bootstrap_path, env)
+        try:
+            _deliver_task(env)
+            deadline = time_module.monotonic() + 5.0
+            while time_module.monotonic() < deadline:
+                if [f for f in env.fired if f[0] == Topic.TASK_PAYLOAD_READY]:
+                    break
+                time_module.sleep(0.01)
+            assert env.fetch_calls, "the payload pull must start without receive()"
+            assert [f for f in env.fired if f[0] == Topic.TASK_PAYLOAD_READY]
+            # the eager pull observes the engine's abort signal (abort ends it mid-flight)
+            assert env.fetch_calls[0][2] is api._abort_signal
+        finally:
+            api.shutdown()
+
+    def test_task_ready_redelivery_is_idempotent(self, bootstrap_path, env):
+        """TASK_READY redelivery (control protocol: idempotent by task id) is re-acked
+        without starting a second pull."""
+        api = _init_api(bootstrap_path, env)
+        try:
+            _, first = _deliver_task(env, task_id="task-42")
+            _, again = _deliver_task(env, task_id="task-42")
+            assert first.payload[MsgKey.REPLY_TOPIC] == Topic.TASK_ACCEPTED
+            assert again.payload[MsgKey.REPLY_TOPIC] == Topic.TASK_ACCEPTED
+
+            model = api.receive()
+            assert isinstance(model, FLModel)
+            assert len(env.fetch_calls) == 1, "a redelivered task must not be pulled twice"
+            assert api._task_queue.empty(), "a redelivered task must not be queued twice"
+        finally:
+            api.shutdown()
+
+    def test_materialization_failure_sends_task_failed_and_receive_raises(self, bootstrap_path, env):
+        from nvflare.client.cell.payload_transfer import PayloadTransferError
+
+        env.fetch_error = PayloadTransferError("ref gone")
+        api = _init_api(bootstrap_path, env)
+        try:
+            _deliver_task(env)
+            with pytest.raises(TrainerSessionError, match="ref gone"):
+                api.receive()
+            # the materializer already reported the failure to the CJ
+            assert [f for f in env.fired if f[0] == Topic.TASK_FAILED]
         finally:
             api.shutdown()
 

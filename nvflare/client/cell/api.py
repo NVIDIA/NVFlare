@@ -27,8 +27,12 @@ semantics):
 - init(): read the bootstrap config, build a child Cell bound to the prescribed trainer FQCN and
   connected to the CJ's internal listener, register the control handlers (TASK_READY / ABORT /
   SHUTDOWN), and perform the HELLO handshake (launch-token proof; V1 trusted host).
-- receive(): block until a TASK_READY is queued by the control handler, pull the task payload
-  from the CJ through the shared download path, send TASK_PAYLOAD_READY, and return the FLModel.
+- TASK_READY handler: ack the control message, then EAGERLY pull the task payload on a
+  materializer thread and send TASK_PAYLOAD_READY once it is stored. Eager, not deferred to
+  receive(): the producer-side acquire budget expects the first pull promptly after TASK_READY,
+  and user code may legitimately spend minutes between rounds (eval, checkpointing) before its
+  next receive() — the payload must not wait on that.
+- receive(): block until a materialized task is queued and return its FLModel.
 - send(): publish the result as a producer-side payload attempt, send RESULT_READY with the
   manifest, and hold the attempt alive until the CJ's pull reaches its terminal outcome (the
   producer-liveness rule) before returning.
@@ -51,18 +55,19 @@ from typing import Any, Dict, Optional
 from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.apis.shareable import Shareable
+from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.fl_model import FLModel
-from nvflare.app_common.executors.client_api.payload_transfer import (
-    PayloadTransferError,
-    TaskPayloadAttempt,
-    fetch_result_payload,
-    payload_layer_available,
-)
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.client.api_spec import APISpec
 from nvflare.client.cell.bootstrap import BOOTSTRAP_FILE_ENV_VAR, BootstrapKey, read_bootstrap_config
 from nvflare.client.cell.decomposers import register_framework_decomposers
 from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, MsgKey, Topic
+from nvflare.client.cell.payload_transfer import (
+    TRANSFER_TTL,
+    PayloadTransferError,
+    TaskPayloadAttempt,
+    fetch_result_payload,
+)
 from nvflare.client.config import ConfigKey
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
@@ -79,8 +84,9 @@ _HELLO_RETRY_INTERVAL = 1.0
 # bounds abort/stop detection latency).
 _RECEIVE_POLL_INTERVAL = 0.5
 # Producer-side hold: how long send() waits for the CJ to certify it pulled the result before
-# giving up (the transfer's own budgets bound it too; this is the whole-call ceiling).
-_RESULT_DELIVERY_TIMEOUT = 3600.0
+# giving up. Aligned with the attempt's own TTL backstop so this wait can never give up while
+# the transfer is still legitimately live.
+_RESULT_DELIVERY_TIMEOUT = TRANSFER_TTL
 # Bounded linger after delivery so a lost terminal reply can still be replayed (contract).
 _RESULT_DELIVERY_LINGER = 5.0
 
@@ -130,13 +136,19 @@ class CellClientAPI(APISpec):
         self._site_name: str = self._config[BootstrapKey.SITE_NAME]
         self._task_exchange: dict = self._config.get(BootstrapKey.TASK_EXCHANGE, {})
 
-        # control state
+        # control state. _task_queue carries MATERIALIZED tasks: the TASK_READY handler
+        # starts an eager payload pull on a materializer thread, which enqueues
+        # {task, model, error} once the pull settles; receive() only dequeues.
         self._task_queue: "Queue[dict]" = Queue()
         self._current_task: Optional[dict] = None
+        self._accepted_task_id: Optional[str] = None  # TASK_READY redelivery idempotency (by task id)
         self._fl_model: Optional[FLModel] = None
         self._receive_called = False
         self._abort = False
         self._abort_reason = ""
+        # observed by the payload pulls between chunk requests, so an abort/stop ends an
+        # in-flight materialization instead of letting it run to completion for nothing
+        self._abort_signal = Signal()
         self._stopped = False
         self._closed = False
         self._lock = threading.Lock()
@@ -151,12 +163,6 @@ class CellClientAPI(APISpec):
             # a Client API session (rank contract). Leave the API passive.
             self.logger.info(f"rank {self._rank}: no Client API session (non-control rank)")
             return
-
-        if not payload_layer_available():
-            raise RuntimeError(
-                "the F3 payload layer (PR #4865) is required for external_process payload transfer "
-                "but is not available in this build"
-            )
 
         # Register the serialization decomposers the launched trainer process needs to decode
         # task payloads and encode results (the FL process/CJ registers these at startup; a
@@ -244,26 +250,25 @@ class CellClientAPI(APISpec):
         if self._fl_model is not None:
             return self._fl_model
 
-        task = self._await_task(timeout)
-        if task is None:
+        entry = self._await_task(timeout)
+        if entry is None:
             return None
 
+        task = entry["task"]
         self._current_task = task
-        try:
-            model = self._materialize_task(task)
-        except PayloadTransferError as e:
-            self._send_task_failed(task, f"task payload download failed: {e}")
-            raise TrainerSessionError(f"failed to materialize task '{task.get(MsgKey.TASK_NAME)}': {e}")
+        error = entry["error"]
+        if error is not None:
+            # the materializer already sent TASK_FAILED to the CJ; surface it to user code
+            raise TrainerSessionError(f"failed to materialize task '{task.get(MsgKey.TASK_NAME)}': {error}")
 
-        self._fl_model = model
+        self._fl_model = entry["model"]
         self._receive_called = True
-        self._send_task_payload_ready(task)
-        return model
+        return self._fl_model
 
     def _await_task(self, timeout: Optional[float]) -> Optional[dict]:
-        """Blocks for the next queued TASK_READY. Returns None on clean stop (SHUTDOWN) or
-        timeout; raises on ABORT (the receive-side contract: abort surfaces as an exception
-        out of a blocked receive)."""
+        """Blocks for the next materialized task entry. Returns None on clean stop
+        (SHUTDOWN) or timeout; raises on ABORT (the receive-side contract: abort surfaces
+        as an exception out of a blocked receive)."""
         deadline = None if timeout is None else time.monotonic() + timeout
         while True:
             if self._abort:
@@ -281,13 +286,33 @@ class CellClientAPI(APISpec):
             except Empty:
                 continue
 
+    def _materialize_and_enqueue(self, task: dict) -> None:
+        """Body of the per-task materializer thread the TASK_READY handler starts.
+
+        Pulls the payload eagerly, reports the payload state to the CJ (TASK_PAYLOAD_READY
+        or TASK_FAILED), and queues the settled entry for receive(). Must not raise: this
+        is a thread target, and an escaping exception would silently strand receive()."""
+        try:
+            model = self._materialize_task(task)
+        except Exception as e:
+            # PayloadTransferError, or anything unexpected: either way this task is dead.
+            # TASK_FAILED tells the CJ (which fails the task there); the queued error entry
+            # surfaces it to user code blocked in receive().
+            reason = f"task payload download failed: {e}"
+            self.logger.error(reason)
+            self._send_task_failed(task, reason)
+            self._task_queue.put({"task": task, "model": None, "error": str(e)})
+            return
+        self._send_task_payload_ready(task)
+        self._task_queue.put({"task": task, "model": model, "error": None})
+
     def _materialize_task(self, task: dict) -> FLModel:
         model_ref = task.get(MsgKey.MODEL) or {}
         ref_ids = model_ref.get(MsgKey.REF_IDS) or []
         if not ref_ids:
             # inline / empty payload: an empty global model is valid (e.g. first round)
             return FLModelUtils.from_shareable(Shareable())
-        objs = fetch_result_payload(self._cell, self._cj_fqcn, ref_ids)
+        objs = fetch_result_payload(self._cell, self._cj_fqcn, ref_ids, abort_signal=self._abort_signal)
         shareable = objs[0] if len(objs) == 1 else None
         if not isinstance(shareable, Shareable):
             raise PayloadTransferError(f"expected one Shareable task payload but got {[type(o) for o in objs]}")
@@ -434,6 +459,7 @@ class CellClientAPI(APISpec):
             return
         self._closed = True
         self._stopped = True
+        self._abort_signal.trigger("client api shutdown")
         try:
             if self._cell is not None and self._session_id is not None:
                 self._cell.fire_and_forget(
@@ -455,14 +481,30 @@ class CellClientAPI(APISpec):
             return make_cell_reply(CellReturnCode.INVALID_REQUEST, error="TASK_READY payload must be a dict")
         if payload.get(MsgKey.SESSION_ID) != self._session_id:
             return self._reply(Topic.TASK_FAILED, **{MsgKey.REASON: "stale or unknown session id"})
-        self._task_queue.put(payload)
-        return self._reply(Topic.TASK_ACCEPTED, **{MsgKey.TASK_ID: payload.get(MsgKey.TASK_ID)})
+        task_id = payload.get(MsgKey.TASK_ID)
+        with self._lock:
+            # TASK_READY redelivery is idempotent by task id (control protocol): a retry of
+            # an already-accepted task is re-acked without starting a second pull
+            is_new = self._accepted_task_id != task_id
+            if is_new:
+                self._accepted_task_id = task_id
+        if is_new:
+            # eager materialization off the cell callback thread: the ack below must not
+            # wait on the payload pull (see the module docstring)
+            threading.Thread(
+                target=self._materialize_and_enqueue,
+                args=(payload,),
+                name="client_api_task_materializer",
+                daemon=True,
+            ).start()
+        return self._reply(Topic.TASK_ACCEPTED, **{MsgKey.TASK_ID: task_id})
 
     def _handle_abort(self, request):
         payload = request.payload if isinstance(request.payload, dict) else {}
         if payload.get(MsgKey.SESSION_ID) == self._session_id:
             self._abort = True
             self._abort_reason = str(payload.get(MsgKey.REASON))
+            self._abort_signal.trigger(self._abort_reason)
             self.logger.error(f"session aborted by CJ: {self._abort_reason}")
         return make_cell_reply(CellReturnCode.OK)
 
@@ -470,6 +512,9 @@ class CellClientAPI(APISpec):
         payload = request.payload if isinstance(request.payload, dict) else {}
         if payload.get(MsgKey.SESSION_ID) == self._session_id:
             self._stopped = True
+            # a materialization still in flight serves no one after an orderly stop either:
+            # receive() will return None and drop the entry
+            self._abort_signal.trigger("session shutdown")
             self.logger.info("session shutdown requested by CJ")
         return make_cell_reply(CellReturnCode.OK)
 

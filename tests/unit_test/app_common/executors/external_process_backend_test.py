@@ -25,7 +25,7 @@ routing through the executor-owned fire_log_analytics(), the launch-token/identi
 of the HELLO handshake, and the one-live-attempt-per-transfer_id payload discipline.
 
 The payload seam (payload_transfer.py) is replaced by fakes here — its own contract
-behavior is covered in ../../fuel-independent payload_transfer_test.py next to this file.
+behavior is covered in tests/unit_test/client/cell/payload_transfer_test.py.
 """
 
 import os
@@ -50,10 +50,10 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.client_api import external_process_backend as ebp
 from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendContext
 from nvflare.app_common.executors.client_api.external_process_backend import ExternalProcessBackend, bootstrap_file_name
-from nvflare.app_common.executors.client_api.payload_transfer import PayloadTransferError
 from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
 from nvflare.client.cell.bootstrap import BOOTSTRAP_FILE_ENV_VAR, BootstrapKey, read_bootstrap_config
 from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, MsgKey, Topic
+from nvflare.client.cell.payload_transfer import PayloadTransferError
 from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode

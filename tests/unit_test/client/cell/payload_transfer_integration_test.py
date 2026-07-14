@@ -12,19 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Integration tests: the Client API payload seam against the REAL #4865 payload layer.
+"""Integration tests: the Client API payload seam against the REAL F3 payload layer.
 
-payload_transfer_test.py covers the seam with fakes in both regimes; this module drives
-the seam through the ACTUAL ObjectDownloader/DownloadService/TransferWaiter code — the
-producer side at the wire level (the trainer's pulls and receiver-truth confirmations
-delivered to the service handler, the way the #4865 suite's own tests do), and the
-consumer side through the real ``download_object`` loop over a loopback cell.
+payload_transfer_test.py covers the seam with fakes; this module drives the seam through
+the ACTUAL ObjectDownloader/DownloadService/TransferWaiter code — the producer side at the
+wire level (the trainer's pulls and receiver-truth confirmations delivered to the service
+handler, the way the payload layer's own suite does), and the consumer side through the
+real ``download_object`` loop over a loopback cell.
 
-Every test here is skipped until the #4865 surface is present (payload_layer_available()),
-so this file is green both before and after the merge: pre-merge it documents exactly what
-activates; post-merge it proves the seam's contract claims — "returns == delivered",
-receiver truth failing an attempt, waiter None-arm folding, and attempt termination —
-against the shipped layer instead of fakes.
+It proves the seam's contract claims — "returns == delivered", receiver truth failing an
+attempt, waiter None-arm folding, attempt termination — and the seam's budget policy:
+a long transaction-level quiet period between the one-shot OK round and the EOF round
+(the inner via-downloader tensor transfer window) must NOT fail a healthy attempt, while
+an attempt whose consumer never shows up still fails fast on the acquire budget.
 """
 
 import time
@@ -33,13 +33,8 @@ from unittest.mock import Mock
 import pytest
 
 from nvflare.apis.shareable import Shareable
-from nvflare.app_common.executors.client_api import payload_transfer as pt
+from nvflare.client.cell import payload_transfer as pt
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
-
-pytestmark = pytest.mark.skipif(
-    not pt.payload_layer_available(),
-    reason="requires the #4865 F3 payload layer (TransferWaiter, receiver identity/budgets)",
-)
 
 TRAINER_FQCN = "site-1.job-1.client_api_trainer_1"
 CJ_FQCN = "site-1.job-1"
@@ -48,13 +43,13 @@ CJ_FQCN = "site-1.job-1"
 @pytest.fixture
 def harness(monkeypatch):
     """An isolated real DownloadService, with the seam and the real ObjectDownloader
-    routed to it, receiver-confirm pinned ON (as the #4865 suite's conftest does)."""
+    routed to it, receiver-confirm pinned ON (as the payload layer's own conftest does)."""
     from nvflare.fuel.f3.streaming import download_service as ds_module
     from nvflare.fuel.f3.streaming import obj_downloader as od_module
     from tests.unit_test.fuel.f3.streaming import download_test_utils as utils
 
-    # isolated real service with the 5s monitor suppressed so we drive monitor passes
-    # explicitly via run_monitor_once (renamed from make_confirm_test_service pre-merge)
+    # isolated real service with the 5s monitor suppressed so tests drive monitor passes
+    # explicitly (and time-travel them) via run_monitor_once
     service = utils.make_service_no_monitor()
     monkeypatch.setattr(od_module, "DownloadService", service)
     monkeypatch.setattr(pt, "DownloadService", service)
@@ -113,9 +108,54 @@ class TestTaskAttemptAgainstRealLayer:
         assert attempt.completed() and not attempt.failed()
         assert attempt.failure_reason() is None
 
+    def test_quiet_period_between_rounds_does_not_fail_a_healthy_attempt(self, harness):
+        """Nested-transfer regression test. Large tensors do not ride the one-shot OK
+        reply: FOBS encode moves them through INNER via-downloader transactions whose
+        pulls run between this transaction's OK round and its EOF round — minutes of
+        legitimate silence on THIS transaction. A per-receiver idle budget here (the
+        removed 300s wall) failed exactly this healthy pattern; only the far larger TTL
+        backstop may bound it."""
+        from nvflare.fuel.f3.streaming.download_service import DownloadStatus, ProduceRC, _PropKey
+
+        service, utils = harness
+        task = _task_shareable()
+        attempt = pt.TaskPayloadAttempt(Mock(), task, TRAINER_FQCN)
+
+        # round 1: the receiver acquires and is served the payload (refs, for big models)
+        first = service._handle_download(utils.pull_request(attempt.ref_id, TRAINER_FQCN, confirm_capable=True))
+        assert first.payload.get(_PropKey.STATUS) == ProduceRC.OK
+        state = first.payload.get(_PropKey.STATE)
+
+        # 25 minutes of transaction-level silence while the (simulated) inner tensor
+        # transfer runs. Under an idle budget this monitor pass fails the receiver.
+        utils.run_monitor_once(service, now=time.time() + 1500.0)
+        assert not attempt.failed(), f"healthy quiet period failed the attempt: {attempt.failure_reason()}"
+
+        # the inner transfer done, the receiver finishes the outer round trip
+        terminal = service._handle_download(
+            utils.pull_request(attempt.ref_id, TRAINER_FQCN, confirm_capable=True, state=state)
+        )
+        assert terminal.payload.get(_PropKey.STATUS) == ProduceRC.EOF
+        service._handle_download(
+            utils.confirm_request(attempt.ref_id, TRAINER_FQCN, DownloadStatus.SUCCESS, utils.serve_nonce(terminal))
+        )
+        utils.run_monitor_once(service, now=time.time())
+        assert attempt.wait(timeout=5.0) is True
+
+    def test_no_consumer_fails_fast_on_the_acquire_budget(self, harness):
+        """Liveness without an idle budget: a consumer that never shows up is failed by
+        the acquire budget well before the TTL backstop."""
+        service, utils = harness
+        attempt = pt.TaskPayloadAttempt(Mock(), _task_shareable(), TRAINER_FQCN)
+
+        utils.run_monitor_once(service, now=time.time() + pt.TASK_ACQUIRE_TIMEOUT + 5.0)
+
+        assert attempt.wait(timeout=5.0) is False
+        assert attempt.failed() and not attempt.completed()
+
     def test_receiver_truth_fails_the_attempt(self, harness):
         """A receiver that pulled everything but failed finalization (its own truth)
-        must fail the attempt — the pre-#4865 served-EOF success would have hidden this."""
+        must fail the attempt — a served-EOF success would have hidden this."""
         from nvflare.fuel.f3.streaming.download_service import DownloadStatus
 
         service, utils = harness
@@ -129,7 +169,7 @@ class TestTaskAttemptAgainstRealLayer:
 
         assert attempt.wait(timeout=5.0) is False
         assert attempt.failed() and not attempt.completed()
-        assert "task payload transfer failed" in attempt.failure_reason()
+        assert "payload transfer failed" in attempt.failure_reason()
 
     def test_terminate_resolves_the_waiter_as_not_delivered(self, harness):
         """Terminating a live attempt (retire/teardown path) settles it promptly:

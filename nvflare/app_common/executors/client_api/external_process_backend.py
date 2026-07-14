@@ -32,8 +32,8 @@ nvflare/client/cell/defs.py — no PipeHandler, no CellPipe, no MetricRelay:
   connection). The heartbeat_interval/heartbeat_timeout knobs on the frozen executor
   surface are reserved for attach, which has no process handle.
 - **Payload plane**: task payloads down and result payloads up move through the
-  payload_transfer seam (coded against docs/design/f3_backend_interface_contract.md, the
-  PR #4865 contract; producer-side attempts activate when #4865 merges). The backend mints
+  payload_transfer seam (nvflare/client/cell/payload_transfer.py, over the F3 payload
+  layer's explicit DownloadService transactions). The backend mints
   the cross-attempt ``transfer_id``, carries it in the task message, and enforces
   one-live-attempt per logical transfer — a retry is a NEW attempt under a NEW tx_id, and
   creating a duplicate live attempt for a transfer_id raises. RESULT_ACCEPTED is a control
@@ -62,11 +62,9 @@ ClientAPIExecutor(execution_mode="external_process") in the same job would silen
 cross-wire both trainers. A second backend is rejected deterministically at START_RUN
 (system_panic) instead; jobs route all their tasks through a single executor.
 
-End-to-end availability note: this backend is the CJ side of the protocol. The
-trainer-side Cell engine (the counterpart that reads the bootstrap config, HELLOs, and
-serves tasks to user code) lands in the trainer-engine PR; until then, and until #4865
-supplies the producer-side payload primitives, jobs selecting external_process fail
-cleanly at launch/transfer time rather than by hanging.
+This backend is the CJ side of the protocol; its counterpart is the trainer-side Cell
+engine (nvflare/client/cell/api.py), which reads the bootstrap config, HELLOs, and serves
+tasks to user code.
 """
 
 import os
@@ -88,17 +86,13 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.utils.analytix_utils import create_analytic_dxo
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendContext, ClientAPIBackendSpec
-from nvflare.app_common.executors.client_api.payload_transfer import (
-    PayloadTransferError,
-    TaskPayloadAttempt,
-    fetch_result_payload,
-)
 from nvflare.app_common.executors.client_api.single_backend import SingleBackendGuard
 from nvflare.app_common.launchers.subprocess_launcher import log_subprocess_output
 from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
 from nvflare.client.cell.bootstrap import BOOTSTRAP_FILE_ENV_VAR, CELL_API_TYPE, BootstrapKey, write_bootstrap_config
 from nvflare.client.cell.decomposers import register_framework_decomposers
 from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, MsgKey, Topic
+from nvflare.client.cell.payload_transfer import PayloadTransferError, TaskPayloadAttempt, fetch_result_payload
 from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
@@ -338,9 +332,11 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
 
             if context.launch_once:
                 self._start_session(timeout=context.launch_timeout)
-        except Exception:
+        except BaseException:
             # contract (backend_spec): initialize() self-unwinds its partial setup on failure;
-            # the executor does not call finalize() on a half-initialized backend.
+            # the executor does not call finalize() on a half-initialized backend. BaseException,
+            # not Exception: a KeyboardInterrupt/SystemExit between the cell claim and here must
+            # also release the guard slot and any launch artifacts already created.
             self._unwind()
             raise
 
@@ -1113,7 +1109,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
         cell.register_request_cb(channel=CHANNEL, topic=Topic.TASK_FAILED, cb=self._handle_task_failed)
         cell.register_request_cb(channel=CHANNEL, topic=Topic.LOG, cb=self._handle_log)
         cell.register_request_cb(channel=CHANNEL, topic=Topic.BYE, cb=self._handle_bye)
-        # #4865's Topic.TASK_PAYLOAD_READY (the trainer's materialization-complete signal).
+        # Topic.TASK_PAYLOAD_READY: the trainer's materialization-complete signal.
         # This backend has no heartbeat lease, so there is no materialization-phase
         # exemption to end — but the trainer engine sends it and must get a clean ack, not
         # a no-handler error.
@@ -1272,6 +1268,14 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                     Topic.RESULT_REJECTED,
                     **{MsgKey.REASON: "invalid result envelope: result_id, transfer_id and manifest ref_ids required"},
                 )
+            if len(ref_ids) != 1:
+                # V1 results are exactly one Shareable. Reject the malformed manifest here,
+                # before any bytes move — the pull loop would otherwise download EVERY ref
+                # only to have the single-Shareable check discard them all.
+                return self._protocol_reply(
+                    Topic.RESULT_REJECTED,
+                    **{MsgKey.REASON: f"invalid result envelope: expected exactly one ref id, got {len(ref_ids)}"},
+                )
             task.result_id = result_id
             task.result_transfer_id = transfer_id
             task.result_ref_ids = list(ref_ids)
@@ -1344,7 +1348,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
         return make_cell_reply(CellReturnCode.OK)
 
     def _handle_task_payload_ready(self, request):
-        # informational (#4865 vocabulary): the trainer materialized the task payload and
+        # informational: the trainer materialized the task payload and
         # user code is training. No heartbeat lease exists in this backend, so nothing to
         # exempt/unexempt — log for observability and ack; stateless, hence no _closed gate.
         payload = request.payload if isinstance(request.payload, dict) else {}

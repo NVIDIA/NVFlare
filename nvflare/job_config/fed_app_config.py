@@ -42,10 +42,31 @@ class ClientAppConfig(BaseAppConfig):
             if len(dup_tasks) > 0:
                 raise RuntimeError(f"executor for tasks {dup_tasks} already exist.")
 
+        self._check_one_client_api_executor_per_mode(executor)
+
         e = _ExecutorDef()
         e.tasks = tasks
         e.executor = executor
         self.executors.append(e)
+
+    def _check_one_client_api_executor_per_mode(self, executor: Executor):
+        """V1 supports one ClientAPIExecutor per execution mode per client job: each mode's
+        backend drives a shared control plane (DataBus key / Cell protocol topics), so a second
+        same-mode executor would be rejected at START_RUN anyway (SingleBackendGuard). Reject it
+        here at job-build time, where the config is still in the user's hands."""
+        # deferred import: keep job authoring import-light for jobs that never use the Client API
+        from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
+
+        if not isinstance(executor, ClientAPIExecutor):
+            return
+        for item in self.executors:
+            other = item.executor
+            if isinstance(other, ClientAPIExecutor) and other.execution_mode == executor.execution_mode:
+                raise RuntimeError(
+                    f"a ClientAPIExecutor with execution_mode '{executor.execution_mode}' is already "
+                    f"configured for this client app: V1 supports one ClientAPIExecutor per execution "
+                    f"mode per client job — route all of its tasks through that single executor"
+                )
 
 
 class ServerAppConfig(BaseAppConfig):

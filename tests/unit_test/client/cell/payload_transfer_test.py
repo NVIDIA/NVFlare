@@ -12,46 +12,64 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for the Client API payload-transfer seam (payload_transfer.py).
+"""Tests for the Client API payload seam (nvflare/client/cell/payload_transfer.py).
 
-The seam is coded against the F3 payload-layer contract of PR #4865
-(docs/design/f3_backend_interface_contract.md), which is not merged yet. These tests
-verify both regimes:
+The F3 layer itself (ObjectDownloader / DownloadService / download_object) is faked at the
+seam's imports; payload_transfer_integration_test.py drives the seam against the real
+layer. What is verified here is the seam's own policy and adapters:
 
-- pre-#4865 (today's main): producer-side attempts are guarded and raise
-  PayloadLayerUnavailable with a message naming the missing layer;
-- post-#4865 (simulated by faking the contract surface at the seam's imports): attempts
-  declare the receiver identity and budgets, latch outcomes from outcome_cb, fold the
-  waiter's None arm into not-delivered, and terminate through the contract-listed
-  DownloadService.delete_transaction.
-
-The consumer side (download_object) already exists on main with the contract signature,
-so fetch_result_payload is tested against a fake of that exact signature.
+- attempts declare the receiver identity and the acquire budget, set the TTL backstop, and
+  deliberately set NO per-receiver idle budget (the one-shot round's healthy quiet period
+  spans the whole inner via-downloader tensor transfer — see the module docstring);
+- the terminal verdict is read through the transaction's TransferWaiter (non-blocking
+  completed()/failed() polls, event-driven wait() with the None arm folded into
+  not-delivered);
+- terminate() is idempotent and never raises; a failing add_object terminates the
+  already-registered transaction instead of leaking it.
 """
 
+import threading
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
-from nvflare.app_common.executors.client_api import payload_transfer as pt
+from nvflare.client.cell import payload_transfer as pt
 from nvflare.fuel.f3.streaming.download_service import ProduceRC
 
 
 class FakeWaiter:
+    """Fakes TransferWaiter: done()/outcome for the poll accessors, wait() for the verdict."""
+
     def __init__(self):
-        self.outcome_to_return = None
+        self._event = threading.Event()
+        self._outcome = None
         self.wait_calls = []
+        self.wait_result = None  # what wait() returns when the event is not pre-resolved
+
+    def resolve(self, outcome):
+        self._outcome = outcome
+        self._event.set()
+
+    @property
+    def outcome(self):
+        return self._outcome
+
+    def done(self):
+        return self._event.is_set()
 
     def wait(self, timeout=None, linger=None):
         self.wait_calls.append((timeout, linger))
-        return self.outcome_to_return
+        if self._event.is_set():
+            return self._outcome
+        return self.wait_result
 
 
 class FakeDownloader:
-    """Fakes the #4865 ObjectDownloader surface the contract exposes to backends."""
+    """Fakes the ObjectDownloader surface the seam consumes."""
 
     instances = []
+    add_object_error = None
 
     def __init__(self, **kwargs):
         FakeDownloader.instances.append(self)
@@ -61,6 +79,8 @@ class FakeDownloader:
         self.waiter = FakeWaiter()
 
     def add_object(self, obj, ref_id=None):
+        if FakeDownloader.add_object_error is not None:
+            raise FakeDownloader.add_object_error
         self.added.append(obj)
         return f"{self.tx_id}-ref-{len(self.added)}"
 
@@ -69,13 +89,7 @@ class FakeDownloader:
 
 
 class FakeDownloadService:
-    """Presence of get_transfer_waiter is the seam's availability signal."""
-
     deleted = []
-
-    @classmethod
-    def get_transfer_waiter(cls, transaction_id):
-        raise AssertionError("the seam should prefer downloader.get_waiter()")
 
     @classmethod
     def delete_transaction(cls, transaction_id):
@@ -87,34 +101,18 @@ def _outcome(completed: bool, reason=None):
 
 
 @pytest.fixture
-def available_layer(monkeypatch):
-    """Simulates the merged #4865 contract surface at the seam's own imports."""
+def fake_layer(monkeypatch):
+    """Fakes the F3 layer at the seam's own imports."""
     FakeDownloader.instances = []
+    FakeDownloader.add_object_error = None
     FakeDownloadService.deleted = []
     monkeypatch.setattr(pt, "ObjectDownloader", FakeDownloader)
     monkeypatch.setattr(pt, "DownloadService", FakeDownloadService)
     return FakeDownloadService
 
 
-class TestAvailabilityGuard:
-    def test_availability_probe_matches_the_service_surface(self):
-        # regime-agnostic: False on pre-#4865 main, flips to True the moment the merged
-        # layer ships the TransferWaiter accessor — with no change here or in the seam
-        from nvflare.fuel.f3.streaming.download_service import DownloadService
-
-        assert pt.payload_layer_available() == hasattr(DownloadService, "get_transfer_waiter")
-
-    @pytest.mark.skipif(pt.payload_layer_available(), reason="the #4865 payload layer is present in this build")
-    def test_attempt_creation_raises_with_clear_hint_pre_4865(self):
-        with pytest.raises(pt.PayloadLayerUnavailable, match="4865"):
-            pt.TaskPayloadAttempt(MagicMock(), {"w": 1}, "site-1.job-1.trainer_1")
-
-    def test_available_when_service_has_waiter_accessor(self, available_layer):
-        assert pt.payload_layer_available() is True
-
-
 class TestTaskPayloadAttempt:
-    def test_attempt_declares_receiver_identity_and_budgets(self, available_layer):
+    def test_attempt_declares_receiver_identity_and_budgets(self, fake_layer):
         cell = MagicMock()
         attempt = pt.TaskPayloadAttempt(cell, {"w": 1}, "site-1.job-1.trainer_1")
 
@@ -123,62 +121,80 @@ class TestTaskPayloadAttempt:
         # declared identity enables the acquire budget and identity-checked completion
         assert downloader.kwargs["receiver_ids"] == ("site-1.job-1.trainer_1",)
         assert downloader.kwargs["num_receivers"] == 1
-        assert downloader.kwargs["timeout"] == pt.TASK_TRANSFER_INACTIVITY_TIMEOUT
+        assert downloader.kwargs["timeout"] == pt.TRANSFER_TTL
         assert downloader.kwargs["receiver_acquire_timeout"] == pt.TASK_ACQUIRE_TIMEOUT
-        assert downloader.kwargs["receiver_idle_timeout"] == pt.TASK_IDLE_TIMEOUT
+        # DELIBERATELY unset: an idle wall around the one-shot round would expire during a
+        # healthy inner (via-downloader) tensor transfer and fail it mid-flight
+        assert "receiver_idle_timeout" not in downloader.kwargs
         assert attempt.tx_id == downloader.tx_id
         assert attempt.ref_id == f"{downloader.tx_id}-ref-1"
         # the payload rides a Downloadable wrapper, one object = one lifecycle unit
         assert isinstance(downloader.added[0], pt.ShareableDownloadable)
         assert downloader.added[0].base_obj == {"w": 1}
 
-    def test_fresh_attempts_get_fresh_tx_ids(self, available_layer):
+    def test_fresh_attempts_get_fresh_tx_ids(self, fake_layer):
         first = pt.TaskPayloadAttempt(MagicMock(), {}, "r")
         second = pt.TaskPayloadAttempt(MagicMock(), {}, "r")
         # attempt-scoped, never reused: a retry is a new attempt under a new tx_id
         assert first.tx_id != second.tx_id
 
-    def test_outcome_cb_latches_verdict(self, available_layer):
-        attempt = pt.TaskPayloadAttempt(MagicMock(), {}, "r")
-        outcome_cb = FakeDownloader.instances[0].kwargs["outcome_cb"]
-        assert not attempt.completed() and not attempt.failed()
+    def test_failing_add_object_terminates_the_registered_transaction(self, fake_layer):
+        FakeDownloader.add_object_error = RuntimeError("service shutting down")
+        with pytest.raises(RuntimeError, match="service shutting down"):
+            pt.TaskPayloadAttempt(MagicMock(), {}, "r")
+        # the constructor registered the transaction before add_object failed; it must be
+        # terminated, not leaked until the TTL backstop reclaims it
+        assert FakeDownloadService.deleted == [FakeDownloader.instances[0].tx_id]
 
-        outcome_cb(_outcome(completed=True))
+    def test_waiter_resolution_latches_verdict(self, fake_layer):
+        attempt = pt.TaskPayloadAttempt(MagicMock(), {}, "r")
+        waiter = FakeDownloader.instances[0].waiter
+        assert not attempt.completed() and not attempt.failed()
+        assert attempt.failure_reason() is None
+
+        waiter.resolve(_outcome(completed=True))
         assert attempt.completed() and not attempt.failed()
         assert attempt.failure_reason() is None
 
-    def test_failed_outcome_carries_reason(self, available_layer):
+    def test_failed_outcome_carries_reason(self, fake_layer):
         attempt = pt.TaskPayloadAttempt(MagicMock(), {}, "r")
-        FakeDownloader.instances[0].kwargs["outcome_cb"](_outcome(completed=False, reason="acquire budget"))
+        FakeDownloader.instances[0].waiter.resolve(_outcome(completed=False, reason="acquire budget"))
         assert attempt.failed() and not attempt.completed()
         assert "acquire budget" in attempt.failure_reason()
 
-    def test_wait_true_only_on_completed_outcome(self, available_layer):
+    def test_service_shutdown_resolves_failed_with_reason(self, fake_layer):
+        # waiter terminally resolved with no outcome: the service shut down before the
+        # attempt settled — must read as failed, never as still-in-flight
+        attempt = pt.TaskPayloadAttempt(MagicMock(), {}, "r")
+        FakeDownloader.instances[0].waiter.resolve(None)
+        assert attempt.failed() and not attempt.completed()
+        assert "shut down" in attempt.failure_reason()
+
+    def test_wait_true_only_on_completed_outcome(self, fake_layer):
         attempt = pt.TaskPayloadAttempt(MagicMock(), {}, "r")
         waiter = FakeDownloader.instances[0].waiter
 
-        waiter.outcome_to_return = _outcome(completed=True)
+        waiter.wait_result = _outcome(completed=True)
         assert attempt.wait(timeout=1.0) is True
-        waiter.outcome_to_return = _outcome(completed=False)
+        waiter.wait_result = _outcome(completed=False)
         assert attempt.wait(timeout=1.0) is False
 
-    def test_wait_handles_the_none_arm(self, available_layer, caplog):
-        # contract: waiter.wait resolves None on timeout or service shutdown; the seam
-        # must fold that into not-delivered, never into a hang or a raise
+    def test_wait_handles_the_none_arm(self, fake_layer, caplog):
+        # waiter.wait resolves None on timeout or service shutdown; the seam must fold
+        # that into not-delivered, never into a hang or a raise
         attempt = pt.TaskPayloadAttempt(MagicMock(), {}, "r")
-        FakeDownloader.instances[0].waiter.outcome_to_return = None
 
         assert attempt.wait(timeout=1.0, linger=0.5) is False
         assert "waiter resolved None" in caplog.text
         assert FakeDownloader.instances[0].waiter.wait_calls == [(1.0, 0.5)]
 
-    def test_terminate_uses_contract_listed_deletion(self, available_layer):
+    def test_terminate_uses_delete_transaction(self, fake_layer):
         attempt = pt.TaskPayloadAttempt(MagicMock(), {}, "r")
         attempt.terminate()
         attempt.terminate()  # idempotent from the seam's side
         assert FakeDownloadService.deleted == [attempt.tx_id, attempt.tx_id]
 
-    def test_terminate_never_raises(self, available_layer, monkeypatch, caplog):
+    def test_terminate_never_raises(self, fake_layer, monkeypatch, caplog):
         attempt = pt.TaskPayloadAttempt(MagicMock(), {}, "r")
 
         def boom(transaction_id):
@@ -222,7 +238,7 @@ class TestFetchResultPayload:
             progress_cb=None,
             progress_interval=30.0,
         ):
-            calls.append((from_fqcn, ref_id, per_request_timeout))
+            calls.append((from_fqcn, ref_id, per_request_timeout, abort_signal))
             if ref_id in fail_refs:
                 consumer.download_failed(ref_id, "producer error")
                 return
@@ -241,6 +257,15 @@ class TestFetchResultPayload:
         assert objs == [{"a": 1}, {"b": 2}]
         assert [c[0] for c in calls] == ["trainer-fqcn", "trainer-fqcn"]
         assert all(c[2] == pt.RESULT_PULL_PER_REQUEST_TIMEOUT for c in calls)
+
+    def test_abort_signal_reaches_every_pull(self, monkeypatch):
+        fake, calls = self._fake_download_object({"r1": {"a": 1}})
+        monkeypatch.setattr(pt, "download_object", fake)
+        signal = object()
+
+        pt.fetch_result_payload(MagicMock(), "trainer-fqcn", ["r1"], abort_signal=signal)
+
+        assert calls[0][3] is signal
 
     def test_failed_pull_raises_with_reason(self, monkeypatch):
         fake, _ = self._fake_download_object({"r1": {"a": 1}}, fail_refs=("r1",))

@@ -18,11 +18,9 @@ Design: docs/design/client_api_execution_modes.md ("What We Propose", "Overview"
 "Execution Modes", "Configuration Surface"). This module path is normative - job configs
 reference ``nvflare.app_common.executors.client_api_executor.ClientAPIExecutor``.
 
-Availability: ``in_process`` is fully supported. ``external_process`` has its CJ-side
-backend (launch/session/control plane); end-to-end use additionally needs the trainer-side
-Cell engine (trainer-engine PR) and the F3 payload layer (#4865), so jobs selecting it fail
-cleanly at launch/transfer time until those land. ``attach`` is not yet implemented;
-selecting it fails cleanly at job startup.
+Availability: ``in_process`` and ``external_process`` are fully supported (the CJ-side
+backend, the trainer-side Cell engine in nvflare/client/cell, and the F3 payload layer).
+``attach`` is not yet implemented; selecting it fails cleanly at job startup.
 
 Unlike the legacy executors (InProcessClientAPIExecutor / ClientAPILauncherExecutor), this
 surface has no parameter-conversion args (``params_exchange_format`` /
@@ -256,6 +254,12 @@ class ClientAPIExecutor(Executor):
         # True: fire a federation-scoped event directly (today's MetricRelay behavior for
         # ex-process). Cell backends (external_process/attach) may select this path in initialize().
         self._analytics_fire_fed_event: bool = False
+
+    @property
+    def execution_mode(self) -> str:
+        """Read-only view of the configured mode, for build-time validation (fed_app_config
+        rejects a second same-mode ClientAPIExecutor per client app) and diagnostics."""
+        return self._execution_mode
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:

@@ -14,15 +14,16 @@
 
 """One-backend-per-resource guard shared by the Client API execution-mode backends.
 
-Both out-of-the-CJ-thread modes drive a shared, process-scoped control plane keyed by a
-single well-known identity, and a Client API job may legally wire more than one executor
-(TaskRouter accepts multiple executors for disjoint task names). Two ClientAPIExecutors of
-the SAME mode in one client job would then silently overwrite each other on that shared
-identity (last-writer-wins), cross-wiring both trainers:
+Both out-of-the-CJ-thread modes drive a shared control plane keyed by a single well-known
+identity, and a Client API job may legally wire more than one executor (TaskRouter accepts
+multiple executors for disjoint task names). Two ClientAPIExecutors of the SAME mode would
+then silently overwrite each other on that shared identity (last-writer-wins), cross-wiring
+both trainers:
 
 - ``in_process``: the process-singleton DataBus — both trainers' ``flare.init()`` resolve
   the single CLIENT_API_KEY to the last-installed API, and one trainer's result fires both
-  backends' fixed-topic callbacks.
+  backends' fixed-topic callbacks. Because the DataBus is a process singleton, the guard's
+  effective scope in this mode is the process, not the job.
 - ``external_process``: the job-scoped CJ Cell — ``register_request_cb`` keeps one callback
   per ``(channel, topic)``, so the second backend replaces the first's protocol handlers,
   and both launches collide on the same trainer FQCN leaf and bootstrap/pgid artifacts.
@@ -47,36 +48,44 @@ from typing import Optional
 class SingleBackendGuard:
     """A process-wide registry enforcing one live backend per shared control-plane resource.
 
-    Keyed weakly on the resource object, so a resource that is itself released (a per-job
-    Cell) drops its entry automatically; a process-singleton resource (the DataBus) relies
-    on the explicit ``release()`` every backend runs in teardown.
+    Both sides of an entry are weak: the resource key, so the registry never extends a
+    per-job Cell's lifetime, and the owner value, so a backend that leaked its claim (its
+    teardown never ran) stops blocking the slot as soon as the leaked backend is collected.
+    A claim whose owner is still reachable is honored — a live backend, even a wedged one,
+    is still using the resource. Explicit ``release()`` in teardown remains the primary
+    cleanup; the weak owner is the self-healing backstop, not the mechanism.
     """
 
-    def __init__(self, mode: str, remedy: str):
+    def __init__(self, mode: str, remedy: str, scope: str = "client job"):
         """
         Args:
             mode: the execution mode this guard protects (used in the rejection message).
             remedy: a one-line "how to fix your job config" clause appended to the message.
+            scope: what one live backend is enforced per, for the rejection message —
+                "client job" for a job-scoped resource (the CJ Cell); the in_process guard
+                passes "process" because its resource (the DataBus) is process-scoped.
         """
         self._mode = mode
         self._remedy = remedy
-        self._active = weakref.WeakKeyDictionary()  # resource -> owner backend
+        self._scope = scope
+        self._active = weakref.WeakKeyDictionary()  # resource -> weakref.ref(owner backend)
         self._lock = threading.Lock()
 
     def claim(self, resource, owner) -> None:
         """Claims the slot for ``resource`` on behalf of ``owner``.
 
-        Idempotent for the same owner. Raises RuntimeError if a different backend already
-        holds it (rejecting the second backend without disturbing the first's claim).
+        Idempotent for the same owner. Raises RuntimeError if a different, still-live
+        backend already holds it (rejecting the second backend without disturbing the
+        first's claim). A dead owner's stale claim is reclaimed silently.
         """
         with self._lock:
-            current = self._active.get(resource)
+            current = self._current_owner_locked(resource)
             if current is not None and current is not owner:
                 raise RuntimeError(
                     f"another {self._mode} Client API backend is already active: V1 supports one "
-                    f"{self._mode} executor per client job — {self._remedy}"
+                    f"{self._mode} executor per {self._scope} — {self._remedy}"
                 )
-            self._active[resource] = owner
+            self._active[resource] = weakref.ref(owner)
 
     def release(self, resource, owner) -> None:
         """Releases the slot only if ``owner`` still holds it. Never raises.
@@ -87,10 +96,14 @@ class SingleBackendGuard:
         if resource is None:
             return
         with self._lock:
-            if self._active.get(resource) is owner:
+            if self._current_owner_locked(resource) is owner:
                 del self._active[resource]
 
     def owner_of(self, resource) -> Optional[object]:
-        """The backend currently holding ``resource`` (or None). For assertions/diagnostics."""
+        """The live backend currently holding ``resource`` (or None). For assertions/diagnostics."""
         with self._lock:
-            return self._active.get(resource)
+            return self._current_owner_locked(resource)
+
+    def _current_owner_locked(self, resource) -> Optional[object]:
+        owner_ref = self._active.get(resource)
+        return owner_ref() if owner_ref is not None else None
