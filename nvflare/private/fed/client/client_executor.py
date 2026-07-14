@@ -433,10 +433,13 @@ class JobExecutor(ClientExecutor):
         retry = 1
         while retry >= 0:
             process_status = self.run_processes.get(job_id, {}).get(RunProcessKey.STATUS, ClientStatus.NOT_STARTED)
-            if process_status == ClientStatus.STARTED:
+            if process_status in (ClientStatus.STARTING, ClientStatus.STARTED):
                 try:
                     with self.lock:
                         job_handle = self.run_processes[job_id][RunProcessKey.JOB_HANDLE]
+                    if process_status == ClientStatus.STARTING:
+                        job_handle.terminate()
+                        break
                     data = {}
                     request = new_cell_message({}, data)
                     self.client.cell.fire_and_forget(
