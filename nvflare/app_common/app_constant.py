@@ -77,6 +77,7 @@ class AppConstants(object):
     MODEL_WEIGHTS = "_model_weights_"
     AGGREGATION_RESULT = "_aggregation_result"
     AGGREGATION_STATS = "_aggregation_stats"
+    JOB_STATS_CLIENT_TELEMETRY = "_job_stats_client_telemetry"
     METRICS_AGGREGATION_INFO = "metrics_aggregation_info"
     METRICS_SELECTION_INFO = "metrics_selection_info"
     AGGREGATION_TRIGGERED = "_aggregation_triggered"

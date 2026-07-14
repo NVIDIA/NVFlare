@@ -19,7 +19,9 @@ from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.abstract.model import make_model_learnable
 from nvflare.app_common.aggregators.weighted_aggregation_helper import (
+    AggregationStatsKey,
     WeightedAggregationHelper,
+    compute_key_match_stats,
     filter_aggregatable_metrics,
 )
 from nvflare.app_common.app_constant import AppConstants
@@ -254,6 +256,11 @@ class BaseFedAvg(ModelController):
             return FLModel()
         self._results = []
         self._set_metrics_aggregation_info(aggr_result)
+
+        aggr_stats = compute_key_match_stats({_get_client_name(r): list(r.params or {}) for r in results})
+        aggr_stats[AggregationStatsKey.ROUND] = self.current_round
+        if self.fl_ctx:
+            self.fl_ctx.set_prop(AppConstants.AGGREGATION_STATS, aggr_stats, private=True, sticky=False)
 
         self.fire_event_with_data(
             AppEventType.AFTER_AGGREGATION, self.fl_ctx, AppConstants.AGGREGATION_RESULT, aggr_result

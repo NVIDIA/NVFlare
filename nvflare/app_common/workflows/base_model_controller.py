@@ -264,6 +264,7 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         try:
             self.event(AppEventType.BEFORE_CONTRIBUTION_ACCEPT)
             accepted = self._accept_train_result(client_name=client_name, result=result, fl_ctx=fl_ctx)
+            self._set_ctx_prop_preserving_attrs(fl_ctx, AppConstants.AGGREGATION_ACCEPTED, accepted)
             self.event(AppEventType.AFTER_CONTRIBUTION_ACCEPT)
         finally:
             self._clear_training_result(fl_ctx)

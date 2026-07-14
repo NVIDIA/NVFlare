@@ -524,6 +524,7 @@ class ServerRunner(TBI):
                     result = make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR)
 
                 self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_RESULT_FILTER")
+                fl_ctx.set_prop(FLContextKey.TASK_RESULT, value=result, private=True, sticky=False)
                 self.fire_event(EventType.AFTER_TASK_RESULT_FILTER, fl_ctx)
 
                 self.log_debug(fl_ctx, "firing event EventType.BEFORE_PROCESS_SUBMISSION")

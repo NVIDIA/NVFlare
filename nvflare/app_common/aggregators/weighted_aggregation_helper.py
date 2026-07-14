@@ -84,6 +84,35 @@ class AggregationStatsKey:
     SKIPPED_KEYS = "skipped_keys"
 
 
+def compute_key_match_stats(contributions: Dict[str, Any]) -> dict:
+    """Compute key-match aggregation stats from each contributor's param keys.
+
+    Args:
+        contributions: dict of contributor name -> iterable of the param keys that contributor supplied.
+
+    Returns:
+        An aggregation stats dict (AggregationStatsKey fields). Since no exclusion is applied here,
+        keys seen equals keys aggregated and skipped keys is 0.
+    """
+    key_counts = {}
+    for keys in contributions.values():
+        for k in keys:
+            key_counts[k] = key_counts.get(k, 0) + 1
+    num_contributions = len(contributions)
+    fully_matched = 0
+    if num_contributions > 0:
+        fully_matched = sum(1 for c in key_counts.values() if c == num_contributions)
+    return {
+        AggregationStatsKey.ACCEPTED_CONTRIBUTIONS: num_contributions,
+        AggregationStatsKey.CONTRIBUTORS: sorted(contributions),
+        AggregationStatsKey.KEYS_AGGREGATED: len(key_counts),
+        AggregationStatsKey.KEYS_SEEN: len(key_counts),
+        AggregationStatsKey.FULLY_MATCHED_KEYS: fully_matched,
+        AggregationStatsKey.PARTIALLY_MATCHED_KEYS: len(key_counts) - fully_matched,
+        AggregationStatsKey.SKIPPED_KEYS: 0,
+    }
+
+
 class WeightedAggregationHelper(object):
     def __init__(self, exclude_vars: Optional[str] = None, weigh_by_local_iter: bool = True):
         """Perform weighted aggregation.

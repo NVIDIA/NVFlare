@@ -27,6 +27,7 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
+from nvflare.app_common.aggregators.weighted_aggregation_helper import AggregationStatsKey
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
@@ -191,6 +192,39 @@ class TestBaseFedAvgMetricsAggregationInfo:
             "mode": "min",
             "mode_source": "derived_from_stop_condition",
         }
+
+    def test_aggregate_publishes_aggregation_stats(self):
+        """BaseFedAvg.aggregate (Scaffold/LR FedAvg path) must publish AGGREGATION_STATS."""
+        controller = _TestBaseFedAvg()
+        controller.fl_ctx = FLContext()
+        controller.event = lambda _: None
+        controller.fire_event_with_data = lambda *args, **kwargs: None
+        controller.current_round = 2
+
+        controller.aggregate(
+            [
+                FLModel(
+                    params={"w1": 1.0, "w2": 2.0},
+                    current_round=2,
+                    meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+                ),
+                FLModel(
+                    params={"w1": 3.0},
+                    current_round=2,
+                    meta={"client_name": "site-2", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 1},
+                ),
+            ]
+        )
+
+        stats = controller.fl_ctx.get_prop(AppConstants.AGGREGATION_STATS)
+        assert stats is not None
+        assert stats[AggregationStatsKey.ROUND] == 2
+        assert stats[AggregationStatsKey.ACCEPTED_CONTRIBUTIONS] == 2
+        assert stats[AggregationStatsKey.CONTRIBUTORS] == ["site-1", "site-2"]
+        assert stats[AggregationStatsKey.KEYS_AGGREGATED] == 2
+        assert stats[AggregationStatsKey.FULLY_MATCHED_KEYS] == 1
+        assert stats[AggregationStatsKey.PARTIALLY_MATCHED_KEYS] == 1
+        assert stats[AggregationStatsKey.SKIPPED_KEYS] == 0
 
     def test_stop_condition_parsing(self):
         """Test that stop condition is correctly parsed."""
@@ -1282,19 +1316,42 @@ class TestFedAvgWorkflowEvents:
         client_task.result = result
 
         training_results_seen = []
+        accepted_flags_seen = []
 
         def record_training_result(event_type):
             if event_type == AppEventType.AFTER_CONTRIBUTION_ACCEPT:
                 training_results_seen.append(fl_ctx.get_prop(AppConstants.TRAINING_RESULT))
+                accepted_flags_seen.append(fl_ctx.get_prop(AppConstants.AGGREGATION_ACCEPTED))
 
         with patch.object(controller, "event", side_effect=record_training_result):
             controller._process_result(client_task, fl_ctx)
 
         assert training_results_seen == [result]
+        assert accepted_flags_seen == [True]
         assert fl_ctx.get_prop(AppConstants.TRAINING_RESULT) is None
         detail = fl_ctx.get_prop_detail(AppConstants.TRAINING_RESULT)
         assert detail["private"] is True
         assert detail["sticky"] is False
+
+    def test_process_result_publishes_rejected_contribution(self):
+        controller = FedAvg(num_clients=1)
+        fl_ctx = FLContext()
+        task = Task(name=AppConstants.TASK_TRAIN, data=Shareable(), props={AppConstants.META_DATA: {}})
+        client_task = ClientTask(client=Client("site-1", "token"), task=task)
+        client_task.result = Shareable()
+        accepted_flags_seen = []
+
+        def record_acceptance(event_type):
+            if event_type == AppEventType.AFTER_CONTRIBUTION_ACCEPT:
+                accepted_flags_seen.append(fl_ctx.get_prop(AppConstants.AGGREGATION_ACCEPTED))
+
+        with (
+            patch.object(controller, "_accept_train_result", return_value=False),
+            patch.object(controller, "event", side_effect=record_acceptance),
+        ):
+            controller._process_result(client_task, fl_ctx)
+
+        assert accepted_flags_seen == [False]
 
     def test_process_result_releases_raw_in_memory_training_result(self):
         import gc
