@@ -88,9 +88,7 @@ def parse_cell_pipe_alias(segment: str) -> Optional[Tuple[str, str, str]]:
         if len(parts) != 5:
             return None
 
-        marker, alias_marker, owner, runtime_id, mode = parts
-        if marker != "cellpipe" or alias_marker != "alias":
-            return None
+        owner, runtime_id, mode = parts[2:]
         if not owner or not runtime_id or "." in owner or "." in runtime_id:
             return None
         if mode not in CELL_PIPE_ALIAS_MODES:

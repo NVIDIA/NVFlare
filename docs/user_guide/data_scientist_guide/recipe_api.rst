@@ -138,19 +138,31 @@ Shared helpers:
    Add the default Recipe log-streaming components. If no file names are given,
    the recipe streams ``log.json``.
 
+``recipe.enable_tensor_streaming(format="pytorch", tasks=None, tensor_send_timeout=30.0, wait_send_task_data_all_clients_timeout=300.0)``
+   Add matching tensor-streaming components to the server and all generated
+   client apps. The format must match the recipe's ``server_expected_format``.
+
 Utility helpers:
 
 ``add_experiment_tracking(recipe, tracking_type, tracking_config=None, client_side=False, server_side=True, clients=None)``
    Add supported experiment tracking receivers such as TensorBoard, MLflow, or
    Weights & Biases. With ``client_side=True``, ``clients`` limits which sites
    receive the client-side receiver; call once per site with different
-   ``tracking_config`` values for per-site tracking destinations. Keep tracking
-   credentials in the executing site's environment or mounted secret files;
-   never put them in ``tracking_config``.
+   ``tracking_config`` values for per-site tracking destinations. For MLflow,
+   omitting ``tracking_config`` uses local storage and defaults the experiment
+   name to ``<recipe-name>-experiment``. The run-name suffix defaults to
+   ``<recipe-name>-Server`` for server-side tracking and
+   ``<recipe-name>-Client`` for client-side tracking. Keep tracking credentials
+   in the executing site's environment or mounted secret files; never put them
+   in ``tracking_config``.
 
 ``add_cross_site_evaluation(recipe, submit_model_timeout=600, validation_timeout=6000, participating_clients=None)``
    Add cross-site evaluation to a training recipe when the recipe/framework
    supports it.
+
+``add_final_global_evaluation(recipe, participating_clients=None, validation_timeout=6000)``
+   Add a final evaluation of a PyTorch recipe's persisted global model without
+   asking clients to submit their local models.
 
 Per-Site And Metadata Helpers
 -----------------------------

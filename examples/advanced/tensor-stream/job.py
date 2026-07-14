@@ -20,8 +20,6 @@ import argparse
 from model import get_model
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.app_opt.tensor_stream.client import TensorClientStreamer
-from nvflare.app_opt.tensor_stream.server import TensorServerStreamer
 from nvflare.client.config import ExchangeFormat
 from nvflare.recipe import SimEnv, add_experiment_tracking
 
@@ -52,8 +50,7 @@ def main():
     )
     add_experiment_tracking(recipe, tracking_type="tensorboard")
 
-    recipe.job.to_server(TensorServerStreamer(), "tensor_server_streamer")
-    recipe.job.to_clients(TensorClientStreamer(), "tensor_client_streamer")
+    recipe.enable_tensor_streaming()
 
     env = SimEnv(num_clients=n_clients)
     run = recipe.execute(env)
