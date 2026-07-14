@@ -303,7 +303,8 @@ class EdgeFedBuffRecipe(Recipe):
                 f"invalid {DEVICE_SIMULATION_ENV_KEY} in env: expect SimulationConfig but got {type(simulation_config)}"
             )
 
-        assert isinstance(self._job, EdgeJob)
+        if not isinstance(self._job, EdgeJob):
+            raise TypeError(f"expected recipe job to be an EdgeJob, got {type(self._job).__name__}")
         self._configure_simulation(self._job, simulation_config)
 
     def create_job(self) -> EdgeJob:

@@ -169,6 +169,7 @@ class TestRecipeConfigMethods:
         recipe = Recipe(job)
 
         assert recipe._job is job
+        assert recipe.name == job.name
         assert not hasattr(recipe, "job")
 
     @pytest.fixture

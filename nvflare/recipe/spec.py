@@ -252,6 +252,7 @@ class Recipe(ABC):
             job: the job that implements the recipe.
         """
         self._job = job
+        self.name = job.name
         self._helper_per_site_config = None
         self._tensor_streaming_added = False
         self._cse_added = False
