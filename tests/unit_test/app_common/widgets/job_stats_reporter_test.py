@@ -854,6 +854,22 @@ class TestSecondReviewRegressions:
         assert summary["status"] == JobStatusCode.PARTIAL
         assert "no rounds or client tasks were observed" in summary["status_reason"]
 
+    def test_empty_rounds_without_tasks_are_not_reported_as_success(self, tmp_path):
+        # rounds that start and end without ever assigning a task must not fall through to
+        # SUCCESS just because the round records exist (PR review comment)
+        engine = make_engine(tmp_path, ["site-1"])
+        reporter = JobStatsReporter()
+        reporter.handle_event(EventType.START_RUN, make_ctx(engine))
+        for round_num in range(2):
+            round_ctx = make_ctx(engine, props={AppConstants.CURRENT_ROUND: round_num})
+            reporter.handle_event(AppEventType.ROUND_STARTED, round_ctx)
+            reporter.handle_event(AppEventType.ROUND_DONE, round_ctx)
+        reporter.handle_event(EventType.END_RUN, make_ctx(engine))
+
+        summary = reporter.get_summary(make_ctx(engine))
+        assert summary["status"] == JobStatusCode.PARTIAL
+        assert "rounds ran but no client tasks were observed" in summary["status_reason"]
+
     def test_counts_only_stats_rounds_have_consistent_patterns(self, tmp_path):
         # two rounds with identical counts-only stats must be stable, with the accepted count
         # taken from ACCEPTED_CONTRIBUTIONS rather than the (empty) contributor-name set

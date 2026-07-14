@@ -1218,9 +1218,18 @@ class JobStatsReporter(Widget):
             issues.append(f"rounds with missing/rejected contributions: {missing_rounds}")
         if issues:
             return JobStatusCode.PARTIAL, "; ".join(issues)
-        if not self._rounds and not self._completed_tasks and not self._open_tasks:
-            # the run ended cleanly but no FL work was ever observed; calling that a
-            # success would hide a job that silently did nothing
+        no_work_observed = (
+            targeted == 0
+            and not self._completed_tasks
+            and not self._open_tasks
+            and not any(rec.accepted_clients for rec in self._rounds.values())
+        )
+        if no_work_observed:
+            # the run ended cleanly but no FL work was ever observed (not even empty rounds
+            # that assigned no tasks); calling that a success would hide a job that silently
+            # did nothing
+            if self._rounds:
+                return JobStatusCode.PARTIAL, "rounds ran but no client tasks were observed"
             return JobStatusCode.PARTIAL, "no rounds or client tasks were observed during the run"
         return JobStatusCode.SUCCESS, "all targeted client contributions were accepted"
 
