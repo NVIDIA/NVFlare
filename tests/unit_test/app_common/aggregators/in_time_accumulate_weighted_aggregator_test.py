@@ -14,6 +14,7 @@
 
 import random
 import re
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -273,6 +274,32 @@ class TestInTimeAccumulateWeightedAggregator:
         assert stats[AggregationStatsKey.FULLY_MATCHED_KEYS] == 1
         assert stats[AggregationStatsKey.PARTIALLY_MATCHED_KEYS] == 1
         assert stats[AggregationStatsKey.SKIPPED_KEYS] == 1
+
+    def test_collection_stats_count_disjoint_contributors(self):
+        def make_stats(contributor):
+            return {
+                AggregationStatsKey.ROUND: 0,
+                AggregationStatsKey.ACCEPTED_CONTRIBUTIONS: 1,
+                AggregationStatsKey.CONTRIBUTORS: [contributor],
+                AggregationStatsKey.KEYS_AGGREGATED: 1,
+                AggregationStatsKey.KEYS_SEEN: 1,
+                AggregationStatsKey.FULLY_MATCHED_KEYS: 1,
+                AggregationStatsKey.PARTIALLY_MATCHED_KEYS: 0,
+                AggregationStatsKey.SKIPPED_KEYS: 0,
+            }
+
+        agg = InTimeAccumulateWeightedAggregator()
+        agg.dxo_aggregators = {
+            "weights": SimpleNamespace(last_aggregation_stats=make_stats("site-1")),
+            "metrics": SimpleNamespace(last_aggregation_stats=make_stats("site-2")),
+        }
+        fl_ctx = FLContext()
+
+        agg._publish_aggregation_stats(fl_ctx)
+
+        stats = fl_ctx.get_prop(AppConstants.AGGREGATION_STATS)
+        assert stats[AggregationStatsKey.CONTRIBUTORS] == ["site-1", "site-2"]
+        assert stats[AggregationStatsKey.ACCEPTED_CONTRIBUTIONS] == 2
 
     @pytest.mark.parametrize("shape", [4, (6, 6)])
     @pytest.mark.parametrize("n_clients", [10, 50, 100])

@@ -280,9 +280,9 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
                 contributors = set(combined[AggregationStatsKey.CONTRIBUTORS])
                 contributors.update(stats[AggregationStatsKey.CONTRIBUTORS])
                 combined[AggregationStatsKey.CONTRIBUTORS] = sorted(contributors)
-                combined[AggregationStatsKey.ACCEPTED_CONTRIBUTIONS] = max(
-                    combined[AggregationStatsKey.ACCEPTED_CONTRIBUTIONS],
-                    stats[AggregationStatsKey.ACCEPTED_CONTRIBUTIONS],
-                )
+                # A collection may contain disjoint contributor sets (for example, one
+                # client supplying weights and another supplying metrics). Report the
+                # number of distinct accepted clients represented by the collection.
+                combined[AggregationStatsKey.ACCEPTED_CONTRIBUTIONS] = len(contributors)
         if combined:
             fl_ctx.set_prop(AppConstants.AGGREGATION_STATS, combined, private=True, sticky=False)

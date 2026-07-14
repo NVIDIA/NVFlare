@@ -455,7 +455,11 @@ class TestJobStatsReporter:
 
     def test_optional_error_file_contains_details(self, tmp_path):
         engine = make_engine(tmp_path, ["site-1"])
-        reporter = JobStatsReporter(error_filename="job_stats_errors.log")
+        reporter = JobStatsReporter(
+            filename="reports/job_stats_run_summary.log",
+            json_filename="reports/job_stats_run_summary.json",
+            error_filename="errors/job_stats_errors.log",
+        )
         reporter.handle_event(EventType.START_RUN, make_ctx(engine))
         fire_round(
             reporter,
@@ -467,7 +471,7 @@ class TestJobStatsReporter:
         )
         reporter.handle_event(EventType.END_RUN, make_ctx(engine))
 
-        error_path = os.path.join(str(tmp_path), "job_stats_errors.log")
+        error_path = os.path.join(str(tmp_path), "errors", "job_stats_errors.log")
         assert os.path.isfile(error_path)
         with open(error_path, encoding="utf-8") as f:
             error_report = f.read()
@@ -475,10 +479,11 @@ class TestJobStatsReporter:
         assert ReturnCode.EXECUTION_EXCEPTION in error_report
 
         # the main report points at the error log
-        with open(os.path.join(str(tmp_path), "job_stats_run_summary.log"), encoding="utf-8") as f:
+        with open(os.path.join(str(tmp_path), "reports", "job_stats_run_summary.log"), encoding="utf-8") as f:
             report = f.read()
         assert "Error Log Location" in report
-        assert "job_stats_errors.log" in report
+        assert "errors/job_stats_errors.log" in report
+        assert os.path.isfile(os.path.join(str(tmp_path), "reports", "job_stats_run_summary.json"))
 
     def test_resource_sampler_collects_cpu_gpu_memory_and_battery(self):
         process = MagicMock()
@@ -498,8 +503,21 @@ class TestJobStatsReporter:
             nvmlShutdown=Mock(),
             nvmlDeviceGetCount=Mock(return_value=1),
             nvmlDeviceGetHandleByIndex=Mock(return_value="gpu-0"),
-            nvmlDeviceGetUtilizationRates=Mock(return_value=SimpleNamespace(gpu=50.0)),
-            nvmlDeviceGetMemoryInfo=Mock(return_value=SimpleNamespace(used=512 * 1024 * 1024)),
+            nvmlDeviceGetProcessUtilization=Mock(
+                return_value=[
+                    SimpleNamespace(pid=os.getpid(), smUtil=50.0, timeStamp=2),
+                    SimpleNamespace(pid=999999, smUtil=90.0, timeStamp=2),
+                ]
+            ),
+            nvmlDeviceGetComputeRunningProcesses=Mock(
+                return_value=[
+                    SimpleNamespace(pid=os.getpid(), usedGpuMemory=512 * 1024 * 1024),
+                    SimpleNamespace(pid=999999, usedGpuMemory=2048 * 1024 * 1024),
+                ]
+            ),
+            nvmlDeviceGetGraphicsRunningProcesses=Mock(return_value=[]),
+            nvmlDeviceGetUtilizationRates=Mock(return_value=SimpleNamespace(gpu=99.0)),
+            nvmlDeviceGetMemoryInfo=Mock(return_value=SimpleNamespace(used=4096 * 1024 * 1024)),
         )
 
         with patch.dict("sys.modules", {"psutil": fake_psutil, "pynvml": fake_pynvml}):
@@ -513,6 +531,8 @@ class TestJobStatsReporter:
         assert resources["gpu_memory_mb"]["mean"] == 512.0
         assert resources["battery_used_percent"] == 2.0
         fake_pynvml.nvmlShutdown.assert_called_once()
+        fake_pynvml.nvmlDeviceGetUtilizationRates.assert_not_called()
+        fake_pynvml.nvmlDeviceGetMemoryInfo.assert_not_called()
 
 
 def fire_relay_leg(reporter, engine, round_num, client, task_id=None, result=None):
@@ -600,6 +620,13 @@ class TestReviewFindingRegressions:
         assert len(summary["rounds"]) == 2
         assert [r["keys_aggregated"] for r in summary["rounds"]] == [5, 7]
         assert summary["rounds"][0]["workflow"] != summary["rounds"][1]["workflow"]
+        assert len(summary["consistency"]["workflows"]) == 2
+        assert [item["stable_rounds"] for item in summary["consistency"]["workflows"]] == [1, 1]
+        assert summary["consistency"]["inconsistent_rounds"] == []
+        report = reporter.format_report(summary)
+        assert "Workflow 1" in report
+        assert "Workflow 2" in report
+        assert "Workflow" in report.split("Aggregation Stats Summary", 1)[1]
 
     def test_malformed_telemetry_does_not_break_summary(self, tmp_path):
         # F6: a bad client telemetry header must degrade gracefully, not destroy the report.
@@ -628,6 +655,35 @@ class TestReviewFindingRegressions:
         task = summary["timing"]["tasks"][0]
         assert task["model_update_mb"] is not None  # falls back to server-side estimation
         assert task["client_computation_time"] is None
+
+    def test_nonfinite_telemetry_is_dropped_and_json_remains_standard(self, tmp_path):
+        clients = ["site-1"]
+        engine = make_engine(tmp_path, clients)
+        reporter = JobStatsReporter()
+        reporter.handle_event(EventType.START_RUN, make_ctx(engine))
+        reporter.handle_event(AppEventType.ROUND_STARTED, make_ctx(engine, props={AppConstants.CURRENT_ROUND: 0}))
+        result = Shareable()
+        result.set_header(
+            AppConstants.JOB_STATS_CLIENT_TELEMETRY,
+            {
+                "round": 0,
+                "execution_time": "nan",
+                "update_size_mb": "inf",
+                "resources": {
+                    "cpu_percent": {"count": "inf", "mean": 25.0},
+                    "memory_rss_mb": {"count": 1, "mean": "nan"},
+                },
+            },
+        )
+        fire_relay_leg(reporter, engine, 0, "site-1", result=result)
+        reporter.handle_event(EventType.END_RUN, make_ctx(engine))
+
+        summary = reporter.get_summary(make_ctx(engine))
+        assert summary["status"] == JobStatusCode.SUCCESS
+        assert summary["participation"]["incomplete_tasks"] == 0
+        assert summary["timing"]["tasks"][0]["client_computation_time"] is None
+        with open(os.path.join(str(tmp_path), "job_stats_run_summary.json"), encoding="utf-8") as f:
+            json.load(f, parse_constant=lambda value: pytest.fail(f"non-standard JSON constant: {value}"))
 
     def test_size_estimate_counts_repeated_shared_objects(self):
         # F7: [1] * n holds one shared int object; every occurrence must still be counted.

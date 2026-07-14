@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+import math
 import os
 import sys
 import threading
@@ -55,9 +56,10 @@ def _to_float(value) -> Optional[float]:
     if value is None or isinstance(value, (dict, list, set, tuple)):
         return None
     try:
-        return float(value)
+        result = float(value)
     except (TypeError, ValueError):
         return None
+    return result if math.isfinite(result) else None
 
 
 def _numeric_stats(values: List[float]) -> Optional[dict]:
@@ -196,6 +198,13 @@ def _format_table(headers: List[str], rows: List[List[object]]) -> List[str]:
     return lines
 
 
+def _prepare_output_path(run_dir: str, filename: str) -> str:
+    """Build an output path and ensure a configured relative subdirectory exists."""
+    path = os.path.join(run_dir, filename)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    return path
+
+
 def _estimate_size_bytes(obj, seen=None) -> int:
     """Estimate logical payload bytes without serializing or materializing lazy tensors.
 
@@ -291,13 +300,21 @@ class _ResourceSampler:
             self.psutil = None
             self.process = None
 
+        pynvml = None
+        nvml_initialized = False
         try:
             import pynvml
 
             pynvml.nvmlInit()
+            nvml_initialized = True
             self.pynvml = pynvml
             self.gpu_handles = [pynvml.nvmlDeviceGetHandleByIndex(i) for i in range(pynvml.nvmlDeviceGetCount())]
         except Exception:
+            if pynvml and nvml_initialized:
+                try:
+                    pynvml.nvmlShutdown()
+                except Exception:
+                    pass
             self.pynvml = None
             self.gpu_handles = []
 
@@ -330,15 +347,83 @@ class _ResourceSampler:
             gpu_percent = []
             gpu_memory_mb = []
             for handle in self.gpu_handles:
-                try:
-                    gpu_percent.append(float(self.pynvml.nvmlDeviceGetUtilizationRates(handle).gpu))
-                    gpu_memory_mb.append(float(self.pynvml.nvmlDeviceGetMemoryInfo(handle).used) / _MB)
-                except Exception:
-                    continue
+                utilization, memory_mb = self._sample_process_gpu(handle)
+                if utilization is not None:
+                    gpu_percent.append(utilization)
+                if memory_mb is not None:
+                    gpu_memory_mb.append(memory_mb)
             if gpu_percent:
                 sample["gpu_percent"] = mean(gpu_percent)
+            if gpu_memory_mb:
                 sample["gpu_memory_mb"] = sum(gpu_memory_mb)
         self.samples.append(sample)
+
+    def _sample_process_gpu(self, handle) -> Tuple[Optional[float], Optional[float]]:
+        """Return GPU utilization and memory for this client process on one device.
+
+        NVML's device utilization/memory APIs include unrelated processes. Prefer process
+        utilization/accounting APIs and process lists; if the installed driver does not expose
+        them, leave the metric unavailable instead of mislabeling device-wide activity as the
+        client's usage.
+        """
+        pid = os.getpid()
+        utilization = None
+        process_util_fn = getattr(self.pynvml, "nvmlDeviceGetProcessUtilization", None)
+        if callable(process_util_fn):
+            try:
+                samples = [s for s in process_util_fn(handle, 0) if getattr(s, "pid", None) == pid]
+                if samples:
+                    latest = max(samples, key=lambda s: getattr(s, "timeStamp", 0))
+                    value = _to_float(getattr(latest, "smUtil", None))
+                    if value is not None and 0.0 <= value <= 100.0:
+                        utilization = value
+            except Exception:
+                pass
+        if utilization is None:
+            accounting_fn = getattr(self.pynvml, "nvmlDeviceGetAccountingStats", None)
+            if callable(accounting_fn):
+                try:
+                    value = _to_float(getattr(accounting_fn(handle, pid), "gpuUtilization", None))
+                    if value is not None and 0.0 <= value <= 100.0:
+                        utilization = value
+                except Exception:
+                    pass
+
+        memory_values = []
+        unavailable = getattr(self.pynvml, "NVML_VALUE_NOT_AVAILABLE", None)
+        for names in (
+            (
+                "nvmlDeviceGetComputeRunningProcesses_v3",
+                "nvmlDeviceGetComputeRunningProcesses_v2",
+                "nvmlDeviceGetComputeRunningProcesses",
+            ),
+            (
+                "nvmlDeviceGetGraphicsRunningProcesses_v3",
+                "nvmlDeviceGetGraphicsRunningProcesses_v2",
+                "nvmlDeviceGetGraphicsRunningProcesses",
+            ),
+        ):
+            process_fn = next(
+                (getattr(self.pynvml, name, None) for name in names if callable(getattr(self.pynvml, name, None))), None
+            )
+            if not process_fn:
+                continue
+            try:
+                for process in process_fn(handle):
+                    if getattr(process, "pid", None) != pid:
+                        continue
+                    used = getattr(process, "usedGpuMemory", None)
+                    if used is None or used == unavailable:
+                        continue
+                    value = _to_float(used)
+                    if value is not None and value >= 0.0:
+                        memory_values.append(value / _MB)
+            except Exception:
+                continue
+
+        # A process may appear in both NVML compute and graphics lists for the same device.
+        memory_mb = max(memory_values) if memory_values else None
+        return utilization, memory_mb
 
     def stop(self) -> dict:
         self.stop_event.set()
@@ -433,6 +518,7 @@ class _TaskRecord:
 
     def to_dict(self) -> dict:
         return {
+            "workflow": self.workflow,
             "round": self.round_num,
             "client": self.client,
             "task_id": self.task_id,
@@ -918,14 +1004,16 @@ class JobStatsReporter(Widget):
         report = self.format_report(summary)
         run_dir = fl_ctx.get_engine().get_workspace().get_run_dir(fl_ctx.get_job_id())
         os.makedirs(run_dir, exist_ok=True)
-        report_path = os.path.join(run_dir, self._filename)
+        report_path = _prepare_output_path(run_dir, self._filename)
         with open(report_path, "w", encoding="utf-8") as f:
             f.write(report)
         if self._json_filename:
-            with open(os.path.join(run_dir, self._json_filename), "w", encoding="utf-8") as f:
+            json_path = _prepare_output_path(run_dir, self._json_filename)
+            with open(json_path, "w", encoding="utf-8") as f:
                 json.dump(summary, f, indent=2, default=str)
         if self._error_filename and summary["errors"]:
-            with open(os.path.join(run_dir, self._error_filename), "w", encoding="utf-8") as f:
+            error_path = _prepare_output_path(run_dir, self._error_filename)
+            with open(error_path, "w", encoding="utf-8") as f:
                 f.write(self.format_errors(summary["errors"]))
         self.log_info(fl_ctx, f"job stats run summary saved to {report_path}")
 
@@ -1014,7 +1102,7 @@ class JobStatsReporter(Widget):
             stats.get(AggregationStatsKey.SKIPPED_KEYS),
         )
 
-    def _get_consistency_summary(self, ordered_rounds: List[_RoundRecord]) -> dict:
+    def _summarize_round_consistency(self, ordered_rounds: List[_RoundRecord]) -> dict:
         patterns = [self._round_pattern(rec) for rec in ordered_rounds]
         known = [p for p in patterns if p is not None]
         result = {
@@ -1044,6 +1132,43 @@ class JobStatsReporter(Widget):
             if key:
                 result[key] = _mean_std([float(p[index]) for p in known if p[index] is not None])
         return result
+
+    def _get_consistency_summary(self, ordered_rounds: List[_RoundRecord]) -> dict:
+        """Summarize aggregation consistency without comparing unrelated workflows."""
+        by_workflow = {}
+        for rec in ordered_rounds:
+            by_workflow.setdefault(rec.workflow, []).append(rec)
+
+        workflow_summaries = []
+        for workflow, records in by_workflow.items():
+            item = self._summarize_round_consistency(records)
+            item["workflow"] = workflow
+            workflow_summaries.append(item)
+
+        if len(workflow_summaries) <= 1:
+            result = (
+                dict(workflow_summaries[0]) if workflow_summaries else self._summarize_round_consistency(ordered_rounds)
+            )
+            result["workflows"] = workflow_summaries
+            return result
+
+        known_summaries = [item for item in workflow_summaries if item["stable_rounds"] is not None]
+        return {
+            "total_rounds": sum(item["total_rounds"] for item in workflow_summaries),
+            "stable_rounds": (sum(item["stable_rounds"] for item in known_summaries) if known_summaries else None),
+            "inconsistent_rounds": [
+                {"workflow": item["workflow"], "round": round_num}
+                for item in workflow_summaries
+                for round_num in item["inconsistent_rounds"]
+            ],
+            # Per-key distributions are meaningful only within a workflow. They are retained
+            # in the workflow summaries instead of being pooled across unrelated models.
+            "keys_aggregated": None,
+            "fully_matched_keys": None,
+            "partially_matched_keys": None,
+            "skipped_keys": None,
+            "workflows": workflow_summaries,
+        }
 
     @staticmethod
     def _get_transport_comm_stats() -> dict:
@@ -1332,40 +1457,40 @@ class JobStatsReporter(Widget):
             display_rows = list(rounds)
             if final_aggregation:
                 display_rows.append(final_aggregation)
+            show_workflow = len({item["workflow"] for item in display_rows}) > 1
             for item in display_rows:
                 keys = (
                     "N/A" if item["keys_aggregated"] is None else f"{item['keys_aggregated']} / {na(item['keys_seen'])}"
                 )
                 rate = item["participation_rate_percent"]
-                rows.append(
-                    [
-                        item["round"],
-                        f"{item['accepted_clients']}/{item['total_clients']}",
-                        f"{rate:.1f}%" if rate is not None else "N/A",
-                        ", ".join(item["missing_clients"]) or "None",
-                        _format_duration(item["server_training_time"]),
-                        keys,
-                        na(item["fully_matched_keys"]),
-                        na(item["partially_matched_keys"]),
-                        na(item["skipped_keys"]),
-                    ]
-                )
-            lines.extend(
-                _format_table(
-                    [
-                        "Round",
-                        "Accepted Clients",
-                        "Participation",
-                        "Missing/Rejected",
-                        "Server Time",
-                        "Keys Aggregated / Seen",
-                        "Fully Matched Keys",
-                        "Partially Matched Keys",
-                        "Skipped Keys",
-                    ],
-                    rows,
-                )
-            )
+                row = [
+                    item["round"],
+                    f"{item['accepted_clients']}/{item['total_clients']}",
+                    f"{rate:.1f}%" if rate is not None else "N/A",
+                    ", ".join(item["missing_clients"]) or "None",
+                    _format_duration(item["server_training_time"]),
+                    keys,
+                    na(item["fully_matched_keys"]),
+                    na(item["partially_matched_keys"]),
+                    na(item["skipped_keys"]),
+                ]
+                if show_workflow:
+                    row.insert(0, item["workflow"])
+                rows.append(row)
+            headers = [
+                "Round",
+                "Accepted Clients",
+                "Participation",
+                "Missing/Rejected",
+                "Server Time",
+                "Keys Aggregated / Seen",
+                "Fully Matched Keys",
+                "Partially Matched Keys",
+                "Skipped Keys",
+            ]
+            if show_workflow:
+                headers.insert(0, "Workflow")
+            lines.extend(_format_table(headers, rows))
         else:
             lines.append("No round data collected.")
         lines.append("")
@@ -1373,24 +1498,31 @@ class JobStatsReporter(Widget):
         cons = summary["consistency"]
         lines.append("Aggregation Consistency Across Rounds")
         lines.append("-" * 100)
-        if cons["stable_rounds"] is not None:
-            inconsistent = ", ".join(f"Round {r}" for r in cons["inconsistent_rounds"]) or "None"
-            lines.extend(
-                _format_table(
-                    ["Metric", "Value / Notes"],
-                    [
-                        ["Total Rounds", cons["total_rounds"]],
-                        ["Stable Rounds", f"{cons['stable_rounds']} / {cons['total_rounds']}"],
-                        ["Keys Aggregated", cons["keys_aggregated"]],
-                        ["Fully Matched Keys", cons["fully_matched_keys"]],
-                        ["Partially Matched Keys", cons["partially_matched_keys"]],
-                        ["Skipped Keys", cons["skipped_keys"]],
-                        ["Inconsistent Rounds", inconsistent],
-                    ],
+        workflow_consistency = cons.get("workflows") or []
+        consistency_sections = workflow_consistency if len(workflow_consistency) > 1 else [cons]
+        for index, item in enumerate(consistency_sections):
+            if len(consistency_sections) > 1:
+                if index:
+                    lines.append("")
+                lines.append(f"Workflow {item['workflow']}")
+            if item["stable_rounds"] is not None:
+                inconsistent = ", ".join(f"Round {r}" for r in item["inconsistent_rounds"]) or "None"
+                lines.extend(
+                    _format_table(
+                        ["Metric", "Value / Notes"],
+                        [
+                            ["Total Rounds", item["total_rounds"]],
+                            ["Stable Rounds", f"{item['stable_rounds']} / {item['total_rounds']}"],
+                            ["Keys Aggregated", item["keys_aggregated"]],
+                            ["Fully Matched Keys", item["fully_matched_keys"]],
+                            ["Partially Matched Keys", item["partially_matched_keys"]],
+                            ["Skipped Keys", item["skipped_keys"]],
+                            ["Inconsistent Rounds", inconsistent],
+                        ],
+                    )
                 )
-            )
-        else:
-            lines.append("No aggregation key stats available (aggregator did not publish them).")
+            else:
+                lines.append("No aggregation key stats available (aggregator did not publish them).")
         lines.append("")
 
         part = summary["participation"]
@@ -1451,54 +1583,60 @@ class JobStatsReporter(Widget):
         if timing["client_rounds"]:
             lines.append("")
             lines.append("Per-Client Per-Round Time")
-            lines.extend(
-                _format_table(
-                    ["Round", "Client", "Tasks", "Computation", "Client Overhead", "Communication/Wait"],
-                    [
-                        [
-                            row["round"],
-                            row["client"],
-                            row["task_count"],
-                            _format_duration(row["computation_time"]),
-                            _format_duration(row["client_framework_overhead"]),
-                            _format_duration(row["communication_time"]),
-                        ]
-                        for row in timing["client_rounds"]
-                    ],
-                )
-            )
+            client_rounds = timing["client_rounds"]
+            show_workflow = len({row["workflow"] for row in client_rounds}) > 1
+            headers = ["Round", "Client", "Tasks", "Computation", "Client Overhead", "Communication/Wait"]
+            rows = [
+                [
+                    row["round"],
+                    row["client"],
+                    row["task_count"],
+                    _format_duration(row["computation_time"]),
+                    _format_duration(row["client_framework_overhead"]),
+                    _format_duration(row["communication_time"]),
+                ]
+                for row in client_rounds
+            ]
+            if show_workflow:
+                headers.insert(0, "Workflow")
+                for row, values in zip(rows, client_rounds):
+                    row.insert(0, values["workflow"])
+            lines.extend(_format_table(headers, rows))
         if timing["tasks"]:
             lines.append("")
             lines.append("Every Task Execution")
-            lines.extend(
-                _format_table(
-                    [
-                        "Round",
-                        "Client",
-                        "Task",
-                        "Task ID",
-                        "Server Elapsed",
-                        "Client Compute",
-                        "Client Overhead",
-                        "Comm/Wait",
-                        "RC",
-                    ],
-                    [
-                        [
-                            task["round"],
-                            task["client"],
-                            task["task_name"],
-                            task["task_id"],
-                            _format_duration(task["server_elapsed_time"]),
-                            _format_duration(task["client_computation_time"]),
-                            _format_duration(task["client_framework_overhead"]),
-                            _format_duration(task["communication_time"]),
-                            task["return_code"],
-                        ]
-                        for task in timing["tasks"]
-                    ],
-                )
-            )
+            tasks = timing["tasks"]
+            show_workflow = len({task["workflow"] for task in tasks}) > 1
+            headers = [
+                "Round",
+                "Client",
+                "Task",
+                "Task ID",
+                "Server Elapsed",
+                "Client Compute",
+                "Client Overhead",
+                "Comm/Wait",
+                "RC",
+            ]
+            rows = [
+                [
+                    task["round"],
+                    task["client"],
+                    task["task_name"],
+                    task["task_id"],
+                    _format_duration(task["server_elapsed_time"]),
+                    _format_duration(task["client_computation_time"]),
+                    _format_duration(task["client_framework_overhead"]),
+                    _format_duration(task["communication_time"]),
+                    task["return_code"],
+                ]
+                for task in tasks
+            ]
+            if show_workflow:
+                headers.insert(0, "Workflow")
+                for row, values in zip(rows, tasks):
+                    row.insert(0, values["workflow"])
+            lines.extend(_format_table(headers, rows))
         lines.append("")
 
         communication = summary["communication"]
@@ -1565,9 +1703,9 @@ class JobStatsReporter(Widget):
                     [
                         "Client",
                         "Avg CPU % (mean ± std)",
-                        "GPU % (mean ± std)",
+                        "Process GPU % (mean ± std)",
                         "Avg Memory MB (mean ± std)",
-                        "GPU Memory MB (mean ± std)",
+                        "Process GPU Memory MB (mean ± std)",
                         "Battery Used %",
                     ],
                     [
