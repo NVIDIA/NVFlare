@@ -213,6 +213,24 @@ results fail closed. POC and production results are accepted only after the
 materialized candidate is re-imported and its fixed comparison budget is
 verified again.
 
+Local simulation needs to bind sockets that a restricted coding-agent sandbox
+may prohibit. Authorization is therefore established once by the human during
+campaign setup, using the host agent's command permission mechanism. The grant
+is limited to the resolved Python interpreter and Auto-FL runner, the
+`initialize` and `evaluate` actions, and the selected absolute `job.py`; all
+other actions and every POC/production operation retain normal permissions.
+The skill never writes permission configuration or treats subprocess output as
+authorization. A detected socket denial remains an `infrastructure_retry` with
+exit code 75, but state reports `await_simulation_runner_approval` and waits for
+the existing grant or the human instead of initiating escalation.
+
+This command scope does not sandbox training code inside the simulator. User
+and agent-authored candidate Python executes with the runner's host privileges,
+like any locally launched training job. Autonomous simulation campaigns should
+therefore run in a disposable container or dedicated VM. Production execution
+continues through startup-kit authentication, standard job submission, and site
+policy; the local simulation grant cannot bypass those controls.
+
 ## Skill Implementation Boundary
 
 The deterministic importer and campaign runner live under

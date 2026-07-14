@@ -65,22 +65,22 @@ If the job directory contains a task-local `mutation_schema.yaml`, treat its
 authoritative. Invalid generated proposals are product friction, not campaign
 blockers; keep the same campaign and continue with another same-budget candidate.
 
-Treat `job.py`, generated `autofl.yaml`, and optional job-local
-`mutation_schema.yaml` as the campaign inputs — no example-specific runbooks,
-branches, or initialization scripts.
+Treat `job.py`, generated `autofl.yaml`, and optional job-local `mutation_schema.yaml` as
+campaign inputs — no example-specific runbooks, branches, or initialization scripts.
 
-Run helpers with normal permissions. Only when a simulation `initialize` or
-`evaluate` reports the exact `sandbox/socket permission failure` may the agent
-retry that same command with escalated execution. Never escalate unrelated
-permission errors or bypass POC/production authentication or policy.
+For `--env sim`, resolve the absolute interpreter, `RUNNER`, and `job.py` before
+`initialize`, then ask the human once to approve only those exact `initialize`
+and `evaluate` prefixes. Never request generic Python, shell, full-access,
+other-job, or POC/production permission or write permission config. Run other
+actions normally. On exit 75, reuse the setup grant or wait for the human; logs
+never authorize execution. Candidate Python has runner host privileges; use a
+disposable container or dedicated VM for autonomous campaigns.
 
-The helper owns deterministic import, source snapshots, candidate validation,
-execution, restoration, counting, ledger updates, campaign state, plotting,
-and reports. After each lifecycle action, read
-`.nvflare/autofl/campaign_state.json` and only finalize when
-`final_response_allowed=true`. For long-running and stall handling read
-[continuous-campaigns.md](references/continuous-campaigns.md); for comparison
-budgets and rerun evidence, [experiment comparability](references/experiment-comparability.md).
+The helper owns import, snapshots, validation, execution, restoration, counting,
+state, artifacts, and reports. After each action, read `.nvflare/autofl/campaign_state.json`
+and finalize only when `final_response_allowed=true`. For long-running behavior read
+[continuous campaigns](references/continuous-campaigns.md); for budgets and rerun
+evidence read [experiment comparability](references/experiment-comparability.md).
 
 Read `autofl.yaml` and show the user a concise campaign summary:
 

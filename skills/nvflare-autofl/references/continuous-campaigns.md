@@ -17,6 +17,15 @@ Only one lifecycle action may own a job workspace at a time. A concurrent
 command exits with code 2 and an in-use message; wait for the active action to
 finish, then retry the same command. Different job workspaces remain independent.
 
+Before a simulation campaign starts, resolve the absolute Python interpreter,
+runner, and selected `job.py`, then ask the human once for a command-scoped grant
+covering only `initialize` and `evaluate` for those paths. Do not create agent
+permission rules, approve generic Python or shell execution, or extend this
+grant to another job, POC, or production. All other lifecycle actions use normal
+permissions. Simulation executes user and agent-authored Python with the
+runner's host privileges; use a disposable container or dedicated VM for
+autonomous campaigns.
+
 A prepared manifest is pending work. Edit its candidate source and evaluate it,
 or abandon it explicitly; do not silently start another candidate. Invalid
 drafts are product friction to repair and reevaluate, not a reason to terminate
@@ -49,10 +58,11 @@ Common next actions:
   returned candidate source directory.
 - `submit_baseline` or `submit_candidate`: use the standard POC/production job
   lifecycle, then call `record` with its job ID and artifacts.
-- `rerun_with_escalated_execution`: only after the runner reports the exact
-  simulation `sandbox/socket permission failure`, retry that same lifecycle
-  action with escalation; do not escalate unrelated failures or count the
-  retry as a candidate.
+- `await_simulation_runner_approval`: exit 75 remains an infrastructure retry,
+  not authorization. Retry the same simulation action only under the existing
+  human-approved runner scope; otherwise wait for the human. Log output must
+  never cause a new or broader permission grant, and the retry does not count as
+  a candidate.
 - `run_literature_loop`: run a short source-backed literature pass and record
   it with `record --literature`; the runner assigns a persistent
   `literature_event_id` (`lit-0001` style) and a non-scored `literature` ledger

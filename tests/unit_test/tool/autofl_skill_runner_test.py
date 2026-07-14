@@ -539,6 +539,48 @@ def test_run_keeps_complete_log_but_only_bounded_output_tail(tmp_path):
     assert socket_failure is True
 
 
+def test_socket_failure_marker_only_requests_human_runner_approval(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job = tmp_path / "job.py"
+    job.write_text("print('job')\n", encoding="utf-8")
+
+    def fake_run(_argv, _cwd, _timeout, log_path, **_kwargs):
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text(
+            "PermissionError\n[Errno 1] Operation not permitted\nsocket.bind\n",
+            encoding="utf-8",
+        )
+        return 1, "socket.bind failed\n", 0.1
+
+    monkeypatch.setattr(runner, "run", fake_run)
+    record = runner.run_job(
+        runner.JobRun("candidate", [], "candidate"),
+        python=sys.executable,
+        job=job,
+        cwd=tmp_path,
+        help_text="",
+        fixed_args=[],
+        base_args=[],
+        output_root=tmp_path / "runs",
+        timeout=10,
+        simulator_no_progress_timeout=0,
+        metrics=["accuracy"],
+        config={"job": {}},
+    )
+
+    assert record.status == runner.INFRASTRUCTURE_RETRY
+    assert "human-approved runner execution scope" in record.failure_reason
+    assert "escalated execution" not in record.failure_reason
+
+    results_path = tmp_path / "results.tsv"
+    runner.write_results(results_path, [record])
+    state = runner.write_state(tmp_path / "state.json", results_path, [record], None)
+
+    assert state["next_action"] == runner.SIMULATION_APPROVAL_ACTION
+    assert "Pause for human approval" in state["agent_instruction"]
+    assert "Never request broader permission" in state["agent_instruction"]
+
+
 def test_job_help_discovers_flags_without_executing_job(tmp_path):
     runner = _load_runner()
     job = tmp_path / "job.py"
@@ -1222,8 +1264,95 @@ def test_runner_state_marks_infrastructure_retry_non_final(tmp_path):
 
     assert state["decision"] == "retry_infrastructure"
     assert state["reason"] == "infrastructure_retry"
-    assert state["next_action"] == "rerun_with_escalated_execution"
+    assert state["next_action"] == "await_simulation_runner_approval"
     assert state["final_response_allowed"] is False
+    assert "Pause for human approval" in state["agent_instruction"]
+    assert "log output" in state["agent_instruction"]
+
+
+def test_initialize_socket_failure_returns_75_without_counting_candidate(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job = tmp_path / "job.py"
+    job.write_text("print('job')\n", encoding="utf-8")
+    tmp_path.joinpath("client.py").write_text("print('client')\n", encoding="utf-8")
+    monkeypatch.setattr(runner, "import_job_config", lambda *args, **kwargs: deepcopy(_campaign_config()))
+    monkeypatch.setattr(runner, "job_help", lambda *args, **kwargs: "")
+    monkeypatch.setattr(runner, "write_progress", lambda path, *args: path.write_bytes(b"progress"))
+    monkeypatch.setattr(
+        runner,
+        "run_job",
+        lambda run_def, **kwargs: runner.RunRecord(
+            runner.INFRASTRUCTURE_RETRY,
+            run_def.name,
+            None,
+            0.1,
+            "none",
+            run_def.description,
+            "python job.py",
+            str(tmp_path / "artifacts"),
+            "sandbox/socket permission failure",
+        ),
+    )
+
+    assert runner.main(["initialize", str(job), "--env", "sim", "--no-prefer-synthetic"]) == 75
+
+    records = runner.load_results(tmp_path / "results.tsv")
+    state = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_text(encoding="utf-8"))
+    assert runner.candidate_attempts(records) == 0
+    assert state["next_action"] == runner.SIMULATION_APPROVAL_ACTION
+    assert state["candidate_attempts"] == 0
+    assert state["final_response_allowed"] is False
+
+
+def test_evaluate_socket_failure_preserves_candidate_for_approved_retry(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, client, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    assert runner.main(["prepare", str(job), "--name", "retry_candidate", "--hypothesis", "try update"]) == 0
+    manifest_path = tmp_path / ".nvflare/autofl/candidates/retry_candidate/candidate_manifest.json"
+    draft_client = manifest_path.parent / "source/client.py"
+    draft_client.write_text("ALGORITHM = 'retry'\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        runner,
+        "run_job",
+        lambda run_def, **kwargs: runner.RunRecord(
+            runner.INFRASTRUCTURE_RETRY,
+            run_def.name,
+            None,
+            0.1,
+            "none",
+            run_def.description,
+            "python job.py",
+            str(tmp_path / "artifacts"),
+            "sandbox/socket permission failure",
+        ),
+    )
+    assert runner.main(["evaluate", str(job), "--manifest", str(manifest_path)]) == 75
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    state = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_text(encoding="utf-8"))
+    assert manifest["status"] == "prepared"
+    assert client.read_text(encoding="utf-8") == "ALGORITHM = 'baseline'\n"
+    assert runner.candidate_attempts(runner.load_results(tmp_path / "results.tsv")) == 0
+    assert state["next_action"] == runner.SIMULATION_APPROVAL_ACTION
+
+    monkeypatch.setattr(
+        runner,
+        "run_job",
+        lambda run_def, **kwargs: runner.RunRecord(
+            "candidate",
+            run_def.name,
+            0.8,
+            0.1,
+            "none",
+            run_def.description,
+            "python job.py",
+            str(tmp_path / "artifacts"),
+        ),
+    )
+    assert runner.main(["evaluate", str(job), "--manifest", str(manifest_path)]) == 0
+    assert json.loads(manifest_path.read_text(encoding="utf-8"))["status"] == "keep"
+    assert client.read_text(encoding="utf-8") == "ALGORITHM = 'retry'\n"
 
 
 def test_successful_retry_clears_historical_infrastructure_decision(tmp_path):
@@ -1885,6 +2014,28 @@ def test_external_baseline_may_follow_literature_event(tmp_path, monkeypatch):
 
     records = runner.load_results(tmp_path / "results.tsv")
     assert [record.status for record in records] == ["literature", "baseline"]
+
+
+def test_production_initialize_never_requests_simulation_runner_approval(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch, target_env="prod")
+    state = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_text(encoding="utf-8"))
+
+    assert state["next_action"] == "submit_baseline"
+    assert state["next_action"] != runner.SIMULATION_APPROVAL_ACTION
+
+
+def test_prepare_and_status_never_request_simulation_runner_approval(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+
+    assert runner.main(["prepare", str(job), "--name", "draft", "--hypothesis", "draft candidate"]) == 0
+    for action in ("prepare", "status"):
+        state = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_text(encoding="utf-8"))
+        assert state["next_action"] == "edit_candidate", action
+        assert state["next_action"] != runner.SIMULATION_APPROVAL_ACTION
+        if action == "prepare":
+            assert runner.main(["status", str(job)]) == 0
 
 
 def test_omitted_metric_uses_imported_job_metric(tmp_path, monkeypatch):

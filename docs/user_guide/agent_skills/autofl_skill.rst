@@ -60,6 +60,22 @@ When the user does not name a metric, a deterministic ``key_metric`` extracted
 from ``job.py`` takes precedence. The default user experience does not require
 editing ``autofl.yaml``.
 
+Simulation Execution Permission
+===============================
+
+Before a simulation campaign starts, the coding agent asks once for approval
+to run the installed Auto-FL runner outside its restricted command sandbox.
+Approve only the resolved Python interpreter and runner, the ``initialize``
+and ``evaluate`` actions, and the selected absolute ``job.py``. Do not approve
+generic Python or shell execution, full access, another job, or POC/production
+commands. The skill does not create or modify agent permission configuration.
+
+This approval is needed because the local simulator binds sockets. It also
+means that user and agent-authored training code runs with the runner's host
+privileges. Use a disposable container or dedicated VM for autonomous
+campaigns. Declining the approval prevents local simulation but does not relax
+the sandbox or bypass normal POC/production authentication and site policy.
+
 Candidate Lifecycle
 ===================
 

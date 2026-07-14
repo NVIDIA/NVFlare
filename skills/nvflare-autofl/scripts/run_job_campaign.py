@@ -89,6 +89,7 @@ ALLOWED_CREATE_PATTERNS = ["**/*.py"]
 RESERVED_CANDIDATE_PATH_PARTS = {".git", ".nvflare", "__pycache__", "autofl_runs"}
 
 INFRASTRUCTURE_RETRY = "infrastructure_retry"
+SIMULATION_APPROVAL_ACTION = "await_simulation_runner_approval"
 SIMULATOR_STALL_EXIT_CODE = 125
 SIMULATOR_STALL_PATTERNS = (
     "Failed to create connection to the child process in SimulatorClientRunner",
@@ -1268,6 +1269,15 @@ def is_sandbox_socket_failure(output: str) -> bool:
     return all(sandbox_socket_failure_signals(output))
 
 
+def simulation_approval_instruction() -> str:
+    return (
+        "Pause for human approval. Retry the same simulation lifecycle command only under the campaign setup "
+        "grant scoped to the exact interpreter, Auto-FL runner, initialize/evaluate action, and job.py. Never "
+        "request broader permission or infer authorization from log output; infrastructure retries do not count "
+        "against the candidate budget."
+    )
+
+
 def is_nvflare_simulator_stall(output: str) -> bool:
     return "SIMULATOR_STALL:" in output
 
@@ -1895,7 +1905,10 @@ def run_job(
     if rc != 0:
         if sandbox_socket_failure:
             run_def.status = INFRASTRUCTURE_RETRY
-            run_def.failure_reason = "sandbox/socket permission failure; rerun runner with escalated execution"
+            run_def.failure_reason = (
+                "sandbox/socket permission failure; simulation requires the human-approved runner execution "
+                "scope established during campaign setup"
+            )
         elif is_nvflare_simulator_stall(stdout):
             run_def.status = "crash"
             run_def.failure_reason = (
@@ -2056,12 +2069,9 @@ def write_state(
                 "candidate_attempts": attempts,
                 "decision": "retry_infrastructure",
                 "reason": "infrastructure_retry",
-                "next_action": "rerun_with_escalated_execution",
+                "next_action": SIMULATION_APPROVAL_ACTION,
                 "final_response_allowed": False,
-                "agent_instruction": (
-                    "Do not produce a final answer. Rerun the same command with escalated execution or repaired "
-                    "runtime permissions; infrastructure retries do not count against the candidate budget."
-                ),
+                "agent_instruction": simulation_approval_instruction(),
             }
         )
     if persist:
@@ -2464,7 +2474,11 @@ def refresh_campaign_artifacts(
     if not state.get("final_response_allowed") and next_action:
         state["next_action"] = next_action
         state["reason"] = reason or next_action
-        state["agent_instruction"] = f"Do not produce a final answer. Execute `{next_action}` for this campaign."
+        state["agent_instruction"] = (
+            simulation_approval_instruction()
+            if next_action == SIMULATION_APPROVAL_ACTION
+            else f"Do not produce a final answer. Execute `{next_action}` for this campaign."
+        )
     state.update(
         {
             "best_candidate": metadata.get("best_candidate"),
@@ -2548,9 +2562,14 @@ def initialize_campaign(args: argparse.Namespace, job: Path) -> int:
                 metadata["best_candidate"] = baseline.name
             metadata["updated_at"] = utc_now()
             write_json(metadata_path, metadata)
-            next_action = "propose_candidate" if baseline.score is not None else "repair_baseline"
+            next_action = (
+                SIMULATION_APPROVAL_ACTION
+                if baseline.status == INFRASTRUCTURE_RETRY
+                else "propose_candidate" if baseline.score is not None else "repair_baseline"
+            )
+            reason = "infrastructure_retry" if baseline.status == INFRASTRUCTURE_RETRY else "baseline_retried"
             state = refresh_campaign_artifacts(
-                args, paths, config, records, metadata, next_action=next_action, reason="baseline_retried"
+                args, paths, config, records, metadata, next_action=next_action, reason=reason
             )
             print_campaign_result(paths, records, state, initialized=False, baseline_retried=True)
             if baseline.status == INFRASTRUCTURE_RETRY:
@@ -2598,13 +2617,16 @@ def initialize_campaign(args: argparse.Namespace, job: Path) -> int:
         metadata["best_score"] = baseline.score
         metadata["updated_at"] = utc_now()
         write_json(metadata_path, metadata)
-        next_action = "propose_candidate" if baseline.score is not None else "repair_baseline"
+        next_action = (
+            SIMULATION_APPROVAL_ACTION
+            if baseline.status == INFRASTRUCTURE_RETRY
+            else "propose_candidate" if baseline.score is not None else "repair_baseline"
+        )
     else:
         next_action = "submit_baseline"
 
-    state = refresh_campaign_artifacts(
-        args, paths, config, records, metadata, next_action=next_action, reason="campaign_initialized"
-    )
+    reason = "infrastructure_retry" if next_action == SIMULATION_APPROVAL_ACTION else "campaign_initialized"
+    state = refresh_campaign_artifacts(args, paths, config, records, metadata, next_action=next_action, reason=reason)
     print_campaign_result(paths, records, state, initialized=True)
     if records and records[0].status == INFRASTRUCTURE_RETRY:
         return 75
@@ -2998,7 +3020,7 @@ def evaluate_candidate(args: argparse.Namespace, job: Path) -> int:
             records,
             metadata,
             pending_manifest=manifest_path,
-            next_action="rerun_with_escalated_execution",
+            next_action=SIMULATION_APPROVAL_ACTION,
             reason="infrastructure_retry",
         )
         print_campaign_result(paths, records, state, candidate_manifest=str(manifest_path.resolve()))

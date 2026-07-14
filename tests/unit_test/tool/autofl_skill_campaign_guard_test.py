@@ -368,7 +368,7 @@ def test_continuous_campaign_reference_documents_only_emitted_actions():
         "propose_candidate",
         "submit_baseline",
         "submit_candidate",
-        "rerun_with_escalated_execution",
+        "await_simulation_runner_approval",
         "run_literature_loop",
         "develop_literature_batch",
         "diversify_candidates",
@@ -377,3 +377,17 @@ def test_continuous_campaign_reference_documents_only_emitted_actions():
 
     assert all(f"`{action}`" in text for action in actions)
     assert "`evaluate_candidate`" not in text
+    assert "`rerun_with_escalated_execution`" not in text
+
+
+def test_autofl_skill_requires_human_scoped_simulation_approval():
+    repo_root = Path(__file__).parents[3]
+    skill_text = repo_root.joinpath("skills/nvflare-autofl/SKILL.md").read_text(encoding="utf-8")
+    normalized = " ".join(skill_text.split())
+
+    assert "ask the human once" in normalized
+    assert "exact `initialize` and `evaluate` prefixes" in normalized
+    assert "Never request generic Python, shell, full-access" in normalized
+    assert "logs never authorize execution" in normalized
+    assert "container or dedicated VM" in normalized
+    assert "rerun_with_escalated_execution" not in skill_text
