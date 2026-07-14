@@ -718,13 +718,19 @@ class TestFedAvgPerSiteConfigHelper:
         assert recipe.configured_sites() == ["site-1", "site-2"]
 
     def test_helper_rebuilds_all_clients_app_and_preserves_public_additions(
-        self, mock_file_system, base_recipe_params, simple_model
+        self, tmp_path, mock_file_system, base_recipe_params, simple_model
     ):
         recipe = FedAvgRecipe(name="test_helper_per_site", model=simple_model, **base_recipe_params)
-        client_filter = PassThroughFilter()
+        client_input_filter = PassThroughFilter()
+        client_output_filter = PassThroughFilter()
+        shared_dir = tmp_path / "shared_dir"
+        shared_dir.mkdir()
         recipe.add_client_config({"shared_setting": {"enabled": True}})
         recipe.add_client_file("shared_helper.py")
-        recipe.add_client_input_filter(client_filter, tasks=["train"])
+        recipe.add_client_file(str(shared_dir))
+        recipe.add_client_input_filter(client_input_filter, tasks=["train"])
+        recipe.add_client_output_filter(client_output_filter, tasks=["train"])
+        recipe.job.add_file_to_clients("shared_config.json", dest_dir="config")
         recipe.enable_log_streaming()
 
         set_per_site_config(
@@ -748,7 +754,10 @@ class TestFedAvgPerSiteConfigHelper:
             assert app_config.additional_params == {"shared_setting": {"enabled": True}}
             assert "shared_helper.py" in app_config.ext_scripts
             assert app_config.ext_scripts.count(base_recipe_params["train_script"]) == 1
-            assert app_config.task_data_filters == [({"train"}, [client_filter])]
+            assert str(shared_dir) in app_config.ext_dirs
+            assert app_config.task_data_filters == [({"train"}, [client_input_filter])]
+            assert app_config.task_result_filters == [({"train"}, [client_output_filter])]
+            assert app_config.file_sources == [("shared_config.json", "config", None)]
             assert any(isinstance(component, JobLogStreamer) for component in app_config.components.values())
 
         assert get_client_executor(recipe, "site-1")._task_script_args == "--data site-1"
@@ -785,6 +794,45 @@ class TestFedAvgPerSiteConfigHelper:
         assert recipe.configured_sites() == ["site-1", "site-2"]
         assert recipe.per_site_config == original_config
         assert set(recipe.job._deploy_map) == {SERVER_SITE_NAME, "site-1", "site-2"}
+
+    def test_helper_rejects_mixed_all_clients_and_per_site_topology(
+        self, mock_file_system, base_recipe_params, simple_model
+    ):
+        recipe = FedAvgRecipe(name="test_mixed_client_topology", model=simple_model, **base_recipe_params)
+        recipe.job.to({"site_setting": True}, "site-1")
+
+        with pytest.raises(RuntimeError, match="mixed all-clients/per-site topology"):
+            set_per_site_config(recipe, {"site-1": {}})
+
+        assert set(recipe.job._deploy_map) == {SERVER_SITE_NAME, ALL_SITES, "site-1"}
+        assert recipe.configured_sites() == []
+        assert recipe.per_site_config is None
+
+    def test_helper_restores_job_when_rebuilding_a_site_fails(self, mock_file_system, base_recipe_params, simple_model):
+        recipe = FedAvgRecipe(
+            name="test_per_site_rollback",
+            model=simple_model,
+            launch_external_process=True,
+            **base_recipe_params,
+        )
+        original_deploy_map = dict(recipe.job._deploy_map)
+        original_clients = list(recipe.job.clients)
+        original_components = dict(recipe.job._components)
+
+        with pytest.raises(ValueError, match="unsupported"):
+            set_per_site_config(
+                recipe,
+                {
+                    "site-1": {"train_args": "--rank 1"},
+                    "site-2": {"framework": "unsupported"},
+                },
+            )
+
+        assert recipe.job._deploy_map == original_deploy_map
+        assert recipe.job.clients == original_clients
+        assert recipe.job._components == original_components
+        assert recipe.configured_sites() == []
+        assert recipe.per_site_config is None
 
 
 class TestFedAvgRecipeValidation:

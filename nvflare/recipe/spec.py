@@ -322,7 +322,7 @@ class Recipe(ABC):
         """Recipe-specific hook for helper-provided per-site configuration."""
         pass
 
-    def _record_client_runner(self, target: str, component_ids: Any, script: str) -> None:
+    def _record_client_runner(self, target: str, component_ids: Dict[str, str], script: str) -> None:
         """Record the generated pieces that must be replaced with a site-specific runner."""
         runner_component_ids = getattr(self, "_client_runner_component_ids", None)
         if runner_component_ids is None:
@@ -333,12 +333,7 @@ class Recipe(ABC):
             runner_scripts = {}
             self._client_runner_scripts = runner_scripts
 
-        if isinstance(component_ids, dict):
-            runner_component_ids[target] = {
-                component_id for component_id in component_ids.values() if isinstance(component_id, str)
-            }
-        else:
-            runner_component_ids[target] = set()
+        runner_component_ids[target] = set(component_ids.values())
         runner_scripts[target] = script
 
     @staticmethod

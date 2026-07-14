@@ -313,6 +313,25 @@ class TestFedEvalRecipeValidation:
                 **base_recipe_params,
             )
 
+    @pytest.mark.parametrize(
+        ("per_site_config", "match"),
+        [
+            ({1: {}}, "key must be str"),
+            ({"site-1": []}, "must be a dict"),
+        ],
+    )
+    def test_per_site_config_rejects_malformed_entries(
+        self, per_site_config, match, mock_file_system, base_recipe_params, simple_model
+    ):
+        model, _ = simple_model
+        with pytest.raises(ValueError, match=match):
+            FedEvalRecipe(
+                name="test_malformed_per_site_config",
+                model=model,
+                per_site_config=per_site_config,
+                **base_recipe_params,
+            )
+
     def test_non_nn_module_raises_error(self, mock_file_system, base_recipe_params, simple_model):
         """Test that non-nn.Module model raises ValueError."""
 
