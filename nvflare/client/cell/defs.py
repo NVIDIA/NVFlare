@@ -13,8 +13,8 @@
 # limitations under the License.
 """Protocol vocabulary for the Client API control protocol over Cell.
 
-This module is interface freeze #1 of the Client API Execution Modes design
-(docs/design/client_api_execution_modes.md, "Control Protocol"). It is consumed by the
+This module is the frozen control-protocol vocabulary of the Client API Execution
+Modes design (docs/design/client_api_execution_modes.md, "Control Protocol"). It is consumed by the
 trainer-side Cell engine, the external_process backend, and the attach backend. It is a
 pure vocabulary module: constants only, no Cell/cellnet imports, no I/O.
 """
@@ -50,12 +50,16 @@ class Topic:
     HELLO_ACCEPTED = "client_api.hello_accepted"
     # Distinct from ERROR (a protocol/transport error): HELLO_REJECTED is a clean, semantic
     # auth/handshake refusal (bad proof, wrong scope, consumed/expired nonce, single-session),
-    # so TE-3/AT-2 state machines can tell a recoverable auth failure from a protocol fault.
+    # so consumers can tell a recoverable auth failure from a protocol fault.
     HELLO_REJECTED = "client_api.hello_rejected"
 
     # Per task (every round)
     TASK_READY = "client_api.task_ready"
     TASK_ACCEPTED = "client_api.task_accepted"
+    # Sent when the trainer has materialized (or lazily bound) the task payload and hands
+    # it to user code. Ends the payload-materialization phase: the forward-path heartbeat
+    # exemption stops here and heartbeats govern the session lease while user code trains.
+    TASK_PAYLOAD_READY = "client_api.task_payload_ready"
     TASK_FAILED = "client_api.task_failed"
     RESULT_READY = "client_api.result_ready"
     RESULT_ACCEPTED = "client_api.result_accepted"
