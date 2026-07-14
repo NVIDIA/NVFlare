@@ -113,6 +113,7 @@ class CollabRecipe(Recipe):
         self.training_module = training_module or self._detect_training_module(self.client)
 
         job = FedJob(name=self.job_name, min_clients=self.min_clients)
+        self._finalized = False
         Recipe.__init__(self, job)
 
     def _detect_training_module(self, client_obj) -> Optional[str]:
@@ -193,6 +194,13 @@ class CollabRecipe(Recipe):
         self.client_app.set_resource_dirs(resource_dirs)
 
     def finalize(self) -> FedJob:
+        # finalize() is invoked by both Recipe.run() and Recipe.export(); a recipe
+        # instance may go through both (or either twice), so adding the job
+        # components must only happen once.
+        if self._finalized:
+            return self.job
+        self._finalized = True
+
         server_obj_id = self.job.to_server(self.server_app.obj, "_server")
         job = self.job
 
