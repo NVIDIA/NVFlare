@@ -84,7 +84,7 @@ def _make_start_app_inputs(tmp_path, job_id="job-1"):
     return job_meta, workspace, client, fl_ctx
 
 
-def test_start_app_pending_handle_poll_before_launcher_returns(tmp_path):
+def test_start_app_pending_handle_operations_before_launcher_returns(tmp_path):
     job_id = "job-1"
     job_meta, workspace, client, fl_ctx = _make_start_app_inputs(tmp_path, job_id)
     executor = JobExecutor(client=client, startup=workspace.get_startup_kit_dir())
@@ -93,6 +93,8 @@ def test_start_app_pending_handle_poll_before_launcher_returns(tmp_path):
     def launch_job(*_args):
         pending_handle = executor.run_processes[job_id][RunProcessKey.JOB_HANDLE]
         assert pending_handle.poll() is None
+        with pytest.raises(RuntimeError, match="before it is attached"):
+            pending_handle.wait()
         return MagicMock()
 
     launcher.launch_job.side_effect = launch_job
@@ -166,6 +168,31 @@ def test_start_app_removes_pending_handle_when_launch_fails(tmp_path):
     with (
         patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
         pytest.raises(RuntimeError, match="launch failed"),
+    ):
+        executor.start_app(
+            client,
+            job_id,
+            job_meta,
+            SimpleNamespace(workspace=str(tmp_path), set=[]),
+            None,
+            None,
+            None,
+            fl_ctx,
+        )
+
+    assert job_id not in executor.run_processes
+
+
+def test_start_app_removes_pending_handle_when_launcher_returns_no_handle(tmp_path):
+    job_id = "job-1"
+    job_meta, workspace, client, fl_ctx = _make_start_app_inputs(tmp_path, job_id)
+    executor = JobExecutor(client=client, startup=workspace.get_startup_kit_dir())
+    launcher = MagicMock()
+    launcher.launch_job.return_value = None
+
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
+        pytest.raises(RuntimeError, match="returned no job handle"),
     ):
         executor.start_app(
             client,

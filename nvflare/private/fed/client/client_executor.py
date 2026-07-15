@@ -77,6 +77,8 @@ class _PendingJobHandle(JobHandleSpec):
     def wait(self):
         with self._lock:
             job_handle = self._job_handle
+        if job_handle is None:
+            raise RuntimeError("cannot wait for a pending job handle before it is attached")
         return job_handle.wait()
 
 
@@ -295,6 +297,8 @@ class JobExecutor(ClientExecutor):
             }
         try:
             job_handle = job_launcher.launch_job(job_meta, fl_ctx)
+            if job_handle is None:
+                raise RuntimeError(f"job launcher returned no job handle for job '{job_id}'")
         except BaseException:
             with self.lock:
                 if self.run_processes.get(job_id, {}).get(RunProcessKey.JOB_HANDLE) is pending_handle:
