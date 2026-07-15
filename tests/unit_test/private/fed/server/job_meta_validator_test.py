@@ -23,6 +23,7 @@ import pytest
 
 from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.fl_constant import JobConstants
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.app_opt.flower.defs import Constant as FlowerConstant
 from nvflare.fuel.utils.zip_utils import get_all_file_paths, normpath_for_zip, split_path
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
@@ -139,6 +140,20 @@ class TestJobMetaValidator:
     def test_validate_invalid_deploy_map(self, meta):
         with pytest.raises(ValueError):
             JobMetaValidator._validate_deploy_map("unit_test", meta)
+
+    @pytest.mark.parametrize("resource_spec", [None, {}])
+    def test_validate_resource_accepts_empty_spec(self, resource_spec):
+        JobMetaValidator._validate_resource("unit_test", {JobMetaKey.RESOURCE_SPEC.value: resource_spec})
+
+    @pytest.mark.parametrize("resource_spec", [[], "", 0, False])
+    def test_validate_resource_rejects_non_mapping_spec(self, resource_spec):
+        with pytest.raises(ValueError, match="Invalid resource_spec"):
+            JobMetaValidator._validate_resource("unit_test", {JobMetaKey.RESOURCE_SPEC.value: resource_spec})
+
+    @pytest.mark.parametrize("site_spec", [None, [], "", 0, False])
+    def test_validate_resource_rejects_non_mapping_site_spec(self, site_spec):
+        with pytest.raises(ValueError, match="expecting a dictionary"):
+            JobMetaValidator._validate_resource("unit_test", {JobMetaKey.RESOURCE_SPEC.value: {"site-1": site_spec}})
 
     @pytest.mark.parametrize("job_name", VALID_JOBS)
     def test_validate_valid_jobs(self, job_name):
