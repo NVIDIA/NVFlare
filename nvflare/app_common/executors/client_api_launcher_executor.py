@@ -31,6 +31,7 @@ from nvflare.fuel.f3.streaming.transfer_progress import (
     resolve_streaming_progress_config,
 )
 from nvflare.fuel.utils.attributes_exportable import ExportMode
+from nvflare.fuel.utils.secret_utils import has_secret_refs
 from nvflare.fuel.utils.validation_utils import check_non_negative_int
 from nvflare.utils.configs import get_client_config_value
 
@@ -227,7 +228,23 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                     )
 
     def _get_client_config_override(self, fl_ctx: FLContext, key: str):
-        return get_client_config_value(fl_ctx, key, _CONFIG_VALUE_MISSING)
+        try:
+            value = get_client_config_value(fl_ctx, key, _CONFIG_VALUE_MISSING, resolve_refs=False)
+        except ValueError:
+            msg = f"Cannot read client config override {key!r}"
+            self.log_error(fl_ctx, msg)
+            raise ValueError(msg) from None
+        if value is not _CONFIG_VALUE_MISSING and has_secret_refs(value):
+            # These overrides are serialized into the subprocess Client API config. Resolving
+            # a reference here would write its secret value to disk, violating the memory-only
+            # contract for resolved secrets.
+            msg = (
+                f"Secret references are not supported for client config override {key!r} "
+                "because this value is written to runtime configuration"
+            )
+            self.log_error(fl_ctx, msg)
+            raise ValueError(msg)
+        return value
 
     def _apply_positive_float_client_config_override(self, fl_ctx: FLContext, key: str, attr_name: str):
         value = self._get_client_config_override(fl_ctx, key)

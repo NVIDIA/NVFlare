@@ -22,6 +22,8 @@ import pytest
 from nvflare.app_opt.flower.recipe import FlowerRecipe
 from nvflare.client.api import ClientAPIType
 from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
+from nvflare.fuel.utils.secret_utils import PotentialSecretWarning, UnsupportedSecretRefWarning
+from nvflare.recipe import secret_ref
 
 
 @pytest.mark.parametrize("flwr_version", ["1.15.9", "1.16rc0", "1.25.9", "1.26.0rc0"])
@@ -66,6 +68,33 @@ def test_flower_recipe_forwards_run_config():
     assert recipe.job is fake_job
     kwargs = mock_flower_job.call_args.kwargs
     assert kwargs["run_config"] == run_config
+
+
+@pytest.mark.parametrize(
+    "parameter, value",
+    [
+        ("extra_env", {"API_TOKEN": "abcd1234efgh"}),
+        ("run_config", {"password": "hunter22x"}),
+    ],
+)
+def test_flower_recipe_warns_on_secret_parameters(parameter, value):
+    fake_job = object()
+
+    with patch("nvflare.app_opt.flower.recipe.get_package_version", return_value="1.26.0"):
+        with patch("nvflare.app_opt.flower.recipe._create_flower_job", return_value=fake_job):
+            with pytest.warns(PotentialSecretWarning, match=parameter):
+                FlowerRecipe(flower_content="mock_flower_content", **{parameter: value})
+
+
+@pytest.mark.parametrize("parameter", ["extra_env", "run_config"])
+def test_flower_recipe_warns_on_unsupported_secret_refs(parameter):
+    fake_job = object()
+    value = {"api_token": secret_ref("API_TOKEN")}
+
+    with patch("nvflare.app_opt.flower.recipe.get_package_version", return_value="1.26.0"):
+        with patch("nvflare.app_opt.flower.recipe._create_flower_job", return_value=fake_job):
+            with pytest.warns(UnsupportedSecretRefWarning, match=parameter):
+                FlowerRecipe(flower_content="mock_flower_content", **{parameter: value})
 
 
 @pytest.mark.parametrize("flwr_version", ["1.26.0", "1.26.1", "1.27.5"])
