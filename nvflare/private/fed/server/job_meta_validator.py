@@ -260,15 +260,15 @@ class JobMetaValidator(JobMetaValidatorSpec):
         logger.debug(f"validate resource for job {job_name}")
 
         resource_spec = meta.get(JobMetaKey.RESOURCE_SPEC.value)
-        if resource_spec and not isinstance(resource_spec, dict):
+        if resource_spec is not None and not isinstance(resource_spec, dict):
             raise ValueError(f"Invalid resource_spec for job {job_name}")
 
         if not resource_spec:
             logger.debug("empty resource spec provided")
 
-        if resource_spec:
+        if isinstance(resource_spec, dict):
             for k in resource_spec:
-                if resource_spec[k] and not isinstance(resource_spec[k], dict):
+                if not isinstance(resource_spec[k], dict):
                     raise ValueError(f"value for key {k} in resource spec is expecting a dictionary")
 
     _VALID_LAUNCHER_MODES = {"process", "docker", "k8s"}
