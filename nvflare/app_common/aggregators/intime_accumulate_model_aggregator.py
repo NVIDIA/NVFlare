@@ -21,6 +21,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.aggregators.dxo_aggregator import DXOAggregator
+from nvflare.app_common.aggregators.weighted_aggregation_helper import AggregationStatsKey
 from nvflare.app_common.app_constant import AppConstants
 
 
@@ -244,9 +245,44 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
         for key in self.expected_data_kind.keys():
             aggregated_dxo = self.dxo_aggregators[key].aggregate(fl_ctx)
             if key == self._single_dxo_key:  # return single DXO with aggregation results
+                self._publish_aggregation_stats(fl_ctx)
                 return aggregated_dxo.to_shareable()
             self.log_info(fl_ctx, f"Aggregated contributions matching key '{key}'.")
             result_dxo_dict.update({key: aggregated_dxo})
         # return collection of DXOs with aggregation results
+        self._publish_aggregation_stats(fl_ctx)
         collection_dxo = DXO(data_kind=DataKind.COLLECTION, data=result_dxo_dict)
         return collection_dxo.to_shareable()
+
+    def _publish_aggregation_stats(self, fl_ctx: FLContext):
+        """Combine the per-DXO aggregation stats of this round and post them to the FLContext.
+
+        The stats are picked up by components (e.g. JobStatsReporter) handling the AFTER_AGGREGATION event,
+        which the workflow fires with this same FLContext right after aggregate() returns.
+        """
+        combined = None
+        for key, dxo_aggregator in self.dxo_aggregators.items():
+            stats = dxo_aggregator.last_aggregation_stats
+            if not stats:
+                continue
+            if combined is None:
+                combined = dict(stats)
+            else:
+                # Multiple DXOs in a collection: key stats add up; contributors are the union.
+                for count_key in (
+                    AggregationStatsKey.KEYS_AGGREGATED,
+                    AggregationStatsKey.KEYS_SEEN,
+                    AggregationStatsKey.FULLY_MATCHED_KEYS,
+                    AggregationStatsKey.PARTIALLY_MATCHED_KEYS,
+                    AggregationStatsKey.SKIPPED_KEYS,
+                ):
+                    combined[count_key] += stats[count_key]
+                contributors = set(combined[AggregationStatsKey.CONTRIBUTORS])
+                contributors.update(stats[AggregationStatsKey.CONTRIBUTORS])
+                combined[AggregationStatsKey.CONTRIBUTORS] = sorted(contributors)
+                # A collection may contain disjoint contributor sets (for example, one
+                # client supplying weights and another supplying metrics). Report the
+                # number of distinct accepted clients represented by the collection.
+                combined[AggregationStatsKey.ACCEPTED_CONTRIBUTIONS] = len(contributors)
+        if combined:
+            fl_ctx.set_prop(AppConstants.AGGREGATION_STATS, combined, private=True, sticky=False)
