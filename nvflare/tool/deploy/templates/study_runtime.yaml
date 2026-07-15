@@ -1,0 +1,25 @@
+# Per-study runtime configuration used by Docker and Kubernetes job launchers.
+# Everything a study gets at this site lives in this file: data mounts, env
+# vars, secret-backed env vars and file mounts, and (K8s only) a pod template.
+# Example:
+# studies:
+#   default:
+#     container:
+#       image: registry.example.com/nvflare-job:2.9   # site default job image; job meta image wins
+#     datasets:
+#       training:
+#         source: /data/training     # Docker: host path; K8s: PVC claim name
+#         mode: ro                   # ro or rw
+#     env:
+#       DB_HOST: postgres.svc
+#     secret_env:
+#       DB_PASSWORD: {source: study-db, key: password}  # K8s: Secret name/key; Docker: launcher env var
+#     secret_mounts:
+#       db-ca:
+#         source: study-db-ca        # K8s: Secret name; Docker: host path
+#         mount_path: /var/run/nvflare/secrets/db-ca
+#     pod_template: pod_specs/job-pod.yaml              # K8s only; path relative to local/
+#     docker_kwargs:                                    # Docker only; containers.run kwargs
+#       shm_size: 8g
+format_version: 2
+studies: {}
