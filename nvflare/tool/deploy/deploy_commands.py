@@ -44,6 +44,7 @@ def _get_backend(runtime: str) -> _DeployBackend:
     if runtime == deploy_common.RUNTIME_K8S:
         return k8s_deploy
     deploy_common._fail("INVALID_CONFIG", f"Unsupported runtime: {runtime}", "Use runtime: docker or runtime: k8s.")
+    raise AssertionError("unreachable")
 
 
 def prepare_deployment(args) -> None:
