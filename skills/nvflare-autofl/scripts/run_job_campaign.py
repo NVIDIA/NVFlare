@@ -36,6 +36,7 @@ import re
 import shlex
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -744,10 +745,20 @@ def is_allowed_new_source(path: str, patterns: Sequence[str]) -> bool:
     )
 
 
-def managed_source_paths(workspace: Path, config: Dict[str, Any], extra_paths: Sequence[str] = ()) -> List[str]:
-    paths = set(allowed_edit_paths(config, workspace))
-    paths.update(safe_relative_path(workspace, value) for value in extra_paths)
-    create_patterns = allowed_create_patterns(config)
+def validated_lexical_relative_path(value: str) -> str:
+    path = Path(value)
+    if (
+        path.is_absolute()
+        or not path.parts
+        or ".." in path.parts
+        or any(part in RESERVED_CANDIDATE_PATH_PARTS for part in path.parts)
+    ):
+        raise ValueError(f"invalid previously validated managed source path: {value}")
+    return path.as_posix()
+
+
+def discover_allowed_created_sources(workspace: Path, patterns: Sequence[str]) -> List[str]:
+    paths = []
     for directory, dir_names, file_names in os.walk(workspace, followlinks=False):
         directory_path = Path(directory)
         dir_names[:] = [
@@ -757,8 +768,23 @@ def managed_source_paths(workspace: Path, config: Dict[str, Any], extra_paths: S
         ]
         for name in file_names:
             relative = (directory_path / name).relative_to(workspace).as_posix()
-            if is_allowed_new_source(relative, create_patterns):
-                paths.add(relative)
+            if is_allowed_new_source(relative, patterns):
+                paths.append(relative)
+    return paths
+
+
+def managed_source_paths(workspace: Path, config: Dict[str, Any], extra_paths: Sequence[str] = ()) -> List[str]:
+    paths = set(allowed_edit_paths(config, workspace))
+    paths.update(safe_relative_path(workspace, value) for value in extra_paths)
+    paths.update(discover_allowed_created_sources(workspace, allowed_create_patterns(config)))
+    return sorted(paths)
+
+
+def managed_source_paths_from_validated(
+    workspace: Path, config: Dict[str, Any], validated_paths: Sequence[str]
+) -> List[str]:
+    paths = {validated_lexical_relative_path(value) for value in validated_paths}
+    paths.update(discover_allowed_created_sources(workspace, allowed_create_patterns(config)))
     return sorted(paths)
 
 
@@ -774,18 +800,32 @@ def capture_managed_source_versions(
     return versions
 
 
-def managed_source_state(workspace: Path, config: Dict[str, Any], extra_paths: Sequence[str] = ()) -> Dict[str, str]:
-    state = {}
-    for relative in managed_source_paths(workspace, config, extra_paths):
-        path = workspace / relative
-        if path.is_symlink():
-            state[relative] = "symlink"
-        elif path.is_file():
-            state[relative] = sha256_bytes(path.read_bytes())
-        elif path.exists():
-            state[relative] = "non-file"
+def managed_path_state(workspace: Path, relative: str) -> str:
+    parts = Path(validated_lexical_relative_path(relative)).parts
+    current = workspace
+    for index, part in enumerate(parts):
+        current /= part
+        try:
+            mode = current.lstat().st_mode
+        except FileNotFoundError:
+            return "missing"
+        component = Path(*parts[: index + 1]).as_posix()
+        if stat.S_ISLNK(mode):
+            return f"symlink:{component}"
+        if index < len(parts) - 1:
+            if not stat.S_ISDIR(mode):
+                return f"non-directory:{component}"
+        elif stat.S_ISREG(mode):
+            return sha256_bytes(current.read_bytes())
         else:
-            state[relative] = "missing"
+            return "non-file"
+    return "missing"
+
+
+def managed_source_state(workspace: Path, config: Dict[str, Any], validated_paths: Sequence[str]) -> Dict[str, str]:
+    state = {}
+    for relative in managed_source_paths_from_validated(workspace, config, validated_paths):
+        state[relative] = managed_path_state(workspace, relative)
     return state
 
 
@@ -793,18 +833,53 @@ def managed_source_drift(expected: Dict[str, str], actual: Dict[str, str]) -> Li
     return sorted(path for path in set(expected) | set(actual) if expected.get(path) != actual.get(path))
 
 
+def remove_path_without_following(path: Path) -> None:
+    try:
+        mode = path.lstat().st_mode
+    except FileNotFoundError:
+        return
+    if stat.S_ISDIR(mode):
+        shutil.rmtree(path)
+    else:
+        path.unlink()
+
+
+def ensure_managed_parent_directories(workspace: Path, relative: str) -> None:
+    current = workspace
+    for part in Path(validated_lexical_relative_path(relative)).parts[:-1]:
+        current /= part
+        try:
+            mode = current.lstat().st_mode
+        except FileNotFoundError:
+            current.mkdir()
+            continue
+        if not stat.S_ISDIR(mode):
+            remove_path_without_following(current)
+            current.mkdir()
+
+
 def restore_managed_source_versions(
     workspace: Path, config: Dict[str, Any], versions: Dict[Path, Optional[bytes]]
 ) -> None:
-    extra_paths = [path.relative_to(workspace).as_posix() for path in versions]
-    current_paths = managed_source_paths(workspace, config, extra_paths)
-    rollback = dict(versions)
+    expected = {
+        validated_lexical_relative_path(path.relative_to(workspace).as_posix()): data for path, data in versions.items()
+    }
+    current_paths = managed_source_paths_from_validated(workspace, config, list(expected))
     for relative in current_paths:
-        rollback.setdefault(workspace / relative, None)
-    for path in rollback:
-        if path.is_dir() and not path.is_symlink():
-            shutil.rmtree(path)
-    restore_file_versions(rollback)
+        ensure_managed_parent_directories(workspace, relative)
+    for relative in current_paths:
+        path = workspace / relative
+        data = expected.get(relative)
+        if data is None:
+            remove_path_without_following(path)
+            continue
+        try:
+            mode = path.lstat().st_mode
+        except FileNotFoundError:
+            mode = None
+        if mode is not None and not stat.S_ISREG(mode):
+            remove_path_without_following(path)
+        atomic_write_bytes(path, data)
 
 
 def file_map(root: Path) -> Dict[str, str]:

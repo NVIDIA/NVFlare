@@ -529,8 +529,15 @@ def test_run_terminates_child_process_group_when_monitor_raises(tmp_path, monkey
 
     def fail_monitor(_roots):
         deadline = runner.time.monotonic() + 5
-        while not pid_path.exists() and runner.time.monotonic() < deadline:
+        while runner.time.monotonic() < deadline:
+            try:
+                int(pid_path.read_text(encoding="utf-8"))
+                break
+            except (FileNotFoundError, ValueError):
+                pass
             runner.time.sleep(0.01)
+        else:
+            pytest.fail("child PID was not published before the monitor deadline")
         raise monitor_error
 
     monkeypatch.setattr(runner, "simulator_stall_message", fail_monitor)
@@ -1520,6 +1527,47 @@ def test_candidate_runtime_source_drift_is_rejected_and_fully_restored(tmp_path,
     assert "client.py" in patch
     assert "runtime mutation" not in patch
     assert "runtime_generated.py" not in patch
+    records = runner.load_results(tmp_path / "results.tsv")
+    assert [(record.status, record.score) for record in records] == [("baseline", 0.8), ("crash", None)]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="runtime symlink rollback uses POSIX symlinks")
+def test_candidate_runtime_parent_symlink_drift_is_rejected_and_restored_without_following(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, client, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch, baseline_score=0.8)
+    baseline_client = client.read_text(encoding="utf-8")
+    managed_parent = tmp_path / "src"
+    managed_parent.mkdir()
+    managed_source = managed_parent / "client.py"
+    managed_source.write_text("NESTED = 'baseline'\n", encoding="utf-8")
+    external_parent = tmp_path.parent / f"{tmp_path.name}-external"
+    external_parent.mkdir()
+    external_source = external_parent / "client.py"
+    external_source.write_text("NESTED = 'external'\n", encoding="utf-8")
+
+    assert runner.main(["prepare", str(job), "--name", "runtime_symlink", "--hypothesis", "improve code"]) == 0
+    candidate_dir = tmp_path / ".nvflare" / "autofl" / "candidates" / "runtime_symlink"
+    candidate_dir.joinpath("source/client.py").write_text("ALGORITHM = 'candidate'\n", encoding="utf-8")
+
+    def replace_parent_with_symlink(run_def, **kwargs):
+        managed_source.unlink()
+        managed_parent.rmdir()
+        managed_parent.symlink_to(external_parent, target_is_directory=True)
+        return runner.RunRecord(
+            "candidate", run_def.name, 0.9, 1.0, "none", run_def.description, "python job.py", "/tmp/candidate"
+        )
+
+    monkeypatch.setattr(runner, "run_job", replace_parent_with_symlink)
+    assert runner.main(["evaluate", str(job)]) == 0
+
+    assert not managed_parent.is_symlink()
+    assert managed_source.read_text(encoding="utf-8") == "NESTED = 'baseline'\n"
+    assert external_source.read_text(encoding="utf-8") == "NESTED = 'external'\n"
+    assert client.read_text(encoding="utf-8") == baseline_client
+    manifest = json.loads(candidate_dir.joinpath("candidate_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["status"] == "crash"
+    assert manifest["result"]["score"] is None
+    assert "src/client.py" in manifest["result"]["failure_reason"]
     records = runner.load_results(tmp_path / "results.tsv")
     assert [(record.status, record.score) for record in records] == [("baseline", 0.8), ("crash", None)]
 
