@@ -15,7 +15,7 @@
 import sys
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Dict, List, Optional, Union
 
 # Single source of truth for the default export dir. Kept in the current working
 # directory on purpose: an export is a user-requested artifact, so it lands next to
@@ -253,6 +253,7 @@ class Recipe(ABC):
         """
         self.job = job
         self._helper_per_site_config = None
+        self._client_customizations_added = False
         self._tensor_streaming_added = False
         self._cse_added = False
         warn_on_potential_secrets(getattr(job, "name", None), context="recipe parameter 'name'")
@@ -299,6 +300,25 @@ class Recipe(ABC):
         text and must never contain actual secret values; see the Recipe class
         docstring for the recommended alternatives.
         """
+        if not isinstance(config, dict):
+            raise TypeError(f"per-site config must be a dict, got {type(config).__name__}")
+        if not config:
+            raise ValueError("per-site config must not be empty")
+        for site_name, site_config in config.items():
+            if not isinstance(site_name, str):
+                raise TypeError(f"per-site config key must be a str, got {type(site_name).__name__}")
+            if not isinstance(site_config, dict):
+                raise TypeError(
+                    f"per-site config for site {site_name!r} must be a dict, got {type(site_config).__name__}"
+                )
+        if self._helper_per_site_config is not None:
+            raise RuntimeError("per-site config has already been applied to this recipe")
+        if self._client_customizations_added:
+            raise RuntimeError(
+                "per-site config must be applied immediately after recipe construction and before client "
+                "configuration, files, filters, or components are added"
+            )
+
         warn_on_potential_secrets(config, context="per_site_config")
         if self._SUPPORTED_PER_SITE_SECRET_REF_KEYS is not None:
             warn_on_unsupported_secret_refs_outside_keys(
@@ -310,138 +330,16 @@ class Recipe(ABC):
         else:
             warn_on_unsupported_secret_refs(config, context="per_site_config")
         stored_config = dict(config)
-        previous_config = self._helper_per_site_config
+        self._apply_per_site_config(dict(stored_config))
         self._helper_per_site_config = stored_config
-        try:
-            self._apply_per_site_config(dict(stored_config))
-        except Exception:
-            self._helper_per_site_config = previous_config
-            raise
 
     def _apply_per_site_config(self, config: Dict[str, Dict]) -> None:
         """Recipe-specific hook for helper-provided per-site configuration."""
         pass
 
-    def _record_client_runner(self, target: str, component_ids: Dict[str, str], script: str) -> None:
-        """Record the generated pieces that must be replaced with a site-specific runner."""
-        runner_component_ids = getattr(self, "_client_runner_component_ids", None)
-        if runner_component_ids is None:
-            runner_component_ids = {}
-            self._client_runner_component_ids = runner_component_ids
-        runner_scripts = getattr(self, "_client_runner_scripts", None)
-        if runner_scripts is None:
-            runner_scripts = {}
-            self._client_runner_scripts = runner_scripts
-
-        runner_component_ids[target] = set(component_ids.values())
-        runner_scripts[target] = script
-
-    @staticmethod
-    def _remove_first(items: list, value: Any) -> list:
-        result = list(items)
-        try:
-            result.remove(value)
-        except ValueError:
-            pass
-        return result
-
-    @classmethod
-    def _clone_client_app_without_runner(cls, source_app, runner_component_ids: Set[str], runner_script: Optional[str]):
-        """Clone supported client additions while removing a recipe-created runner."""
-        from nvflare.job_config.api import ClientApp
-
-        cloned_app = ClientApp()
-        source = source_app.app_config
-
-        for tasks, filters in source.task_data_filters:
-            for task_filter in filters:
-                cloned_app.add_task_data_filter(list(tasks), task_filter)
-        for tasks, filters in source.task_result_filters:
-            for task_filter in filters:
-                cloned_app.add_task_result_filter(list(tasks), task_filter)
-        for component_id, component in source.components.items():
-            if component_id not in runner_component_ids:
-                cloned_app.add_component(component, component_id)
-        for script in cls._remove_first(source.ext_scripts, runner_script):
-            cloned_app.add_external_script(script)
-        for directory in cls._remove_first(source.ext_dirs, runner_script):
-            cloned_app.add_external_dir(directory)
-        for src_path, dest_dir, app_folder_type in source.file_sources:
-            cloned_app.add_file_source(src_path, dest_dir, app_folder_type)
-        cloned_app.add_params(dict(source.additional_params))
-        return cloned_app
-
-    def _replace_client_runners_for_sites(self, config: Dict[str, Dict], add_client_runner) -> None:
-        """Replace a runner-based client topology while preserving Recipe API additions."""
-        from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
-
-        # Recipe owns this still-mutable job definition. FedJob does not expose a public
-        # topology-replacement API, so update its construction state before deployment.
-        job = self.job
-        if getattr(job, "_deployed", False):
-            raise RuntimeError("per-site configuration cannot be changed after the recipe job has been exported")
-
-        client_targets = [target for target in job._deploy_map if target != SERVER_SITE_NAME]
-        if ALL_SITES in client_targets and len(client_targets) != 1:
-            raise RuntimeError("cannot apply per-site configuration to a mixed all-clients/per-site topology")
-        if ALL_SITES not in client_targets and client_targets and set(client_targets) != set(config):
-            raise RuntimeError(
-                "cannot change the configured site names after per-site client apps exist; create a new recipe "
-                "or reapply configuration for the same sites"
-            )
-
-        runner_component_ids = getattr(self, "_client_runner_component_ids", {})
-        runner_scripts = getattr(self, "_client_runner_scripts", {})
-        source_apps = {}
-        if client_targets == [ALL_SITES]:
-            source = job._deploy_map[ALL_SITES]
-            source_apps = {
-                site_name: self._clone_client_app_without_runner(
-                    source,
-                    runner_component_ids.get(ALL_SITES, set()),
-                    runner_scripts.get(ALL_SITES),
-                )
-                for site_name in config
-            }
-        else:
-            for site_name in config:
-                source = job._deploy_map.get(site_name)
-                if source is not None:
-                    source_apps[site_name] = self._clone_client_app_without_runner(
-                        source,
-                        runner_component_ids.get(site_name, set()),
-                        runner_scripts.get(site_name),
-                    )
-
-        old_deploy_map = dict(job._deploy_map)
-        old_clients = list(job.clients)
-        old_components = dict(job._components)
-        old_runner_component_ids = dict(runner_component_ids)
-        old_runner_scripts = dict(runner_scripts)
-        old_per_site_config = self.per_site_config
-
-        try:
-            for target in client_targets:
-                job._deploy_map.pop(target, None)
-            job.clients = [target for target in job.clients if target not in client_targets]
-            self._client_runner_component_ids = {}
-            self._client_runner_scripts = {}
-
-            for site_name, site_config in config.items():
-                source_app = source_apps.get(site_name)
-                if source_app is not None:
-                    job._add_client_app(source_app, site_name)
-                add_client_runner(job, site_name, site_config)
-        except Exception:
-            job._deploy_map = old_deploy_map
-            job.clients = old_clients
-            job._components = old_components
-            self._client_runner_component_ids = old_runner_component_ids
-            self._client_runner_scripts = old_runner_scripts
-            self.per_site_config = old_per_site_config
-            raise
-
-        self.per_site_config = dict(config)
+    def _validate_before_use(self) -> None:
+        """Validate recipe state immediately before export or execution."""
+        pass
 
     def configured_sites(self) -> List[str]:
         """Return site keys configured through the helper or legacy constructor config.
@@ -593,8 +491,8 @@ class Recipe(ABC):
                 # instead of silently losing the placement.
                 raise ValueError(
                     "cannot target specific clients: this recipe's client app applies to all clients. "
-                    "Configure per-site client apps first (with set_per_site_config or the per_site_config "
-                    "constructor argument on recipes that support them), or omit clients to apply to all clients."
+                    "Call set_per_site_config immediately after constructing a recipe that supports it, "
+                    "or omit clients to apply to all clients."
                 )
             if existing_client_sites:
                 # Targeting a site with no app would create a bare, executor-less app for
@@ -608,6 +506,7 @@ class Recipe(ABC):
                     )
             for client in clients:
                 self.job.to(obj, client, **kwargs)
+        self._client_customizations_added = True
 
     def add_client_input_filter(
         self, filter: Filter, tasks: Optional[List[str]] = None, clients: Optional[List[str]] = None
@@ -920,6 +819,7 @@ class Recipe(ABC):
         Returns: None
 
         """
+        self._validate_before_use()
         self._warn_potential_secrets_in_params()
         with self._temporary_exec_params(server_exec_params=server_exec_params, client_exec_params=client_exec_params):
             if env is not None:
@@ -940,6 +840,7 @@ class Recipe(ABC):
         Returns: Run to get job ID and execution results
 
         """
+        self._validate_before_use()
         self._warn_potential_secrets_in_params()
         with self._temporary_exec_params(server_exec_params=server_exec_params, client_exec_params=client_exec_params):
             self.process_env(env)

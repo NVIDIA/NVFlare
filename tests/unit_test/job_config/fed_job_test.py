@@ -35,6 +35,35 @@ def _create_model_learner():
 
 
 class TestFedJob:
+    def test_remove_client_app_before_deployment(self):
+        job = FedJob(name="test_remove_client_app")
+        job.to_clients({"executor_standin": True})
+
+        assert job.is_deployed is False
+        job.remove_client_app("@ALL")
+
+        assert job.clients == []
+        assert "@ALL" not in job._deploy_map
+
+    def test_remove_client_app_rejects_server_and_missing_targets(self):
+        job = FedJob(name="test_invalid_remove_client_app")
+        job.to_server({"server_param": True})
+
+        with pytest.raises(ValueError, match="not a client target"):
+            job.remove_client_app("server")
+        with pytest.raises(ValueError, match="no client app exists"):
+            job.remove_client_app("site-1")
+
+    def test_remove_client_app_rejects_deployed_job(self, tmp_path):
+        job = FedJob(name="test_deployed_remove_client_app")
+        job.to_server({"server_param": True})
+        job.to_clients({"client_param": True})
+        job.export_job(str(tmp_path))
+
+        assert job.is_deployed is True
+        with pytest.raises(RuntimeError, match="after the job has been deployed"):
+            job.remove_client_app("@ALL")
+
     def test_validate_targets(self):
         job = FedJob()
         controller = FedAvg()

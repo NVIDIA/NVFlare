@@ -16,13 +16,17 @@ from typing import Any, Dict, Optional, Union
 
 from pydantic import BaseModel, field_validator
 
-from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
 from nvflare.app_common.workflows.model_controller import ModelController
 from nvflare.client.config import ExchangeFormat
 from nvflare.job_config.base_fed_job import BaseFedJob
 from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 from nvflare.recipe.spec import Recipe
-from nvflare.recipe.utils import validate_ckpt
+from nvflare.recipe.utils import (
+    _apply_legacy_constructor_config,
+    _configure_per_site_clients,
+    _validate_per_site_targets,
+    validate_ckpt,
+)
 
 
 # Internal validator
@@ -84,13 +88,12 @@ class FedEvalRecipe(Recipe):
         server_expected_format: What format to exchange the parameters between server and client.
             Defaults to ExchangeFormat.NUMPY.
         validation_timeout: Timeout for evaluation task in seconds. Defaults to 6000.
-        per_site_config: Per-site configuration for the evaluation job. Dictionary mapping
-            site names to configuration dicts. Each config dict can contain optional overrides:
+        per_site_config: Deprecated constructor form of per-site configuration. New code should call
+            ``set_per_site_config(recipe, config)`` immediately after construction. Each config dict can
+            contain optional overrides:
             eval_script, eval_args, launch_external_process, command, server_expected_format.
             Values are stored in the job definition and must not contain actual secret values.
             If not provided, the same configuration will be used for all clients. Defaults to None.
-            The same mapping may instead be applied with ``set_per_site_config`` after construction
-            and before export or execution.
 
     Example:
         Basic usage with model instance:
@@ -154,10 +157,10 @@ class FedEvalRecipe(Recipe):
         self.command = command
         self.server_expected_format = server_expected_format
         self.validation_timeout = validation_timeout
-        self.per_site_config = per_site_config
+        legacy_per_site_config = per_site_config
+        self.per_site_config = None
         self.client_memory_gc_rounds = client_memory_gc_rounds
         self.cuda_empty_cache = cuda_empty_cache
-        self._validate_per_site_config(self.per_site_config)
 
         # Create BaseFedJob
         job = BaseFedJob(
@@ -194,19 +197,16 @@ class FedEvalRecipe(Recipe):
         controller = EvalController(persistor_id=persistor_id, timeout=self.validation_timeout)
         job.to_server(controller)
 
-        # Add client executors
-        if self.per_site_config is not None:
-            for site_name, site_config in self.per_site_config.items():
-                self._add_client_runner(job, site_name, site_config)
-        else:
-            self._add_client_runner(job, ALL_SITES, {})
+        job.to_clients(self._create_client_runner({}))
 
         Recipe.__init__(self, job)
 
-    def _create_client_runner(self, site_config: Dict) -> tuple[ScriptRunner, str]:
-        script = site_config.get("eval_script", self.eval_script)
-        runner = ScriptRunner(
-            script=script,
+        if legacy_per_site_config is not None:
+            _apply_legacy_constructor_config(self, legacy_per_site_config)
+
+    def _create_client_runner(self, site_config: Dict) -> ScriptRunner:
+        return ScriptRunner(
+            script=site_config.get("eval_script", self.eval_script),
             script_args=site_config.get("eval_args", self.eval_args),
             launch_external_process=site_config.get("launch_external_process", self.launch_external_process),
             command=site_config.get("command", self.command),
@@ -215,31 +215,16 @@ class FedEvalRecipe(Recipe):
             memory_gc_rounds=self.client_memory_gc_rounds,
             cuda_empty_cache=self.cuda_empty_cache,
         )
-        return runner, script
 
     def _add_client_runner(self, job: BaseFedJob, target: str, site_config: Dict) -> None:
-        runner, script = self._create_client_runner(site_config)
-        component_ids = job.to(runner, target)
-        self._record_client_runner(target, component_ids, script)
+        job.to(self._create_client_runner(site_config), target)
 
     def _apply_per_site_config(self, config: Dict[str, Dict]) -> None:
-        """Replace the all-clients evaluator with site-specific client apps."""
-        self._validate_per_site_config(config)
-        self._replace_client_runners_for_sites(config, self._add_client_runner)
-
-    @staticmethod
-    def _validate_per_site_config(per_site_config: Optional[Dict[str, Dict]]) -> None:
-        if per_site_config is None:
-            return
-
-        reserved_targets = {SERVER_SITE_NAME, ALL_SITES}
-        for site_name, site_config in per_site_config.items():
-            if not isinstance(site_name, str):
-                raise ValueError(f"per_site_config key must be str, got {type(site_name).__name__}")
-            if site_name in reserved_targets:
-                raise ValueError(
-                    f"'{site_name}' is a reserved target name and cannot be used in per_site_config. "
-                    f"Reserved names: {sorted(reserved_targets)}"
-                )
-            if not isinstance(site_config, dict):
-                raise ValueError(f"per_site_config['{site_name}'] must be a dict, got {type(site_config).__name__}")
+        _validate_per_site_targets(config, self.min_clients)
+        _configure_per_site_clients(
+            self.job,
+            config,
+            self._add_client_runner,
+            replace_all_clients=True,
+        )
+        self.per_site_config = dict(config)

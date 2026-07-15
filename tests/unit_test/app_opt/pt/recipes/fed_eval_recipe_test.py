@@ -19,7 +19,7 @@ import pytest
 import torch.nn as nn
 from pydantic import ValidationError
 
-from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
+from nvflare.apis.job_def import ALL_SITES
 from nvflare.app_opt.pt.recipes.fedeval import FedEvalRecipe
 from nvflare.client.config import ExchangeFormat
 from nvflare.fuel.utils.secret_utils import PotentialSecretWarning, UnsupportedSecretRefWarning
@@ -76,6 +76,10 @@ def assert_recipe_basics(recipe, expected_name, expected_params):
     assert recipe.job.name == expected_name
 
 
+def get_client_executor(recipe, site_name):
+    return recipe.job._deploy_map[site_name].app_config.executors[0].executor
+
+
 class TestFedEvalRecipe:
     """Test cases for FedEvalRecipe class."""
 
@@ -93,16 +97,20 @@ class TestFedEvalRecipe:
         model, _ = simple_model
         with warnings.catch_warnings():
             warnings.simplefilter("error", UnsupportedSecretRefWarning)
-            FedEvalRecipe(
+            recipe = FedEvalRecipe(
                 name="command_secret_ref",
                 model=model,
-                per_site_config={
+                **base_recipe_params,
+            )
+            set_per_site_config(
+                recipe,
+                {
                     "site-1": {
                         "launch_external_process": True,
                         "command": "env API_TOKEN=${secret:API_TOKEN} python3 -u",
-                    }
+                    },
+                    "site-2": {},
                 },
-                **base_recipe_params,
             )
 
     def test_basic_initialization(self, mock_file_system, base_recipe_params, simple_model):
@@ -118,6 +126,20 @@ class TestFedEvalRecipe:
         assert recipe.server_expected_format == ExchangeFormat.NUMPY
         assert recipe.validation_timeout == 6000
         assert recipe.per_site_config is None
+
+    def test_set_per_site_config_builds_site_specific_runners(self, mock_file_system, base_recipe_params, simple_model):
+        model, _ = simple_model
+        recipe = FedEvalRecipe(name="test_helper_per_site", model=model, **base_recipe_params)
+        config = {"site-1": {"eval_args": "--batch_size 8"}, "site-2": {}}
+
+        assert recipe.job.clients == [ALL_SITES]
+        set_per_site_config(recipe, config)
+
+        assert recipe.configured_sites() == ["site-1", "site-2"]
+        assert recipe.job.clients == ["site-1", "site-2"]
+        assert ALL_SITES not in recipe.job._deploy_map
+        assert get_client_executor(recipe, "site-1")._task_script_args == "--batch_size 8"
+        assert get_client_executor(recipe, "site-2")._task_script_args == "--batch_size 32"
 
     def test_default_job_name(self, mock_file_system, base_recipe_params, simple_model):
         """Test FedEvalRecipe with default job name."""
@@ -221,12 +243,13 @@ class TestFedEvalRecipe:
             },
         }
 
-        recipe = FedEvalRecipe(
-            name="test_per_site",
-            model=model,
-            per_site_config=per_site_config,
-            **base_recipe_params,
-        )
+        with pytest.warns(FutureWarning, match="set_per_site_config"):
+            recipe = FedEvalRecipe(
+                name="test_per_site",
+                model=model,
+                per_site_config=per_site_config,
+                **base_recipe_params,
+            )
 
         assert recipe.per_site_config == per_site_config
 
@@ -237,45 +260,29 @@ class TestFedEvalRecipe:
             "site-1": {
                 "eval_args": "--batch_size 16",
             },
+            "site-2": {},
         }
 
-        recipe = FedEvalRecipe(
-            name="test_partial_override",
-            model=model,
-            per_site_config=per_site_config,
-            **base_recipe_params,
-        )
+        recipe = FedEvalRecipe(name="test_partial_override", model=model, **base_recipe_params)
+        set_per_site_config(recipe, per_site_config)
 
         # Check that default values are stored
         assert recipe.eval_script == "mock_eval_script.py"
         assert recipe.eval_args == "--batch_size 32"
         assert recipe.per_site_config == per_site_config
 
-    def test_set_per_site_config_helper_rebuilds_client_apps(self, mock_file_system, base_recipe_params, simple_model):
-        model, _ = simple_model
-        recipe = FedEvalRecipe(name="test_helper_per_site", model=model, **base_recipe_params)
-        recipe.add_client_config({"shared_setting": True})
-
-        set_per_site_config(
-            recipe,
-            {
-                "site-1": {"eval_args": "--batch_size 16"},
-                "site-2": {"eval_args": "--batch_size 64"},
-            },
-        )
-
-        assert ALL_SITES not in recipe.job._deploy_map
-        assert set(recipe.job._deploy_map) == {SERVER_SITE_NAME, "site-1", "site-2"}
-        assert recipe.configured_sites() == ["site-1", "site-2"]
-        for site_name, batch_size in (("site-1", 16), ("site-2", 64)):
-            app_config = recipe.job._deploy_map[site_name].app_config
-            assert app_config.additional_params == {"shared_setting": True}
-            assert len(app_config.executors) == 1
-            assert app_config.executors[0].executor._task_script_args == f"--batch_size {batch_size}"
-
 
 class TestFedEvalRecipeValidation:
     """Test FedEvalRecipe input validation."""
+
+    def test_per_site_config_requires_at_least_min_clients(self, mock_file_system, base_recipe_params, simple_model):
+        model, _ = simple_model
+        recipe = FedEvalRecipe(name="test_per_site_client_count", model=model, **base_recipe_params)
+
+        with pytest.raises(ValueError, match=r"defines 1 site.*min_clients=2"):
+            set_per_site_config(recipe, {"site-1": {}})
+
+        assert recipe.job.clients == [ALL_SITES]
 
     def test_invalid_eval_ckpt_raises_error(self, simple_model):
         """Test that relative eval_ckpt raises when path does not exist locally.
@@ -298,38 +305,6 @@ class TestFedEvalRecipeValidation:
                 min_clients=2,
                 eval_script="mock_eval_script.py",
                 eval_args="--batch_size 32",
-            )
-
-    @pytest.mark.parametrize("reserved_target", [SERVER_SITE_NAME, ALL_SITES])
-    def test_per_site_config_rejects_reserved_targets(
-        self, reserved_target, mock_file_system, base_recipe_params, simple_model
-    ):
-        model, _ = simple_model
-        with pytest.raises(ValueError, match="reserved target name"):
-            FedEvalRecipe(
-                name="test_reserved_target",
-                model=model,
-                per_site_config={reserved_target: {}},
-                **base_recipe_params,
-            )
-
-    @pytest.mark.parametrize(
-        ("per_site_config", "match"),
-        [
-            ({1: {}}, "key must be str"),
-            ({"site-1": []}, "must be a dict"),
-        ],
-    )
-    def test_per_site_config_rejects_malformed_entries(
-        self, per_site_config, match, mock_file_system, base_recipe_params, simple_model
-    ):
-        model, _ = simple_model
-        with pytest.raises(ValueError, match=match):
-            FedEvalRecipe(
-                name="test_malformed_per_site_config",
-                model=model,
-                per_site_config=per_site_config,
-                **base_recipe_params,
             )
 
     def test_non_nn_module_raises_error(self, mock_file_system, base_recipe_params, simple_model):

@@ -121,6 +121,8 @@ TimberStrike is a model inversion attack that exploits `sum_hessian` values and 
 - **Built-in**: NVFlare removes `sum_hessian` from model transmissions in horizontal tree-based mode, eliminating the attack's primary information source.
 - **Additional**: Increase `min_child_weight` to raise the minimum sum of instance weight (hessian) required per leaf, resulting in coarser tree structure with fewer splits. The [TimberStrike paper](https://arxiv.org/abs/2506.07605) shows that tree depth (and by extension, number of splits) directly impacts reconstruction accuracy, so reducing tree granularity is expected to limit information exposure. Optimal values are task-dependent; refer to the paper for analysis of the privacy-utility trade-off. This parameter can be added to `xgb_params` in the recipe, for example:
   ```python
+  from nvflare.recipe import set_per_site_config
+
   recipe = XGBHorizontalRecipe(
       name="xgb_higgs_horizontal",
       min_clients=2,
@@ -132,8 +134,8 @@ TimberStrike is a model inversion attack that exploits `sum_hessian` values and 
           "eval_metric": "auc",
           "min_child_weight": 100,  # increase for coarser trees and reduced privacy exposure
       },
-      per_site_config=per_site_config,
   )
+  set_per_site_config(recipe, per_site_config)
   ```
 
 **Closest Reconstructed Samples (CreditCard)**:

@@ -89,14 +89,14 @@ Modify `calculate_data_splits()` in `job.py` to implement different split strate
 - **Unbalanced splits**: Give clients different amounts of data (e.g., linear, exponential ratios)
 - **Overlapping validation**: Use different validation sets per client
 
-The key is building site-specific `train_args` entries and applying them with
-`set_per_site_config`:
+Build the site mapping and apply it immediately after recipe construction:
 ```python
 from nvflare.recipe import set_per_site_config
 
 per_site_config = {
     "site-1": {"train_args": "--data_path /data/HIGGS.csv --train_start 1100000 --train_end 3080000 ..."},
     "site-2": {"train_args": "--data_path /data/HIGGS.csv --train_start 3080000 --train_end 5060000 ..."},
+    # ... more sites
 }
 set_per_site_config(recipe, per_site_config)
 ```

@@ -89,12 +89,14 @@ class TestRecipeSecretScanning:
         assert _no_secret_warnings(record)
 
     def test_per_site_config_with_password_warns(self, make_recipe):
-        recipe = make_recipe(
-            per_site_config={
-                "site-1": {"train_args": "--password hunter22x"},
-                "site-2": {"train_args": "--epochs 5"},
-            }
-        )
+        recipe = make_recipe()
+        with pytest.warns(PotentialSecretWarning):
+            recipe.set_per_site_config(
+                {
+                    "site-1": {"train_args": "--password hunter22x"},
+                    "site-2": {"train_args": "--epochs 5"},
+                }
+            )
         with pytest.warns(PotentialSecretWarning) as record:
             recipe._warn_potential_secrets_in_params()
         messages = [str(w.message) for w in record]
@@ -104,7 +106,7 @@ class TestRecipeSecretScanning:
     def test_set_per_site_config_warns(self, make_recipe):
         recipe = make_recipe()
         with pytest.warns(PotentialSecretWarning):
-            recipe.set_per_site_config({"site-1": {"api_key": "abcd1234efgh"}})
+            recipe.set_per_site_config({"site-1": {"api_key": "abcd1234efgh"}, "site-2": {}})
 
     def test_add_client_config_warns(self, make_recipe):
         recipe = make_recipe()

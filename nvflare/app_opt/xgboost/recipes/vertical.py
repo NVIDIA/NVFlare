@@ -24,6 +24,11 @@ from nvflare.app_opt.xgboost.histogram_based_v2.fed_controller import XGBFedCont
 from nvflare.app_opt.xgboost.histogram_based_v2.fed_executor import FedXGBHistogramExecutor
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import Recipe
+from nvflare.recipe.utils import (
+    _apply_legacy_constructor_config,
+    _configure_per_site_clients,
+    _validate_per_site_targets,
+)
 
 
 # Internal — not part of the public API
@@ -97,30 +102,21 @@ class XGBVerticalRecipe(Recipe):
         metrics_writer_id (str, optional): ID of the metrics writer component. Default is 'metrics_writer'.
         in_process (bool, optional): Whether to run in-process (required for vertical). Default is True.
         model_file_name (str, optional): Model file name. Default is 'test.model.json'.
-        per_site_config (dict): Required per-site configuration mapping site names to config dicts.
-            Each config dict must contain 'data_loader' key with XGBDataLoader instance.
-            This must be supplied to the constructor; ``set_per_site_config`` is not supported
-            because data loaders and client ranks are needed while the workflow is built.
-            Nested values become part of the generated job definition and must not contain secrets.
-            Example: {"site-1": {"data_loader": VerticalDataLoader(...)}, "site-2": {...}}
+        per_site_config (dict, optional): Deprecated constructor form of per-site configuration.
+            New code should call ``set_per_site_config(recipe, config)`` immediately after construction.
 
     Example:
         .. code-block:: python
 
             from nvflare.app_opt.xgboost.recipes import XGBVerticalRecipe
             from vertical_data_loader import VerticalDataLoader
-            from nvflare.recipe import SimEnv
+            from nvflare.recipe import SimEnv, set_per_site_config
 
             # Step 1: Run PSI first (separate job) to get intersection files
             # ... PSI job execution ...
 
-            # Step 2: Create vertical XGBoost recipe with per-site data loaders
-            recipe = XGBVerticalRecipe(
-                name="xgb_vertical",
-                min_clients=2,
-                num_rounds=100,
-                label_owner="site-1",  # Only site-1 has labels
-                per_site_config={
+            # Step 2: Create vertical XGBoost recipe and configure site data loaders
+            per_site_config = {
                 "site-1": {
                     "data_loader": VerticalDataLoader(
                         data_split_path="/tmp/data/site-1/higgs.data.csv",
@@ -139,7 +135,14 @@ class XGBVerticalRecipe(Recipe):
                         train_proportion=0.8,
                     )
                 },
+            }
+            recipe = XGBVerticalRecipe(
+                name="xgb_vertical",
+                min_clients=2,
+                num_rounds=100,
+                label_owner="site-1",  # Only site-1 has labels
             )
+            set_per_site_config(recipe, per_site_config)
 
             # Step 3: Run with explicit client list
             clients = list(per_site_config.keys())
@@ -151,8 +154,8 @@ class XGBVerticalRecipe(Recipe):
         - Only one client should be designated as label_owner
         - All clients must have overlapping sample IDs (after PSI)
         - Uses histogram_v2 algorithm with data_split_mode=1 (vertical)
-        - Data loaders must be configured via the constructor's per_site_config parameter
-        - Executor and metrics components are automatically added to all clients
+        - Data loaders must be configured with ``set_per_site_config`` before export or execution
+        - Executor and metrics components are automatically added to each configured site
         - TensorBoard tracking is automatically configured
     """
 
@@ -210,61 +213,23 @@ class XGBVerticalRecipe(Recipe):
         self.early_stopping_rounds = v.early_stopping_rounds
         self.use_gpus = v.use_gpus
         self.secure = v.secure
-        self.client_ranks = v.client_ranks
+        self._requested_client_ranks = dict(v.client_ranks)
+        self.client_ranks = dict(v.client_ranks)
         self.xgb_params = v.xgb_params
         self.data_loader_id = v.data_loader_id
         self.metrics_writer_id = v.metrics_writer_id
         self.in_process = v.in_process
         self.model_file_name = v.model_file_name
-        self.per_site_config = per_site_config
+        legacy_per_site_config = per_site_config
+        self.per_site_config = None
 
-        # Validate per_site_config is provided
-        if per_site_config is None:
-            raise ValueError(
-                "per_site_config is required for XGBVerticalRecipe. "
-                "Each site must specify a 'data_loader' in the config dictionary."
-            )
-
-        if self.label_owner not in per_site_config:
-            raise ValueError(f"label_owner {self.label_owner!r} must be included in per_site_config")
-
-        if self.client_ranks:
-            expected_clients = set(per_site_config)
-            ranked_clients = set(self.client_ranks)
-            if ranked_clients != expected_clients:
-                raise ValueError(
-                    f"client_ranks must include exactly the per_site_config clients: expected "
-                    f"{sorted(expected_clients)}, got {sorted(ranked_clients)}"
-                )
-            non_integer_ranks = {
-                client_name: rank
-                for client_name, rank in self.client_ranks.items()
-                if not isinstance(rank, int) or isinstance(rank, bool)
-            }
-            if non_integer_ranks:
-                raise ValueError(f"client_ranks values must be integers, got {non_integer_ranks}")
-            expected_ranks = set(range(len(per_site_config)))
-            actual_ranks = set(self.client_ranks.values())
-            if actual_ranks != expected_ranks:
-                raise ValueError(
-                    f"client_ranks values must be unique and consecutive from 0 to {len(per_site_config) - 1}: "
-                    f"got {self.client_ranks}"
-                )
-            if self.client_ranks.get(self.label_owner) != 0:
-                raise ValueError("label_owner must be assigned rank 0 for vertical XGBoost")
-        else:
-            ranked_clients = [self.label_owner] + sorted(c for c in per_site_config if c != self.label_owner)
-            self.client_ranks = {client_name: rank for rank, client_name in enumerate(ranked_clients)}
-
-        # Configure the job
+        # Configure site-independent job components first. The controller and
+        # client apps depend on the site mapping and are added by the hook.
         self.job = self.configure()
         Recipe.__init__(self, self.job)
 
-    def _apply_per_site_config(self, config: dict[str, dict]) -> None:
-        raise RuntimeError(
-            "XGBVerticalRecipe requires per_site_config during construction because data loaders and client ranks "
-            "are needed to build the workflow"
-        )
+        if legacy_per_site_config is not None:
+            _apply_legacy_constructor_config(self, legacy_per_site_config)
 
     def configure(self):
         """Configure the federated job for vertical XGBoost training."""
@@ -273,57 +238,102 @@ class XGBVerticalRecipe(Recipe):
         job = FedJob(name=self.name, min_clients=self.min_clients)
         job.to_server(MetricsArtifactWriter(), id="metrics_artifact_writer")
 
-        # Configure controller for vertical mode
+        # Add TensorBoard receiver to server
+        tb_receiver = TBAnalyticsReceiver(tb_folder="tb_events")
+        job.to_server(tb_receiver, id="tb_receiver")
+
+        return job
+
+    def _create_controller(self, client_ranks: dict) -> XGBFedController:
         controller_kwargs = {
             "num_rounds": self.num_rounds,
             "data_split_mode": 1,  # 1 = vertical (column split)
             "secure_training": self.secure,
             "xgb_options": {"early_stopping_rounds": self.early_stopping_rounds, "use_gpus": self.use_gpus},
             "xgb_params": self.xgb_params,
-            "client_ranks": self.client_ranks,
+            "client_ranks": client_ranks,
         }
 
         # In-process execution is required for secure training.
         if self.secure:
             controller_kwargs["in_process"] = True  # Required for secure training
 
-        controller = XGBFedController(**controller_kwargs)
-        job.to_server(controller, id="xgb_controller")
+        return XGBFedController(**controller_kwargs)
 
-        # Add TensorBoard receiver to server
+    def _resolve_client_ranks(self, config: dict[str, dict]) -> dict:
+        if self.label_owner not in config:
+            raise ValueError(f"label_owner {self.label_owner!r} must be included in per_site_config")
 
-        tb_receiver = TBAnalyticsReceiver(tb_folder="tb_events")
-        job.to_server(tb_receiver, id="tb_receiver")
+        if not self._requested_client_ranks:
+            ranked_clients = [self.label_owner] + sorted(c for c in config if c != self.label_owner)
+            return {client_name: rank for rank, client_name in enumerate(ranked_clients)}
 
-        # Add executor and components
+        expected_clients = set(config)
+        ranked_clients = set(self._requested_client_ranks)
+        if ranked_clients != expected_clients:
+            raise ValueError(
+                f"client_ranks must include exactly the per_site_config clients: expected "
+                f"{sorted(expected_clients)}, got {sorted(ranked_clients)}"
+            )
+        non_integer_ranks = {
+            client_name: rank
+            for client_name, rank in self._requested_client_ranks.items()
+            if not isinstance(rank, int) or isinstance(rank, bool)
+        }
+        if non_integer_ranks:
+            raise ValueError(f"client_ranks values must be integers, got {non_integer_ranks}")
+        expected_ranks = set(range(len(config)))
+        actual_ranks = set(self._requested_client_ranks.values())
+        if actual_ranks != expected_ranks:
+            raise ValueError(
+                f"client_ranks values must be unique and consecutive from 0 to {len(config) - 1}: "
+                f"got {self._requested_client_ranks}"
+            )
+        if self._requested_client_ranks.get(self.label_owner) != 0:
+            raise ValueError("label_owner must be assigned rank 0 for vertical XGBoost")
+        return dict(self._requested_client_ranks)
 
-        # Add all components per site (executor, metrics, event converter, data loader)
-        for site_name, site_config in self.per_site_config.items():
-            data_loader = site_config.get("data_loader")
-            if data_loader is None:
+    def _add_client_components(self, job: FedJob, site_name: str, site_config: dict) -> None:
+        executor = FedXGBHistogramExecutor(
+            data_loader_id=self.data_loader_id,
+            metrics_writer_id=self.metrics_writer_id,
+            in_process=True if self.secure else self.in_process,
+            model_file_name=self.model_file_name,
+        )
+        job.to(executor, site_name, id="xgb_hist_executor", tasks=["config", "start"])
+        job.to(TBWriter(event_type="analytix_log_stats"), site_name, id=self.metrics_writer_id)
+        job.to(
+            ConvertToFedEvent(events_to_convert=["analytix_log_stats"], fed_event_prefix="fed."),
+            site_name,
+            id="event_to_fed",
+        )
+        job.to(site_config["data_loader"], site_name, id=self.data_loader_id)
+
+    def _apply_per_site_config(self, config: dict[str, dict]) -> None:
+        _validate_per_site_targets(config, self.min_clients)
+        for site_name, site_config in config.items():
+            if site_config.get("data_loader") is None:
                 raise ValueError(f"per_site_config for {site_name!r} must include 'data_loader' key")
 
-            # Add executor
-            executor = FedXGBHistogramExecutor(
-                data_loader_id=self.data_loader_id,
-                metrics_writer_id=self.metrics_writer_id,
-                in_process=True if self.secure else self.in_process,
-                model_file_name=self.model_file_name,
-            )
-            job.to(executor, site_name, id="xgb_hist_executor", tasks=["config", "start"])
+        client_ranks = self._resolve_client_ranks(config)
+        controller = self._create_controller(client_ranks)
+        _configure_per_site_clients(
+            self.job,
+            config,
+            self._add_client_components,
+            replace_all_clients=False,
+        )
+        try:
+            self.job.to_server(controller, id="xgb_controller")
+        except Exception:
+            for site_name in config:
+                if site_name in self.job.clients:
+                    self.job.remove_client_app(site_name)
+            raise
 
-            # Add metrics writer
-            metrics_writer = TBWriter(event_type="analytix_log_stats")
-            job.to(metrics_writer, site_name, id=self.metrics_writer_id)
+        self.client_ranks = client_ranks
+        self.per_site_config = dict(config)
 
-            # Add event converter
-            event_to_fed = ConvertToFedEvent(
-                events_to_convert=["analytix_log_stats"],
-                fed_event_prefix="fed.",
-            )
-            job.to(event_to_fed, site_name, id="event_to_fed")
-
-            # Add data loader
-            job.to(data_loader, site_name, id=self.data_loader_id)
-
-        return job
+    def _validate_before_use(self) -> None:
+        if not self.configured_sites():
+            raise RuntimeError("XGBVerticalRecipe requires set_per_site_config() before export or execution")

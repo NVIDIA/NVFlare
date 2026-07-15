@@ -85,6 +85,7 @@ def main():
 
     # Calculate per-client data splits (non-overlapping ranges)
     splits = calculate_data_splits(n_clients)
+    clients = [site_name for site_name in splits.keys()]
     per_site_config = {
         site_name: {
             "train_args": f"--data_path {data_path} --train_start {split['train_start']} "
@@ -112,7 +113,7 @@ def main():
     set_per_site_config(recipe, per_site_config)
 
     print("Executing recipe in simulation environment...")
-    env = SimEnv(clients=recipe.configured_sites(), num_threads=n_clients)
+    env = SimEnv(clients=clients, num_threads=n_clients)
     run = recipe.execute(env)
 
     print()

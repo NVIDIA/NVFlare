@@ -242,8 +242,8 @@ class TestRecipeConfigMethods:
             min_clients=2,
             train_script=temp_script,
             model={"class_path": "model.DummyModel", "args": {}},
-            per_site_config={"site-1": {}, "site-2": {}},
         )
+        set_per_site_config(recipe, {"site-1": {}, "site-2": {}})
 
         recipe.add_client_file(temp_script)
 
@@ -265,8 +265,8 @@ class TestRecipeConfigMethods:
             min_clients=2,
             train_script=temp_script,
             model={"class_path": "model.DummyModel", "args": {}},
-            per_site_config={"site-1": {}, "site-2": {}, "site-3": {}},
         )
+        set_per_site_config(recipe, {"site-1": {}, "site-2": {}, "site-3": {}})
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
             f.write("targeted file for site-2 only")
@@ -787,7 +787,7 @@ class TestRecipePerSiteConfigHelper:
 
         assert recipe.configured_sites() == ["helper-1"]
 
-    def test_empty_helper_config_still_overrides_legacy_constructor_config(self):
+    def test_empty_helper_config_is_rejected_without_overriding_legacy_config(self):
         from nvflare.recipe.spec import Recipe
 
         class LegacyRecipe(Recipe):
@@ -797,9 +797,46 @@ class TestRecipePerSiteConfigHelper:
 
         recipe = LegacyRecipe()
 
-        set_per_site_config(recipe, {})
+        with pytest.raises(ValueError, match="must not be empty"):
+            set_per_site_config(recipe, {})
+
+        assert recipe.configured_sites() == ["legacy-1"]
+
+    def test_failed_recipe_hook_does_not_record_helper_config(self):
+        from nvflare.recipe.spec import Recipe
+
+        class FailingRecipe(Recipe):
+            def __init__(self):
+                super().__init__(FedJob(name="test_failed_per_site_hook", min_clients=1))
+
+            def _apply_per_site_config(self, config):
+                raise ValueError("invalid recipe-specific value")
+
+        recipe = FailingRecipe()
+
+        with pytest.raises(ValueError, match="invalid recipe-specific value"):
+            set_per_site_config(recipe, {"site-1": {}})
 
         assert recipe.configured_sites() == []
+
+    def test_per_site_config_can_only_be_applied_once(self):
+        from nvflare.recipe.spec import Recipe
+
+        recipe = Recipe(FedJob(name="test_repeated_per_site_config", min_clients=1))
+        set_per_site_config(recipe, {"site-1": {}})
+
+        with pytest.raises(RuntimeError, match="already been applied"):
+            set_per_site_config(recipe, {"site-2": {}})
+
+    def test_per_site_config_must_precede_client_customization(self):
+        from nvflare.recipe.spec import Recipe
+
+        recipe = Recipe(FedJob(name="test_late_per_site_config", min_clients=1))
+        recipe.job.to_clients({"executor_standin": True})
+        recipe.add_client_config({"timeout": 600})
+
+        with pytest.raises(RuntimeError, match="immediately after recipe construction"):
+            set_per_site_config(recipe, {"site-1": {}})
 
     def test_configured_sites_does_not_infer_from_job_meta(self):
         from nvflare.recipe.spec import Recipe
@@ -839,6 +876,23 @@ class TestRecipePerSiteConfigHelper:
 
         with pytest.raises(TypeError, match=match):
             set_per_site_config(BasicRecipe(), config)
+
+    @pytest.mark.parametrize(
+        "config, exception, match",
+        [
+            ("not-a-dict", TypeError, "per-site config must be a dict"),
+            ({}, ValueError, "per-site config must not be empty"),
+            ({1: {}}, TypeError, "per-site config key must be a str"),
+            ({"site-1": "not-a-dict"}, TypeError, "per-site config for site 'site-1' must be a dict"),
+        ],
+    )
+    def test_recipe_method_validates_generic_shape(self, config, exception, match):
+        from nvflare.recipe.spec import Recipe
+
+        recipe = Recipe(FedJob(name="test_direct_per_site_validation", min_clients=1))
+
+        with pytest.raises(exception, match=match):
+            recipe.set_per_site_config(config)
 
 
 class TestClientPlacementHardening:
