@@ -28,7 +28,9 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobFailureMsgKey
+from nvflare.private.fed.client.client_engine import ClientEngine
 from nvflare.private.fed.client.client_executor import REPORTABLE_JOB_FAILURES, JobExecutor
+from nvflare.private.fed.client.client_status import ClientStatus
 
 EXPECTED_REPORTABLE_JOB_FAILURES = {
     ProcessExitCode.EXCEPTION: "exception",
@@ -40,6 +42,21 @@ EXPECTED_REPORTABLE_JOB_FAILURES = {
 
 def test_reportable_job_failures_has_expected_codes():
     assert REPORTABLE_JOB_FAILURES == EXPECTED_REPORTABLE_JOB_FAILURES
+
+
+def test_abort_app_terminates_starting_job_without_worker_command():
+    client = MagicMock()
+    job_executor = JobExecutor(client=client, startup="startup")
+    job_handle = MagicMock()
+    job_executor.run_processes["job-1"] = {
+        RunProcessKey.JOB_HANDLE: job_handle,
+        RunProcessKey.STATUS: ClientStatus.STARTING,
+    }
+
+    ClientEngine.abort_app(SimpleNamespace(client_executor=job_executor), "job-1")
+
+    job_handle.terminate.assert_called_once_with()
+    client.cell.fire_and_forget.assert_not_called()
 
 
 def _write_deployed_meta(tmp_path, job_id, deployed_meta):
