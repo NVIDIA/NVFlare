@@ -1572,6 +1572,47 @@ def test_candidate_runtime_parent_symlink_drift_is_rejected_and_restored_without
     assert [(record.status, record.score) for record in records] == [("baseline", 0.8), ("crash", None)]
 
 
+@pytest.mark.skipif(os.name == "nt", reason="virtual-environment regression uses a POSIX symlink")
+def test_candidate_evaluation_excludes_in_workspace_environment_and_dependency_trees(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, client, config = _initialize_fake_campaign(runner, tmp_path, monkeypatch, baseline_score=0.5)
+    environment_files = [
+        ".venv/lib/python3.12/site-packages/pkg/real.py",
+        "venv/lib/python3.12/site-packages/pkg/module.py",
+        ".tox/py/lib/python3.12/site-packages/pkg/module.py",
+        "vendor/site-packages/pkg/module.py",
+        "node_modules/tool/module.py",
+    ]
+    for relative in environment_files:
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("VALUE = 'dependency'\n", encoding="utf-8")
+    linked_module = tmp_path / ".venv/lib/python3.12/site-packages/pkg/linked.py"
+    linked_module.symlink_to("real.py")
+
+    managed_paths = runner.managed_source_paths(tmp_path, config)
+    assert not any(
+        path in managed_paths for path in [*environment_files, linked_module.relative_to(tmp_path).as_posix()]
+    )
+
+    assert runner.main(["prepare", str(job), "--name", "venv_safe", "--hypothesis", "improve code"]) == 0
+    candidate_dir = tmp_path / ".nvflare" / "autofl" / "candidates" / "venv_safe"
+    candidate_dir.joinpath("source/client.py").write_text("ALGORITHM = 'candidate'\n", encoding="utf-8")
+    monkeypatch.setattr(
+        runner,
+        "run_job",
+        lambda run_def, **kwargs: runner.RunRecord(
+            "candidate", run_def.name, 0.7, 1.0, "none", run_def.description, "python job.py", "/tmp/candidate"
+        ),
+    )
+
+    assert runner.main(["evaluate", str(job)]) == 0
+    assert client.read_text(encoding="utf-8") == "ALGORITHM = 'candidate'\n"
+    assert linked_module.is_symlink()
+    manifest = json.loads(candidate_dir.joinpath("candidate_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["status"] == "keep"
+
+
 def test_candidate_runtime_source_restore_failure_remains_pending(tmp_path, monkeypatch, capsys):
     runner = _load_runner()
     job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch, baseline_score=0.8)

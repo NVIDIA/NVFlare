@@ -87,7 +87,17 @@ CAMPAIGN_METADATA_PATH = ".nvflare/autofl/campaign.json"
 CANDIDATE_ROOT = ".nvflare/autofl/candidates"
 BEST_SNAPSHOT_ROOT = ".nvflare/autofl/snapshots/best"
 ALLOWED_CREATE_PATTERNS = ["**/*.py"]
-RESERVED_CANDIDATE_PATH_PARTS = {".git", ".nvflare", "__pycache__", "autofl_runs"}
+RESERVED_CANDIDATE_PATH_PARTS = {
+    ".git",
+    ".nvflare",
+    ".tox",
+    ".venv",
+    "__pycache__",
+    "autofl_runs",
+    "node_modules",
+    "site-packages",
+    "venv",
+}
 
 INFRASTRUCTURE_RETRY = "infrastructure_retry"
 SIMULATION_APPROVAL_ACTION = "await_simulation_runner_approval"
