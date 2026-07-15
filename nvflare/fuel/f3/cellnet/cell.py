@@ -94,15 +94,15 @@ class Adapter:
         self.logger.debug(f"{stream_req_id=}: {headers=}, incoming data={result}")
         request = Message(headers, result)
 
-        # PASS_THROUGH can be requested per-message (sender stamps
-        # MessageHeaderKey.PASS_THROUGH) or per-channel (receiver adds the
-        # channel name to cell.decode_pass_through_channels).  Either source
-        # activates LazyDownloadRef decode so tensors are not downloaded at
-        # this hop.
+        # PASS_THROUGH can be requested per-message, per-channel, or for one
+        # exact (channel, topic) route. Any source activates LazyDownloadRef
+        # decode so tensors are not downloaded at this hop.
         channel = request.get_header(StreamHeaderKey.CHANNEL)
         topic = request.get_header(StreamHeaderKey.TOPIC)
         passthrough = bool(request.get_header(MessageHeaderKey.PASS_THROUGH, False))
         if channel in self.cell.decode_pass_through_channels:
+            passthrough = True
+        if (channel, topic) in self.cell.decode_pass_through_topics:
             passthrough = True
         decode_ctx = self.cell.get_fobs_context(props={FOBSContextKey.PASS_THROUGH: passthrough})
         try:
@@ -160,6 +160,7 @@ class Cell(StreamCell):
         self.register_blob_cb(CellChannel.RETURN_ONLY, "*", self._process_reply)  # this should be one-time registration
         self.core_cell.update_fobs_context({FOBSContextKey.CELL: self})
         self.decode_pass_through_channels: set = set()  # per-channel opt-in for receiver-side PASS_THROUGH
+        self.decode_pass_through_topics: set = set()  # exact (channel, topic) receiver-side opt-in
 
     def update_fobs_context(self, props: dict):
         self.core_cell.update_fobs_context(props)
@@ -337,12 +338,26 @@ class Cell(StreamCell):
         else:
             return True
 
-    def _encode_message(self, msg: Message, abort_signal, num_receivers=1, receiver_ids=None) -> int:
+    def _encode_message(
+        self,
+        msg: Message,
+        abort_signal,
+        num_receivers=1,
+        receiver_ids=None,
+        fobs_ctx_props: dict = None,
+    ) -> int:
         try:
-            props = {
-                FOBSContextKey.ABORT_SIGNAL: abort_signal,
-                FOBSContextKey.NUM_RECEIVERS: num_receivers,
-            }
+            # Keep call-scoped FOBS behavior out of the Cell's shared context.  This is
+            # especially important when a trainer logs from one thread while another
+            # serializes a result: temporarily mutating the CoreCell context would let
+            # transaction-lifecycle callbacks leak into the log encode.
+            props = dict(fobs_ctx_props or {})
+            props.update(
+                {
+                    FOBSContextKey.ABORT_SIGNAL: abort_signal,
+                    FOBSContextKey.NUM_RECEIVERS: num_receivers,
+                }
+            )
             if receiver_ids is not None:
                 props[FOBSContextKey.RECEIVER_IDS] = receiver_ids
             return encode_payload(msg, StreamHeaderKey.PAYLOAD_ENCODING, fobs_ctx=self.get_fobs_context(props))
@@ -363,6 +378,7 @@ class Cell(StreamCell):
         progress_wait_cb=None,
         num_receivers=1,
         receiver_ids=None,
+        fobs_ctx_props: dict = None,
     ):
         """Stream one request to the target
 
@@ -375,11 +391,19 @@ class Cell(StreamCell):
             secure: is P2P security to be applied
             optional: is the message optional
             abort_signal: signal to abort the message
+            fobs_ctx_props: optional call-scoped FOBS context properties used only
+                while serializing this request
 
         Returns: reply data
 
         """
-        self._encode_message(request, abort_signal, num_receivers=num_receivers, receiver_ids=receiver_ids)
+        self._encode_message(
+            request,
+            abort_signal,
+            num_receivers=num_receivers,
+            receiver_ids=receiver_ids,
+            fobs_ctx_props=fobs_ctx_props,
+        )
         return self._send_one_request(
             channel, target, topic, request, timeout, secure, optional, abort_signal, progress_wait_cb
         )
@@ -478,6 +502,8 @@ class Cell(StreamCell):
             waiter.result = Message(r_future.headers, r_future.result())
             pt = bool(waiter.result.get_header(MessageHeaderKey.PASS_THROUGH, False))
             if channel in self.decode_pass_through_channels:
+                pt = True
+            if (channel, topic) in self.decode_pass_through_topics:
                 pt = True
             decode_payload(
                 waiter.result,

@@ -59,6 +59,15 @@ class Executor(FLComponent, ABC):
         """
         return JobTargetType.CLIENT
 
+    def supports_task_data_pass_through(self) -> bool:
+        """Whether this executor can forward lazy task payload references without reading them.
+
+        Executors run in the client job process by default and therefore require concrete
+        task data. An executor that forwards the Shareable to another process may override
+        this capability so the client job avoids materializing large payloads unnecessarily.
+        """
+        return False
+
     def add_to_fed_job(self, job, ctx, **kwargs):
         """This method is used by Job API.
 

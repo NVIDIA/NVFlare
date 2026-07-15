@@ -445,8 +445,8 @@ class FedAvgRecipe(Recipe):
     ):
         """Build the client ScriptRunner. When execution_mode is set, route to the new
         ClientAPIExecutor stack (external_process/in_process) instead of the legacy
-        launch_external_process launcher; framework/server_expected_format still drive the
-        client-edge conversion filter, so an unchanged framework client runs on either path."""
+        launch_external_process launcher; framework/server_expected_format declare the
+        trainer-side Client API adaptation, so an unchanged framework client runs on either path."""
         if self.execution_mode is not None:
             return ScriptRunner(
                 script=script,
@@ -455,6 +455,7 @@ class FedAvgRecipe(Recipe):
                 command=command,
                 framework=framework,
                 server_expected_format=server_expected_format,
+                params_transfer_type=params_transfer_type,
                 launch_once=launch_once,
                 shutdown_timeout=shutdown_timeout,
                 memory_gc_rounds=self.client_memory_gc_rounds,

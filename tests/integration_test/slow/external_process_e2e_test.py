@@ -20,10 +20,9 @@ REAL trainer subprocess that speaks the new Cell protocol (ExternalProcessBacken
 trainer-side CellClientAPI) over real cellnet, pulls the global model, trains, and streams the
 result back through the shared F3 payload layer — the whole stack, not fakes.
 
-It is intentionally heavier than the unit tests (spawns processes, stands up cellnet), so it is
-guarded to skip when the F3 payload layer (#4865) is absent, and it points the launched
-subprocess at the nvflare under test via PYTHONPATH so it works whether or not the editable
-install targets this tree.
+It is intentionally heavier than the unit tests (spawns processes and stands up cellnet), and it
+points the launched subprocess at the nvflare under test via PYTHONPATH so it works whether or
+not the editable install targets this tree.
 """
 
 import os
@@ -79,7 +78,10 @@ _JOB_SCRIPT = textwrap.dedent(
     job.to_server(FedAvg(num_clients=n_clients, num_rounds=num_rounds, persistor_id=pid, task_name="train"))
     job.to_clients(
         ScriptRunner(
-            script="client.py", execution_mode="external_process", command=command, framework=FrameworkType.NUMPY
+            script="client.py", execution_mode="external_process", command=command, framework=FrameworkType.NUMPY,
+            # The client script intentionally does not call flare.shutdown(). Give the
+            # trainer-side Cell watcher a bounded opportunity to reap F3 naturally.
+            shutdown_timeout=5.0,
         ),
         tasks=["train"],
     )
@@ -99,7 +101,7 @@ _PT_CLIENT_SCRIPT = textwrap.dedent(
         if model is None:
             break
         params = model.params
-        # the client-edge conversion filter must hand the (unchanged) PT script torch tensors,
+        # trainer-side Client API conversion must hand the unchanged script torch tensors,
         # exactly as the legacy Client API did — even though the wire/server stay numpy
         assert params and all(isinstance(v, torch.Tensor) for v in params.values()), (
             "expected torch tensors at flare.receive(): " + str({k: type(v).__name__ for k, v in params.items()})
@@ -128,7 +130,7 @@ _PT_JOB_SCRIPT = textwrap.dedent(
     job = BaseFedJob(name="ext-pt-e2e", min_clients=n_clients)
     pid = extract_persistor_id(job.to_server(PTModel(TinyNet()), id="persistor"))
     job.to_server(FedAvg(num_clients=n_clients, num_rounds=num_rounds, persistor_id=pid, task_name="train"))
-    # framework defaults to PYTORCH; the ScriptRunner wires the numpy<->torch conversion filters
+    # framework defaults to PYTORCH; ScriptRunner declares numpy<->torch API-boundary conversion
     job.to_clients(ScriptRunner(script="client.py", execution_mode="external_process", command=command), tasks=["train"])
     job.simulator_run(workdir, n_clients=n_clients, threads=n_clients)
     """
@@ -264,12 +266,15 @@ def test_external_process_numpy_fedavg_end_to_end(tmp_path):
     assert "failed to process trainer LOG data" not in out, f"metric logging failed:\n{out[-3000:]}"
     # real trainer subprocesses were launched and reaped by the backend
     assert "launching external trainer" in out, f"no external trainer was launched:\n{out[-3000:]}"
+    assert "terminating trainer process tree" not in out, (
+        "trainer did not exit naturally within the orderly shutdown bound:\n" + out[-3000:]
+    )
 
 
 @pytest.mark.skipif(not _torch_available(), reason="requires torch for the PyTorch example")
 def test_external_process_pytorch_fedavg_end_to_end(tmp_path):
-    """hello-pt-style: an UNCHANGED torch-expecting client. The ScriptRunner wires the
-    numpy<->torch client-edge conversion filters, so flare.receive() hands the script torch
+    """hello-pt-style: an UNCHANGED torch-expecting client. ScriptRunner declares trainer-side
+    numpy<->torch API conversion, so flare.receive() hands the script torch
     tensors even though the wire/server stay numpy — the client asserts it received torch."""
     jobdir = tmp_path / "job"
     jobdir.mkdir()
@@ -702,10 +707,10 @@ def test_external_process_metrics_streaming_config_job_end_to_end(tmp_path):
     assert "Traceback" not in out, f"metrics config job raised:\n{out[-4000:]}"
 
 
-# --- Config-based PyTorch job, torch-throughout pass-through (no conversion filters) --------------
+# --- Config-based PyTorch job, torch-throughout RAW representation -------------------------------
 #
 # Derived from the pt_client_api_basic integration job (params_exchange_format="pytorch"). Unlike
-# the FedJob-API PyTorch test above (numpy wire + client-edge conversion filters), this keeps torch
+# the FedJob-API PyTorch test above (numpy wire + trainer-side conversion), this keeps torch
 # tensors on the wire end-to-end: PTFileModelPersistor registers the tensor decomposer server-side,
 # the backend and trainer engine register it too, so the FLModel round-trips as torch with the
 # Client API passing params through unconverted. Also exercises launch_once=false: a single-shot
@@ -727,8 +732,8 @@ _PT_CONFIG_CLIENT_SCRIPT = textwrap.dedent(
         weight = torch.zeros([5, 10], dtype=torch.float32)
         bias = torch.zeros([5], dtype=torch.float32)
     else:
-        # round > 0: the server's aggregated model arrives as torch tensors (pass-through, no
-        # conversion filter) — a broken decomposer/pass-through path would not yield torch here
+        # round > 0: the server's aggregated model arrives as torch tensors (RAW representation,
+        # no conversion) — a broken decomposer/pass-through path would not yield torch here
         weight = input_model.params.get("fc1.weight")
         bias = input_model.params.get("fc1.bias")
         assert isinstance(weight, torch.Tensor) and isinstance(bias, torch.Tensor), (
@@ -841,7 +846,7 @@ _PT_CONFIG_META_CONF = textwrap.dedent(
 @pytest.mark.skipif(not _torch_available(), reason="requires torch for the config-based PyTorch example")
 def test_external_process_pytorch_config_job_passthrough_end_to_end(tmp_path):
     """A config-based PyTorch job (derived from pt_client_api_basic) with torch tensors on the wire
-    end-to-end (no conversion filters): PTFileModelPersistor + backend + engine all register the
+    end-to-end (RAW representation, no conversion): PTFileModelPersistor + backend + engine register the
     tensor decomposer, so the FLModel round-trips as torch. Also drives launch_once=false (per-task
     relaunch across two rounds). The trainer asserts it received torch tensors at round > 0."""
     jobdir = tmp_path / "pt_basic_external_process"
@@ -885,12 +890,215 @@ def test_external_process_pytorch_config_job_passthrough_end_to_end(tmp_path):
 
     assert "Finished ScatterAndGather Training." in out, f"PT config job did not finish:\n{out[-4000:]}"
     assert "aggregating 2 update(s) at round 1" in out, f"second round did not aggregate both clients:\n{out[-4000:]}"
-    # torch tensors survived the round-trip on the wire (no conversion filters)
+    # torch tensors survived the RAW round-trip on the wire
     assert "PT_PASSTHROUGH_OK" in out, f"trainer did not receive torch tensors at round>0:\n{out[-4000:]}"
     assert "PT_PASSTHROUGH_BROKEN" not in out, f"pass-through delivered non-torch params:\n{out[-4000:]}"
     # launch_once=false relaunched the trainer per task
     assert "launching external trainer" in out, f"no external trainer was launched:\n{out[-4000:]}"
+    assert "trainer SHUTDOWN was not acknowledged" not in out, f"per-task trainer did not stop cleanly:\n{out[-4000:]}"
+    assert "terminating trainer process tree" not in out, f"per-task trainer required forced reaping:\n{out[-4000:]}"
     assert "Traceback" not in out, f"PT config job raised:\n{out[-4000:]}"
+
+
+# --- Trainer-side DIFF calculation ---------------------------------------------------------------
+#
+# The original pt_client_api_basic job declares params_transfer_type=DIFF while its unchanged
+# trainer returns a FULL PyTorch model.  The Client API boundary must subtract the received model,
+# convert the resulting diff to the server representation, and put WEIGHT_DIFF on the wire.  A
+# unit test of _prepare_param_diff cannot prove that last part, so this E2E installs an asserting
+# aggregator at the server boundary.
+
+_DIFF_ASSERTING_AGGREGATOR = textwrap.dedent(
+    """
+    from nvflare.apis.dxo import DataKind, from_shareable
+    from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import (
+        InTimeAccumulateWeightedAggregator,
+    )
+
+
+    class DiffAssertingAggregator(InTimeAccumulateWeightedAggregator):
+        def accept(self, shareable, fl_ctx):
+            dxo = from_shareable(shareable)
+            assert dxo.data_kind == DataKind.WEIGHT_DIFF, (
+                "SERVER_EXPECTED_WEIGHT_DIFF: got " + str(dxo.data_kind)
+            )
+            print("SERVER_RECEIVED_DIFF", flush=True)
+            return super().accept(shareable, fl_ctx)
+    """
+)
+
+_DIFF_SERVER_CONF = _PT_CONFIG_SERVER_CONF.replace(
+    "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",
+    "diff_aggregator.DiffAssertingAggregator",
+).replace('expected_data_kind = "WEIGHTS"', 'expected_data_kind = "WEIGHT_DIFF"')
+
+_DIFF_CLIENT_CONF = _PT_CONFIG_CLIENT_CONF.replace(
+    "train_with_evaluation = true",
+    (
+        "train_with_evaluation = true\n"
+        '              params_transfer_type = "DIFF"\n'
+        '              params_exchange_format = "pytorch"\n'
+        '              server_expected_format = "numpy"'
+    ),
+)
+
+_DIFF_META_CONF = _PT_CONFIG_META_CONF.replace(
+    "pt_client_api_basic_external_process", "pt_client_api_diff_external_process"
+)
+
+
+@pytest.mark.skipif(not _torch_available(), reason="requires torch for the config-based PyTorch DIFF example")
+def test_external_process_pytorch_diff_reaches_server_end_to_end(tmp_path):
+    """An unchanged PT trainer sends FULL, but ClientAPIExecutor declares DIFF.  Assert at the
+    actual server aggregator boundary that both client results arrive as WEIGHT_DIFF."""
+    jobdir = tmp_path / "pt_diff_external_process"
+    (jobdir / "app" / "config").mkdir(parents=True)
+    (jobdir / "app" / "custom").mkdir(parents=True)
+    (jobdir / "app" / "config" / "config_fed_server.conf").write_text(_DIFF_SERVER_CONF)
+    (jobdir / "app" / "config" / "config_fed_client.conf").write_text(
+        _DIFF_CLIENT_CONF.replace("__PYTHON__", sys.executable)
+    )
+    (jobdir / "app" / "custom" / "poc_client.py").write_text(_PT_CONFIG_CLIENT_SCRIPT)
+    (jobdir / "app" / "custom" / "net.py").write_text(_PT_CONFIG_NET)
+    (jobdir / "app" / "custom" / "diff_aggregator.py").write_text(_DIFF_ASSERTING_AGGREGATOR)
+    (jobdir / "meta.conf").write_text(_DIFF_META_CONF)
+    workdir = tmp_path / "sim"
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = _REPO_ROOT + os.pathsep + env.get("PYTHONPATH", "")
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-u",
+            "-m",
+            "nvflare.private.fed.app.simulator.simulator",
+            str(jobdir),
+            "-w",
+            str(workdir),
+            "-n",
+            "2",
+            "-t",
+            "2",
+            "-c",
+            "site-1,site-2",
+        ],
+        cwd=str(tmp_path),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    out = proc.stdout + proc.stderr
+
+    assert "Finished ScatterAndGather Training." in out, f"PT DIFF job did not finish:\n{out[-4000:]}"
+    # This marker is emitted only after from_shareable() at the server boundary verifies
+    # DataKind.WEIGHT_DIFF.  Both clients must contribute in both rounds.
+    assert out.count("SERVER_RECEIVED_DIFF") >= 4, f"server did not receive four DIFF results:\n{out[-4000:]}"
+    assert "SERVER_EXPECTED_WEIGHT_DIFF" not in out, f"server received a FULL result:\n{out[-4000:]}"
+    assert "aggregating 2 update(s) at round 1" in out, f"server did not aggregate round 1:\n{out[-4000:]}"
+    assert "Traceback" not in out, f"PT DIFF job raised:\n{out[-4000:]}"
+
+
+# --- Secret reference resolution in a real trainer launch ---------------------------------------
+#
+# Unit tests cover command tokenization.  This case proves the complete boundary: ScriptRunner
+# stores the reference, the executing CJ resolves it immediately before shell-free Popen, a value
+# with spaces/metacharacters remains one argv item, and the resolved value is not logged.
+
+_SECRET_ENV_NAME = "NVFLARE_EXTERNAL_E2E_LAUNCH_SECRET"
+_SECRET_REF = "${secret:" + _SECRET_ENV_NAME + "}"
+
+_SECRET_CLIENT_SCRIPT = textwrap.dedent(
+    """
+    import argparse
+    import os
+
+    import nvflare.client as flare
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--launch-secret", required=True)
+    args = parser.parse_args()
+    assert args.launch_secret == os.environ["NVFLARE_EXTERNAL_E2E_LAUNCH_SECRET"], "LAUNCH_SECRET_MISMATCH"
+    print("LAUNCH_SECRET_ARG_OK", flush=True)
+
+    flare.init()
+    while flare.is_running():
+        model = flare.receive()
+        if model is None:
+            break
+        flare.send(
+            flare.FLModel(
+                params=model.params,
+                params_type=flare.ParamsType.FULL,
+                current_round=model.current_round,
+            )
+        )
+    """
+)
+
+_SECRET_JOB_SCRIPT = textwrap.dedent(
+    """
+    import sys
+    from nvflare.app_common.np.np_model_persistor import NPModelPersistor
+    from nvflare.app_common.workflows.fedavg import FedAvg
+    from nvflare.fuel.utils.constants import FrameworkType
+    from nvflare.job_config.base_fed_job import BaseFedJob
+    from nvflare.job_config.script_runner import ScriptRunner
+    from nvflare.recipe.utils import extract_persistor_id
+
+    workdir, command, secret_ref = sys.argv[1], sys.argv[2], sys.argv[3]
+    job = BaseFedJob(name="external-secret-command-e2e", min_clients=1)
+    pid = extract_persistor_id(job.to_server(NPModelPersistor(model=[[1.0]]), id="persistor"))
+    job.to_server(FedAvg(num_clients=1, num_rounds=1, persistor_id=pid, task_name="train"))
+    job.to_clients(
+        ScriptRunner(
+            script="client.py",
+            script_args=f"--launch-secret {secret_ref}",
+            execution_mode="external_process",
+            command=command,
+            framework=FrameworkType.NUMPY,
+            shutdown_timeout=5.0,
+        ),
+        tasks=["train"],
+    )
+    job.simulator_run(workdir, n_clients=1, threads=1)
+    """
+)
+
+
+def test_external_process_secret_command_launch_end_to_end(tmp_path):
+    """A secret reference is resolved at the real CJ->trainer launch boundary, remains one argv
+    item despite spaces and shell metacharacters, and is never written to captured logs."""
+    jobdir = tmp_path / "job"
+    jobdir.mkdir()
+    (jobdir / "client.py").write_text(_SECRET_CLIENT_SCRIPT)
+    (jobdir / "run_job.py").write_text(_SECRET_JOB_SCRIPT)
+    workdir = tmp_path / "sim"
+
+    # If the backend accidentally reparses this through a shell, the semicolon/dollar syntax
+    # changes behavior.  With shell=False it is a single opaque argv value.
+    secret_value = "synthetic value; $NOT_EXPANDED $(not-executed)"
+    env = os.environ.copy()
+    env["PYTHONPATH"] = _REPO_ROOT + os.pathsep + env.get("PYTHONPATH", "")
+    env[_SECRET_ENV_NAME] = secret_value
+    command = f"{sys.executable} -u"
+
+    proc = subprocess.run(
+        [sys.executable, "-u", str(jobdir / "run_job.py"), str(workdir), command, _SECRET_REF],
+        cwd=str(jobdir),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    out = proc.stdout + proc.stderr
+
+    assert "Finished FedAvg." in out, f"secret-command job did not finish:\n{out[-4000:]}"
+    assert "LAUNCH_SECRET_ARG_OK" in out, f"trainer did not receive the resolved secret argv:\n{out[-4000:]}"
+    assert "LAUNCH_SECRET_MISMATCH" not in out, f"secret argv was changed during launch:\n{out[-4000:]}"
+    assert secret_value not in out, "resolved launch secret leaked into simulator/trainer logs"
+    assert "Traceback" not in out, f"secret-command job raised:\n{out[-4000:]}"
 
 
 # --- Cyclic (relay) workflow ---------------------------------------------------------------------
@@ -1225,9 +1433,9 @@ def test_external_process_launcher_wrapped_grandchild_trainer_end_to_end(tmp_pat
 # Derived from the pt_large_model_pass_through integration job. LargeNet (~8 MB of float32 params)
 # is deliberately sized ABOVE the 2 MB ViaDownloaderDecomposer streaming threshold, so the model
 # round-trips via the F3 chunked download path — the path all the small-model tests above stay
-# below and never exercise. Run via the ScriptRunner conversion-filter path (the design's supported
-# migration for torch models): the wire carries large NUMPY arrays (streamed), and the client-edge
-# filter converts them to torch, so an unchanged torch script's net.load_state_dict() works.
+# below and never exercise. ScriptRunner declares trainer-side representation conversion: the wire
+# carries large NUMPY arrays (streamed), and the Client API converts them to torch before returning
+# from flare.receive(), so an unchanged torch script's net.load_state_dict() works.
 
 _LARGE_MODEL_SCRIPT = textwrap.dedent(
     """
@@ -1263,7 +1471,7 @@ _LARGE_CLIENT_SCRIPT = textwrap.dedent(
         m = flare.receive()
         if m is None:
             break
-        # the conversion filter must deliver torch tensors even for the large (streamed) model
+        # trainer-side conversion must deliver torch tensors even for the large (streamed) model
         assert all(isinstance(v, torch.Tensor) for v in m.params.values()), (
             "LARGE_NOT_TORCH:" + str({k: type(v).__name__ for k, v in m.params.items()})
         )
@@ -1307,8 +1515,8 @@ _LARGE_JOB_SCRIPT = textwrap.dedent(
 def test_external_process_large_model_streaming_end_to_end(tmp_path):
     """A ~8 MB model (above the 2 MB streaming threshold) round-trips via the F3 chunked download
     path — the large-payload path the small-model tests don't reach. Derived from the
-    pt_large_model_pass_through integration job; run via the ScriptRunner conversion-filter path so
-    the large NUMPY arrays stream on the wire and the client-edge filter hands the script torch."""
+    pt_large_model_pass_through integration job; ScriptRunner keeps large NUMPY arrays on the wire
+    while trainer-side API conversion hands the script torch."""
     jobdir = tmp_path / "job"
     jobdir.mkdir()
     (jobdir / "client.py").write_text(_LARGE_CLIENT_SCRIPT)
@@ -1335,7 +1543,7 @@ def test_external_process_large_model_streaming_end_to_end(tmp_path):
     # the large model completed both rounds on both clients (streamed download + conversion)
     assert "LARGE_ROUND 0 ok" in out, f"round 0 did not complete on the large model:\n{out[-4000:]}"
     assert "LARGE_ROUND 1 ok" in out, f"round 1 did not complete on the large model:\n{out[-4000:]}"
-    assert "LARGE_NOT_TORCH" not in out, f"conversion filter failed for the streamed large model:\n{out[-4000:]}"
+    assert "LARGE_NOT_TORCH" not in out, f"trainer conversion failed for the streamed large model:\n{out[-4000:]}"
     assert "Traceback" not in out, f"large-model job raised:\n{out[-4000:]}"
 
 
@@ -1498,7 +1706,9 @@ _MRANK_CLIENT_CONF = textwrap.dedent(
             args {
               execution_mode = "external_process"
               command = "__PYTHON__ -u custom/dist_launch.py"
-              launch_once = true
+              # Mirrors pt_client_api_torchrun_cpu: this trainer handles one task and
+              # returns, so the backend launches and owns one process tree per task.
+              launch_once = false
               stop_grace_period = 5.0
               train_with_evaluation = true
             }
@@ -1590,9 +1800,9 @@ def test_external_process_multi_rank_distributed_end_to_end(tmp_path):
 # Derived from the pt_lightning integration job. It uses the distinct Lightning client integration:
 # `import nvflare.client.lightning as flare` + `flare.patch(trainer)`, which installs FL callbacks on
 # the Lightning Trainer so trainer.fit()/validate() load the global model and send the result. Runs
-# torch-throughout the trainer with numpy on the wire via the client-edge conversion filters wired in
-# the CONFIG (ParamsConverterFilter, the same numpy<->torch converters ScriptRunner uses) — proving
-# a config-based job can declare those filters itself. Synthetic tensor data, CPU (no GPU/dataset).
+# torch-throughout the trainer with numpy on the wire via representation formats declared in the
+# CONFIG (the same TASK_EXCHANGE declaration ScriptRunner generates) — proving a config-based job
+# gets the same trainer-side API conversion. Synthetic tensor data, CPU (no GPU/dataset).
 
 _LIGHTNING_NET = (
     "import torch.nn as nn\n\n\n"
@@ -1731,7 +1941,7 @@ _LIGHTNING_SERVER_CONF = textwrap.dedent(
     """
 )
 
-# client-edge numpy<->torch conversion filters declared in the config (what ScriptRunner wires
+# Trainer/server representations declared in the executor config (what ScriptRunner generates
 # automatically); __PYTHON__ is replaced with the interpreter under test.
 _LIGHTNING_CLIENT_CONF = textwrap.dedent(
     """
@@ -1750,32 +1960,14 @@ _LIGHTNING_CLIENT_CONF = textwrap.dedent(
               launch_once = true
               stop_grace_period = 5.0
               train_with_evaluation = true
+              params_exchange_format = "pytorch"
+              server_expected_format = "numpy"
             }
           }
         }
       ]
-      task_data_filters = [
-        {
-          tasks = ["train"]
-          filters = [
-            {
-              path = "nvflare.app_common.filters.params_converter_filter.ParamsConverterFilter"
-              args { converter { path = "nvflare.app_opt.pt.numpy_params_converter.NumpyToPTParamsConverter" } }
-            }
-          ]
-        }
-      ]
-      task_result_filters = [
-        {
-          tasks = ["train"]
-          filters = [
-            {
-              path = "nvflare.app_common.filters.params_converter_filter.ParamsConverterFilter"
-              args { converter { path = "nvflare.app_opt.pt.numpy_params_converter.PTToNumpyParamsConverter" } }
-            }
-          ]
-        }
-      ]
+      task_data_filters = []
+      task_result_filters = []
       components = []
     }
     """
@@ -1800,8 +1992,8 @@ _LIGHTNING_META_CONF = textwrap.dedent(
 )
 def test_external_process_pytorch_lightning_config_job_end_to_end(tmp_path):
     """The pt_lightning integration job (nvflare.client.lightning flare.patch pattern) runs on
-    ClientAPIExecutor(external_process). The trainer works in torch; numpy<->torch conversion
-    filters declared in the config keep the wire numpy and hand the Lightning module torch."""
+    ClientAPIExecutor(external_process). The trainer works in torch; declared numpy<->torch API
+    conversion keeps the wire numpy and hands the Lightning module torch."""
     jobdir = tmp_path / "pt_lightning_external_process"
     (jobdir / "app" / "config").mkdir(parents=True)
     (jobdir / "app" / "custom").mkdir(parents=True)
@@ -1847,8 +2039,8 @@ def test_external_process_pytorch_lightning_config_job_end_to_end(tmp_path):
     assert "LIGHTNING_PATCHED" in out, f"flare.patch did not install callbacks:\n{out[-4000:]}"
     assert "LIGHTNING_ROUND 1" in out, f"second round did not run through the Lightning trainer:\n{out[-4000:]}"
     assert "aggregating 2 update(s) at round 1" in out, f"server did not aggregate both clients:\n{out[-4000:]}"
-    # the conversion filters delivered torch to the Lightning module (no numpy load_state_dict error)
-    assert "expected torch.Tensor" not in out, f"conversion filter did not deliver torch:\n{out[-4000:]}"
+    # trainer-side API conversion delivered torch to the Lightning module (no numpy load_state_dict error)
+    assert "expected torch.Tensor" not in out, f"trainer conversion did not deliver torch:\n{out[-4000:]}"
     assert "Traceback" not in out, f"lightning job raised:\n{out[-4000:]}"
 
 
@@ -1856,8 +2048,8 @@ def test_external_process_pytorch_lightning_config_job_end_to_end(tmp_path):
 #
 # The fourth ML framework. TensorFlow has no wheel for Python 3.14, so this test self-skips on the
 # 3.14 CI interpreter and runs wherever tensorflow is importable (e.g. a Python 3.13 environment).
-# It mirrors the TF FedAvg examples: the ScriptRunner wires the numpy<->keras-layer-weights
-# conversion filters (KERAS_LAYER_WEIGHTS exchange), so flare.receive() hands the script a
+# It mirrors the TF FedAvg examples: ScriptRunner declares numpy<->keras-layer-weights conversion
+# (KERAS_LAYER_WEIGHTS exchange), so flare.receive() hands the script a
 # {layer_name: [weight_arrays]} dict for model.get_layer(k).set_weights(v), and the wire/server
 # stay numpy. Synthetic data, CPU.
 
@@ -1897,7 +2089,7 @@ _TF_CLIENT_SCRIPT = textwrap.dedent(
         input_model = flare.receive()
         if input_model is None:
             break
-        # the conversion filter delivers keras layer weights {layer_name: [arrays]}
+        # trainer-side conversion delivers keras layer weights {layer_name: [arrays]}
         for k, v in input_model.params.items():
             model.get_layer(k).set_weights(v)
         model.fit(X, y, epochs=1, batch_size=16, verbose=0)
@@ -1941,7 +2133,7 @@ _TF_JOB_SCRIPT = textwrap.dedent(
 @pytest.mark.skipif(not _tf_available(), reason="requires tensorflow (no wheel for Python 3.14)")
 def test_external_process_tensorflow_fedavg_end_to_end(tmp_path):
     """A real TensorFlow/Keras FedAvg job runs as subprocesses on external_process. The ScriptRunner
-    wires the numpy<->keras-layer-weights conversion filters, so the wire stays numpy while the TF
+    declares numpy<->keras-layer-weights API conversion, so the wire stays numpy while the TF
     script works with keras layer weights. Self-skips where tensorflow is unavailable (Python 3.14)."""
     jobdir = tmp_path / "job"
     jobdir.mkdir()
@@ -2101,5 +2293,5 @@ def test_external_process_real_dataset_pytorch_end_to_end(tmp_path):
     # both rounds trained on real MNIST images on both clients
     assert "MNIST_ROUND 0 ok" in out, f"round 0 did not complete on real data:\n{out[-4000:]}"
     assert "MNIST_ROUND 1 ok" in out, f"round 1 did not complete on real data:\n{out[-4000:]}"
-    assert "MNIST_NOT_TORCH" not in out, f"conversion filter did not deliver torch:\n{out[-4000:]}"
+    assert "MNIST_NOT_TORCH" not in out, f"trainer conversion did not deliver torch:\n{out[-4000:]}"
     assert "Traceback" not in out, f"MNIST job raised:\n{out[-4000:]}"

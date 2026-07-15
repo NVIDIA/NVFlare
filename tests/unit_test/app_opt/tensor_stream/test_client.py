@@ -46,6 +46,10 @@ class TestTensorClientStreamer:
         assert streamer.engine is None
         assert streamer.sender is None
         assert streamer.receiver is None
+        assert streamer.requires_materialized_task_data(expected_tasks[0]) is True
+        assert streamer.requires_materialized_task_data("not-configured") is False
+        assert streamer.requires_materialized_task_result(expected_tasks[0]) is True
+        assert streamer.requires_materialized_task_result("not-configured") is False
 
     @patch("nvflare.app_opt.tensor_stream.client.TensorReceiver")
     def test_initialize_success(self, mock_receiver_class, mock_fl_context, mock_engine_with_clients):

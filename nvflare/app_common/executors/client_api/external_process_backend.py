@@ -16,51 +16,42 @@
 
 Design: docs/design/client_api_execution_modes.md ("external_process", "Control Protocol",
 "Payload Lifecycle State Machine"). The backend launches and owns the external trainer
-process tree, and talks to it over the CJ cell using the frozen protocol vocabulary in
+process tree, and talks to it over the CJ cell using the implemented protocol vocabulary in
 nvflare/client/cell/defs.py — no PipeHandler, no CellPipe, no MetricRelay:
 
 - **Launch**: writes the bootstrap config (0600; fresh launch-scoped token, connect URL,
   prescribed trainer FQCN — see nvflare/client/cell/bootstrap.py), starts the configured
   command in its own process group, and waits for the trainer's HELLO. The token is a
-  plain match over the localhost connection NVFlare itself created (V1 trusted host);
-  challenge-response proof is an attach-mode concern (design Appendix B).
-- **Control plane**: TASK_READY/TASK_ACCEPTED, RESULT_READY/RESULT_ACCEPTED, TASK_FAILED,
-  LOG, ABORT, SHUTDOWN, BYE as plain cell messages. There is deliberately NO session
-  heartbeat protocol in this mode: liveness of a *transfer* is the payload layer's budget
-  job, liveness of the *process* is the backend's (process handle; the trainer's cell
-  connects directly to the CJ's internal listener, so process death also drops the
-  connection). The heartbeat_interval/heartbeat_timeout knobs on the frozen executor
-  surface are reserved for attach, which has no process handle.
-- **Payload plane**: task payloads down and result payloads up move through the
-  payload_transfer seam (nvflare/client/cell/payload_transfer.py, over the F3 payload
-  layer's explicit DownloadService transactions). The backend mints
-  the cross-attempt ``transfer_id``, carries it in the task message, and enforces
-  one-live-attempt per logical transfer — a retry is a NEW attempt under a NEW tx_id, and
-  creating a duplicate live attempt for a transfer_id raises. RESULT_ACCEPTED is a control
-  ack, not payload completion: the result bytes are pulled through the seam after it, and
-  a pull failure is confirmed to the trainer-side producer as FAILED by the layer itself.
+  plain match over the localhost connection NVFlare itself created (V1 trusted host).
+- **Control plane**: TASK_READY with TASK_ACCEPTED/TASK_FAILED replies,
+  RESULT_READY with RESULT_ACCEPTED/RESULT_REJECTED replies, and LOG, HEARTBEAT, ABORT,
+  SHUTDOWN as plain Cell messages. Process-group exit and the
+  authenticated heartbeat lease are independent liveness signals: the former detects a
+  dead trainer tree, while the latter detects a live tree whose Cell session is wedged.
+- **Payload plane**: task and result Shareables ride directly in the Cell requests. Cell's
+  FOBS encoder uses ViaDownloader for large tensors, so the existing F3 transaction is the
+  only payload lifecycle. The CJ remains a pass-through hop unless an executor-side filter
+  or declared event consumer needs concrete data; ClientRunner materializes lazy references
+  at that boundary only.
 - **Teardown**: orderly stop is SHUTDOWN, a bounded wait for natural exit
-  (shutdown_timeout), then SIGTERM -> stop_grace_period -> SIGKILL to the process GROUP,
-  keyed off group liveness rather than the launcher handle (a torchrun/mpirun launcher can
-  exit while its workers keep the group alive). The pgid breadcrumb written at launch is
-  removed only once the group is confirmed gone; its CP-side consumer (the orphan reaper
-  of the design's "CJ Failure" section) is a follow-up PR. Non-POSIX limitation: there is
+  (shutdown_timeout), then SIGTERM -> stop_grace_period -> SIGKILL to the process GROUP.
+  An accepted result is the one exception: teardown requests SHUTDOWN but preserves the
+  trainer until its send barrier closes the Cell; an asynchronous reaper then cleans it
+  up, while END_RUN preserves the CJ until natural exit. Process
+  ownership is keyed off group liveness rather than the
+  launcher handle (a torchrun/mpirun launcher can
+  exit while its workers keep the group alive). Non-POSIX limitation: there is
   no group-liveness probe, so tree death is inferred from the launcher handle; both stop
   stages therefore use ``taskkill /T`` on Windows (soft, then ``/F``) so a launcher-only
   terminate cannot strand workers — full tree ownership there needs the Job-Object work
-  the design assigns to that platform. The trainer is never stopped while a pending payload
-  attempt could still settle: live attempts get a bounded waiter wait (the waiter's None
-  arm is treated as not-delivered) before termination.
+  the design assigns to that platform.
 
 Like the in_process backend, LOG data is routed through the executor-owned
 fire_log_analytics(); this backend selects the federation-scoped fire path
 (set_analytics_fire_fed_event(True)) for parity with MetricRelay's ex-process behavior.
 
-V1 supports ONE external_process backend per client job: the protocol topics, prescribed
-trainer FQCN leaves, and launch artifacts are all job-scoped, so a second
-ClientAPIExecutor(execution_mode="external_process") in the same job would silently
-cross-wire both trainers. A second backend is rejected deterministically at START_RUN
-(system_panic) instead; jobs route all their tasks through a single executor.
+Client configuration permits one ClientAPIExecutor total per client job. That executor
+routes all Client API task names through one selected backend and one control plane.
 
 This backend is the CJ side of the protocol; its counterpart is the trainer-side Cell
 engine (nvflare/client/cell/api.py), which reads the bootstrap config, HELLOs, and serves
@@ -69,16 +60,14 @@ tasks to user code.
 
 import os
 import secrets
-import shlex
 import signal
 import subprocess
 import threading
 import time
 import uuid
-from collections import OrderedDict
 from typing import Any, Optional, Tuple
 
-from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, ReturnCode
+from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, ReturnCode, ServerCommandNames
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import Shareable, make_reply
@@ -86,22 +75,30 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.utils.analytix_utils import create_analytic_dxo
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendContext, ClientAPIBackendSpec
-from nvflare.app_common.executors.client_api.single_backend import SingleBackendGuard
-from nvflare.app_common.launchers.subprocess_launcher import log_subprocess_output
 from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
-from nvflare.client.cell.bootstrap import BOOTSTRAP_FILE_ENV_VAR, CELL_API_TYPE, BootstrapKey, write_bootstrap_config
+from nvflare.client.cell.bootstrap import (
+    BOOTSTRAP_FILE_ENV_VAR,
+    BOOTSTRAP_SCHEMA_VERSION,
+    CELL_API_TYPE,
+    EXTERNAL_PROCESS_EXECUTION_MODE,
+    BootstrapKey,
+    write_bootstrap_config,
+)
 from nvflare.client.cell.decomposers import register_framework_decomposers
 from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, MsgKey, Topic
-from nvflare.client.cell.payload_transfer import PayloadTransferError, TaskPayloadAttempt, fetch_result_payload
-from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.client.config import ConfigKey
+from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
+from nvflare.fuel.f3.streaming.download_service import DownloadService
+from nvflare.fuel.utils.fobs import FOBSContextKey
+from nvflare.fuel.utils.fobs.decomposers.via_downloader import RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_traceback
 from nvflare.utils.job_launcher_utils import add_custom_dir_to_path
+from nvflare.utils.process_utils import log_subprocess_output, prepare_subprocess_command
 
 # Poll cadence of the result-wait loop and the HELLO wait (result arrival wakes the loop
 # early through the task's event; the poll only bounds process-death detection latency).
@@ -112,9 +109,10 @@ _HELLO_POLL_INTERVAL = 0.1
 # ("None means the backend default" per the executor docstring).
 _DEFAULT_SHUTDOWN_TIMEOUT = 30.0
 
-# Bounded wait for a still-live task payload attempt to settle before it is terminated
-# (retire path / teardown). The waiter's None arm folds into "not delivered".
-_ATTEMPT_SETTLE_WAIT = 5.0
+# A possibly-active accepted result must receive SHUTDOWN reliably: unlike ordinary
+# zero-timeout teardown, the backend cannot force-stop it while send() is settling. Keep
+# this control acknowledgement independently bounded and retry it from the result reaper.
+_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT = 5.0
 
 # Bound for joining the subprocess-stdout log thread after the process is gone.
 _LOG_THREAD_JOIN_TIMEOUT = 5.0
@@ -123,33 +121,6 @@ _LOG_THREAD_JOIN_TIMEOUT = 5.0
 # A fresh leaf per launch means a stale process's cell can never collide with (or receive
 # messages meant for) the current launch's cell.
 _TRAINER_LEAF_PREFIX = "client_api_trainer"
-
-# How many recently-accepted result receipts to retain for idempotent RESULT_READY retries.
-# Task ids are sequential per session; a retry arrives shortly after its original, so a small
-# ring covers the lost-reply window without unbounded growth over a long launch_once job.
-_RESULT_RECEIPT_RING = 32
-
-# One live external_process backend per CJ cell (V1): the protocol topics, trainer FQCN
-# leaves, and launch artifacts are job-scoped, so a second backend on the same cell would
-# overwrite the first's handlers and launch namespace. The shared guard mechanism is also
-# used by the in_process backend (keyed on the DataBus); see single_backend.py.
-_GUARD = SingleBackendGuard(
-    mode="external_process",
-    remedy="configure a single ClientAPIExecutor for all of its tasks (its protocol topics and "
-    "launch artifacts are job-scoped)",
-)
-
-
-def pgid_file_name(seq: int) -> str:
-    """The launch-scoped process-group breadcrumb name, written into the job's app dir.
-
-    Lets the client CP (or manual cleanup) reap an orphaned trainer tree if the CJ dies
-    (design: "CJ Failure (Owner Death)"). Launch-scoped so a group that survives SIGKILL
-    keeps ITS breadcrumb even after later launches write theirs — a shared fixed name
-    would lose exactly the recovery information a surviving group needs. Removed once the
-    backend itself confirms the group stopped.
-    """
-    return f"client_api_trainer_{seq}.pgid"
 
 
 def bootstrap_file_name(seq: int) -> str:
@@ -172,6 +143,7 @@ class _LaunchAborted(Exception):
 _SEND_OK = "ok"
 _SEND_ABORTED = "aborted"
 _SEND_PROCESS_DEAD = "process_dead"
+_SEND_SESSION_DEAD = "session_dead"
 _SEND_CLOSED = "closed"
 
 # CHANNEL is streaming-capable (cellnet treats every non-excluded channel as one), so
@@ -187,12 +159,17 @@ _TASK_READY_NO_PROGRESS_TIMEOUT = 3600.0
 # abandoned (daemon) after this bound rather than blocking the task result.
 _SENDER_CANCEL_JOIN_TIMEOUT = 1.0
 
+# An accepted result keeps the trainer alive until flare.send() crosses its terminal
+# barrier and returns. The trainer normally exits itself; this daemon only reaps its
+# launch artifacts without racing the result acknowledgement or payload path.
+_NATURAL_EXIT_REAP_INTERVAL = 0.1
+_SHUTDOWN_RETRY_INTERVAL = 1.0
+
 
 class _TrainerSession:
     """One launched trainer process and its (at most one) authenticated protocol session."""
 
-    def __init__(self, seq: int, token: str, trainer_fqcn: str):
-        self.seq = seq
+    def __init__(self, token: str, trainer_fqcn: str):
         self.token = token
         self.trainer_fqcn = trainer_fqcn
         self.session_id: Optional[str] = None
@@ -201,35 +178,47 @@ class _TrainerSession:
         # wait fails fast instead of waiting out launch_timeout
         self.reject_reason: Optional[str] = None
         self.bootstrap_path: Optional[str] = None
-        self.pgid_path: Optional[str] = None
         self.process: Optional[subprocess.Popen] = None
         # POSIX process-group id, retained independently of the Popen leader handle so the
         # group can be probed/terminated even after the launcher itself exited
         self.pgid: Optional[int] = None
         self.log_thread: Optional[threading.Thread] = None
+        # Conservative CJ-side latch: an accepted result may still be inside the
+        # trainer's send() acknowledgement/payload barrier. SHUTDOWN reply truth clears
+        # it once the trainer has crossed that barrier.
+        self.result_source_live = threading.Event()
+        self.reaper_thread: Optional[threading.Thread] = None
+        self.shutdown_requested = threading.Event()
+        self._shutdown_request_lock = threading.Lock()
+        self._next_shutdown_retry = 0.0
+        self._stop_lock = threading.Lock()
+        self._cleanup_lock = threading.Lock()
+        self._cleaned = False
+        self._activity_lock = threading.Lock()
+        self._last_peer_activity: Optional[float] = None
 
-    def process_alive(self) -> bool:
-        process = self.process
-        return process is not None and process.poll() is None
+    def touch_peer_activity(self) -> None:
+        with self._activity_lock:
+            self._last_peer_activity = time.monotonic()
+
+    def peer_silent_for(self) -> Optional[float]:
+        with self._activity_lock:
+            last_activity = self._last_peer_activity
+        return None if last_activity is None else max(0.0, time.monotonic() - last_activity)
 
 
 class _TaskContext:
     """Correlation state for the one task execute() is currently running."""
 
-    def __init__(self, task_id: str, task_name: str, transfer_id: str):
+    def __init__(self, task_id: str):
         self.task_id = task_id
-        self.task_name = task_name
-        self.transfer_id = transfer_id
         # No per-task lock: all of a task's result/failure fields, the _current_task
-        # pointer, and the receipt ring are guarded by the backend's single _task_lock, so
-        # current-task validation and the acceptance/failure commit are one critical section
-        # (they cannot interleave with teardown's clear).
+        # pointer are guarded by the backend's single _task_lock, so current-task
+        # validation and the acceptance/failure commit are one critical section (they
+        # cannot interleave with teardown's clear).
         self.result_ready = threading.Event()
         self.result_id: Optional[str] = None
-        self.result_transfer_id: Optional[str] = None
-        self.result_ref_ids: Optional[list] = None
-        self.failed = threading.Event()
-        self.failure_reason: Optional[str] = None
+        self.result: Optional[Shareable] = None
 
 
 class ExternalProcessBackend(ClientAPIBackendSpec):
@@ -245,26 +234,25 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
         self._cell = None
         self._cj_fqcn: Optional[str] = None
         self._connect_url: Optional[str] = None
+        self._pass_through_route: Optional[Tuple[str, str]] = None
+        self._owns_pass_through_route = False
         self._job_id: Optional[str] = None
         self._site_name: Optional[str] = None
         self._app_dir: Optional[str] = None
         self._custom_dir: Optional[str] = None
         self._session: Optional[_TrainerSession] = None
         self._session_lock = threading.Lock()
+        # A per-task launch can be replaced in ``self._session`` while its accepted
+        # result is still finishing send(). Keep explicit ownership of every such reaper
+        # so END_RUN cannot return and tear down the CJ Cell underneath an older send.
+        self._result_reapers = set()
+        self._result_reapers_lock = threading.Lock()
         self._launch_seq = 0
         self._current_task: Optional[_TaskContext] = None
         self._task_lock = threading.Lock()
         # admission gate: one active execute() at a time (one active task per session).
         # try-acquired at execute() entry, released in its finally.
         self._execute_gate = threading.Lock()
-        # Bounded receipts of accepted results (task_id -> result_id), so a RESULT_READY
-        # retried after execute() cleared _current_task (a lost RESULT_ACCEPTED reply) is
-        # still answered idempotently — the design's retry rule — instead of wrongly
-        # rejected as "no current task". Guarded by _task_lock; oldest evicted past the ring.
-        self._result_receipts: "OrderedDict[str, str]" = OrderedDict()
-        # transfer_id -> live TaskPayloadAttempt: the one-live-attempt-per-transfer registry
-        self._live_attempts = {}
-        self._attempts_lock = threading.Lock()
         self._abort = False
         self._abort_reason: Optional[str] = None
         self._finalized = False
@@ -272,7 +260,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
         # unregister for request callbacks; the CJ cell is job-scoped so the registrations
         # die with it, and a later backend on the same cell would overwrite them — the gate
         # covers the window in between (a late message from an abandoned trainer is politely
-        # rejected). The stateless BYE / TASK_PAYLOAD_READY acks are the ungated handlers.
+        # rejected).
         self._closed = False
 
     # ------------------------------------------------------------------ lifecycle
@@ -293,6 +281,14 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             self._cell = cell
             self._cj_fqcn = cell.get_fqcn()
 
+            # Decode only GET_TASK replies lazily in the CJ so an external trainer can
+            # download directly from the original source. SERVER_COMMAND also carries
+            # unrelated request types (notably subordinate-client SUBMIT_UPDATE), so a
+            # channel-wide opt-in would silently expose lazy refs to their handlers.
+            self._pass_through_route = (CellChannel.SERVER_COMMAND, ServerCommandNames.GET_TASK)
+            self._owns_pass_through_route = self._pass_through_route not in cell.decode_pass_through_topics
+            cell.decode_pass_through_topics.add(self._pass_through_route)
+
             workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
             job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
             if workspace is None or not job_id:
@@ -302,15 +298,6 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             self._app_dir = workspace.get_app_dir(job_id)
             self._custom_dir = workspace.get_app_custom_dir(job_id)
 
-            # the trainer's child cell connects here (localhost listener owned by the CJ cell);
-            # One external_process backend per CJ cell (V1). The protocol topics, the
-            # prescribed trainer FQCN leaves, and the launch artifacts (bootstrap/pgid
-            # files) are all job-scoped: a second backend would silently overwrite the
-            # first's cell handlers and collide on its launch namespace, cross-wiring
-            # both trainers. Reject deterministically at START_RUN (-> system_panic)
-            # instead of hanging cross-wired at the first task.
-            self._claim_cell(cell)
-
             # idempotent if the cell already has one
             cell.make_internal_listener()
             connect_url = cell.get_internal_listener_url()
@@ -319,9 +306,8 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             self._connect_url = connect_url
 
             self._register_protocol_cbs(cell)
-            # register framework tensor decomposers in the CJ so a client-edge conversion
-            # filter that produced framework-native tensors (e.g. torch) can be serialized to
-            # the trainer; the trainer-side engine registers the same. Opportunistic: a
+            # Register framework tensor decomposers for explicitly native/RAW server
+            # representations. The trainer-side engine registers the same. Opportunistic: a
             # framework that is not installed is skipped, and numpy/FLModel need nothing extra.
             register_framework_decomposers(self.logger)
 
@@ -334,9 +320,8 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                 self._start_session(timeout=context.launch_timeout)
         except BaseException:
             # contract (backend_spec): initialize() self-unwinds its partial setup on failure;
-            # the executor does not call finalize() on a half-initialized backend. BaseException,
-            # not Exception: a KeyboardInterrupt/SystemExit between the cell claim and here must
-            # also release the guard slot and any launch artifacts already created.
+            # the executor does not call finalize() on a half-initialized backend. BaseException
+            # ensures launch artifacts are also cleaned up for KeyboardInterrupt/SystemExit.
             self._unwind()
             raise
 
@@ -397,9 +382,10 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                 if session is None or not session.ready.is_set():
                     executor.log_error(fl_ctx, f"no established trainer session; failing task '{task_name}'")
                     return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-                if not session.process_alive():
-                    self._latch_abort("trainer process exited unexpectedly")
-                    executor.log_error(fl_ctx, f"trainer process is not running; failing task '{task_name}'")
+                liveness_error = self._session_liveness_error(session)
+                if liveness_error:
+                    self._latch_abort(liveness_error)
+                    executor.log_error(fl_ctx, f"{liveness_error}; failing task '{task_name}'")
                     return make_reply(ReturnCode.EXECUTION_EXCEPTION)
             else:
                 try:
@@ -425,33 +411,36 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             # mask the task result — so catch+log the stop, then always release the gate.
             try:
                 if not launch_once:
-                    # per-task lifecycle: this launch's process stops with its task. The stop
-                    # waits for pending payload attempts and natural exit before terminating
-                    # the group, which is what replaces the legacy deferred-stop machinery.
-                    stale = self._session
+                    stale = session
                     if stale is not None:
-                        self._stop_session(stale, natural_exit_wait=self._shutdown_wait_bound())
+                        if stale.result_source_live.is_set():
+                            # RESULT_ACCEPTED can race its reply delivery and, when the
+                            # result is streamed, the lazy payload transfer. Let the trainer
+                            # gate its own exit on the complete send barrier and reap it
+                            # asynchronously.
+                            self._reap_session_after_result(stale)
+                        else:
+                            self._stop_session(stale, natural_exit_wait=self._shutdown_wait_bound())
             except Exception:
                 self.logger.error(secure_format_traceback())
             finally:
                 self._execute_gate.release()
-
-    def handle_event(self, event_type: str, fl_ctx: FLContext) -> None:
-        # no per-event behavior for external_process (START_RUN/END_RUN map to
-        # initialize/finalize); contract: must not raise
-        pass
 
     def finalize(self, fl_ctx: FLContext) -> None:
         # contract: idempotent and must not raise
         if self._finalized:
             return
         self._finalized = True
-        self._closed = True
+        # Order closure against RESULT_READY's acceptance commit. A callback that commits
+        # first makes result_source_live visible to teardown; one that reaches the critical
+        # section later is rejected and cannot create a source after finalize classified it.
+        with self._task_lock:
+            self._closed = True
         # Barrier on any in-flight execute(): with _closed set, a mid-launch execute bails at
         # the pre-Popen check and releases the gate, so acquiring it here means "no execute is
         # between session install and Popen". This prevents a trainer being launched after we
         # return, and lets a per-task execute finish its own unwind (removing its launch
-        # artifacts) before we release the cell to a successor job. Bounded: a long RUNNING
+        # artifacts) before finalize returns. Bounded: a long RUNNING
         # task holds the gate past this wait; we then proceed to stop its session (failing it),
         # matching END_RUN-mid-task, and that execute releases the gate on its own exit.
         admitted = self._execute_gate.acquire(timeout=self._shutdown_wait_bound())
@@ -462,14 +451,30 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             with self._session_lock:
                 session = self._session
             if session is not None:
-                self._stop_session(session, natural_exit_wait=self._shutdown_wait_bound())
+                if session.result_source_live.is_set():
+                    # RESULT_ACCEPTED can precede reply delivery and, when present,
+                    # lazy-transfer settlement. Ask the trainer to stop, but let its send
+                    # barrier keep the process alive until it is safe. Preserve the CJ/Cell
+                    # infrastructure
+                    # until the reaper observes the trainer's truthful terminal signal
+                    # (natural process/Cell exit). Returning with a daemon reaper is not
+                    # safe: ClientRunner tears down DownloadService and the CJ Cell as soon
+                    # as END_RUN completes. Stalled transfers are bounded by the source
+                    # DownloadService's idle/receiver budgets, not by shutdown_timeout.
+                    self._request_session_shutdown(session, wait_timeout=_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT)
+                    self._reap_session_after_result(session)
+                else:
+                    self._stop_session(session, natural_exit_wait=self._shutdown_wait_bound())
+            # ``self._session`` names only the newest launch. Earlier launch_per_task
+            # sessions remain valid DownloadService sources until their own terminal
+            # transfer outcome, so preserve the job Cell until all owned reapers finish.
+            self._wait_for_result_reapers()
         except Exception:
             self.logger.error(secure_format_traceback())
         finally:
+            self._disable_task_pass_through()
             if admitted:
                 self._execute_gate.release()
-        self._sweep_live_attempts()
-        self._release_cell()
 
     # ------------------------------------------------------------------ session management
 
@@ -489,7 +494,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             self._launch_seq += 1
             seq = self._launch_seq
             trainer_fqcn = FQCN.join([self._cj_fqcn, f"{_TRAINER_LEAF_PREFIX}_{seq}"])
-            session = _TrainerSession(seq, token, trainer_fqcn)
+            session = _TrainerSession(token, trainer_fqcn)
             # install before launch so the HELLO handler resolves the current launch
             self._session = session
         try:
@@ -498,6 +503,8 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             write_bootstrap_config(
                 bootstrap_path,
                 {
+                    BootstrapKey.SCHEMA_VERSION: BOOTSTRAP_SCHEMA_VERSION,
+                    BootstrapKey.EXECUTION_MODE: EXTERNAL_PROCESS_EXECUTION_MODE,
                     BootstrapKey.CONNECT_URL: self._connect_url,
                     BootstrapKey.CJ_FQCN: self._cj_fqcn,
                     BootstrapKey.TRAINER_FQCN: trainer_fqcn,
@@ -539,7 +546,6 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             if os.name == "posix":
                 # start_new_session made the child its own group leader (pgid == pid)
                 session.pgid = session.process.pid
-            self._write_pgid_file(session)
             session.log_thread = threading.Thread(
                 target=log_subprocess_output,
                 args=(session.process, self.logger),
@@ -582,74 +588,230 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                 raise RuntimeError("backend closed while waiting for the trainer HELLO")
             if session.reject_reason:
                 raise RuntimeError(f"trainer HELLO was rejected: {session.reject_reason}")
-            if not session.process_alive():
+            if not self._process_group_alive(session):
                 rc = session.process.poll() if session.process else None
-                raise RuntimeError(f"trainer process exited (rc={rc}) before completing the HELLO handshake")
+                raise RuntimeError(f"trainer process group exited (rc={rc}) before completing the HELLO handshake")
             if deadline is not None and time.monotonic() >= deadline:
                 raise RuntimeError(f"trainer did not complete the HELLO handshake within launch_timeout={timeout}s")
 
     def _stop_session(self, session: _TrainerSession, natural_exit_wait: float) -> None:
         """Stops one trainer session and its process tree. Must not raise; idempotent.
 
-        Order: hold for pending payload attempts (bounded), SHUTDOWN, bounded natural-exit
-        wait, then SIGTERM -> stop_grace_period -> SIGKILL to the process group. The token
-        is invalidated so a surviving process can never authenticate against a later launch.
+        Order: bounded SHUTDOWN request/ack, remaining natural-exit wait, then SIGTERM ->
+        stop_grace_period -> SIGKILL to the process group. The SHUTDOWN request time is
+        charged against natural_exit_wait rather than extending teardown. A zero bound
+        preserves immediate fire-and-forget notification. The token is invalidated so a
+        surviving process can never authenticate against a later launch.
         """
-        self._sweep_live_attempts()
-        try:
-            if session.session_id is not None and session.process_alive():
-                self._cell.fire_and_forget(
-                    channel=CHANNEL,
-                    topic=Topic.SHUTDOWN,
-                    targets=[session.trainer_fqcn],
-                    message=new_cell_message(
-                        {}, {MsgKey.SESSION_ID: session.session_id, MsgKey.REASON: "shutdown requested"}
-                    ),
-                    optional=True,
-                )
-        except Exception:
-            self.logger.error(secure_format_traceback())
-        try:
-            process = session.process
-            if process is not None and natural_exit_wait > 0:
+        with session._stop_lock:
+            if session._cleaned:
+                return
+            natural_exit_wait = max(0.0, natural_exit_wait)
+            natural_exit_deadline = time.monotonic() + natural_exit_wait
+            try:
+                remaining = max(0.0, natural_exit_deadline - time.monotonic())
+                self._request_session_shutdown(session, wait_timeout=remaining)
+            except Exception:
+                self.logger.error(secure_format_traceback())
+            try:
+                process = session.process
+                remaining = max(0.0, natural_exit_deadline - time.monotonic())
+                if process is not None and remaining > 0:
+                    leader_exited = process.poll() is not None
+                    if not leader_exited:
+                        try:
+                            process.wait(timeout=remaining)
+                            leader_exited = True
+                        except subprocess.TimeoutExpired:
+                            pass
+                    remaining = max(0.0, natural_exit_deadline - time.monotonic())
+                    if leader_exited and os.name == "posix" and session.pgid is not None and remaining > 0:
+                        # A launcher/torchrun leader may exit before its trainer workers.
+                        # Preserve the same natural-exit grace for the whole owned group;
+                        # otherwise a truthful RESULT_SOURCE_LIVE=False ACK can still be
+                        # followed by an immediate SIGTERM while send() is returning.
+                        self._await_group_exit(session, remaining)
+            except Exception:
+                self.logger.error(secure_format_traceback())
+            try:
+                self._terminate_process_tree(session, grace=self._context.stop_grace_period)
+            except Exception:
+                self.logger.error(secure_format_traceback())
+            self._cleanup_session(session)
+
+    def _request_session_shutdown(self, session: _TrainerSession, wait_timeout: float) -> None:
+        """Send at most one orderly SHUTDOWN without taking ownership of process death."""
+        with session._shutdown_request_lock:
+            if session.shutdown_requested.is_set():
+                return
+            now = time.monotonic()
+            if now < session._next_shutdown_retry:
+                return
+            session._next_shutdown_retry = now + _SHUTDOWN_RETRY_INTERVAL
+            if session.session_id is None or not self._process_group_alive(session):
+                return
+            request = new_cell_message({}, {MsgKey.SESSION_ID: session.session_id, MsgKey.REASON: "shutdown requested"})
+            try:
+                if wait_timeout > 0:
+                    reply = self._cell.send_request(
+                        channel=CHANNEL,
+                        topic=Topic.SHUTDOWN,
+                        target=session.trainer_fqcn,
+                        request=request,
+                        timeout=wait_timeout,
+                        optional=True,
+                    )
+                    if reply is None or reply.get_header(MessageHeaderKey.RETURN_CODE) != CellReturnCode.OK:
+                        rc = None if reply is None else reply.get_header(MessageHeaderKey.RETURN_CODE)
+                        self.logger.warning(f"trainer SHUTDOWN was not acknowledged (rc={rc})")
+                        return
+                    body = reply.payload
+                    if isinstance(body, dict):
+                        source_live = body.get(MsgKey.RESULT_SOURCE_LIVE)
+                        if source_live is True:
+                            # The trainer is still inside send(); natural exit is the only
+                            # safe proof that its reply/payload barrier has finished.
+                            session.result_source_live.set()
+                        elif source_live is False:
+                            # The trainer serialized send-completion and SHUTDOWN under one
+                            # lock. False proves the result transaction had settled before
+                            # it handled this request, so ordinary process-exit grace applies.
+                            session.result_source_live.clear()
+                else:
+                    send_errors = self._cell.fire_and_forget(
+                        channel=CHANNEL,
+                        topic=Topic.SHUTDOWN,
+                        targets=[session.trainer_fqcn],
+                        message=request,
+                        optional=True,
+                    )
+                    send_error = send_errors.get(session.trainer_fqcn) if isinstance(send_errors, dict) else None
+                    if send_error:
+                        self.logger.warning(f"trainer SHUTDOWN was not delivered: {send_error}")
+                        return
+                session.shutdown_requested.set()
+            except Exception:
+                # A transient control-path failure must not abandon ownership. The result
+                # reaper retries at a bounded cadence while preserving the data source;
+                # Cell disconnect remains the proof that it is safe to terminate.
+                self.logger.error(secure_format_traceback())
+
+    def _reap_session_after_result(self, session: _TrainerSession) -> None:
+        """Reap a successful one-task trainer after it finishes serving its result."""
+        with session._cleanup_lock:
+            if session._cleaned or (session.reaper_thread is not None and session.reaper_thread.is_alive()):
+                return
+            session.reaper_thread = threading.Thread(
+                target=self._wait_for_natural_exit_and_cleanup,
+                args=(session,),
+                name=f"client_api_trainer_reaper_{session.trainer_fqcn.rsplit('.', 1)[-1]}",
+                daemon=True,
+            )
+            # Register ownership before start: a very short-lived process may otherwise
+            # finish and disappear before finalize() can observe this reaper.
+            with self._result_reapers_lock:
+                self._result_reapers.add(session)
                 try:
-                    process.wait(timeout=natural_exit_wait)
-                except subprocess.TimeoutExpired:
-                    pass
-        except Exception:
-            self.logger.error(secure_format_traceback())
+                    # Keep registration and start atomic to finalize: Thread.join() on a
+                    # registered-but-not-yet-started reaper raises RuntimeError.
+                    session.reaper_thread.start()
+                except BaseException:
+                    self._result_reapers.discard(session)
+                    session.reaper_thread = None
+                    raise
+
+    def _wait_for_result_reapers(self) -> None:
+        """Wait until every accepted result send owned by this backend is terminal."""
+        while True:
+            with self._result_reapers_lock:
+                reapers = tuple(
+                    session.reaper_thread for session in self._result_reapers if session.reaper_thread is not None
+                )
+            if not reapers:
+                return
+            for reaper in reapers:
+                reaper.join()
+
+    def _wait_for_natural_exit_and_cleanup(self, session: _TrainerSession) -> None:
+        disconnected_since = None
+        disconnect_grace = (
+            self._context.heartbeat_timeout
+            if self._context.heartbeat_timeout > 0
+            else self._result_source_disconnect_grace()
+        )
         try:
-            self._terminate_process_tree(session, grace=self._context.stop_grace_period)
-        except Exception:
+            while self._process_group_alive(session):
+                now = time.monotonic()
+                if self._cell.is_cell_connected(session.trainer_fqcn):
+                    disconnected_since = None
+                elif disconnected_since is None:
+                    disconnected_since = now
+                elif now - disconnected_since >= disconnect_grace:
+                    # The trainer normally closes its Cell after the source transaction
+                    # is terminal. Require a full session-lease interval before treating
+                    # disconnect as terminal so a transient reconnect cannot corrupt a
+                    # recoverable ViaDownloader transfer.
+                    self._stop_session(session, natural_exit_wait=0.0)
+                    return
+                if self._closed:
+                    if not session.result_source_live.is_set():
+                        # A later per-task launch may already have replaced self._session,
+                        # so finalize cannot discover every retired launch by that pointer.
+                        # RESULT_SOURCE_LIVE=False proves send settled, but the user thread
+                        # may still be returning from flare.send(). Give it normal/default
+                        # process-exit grace before escalating to signals.
+                        self._stop_session(session, natural_exit_wait=self._result_source_disconnect_grace())
+                        return
+                    # The trainer is still inside send(). SHUTDOWN is only an orderly
+                    # intent here; send keeps serving until its receiver reaches a terminal
+                    # outcome and then closes the trainer process itself.
+                    self._request_session_shutdown(session, wait_timeout=_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT)
+                time.sleep(_NATURAL_EXIT_REAP_INTERVAL)
+            self._cleanup_session(session)
+        except BaseException:
             self.logger.error(secure_format_traceback())
+        finally:
+            if not session._cleaned:
+                # No exception in the sole ownership reaper may strand a process or its
+                # launch token/bootstrap. _stop_session is idempotent and self-guarding.
+                self._stop_session(session, natural_exit_wait=0.0)
+            with self._result_reapers_lock:
+                self._result_reapers.discard(session)
+
+    def _cleanup_session(self, session: _TrainerSession) -> None:
+        """Release launch-scoped state after the process group is gone. Idempotent."""
+        with session._cleanup_lock:
+            if session._cleaned:
+                return
+            session._cleaned = True
         try:
             log_thread = session.log_thread
             if log_thread is not None and log_thread.is_alive():
                 log_thread.join(timeout=_LOG_THREAD_JOIN_TIMEOUT)
         except Exception:
             self.logger.error(secure_format_traceback())
-        # launch-scoped token invalidation: HELLO/RESULT_READY from a zombie of this
-        # launch can never match again. Remove the launch's bootstrap file (the token must
-        # not linger on disk); the pgid breadcrumb goes only once the GROUP is confirmed
-        # gone — a surviving tree keeps its breadcrumb so the CP reaper can still find it.
+        # Launch-scoped token invalidation: HELLO/RESULT_READY from a zombie of this
+        # launch can never match again. Remove the launch's bootstrap file so the token
+        # does not linger on disk. Process-group ownership remains in memory; no orphan
+        # breadcrumb is emitted until there is an actual site-side consumer for one.
         session.token = ""
         session.session_id = None
-        stale_files = [session.bootstrap_path]
-        if not self._process_group_alive(session):
-            stale_files.append(session.pgid_path)
-        else:
-            self.logger.warning(
-                f"trainer process group (pgid={session.pgid}) may still be alive; keeping the pgid breadcrumb"
-            )
-        for stale_file in stale_files:
-            try:
-                if stale_file and os.path.exists(stale_file):
-                    os.remove(stale_file)
-            except Exception as e:
-                self.logger.debug(f"failed to remove {stale_file}: {e}")
+        try:
+            if session.bootstrap_path and os.path.exists(session.bootstrap_path):
+                os.remove(session.bootstrap_path)
+        except Exception as e:
+            self.logger.debug(f"failed to remove {session.bootstrap_path}: {e}")
         with self._session_lock:
             if self._session is session:
                 self._session = None
+
+    def _disable_task_pass_through(self) -> None:
+        cell = self._cell
+        route = self._pass_through_route
+        if cell is not None and route is not None and self._owns_pass_through_route:
+            cell.decode_pass_through_topics.discard(route)
+        self._pass_through_route = None
+        self._owns_pass_through_route = False
 
     def _process_group_alive(self, session: _TrainerSession) -> bool:
         """True while any member of the launch's process group survives.
@@ -672,10 +834,22 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
         except ProcessLookupError:
             return False
         except Exception as e:
-            # cannot probe (e.g. permissions): assume alive — erring this way keeps the
-            # pgid breadcrumb for the CP reaper instead of silently dropping it
+            # Cannot probe (for example due to permissions): assume alive so teardown
+            # still attempts to signal the owned group rather than silently stranding it.
             self.logger.debug(f"cannot probe trainer process group {session.pgid}: {e}")
             return True
+
+    def _session_liveness_error(self, session: _TrainerSession) -> Optional[str]:
+        """Returns why an established session is unavailable, or None while it is live."""
+        if not self._process_group_alive(session):
+            rc = session.process.poll() if session.process else None
+            return f"trainer process group exited (rc={rc})"
+        heartbeat_timeout = self._context.heartbeat_timeout
+        if heartbeat_timeout > 0 and session.ready.is_set():
+            silent_for = session.peer_silent_for()
+            if silent_for is not None and silent_for > heartbeat_timeout:
+                return f"trainer heartbeat timed out after {silent_for:.1f}s " f"(timeout={heartbeat_timeout}s)"
+        return None
 
     def _await_group_exit(self, session: _TrainerSession, timeout: float) -> bool:
         """Waits (bounded) for the whole process group to exit; reaps the leader."""
@@ -706,7 +880,6 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
         self.logger.warning(f"trainer process tree (pgid={session.pgid}) survived SIGTERM grace; killing")
         self._signal_process_tree(session, hard=True)
         if not self._await_group_exit(session, _LOG_THREAD_JOIN_TIMEOUT):
-            # the breadcrumb is deliberately kept in this case (see _stop_session)
             self.logger.error(f"trainer process group (pgid={session.pgid}) did not die after SIGKILL")
 
     def _signal_process_tree(self, session: _TrainerSession, hard: bool) -> None:
@@ -744,49 +917,30 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
         except Exception as e:
             self.logger.debug(f"failed to signal trainer process: {e}")
 
-    def _write_pgid_file(self, session: _TrainerSession) -> None:
-        # Breadcrumb for orphan reaping if the CJ dies without running finalize (design:
-        # "CJ Failure (Owner Death)"). NOTE: the CP-side reaper that consumes these files
-        # is a follow-up PR of that design section — until it lands, the breadcrumb is
-        # forward-looking (and still useful for manual cleanup/diagnosis).
-        try:
-            path = os.path.join(self._app_dir, pgid_file_name(session.seq))
-            session.pgid_path = path
-            with open(path, "w") as f:
-                f.write(str(session.pgid if session.pgid is not None else session.process.pid))
-        except Exception as e:
-            self.logger.debug(f"failed to record trainer pgid: {e}")
-
-    def _claim_cell(self, cell) -> None:
-        """Claims the one-backend-per-cell slot; raises if another backend holds it.
-
-        The slot is held from claim until _release_cell() (at the END of finalize()/
-        _unwind()), NOT merely until _closed is set: a backend mid-teardown is still
-        stopping its trainer and still owns launch seq 1's FQCN leaf, bootstrap/pgid
-        artifacts, and registered handlers, so a second backend claiming that window would
-        collide on all of them. See SingleBackendGuard for the shared rationale.
-        """
-        _GUARD.claim(cell, self)
-
-    def _release_cell(self) -> None:
-        """Releases the one-backend-per-cell slot if this backend holds it. Must not raise."""
-        try:
-            _GUARD.release(self._cell, self)
-        except Exception:
-            self.logger.error(secure_format_traceback())
-
     @staticmethod
     def _split_command(command: str):
-        """POSIX: shlex argv. Windows: pass the string through — CreateProcess parses the
-        command line natively, and POSIX shlex rules would corrupt backslashed paths
-        (``python C:\\work\\train.py`` -> ``['python', 'C:worktrain.py']``)."""
-        if os.name == "posix":
-            return shlex.split(command)
-        return command
+        """Prepare shell-free argv and resolve secret references after tokenization.
+
+        Windows uses the whitespace-only tokenizer to preserve backslashed paths; POSIX
+        uses shell-style tokenization. Resolved secrets therefore remain one argv item on
+        both platforms and are never reparsed as command syntax.
+        """
+        return prepare_subprocess_command(command, posix=os.name == "posix")
 
     def _shutdown_wait_bound(self) -> float:
         shutdown_timeout = self._context.shutdown_timeout
         return _DEFAULT_SHUTDOWN_TIMEOUT if shutdown_timeout is None else shutdown_timeout
+
+    def _result_source_disconnect_grace(self) -> float:
+        """Return a nonzero grace before treating source-Cell disconnect as terminal.
+
+        ``ScriptRunner`` historically defaults ``shutdown_timeout`` to zero. That is a
+        valid preference for ordinary process shutdown, but it cannot mean "kill on the
+        first disconnected sample" while an accepted result can still be returning from
+        send(). Use the backend default when no positive disconnect grace exists.
+        """
+        shutdown_bound = self._shutdown_wait_bound()
+        return shutdown_bound if shutdown_bound > 0 else _DEFAULT_SHUTDOWN_TIMEOUT
 
     def _unwind(self) -> None:
         """Releases partial setup after a failed initialize(). Best-effort per step."""
@@ -797,10 +951,8 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                 self._stop_session(session, natural_exit_wait=0.0)
         except Exception:
             self.logger.error(secure_format_traceback())
-        self._sweep_live_attempts()
-        # only releases a slot THIS backend claimed: a second backend whose claim was
-        # rejected must not evict the first backend's claim on its way out
-        self._release_cell()
+        finally:
+            self._disable_task_pass_through()
 
     # ------------------------------------------------------------------ task execution
 
@@ -811,16 +963,17 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
         executor = context.executor
         launch_once = context.launch_once
 
-        task = _TaskContext(task_id=uuid.uuid4().hex, task_name=task_name, transfer_id=uuid.uuid4().hex)
+        task = _TaskContext(task_id=uuid.uuid4().hex)
+        # ``result_source_live`` is a conservative, session-monotonic send barrier. The
+        # CJ may queue the next task after receiver confirmation but before asynchronous
+        # source settlement lets the trainer return from the previous send(). Only a
+        # synchronized SHUTDOWN ACK or process cleanup may clear it.
 
         shareable.set_header(FLMetaKey.JOB_ID, fl_ctx.get_job_id())
         shareable.set_header(FLMetaKey.SITE_NAME, fl_ctx.get_identity_name())
 
-        # task payload attempt: producer side of the payload seam; one-live-attempt per
-        # transfer_id is enforced in _create_task_attempt (duplicates raise)
-        attempt = self._create_task_attempt(task.transfer_id, shareable, session.trainer_fqcn)
-        # publish the task for the RESULT_READY/TASK_FAILED handlers only once the attempt
-        # exists, so a raising attempt creation cannot leak a half-registered task
+        # Publish correlation state before sending: Cell serializes the Shareable into this
+        # request and materializes it at the trainer before TASK_ACCEPTED is returned.
         with self._task_lock:
             self._current_task = task
         try:
@@ -828,8 +981,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                 MsgKey.SESSION_ID: session.session_id,
                 MsgKey.TASK_ID: task.task_id,
                 MsgKey.TASK_NAME: task_name,
-                MsgKey.TRANSFER_ID: task.transfer_id,
-                MsgKey.MODEL: {MsgKey.REF_IDS: [attempt.ref_id]},
+                MsgKey.MODEL: shareable,
             }
             executor.log_info(fl_ctx, f"sending TASK_READY for '{task_name}' to trainer {session.trainer_fqcn}")
             send_status, reply = self._send_task_ready(session, task_message, abort_signal)
@@ -839,6 +991,11 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                 return make_reply(ReturnCode.TASK_ABORTED)
             if send_status == _SEND_PROCESS_DEAD:
                 reason = "trainer process exited while TASK_READY was pending"
+                self._latch_abort(reason)
+                executor.log_error(fl_ctx, f"{reason} for task '{task_name}'")
+                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+            if send_status == _SEND_SESSION_DEAD:
+                reason = f"{reply} while TASK_READY was pending"
                 self._latch_abort(reason)
                 executor.log_error(fl_ctx, f"{reason} for task '{task_name}'")
                 return make_reply(ReturnCode.EXECUTION_EXCEPTION)
@@ -869,22 +1026,11 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                 if task.result_ready.is_set():
                     break
 
-                if task.failed.is_set():
-                    executor.log_error(fl_ctx, f"trainer failed task '{task_name}': {task.failure_reason}")
-                    return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-
-                if attempt.failed():
-                    # decisions come from the settled outcome, never from progress events
-                    executor.log_error(
-                        fl_ctx, f"task payload delivery failed for '{task_name}': {attempt.failure_reason()}"
-                    )
-                    return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-
-                if not session.process_alive():
-                    rc = session.process.poll() if session.process else None
-                    reason = f"trainer process exited (rc={rc}) before producing a result"
-                    self._latch_abort(reason)
-                    executor.log_error(fl_ctx, f"{reason} for task '{task_name}'")
+                liveness_error = self._session_liveness_error(session)
+                if liveness_error:
+                    self._send_abort(session, liveness_error)
+                    self._latch_abort(liveness_error)
+                    executor.log_error(fl_ctx, f"{liveness_error} before task '{task_name}' produced a result")
                     return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
                 now = time.monotonic()
@@ -905,33 +1051,12 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                 # process-death/abort detection latency
                 task.result_ready.wait(wait_time)
 
-            # RESULT_ACCEPTED (already sent by the handler) was a control ack only — the
-            # payload moves here, and failure is confirmed to the producer by the layer.
-            # result_ready is only set by the handler after it committed these fields under
-            # _task_lock, so this read (same lock) sees them fully.
+            # RESULT_READY may carry lazy references. ClientRunner materializes them only
+            # when an executor result filter is actually configured.
             with self._task_lock:
-                result_ref_ids = list(task.result_ref_ids)
-                result_transfer_id = task.result_transfer_id
-            executor.log_info(fl_ctx, f"pulling result payload for '{task_name}' (transfer_id={result_transfer_id})")
-            try:
-                objs = fetch_result_payload(self._cell, session.trainer_fqcn, result_ref_ids, abort_signal)
-            except PayloadTransferError as e:
-                if abort_signal.triggered:
-                    # the pull observed the abort (download_object fails the pull on a
-                    # triggered signal): report the abort accurately and end the session,
-                    # not a generic failure a workflow might retry against a dead session
-                    self._send_abort(session, f"'{task_name}' is aborted, abort_signal_triggered")
-                    self._latch_abort(f"task '{task_name}' aborted during result pull")
-                    executor.log_info(fl_ctx, f"result pull for '{task_name}' aborted: {e}")
-                    return make_reply(ReturnCode.TASK_ABORTED)
-                executor.log_error(fl_ctx, f"result payload pull failed for '{task_name}': {e}")
-                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-
-            result = objs[0] if len(objs) == 1 else None
+                result = task.result
             if not isinstance(result, Shareable):
-                executor.log_error(
-                    fl_ctx, f"bad task result from trainer: expect one Shareable but got {[type(o) for o in objs]}"
-                )
+                executor.log_error(fl_ctx, f"bad task result from trainer: expect Shareable but got {type(result)}")
                 return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
             current_round = shareable.get_header(AppConstants.CURRENT_ROUND)
@@ -940,15 +1065,9 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                 result.set_header(AppConstants.CURRENT_ROUND, current_round)
             return result
         finally:
-            self._retire_task_attempt(task.transfer_id, attempt)
             with self._task_lock:
                 if self._current_task is task:
                     self._current_task = None
-                # atomic with the clear: a RESULT_READY retried after this point finds the
-                # receipt (below) instead of a wrongful "no current task"; before this point
-                # it still matches the current task. Only an accepted result leaves a receipt.
-                if task.result_id is not None:
-                    self._record_result_receipt_locked(task.task_id, task.result_id)
 
     def _send_task_ready(self, session: _TrainerSession, task_message: dict, abort_signal: Signal) -> Tuple[str, Any]:
         """Sends TASK_READY without hanging past abort, process death, or backend close.
@@ -964,7 +1083,9 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
 
         Returns:
             (_SEND_OK, reply) on a delivered request; (_SEND_ABORTED / _SEND_PROCESS_DEAD /
-            _SEND_CLOSED, None) when the corresponding condition ended the wait.
+            _SEND_SESSION_DEAD / _SEND_CLOSED, reason) when the corresponding condition
+            ended the wait. Only _SEND_SESSION_DEAD supplies a reason; the other non-OK
+            outcomes return None as the second item.
         """
         timeout = self._context.task_wait_timeout
         if timeout is None:
@@ -973,6 +1094,24 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
         cancel = Signal()
         holder = {}
         done = threading.Event()
+        transactions = []
+
+        def _on_transaction_created(transaction):
+            transactions.append(transaction)
+
+        def _has_live_task_download():
+            # Cell calls this after a request-wait interval expires. Continue waiting
+            # while the real task ViaDownloader transaction remains live; its own idle
+            # timeout is the stall bound. Once it settles, a missing TASK_ACCEPTED is a
+            # genuine request timeout.
+            for transaction in tuple(transactions):
+                try:
+                    if not DownloadService.get_transfer_waiter(transaction.tx_id).done():
+                        return True
+                except Exception:
+                    # A transaction deleted between snapshot and lookup is no longer live.
+                    continue
+            return False
 
         def _send():
             try:
@@ -983,6 +1122,12 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                     request=new_cell_message({}, task_message),
                     timeout=timeout,
                     abort_signal=cancel,
+                    progress_wait_cb=_has_live_task_download,
+                    receiver_ids=(session.trainer_fqcn,),
+                    fobs_ctx_props={
+                        FOBSContextKey.STREAM_PROGRESS_CB: lambda **_kwargs: None,
+                        RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY: _on_transaction_created,
+                    },
                 )
             except Exception as e:
                 holder["error"] = e
@@ -999,17 +1144,40 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             if self._closed:
                 status = _SEND_CLOSED
                 break
-            if not session.process_alive():
+            if not self._process_group_alive(session):
                 status = _SEND_PROCESS_DEAD
                 break
+            # The trainer callback runs only after Cell/FOBS materializes the task. During
+            # an actual ViaDownloader transaction, that transaction's progress/idle policy
+            # is the authoritative stall detector. Merely having TASK_READY pending is not
+            # evidence of transfer progress: an inline request to a live-but-wedged Cell
+            # must still be bounded by the heartbeat lease.
+            if not _has_live_task_download():
+                liveness_error = self._session_liveness_error(session)
+                if liveness_error:
+                    holder["liveness_error"] = liveness_error
+                    status = _SEND_SESSION_DEAD
+                    break
         if status != _SEND_OK:
             cancel.trigger(status)
             sender.join(timeout=_SENDER_CANCEL_JOIN_TIMEOUT)
-            return status, None
+            self._delete_transactions(transactions)
+            return status, holder.get("liveness_error")
         error = holder.get("error")
         if error is not None:
+            self._delete_transactions(transactions)
             raise error
         return _SEND_OK, holder.get("reply")
+
+    @staticmethod
+    def _delete_transactions(transactions) -> None:
+        for transaction in transactions:
+            try:
+                DownloadService.delete_transaction(transaction.tx_id)
+            except Exception:
+                # Preserve the task's original abort/transport error. The transaction's
+                # own timeout remains the cleanup backstop if deletion itself fails.
+                pass
 
     def _check_task_accepted(self, reply) -> Optional[str]:
         """Returns a rejection reason, or None when the trainer accepted the task."""
@@ -1026,94 +1194,17 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             return f"trainer replied {reply_topic}: {body.get(MsgKey.REASON)}"
         return None
 
-    # ------------------------------------------------------------------ payload attempts
-
-    def _create_task_attempt(self, transfer_id: str, obj, receiver_fqcn: str) -> TaskPayloadAttempt:
-        """Creates the (single) live payload attempt for a logical transfer.
-
-        Contract: one live attempt per logical transfer is the BACKEND's responsibility. A
-        retry must terminate the old attempt first and is a NEW attempt under a NEW
-        (attempt-scoped, never reused) tx_id; a duplicate live attempt for the same
-        transfer_id is a protocol bug and raises.
-        """
-        with self._attempts_lock:
-            if self._closed:
-                raise RuntimeError("backend is closed; not creating a payload attempt")
-            if transfer_id in self._live_attempts:
-                raise ValueError(
-                    f"duplicate live payload attempt for transfer_id {transfer_id}: terminate the live "
-                    f"attempt before retrying (a retry is a new attempt under a new tx_id)"
-                )
-            # reserve under the lock; create outside it (attempt creation talks to the service)
-            self._live_attempts[transfer_id] = None
-        try:
-            attempt = TaskPayloadAttempt(self._cell, obj, receiver_fqcn)
-        except Exception:
-            with self._attempts_lock:
-                self._live_attempts.pop(transfer_id, None)
-            raise
-        with self._attempts_lock:
-            # a teardown sweep may have run between the reservation and here (it clears
-            # the registry): the fresh attempt must not resurrect after END_RUN — publish
-            # only if the reservation is still ours and the backend is still open
-            if not self._closed and transfer_id in self._live_attempts:
-                self._live_attempts[transfer_id] = attempt
-                return attempt
-        attempt.terminate()
-        raise RuntimeError(f"backend closed while creating the payload attempt for transfer_id {transfer_id}")
-
-    def _retire_task_attempt(self, transfer_id: str, attempt: TaskPayloadAttempt) -> None:
-        """Settles or terminates the task's payload attempt at task end. Must not raise."""
-        try:
-            if not attempt.completed():
-                # bounded, event-driven wait for the verdict; the waiter's None arm
-                # (timeout or service shutdown) folds into delivered=False
-                delivered = attempt.wait(timeout=_ATTEMPT_SETTLE_WAIT)
-                if not delivered:
-                    self.logger.warning(
-                        f"task payload attempt {attempt.tx_id} (transfer_id={transfer_id}) was not certified "
-                        f"delivered; terminating the attempt"
-                    )
-                    attempt.terminate()
-        except Exception:
-            self.logger.error(secure_format_traceback())
-        finally:
-            with self._attempts_lock:
-                self._live_attempts.pop(transfer_id, None)
-
-    def _sweep_live_attempts(self) -> None:
-        """Terminates any attempts still live (teardown paths). Must not raise."""
-        with self._attempts_lock:
-            leaked = [(tid, attempt) for tid, attempt in self._live_attempts.items() if attempt is not None]
-            self._live_attempts.clear()
-        for transfer_id, attempt in leaked:
-            try:
-                if not attempt.completed():
-                    if not attempt.wait(timeout=_ATTEMPT_SETTLE_WAIT):
-                        self.logger.warning(
-                            f"terminating still-live payload attempt {attempt.tx_id} (transfer_id={transfer_id})"
-                        )
-                attempt.terminate()
-            except Exception:
-                self.logger.error(secure_format_traceback())
-
     # ------------------------------------------------------------------ control-plane handlers
 
     def _register_protocol_cbs(self, cell) -> None:
         # NOTE: cellnet request callbacks cannot be unregistered. The CJ cell is job-scoped
         # (it dies with the job), a later backend re-registering overwrites these entries,
         # and every state-mutating handler is gated on self._closed for the window in
-        # between (the stateless BYE / TASK_PAYLOAD_READY acks carry no gate).
+        # between.
         cell.register_request_cb(channel=CHANNEL, topic=Topic.HELLO, cb=self._handle_hello)
         cell.register_request_cb(channel=CHANNEL, topic=Topic.RESULT_READY, cb=self._handle_result_ready)
-        cell.register_request_cb(channel=CHANNEL, topic=Topic.TASK_FAILED, cb=self._handle_task_failed)
         cell.register_request_cb(channel=CHANNEL, topic=Topic.LOG, cb=self._handle_log)
-        cell.register_request_cb(channel=CHANNEL, topic=Topic.BYE, cb=self._handle_bye)
-        # Topic.TASK_PAYLOAD_READY: the trainer's materialization-complete signal.
-        # This backend has no heartbeat lease, so there is no materialization-phase
-        # exemption to end — but the trainer engine sends it and must get a clean ack, not
-        # a no-handler error.
-        cell.register_request_cb(channel=CHANNEL, topic=Topic.TASK_PAYLOAD_READY, cb=self._handle_task_payload_ready)
+        cell.register_request_cb(channel=CHANNEL, topic=Topic.HEARTBEAT, cb=self._handle_heartbeat)
 
     @staticmethod
     def _protocol_reply(reply_topic: str, **fields):
@@ -1149,8 +1240,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                 latch=False,
             )
 
-        # V1 external_process proof: the plain launch token, carried as MsgKey.PROOF
-        # (the token IS the proof on the trusted host; challenge-response is attach's).
+        # V1 external_process proof: the plain launch token carried as MsgKey.PROOF.
         # Compared as bytes: compare_digest raises TypeError on non-ASCII str input, and a
         # forged proof must yield a clean (latched) rejection, not a handler exception.
         proof = payload.get(MsgKey.PROOF)
@@ -1172,6 +1262,14 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
         if payload.get(MsgKey.JOB_ID) != self._job_id:
             return self._hello_reject(session, origin, f"job id mismatch: {payload.get(MsgKey.JOB_ID)!r}", latch=True)
 
+        if payload.get(MsgKey.SITE_NAME) != self._site_name:
+            return self._hello_reject(
+                session,
+                origin,
+                f"site name mismatch: {payload.get(MsgKey.SITE_NAME)!r}",
+                latch=True,
+            )
+
         # rank contract: only rank 0 connects; other ranks get the model via the training
         # framework's own collectives. Not latched: the real rank 0 may still HELLO.
         rank = payload.get(MsgKey.RANK)
@@ -1185,10 +1283,17 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                 session.session_id = uuid.uuid4().hex
                 session.ready.set()
                 self.logger.info(f"HELLO accepted from {origin} (session_id={session.session_id})")
+            session.touch_peer_activity()
         # duplicate HELLO from the same authenticated trainer is idempotent: same session
         return self._protocol_reply(
             Topic.HELLO_ACCEPTED,
-            **{MsgKey.SESSION_ID: session.session_id, MsgKey.JOB_ID: self._job_id, MsgKey.SITE_NAME: self._site_name},
+            **{
+                MsgKey.SESSION_ID: session.session_id,
+                MsgKey.JOB_ID: self._job_id,
+                MsgKey.SITE_NAME: self._site_name,
+                MsgKey.HEARTBEAT_INTERVAL: self._context.heartbeat_interval,
+                MsgKey.HEARTBEAT_TIMEOUT: self._context.heartbeat_timeout,
+            },
         )
 
     def _hello_reject(self, session: Optional[_TrainerSession], origin: str, reason: str, latch: bool):
@@ -1208,11 +1313,19 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             return None, f"unexpected origin {origin!r}"
         if payload.get(MsgKey.SESSION_ID) != session.session_id:
             return None, "stale or unknown session id"
+        session.touch_peer_activity()
         return session, None
 
     def _handle_result_ready(self, request):
-        """RESULT_READY -> RESULT_ACCEPTED is a control ack ONLY: it does not mean the
-        payload transferred (the pull happens on the execute() thread afterwards)."""
+        """Accept a result Shareable already decoded by Cell.
+
+        PASS_THROUGH decoding can leave large values as lazy references here. ClientRunner
+        resolves them before invoking any configured TASK_RESULT filter or declared
+        concrete result-event consumer.
+
+        RESULT_READY is currently sent once. Attach-mode redelivery tolerance should be
+        added only as a sender-retry + receiver-dedup pair.
+        """
         if self._closed:
             return self._protocol_reply(Topic.RESULT_REJECTED, **{MsgKey.REASON: "backend is closed"})
         payload = request.payload
@@ -1226,91 +1339,38 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
 
         task_id = payload.get(MsgKey.TASK_ID)
         result_id = payload.get(MsgKey.RESULT_ID)
-        transfer_id = payload.get(MsgKey.TRANSFER_ID)
-        manifest = payload.get(MsgKey.MANIFEST)
-        ref_ids = manifest.get(MsgKey.REF_IDS) if isinstance(manifest, dict) else None
-        # ONE critical section for current-task validation AND the acceptance commit: a
-        # split (validate here, commit under a different lock) lets teardown clear the task
-        # between the two and record no receipt, so the handler would return RESULT_ACCEPTED
-        # for a retired task the CJ never pulls — and the retry would then be rejected. The
-        # _run_task finally (clear + conditional receipt) takes this same lock, so the two
-        # are mutually exclusive: if teardown wins, the task reads None below and we reject.
+        result = payload.get(MsgKey.RESULT)
+        # ONE critical section for current-task validation AND the acceptance commit. The
+        # _run_task finally takes this same lock to clear the task, so if teardown wins the
+        # task reads None below and the result is rejected instead of being accepted for a
+        # retired task.
         with self._task_lock:
+            if self._closed:
+                return self._protocol_reply(Topic.RESULT_REJECTED, **{MsgKey.REASON: "backend is closed"})
             task = self._current_task
             if task is None or task_id != task.task_id:
-                # Not the current task. It may be a retry of a result already accepted (and
-                # consumed) for a now-cleared task — a lost RESULT_ACCEPTED reply. Answer
-                # idempotently from the receipt ring instead of splitting the persistent
-                # trainer from the CJ with a wrongful "no current task" rejection.
-                accepted_result = self._result_receipts.get(task_id)
-                if accepted_result is not None and accepted_result == result_id:
-                    return self._protocol_reply(Topic.RESULT_ACCEPTED, **{MsgKey.RESULT_ID: result_id})
-                if accepted_result is not None:
-                    return self._protocol_reply(
-                        Topic.RESULT_REJECTED,
-                        **{MsgKey.REASON: f"a result ({accepted_result}) was already accepted for task {task_id!r}"},
-                    )
                 reason = f"no current task matching task_id {task_id!r}"
                 self.logger.warning(f"rejecting RESULT_READY: {reason}")
                 return self._protocol_reply(Topic.RESULT_REJECTED, **{MsgKey.REASON: reason})
 
             if task.result_id is not None:
-                # duplicate RESULT_READY while the task is still current: idempotent by
-                # result_id — reply the current state instead of a second result/transfer
-                if result_id == task.result_id:
-                    return self._protocol_reply(Topic.RESULT_ACCEPTED, **{MsgKey.RESULT_ID: result_id})
                 return self._protocol_reply(
                     Topic.RESULT_REJECTED,
                     **{MsgKey.REASON: f"a result ({task.result_id}) was already accepted for this task"},
                 )
-            if not result_id or not transfer_id or not isinstance(ref_ids, list) or not ref_ids:
+            if not result_id or not isinstance(result, Shareable):
                 return self._protocol_reply(
                     Topic.RESULT_REJECTED,
-                    **{MsgKey.REASON: "invalid result envelope: result_id, transfer_id and manifest ref_ids required"},
-                )
-            if len(ref_ids) != 1:
-                # V1 results are exactly one Shareable. Reject the malformed manifest here,
-                # before any bytes move — the pull loop would otherwise download EVERY ref
-                # only to have the single-Shareable check discard them all.
-                return self._protocol_reply(
-                    Topic.RESULT_REJECTED,
-                    **{MsgKey.REASON: f"invalid result envelope: expected exactly one ref id, got {len(ref_ids)}"},
+                    **{MsgKey.REASON: "invalid result envelope: result_id and Shareable result required"},
                 )
             task.result_id = result_id
-            task.result_transfer_id = transfer_id
-            task.result_ref_ids = list(ref_ids)
+            task.result = result
+            # The RESULT_ACCEPTED reply itself can race END_RUN even for inline payloads.
+            # Keep every accepted result behind the same send-completion barrier; the
+            # synchronized SHUTDOWN reply clears this latch when send already settled.
+            session.result_source_live.set()
             task.result_ready.set()
         return self._protocol_reply(Topic.RESULT_ACCEPTED, **{MsgKey.RESULT_ID: result_id})
-
-    def _record_result_receipt_locked(self, task_id: str, result_id: str) -> None:
-        """Records an accepted result for idempotent retries. Caller must hold _task_lock."""
-        self._result_receipts.pop(task_id, None)  # move-to-end on re-record
-        self._result_receipts[task_id] = result_id
-        while len(self._result_receipts) > _RESULT_RECEIPT_RING:
-            self._result_receipts.popitem(last=False)
-
-    def _handle_task_failed(self, request):
-        if self._closed:
-            return make_cell_reply(CellReturnCode.OK)
-        payload = request.payload
-        if not isinstance(payload, dict):
-            return make_cell_reply(CellReturnCode.INVALID_REQUEST, error="TASK_FAILED payload must be a dict")
-        session, reject_reason = self._validate_session_msg(request, payload)
-        if reject_reason:
-            self.logger.warning(f"ignoring TASK_FAILED: {reject_reason}")
-            return make_cell_reply(CellReturnCode.OK)
-        task_id = payload.get(MsgKey.TASK_ID)
-        # validate + commit in one _task_lock section (same discipline as _handle_result_ready),
-        # so teardown cannot clear the task between the check and the failure mark
-        with self._task_lock:
-            task = self._current_task
-            if task is None or task_id != task.task_id:
-                self.logger.warning(f"ignoring TASK_FAILED: no current task matching task_id {task_id!r}")
-                return make_cell_reply(CellReturnCode.OK)
-            if task.failure_reason is None:
-                task.failure_reason = str(payload.get(MsgKey.REASON))
-            task.failed.set()
-        return make_cell_reply(CellReturnCode.OK)
 
     def _handle_log(self, request):
         """Routes trainer LOG data through the executor-owned fire_log_analytics().
@@ -1340,20 +1400,17 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             self.logger.error(f"failed to process trainer LOG data: {secure_format_traceback()}")
         return None
 
-    def _handle_bye(self, request):
-        # informational: the trainer announces orderly exit; process reaping is
-        # authoritative, so this changes no state — which is why it carries no _closed
-        # gate (see _register_protocol_cbs). Any future BYE behavior that mutates state
-        # must add it.
-        return make_cell_reply(CellReturnCode.OK)
-
-    def _handle_task_payload_ready(self, request):
-        # informational: the trainer materialized the task payload and
-        # user code is training. No heartbeat lease exists in this backend, so nothing to
-        # exempt/unexempt — log for observability and ack; stateless, hence no _closed gate.
-        payload = request.payload if isinstance(request.payload, dict) else {}
-        self.logger.info(f"trainer reports task payload ready (task_id={payload.get(MsgKey.TASK_ID)!r})")
-        return make_cell_reply(CellReturnCode.OK)
+    def _handle_heartbeat(self, request):
+        if self._closed:
+            return self._protocol_reply(Topic.ERROR, **{MsgKey.REASON: "backend is closed"})
+        payload = request.payload
+        if not isinstance(payload, dict):
+            return make_cell_reply(CellReturnCode.INVALID_REQUEST, error="HEARTBEAT payload must be a dict")
+        session, reject_reason = self._validate_session_msg(request, payload)
+        if reject_reason:
+            self.logger.warning(f"rejecting HEARTBEAT: {reject_reason}")
+            return self._protocol_reply(Topic.ERROR, **{MsgKey.REASON: reject_reason})
+        return self._protocol_reply(Topic.HEARTBEAT, **{MsgKey.SESSION_ID: session.session_id})
 
     # ------------------------------------------------------------------ helpers
 
@@ -1378,15 +1435,20 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             self._abort_reason = reason
 
     def _task_exchange_config(self) -> dict:
-        # mirrors the in_process backend's TASK_EXCHANGE meta: the Client API boundary
-        # passes params through unconverted (format conversion belongs to send/receive
-        # filters at the client edge; DIFF returns with the model-registry decision)
+        # Mirrors the in_process backend's TASK_EXCHANGE meta. The backend only transports
+        # the declared representation contract; the trainer-side Client API performs the
+        # receive/send adaptation and computes DIFF in the native exchange format.
         context = self._context
         return {
             ConfigKey.TRAIN_WITH_EVAL: context.train_with_evaluation,
-            ConfigKey.EXCHANGE_FORMAT: ExchangeFormat.RAW,
-            ConfigKey.TRANSFER_TYPE: TransferType.FULL,
+            ConfigKey.EXCHANGE_FORMAT: context.params_exchange_format,
+            ConfigKey.SERVER_EXPECTED_FORMAT: context.server_expected_format,
+            ConfigKey.TRANSFER_TYPE: context.params_transfer_type,
             ConfigKey.TRAIN_TASK_NAME: context.train_task_name,
             ConfigKey.EVAL_TASK_NAME: context.evaluate_task_name,
             ConfigKey.SUBMIT_MODEL_TASK_NAME: context.submit_model_task_name,
+            # Preserve the existing Client API lifecycle contract: a per-task trainer
+            # closes its communication endpoint after its accepted result, while a
+            # launch-once trainer remains connected for the next task.
+            ConfigKey.LAUNCH_ONCE: context.launch_once,
         }

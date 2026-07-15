@@ -16,7 +16,6 @@ from typing import Optional, Type, Union
 
 from nvflare.apis.fl_constant import SystemVarName
 from nvflare.app_common.abstract.launcher import Launcher
-from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.client_api_executor import ALL_EXECUTION_MODES, ClientAPIExecutor, ExecutionMode
 from nvflare.app_common.executors.client_api_launcher_executor import ClientAPILauncherExecutor
 from nvflare.app_common.executors.in_process_client_api_executor import InProcessClientAPIExecutor
@@ -31,7 +30,6 @@ from nvflare.fuel.utils.pipe.pipe import Pipe
 from nvflare.fuel.utils.validation_utils import check_str
 
 from .api import FedJob, validate_object_for_job
-from .defs import FilterType
 
 
 class PipeConnectType(str, Enum):
@@ -127,10 +125,11 @@ class BaseScriptRunner:
 
             execution_mode (Optional[str]): Selects the new ClientAPIExecutor
                 (design: docs/design/client_api_execution_modes.md) instead of the legacy
-                executor stack. Currently only "in_process" is available; "external_process"
-                and "attach" land with their backends. When set, the params boundary is
-                pass-through (no ParamsConverters): `framework`,
-                `server_expected_format` and `params_transfer_type` are not used, and the
+                executor stack. ``in_process`` and ``external_process`` are available;
+                ``attach`` lands with its backend. When set, the recipe declares framework and
+                server representations in ``TASK_EXCHANGE``; the trainer-side Client API adapts
+                at receive/send without constructing ParamsConverters. ``params_transfer_type``
+                is applied by the Client API model state. The
                 legacy stack args (`launch_external_process`, `executor`, `task_pipe`,
                 `launcher`, `metric_relay`, `metric_pipe`) must not be set. Defaults to None
                 (legacy behavior, unchanged).
@@ -172,11 +171,19 @@ class BaseScriptRunner:
 
         self._params_exchange_format = None
 
-        # The new-executor path is pass-through (no ParamsConverters), so the
-        # framework format resolution -- including its torch/tensorflow import checks -- is
-        # skipped entirely when execution_mode is set.
+        # The new-executor path does not instantiate ParamsConverters or import a framework
+        # during job construction. It declares the trainer-native representation so the
+        # trainer-side Client API can adapt lazily at receive/send.
         if execution_mode is not None:
-            pass
+            format_by_framework = {
+                FrameworkType.PYTORCH: ExchangeFormat.PYTORCH,
+                FrameworkType.TENSORFLOW: ExchangeFormat.KERAS_LAYER_WEIGHTS,
+                FrameworkType.NUMPY: ExchangeFormat.NUMPY,
+                FrameworkType.RAW: ExchangeFormat.RAW,
+            }
+            self._params_exchange_format = format_by_framework.get(self._framework)
+            if self._params_exchange_format is None:
+                raise ValueError(f"Framework {self._framework} unsupported")
         elif self._framework == FrameworkType.PYTORCH:
             _, torch_ok = optional_import(module="torch")
             if torch_ok:
@@ -224,46 +231,6 @@ class BaseScriptRunner:
         self._memory_gc_rounds = memory_gc_rounds
         self._cuda_empty_cache = cuda_empty_cache
 
-    def _framework_exchange_format(self):
-        """The framework's native params exchange format, for the client-edge conversion
-        filter. Returns None when no conversion is needed (numpy/raw)."""
-        if self._framework == FrameworkType.PYTORCH:
-            return ExchangeFormat.PYTORCH
-        if self._framework == FrameworkType.TENSORFLOW:
-            return ExchangeFormat.KERAS_LAYER_WEIGHTS
-        return None
-
-    def _add_client_conversion_filters(self, job: FedJob, tasks, ctx):
-        """Wire the framework conversion as client-edge filters (design: conversion moves out
-        of the executor into send/receive filters at the client edge).
-
-        For a framework whose native format differs from the server's aggregation format
-        (numpy), add a task-data filter (numpy -> framework, so flare.receive() hands the
-        script native tensors) and a task-result filter (framework -> numpy, so the server
-        aggregates numpy). No-op for numpy/raw jobs. Applies to every execution_mode
-        (in_process and external_process); the trainer-side Client API stays pass-through.
-        """
-        exchange_format = self._framework_exchange_format()
-        if exchange_format is None or self._server_expected_format != ExchangeFormat.NUMPY:
-            return
-
-        from nvflare.app_common.filters.params_converter_filter import ParamsConverterFilter
-        from nvflare.client.converter_utils import create_default_params_converters
-
-        from_nvflare, to_nvflare = create_default_params_converters(
-            server_expected_format=self._server_expected_format,
-            params_exchange_format=exchange_format,
-            train_task_name=AppConstants.TASK_TRAIN,
-            eval_task_name=AppConstants.TASK_VALIDATION,
-            submit_model_task_name=AppConstants.TASK_SUBMIT_MODEL,
-        )
-        if from_nvflare is not None:
-            # last task-data filter: numpy -> framework-native for the training script
-            job.add_filter(ParamsConverterFilter(from_nvflare), FilterType.TASK_DATA, tasks, ctx)
-        if to_nvflare is not None:
-            # first task-result filter: framework-native -> numpy for the server
-            job.add_filter(ParamsConverterFilter(to_nvflare), FilterType.TASK_RESULT, tasks, ctx)
-
     def _create_cell_pipe(self):
         ct = self._pipe_connect_type
         if not ct:
@@ -304,7 +271,10 @@ class BaseScriptRunner:
                     execution_mode=self._execution_mode,
                     command=f"{self._command} custom/{self._script} {self._script_args}".strip(),
                     launch_once=self._launch_once,
-                    shutdown_timeout=self._shutdown_timeout if self._shutdown_timeout else None,
+                    shutdown_timeout=self._shutdown_timeout,
+                    params_exchange_format=self._params_exchange_format,
+                    server_expected_format=self._server_expected_format,
+                    params_transfer_type=self._params_transfer_type,
                     memory_gc_rounds=self._memory_gc_rounds,
                     cuda_empty_cache=self._cuda_empty_cache,
                 )
@@ -313,12 +283,14 @@ class BaseScriptRunner:
                     execution_mode=self._execution_mode,
                     task_script_path=self._script,
                     task_script_args=self._script_args,
+                    params_exchange_format=self._params_exchange_format,
+                    server_expected_format=self._server_expected_format,
+                    params_transfer_type=self._params_transfer_type,
                     memory_gc_rounds=self._memory_gc_rounds,
                     cuda_empty_cache=self._cuda_empty_cache,
                 )
             job.add_executor(executor, tasks=tasks, ctx=ctx)
             job.add_resources(resources=[self._script], ctx=ctx)
-            self._add_client_conversion_filters(job, tasks, ctx)
             return comp_ids
 
         if self._launch_external_process:
@@ -462,7 +434,7 @@ class ScriptRunner(BaseScriptRunner):
             shutdown_timeout (float): If provided, will wait for this number of seconds before shutdown.
                 Only used if `launch_external_process` is True. Defaults to 0.0.
             execution_mode (Optional[str]): Selects the new ClientAPIExecutor instead of the
-                legacy executor stack; only "in_process" is currently available. See
+                legacy executor stack; "in_process" and "external_process" are available. See
                 BaseScriptRunner for the full contract. Defaults to None (legacy behavior).
         """
         super().__init__(

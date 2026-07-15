@@ -19,23 +19,21 @@ process that NVFlare launched, and is the Client API implementation that flare.i
 send/log resolve to when the process was started with a Client API bootstrap config (the
 NVFLARE_CLIENT_API_BOOTSTRAP env var; see nvflare/client/cell/bootstrap.py).
 
-It replaces the legacy CellPipe + FlareAgent trainer stack with a direct Cell session on the
-frozen protocol vocabulary in nvflare/client/cell/defs.py, and moves payloads through the same
-payload_transfer seam the backend uses (so both sides share identical "returns == delivered"
-semantics):
+It replaces the legacy CellPipe + FlareAgent trainer stack with a direct Cell session using the
+protocol vocabulary in nvflare/client/cell/defs.py. Task and result Shareables ride in
+the Cell requests themselves: Cell/FOBS selects inline encoding or ViaDownloader references,
+and the Client API keeps the original source alive until the ultimate receiver settles them:
 
 - init(): read the bootstrap config, build a child Cell bound to the prescribed trainer FQCN and
   connected to the CJ's internal listener, register the control handlers (TASK_READY / ABORT /
   SHUTDOWN), and perform the HELLO handshake (launch-token proof; V1 trusted host).
-- TASK_READY handler: ack the control message, then EAGERLY pull the task payload on a
-  materializer thread and send TASK_PAYLOAD_READY once it is stored. Eager, not deferred to
-  receive(): the producer-side acquire budget expects the first pull promptly after TASK_READY,
-  and user code may legitimately spend minutes between rounds (eval, checkpointing) before its
-  next receive() — the payload must not wait on that.
+- TASK_READY handler: the trainer Cell decodes/materializes the Shareable before invoking the
+  handler, which validates and queues it before returning TASK_ACCEPTED.
 - receive(): block until a materialized task is queued and return its FLModel.
-- send(): publish the result as a producer-side payload attempt, send RESULT_READY with the
-  manifest, and hold the attempt alive until the CJ's pull reaches its terminal outcome (the
-  producer-liveness rule) before returning.
+- send(): send RESULT_READY with per-message pass-through enabled. The CJ accepts a lazy
+  envelope, materializing only if it has a result filter; otherwise the server downloads
+  directly from this trainer. send() returns only after every created transfer reaches a
+  successful terminal outcome.
 - log(): send a LOG control message the executor converts to a fed analytics event.
 
 V1 scope: rank 0 connects and drives the session; non-zero ranks get the model through the
@@ -45,6 +43,8 @@ receive() returns None and whose is_running() is False, so a plain (non-torchrun
 primary external_process case — runs unchanged.
 """
 
+import copy
+import math
 import os
 import threading
 import time
@@ -56,24 +56,35 @@ from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
-from nvflare.app_common.abstract.fl_model import FLModel
+from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.client.api_spec import APISpec
-from nvflare.client.cell.bootstrap import BOOTSTRAP_FILE_ENV_VAR, BootstrapKey, read_bootstrap_config
+from nvflare.client.cell.bootstrap import (
+    BOOTSTRAP_FILE_ENV_VAR,
+    BootstrapKey,
+    get_bootstrap_client_api_type,
+    read_bootstrap_config,
+)
 from nvflare.client.cell.decomposers import register_framework_decomposers
 from nvflare.client.cell.defs import CHANNEL, PROTOCOL_VERSION, MsgKey, Topic
-from nvflare.client.cell.payload_transfer import (
-    TRANSFER_TTL,
-    PayloadTransferError,
-    TaskPayloadAttempt,
-    fetch_result_payload,
-)
-from nvflare.client.config import ConfigKey
+from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType
+from nvflare.client.params_conversion import convert_params
+from nvflare.client.utils import DIFF_FUNCS
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
+from nvflare.fuel.f3.streaming.byte_streamer import reliable_retry_scheduler
+from nvflare.fuel.f3.streaming.download_service import DownloadService
+from nvflare.fuel.f3.streaming.stream_utils import stream_shutdown
+from nvflare.fuel.f3.streaming.transfer_progress import DEFAULT_STREAMING_IDLE_TIMEOUT, TransferProgressState
+from nvflare.fuel.utils.fobs import FOBSContextKey
+from nvflare.fuel.utils.fobs.decomposers.via_downloader import (
+    RESULT_UPLOAD_PROGRESS_CTX_KEY,
+    RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY,
+    ResultUploadProgressContextKey,
+)
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 # How long HELLO retries for the CJ's HELLO_ACCEPTED before failing init.
@@ -83,16 +94,43 @@ _HELLO_RETRY_INTERVAL = 1.0
 # Poll cadence of receive()'s task-queue wait (the queue wakes it immediately; the poll only
 # bounds abort/stop detection latency).
 _RECEIVE_POLL_INTERVAL = 0.5
-# Producer-side hold: how long send() waits for the CJ to certify it pulled the result before
-# giving up. Aligned with the attempt's own TTL backstop so this wait can never give up while
-# the transfer is still legitimately live.
-_RESULT_DELIVERY_TIMEOUT = TRANSFER_TTL
-# Bounded linger after delivery so a lost terminal reply can still be replayed (contract).
-_RESULT_DELIVERY_LINGER = 5.0
+# Heartbeat requests are cancelled during shutdown and the daemon is joined boundedly.
+_HEARTBEAT_JOIN_TIMEOUT = 1.0
 
 
 class TrainerSessionError(Exception):
     """The trainer's Client API session ended (SHUTDOWN, ABORT, or CJ/cell loss)."""
+
+
+def _shutdown_f3_streaming() -> None:
+    """Retire the process-global F3 streaming services used by a bare trainer.
+
+    Normal NVFlare entry points run under MainProcessMonitor, but an external trainer's
+    entry point is the user's script and cannot be wrapped by it. Keep this list aligned
+    with the process-global cleanup registrations in byte_streamer.py and stream_utils.py,
+    plus DownloadService cleanup performed by the normal client/server runners. If a
+    second standalone-process caller appears, promote this into an F3-owned, appropriately
+    scoped lifecycle API instead of copying the list.
+
+    Every stage is attempted even if an earlier one fails: one broken service must not
+    strand another non-daemon pool. Stop transaction ownership first, then the retry
+    dispatcher, before joining the executors needed by retry work. The underlying
+    shutdown operations are idempotent, so a repeated caller retries a partial cleanup
+    without a second completion latch.
+    """
+    errors = []
+    for name, shutdown in (
+        ("download service", DownloadService.shutdown),
+        ("reliable retry scheduler", reliable_retry_scheduler.shutdown),
+        ("stream executors", stream_shutdown),
+    ):
+        try:
+            shutdown()
+        except Exception as e:
+            errors.append((name, e))
+    if errors:
+        names = ", ".join(name for name, _ in errors)
+        raise RuntimeError(f"failed to stop F3 streaming services: {names}") from errors[0][1]
 
 
 def _to_python_scalar(v: Any) -> Any:
@@ -125,6 +163,10 @@ class CellClientAPI(APISpec):
                 f"(the external_process backend writes it on the launched trainer)"
             )
         self._config = read_bootstrap_config(self._bootstrap_file)
+        # Environment selection remains a compatibility path for untyped legacy files,
+        # but any typed envelope must be complete and supported on every construction
+        # path, including a backend-launched trainer.
+        get_bootstrap_client_api_type(self._config, self._bootstrap_file)
 
         self._rank: Optional[str] = None
         self._is_control_rank = False
@@ -135,25 +177,57 @@ class CellClientAPI(APISpec):
         self._job_id: str = self._config[BootstrapKey.JOB_ID]
         self._site_name: str = self._config[BootstrapKey.SITE_NAME]
         self._task_exchange: dict = self._config.get(BootstrapKey.TASK_EXCHANGE, {})
+        # This is the same TASK_EXCHANGE lifecycle bit used by the legacy ex-process
+        # Client API. Default to a persistent session for typed bootstrap files written
+        # before the field was added, since closing after one result is irreversible.
+        self._launch_once = bool(self._task_exchange.get(ConfigKey.LAUNCH_ONCE, True))
+        self._memory_gc_rounds = int(self._config.get(BootstrapKey.MEMORY_GC_ROUNDS, 0))
+        self._cuda_empty_cache = bool(self._config.get(BootstrapKey.CUDA_EMPTY_CACHE, False))
 
-        # control state. _task_queue carries MATERIALIZED tasks: the TASK_READY handler
-        # starts an eager payload pull on a materializer thread, which enqueues
-        # {task, model, error} once the pull settles; receive() only dequeues.
+        # control state. _task_queue carries materialized tasks: Cell finishes FOBS decode
+        # (including any ViaDownloader pulls) before it invokes the TASK_READY handler.
         self._task_queue: "Queue[dict]" = Queue()
         self._current_task: Optional[dict] = None
-        self._accepted_task_id: Optional[str] = None  # TASK_READY redelivery idempotency (by task id)
+        self._result_receiver_ids = None
         self._fl_model: Optional[FLModel] = None
         self._receive_called = False
         self._abort = False
         self._abort_reason = ""
-        # observed by the payload pulls between chunk requests, so an abort/stop ends an
-        # in-flight materialization instead of letting it run to completion for nothing
+        # observed by incoming task payload pulls between chunk requests, so an abort/stop
+        # ends an in-flight materialization instead of letting it run to completion for
+        # nothing. Result publication deliberately has a separate cancellation signal:
+        # an orderly SHUTDOWN can race the RESULT_ACCEPTED reply and must not tear down a
+        # result source that the downstream receiver is still downloading.
         self._abort_signal = Signal()
+        self._result_abort_signal = Signal()
+        self._heartbeat_cancel = Signal()
         self._stopped = False
         self._closed = False
         self._lock = threading.Lock()
+        self._shutdown_lock = threading.Lock()
+        self._heartbeat_lock = threading.Lock()
+        self._heartbeat_interval = 0.0
+        self._heartbeat_timeout = 0.0
+        self._last_cj_activity: Optional[float] = None
+        self._heartbeat_stop = threading.Event()
+        self._heartbeat_thread: Optional[threading.Thread] = None
+        # While the trainer is serving an actual live DownloadService transaction, that
+        # transaction's progress/idle policy is authoritative. Merely entering send() is
+        # not enough: inline serialization or a wedged RESULT_READY request must remain
+        # bounded by the CJ heartbeat lease.
+        self._result_transactions = ()
+        # Guarded by _lock. SHUTDOWN reads this in the same critical section in which it
+        # sets _stopped, so either send() observes the stop and closes itself or the
+        # SHUTDOWN reply tells the backend the process is already safe to stop.
+        self._result_send_active = False
+        self._params_conversion_state = {}
 
     # ------------------------------------------------------------------ lifecycle
+
+    @property
+    def closed(self) -> bool:
+        """Whether this Cell API has been shut down."""
+        return self._closed
 
     def init(self, rank: Optional[str] = None):
         self._rank = rank if rank is not None else os.environ.get("RANK", "0")
@@ -184,11 +258,17 @@ class CellClientAPI(APISpec):
             parent_url=connect_url,
             create_internal_listener=False,
         )
+        # Direct task decode must observe a concurrent ABORT/SHUTDOWN while nested tensor
+        # downloads are running. Adapter.call() derives each decode context from this Cell
+        # context, so the signal reaches ViaDownloader without a ClientAPI-specific wrapper.
+        self._cell.update_fobs_context({FOBSContextKey.ABORT_SIGNAL: self._abort_signal})
         self._register_control_cbs(self._cell)
         self._cell.start()
         try:
             self._hello()
+            self._start_heartbeat()
         except Exception:
+            self._stop_heartbeat()
             self._stop_cell()
             raise
         self.logger.info(f"trainer session established: fqcn={self._trainer_fqcn} session_id={self._session_id}")
@@ -220,7 +300,9 @@ class CellClientAPI(APISpec):
                     {
                         MsgKey.TRAINER_FQCN: self._trainer_fqcn,
                         MsgKey.PROOF: self._config[BootstrapKey.LAUNCH_TOKEN],
-                        MsgKey.PROTOCOL_VERSION: self._config.get(BootstrapKey.PROTOCOL_VERSION, PROTOCOL_VERSION),
+                        # Report the trainer code's actual wire version. Echoing the bootstrap
+                        # value would make an incompatible trainer appear compatible.
+                        MsgKey.PROTOCOL_VERSION: PROTOCOL_VERSION,
                         MsgKey.JOB_ID: self._job_id,
                         MsgKey.SITE_NAME: self._site_name,
                         MsgKey.RANK: str(self._rank),
@@ -241,26 +323,50 @@ class CellClientAPI(APISpec):
         self._session_id = body.get(MsgKey.SESSION_ID)
         if not self._session_id:
             raise TrainerSessionError("HELLO_ACCEPTED carried no session id")
+        self._heartbeat_interval = self._valid_heartbeat_number(
+            MsgKey.HEARTBEAT_INTERVAL, body.get(MsgKey.HEARTBEAT_INTERVAL), positive=True
+        )
+        self._heartbeat_timeout = self._valid_heartbeat_number(
+            MsgKey.HEARTBEAT_TIMEOUT, body.get(MsgKey.HEARTBEAT_TIMEOUT), positive=False
+        )
+        if 0 < self._heartbeat_timeout <= self._heartbeat_interval:
+            raise TrainerSessionError(
+                f"invalid heartbeat policy: interval {self._heartbeat_interval} must be less than "
+                f"timeout {self._heartbeat_timeout}"
+            )
+        self._note_cj_activity()
 
     # ------------------------------------------------------------------ receive
 
     def receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
         if not self._is_control_rank or self._closed:
             return None
+        if self._abort:
+            reason = self._abort_reason
+            self.shutdown()
+            raise TrainerSessionError(f"session aborted: {reason}")
+        if self._stopped:
+            # Standard trainers leave their loop after receive()/is_running() observes
+            # SHUTDOWN. Close F3 synchronously on this user thread so interpreter teardown
+            # does not wait forever for its worker pools.
+            self.shutdown()
+            return None
         if self._fl_model is not None:
             return self._fl_model
 
-        entry = self._await_task(timeout)
+        try:
+            entry = self._await_task(timeout)
+        except TrainerSessionError:
+            self.shutdown()
+            raise
         if entry is None:
+            if self._stopped and not self._closed:
+                self.shutdown()
             return None
 
         task = entry["task"]
         self._current_task = task
-        error = entry["error"]
-        if error is not None:
-            # the materializer already sent TASK_FAILED to the CJ; surface it to user code
-            raise TrainerSessionError(f"failed to materialize task '{task.get(MsgKey.TASK_NAME)}': {error}")
-
+        self._result_receiver_ids = entry.get("result_receiver_ids")
         self._fl_model = entry["model"]
         self._receive_called = True
         return self._fl_model
@@ -286,38 +392,6 @@ class CellClientAPI(APISpec):
             except Empty:
                 continue
 
-    def _materialize_and_enqueue(self, task: dict) -> None:
-        """Body of the per-task materializer thread the TASK_READY handler starts.
-
-        Pulls the payload eagerly, reports the payload state to the CJ (TASK_PAYLOAD_READY
-        or TASK_FAILED), and queues the settled entry for receive(). Must not raise: this
-        is a thread target, and an escaping exception would silently strand receive()."""
-        try:
-            model = self._materialize_task(task)
-        except Exception as e:
-            # PayloadTransferError, or anything unexpected: either way this task is dead.
-            # TASK_FAILED tells the CJ (which fails the task there); the queued error entry
-            # surfaces it to user code blocked in receive().
-            reason = f"task payload download failed: {e}"
-            self.logger.error(reason)
-            self._send_task_failed(task, reason)
-            self._task_queue.put({"task": task, "model": None, "error": str(e)})
-            return
-        self._send_task_payload_ready(task)
-        self._task_queue.put({"task": task, "model": model, "error": None})
-
-    def _materialize_task(self, task: dict) -> FLModel:
-        model_ref = task.get(MsgKey.MODEL) or {}
-        ref_ids = model_ref.get(MsgKey.REF_IDS) or []
-        if not ref_ids:
-            # inline / empty payload: an empty global model is valid (e.g. first round)
-            return FLModelUtils.from_shareable(Shareable())
-        objs = fetch_result_payload(self._cell, self._cj_fqcn, ref_ids, abort_signal=self._abort_signal)
-        shareable = objs[0] if len(objs) == 1 else None
-        if not isinstance(shareable, Shareable):
-            raise PayloadTransferError(f"expected one Shareable task payload but got {[type(o) for o in objs]}")
-        return FLModelUtils.from_shareable(shareable)
-
     # ------------------------------------------------------------------ send
 
     def send(self, model: FLModel, clear_cache: bool = True) -> None:
@@ -331,41 +405,172 @@ class CellClientAPI(APISpec):
         if task is None:
             raise TrainerSessionError("send() called with no current task")
 
-        shareable = FLModelUtils.to_shareable(model)
-        transfer_id = uuid.uuid4().hex
+        if self._task_exchange.get(ConfigKey.TRANSFER_TYPE) == TransferType.DIFF:
+            model = self._prepare_param_diff(model)
+        if model.params is None and model.metrics is None:
+            raise RuntimeError("the model to send does not have either params or metrics")
+
+        # DIFF is computed above in the trainer-native representation. Adapt only a
+        # shallow wire model so clear_cache=False leaves the user's FLModel native.
+        wire_model = copy.copy(model)
+        wire_model.params = convert_params(
+            model.params,
+            self._task_exchange.get(ConfigKey.EXCHANGE_FORMAT, ExchangeFormat.RAW),
+            self._task_exchange.get(ConfigKey.SERVER_EXPECTED_FORMAT, ExchangeFormat.NUMPY),
+            self._params_conversion_state,
+            self.logger,
+        )
+        shareable = FLModelUtils.to_shareable(wire_model)
         result_id = uuid.uuid4().hex
-        attempt = TaskPayloadAttempt(self._cell, shareable, self._cj_fqcn)
+        transactions = []
+
+        def _on_transaction_created(transaction):
+            transactions.append(transaction)
+
+        # A no-op progress callback requests transaction tracking from ViaDownloader.
+        # DownloadService itself records per-receiver activity and terminal truth; the
+        # callback is only the opt-in that exposes the created transaction to this sender.
+        def _on_result_progress(**_kwargs):
+            return None
+
+        request = new_cell_message(
+            {MessageHeaderKey.PASS_THROUGH: True},
+            {
+                MsgKey.SESSION_ID: self._session_id,
+                MsgKey.TASK_ID: task.get(MsgKey.TASK_ID),
+                MsgKey.RESULT_ID: result_id,
+                MsgKey.RESULT: shareable,
+            },
+        )
+        # These are the ultimate result receivers declared on the incoming task (if the
+        # workflow knows them). The CJ is only an intermediate hop: with no result filter
+        # it forwards the references and never counts as a DownloadService receiver.
+        result_receiver_ids = self._result_receiver_ids
+
+        fobs_ctx_props = {
+            FOBSContextKey.STREAM_PROGRESS_CB: _on_result_progress,
+            RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY: _on_transaction_created,
+            RESULT_UPLOAD_PROGRESS_CTX_KEY: {
+                ResultUploadProgressContextKey.JOB_ID: self._job_id,
+                ResultUploadProgressContextKey.TASK_ID: task.get(MsgKey.TASK_ID),
+                ResultUploadProgressContextKey.STREAMING_IDLE_TIMEOUT: DEFAULT_STREAMING_IDLE_TIMEOUT,
+            },
+        }
+
+        def _has_live_result_transfer():
+            for transaction in tuple(transactions):
+                try:
+                    if not DownloadService.get_transfer_waiter(transaction.tx_id).done():
+                        return True
+                except Exception:
+                    # A transaction deleted between snapshot and lookup is no longer live.
+                    continue
+            return False
+
+        result_accepted = False
+        # Serialize result publication admission with SHUTDOWN. If shutdown wins, no
+        # result has been published and send fails normally. If send wins, SHUTDOWN does
+        # not cancel the result signal; send remains the terminal-transfer barrier.
+        with self._lock:
+            self._check_session_alive()
+            self._result_send_active = True
         try:
+            self._set_result_transactions(transactions)
             reply = self._cell.send_request(
                 channel=CHANNEL,
                 topic=Topic.RESULT_READY,
                 target=self._cj_fqcn,
-                request=new_cell_message(
-                    {},
-                    {
-                        MsgKey.SESSION_ID: self._session_id,
-                        MsgKey.TASK_ID: task.get(MsgKey.TASK_ID),
-                        MsgKey.RESULT_ID: result_id,
-                        MsgKey.TRANSFER_ID: transfer_id,
-                        MsgKey.MANIFEST: {MsgKey.REF_IDS: [attempt.ref_id]},
-                    },
-                ),
+                request=request,
                 timeout=_HELLO_TIMEOUT,
+                abort_signal=self._result_abort_signal,
+                progress_wait_cb=_has_live_result_transfer,
+                num_receivers=len(result_receiver_ids) if result_receiver_ids else 1,
+                receiver_ids=result_receiver_ids,
+                fobs_ctx_props=fobs_ctx_props,
             )
             self._check_result_accepted(reply)
-
-            # producer-liveness rule: hold the result payload alive until the CJ's pull
-            # reaches its terminal outcome (returns == delivered). None arm => not delivered.
-            delivered = attempt.wait(timeout=_RESULT_DELIVERY_TIMEOUT, linger=_RESULT_DELIVERY_LINGER)
-            if not delivered:
-                raise TrainerSessionError("result was not certified delivered by the CJ")
+            result_accepted = True
+            self._note_cj_activity()
+            self._wait_for_result_transfers(transactions)
+        except BaseException:
+            self._delete_result_transactions(transactions)
+            raise
         finally:
-            attempt.terminate()
-            if clear_cache:
-                self._fl_model = None
-                self._receive_called = False
-                self._current_task = None
-            self._maybe_cleanup_memory()
+            try:
+                self._set_result_transactions(())
+                if clear_cache:
+                    # Serialization is complete. Release both the submitted and received
+                    # parameter sets; neither is needed after the actual transfer settles.
+                    model.params = None
+                    model.optimizer_params = None
+                    received_model = self._fl_model
+                    self._fl_model = None
+                    if received_model is not None:
+                        received_model.params = None
+                        received_model.optimizer_params = None
+                    self._receive_called = False
+                    self._current_task = None
+                    self._result_receiver_ids = None
+                self._maybe_cleanup_memory()
+            finally:
+                # Pair this transition with _handle_shutdown under one lock. If SHUTDOWN
+                # won first, this thread owns the close after the actual transfer settled.
+                # If this transition won first, SHUTDOWN reports RESULT_SOURCE_LIVE=False
+                # and the backend can stop the already-settled process after receiving ACK.
+                with self._lock:
+                    self._result_send_active = False
+                    should_shutdown = self._stopped or (result_accepted and not self._launch_once)
+                # A per-task trainer has completed its whole session only after the CJ
+                # accepted the envelope AND the actual downstream receiver completed every
+                # download. Close Cell/F3 synchronously before a one-shot script returns.
+                if should_shutdown:
+                    self.shutdown()
+
+    def _wait_for_result_transfers(self, transactions) -> None:
+        """Wait for strict terminal success of every result DownloadService transaction."""
+        for transaction in tuple(transactions):
+            waiter = DownloadService.get_transfer_waiter(transaction.tx_id)
+            while True:
+                outcome = waiter.wait(timeout=_RECEIVE_POLL_INTERVAL)
+                if outcome is not None:
+                    break
+                if waiter.done():
+                    raise TrainerSessionError(f"result transfer {transaction.tx_id} ended without a terminal outcome")
+                if self._abort:
+                    raise TrainerSessionError(f"session aborted while serving result: {self._abort_reason}")
+                if self._closed:
+                    raise TrainerSessionError("session closed while serving result")
+            if outcome.status != TransferProgressState.COMPLETED:
+                raise TrainerSessionError(
+                    f"result transfer {transaction.tx_id} failed: status={outcome.status} reason={outcome.reason}"
+                )
+
+    @staticmethod
+    def _delete_result_transactions(transactions) -> None:
+        for transaction in transactions:
+            try:
+                DownloadService.delete_transaction(transaction.tx_id)
+            except Exception:
+                # Preserve the original send/abort failure; DownloadService cleanup is
+                # best-effort and the transaction idle timeout remains a backstop.
+                pass
+
+    def _prepare_param_diff(self, model: FLModel) -> FLModel:
+        exchange_format = self._task_exchange.get(ConfigKey.EXCHANGE_FORMAT, ExchangeFormat.RAW)
+        diff_func = DIFF_FUNCS.get(exchange_format)
+        if diff_func is None and exchange_format == ExchangeFormat.RAW:
+            diff_func = DIFF_FUNCS.get(ExchangeFormat.NUMPY)
+        if diff_func is None:
+            raise RuntimeError(f"no default params diff function for {exchange_format}")
+        if self._fl_model is None:
+            raise RuntimeError("no received model")
+        if self._fl_model.params is not None and model.params is not None and model.params_type == ParamsType.FULL:
+            try:
+                model.params = diff_func(original=self._fl_model.params, new=model.params)
+                model.params_type = ParamsType.DIFF
+            except Exception as e:
+                raise RuntimeError(f"params diff function failed: {e}") from e
+        return model
 
     def _check_result_accepted(self, reply) -> None:
         if reply is None:
@@ -412,7 +617,16 @@ class CellClientAPI(APISpec):
         return {FLMetaKey.SITE_NAME: self._site_name, FLMetaKey.JOB_ID: self._job_id}
 
     def get_config(self) -> Dict:
-        return dict(self._task_exchange)
+        # Match the legacy ClientConfig shape consumed by existing trainers (for example
+        # Lightning integrations call get_config()[TASK_EXCHANGE]). Do not expose Cell
+        # addresses or the launch credential from the bootstrap file.
+        return {
+            ConfigKey.TASK_EXCHANGE: dict(self._task_exchange),
+            FLMetaKey.JOB_ID: self._job_id,
+            FLMetaKey.SITE_NAME: self._site_name,
+            ConfigKey.MEMORY_GC_ROUNDS: self._memory_gc_rounds,
+            ConfigKey.CUDA_EMPTY_CACHE: self._cuda_empty_cache,
+        }
 
     def get_job_id(self) -> str:
         return self._job_id
@@ -431,11 +645,15 @@ class CellClientAPI(APISpec):
         # loop guard: False on any session end (abort/stop/closed). Otherwise block in
         # receive() for the next task; an abort arriving during that block returns False
         # here (the loop exits), while an explicit flare.receive()/send() still raises.
-        if not self._is_control_rank or self._closed or self._abort or self._stopped:
+        if not self._is_control_rank or self._closed:
+            return False
+        if self._abort or self._stopped:
+            self.shutdown()
             return False
         try:
             return self.receive() is not None
         except TrainerSessionError:
+            self.shutdown()
             return False
 
     def is_train(self) -> bool:
@@ -455,68 +673,99 @@ class CellClientAPI(APISpec):
         self._receive_called = False
 
     def shutdown(self):
-        if self._closed:
-            return
-        self._closed = True
-        self._stopped = True
-        self._abort_signal.trigger("client api shutdown")
-        try:
-            if self._cell is not None and self._session_id is not None:
-                self._cell.fire_and_forget(
-                    channel=CHANNEL,
-                    topic=Topic.BYE,
-                    targets=[self._cj_fqcn],
-                    message=new_cell_message({}, {MsgKey.SESSION_ID: self._session_id}),
-                    optional=True,
-                )
-        except Exception as e:
-            self.logger.debug(f"failed to send BYE: {e}")
-        self._stop_cell()
+        """Stop this trainer session and retire its process-global F3 streaming runtime.
+
+        A Cell Client API trainer is currently one-session-per-process. After shutdown,
+        no further Cell Client API session can run in this interpreter.
+        """
+        with self._shutdown_lock:
+            if not self._closed:
+                self._closed = True
+                self._stopped = True
+                self._abort_signal.trigger("client api shutdown")
+                self._result_abort_signal.trigger("client api shutdown")
+                self._stop_heartbeat()
+                self._stop_cell()
+            try:
+                # This API owns a dedicated trainer process, unlike CJ/server processes
+                # whose MainProcessMonitor performs global F3 cleanup. Without this step,
+                # non-daemon stream pools keep one-shot/torchrun trainers alive forever.
+                # Retry this process-global cleanup on a repeated shutdown() if a previous
+                # stage failed; the services' own shutdown operations are idempotent.
+                _shutdown_f3_streaming()
+            except Exception as e:
+                self.logger.warning(f"failed to stop trainer streaming services: {e}")
 
     # ------------------------------------------------------------------ control handlers
 
     def _handle_task_ready(self, request):
+        # TASK_READY is currently sent once. Attach-mode redelivery tolerance should be
+        # added only as a sender-retry + receiver-dedup pair.
         payload = request.payload
         if not isinstance(payload, dict):
             return make_cell_reply(CellReturnCode.INVALID_REQUEST, error="TASK_READY payload must be a dict")
-        if payload.get(MsgKey.SESSION_ID) != self._session_id:
-            return self._reply(Topic.TASK_FAILED, **{MsgKey.REASON: "stale or unknown session id"})
+        reject_reason = self._validate_cj_control(request, payload)
+        if reject_reason:
+            return self._reply(Topic.TASK_FAILED, **{MsgKey.REASON: reject_reason})
+        self._note_cj_activity()
         task_id = payload.get(MsgKey.TASK_ID)
-        with self._lock:
-            # TASK_READY redelivery is idempotent by task id (control protocol): a retry of
-            # an already-accepted task is re-acked without starting a second pull
-            is_new = self._accepted_task_id != task_id
-            if is_new:
-                self._accepted_task_id = task_id
-        if is_new:
-            # eager materialization off the cell callback thread: the ack below must not
-            # wait on the payload pull (see the module docstring)
-            threading.Thread(
-                target=self._materialize_and_enqueue,
-                args=(payload,),
-                name="client_api_task_materializer",
-                daemon=True,
-            ).start()
+        shareable = payload.get(MsgKey.MODEL)
+        if not isinstance(shareable, Shareable):
+            return self._reply(
+                Topic.TASK_FAILED,
+                **{
+                    MsgKey.TASK_ID: task_id,
+                    MsgKey.REASON: f"TASK_READY model must be Shareable, got {type(shareable)}",
+                },
+            )
+        try:
+            model = FLModelUtils.from_shareable(shareable)
+            model.params = convert_params(
+                model.params,
+                self._task_exchange.get(ConfigKey.SERVER_EXPECTED_FORMAT, ExchangeFormat.NUMPY),
+                self._task_exchange.get(ConfigKey.EXCHANGE_FORMAT, ExchangeFormat.RAW),
+                self._params_conversion_state,
+                self.logger,
+            )
+        except Exception as e:
+            return self._reply(
+                Topic.TASK_FAILED,
+                **{MsgKey.TASK_ID: task_id, MsgKey.REASON: f"invalid task model: {e}"},
+            )
+        result_receiver_ids = self._normalize_result_receiver_ids(shareable.get_header(FOBSContextKey.RECEIVER_IDS))
+        self._task_queue.put({"task": payload, "model": model, "result_receiver_ids": result_receiver_ids})
         return self._reply(Topic.TASK_ACCEPTED, **{MsgKey.TASK_ID: task_id})
 
     def _handle_abort(self, request):
         payload = request.payload if isinstance(request.payload, dict) else {}
-        if payload.get(MsgKey.SESSION_ID) == self._session_id:
-            self._abort = True
-            self._abort_reason = str(payload.get(MsgKey.REASON))
-            self._abort_signal.trigger(self._abort_reason)
-            self.logger.error(f"session aborted by CJ: {self._abort_reason}")
+        reject_reason = self._validate_cj_control(request, payload)
+        if reject_reason:
+            return make_cell_reply(CellReturnCode.INVALID_REQUEST, error=reject_reason)
+        self._note_cj_activity()
+        self._abort = True
+        self._abort_reason = str(payload.get(MsgKey.REASON))
+        self._abort_signal.trigger(self._abort_reason)
+        self._result_abort_signal.trigger(self._abort_reason)
+        self.logger.error(f"session aborted by CJ: {self._abort_reason}")
         return make_cell_reply(CellReturnCode.OK)
 
     def _handle_shutdown(self, request):
         payload = request.payload if isinstance(request.payload, dict) else {}
-        if payload.get(MsgKey.SESSION_ID) == self._session_id:
+        reject_reason = self._validate_cj_control(request, payload)
+        if reject_reason:
+            return make_cell_reply(CellReturnCode.INVALID_REQUEST, error=reject_reason)
+        self._note_cj_activity()
+        with self._lock:
             self._stopped = True
-            # a materialization still in flight serves no one after an orderly stop either:
-            # receive() will return None and drop the entry
-            self._abort_signal.trigger("session shutdown")
-            self.logger.info("session shutdown requested by CJ")
-        return make_cell_reply(CellReturnCode.OK)
+            result_source_live = self._result_send_active
+        # An incoming task materialization still in flight serves no one after an orderly
+        # stop: receive() will return None and drop the entry. Do not trigger the result
+        # signal here. SHUTDOWN can arrive after the CJ accepted a lazy result envelope but
+        # before RESULT_ACCEPTED reaches send(); the result remains live until its actual
+        # downstream DownloadService transaction settles.
+        self._abort_signal.trigger("session shutdown")
+        self.logger.info("session shutdown requested by CJ")
+        return make_cell_reply(CellReturnCode.OK, body={MsgKey.RESULT_SOURCE_LIVE: result_source_live})
 
     # ------------------------------------------------------------------ helpers
 
@@ -526,44 +775,131 @@ class CellClientAPI(APISpec):
         body.update(fields)
         return make_cell_reply(CellReturnCode.OK, body=body)
 
-    def _send_task_payload_ready(self, task: dict) -> None:
-        try:
-            self._cell.fire_and_forget(
-                channel=CHANNEL,
-                topic=Topic.TASK_PAYLOAD_READY,
-                targets=[self._cj_fqcn],
-                message=new_cell_message(
-                    {}, {MsgKey.SESSION_ID: self._session_id, MsgKey.TASK_ID: task.get(MsgKey.TASK_ID)}
-                ),
-                optional=True,
-            )
-        except Exception as e:
-            self.logger.debug(f"failed to send TASK_PAYLOAD_READY: {e}")
-
-    def _send_task_failed(self, task: dict, reason: str) -> None:
-        try:
-            self._cell.fire_and_forget(
-                channel=CHANNEL,
-                topic=Topic.TASK_FAILED,
-                targets=[self._cj_fqcn],
-                message=new_cell_message(
-                    {},
-                    {
-                        MsgKey.SESSION_ID: self._session_id,
-                        MsgKey.TASK_ID: task.get(MsgKey.TASK_ID),
-                        MsgKey.REASON: reason,
-                    },
-                ),
-                optional=True,
-            )
-        except Exception as e:
-            self.logger.debug(f"failed to send TASK_FAILED: {e}")
+    @staticmethod
+    def _normalize_result_receiver_ids(receiver_ids):
+        if receiver_ids is None:
+            return None
+        if isinstance(receiver_ids, str):
+            values = [receiver_ids]
+        else:
+            try:
+                values = list(receiver_ids)
+            except TypeError:
+                return None
+        normalized = tuple(str(receiver_id) for receiver_id in values if receiver_id is not None and str(receiver_id))
+        return normalized or None
 
     def _check_session_alive(self) -> None:
         if self._abort:
             raise TrainerSessionError(f"session aborted: {self._abort_reason}")
         if self._stopped or self._closed:
             raise TrainerSessionError("session stopped")
+
+    def _validate_cj_control(self, request, payload: dict) -> Optional[str]:
+        origin = request.get_header(MessageHeaderKey.ORIGIN) or ""
+        if origin != self._cj_fqcn:
+            return f"unexpected CJ origin {origin!r}"
+        if payload.get(MsgKey.SESSION_ID) != self._session_id:
+            return "stale or unknown session id"
+        return None
+
+    @staticmethod
+    def _valid_heartbeat_number(name: str, value, positive: bool) -> float:
+        if (
+            not isinstance(value, (int, float))
+            or isinstance(value, bool)
+            or not math.isfinite(value)
+            or (positive and value <= 0)
+            or (not positive and value < 0)
+        ):
+            relation = "> 0" if positive else ">= 0"
+            raise TrainerSessionError(f"HELLO_ACCEPTED {name} must be a finite number {relation}, got {value!r}")
+        return float(value)
+
+    def _start_heartbeat(self) -> None:
+        if self._heartbeat_timeout == 0:
+            return
+        thread = threading.Thread(target=self._heartbeat_loop, name="client_api_heartbeat", daemon=True)
+        self._heartbeat_thread = thread
+        thread.start()
+
+    def _heartbeat_loop(self) -> None:
+        while not self._heartbeat_stop.wait(self._heartbeat_interval):
+            if self._closed or self._stopped or self._abort:
+                return
+            try:
+                reply = self._cell.send_request(
+                    channel=CHANNEL,
+                    topic=Topic.HEARTBEAT,
+                    target=self._cj_fqcn,
+                    request=new_cell_message({}, {MsgKey.SESSION_ID: self._session_id}),
+                    timeout=min(self._heartbeat_interval, self._heartbeat_timeout),
+                    abort_signal=self._heartbeat_cancel,
+                )
+                if self._heartbeat_reply_valid(reply):
+                    self._note_cj_activity()
+            except Exception as e:
+                self.logger.debug(f"heartbeat to CJ failed: {e}")
+
+            silent_for = self._cj_silent_for()
+            if silent_for > self._heartbeat_timeout and not self._has_live_result_transfer():
+                self._mark_owner_lost(
+                    f"CJ heartbeat timed out after {silent_for:.1f}s (timeout={self._heartbeat_timeout}s)"
+                )
+                return
+
+    def _heartbeat_reply_valid(self, reply) -> bool:
+        if reply is None or reply.get_header(MessageHeaderKey.RETURN_CODE) != CellReturnCode.OK:
+            return False
+        body = reply.payload
+        return (
+            isinstance(body, dict)
+            and body.get(MsgKey.REPLY_TOPIC) == Topic.HEARTBEAT
+            and body.get(MsgKey.SESSION_ID) == self._session_id
+        )
+
+    def _note_cj_activity(self) -> None:
+        with self._heartbeat_lock:
+            self._last_cj_activity = time.monotonic()
+
+    def _cj_silent_for(self) -> float:
+        with self._heartbeat_lock:
+            last_activity = self._last_cj_activity
+        return float("inf") if last_activity is None else max(0.0, time.monotonic() - last_activity)
+
+    def _set_result_transactions(self, transactions) -> None:
+        with self._heartbeat_lock:
+            self._result_transactions = transactions
+
+    def _has_live_result_transfer(self) -> bool:
+        with self._heartbeat_lock:
+            transactions = tuple(self._result_transactions)
+        for transaction in transactions:
+            try:
+                if not DownloadService.get_transfer_waiter(transaction.tx_id).done():
+                    return True
+            except Exception:
+                # A transaction deleted between snapshot and lookup is no longer live.
+                continue
+        return False
+
+    def _mark_owner_lost(self, reason: str) -> None:
+        with self._heartbeat_lock:
+            if self._abort or self._stopped or self._closed:
+                return
+            self._abort = True
+            self._abort_reason = reason
+        self._abort_signal.trigger(reason)
+        self._result_abort_signal.trigger(reason)
+        self._heartbeat_stop.set()
+        self.logger.error(reason)
+
+    def _stop_heartbeat(self) -> None:
+        self._heartbeat_stop.set()
+        self._heartbeat_cancel.trigger("client api heartbeat stopped")
+        thread = self._heartbeat_thread
+        if thread is not None and thread is not threading.current_thread() and thread.is_alive():
+            thread.join(timeout=_HEARTBEAT_JOIN_TIMEOUT)
 
     def _current_task_name(self) -> Optional[str]:
         task = self._current_task

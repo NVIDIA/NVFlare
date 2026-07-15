@@ -27,9 +27,11 @@ from nvflare.fuel.utils.fobs.decomposers.via_downloader import (
     RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY,
     EncKey,
     EncType,
+    LazyDownloadRef,
     ResultUploadProgressContextKey,
     ViaDownloaderDecomposer,
     clear_download_initiated,
+    contains_lazy_download_ref,
     get_download_transactions,
 )
 
@@ -90,6 +92,14 @@ class _ItemsWithCallableLazyRef:
         return f"get_{item_id}"
 
 
+class _CustomPayloadContainer:
+    __slots__ = ("child", "parent")
+
+    def __init__(self, child=None):
+        self.child = child
+        self.parent = None
+
+
 class _FakeDownloadable(Downloadable):
     def __init__(self, script):
         super().__init__("base")
@@ -114,6 +124,25 @@ class _FakeObjectDownloader:
 
     def add_object(self, obj, ref_id=None):
         self.added.append((ref_id, obj))
+
+
+class TestContainsLazyDownloadRef:
+    def test_finds_ref_in_cycle_safe_custom_container_graph(self):
+        lazy_ref = LazyDownloadRef("server", "ref-1", "T0", 1)
+        parent = _CustomPayloadContainer()
+        child = _CustomPayloadContainer({"refs": {lazy_ref}})
+        parent.child = child
+        child.parent = parent
+
+        assert contains_lazy_download_ref(parent) is True
+
+    def test_returns_false_for_cycle_without_ref(self):
+        parent = _CustomPayloadContainer()
+        child = _CustomPayloadContainer(["concrete"])
+        parent.child = child
+        child.parent = parent
+
+        assert contains_lazy_download_ref(parent) is False
 
 
 class TestViaDownloaderRecomposeLazyRefGuard:

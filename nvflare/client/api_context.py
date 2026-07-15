@@ -15,9 +15,10 @@
 
 import os
 from enum import Enum
+from threading import Lock
 from typing import Optional
 
-from nvflare.client.cell.bootstrap import CELL_API_TYPE
+from nvflare.client.cell.bootstrap import CELL_API_TYPE, get_bootstrap_client_api_type, read_bootstrap_config
 from nvflare.client.constants import CLIENT_API_CONFIG
 from nvflare.fuel.data_event.data_bus import DataBus
 
@@ -42,10 +43,13 @@ class APIContext:
     def __init__(self, rank: Optional[str] = None, config_file: Optional[str] = None):
         self.rank = rank
         self.config_file = config_file if config_file else DEFAULT_CONFIG
+        self._explicit_config_file = bool(config_file)
+        self._typed_bootstrap_file = None
+        self._shutdown_lock = Lock()
+        self._closed = False
 
-        api_type_name = os.environ.get(CLIENT_API_TYPE_KEY, ClientAPIType.IN_PROCESS_API.value)
-        api_type = ClientAPIType(api_type_name)
-        self.api = self._create_client_api(api_type)
+        self.api_type = self._resolve_api_type()
+        self.api = self._create_client_api(self.api_type)
         self.api.init(rank=self.rank)
 
     def __enter__(self):
@@ -53,9 +57,58 @@ class APIContext:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Cleanup the client API when the context ends."""
-        if self.api:
-            self.api.shutdown()
-            self.api = None
+        self.shutdown()
+
+    @property
+    def is_shutdown(self) -> bool:
+        """Whether this context has released its Client API resources."""
+        # InProcessBackend owns the DataBus API and closes it directly at job teardown.
+        # Treat that owner-side close as a stopped context too, so a later job in the same
+        # process does not reuse a cached APIContext that still points at the old backend.
+        return self._closed or getattr(self.api, "closed", False) is True
+
+    def shutdown(self):
+        """Shuts down this context exactly once."""
+        with self._shutdown_lock:
+            if self._closed:
+                return None
+            self._closed = True
+            try:
+                return self.api.shutdown()
+            finally:
+                # APIContext is itself a context manager and may be shut down directly.
+                # Notify the public cache/lifecycle owner so those paths cannot bypass the
+                # Cell one-shot gate or leave a stopped non-Cell context cached.
+                from .api import _on_context_shutdown
+
+                _on_context_shutdown(self)
+
+    def _resolve_api_type(self) -> ClientAPIType:
+        """Resolves the API engine from typed config metadata and the legacy environment."""
+        typed_api_type = None
+        if self._explicit_config_file:
+            try:
+                config = read_bootstrap_config(self.config_file)
+            except (OSError, ValueError):
+                # Missing/non-dict files retain the old behavior: the selected API engine
+                # owns validation of its legacy config. A valid dict containing either
+                # typed marker is validated below and never silently downgraded.
+                config = None
+            if config is not None:
+                typed_api_type = get_bootstrap_client_api_type(config, self.config_file)
+
+        env_api_type_name = os.environ.get(CLIENT_API_TYPE_KEY)
+        if typed_api_type is not None:
+            if env_api_type_name is not None and env_api_type_name != typed_api_type:
+                raise ValueError(
+                    f"Client API bootstrap {self.config_file} declares {typed_api_type!r}, "
+                    f"but {CLIENT_API_TYPE_KEY} is {env_api_type_name!r}"
+                )
+            self._typed_bootstrap_file = self.config_file
+            return ClientAPIType(typed_api_type)
+
+        api_type_name = env_api_type_name or ClientAPIType.IN_PROCESS_API.value
+        return ClientAPIType(api_type_name)
 
     def _create_client_api(self, api_type: ClientAPIType) -> APISpec:
         """Creates a new client_api based on the provided API type."""
@@ -69,6 +122,8 @@ class APIContext:
             # API types never need; keep flare.init import-light for in_process/ex_process.
             from nvflare.client.cell.api import CellClientAPI
 
+            if self._typed_bootstrap_file:
+                return CellClientAPI(bootstrap_file=self._typed_bootstrap_file)
             return CellClientAPI()
         else:
             return ExProcessClientAPI(config_file=self.config_file)

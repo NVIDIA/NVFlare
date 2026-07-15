@@ -20,6 +20,7 @@ from unittest.mock import patch
 import pytest
 
 from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
+from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.job_config.script_runner import FrameworkType, PipeConnectType, ScriptRunner
 
 
@@ -320,14 +321,18 @@ class TestScriptRunnerMemoryManagement:
 
 
 class TestExecutionModeSelection:
+    def test_new_executor_path_rejects_unknown_framework(self):
+        with pytest.raises(ValueError, match="Framework unknown unsupported"):
+            ScriptRunner(script="train.py", execution_mode="in_process", framework="unknown")
+
     """execution_mode selects the new ClientAPIExecutor (design: client_api_execution_modes.md)."""
 
     def test_in_process_mode_constructs_without_framework_imports(self):
-        # the new path is pass-through (no ParamsConverters), so the default
-        # framework=PYTORCH must NOT trigger the torch import check
+        # The new path declares PYTORCH without constructing ParamsConverters or
+        # importing torch during job construction.
         runner = ScriptRunner(script="train.py", execution_mode="in_process")
         assert runner._execution_mode == "in_process"
-        assert runner._params_exchange_format is None
+        assert runner._params_exchange_format == ExchangeFormat.PYTORCH
 
     def test_invalid_mode_rejected(self):
         with pytest.raises(ValueError, match="invalid execution_mode"):
@@ -343,51 +348,34 @@ class TestExecutionModeSelection:
         runner = ScriptRunner(script="train.py", execution_mode="external_process")
         assert runner._execution_mode == "external_process"
 
-    @staticmethod
-    def _conversion_filters(app):
-        from nvflare.app_common.filters.params_converter_filter import ParamsConverterFilter
-
-        data, result = [], []
-        for _tasks, filters in app.task_data_filters:
-            data += [f for f in filters if isinstance(f, ParamsConverterFilter)]
-        for _tasks, filters in app.task_result_filters:
-            result += [f for f in filters if isinstance(f, ParamsConverterFilter)]
-        return data, result
-
     @pytest.mark.parametrize("mode", ["in_process", "external_process"])
-    def test_pytorch_wires_client_edge_conversion_filters(self, mode):
-        # so an unchanged torch-expecting client (hello-pt) gets native tensors from
-        # flare.receive() while the wire/server stay numpy
-        from nvflare.app_opt.pt.numpy_params_converter import NumpyToPTParamsConverter, PTToNumpyParamsConverter
-        from nvflare.fuel.utils.constants import FrameworkType
+    @pytest.mark.parametrize(
+        "framework,native_format",
+        [
+            (FrameworkType.PYTORCH, ExchangeFormat.PYTORCH),
+            (FrameworkType.TENSORFLOW, ExchangeFormat.KERAS_LAYER_WEIGHTS),
+            (FrameworkType.NUMPY, ExchangeFormat.NUMPY),
+            (FrameworkType.RAW, ExchangeFormat.RAW),
+        ],
+    )
+    def test_recipe_declares_trainer_and_server_formats_without_conversion_filters(
+        self, mode, framework, native_format
+    ):
         from nvflare.job_config.api import FedJob
 
         with patch("os.path.isfile", return_value=True), patch("os.path.exists", return_value=True):
-            job = FedJob(name="pt")
+            job = FedJob(name="formats")
             job.to(
-                ScriptRunner(script="c.py", execution_mode=mode, command="python -u", framework=FrameworkType.PYTORCH),
+                ScriptRunner(script="c.py", execution_mode=mode, command="python -u", framework=framework),
                 "site-1",
                 tasks=["train"],
             )
-        data, result = self._conversion_filters(job._deploy_map["site-1"].app_config)
-        assert len(data) == 1 and isinstance(data[0].converter, NumpyToPTParamsConverter)
-        assert len(result) == 1 and isinstance(result[0].converter, PTToNumpyParamsConverter)
-
-    def test_numpy_wires_no_conversion_filters(self):
-        from nvflare.fuel.utils.constants import FrameworkType
-        from nvflare.job_config.api import FedJob
-
-        with patch("os.path.isfile", return_value=True), patch("os.path.exists", return_value=True):
-            job = FedJob(name="np")
-            job.to(
-                ScriptRunner(
-                    script="c.py", execution_mode="external_process", command="python -u", framework=FrameworkType.NUMPY
-                ),
-                "site-1",
-                tasks=["train"],
-            )
-        data, result = self._conversion_filters(job._deploy_map["site-1"].app_config)
-        assert data == [] and result == []
+        app = job._deploy_map["site-1"].app_config
+        executor = app.executors[0].executor
+        assert executor._params_exchange_format == native_format
+        assert executor._server_expected_format == ExchangeFormat.NUMPY
+        assert app.task_data_filters == []
+        assert app.task_result_filters == []
 
     def test_add_to_fed_job_wires_external_process_executor_with_command(self):
         from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
@@ -400,6 +388,7 @@ class TestExecutionModeSelection:
                 script_args="--update_type full",
                 execution_mode="external_process",
                 command="python3 -u",
+                params_transfer_type=TransferType.DIFF,
             )
             job.to(runner, "site-1", tasks=["train"])
 
@@ -409,6 +398,13 @@ class TestExecutionModeSelection:
         # external_process names the trainer by a command (not an in-CJ task_script_path)
         assert executor._command == "python3 -u custom/client.py --update_type full"
         assert executor._task_script_path is None
+        assert executor._params_exchange_format == ExchangeFormat.PYTORCH
+        assert executor._server_expected_format == ExchangeFormat.NUMPY
+        assert executor._params_transfer_type == TransferType.DIFF
+        # Zero means do not wait for natural exit before process-tree termination. It must
+        # not be rewritten to None, which asks the backend to use its 30-second fallback.
+        assert executor._shutdown_timeout == 0.0
+        assert executor._build_backend_context().shutdown_timeout == 0.0
 
     def test_conflicts_with_legacy_stack_args(self):
         with pytest.raises(ValueError, match="mutually exclusive.*launch_external_process"):

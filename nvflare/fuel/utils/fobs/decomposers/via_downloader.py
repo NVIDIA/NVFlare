@@ -11,9 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import gc
 import json
 import threading
 import time
+import types
 import uuid
 from abc import ABC, abstractmethod
 from typing import Any
@@ -147,6 +149,63 @@ class LazyDownloadRef:
         self.ref_id = ref_id
         self.item_id = item_id
         self.dot = dot
+
+
+_LAZY_REF_SCAN_LEAF_TYPES = (
+    type(None),
+    bool,
+    int,
+    float,
+    complex,
+    str,
+    bytes,
+    bytearray,
+    memoryview,
+    type,
+    types.ModuleType,
+    types.FunctionType,
+    types.BuiltinFunctionType,
+    types.MethodType,
+    types.CodeType,
+    types.FrameType,
+    types.TracebackType,
+    types.GeneratorType,
+    types.CoroutineType,
+    types.AsyncGeneratorType,
+)
+
+
+def contains_lazy_download_ref(value: Any) -> bool:
+    """Return whether ``value`` contains a ``LazyDownloadRef`` anywhere in its object graph.
+
+    FOBS payloads can place values in mapping keys, sets, slots, and application-defined
+    containers, so checking only built-in sequences is insufficient. ``gc.get_referents``
+    covers those containers without invoking application code. Object identity tracking makes
+    the scan cycle-safe, and runtime/executable objects are treated as leaves to avoid following
+    unrelated module globals or stack frames.
+    """
+
+    pending = [value]
+    visited = set()
+    while pending:
+        current = pending.pop()
+        if isinstance(current, LazyDownloadRef):
+            return True
+        if isinstance(current, _LAZY_REF_SCAN_LEAF_TYPES):
+            continue
+
+        object_id = id(current)
+        if object_id in visited:
+            continue
+        visited.add(object_id)
+
+        try:
+            pending.extend(gc.get_referents(current))
+        except Exception:
+            # Some extension types do not expose a traversable referent graph. Treat them
+            # as leaves rather than allowing an optimization probe to break task processing.
+            continue
+    return False
 
 
 class _LazyBatchInfo:
@@ -390,8 +449,8 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
         # Subscribing caused a race: delete_transaction() removed refs from _ref_table
         # before blob_cb could finish its _download_from_remote_cell() calls, producing
         # "no ref found" FATAL_SYSTEM_ERROR (RC12 Bug 1).
-        # _monitor_tx() polls is_finished() every 5s and cleans up within 5s of the last
-        # receiver completing all chunk downloads — sufficient for all model sizes.
+        # The final accepted receiver confirmation retires a completed transaction
+        # immediately; _monitor_tx() remains the timeout/budget backstop.
         msg_root_id, msg_root_ttl = self._determine_msg_root(fobs_ctx)
 
         # The generic streaming idle timeout is the default lifetime floor for streamed

@@ -130,4 +130,8 @@ def stream_shutdown():
     stream_thread_pool.shutdown(wait=True)
 
 
+# Bare Client API trainer processes do not run MainProcessMonitor. If another
+# process-global streaming service is added here, mirror its teardown in
+# nvflare.client.cell.api._shutdown_f3_streaming() until a second standalone caller
+# justifies a session-scoped F3 lifecycle API.
 MainProcessMonitor.add_cleanup_cb(stream_shutdown)

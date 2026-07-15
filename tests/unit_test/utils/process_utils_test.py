@@ -18,7 +18,31 @@ from unittest import mock
 
 import pytest
 
-from nvflare.utils.process_utils import ProcessAdapter, spawn_process
+from nvflare.utils.process_utils import ProcessAdapter, prepare_subprocess_command, spawn_process
+
+
+class TestPrepareSubprocessCommand:
+    def test_resolves_secret_after_splitting(self, monkeypatch):
+        monkeypatch.setenv("PROCESS_UTIL_TEST_SECRET", "value with spaces; --still-one-arg")
+
+        argv = prepare_subprocess_command("python train.py --token ${secret:PROCESS_UTIL_TEST_SECRET}")
+
+        assert argv == ["python", "train.py", "--token", "value with spaces; --still-one-arg"]
+
+    def test_rejects_secret_in_nested_shell_command(self, monkeypatch):
+        monkeypatch.setenv("PROCESS_UTIL_TEST_SECRET", "'; injected-command #")
+
+        with pytest.raises(ValueError, match="nested interpreter command strings"):
+            prepare_subprocess_command("bash -lc 'echo ${secret:PROCESS_UTIL_TEST_SECRET}'")
+
+    def test_windows_tokenization_preserves_backslashes_and_secret_as_one_arg(self, monkeypatch):
+        monkeypatch.setenv("PROCESS_UTIL_TEST_SECRET", "value with spaces")
+
+        argv = prepare_subprocess_command(
+            r"python C:\work\train.py --token ${secret:PROCESS_UTIL_TEST_SECRET}", posix=False
+        )
+
+        assert argv == ["python", r"C:\work\train.py", "--token", "value with spaces"]
 
 
 class TestProcessAdapterWithPopen:

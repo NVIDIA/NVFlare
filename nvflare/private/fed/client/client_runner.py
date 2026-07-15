@@ -27,9 +27,11 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.utils.event import fire_event_to_components
 from nvflare.apis.utils.fl_context_utils import add_job_audit_event
 from nvflare.apis.utils.reliable_message import ReliableMessage
-from nvflare.apis.utils.task_utils import apply_filters
+from nvflare.apis.utils.task_utils import apply_filters, get_filters
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.streaming.download_service import DownloadService
+from nvflare.fuel.utils.fobs import FOBSContextKey
+from nvflare.fuel.utils.fobs.decomposers.via_downloader import contains_lazy_download_ref
 from nvflare.fuel.utils.msg_root_utils import delete_msg_root
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.private.fed.client.client_engine_executor_spec import ClientEngineExecutorSpec, TaskAssignment
@@ -44,6 +46,35 @@ from .utils import determine_parent_name
 _TASK_CHECK_RESULT_OK = 0
 _TASK_CHECK_RESULT_TRY_AGAIN = 1
 _TASK_CHECK_RESULT_TASK_GONE = 2
+
+
+def _materialize_lazy_download_refs(data, fl_ctx, abort_signal: Signal):
+    """Resolve the full FOBS graph when a CJ-side consumer explicitly needs concrete data."""
+    import nvflare.fuel.utils.fobs as fobs
+
+    engine = fl_ctx.get_engine()
+    get_cell = getattr(engine, "get_cell", None) if engine is not None else None
+    cell = get_cell() if get_cell else None
+    if cell is None:
+        raise RuntimeError("cannot materialize lazy task payload: no Cell available from the client engine")
+
+    # LazyDownloadRefDecomposer re-emits the original source reference on encode; decoding
+    # with PASS_THROUGH disabled then downloads directly from that source into this CJ.
+    encoded = fobs.dumps(data)
+    decode_ctx = cell.get_fobs_context(
+        props={
+            fobs.FOBSContextKey.PASS_THROUGH: False,
+            fobs.FOBSContextKey.ABORT_SIGNAL: abort_signal,
+        }
+    )
+    return fobs.loads(encoded, fobs_ctx=decode_ctx)
+
+
+def _handler_requires_materialized_payload(handler, requirement_name: str, task_name: str) -> bool:
+    requirement = getattr(handler, requirement_name, False)
+    if callable(requirement):
+        return requirement(task_name) is True
+    return requirement is True
 
 
 class TaskRouter:
@@ -144,6 +175,10 @@ class ClientRunner(TBI):
         self.task_router = config.task_router
         self.task_data_filters = config.task_data_filters
         self.task_result_filters = config.task_result_filters
+        # Keep configured job handlers visible to payload routing. Components are registered
+        # on the run manager, not on this FLComponent's callback table, but may declare that
+        # their task-data or task-result events need concrete payloads.
+        self.event_handlers = config.handlers
         self.default_task_fetch_interval = config.default_task_fetch_interval
 
         # parent target is where we will pull task and send task results to
@@ -310,12 +345,23 @@ class ClientRunner(TBI):
 
         executor_name = executor.__class__.__name__
 
-        self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_DATA_FILTER")
-        self.fire_event(EventType.BEFORE_TASK_DATA_FILTER, fl_ctx)
-
         task_data = task.data
         try:
             filter_name = Scope.TASK_DATA_FILTERS_NAME
+            task_data_filters = get_filters(filter_name, fl_ctx, self.task_data_filters, task.name, FilterKey.IN)
+            supports_pass_through = executor.supports_task_data_pass_through()
+            task_data_event_consumer = any(
+                _handler_requires_materialized_payload(handler, "requires_materialized_task_data", task.name)
+                for handler in getattr(self, "event_handlers", [])
+            )
+            concrete_task_data_consumer = task_data_filters or task_data_event_consumer or not supports_pass_through
+            if concrete_task_data_consumer and contains_lazy_download_ref(task_data):
+                task_data = _materialize_lazy_download_refs(task_data, fl_ctx, abort_signal)
+                task.data = task_data
+                fl_ctx.set_prop(FLContextKey.TASK_DATA, value=task_data, private=True, sticky=False)
+
+            self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_DATA_FILTER")
+            self.fire_event(EventType.BEFORE_TASK_DATA_FILTER, fl_ctx)
             task_data = apply_filters(filter_name, task_data, fl_ctx, self.task_data_filters, task.name, FilterKey.IN)
         except UnsafeJobError:
             self.log_exception(fl_ctx, "UnsafeJobError from Task Data Filters")
@@ -329,6 +375,13 @@ class ClientRunner(TBI):
                 msg=f"submit result: {ReturnCode.UNSAFE_JOB}",
             )
         except Exception as e:
+            if abort_signal.triggered:
+                return self._reply_and_audit(
+                    reply=make_reply(ReturnCode.TASK_ABORTED),
+                    ref=server_audit_event_id,
+                    fl_ctx=fl_ctx,
+                    msg=f"submit result: {ReturnCode.TASK_ABORTED}",
+                )
             self.log_exception(fl_ctx, f"Processing error from Task Data Filters : {secure_format_exception(e)}")
             return self._reply_and_audit(
                 reply=make_reply(ReturnCode.TASK_DATA_FILTER_ERROR),
@@ -358,6 +411,40 @@ class ClientRunner(TBI):
         fl_ctx.set_prop(FLContextKey.TASK_DATA, value=task.data, private=True, sticky=False)
         self.fire_event(EventType.BEFORE_TASK_EXECUTION, fl_ctx)
         # Task_data is needed in the executor, don't clean it here
+
+        result_filter_name = Scope.TASK_RESULT_FILTERS_NAME
+        try:
+            result_filters = get_filters(result_filter_name, fl_ctx, self.task_result_filters, task.name, FilterKey.OUT)
+        except Exception as e:
+            self.log_exception(fl_ctx, f"Resolving Task Result Filters failed: {secure_format_exception(e)}")
+            return self._reply_and_audit(
+                reply=make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR),
+                ref=server_audit_event_id,
+                fl_ctx=fl_ctx,
+                msg=f"submit result: {ReturnCode.TASK_RESULT_FILTER_ERROR}",
+            )
+
+        result_event_consumer = any(
+            _handler_requires_materialized_payload(handler, "requires_materialized_task_result", task.name)
+            for handler in getattr(self, "event_handlers", [])
+        )
+        if (result_filters or result_event_consumer) and supports_pass_through:
+            # A result filter or declared event consumer makes this CJ the first concrete
+            # result consumer. Tell the trainer's DownloadService transaction to count
+            # this Cell—not the ultimate server stamped on the incoming task—as its
+            # receiver. The ordinary client-to-server send owns the next transaction.
+            engine = fl_ctx.get_engine() or self.engine
+            cell = engine.get_cell() if engine is not None else None
+            cj_fqcn = cell.get_fqcn() if cell is not None else None
+            if not cj_fqcn:
+                self.log_error(fl_ctx, "cannot route filtered trainer result: CJ Cell identity is unavailable")
+                return self._reply_and_audit(
+                    reply=make_reply(ReturnCode.EXECUTION_EXCEPTION),
+                    ref=server_audit_event_id,
+                    fl_ctx=fl_ctx,
+                    msg=f"submit result: {ReturnCode.EXECUTION_EXCEPTION}",
+                )
+            task.data.set_header(FOBSContextKey.RECEIVER_IDS, [cj_fqcn])
 
         try:
             self.log_info(fl_ctx, f"invoking task executor {executor_name}")
@@ -425,17 +512,20 @@ class ClientRunner(TBI):
         finally:
             fl_ctx.set_prop(FLContextKey.TASK_DATA, value=None, private=True, sticky=False)
 
-        fl_ctx.set_prop(FLContextKey.TASK_RESULT, value=reply, private=True, sticky=False)
-
-        self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_EXECUTION")
-        self.fire_event(EventType.AFTER_TASK_EXECUTION, fl_ctx)
-
-        self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_RESULT_FILTER")
-        self.fire_event(EventType.BEFORE_TASK_RESULT_FILTER, fl_ctx)
-
         try:
-            filter_name = Scope.TASK_RESULT_FILTERS_NAME
-            reply = apply_filters(filter_name, reply, fl_ctx, self.task_result_filters, task.name, FilterKey.OUT)
+            if (result_filters or result_event_consumer) and contains_lazy_download_ref(reply):
+                reply = _materialize_lazy_download_refs(reply, fl_ctx, abort_signal)
+
+            # A configured result filter or an explicitly declared result-event consumer
+            # makes the CJ concrete. Otherwise the CJ stays a pure forwarder and generic
+            # observation-only events may see lazy references.
+            fl_ctx.set_prop(FLContextKey.TASK_RESULT, value=reply, private=True, sticky=False)
+            self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_EXECUTION")
+            self.fire_event(EventType.AFTER_TASK_EXECUTION, fl_ctx)
+
+            self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_RESULT_FILTER")
+            self.fire_event(EventType.BEFORE_TASK_RESULT_FILTER, fl_ctx)
+            reply = apply_filters(result_filter_name, reply, fl_ctx, self.task_result_filters, task.name, FilterKey.OUT)
         except UnsafeJobError:
             self.log_exception(fl_ctx, "UnsafeJobError from Task Result Filters")
             executor.unsafe = True
@@ -447,6 +537,13 @@ class ClientRunner(TBI):
                 msg=f"submit result: {ReturnCode.UNSAFE_JOB}",
             )
         except Exception as e:
+            if abort_signal.triggered:
+                return self._reply_and_audit(
+                    reply=make_reply(ReturnCode.TASK_ABORTED),
+                    ref=server_audit_event_id,
+                    fl_ctx=fl_ctx,
+                    msg=f"submit result: {ReturnCode.TASK_ABORTED}",
+                )
             self.log_exception(fl_ctx, f"Processing error in Task Result Filter : {secure_format_exception(e)}")
             return self._reply_and_audit(
                 reply=make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR),

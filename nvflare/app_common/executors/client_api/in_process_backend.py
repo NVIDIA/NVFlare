@@ -22,11 +22,9 @@ TOPIC_GLOBAL_RESULT, and returns results over TOPIC_LOCAL_RESULT.
 
 Differences from the legacy executor (see docs/design/client_api_execution_modes.md):
 
-- No ParamsConverters and no exchange-format/transfer-type knobs:
-  the Client API boundary passes params through unconverted (ExchangeFormat.RAW)
-  and V1 sends full params (TransferType.FULL); DIFF support returns with the
-  model_registry transfer-type decision, and format conversion moves to
-  send/receive filters at the client edge.
+- No ParamsConverter components: the backend carries the declared native/server formats in
+  TASK_EXCHANGE, and the trainer-side Client API adapts at receive/send. FULL/DIFF remains a
+  trainer-side model-state setting.
 - LOG data is converted to analytics events through the executor-owned
   fire_log_analytics() (single analytics-event ownership point), not a direct
   send_analytic_dxo call.
@@ -49,10 +47,9 @@ from nvflare.apis.utils.analytix_utils import create_analytic_dxo
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendContext, ClientAPIBackendSpec
-from nvflare.app_common.executors.client_api.single_backend import SingleBackendGuard
 from nvflare.app_common.executors.task_script_runner import TaskScriptRunner
 from nvflare.client.api_spec import CLIENT_API_KEY
-from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType
+from nvflare.client.config import ConfigKey
 from nvflare.client.in_process.api import (
     TOPIC_ABORT,
     TOPIC_GLOBAL_RESULT,
@@ -78,18 +75,6 @@ _RESULT_POLL_INTERVAL = 0.5
 # teardown forever.
 _TRAINER_STOP_JOIN_TIMEOUT = 30.0
 _NO_RESULT = object()
-
-# One live in_process backend per DataBus (V1): the DataBus is a process singleton with a
-# single well-known CLIENT_API_KEY and fixed topics, so two in_process ClientAPIExecutors
-# in one job would silently overwrite each other. Shared mechanism with the external_process
-# backend (keyed on the CJ Cell there); see single_backend.py.
-_GUARD = SingleBackendGuard(
-    mode="in_process",
-    remedy="configure a single ClientAPIExecutor for all of its tasks (they share the process "
-    "DataBus CLIENT_API_KEY and fixed topics)",
-    # the DataBus is a process singleton, so the enforced scope is the process, not the job
-    scope="process",
-)
 
 
 class InProcessBackend(ClientAPIBackendSpec):
@@ -123,14 +108,6 @@ class InProcessBackend(ClientAPIBackendSpec):
             self._engine = fl_ctx.get_engine()
 
             self._data_bus = DataBus()
-            # Claim the one-backend-per-DataBus slot BEFORE any subscribe/put_data, so a
-            # rejected second backend (another in_process ClientAPIExecutor in the same job)
-            # leaves the active backend's subscriptions and CLIENT_API_KEY untouched. The
-            # DataBus is a process singleton with one well-known key + fixed topics, so two
-            # backends would otherwise silently overwrite each other (last-writer-wins);
-            # this fails the misconfiguration fast at START_RUN. See SingleBackendGuard.
-            _GUARD.claim(self._data_bus, self)
-
             self._event_manager = EventManager(self._data_bus)
             self._data_bus.subscribe([TOPIC_LOCAL_RESULT], self._local_result_callback)
             self._data_bus.subscribe([TOPIC_LOG_DATA], self._log_result_callback)
@@ -165,9 +142,9 @@ class InProcessBackend(ClientAPIBackendSpec):
             self._task_fn_thread.start()
         except BaseException:
             # contract (backend_spec): initialize() self-unwinds its partial setup on failure;
-            # the executor does not call finalize() on a half-initialized backend. BaseException,
-            # not Exception: a KeyboardInterrupt/SystemExit between the guard claim and here must
-            # also release the process-scoped DataBus slot, or it stays blocked for the process.
+            # the executor does not call finalize() on a half-initialized backend. BaseException
+            # ensures partial DataBus subscriptions/API state are also cleaned up for
+            # KeyboardInterrupt/SystemExit.
             self._unwind()
             raise
 
@@ -269,11 +246,6 @@ class InProcessBackend(ClientAPIBackendSpec):
             self._event_manager.fire_event(TOPIC_ABORT, f"'{task_name}' failed: {secure_format_traceback()}")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-    def handle_event(self, event_type: str, fl_ctx: FLContext) -> None:
-        # no per-event behavior for in_process (START_RUN/END_RUN are handled by the
-        # executor via initialize/finalize); contract: must not raise
-        pass
-
     def finalize(self, fl_ctx: FLContext) -> None:
         # contract: idempotent and must not raise
         if self._finalized:
@@ -336,15 +308,6 @@ class InProcessBackend(ClientAPIBackendSpec):
                     self.logger.error(secure_format_traceback())
             self._subscribed = False
         self._client_api = None
-        # release the one-backend-per-DataBus slot LAST, only if this backend holds it: a
-        # rejected second backend's unwind must not evict the active backend's claim, and a
-        # later sequential job (simulator reuse) must be able to reclaim. Runs on both the
-        # finalize path (finalize -> _unwind) and the failed-init path.
-        try:
-            if self._data_bus is not None:
-                _GUARD.release(self._data_bus, self)
-        except Exception:
-            self.logger.error(secure_format_traceback())
 
     def _prepare_task_meta(self, fl_ctx: FLContext, task_name: Optional[str]) -> dict:
         context = self._context
@@ -354,11 +317,11 @@ class InProcessBackend(ClientAPIBackendSpec):
             ConfigKey.TASK_NAME: task_name,
             ConfigKey.TASK_EXCHANGE: {
                 ConfigKey.TRAIN_WITH_EVAL: context.train_with_evaluation,
-                # the Client API boundary passes params through unconverted; format conversion
-                # happens in send/receive filters at the client edge, and DIFF returns with the
-                # model-registry transfer-type decision
-                ConfigKey.EXCHANGE_FORMAT: ExchangeFormat.RAW,
-                ConfigKey.TRANSFER_TYPE: TransferType.FULL,
+                # The backend only transports the declared representation contract. The
+                # trainer-side Client API adapts at receive/send and computes DIFF natively.
+                ConfigKey.EXCHANGE_FORMAT: context.params_exchange_format,
+                ConfigKey.SERVER_EXPECTED_FORMAT: context.server_expected_format,
+                ConfigKey.TRANSFER_TYPE: context.params_transfer_type,
                 ConfigKey.TRAIN_TASK_NAME: context.train_task_name,
                 ConfigKey.EVAL_TASK_NAME: context.evaluate_task_name,
                 ConfigKey.SUBMIT_MODEL_TASK_NAME: context.submit_model_task_name,

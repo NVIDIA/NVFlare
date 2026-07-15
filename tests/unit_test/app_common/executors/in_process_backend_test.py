@@ -28,7 +28,7 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 
 from nvflare.apis.analytix import AnalyticsDataType
-from nvflare.apis.dxo import DXO, DataKind
+from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeJobError
@@ -39,6 +39,7 @@ from nvflare.app_common.executors.client_api import in_process_backend as ipb_mo
 from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendContext
 from nvflare.app_common.executors.client_api.in_process_backend import InProcessBackend
 from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
+from nvflare.client import api as flare_api
 from nvflare.client.api_spec import CLIENT_API_KEY
 from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType
 from nvflare.client.in_process.api import (
@@ -71,20 +72,13 @@ def _backend_callbacks_subscribed(bus, backend) -> bool:
 
 @pytest.fixture(autouse=True)
 def clean_databus():
-    """The DataBus is a process singleton: isolate every test from prior subscriptions/data.
-
-    Also reset the one-backend-per-DataBus guard registry, which is keyed on that same
-    singleton — a test that initializes without finalizing would otherwise leave its claim
-    and make the next test's initialize raise "already active".
-    """
+    """The DataBus is a process singleton: isolate every test from prior subscriptions/data."""
     bus = DataBus()
     bus.subscribers.clear()
     bus.data_store.clear()
-    ipb_module._GUARD._active.clear()
     yield bus
     bus.subscribers.clear()
     bus.data_store.clear()
-    ipb_module._GUARD._active.clear()
 
 
 @pytest.fixture
@@ -132,7 +126,6 @@ def _make_fl_ctx(engine, custom_dir):
 def _make_context(executor=None, **overrides):
     kwargs = dict(
         executor=executor if executor is not None else MagicMock(),
-        execution_mode="in_process",
         task_script_path="train.py",
         task_script_args="",
         # bounded by default so a broken round trip FAILS the test instead of hanging it
@@ -172,7 +165,7 @@ class TestInitializeAndFinalize:
     def test_initialize_wires_databus_and_starts_trainer(self, clean_databus, custom_dir):
         backend, _ = _initialized_backend(custom_dir)
         try:
-            # the trainer script's flare.init() finds the API instance here
+            # The backend publishes the API instance the trainer consumes here.
             assert isinstance(clean_databus.get_data(CLIENT_API_KEY), InProcessClientAPI)
             for topic in BACKEND_TOPICS:
                 assert topic in clean_databus.subscribers, f"backend must subscribe {topic}"
@@ -180,6 +173,40 @@ class TestInitializeAndFinalize:
         finally:
             backend.finalize(FLContext())
         assert not backend._task_fn_thread.is_alive()
+
+    def test_sequential_backends_rebind_module_level_client_api(self, tmp_path, monkeypatch):
+        """A later in-process job must not reuse the APIContext closed by its predecessor."""
+        (tmp_path / "train.py").write_text(
+            "import nvflare.client as flare\n" "flare.init()\n" "while flare.is_running():\n" "    pass\n"
+        )
+        monkeypatch.setattr(flare_api, "context_dict", {})
+        monkeypatch.setattr(flare_api, "default_context", None)
+        monkeypatch.setattr(flare_api, "_runtime_shutdown", False)
+
+        first, _ = _initialized_backend(str(tmp_path))
+        deadline = time.monotonic() + 2.0
+        while (flare_api.default_context is None or flare_api.default_context.api is not first._client_api) and (
+            time.monotonic() < deadline
+        ):
+            time.sleep(0.005)
+        assert flare_api.default_context is not None
+        first_context = flare_api.default_context
+        assert first_context.api is first._client_api
+        first.finalize(FLContext())
+        assert first_context.is_shutdown
+
+        second, _ = _initialized_backend(str(tmp_path))
+        try:
+            deadline = time.monotonic() + 2.0
+            while (
+                flare_api.default_context is first_context or flare_api.default_context.api is not second._client_api
+            ) and (time.monotonic() < deadline):
+                time.sleep(0.005)
+
+            assert flare_api.default_context is not first_context
+            assert flare_api.default_context.api is second._client_api
+        finally:
+            second.finalize(FLContext())
 
     def test_initialize_unwinds_on_failure(self, clean_databus, custom_dir):
         backend = InProcessBackend()
@@ -297,6 +324,30 @@ class TestInitializeAndFinalize:
 
 
 class TestExecute:
+    def test_raw_diff_round_trip_calculates_and_sends_delta(self, clean_databus, tmp_path):
+        """RAW describes the unconverted boundary, but DIFF still sends a numerical delta."""
+        (tmp_path / "train.py").write_text(
+            "from nvflare.app_common.abstract.fl_model import FLModel\n"
+            "from nvflare.client.api_spec import CLIENT_API_KEY\n"
+            "from nvflare.fuel.data_event.data_bus import DataBus\n"
+            "api = DataBus().get_data(CLIENT_API_KEY)\n"
+            "received = api.receive(timeout=5.0)\n"
+            "if received is None:\n"
+            "    raise RuntimeError('no task received')\n"
+            "api.send(FLModel(params={'w': [4.0, 1.0]}), clear_cache=False)\n"
+        )
+        backend, fl_ctx = _initialized_backend(str(tmp_path), params_transfer_type=TransferType.DIFF)
+        try:
+            task = DXO(data_kind=DataKind.WEIGHTS, data={"w": [1.5, -2.0]}).to_shareable()
+
+            result = backend.execute("train", task, fl_ctx, Signal())
+
+            result_dxo = from_shareable(result)
+            assert result_dxo.data_kind == DataKind.WEIGHT_DIFF
+            assert result_dxo.data == {"w": [2.5, 3.0]}
+        finally:
+            backend.finalize(FLContext())
+
     def test_execute_round_trip(self, clean_databus, custom_dir):
         backend, fl_ctx = _initialized_backend(custom_dir)
         try:
@@ -482,76 +533,9 @@ class TestExecute:
         finally:
             backend.finalize(FLContext())
 
-    def test_handle_event_is_noop(self):
-        backend = InProcessBackend()
-        backend.handle_event("custom_event", FLContext())
-
-
-class TestSingleBackendGuard:
-    """V1 allows one in_process backend per client job: the process-singleton DataBus has a
-    single well-known CLIENT_API_KEY and fixed topics, so two in_process ClientAPIExecutors
-    in one job would silently overwrite each other (both trainers' flare.init() resolve the
-    last-installed API; one result fires both backends). A second backend is rejected
-    deterministically at initialize (-> executor system_panic). Mirrors the external_process
-    backend's one-backend-per-cell guard (shared SingleBackendGuard mechanism)."""
-
-    def test_second_backend_on_same_databus_is_rejected(self, clean_databus, custom_dir):
-        backend_1, _ = _initialized_backend(custom_dir)
-        try:
-            api_1 = backend_1._client_api
-            backend_2 = InProcessBackend()
-            fl_ctx = _make_fl_ctx(_make_engine(), custom_dir)
-            with pytest.raises(RuntimeError, match="already active"):
-                backend_2.initialize(_make_context(), fl_ctx)
-
-            # the loser's unwind must not disturb the winner: its CLIENT_API_KEY, its
-            # subscriptions, and its guard claim all survive
-            assert ipb_module._GUARD.owner_of(clean_databus) is backend_1
-            assert clean_databus.get_data(CLIENT_API_KEY) is api_1
-            assert _backend_callbacks_subscribed(clean_databus, backend_1)
-            assert backend_1._task_fn_thread.is_alive()
-        finally:
-            backend_1.finalize(FLContext())
-        assert ipb_module._GUARD.owner_of(clean_databus) is None
-
-    def test_claim_released_on_finalize_for_the_next_job(self, clean_databus, custom_dir):
-        """Sequential jobs in one process (simulator) must reclaim the slot."""
-        backend_1, _ = _initialized_backend(custom_dir)
-        backend_1.finalize(FLContext())
-        assert ipb_module._GUARD.owner_of(clean_databus) is None
-
-        backend_2, _ = _initialized_backend(custom_dir)
-        try:
-            assert ipb_module._GUARD.owner_of(clean_databus) is backend_2
-        finally:
-            backend_2.finalize(FLContext())
-
-    def test_claim_released_on_failed_initialize(self, clean_databus, custom_dir, monkeypatch):
-        """A backend whose initialize raises must release its claim (self-unwind), or the
-        next backend in the process could never start."""
-
-        def raising_init(self, *args, **kwargs):
-            raise RuntimeError("late boom")
-
-        monkeypatch.setattr(InProcessClientAPI, "init", raising_init)
-        backend = InProcessBackend()
-        with pytest.raises(RuntimeError, match="late boom"):
-            backend.initialize(_make_context(), _make_fl_ctx(_make_engine(), custom_dir))
-
-        assert ipb_module._GUARD.owner_of(clean_databus) is None
-        # and the slot is genuinely free: with init restored, a fresh backend can claim it
-        monkeypatch.undo()
-        backend_2, _ = _initialized_backend(custom_dir)
-        try:
-            assert ipb_module._GUARD.owner_of(clean_databus) is backend_2
-        finally:
-            backend_2.finalize(FLContext())
-
 
 class TestBackendTeardown:
-    """Single-backend teardown invariants (the guard now forbids concurrent backends, so
-    the former 'successor's CLIENT_API_KEY survives A's finalize' case is gone — the DataBus
-    cleanup below still matters for sequential jobs in one process)."""
+    """DataBus cleanup and idempotent teardown invariants."""
 
     def test_finalize_fires_stop_exactly_once(self, clean_databus, custom_dir):
         """Idempotency means no repeated side effects, not just no raise."""
@@ -688,16 +672,22 @@ class TestLogRouting:
 
 
 class TestMetaPassThrough:
-    def test_meta_uses_raw_full_and_context_task_names(self, custom_dir):
+    def test_meta_carries_declared_formats_transfer_type_and_task_names(self, custom_dir):
         backend, fl_ctx = _initialized_backend(
-            custom_dir, train_task_name="my_train", evaluate_task_name="my_eval", submit_model_task_name="my_submit"
+            custom_dir,
+            params_exchange_format=ExchangeFormat.PYTORCH,
+            server_expected_format=ExchangeFormat.NUMPY,
+            params_transfer_type=TransferType.DIFF,
+            train_task_name="my_train",
+            evaluate_task_name="my_eval",
+            submit_model_task_name="my_submit",
         )
         try:
             meta = backend._prepare_task_meta(fl_ctx, "my_train")
             exchange = meta[ConfigKey.TASK_EXCHANGE]
-            # FLARE-2698: pass-through boundary - no converter formats in the frozen surface
-            assert exchange[ConfigKey.EXCHANGE_FORMAT] == ExchangeFormat.RAW
-            assert exchange[ConfigKey.TRANSFER_TYPE] == TransferType.FULL
+            assert exchange[ConfigKey.EXCHANGE_FORMAT] == ExchangeFormat.PYTORCH
+            assert exchange[ConfigKey.SERVER_EXPECTED_FORMAT] == ExchangeFormat.NUMPY
+            assert exchange[ConfigKey.TRANSFER_TYPE] == TransferType.DIFF
             assert exchange[ConfigKey.TRAIN_TASK_NAME] == "my_train"
             assert exchange[ConfigKey.EVAL_TASK_NAME] == "my_eval"
             assert exchange[ConfigKey.SUBMIT_MODEL_TASK_NAME] == "my_submit"

@@ -14,9 +14,9 @@
 
 """Build-time validation in ClientAppConfig.add_executor.
 
-V1 supports one ClientAPIExecutor per execution mode per client job (the runtime
-SingleBackendGuard enforces the same at START_RUN); the build-time check here fails the
-misconfiguration while the config is still in the user's hands."""
+A client job supports one ClientAPIExecutor total, regardless of execution mode. The
+build-time check here fails the misconfiguration while the config is still in the user's
+hands; ClientJsonConfigurator independently covers hand-written client configs."""
 
 import pytest
 
@@ -41,18 +41,24 @@ def _external_executor():
     return ClientAPIExecutor(execution_mode="external_process", command="python custom/train.py")
 
 
-class TestOneClientAPIExecutorPerMode:
+class TestOneClientAPIExecutor:
     def test_second_same_mode_executor_is_rejected(self):
         config = ClientAppConfig()
         config.add_executor(["train"], _in_process_executor())
-        with pytest.raises(RuntimeError, match="one ClientAPIExecutor per execution mode"):
+        with pytest.raises(RuntimeError, match="only one ClientAPIExecutor.*per client job"):
             config.add_executor(["evaluate"], _in_process_executor())
 
-    def test_different_modes_may_coexist(self):
+    def test_different_modes_are_also_rejected(self):
         config = ClientAppConfig()
         config.add_executor(["train"], _in_process_executor())
-        config.add_executor(["evaluate"], _external_executor())
-        assert len(config.executors) == 2
+        with pytest.raises(RuntimeError, match="regardless of execution mode"):
+            config.add_executor(["evaluate"], _external_executor())
+
+    def test_one_executor_can_route_multiple_tasks(self):
+        config = ClientAppConfig()
+        config.add_executor(["train", "evaluate", "submit_model"], _external_executor())
+        assert len(config.executors) == 1
+        assert config.executors[0].tasks == ["train", "evaluate", "submit_model"]
 
     def test_plain_executors_are_not_restricted(self):
         config = ClientAppConfig()

@@ -34,6 +34,7 @@ Run one direct pytest suite:
 
 ```bash
 python -m pytest -v --log-cli-level=INFO --capture=no fast/study_session_test.py
+python -m pytest -v --log-cli-level=INFO --capture=no slow/external_process_e2e_test.py
 python -m pytest -v --log-cli-level=INFO --capture=no slow/preflight_check_test.py
 python -m pytest -v --log-cli-level=INFO --capture=no slow/experiment_tracking_recipes_test.py
 python -m pytest -v --log-cli-level=INFO --capture=no slow/distributed_provisioning_test.py
@@ -209,6 +210,7 @@ tests/integration_test/
   fast/
     study_session_test.py
   slow/
+    external_process_e2e_test.py
     preflight_check_test.py
     experiment_tracking_recipes_test.py
     distributed_provisioning_test.py

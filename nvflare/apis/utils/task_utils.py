@@ -15,9 +15,9 @@
 from nvflare.apis.fl_constant import FilterKey, FLContextKey
 
 
-def apply_filters(filters_name, filter_data, fl_ctx, config_filters, task_name, direction):
+def get_filters(filters_name, fl_ctx, config_filters, task_name, direction):
+    """Return the applicable scope and task filters in execution order."""
     filter_list = []
-    fl_ctx.set_prop(FLContextKey.FILTER_DIRECTION, direction, private=True, sticky=False)
     scope_object = fl_ctx.get_prop(FLContextKey.SCOPE_OBJECT)
     if scope_object:
         filters = getattr(scope_object, filters_name)
@@ -27,6 +27,12 @@ def apply_filters(filters_name, filter_data, fl_ctx, config_filters, task_name, 
     task_filter_list = config_filters.get(task_name + FilterKey.DELIMITER + direction)
     if task_filter_list:
         filter_list.extend(task_filter_list)
+    return filter_list
+
+
+def apply_filters(filters_name, filter_data, fl_ctx, config_filters, task_name, direction):
+    fl_ctx.set_prop(FLContextKey.FILTER_DIRECTION, direction, private=True, sticky=False)
+    filter_list = get_filters(filters_name, fl_ctx, config_filters, task_name, direction)
 
     if filter_list:
         for f in filter_list:

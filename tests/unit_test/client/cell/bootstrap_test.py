@@ -19,9 +19,19 @@ import os
 
 import pytest
 
-from nvflare.client.cell.bootstrap import BootstrapKey, read_bootstrap_config, write_bootstrap_config
+from nvflare.client.cell.bootstrap import (
+    BOOTSTRAP_SCHEMA_VERSION,
+    CELL_API_TYPE,
+    EXTERNAL_PROCESS_EXECUTION_MODE,
+    BootstrapKey,
+    get_bootstrap_client_api_type,
+    read_bootstrap_config,
+    write_bootstrap_config,
+)
 
 CONFIG = {
+    BootstrapKey.SCHEMA_VERSION: BOOTSTRAP_SCHEMA_VERSION,
+    BootstrapKey.EXECUTION_MODE: EXTERNAL_PROCESS_EXECUTION_MODE,
     BootstrapKey.CONNECT_URL: "tcp://127.0.0.1:56789",
     BootstrapKey.CJ_FQCN: "site-1.job-1",
     BootstrapKey.TRAINER_FQCN: "site-1.job-1.client_api_trainer_1",
@@ -58,9 +68,65 @@ class TestBootstrapConfig:
         assert os.stat(path).st_mode & 0o777 == 0o600
         assert read_bootstrap_config(path) == CONFIG
 
+    @pytest.mark.skipif(os.name == "nt", reason="creating a symlink may require elevated privileges on Windows")
+    def test_write_replaces_symlink_without_touching_target(self, tmp_path):
+        target = tmp_path / "unrelated.json"
+        target.write_text('{"owner": "other"}')
+        path = tmp_path / "bootstrap.json"
+        path.symlink_to(target)
+
+        write_bootstrap_config(str(path), CONFIG)
+
+        assert not path.is_symlink()
+        assert read_bootstrap_config(str(path)) == CONFIG
+        assert target.read_text() == '{"owner": "other"}'
+
+    def test_failed_write_preserves_existing_config_and_cleans_temp(self, tmp_path):
+        path = str(tmp_path / "bootstrap.json")
+        write_bootstrap_config(path, CONFIG)
+
+        with pytest.raises(TypeError):
+            write_bootstrap_config(path, {"not_json_serializable": object()})
+
+        assert read_bootstrap_config(path) == CONFIG
+        assert not list(tmp_path.glob(".client_api_bootstrap-*.tmp"))
+
     def test_read_rejects_non_dict_content(self, tmp_path):
         path = str(tmp_path / "bootstrap.json")
         with open(path, "w") as f:
             json.dump(["not", "a", "dict"], f)
         with pytest.raises(ValueError, match="expect a JSON dict"):
             read_bootstrap_config(path)
+
+    def test_typed_bootstrap_identifies_cell_api(self):
+        assert get_bootstrap_client_api_type(CONFIG, "bootstrap.json") == CELL_API_TYPE
+
+    def test_untyped_legacy_config_is_not_a_bootstrap(self):
+        assert get_bootstrap_client_api_type({"TASK_EXCHANGE": {}}, "legacy.json") is None
+
+    @pytest.mark.parametrize(
+        "config,match",
+        [
+            (
+                {BootstrapKey.EXECUTION_MODE: EXTERNAL_PROCESS_EXECUTION_MODE},
+                "missing required field 'schema_version'",
+            ),
+            (
+                {
+                    BootstrapKey.SCHEMA_VERSION: BOOTSTRAP_SCHEMA_VERSION,
+                    BootstrapKey.EXECUTION_MODE: "attach",
+                },
+                "unsupported Client API bootstrap execution_mode 'attach'",
+            ),
+            (
+                {
+                    BootstrapKey.SCHEMA_VERSION: BOOTSTRAP_SCHEMA_VERSION + 1,
+                    BootstrapKey.EXECUTION_MODE: EXTERNAL_PROCESS_EXECUTION_MODE,
+                },
+                "unsupported Client API bootstrap schema_version 2",
+            ),
+        ],
+    )
+    def test_typed_bootstrap_rejects_incomplete_or_unsupported_envelope(self, config, match):
+        with pytest.raises(ValueError, match=match):
+            get_bootstrap_client_api_type(config, "bootstrap.json")

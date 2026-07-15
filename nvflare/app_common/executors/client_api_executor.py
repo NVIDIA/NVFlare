@@ -23,14 +23,14 @@ backend, the trainer-side Cell engine in nvflare/client/cell, and the F3 payload
 ``attach`` is not yet implemented; selecting it fails cleanly at job startup.
 
 Unlike the legacy executors (InProcessClientAPIExecutor / ClientAPILauncherExecutor), this
-surface has no parameter-conversion args (``params_exchange_format`` /
-``params_transfer_type`` / ``server_expected_format`` / converter ids): the Client API
-boundary passes parameters through unconverted, and format conversion belongs to
-send/receive filters at the client edge. Transfer type (FULL/DIFF) is a model-registry
-concern, configured elsewhere.
+surface has no converter component ids.  It carries only declarative
+``params_exchange_format`` / ``server_expected_format`` values into ``TASK_EXCHANGE``;
+the trainer-side Client API adapts representations at receive/send. ``params_transfer_type``
+remains because FULL/DIFF is model state owned by that same API boundary.
 """
 
-from typing import Callable, Dict, Optional
+import math
+from typing import Optional
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.apis.dxo import DXO
@@ -45,6 +45,8 @@ from nvflare.apis.utils.analytix_utils import send_analytic_dxo
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendContext, ClientAPIBackendSpec
 from nvflare.app_common.widgets.convert_to_fed_event import FED_EVENT_PREFIX
+from nvflare.client.config import ExchangeFormat, TransferType
+from nvflare.client.params_conversion import normalize_exchange_format, validate_format_pair
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
 
@@ -66,6 +68,7 @@ FED_ANALYTIC_EVENT_TYPE = FED_EVENT_PREFIX + ANALYTIC_EVENT_TYPE
 # constants so the constructor default and the wrong-mode "explicitly set a non-default" checks
 # below cannot drift apart.
 _DEFAULT_LAUNCH_ONCE = True
+_DEFAULT_LAUNCH_TIMEOUT = 300.0
 _DEFAULT_STOP_GRACE_PERIOD = 30.0
 _DEFAULT_HEARTBEAT_INTERVAL = 5.0
 _DEFAULT_HEARTBEAT_TIMEOUT = 30.0
@@ -90,7 +93,7 @@ class ClientAPIExecutor(Executor):
         task_script_path: Optional[str] = None,
         task_script_args: str = "",
         launch_once: bool = _DEFAULT_LAUNCH_ONCE,
-        launch_timeout: Optional[float] = None,
+        launch_timeout: Optional[float] = _DEFAULT_LAUNCH_TIMEOUT,
         shutdown_timeout: Optional[float] = None,
         stop_grace_period: float = _DEFAULT_STOP_GRACE_PERIOD,
         heartbeat_interval: float = _DEFAULT_HEARTBEAT_INTERVAL,
@@ -101,6 +104,9 @@ class ClientAPIExecutor(Executor):
         evaluate_task_name: str = AppConstants.TASK_VALIDATION,
         submit_model_task_name: str = AppConstants.TASK_SUBMIT_MODEL,
         train_with_evaluation: bool = False,
+        params_exchange_format: ExchangeFormat = ExchangeFormat.RAW,
+        server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
+        params_transfer_type: TransferType = TransferType.FULL,
         memory_gc_rounds: int = 0,
         cuda_empty_cache: bool = False,
         attach_timeout: Optional[float] = None,
@@ -124,7 +130,8 @@ class ClientAPIExecutor(Executor):
                 vs once per task.
             launch_timeout (Optional[float]): external_process only. Bound for the launched
                 trainer to complete its HELLO/session setup (this replaces the legacy
-                external_pre_init_timeout). None means no timeout.
+                external_pre_init_timeout). Defaults to 300 seconds for compatibility with
+                ClientAPILauncherExecutor; an explicit None means no timeout.
             shutdown_timeout (Optional[float]): external_process only. How long to wait for the
                 trainer to exit naturally after an orderly SHUTDOWN before starting forced
                 process-tree termination. None means the backend default.
@@ -149,6 +156,16 @@ class ClientAPIExecutor(Executor):
                 flare.is_submit_model(). Defaults to AppConstants.TASK_SUBMIT_MODEL.
             train_with_evaluation (bool): Whether the trainer also returns evaluation metrics with
                 the trained model.
+            params_exchange_format (ExchangeFormat): Framework-native parameter representation
+                exposed by ``flare.receive()`` and accepted by ``flare.send()``. The declaration
+                is transported to the trainer in ``TASK_EXCHANGE``; the executor does not perform
+                conversion. ``RAW`` explicitly disables representation adaptation.
+            server_expected_format (ExchangeFormat): Parameter representation expected by the
+                server and by any CJ-side content filters. The declaration is transported to the
+                trainer in ``TASK_EXCHANGE``.
+            params_transfer_type (TransferType): Whether training results contain full parameters
+                or a difference from the received parameters. This is applied by the trainer-side
+                model state and is independent of framework representation conversion.
             memory_gc_rounds (int): Force a GC cycle every N rounds (0 disables).
             cuda_empty_cache (bool): Whether to also empty the CUDA cache during memory cleanup.
             attach_timeout (Optional[float]): attach only. Bound for the externally started
@@ -193,7 +210,7 @@ class ClientAPIExecutor(Executor):
         if not is_external:
             if launch_once != _DEFAULT_LAUNCH_ONCE:
                 raise self._wrong_mode_error("launch_once", launch_once, "'external_process'", execution_mode)
-            if launch_timeout is not None:
+            if launch_timeout != _DEFAULT_LAUNCH_TIMEOUT:
                 raise self._wrong_mode_error("launch_timeout", launch_timeout, "'external_process'", execution_mode)
             if shutdown_timeout is not None:
                 raise self._wrong_mode_error("shutdown_timeout", shutdown_timeout, "'external_process'", execution_mode)
@@ -213,6 +230,24 @@ class ClientAPIExecutor(Executor):
                     "heartbeat_timeout", heartbeat_timeout, "'external_process' or 'attach'", execution_mode
                 )
 
+        # A positive send cadence and a non-negative lease are required by both Cell
+        # backends. Timeout zero retains the legacy meaning "disable heartbeat checking";
+        # otherwise at least one heartbeat must fit strictly inside the miss window.
+        for name, value in (
+            ("heartbeat_interval", heartbeat_interval),
+            ("heartbeat_timeout", heartbeat_timeout),
+        ):
+            if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value):
+                raise ValueError(f"{name} must be a finite number, but got {value!r}")
+        if heartbeat_interval <= 0:
+            raise ValueError(f"heartbeat_interval must > 0, but got {heartbeat_interval}")
+        if heartbeat_timeout < 0:
+            raise ValueError(f"heartbeat_timeout must >= 0, but got {heartbeat_timeout}")
+        if 0 < heartbeat_timeout <= heartbeat_interval:
+            raise ValueError(
+                f"heartbeat_interval {heartbeat_interval} must be less than heartbeat_timeout {heartbeat_timeout}"
+            )
+
         # --- attach-only knobs ---
         if not is_attach:
             if attach_timeout is not None:
@@ -222,6 +257,24 @@ class ClientAPIExecutor(Executor):
             # also stops misfires on falsy-but-not-False values (None, 0, numpy.bool_(False)).
             if allow_reconnect:
                 raise self._wrong_mode_error("allow_reconnect", allow_reconnect, "'attach'", execution_mode)
+
+        # Reject invalid bounds before they reach threading/subprocess primitives. In
+        # particular, a negative Lock.acquire(timeout=...) can mean "wait forever",
+        # which would violate the executor's bounded-shutdown contract.
+        for name, value in (
+            ("launch_timeout", launch_timeout),
+            ("shutdown_timeout", shutdown_timeout),
+            ("stop_grace_period", stop_grace_period),
+            ("task_wait_timeout", task_wait_timeout),
+            ("result_wait_timeout", result_wait_timeout),
+            ("attach_timeout", attach_timeout),
+        ):
+            if value is not None and (
+                not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value) or value < 0
+            ):
+                raise ValueError(f"{name} must be a finite number >= 0 or None, but got {value!r}")
+        if not isinstance(memory_gc_rounds, int) or isinstance(memory_gc_rounds, bool) or memory_gc_rounds < 0:
+            raise ValueError(f"memory_gc_rounds must be an integer >= 0, but got {memory_gc_rounds!r}")
 
         self._execution_mode = execution_mode
         self._command = command
@@ -239,6 +292,15 @@ class ClientAPIExecutor(Executor):
         self._evaluate_task_name = evaluate_task_name
         self._submit_model_task_name = submit_model_task_name
         self._train_with_evaluation = train_with_evaluation
+        self._params_exchange_format = normalize_exchange_format(params_exchange_format, "params_exchange_format")
+        self._server_expected_format = normalize_exchange_format(server_expected_format, "server_expected_format")
+        validate_format_pair(self._params_exchange_format, self._server_expected_format)
+        try:
+            self._params_transfer_type = TransferType(params_transfer_type)
+        except (TypeError, ValueError) as e:
+            raise ValueError(
+                f"invalid params_transfer_type {params_transfer_type!r}: must be one of {list(TransferType)}"
+            ) from e
         self._memory_gc_rounds = memory_gc_rounds
         self._cuda_empty_cache = cuda_empty_cache
         self._attach_timeout = attach_timeout
@@ -260,6 +322,15 @@ class ClientAPIExecutor(Executor):
         """Read-only view of the configured mode, for build-time validation (fed_app_config
         rejects a second same-mode ClientAPIExecutor per client app) and diagnostics."""
         return self._execution_mode
+
+    def supports_task_data_pass_through(self) -> bool:
+        """Whether task payloads can stay lazy while traversing this executor.
+
+        Only the Cell-based external-process backend has a distinct trainer receiver. The
+        in-process backend consumes task data inside the CJ, and attach is not implemented.
+        """
+
+        return self._execution_mode == ExecutionMode.EXTERNAL_PROCESS
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
@@ -288,11 +359,6 @@ class ClientAPIExecutor(Executor):
                     self.log_error(fl_ctx, secure_format_traceback(), fire_event=False)
             super().handle_event(event_type, fl_ctx)
         else:
-            if self._backend is not None:
-                try:
-                    self._backend.handle_event(event_type, fl_ctx)
-                except Exception:
-                    self.log_error(fl_ctx, secure_format_traceback(), fire_event=False)
             super().handle_event(event_type, fl_ctx)
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
@@ -400,7 +466,6 @@ class ClientAPIExecutor(Executor):
         """Builds the frozen config snapshot handed to the backend at initialize()."""
         return ClientAPIBackendContext(
             executor=self,
-            execution_mode=self._execution_mode,
             task_script_path=self._task_script_path,
             task_script_args=self._task_script_args,
             command=self._command,
@@ -416,35 +481,23 @@ class ClientAPIExecutor(Executor):
             evaluate_task_name=self._evaluate_task_name,
             submit_model_task_name=self._submit_model_task_name,
             train_with_evaluation=self._train_with_evaluation,
+            params_exchange_format=self._params_exchange_format,
+            server_expected_format=self._server_expected_format,
+            params_transfer_type=self._params_transfer_type,
             memory_gc_rounds=self._memory_gc_rounds,
             cuda_empty_cache=self._cuda_empty_cache,
-            attach_timeout=self._attach_timeout,
-            allow_reconnect=self._allow_reconnect,
         )
 
-    def _backend_registry(self) -> Dict[str, Callable[[], ClientAPIBackendSpec]]:
-        """Internal registry mapping each execution_mode to its backend factory.
-
-        Backend PRs replace the corresponding factory below with one that returns a real
-        ClientAPIBackendSpec; the registry keys are the frozen mode names.
-        """
-        return {
-            ExecutionMode.IN_PROCESS: self._create_in_process_backend,
-            ExecutionMode.EXTERNAL_PROCESS: self._create_external_process_backend,
-            ExecutionMode.ATTACH: self._create_attach_backend,
-        }
-
     def _create_backend(self) -> ClientAPIBackendSpec:
-        registry = self._backend_registry()
-        factory = registry.get(self._execution_mode)
-        if factory is None:
-            # Unreachable via the public constructor (execution_mode is validated there);
-            # guards subclasses that override _backend_registry().
-            raise ValueError(
-                f"no backend factory registered for execution_mode '{self._execution_mode}': "
-                f"registered modes are {list(registry.keys())}"
-            )
-        return factory()
+        if self._execution_mode == ExecutionMode.IN_PROCESS:
+            return self._create_in_process_backend()
+        if self._execution_mode == ExecutionMode.EXTERNAL_PROCESS:
+            return self._create_external_process_backend()
+        if self._execution_mode == ExecutionMode.ATTACH:
+            raise NotImplementedError("attach execution mode is not yet implemented in this release")
+
+        # The constructor validates execution_mode, so this only guards corrupted internal state.
+        raise ValueError(f"unexpected execution_mode {self._execution_mode!r}")
 
     def _create_in_process_backend(self) -> ClientAPIBackendSpec:
         # Deferred import: the backend pulls in DataBus/TaskScriptRunner machinery that the
@@ -459,6 +512,3 @@ class ClientAPIExecutor(Executor):
         from nvflare.app_common.executors.client_api.external_process_backend import ExternalProcessBackend
 
         return ExternalProcessBackend()
-
-    def _create_attach_backend(self) -> ClientAPIBackendSpec:
-        raise NotImplementedError("attach execution mode is not yet implemented in this release")

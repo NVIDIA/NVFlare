@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import os
 import time
 from typing import Any, Dict, Optional
@@ -22,8 +23,9 @@ from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.client.api_spec import APISpec
-from nvflare.client.config import ClientConfig, ConfigKey, TransferType
+from nvflare.client.config import ClientConfig, ConfigKey, ExchangeFormat, TransferType
 from nvflare.client.constants import SYS_ATTRS
+from nvflare.client.params_conversion import convert_params
 from nvflare.client.utils import DIFF_FUNCS
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.data_event.event_manager import EventManager
@@ -66,6 +68,7 @@ class InProcessClientAPI(APISpec):
         self.closed = False
         self.rank = None
         self.receive_called = False  # to check if users have call received for a new model
+        self._params_conversion_state = {}
 
     def init(self, rank: Optional[str] = None, config: Optional[Dict] = None):
         """Initializes NVFlare Client API environment.
@@ -180,7 +183,17 @@ class InProcessClientAPI(APISpec):
         if model.params is None and model.metrics is None:
             raise RuntimeError("the model to send does not have either params or metrics")
 
-        shareable = FLModelUtils.to_shareable(model)
+        # DIFF is computed above in the trainer-native representation. Adapt only the
+        # shallow wire model so clear_cache=False leaves the user's FLModel native.
+        wire_model = copy.copy(model)
+        wire_model.params = convert_params(
+            model.params,
+            self.client_config.get_exchange_format() or ExchangeFormat.RAW,
+            self.client_config.get_server_expected_format(),
+            self._params_conversion_state,
+            self.logger,
+        )
+        shareable = FLModelUtils.to_shareable(wire_model)
         self.event_manager.fire_event(TOPIC_LOCAL_RESULT, shareable)
 
         if clear_cache:
@@ -258,17 +271,21 @@ class InProcessClientAPI(APISpec):
         exchange_format = self.client_config.get_exchange_format()
         diff_func = DIFF_FUNCS.get(exchange_format, None)
 
+        # RAW keeps the direct ClientAPIExecutor compatibility behavior: its payload is
+        # unadapted, but the historical generic numerical diff still applies.
+        if diff_func is None and exchange_format == ExchangeFormat.RAW:
+            diff_func = DIFF_FUNCS.get(ExchangeFormat.NUMPY)
+
         if diff_func is None:
             raise RuntimeError(f"no default params diff function for {exchange_format}")
         elif self.fl_model is None:
             raise RuntimeError("no received model")
-        elif self.fl_model.params is not None:
-            if model.params_type == ParamsType.FULL:
-                try:
-                    model.params = diff_func(original=self.fl_model.params, new=model.params)
-                    model.params_type = ParamsType.DIFF
-                except Exception as e:
-                    raise RuntimeError(f"params diff function failed: {e}")
+        elif self.fl_model.params is not None and model.params is not None and model.params_type == ParamsType.FULL:
+            try:
+                model.params = diff_func(original=self.fl_model.params, new=model.params)
+                model.params_type = ParamsType.DIFF
+            except Exception as e:
+                raise RuntimeError(f"params diff function failed: {e}") from e
 
         return model
 
@@ -278,6 +295,14 @@ class InProcessClientAPI(APISpec):
             raise ValueError(f"expecting a Shareable, but got '{type(data)}'")
 
         fl_model = FLModelUtils.from_shareable(data)
+        exchange = self.client_config.get_exchange_format() or ExchangeFormat.RAW
+        fl_model.params = convert_params(
+            fl_model.params,
+            self.client_config.get_server_expected_format(),
+            exchange,
+            self._params_conversion_state,
+            self.logger,
+        )
         self.fl_model = fl_model
 
     def __ask_to_abort(self, topic, msg, databus):

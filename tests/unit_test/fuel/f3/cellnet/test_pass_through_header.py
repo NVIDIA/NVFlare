@@ -16,24 +16,26 @@
 Unit tests for the PASS_THROUGH mechanism (Design 1: receiver-side opt-in).
 
 PASS_THROUGH activates LazyDownloadRef decode so tensors are not downloaded at
-an intermediate hop.  It can be triggered by two independent sources:
+an intermediate hop. It can be triggered by three independent sources:
 
   1. Per-message header: MessageHeaderKey.PASS_THROUGH stamped by the sender
-     (e.g. subprocess-side CellPipe with pass_through_on_send=True stamps this
-     on result messages so CJ decodes them as LazyDownloadRef for the reverse
-     path: subprocess → CJ → server direct download).
+     (e.g. the external trainer stamps RESULT_READY so CJ decodes it as a
+     LazyDownloadRef for the reverse trainer → CJ → server path).
 
   2. Per-channel receiver opt-in: the channel name is added to
-     cell.decode_pass_through_channels by ClientAPILauncherExecutor.initialize().
+     cell.decode_pass_through_channels by a receiver that intentionally opts an
+     entire channel into lazy decode.
      When a message arrives on that channel it is decoded with PASS_THROUGH=True
      regardless of the sender header, enabling the forward path
-     (server/aggregator → CJ → subprocess direct download) without the server
-     needing to stamp anything.  Each job registers only its own pipe channel,
-     so concurrent jobs with different channels are unaffected.
+     without the sender needing to stamp anything.
 
-Either source activates PASS_THROUGH; both can coexist.  For channels not in
-decode_pass_through_channels (the default — in-process executors, subprocess),
-only an explicit sender header triggers PASS_THROUGH.
+  3. Exact receiver route opt-in: a ``(channel, topic)`` pair is added to
+     ``cell.decode_pass_through_topics``. ClientRunner uses only
+     ``(SERVER_COMMAND, GET_TASK)`` for the external backend, so sibling server
+     commands keep ordinary eager decode.
+
+Any source activates PASS_THROUGH and they can coexist. For routes without an
+opt-in, only an explicit sender header triggers PASS_THROUGH.
 
 Tests verify:
 
@@ -75,7 +77,9 @@ from nvflare.fuel.utils.waiter_utils import WaiterRC
 _TEST_CHANNEL = "aux_communication"
 
 
-def _make_mock_cell(captured_ctx: dict, decode_pass_through_channels: set = None):
+def _make_mock_cell(
+    captured_ctx: dict, decode_pass_through_channels: set = None, decode_pass_through_topics: set = None
+):
     """Return a mock Cell whose get_fobs_context() captures the props it receives.
 
     decode_pass_through_channels mirrors Cell.decode_pass_through_channels.
@@ -86,6 +90,7 @@ def _make_mock_cell(captured_ctx: dict, decode_pass_through_channels: set = None
     cell.decode_pass_through_channels = (
         decode_pass_through_channels if decode_pass_through_channels is not None else set()
     )
+    cell.decode_pass_through_topics = decode_pass_through_topics if decode_pass_through_topics is not None else set()
 
     def _get_fobs_context(props=None):
         ctx = {}
@@ -107,9 +112,13 @@ def _make_future(headers: dict, payload=b""):
     return future
 
 
-def _make_adapter(captured_ctx: dict, decode_pass_through_channels: set = None):
+def _make_adapter(captured_ctx: dict, decode_pass_through_channels: set = None, decode_pass_through_topics: set = None):
     """Return an Adapter backed by a mock cell and a trivial callback."""
-    cell = _make_mock_cell(captured_ctx, decode_pass_through_channels=decode_pass_through_channels)
+    cell = _make_mock_cell(
+        captured_ctx,
+        decode_pass_through_channels=decode_pass_through_channels,
+        decode_pass_through_topics=decode_pass_through_topics,
+    )
     cb = MagicMock(return_value=MagicMock())
     return Adapter(cb=cb, my_info=None, cell=cell)
 
@@ -251,6 +260,34 @@ class TestAdapterPassThroughHeader:
         assert (
             captured.get(FOBSContextKey.PASS_THROUGH) is False
         ), "A channel not in decode_pass_through_channels must not activate PASS_THROUGH."
+
+    def test_exact_channel_topic_route_does_not_affect_sibling_topic(self):
+        captured = {}
+        adapter = _make_adapter(
+            captured,
+            decode_pass_through_topics={(_TEST_CHANNEL, ServerCommandNames.GET_TASK)},
+        )
+        headers = _headers_without_pass_through()
+        headers[StreamHeaderKey.TOPIC] = ServerCommandNames.SUBMIT_UPDATE
+
+        with patch("nvflare.fuel.f3.cellnet.cell.decode_payload"):
+            adapter.call(_make_future(headers))
+
+        assert captured.get(FOBSContextKey.PASS_THROUGH) is False
+
+    def test_exact_channel_topic_route_activates_pass_through(self):
+        captured = {}
+        adapter = _make_adapter(
+            captured,
+            decode_pass_through_topics={(_TEST_CHANNEL, ServerCommandNames.GET_TASK)},
+        )
+        headers = _headers_without_pass_through()
+        headers[StreamHeaderKey.TOPIC] = ServerCommandNames.GET_TASK
+
+        with patch("nvflare.fuel.f3.cellnet.cell.decode_payload"):
+            adapter.call(_make_future(headers))
+
+        assert captured.get(FOBSContextKey.PASS_THROUGH) is True
 
     def test_decode_payload_receives_the_per_call_decode_ctx(self):
         """decode_payload must be called with the per-call decode_ctx, not None."""
@@ -620,7 +657,9 @@ class TestPassThroughDirectionContract:
 _SEND_REQ_CHANNEL = "ch"
 
 
-def _make_cell_stub(captured_ctx: dict, decode_pass_through_channels: set = None):
+def _make_cell_stub(
+    captured_ctx: dict, decode_pass_through_channels: set = None, decode_pass_through_topics: set = None
+):
     """Minimal stub for Cell._send_one_request() — only the attributes that
     method touches are initialised; everything else stays as MagicMock."""
     cell = MagicMock(spec=Cell)
@@ -628,6 +667,7 @@ def _make_cell_stub(captured_ctx: dict, decode_pass_through_channels: set = None
     cell.decode_pass_through_channels = (
         decode_pass_through_channels if decode_pass_through_channels is not None else set()
     )
+    cell.decode_pass_through_topics = decode_pass_through_topics if decode_pass_through_topics is not None else set()
     cell.logger = MagicMock()
     cell._future_wait.return_value = True  # both sending-complete and receiving-complete
     cell._get_result.return_value = MagicMock()
@@ -643,7 +683,7 @@ def _make_cell_stub(captured_ctx: dict, decode_pass_through_channels: set = None
     return cell
 
 
-def _run_send_one_request(cell_stub, reply_headers: dict):
+def _run_send_one_request(cell_stub, reply_headers: dict, topic: str = "topic"):
     """Drive Cell._send_one_request() with a fake reply carrying reply_headers.
 
     Patches SimpleWaiter so we can inject reply_headers into the receiving
@@ -664,7 +704,7 @@ def _run_send_one_request(cell_stub, reply_headers: dict):
         patch("nvflare.fuel.f3.cellnet.cell.conditional_wait", return_value=WaiterRC.IS_SET),
         patch("nvflare.fuel.f3.cellnet.cell.decode_payload"),
     ):
-        Cell._send_one_request(cell_stub, _SEND_REQ_CHANNEL, "target", "topic", request, timeout=5.0)
+        Cell._send_one_request(cell_stub, _SEND_REQ_CHANNEL, "target", topic, request, timeout=5.0)
 
 
 class TestSendOneRequestPassThrough:
@@ -707,6 +747,28 @@ class TestSendOneRequestPassThrough:
         assert (
             captured.get(FOBSContextKey.PASS_THROUGH) is False
         ), "Empty decode_pass_through_channels + no reply header must give PASS_THROUGH=False."
+
+    def test_exact_channel_topic_route_only_decodes_matching_reply_lazily(self):
+        captured = {}
+        cell = _make_cell_stub(
+            captured,
+            decode_pass_through_topics={(_SEND_REQ_CHANNEL, "topic")},
+        )
+
+        _run_send_one_request(cell, reply_headers={})
+
+        assert captured.get(FOBSContextKey.PASS_THROUGH) is True
+
+    def test_exact_channel_topic_route_does_not_decode_sibling_reply_lazily(self):
+        captured = {}
+        cell = _make_cell_stub(
+            captured,
+            decode_pass_through_topics={(_SEND_REQ_CHANNEL, ServerCommandNames.GET_TASK)},
+        )
+
+        _run_send_one_request(cell, reply_headers={}, topic=ServerCommandNames.SUBMIT_UPDATE)
+
+        assert captured.get(FOBSContextKey.PASS_THROUGH) is False
 
     def test_reply_header_true_with_channel_not_registered_gives_pass_through_true(self):
         """Reply carries PASS_THROUGH=True header + channel not registered → PASS_THROUGH=True.

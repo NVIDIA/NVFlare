@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import os
-import re
 import signal
 import subprocess
 from threading import Lock, Thread
@@ -25,184 +24,17 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.launcher import Launcher, LauncherRunStatus
 from nvflare.fuel.utils.log_utils import get_obj_logger
-from nvflare.fuel.utils.secret_utils import has_secret_refs, resolve_secret_refs, split_command_preserving_secret_refs
 from nvflare.utils.job_launcher_utils import add_custom_dir_to_path
+from nvflare.utils.process_utils import _get_line as get_line  # noqa: F401 - compatibility export
+from nvflare.utils.process_utils import (  # noqa: F401 - _route_subprocess_line compatibility export
+    _route_subprocess_line,
+    log_subprocess_output,
+    prepare_subprocess_command,
+)
 
-
-def get_line(buffer: bytearray):
-    """Read a line from the binary buffer. It treats all combinations of \n and \r as line breaks.
-
-    Args:
-        buffer: A binary buffer
-
-    Returns:
-        (line, remaining): Return the first line as str and the remaining buffer.
-        line is None if no newline found
-
-    """
-    size = len(buffer)
-    r = buffer.find(b"\r")
-    if r < 0:
-        r = size + 1
-    n = buffer.find(b"\n")
-    if n < 0:
-        n = size + 1
-    index = min(r, n)
-
-    if index >= size:
-        return None, buffer
-
-    # if \r and \n are adjacent, treat them as one
-    if abs(r - n) == 1:
-        index = index + 1
-
-    line = buffer[:index].decode().rstrip()
-    if index >= size - 1:
-        remaining = bytearray()
-    else:
-        remaining = buffer[index + 1 :]
-    return line, remaining
-
-
-# Matches the start of a formatted NVFlare log line after stripping ANSI color
-# codes: "YYYY-MM-DD HH:MM:SS" produced by BaseFormatter / ColorFormatter.
-# Lines from the subprocess consoleHandler match this; raw print() lines do not.
-_ANSI_ESC_RE = re.compile(r"\x1b\[[0-9;]*m")
-_LOG_LINE_RE = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}")
-_SHELL_COMMAND_INTERPRETERS = frozenset({"sh", "bash"})
-_POWERSHELL_COMMAND_INTERPRETERS = frozenset({"powershell", "pwsh"})
-_ENV_COMMAND_WRAPPERS = frozenset({"env"})
-_SHELL_OPTIONS_WITH_VALUE = frozenset({"-o", "-O", "--init-file", "--rcfile"})
-
-
-def _command_basename(command: str) -> str:
-    """Return a command basename for either POSIX or Windows-style paths."""
-    return command.replace("\\", "/").rsplit("/", maxsplit=1)[-1]
-
-
-def _raise_nested_command_secret_ref(interpreter: str, option: str) -> None:
-    detail = f"{interpreter} {option}"
-    raise ValueError(f"secret references are not supported in nested interpreter command strings ({detail})")
-
-
-def _unwrap_env_commands(command_seq: list[str]) -> list[str]:
-    """Unwrap simple leading env commands without guessing option operands."""
-    while command_seq and _command_basename(command_seq[0]).casefold().removesuffix(".exe") in _ENV_COMMAND_WRAPPERS:
-        interpreter = _command_basename(command_seq[0])
-        command_seq = command_seq[1:]
-        parse_options = True
-        while command_seq:
-            option = command_seq[0]
-            if parse_options and option == "--":
-                command_seq = command_seq[1:]
-                parse_options = False
-                continue
-            if "=" in option and not option.startswith(("-", "=")):
-                command_seq = command_seq[1:]
-                continue
-            if not parse_options:
-                break
-            if option in {"-i", "--ignore-environment"}:
-                command_seq = command_seq[1:]
-                continue
-            if option.startswith("-"):
-                if any(has_secret_refs(arg) for arg in command_seq):
-                    _raise_nested_command_secret_ref(interpreter, option)
-                return []
-            break
-    return command_seq
-
-
-def _reject_shell_command_refs(command_seq: list[str], interpreter: str) -> None:
-    index = 1
-    while index < len(command_seq):
-        option = command_seq[index]
-        if option == "--" or not option.startswith("-"):
-            return
-        # POSIX shells allow short options to be combined, for example ``bash -lc``.
-        if not option.startswith("--") and "c" in option[1:]:
-            command_index = index + 1
-            if has_secret_refs(option) or (
-                command_index < len(command_seq) and has_secret_refs(command_seq[command_index])
-            ):
-                _raise_nested_command_secret_ref(interpreter, option)
-            return
-        index += 2 if option in _SHELL_OPTIONS_WITH_VALUE else 1
-
-
-def _reject_powershell_code_refs(command_seq: list[str], interpreter: str) -> None:
-    for index, option in enumerate(command_seq[1:], start=1):
-        normalized_option = option.casefold()
-        if option == "--" or not option.startswith("-") or normalized_option in {"-file", "-f"}:
-            return
-        if normalized_option in {"-command", "-c"}:
-            if any(has_secret_refs(arg) for arg in command_seq[index + 1 :]):
-                _raise_nested_command_secret_ref(interpreter, option)
-            return
-        if normalized_option in {"-encodedcommand", "-e", "-ec", "-enc"}:
-            if index + 1 < len(command_seq) and has_secret_refs(command_seq[index + 1]):
-                _raise_nested_command_secret_ref(interpreter, option)
-            return
-        if any(has_secret_refs(arg) for arg in command_seq[index:]):
-            _raise_nested_command_secret_ref(interpreter, option)
-        return
-
-
-def _reject_secret_refs_in_nested_command(command_seq: list[str]) -> None:
-    """Reject refs in code strings for direct or explicitly env-wrapped shell interpreters."""
-    command_seq = _unwrap_env_commands(command_seq)
-    if not command_seq:
-        return
-
-    interpreter = _command_basename(command_seq[0])
-    normalized_interpreter = interpreter.casefold().removesuffix(".exe")
-    if normalized_interpreter in _SHELL_COMMAND_INTERPRETERS:
-        _reject_shell_command_refs(command_seq, interpreter)
-    elif normalized_interpreter in _POWERSHELL_COMMAND_INTERPRETERS:
-        _reject_powershell_code_refs(command_seq, interpreter)
-
-
-def _prepare_command(command: str) -> list[str]:
-    command_seq = split_command_preserving_secret_refs(command, posix=True)
-    _reject_secret_refs_in_nested_command(command_seq)
-    return [resolve_secret_refs(token) for token in command_seq]
-
-
-def _route_subprocess_line(line: str, logger) -> None:
-    """Route one stdout line from the subprocess to the right destination.
-
-    Formatted log lines (from the subprocess consoleHandler) are already written
-    to the shared log files by the subprocess file handler, so we just print them
-    to the terminal for interactive visibility.  Raw print() lines from user
-    training scripts have no timestamp, so we wrap them with logger.info() to
-    ensure they reach both the terminal and log.txt.
-    """
-    plain = _ANSI_ESC_RE.sub("", line)
-    if _LOG_LINE_RE.match(plain):
-        print(line)
-    else:
-        logger.info(line)
-
-
-def log_subprocess_output(process, logger):
-
-    buffer = bytearray()
-    while True:
-        chunk = process.stdout.read1(4096)
-        if not chunk:
-            break
-        buffer = buffer + chunk
-
-        while True:
-            line, buffer = get_line(buffer)
-            if line is None:
-                break
-
-            if line:
-                _route_subprocess_line(line, logger)
-
-    if buffer:
-        _route_subprocess_line(buffer.decode(), logger)
+# Compatibility aliases for callers/tests that import the legacy launcher's helpers.
+# Their implementation is neutral and shared with ExternalProcessBackend now.
+_prepare_command = prepare_subprocess_command
 
 
 class SubprocessLauncher(Launcher):

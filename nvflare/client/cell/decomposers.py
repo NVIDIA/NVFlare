@@ -15,10 +15,10 @@
 """Framework decomposer registration shared by the external_process CJ backend and trainer engine.
 
 Both ends of an external_process job may need to serialize framework-native tensors across the
-Cell (the CJ serializes the model to the trainer when a client-edge conversion filter produced
-torch tensors; the trainer serializes the result back), so both register the same framework
-decomposers. Registration is opportunistic: a framework that is not installed is skipped, and the
-numpy/FLModel path needs nothing beyond the standard decomposers.
+Cell when the declared server representation is native or ``RAW``. The trainer also serializes
+native results before its Client API boundary adapts them when required, so both ends register the
+same framework decomposers. Registration is opportunistic: a framework that is not installed is
+skipped, and the numpy/FLModel path needs nothing beyond the standard decomposers.
 """
 
 # (module_path, class_name) of each framework's tensor decomposer, mirroring what the legacy

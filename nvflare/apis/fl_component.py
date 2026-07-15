@@ -137,6 +137,30 @@ class FLComponent(StatePersistable):
         """
         pass
 
+    def requires_materialized_task_data(self, task_name: str) -> bool:
+        """Whether this client event component requires concrete task data.
+
+        External-process Client API task data can pass through the client job as FOBS
+        ``LazyDownloadRef`` values so the trainer downloads directly from the server. A
+        component that consumes ``FLContextKey.TASK_DATA`` during client task-data events
+        must override this method and return ``True`` for each task it reads. Observation-only
+        components should keep the default ``False`` so they do not force materialization and
+        an additional client-job copy.
+        """
+        return False
+
+    def requires_materialized_task_result(self, task_name: str) -> bool:
+        """Whether this client event component requires a concrete task result.
+
+        External-process Client API results can pass through the client job as FOBS
+        ``LazyDownloadRef`` values so the final receiver downloads directly from the
+        trainer. A component that consumes ``FLContextKey.TASK_RESULT`` during client
+        result events must override this method and return ``True`` for each task whose
+        result it reads. Observation-only components should keep the default ``False`` so
+        they do not force materialization and an additional CJ copy.
+        """
+        return False
+
     def log_info(self, fl_ctx: FLContext, msg: str, fire_event=False):
         """Logs a message with logger.info.
 

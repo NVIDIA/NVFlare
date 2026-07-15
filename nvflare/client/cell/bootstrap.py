@@ -31,6 +31,7 @@ contrast.
 
 import json
 import os
+import tempfile
 
 # Environment variable the backend sets on the launched trainer process; its value is the
 # absolute path of the bootstrap config file.
@@ -41,6 +42,16 @@ BOOTSTRAP_FILE_ENV_VAR = "NVFLARE_CLIENT_API_BOOTSTRAP"
 # by ClientAPIType.CELL_API in nvflare/client/api_context.py.
 CELL_API_TYPE = "CELL_API"
 
+# Version of the typed bootstrap-file envelope.  This is separate from PROTOCOL_VERSION:
+# the former controls how flare.init() identifies and parses this persisted rendezvous file,
+# while the latter controls messages exchanged after the Cell session is established.
+BOOTSTRAP_SCHEMA_VERSION = 1
+
+# Supported execution mode for this first typed bootstrap contract. Attach will use the
+# same Cell Client API engine later, but has a different authentication/session contract
+# and must not be accepted accidentally before that mode is implemented.
+EXTERNAL_PROCESS_EXECUTION_MODE = "external_process"
+
 # Bootstrap files are readable/writable by the owner only: the launch token must not be
 # readable by other local users (same rationale as nvflare/client/config.py).
 BOOTSTRAP_FILE_PERMISSION = 0o600
@@ -48,6 +59,11 @@ BOOTSTRAP_FILE_PERMISSION = 0o600
 
 class BootstrapKey:
     """Keys of the bootstrap config file. Frozen file contract shared with the trainer engine."""
+
+    # Self-identifying envelope. These fields let ``flare.init(config_file=...)`` distinguish
+    # this file from the legacy ExProcess Client API config without relying on inherited env.
+    SCHEMA_VERSION = "schema_version"
+    EXECUTION_MODE = "execution_mode"
 
     # Cell construction: the URL the trainer's child cell connects to (the CJ cell's
     # internal listener) and the exact FQCN the child cell must bind. The backend
@@ -76,24 +92,84 @@ class BootstrapKey:
     CUDA_EMPTY_CACHE = "cuda_empty_cache"
 
 
+def get_bootstrap_client_api_type(config: dict, path: str = "<bootstrap config>") -> str | None:
+    """Returns the Client API type selected by a typed bootstrap config.
+
+    An untyped dict is deliberately returned as ``None`` so legacy ExProcess configs retain
+    their existing environment-based selection. If either typed-envelope marker is present,
+    however, both markers must be valid: silently treating a malformed or future bootstrap as
+    a legacy config could start the wrong Client API engine with misleading downstream errors.
+
+    Args:
+        config: parsed JSON config dict.
+        path: source path used in validation errors.
+
+    Returns:
+        ``CELL_API_TYPE`` for the supported Cell bootstrap, or ``None`` for an untyped config.
+
+    Raises:
+        ValueError: if the typed envelope is incomplete or unsupported.
+    """
+    has_schema = BootstrapKey.SCHEMA_VERSION in config
+    has_execution_mode = BootstrapKey.EXECUTION_MODE in config
+    if not has_schema and not has_execution_mode:
+        return None
+    if not has_schema or not has_execution_mode:
+        missing = BootstrapKey.SCHEMA_VERSION if not has_schema else BootstrapKey.EXECUTION_MODE
+        raise ValueError(f"invalid Client API bootstrap config {path}: missing required field {missing!r}")
+
+    schema_version = config[BootstrapKey.SCHEMA_VERSION]
+    if type(schema_version) is not int or schema_version != BOOTSTRAP_SCHEMA_VERSION:
+        raise ValueError(
+            f"unsupported Client API bootstrap schema_version {schema_version!r} in {path}; "
+            f"supported version is {BOOTSTRAP_SCHEMA_VERSION}"
+        )
+
+    execution_mode = config[BootstrapKey.EXECUTION_MODE]
+    if execution_mode != EXTERNAL_PROCESS_EXECUTION_MODE:
+        raise ValueError(
+            f"unsupported Client API bootstrap execution_mode {execution_mode!r} in {path}; "
+            f"supported mode is {EXTERNAL_PROCESS_EXECUTION_MODE!r}"
+        )
+    return CELL_API_TYPE
+
+
 def write_bootstrap_config(path: str, config: dict) -> None:
     """Writes the bootstrap config file with owner-only permission (0600).
 
-    The file is created (or truncated) with mode 0600 atomically at open time, so the
-    launch token is never observable at a wider mode. An os.fchmod follows for the
-    pre-existing-file case, where the open mode argument does not apply.
+    The content is first written to an owner-only sibling temporary file and then
+    atomically replaces the destination. This keeps a valid existing bootstrap intact
+    when serialization fails and replaces, rather than follows, a planted destination
+    symlink.
 
     Args:
         path: absolute path of the bootstrap config file.
         config: the bootstrap config dict (BootstrapKey keys).
     """
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, BOOTSTRAP_FILE_PERMISSION)
-    with os.fdopen(fd, "w") as f:
+    target_path = os.path.abspath(path)
+    config_dir = os.path.dirname(target_path)
+    fd, tmp_path = tempfile.mkstemp(dir=config_dir, prefix=".client_api_bootstrap-", suffix=".tmp")
+    fd_owned = True
+    try:
         if hasattr(os, "fchmod"):
-            # Unix-only before Python 3.13; on Windows the POSIX permission model does not
-            # apply (the O_CREAT mode above already bounds fresh-file permissions on POSIX)
+            # mkstemp already creates 0600 on POSIX; set it explicitly as part of the
+            # persisted credential contract.
             os.fchmod(fd, BOOTSTRAP_FILE_PERMISSION)
-        json.dump(config, f, indent=2)
+        with os.fdopen(fd, "w") as f:
+            fd_owned = False
+            json.dump(config, f, indent=2)
+        os.replace(tmp_path, target_path)
+    except BaseException:
+        if fd_owned:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        try:
+            os.remove(tmp_path)
+        except FileNotFoundError:
+            pass
+        raise
 
 
 def read_bootstrap_config(path: str) -> dict:

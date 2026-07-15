@@ -43,4 +43,8 @@ def numerical_params_diff(original: Dict, new: Dict) -> Dict:
     return diff_dict
 
 
-DIFF_FUNCS = {ExchangeFormat.PYTORCH: numerical_params_diff, ExchangeFormat.NUMPY: numerical_params_diff}
+DIFF_FUNCS = {
+    ExchangeFormat.PYTORCH: numerical_params_diff,
+    ExchangeFormat.NUMPY: numerical_params_diff,
+    ExchangeFormat.KERAS_LAYER_WEIGHTS: numerical_params_diff,
+}

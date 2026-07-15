@@ -13,10 +13,9 @@
 # limitations under the License.
 """Protocol vocabulary for the Client API control protocol over Cell.
 
-This module is the frozen control-protocol vocabulary of the Client API Execution
-Modes design (docs/design/client_api_execution_modes.md, "Control Protocol"). It is consumed by the
-trainer-side Cell engine, the external_process backend, and the attach backend. It is a
-pure vocabulary module: constants only, no Cell/cellnet imports, no I/O.
+This module is the control-protocol vocabulary implemented by the trainer-side Cell
+engine and the external-process backend. It is a pure vocabulary module: constants
+only, no Cell/cellnet imports and no I/O.
 """
 
 # Cell channel used for all Client API control protocol messages.
@@ -34,10 +33,8 @@ PROTOCOL_VERSION = 1
 class Topic:
     """Topics of the Client API control protocol messages over the Cell CHANNEL.
 
-    Reply-type messages (HELLO_CHALLENGE, HELLO_ACCEPTED, TASK_ACCEPTED, RESULT_ACCEPTED,
-    RESULT_REJECTED) may be modeled as Cell request replies at runtime rather than separate
-    sends; the constants still name them so state machines, logs, and tests share one
-    vocabulary.
+    Reply-type messages (HELLO_ACCEPTED, TASK_ACCEPTED, RESULT_ACCEPTED and
+    RESULT_REJECTED) are modeled as Cell request replies rather than separate sends.
 
     Values are prefixed with "client_api." so they never collide with legacy topic values
     (e.g. "hello"/"heartbeat"/"abort"/"bye" in nvflare/client/ipc/defs.py).
@@ -45,8 +42,6 @@ class Topic:
 
     # Session setup (all out-of-process modes)
     HELLO = "client_api.hello"
-    HELLO_CHALLENGE = "client_api.hello_challenge"
-    HELLO_PROOF = "client_api.hello_proof"
     HELLO_ACCEPTED = "client_api.hello_accepted"
     # Distinct from ERROR (a protocol/transport error): HELLO_REJECTED is a clean, semantic
     # auth/handshake refusal (bad proof, wrong scope, consumed/expired nonce, single-session),
@@ -56,10 +51,6 @@ class Topic:
     # Per task (every round)
     TASK_READY = "client_api.task_ready"
     TASK_ACCEPTED = "client_api.task_accepted"
-    # Sent when the trainer has materialized (or lazily bound) the task payload and hands
-    # it to user code. Ends the payload-materialization phase: the forward-path heartbeat
-    # exemption stops here and heartbeats govern the session lease while user code trains.
-    TASK_PAYLOAD_READY = "client_api.task_payload_ready"
     TASK_FAILED = "client_api.task_failed"
     RESULT_READY = "client_api.result_ready"
     RESULT_ACCEPTED = "client_api.result_accepted"
@@ -72,46 +63,46 @@ class Topic:
     # Teardown / failure
     ABORT = "client_api.abort"
     SHUTDOWN = "client_api.shutdown"
-    BYE = "client_api.bye"
     ERROR = "client_api.error"
 
 
 class MsgKey:
     """Keys for Client API control protocol message payloads.
 
-    These string values are the frozen wire contract shared across tracks; renaming a value is
-    a protocol break, not a refactor.
+    These string values are the implemented wire contract; renaming a value is a protocol
+    break, not a refactor.
     """
 
     SESSION_ID = "session_id"
-    ATTACH_ID = "attach_id"
     JOB_ID = "job_id"
     SITE_NAME = "site_name"
     TRAINER_FQCN = "trainer_fqcn"
-    TARGET_FQCN = "target_fqcn"
     RANK = "rank"
-    # Rank policy the session is scoped to (a TokenScope / HELLO_PROOF-covered field);
-    # distinct from RANK, which is the concrete rank a trainer reports in HELLO.
-    RANK_POLICY = "rank_policy"
     PROTOCOL_VERSION = "protocol_version"
-    NONCE = "nonce"
     PROOF = "proof"
     REASON = "reason"
     TASK_ID = "task_id"
     # TASK_READY carries the task name alongside the task id.
     TASK_NAME = "task_name"
-    # TASK_READY carries the FLModel reference and its params (lazy refs, not materialized bytes).
+    # TASK_READY carries the task Shareable. Cell/FOBS decides whether its payload is inline
+    # or represented by a ViaDownloader reference.
     MODEL = "model"
-    PARAMS = "params"
     RESULT_ID = "result_id"
-    TRANSFER_ID = "transfer_id"
-    # RESULT_READY carries the payload manifest describing the result envelope.
-    MANIFEST = "manifest"
+    # The task/result Shareables ride directly in their Cell requests. Cell's FOBS
+    # encoder selects inline encoding or ViaDownloader references as appropriate.
+    RESULT = "result"
+    # SHUTDOWN reply truth: True while flare.send() still owns the accepted-result
+    # publication barrier, including the RESULT_ACCEPTED reply race for an inline result;
+    # False once the send barrier has cleared. The CJ may then use ordinary bounded
+    # process-exit grace before signaling the process group. This closes the
+    # final-send/END_RUN race without a timer or a second control topic.
+    RESULT_SOURCE_LIVE = "result_source_live"
+    # Authenticated session policy returned in HELLO_ACCEPTED. A zero timeout disables
+    # heartbeat lease enforcement for compatibility with legacy jobs that explicitly
+    # disabled PipeHandler heartbeat checking.
+    HEARTBEAT_INTERVAL = "heartbeat_interval"
+    HEARTBEAT_TIMEOUT = "heartbeat_timeout"
     # Reply-type messages (see the Topic docstring) ride Cell request replies; the reply
     # body carries its protocol topic under this key so state machines can tell e.g.
     # HELLO_ACCEPTED from HELLO_REJECTED without a separate wire message.
     REPLY_TOPIC = "reply_topic"
-    # MODEL (TASK_READY) and MANIFEST (RESULT_READY) entries carry the F3 download ref ids
-    # of the payload under this key (the transfer_id -> ref_ids mapping of the design's
-    # Payload Lifecycle section).
-    REF_IDS = "ref_ids"
