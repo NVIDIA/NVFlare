@@ -250,6 +250,19 @@ def _validate_report_filename(filename, arg_name: str):
         raise ValueError(f"{arg_name} must not contain '..' components: '{filename}'")
 
 
+def _validate_distinct_report_filenames(filenames: Dict[str, Optional[str]]) -> None:
+    """Reject report names that normalize to the same path before any files are written."""
+    resolved = {}
+    for arg_name, filename in filenames.items():
+        if filename is None:
+            continue
+        normalized = os.path.normcase(os.path.normpath(filename))
+        previous = resolved.get(normalized)
+        if previous:
+            raise ValueError(f"{arg_name} and {previous} resolve to the same report path: '{filename}'")
+        resolved[normalized] = arg_name
+
+
 def _prepare_output_path(run_dir: str, filename: str) -> str:
     """Resolve an output path strictly under the run directory and ensure its subdirectory exists."""
     root = os.path.realpath(run_dir)
@@ -371,7 +384,6 @@ class _ResourceSampler:
 
             self.psutil = psutil
             self.process = psutil.Process()
-            self.process.cpu_percent(interval=None)
         except Exception:
             self.psutil = None
             self.process = None
@@ -402,15 +414,44 @@ class _ResourceSampler:
         while not self.stop_event.wait(self.interval):
             self._sample(include_cpu=True)
 
+    def _process_family(self) -> list:
+        """Return the live client process and its descendants."""
+        if not self.process:
+            return []
+        processes = [self.process]
+        try:
+            processes.extend(self.process.children(recursive=True))
+        except Exception:
+            pass
+        return processes
+
     def _sample(self, include_cpu: bool):
         sample = {"time": time.time()}
-        if self.process:
-            try:
-                sample["memory_rss_mb"] = self.process.memory_info().rss / _MB
-                if include_cpu:
-                    sample["cpu_percent"] = self.process.cpu_percent(interval=None)
-            except Exception:
-                pass
+        processes = self._process_family()
+        if processes:
+            memory_rss_mb = 0.0
+            memory_observed = False
+            cpu_percent = 0.0
+            cpu_observed = False
+            for process in processes:
+                try:
+                    memory_rss_mb += process.memory_info().rss / _MB
+                    memory_observed = True
+                except Exception:
+                    pass
+                try:
+                    value = _to_float(process.cpu_percent(interval=None))
+                    if include_cpu and value is not None:
+                        cpu_percent += value
+                        cpu_observed = True
+                except Exception:
+                    pass
+            if memory_observed:
+                sample["memory_rss_mb"] = memory_rss_mb
+            if cpu_observed:
+                # psutil reports process CPU independently, so summing represents the
+                # total CPU consumed by the client process family and may exceed 100%.
+                sample["cpu_percent"] = cpu_percent
         if self.psutil:
             try:
                 battery = self.psutil.sensors_battery()
@@ -420,7 +461,7 @@ class _ResourceSampler:
             except Exception:
                 pass
         if self.pynvml:
-            pids = self._process_family_pids()
+            pids = self._process_family_pids(processes)
             gpu_percent = []
             gpu_memory_mb = []
             for handle in self.gpu_handles:
@@ -435,19 +476,19 @@ class _ResourceSampler:
                 sample["gpu_memory_mb"] = sum(gpu_memory_mb)
         self.samples.append(sample)
 
-    def _process_family_pids(self) -> set:
+    def _process_family_pids(self, processes=None) -> set:
         """This process plus its descendants.
 
         Subprocess-mode training (ScriptRunner/launcher external process — the common Client API
         setup) does its GPU work in a launched CHILD process, so scoping to os.getpid() alone
         would miss it entirely.
         """
+        processes = self._process_family() if processes is None else processes
         pids = {os.getpid()}
-        if self.process:
-            try:
-                pids.update(child.pid for child in self.process.children(recursive=True))
-            except Exception:
-                pass
+        for process in processes[1:]:
+            pid = getattr(process, "pid", None)
+            if isinstance(pid, int) and not isinstance(pid, bool):
+                pids.add(pid)
         return pids
 
     def _sample_process_gpu(self, handle, pids: set) -> Tuple[Optional[float], Optional[float]]:
@@ -690,6 +731,9 @@ class JobStatsReporter(Widget):
             _validate_report_filename(json_filename, "json_filename")
         if error_filename is not None:
             _validate_report_filename(error_filename, "error_filename")
+        _validate_distinct_report_filenames(
+            {"filename": filename, "json_filename": json_filename, "error_filename": error_filename}
+        )
         self._filename = filename
         self._json_filename = json_filename
         self._error_filename = error_filename
@@ -973,8 +1017,17 @@ class JobStatsReporter(Widget):
             rec.close(time.monotonic())
             if stats is not None:
                 rec.aggr_stats = stats
-                contributors = stats.get(AggregationStatsKey.CONTRIBUTORS) or []
-                rec.accepted_clients.update(contributors)
+                contributors = set(stats.get(AggregationStatsKey.CONTRIBUTORS) or [])
+                accepted_count = stats.get(AggregationStatsKey.ACCEPTED_CONTRIBUTIONS)
+                if accepted_count is not None:
+                    # Final aggregation is authoritative. Replace provisional acceptance
+                    # signals emitted before aggregation so converted-but-skipped updates
+                    # cannot remain counted as participants. An empty contributor list means
+                    # names are unavailable; the published count is still used numerically.
+                    rec.accepted_clients = contributors
+                else:
+                    rec.accepted_clients.update(contributors)
+                rec.rejected_clients.difference_update(contributors)
                 self._all_clients.update(contributors)
 
     def _handle_contribution_accept(self, fl_ctx: FLContext):
@@ -1159,24 +1212,30 @@ class JobStatsReporter(Widget):
     def _round_participants(rec: _RoundRecord, completed_by_round: Dict[tuple, set]) -> set:
         """Clients that participated in a round.
 
-        When the round saw per-client acceptance information (accepted or rejected names),
-        participation means the contribution was accepted. Otherwise — relay/cyclic flows that
-        never report acceptance, or aggregators that publish stats without contributor names —
-        participation is measured by tasks completed with an OK result instead. The condition
-        deliberately keys on the NAME sets, not on aggr_stats being present, so a stats dict
-        without contributor names cannot zero out participation for a successful round.
+        Final aggregation contributor names supersede provisional per-contribution signals.
+        If aggregation publishes only an accepted count, the returned name set may be empty;
+        _round_participation_count() still uses that authoritative numeric count. Workflows that
+        publish neither aggregation counts nor acceptance signals fall back to OK task results.
         """
+        if rec.aggr_stats and rec.aggr_stats.get(AggregationStatsKey.ACCEPTED_CONTRIBUTIONS) is not None:
+            return rec.accepted_clients
         if rec.accepted_clients or rec.rejected_clients:
             return rec.accepted_clients
         return completed_by_round.get((rec.workflow, rec.round_num), set())
 
+    @classmethod
+    def _round_participation_count(cls, rec: _RoundRecord, completed_by_round: Dict[tuple, set]) -> int:
+        if rec.aggr_stats:
+            accepted = rec.aggr_stats.get(AggregationStatsKey.ACCEPTED_CONTRIBUTIONS)
+            if accepted is not None:
+                return accepted
+        participants = cls._round_participants(rec, completed_by_round)
+        return len(participants & rec.targeted_clients) if rec.targeted_clients else len(participants)
+
     def _participation_counts(self) -> Tuple[int, int]:
         completed_by_round = self._completed_ok_clients_by_round()
         targeted = sum(len(rec.targeted_clients) for rec in self._rounds.values())
-        participated = sum(
-            len(self._round_participants(rec, completed_by_round) & rec.targeted_clients)
-            for rec in self._rounds.values()
-        )
+        participated = sum(self._round_participation_count(rec, completed_by_round) for rec in self._rounds.values())
         return targeted, participated
 
     def _determine_status(self, fl_ctx: Optional[FLContext]) -> Tuple[str, str]:
@@ -1210,7 +1269,7 @@ class JobStatsReporter(Widget):
                 rec.round_num
                 for rec in self._rounds.values()
                 if rec.targeted_clients
-                and not rec.targeted_clients.issubset(self._round_participants(rec, completed_by_round))
+                and self._round_participation_count(rec, completed_by_round) < len(rec.targeted_clients)
             },
             key=_round_sort_key,
         )
@@ -1459,18 +1518,28 @@ class JobStatsReporter(Widget):
                 stats = rec.aggr_stats or {}
                 participants = self._round_participants(rec, completed_by_round)
                 targeted = len(rec.targeted_clients)
-                accepted = len(participants & rec.targeted_clients) if targeted else len(participants)
-                missing = sorted(rec.targeted_clients - participants)
+                accepted = self._round_participation_count(rec, completed_by_round)
+                published_count = stats.get(AggregationStatsKey.ACCEPTED_CONTRIBUTIONS)
+                names_complete = published_count is None or published_count == len(participants)
+                missing_count = max(0, targeted - accepted)
+                if names_complete:
+                    missing = sorted(rec.targeted_clients - participants)
+                else:
+                    # The aggregation told us how many updates were accepted but not which
+                    # clients they came from. Report known rejections without inventing names.
+                    missing = sorted(rec.targeted_clients & rec.rejected_clients)
                 round_rows.append(
                     {
                         "workflow": rec.workflow,
                         "round": rec.round_num,
                         "targeted_clients": sorted(rec.targeted_clients),
                         "accepted_client_names": sorted(participants),
+                        "accepted_client_names_complete": names_complete,
                         "accepted_clients": accepted,
                         "total_clients": targeted,
                         "participation_rate_percent": 100.0 * accepted / targeted if targeted else None,
                         "missing_clients": missing,
+                        "missing_client_count": missing_count,
                         "rejected_clients": sorted(rec.rejected_clients),
                         "keys_aggregated": stats.get(AggregationStatsKey.KEYS_AGGREGATED),
                         "keys_seen": stats.get(AggregationStatsKey.KEYS_SEEN),
@@ -1504,12 +1573,19 @@ class JobStatsReporter(Widget):
                 | {r.client for r in incomplete}
                 | {c for rec in ordered_rounds for c in rec.rejected_clients}
             )
-            # report the basis actually used by _round_participants: acceptance when a round
-            # carried accepted/rejected names, completed-OK tasks otherwise
+            # Report the basis actually used for each round's numeric participation.
             bases = {
-                "accepted_contributions" if (rec.accepted_clients or rec.rejected_clients) else "completed_tasks"
+                (
+                    "aggregation_stats"
+                    if rec.aggr_stats and rec.aggr_stats.get(AggregationStatsKey.ACCEPTED_CONTRIBUTIONS) is not None
+                    else (
+                        "accepted_contributions"
+                        if (rec.accepted_clients or rec.rejected_clients)
+                        else "completed_tasks"
+                    )
+                )
                 for rec in ordered_rounds
-                if rec.targeted_clients or rec.accepted_clients or rec.rejected_clients
+                if rec.targeted_clients or rec.accepted_clients or rec.rejected_clients or rec.aggr_stats
             }
             participation_basis = "mixed" if len(bases) > 1 else next(iter(bases), "completed_tasks")
 
@@ -1637,11 +1713,14 @@ class JobStatsReporter(Widget):
                     "N/A" if item["keys_aggregated"] is None else f"{item['keys_aggregated']} / {na(item['keys_seen'])}"
                 )
                 rate = item["participation_rate_percent"]
+                missing = ", ".join(item["missing_clients"])
+                if not missing and item.get("missing_client_count"):
+                    missing = f"{item['missing_client_count']} client(s), names unavailable"
                 row = [
                     item["round"],
                     f"{item['accepted_clients']}/{item['total_clients']}",
                     f"{rate:.1f}%" if rate is not None else "N/A",
-                    ", ".join(item["missing_clients"]) or "None",
+                    missing or "None",
                     _format_duration(item["server_training_time"]),
                     keys,
                     na(item["fully_matched_keys"]),

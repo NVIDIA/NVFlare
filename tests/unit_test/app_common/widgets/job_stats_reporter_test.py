@@ -789,6 +789,18 @@ class TestSecondReviewRegressions:
             JobStatsReporter(error_filename="../outside/errors.log")
         JobStatsReporter(filename="reports/summary.log")  # relative subdir is fine
 
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"filename": "summary.log", "json_filename": "summary.log"},
+            {"filename": "reports/summary.log", "error_filename": "reports/./summary.log"},
+            {"json_filename": "reports/summary.json", "error_filename": "reports/summary.json"},
+        ],
+    )
+    def test_report_filenames_must_not_collide(self, kwargs):
+        with pytest.raises(ValueError, match="resolve to the same report path"):
+            JobStatsReporter(**kwargs)
+
     def test_malformed_aggregation_stats_degrade_gracefully(self, tmp_path):
         # string CONTRIBUTORS must not explode into per-character clients, and non-numeric
         # counts must not abort report generation
@@ -818,8 +830,9 @@ class TestSecondReviewRegressions:
         report = reporter.format_report(summary)
         assert "Aggregation Consistency Across Rounds" in report
 
-    def test_stats_without_contributor_names_fall_back_to_completed_tasks(self, tmp_path):
-        # a custom aggregator publishing counts but no names must not zero out participation
+    def test_stats_without_contributor_names_use_published_count(self, tmp_path):
+        # a custom aggregator publishing counts but no names must use that count rather than
+        # promoting every OK-completed task to an accepted contribution
         clients = ["site-1", "site-2"]
         engine = make_engine(tmp_path, clients)
         reporter = JobStatsReporter()
@@ -828,7 +841,7 @@ class TestSecondReviewRegressions:
         for client in clients:
             fire_relay_leg(reporter, engine, 0, client)
         stats = make_aggr_stats(0, [], 5, 5, 5, 0, 0)
-        stats[AggregationStatsKey.ACCEPTED_CONTRIBUTIONS] = 2  # counts known, names unknown
+        stats[AggregationStatsKey.ACCEPTED_CONTRIBUTIONS] = 1  # count known, accepted client name unknown
         reporter.handle_event(
             AppEventType.AFTER_AGGREGATION,
             make_ctx(engine, props={AppConstants.CURRENT_ROUND: 0, AppConstants.AGGREGATION_STATS: stats}),
@@ -836,12 +849,43 @@ class TestSecondReviewRegressions:
         reporter.handle_event(EventType.END_RUN, make_ctx(engine))
 
         summary = reporter.get_summary(make_ctx(engine))
-        assert summary["status"] == JobStatusCode.SUCCESS
-        assert summary["participation"]["participation_rate_percent"] == 100.0
-        # the reported basis must reflect what was actually used (PR review comment)
-        assert summary["participation"]["participation_basis"] == "completed_tasks"
+        assert summary["status"] == JobStatusCode.PARTIAL
+        assert summary["participation"]["participation_rate_percent"] == 50.0
+        assert summary["participation"]["participation_basis"] == "aggregation_stats"
+        assert summary["rounds"][0]["accepted_clients"] == 1
+        assert summary["rounds"][0]["accepted_client_names"] == []
+        assert summary["rounds"][0]["missing_client_count"] == 1
         # the consistency pattern must use the stats' accepted count, not the empty name set
         assert summary["consistency"]["stable_rounds"] == 1
+
+    def test_zero_aggregation_count_overrides_completed_tasks_and_provisional_acceptance(self, tmp_path):
+        clients = ["site-1", "site-2"]
+        engine = make_engine(tmp_path, clients)
+        reporter = JobStatsReporter()
+        reporter.handle_event(EventType.START_RUN, make_ctx(engine))
+        reporter.handle_event(AppEventType.ROUND_STARTED, make_ctx(engine, props={AppConstants.CURRENT_ROUND: 0}))
+        for client in clients:
+            fire_relay_leg(reporter, engine, 0, client)
+            reporter.handle_event(
+                AppEventType.AFTER_CONTRIBUTION_ACCEPT,
+                make_ctx(
+                    engine,
+                    peer_name=client,
+                    props={AppConstants.CURRENT_ROUND: 0, AppConstants.AGGREGATION_ACCEPTED: True},
+                ),
+            )
+        stats = make_aggr_stats(0, [], 0, 0, 0, 0, 0)
+        stats[AggregationStatsKey.ACCEPTED_CONTRIBUTIONS] = 0
+        reporter.handle_event(
+            AppEventType.AFTER_AGGREGATION,
+            make_ctx(engine, props={AppConstants.CURRENT_ROUND: 0, AppConstants.AGGREGATION_STATS: stats}),
+        )
+
+        summary = reporter.get_summary(make_ctx(engine))
+        assert summary["status"] == JobStatusCode.FAILURE
+        assert summary["participation"]["accepted_client_rounds"] == 0
+        assert summary["participation"]["failure_rate_percent"] == 100.0
+        assert summary["rounds"][0]["accepted_client_names"] == []
 
     def test_idle_job_is_not_reported_as_success(self, tmp_path):
         # a run that ends without any rounds or client tasks must not claim success (PR review comment)
@@ -972,12 +1016,16 @@ class TestSecondReviewRegressions:
         assert summary["participation"]["failed_clients"] == []
 
     def test_gpu_sampler_includes_child_process_usage(self):
-        # subprocess-mode training does GPU work in a launched child pid
+        # subprocess-mode training does CPU/GPU work and allocates memory in a launched child pid
         child_pid = 4242
         process = MagicMock()
         process.cpu_percent.side_effect = [0.0, 25.0]
         process.memory_info.return_value = SimpleNamespace(rss=100 * 1024 * 1024)
-        process.children.return_value = [SimpleNamespace(pid=child_pid)]
+        child = MagicMock()
+        child.pid = child_pid
+        child.cpu_percent.side_effect = [0.0, 40.0]
+        child.memory_info.return_value = SimpleNamespace(rss=200 * 1024 * 1024)
+        process.children.return_value = [child]
         fake_psutil = SimpleNamespace(Process=Mock(return_value=process), sensors_battery=Mock(return_value=None))
         fake_pynvml = SimpleNamespace(
             nvmlInit=Mock(),
@@ -997,6 +1045,8 @@ class TestSecondReviewRegressions:
             sampler.start()
             resources = sampler.stop()
 
+        assert resources["cpu_percent"]["mean"] == 65.0
+        assert resources["memory_rss_mb"]["mean"] == 300.0
         assert resources["gpu_percent"]["mean"] == 40.0
         assert resources["gpu_memory_mb"]["mean"] == 512.0
 

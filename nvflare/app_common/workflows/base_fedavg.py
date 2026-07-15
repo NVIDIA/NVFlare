@@ -240,6 +240,11 @@ class BaseFedAvg(ModelController):
 
         """
         self.debug("Start aggregation.")
+        # FLContext is reused across rounds. Clear the prior round's value before any
+        # aggregation work so an empty/unsupported result set or stats-computation failure
+        # cannot expose stale statistics to AFTER_AGGREGATION handlers.
+        if self.fl_ctx:
+            self._set_ctx_prop_preserving_attrs(fl_ctx=self.fl_ctx, key=AppConstants.AGGREGATION_STATS, value=None)
         self.event(AppEventType.BEFORE_AGGREGATION)
         self._check_results(results)
 

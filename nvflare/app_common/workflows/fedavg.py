@@ -256,12 +256,12 @@ class FedAvg(BaseFedAvg):
         finally:
             cleanup_tensor_disk_offload(engine=getattr(self, "engine", None), context=disk_offload_context)
 
-    def _aggregate_one_result(self, result: FLModel) -> None:
+    def _aggregate_one_result(self, result: FLModel) -> bool:
         """Callback: aggregate ONE client result immediately (InTime aggregation)."""
         if not result.params:
             client_name = _get_client_name(result)
             self.warning(f"Empty result from client {client_name}, skipping.")
-            return
+            return False
 
         # Store only params_type from first result (not the full model)
         if self._params_type is None:
@@ -318,6 +318,7 @@ class FedAvg(BaseFedAvg):
 
         self._received_count += 1
         self.info(f"Aggregated {self._received_count}/{self._expected_count} results")
+        return True
 
     def _get_aggregated_result(self) -> FLModel:
         """Get the final aggregated result after all clients have responded."""

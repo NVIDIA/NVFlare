@@ -230,6 +230,12 @@ class TestBaseFedAvgMetricsAggregationInfo:
         """Key stats are reporting only: ndarray params with a custom aggregate_fn must not break aggregate()."""
         controller = _TestBaseFedAvg()
         controller.fl_ctx = FLContext()
+        controller.fl_ctx.set_prop(
+            AppConstants.AGGREGATION_STATS,
+            {AggregationStatsKey.ROUND: 0, AggregationStatsKey.ACCEPTED_CONTRIBUTIONS: 99},
+            private=True,
+            sticky=False,
+        )
         controller.event = lambda _: None
         controller.fire_event_with_data = lambda *args, **kwargs: None
         controller.current_round = 1
@@ -245,7 +251,7 @@ class TestBaseFedAvgMetricsAggregationInfo:
         aggr_result = controller.aggregate(results, aggregate_fn=custom_aggregate_fn)
 
         np.testing.assert_allclose(aggr_result.params, np.array([2.0]))
-        # no dict params -> no key stats published, and no crash
+        # no dict params -> no key stats published, and the previous round's value is cleared
         assert controller.fl_ctx.get_prop(AppConstants.AGGREGATION_STATS) is None
 
     def test_stop_condition_parsing(self):
@@ -934,7 +940,8 @@ class TestFedAvgAggregation:
 
         # Empty result
         empty_result = FLModel(params=None, meta={"client_name": "site-1"})
-        controller._aggregate_one_result(empty_result)
+        accepted = controller._aggregate_one_result(empty_result)
+        assert accepted is False
         assert controller._received_count == 0  # Not counted
 
 
@@ -1374,6 +1381,53 @@ class TestFedAvgWorkflowEvents:
             controller._process_result(client_task, fl_ctx)
 
         assert accepted_flags_seen == [False]
+
+    def test_process_result_publishes_callback_skip_as_rejected(self):
+        controller = FedAvg(num_clients=1)
+        fl_ctx = FLContext()
+        result = FLModelUtils.to_shareable(FLModel(params={"w": 1.0}))
+        task = Task(
+            name=AppConstants.TASK_TRAIN,
+            data=Shareable(),
+            props={AppConstants.META_DATA: {}, AppConstants.TASK_PROP_CALLBACK: lambda _: False},
+        )
+        client_task = ClientTask(client=Client("site-1", "token"), task=task)
+        client_task.result = result
+        accepted_flags_seen = []
+
+        def record_acceptance(event_type):
+            if event_type == AppEventType.AFTER_CONTRIBUTION_ACCEPT:
+                accepted_flags_seen.append(fl_ctx.get_prop(AppConstants.AGGREGATION_ACCEPTED))
+
+        with patch.object(controller, "event", side_effect=record_acceptance):
+            controller._process_result(client_task, fl_ctx)
+
+        assert accepted_flags_seen == [False]
+        assert controller._results == []
+        assert client_task.result is None
+
+    def test_process_result_publishes_conversion_failure_as_rejected(self):
+        controller = FedAvg(num_clients=1)
+        fl_ctx = FLContext()
+        task = Task(name=AppConstants.TASK_TRAIN, data=Shareable(), props={AppConstants.META_DATA: {}})
+        client_task = ClientTask(client=Client("site-1", "token"), task=task)
+        client_task.result = Shareable()
+        accepted_flags_seen = []
+
+        def record_acceptance(event_type):
+            if event_type == AppEventType.AFTER_CONTRIBUTION_ACCEPT:
+                accepted_flags_seen.append(fl_ctx.get_prop(AppConstants.AGGREGATION_ACCEPTED))
+
+        with (
+            patch.object(controller, "_accept_train_result", return_value=True),
+            patch.object(FLModelUtils, "from_shareable", side_effect=ValueError("bad model")),
+            patch.object(controller, "event", side_effect=record_acceptance),
+        ):
+            controller._process_result(client_task, fl_ctx)
+
+        assert accepted_flags_seen == [False]
+        assert controller._results == []
+        assert client_task.result is None
 
     def test_process_result_releases_raw_in_memory_training_result(self):
         import gc
