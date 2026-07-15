@@ -69,6 +69,175 @@ def _write_deployed_meta(tmp_path, job_id, deployed_meta):
     return workspace
 
 
+def _make_start_app_inputs(tmp_path, job_id="job-1"):
+    job_meta = {JobConstants.JOB_ID: job_id}
+    workspace = _write_deployed_meta(tmp_path, job_id, job_meta)
+    client = MagicMock()
+    client.client_name = "site-1"
+    client.cell.get_internal_listener_url.return_value = "tcp://parent:8002"
+    client.cell.get_internal_listener_params.return_value = {}
+    fl_ctx = MagicMock()
+    fl_ctx.get_prop.side_effect = lambda key, *args, **kwargs: {
+        FLContextKey.WORKSPACE_OBJECT: workspace,
+        FLContextKey.SERVER_CONFIG: [{"service": {"scheme": "grpc", "target": "parent:8002"}}],
+    }.get(key)
+    return job_meta, workspace, client, fl_ctx
+
+
+def test_start_app_pending_handle_operations_before_launcher_returns(tmp_path):
+    job_id = "job-1"
+    job_meta, workspace, client, fl_ctx = _make_start_app_inputs(tmp_path, job_id)
+    executor = JobExecutor(client=client, startup=workspace.get_startup_kit_dir())
+    launcher = MagicMock()
+
+    def launch_job(*_args):
+        pending_handle = executor.run_processes[job_id][RunProcessKey.JOB_HANDLE]
+        assert pending_handle.poll() is None
+        with pytest.raises(RuntimeError, match="before it is attached"):
+            pending_handle.wait()
+        return MagicMock()
+
+    launcher.launch_job.side_effect = launch_job
+
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
+        patch.object(threading.Thread, "start", lambda self: None),
+    ):
+        executor.start_app(
+            client,
+            job_id,
+            job_meta,
+            SimpleNamespace(workspace=str(tmp_path), set=[]),
+            None,
+            None,
+            None,
+            fl_ctx,
+        )
+
+
+def test_start_app_applies_abort_while_launcher_is_running(tmp_path):
+    job_id = "job-1"
+    job_meta, workspace, client, fl_ctx = _make_start_app_inputs(tmp_path, job_id)
+    executor = JobExecutor(client=client, startup=workspace.get_startup_kit_dir())
+    job_handle = MagicMock()
+    job_handle.poll.return_value = JobReturnCode.ABORTED
+    launcher = MagicMock()
+
+    def launch_job(*_args):
+        assert executor.get_status(job_id) == ClientStatus.STARTING
+        ClientEngine.abort_app(SimpleNamespace(client_executor=executor), job_id)
+        return job_handle
+
+    launcher.launch_job.side_effect = launch_job
+
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
+        patch.object(threading.Thread, "start", lambda self: None),
+    ):
+        executor.start_app(
+            client,
+            job_id,
+            job_meta,
+            SimpleNamespace(workspace=str(tmp_path), set=[]),
+            None,
+            None,
+            None,
+            fl_ctx,
+        )
+
+    pending_handle = executor.run_processes[job_id][RunProcessKey.JOB_HANDLE]
+    job_handle.terminate.assert_called_once_with()
+    client.cell.fire_and_forget.assert_not_called()
+    assert pending_handle.poll() == JobReturnCode.ABORTED
+    pending_handle.wait()
+    job_handle.wait.assert_called_once_with()
+
+
+def test_start_app_removes_pending_handle_when_launch_fails(tmp_path):
+    job_id = "job-1"
+    job_meta, workspace, client, fl_ctx = _make_start_app_inputs(tmp_path, job_id)
+    executor = JobExecutor(client=client, startup=workspace.get_startup_kit_dir())
+    launcher = MagicMock()
+
+    def launch_job(*_args):
+        executor.abort_app(job_id)
+        raise RuntimeError("launch failed")
+
+    launcher.launch_job.side_effect = launch_job
+
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
+        pytest.raises(RuntimeError, match="launch failed"),
+    ):
+        executor.start_app(
+            client,
+            job_id,
+            job_meta,
+            SimpleNamespace(workspace=str(tmp_path), set=[]),
+            None,
+            None,
+            None,
+            fl_ctx,
+        )
+
+    assert job_id not in executor.run_processes
+
+
+def test_start_app_removes_pending_handle_when_launcher_returns_no_handle(tmp_path):
+    job_id = "job-1"
+    job_meta, workspace, client, fl_ctx = _make_start_app_inputs(tmp_path, job_id)
+    executor = JobExecutor(client=client, startup=workspace.get_startup_kit_dir())
+    launcher = MagicMock()
+    launcher.launch_job.return_value = None
+
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
+        pytest.raises(RuntimeError, match="returned no job handle"),
+    ):
+        executor.start_app(
+            client,
+            job_id,
+            job_meta,
+            SimpleNamespace(workspace=str(tmp_path), set=[]),
+            None,
+            None,
+            None,
+            fl_ctx,
+        )
+
+    assert job_id not in executor.run_processes
+
+
+def test_start_app_does_not_replace_existing_launch_registration(tmp_path):
+    job_id = "job-1"
+    job_meta, workspace, client, fl_ctx = _make_start_app_inputs(tmp_path, job_id)
+    executor = JobExecutor(client=client, startup=workspace.get_startup_kit_dir())
+    existing_handle = MagicMock()
+    executor.run_processes[job_id] = {
+        RunProcessKey.JOB_HANDLE: existing_handle,
+        RunProcessKey.STATUS: ClientStatus.STARTING,
+    }
+    launcher = MagicMock()
+
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
+        pytest.raises(RuntimeError, match="still registered"),
+    ):
+        executor.start_app(
+            client,
+            job_id,
+            job_meta,
+            SimpleNamespace(workspace=str(tmp_path), set=[]),
+            None,
+            None,
+            None,
+            fl_ctx,
+        )
+
+    assert executor.run_processes[job_id][RunProcessKey.JOB_HANDLE] is existing_handle
+    launcher.launch_job.assert_not_called()
+
+
 def test_start_app_allows_scheduler_metadata(tmp_path):
     job_id = "job-1"
     deployed_meta = {
