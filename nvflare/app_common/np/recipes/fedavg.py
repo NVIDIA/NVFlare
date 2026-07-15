@@ -206,4 +206,4 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
         from nvflare.app_common.app_constant import AppConstants
         from nvflare.app_common.np.np_validator import NPValidator
 
-        self._job.to_clients(NPValidator(), tasks=[AppConstants.TASK_VALIDATION])
+        self._add_to_client_apps(NPValidator(), tasks=[AppConstants.TASK_VALIDATION])

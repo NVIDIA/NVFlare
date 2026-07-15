@@ -534,6 +534,38 @@ class TestNumpyFedAvgRecipe:
 
         assert recipe.per_site_config == per_site_config
 
+    def test_numpy_cse_export_preserves_per_site_training_apps(self, tmp_path):
+        """Adding CSE must retain each per-site training executor alongside NPValidator."""
+        from nvflare.recipe.utils import add_cross_site_evaluation
+
+        train_script = tmp_path / "client.py"
+        train_script.write_text("# test client script\n")
+        sites = ["site-1", "site-2"]
+        recipe = NumpyFedAvgRecipe(
+            name="test_numpy_per_site_cse",
+            model=[1.0, 2.0],
+            min_clients=2,
+            train_script=str(train_script),
+            per_site_config={site: {"train_args": f"--site {site}"} for site in sites},
+        )
+
+        add_cross_site_evaluation(recipe)
+        export_dir = tmp_path / "export"
+        recipe.export(job_dir=str(export_dir))
+
+        job_dir = export_dir / recipe.name
+        assert not (job_dir / "app").exists()
+        for site in sites:
+            with open(job_dir / f"app_{site}" / "config" / "config_fed_client.json") as f:
+                client_config = json.load(f)
+
+            executors = client_config["executors"]
+            assert any("*" in executor["tasks"] for executor in executors)
+            assert any(
+                "validate" in executor["tasks"] and executor["executor"]["path"].endswith(".NPValidator")
+                for executor in executors
+            )
+
     def test_numpy_recipe_with_none_model_raises_error(self, mock_file_system):
         """Test NumpyFedAvgRecipe with no model raises error."""
         with pytest.raises(ValueError, match="Must provide either model"):
