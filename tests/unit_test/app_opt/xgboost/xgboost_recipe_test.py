@@ -42,6 +42,14 @@ def _get_metrics_writer(recipe):
     return server_app.app_config.components.get("metrics_artifact_writer")
 
 
+def _get_server_controller(recipe, controller_id):
+    server_app = recipe.job._deploy_map[SERVER_SITE_NAME]
+    return next(
+        (workflow.controller for workflow in server_app.app_config.workflows if workflow.id == controller_id),
+        None,
+    )
+
+
 @pytest.mark.parametrize(
     "recipe",
     [
@@ -67,6 +75,7 @@ def test_xgb_recipes_apply_helper_config(recipe, tmp_path):
     for site_name, site_config in config.items():
         components = recipe.job._deploy_map[site_name].app_config.components
         assert components[recipe.data_loader_id] is site_config["data_loader"]
+    assert _get_server_controller(recipe, "xgb_controller") is not None
     recipe._validate_before_use()
 
 
@@ -109,5 +118,6 @@ def test_xgb_vertical_resolves_label_owner_rank_when_helper_is_applied():
     set_per_site_config(recipe, _per_site_config())
 
     assert recipe.client_ranks == {"site-2": 0, "site-1": 1}
-    server_components = recipe.job._deploy_map[SERVER_SITE_NAME].app_config.components
-    assert "xgb_controller" in server_components
+    controller = _get_server_controller(recipe, "xgb_controller")
+    assert controller is not None
+    assert controller.client_ranks == recipe.client_ranks
