@@ -34,6 +34,7 @@ SITE_CONFIG_EXCLUDED_TOP_LEVEL_KEYS = frozenset(
         "components",  # local component wiring (class paths, args)
         "handlers",  # local handler wiring
         "class_allow_list",  # local component authorization policy
+        "class_list_enforcement_mode",  # local component authorization policy
         "snapshot_persistor",  # server-side persistence backend
         "admin",  # admin client config
         "relay_config",  # local connection topology
