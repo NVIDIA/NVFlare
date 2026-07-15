@@ -23,7 +23,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import AdminCommandNames, ConnPropKey, FLContextKey, RunProcessKey, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.apis.job_launcher_spec import JobLauncherSpec, JobProcessArgs, JobReturnCode
+from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.exit_codes import PROCESS_EXIT_REASON, ProcessExitCode
@@ -44,6 +44,40 @@ REPORTABLE_JOB_FAILURES = {
     ProcessExitCode.CONFIG_ERROR: PROCESS_EXIT_REASON[ProcessExitCode.CONFIG_ERROR],
     JobReturnCode.ABORTED: "aborted",
 }
+
+
+class _PendingJobHandle(JobHandleSpec):
+    """Hold an abort request until a launcher returns the real job handle."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._job_handle = None
+        self._terminate_requested = False
+
+    def attach(self, job_handle: JobHandleSpec) -> bool:
+        with self._lock:
+            self._job_handle = job_handle
+            return self._terminate_requested
+
+    def terminate(self):
+        with self._lock:
+            job_handle = self._job_handle
+            if job_handle is None:
+                self._terminate_requested = True
+                return
+        return job_handle.terminate()
+
+    def poll(self):
+        with self._lock:
+            job_handle = self._job_handle
+        if job_handle is None:
+            return None
+        return job_handle.poll()
+
+    def wait(self):
+        with self._lock:
+            job_handle = self._job_handle
+        return job_handle.wait()
 
 
 class ClientExecutor(ABC):
@@ -251,7 +285,26 @@ class JobExecutor(ClientExecutor):
                 job_args[JobProcessArgs.PARENT_CONN_SEC] = ("--parent_conn_sec", parent_conn_sec)
 
         fl_ctx.set_prop(key=FLContextKey.JOB_PROCESS_ARGS, value=job_args, private=True, sticky=False)
-        job_handle = job_launcher.launch_job(job_meta, fl_ctx)
+        pending_handle = _PendingJobHandle()
+        with self.lock:
+            if job_id in self.run_processes:
+                raise RuntimeError(f"client app for job '{job_id}' is still registered")
+            self.run_processes[job_id] = {
+                RunProcessKey.JOB_HANDLE: pending_handle,
+                RunProcessKey.STATUS: ClientStatus.STARTING,
+            }
+        try:
+            job_handle = job_launcher.launch_job(job_meta, fl_ctx)
+        except BaseException:
+            with self.lock:
+                if self.run_processes.get(job_id, {}).get(RunProcessKey.JOB_HANDLE) is pending_handle:
+                    self.run_processes.pop(job_id, None)
+            raise
+
+        abort_requested = pending_handle.attach(job_handle)
+        if abort_requested:
+            self.abort_app(job_id)
+
         self.logger.info(f"Launched job {job_id} with job launcher: {type(job_launcher)} ")
 
         fl_ctx.set_prop(FLContextKey.JOB_META, job_meta, private=True, sticky=False)
@@ -259,12 +312,6 @@ class JobExecutor(ClientExecutor):
         engine.fire_event(EventType.AFTER_JOB_LAUNCH, fl_ctx)
 
         client.multi_gpu = False
-
-        with self.lock:
-            self.run_processes[job_id] = {
-                RunProcessKey.JOB_HANDLE: job_handle,
-                RunProcessKey.STATUS: ClientStatus.STARTING,
-            }
 
         thread = threading.Thread(
             target=self._wait_child_process_finish,
