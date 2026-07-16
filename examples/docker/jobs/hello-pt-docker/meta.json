@@ -14,10 +14,20 @@
                 "shm_size": "8g",
                 "ipc_mode": "host"
             }
+        },
+        "site-2": {
+            "docker": {
+                "image": "nvflare-job:latest",
+                "shm_size": "8g",
+                "ipc_mode": "host"
+            }
         }
     },
     "resource_spec": {
         "site-1": {
+            "num_of_gpus": 1
+        },
+        "site-2": {
             "num_of_gpus": 1
         }
     }
