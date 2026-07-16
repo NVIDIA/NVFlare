@@ -39,16 +39,9 @@ def download_data():
     datasets.CIFAR10(root=DATASET_ROOT, train=False, download=True)
 
 
-def main():
-    args = define_parser()
-
-    n_clients = args.n_clients
-    num_rounds = args.num_rounds
-    batch_size = args.batch_size
-    recipe_class = FedAvgRecipe if args.algorithm == "fedavg" else ScaffoldRecipe
-
-    recipe = recipe_class(
-        name=f"hello-lightning-{args.algorithm}",
+def create_fedavg_recipe(n_clients, num_rounds, batch_size):
+    return FedAvgRecipe(
+        name="hello-lightning-fedavg",
         min_clients=n_clients,
         num_rounds=num_rounds,
         # Model can be specified as class instance or dict config:
@@ -58,6 +51,29 @@ def main():
         train_script="client.py",
         train_args=f"--batch_size {batch_size}",
     )
+
+
+def create_scaffold_recipe(n_clients, num_rounds, batch_size):
+    return ScaffoldRecipe(
+        name="hello-lightning-scaffold",
+        min_clients=n_clients,
+        num_rounds=num_rounds,
+        model=LitNet(),
+        train_script="client.py",
+        train_args=f"--batch_size {batch_size}",
+    )
+
+
+def main():
+    args = define_parser()
+
+    n_clients = args.n_clients
+    num_rounds = args.num_rounds
+    batch_size = args.batch_size
+    if args.algorithm == "fedavg":
+        recipe = create_fedavg_recipe(n_clients, num_rounds, batch_size)
+    else:
+        recipe = create_scaffold_recipe(n_clients, num_rounds, batch_size)
 
     env = SimEnv(num_clients=n_clients, num_threads=n_clients)
     recipe.execute(env=env)
