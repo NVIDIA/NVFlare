@@ -38,6 +38,7 @@ NVIDIA FLARE
    programming_guide/experiment_tracking
    Federated XGBoost <user_guide/data_scientist_guide/federated_xgboost/federated_xgboost>
    user_guide/data_scientist_guide/data_preparation
+   Agent Skills <user_guide/agent_skills/index>
    CLI Tools <user_guide/nvflare_cli/nvflare_cli>
 
 .. toctree::
