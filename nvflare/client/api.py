@@ -13,8 +13,10 @@
 # limitations under the License.
 
 import logging
+from contextlib import contextmanager
+from contextvars import ContextVar
 from threading import Lock
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Iterator, Optional, Union
 
 from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.app_common.abstract.fl_model import FLModel
@@ -22,10 +24,32 @@ from nvflare.app_common.abstract.fl_model import FLModel
 # this import is to let existing scripts import client.api
 from .api_context import ClientAPIType  # noqa: F401
 from .api_context import APIContext
+from .api_spec import APISpec
 
 global_context_lock = Lock()
 context_dict = {}
 default_context = None
+_current_context: ContextVar[Optional[APIContext]] = ContextVar("client_api_context", default=None)
+_api_override: ContextVar[Optional[APISpec]] = ContextVar("client_api_override", default=None)
+
+
+@contextmanager
+def use_api(api: APISpec) -> Iterator[None]:
+    """Temporarily use the specified Client API implementation in the current context.
+
+    This hook allows an embedded runtime to provide its own Client API without
+    changing the process-wide Client API type or context cache.
+    """
+    if not isinstance(api, APISpec):
+        raise TypeError(f"api must be an APISpec but got {type(api)}")
+
+    api_token = _api_override.set(api)
+    context_token = _current_context.set(None)
+    try:
+        yield
+    finally:
+        _current_context.reset(context_token)
+        _api_override.reset(api_token)
 
 
 def get_context(ctx: Optional[APIContext] = None) -> APIContext:
@@ -43,6 +67,9 @@ def get_context(ctx: Optional[APIContext] = None) -> APIContext:
     """
     if ctx:
         return ctx
+    local_context = _current_context.get()
+    if local_context:
+        return local_context
     elif default_context:
         return default_context
     else:
@@ -61,7 +88,6 @@ def init(rank: Optional[Union[str, int]] = None, config_file: Optional[str] = No
     Returns:
         APIContext
     """
-
     # subsequent logic assumes rank is a string
     if rank is not None:
         if isinstance(rank, int):
@@ -71,9 +97,19 @@ def init(rank: Optional[Union[str, int]] = None, config_file: Optional[str] = No
         else:
             raise ValueError(f"rank must be a string or an integer but got {type(rank)}")
 
+    api_override = _api_override.get()
+    if api_override is not None:
+        # Embedded API implementations are context-local and must not enter the
+        # process-wide cache, which may be shared by concurrent runtimes.
+        local_ctx = APIContext(rank=rank, config_file=config_file, api=api_override)
+        _current_context.set(local_ctx)
+        return local_ctx
+
     with global_context_lock:
         global context_dict
         global default_context
+
+        # Standard mode: use caching
         local_ctx = context_dict.get((rank, config_file))
 
         if local_ctx is None:

@@ -34,13 +34,18 @@ class ClientAPIType(Enum):
 
 
 class APIContext:
-    def __init__(self, rank: Optional[str] = None, config_file: Optional[str] = None):
+    def __init__(self, rank: Optional[str] = None, config_file: Optional[str] = None, api: Optional[APISpec] = None):
         self.rank = rank
         self.config_file = config_file if config_file else DEFAULT_CONFIG
 
-        api_type_name = os.environ.get(CLIENT_API_TYPE_KEY, ClientAPIType.IN_PROCESS_API.value)
-        api_type = ClientAPIType(api_type_name)
-        self.api = self._create_client_api(api_type)
+        if api is not None:
+            if not isinstance(api, APISpec):
+                raise TypeError(f"api must be an APISpec but got {type(api)}")
+            self.api = api
+        else:
+            api_type_name = os.environ.get(CLIENT_API_TYPE_KEY, ClientAPIType.IN_PROCESS_API.value)
+            api_type = ClientAPIType(api_type_name)
+            self.api = self._create_client_api(api_type)
         self.api.init(rank=self.rank)
 
     def __enter__(self):

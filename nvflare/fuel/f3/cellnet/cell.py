@@ -363,6 +363,8 @@ class Cell(StreamCell):
         progress_wait_cb=None,
         num_receivers=1,
         receiver_ids=None,
+        send_complete_cb=None,
+        **cb_kwargs,
     ):
         """Stream one request to the target
 
@@ -381,7 +383,17 @@ class Cell(StreamCell):
         """
         self._encode_message(request, abort_signal, num_receivers=num_receivers, receiver_ids=receiver_ids)
         return self._send_one_request(
-            channel, target, topic, request, timeout, secure, optional, abort_signal, progress_wait_cb
+            channel,
+            target,
+            topic,
+            request,
+            timeout,
+            secure,
+            optional,
+            abort_signal,
+            progress_wait_cb,
+            send_complete_cb,
+            **cb_kwargs,
         )
 
     def _send_one_request(
@@ -395,6 +407,8 @@ class Cell(StreamCell):
         optional=False,
         abort_signal=None,
         progress_wait_cb=None,
+        send_complete_cb=None,
+        **cb_kwargs,
     ):
         req_id = str(uuid.uuid4())
         request.add_headers({StreamHeaderKey.STREAM_REQ_ID: req_id})
@@ -416,6 +430,10 @@ class Cell(StreamCell):
             # sending with progress timeout
             self.logger.debug(f"{req_id=}: entering sending wait {timeout=}")
             sending_complete = self._future_wait(future, timeout, abort_signal)
+
+            if send_complete_cb:
+                send_complete_cb(**cb_kwargs)
+
             if not sending_complete:
                 self.logger.debug(f"{req_id=}: sending timeout {timeout=}")
                 return self._get_result(req_id)
@@ -527,6 +545,6 @@ class Cell(StreamCell):
         # through the core_cell, even if the channel may be a stream channel (e.g. aux channel).
         self.core_cell.register_request_cb(channel, topic, cb, *args, **kwargs)
         if _is_stream_channel(channel):
-            self.logger.info(f"Register blob CB for {channel=}, {topic=}")
+            self.logger.debug(f"Register blob CB for {channel=}, {topic=}")
             adapter = Adapter(cb, self.core_cell.my_info, self)
             self.register_blob_cb(channel, topic, adapter.call, *args, **kwargs)
