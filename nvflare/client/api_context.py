@@ -18,7 +18,12 @@ from enum import Enum
 from threading import Lock
 from typing import Optional
 
-from nvflare.client.cell.bootstrap import CELL_API_TYPE, get_bootstrap_client_api_type, read_bootstrap_config
+from nvflare.client.cell.bootstrap import (
+    BOOTSTRAP_FILE_ENV_VAR,
+    CELL_API_TYPE,
+    get_bootstrap_client_api_type,
+    read_bootstrap_config,
+)
 from nvflare.client.constants import CLIENT_API_CONFIG
 from nvflare.fuel.data_event.data_bus import DataBus
 
@@ -84,9 +89,11 @@ class APIContext:
                 _on_context_shutdown(self)
 
     def _resolve_api_type(self) -> ClientAPIType:
-        """Resolves the API engine from typed config metadata and the legacy environment."""
+        """Resolve the API engine from a typed bootstrap or the legacy type environment."""
         typed_api_type = None
+        typed_config_path = None
         if self._explicit_config_file:
+            typed_config_path = self.config_file
             try:
                 config = read_bootstrap_config(self.config_file)
             except (OSError, ValueError):
@@ -96,15 +103,28 @@ class APIContext:
                 config = None
             if config is not None:
                 typed_api_type = get_bootstrap_client_api_type(config, self.config_file)
+        if typed_api_type is None:
+            # ExternalProcessBackend supplies one self-identifying bootstrap path. This is
+            # sufficient to select CellClientAPI; no duplicate CLIENT_API_TYPE marker is needed.
+            # It also supersedes an explicitly supplied legacy client_api_config.json: existing
+            # trainer scripts may still pass that file, but launched mode must use this run's
+            # Cell endpoint and token.
+            bootstrap_path = os.environ.get(BOOTSTRAP_FILE_ENV_VAR)
+            if bootstrap_path:
+                config = read_bootstrap_config(bootstrap_path)
+                typed_api_type = get_bootstrap_client_api_type(config, bootstrap_path)
+                if typed_api_type is None:
+                    raise ValueError(f"Client API bootstrap {bootstrap_path} is missing its typed envelope")
+                typed_config_path = bootstrap_path
 
         env_api_type_name = os.environ.get(CLIENT_API_TYPE_KEY)
         if typed_api_type is not None:
             if env_api_type_name is not None and env_api_type_name != typed_api_type:
                 raise ValueError(
-                    f"Client API bootstrap {self.config_file} declares {typed_api_type!r}, "
+                    f"Client API bootstrap {typed_config_path} declares {typed_api_type!r}, "
                     f"but {CLIENT_API_TYPE_KEY} is {env_api_type_name!r}"
                 )
-            self._typed_bootstrap_file = self.config_file
+            self._typed_bootstrap_file = typed_config_path
             return ClientAPIType(typed_api_type)
 
         api_type_name = env_api_type_name or ClientAPIType.IN_PROCESS_API.value

@@ -214,9 +214,9 @@ class TestConstructorValidation:
             (ExecutionMode.ATTACH, False),
         ],
     )
-    def test_only_external_process_supports_task_data_pass_through(self, mode, expected):
+    def test_only_external_process_supports_payload_pass_through(self, mode, expected):
         executor = ClientAPIExecutor(**MODE_KWARGS[mode])
-        assert executor.supports_task_data_pass_through() is expected
+        assert executor.supports_payload_pass_through() is expected
 
     def test_in_process_accepts_task_script(self):
         # in_process names its script via task_script_path/args; command names the external_process

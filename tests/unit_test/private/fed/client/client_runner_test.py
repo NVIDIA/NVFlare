@@ -13,7 +13,8 @@
 # limitations under the License.
 
 import threading
-from unittest.mock import ANY, MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -23,7 +24,6 @@ from nvflare.apis.fl_constant import FilterKey, FLContextKey, ReservedKey, Reser
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
-from nvflare.app_opt.tensor_stream.client import TensorClientStreamer
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import LazyDownloadRef
 from nvflare.private.defs import SpecialTaskName, TaskConstant
@@ -38,6 +38,7 @@ from nvflare.private.fed.client.client_runner import (
     _materialize_lazy_download_refs,
 )
 from nvflare.private.json_configer import ConfigError
+from nvflare.private.privacy_manager import Scope
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
 
@@ -46,7 +47,6 @@ def _runner():
     runner.task_router = TaskRouter()
     runner.task_data_filters = {}
     runner.task_result_filters = {}
-    runner.event_handlers = []
     runner.default_task_fetch_interval = 0.5
     runner.parent_target = "server"
     runner.job_id = "job-1"
@@ -105,9 +105,7 @@ def test_client_runner_config_initializes_and_validates_components():
 
 def test_client_runner_init_registers_aux_and_event_handlers(monkeypatch):
     engine = MagicMock()
-    concrete_consumer = FLComponent()
-    concrete_consumer.requires_materialized_task_result = True
-    config = ClientRunnerConfig(TaskRouter(), {}, {}, handlers=[concrete_consumer])
+    config = ClientRunnerConfig(TaskRouter(), {}, {}, handlers=[FLComponent()])
     monkeypatch.setattr(ClientRunner, "get_positive_float_var", lambda _self, _name, default: default)
     monkeypatch.setattr(ClientRunner, "register_event_handler", MagicMock())
 
@@ -118,9 +116,6 @@ def test_client_runner_init_registers_aux_and_event_handlers(monkeypatch):
     assert topics == {ReservedTopic.END_RUN, ReservedTopic.DO_TASK}
     event_types = {call.args[0] for call in ClientRunner.register_event_handler.call_args_list}
     assert {EventType.TASK_ASSIGNMENT_SENT, EventType.TASK_RESULT_RECEIVED}.issubset(event_types)
-    assert runner.event_handlers is config.handlers
-    assert FLComponent().requires_materialized_task_data("train") is False
-    assert FLComponent().requires_materialized_task_result("train") is False
 
 
 def test_process_task_preserves_cookie_and_assignment_headers():
@@ -195,7 +190,7 @@ def _task_context_for_job(job_id="job-1"):
 def test_do_task_keeps_payload_lazy_for_pass_through_executor_without_filters():
     runner = _runner()
     executor = MagicMock()
-    executor.supports_task_data_pass_through.return_value = True
+    executor.supports_payload_pass_through.return_value = True
     executor.execute.return_value = Shareable()
     runner.task_router.add_executor(["train"], executor)
 
@@ -207,6 +202,26 @@ def test_do_task_keeps_payload_lazy_for_pass_through_executor_without_filters():
 
     assert reply.get_return_code() == ReturnCode.OK
     materialize.assert_not_called()
+
+
+def test_do_task_keeps_result_lazy_for_pass_through_executor_without_filters():
+    runner = _runner()
+    executor = MagicMock()
+    executor.supports_payload_pass_through.return_value = True
+    lazy_result = _lazy_payload("result")
+    executor.execute.return_value = lazy_result
+    runner.task_router.add_executor(["train"], executor)
+
+    with (
+        patch("nvflare.private.fed.client.client_runner.add_job_audit_event", return_value="audit-id"),
+        patch("nvflare.private.fed.client.client_runner._materialize_lazy_download_refs") as materialize,
+    ):
+        reply = runner._do_task(_task(), _task_context_for_job(), Signal())
+
+    assert reply is lazy_result
+    materialize.assert_not_called()
+    executed_task = executor.execute.call_args.args[1]
+    assert executed_task.get_header(FOBSContextKey.RECEIVER_IDS) is None
 
 
 def test_materialize_lazy_download_refs_propagates_task_abort_signal_to_fobs():
@@ -241,7 +256,7 @@ def test_materialize_lazy_download_refs_propagates_task_abort_signal_to_fobs():
 def test_do_task_materializes_lazy_payload_for_cj_local_executor_without_filters():
     runner = _runner()
     executor = MagicMock()
-    executor.supports_task_data_pass_through.return_value = False
+    executor.supports_payload_pass_through.return_value = False
     executor.execute.return_value = Shareable()
     runner.task_router.add_executor(["train"], executor)
 
@@ -261,7 +276,7 @@ def test_do_task_materializes_lazy_payload_for_cj_local_executor_without_filters
 def test_do_task_does_not_reserialize_concrete_payload_for_cj_local_executor():
     runner = _runner()
     executor = MagicMock()
-    executor.supports_task_data_pass_through.return_value = False
+    executor.supports_payload_pass_through.return_value = False
     executor.execute.return_value = Shareable()
     runner.task_router.add_executor(["train"], executor)
 
@@ -278,7 +293,7 @@ def test_do_task_does_not_reserialize_concrete_payload_for_cj_local_executor():
 def test_do_task_materializes_before_applicable_data_and_result_filters():
     runner = _runner()
     executor = MagicMock()
-    executor.supports_task_data_pass_through.return_value = True
+    executor.supports_payload_pass_through.return_value = True
     executor.execute.return_value = _lazy_payload("result")
     runner.task_router.add_executor(["train"], executor)
 
@@ -286,8 +301,18 @@ def test_do_task_materializes_before_applicable_data_and_result_filters():
     data_filter.process.side_effect = lambda data, _ctx: data
     result_filter = MagicMock()
     result_filter.process.side_effect = lambda data, _ctx: data
-    runner.task_data_filters["train" + FilterKey.DELIMITER + FilterKey.IN] = [data_filter]
-    runner.task_result_filters["train" + FilterKey.DELIMITER + FilterKey.OUT] = [result_filter]
+    fl_ctx = _task_context_for_job()
+    fl_ctx.set_prop(
+        FLContextKey.SCOPE_OBJECT,
+        SimpleNamespace(
+            **{
+                Scope.TASK_DATA_FILTERS_NAME: {FilterKey.IN: [data_filter]},
+                Scope.TASK_RESULT_FILTERS_NAME: {FilterKey.OUT: [result_filter]},
+            }
+        ),
+        private=True,
+        sticky=False,
+    )
 
     materialized = []
 
@@ -299,7 +324,7 @@ def test_do_task_materializes_before_applicable_data_and_result_filters():
         patch("nvflare.private.fed.client.client_runner.add_job_audit_event", return_value="audit-id"),
         patch("nvflare.private.fed.client.client_runner._materialize_lazy_download_refs", side_effect=materialize),
     ):
-        reply = runner._do_task(_task(data=_lazy_payload("task")), _task_context_for_job(), Signal())
+        reply = runner._do_task(_task(data=_lazy_payload("task")), fl_ctx, Signal())
 
     assert reply.get_return_code() == ReturnCode.OK
     assert len(materialized) == 2
@@ -312,7 +337,7 @@ def test_do_task_materializes_before_applicable_data_and_result_filters():
 def test_do_task_does_not_reserialize_concrete_result_for_result_filter():
     runner = _runner()
     executor = MagicMock()
-    executor.supports_task_data_pass_through.return_value = True
+    executor.supports_payload_pass_through.return_value = True
     executor.execute.return_value = Shareable({"payload": "concrete"})
     runner.task_router.add_executor(["train"], executor)
     result_filter = MagicMock()
@@ -330,64 +355,10 @@ def test_do_task_does_not_reserialize_concrete_result_for_result_filter():
     result_filter.process.assert_called_once()
 
 
-def test_task_data_event_consumer_can_require_materialization_without_a_filter():
-    runner = _runner()
-    executor = MagicMock()
-    executor.supports_task_data_pass_through.return_value = True
-    executor.execute.return_value = Shareable()
-    runner.task_router.add_executor(["train"], executor)
-    consumer = FLComponent()
-    consumer.requires_materialized_task_data = True
-    runner.event_handlers.append(consumer)
-    lazy_task = _lazy_payload("task")
-    concrete_task = Shareable({"payload": "concrete"})
-    observed_before_filter = []
-
-    def fire_event(event_type, fl_ctx):
-        if event_type == EventType.BEFORE_TASK_DATA_FILTER:
-            observed_before_filter.append(fl_ctx.get_prop(FLContextKey.TASK_DATA))
-
-    runner.fire_event.side_effect = fire_event
-
-    with (
-        patch("nvflare.private.fed.client.client_runner.add_job_audit_event", return_value="audit-id"),
-        patch(
-            "nvflare.private.fed.client.client_runner._materialize_lazy_download_refs",
-            return_value=concrete_task,
-        ) as materialize,
-    ):
-        reply = runner._do_task(_task(data=lazy_task), _task_context_for_job(), Signal())
-
-    assert reply.get_return_code() == ReturnCode.OK
-    assert observed_before_filter == [concrete_task]
-    assert executor.execute.call_args.args[1] is concrete_task
-    materialize.assert_called_once_with(lazy_task, ANY, ANY)
-
-
-def test_task_data_event_consumer_requirement_is_task_specific():
-    runner = _runner()
-    executor = MagicMock()
-    executor.supports_task_data_pass_through.return_value = True
-    executor.execute.return_value = Shareable()
-    runner.task_router.add_executor(["validate"], executor)
-    consumer = FLComponent()
-    consumer.requires_materialized_task_data = lambda task_name: task_name == "train"
-    runner.event_handlers.append(consumer)
-
-    with (
-        patch("nvflare.private.fed.client.client_runner.add_job_audit_event", return_value="audit-id"),
-        patch("nvflare.private.fed.client.client_runner._materialize_lazy_download_refs") as materialize,
-    ):
-        reply = runner._do_task(_task(name="validate", data=_lazy_payload("task")), _task_context_for_job(), Signal())
-
-    assert reply.get_return_code() == ReturnCode.OK
-    materialize.assert_not_called()
-
-
 def test_after_task_execution_sees_materialized_result_when_result_filter_requires_it():
     runner = _runner()
     executor = MagicMock()
-    executor.supports_task_data_pass_through.return_value = True
+    executor.supports_payload_pass_through.return_value = True
     lazy_result = _lazy_payload("result")
     concrete_result = Shareable({"payload": "concrete"})
     executor.execute.return_value = lazy_result
@@ -418,101 +389,10 @@ def test_after_task_execution_sees_materialized_result_when_result_filter_requir
     assert executed_task.get_header(FOBSContextKey.RECEIVER_IDS) == ["site-1.job-1"]
 
 
-def test_result_event_consumer_can_require_materialization_without_a_filter():
-    runner = _runner()
-    executor = MagicMock()
-    executor.supports_task_data_pass_through.return_value = True
-    lazy_result = _lazy_payload("result")
-    concrete_result = Shareable({"payload": "concrete"})
-    executor.execute.return_value = lazy_result
-    runner.task_router.add_executor(["train"], executor)
-    consumer = MagicMock()
-    consumer.requires_materialized_task_result = True
-    runner.event_handlers.append(consumer)
-    observed_after_execution = []
-
-    def fire_event(event_type, fl_ctx):
-        if event_type == EventType.AFTER_TASK_EXECUTION:
-            observed_after_execution.append(fl_ctx.get_prop(FLContextKey.TASK_RESULT))
-
-    runner.fire_event.side_effect = fire_event
-
-    def materialize(data, _fl_ctx, _abort_signal):
-        return concrete_result if data is lazy_result else data
-
-    with (
-        patch("nvflare.private.fed.client.client_runner.add_job_audit_event", return_value="audit-id"),
-        patch("nvflare.private.fed.client.client_runner._materialize_lazy_download_refs", side_effect=materialize),
-    ):
-        reply = runner._do_task(_task(), _task_context_for_job(), Signal())
-
-    assert reply is concrete_result
-    assert observed_after_execution == [concrete_result]
-    executed_task = executor.execute.call_args.args[1]
-    assert executed_task.get_header(FOBSContextKey.RECEIVER_IDS) == ["site-1.job-1"]
-
-
-def test_tensor_client_streamer_receives_materialized_external_result():
-    runner = _runner()
-    executor = MagicMock()
-    executor.supports_task_data_pass_through.return_value = True
-    lazy_result = _lazy_payload("result")
-    concrete_result = Shareable({"payload": "concrete"})
-    executor.execute.return_value = lazy_result
-    runner.task_router.add_executor(["train"], executor)
-    streamer = TensorClientStreamer(tasks=["train"])
-    observed = []
-    streamer.send_tensors_to_server = lambda fl_ctx: observed.append(fl_ctx.get_prop(FLContextKey.TASK_RESULT))
-    runner.event_handlers.append(streamer)
-
-    def fire_event(event_type, fl_ctx):
-        if event_type == EventType.AFTER_TASK_RESULT_FILTER:
-            streamer.handle_event(event_type, fl_ctx)
-
-    runner.fire_event.side_effect = fire_event
-
-    with (
-        patch("nvflare.private.fed.client.client_runner.add_job_audit_event", return_value="audit-id"),
-        patch(
-            "nvflare.private.fed.client.client_runner._materialize_lazy_download_refs",
-            return_value=concrete_result,
-        ) as materialize,
-    ):
-        reply = runner._do_task(_task(), _task_context_for_job(), Signal())
-
-    assert reply is concrete_result
-    assert observed == [concrete_result]
-    materialize.assert_called_once_with(lazy_result, ANY, ANY)
-    executed_task = executor.execute.call_args.args[1]
-    assert executed_task.get_header(FOBSContextKey.RECEIVER_IDS) == ["site-1.job-1"]
-
-
-def test_result_event_consumer_requirement_is_task_specific():
-    runner = _runner()
-    executor = MagicMock()
-    executor.supports_task_data_pass_through.return_value = True
-    executor.execute.return_value = _lazy_payload("result")
-    runner.task_router.add_executor(["validate"], executor)
-    consumer = MagicMock()
-    consumer.requires_materialized_task_result = lambda task_name: task_name == "train"
-    runner.event_handlers.append(consumer)
-
-    with (
-        patch("nvflare.private.fed.client.client_runner.add_job_audit_event", return_value="audit-id"),
-        patch("nvflare.private.fed.client.client_runner._materialize_lazy_download_refs") as materialize,
-    ):
-        reply = runner._do_task(_task(name="validate"), _task_context_for_job(), Signal())
-
-    assert reply.get_return_code() == ReturnCode.OK
-    materialize.assert_not_called()
-    executed_task = executor.execute.call_args.args[1]
-    assert executed_task.get_header(FOBSContextKey.RECEIVER_IDS) is None
-
-
 def test_do_task_maps_abort_during_task_data_materialization_to_task_aborted():
     runner = _runner()
     executor = MagicMock()
-    executor.supports_task_data_pass_through.return_value = True
+    executor.supports_payload_pass_through.return_value = True
     runner.task_router.add_executor(["train"], executor)
     data_filter = MagicMock()
     runner.task_data_filters["train" + FilterKey.DELIMITER + FilterKey.IN] = [data_filter]
@@ -537,7 +417,7 @@ def test_do_task_maps_abort_during_task_data_materialization_to_task_aborted():
 def test_do_task_maps_abort_during_task_result_materialization_to_task_aborted():
     runner = _runner()
     executor = MagicMock()
-    executor.supports_task_data_pass_through.return_value = True
+    executor.supports_payload_pass_through.return_value = True
     executor.execute.return_value = _lazy_payload("result")
     runner.task_router.add_executor(["train"], executor)
     result_filter = MagicMock()

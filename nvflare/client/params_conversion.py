@@ -133,10 +133,11 @@ def _pytorch_to_numpy(params: Any, state: MutableMapping[str, Any], logger: Opti
         else:
             exclude_vars[key] = value
 
-    if tensor_shapes:
-        state[_TENSOR_SHAPES] = tensor_shapes
+    # This state is session-scoped. Replace both maps on every outgoing conversion so
+    # entries removed or changed between rounds cannot be restored from stale state.
+    state[_TENSOR_SHAPES] = tensor_shapes
+    state[_EXCLUDE_VARS] = exclude_vars
     if exclude_vars:
-        state[_EXCLUDE_VARS] = exclude_vars
         if logger is not None:
             logger.warning(
                 f"{len(exclude_vars)} vars excluded because they are not tensors: {list(exclude_vars.keys())}"

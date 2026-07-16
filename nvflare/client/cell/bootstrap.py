@@ -37,9 +37,8 @@ import tempfile
 # absolute path of the bootstrap config file.
 BOOTSTRAP_FILE_ENV_VAR = "NVFLARE_CLIENT_API_BOOTSTRAP"
 
-# CLIENT_API_TYPE value the backend sets on the launched trainer so its flare.init() resolves
-# to the Cell engine (CellClientAPI). Canonical here (part of the launch contract) and mirrored
-# by ClientAPIType.CELL_API in nvflare/client/api_context.py.
+# Client API type selected by this self-identifying bootstrap. Mirrored by
+# ClientAPIType.CELL_API in nvflare/client/api_context.py.
 CELL_API_TYPE = "CELL_API"
 
 # Version of the typed bootstrap-file envelope.  This is separate from PROTOCOL_VERSION:

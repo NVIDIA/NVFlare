@@ -21,7 +21,12 @@ import pytest
 from nvflare.client import api as flare_api
 from nvflare.client.api_context import APIContext, ClientAPIType
 from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
-from nvflare.client.cell.bootstrap import BOOTSTRAP_SCHEMA_VERSION, EXTERNAL_PROCESS_EXECUTION_MODE, BootstrapKey
+from nvflare.client.cell.bootstrap import (
+    BOOTSTRAP_FILE_ENV_VAR,
+    BOOTSTRAP_SCHEMA_VERSION,
+    EXTERNAL_PROCESS_EXECUTION_MODE,
+    BootstrapKey,
+)
 from nvflare.client.in_process.api import InProcessClientAPI
 
 
@@ -71,6 +76,29 @@ class TestAPIContextSelection:
         cell_api_cls.return_value.init.assert_called_once_with(rank="0")
         assert ctx.api_type == ClientAPIType.CELL_API
         assert ctx.api is cell_api_cls.return_value
+
+    def test_bootstrap_env_selects_cell_without_duplicate_api_type(self, tmp_path, monkeypatch):
+        config_file = _write_config(tmp_path / "launch-bootstrap.json", _typed_bootstrap())
+        monkeypatch.setenv(BOOTSTRAP_FILE_ENV_VAR, config_file)
+        monkeypatch.delenv(CLIENT_API_TYPE_KEY, raising=False)
+
+        with patch("nvflare.client.cell.api.CellClientAPI") as cell_api_cls:
+            ctx = APIContext(rank="0")
+
+        cell_api_cls.assert_called_once_with(bootstrap_file=config_file)
+        assert ctx.api_type == ClientAPIType.CELL_API
+
+    def test_bootstrap_env_overrides_untyped_explicit_legacy_config(self, tmp_path, monkeypatch):
+        legacy_file = _write_config(tmp_path / "client_api_config.json", {"TASK_EXCHANGE": {}})
+        bootstrap_file = _write_config(tmp_path / "launch-bootstrap.json", _typed_bootstrap())
+        monkeypatch.setenv(BOOTSTRAP_FILE_ENV_VAR, bootstrap_file)
+        monkeypatch.delenv(CLIENT_API_TYPE_KEY, raising=False)
+
+        with patch("nvflare.client.cell.api.CellClientAPI") as cell_api_cls:
+            ctx = APIContext(rank="0", config_file=legacy_file)
+
+        cell_api_cls.assert_called_once_with(bootstrap_file=bootstrap_file)
+        assert ctx.api_type == ClientAPIType.CELL_API
 
     def test_env_cell_selection_without_explicit_config_keeps_bootstrap_env_behavior(self, monkeypatch):
         monkeypatch.setenv(CLIENT_API_TYPE_KEY, ClientAPIType.CELL_API.value)

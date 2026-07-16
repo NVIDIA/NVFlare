@@ -25,12 +25,9 @@ from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.signal import Signal
-from nvflare.app_common.launchers.subprocess_launcher import (
-    SubprocessLauncher,
-    _route_subprocess_line,
-    log_subprocess_output,
-)
+from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
 from nvflare.fuel.utils.secret_utils import secret_file_ref
+from nvflare.utils.process_utils import _route_subprocess_line, log_subprocess_output
 
 
 class TestSubprocessLauncher:

@@ -21,8 +21,7 @@ Client-API-specific payload wrapper or progress event over Pipe. Task and result
 `ViaDownloader`, and the sender observes the real `DownloadService` transactions through
 call-scoped FOBS context. The task is materialized at the trainer before its Cell handler
 runs. A result reaches the CJ as inline values and/or lazy references. `ClientRunner`
-materializes it only when an applicable CJ task-result filter or an event component that
-declares `requires_materialized_task_result(task_name)` consumes it; otherwise the
+materializes it only when an applicable CJ task-result filter consumes it; otherwise the
 downstream server/workflow pulls directly from the trainer. The trainer waits on the real
 `DownloadService` terminal outcome, so CJ envelope acceptance cannot end the source lifetime. The
 last accepted receiver confirmation eagerly settles a completed transaction instead of waiting

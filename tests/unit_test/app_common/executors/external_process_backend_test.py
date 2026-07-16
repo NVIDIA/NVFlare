@@ -365,12 +365,29 @@ class TestInitializeAndFinalize:
             assert process.kwargs["start_new_session"] is (os.name == "posix")
             assert process.kwargs["cwd"] == env.app_dir
             assert BOOTSTRAP_FILE_ENV_VAR in process.kwargs["env"]
+            assert "CLIENT_API_TYPE" not in process.kwargs["env"]
         finally:
             backend.finalize(FLContext())
         assert not backend._session
         assert (CellChannel.SERVER_COMMAND, ServerCommandNames.GET_TASK) not in env.cell.decode_pass_through_topics
         # launch-token file is removed after teardown
         assert not os.path.exists(os.path.join(env.app_dir, bootstrap_file_name(1)))
+
+    def test_initialize_does_not_log_configured_command(self, env):
+        literal_secret = "literal-secret-sentinel"
+        backend = ExternalProcessBackend()
+        backend.logger = MagicMock()
+        fl_ctx = _make_fl_ctx(_make_engine(env.cell), env.app_dir)
+
+        backend.initialize(
+            _make_context(command=f"python custom/train.py --api-key {literal_secret}"),
+            fl_ctx,
+        )
+        try:
+            assert all(literal_secret not in str(call) for call in backend.logger.method_calls)
+            backend.logger.info.assert_any_call("launching external trainer (launch 1)")
+        finally:
+            backend.finalize(FLContext())
 
     def test_bootstrap_config_contents_and_permission(self, env):
         backend, _ = _initialized_backend(

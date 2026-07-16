@@ -31,8 +31,7 @@ nvflare/client/cell/defs.py — no PipeHandler, no CellPipe, no MetricRelay:
 - **Payload plane**: task and result Shareables ride directly in the Cell requests. Cell's
   FOBS encoder uses ViaDownloader for large tensors, so the existing F3 transaction is the
   only payload lifecycle. The CJ remains a pass-through hop unless an executor-side filter
-  or declared event consumer needs concrete data; ClientRunner materializes lazy references
-  at that boundary only.
+  needs concrete data; ClientRunner materializes lazy references at that boundary only.
 - **Teardown**: orderly stop is SHUTDOWN, a bounded wait for natural exit
   (shutdown_timeout), then SIGTERM -> stop_grace_period -> SIGKILL to the process GROUP.
   An accepted result is the one exception: teardown requests SHUTDOWN but preserves the
@@ -79,7 +78,6 @@ from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
 from nvflare.client.cell.bootstrap import (
     BOOTSTRAP_FILE_ENV_VAR,
     BOOTSTRAP_SCHEMA_VERSION,
-    CELL_API_TYPE,
     EXTERNAL_PROCESS_EXECUTION_MODE,
     BootstrapKey,
     write_bootstrap_config,
@@ -306,10 +304,9 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             self._connect_url = connect_url
 
             self._register_protocol_cbs(cell)
-            # Register framework tensor decomposers for explicitly native/RAW server
-            # representations. The trainer-side engine registers the same. Opportunistic: a
-            # framework that is not installed is skipped, and numpy/FLModel need nothing extra.
-            register_framework_decomposers(self.logger)
+            # Register only decomposers required by the declared exchange pair. RAW disables
+            # adaptation, so its concrete representation is handled opportunistically.
+            register_framework_decomposers(context.params_exchange_format, context.server_expected_format, self.logger)
 
             # ex-process analytics parity with MetricRelay (fed_event=True): fire the
             # federation-scoped event directly. ConvertToFedEvent (if configured) only
@@ -520,9 +517,9 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
 
             env = os.environ.copy()
             env[BOOTSTRAP_FILE_ENV_VAR] = bootstrap_path
-            # route the launched trainer's flare.init() to the Cell engine (CellClientAPI),
-            # not the legacy CellPipe/FlareAgent ex-process stack
-            env[CLIENT_API_TYPE_KEY] = CELL_API_TYPE
+            # The typed bootstrap is the launch selector. Do not inherit a legacy API-type
+            # override that could conflict with it in the trainer process.
+            env.pop(CLIENT_API_TYPE_KEY, None)
             add_custom_dir_to_path(self._custom_dir, env)
 
             # Last gate before spawning: finalize() may have set _closed after this session
@@ -532,7 +529,9 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             if self._closed:
                 raise RuntimeError("backend closed before trainer launch")
 
-            self.logger.info(f"launching external trainer (launch {seq}): {self._context.command}")
+            # Never log the configured command: legacy/hand-written jobs may contain literal
+            # credentials rather than site-resolved secret references.
+            self.logger.info(f"launching external trainer (launch {seq})")
             session.process = subprocess.Popen(
                 self._split_command(self._context.command),
                 shell=False,
@@ -1320,8 +1319,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
         """Accept a result Shareable already decoded by Cell.
 
         PASS_THROUGH decoding can leave large values as lazy references here. ClientRunner
-        resolves them before invoking any configured TASK_RESULT filter or declared
-        concrete result-event consumer.
+        resolves them before invoking any configured TASK_RESULT filter.
 
         RESULT_READY is currently sent once. Attach-mode redelivery tolerance should be
         added only as a sender-retry + receiver-dedup pair.

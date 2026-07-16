@@ -61,6 +61,25 @@ def test_pytorch_round_trip_preserves_tensor_shape_and_local_non_tensor_state():
     assert restored["local_metadata"] == "not aggregated"
 
 
+@pytest.mark.parametrize("second_round_has_metadata", [False, True])
+def test_pytorch_round_trip_replaces_stale_non_tensor_state(second_round_has_metadata):
+    torch = pytest.importorskip("torch")
+    state = {}
+    first_round = {
+        "w": torch.tensor([1.0]),
+        "local_metadata": "not aggregated",
+    }
+    convert_params(first_round, ExchangeFormat.PYTORCH, ExchangeFormat.NUMPY, state)
+
+    second_round = {"w": torch.tensor([2.0])}
+    if second_round_has_metadata:
+        second_round["local_metadata"] = torch.tensor([3.0])
+    convert_params(second_round, ExchangeFormat.PYTORCH, ExchangeFormat.NUMPY, state)
+
+    restored = convert_params({"w": np.asarray([4.0])}, ExchangeFormat.NUMPY, ExchangeFormat.PYTORCH, state)
+    assert "local_metadata" not in restored
+
+
 def test_pytorch_conversion_requires_parameter_dict():
     pytest.importorskip("torch")
     with pytest.raises(TypeError, match="parameter dict"):

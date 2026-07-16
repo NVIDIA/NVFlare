@@ -1756,7 +1756,7 @@ def test_external_process_multi_rank_distributed_end_to_end(tmp_path):
 
     env = os.environ.copy()
     env["PYTHONPATH"] = _REPO_ROOT + os.pathsep + env.get("PYTHONPATH", "")
-    env["GLOO_SOCKET_IFNAME"] = "lo0"  # force gloo onto loopback on macOS
+    env["GLOO_SOCKET_IFNAME"] = "lo0" if sys.platform == "darwin" else "lo"
 
     proc = subprocess.run(
         [

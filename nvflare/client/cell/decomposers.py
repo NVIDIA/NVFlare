@@ -12,22 +12,43 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Framework decomposer registration shared by the external_process CJ backend and trainer engine.
+"""Framework decomposer registration shared by the external-process CJ and trainer.
 
-Both ends of an external_process job may need to serialize framework-native tensors across the
-Cell when the declared server representation is native or ``RAW``. The trainer also serializes
-native results before its Client API boundary adapts them when required, so both ends register the
-same framework decomposers. Registration is opportunistic: a framework that is not installed is
-skipped, and the numpy/FLModel path needs nothing beyond the standard decomposers.
+Both ends may need to serialize framework-native tensors across the Cell when the declared wire
+representation is native or ``RAW``. NumPy and Keras wire representations need only the standard
+decomposers. A declared native representation is strict; ``RAW`` remains opportunistic because its
+concrete payload type is intentionally unspecified.
 """
+
+from nvflare.client.config import ExchangeFormat
 
 # (module_path, class_name) of each framework's tensor decomposer, mirroring what the legacy
 # ex-process trainer registered for ExchangeFormat.PYTORCH (nvflare/client/ex_process/api.py).
 _FRAMEWORK_DECOMPOSERS = (("nvflare.app_opt.pt.decomposers", "TensorDecomposer"),)
 
 
-def register_framework_decomposers(logger=None) -> None:
-    """Register available framework tensor decomposers with FOBS. Never raises."""
+def register_framework_decomposers(params_exchange_format, server_expected_format, logger=None) -> None:
+    """Register decomposers required by the declared Client API exchange pair.
+
+    The Cell normally carries the server representation because trainer-side adaptation happens
+    after receive and before send. If either side declares ``RAW``, however, conversion is disabled
+    and either representation may cross the Cell. Registration is opportunistic when that pair is
+    otherwise framework-agnostic, but required when the other side explicitly declares PyTorch.
+    """
+    params_exchange_format = ExchangeFormat(params_exchange_format)
+    server_expected_format = ExchangeFormat(server_expected_format)
+    formats = (params_exchange_format, server_expected_format)
+    if ExchangeFormat.RAW in formats:
+        # RAW disables adaptation, so either declared representation may cross the Cell.
+        should_register = True
+        required = ExchangeFormat.PYTORCH in formats
+    else:
+        # With adaptation enabled, the Cell carries the server representation.
+        should_register = server_expected_format == ExchangeFormat.PYTORCH
+        required = should_register
+    if not should_register:
+        return
+
     from nvflare.fuel.utils import fobs
 
     for module_name, class_name in _FRAMEWORK_DECOMPOSERS:
@@ -37,5 +58,10 @@ def register_framework_decomposers(logger=None) -> None:
             if logger is not None:
                 logger.debug(f"registered framework decomposer {module_name}.{class_name}")
         except Exception as e:
+            if required:
+                raise RuntimeError(
+                    f"cannot register {module_name}.{class_name} required by the declared "
+                    f"{ExchangeFormat.PYTORCH.value} wire format"
+                ) from e
             if logger is not None:
                 logger.debug(f"framework decomposer {module_name}.{class_name} not registered: {e}")

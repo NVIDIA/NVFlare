@@ -30,10 +30,13 @@ _POSIX_SPAWN_SUPPORTED = hasattr(os, "posix_spawn") and os.name == "posix"
 # Lines from a subprocess consoleHandler match this; raw print() lines do not.
 _ANSI_ESC_RE = re.compile(r"\x1b\[[0-9;]*m")
 _LOG_LINE_RE = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}")
-_SHELL_COMMAND_INTERPRETERS = frozenset({"sh", "bash"})
+_SHELL_COMMAND_INTERPRETERS = frozenset({"ash", "bash", "dash", "fish", "ksh", "mksh", "sh", "zsh"})
 _POWERSHELL_COMMAND_INTERPRETERS = frozenset({"powershell", "pwsh"})
+_CMD_COMMAND_INTERPRETERS = frozenset({"cmd"})
 _ENV_COMMAND_WRAPPERS = frozenset({"env"})
+_COMMAND_MULTIPLEXERS = frozenset({"busybox"})
 _SHELL_OPTIONS_WITH_VALUE = frozenset({"-o", "-O", "--init-file", "--rcfile"})
+_PYTHON_INTERPRETER_RE = re.compile(r"^(?:python|pypy)(?:\d+(?:\.\d+)*)?$")
 
 
 def _command_basename(command: str) -> str:
@@ -75,13 +78,17 @@ def _unwrap_env_commands(command_seq: list[str]) -> list[str]:
 
 
 def _reject_shell_command_refs(command_seq: list[str], interpreter: str) -> None:
+    normalized_interpreter = interpreter.casefold().removesuffix(".exe")
     index = 1
     while index < len(command_seq):
         option = command_seq[index]
         if option == "--" or not option.startswith("-"):
             return
         # POSIX shells allow short options to be combined, for example ``bash -lc``.
-        if not option.startswith("--") and "c" in option[1:]:
+        is_command_option = not option.startswith("--") and (
+            "c" in option[1:] or (normalized_interpreter == "fish" and "C" in option[1:])
+        )
+        if is_command_option:
             command_index = index + 1
             if has_secret_refs(option) or (
                 command_index < len(command_seq) and has_secret_refs(command_seq[command_index])
@@ -109,6 +116,24 @@ def _reject_powershell_code_refs(command_seq: list[str], interpreter: str) -> No
         return
 
 
+def _reject_cmd_code_refs(command_seq: list[str], interpreter: str) -> None:
+    for index, option in enumerate(command_seq[1:], start=1):
+        if option.casefold().startswith(("/c", "/k")):
+            if has_secret_refs(option) or any(has_secret_refs(arg) for arg in command_seq[index + 1 :]):
+                _raise_nested_command_secret_ref(interpreter, option)
+            return
+
+
+def _reject_python_code_refs(command_seq: list[str], interpreter: str) -> None:
+    for index, option in enumerate(command_seq[1:], start=1):
+        if option == "--" or not option.startswith("-"):
+            return
+        if option == "-c" or option.startswith("-c"):
+            if has_secret_refs(option) or (index + 1 < len(command_seq) and has_secret_refs(command_seq[index + 1])):
+                _raise_nested_command_secret_ref(interpreter, option)
+            return
+
+
 def _reject_secret_refs_in_nested_command(command_seq: list[str]) -> None:
     """Reject refs in code strings for direct or explicitly env-wrapped shell interpreters."""
     command_seq = _unwrap_env_commands(command_seq)
@@ -117,19 +142,26 @@ def _reject_secret_refs_in_nested_command(command_seq: list[str]) -> None:
 
     interpreter = _command_basename(command_seq[0])
     normalized_interpreter = interpreter.casefold().removesuffix(".exe")
+    if normalized_interpreter in _COMMAND_MULTIPLEXERS and len(command_seq) > 1:
+        command_seq = command_seq[1:]
+        interpreter = _command_basename(command_seq[0])
+        normalized_interpreter = interpreter.casefold().removesuffix(".exe")
     if normalized_interpreter in _SHELL_COMMAND_INTERPRETERS:
         _reject_shell_command_refs(command_seq, interpreter)
     elif normalized_interpreter in _POWERSHELL_COMMAND_INTERPRETERS:
         _reject_powershell_code_refs(command_seq, interpreter)
+    elif normalized_interpreter in _CMD_COMMAND_INTERPRETERS:
+        _reject_cmd_code_refs(command_seq, interpreter)
+    elif _PYTHON_INTERPRETER_RE.fullmatch(normalized_interpreter):
+        _reject_python_code_refs(command_seq, interpreter)
 
 
 def prepare_subprocess_command(command: str, posix: bool = True) -> list[str]:
     """Build argv for a shell-free subprocess command and resolve secret references safely.
 
     The command is split before references are resolved, so a secret containing spaces or
-    command-line metacharacters remains one argv element. References inside nested shell or
-    PowerShell command strings are rejected because those strings would be parsed a second
-    time by the interpreter.
+    command-line metacharacters remains one argv element. References inside recognized nested
+    interpreter command strings are rejected because those strings are parsed a second time.
 
     Args:
         command: Command string from job configuration.

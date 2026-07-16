@@ -83,32 +83,6 @@ The following is a typical code pattern for handling events you are interested i
 
 Event handlers are called in sequence. The failure (exception) of one handler does not stop the invocation of subsequent handlers.
 
-Concrete Client Task Data and Results
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-An external-process Client API executor can leave large values in ``FLContextKey.TASK_DATA`` or
-``FLContextKey.TASK_RESULT`` as internal lazy download references while the client job forwards
-the payload. This avoids materializing a full model in the client job and preserves direct
-server-to-trainer and trainer-to-server transfer paths.
-
-An event component that reads concrete task-data values during client task-data events (for
-example ``BEFORE_TASK_DATA_FILTER``, ``AFTER_TASK_DATA_FILTER``, or
-``BEFORE_TASK_EXECUTION``) must override ``FLComponent.requires_materialized_task_data(task_name)``
-and return ``True`` for the tasks it consumes. Configured task-data filters and executors that do
-not support pass-through are also concrete consumers.
-
-An event component that reads concrete task-result values during client result events (for
-example ``AFTER_TASK_EXECUTION``, ``BEFORE_TASK_RESULT_FILTER``, or
-``AFTER_TASK_RESULT_FILTER``) must override
-``FLComponent.requires_materialized_task_result(task_name)`` and return ``True`` for the tasks
-it consumes. The client job then becomes the first concrete receiver for those tasks and
-materializes the complete FOBS graph before firing result events. The default implementation
-returns ``False``; observation-only components should keep that default so they do not force an
-additional model copy. Configured task-result filters always require concrete data and therefore
-materialize automatically. In both directions, the client job performs the FOBS materialization
-round trip only when a concrete consumer exists *and* the payload actually contains a lazy
-download reference; already-concrete payloads are not reserialized.
-
 Built-in Event Types
 --------------------
 NVIDIA FLARE's system-defined event types are specified in :class:`nvflare.apis.event_type.EventType`:

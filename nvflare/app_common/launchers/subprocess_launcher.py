@@ -25,16 +25,7 @@ from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.launcher import Launcher, LauncherRunStatus
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.utils.job_launcher_utils import add_custom_dir_to_path
-from nvflare.utils.process_utils import _get_line as get_line  # noqa: F401 - compatibility export
-from nvflare.utils.process_utils import (  # noqa: F401 - _route_subprocess_line compatibility export
-    _route_subprocess_line,
-    log_subprocess_output,
-    prepare_subprocess_command,
-)
-
-# Compatibility aliases for callers/tests that import the legacy launcher's helpers.
-# Their implementation is neutral and shared with ExternalProcessBackend now.
-_prepare_command = prepare_subprocess_command
+from nvflare.utils.process_utils import log_subprocess_output, prepare_subprocess_command
 
 
 class SubprocessLauncher(Launcher):
@@ -102,7 +93,7 @@ class SubprocessLauncher(Launcher):
                 # splitting, so injected values never re-tokenize. References in supported nested
                 # shell command strings are rejected because those strings are parsed again.
                 # Resolved values exist only in the subprocess argv and must never be logged.
-                command_seq = _prepare_command(command)
+                command_seq = prepare_subprocess_command(command)
                 self._process = subprocess.Popen(
                     command_seq,
                     shell=False,
@@ -137,7 +128,7 @@ class SubprocessLauncher(Launcher):
                 self._terminate_process()
                 self._log_thread.join()
                 if self._clean_up_script:
-                    command_seq = _prepare_command(self._clean_up_script)
+                    command_seq = prepare_subprocess_command(self._clean_up_script)
                     process = subprocess.Popen(command_seq, cwd=self._app_dir, shell=False)
                     process.wait()
                 self._process = None

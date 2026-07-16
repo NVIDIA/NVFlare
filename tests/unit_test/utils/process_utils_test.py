@@ -29,11 +29,25 @@ class TestPrepareSubprocessCommand:
 
         assert argv == ["python", "train.py", "--token", "value with spaces; --still-one-arg"]
 
-    def test_rejects_secret_in_nested_shell_command(self, monkeypatch):
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "bash -lc 'echo ${secret:PROCESS_UTIL_TEST_SECRET}'",
+            "zsh -c 'echo ${secret:PROCESS_UTIL_TEST_SECRET}'",
+            "dash -c 'echo ${secret:PROCESS_UTIL_TEST_SECRET}'",
+            "fish -c 'echo ${secret:PROCESS_UTIL_TEST_SECRET}'",
+            "fish -C 'echo ${secret:PROCESS_UTIL_TEST_SECRET}'",
+            'cmd.exe /c "echo ${secret:PROCESS_UTIL_TEST_SECRET}"',
+            "cmd.exe /Cecho ${secret:PROCESS_UTIL_TEST_SECRET}",
+            "busybox sh -c 'echo ${secret:PROCESS_UTIL_TEST_SECRET}'",
+            "python -c 'print(\"${secret:PROCESS_UTIL_TEST_SECRET}\")'",
+        ],
+    )
+    def test_rejects_secret_in_nested_shell_command(self, monkeypatch, command):
         monkeypatch.setenv("PROCESS_UTIL_TEST_SECRET", "'; injected-command #")
 
         with pytest.raises(ValueError, match="nested interpreter command strings"):
-            prepare_subprocess_command("bash -lc 'echo ${secret:PROCESS_UTIL_TEST_SECRET}'")
+            prepare_subprocess_command(command)
 
     def test_windows_tokenization_preserves_backslashes_and_secret_as_one_arg(self, monkeypatch):
         monkeypatch.setenv("PROCESS_UTIL_TEST_SECRET", "value with spaces")

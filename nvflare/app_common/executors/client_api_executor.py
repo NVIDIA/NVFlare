@@ -319,15 +319,14 @@ class ClientAPIExecutor(Executor):
 
     @property
     def execution_mode(self) -> str:
-        """Read-only view of the configured mode, for build-time validation (fed_app_config
-        rejects a second same-mode ClientAPIExecutor per client app) and diagnostics."""
+        """Read-only view of the configured mode, for validation and diagnostics."""
         return self._execution_mode
 
-    def supports_task_data_pass_through(self) -> bool:
-        """Whether task payloads can stay lazy while traversing this executor.
+    def supports_payload_pass_through(self) -> bool:
+        """Whether task and result payloads can stay lazy while traversing this executor.
 
         Only the Cell-based external-process backend has a distinct trainer receiver. The
-        in-process backend consumes task data inside the CJ, and attach is not implemented.
+        in-process backend consumes payloads inside the CJ, and attach is not implemented.
         """
 
         return self._execution_mode == ExecutionMode.EXTERNAL_PROCESS

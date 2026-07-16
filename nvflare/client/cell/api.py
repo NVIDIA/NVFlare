@@ -247,7 +247,11 @@ class CellClientAPI(APISpec):
 
         flare_decomposers.register()
         common_decomposers.register()
-        register_framework_decomposers(self.logger)
+        register_framework_decomposers(
+            self._task_exchange.get(ConfigKey.EXCHANGE_FORMAT, ExchangeFormat.RAW),
+            self._task_exchange.get(ConfigKey.SERVER_EXPECTED_FORMAT, ExchangeFormat.NUMPY),
+            self.logger,
+        )
 
         connect_url = self._config[BootstrapKey.CONNECT_URL]
         self._cell = Cell(

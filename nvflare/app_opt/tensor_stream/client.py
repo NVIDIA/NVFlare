@@ -75,14 +75,6 @@ class TensorClientStreamer(FLComponent):
         self.sender: TensorSender = None
         self.receiver: TensorReceiver = None
 
-    def requires_materialized_task_data(self, task_name: str) -> bool:
-        """Whether this event component consumes concrete task data for ``task_name``."""
-        return task_name in self.tasks
-
-    def requires_materialized_task_result(self, task_name: str) -> bool:
-        """Whether this event component consumes the concrete result for ``task_name``."""
-        return task_name in self.tasks
-
     def initialize(self, fl_ctx: FLContext):
         """Initialize the TensorClientStreamer component.
         Args:

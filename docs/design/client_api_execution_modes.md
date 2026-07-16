@@ -104,6 +104,12 @@ architecture change.
 Only one `ClientAPIExecutor` is configured for a client job. It routes all of its configured task
 names through the selected backend.
 
+This is a lifecycle/control-plane constraint, not an assumption that task routing alone serializes
+the system. Every configured executor receives `START_RUN` before task routing begins; multiple
+Client API executors would therefore initialize concurrently and collide on the in-process DataBus
+binding or the shared CJ Cell protocol callbacks. Job construction and raw client-config loading
+reject that configuration early instead of carrying a second runtime ownership guard.
+
 ### Launch and typed bootstrap
 
 Before launching a trainer, `ExternalProcessBackend` writes a launch-scoped JSON bootstrap file.
@@ -188,10 +194,9 @@ Result direction:
 2. Cell/FOBS invokes the CJ handler with inline values and/or lazy `ViaDownloader` references.
 3. The CJ validates and stores that result, then returns `RESULT_ACCEPTED`; this acknowledges the
    envelope, not completion of every downstream tensor download.
-4. `ClientRunner` materializes the result before an applicable CJ task-result filter or an
-   event component that explicitly declares itself a concrete result consumer (for example
-   `TensorClientStreamer`). With neither, it forwards the references, so the server/workflow
-   downloads directly from the trainer; observation-only events may therefore see lazy refs.
+4. `ClientRunner` materializes the result before an applicable CJ task-result filter. With no
+   filter, it forwards the references, so the server/workflow downloads directly from the
+   trainer; generic observation events may therefore see lazy refs.
 5. After a CJ filter, the ordinary CJ-to-server result send owns a new payload transaction. With
    no filter, the original trainer transaction remains end-to-end.
 6. The trainer waits for the strict terminal outcome of every created `DownloadService`
@@ -295,8 +300,16 @@ result. A DIFF is computed in the trainer-native representation before outgoing 
 
 CJ task-data/task-result filters remain supported. They see the server representation, matching
 legacy ordering, but conversion itself does not force CJ materialization. A payload materializes
-at the CJ only when an applicable CJ-side filter or explicitly declared event consumer requires
-concrete content.
+at the CJ only when an applicable CJ-side filter requires concrete content (or, for incoming task
+data, when the selected executor cannot preserve lazy references). With no applicable filter, the
+external-process path remains pass-through in both directions.
+
+Relocating content transformations from CJ filters to explicit send/receive endpoints is deferred
+to a separate design and change. That work must first inventory the existing privacy, HE,
+compression, selection, and blocking filters, including which side is trusted, which representation
+each operation requires, and whether removing or blocking a lazy reference must explicitly abandon
+its source transaction. This execution-mode change does not add a partial ``supports_lazy_payload``
+filter contract.
 
 ## In-Process Mode
 

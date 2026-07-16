@@ -70,13 +70,6 @@ def _materialize_lazy_download_refs(data, fl_ctx, abort_signal: Signal):
     return fobs.loads(encoded, fobs_ctx=decode_ctx)
 
 
-def _handler_requires_materialized_payload(handler, requirement_name: str, task_name: str) -> bool:
-    requirement = getattr(handler, requirement_name, False)
-    if callable(requirement):
-        return requirement(task_name) is True
-    return requirement is True
-
-
 class TaskRouter:
     def __init__(self):
         self.task_table = {}
@@ -175,10 +168,6 @@ class ClientRunner(TBI):
         self.task_router = config.task_router
         self.task_data_filters = config.task_data_filters
         self.task_result_filters = config.task_result_filters
-        # Keep configured job handlers visible to payload routing. Components are registered
-        # on the run manager, not on this FLComponent's callback table, but may declare that
-        # their task-data or task-result events need concrete payloads.
-        self.event_handlers = config.handlers
         self.default_task_fetch_interval = config.default_task_fetch_interval
 
         # parent target is where we will pull task and send task results to
@@ -349,12 +338,8 @@ class ClientRunner(TBI):
         try:
             filter_name = Scope.TASK_DATA_FILTERS_NAME
             task_data_filters = get_filters(filter_name, fl_ctx, self.task_data_filters, task.name, FilterKey.IN)
-            supports_pass_through = executor.supports_task_data_pass_through()
-            task_data_event_consumer = any(
-                _handler_requires_materialized_payload(handler, "requires_materialized_task_data", task.name)
-                for handler in getattr(self, "event_handlers", [])
-            )
-            concrete_task_data_consumer = task_data_filters or task_data_event_consumer or not supports_pass_through
+            supports_pass_through = executor.supports_payload_pass_through()
+            concrete_task_data_consumer = task_data_filters or not supports_pass_through
             if concrete_task_data_consumer and contains_lazy_download_ref(task_data):
                 task_data = _materialize_lazy_download_refs(task_data, fl_ctx, abort_signal)
                 task.data = task_data
@@ -424,15 +409,11 @@ class ClientRunner(TBI):
                 msg=f"submit result: {ReturnCode.TASK_RESULT_FILTER_ERROR}",
             )
 
-        result_event_consumer = any(
-            _handler_requires_materialized_payload(handler, "requires_materialized_task_result", task.name)
-            for handler in getattr(self, "event_handlers", [])
-        )
-        if (result_filters or result_event_consumer) and supports_pass_through:
-            # A result filter or declared event consumer makes this CJ the first concrete
-            # result consumer. Tell the trainer's DownloadService transaction to count
-            # this Cell—not the ultimate server stamped on the incoming task—as its
-            # receiver. The ordinary client-to-server send owns the next transaction.
+        if result_filters and supports_pass_through:
+            # A result filter makes this CJ the first concrete result consumer. Tell the
+            # trainer's DownloadService transaction to count this Cell—not the ultimate
+            # server stamped on the incoming task—as its receiver. The ordinary
+            # client-to-server send owns the next transaction.
             engine = fl_ctx.get_engine() or self.engine
             cell = engine.get_cell() if engine is not None else None
             cj_fqcn = cell.get_fqcn() if cell is not None else None
@@ -513,12 +494,11 @@ class ClientRunner(TBI):
             fl_ctx.set_prop(FLContextKey.TASK_DATA, value=None, private=True, sticky=False)
 
         try:
-            if (result_filters or result_event_consumer) and contains_lazy_download_ref(reply):
+            if result_filters and contains_lazy_download_ref(reply):
                 reply = _materialize_lazy_download_refs(reply, fl_ctx, abort_signal)
 
-            # A configured result filter or an explicitly declared result-event consumer
-            # makes the CJ concrete. Otherwise the CJ stays a pure forwarder and generic
-            # observation-only events may see lazy references.
+            # A configured result filter makes the CJ concrete. Otherwise the CJ stays a
+            # pure forwarder and generic observation events may see lazy references.
             fl_ctx.set_prop(FLContextKey.TASK_RESULT, value=reply, private=True, sticky=False)
             self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_EXECUTION")
             self.fire_event(EventType.AFTER_TASK_EXECUTION, fl_ctx)
