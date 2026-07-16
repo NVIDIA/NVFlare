@@ -307,3 +307,16 @@ See `ACKNOWLEDGEMENTS.md` for provenance. In short:
 - the **control-plane idea** and `program.md` workflow are adapted from [karpathy/autoresearch](https://github.com/karpathy/autoresearch);
 - the **literature-loop / QWBE-style proposal workflow** is inspired by the public [Camyla project](https://yifangao112.github.io/camyla-page) and adapted only at the instruction/artifact level;
 - the **FL execution substrate** is adapted from existing NVFlare examples and utilities, mainly [CIFAR-10 in PyTorch](../../examples/advanced/cifar10/pt/cifar10-sim).
+
+## Citation
+
+If you use this example, please cite the Auto-FL-Research paper:
+
+```bibtex
+@article{roth2026auto,
+  title={Auto-FL-Research: Agentic Search for Federated Learning Algorithms},
+  author={Roth, Holger R and Xu, Ziyue and Chen, Chester and Xu, Daguang and Cnudde, Peter and Feng, Andrew},
+  journal={arXiv preprint arXiv:2607.01366},
+  year={2026}
+}
+```
