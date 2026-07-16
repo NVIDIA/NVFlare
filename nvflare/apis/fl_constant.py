@@ -327,6 +327,7 @@ class ServerCommandKey:
 class FedEventHeader:
 
     TIMESTAMP = "_timestamp"
+    EVENT_ID = "_event_id"
     EVENT_TYPE = "_event_type"
     DIRECTION = "_direction"
     ORIGIN = "_origin"
