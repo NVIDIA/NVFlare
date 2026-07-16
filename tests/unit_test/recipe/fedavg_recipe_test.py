@@ -840,6 +840,25 @@ class TestFedAvgRecipeValidation:
         with pytest.raises(ValueError, match="reserved target name"):
             set_per_site_config(recipe, {ALL_SITES: {}})
 
+    @pytest.mark.parametrize(
+        ("site_name", "match"),
+        [
+            ("", "valid target name"),
+            ("site/1", "invalid character"),
+            ("site@1", "invalid character"),
+        ],
+    )
+    def test_per_site_config_rejects_invalid_target_name(
+        self, mock_file_system, base_recipe_params, simple_model, site_name, match
+    ):
+        recipe = FedAvgRecipe(name="test_invalid_target_name", model=simple_model, **base_recipe_params)
+
+        with pytest.raises(ValueError, match=match):
+            set_per_site_config(recipe, {site_name: {}, "site-2": {}})
+
+        assert recipe.configured_sites() == []
+        assert recipe._job.clients == []
+
     def test_per_site_config_requires_at_least_min_clients(self, mock_file_system, base_recipe_params, simple_model):
         recipe = FedAvgRecipe(name="test_per_site_client_count", model=simple_model, **base_recipe_params)
 
