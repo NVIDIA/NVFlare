@@ -2,6 +2,8 @@
 
 This bundle is a practical starting point for an **autoresearch-style** Auto-FL loop on top of NVFlare using agents.
 
+It accompanies the paper [**Auto-FL-Research: Agentic Search for Federated Learning Algorithms**](https://arxiv.org/abs/2607.01366).
+
 ## Example progress
 
 The plot below is an example result from using this harness with Claude Code, model: Opus 4.7 (1M context),
