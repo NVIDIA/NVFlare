@@ -32,6 +32,16 @@ Table overview of the :class:`FedJob<nvflare.job_config.api.FedJob>` API:
    * - to_clients
      - Assign object to all clients.
      - :func:`to_clients<nvflare.job_config.api.FedJob.to_clients>`
+   * - add_file_to
+     - Add a file or directory explicitly to one target app.
+     - :func:`add_file_to<nvflare.job_config.api.FedJob.add_file_to>`
+   * - add_file_to_server
+     - Add a file or directory explicitly to the server app.
+     - :func:`add_file_to_server<nvflare.job_config.api.FedJob.add_file_to_server>`
+   * - add_file_to_clients
+     - Add a file or directory explicitly to the single app shared by all
+       clients; for per-site apps, use ``add_file_to`` for each site.
+     - :func:`add_file_to_clients<nvflare.job_config.api.FedJob.add_file_to_clients>`
    * - set_up_client
      - To be used in FedJob subclasses. Setup routine called by FedJob when first sending object to a client target.
      - :func:`set_up_client<nvflare.job_config.api.FedJob.set_up_client>`
@@ -220,8 +230,14 @@ Resource (str)
 
 If the object is a str, it is treated as an external resource and will be included in the custom directory.
 
-* If the object is a script, it will be copied to the custom directory.
+* If the object is a Python file, it will be copied to the custom directory and
+  the exporter will perform best-effort discovery of locally resolvable imports.
 * If the object is a directory, the directory will be copied flat to the custom directory.
+
+Import discovery is scoped to the target app and is not a dependency
+declaration mechanism. For example, imports discovered from a client training
+script are not automatically added to the server app. Dynamic imports and
+other imports that cannot be resolved locally may not be discovered.
 
 Example:
 
@@ -229,6 +245,58 @@ Example:
 
   job.to("src/cifar10_fl.py", "site-1") # script
   job.to("content_dir", "site-1") # directory
+
+
+Explicit File Placement
+-----------------------
+
+Use :func:`add_file_to<nvflare.job_config.api.FedJob.add_file_to>`,
+:func:`add_file_to_server<nvflare.job_config.api.FedJob.add_file_to_server>`,
+and :func:`add_file_to_clients<nvflare.job_config.api.FedJob.add_file_to_clients>`
+to copy a declared file or directory without Python import discovery. This is
+the recommended approach for modules defining FOBS types because the module
+must be importable in every app that serializes or deserializes the type.
+
+.. warning::
+
+   These methods create the target app if it does not already exist. Calling
+   ``add_file_to_clients`` on a job with per-site client apps, or calling
+   ``add_file_to(file, site)`` on a job with one all-clients app, creates a
+   conflicting topology that export resolves silently. The all-clients app
+   takes precedence, and the named client apps are dropped. Match the placement
+   call to the job's client-app topology.
+
+For a job with one app shared by all clients:
+
+.. code-block:: python
+
+  custom_type_file = "src/custom_enum.py"
+  job.add_file_to_server(custom_type_file)
+  job.add_file_to_clients(custom_type_file)
+
+For a job with separate per-site client apps, target each existing client app:
+
+.. code-block:: python
+
+  custom_type_file = "src/custom_enum.py"
+  job.add_file_to_server(custom_type_file)
+  for site in ("site-1", "site-2"):
+      job.add_file_to(custom_type_file, site)
+
+By default, a file is copied by basename into the app's ``custom`` directory.
+Use ``dest_dir`` to place it in a relative subdirectory when its importable
+module path requires one. For example:
+
+.. code-block:: python
+
+  # custom_enum.CustomEnum -> custom/custom_enum.py
+  job.add_file_to_server("src/custom_enum.py")
+
+  # src.custom_enum.CustomEnum -> custom/src/custom_enum.py
+  job.add_file_to_server("src/custom_enum.py", dest_dir="src")
+
+Apply the same placement to every client app that serializes or deserializes
+the type.
 
 
 Filter
