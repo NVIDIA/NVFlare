@@ -33,7 +33,7 @@ def test_fedstats_warns_for_secret_like_statistic_config():
             )
 
     stats_job_cls.return_value.setup_clients.assert_called_once_with(["site-1"])
-    assert recipe.job is stats_job_cls.return_value
+    assert recipe._job is stats_job_cls.return_value
 
 
 def test_fedstats_warns_for_unsupported_secret_ref():

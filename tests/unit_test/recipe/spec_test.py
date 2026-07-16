@@ -161,6 +161,17 @@ class TestProdEnvValidation:
 class TestRecipeConfigMethods:
     """Test add_server_config and add_client_config methods in Recipe."""
 
+    def test_job_storage_is_private(self):
+        from nvflare.recipe.spec import Recipe
+
+        job = FedJob(name="test_job", min_clients=1)
+
+        recipe = Recipe(job)
+
+        assert recipe._job is job
+        assert recipe.name == job.name
+        assert not hasattr(recipe, "job")
+
     @pytest.fixture
     def temp_script(self):
         """Create a temporary script file for testing."""
@@ -185,7 +196,7 @@ class TestRecipeConfigMethods:
         config = {"np_download_chunk_size": 2097152}
         recipe.add_server_config(config)
 
-        server_app = recipe.job._deploy_map.get("server")
+        server_app = recipe._job._deploy_map.get("server")
         assert server_app is not None
         assert server_app.app_config.additional_params == config
 
@@ -205,7 +216,7 @@ class TestRecipeConfigMethods:
         config = {"timeout": 600}
         recipe.add_client_config(config)
 
-        all_clients_app = recipe.job._deploy_map.get(ALL_SITES)
+        all_clients_app = recipe._job._deploy_map.get(ALL_SITES)
         assert all_clients_app is not None
         assert all_clients_app.app_config.additional_params == config
 
@@ -226,7 +237,7 @@ class TestRecipeConfigMethods:
             recipe.add_client_file(temp_script)
             recipe.add_client_file(temp_dir)
 
-            all_clients_app = recipe.job._deploy_map.get(ALL_SITES)
+            all_clients_app = recipe._job._deploy_map.get(ALL_SITES)
             assert all_clients_app is not None
             assert temp_script in all_clients_app.app_config.ext_scripts
             assert temp_dir in all_clients_app.app_config.ext_dirs
@@ -247,9 +258,9 @@ class TestRecipeConfigMethods:
 
         recipe.add_client_file(temp_script)
 
-        assert ALL_SITES not in recipe.job._deploy_map
-        site_1_app = recipe.job._deploy_map.get("site-1")
-        site_2_app = recipe.job._deploy_map.get("site-2")
+        assert ALL_SITES not in recipe._job._deploy_map
+        site_1_app = recipe._job._deploy_map.get("site-1")
+        site_2_app = recipe._job._deploy_map.get("site-2")
         assert site_1_app is not None
         assert site_2_app is not None
         assert temp_script in site_1_app.app_config.ext_scripts
@@ -275,9 +286,9 @@ class TestRecipeConfigMethods:
         recipe.add_client_file(targeted_file, clients=["site-2"])
 
         try:
-            site_1_app = recipe.job._deploy_map.get("site-1")
-            site_2_app = recipe.job._deploy_map.get("site-2")
-            site_3_app = recipe.job._deploy_map.get("site-3")
+            site_1_app = recipe._job._deploy_map.get("site-1")
+            site_2_app = recipe._job._deploy_map.get("site-2")
+            site_3_app = recipe._job._deploy_map.get("site-3")
             assert site_1_app is not None
             assert site_2_app is not None
             assert site_3_app is not None
@@ -303,7 +314,7 @@ class TestRecipeConfigMethods:
             recipe.add_server_file(temp_script)
             recipe.add_server_file(temp_dir)
 
-            server_app = recipe.job._deploy_map.get("server")
+            server_app = recipe._job._deploy_map.get("server")
             assert server_app is not None
             assert temp_script in server_app.app_config.ext_scripts
             assert temp_dir in server_app.app_config.ext_dirs
@@ -324,7 +335,7 @@ class TestRecipeConfigMethods:
         recipe.add_client_config({"client_param": 456})
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            recipe.job.export_job(tmpdir)
+            recipe._job.export_job(tmpdir)
             job_dir = os.path.join(tmpdir, "test_config_gen")
 
             # Verify server config
@@ -396,7 +407,7 @@ class TestRecipeConfigMethods:
                 self.class_names = class_names
 
         monkeypatch.setattr(spec_module, "DecomposerRegister", _DummyRegister)
-        monkeypatch.setattr(recipe.job, "to_server", _capture_server)
+        monkeypatch.setattr(recipe._job, "to_server", _capture_server)
         monkeypatch.setattr(recipe, "_add_to_client_apps", _capture_clients)
 
         recipe.add_decomposers(["pkg.mod.Dec"])
@@ -429,8 +440,8 @@ class TestRecipeTensorStreaming:
             wait_send_task_data_all_clients_timeout=600.0,
         )
 
-        server_streamer = recipe.job._deploy_map["server"].app_config.components["tensor_server_streamer"]
-        client_streamer = recipe.job._deploy_map[ALL_SITES].app_config.components["tensor_client_streamer"]
+        server_streamer = recipe._job._deploy_map["server"].app_config.components["tensor_server_streamer"]
+        client_streamer = recipe._job._deploy_map[ALL_SITES].app_config.components["tensor_client_streamer"]
         assert isinstance(server_streamer, TensorServerStreamer)
         assert isinstance(client_streamer, TensorClientStreamer)
         assert server_streamer.format == client_streamer.format == ExchangeFormat.PYTORCH
@@ -447,8 +458,8 @@ class TestRecipeTensorStreaming:
         recipe = self._make_recipe()
         recipe.enable_tensor_streaming()
 
-        server_streamer = recipe.job._deploy_map["server"].app_config.components["tensor_server_streamer"]
-        client_streamer = recipe.job._deploy_map[ALL_SITES].app_config.components["tensor_client_streamer"]
+        server_streamer = recipe._job._deploy_map["server"].app_config.components["tensor_server_streamer"]
+        client_streamer = recipe._job._deploy_map[ALL_SITES].app_config.components["tensor_client_streamer"]
         assert server_streamer.tasks == client_streamer.tasks == ["train"]
 
     @pytest.mark.parametrize(
@@ -466,7 +477,7 @@ class TestRecipeTensorStreaming:
         with pytest.raises(error_type, match="tasks must"):
             recipe.enable_tensor_streaming(tasks=tasks)
 
-        assert recipe.job._deploy_map == {}
+        assert recipe._job._deploy_map == {}
 
     def test_enable_tensor_streaming_rejects_mismatched_format(self):
         from nvflare.client.config import ExchangeFormat
@@ -477,7 +488,7 @@ class TestRecipeTensorStreaming:
         with pytest.raises(ValueError, match="must match server_expected_format"):
             recipe.enable_tensor_streaming(format=ExchangeFormat.PYTORCH)
 
-        assert recipe.job._deploy_map == {}
+        assert recipe._job._deploy_map == {}
 
     def test_enable_tensor_streaming_rejects_duplicate_call(self):
         recipe = self._make_recipe()
@@ -486,7 +497,7 @@ class TestRecipeTensorStreaming:
         with pytest.raises(RuntimeError, match="already been enabled"):
             recipe.enable_tensor_streaming()
 
-        assert len(recipe.job._deploy_map["server"].app_config.components) == 1
+        assert len(recipe._job._deploy_map["server"].app_config.components) == 1
 
 
 class _DummyExecEnv:
@@ -532,7 +543,7 @@ class TestRecipeExecuteExportParamIsolation:
         )
 
         env = _DummyExecEnv()
-        server_app = recipe.job._deploy_map.get("server")
+        server_app = recipe._job._deploy_map.get("server")
         assert server_app is not None
         assert server_app.app_config.additional_params == {}
         recipe.execute(env, server_exec_params={"param_a": 1})
@@ -553,7 +564,7 @@ class TestRecipeExecuteExportParamIsolation:
         )
 
         env = _DummyExecEnv()
-        server_app = recipe.job._deploy_map.get("server")
+        server_app = recipe._job._deploy_map.get("server")
         assert server_app is not None
         server_app.app_config.additional_params.update({"persisted": 1})
 
@@ -597,7 +608,7 @@ class TestRecipeExecuteExportParamIsolation:
         assert "from_execute" not in server_cfg
         assert server_cfg.get("from_export") == 2
 
-        server_app = recipe.job._deploy_map.get("server")
+        server_app = recipe._job._deploy_map.get("server")
         assert server_app is not None
         assert server_app.app_config.additional_params == {}
 
@@ -770,7 +781,7 @@ class TestRecipePerSiteConfigHelper:
         set_per_site_config(recipe, {"site-1": {}, "site-2": {}})
 
         assert recipe.configured_sites() == ["site-1", "site-2"]
-        assert recipe.job._deploy_map == {}
+        assert recipe._job._deploy_map == {}
 
     def test_configured_sites_prefers_helper_config_over_legacy_constructor_config(self):
         from nvflare.recipe.spec import Recipe
@@ -857,7 +868,7 @@ class TestClientPlacementHardening:
     def test_targeted_config_rejects_all_clients_topology(self):
         recipe = self._make_recipe()
         # Default recipe topology: one client app for all clients.
-        recipe.job.to_clients({"executor_standin": True})
+        recipe._job.to_clients({"executor_standin": True})
 
         with pytest.raises(ValueError, match="applies to all clients"):
             recipe.add_client_config({"timeout": 600}, clients=["site-1"])
@@ -866,25 +877,25 @@ class TestClientPlacementHardening:
         src_file = tmp_path / "wrapper.sh"
         src_file.write_text("#!/bin/sh\n")
         recipe = self._make_recipe()
-        recipe.job.to_clients({"executor_standin": True})
+        recipe._job.to_clients({"executor_standin": True})
 
         with pytest.raises(ValueError, match="applies to all clients"):
             recipe.add_client_file(str(src_file), clients=["site-1"])
 
     def test_targeted_config_works_with_per_site_topology(self):
         recipe = self._make_recipe()
-        recipe.job.to({"site_arg": 1}, "site-1")
-        recipe.job.to({"site_arg": 2}, "site-2")
+        recipe._job.to({"site_arg": 1}, "site-1")
+        recipe._job.to({"site_arg": 2}, "site-2")
 
         recipe.add_client_config({"timeout": 600}, clients=["site-1"])
 
-        assert recipe.job._deploy_map["site-1"].app_config.additional_params["timeout"] == 600
-        assert "timeout" not in recipe.job._deploy_map["site-2"].app_config.additional_params
+        assert recipe._job._deploy_map["site-1"].app_config.additional_params["timeout"] == 600
+        assert "timeout" not in recipe._job._deploy_map["site-2"].app_config.additional_params
 
     def test_targeted_config_rejects_unknown_site_with_per_site_topology(self):
         recipe = self._make_recipe()
-        recipe.job.to({"site_arg": 1}, "site-1")
-        recipe.job.to({"site_arg": 2}, "site-2")
+        recipe._job.to({"site_arg": 1}, "site-1")
+        recipe._job.to({"site_arg": 2}, "site-2")
 
         with pytest.raises(ValueError, match=r"unknown client site.*site-3"):
             recipe.add_client_config({"timeout": 600}, clients=["site-3"])
