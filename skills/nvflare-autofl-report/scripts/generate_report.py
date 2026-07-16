@@ -85,6 +85,12 @@ class RunRecord:
     candidate_manifest: str
     base_candidate: str
     patch_sha256: str
+    metric_name: str = ""
+    metric_source: str = ""
+    metric_artifact: str = ""
+    candidate_kind: str = ""
+    algorithm_family: str = ""
+    literature_event_id: str = ""
 
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
@@ -149,6 +155,12 @@ def load_results(path: Path) -> List[RunRecord]:
                     candidate_manifest=(row.get("candidate_manifest") or "").strip(),
                     base_candidate=(row.get("base_candidate") or "").strip(),
                     patch_sha256=(row.get("patch_sha256") or "").strip(),
+                    metric_name=(row.get("metric_name") or "").strip(),
+                    metric_source=(row.get("metric_source") or "").strip(),
+                    metric_artifact=(row.get("metric_artifact") or "").strip(),
+                    candidate_kind=(row.get("candidate_kind") or "").strip().lower(),
+                    algorithm_family=(row.get("algorithm_family") or "").strip().lower(),
+                    literature_event_id=(row.get("literature_event_id") or "").strip(),
                 )
             )
     if not records:
@@ -213,7 +225,7 @@ def metric_contract(
     )
     requested = objective.get("requested_metric") or objective.get("metric") or metric
     measurement_source = objective.get("metric_source") or "NVFlare metric artifacts"
-    contract_source = objective.get("source") or "not declared"
+    contract_source = objective.get("metric_contract_source") or "not declared"
     return str(metric), str(requested), str(measurement_source), str(contract_source)
 
 
@@ -248,20 +260,11 @@ def verify_stopped(state_path: Path, confirm_interrupted: bool) -> Tuple[Dict[st
 
 
 def is_baseline(record: RunRecord) -> bool:
-    name = record.name.strip().lower()
-    command = record.run_command.lower()
-    return (
-        record.status == "baseline"
-        or name == "baseline"
-        or name.startswith("baseline_")
-        or "--name baseline" in command
-    )
+    return record.status == "baseline"
 
 
 def is_finalized_scored_record(record: RunRecord) -> bool:
-    if record.score is None or record.status in {"candidate", "crash"}:
-        return False
-    return is_baseline(record) or record.status in FINALIZED_SCORE_STATUSES
+    return record.score is not None and record.status in FINALIZED_SCORE_STATUSES
 
 
 def candidate_manifest_evidence(
@@ -420,6 +423,20 @@ def parse_sources(text: str) -> List[str]:
     return sources
 
 
+def is_literature_event(record: RunRecord) -> bool:
+    text = " ".join(
+        [record.name, record.diff_summary, record.run_command, record.artifacts, record.failure_reason]
+    ).lower()
+    return (record.status in LITERATURE_STATUSES and "literature" in text) or "literature" in record.name.lower()
+
+
+def inferred_candidate_kind(record: RunRecord) -> str:
+    if record.candidate_kind:
+        return record.candidate_kind
+    changed = record.changed_files.strip().lower()
+    return "source_edit" if changed and changed != "none" else "argument_only"
+
+
 def manifest_summary(record: Optional[RunRecord], campaign_root: Path) -> Dict[str, Any]:
     if record is None or not record.candidate_manifest:
         return {}
@@ -440,6 +457,9 @@ def manifest_summary(record: Optional[RunRecord], campaign_root: Path) -> Dict[s
         "run_args": manifest.get("run_args") or [],
         "changed_files": manifest.get("changed_files") or [],
         "created_files": manifest.get("created_files") or [],
+        "candidate_kind": manifest.get("candidate_kind"),
+        "algorithm_family": manifest.get("algorithm_family"),
+        "literature_event_id": manifest.get("literature_event_id"),
         "source_sha256": manifest.get("candidate_source_sha256") or manifest.get("base_source_sha256"),
         "budget_sha256": manifest.get("fixed_budget_sha256") or manifest.get("budget_sha256"),
         "patch_sha256": manifest.get("patch_sha256"),
@@ -450,16 +470,21 @@ def manifest_summary(record: Optional[RunRecord], campaign_root: Path) -> Dict[s
 
 
 def literature_outcomes(records: Sequence[RunRecord], mode: str) -> List[Dict[str, Any]]:
-    event_indices = [index for index, record in enumerate(records) if record.status in LITERATURE_STATUSES]
+    events = []
+    for index, record in enumerate(records):
+        if is_literature_event(record):
+            events.append((index, record, record.literature_event_id))
     outcomes = []
-    for event_number, start in enumerate(event_indices):
-        event = records[start]
-        end = event_indices[event_number + 1] if event_number + 1 < len(event_indices) else len(records)
-        before = select_best(records[:start], mode)
+    for start, event, event_id in events:
+        before = select_best(records[:start], mode, retained_only=True)
         attempts = [
             record
-            for record in records[start + 1 : end]
-            if record.status in ATTEMPT_STATUSES and not is_baseline(record)
+            for index, record in enumerate(records)
+            if record.status in ATTEMPT_STATUSES
+            and not is_baseline(record)
+            and index > start
+            and bool(event_id)
+            and record.literature_event_id == event_id
         ]
         scored = [record for record in attempts if is_finalized_scored_record(record)]
         segment_best = select_best(scored, mode)
@@ -478,6 +503,7 @@ def literature_outcomes(records: Sequence[RunRecord], mode: str) -> List[Dict[st
         outcomes.append(
             {
                 "event": event.name,
+                "literature_event_id": event_id,
                 "row": event.index + 1,
                 "hypothesis": event.diff_summary,
                 "sources": parse_sources(event.diff_summary),
@@ -488,7 +514,17 @@ def literature_outcomes(records: Sequence[RunRecord], mode: str) -> List[Dict[st
                 "delta_from_incumbent": delta,
                 "candidate_attempts": [record.name for record in attempts],
                 "candidate_results": [
-                    {"name": record.name, "status": record.status, "score": record.score} for record in attempts
+                    {
+                        "name": record.name,
+                        "status": record.status,
+                        "score": record.score,
+                        "candidate_kind": inferred_candidate_kind(record),
+                        "algorithm_family": record.algorithm_family,
+                        "metric_name": record.metric_name,
+                        "metric_source": record.metric_source,
+                        "metric_artifact": record.metric_artifact,
+                    }
+                    for record in attempts
                 ],
                 "failures": [record.name for record in attempts if record.status == "crash"],
             }
@@ -807,6 +843,12 @@ def report_markdown(summary: Dict[str, Any], records: Sequence[RunRecord], max_n
                 f"- Manifest available: `{summary['best_manifest'].get('available', False)}`",
                 f"- Manifest budget SHA-256: `{summary['best_manifest'].get('budget_sha256') or 'not recorded'}`",
                 f"- Patch SHA-256: `{best['patch_sha256'] or 'not recorded'}`",
+                f"- Candidate kind: `{best['candidate_kind'] or 'not recorded'}`",
+                f"- Algorithm family: `{best['algorithm_family'] or 'not recorded'}`",
+                f"- Literature event: `{best['literature_event_id'] or 'not linked'}`",
+                f"- Recorded metric: `{best['metric_name'] or summary['objective']['optimization_metric']}`",
+                f"- Metric extraction source: `{best['metric_source'] or 'not recorded'}`",
+                f"- Metric artifact: `{best['metric_artifact'] or 'not recorded'}`",
                 f"- Artifacts: `{best['artifacts'] or 'not recorded'}`",
                 "",
                 "Executed baseline command:",
@@ -843,7 +885,8 @@ def report_markdown(summary: Dict[str, Any], records: Sequence[RunRecord], max_n
                 evidence_items.append(f"{candidate['name']}={result}")
             evidence = "; ".join(evidence_items) or "no candidate recorded"
             lines.append(
-                f"| `{md_cell(item['event'], 45)}` | {md_cell('; '.join(item['sources']) or 'not recorded', 100)} | "
+                f"| `{md_cell(item['event'], 45)}` (`{item['literature_event_id'] or 'not recorded'}`) | "
+                f"{md_cell('; '.join(item['sources']) or 'not recorded', 100)} | "
                 f"{item['outcome']} | `{md_cell(evidence, 130)}` | {format_delta(item['delta_from_incumbent'])} |"
             )
         lines.extend(["", "Checkpoint hypotheses and decisions:", ""])

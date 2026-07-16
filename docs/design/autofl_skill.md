@@ -2,20 +2,22 @@
 
 ## Summary
 
-Auto-FL should enter NVFlare as a skill-first product experience. Users select
+Auto-FL is implemented in NVFlare as a skill-first product experience. Users select
 an official NVFlare Auto-FL skill in a coding agent, point it at an existing
 `job.py`, and state the optimization objective, environment, and budget. NVFlare
 owns deterministic import of campaign-relevant settings, execution truth, policy
 boundaries, artifacts, and reproducibility. The agent owns candidate planning,
 code edits within allowed paths, experiment execution through the existing
-`job.py`, comparison, and narrative reporting.
+`job.py`, and hypothesis-driven exploration. The companion report skill turns
+the recorded evidence into deterministic final artifacts for the agent to
+summarize.
 
-This avoids introducing a new public Auto-FL command tree while still making
+This design avoids introducing a new public Auto-FL command tree while making
 Auto-FL an NVFlare-owned feature.
 
 ## Product Boundary
 
-The first production-oriented slice includes:
+The product boundary comprises:
 
 - A root `skills/nvflare-autofl` agent skill that follows the NVFLARE skills
   layout used by the general agent-skills work.
@@ -26,9 +28,9 @@ The first production-oriented slice includes:
 - A skill-local candidate lifecycle that snapshots the current best source,
   gives the agent an isolated draft, validates the resulting patch, and keeps or
   restores source according to the campaign metric.
-- A companion `skills/nvflare-autofl-report` skill that deterministically turns
-  a stopped campaign ledger, state, config, and manifests into human- and
-  machine-readable final report artifacts.
+- This follow-up's companion `skills/nvflare-autofl-report` skill, which
+  deterministically turns a stopped campaign ledger, state, config, and
+  manifests into human- and machine-readable final report artifacts.
 - Documentation for using the skill with simulation, POC, and production
   environments through existing NVFlare surfaces.
 
@@ -247,7 +249,7 @@ This placement deliberately keeps the unreleased `autofl.yaml` contract out of
 contract command should be considered only after another concrete workflow
 needs the same interface and the schema has proved stable. The general,
 read-only `nvflare agent inspect` surface does not acquire an Auto-FL-specific
-profile in this proposal.
+profile in this implementation.
 
 ## Stopped-Campaign Reporting
 
@@ -285,18 +287,23 @@ failed artifact, emits a warning, omits the Markdown image, and records
 `artifacts.progress_plot_available=false`.
 
 Literature reporting follows measured evidence rather than agent narrative.
-Each recorded literature checkpoint owns the comparable candidates until the
-next checkpoint. Their best result is compared with the incumbent immediately
-before the review and classified as helped, matched, not confirmed, failed, or
-not evaluated. Recorded `[src: ...]` markers are preserved as campaign
-provenance, not presented as independently verified citations.
+Each checkpoint's `literature_event_id` links it to candidates developed from
+that review, including candidates recorded after a newer checkpoint. Candidates
+without an event ID are not attributed by ledger position. Their best result is
+compared with the retained incumbent immediately before the review and
+classified as helped, matched, not confirmed, failed, or not evaluated.
+Recorded `[src: ...]` markers are preserved as campaign provenance, not
+presented as independently verified citations.
 
 The report distinguishes retained and observed evidence. `best` is limited to
 scored baseline and `keep` rows, while `best_observed` may expose an unretained
 scored `discard`. Pending candidates and crashes remain attempt/failure
 evidence and cannot become milestones or literature improvements. The
 objective also separates measurement provenance (`metric_source`) from the
-importer's metric-contract provenance (`metric_contract_source`).
+importer's metric-contract provenance (`metric_contract_source`). Per-run
+metric name, extraction source and artifact, candidate kind, algorithm family,
+and literature event linkage flow from the final `results.tsv` contract into
+the JSON summary and best-candidate report.
 
 Finally, the report compares the declarative/imported budget with exact
 baseline and best-candidate commands. It highlights changed compute or data
@@ -304,16 +311,11 @@ arguments, incomplete lineage, and repeated selection on test-like metrics.
 This makes the report a trust artifact rather than a polished restatement of
 the agent's conclusions.
 
-## Review Questions
+## Follow-Up Review Questions
 
-- Are the supported `job.py` patterns sufficient for an initial prototype?
-- Are the edit and creation permissions in `autofl.yaml` appropriate for
-  algorithm-level candidates while preserving candidate comparability?
-- Which exported-job fields should be used as validation evidence versus static
-  `job.py` parsing for authoring intent?
-- Does the Auto-FL skill pass the general NVFLARE skill frontmatter, trigger,
-  and eval checks after it lands under `skills/nvflare-autofl`?
-- Which candidate-manifest and metric/artifact fields should become stable
-  NVFlare APIs after the skill-local contract proves itself?
 - Is `nvflare.autofl.report.v1` sufficient for downstream review and automation
   while remaining explicitly skill-local in this follow-up?
+- Which report, candidate-manifest, and metric/artifact fields should become
+  stable NVFlare APIs after these skill-local contracts prove themselves?
+- Which additional POC and production campaign fixtures should be added once
+  externally recorded campaigns are available?

@@ -33,6 +33,12 @@ RESULT_FIELDS = [
     "candidate_manifest",
     "base_candidate",
     "patch_sha256",
+    "metric_name",
+    "metric_source",
+    "metric_artifact",
+    "candidate_kind",
+    "algorithm_family",
+    "literature_event_id",
 ]
 
 
@@ -88,12 +94,16 @@ def _write_campaign(tmp_path, *, active=False, mode="max"):
             "baseline",
             "0.500000",
             run_command=("python job.py --n_clients 8 --num_rounds 10 --aggregation_epochs 1 --name autofl_baseline"),
+            metric_name="test_accuracy",
+            metric_source="json:metrics_summary.json",
+            metric_artifact="runs/baseline/metrics_summary.json",
         ),
         _row(
             "literature",
             "literature_review_1",
             diff_summary="Review FedProx [src: Li18 arXiv:1812.06127] and SCAFFOLD [src: Karimireddy19].",
             run_command="agent literature review",
+            literature_event_id="lit-0001",
         ),
         _row(
             "keep" if mode == "min" else "discard",
@@ -101,6 +111,7 @@ def _write_campaign(tmp_path, *, active=False, mode="max"):
             "0.490000",
             base_candidate="baseline",
             diff_summary="Small FedProx term did not help.",
+            literature_event_id="lit-0001",
         ),
         _row(
             "discard" if mode == "min" else "keep",
@@ -110,6 +121,12 @@ def _write_campaign(tmp_path, *, active=False, mode="max"):
             base_candidate="baseline",
             candidate_manifest=".nvflare/autofl/candidates/algorithm_code/candidate_manifest.json",
             patch_sha256="a" * 64,
+            metric_name="test_accuracy",
+            metric_source="json:cross_val_results.json",
+            metric_artifact="runs/algorithm_code/cross_val_results.json",
+            candidate_kind="source_edit",
+            algorithm_family="drift_correction",
+            literature_event_id="lit-0001",
             diff_summary="Implement an agent-authored drift correction algorithm.",
             run_command=(
                 "python job.py --n_clients 8 --num_rounds 10 --aggregation_epochs 2 --name autofl_algorithm_code"
@@ -123,6 +140,12 @@ def _write_campaign(tmp_path, *, active=False, mode="max"):
             base_candidate="algorithm_code",
             candidate_manifest=".nvflare/autofl/candidates/inherited_tuning/candidate_manifest.json",
             patch_sha256="b" * 64,
+            metric_name="test_accuracy",
+            metric_source="json:cross_val_results.json",
+            metric_artifact="runs/inherited_tuning/cross_val_results.json",
+            candidate_kind="argument_only",
+            algorithm_family="drift_correction",
+            literature_event_id="lit-0001",
             diff_summary="Tune the retained algorithm without another source patch.",
             run_command=(
                 "python job.py --n_clients 8 --num_rounds 10 --aggregation_epochs 2 --lr 0.01 "
@@ -135,6 +158,7 @@ def _write_campaign(tmp_path, *, active=False, mode="max"):
             failure_reason="exit_code=1",
             base_candidate="inherited_tuning",
             diff_summary="A larger update was unstable.",
+            literature_event_id="lit-0001",
         ),
     ]
     _write_rows(tmp_path, rows)
@@ -335,6 +359,8 @@ def test_report_generates_product_artifacts_and_candidate_lineage(tmp_path, monk
     assert "## Validation And Comparability Notes" in report
     assert "Product Findings" not in report
     assert str(tmp_path.joinpath("progress.png").resolve()) in report
+    assert "Metric extraction source: `json:cross_val_results.json`" in report
+    assert "Metric artifact: `runs/inherited_tuning/cross_val_results.json`" in report
 
 
 def test_report_synthesizes_literature_against_checkpoint_incumbent(tmp_path, monkeypatch):
@@ -352,11 +378,58 @@ def test_report_synthesizes_literature_against_checkpoint_incumbent(tmp_path, mo
     assert literature[0]["delta_from_incumbent"] == pytest.approx(0.15)
 
 
+def test_report_uses_explicit_literature_links_across_later_events(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    rows = [
+        _row("baseline", "baseline", "0.500000"),
+        _row("literature", "literature_review_1", literature_event_id="lit-0001"),
+        _row("literature", "literature_review_2", literature_event_id="lit-0002"),
+        _row(
+            "keep",
+            "late_candidate_for_first_review",
+            "0.700000",
+            candidate_kind="source_edit",
+            literature_event_id="lit-0001",
+        ),
+        _row(
+            "discard",
+            "candidate_for_second_review",
+            "0.600000",
+            candidate_kind="source_edit",
+            literature_event_id="lit-0002",
+        ),
+        _row("discard", "unlinked_candidate", "0.650000", candidate_kind="source_edit"),
+    ]
+    _write_rows(tmp_path, rows)
+    tmp_path.joinpath("autofl.yaml").write_text("objective:\n  metric: accuracy\n", encoding="utf-8")
+    state_path = tmp_path / ".nvflare/autofl/campaign_state.json"
+    state_path.parent.mkdir(parents=True)
+    state_path.write_text(json.dumps({"final_response_allowed": True}), encoding="utf-8")
+    tmp_path.joinpath("progress.png").write_bytes(b"\x89PNG\r\n\x1a\nplot")
+
+    summary = _generate(reporter, tmp_path, monkeypatch)
+
+    first, second = summary["literature_reviews"]
+    assert first["literature_event_id"] == "lit-0001"
+    assert first["candidate_attempts"] == ["late_candidate_for_first_review"]
+    assert second["literature_event_id"] == "lit-0002"
+    assert second["candidate_attempts"] == ["candidate_for_second_review"]
+    assert all("unlinked_candidate" not in item["candidate_attempts"] for item in summary["literature_reviews"])
+
+
 def test_literature_evidence_preserves_crash_and_blank_discard_status(tmp_path, monkeypatch):
     reporter = _load_reporter()
     rows = _write_campaign(tmp_path)
     rows[-1]["score"] = "0.990000"
-    rows.append(_row("discard", "blank_discard", "", diff_summary="No metric artifact was produced."))
+    rows.append(
+        _row(
+            "discard",
+            "blank_discard",
+            "",
+            diff_summary="No metric artifact was produced.",
+            literature_event_id="lit-0001",
+        )
+    )
     _write_rows(tmp_path, rows)
 
     summary = _generate(reporter, tmp_path, monkeypatch)
@@ -491,6 +564,9 @@ def test_report_reads_best_candidate_manifest_when_available(tmp_path, monkeypat
                 "run_args": ["--lr", "0.01"],
                 "changed_files": [],
                 "created_files": [],
+                "candidate_kind": "argument_only",
+                "algorithm_family": "drift_correction",
+                "literature_event_id": "lit-0001",
                 "candidate_source_sha256": "c" * 64,
                 "fixed_budget_sha256": "d" * 64,
                 "patch_sha256": "b" * 64,
@@ -505,6 +581,8 @@ def test_report_reads_best_candidate_manifest_when_available(tmp_path, monkeypat
     assert summary["best_manifest"]["available"] is True
     assert summary["best_manifest"]["candidate_id"] == "inherited_tuning"
     assert summary["best_manifest"]["budget_sha256"] == "d" * 64
+    assert summary["best_manifest"]["candidate_kind"] == "argument_only"
+    assert summary["best_manifest"]["literature_event_id"] == "lit-0001"
 
 
 @pytest.mark.parametrize("invalid_content", [None, b"not a png"])
@@ -556,7 +634,7 @@ def test_report_separates_metric_measurement_and_contract_sources(tmp_path, monk
         "objective:\n"
         "  requested_metric: accuracy\n"
         "  optimization_metric: test_accuracy\n"
-        "  source: arg:key_metric\n",
+        "  metric_contract_source: arg:key_metric\n",
         encoding="utf-8",
     )
 
@@ -621,7 +699,7 @@ def test_report_attempt_and_baseline_rules_match_campaign_guard():
         {"status": "keep", "name": "candidate_1", "run_command": "python job.py"},
     ]
 
-    assert reporter.ATTEMPT_STATUSES == guard.COMPARABLE_STATUSES
+    assert reporter.ATTEMPT_STATUSES == guard.ATTEMPT_STATUSES
     for index, case in enumerate(cases):
         record = reporter.RunRecord(
             index=index,

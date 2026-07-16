@@ -124,3 +124,38 @@ and NVFlare-distributed classes ending in ``Job``. Generic, local, and
 non-NVFlare job or recipe classes remain unresolved. Ambiguous scripts and
 dynamic safety-critical comparison fields block baseline execution rather than
 being guessed.
+
+Final Report After Stop
+=======================
+
+After a campaign stops cleanly, reaches its explicit cap, or ends at a hard
+blocker, select the companion report skill:
+
+.. code-block:: text
+
+   Select: NVFlare Auto-FL Report skill
+   Prompt: Generate the final report for the stopped campaign in ./job.
+
+The report skill verifies that authoritative campaign state allows a final
+response and that no ledger row or candidate manifest remains pending. For an
+abrupt interruption, the human must first confirm that no campaign process is
+running; this confirmation bypasses stale stop state only and never unfinished
+candidate evidence.
+
+The skill refreshes ``progress.png`` when plotting is available and generates:
+
+- ``autofl_final_report.md`` with the trajectory, retained best candidate,
+  metric provenance, lineage, literature outcomes, failures, commands, and
+  comparability warnings;
+- ``autofl_report_summary.json`` with the same evidence under the skill-local
+  ``nvflare.autofl.report.v1`` schema.
+
+Literature outcomes use the ``literature_event_id`` written by the campaign
+runner rather than inferring relationships from ledger position. Baselines are
+identified strictly by ``status=baseline``; ``best`` includes only a scored
+baseline or ``keep`` row, while a better unretained ``discard`` is reported as
+``best_observed``. If a valid plot cannot be produced, the Markdown and JSON
+reports are still generated with an explicit plot-availability warning.
+
+As with active Auto-FL, users invoke the skill through their coding agent and
+do not run scripts from the installed skill directory themselves.

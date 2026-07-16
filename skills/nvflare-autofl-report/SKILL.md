@@ -1,9 +1,21 @@
 ---
 name: nvflare-autofl-report
 description: "Generate a reproducible final report, literature-outcome synthesis, JSON summary, and refreshed progress plot for a stopped or interrupted NVFLARE Auto-FL campaign."
-min_flare_version: "2.8.0"
-blast_radius: edits_files
-skill_version: "0.1.0"
+license: Apache-2.0
+version: "0.1.0"
+compatibility: "Requires NVFLARE 2.8.0+, Python, and artifacts from an NVFLARE Auto-FL campaign."
+metadata:
+  author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
+  min_flare_version: "2.8.0"
+  blast_radius: edits_files
+  category: Reporting
+  tags:
+    - nvflare
+    - federated-learning
+    - optimization
+    - reporting
+  languages:
+    - python
 ---
 
 # NVFLARE Auto-FL Report
@@ -35,8 +47,12 @@ user asks for a status snapshot.
 3. Generate the deterministic report artifacts:
 
    ```bash
-   python "$CODEX_HOME/skills/nvflare-autofl-report/scripts/generate_report.py" <job-dir>
+   python "$REPORTER" <job-dir>
    ```
+
+   Resolve `REPORTER` once to the absolute path of
+   `scripts/generate_report.py` relative to this `SKILL.md`. Do not assume a
+   provider-specific skill installation directory or `$CODEX_HOME`.
 
 4. Read both **autofl_final_report.md** and `autofl_report_summary.json`. Check
    warnings about metric use, executed budget changes, missing provenance, and
@@ -61,7 +77,7 @@ the human has said the campaign was stopped/interrupted and the agent confirms
 that execution is no longer active. Only then run:
 
 ```bash
-python "$CODEX_HOME/skills/nvflare-autofl-report/scripts/generate_report.py" <job-dir> --confirm-interrupted
+python "$REPORTER" <job-dir> --confirm-interrupted
 ```
 
 This records a reporting-time interruption assertion; it does not rewrite the
@@ -84,9 +100,9 @@ The final report must include:
   available, with explicit plot availability in the JSON summary otherwise;
 - best-candidate manifest, patch hash, base-candidate lineage, inherited code
   changes, artifacts, and exact baseline/best commands;
-- every recorded literature checkpoint, cited source markers, candidates
-  attempted afterward, and whether measured evidence helped, matched, failed,
-  or did not confirm the idea;
+- every recorded literature checkpoint, its event ID and source markers,
+  explicitly linked candidates, and whether measured evidence helped, matched,
+  failed, or did not confirm the idea;
 - discarded/crashed ideas and deterministic comparability warnings;
 - optional agent model, reasoning effort, cost, or tooling notes when supplied;
 - absolute paths to `autofl.yaml`, `results.tsv`, campaign state,
@@ -100,6 +116,9 @@ sections such as "Product Findings" unless the user explicitly requests them.
 `best` means a scored retained baseline or `keep` row; an unretained scored
 `discard` may appear only as `best_observed`. Candidate and crash rows never
 become retained best results, milestones, or literature improvements.
+Baseline identity is determined strictly by `status=baseline`, matching the
+campaign guard. The report preserves per-run metric name, extraction source,
+artifact, candidate kind, algorithm family, and literature event linkage.
 
 Read [report-contract.md](references/report-contract.md) when interpreting
 lineage, literature outcomes, budget warnings, or interrupted state.

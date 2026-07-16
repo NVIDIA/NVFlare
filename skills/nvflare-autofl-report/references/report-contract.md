@@ -13,8 +13,9 @@ The report generator consumes product Auto-FL artifacts from the job directory:
 
 The current ledger contract includes status, name, score, runtime, changed
 files, hypothesis/diff summary, exact run command, artifacts, failure reason,
-candidate manifest, base candidate, and patch hash. Older ledgers may omit
-newer fields; the report should disclose missing provenance rather than fail
+candidate manifest, base candidate, patch hash, metric name/source/artifact,
+candidate kind, algorithm family, and literature event ID. Older ledgers may
+omit newer fields; the report discloses missing provenance rather than failing
 when the essential status and score columns remain readable.
 
 ## Termination
@@ -40,12 +41,14 @@ manifest is unavailable.
 
 ## Literature Evidence
 
-A `literature` row opens a checkpoint. Associate subsequent comparable
-candidate rows with that checkpoint until the next literature row. Compare the
-best finalized `keep` or `discard` score in that segment with the incumbent
-immediately before the review. Pending candidates and crashes are attempts but
-never scored improvements, even if a malformed crash row contains a numeric
-score:
+A `literature` row opens a checkpoint and records a `literature_event_id`.
+Associate candidate rows carrying that ID with the checkpoint, even when a
+later review was recorded before the batch completed. Candidates without an
+event ID are not attributed to a literature checkpoint; the report does not
+guess from row order. Compare the best finalized `keep` or `discard` score in
+that evidence with the retained incumbent immediately before the review.
+Pending candidates and crashes are attempts but never scored improvements,
+even if a malformed crash row contains a numeric score:
 
 - `helped`: a following candidate improved the incumbent;
 - `matched`: the best following candidate tied the incumbent;
@@ -64,6 +67,11 @@ source identifiers, not independently verified citations.
 running-best milestones, and literature improvements. Literature tables render
 status first, so scored crashes remain `crash` and unscored discards remain
 `n/a`.
+
+Baseline identity is strict: only `status=baseline` is a baseline. Names and
+run-command text do not change result status. The report carries the runner's
+per-row metric extraction provenance, candidate kind, algorithm family, and
+literature linkage into the JSON summary and best-candidate Markdown section.
 
 The objective contract records two distinct provenance fields. `metric_source`
 describes where measurements came from and defaults to `NVFlare metric

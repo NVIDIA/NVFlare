@@ -4,13 +4,13 @@
     {
       "id": "autofl-report-stopped-campaign",
       "prompt": "The Auto-FL campaign in ./job has been manually stopped. Generate its final report and explain what the literature reviews taught us.",
-      "expected_output": "The agent selects nvflare-autofl-report, verifies stopped state and absence of pending candidates, generates the Markdown and JSON reports, refreshes the progress plot when available, then summarizes measured trajectory, candidate lineage, literature outcomes, failures, and comparability caveats.",
+      "expected_output": "The agent selects nvflare-autofl-report, verifies stopped state and absence of pending candidates, resolves the bundled reporter relative to the skill root, generates the Markdown and JSON reports, refreshes the progress plot when available, then summarizes measured trajectory, metric provenance, candidate lineage, explicitly linked literature outcomes, failures, and comparability caveats.",
       "files": [],
       "assertions": [
         "The agent verifies that campaign execution has stopped and no candidate remains pending before finalizing.",
         "The agent generates autofl_final_report.md and autofl_report_summary.json, and reports whether progress.png is available.",
-        "The agent reports baseline, best score, delta, exact command provenance, candidate lineage, and artifacts.",
-        "The agent connects each literature checkpoint to subsequent measured candidate outcomes.",
+        "The agent reports baseline, best score, delta, exact command and metric provenance, candidate lineage, and artifacts.",
+        "The agent connects each literature checkpoint to measured candidates through literature_event_id rather than ledger position.",
         "The agent surfaces test-metric and changed-compute warnings when applicable."
       ],
       "nvflare": {
@@ -30,7 +30,7 @@
           },
           {
             "id": "literature-outcome-synthesis",
-            "description": "links literature checkpoints and source markers to subsequent measured candidate evidence"
+            "description": "links literature checkpoints and source markers to measured candidate evidence through literature_event_id"
           },
           {
             "id": "comparability-warnings",
