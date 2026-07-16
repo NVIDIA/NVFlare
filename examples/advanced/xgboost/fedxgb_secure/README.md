@@ -199,7 +199,7 @@ python job_vertical.py --secure
 ```python
 from nvflare.app_opt.xgboost.recipes import XGBVerticalRecipe
 from nvflare.app_opt.xgboost.histogram_based_v2.csv_data_loader import CSVDataLoader
-from nvflare.recipe import SimEnv
+from nvflare.recipe import SimEnv, set_per_site_config
 
 # Generate client ranks (required for secure training)
 # Maps each client name to a unique rank (0-indexed)
@@ -225,8 +225,8 @@ recipe = XGBVerticalRecipe(
         "objective": "binary:logistic",
         "eval_metric": "auc",
     },
-    per_site_config=per_site_config,
 )
+set_per_site_config(recipe, per_site_config)
 
 # Run simulation
 env = SimEnv(num_clients=3)
@@ -254,7 +254,7 @@ python job.py --secure
 ```python
 from nvflare.app_opt.xgboost.recipes import XGBHorizontalRecipe
 from nvflare.app_opt.xgboost.histogram_based_v2.csv_data_loader import CSVDataLoader
-from nvflare.recipe import SimEnv
+from nvflare.recipe import SimEnv, set_per_site_config
 
 # Generate client ranks (required for secure training)
 # Maps each client name to a unique rank (0-indexed)
@@ -279,8 +279,8 @@ recipe = XGBHorizontalRecipe(
         "objective": "binary:logistic",
         "eval_metric": "auc",
     },
-    per_site_config=per_site_config,
 )
+set_per_site_config(recipe, per_site_config)
 
 # Export job (simulator run requires additional context setup for secure horizontal)
 env = SimEnv(num_clients=3)
