@@ -22,6 +22,8 @@ from nvflare.app_common.abstract.params_converter import ParamsConverter
 
 class NumpyToPTParamsConverter(ParamsConverter):
     def convert(self, params: Dict, fl_ctx) -> Dict:
+        if not isinstance(params, dict):
+            raise TypeError(f"NumPy-to-PyTorch conversion expects a parameter dict, got {type(params)}")
         tensor_shapes = fl_ctx.get_prop("tensor_shapes")
         exclude_vars = fl_ctx.get_prop("exclude_vars")
 
@@ -43,6 +45,8 @@ class NumpyToPTParamsConverter(ParamsConverter):
 
 class PTToNumpyParamsConverter(ParamsConverter):
     def convert(self, params: Dict, fl_ctx) -> Dict:
+        if not isinstance(params, dict):
+            raise TypeError(f"PyTorch-to-NumPy conversion expects a parameter dict, got {type(params)}")
         return_tensors = {}
         tensor_shapes = {}
         exclude_vars = {}
@@ -50,19 +54,19 @@ class PTToNumpyParamsConverter(ParamsConverter):
             if isinstance(v, torch.Tensor):
                 # Try to convert to numpy and catch exception if it fails
                 try:
-                    return_tensors[k] = v.cpu().numpy()
+                    return_tensors[k] = v.detach().cpu().numpy()
                 except Exception as e:
-                    error_msg = f"Exception while converting torch tensor to numpy: {e} \n"
-                    additional_info = "Most possibly caused by unsupported data type for numpy transmission, please use pytorch exchange format or convert params to a supported data type (fp32, fp16, etc.)"
-                    raise ValueError(f"{error_msg} {additional_info}")
+                    raise ValueError(
+                        "failed to convert a PyTorch tensor to NumPy; use a NumPy-supported dtype "
+                        f"or declare a native PyTorch server exchange format: {e}"
+                    ) from e
                 tensor_shapes[k] = v.shape
             else:
                 exclude_vars[k] = v
 
-        if tensor_shapes:
-            fl_ctx.set_prop("tensor_shapes", tensor_shapes)
+        fl_ctx.set_prop("tensor_shapes", tensor_shapes)
+        fl_ctx.set_prop("exclude_vars", exclude_vars)
         if exclude_vars:
-            fl_ctx.set_prop("exclude_vars", exclude_vars)
             self.logger.warning(
                 f"{len(exclude_vars)} vars excluded as they were non-tensor type: " f"{list(exclude_vars.keys())}"
             )

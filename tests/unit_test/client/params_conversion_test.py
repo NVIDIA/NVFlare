@@ -17,8 +17,8 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from nvflare.client.config import ExchangeFormat
-from nvflare.client.params_conversion import convert_params, normalize_exchange_format, validate_format_pair
+from nvflare.client.config import ExchangeFormat, normalize_exchange_format, validate_format_pair
+from nvflare.client.converter_utils import convert_params
 
 
 def test_identity_and_raw_declarations_are_no_ops():
@@ -42,7 +42,7 @@ def test_pytorch_round_trip_preserves_tensor_shape_and_local_non_tensor_state():
     state = {}
     logger = MagicMock()
     native = {
-        "w": torch.arange(6, dtype=torch.float32).reshape(2, 3),
+        "w": torch.arange(6, dtype=torch.float32, requires_grad=True).reshape(2, 3),
         "local_metadata": "not aggregated",
     }
 
