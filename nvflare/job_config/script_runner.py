@@ -27,6 +27,7 @@ from nvflare.fuel.utils.constants import FrameworkType  # noqa: F401 - re-export
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel.utils.pipe.cell_pipe import CellPipe, Mode
 from nvflare.fuel.utils.pipe.pipe import Pipe
+from nvflare.fuel.utils.secret_utils import split_command_preserving_secret_refs
 from nvflare.fuel.utils.validation_utils import check_str
 
 from .api import FedJob, validate_object_for_job
@@ -265,11 +266,15 @@ class BaseScriptRunner:
         if self._execution_mode is not None:
             if self._execution_mode == ExecutionMode.EXTERNAL_PROCESS:
                 # external_process launches the trainer as its own process, named by a
-                # command (the same shape as the legacy SubprocessLauncher script), not by
-                # an in-CJ-process task_script_path.
+                # shell-free argv, not by an in-CJ-process task_script_path. Parse the
+                # user-authored strings once here so the exported config carries stable
+                # argv boundaries to every target platform.
+                command = split_command_preserving_secret_refs(self._command, posix=True)
+                command.append(f"custom/{self._script}")
+                command.extend(split_command_preserving_secret_refs(self._script_args, posix=True))
                 executor = ClientAPIExecutor(
                     execution_mode=self._execution_mode,
-                    command=f"{self._command} custom/{self._script} {self._script_args}".strip(),
+                    command=command,
                     launch_once=self._launch_once,
                     shutdown_timeout=self._shutdown_timeout,
                     params_exchange_format=self._params_exchange_format,

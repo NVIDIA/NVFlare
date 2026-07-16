@@ -29,6 +29,21 @@ class TestPrepareSubprocessCommand:
 
         assert argv == ["python", "train.py", "--token", "value with spaces; --still-one-arg"]
 
+    def test_pre_tokenized_argv_preserves_boundaries(self, monkeypatch):
+        monkeypatch.setenv("PROCESS_UTIL_TEST_SECRET", "resolved value with spaces")
+
+        argv = prepare_subprocess_command(
+            ["python", "train model.py", "--label", "two words", "--token", "${secret:PROCESS_UTIL_TEST_SECRET}"]
+        )
+
+        assert argv == ["python", "train model.py", "--label", "two words", "--token", "resolved value with spaces"]
+
+    def test_pre_tokenized_argv_keeps_nested_command_secret_rejection(self, monkeypatch):
+        monkeypatch.setenv("PROCESS_UTIL_TEST_SECRET", "'; injected-command #")
+
+        with pytest.raises(ValueError, match="nested interpreter command strings"):
+            prepare_subprocess_command(["bash", "-c", "echo ${secret:PROCESS_UTIL_TEST_SECRET}"])
+
     @pytest.mark.parametrize(
         "command",
         [

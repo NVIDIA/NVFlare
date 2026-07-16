@@ -396,7 +396,7 @@ class TestExecutionModeSelection:
         assert isinstance(executor, ClientAPIExecutor)
         assert executor._execution_mode == "external_process"
         # external_process names the trainer by a command (not an in-CJ task_script_path)
-        assert executor._command == "python3 -u custom/client.py --update_type full"
+        assert executor._command == ["python3", "-u", "custom/client.py", "--update_type", "full"]
         assert executor._task_script_path is None
         assert executor._params_exchange_format == ExchangeFormat.PYTORCH
         assert executor._server_expected_format == ExchangeFormat.NUMPY
@@ -405,6 +405,61 @@ class TestExecutionModeSelection:
         # not be rewritten to None, which asks the backend to use its 30-second fallback.
         assert executor._shutdown_timeout == 0.0
         assert executor._build_backend_context().shutdown_timeout == 0.0
+
+    def test_external_process_command_preserves_argv_boundaries(self):
+        from nvflare.job_config.api import FedJob
+
+        with patch("os.path.isfile", return_value=True), patch("os.path.exists", return_value=True):
+            job = FedJob(name="spaced-command")
+            runner = ScriptRunner(
+                script="train model.py",
+                script_args='--label "two words" --empty ""',
+                execution_mode="external_process",
+                command="python3 -u",
+            )
+            job.to(runner, "site-1", tasks=["train"])
+
+        executor = job._deploy_map["site-1"].app_config.executors[0].executor
+        assert executor._command == [
+            "python3",
+            "-u",
+            "custom/train model.py",
+            "--label",
+            "two words",
+            "--empty",
+            "",
+        ]
+
+    def test_external_process_command_argv_is_serialized(self, tmp_path, monkeypatch):
+        from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
+        from nvflare.job_config.api import FedJob
+
+        monkeypatch.chdir(tmp_path)
+        script = tmp_path / "train model.py"
+        script.write_text("# test trainer\n")
+        job = FedJob(name="spaced-command-export")
+        job.to_server(ScatterAndGather(min_clients=1, num_rounds=1, wait_time_after_min_received=0))
+        job.to_clients(
+            ScriptRunner(
+                script=script.name,
+                script_args='--label "two words"',
+                execution_mode="external_process",
+                command="python3 -u",
+            )
+        )
+
+        export_dir = tmp_path / "export"
+        job.export_job(str(export_dir))
+        config_path = export_dir / job.name / "app" / "config" / "config_fed_client.json"
+        config = json.loads(config_path.read_text())
+
+        assert config["executors"][0]["executor"]["args"]["command"] == [
+            "python3",
+            "-u",
+            "custom/train model.py",
+            "--label",
+            "two words",
+        ]
 
     def test_conflicts_with_legacy_stack_args(self):
         with pytest.raises(ValueError, match="mutually exclusive.*launch_external_process"):

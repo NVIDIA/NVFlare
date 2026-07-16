@@ -17,7 +17,7 @@ import os
 import re
 import signal
 import subprocess
-from typing import List, Optional
+from typing import List, Optional, Sequence, Union
 
 from nvflare.fuel.utils.secret_utils import has_secret_refs, resolve_secret_refs, split_command_preserving_secret_refs
 
@@ -156,7 +156,7 @@ def _reject_secret_refs_in_nested_command(command_seq: list[str]) -> None:
         _reject_python_code_refs(command_seq, interpreter)
 
 
-def prepare_subprocess_command(command: str, posix: bool = True) -> list[str]:
+def prepare_subprocess_command(command: Union[str, Sequence[str]], posix: bool = True) -> list[str]:
     """Build argv for a shell-free subprocess command and resolve secret references safely.
 
     The command is split before references are resolved, so a secret containing spaces or
@@ -164,14 +164,19 @@ def prepare_subprocess_command(command: str, posix: bool = True) -> list[str]:
     interpreter command strings are rejected because those strings are parsed a second time.
 
     Args:
-        command: Command string from job configuration.
+        command: Command string or pre-tokenized argv from job configuration.
         posix: Whether to use POSIX shell-style tokenization. Set False on Windows
             to preserve backslashes with the legacy whitespace-only tokenizer.
 
     Returns:
         A resolved argv list suitable for ``subprocess.Popen(..., shell=False)``.
     """
-    command_seq = split_command_preserving_secret_refs(command, posix=posix, group_secret_ref_quotes=not posix)
+    if isinstance(command, str):
+        command_seq = split_command_preserving_secret_refs(command, posix=posix, group_secret_ref_quotes=not posix)
+    else:
+        command_seq = list(command)
+        if not command_seq or not all(isinstance(arg, str) for arg in command_seq):
+            raise ValueError("command argv must be a non-empty sequence of strings")
     _reject_secret_refs_in_nested_command(command_seq)
     return [resolve_secret_refs(token) for token in command_seq]
 

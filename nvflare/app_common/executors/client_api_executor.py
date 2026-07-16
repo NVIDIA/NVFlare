@@ -30,7 +30,7 @@ remains because FULL/DIFF is model state owned by that same API boundary.
 """
 
 import math
-from typing import Optional
+from typing import Optional, Union
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.apis.dxo import DXO
@@ -89,7 +89,7 @@ class ClientAPIExecutor(Executor):
     def __init__(
         self,
         execution_mode: str,
-        command: Optional[str] = None,
+        command: Optional[Union[str, list[str]]] = None,
         task_script_path: Optional[str] = None,
         task_script_args: str = "",
         launch_once: bool = _DEFAULT_LAUNCH_ONCE,
@@ -119,9 +119,11 @@ class ClientAPIExecutor(Executor):
 
         Args:
             execution_mode (str): One of "in_process", "external_process", or "attach". Required.
-            command (Optional[str]): The trainer launch command, e.g. "python custom/train.py",
-                "torchrun ...". Required for (and only valid in) "external_process" mode. An
-                empty/whitespace-only string is treated as unset.
+            command (Optional[Union[str, list[str]]]): The trainer launch command, either as a
+                command string (e.g. "python custom/train.py") or shell-free argv. Required for
+                (and only valid in) "external_process" mode. An empty/whitespace-only string or
+                empty argv is treated as unset. Use argv when values must retain exact boundaries
+                across platforms.
             task_script_path (Optional[str]): in_process only. Path to the user training script the
                 in_process backend runs via TaskScriptRunner. An empty/whitespace-only string is
                 treated as unset. (The in_process backend validates presence and ".py" suffix.)
@@ -181,7 +183,7 @@ class ClientAPIExecutor(Executor):
         # "unset" uniformly in every mode. Previously external_process used `if not command` while
         # the other modes used `command is not None`, so command="" was rejected with a misleading
         # "only valid for external_process" message in in_process/attach instead of treated as unset.
-        command = self._normalize_optional_str(command)
+        command = self._normalize_command(command)
         task_script_path = self._normalize_optional_str(task_script_path)
 
         is_in_process = execution_mode == ExecutionMode.IN_PROCESS
@@ -442,6 +444,20 @@ class ClientAPIExecutor(Executor):
         if isinstance(value, str) and not value.strip():
             return None
         return value
+
+    @staticmethod
+    def _normalize_command(command: Optional[Union[str, list[str]]]) -> Optional[Union[str, list[str]]]:
+        if isinstance(command, str) or command is None:
+            return ClientAPIExecutor._normalize_optional_str(command)
+        if not isinstance(command, list):
+            raise ValueError(f"command must be a string, list of strings, or None, but got {type(command).__name__}")
+        if not command:
+            return None
+        if not all(isinstance(arg, str) for arg in command):
+            raise ValueError("command argv must contain only strings")
+        if not command[0].strip():
+            raise ValueError("command argv must start with a non-empty executable")
+        return list(command)
 
     @staticmethod
     def _wrong_mode_error(arg_name: str, value, valid_modes: str, execution_mode: str) -> ValueError:

@@ -806,6 +806,23 @@ class TestInitializeAndFinalize:
             "python C:\\work\\train.py --token ${secret:EXTERNAL_BACKEND_TEST_SECRET}"
         ) == ["python", "C:\\work\\train.py", "--token", "resolved value with spaces"]
 
+        argv = [
+            "python",
+            "custom/train model.py",
+            "--label",
+            "two words",
+            "--token",
+            "${secret:EXTERNAL_BACKEND_TEST_SECRET}",
+        ]
+        assert ExternalProcessBackend._split_command(argv) == [
+            "python",
+            "custom/train model.py",
+            "--label",
+            "two words",
+            "--token",
+            "resolved value with spaces",
+        ]
+
     def test_signal_fallback_uses_terminate_then_kill(self, env, monkeypatch):
         """When group signaling is unavailable (non-POSIX, or killpg failure), the stop
         escalation falls back to Popen.terminate()/kill() on the process itself."""

@@ -27,7 +27,7 @@ This module is internal to NVFlare. It is not a user extension point; users conf
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Union
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
@@ -67,7 +67,7 @@ class ClientAPIBackendContext:
     task_script_path: Optional[str] = None
     task_script_args: str = ""
     # external_process launch
-    command: Optional[str] = None
+    command: Optional[Union[str, list[str]]] = None
     launch_once: bool = True
     launch_timeout: Optional[float] = 300.0
     shutdown_timeout: Optional[float] = None

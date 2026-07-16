@@ -443,7 +443,7 @@ def _split_tokens_leniently(text: str) -> List[str]:
     return tokens
 
 
-def _iter_flag_findings(tokens: List[str], location: str):
+def _iter_flag_findings(tokens: List[str], location: str, include_inline: bool = True):
     """Yield findings for command-line style '--secret-named-flag value' pairs."""
     for i, token in enumerate(tokens):
         if not token.startswith("-"):
@@ -451,6 +451,8 @@ def _iter_flag_findings(tokens: List[str], location: str):
         name = token.lstrip("-")
         value = None
         if "=" in name:
+            if not include_inline:
+                continue
             name, value = name.split("=", 1)
         elif i + 1 < len(tokens) and not tokens[i + 1].startswith("-"):
             value = tokens[i + 1]
@@ -565,6 +567,11 @@ def _scan_value(value: Any, location: str, findings: List[SecretFinding]) -> Non
                     )
             _scan_value(item, child_location, findings)
     elif isinstance(value, (list, tuple)):
+        if value and all(isinstance(item, str) for item in value):
+            # Preserve argv adjacency: recursively scanning each item cannot associate a
+            # secret-named flag with its value in the following element. Inline assignments
+            # are still found by the per-item scan below.
+            findings.extend(_iter_flag_findings(list(value), location, include_inline=False))
         for index, item in enumerate(value):
             _scan_value(item, f"{location}[{index}]", findings)
 

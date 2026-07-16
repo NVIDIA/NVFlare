@@ -232,9 +232,22 @@ class TestConstructorValidation:
         with pytest.raises(ValueError, match="command is only valid for execution_mode 'external_process'"):
             ClientAPIExecutor(execution_mode=mode, command="python custom/train.py")
 
-    @pytest.mark.parametrize("command", [None, ""])
+    @pytest.mark.parametrize("command", [None, "", []])
     def test_external_process_requires_command(self, command):
         with pytest.raises(ValueError, match="'external_process' requires a non-empty command"):
+            ClientAPIExecutor(execution_mode="external_process", command=command)
+
+    def test_external_process_accepts_and_copies_command_argv(self):
+        command = ["python", "custom/train model.py", "--label", "two words", ""]
+
+        executor = ClientAPIExecutor(execution_mode="external_process", command=command)
+        command[1] = "changed.py"
+
+        assert executor._command == ["python", "custom/train model.py", "--label", "two words", ""]
+
+    @pytest.mark.parametrize("command", [[""], ["python", 1], {"executable": "python"}])
+    def test_external_process_rejects_invalid_command_argv(self, command):
+        with pytest.raises(ValueError, match="command"):
             ClientAPIExecutor(execution_mode="external_process", command=command)
 
     @pytest.mark.parametrize(

@@ -65,7 +65,7 @@ import subprocess
 import threading
 import time
 import uuid
-from typing import Any, Optional, Tuple
+from typing import Any, Optional, Sequence, Tuple, Union
 
 from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, ReturnCode, ServerCommandNames
 from nvflare.apis.fl_context import FLContext
@@ -942,12 +942,12 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             self.logger.debug(f"failed to signal trainer process: {e}")
 
     @staticmethod
-    def _split_command(command: str):
+    def _split_command(command: Union[str, Sequence[str]]) -> list[str]:
         """Prepare shell-free argv and resolve secret references after tokenization.
 
-        Windows uses the whitespace-only tokenizer to preserve backslashed paths; POSIX
-        uses shell-style tokenization. Resolved secrets therefore remain one argv item on
-        both platforms and are never reparsed as command syntax.
+        Structured argv is already tokenized. Command strings retain the legacy platform
+        behavior: Windows preserves backslashed paths and POSIX uses shell-style tokenization.
+        Resolved secrets remain one argv item and are never reparsed as command syntax.
         """
         return prepare_subprocess_command(command, posix=os.name == "posix")
 
