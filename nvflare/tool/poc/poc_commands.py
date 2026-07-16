@@ -542,21 +542,15 @@ def _write_poc_docker_study_runtime(kit_dir: Path, poc_workspace: str) -> None:
 
 
 def _prepare_poc_docker_kit(kit_dir: str, docker_config: Dict, poc_workspace: str):
-    from nvflare.tool.deploy.deploy_commands import (
-        ROLE_CLIENT,
-        RUNTIME_DOCKER,
-        _prepare_docker,
-        _validate_kit,
-        _validate_runtime_config,
-    )
+    from nvflare.tool.deploy import deploy_common, docker_deploy
 
     kit_path = Path(kit_dir)
     try:
-        _validate_runtime_config(RUNTIME_DOCKER, docker_config)
-        kit_info = _validate_kit(kit_path)
-        _prepare_docker(kit_info, kit_path, docker_config)
+        docker_deploy.validate_config(docker_config)
+        kit_info = deploy_common.validate_kit(kit_path)
+        docker_deploy.prepare(kit_info, kit_path, docker_config)
         _write_poc_docker_study_runtime(kit_path, poc_workspace)
-        if kit_info.role == ROLE_CLIENT:
+        if kit_info.role == deploy_common.ROLE_CLIENT:
             _patch_poc_docker_client_target(kit_path)
     except SystemExit as e:
         raise CLIException(f"failed to prepare Docker deployment for startup kit '{kit_dir}'") from e
