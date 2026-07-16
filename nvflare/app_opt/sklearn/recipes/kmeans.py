@@ -180,4 +180,4 @@ class KMeansFedAvgRecipe(FedAvgRecipe):
             per_site_config=per_site_config,
             key_metric=key_metric,
         )
-        self.job.to_server(assembler, id=assembler_id)
+        self._job.to_server(assembler, id=assembler_id)

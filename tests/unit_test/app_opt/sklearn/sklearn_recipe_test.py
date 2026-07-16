@@ -59,7 +59,7 @@ class TestSklearnFedAvgRecipe:
         )
 
         assert recipe.name == "test_sklearn"
-        assert recipe.job is not None
+        assert recipe._job is not None
 
     def test_weight_diff_is_allowed_for_clients_that_return_diffs(self, mock_file_system, base_recipe_params):
         from nvflare.app_opt.sklearn.recipes.fedavg import SklearnFedAvgRecipe
@@ -84,7 +84,7 @@ class TestSklearnFedAvgRecipe:
             **base_recipe_params,
         )
 
-        assert recipe.job is not None
+        assert recipe._job is not None
 
     def test_model_path_only_without_model_params(self, mock_file_system, base_recipe_params):
         """Test that model_path alone (load from file) works."""
@@ -96,7 +96,7 @@ class TestSklearnFedAvgRecipe:
             **base_recipe_params,
         )
 
-        assert recipe.job is not None
+        assert recipe._job is not None
 
     def test_relative_path_rejected(self, mock_file_system, base_recipe_params):
         """Test that relative model_path is rejected at construction time."""
@@ -144,7 +144,7 @@ class TestKMeansFedAvgRecipe:
         )
 
         assert recipe.name == "test_kmeans"
-        assert recipe.job is not None
+        assert recipe._job is not None
 
     def test_model_path_accepted(self, mock_file_system):
         """Test that model_path parameter is accepted."""
@@ -159,7 +159,7 @@ class TestKMeansFedAvgRecipe:
             model_path="/abs/path/to/kmeans.joblib",
         )
 
-        assert recipe.job is not None
+        assert recipe._job is not None
 
     def test_relative_path_rejected(self):
         """Test that relative model_path is rejected (all sklearn recipes require absolute path)."""
@@ -191,7 +191,7 @@ class TestSVMFedAvgRecipe:
         )
 
         assert recipe.name == "test_svm"
-        assert recipe.job is not None
+        assert recipe._job is not None
 
     def test_model_path_accepted(self, mock_file_system):
         """Test that model_path parameter is accepted."""
@@ -205,7 +205,7 @@ class TestSVMFedAvgRecipe:
             model_path="/abs/path/to/svm.joblib",
         )
 
-        assert recipe.job is not None
+        assert recipe._job is not None
 
     def test_relative_path_rejected(self):
         """Test that relative model_path is rejected (all sklearn recipes require absolute path)."""

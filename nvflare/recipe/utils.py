@@ -211,10 +211,10 @@ def _normalize_recipe_meta_value(key: JobMetaKey, key_str: str, value: Any) -> A
 
 
 def _get_recipe_job_config(recipe: Recipe) -> FedJobConfig:
-    job = getattr(recipe, "job", None)
+    job = getattr(recipe, "_job", None)
     job_config = getattr(job, "job", None)
     if not isinstance(job_config, FedJobConfig):
-        raise TypeError("recipe must provide a FedJob through recipe.job")
+        raise TypeError("recipe must be backed by a FedJob")
     return job_config
 
 
@@ -378,7 +378,7 @@ def add_experiment_tracking(
             tracking_config["kw_args"] = kw_args
         elif not isinstance(kw_args, dict):
             raise TypeError(f"MLflow kw_args must be a dict, got {type(kw_args).__name__}")
-        recipe_name = getattr(recipe, "name", None) or getattr(recipe.job, "name", None) or "nvflare"
+        recipe_name = getattr(recipe, "name", None) or getattr(recipe._job, "name", None) or "nvflare"
         kw_args.setdefault("experiment_name", f"{recipe_name}-experiment")
 
     if not server_side and not client_side:
@@ -407,7 +407,7 @@ def add_experiment_tracking(
         if tracking_type == "mlflow":
             server_config["kw_args"].setdefault("run_name", f"{recipe_name}-Server")
         receiver = receiver_class(**server_config)
-        recipe.job.to_server(receiver, "receiver")
+        recipe._job.to_server(receiver, "receiver")
 
     # Add client-side tracking
     if client_side:
@@ -455,7 +455,7 @@ def add_final_global_evaluation(
     from nvflare.app_opt.pt.file_model_locator import PTFileModelLocator
     from nvflare.job_config.script_runner import FrameworkType
 
-    if getattr(recipe, "_cse_added", False) or _has_cross_site_eval_workflow(recipe.job):
+    if getattr(recipe, "_cse_added", False) or _has_cross_site_eval_workflow(recipe._job):
         raise RuntimeError("a cross-site evaluation workflow is already configured for this recipe")
 
     if getattr(recipe, "framework", None) != FrameworkType.PYTORCH:
@@ -469,7 +469,7 @@ def add_final_global_evaluation(
         if not participating_clients:
             raise ValueError("participating_clients must not be empty; use None to evaluate on all clients")
 
-    comp_ids = getattr(recipe.job, "comp_ids", None)
+    comp_ids = getattr(recipe._job, "comp_ids", None)
     if not isinstance(comp_ids, dict):
         raise ValueError("final global evaluation requires a recipe that tracks component IDs")
 
@@ -478,15 +478,15 @@ def add_final_global_evaluation(
         persistor_id = comp_ids.get("persistor_id", "")
         if not persistor_id:
             raise ValueError("final global evaluation requires a PyTorch model persistor")
-        model_locator_id = recipe.job.to_server(
+        model_locator_id = recipe._job.to_server(
             PTFileModelLocator(pt_persistor_id=persistor_id), id="final_model_locator"
         )
         if not isinstance(model_locator_id, str) or not model_locator_id:
             raise RuntimeError("failed to register the final global model locator")
         comp_ids["locator_id"] = model_locator_id
 
-    recipe.job.to_server(ValidationJsonGenerator())
-    recipe.job.to_server(
+    recipe._job.to_server(ValidationJsonGenerator())
+    recipe._job.to_server(
         CrossSiteModelEval(
             model_locator_id=model_locator_id,
             submit_model_task_name="",
@@ -514,9 +514,9 @@ def add_cross_site_evaluation(
 
     **For standalone CSE without training**, use `NumpyCrossSiteEvalRecipe` instead.
 
-    **Note**: This utility is designed for adding CSE to training recipes. If you call it on
-    a CSE-only recipe (e.g., `NumpyCrossSiteEvalRecipe`), it will detect this and skip
-    adding duplicate validators automatically.
+    **Note**: This utility is designed for adding CSE to training recipes. Standalone CSE
+    recipes such as `NumpyCrossSiteEvalRecipe` already configure their CSE workflow;
+    calling this utility on them raises `RuntimeError` through the idempotency check.
 
     **WARNING**: Do not call this function multiple times on the same recipe instance.
     This function is idempotent and will raise a RuntimeError if called more than once
@@ -602,9 +602,8 @@ def add_cross_site_evaluation(
     Note:
         - Currently supports PyTorch, NumPy, and TensorFlow frameworks.
         - **NumPy recipes using `NumpyFedAvgRecipe`**: Validators (NPValidator) are automatically
-          added to clients to handle validation tasks. The function intelligently detects if validators
-          are already configured by checking for executors handling TASK_VALIDATION, avoiding duplicates
-          for CSE-only recipes (like `NumpyCrossSiteEvalRecipe`).
+          added to clients to handle validation tasks. The idempotency check prevents duplicate
+          CSE augmentation and validator registration.
         - **Unified `FedAvgRecipe` with `framework=FrameworkType.NUMPY`**: Uses the same Client API
           validation pattern as PyTorch and TensorFlow. Your client script should handle
           `flare.is_evaluate()` and return metrics for validation tasks.
@@ -621,7 +620,7 @@ def add_cross_site_evaluation(
     # Idempotency check: prevent multiple calls on the same recipe.
     # Keep the explicit flag fast-path, but also verify server workflow state so
     # protection remains effective even if dynamic attributes are lost.
-    if getattr(recipe, "_cse_added", False) or _has_cross_site_eval_workflow(recipe.job):
+    if getattr(recipe, "_cse_added", False) or _has_cross_site_eval_workflow(recipe._job):
         name = recipe.name if hasattr(recipe, "name") else "cross-site-evaluation job"
         raise RuntimeError(
             f"Cross-site evaluation has already been added to recipe '{name}'. "
@@ -672,12 +671,12 @@ def add_cross_site_evaluation(
     locator_kwargs = {}
     if locator_config["persistor_param"] is not None:
         # For frameworks requiring persistor_id (PyTorch, TensorFlow), get it from comp_ids
-        if hasattr(recipe.job, "comp_ids"):
-            persistor_id = recipe.job.comp_ids.get("persistor_id", "")
+        if hasattr(recipe._job, "comp_ids"):
+            persistor_id = recipe._job.comp_ids.get("persistor_id", "")
             if not persistor_id:
                 raise ValueError(
                     f"Cross-site evaluation requires a persistor for {framework_to_locator[framework]} recipes, "
-                    f"but no persistor_id found in recipe.job.comp_ids. "
+                    "but no persistor_id was found in the generated job. "
                     f"Ensure your recipe includes a model to create a persistor."
                 )
             locator_kwargs[locator_config["persistor_param"]] = persistor_id
@@ -688,10 +687,10 @@ def add_cross_site_evaluation(
             )
 
     model_locator = locator_class(**locator_kwargs)
-    model_locator_id = recipe.job.to_server(model_locator)
+    model_locator_id = recipe._job.to_server(model_locator)
 
     # Add validation JSON generator
-    recipe.job.to_server(ValidationJsonGenerator())
+    recipe._job.to_server(ValidationJsonGenerator())
 
     # Create and add cross-site evaluation controller
     eval_controller = CrossSiteModelEval(
@@ -700,7 +699,7 @@ def add_cross_site_evaluation(
         validation_timeout=validation_timeout,
         participating_clients=participating_clients,
     )
-    recipe.job.to_server(eval_controller)
+    recipe._job.to_server(eval_controller)
 
     # Let recipe handle framework-specific validator setup if needed
     # NumPy recipes implement add_cse_validator_if_needed() to add NPValidator automatically
@@ -711,64 +710,6 @@ def add_cross_site_evaluation(
 
     # Mark that CSE has been added to prevent duplicate calls
     recipe._cse_added = True
-
-
-def _has_task_executor(job, task_name: str) -> bool:
-    """Check if any executor is already configured for the specified task.
-
-    This function inspects the job's internal structure to determine if a validator
-    or executor is already handling the specified task. It uses defensive programming
-    to handle potential variations in the internal API structure.
-
-    IMPORTANT: This function accesses the private attribute job._deploy_map because:
-    1. No public API exists in FedJob to query configured executors
-    2. This check is necessary to avoid adding duplicate validators for CSE
-    3. Without this, we'd rely on fragile string matching on recipe class names
-
-    The implementation uses defensive programming (hasattr checks, try-except) to
-    minimize fragility. If FedJob's internal structure changes, this function will
-    gracefully return False rather than crashing.
-
-    Future improvement: FedJob could provide a public method like get_executors(target)
-    to make this check safer and more maintainable.
-
-    Args:
-        job: FedJob instance to check
-        task_name: Task name to check for (e.g., AppConstants.TASK_VALIDATION)
-
-    Returns:
-        True if an executor is already configured for this task, False otherwise
-    """
-    # Access _deploy_map (private attribute) - see docstring for justification
-    # Defensive check: ensure _deploy_map exists before accessing
-    if not hasattr(job, "_deploy_map"):
-        return False
-
-    for target, app in job._deploy_map.items():
-        # Skip server apps, only check client apps
-        if target == "server":
-            continue
-
-        # Get the client app configuration
-        if hasattr(app, "app_config"):
-            app_config = app.app_config
-            # Check if it's a ClientAppConfig with executors
-            if hasattr(app_config, "executors"):
-                for executor_def in app_config.executors:
-                    # Defensive check: ensure executor_def has tasks attribute
-                    if not hasattr(executor_def, "tasks"):
-                        continue
-
-                    try:
-                        # Check if this executor handles the task
-                        # Wildcard executors (["*"]) can handle any task
-                        if "*" in executor_def.tasks or task_name in executor_def.tasks:
-                            return True
-                    except (TypeError, AttributeError):
-                        # Handle case where tasks is not iterable or comparable
-                        # This could happen if tasks has an unexpected type
-                        continue
-    return False
 
 
 def collect_non_local_scripts(job: FedJob) -> List[str]:

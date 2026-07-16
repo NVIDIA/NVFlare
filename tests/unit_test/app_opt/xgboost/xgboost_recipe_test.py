@@ -32,7 +32,7 @@ def _per_site_config():
 
 
 def _get_metrics_writer(recipe):
-    server_app = recipe.job._deploy_map[SERVER_SITE_NAME]
+    server_app = recipe._job._deploy_map[SERVER_SITE_NAME]
     return server_app.app_config.components.get("metrics_artifact_writer")
 
 
