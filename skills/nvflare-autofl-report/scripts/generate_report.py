@@ -427,7 +427,7 @@ def is_literature_event(record: RunRecord) -> bool:
     text = " ".join(
         [record.name, record.diff_summary, record.run_command, record.artifacts, record.failure_reason]
     ).lower()
-    return (record.status in LITERATURE_STATUSES and "literature" in text) or "literature" in record.name.lower()
+    return record.status in LITERATURE_STATUSES and (record.status == "literature" or "literature" in text)
 
 
 def inferred_candidate_kind(record: RunRecord) -> str:
@@ -615,11 +615,12 @@ def comparability_warnings(
             + ")."
         )
 
-    candidate_count = len(
-        [record for record in records if record.status in ATTEMPT_STATUSES and not is_baseline(record)]
+    scored_candidate_count = sum(
+        record.status in FINALIZED_SCORE_STATUSES and record.status != "baseline" and record.score is not None
+        for record in records
     )
     metric_text = f"{metric} {metric_source}".lower()
-    if candidate_count > 1 and "test" in metric_text:
+    if scored_candidate_count > 1 and "test" in metric_text:
         warnings.append(
             "Multiple candidates were selected against a test-like metric. Re-evaluate the chosen candidate once on an "
             "untouched holdout before making generalization claims."
@@ -642,12 +643,18 @@ def refresh_plot(results: Path, output: Path, mode: str, metric: str, plotter_pa
     if spec is None or spec.loader is None:
         return f"Could not load Auto-FL progress plotter from {plotter_path}; existing plot was preserved."
     module = importlib.util.module_from_spec(spec)
+    previous_module = sys.modules.get(spec.name)
     sys.modules[spec.name] = module
     try:
         spec.loader.exec_module(module)
         module.plot_progress(module.load_results(results), output, mode, metric)
     except Exception as exc:  # plotting should not destroy an otherwise useful stopped-campaign report
         return f"Could not refresh progress plot ({type(exc).__name__}: {exc}); existing plot was preserved."
+    finally:
+        if previous_module is None:
+            sys.modules.pop(spec.name, None)
+        else:
+            sys.modules[spec.name] = previous_module
     return None
 
 

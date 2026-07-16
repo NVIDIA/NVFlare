@@ -417,6 +417,44 @@ def test_report_uses_explicit_literature_links_across_later_events(tmp_path, mon
     assert all("unlinked_candidate" not in item["candidate_attempts"] for item in summary["literature_reviews"])
 
 
+def test_candidate_name_containing_literature_is_not_a_checkpoint(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    rows = [
+        _row("baseline", "baseline", "0.500000"),
+        _row("literature", "review_fedprox", literature_event_id="lit-0001"),
+        _row(
+            "keep",
+            "literature_review_based_init",
+            "0.600000",
+            candidate_kind="source_edit",
+            literature_event_id="lit-0001",
+        ),
+        _row(
+            "discard",
+            "fedprox_followup",
+            "0.550000",
+            candidate_kind="source_edit",
+            literature_event_id="lit-0001",
+        ),
+    ]
+    _write_rows(tmp_path, rows)
+    tmp_path.joinpath("autofl.yaml").write_text("objective:\n  metric: accuracy\n", encoding="utf-8")
+    state_path = tmp_path / ".nvflare/autofl/campaign_state.json"
+    state_path.parent.mkdir(parents=True)
+    state_path.write_text(json.dumps({"final_response_allowed": True}), encoding="utf-8")
+    tmp_path.joinpath("progress.png").write_bytes(b"\x89PNG\r\n\x1a\nplot")
+
+    summary = _generate(reporter, tmp_path, monkeypatch)
+
+    assert len(summary["literature_reviews"]) == 1
+    assert summary["literature_reviews"][0]["event"] == "review_fedprox"
+    assert summary["literature_reviews"][0]["incumbent_score"] == 0.5
+    assert summary["literature_reviews"][0]["candidate_attempts"] == [
+        "literature_review_based_init",
+        "fedprox_followup",
+    ]
+
+
 def test_literature_evidence_preserves_crash_and_blank_discard_status(tmp_path, monkeypatch):
     reporter = _load_reporter()
     rows = _write_campaign(tmp_path)
@@ -644,6 +682,21 @@ def test_report_separates_metric_measurement_and_contract_sources(tmp_path, monk
     assert summary["objective"]["metric_contract_source"] == "arg:key_metric"
 
 
+def test_crash_only_attempts_do_not_trigger_test_metric_selection_warning(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    rows = [
+        _row("baseline", "baseline", "0.500000", metric_name="test_accuracy"),
+        _row("crash", "candidate_1", failure_reason="exit_code=1"),
+        _row("crash", "candidate_2", failure_reason="exit_code=1"),
+    ]
+    _write_rows(tmp_path, rows)
+
+    summary = _generate(reporter, tmp_path, monkeypatch)
+
+    assert not any("selected against a test-like metric" in warning for warning in summary["warnings"])
+
+
 def test_relative_plotter_path_resolves_from_campaign_directory(tmp_path, monkeypatch):
     reporter = _load_reporter()
     _write_campaign(tmp_path)
@@ -660,6 +713,29 @@ def test_relative_plotter_path_resolves_from_campaign_directory(tmp_path, monkey
     reporter.generate(reporter.parse_args([str(tmp_path), "--plotter", "tools/plot_progress.py"]))
 
     assert captured["path"] == plotter_path.resolve()
+
+
+def test_refresh_plot_reloads_plotter_without_leaking_module(tmp_path):
+    reporter = _load_reporter()
+    results_path = tmp_path / "results.tsv"
+    results_path.write_text("status\tname\n", encoding="utf-8")
+    output_path = tmp_path / "progress.png"
+    module_name = "nvflare_autofl_report_plotter"
+
+    for marker in ("first", "second"):
+        plotter_path = tmp_path / f"plot_{marker}.py"
+        plotter_path.write_text(
+            "from pathlib import Path\n"
+            "def load_results(path):\n"
+            "    return []\n"
+            "def plot_progress(records, output, mode, metric):\n"
+            f"    Path(output).write_text('{marker}', encoding='utf-8')\n",
+            encoding="utf-8",
+        )
+
+        assert reporter.refresh_plot(results_path, output_path, "max", "accuracy", plotter_path) is None
+        assert output_path.read_text(encoding="utf-8") == marker
+        assert module_name not in sys.modules
 
 
 def test_candidate_lineage_marks_cycles_incomplete():
