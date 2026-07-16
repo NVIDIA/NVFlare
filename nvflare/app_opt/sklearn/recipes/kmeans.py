@@ -43,6 +43,10 @@ class _KMeansValidator(BaseModel):
 class KMeansFedAvgRecipe(FedAvgRecipe):
     """A recipe for Federated K-Means Clustering with Scikit-learn.
 
+    Recipe parameters, including ``train_args`` and nested ``per_site_config`` values,
+    must never contain actual secrets. Read secrets from site environment variables or mounted
+    files; references are supported only where documented in :mod:`nvflare.recipe.secrets`.
+
     This recipe implements federated K-Means clustering using a mini-batch aggregation
     strategy. The aggregation follows the scheme defined in MiniBatchKMeans where each
     client's results are treated as a mini-batch for updating global centers.
@@ -77,7 +81,8 @@ class KMeansFedAvgRecipe(FedAvgRecipe):
             Defaults to "python3 -u".
         per_site_config: Per-site configuration for the federated learning job. Dictionary mapping
             site names to configuration dicts. If not provided, the same configuration will be used
-            for all clients.
+            for all clients. Nested values become part of the generated job definition and must not
+            contain secrets.
         key_metric: Metric used to determine if the model is globally best. If validation metrics are
             a dict, key_metric selects the metric used for global model selection. Defaults to "metrics"
             (which corresponds to the homogeneity score sent by the K-Means client).
@@ -175,4 +180,4 @@ class KMeansFedAvgRecipe(FedAvgRecipe):
             per_site_config=per_site_config,
             key_metric=key_metric,
         )
-        self.job.to_server(assembler, id=assembler_id)
+        self._job.to_server(assembler, id=assembler_id)

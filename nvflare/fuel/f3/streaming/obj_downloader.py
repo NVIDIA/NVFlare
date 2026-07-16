@@ -28,6 +28,10 @@ class ObjectDownloader:
         progress_cb=None,
         progress_interval: float = 30.0,
         outcome_cb=None,
+        receiver_ids=None,
+        min_receivers=None,
+        receiver_acquire_timeout=None,
+        receiver_idle_timeout=None,
         **cb_kwargs,
     ):
         """Constructor of ObjectDownloader.
@@ -67,6 +71,10 @@ class ObjectDownloader:
             progress_cb=progress_cb,
             progress_interval=progress_interval,
             outcome_cb=outcome_cb,
+            receiver_ids=receiver_ids,
+            min_receivers=min_receivers,
+            receiver_acquire_timeout=receiver_acquire_timeout,
+            receiver_idle_timeout=receiver_idle_timeout,
             **cb_kwargs,
         )
 
@@ -86,6 +94,15 @@ class ObjectDownloader:
             ref_id=ref_id,
         )
         return rid
+
+    def get_waiter(self):
+        """Returns the awaitable facade (TransferWaiter) over this transaction's terminal outcome.
+
+        waiter.wait(timeout) blocks until the aggregate TransferOutcome is recorded --
+        COMPLETED only when every expected receiver succeeded. This is the primitive
+        upper layers use to guarantee "send returns only when the payload is delivered".
+        """
+        return DownloadService.get_transfer_waiter(self.tx_id)
 
     def delete_transaction(self):
         """Delete the download transaction forcefully.

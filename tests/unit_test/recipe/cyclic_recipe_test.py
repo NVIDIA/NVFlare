@@ -14,6 +14,7 @@
 
 """Tests for CyclicRecipe and framework-specific variants with initial_ckpt support."""
 
+import warnings
 from unittest.mock import patch
 
 import pytest
@@ -22,6 +23,7 @@ import torch.nn as nn
 from nvflare.apis.job_def import ALL_SITES
 from nvflare.app_opt.pt.job_config.model import PTModel
 from nvflare.fuel.utils.constants import FrameworkType
+from nvflare.fuel.utils.secret_utils import PotentialSecretWarning, UnsupportedSecretRefWarning
 from nvflare.recipe.cyclic import CyclicRecipe as BaseCyclicRecipe
 
 
@@ -62,6 +64,36 @@ def base_recipe_params():
 
 class TestBaseCyclicRecipe:
     """Test cases for base CyclicRecipe class."""
+
+    def test_warns_on_secret_in_client_config_overrides(self, mock_file_system, base_recipe_params, simple_model):
+        secret = "ghp_" + "Ab1" * 12
+
+        recipe = BaseCyclicRecipe(
+            name="secret_override",
+            model=PTModel(model=simple_model),
+            client_config_overrides={"command": secret},
+            framework=FrameworkType.PYTORCH,
+            **base_recipe_params,
+        )
+
+        with pytest.warns(PotentialSecretWarning) as record:
+            recipe._warn_potential_secrets_in_params()
+
+        messages = [str(warning.message) for warning in record]
+        assert any("client_config_overrides" in message for message in messages)
+        assert all(secret not in message for message in messages)
+
+    def test_external_command_secret_ref_is_supported(self, mock_file_system, base_recipe_params, simple_model):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UnsupportedSecretRefWarning)
+            BaseCyclicRecipe(
+                name="command_secret_ref",
+                model=PTModel(model=simple_model),
+                launch_external_process=True,
+                client_config_overrides={"command": "env API_TOKEN=${secret:API_TOKEN} python3 -u"},
+                framework=FrameworkType.PYTORCH,
+                **base_recipe_params,
+            )
 
     def test_initial_ckpt_must_exist_for_relative_path(self):
         """Test that non-existent relative paths are rejected (no mock - validation must run)."""
@@ -126,7 +158,7 @@ class TestBaseCyclicRecipe:
             **base_recipe_params,
         )
 
-        server_app = recipe.job._deploy_map.get("server")
+        server_app = recipe._job._deploy_map.get("server")
         persistor = server_app.app_config.components.get("persistor")
         assert persistor is not None
         assert getattr(persistor, "source_ckpt_file_full_name", None) == "/abs/path/to/model.pt"
@@ -173,8 +205,8 @@ class TestCyclicRecipeControllerConfig:
             **base_recipe_params,
         )
 
-        controller = recipe.job._deploy_map["server"].app_config.workflows[0].controller
-        launcher = recipe.job._deploy_map[ALL_SITES].app_config.components["launcher"]
+        controller = recipe._job._deploy_map["server"].app_config.workflows[0].controller
+        launcher = recipe._job._deploy_map[ALL_SITES].app_config.components["launcher"]
         assert controller.task_assignment_timeout == 60
         assert controller._task_check_period == 2.0
         assert launcher._shutdown_timeout == 90.0
@@ -204,7 +236,7 @@ class TestPTCyclicRecipe:
         )
 
         assert recipe.name == "test_pt_cyclic"
-        assert recipe.job is not None
+        assert recipe._job is not None
 
     def test_pt_cyclic_with_ptmodel_wrapper_returns_persistor_id(
         self, mock_file_system, base_recipe_params, simple_model
@@ -218,7 +250,7 @@ class TestPTCyclicRecipe:
             **base_recipe_params,
         )
 
-        server_app = recipe.job._deploy_map.get("server")
+        server_app = recipe._job._deploy_map.get("server")
         assert server_app is not None
         assert "persistor" in server_app.app_config.components
 
@@ -239,4 +271,4 @@ class TestTFCyclicRecipe:
         )
 
         assert recipe.name == "test_tf_cyclic"
-        assert recipe.job is not None
+        assert recipe._job is not None

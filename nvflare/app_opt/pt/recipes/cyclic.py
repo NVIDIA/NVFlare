@@ -24,6 +24,10 @@ from nvflare.recipe.utils import extract_persistor_id
 class CyclicRecipe(BaseCyclicRecipe):
     """PyTorch-specific Cyclic federated learning recipe.
 
+    Recipe parameters, including ``train_args`` and config override dictionaries,
+    must never contain actual secret values. Read secrets from site environment variables or
+    mounted files; references are supported only where documented in :mod:`nvflare.recipe.secrets`.
+
     Args:
         name: Name identifier for the federated learning job. Defaults to "cyclic".
         model: Starting model object to begin training. Can be:

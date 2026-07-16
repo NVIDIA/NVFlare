@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import warnings
 from unittest.mock import patch
 
 import pytest
@@ -20,6 +21,7 @@ from pydantic import ValidationError
 
 from nvflare.app_opt.pt.recipes.fedeval import FedEvalRecipe
 from nvflare.client.config import ExchangeFormat
+from nvflare.fuel.utils.secret_utils import PotentialSecretWarning, UnsupportedSecretRefWarning
 
 
 class SimpleTestModel(nn.Module):
@@ -68,12 +70,38 @@ def assert_recipe_basics(recipe, expected_name, expected_params):
     assert recipe.eval_script == expected_params.get("eval_script", "mock_eval_script.py")
     assert recipe.eval_args == expected_params.get("eval_args", "--batch_size 32")
     assert recipe.min_clients == expected_params.get("min_clients", 2)
-    assert recipe.job is not None
-    assert recipe.job.name == expected_name
+    assert recipe._job is not None
+    assert recipe._job.name == expected_name
 
 
 class TestFedEvalRecipe:
     """Test cases for FedEvalRecipe class."""
+
+    def test_warns_on_secret_in_eval_args(self, mock_file_system, base_recipe_params, simple_model):
+        model, _ = simple_model
+        params = dict(base_recipe_params)
+        params["eval_args"] = "--password hunter22x"
+
+        recipe = FedEvalRecipe(name="secret_eval", model=model, **params)
+
+        with pytest.warns(PotentialSecretWarning, match="eval_args"):
+            recipe._warn_potential_secrets_in_params()
+
+    def test_external_command_secret_ref_is_supported(self, mock_file_system, base_recipe_params, simple_model):
+        model, _ = simple_model
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UnsupportedSecretRefWarning)
+            FedEvalRecipe(
+                name="command_secret_ref",
+                model=model,
+                per_site_config={
+                    "site-1": {
+                        "launch_external_process": True,
+                        "command": "env API_TOKEN=${secret:API_TOKEN} python3 -u",
+                    }
+                },
+                **base_recipe_params,
+            )
 
     def test_basic_initialization(self, mock_file_system, base_recipe_params, simple_model):
         """Test FedEvalRecipe initialization with default parameters."""
@@ -95,7 +123,7 @@ class TestFedEvalRecipe:
         recipe = FedEvalRecipe(model=model, **base_recipe_params)
 
         assert recipe.name == "eval"
-        assert recipe.job.name == "eval"
+        assert recipe._job.name == "eval"
 
     def test_custom_command(self, mock_file_system, base_recipe_params, simple_model):
         """Test FedEvalRecipe with custom command."""

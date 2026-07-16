@@ -247,10 +247,6 @@ class StudyCommandModule(CommandModule, CommandUtil):
         }
 
     @staticmethod
-    def _registry_path(engine: ServerEngine) -> str:
-        return engine.get_workspace().get_file_path_in_site_config("study_registry.json")
-
-    @staticmethod
     def _load_registry_config(path: str) -> dict:
         if not os.path.exists(path):
             return {"format_version": StudyRegistry.FORMAT_VERSION, "studies": {}}
@@ -419,8 +415,8 @@ class StudyCommandModule(CommandModule, CommandUtil):
             if not isinstance(engine, ServerEngine):
                 raise TypeError(f"engine must be ServerEngine but got {type(engine)}")
 
-            path = self._registry_path(engine)
-            config = self._load_registry_config(path)
+            workspace = engine.get_workspace()
+            config = self._load_registry_config(workspace.get_study_registry_file_path())
             working = deepcopy(config)
             payload = mutation_cb(engine, working)
             if payload is None:
@@ -430,7 +426,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
                 self._reply(conn, payload)
                 return
             new_registry = StudyRegistry(working)
-            self._write_registry_config(path, working)
+            self._write_registry_config(workspace.get_study_registry_write_path(), working)
             StudyRegistryService.initialize(new_registry)
             self._reply(conn, payload)
         except Exception as e:

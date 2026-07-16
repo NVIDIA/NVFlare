@@ -74,15 +74,16 @@ Use the Built-in Component Path Authorizer
 When BYOC is disabled, NVFLARE runs a built-in component path authorization check while parsing job
 configuration. Sites get this protection without installing an authorizer component in ``resources.json``. The policy
 allows only class paths that match ``class_allow_list`` in the site's top-level ``resources.json`` or
-``resources.json.default``. Standard provisioning installs a curated list of built-in components. The authorizer itself
-has no fallback: if ``class_allow_list`` is not configured, non-BYOC component builds fail with an explicit setup error.
+``resources.json.default``. Standard provisioning installs a curated list of built-in components. If
+``class_allow_list`` is not configured, NVFLARE uses the curated built-in default shown below and records an audit
+event for the implicit policy decision. An explicitly configured list replaces that default.
 
 ``SimEnv`` also installs this curated list in new simulation workspaces without changing POC or production authorization.
 
-Migration note for upgrades: startup kits created before this policy may not contain ``class_allow_list``. Before running
-non-BYOC jobs after upgrade, add a top-level ``class_allow_list`` to each site's ``resources.json`` or
-``resources.json.default``. Use the provisioned list below as the starting point for NVFLARE built-in components. Add
-site-local package prefixes only after reviewing the classes that should be loadable in non-BYOC jobs.
+Migration note for upgrades: startup kits created before this policy may not contain ``class_allow_list``. Such sites use
+the built-in default automatically. Add a top-level ``class_allow_list`` to each site's ``resources.json`` or
+``resources.json.default`` only when the site needs to replace the default, for example to authorize reviewed site-local
+classes for non-BYOC jobs.
 
 The check is applied to every component config built through the NVFLARE JSON configuration flow, including component configs
 nested at any depth inside another component's ``args``. It also checks component configs inside dictionaries and lists before
@@ -105,17 +106,29 @@ Python package boundary, for example ``"nvflare."``. Entries without a trailing 
 and are matched exactly or on a ``.`` boundary. For example, ``"nvflare"`` is rejected as ambiguous, and ``"nvflare."`` does
 not match ``"nvflareevil.module.Component"``.
 
+The adjacent ``class_list_enforcement_mode`` setting accepts ``"enforce"`` (the default) or ``"warn"``. In ``"warn"``
+mode, a component outside ``class_allow_list`` is allowed to load, a context-rich warning is logged, and one audit event is
+recorded per job and unmatched class path. If ``"*"`` appears anywhere in ``class_allow_list``, all component classes are
+allowed, the remaining entries are ignored, and an audit event records the policy source and that the allow-list check was
+bypassed; the enforcement mode has no effect in this case. Failed audit writes are retried on later matching component
+checks without repeating the wildcard warning. Simulator runs use warning logs because their auditor is a no-op. Use
+``"warn"`` and ``"*"`` only as temporary migration aids in trusted environments.
+
 Provisioned ``resources.json.default`` Results
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 When provisioning generates startup kits, the server and client ``resources.json.default`` files include the following
-top-level ``class_allow_list``. This list is provisioned configuration, not a hard-coded fallback in
-``ComponentPathAuthorizer``. Operators can edit it in ``resources.json`` or ``resources.json.default`` to match the classes
-their non-BYOC jobs are allowed to load.
+top-level ``class_allow_list``. It is also the built-in fallback when the setting is omitted. Operators can replace it in
+``resources.json`` or ``resources.json.default`` to match the classes their non-BYOC jobs are allowed to load.
+
+Every class in ``DEFAULT_CLASS_ALLOW_LIST`` must remain safe to import and construct with untrusted, job-controlled
+arguments. Future additions to the default list require review under this security bar, including constructor side effects
+and any argument values that could trigger file, process, network, deserialization, or other privileged operations.
 
 .. code-block:: json
 
     {
         "format_version": 2,
+        "class_list_enforcement_mode": "enforce",
         "class_allow_list": [
             "nvflare.app_common.aggregators.collect_and_assemble_model_aggregator.CollectAndAssembleModelAggregator",
             "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",

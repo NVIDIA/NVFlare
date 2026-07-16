@@ -21,6 +21,7 @@ from nvflare.app_common.shareablegenerators import FullModelShareableGenerator
 from nvflare.app_common.workflows.cyclic_ctl import CyclicController
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.constants import FrameworkType
+from nvflare.fuel.utils.secret_utils import warn_on_unsupported_secret_refs_outside_keys
 from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.recipe.spec import Recipe
 
@@ -75,6 +76,8 @@ class CyclicRecipe(Recipe):
         min_clients: Minimum number of clients required to participate. Must be >= 2.
         train_script: Path to the client training script to execute.
         train_args: Additional command-line arguments to pass to the training script.
+            Written in clear text into the generated job config, so it must never contain
+            actual secret values; see :mod:`nvflare.recipe.secrets` for how to pass secrets.
         launch_external_process: Whether to run training in a separate process. Defaults to False.
         command: Shell command to execute the training script. Defaults to "python3 -u".
         framework: ML framework type for compatibility. Defaults to FrameworkType.NUMPY.
@@ -91,8 +94,10 @@ class CyclicRecipe(Recipe):
         server_config_overrides: Advanced shallow overrides for ``CyclicController``.
             Values here take precedence over named constructor parameters.
             ``task_check_period`` must be positive when supplied.
+            This dictionary is stored in the job definition and must not contain secrets.
         client_config_overrides: Advanced shallow overrides for ``ScriptRunner``.
             Values here take precedence over named constructor parameters.
+            This dictionary is stored in the job definition and must not contain secrets.
 
     Raises:
         ValidationError: If min_clients < 2 or other parameter validation fails.
@@ -180,6 +185,11 @@ class CyclicRecipe(Recipe):
         self.shutdown_timeout = v.shutdown_timeout
         self.server_config_overrides = server_config_overrides
         self.client_config_overrides = client_config_overrides
+        warn_on_unsupported_secret_refs_outside_keys(
+            self.client_config_overrides,
+            supported_value_keys={"command", "script_args"},
+            context="recipe parameter 'client_config_overrides'",
+        )
 
         # Validate that we have at least one model source
         if self.model is None and self.initial_ckpt is None:

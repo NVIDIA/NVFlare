@@ -72,6 +72,30 @@ class TestWorkspace:
 
             assert result == expected
 
+    def test_study_registry_path_defaults_to_root_when_absent(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            ws = self._make_workspace(tmp_dir)
+            expected = os.path.join(tmp_dir, WorkspaceConstants.STUDY_REGISTRY_CONFIG)
+            assert ws.get_study_registry_file_path() == expected
+
+    def test_study_registry_path_falls_back_to_site_config_seed(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            ws = self._make_workspace(tmp_dir)
+            seed = os.path.join(tmp_dir, "local", WorkspaceConstants.STUDY_REGISTRY_CONFIG)
+            with open(seed, "wt") as f:
+                f.write("{}")
+            assert ws.get_study_registry_file_path() == seed
+
+    def test_study_registry_path_prefers_root_copy_over_seed(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            ws = self._make_workspace(tmp_dir)
+            seed = os.path.join(tmp_dir, "local", WorkspaceConstants.STUDY_REGISTRY_CONFIG)
+            root_copy = os.path.join(tmp_dir, WorkspaceConstants.STUDY_REGISTRY_CONFIG)
+            for path in (seed, root_copy):
+                with open(path, "wt") as f:
+                    f.write("{}")
+            assert ws.get_study_registry_file_path() == root_copy
+
     @pytest.mark.parametrize(
         "job_id",
         [

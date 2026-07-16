@@ -74,7 +74,9 @@ class FedEvalRecipe(Recipe):
             The file may not exist locally (server-side path).
         min_clients: Minimum number of clients required to start evaluation.
         eval_script: Path to the evaluation script that will be executed on each client.
-        eval_args: Command line arguments to pass to the evaluation script. Defaults to "".
+        eval_args: Command line arguments to pass to the evaluation script. The string is
+            stored in the job definition and must not contain actual secret values; see
+            :mod:`nvflare.recipe.secrets` for safe runtime references. Defaults to "".
         launch_external_process: Whether to launch the script in external process. Defaults to False.
         command: If launch_external_process=True, command to run script (prepended to script).
             Defaults to "python3 -u".
@@ -84,6 +86,7 @@ class FedEvalRecipe(Recipe):
         per_site_config: Per-site configuration for the evaluation job. Dictionary mapping
             site names to configuration dicts. Each config dict can contain optional overrides:
             eval_script, eval_args, launch_external_process, command, server_expected_format.
+            Values are stored in the job definition and must not contain actual secret values.
             If not provided, the same configuration will be used for all clients. Defaults to None.
 
     Example:
@@ -115,6 +118,8 @@ class FedEvalRecipe(Recipe):
         )
         ```
     """
+
+    _SUPPORTED_PER_SITE_SECRET_REF_KEYS = frozenset({"command", "eval_args"})
 
     def __init__(
         self,

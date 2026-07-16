@@ -112,8 +112,9 @@ def _cell_fqcn(mode, site_name, token, parent_fqcn):
         prefix = parent_fqcn
         cell_name = make_cell_pipe_alias(site_name, token, mode)
     else:
-        # Missing parent FQCN: keep the cell under the owning site so routing
-        # still has a topology-shaped parent instead of creating <site>.<token>.
+        # Missing parent FQCN: intentionally mirror the root-server placement
+        # and keep the cell under the owning site, so routing still has a
+        # topology-shaped parent instead of creating <site>.<token>.
         # No in-tree caller hits this today; warn so a misconfiguration that
         # produces a correct-looking name is still diagnosable.
         _logger.warning(

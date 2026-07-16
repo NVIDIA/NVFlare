@@ -22,6 +22,7 @@ import pytest
 
 from nvflare.apis.dxo import DataKind
 from nvflare.apis.job_def import ALL_SITES
+from nvflare.fuel.utils.secret_utils import PotentialSecretWarning
 
 torch = pytest.importorskip("torch")
 
@@ -48,6 +49,35 @@ def simple_pt_model():
 class TestSwarmLearningRecipe:
     """Test cases for SwarmLearningRecipe."""
 
+    def test_warns_on_secret_in_train_args(self, mock_file_system, simple_pt_model):
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+
+        with pytest.warns(PotentialSecretWarning, match="train_args"):
+            SwarmLearningRecipe(
+                name="secret_swarm",
+                model=simple_pt_model,
+                num_rounds=1,
+                train_script="train.py",
+                min_clients=2,
+                train_args={"script_args": "--password hunter22x"},
+            )
+
+    def test_warns_on_secret_assignment_in_external_command(self, mock_file_system, simple_pt_model):
+        from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
+
+        with pytest.warns(PotentialSecretWarning, match="command") as record:
+            SwarmLearningRecipe(
+                name="secret_command_swarm",
+                model=simple_pt_model,
+                num_rounds=1,
+                train_script="train.py",
+                min_clients=2,
+                launch_external_process=True,
+                command="env API_PASSWORD=hunter22x python3 -u",
+            )
+
+        assert all("hunter22x" not in str(warning.message) for warning in record)
+
     def test_import_from_new_location(self, mock_file_system, simple_pt_model):
         """Test importing from new location (app_opt/pt/recipes)."""
         from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
@@ -60,7 +90,7 @@ class TestSwarmLearningRecipe:
             min_clients=2,
         )
 
-        assert recipe.job is not None
+        assert recipe._job is not None
 
     def test_weight_diff_with_default_transfer_is_valid(self, mock_file_system, simple_pt_model):
         from nvflare.app_opt.pt.recipes.swarm import SwarmLearningRecipe
@@ -74,7 +104,7 @@ class TestSwarmLearningRecipe:
             expected_data_kind=DataKind.WEIGHT_DIFF,
         )
 
-        assert recipe.job is not None
+        assert recipe._job is not None
 
     def test_import_from_old_location_backward_compat(self, mock_file_system, simple_pt_model):
         """Test importing from old location (backward compatibility)."""
@@ -88,7 +118,7 @@ class TestSwarmLearningRecipe:
             min_clients=2,
         )
 
-        assert recipe.job is not None
+        assert recipe._job is not None
 
     def test_initial_ckpt_accepted(self, mock_file_system, simple_pt_model):
         """Test that initial_ckpt parameter is accepted."""
@@ -103,7 +133,7 @@ class TestSwarmLearningRecipe:
             initial_ckpt="/abs/path/to/model.pt",
         )
 
-        assert recipe.job is not None
+        assert recipe._job is not None
 
     def test_relative_path_accepted_if_exists(self, mock_file_system, simple_pt_model):
         """Test that existing relative paths are accepted and bundled."""
@@ -134,7 +164,7 @@ class TestSwarmLearningRecipe:
             cross_site_eval_timeout=600,
         )
 
-        assert recipe.job is not None
+        assert recipe._job is not None
 
     def test_dict_model_config_accepted(self, mock_file_system):
         """Test that dict model config is accepted."""
@@ -148,7 +178,7 @@ class TestSwarmLearningRecipe:
             min_clients=2,
         )
 
-        assert recipe.job is not None
+        assert recipe._job is not None
 
     def test_dict_model_config_with_ckpt(self, mock_file_system):
         """Test dict model config with initial checkpoint."""
@@ -163,7 +193,7 @@ class TestSwarmLearningRecipe:
             initial_ckpt="/abs/path/to/model.pt",
         )
 
-        assert recipe.job is not None
+        assert recipe._job is not None
 
     def test_dict_model_missing_class_path_or_path_rejected(self, mock_file_system):
         """Test that dict model without 'class_path' or 'path' key is rejected."""
@@ -205,7 +235,7 @@ class TestSwarmLearningRecipe:
             train_args={"script_args": "--batch_size 32"},  # valid key
         )
 
-        assert recipe.job is not None
+        assert recipe._job is not None
 
     def test_min_clients_accepted(self, mock_file_system, simple_pt_model):
         """Test that min_clients is a required parameter and is passed to the job."""
@@ -225,7 +255,7 @@ class TestSwarmLearningRecipe:
             min_clients=3,
         )
 
-        assert recipe.job is not None
+        assert recipe._job is not None
 
     def test_launch_external_process_accepted(self, mock_file_system, simple_pt_model):
         """Test that launch_external_process=True is accepted."""
@@ -240,7 +270,7 @@ class TestSwarmLearningRecipe:
             launch_external_process=True,
         )
 
-        assert recipe.job is not None
+        assert recipe._job is not None
 
     def test_command_accepted(self, mock_file_system, simple_pt_model):
         """Test that command is accepted alongside launch_external_process."""
@@ -256,7 +286,7 @@ class TestSwarmLearningRecipe:
             command="python3 -u",
         )
 
-        assert recipe.job is not None
+        assert recipe._job is not None
 
 
 class TestSwarmLearningRecipeControllerConfig:
@@ -285,8 +315,8 @@ class TestSwarmLearningRecipeControllerConfig:
             },
         )
 
-        server_controller = recipe.job._deploy_map["server"].app_config.workflows[0].controller
-        client_app = recipe.job._deploy_map[ALL_SITES]
+        server_controller = recipe._job._deploy_map["server"].app_config.workflows[0].controller
+        client_app = recipe._job._deploy_map[ALL_SITES]
         client_controller = next(item.executor for item in client_app.app_config.executors if item.tasks == ["swarm_*"])
         assert server_controller.progress_timeout == 9000
         assert client_controller.learn_task_timeout == 2400
@@ -364,7 +394,7 @@ class TestSwarmLearningRecipeMemoryGC:
             min_clients=2,
             memory_gc_rounds=2,
         )
-        assert recipe.job is not None
+        assert recipe._job is not None
 
     def test_memory_gc_disabled_accepted(self, mock_file_system, simple_pt_model):
         """memory_gc_rounds=0 disables GC."""
@@ -378,7 +408,7 @@ class TestSwarmLearningRecipeMemoryGC:
             min_clients=2,
             memory_gc_rounds=0,
         )
-        assert recipe.job is not None
+        assert recipe._job is not None
 
     def test_cuda_empty_cache_accepted(self, mock_file_system, simple_pt_model):
         """cuda_empty_cache=True is accepted and wired through."""
@@ -392,7 +422,7 @@ class TestSwarmLearningRecipeMemoryGC:
             min_clients=2,
             cuda_empty_cache=True,
         )
-        assert recipe.job is not None
+        assert recipe._job is not None
 
 
 class TestSwarmLearningRecipePipeType:
