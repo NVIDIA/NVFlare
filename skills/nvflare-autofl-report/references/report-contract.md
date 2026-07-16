@@ -73,6 +73,33 @@ run-command text do not change result status. The report carries the runner's
 per-row metric extraction provenance, candidate kind, algorithm family, and
 literature linkage into the JSON summary and best-candidate Markdown section.
 
+## Outcome Synthesis
+
+The human-readable report leads with three deterministic views built from the
+same ledger evidence:
+
+- **Selected Candidate And Why** identifies the best scored retained result,
+  its baseline delta, declared family and kind, hypothesis, and retained
+  lineage. It does not claim robustness from a single run.
+- **What Helped** contains only `keep` rows that strictly improved the retained
+  incumbent at that point in the campaign. Major entries are selected by the
+  first, final, and largest measured improvements.
+- **What Did Not Help** selects a representative scored `discard` for each
+  explicit algorithm-family/literature-event group and groups crashes or
+  unscored discards by their recorded failure reason.
+
+`outcome_summary.families` reports `helped`, `mixed`, `not_confirmed`, or
+`failed` from explicit `algorithm_family` values; missing values remain
+`unclassified`. The helper never infers a family or mechanism from candidate
+names. `outcome_summary.literature` provides a compact count and strongest
+helped checkpoint while `literature_reviews` retains every detailed event.
+
+Trajectory compression preserves the first and final running-best rows and
+fills the remaining limit with the largest objective improvements, restoring
+chronological order for presentation. A scored discarded row may remain
+visible as observed trajectory evidence, but it never enters **What Helped** or
+retained selection.
+
 The objective contract records two distinct provenance fields. `metric_source`
 describes where measurements came from and defaults to `NVFlare metric
 artifacts`. `metric_contract_source` records how the importer selected the
@@ -98,11 +125,12 @@ silently present repeated test-set selection as an unbiased final estimate.
   plotting is available.
 
 The JSON summary remains `nvflare.autofl.report.v1` and includes
-`artifacts.progress_plot_available` and
-`objective.metric_contract_source`. Missing plotting dependencies or an
-invalid existing PNG produce warnings and `progress_plot_available=false`, but
-do not suppress the Markdown or JSON report. The invalid or failed plot
-artifact is preserved and is not embedded in Markdown.
+`artifacts.progress_plot_available` and `objective.metric_contract_source`,
+plus `selection` and `outcome_summary` for the concise evidence synthesis.
+Missing plotting dependencies or an invalid existing PNG produce warnings and
+`progress_plot_available=false`, but do not suppress the Markdown or JSON
+report. The invalid or failed plot artifact is preserved and is not embedded
+in Markdown.
 
 All relative helper path arguments, including `--plotter`, resolve from the
 campaign directory rather than the invoking shell's current working directory.

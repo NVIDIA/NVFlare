@@ -362,16 +362,37 @@ def running_best_milestones(records: Sequence[RunRecord], mode: str, limit: int)
                 "status": record.status,
                 "score": record.score,
                 "delta_from_previous_best": None if previous is None else record.score - previous,
+                "improvement_from_previous_best": (
+                    None if previous is None else improvement_amount(record.score, previous, mode)
+                ),
                 "hypothesis": record.diff_summary,
                 "changed_files": split_files(record.changed_files),
+                "candidate_kind": inferred_candidate_kind(record),
+                "algorithm_family": record.algorithm_family
+                or ("baseline" if record.status == "baseline" else "unclassified"),
+                "literature_event_id": record.literature_event_id,
             }
         )
     if limit > 0 and len(milestones) > limit:
         if limit == 1:
             return [milestones[-1]]
-        indices = [round(index * (len(milestones) - 1) / (limit - 1)) for index in range(limit)]
-        return [milestones[index] for index in dict.fromkeys(indices)]
+        selected = {0, len(milestones) - 1}
+        middle = sorted(
+            range(1, len(milestones) - 1),
+            key=lambda index: (
+                milestones[index]["improvement_from_previous_best"] or 0.0,
+                -milestones[index]["row"],
+            ),
+            reverse=True,
+        )
+        selected.update(middle[: max(0, limit - 2)])
+        return [milestones[index] for index in sorted(selected)]
     return milestones
+
+
+def improvement_amount(score: float, incumbent: float, mode: str) -> float:
+    delta = score - incumbent
+    return delta if mode == "max" else -delta
 
 
 def split_files(value: str) -> List[str]:
@@ -431,6 +452,8 @@ def is_literature_event(record: RunRecord) -> bool:
 
 
 def inferred_candidate_kind(record: RunRecord) -> str:
+    if record.status == "baseline":
+        return "baseline"
     if record.candidate_kind:
         return record.candidate_kind
     changed = record.changed_files.strip().lower()
@@ -530,6 +553,236 @@ def literature_outcomes(records: Sequence[RunRecord], mode: str) -> List[Dict[st
             }
         )
     return outcomes
+
+
+def candidate_outcome_payload(record: RunRecord, incumbent: Optional[RunRecord], mode: str) -> Dict[str, Any]:
+    delta = None if incumbent is None or record.score is None else record.score - incumbent.score
+    return {
+        "row": record.index + 1,
+        "name": record.name,
+        "status": record.status,
+        "score": record.score,
+        "incumbent_name": None if incumbent is None else incumbent.name,
+        "incumbent_score": None if incumbent is None else incumbent.score,
+        "delta_from_incumbent": delta,
+        "improvement_from_incumbent": (
+            None
+            if incumbent is None or record.score is None
+            else improvement_amount(record.score, incumbent.score, mode)
+        ),
+        "hypothesis": record.diff_summary,
+        "changed_files": split_files(record.changed_files),
+        "candidate_kind": inferred_candidate_kind(record),
+        "algorithm_family": record.algorithm_family or "unclassified",
+        "literature_event_id": record.literature_event_id,
+        "failure_reason": record.failure_reason,
+    }
+
+
+def select_major_improvements(items: Sequence[Dict[str, Any]], limit: int) -> List[Dict[str, Any]]:
+    if limit <= 0 or len(items) <= limit:
+        return list(items)
+    if limit == 1:
+        return [items[-1]]
+    selected = {0, len(items) - 1}
+    middle = sorted(
+        range(1, len(items) - 1),
+        key=lambda index: (items[index]["improvement_from_incumbent"] or 0.0, -items[index]["row"]),
+        reverse=True,
+    )
+    selected.update(middle[: max(0, limit - 2)])
+    return [items[index] for index in sorted(selected)]
+
+
+def representative_non_improvements(items: Sequence[Dict[str, Any]], limit: int) -> List[Dict[str, Any]]:
+    representatives: Dict[Tuple[str, ...], Dict[str, Any]] = {}
+    for item in items:
+        family = item["algorithm_family"]
+        event_id = item["literature_event_id"]
+        if family != "unclassified" and event_id:
+            key = ("family_literature", family, event_id)
+            label = f"family={family}, literature={event_id}"
+        elif family != "unclassified":
+            key = ("family", family)
+            label = f"family={family}"
+        elif event_id:
+            key = ("literature", event_id)
+            label = f"literature={event_id}"
+        else:
+            key = ("candidate", item["name"])
+            label = f"candidate={item['name']}"
+        candidate = dict(item)
+        candidate["representative_for"] = label
+        previous = representatives.get(key)
+        candidate_rank = candidate["improvement_from_incumbent"]
+        previous_rank = None if previous is None else previous["improvement_from_incumbent"]
+        if previous is None or (
+            candidate_rank is not None and (previous_rank is None or candidate_rank > previous_rank)
+        ):
+            representatives[key] = candidate
+    ranked = sorted(
+        representatives.values(),
+        key=lambda item: (
+            item["improvement_from_incumbent"] is not None,
+            (item["improvement_from_incumbent"] if item["improvement_from_incumbent"] is not None else -math.inf),
+            -item["row"],
+        ),
+        reverse=True,
+    )
+    return ranked[: max(0, limit)]
+
+
+def failure_outcomes(items: Sequence[Dict[str, Any]], limit: int) -> List[Dict[str, Any]]:
+    groups: Dict[str, List[Dict[str, Any]]] = {}
+    for item in items:
+        reason = " ".join((item["failure_reason"] or "no score or failure reason recorded").split())
+        groups.setdefault(reason, []).append(item)
+    outcomes = []
+    for reason, failures in groups.items():
+        outcomes.append(
+            {
+                "reason": reason,
+                "count": len(failures),
+                "candidates": [item["name"] for item in failures],
+                "statuses": sorted({item["status"] for item in failures}),
+                "algorithm_families": sorted({item["algorithm_family"] for item in failures}),
+                "candidate_kinds": sorted({item["candidate_kind"] for item in failures}),
+            }
+        )
+    outcomes.sort(key=lambda item: (-item["count"], item["reason"]))
+    return outcomes[: max(0, limit)]
+
+
+def family_outcomes(records: Sequence[RunRecord], mode: str, helped_rows: set[int]) -> List[Dict[str, Any]]:
+    families: Dict[str, List[RunRecord]] = {}
+    for record in records:
+        if record.status not in {"keep", "discard", "crash"}:
+            continue
+        families.setdefault(record.algorithm_family or "unclassified", []).append(record)
+    outcomes = []
+    for family, attempts in families.items():
+        counts = Counter(record.status for record in attempts)
+        helped = [record for record in attempts if record.index in helped_rows]
+        scored_discards = [record for record in attempts if record.status == "discard" and record.score is not None]
+        scored_unhelpful_keeps = [
+            record
+            for record in attempts
+            if record.status == "keep" and record.score is not None and record.index not in helped_rows
+        ]
+        if helped and (counts.get("discard", 0) or counts.get("crash", 0)):
+            outcome = "mixed"
+        elif helped:
+            outcome = "helped"
+        elif scored_discards or scored_unhelpful_keeps:
+            outcome = "not_confirmed"
+        else:
+            outcome = "failed"
+        retained = select_best([record for record in attempts if record.status == "keep"], mode, retained_only=True)
+        observed = select_best(attempts, mode)
+        outcomes.append(
+            {
+                "algorithm_family": family,
+                "outcome": outcome,
+                "attempts": len(attempts),
+                "kept": counts.get("keep", 0),
+                "discarded": counts.get("discard", 0),
+                "crashed": counts.get("crash", 0),
+                "best_retained_score": None if retained is None else retained.score,
+                "best_observed_score": None if observed is None else observed.score,
+                "candidate_kinds": sorted({inferred_candidate_kind(record) for record in attempts}),
+                "literature_event_ids": sorted(
+                    {record.literature_event_id for record in attempts if record.literature_event_id}
+                ),
+            }
+        )
+    order = {"helped": 0, "mixed": 1, "not_confirmed": 2, "failed": 3}
+    return sorted(outcomes, key=lambda item: (order[item["outcome"]], item["algorithm_family"]))
+
+
+def literature_digest(reviews: Sequence[Dict[str, Any]], mode: str) -> Dict[str, Any]:
+    counts = dict(sorted(Counter(review["outcome"] for review in reviews).items()))
+    helped = [review for review in reviews if review["outcome"] == "helped"]
+    strongest = None
+    if helped:
+
+        def improvement(review: Dict[str, Any]) -> float:
+            if review["best_score"] is None or review["incumbent_score"] is None:
+                return -math.inf
+            return improvement_amount(review["best_score"], review["incumbent_score"], mode)
+
+        strongest = max(
+            helped,
+            key=improvement,
+        )
+        strongest = {
+            "event": strongest["event"],
+            "literature_event_id": strongest["literature_event_id"],
+            "best_candidate": strongest["best_candidate"],
+            "best_score": strongest["best_score"],
+            "delta_from_incumbent": strongest["delta_from_incumbent"],
+            "sources": strongest["sources"],
+        }
+    return {"counts": counts, "strongest_helped": strongest}
+
+
+def outcome_summary(
+    records: Sequence[RunRecord],
+    mode: str,
+    reviews: Sequence[Dict[str, Any]],
+    max_milestones: int,
+    max_non_improvements: int,
+) -> Dict[str, Any]:
+    incumbent = None
+    helped = []
+    non_improvements = []
+    failures = []
+    for record in records:
+        if record.status in RETAINED_STATUSES and record.score is not None:
+            if record.status == "keep" and incumbent is not None and better(record.score, incumbent.score, mode):
+                helped.append(candidate_outcome_payload(record, incumbent, mode))
+            if incumbent is None or better(record.score, incumbent.score, mode):
+                incumbent = record
+            continue
+        if record.status == "discard":
+            payload = candidate_outcome_payload(record, incumbent, mode)
+            (non_improvements if record.score is not None else failures).append(payload)
+        elif record.status == "crash":
+            failures.append(candidate_outcome_payload(record, incumbent, mode))
+    helped_rows = {item["row"] - 1 for item in helped}
+    return {
+        "helped": helped,
+        "major_helped": select_major_improvements(helped, max_milestones),
+        "not_confirmed": representative_non_improvements(non_improvements, max_non_improvements),
+        "failures": failure_outcomes(failures, max_non_improvements),
+        "families": family_outcomes(records, mode, helped_rows),
+        "literature": literature_digest(reviews, mode),
+    }
+
+
+def selection_summary(
+    best: Optional[RunRecord], baseline: Optional[RunRecord], lineage: Dict[str, Any], mode: str
+) -> Optional[Dict[str, Any]]:
+    if best is None:
+        return None
+    delta = None if baseline is None else best.score - baseline.score
+    improvement = None if baseline is None else improvement_amount(best.score, baseline.score, mode)
+    return {
+        "candidate": best.name,
+        "score": best.score,
+        "delta_from_baseline": delta,
+        "improvement_from_baseline": improvement,
+        "algorithm_family": best.algorithm_family or ("baseline" if best.status == "baseline" else "unclassified"),
+        "candidate_kind": "baseline" if best.status == "baseline" else inferred_candidate_kind(best),
+        "hypothesis": best.diff_summary,
+        "base_candidate": best.base_candidate,
+        "literature_event_id": best.literature_event_id,
+        "lineage": lineage,
+        "reason": (
+            "It is the best scored retained result under the " + mode + " objective."
+            if best.status != "baseline"
+            else "No retained candidate improved on the scored baseline."
+        ),
+    }
 
 
 def command_options(command: str) -> Dict[str, Any]:
@@ -765,7 +1018,7 @@ def wrap_markdown_bullet(prefix: str, text: str, width: int = 120) -> List[str]:
     )
 
 
-def report_markdown(summary: Dict[str, Any], records: Sequence[RunRecord], max_non_improvements: int) -> str:
+def report_markdown(summary: Dict[str, Any], records: Sequence[RunRecord]) -> str:
     baseline = summary["baseline"]
     best = summary["best"]
     counts = summary["status_counts"]
@@ -804,11 +1057,109 @@ def report_markdown(summary: Dict[str, Any], records: Sequence[RunRecord], max_n
         if summary["artifacts"]["progress_plot_available"]
         else ["Progress plot unavailable; see the validation and comparability warnings below."]
     )
+    selection = summary["selection"]
+    outcomes = summary["outcome_summary"]
     lines.extend(
         [
             "",
             f"Termination: `{summary['termination']['reason']}`. "
             f"Final campaign state allowed: `{summary['termination']['state_allowed_final_response']}`.",
+            "",
+            "## Selected Candidate And Why",
+            "",
+        ]
+    )
+    if selection:
+        lines.append(
+            f"Select `{selection['candidate']}` at `{summary['objective']['optimization_metric']}="
+            f"{format_score(selection['score'])}`. {selection['reason']}"
+        )
+        lines.extend(
+            [
+                "",
+                f"- Objective improvement from baseline: `{format_delta(selection['improvement_from_baseline'])}`",
+                f"- Recorded algorithm family: `{selection['algorithm_family']}`",
+                f"- Candidate kind: `{selection['candidate_kind']}`",
+                f"- Hypothesis: {md_cell(selection['hypothesis'], 300) or 'not recorded'}",
+                f"- Retained lineage: `{compact_lineage(selection['lineage']['candidates']) or 'unavailable'}`",
+                f"- Cumulative changed files: `{', '.join(selection['lineage']['changed_files']) or 'none recorded'}`",
+            ]
+        )
+    else:
+        lines.append("No retained scored result was available for selection.")
+
+    lines.extend(
+        [
+            "",
+            "## What Helped",
+            "",
+            "The following candidates made strict measured improvements over the retained incumbent and were kept:",
+            "",
+        ]
+    )
+    if outcomes["major_helped"]:
+        lines.extend(
+            [
+                "| Candidate | Family | Kind | Score | Objective improvement vs incumbent | Evidence |",
+                "| --- | --- | --- | ---: | ---: | --- |",
+            ]
+        )
+        for item in outcomes["major_helped"]:
+            lines.append(
+                f"| `{md_cell(item['name'], 50)}` | `{md_cell(item['algorithm_family'], 40)}` | "
+                f"`{md_cell(item['candidate_kind'], 30)}` | {format_score(item['score'])} | "
+                f"{format_delta(item['improvement_from_incumbent'])} | {md_cell(item['hypothesis'])} |"
+            )
+    else:
+        lines.append("No candidate produced a strict retained improvement over the baseline.")
+
+    lines.extend(["", "## What Did Not Help", ""])
+    if outcomes["not_confirmed"]:
+        lines.extend(
+            [
+                "Representative scored candidates that did not produce a retained improvement:",
+                "",
+                "| Candidate | Represents | Score | Delta vs incumbent | Evidence |",
+                "| --- | --- | ---: | ---: | --- |",
+            ]
+        )
+        for item in outcomes["not_confirmed"]:
+            lines.append(
+                f"| `{md_cell(item['name'], 50)}` | `{md_cell(item['representative_for'], 70)}` | "
+                f"{format_score(item['score'])} | {format_delta(item['delta_from_incumbent'])} | "
+                f"{md_cell(item['hypothesis'])} |"
+            )
+    else:
+        lines.append("No scored discarded candidates were recorded.")
+    if outcomes["failures"]:
+        lines.extend(["", "Grouped failed or unscored attempts:", ""])
+        for item in outcomes["failures"]:
+            candidates = ", ".join(item["candidates"])
+            lines.extend(
+                wrap_markdown_bullet(
+                    f"- **{item['count']} attempt(s):** ",
+                    f"{item['reason']} Candidates: `{md_cell(candidates, 240)}`.",
+                )
+            )
+
+    if outcomes["families"]:
+        lines.extend(
+            [
+                "",
+                "Outcome by recorded algorithm family (`unclassified` means the ledger did not declare one):",
+                "",
+                "| Family | Outcome | Attempts | Kept | Discarded | Crashed |",
+                "| --- | --- | ---: | ---: | ---: | ---: |",
+            ]
+        )
+        for item in outcomes["families"]:
+            lines.append(
+                f"| `{md_cell(item['algorithm_family'], 50)}` | {item['outcome']} | {item['attempts']} | "
+                f"{item['kept']} | {item['discarded']} | {item['crashed']} |"
+            )
+
+    lines.extend(
+        [
             "",
             "## Campaign Contract",
             "",
@@ -826,17 +1177,21 @@ def report_markdown(summary: Dict[str, Any], records: Sequence[RunRecord], max_n
             "",
             "## Optimization Trajectory",
             "",
-            "| Row | Candidate | Status | Score | Delta from previous best | Hypothesis |",
-            "| ---: | --- | --- | ---: | ---: | --- |",
+            "Major running-best milestones are selected by first, final, and largest measured objective improvements.",
+            "",
+            "| Row | Candidate | Status | Family | Kind | Score | Delta from previous best | Hypothesis |",
+            "| ---: | --- | --- | --- | --- | ---: | ---: | --- |",
         ]
     )
     for item in summary["milestones"]:
         lines.append(
-            f"| {item['row']} | `{md_cell(item['name'], 50)}` | {item['status']} | {format_score(item['score'])} | "
-            f"{format_delta(item['delta_from_previous_best'])} | {md_cell(item['hypothesis'])} |"
+            f"| {item['row']} | `{md_cell(item['name'], 50)}` | {item['status']} | "
+            f"`{md_cell(item['algorithm_family'], 40)}` | `{md_cell(item['candidate_kind'], 30)}` | "
+            f"{format_score(item['score'])} | {format_delta(item['delta_from_previous_best'])} | "
+            f"{md_cell(item['hypothesis'])} |"
         )
     if not summary["milestones"]:
-        lines.append("|  |  |  |  |  | No scored milestones. |")
+        lines.append("|  |  |  |  |  |  |  | No scored milestones. |")
 
     lines.extend(["", "## Best Candidate Provenance", ""])
     if best:
@@ -876,8 +1231,18 @@ def report_markdown(summary: Dict[str, Any], records: Sequence[RunRecord], max_n
 
     lines.extend(["", "## Literature Review Outcomes", ""])
     if summary["literature_reviews"]:
+        literature_digest = outcomes["literature"]
+        lines.append(f"Outcome counts: `{json.dumps(literature_digest['counts'], sort_keys=True)}`.")
+        strongest = literature_digest["strongest_helped"]
+        if strongest:
+            lines.append(
+                f"Strongest literature-linked improvement: `{strongest['event']}` led to "
+                f"`{strongest['best_candidate']}` with delta "
+                f"`{format_delta(strongest['delta_from_incumbent'])}` versus its incumbent."
+            )
         lines.extend(
             [
+                "",
                 "| Checkpoint | Sources | Outcome | Candidate evidence | Delta vs incumbent |",
                 "| --- | --- | --- | --- | ---: |",
             ]
@@ -923,17 +1288,8 @@ def report_markdown(summary: Dict[str, Any], records: Sequence[RunRecord], max_n
             f"- Status counts: `{json.dumps(counts, sort_keys=True)}`",
             f"- Scored comparable runs: `{summary['scored_runs']}`",
             f"- Crashes: `{counts.get('crash', 0)}`",
-            "",
-            "## Null, Worse, Or Unstable Ideas",
-            "",
         ]
     )
-    non_improvements = [record for record in records if record.status in {"discard", "crash"}]
-    for record in non_improvements[: max(0, max_non_improvements)]:
-        evidence = record.failure_reason or f"score={format_score(record.score)}"
-        lines.append(f"- `{record.name}`: {md_cell(record.diff_summary, 240)} Evidence: `{md_cell(evidence, 120)}`.")
-    if not non_improvements:
-        lines.append("No discarded or crashed candidates were recorded.")
 
     lines.extend(["", "## Validation And Comparability Notes", ""])
     if summary["warnings"]:
@@ -1043,6 +1399,8 @@ def generate(args: argparse.Namespace) -> Dict[str, Any]:
     fixed_budget = budget.get("fixed_training_budget", {})
     cap = state.get("candidate_cap")
     cap_label = "uncapped" if cap in {None, "", 0} else cap
+    lineage = candidate_lineage(best, records)
+    reviews = literature_outcomes(records, mode)
     summary = {
         "schema_version": SUMMARY_SCHEMA_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -1069,11 +1427,19 @@ def generate(args: argparse.Namespace) -> Dict[str, Any]:
         "baseline": record_payload(baseline),
         "best": record_payload(best),
         "best_observed": record_payload(observed_best),
-        "best_lineage": candidate_lineage(best, records),
+        "best_lineage": lineage,
         "best_manifest": manifest_summary(best, root),
         "best_command_changes": changes,
         "milestones": running_best_milestones(records, mode, args.max_milestones),
-        "literature_reviews": literature_outcomes(records, mode),
+        "selection": selection_summary(best, baseline, lineage, mode),
+        "outcome_summary": outcome_summary(
+            records,
+            mode,
+            reviews,
+            args.max_milestones,
+            args.max_non_improvements,
+        ),
+        "literature_reviews": reviews,
         "warnings": warnings,
         "agent_context": read_agent_context(agent_context_path, args),
         "artifacts": {
@@ -1086,7 +1452,7 @@ def generate(args: argparse.Namespace) -> Dict[str, Any]:
             "report": str(report_path.resolve()),
         },
     }
-    atomic_write_text(report_path, report_markdown(summary, records, args.max_non_improvements))
+    atomic_write_text(report_path, report_markdown(summary, records))
     atomic_write_text(summary_path, json.dumps(summary, indent=2, sort_keys=True) + "\n")
     return summary
 

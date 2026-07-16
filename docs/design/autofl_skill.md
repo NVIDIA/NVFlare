@@ -264,6 +264,7 @@ candidate manifests. It attempts to refresh the shared `progress.png` and
 writes:
 
 - `autofl_final_report.md`, a concise review artifact with executive summary,
+  selected-candidate rationale, what-helped/what-did-not-help synthesis, major
   trajectory, best-candidate lineage, exact commands, reliability, and
   reproduction guidance;
 - `autofl_report_summary.json`, a machine-readable
@@ -294,6 +295,21 @@ compared with the retained incumbent immediately before the review and
 classified as helped, matched, not confirmed, failed, or not evaluated.
 Recorded `[src: ...]` markers are preserved as campaign provenance, not
 presented as independently verified citations.
+
+The report's concise outcome synthesis builds on those same semantics. A
+candidate appears under "What Helped" only when a scored `keep` row strictly
+improved the retained incumbent. Representative scored discards are grouped by
+their explicit algorithm family and literature event, while crashes and
+unscored discards are grouped by recorded failure reason. Family outcomes can
+be helped, mixed, not confirmed, or failed; missing family metadata remains
+unclassified rather than being inferred from candidate names. The selected
+candidate is explained as the best scored retained result with its baseline
+delta, hypothesis, kind, family, and lineage.
+
+For long campaigns, the trajectory retains the first and final running best
+and selects the largest measured objective improvements for the remaining
+milestone slots. This preserves the important optimization story without
+weakening the underlying retained-best and literature-event contracts.
 
 The report distinguishes retained and observed evidence. `best` is limited to
 scored baseline and `keep` rows, while `best_observed` may expose an unretained

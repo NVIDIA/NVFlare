@@ -144,9 +144,10 @@ candidate evidence.
 
 The skill refreshes ``progress.png`` when plotting is available and generates:
 
-- ``autofl_final_report.md`` with the trajectory, retained best candidate,
-  metric provenance, lineage, literature outcomes, failures, commands, and
-  comparability warnings;
+- ``autofl_final_report.md`` with a selected-candidate rationale, concise
+  summaries of what helped and what did not help, the major trajectory,
+  retained-best provenance, lineage, literature outcomes, grouped failures,
+  commands, and comparability warnings;
 - ``autofl_report_summary.json`` with the same evidence under the skill-local
   ``nvflare.autofl.report.v1`` schema.
 
@@ -156,6 +157,14 @@ identified strictly by ``status=baseline``; ``best`` includes only a scored
 baseline or ``keep`` row, while a better unretained ``discard`` is reported as
 ``best_observed``. If a valid plot cannot be produced, the Markdown and JSON
 reports are still generated with an explicit plot-availability warning.
+
+The concise synthesis follows the same evidence rules. "What helped" contains
+only strict improvements that were retained. "What did not help" presents
+representative scored discards by their recorded algorithm family and
+literature event, plus grouped crashes. Missing family metadata stays
+``unclassified``; the report does not guess mechanisms from candidate names.
+The trajectory keeps the first and final running best and the largest measured
+objective improvements rather than evenly sampling the campaign.
 
 As with active Auto-FL, users invoke the skill through their coding agent and
 do not run scripts from the installed skill directory themselves.

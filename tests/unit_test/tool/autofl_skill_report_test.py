@@ -352,9 +352,22 @@ def test_report_generates_product_artifacts_and_candidate_lineage(tmp_path, monk
         "changed_files": ["client.py", "job.py"],
         "complete": True,
     }
+    assert summary["selection"]["candidate"] == "inherited_tuning"
+    assert summary["selection"]["delta_from_baseline"] == pytest.approx(0.15)
+    assert [item["name"] for item in summary["outcome_summary"]["helped"]] == [
+        "algorithm_code",
+        "inherited_tuning",
+    ]
+    assert summary["outcome_summary"]["not_confirmed"][0]["name"] == "weak_prox"
+    assert summary["outcome_summary"]["not_confirmed"][0]["algorithm_family"] == "unclassified"
+    assert summary["outcome_summary"]["failures"][0]["candidates"] == ["unstable_branch"]
     assert saved_summary["best"]["name"] == "inherited_tuning"
     assert summary["artifacts"]["progress_plot_available"] is True
     assert "## Executive Summary" in report
+    assert "## Selected Candidate And Why" in report
+    assert "## What Helped" in report
+    assert "## What Did Not Help" in report
+    assert "Select `inherited_tuning`" in report
     assert "## Literature Review Outcomes" in report
     assert "## Validation And Comparability Notes" in report
     assert "Product Findings" not in report
@@ -376,6 +389,88 @@ def test_report_synthesizes_literature_against_checkpoint_incumbent(tmp_path, mo
     assert literature[0]["incumbent_score"] == 0.5
     assert literature[0]["best_candidate"] == "inherited_tuning"
     assert literature[0]["delta_from_incumbent"] == pytest.approx(0.15)
+    assert summary["outcome_summary"]["literature"] == {
+        "counts": {"helped": 1},
+        "strongest_helped": {
+            "event": "literature_review_1",
+            "literature_event_id": "lit-0001",
+            "best_candidate": "inherited_tuning",
+            "best_score": 0.65,
+            "delta_from_incumbent": pytest.approx(0.15),
+            "sources": ["Li18 arXiv:1812.06127", "Karimireddy19"],
+        },
+    }
+
+
+def test_report_selects_first_final_and_largest_milestone_jumps(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    rows = [
+        _row("baseline", "baseline", "0.500000"),
+        _row("keep", "small_early", "0.510000", algorithm_family="tuning"),
+        _row("keep", "largest_jump", "0.800000", algorithm_family="optimizer"),
+        _row("keep", "small_late", "0.810000", algorithm_family="tuning"),
+        _row("keep", "final_best", "0.820000", algorithm_family="calibration"),
+    ]
+    _write_rows(tmp_path, rows)
+
+    summary = _generate(reporter, tmp_path, monkeypatch, "--max-milestones", "3")
+
+    assert [item["name"] for item in summary["milestones"]] == ["baseline", "largest_jump", "final_best"]
+    assert summary["milestones"][1]["improvement_from_previous_best"] == pytest.approx(0.29)
+    assert summary["milestones"][1]["algorithm_family"] == "optimizer"
+
+
+def test_report_summarizes_helped_mixed_unconfirmed_and_failed_families(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    _write_campaign(tmp_path)
+    rows = [
+        _row("baseline", "baseline", "0.500000"),
+        _row("keep", "fedavgm_gain", "0.600000", algorithm_family="fedavgm", candidate_kind="argument_only"),
+        _row("discard", "fedavgm_followup", "0.590000", algorithm_family="fedavgm"),
+        _row("discard", "fedprox_trial", "0.550000", algorithm_family="fedprox"),
+        _row("discard", "fedprox_worse", "0.520000", algorithm_family="fedprox"),
+        _row(
+            "crash",
+            "fednova_crash_1",
+            algorithm_family="fednova",
+            failure_reason="exit_code=1",
+        ),
+        _row(
+            "crash",
+            "fednova_crash_2",
+            algorithm_family="fednova",
+            failure_reason="exit_code=1",
+        ),
+        _row("keep", "tta_gain", "0.650000", algorithm_family="tta", candidate_kind="source_edit"),
+    ]
+    _write_rows(tmp_path, rows)
+
+    summary = _generate(reporter, tmp_path, monkeypatch)
+    report = tmp_path.joinpath("autofl_final_report.md").read_text(encoding="utf-8")
+    outcomes = summary["outcome_summary"]
+
+    assert [item["name"] for item in outcomes["helped"]] == ["fedavgm_gain", "tta_gain"]
+    assert {item["name"] for item in outcomes["not_confirmed"]} == {"fedavgm_followup", "fedprox_trial"}
+    assert outcomes["failures"] == [
+        {
+            "reason": "exit_code=1",
+            "count": 2,
+            "candidates": ["fednova_crash_1", "fednova_crash_2"],
+            "statuses": ["crash"],
+            "algorithm_families": ["fednova"],
+            "candidate_kinds": ["argument_only"],
+        }
+    ]
+    assert {item["algorithm_family"]: item["outcome"] for item in outcomes["families"]} == {
+        "fedavgm": "mixed",
+        "tta": "helped",
+        "fedprox": "not_confirmed",
+        "fednova": "failed",
+    }
+    assert summary["selection"]["candidate"] == "tta_gain"
+    assert "Outcome by recorded algorithm family" in report
+    assert "**2 attempt(s):** exit_code=1" in report
 
 
 def test_report_uses_explicit_literature_links_across_later_events(tmp_path, monkeypatch):
@@ -567,6 +662,9 @@ def test_report_supports_minimization_and_agent_context_without_git(tmp_path, mo
     assert not tmp_path.joinpath(".git").exists()
     assert summary["objective"]["mode"] == "min"
     assert summary["best"]["name"] == "weak_prox"
+    assert summary["selection"]["delta_from_baseline"] == pytest.approx(-0.01)
+    assert summary["selection"]["improvement_from_baseline"] == pytest.approx(0.01)
+    assert summary["outcome_summary"]["helped"][0]["name"] == "weak_prox"
     assert summary["agent_context"] == {
         "model": "gpt-test",
         "notes": "stopped by user",

@@ -58,8 +58,9 @@ user asks for a status snapshot.
    warnings about metric use, executed budget changes, missing provenance, and
    incomplete interruption state.
 5. Give the user the baseline, best score, delta, strongest candidate lineage,
-   literature ideas that helped or failed, reliability caveats, and absolute
-   artifact paths.
+   concise "what helped" and "what did not help" findings, literature ideas
+   that helped or failed, selection rationale, reliability caveats, and
+   absolute artifact paths.
 
 The helper attempts to refresh `progress.png` by reusing the product Auto-FL
 plotter. Plotting is optional evidence: if plotting dependencies are missing or
@@ -96,8 +97,12 @@ The final report must include:
   environment, cap, and declared fixed budget;
 - baseline, best retained result, score delta, runtime, failures, and status
   counts;
-- running-best trajectory and a refreshed `progress.png` when plotting is
-  available, with explicit plot availability in the JSON summary otherwise;
+- selected-candidate rationale, strict retained improvements, representative
+  non-improvements, grouped failures, and outcomes by recorded algorithm
+  family;
+- running-best trajectory selected by first, final, and largest objective improvements,
+  plus a refreshed `progress.png` when plotting is available, with explicit
+  plot availability in the JSON summary otherwise;
 - best-candidate manifest, patch hash, base-candidate lineage, inherited code
   changes, artifacts, and exact baseline/best commands;
 - every recorded literature checkpoint, its event ID and source markers,
@@ -119,6 +124,7 @@ become retained best results, milestones, or literature improvements.
 Baseline identity is determined strictly by `status=baseline`, matching the
 campaign guard. The report preserves per-run metric name, extraction source,
 artifact, candidate kind, algorithm family, and literature event linkage.
+It does not infer algorithm families or mechanisms from candidate names.
 
 Read [report-contract.md](references/report-contract.md) when interpreting
 lineage, literature outcomes, budget warnings, or interrupted state.
