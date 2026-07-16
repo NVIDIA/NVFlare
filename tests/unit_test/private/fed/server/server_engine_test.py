@@ -250,9 +250,7 @@ def test_remove_run_processes_terminates_job_handle_when_graceful_wait_expires()
     run_process_info = {RunProcessKey.JOB_HANDLE: job_handle}
     engine = _make_remove_engine({"job-1": run_process_info})
 
-    with patch("nvflare.private.fed.server.server_engine.time.time", side_effect=[0.0, 99.0]):
-        with patch("nvflare.private.fed.server.server_engine.time.sleep"):
-            engine._remove_run_processes("job-1")
+    engine._remove_run_processes("job-1", max_wait=0.0)
 
     job_handle.terminate.assert_called_once()
     assert "job-1" not in engine.run_processes
@@ -289,9 +287,7 @@ def test_remove_run_processes_tolerates_terminate_failure():
     run_process_info = {RunProcessKey.JOB_HANDLE: job_handle}
     engine = _make_remove_engine({"job-1": run_process_info})
 
-    with patch("nvflare.private.fed.server.server_engine.time.time", side_effect=[0.0, 99.0]):
-        with patch("nvflare.private.fed.server.server_engine.time.sleep"):
-            engine._remove_run_processes("job-1")
+    engine._remove_run_processes("job-1", max_wait=0.0)
 
     job_handle.terminate.assert_called_once()
     assert "job-1" not in engine.run_processes
