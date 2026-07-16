@@ -362,6 +362,17 @@ concurrency. Best suited for:
 * ``num_threads``: Number of concurrent simulated client worker processes
 * ``gpu_config`` (str): List of GPU device IDs, comma separated
 * ``log_config`` (str): Log config mode (``'concise'``, ``'full'``, ``'verbose'``), filepath, or level
+* ``workspace_root`` (str): Root directory for simulation artifacts; defaults to ``/tmp/nvflare/simulation``
+
+.. note::
+
+   ``NVFLARE_SIMULATOR_WORKSPACE_ROOT`` is a process-level orchestration
+   override. When it is set, ``SimEnv`` uses it instead of ``workspace_root``,
+   including an explicitly supplied constructor value. Auto-FL uses this
+   override only in each trial's child process to prevent concurrent simulator
+   runs from sharing artifacts. ``SimEnv`` emits a ``RuntimeWarning`` when the
+   override changes the configured path. Normal Recipe applications should
+   leave it unset and configure ``workspace_root`` directly.
 
 Now let's test running the prepared recipe with ``SimEnv``:
 
