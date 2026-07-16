@@ -12,21 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""The public Client API executor, configured by execution mode.
+"""Client API executor with mode-specific trainer backends.
 
-Design: docs/design/client_api_execution_modes.md ("What We Propose", "Overview",
-"Execution Modes", "Configuration Surface"). This module path is normative - job configs
-reference ``nvflare.app_common.executors.client_api_executor.ClientAPIExecutor``.
-
-Availability: ``in_process`` and ``external_process`` are fully supported (the CJ-side
-backend, the trainer-side Cell engine in nvflare/client/cell, and the F3 payload layer).
-``attach`` is not yet implemented; selecting it fails cleanly at job startup.
-
-Unlike the legacy executors (InProcessClientAPIExecutor / ClientAPILauncherExecutor), this
-surface has no converter component ids.  It carries only declarative
-``params_exchange_format`` / ``server_expected_format`` values into ``TASK_EXCHANGE``;
-the trainer-side Client API adapts representations at receive/send. ``params_transfer_type``
-remains because FULL/DIFF is model state owned by that same API boundary.
+``in_process`` and ``external_process`` are supported; ``attach`` is reserved. Parameter
+conversion and FULL/DIFF state are handled by the trainer-side Client API.
 """
 
 import math
@@ -60,13 +49,9 @@ class ExecutionMode:
 
 ALL_EXECUTION_MODES = (ExecutionMode.IN_PROCESS, ExecutionMode.EXTERNAL_PROCESS, ExecutionMode.ATTACH)
 
-# Federation-scoped analytics event, matching MetricRelay's ex-process default
-# (job_config/script_runner.py) and flower_job.py: "fed.analytix_log_stats".
 FED_ANALYTIC_EVENT_TYPE = FED_EVENT_PREFIX + ANALYTIC_EVENT_TYPE
 
-# Frozen defaults for mode-specific knobs (design "Configuration Surface"). Kept as named
-# constants so the constructor default and the wrong-mode "explicitly set a non-default" checks
-# below cannot drift apart.
+# Shared by constructor defaults and wrong-mode override checks.
 _DEFAULT_LAUNCH_ONCE = True
 _DEFAULT_LAUNCH_TIMEOUT = 300.0
 _DEFAULT_STOP_GRACE_PERIOD = 30.0
@@ -75,16 +60,7 @@ _DEFAULT_HEARTBEAT_TIMEOUT = 30.0
 
 
 class ClientAPIExecutor(Executor):
-    """One executor for all Client API execution modes.
-
-    The trainer-facing Client API (flare.init/receive/send/log) is unchanged; this executor
-    replaces the Pipe/launcher integration stack. It delegates to an internal mode-specific
-    backend (ClientAPIBackendSpec) resolved from ``execution_mode`` at START_RUN:
-
-    - ``in_process``: trainer runs inside the CJ process over DataBus.
-    - ``external_process``: NVFlare launches and owns the trainer process tree; control over Cell.
-    - ``attach``: an externally started/owned trainer attaches over Cell.
-    """
+    """Delegates Client API task execution to the configured backend."""
 
     def __init__(
         self,
@@ -179,10 +155,7 @@ class ClientAPIExecutor(Executor):
         if execution_mode not in ALL_EXECUTION_MODES:
             raise ValueError(f"invalid execution_mode {execution_mode!r}: must be one of {list(ALL_EXECUTION_MODES)}")
 
-        # Normalize an empty/whitespace command or task_script_path to None up front so "" means
-        # "unset" uniformly in every mode. Previously external_process used `if not command` while
-        # the other modes used `command is not None`, so command="" was rejected with a misleading
-        # "only valid for external_process" message in in_process/attach instead of treated as unset.
+        # Normalize empty entry points before mode-specific validation.
         command = self._normalize_command(command)
         task_script_path = self._normalize_optional_str(task_script_path)
 
@@ -206,8 +179,7 @@ class ClientAPIExecutor(Executor):
             if task_script_args:
                 raise self._wrong_mode_error("task_script_args", task_script_args, "'in_process'", execution_mode)
 
-        # --- external_process-only lifecycle knobs (reject only when explicitly set away from the
-        # frozen default in a mode that ignores them) ---
+        # Reject external-process settings changed from their defaults in other modes.
         if not is_external:
             if launch_once != _DEFAULT_LAUNCH_ONCE:
                 raise self._wrong_mode_error("launch_once", launch_once, "'external_process'", execution_mode)
@@ -253,9 +225,7 @@ class ClientAPIExecutor(Executor):
         if not is_attach:
             if attach_timeout is not None:
                 raise self._wrong_mode_error("attach_timeout", attach_timeout, "'attach'", execution_mode)
-            # Only reject a truthy allow_reconnect: allow_reconnect=False (the frozen default) is
-            # indistinguishable from "not set". Using `if allow_reconnect` (not `is not False`)
-            # also stops misfires on falsy-but-not-False values (None, 0, numpy.bool_(False)).
+            # Treat False and other falsy values as the unset default.
             if allow_reconnect:
                 raise self._wrong_mode_error("allow_reconnect", allow_reconnect, "'attach'", execution_mode)
 
@@ -309,13 +279,7 @@ class ClientAPIExecutor(Executor):
 
         self._backend: Optional[ClientAPIBackendSpec] = None
 
-        # Analytics-event ownership (design: "Configuration Surface" - "the executor's Cell
-        # backend converts [LOG messages] into fed.analytix_log_stats analytics events").
-        # False (default): fire the local un-prefixed ANALYTIC_EVENT_TYPE and rely on a
-        # ConvertToFedEvent widget (added by BaseFedJob) to re-fire it as
-        # "fed.analytix_log_stats" - today's in-process executor behavior.
-        # True: fire a federation-scoped event directly (today's MetricRelay behavior for
-        # ex-process). Cell backends (external_process/attach) may select this path in initialize().
+        # False uses the local event path; Cell backends enable direct federation events as needed.
         self._analytics_fire_fed_event: bool = False
 
     @property
@@ -330,9 +294,7 @@ class ClientAPIExecutor(Executor):
                 self._backend = self._create_backend()
                 self._backend.initialize(self._build_backend_context(), fl_ctx)
             except Exception as e:
-                # initialize() is contracted to self-unwind its partial setup on failure, so the
-                # executor does NOT call finalize() on a half-initialized backend; it just drops
-                # the reference and panics so the job fails cleanly.
+                # initialize() owns rollback; finalizing a partial backend is unsafe.
                 self._backend = None
                 self.log_error(fl_ctx, secure_format_traceback(), fire_event=False)
                 self.system_panic(
@@ -355,9 +317,6 @@ class ClientAPIExecutor(Executor):
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         backend = self._backend
         if backend is None:
-            # START_RUN either never happened or backend initialization failed (and the executor
-            # already panicked). Reply with an error instead of waiting on a backend that will
-            # never be ready.
             self.log_error(
                 fl_ctx,
                 f"no Client API backend available for execution_mode '{self._execution_mode}' - "
@@ -384,42 +343,15 @@ class ClientAPIExecutor(Executor):
         return result
 
     def set_analytics_fire_fed_event(self, enabled: bool) -> None:
-        """Selects whether trainer LOG data is fired as a federation-scoped analytics event.
-
-        Cell backends call this during initialization when no ConvertToFedEvent widget is
-        configured. The default remains the local analytics path used by the in-process backend.
-
-        Args:
-            enabled: True to fire federation-scoped events directly; False to fire local events.
-        """
+        """Select direct federation events instead of the local ConvertToFedEvent path."""
         self._analytics_fire_fed_event = bool(enabled)
 
     def fire_log_analytics(self, fl_ctx: FLContext, dxo: DXO) -> None:
-        """Converts trainer LOG data into an analytics event. Executor-owned surface.
+        """Emit trainer LOG data through the configured analytics path.
 
-        Backends call this for every LOG control message (flare.log from the trainer),
-        regardless of execution mode - this replaces MetricRelay (ex-process) and the
-        in-process executor's log callback as the single analytics-event ownership point.
-
-        The fire path is mode-selectable via ``set_analytics_fire_fed_event()``:
-
-        - False (default): fires the local, un-prefixed ANALYTIC_EVENT_TYPE
-          ("analytix_log_stats") and relies on the ConvertToFedEvent widget (added by
-          BaseFedJob) to forward it to the server as "fed.analytix_log_stats".
-        - True: fires a federation-scoped event directly to the server, matching what
-          MetricRelay does today for ex-process metrics. Cell backends may select this path during
-          initialize() by calling ``set_analytics_fire_fed_event(True)`` when no ConvertToFedEvent
-          widget is configured.
-
-        The two paths must land on the same server-side event name. ConvertToFedEvent prefixes
-        the local event with "fed.", so the fed path must fire the already-prefixed
-        FED_ANALYTIC_EVENT_TYPE ("fed.analytix_log_stats"); firing the un-prefixed name
-        federation-scoped would miss every consumer listening on "fed.analytix_log_stats"
-        (MetricRelay in job_config/script_runner.py, flower_job.py).
-
-        Args:
-            fl_ctx: an FLContext to fire the event with.
-            dxo: the analytics data (e.g. from create_analytic_dxo) carried by the event.
+        The local path fires ``analytix_log_stats`` and ConvertToFedEvent prefixes it to
+        ``fed.analytix_log_stats``. The direct path must fire that prefixed name itself or
+        server-side consumers will miss the event.
         """
         if self._analytics_fire_fed_event:
             send_analytic_dxo(
@@ -440,7 +372,6 @@ class ClientAPIExecutor(Executor):
 
     @staticmethod
     def _normalize_optional_str(value: Optional[str]) -> Optional[str]:
-        """Treats an empty/whitespace-only string as unset (None)."""
         if isinstance(value, str) and not value.strip():
             return None
         return value
@@ -461,14 +392,12 @@ class ClientAPIExecutor(Executor):
 
     @staticmethod
     def _wrong_mode_error(arg_name: str, value, valid_modes: str, execution_mode: str) -> ValueError:
-        """Builds the consistent 'arg only valid for <mode(s)>' rejection error."""
         return ValueError(
             f"{arg_name} is only valid for execution_mode {valid_modes}, "
             f"but got {arg_name}={value!r} with execution_mode '{execution_mode}'"
         )
 
     def _build_backend_context(self) -> ClientAPIBackendContext:
-        """Builds the frozen config snapshot handed to the backend at initialize()."""
         return ClientAPIBackendContext(
             executor=self,
             task_script_path=self._task_script_path,
@@ -501,19 +430,14 @@ class ClientAPIExecutor(Executor):
         if self._execution_mode == ExecutionMode.ATTACH:
             raise NotImplementedError("attach execution mode is not yet implemented in this release")
 
-        # The constructor validates execution_mode, so this only guards corrupted internal state.
         raise ValueError(f"unexpected execution_mode {self._execution_mode!r}")
 
     def _create_in_process_backend(self) -> ClientAPIBackendSpec:
-        # Deferred import: the backend pulls in DataBus/TaskScriptRunner machinery that the
-        # other modes never need; the skeleton stays import-light.
         from nvflare.app_common.executors.client_api.in_process_backend import InProcessBackend
 
         return InProcessBackend()
 
     def _create_external_process_backend(self) -> ClientAPIBackendSpec:
-        # Deferred import: the backend pulls in subprocess/cell-protocol/payload machinery
-        # the other modes never need; the skeleton stays import-light.
         from nvflare.app_common.executors.client_api.external_process_backend import ExternalProcessBackend
 
         return ExternalProcessBackend()

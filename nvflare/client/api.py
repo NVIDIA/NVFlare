@@ -36,8 +36,7 @@ def _on_context_shutdown(local_ctx: APIContext) -> None:
 
     with global_context_lock:
         if local_ctx.api_type == ClientAPIType.CELL_API:
-            # CellClientAPI owns process-global F3 services in its dedicated trainer
-            # process. Once it stops them, no Cell context in that process is reusable.
+            # A Cell context retires the trainer's process-global F3 runtime.
             _runtime_shutdown = True
         else:
             # Remove only this context: another rank/session may still be active.
@@ -108,10 +107,8 @@ def init(rank: Optional[Union[str, int]] = None, config_file: Optional[str] = No
         global default_context
         global _runtime_shutdown
         if not _runtime_shutdown:
-            # CellClientAPI can stop itself when receive()/is_running() observes CJ
-            # SHUTDOWN. Detect that owner-side close before looking up a particular key,
-            # because its streaming services are process-global and a different rank/config
-            # must not construct a fresh-looking Cell context on the retired runtime.
+            # CellClientAPI can stop itself on CJ SHUTDOWN; detect that process-wide close
+            # before a different rank/config constructs another context.
             _runtime_shutdown = any(
                 cached_ctx.api_type == ClientAPIType.CELL_API and cached_ctx.is_shutdown
                 for cached_ctx in context_dict.values()
@@ -132,10 +129,7 @@ def init(rank: Optional[Union[str, int]] = None, config_file: Optional[str] = No
                     "Cell Client API context has been shut down and cannot be reinitialized in the same process; "
                     "start a new trainer process"
                 )
-            # In-process jobs can run sequentially in the same CJ/simulator process, and
-            # legacy external-process contexts do not retire the process-global F3 runtime.
-            # Replace their stopped context instead of returning an API object owned by the
-            # previous job/session.
+            # Non-Cell contexts are reusable across sequential jobs in the same process.
             local_ctx = APIContext(rank=rank, config_file=config_file)
             context_dict[(rank, config_file)] = local_ctx
             default_context = local_ctx
@@ -301,16 +295,13 @@ def shutdown(ctx: Optional[APIContext] = None):
     streaming services; no later Cell Client API session can run in that interpreter.
     """
     global default_context
-    # Shutdown is the one public operation that accepts an already-stopped context:
-    # APIContext.shutdown() is idempotent, and cleanup code commonly calls this from
-    # multiple finally/context-manager paths. Other APIs continue to use get_context(),
-    # which rejects stale contexts. A missing default is likewise an already-clean state.
+    # Unlike other API calls, shutdown accepts stale or missing contexts so cleanup remains
+    # idempotent across finally/context-manager paths.
     if ctx is not None:
         local_ctx = ctx
     else:
-        # Prefer the calling thread's ownership binding. In particular, retain a stopped
-        # binding instead of letting a late trainer's shutdown target a successor job's
-        # newer global default. Unbound helper threads keep the compatibility fallback.
+        # A stopped thread binding prevents late cleanup from targeting a successor job's
+        # process default; unbound helper threads retain the compatibility fallback.
         local_ctx = getattr(_thread_context, "context", None)
         if local_ctx is None:
             local_ctx = default_context
@@ -319,7 +310,5 @@ def shutdown(ctx: Optional[APIContext] = None):
     try:
         return local_ctx.shutdown()
     finally:
-        # APIContext also invokes this hook for direct/context-manager shutdown. Keep the
-        # public wrapper idempotently responsible too so APIContext-compatible test doubles
-        # and integrations receive the same cache semantics.
+        # APIContext invokes the same hook when shut down directly.
         _on_context_shutdown(local_ctx)

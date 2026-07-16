@@ -12,38 +12,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Framework decomposer registration shared by the external-process CJ and trainer.
-
-Both ends may need to serialize framework-native tensors across the Cell when the declared wire
-representation is native or ``RAW``. NumPy and Keras wire representations need only the standard
-decomposers. A declared native representation is strict; ``RAW`` remains opportunistic because its
-concrete payload type is intentionally unspecified.
-"""
+"""Register framework decomposers needed by the external-process CJ and trainer."""
 
 from nvflare.client.config import ExchangeFormat
 
-# (module_path, class_name) of each framework's tensor decomposer, mirroring what the legacy
-# ex-process trainer registered for ExchangeFormat.PYTORCH (nvflare/client/ex_process/api.py).
+# Mirrors legacy PyTorch ex-process registration.
 _FRAMEWORK_DECOMPOSERS = (("nvflare.app_opt.pt.decomposers", "TensorDecomposer"),)
 
 
 def register_framework_decomposers(params_exchange_format, server_expected_format, logger=None) -> None:
-    """Register decomposers required by the declared Client API exchange pair.
+    """Register decomposers for the declared exchange pair.
 
-    The Cell normally carries the server representation because trainer-side adaptation happens
-    after receive and before send. If either side declares ``RAW``, however, conversion is disabled
-    and either representation may cross the Cell. Registration is opportunistic when that pair is
-    otherwise framework-agnostic, but required when the other side explicitly declares PyTorch.
+    ``RAW`` registration is opportunistic because its payload type is unspecified;
+    explicitly declared PyTorch formats require registration.
     """
     params_exchange_format = ExchangeFormat(params_exchange_format)
     server_expected_format = ExchangeFormat(server_expected_format)
     formats = (params_exchange_format, server_expected_format)
     if ExchangeFormat.RAW in formats:
-        # RAW disables adaptation, so either declared representation may cross the Cell.
+        # RAW can carry either representation.
         should_register = True
         required = ExchangeFormat.PYTORCH in formats
     else:
-        # With adaptation enabled, the Cell carries the server representation.
+        # Adapted payloads cross Cell in the server representation.
         should_register = server_expected_format == ExchangeFormat.PYTORCH
         required = should_register
     if not should_register:

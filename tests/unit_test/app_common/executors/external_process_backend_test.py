@@ -12,18 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for the external_process backend of ClientAPIExecutor (mirrors the in_process
-backend tests).
-
-Drives the real control-protocol round trip the design defines for external_process: the
-backend writes the bootstrap config and launches the trainer command, a fake trainer reads
-that config exactly like the real one and HELLOs over the (fake) cell, TASK_READY carries a
-direct Shareable, RESULT_READY returns a direct Shareable, and execute() returns it. Also
-covers the backend-contract obligations: initialize()
-self-unwinding, finalize() idempotency + process-tree teardown, bounded result wait, LOG
-routing through the executor-owned fire_log_analytics(), the launch-token/identity checks
-of the HELLO handshake, and direct Cell payload handling.
-"""
+"""Tests for ClientAPIExecutor's external-process backend and Cell protocol."""
 
 import os
 import signal
@@ -165,14 +154,12 @@ class FakeCell:
             self.on_fire(topic, targets, message)
 
     def deliver(self, topic, origin, payload):
-        """Invokes the backend's registered handler as an incoming cell request."""
         cb = self.cbs[topic]
         return cb(new_cell_message({MessageHeaderKey.ORIGIN: origin}, payload))
 
 
 class FakeTrainerHarness:
-    """Patched in as subprocess.Popen: 'launches' a trainer that reads the bootstrap
-    config exactly like the real one and performs the HELLO handshake synchronously."""
+    """A Popen fake that reads bootstrap config and performs HELLO synchronously."""
 
     def __init__(self, cell):
         self.cell = cell
@@ -210,8 +197,7 @@ class FakeTrainerHarness:
         return proc
 
     def killpg(self, pgid, sig):
-        """Models the group: alive while the leader runs OR extra members survive it;
-        sig 0 is the liveness probe; a real signal takes the whole group down."""
+        """Model sig-0 probes and signals to a group whose leader may have exited."""
         self.killpg_calls.append((pgid, sig))
         for proc in self.processes:
             if proc.pid == pgid:
@@ -227,7 +213,6 @@ class FakeTrainerHarness:
         raise ProcessLookupError(pgid)
 
     def signals_sent(self):
-        """The non-probe signals delivered to process groups (excludes sig-0 probes)."""
         return [(pgid, sig) for pgid, sig in self.killpg_calls if sig != 0]
 
 
@@ -290,11 +275,9 @@ def _initialized_backend(env, executor=None, **overrides):
 
 
 def _install_auto_result(env, lazy_result=False):
-    """Makes the fake trainer reply TASK_ACCEPTED and immediately RESULT_READY.
+    """Install synchronous TASK_ACCEPTED and RESULT_READY replies.
 
-    Runs synchronously on the execute() thread (send_request is synchronous), like the
-    in_process test's fake trainer. Records instead of asserting: a raise in here would be
-    converted to an EXECUTION_EXCEPTION reply by the backend and mask the real failure.
+    Callback assertions are recorded because raises become EXECUTION_EXCEPTION replies.
     """
     seen = SimpleNamespace(task_payloads=[], result_replies=[])
 
@@ -785,7 +768,6 @@ class TestInitializeAndFinalize:
         assert not process.extra_group_members, "surviving workers were signaled"
 
     def test_command_split_is_platform_appropriate(self, monkeypatch):
-        """Each platform's tokenizer preserves its paths and resolves secrets as one arg."""
         monkeypatch.setattr(ebp.os, "name", "posix")
         assert ExternalProcessBackend._split_command("python -u custom/train.py") == [
             "python",
@@ -824,8 +806,7 @@ class TestInitializeAndFinalize:
         ]
 
     def test_signal_fallback_uses_terminate_then_kill(self, env, monkeypatch):
-        """When group signaling is unavailable (non-POSIX, or killpg failure), the stop
-        escalation falls back to Popen.terminate()/kill() on the process itself."""
+        """Fall back to Popen signals when process-group signaling is unavailable."""
         backend, _ = _initialized_backend(env, stop_grace_period=0.01)
         process = env.harness.processes[0]
 
@@ -1200,11 +1181,7 @@ class TestHeartbeatAndOperationalLiveness:
 
 
 class TestClosedGate:
-    """The _closed gate must hold on its own: cell callbacks stay registered after
-    finalize() (cellnet has no unregister), so a zombie trainer's messages must be
-    refused even if backend session state were somehow still present. These tests
-    resurrect the session object after finalize to isolate the gate from the
-    session-teardown checks (the in_process analog is TestClosedApiOutgoingGate)."""
+    """Isolate _closed by restoring session state after callback teardown."""
 
     @staticmethod
     def _resurrect_session(backend, session, token, session_id):
@@ -1342,13 +1319,7 @@ class TestExecute:
             backend.finalize(FLContext())
 
     def test_result_arriving_asynchronously_wakes_the_wait(self, env):
-        """The production shape: a cell dispatcher thread sets the result event while
-        execute() is parked in the wait loop (every other test delivers synchronously).
-
-        The bound is deliberately BELOW _RESULT_POLL_INTERVAL: a purely poll-based wait
-        (e.g. replacing task.result_ready.wait with time.sleep) would only observe the
-        event at the next 0.5s poll and blow this bound — so the assertion actually
-        verifies the event-driven wake, not merely 'a result eventually arrives'."""
+        """The timeout is below the polling interval to verify an event-driven wake."""
         assert ebp._RESULT_POLL_INTERVAL >= 0.4, "the sub-poll-interval bound below depends on this"
         backend, fl_ctx = _initialized_backend(env, result_wait_timeout=30.0)
         try:
@@ -1377,10 +1348,7 @@ class TestExecute:
             backend.finalize(FLContext())
 
     def test_client_api_channel_takes_the_streaming_request_path(self):
-        """Locks the routing assumption behind the TASK_READY timeout normalization and
-        native cancel: cellnet treats every non-excluded channel as streaming-capable, so
-        our channel goes through Cell._send_request (numeric no-progress timeout,
-        abort_signal support) — NOT CoreCell.send_request."""
+        """Verify CLIENT_API routing supplies streaming timeout and cancellation."""
         from nvflare.fuel.f3.cellnet.cell import _is_stream_channel
 
         assert _is_stream_channel(CHANNEL) is True
@@ -1395,16 +1363,14 @@ class TestExecute:
             backend.finalize(FLContext())
 
     def test_task_ready_send_does_not_hang_past_abort(self, env):
-        """The plain-channel Cell request has no cancellation and a None task_wait_timeout
-        falls back to the cell's hour-long max: a wedged trainer handler must not pin
-        execute() past abort (the send runs on a helper thread; the wait polls)."""
         backend, fl_ctx = _initialized_backend(env, result_wait_timeout=30.0)
-        release = threading.Event()
         try:
             abort_signal = Signal()
 
             def wedged_handler(topic, target, request):
-                release.wait(10.0)  # the trainer's TASK_READY handler never replies
+                cancel = env.cell.sent_kwargs[-1]["abort_signal"]
+                while not cancel.triggered:
+                    time.sleep(0.005)
                 return _task_accepted_reply()
 
             env.cell.on_request = wedged_handler
@@ -1422,16 +1388,16 @@ class TestExecute:
             cancel = env.cell.sent_kwargs[0].get("abort_signal")
             assert cancel is not None and cancel.triggered
         finally:
-            release.set()
             backend.finalize(FLContext())
 
     def test_task_ready_send_detects_process_death(self, env):
         backend, fl_ctx = _initialized_backend(env, result_wait_timeout=30.0)
-        release = threading.Event()
         try:
 
             def wedged_handler(topic, target, request):
-                release.wait(10.0)
+                cancel = env.cell.sent_kwargs[-1]["abort_signal"]
+                while not cancel.triggered:
+                    time.sleep(0.005)
                 return _task_accepted_reply()
 
             env.cell.on_request = wedged_handler
@@ -1445,19 +1411,42 @@ class TestExecute:
             assert elapsed < 5.0, "a dead trainer must end the TASK_READY wait"
             assert "TASK_READY was pending" in backend._abort_reason
         finally:
-            release.set()
             backend.finalize(FLContext())
 
-    def test_task_ready_send_detects_backend_close(self, env):
-        """finalize() racing an in-flight TASK_READY send (the teardown window): the send
-        wait must observe _closed and fail the task rather than pin execute() on the
-        wedged handler until the streaming request's no-progress timeout."""
+    def test_task_ready_cancellation_deletes_tracked_transactions(self, env, monkeypatch):
+        waiter = SimpleNamespace(done=lambda: False)
+        deleted = []
+        monkeypatch.setattr(ebp.DownloadService, "get_transfer_waiter", lambda _tx_id: waiter)
+        monkeypatch.setattr(ebp.DownloadService, "delete_transaction", deleted.append)
         backend, fl_ctx = _initialized_backend(env, result_wait_timeout=30.0)
-        release = threading.Event()
         try:
 
             def wedged_handler(topic, target, request):
-                release.wait(10.0)
+                tx_created = env.cell.sent_kwargs[-1]["fobs_ctx_props"][ebp.RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY]
+                tx_created(SimpleNamespace(tx_id="task-payload-tx"))
+                env.harness.processes[0].exit(1)
+                cancel = env.cell.sent_kwargs[-1]["abort_signal"]
+                while not cancel.triggered:
+                    time.sleep(0.005)
+                return _task_accepted_reply()
+
+            env.cell.on_request = wedged_handler
+            result = backend.execute("train", Shareable(), fl_ctx, Signal())
+
+            assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+            assert deleted == ["task-payload-tx"]
+        finally:
+            backend.finalize(FLContext())
+
+    def test_task_ready_send_detects_backend_close(self, env):
+        """Backend closure must cancel an in-flight TASK_READY send."""
+        backend, fl_ctx = _initialized_backend(env, result_wait_timeout=30.0)
+        try:
+
+            def wedged_handler(topic, target, request):
+                cancel = env.cell.sent_kwargs[-1]["abort_signal"]
+                while not cancel.triggered:
+                    time.sleep(0.005)
                 return _task_accepted_reply()
 
             env.cell.on_request = wedged_handler
@@ -1474,15 +1463,11 @@ class TestExecute:
             cancel = env.cell.sent_kwargs[0].get("abort_signal")
             assert cancel is not None and cancel.triggered
         finally:
-            release.set()
             backend._closed = False  # let finalize run its normal teardown
             backend.finalize(FLContext())
 
     def test_concurrent_execute_rejects_second_without_disturbing_first(self, env):
-        """One active task per session: a second execute() racing the first must be
-        rejected without overwriting _current_task, so the first task's RESULT_READY is
-        still accepted and the first returns OK. (ClientRunner does not serialize executor
-        calls, so the backend must.)"""
+        """ClientRunner may call execute concurrently; rejection must preserve the active task."""
         backend, fl_ctx = _initialized_backend(env, result_wait_timeout=30.0)
         first_in_flight = threading.Event()
         let_first_finish = threading.Event()
@@ -1527,9 +1512,6 @@ class TestExecute:
             backend.finalize(FLContext())
 
     def test_busy_rejection_honors_triggered_abort(self, env):
-        """A concurrent second task whose abort_signal is already triggered must get
-        TASK_ABORTED (contract), not the busy EXECUTION_EXCEPTION — and must not touch the
-        active task's session."""
         backend, fl_ctx = _initialized_backend(env, result_wait_timeout=30.0)
         first_in_flight = threading.Event()
         let_first_finish = threading.Event()
@@ -1570,8 +1552,6 @@ class TestExecute:
             backend.finalize(FLContext())
 
     def test_raising_per_task_stop_still_releases_the_gate(self, env, monkeypatch):
-        """A raising per-task _stop_session must not leak the admission gate — else every
-        later task would be busy-rejected forever."""
         backend, fl_ctx = _initialized_backend(env, launch_once=False)
         _install_auto_result(env)
         real_stop = backend._stop_session
@@ -1594,9 +1574,7 @@ class TestExecute:
             backend.finalize(FLContext())
 
     def test_finalize_barriers_no_process_started_after_close(self, env, monkeypatch):
-        """END_RUN racing a per-task launch: finalize() sets _closed and barriers on the
-        execute gate, and the pre-Popen _closed check bails the launch — so no trainer
-        process is ever started after finalize began."""
+        """Finalize must close admission before an in-progress launch reaches Popen."""
         backend, fl_ctx = _initialized_backend(env, launch_once=False)
         in_write = threading.Event()
         let_write = threading.Event()
@@ -1680,9 +1658,6 @@ class TestExecute:
             backend.finalize(FLContext())
 
     def test_execute_after_timeout_fails_fast_with_accurate_rc(self, env):
-        """One result-wait timeout ends the launch_once session for good (the wire ABORT
-        ends the trainer's Client API loop); later tasks must fail FAST with
-        EXECUTION_EXCEPTION - mirrors the in_process latched-abort behavior."""
         backend, fl_ctx = _initialized_backend(env, result_wait_timeout=0.05)
         try:
             first = backend.execute("train", Shareable(), fl_ctx, Signal())
@@ -1750,7 +1725,6 @@ class TestExecute:
             backend.finalize(FLContext())
 
     def test_multi_round_sequential_execute(self, env):
-        """The same backend and session serve consecutive rounds (launch_once)."""
         backend, fl_ctx = _initialized_backend(env)
         try:
             _install_auto_result(env)
@@ -1818,12 +1792,7 @@ class TestResultReadyHandler:
             backend.finalize(FLContext())
 
     def test_finalize_wins_after_result_validation_before_acceptance(self, env, monkeypatch):
-        """Closure is rechecked in the acceptance critical section.
-
-        RESULT_READY may pass authentication just before END_RUN. If finalize wins the
-        task lock afterward, the callback must not create a newly live result source that
-        teardown has already classified.
-        """
+        """Finalize winning after validation must prevent a newly live result source."""
         backend, _ = _initialized_backend(env, shutdown_timeout=0.0, stop_grace_period=0.0)
         task = self._task(backend)
         session = backend._session
@@ -2052,8 +2021,7 @@ class TestLaunchPerTask:
             finalize_thread.join(timeout=1.0)
 
     def test_abort_during_per_task_launch_returns_task_aborted(self, env):
-        """The HELLO wait must not hang past abort (execute contract): with no
-        launch_timeout and a live-but-silent trainer, only the abort bounds the wait."""
+        """Abort is the only bound when launch_timeout is unset and HELLO never arrives."""
         env.harness.auto_hello = False
         backend, fl_ctx = _initialized_backend(env, launch_once=False, launch_timeout=None)
         try:
@@ -2071,7 +2039,6 @@ class TestLaunchPerTask:
             backend.finalize(FLContext())
 
     def test_execute_after_finalize_fails_without_launching(self, env):
-        """A task racing END_RUN teardown must not launch a trainer after finalize()."""
         backend, fl_ctx = _initialized_backend(env, launch_once=False)
         backend.finalize(FLContext())
 
@@ -2104,8 +2071,7 @@ class TestLaunchPerTask:
             backend.finalize(FLContext())
 
     def test_task_timeout_does_not_poison_next_task(self, env):
-        """A previous task's dead session must not fail a per-task launch (fresh process,
-        fresh state): the backend abort latch only fail-fasts launch_once sessions."""
+        """The abort latch only fail-fasts launch_once sessions."""
         backend, fl_ctx = _initialized_backend(env, launch_once=False, result_wait_timeout=0.05)
         try:
             # task 1: trainer accepts but never sends a result -> timeout

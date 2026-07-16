@@ -38,9 +38,7 @@ data_bus = DataBus()
 class ClientAPIType(Enum):
     IN_PROCESS_API = "IN_PROCESS_API"
     EX_PROCESS_API = "EX_PROCESS_API"
-    # external_process execution mode's trainer-side Cell engine (CellClientAPI): selected
-    # when NVFlare's ExternalProcessBackend launched this process. Reads its bootstrap config
-    # from the NVFLARE_CLIENT_API_BOOTSTRAP env var (not the legacy config_file).
+    # Trainer-side Cell engine selected by ExternalProcessBackend's typed bootstrap.
     CELL_API = CELL_API_TYPE
 
 
@@ -67,9 +65,7 @@ class APIContext:
     @property
     def is_shutdown(self) -> bool:
         """Whether this context has released its Client API resources."""
-        # InProcessBackend owns the DataBus API and closes it directly at job teardown.
-        # Treat that owner-side close as a stopped context too, so a later job in the same
-        # process does not reuse a cached APIContext that still points at the old backend.
+        # InProcessBackend may close its DataBus API directly at job teardown.
         return self._closed or getattr(self.api, "closed", False) is True
 
     def shutdown(self):
@@ -81,9 +77,7 @@ class APIContext:
             try:
                 return self.api.shutdown()
             finally:
-                # APIContext is itself a context manager and may be shut down directly.
-                # Notify the public cache/lifecycle owner so those paths cannot bypass the
-                # Cell one-shot gate or leave a stopped non-Cell context cached.
+                # Direct/context-manager shutdown must update the public context cache too.
                 from .api import _on_context_shutdown
 
                 _on_context_shutdown(self)
@@ -97,18 +91,14 @@ class APIContext:
             try:
                 config = read_bootstrap_config(self.config_file)
             except (OSError, ValueError):
-                # Missing/non-dict files retain the old behavior: the selected API engine
-                # owns validation of its legacy config. A valid dict containing either
-                # typed marker is validated below and never silently downgraded.
+                # Legacy config validation remains owned by the selected API engine; a
+                # readable typed envelope is validated below and never downgraded.
                 config = None
             if config is not None:
                 typed_api_type = get_bootstrap_client_api_type(config, self.config_file)
         if typed_api_type is None:
-            # ExternalProcessBackend supplies one self-identifying bootstrap path. This is
-            # sufficient to select CellClientAPI; no duplicate CLIENT_API_TYPE marker is needed.
-            # It also supersedes an explicitly supplied legacy client_api_config.json: existing
-            # trainer scripts may still pass that file, but launched mode must use this run's
-            # Cell endpoint and token.
+            # The backend bootstrap supersedes a legacy config_file argument so launched
+            # trainers always use this run's Cell endpoint and token.
             bootstrap_path = os.environ.get(BOOTSTRAP_FILE_ENV_VAR)
             if bootstrap_path:
                 config = read_bootstrap_config(bootstrap_path)
@@ -138,8 +128,7 @@ class APIContext:
                 raise RuntimeError(f"api {api} is not a valid InProcessClientAPI")
             return api
         elif api_type == ClientAPIType.CELL_API:
-            # Deferred import: the Cell engine pulls in cellnet/payload machinery the other
-            # API types never need; keep flare.init import-light for in_process/ex_process.
+            # Keep cellnet/payload imports out of the other Client API modes.
             from nvflare.client.cell.api import CellClientAPI
 
             if self._typed_bootstrap_file:

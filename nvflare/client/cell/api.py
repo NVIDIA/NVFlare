@@ -12,35 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Trainer-side Cell engine for the external_process Client API execution mode.
+"""Trainer-side Cell Client API for ``external_process`` execution.
 
-This is the counterpart of ExternalProcessBackend (the CJ side). It runs INSIDE the trainer
-process that NVFlare launched, and is the Client API implementation that flare.init/receive/
-send/log resolve to when the process was started with a Client API bootstrap config (the
-NVFLARE_CLIENT_API_BOOTSTRAP env var; see nvflare/client/cell/bootstrap.py).
-
-It replaces the legacy CellPipe + FlareAgent trainer stack with a direct Cell session using the
-protocol vocabulary in nvflare/client/cell/defs.py. Task and result Shareables ride in
-the Cell requests themselves: Cell/FOBS selects inline encoding or ViaDownloader references,
-and the Client API keeps the original source alive until the ultimate receiver settles them:
-
-- init(): read the bootstrap config, build a child Cell bound to the prescribed trainer FQCN and
-  connected to the CJ's internal listener, register the control handlers (TASK_READY / ABORT /
-  SHUTDOWN), and perform the HELLO handshake (launch-token proof; V1 trusted host).
-- TASK_READY handler: the trainer Cell decodes/materializes the Shareable before invoking the
-  handler, which validates and queues it before returning TASK_ACCEPTED.
-- receive(): block until a materialized task is queued and return its FLModel.
-- send(): send RESULT_READY with per-message pass-through enabled. The CJ accepts the lazy
-  envelope and can forward its references so the declared downstream receiver downloads
-  directly from this trainer. send() returns only after every created transfer reaches a
-  successful terminal outcome.
-- log(): send a LOG control message the executor converts to a fed analytics event.
-
-V1 scope: rank 0 connects and drives the session; non-zero ranks get the model through the
-training framework's own collectives and do not open a Client API session (the rank contract).
-This engine therefore only builds the session for rank 0; other ranks get a passive API whose
-receive() returns None and whose is_running() is False, so a plain (non-torchrun) trainer — the
-primary external_process case — runs unchanged.
+Rank 0 exchanges materialized tasks and results with ExternalProcessBackend. ``send()``
+keeps the trainer available until all downstream result transfers settle; other ranks are
+passive and rely on their training framework's collectives.
 """
 
 import copy
@@ -86,14 +62,10 @@ from nvflare.fuel.utils.fobs.decomposers.via_downloader import (
 )
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
-# How long HELLO retries for the CJ's HELLO_ACCEPTED before failing init.
 _HELLO_TIMEOUT = 30.0
-# Per-attempt timeout / backoff while the child cell's connection to the CJ comes up.
 _HELLO_RETRY_INTERVAL = 1.0
-# Poll cadence of receive()'s task-queue wait (the queue wakes it immediately; the poll only
-# bounds abort/stop detection latency).
+# Queue reads wake immediately; this bounds abort/stop detection latency.
 _RECEIVE_POLL_INTERVAL = 0.5
-# Heartbeat requests are cancelled during shutdown and the daemon is joined boundedly.
 _HEARTBEAT_JOIN_TIMEOUT = 1.0
 
 
@@ -102,20 +74,11 @@ class TrainerSessionError(Exception):
 
 
 def _shutdown_f3_streaming() -> None:
-    """Retire the process-global F3 streaming services used by a bare trainer.
+    """Stop process-global F3 services owned by the standalone trainer.
 
-    Normal NVFlare entry points run under MainProcessMonitor, but an external trainer's
-    entry point is the user's script and cannot be wrapped by it. Keep this list aligned
-    with the process-global cleanup registrations in byte_streamer.py and stream_utils.py,
-    plus DownloadService cleanup performed by the normal client/server runners. If a
-    second standalone-process caller appears, promote this into an F3-owned, appropriately
-    scoped lifecycle API instead of copying the list.
-
-    Every stage is attempted even if an earlier one fails: one broken service must not
-    strand another non-daemon pool. Stop transaction ownership first, then the retry
-    dispatcher, before joining the executors needed by retry work. The underlying
-    shutdown operations are idempotent, so a repeated caller retries a partial cleanup
-    without a second completion latch.
+    External trainers do not run under MainProcessMonitor. Keep this order aligned with
+    F3 cleanup: stop transaction ownership and retry dispatch before their executors.
+    Each operation is idempotent and every stage is attempted.
     """
     errors = []
     for name, shutdown in (
@@ -133,11 +96,7 @@ def _shutdown_f3_streaming() -> None:
 
 
 def _to_python_scalar(v: Any) -> Any:
-    """Coerce a 0-d numpy scalar (np.float32, np.int64, ...) to a Python scalar.
-
-    Trainers naturally produce numpy scalar metrics; the analytics DXO validation rejects
-    numpy scalar types, so convert at the source. Non-numpy values and arrays pass through.
-    """
+    """Convert 0-d NumPy metrics to Python scalars accepted by analytics validation."""
     item = getattr(v, "item", None)
     if callable(item) and getattr(v, "shape", None) == ():
         return v.item()
@@ -148,11 +107,7 @@ class CellClientAPI(APISpec):
     """Client API implementation that speaks the external_process Cell protocol to the CJ."""
 
     def __init__(self, bootstrap_file: Optional[str] = None):
-        """
-        Args:
-            bootstrap_file: path to the bootstrap config. Defaults to the path in the
-                NVFLARE_CLIENT_API_BOOTSTRAP env var the backend set on the launched process.
-        """
+        """Create the API from an explicit bootstrap path or the launch environment."""
         super().__init__()
         self.logger = get_obj_logger(self)
         self._bootstrap_file = bootstrap_file or os.environ.get(BOOTSTRAP_FILE_ENV_VAR)
@@ -162,9 +117,7 @@ class CellClientAPI(APISpec):
                 f"(the external_process backend writes it on the launched trainer)"
             )
         self._config = read_bootstrap_config(self._bootstrap_file)
-        # Environment selection remains a compatibility path for untyped legacy files,
-        # but any typed envelope must be complete and supported on every construction
-        # path, including a backend-launched trainer.
+        # Legacy untyped files retain environment selection; typed envelopes must validate.
         get_bootstrap_client_api_type(self._config, self._bootstrap_file)
 
         self._rank: Optional[str] = None
@@ -176,15 +129,12 @@ class CellClientAPI(APISpec):
         self._job_id: str = self._config[BootstrapKey.JOB_ID]
         self._site_name: str = self._config[BootstrapKey.SITE_NAME]
         self._task_exchange: dict = self._config.get(BootstrapKey.TASK_EXCHANGE, {})
-        # This is the same TASK_EXCHANGE lifecycle bit used by the legacy ex-process
-        # Client API. Default to a persistent session for typed bootstrap files written
-        # before the field was added, since closing after one result is irreversible.
+        # Typed files predating LAUNCH_ONCE default to persistent; one-shot close is irreversible.
         self._launch_once = bool(self._task_exchange.get(ConfigKey.LAUNCH_ONCE, True))
         self._memory_gc_rounds = int(self._config.get(BootstrapKey.MEMORY_GC_ROUNDS, 0))
         self._cuda_empty_cache = bool(self._config.get(BootstrapKey.CUDA_EMPTY_CACHE, False))
 
-        # control state. _task_queue carries materialized tasks: Cell finishes FOBS decode
-        # (including any ViaDownloader pulls) before it invokes the TASK_READY handler.
+        # Cell materializes FOBS payloads before the task handler queues them.
         self._task_queue: "Queue[dict]" = Queue()
         self._current_task: Optional[dict] = None
         self._result_receiver_ids = None
@@ -192,11 +142,8 @@ class CellClientAPI(APISpec):
         self._receive_called = False
         self._abort = False
         self._abort_reason = ""
-        # observed by incoming task payload pulls between chunk requests, so an abort/stop
-        # ends an in-flight materialization instead of letting it run to completion for
-        # nothing. Result publication deliberately has a separate cancellation signal:
-        # an orderly SHUTDOWN can race the RESULT_ACCEPTED reply and must not tear down a
-        # result source that the downstream receiver is still downloading.
+        # Task materialization may be cancelled on stop. Result publication uses a separate
+        # signal because SHUTDOWN can race RESULT_ACCEPTED while receivers still need the source.
         self._abort_signal = Signal()
         self._result_abort_signal = Signal()
         self._heartbeat_cancel = Signal()
@@ -210,14 +157,10 @@ class CellClientAPI(APISpec):
         self._last_cj_activity: Optional[float] = None
         self._heartbeat_stop = threading.Event()
         self._heartbeat_thread: Optional[threading.Thread] = None
-        # While the trainer is serving an actual live DownloadService transaction, that
-        # transaction's progress/idle policy is authoritative. Merely entering send() is
-        # not enough: inline serialization or a wedged RESULT_READY request must remain
-        # bounded by the CJ heartbeat lease.
+        # Only a live DownloadService transaction supersedes the CJ heartbeat lease;
+        # inline serialization and a wedged RESULT_READY stay heartbeat-bounded.
         self._result_transactions = ()
-        # Guarded by _lock. SHUTDOWN reads this in the same critical section in which it
-        # sets _stopped, so either send() observes the stop and closes itself or the
-        # SHUTDOWN reply tells the backend the process is already safe to stop.
+        # Under _lock, this tells SHUTDOWN whether send() still owns a live result source.
         self._result_send_active = False
         self._params_conversion_state = {}
 
@@ -232,15 +175,11 @@ class CellClientAPI(APISpec):
         self._rank = rank if rank is not None else os.environ.get("RANK", "0")
         self._is_control_rank = str(self._rank) == "0"
         if not self._is_control_rank:
-            # non-zero ranks get the model via the framework's collectives; they do not open
-            # a Client API session (rank contract). Leave the API passive.
+            # Non-control ranks receive the model through framework collectives.
             self.logger.info(f"rank {self._rank}: no Client API session (non-control rank)")
             return
 
-        # Register the serialization decomposers the launched trainer process needs to decode
-        # task payloads and encode results (the FL process/CJ registers these at startup; a
-        # bare trainer subprocess must too). common_decomposers covers numpy/FLModel and the
-        # download-ref DOT handlers used by the shared payload path. Mirrors FlareAgent.
+        # A bare trainer must register payload decomposers normally installed by the FL process.
         from nvflare.apis.utils.decomposers import flare_decomposers
         from nvflare.app_common.decomposers import common_decomposers
 
@@ -261,9 +200,7 @@ class CellClientAPI(APISpec):
             parent_url=connect_url,
             create_internal_listener=False,
         )
-        # Direct task decode must observe a concurrent ABORT/SHUTDOWN while nested tensor
-        # downloads are running. Adapter.call() derives each decode context from this Cell
-        # context, so the signal reaches ViaDownloader without a ClientAPI-specific wrapper.
+        # Propagate concurrent ABORT/SHUTDOWN into nested task-payload downloads.
         self._cell.update_fobs_context({FOBSContextKey.ABORT_SIGNAL: self._abort_signal})
         self._register_control_cbs(self._cell)
         self._cell.start()
@@ -282,10 +219,7 @@ class CellClientAPI(APISpec):
         cell.register_request_cb(channel=CHANNEL, topic=Topic.SHUTDOWN, cb=self._handle_shutdown)
 
     def _hello(self) -> None:
-        # The child cell connects to the CJ's internal listener asynchronously after start();
-        # the first HELLO can race that connection and come back unreachable. Retry with a
-        # short backoff until the CJ replies (or _HELLO_TIMEOUT), so a connection still coming
-        # up is not mistaken for a rejected handshake.
+        # Cell connection is asynchronous; retry HELLO until the listener is reachable.
         deadline = time.monotonic() + _HELLO_TIMEOUT
         reply = None
         attempt = 0
@@ -303,8 +237,7 @@ class CellClientAPI(APISpec):
                     {
                         MsgKey.TRAINER_FQCN: self._trainer_fqcn,
                         MsgKey.PROOF: self._config[BootstrapKey.LAUNCH_TOKEN],
-                        # Report the trainer code's compiled wire version. Protocol
-                        # compatibility is negotiated by HELLO, not selected by bootstrap.
+                        # Negotiate with the trainer's compiled protocol version.
                         MsgKey.PROTOCOL_VERSION: PROTOCOL_VERSION,
                         MsgKey.JOB_ID: self._job_id,
                         MsgKey.SITE_NAME: self._site_name,
@@ -316,7 +249,6 @@ class CellClientAPI(APISpec):
             rc = None if reply is None else reply.get_header(MessageHeaderKey.RETURN_CODE)
             if rc == CellReturnCode.OK:
                 break
-            # transient: connection to the CJ not up yet (unreachable / no reply). Back off.
             self.logger.debug(f"HELLO attempt {attempt} not yet delivered (rc={rc}); retrying")
             time.sleep(min(_HELLO_RETRY_INTERVAL, max(0.0, deadline - time.monotonic())))
         body = reply.payload
@@ -349,9 +281,7 @@ class CellClientAPI(APISpec):
             self.shutdown()
             raise TrainerSessionError(f"session aborted: {reason}")
         if self._stopped:
-            # Standard trainers leave their loop after receive()/is_running() observes
-            # SHUTDOWN. Close F3 synchronously on this user thread so interpreter teardown
-            # does not wait forever for its worker pools.
+            # Shut F3 down on the user thread before interpreter teardown.
             self.shutdown()
             return None
         if self._fl_model is not None:
@@ -375,9 +305,7 @@ class CellClientAPI(APISpec):
         return self._fl_model
 
     def _await_task(self, timeout: Optional[float]) -> Optional[dict]:
-        """Blocks for the next materialized task entry. Returns None on clean stop
-        (SHUTDOWN) or timeout; raises on ABORT (the receive-side contract: abort surfaces
-        as an exception out of a blocked receive)."""
+        """Wait for a task; return None on SHUTDOWN/timeout and raise on ABORT."""
         deadline = None if timeout is None else time.monotonic() + timeout
         while True:
             if self._abort:
@@ -429,9 +357,7 @@ class CellClientAPI(APISpec):
         def _on_transaction_created(transaction):
             transactions.append(transaction)
 
-        # A no-op progress callback requests transaction tracking from ViaDownloader.
-        # DownloadService itself records per-receiver activity and terminal truth; the
-        # callback is only the opt-in that exposes the created transaction to this sender.
+        # The no-op callback opts into ViaDownloader transaction tracking.
         def _on_result_progress(**_kwargs):
             return None
 
@@ -443,9 +369,7 @@ class CellClientAPI(APISpec):
                 MsgKey.RESULT: shareable,
             },
         )
-        # These are the ultimate result receivers declared on the incoming task (if the
-        # workflow knows them). Merely accepting the lazy envelope does not make the CJ a
-        # DownloadService receiver; it remains an intermediate forwarding hop.
+        # Preserve ultimate receiver ids so the CJ remains a forwarding hop, not a receiver.
         result_receiver_ids = self._result_receiver_ids
 
         fobs_ctx_props = {
@@ -464,14 +388,11 @@ class CellClientAPI(APISpec):
                     if not DownloadService.get_transfer_waiter(transaction.tx_id).done():
                         return True
                 except Exception:
-                    # A transaction deleted between snapshot and lookup is no longer live.
                     continue
             return False
 
         result_accepted = False
-        # Serialize result publication admission with SHUTDOWN. If shutdown wins, no
-        # result has been published and send fails normally. If send wins, SHUTDOWN does
-        # not cancel the result signal; send remains the terminal-transfer barrier.
+        # Serialize publication with SHUTDOWN; an admitted send owns the transfer barrier.
         with self._lock:
             self._check_session_alive()
             self._result_send_active = True
@@ -500,8 +421,7 @@ class CellClientAPI(APISpec):
             try:
                 self._set_result_transactions(())
                 if clear_cache:
-                    # Serialization is complete. Release both the submitted and received
-                    # parameter sets; neither is needed after the actual transfer settles.
+                    # Transfer is complete; neither submitted nor received parameters are needed.
                     model.params = None
                     model.optimizer_params = None
                     received_model = self._fl_model
@@ -514,16 +434,12 @@ class CellClientAPI(APISpec):
                     self._result_receiver_ids = None
                 self._maybe_cleanup_memory()
             finally:
-                # Pair this transition with _handle_shutdown under one lock. If SHUTDOWN
-                # won first, this thread owns the close after the actual transfer settled.
-                # If this transition won first, SHUTDOWN reports RESULT_SOURCE_LIVE=False
-                # and the backend can stop the already-settled process after receiving ACK.
+                # Clear ownership under the lock read by SHUTDOWN. If SHUTDOWN won, this
+                # thread closes after settlement; otherwise SHUTDOWN observes no live source.
                 with self._lock:
                     self._result_send_active = False
                     should_shutdown = self._stopped or (result_accepted and not self._launch_once)
-                # A per-task trainer has completed its whole session only after the CJ
-                # accepted the envelope AND the actual downstream receiver completed every
-                # download. Close Cell/F3 synchronously before a one-shot script returns.
+                # One-shot sessions close only after acceptance and downstream settlement.
                 if should_shutdown:
                     self.shutdown()
 
@@ -552,8 +468,7 @@ class CellClientAPI(APISpec):
             try:
                 DownloadService.delete_transaction(transaction.tx_id)
             except Exception:
-                # Preserve the original send/abort failure; DownloadService cleanup is
-                # best-effort and the transaction idle timeout remains a backstop.
+                # Preserve the original failure; idle timeout remains the cleanup backstop.
                 pass
 
     def _prepare_param_diff(self, model: FLModel) -> FLModel:
@@ -601,9 +516,6 @@ class CellClientAPI(APISpec):
                     {
                         MsgKey.SESSION_ID: self._session_id,
                         "key": key,
-                        # numpy scalar metrics (e.g. np.mean(...) -> np.float32) must go over
-                        # the wire as a Python scalar: the analytics DXO validation on the CJ
-                        # (create_analytic_dxo) rejects numpy scalar types.
                         "value": _to_python_scalar(value),
                         "data_type": data_type,
                         **kwargs,
@@ -618,9 +530,7 @@ class CellClientAPI(APISpec):
         return {FLMetaKey.SITE_NAME: self._site_name, FLMetaKey.JOB_ID: self._job_id}
 
     def get_config(self) -> Dict:
-        # Match the legacy ClientConfig shape consumed by existing trainers (for example
-        # Lightning integrations call get_config()[TASK_EXCHANGE]). Do not expose Cell
-        # addresses or the launch credential from the bootstrap file.
+        # Keep the legacy shape without exposing Cell addresses or launch credentials.
         return {
             ConfigKey.TASK_EXCHANGE: dict(self._task_exchange),
             FLMetaKey.JOB_ID: self._job_id,
@@ -643,9 +553,7 @@ class CellClientAPI(APISpec):
         return task.get(MsgKey.TASK_NAME)
 
     def is_running(self) -> bool:
-        # loop guard: False on any session end (abort/stop/closed). Otherwise block in
-        # receive() for the next task; an abort arriving during that block returns False
-        # here (the loop exits), while an explicit flare.receive()/send() still raises.
+        # Loop guards swallow session-end errors; explicit receive()/send() still raise.
         if not self._is_control_rank or self._closed:
             return False
         if self._abort or self._stopped:
@@ -674,11 +582,7 @@ class CellClientAPI(APISpec):
         self._receive_called = False
 
     def shutdown(self):
-        """Stop this trainer session and retire its process-global F3 streaming runtime.
-
-        A Cell Client API trainer is currently one-session-per-process. After shutdown,
-        no further Cell Client API session can run in this interpreter.
-        """
+        """Stop this one-session trainer and its process-global F3 runtime."""
         with self._shutdown_lock:
             if not self._closed:
                 self._closed = True
@@ -688,11 +592,7 @@ class CellClientAPI(APISpec):
                 self._stop_heartbeat()
                 self._stop_cell()
             try:
-                # This API owns a dedicated trainer process, unlike CJ/server processes
-                # whose MainProcessMonitor performs global F3 cleanup. Without this step,
-                # non-daemon stream pools keep one-shot/torchrun trainers alive forever.
-                # Retry this process-global cleanup on a repeated shutdown() if a previous
-                # stage failed; the services' own shutdown operations are idempotent.
+                # Retry partial process-global cleanup; each operation is idempotent.
                 _shutdown_f3_streaming()
             except Exception as e:
                 self.logger.warning(f"failed to stop trainer streaming services: {e}")
@@ -700,8 +600,6 @@ class CellClientAPI(APISpec):
     # ------------------------------------------------------------------ control handlers
 
     def _handle_task_ready(self, request):
-        # TASK_READY is currently sent once. Attach-mode redelivery tolerance should be
-        # added only as a sender-retry + receiver-dedup pair.
         payload = request.payload
         if not isinstance(payload, dict):
             return make_cell_reply(CellReturnCode.INVALID_REQUEST, error="TASK_READY payload must be a dict")
@@ -759,11 +657,8 @@ class CellClientAPI(APISpec):
         with self._lock:
             self._stopped = True
             result_source_live = self._result_send_active
-        # An incoming task materialization still in flight serves no one after an orderly
-        # stop: receive() will return None and drop the entry. Do not trigger the result
-        # signal here. SHUTDOWN can arrive after the CJ accepted a lazy result envelope but
-        # before RESULT_ACCEPTED reaches send(); the result remains live until its actual
-        # downstream DownloadService transaction settles.
+        # Cancel incoming materialization only. SHUTDOWN may race RESULT_ACCEPTED, so the
+        # result signal remains live until downstream transfer settlement.
         self._abort_signal.trigger("session shutdown")
         self.logger.info("session shutdown requested by CJ")
         return make_cell_reply(CellReturnCode.OK, body={MsgKey.RESULT_SOURCE_LIVE: result_source_live})
@@ -880,7 +775,6 @@ class CellClientAPI(APISpec):
                 if not DownloadService.get_transfer_waiter(transaction.tx_id).done():
                     return True
             except Exception:
-                # A transaction deleted between snapshot and lookup is no longer live.
                 continue
         return False
 
