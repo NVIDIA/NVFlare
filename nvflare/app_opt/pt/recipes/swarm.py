@@ -32,7 +32,7 @@ from nvflare.fuel.utils.secret_utils import (
     warn_on_unsupported_secret_refs_outside_keys,
 )
 from nvflare.fuel.utils.validation_utils import check_positive_int, check_positive_number
-from nvflare.job_config.script_runner import ScriptRunner
+from nvflare.job_config.script_runner import BaseScriptRunner, ScriptRunner
 from nvflare.recipe.spec import Recipe
 from nvflare.recipe.utils import merge_config_overrides, validate_aggregator_data_kind, validate_ckpt
 
@@ -329,7 +329,7 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         )
 
         task_pipe = None
-        if pipe_type == "file_pipe":
+        if pipe_type == "file_pipe" and launch_external_process:
             # Append {JOB_ID}/{SITE_NAME} so concurrent jobs and sites on the same
             # machine use isolated pipe directories (resolved at runtime by NVFlare).
             # Format matches the sag_cse_ccwf_pt reference template.
@@ -389,8 +389,12 @@ class SwarmLearningRecipe(BaseSwarmLearningRecipe):
         )
         server_config = SwarmServerConfig(**server_config_args)
 
+        # FilePipe remains an explicit legacy compatibility option. Ordinary Swarm jobs use
+        # ScriptRunner's ClientAPIExecutor path; only the custom Pipe case opts into the old
+        # BaseScriptRunner/LauncherExecutor stack.
+        runner_cls = BaseScriptRunner if task_pipe is not None else ScriptRunner
         client_config_args = {
-            "executor": ScriptRunner(
+            "executor": runner_cls(
                 script=train_script,
                 launch_external_process=launch_external_process,
                 command=command,

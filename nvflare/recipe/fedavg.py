@@ -46,10 +46,6 @@ class _FedAvgValidator(BaseModel):
     aggregator_data_kind: Optional[DataKind] = DataKind.WEIGHTS
     # Core parameters
     launch_external_process: bool
-    # New Client API execution mode (design: client_api_execution_modes.md). When set to
-    # "external_process", the client runs on ClientAPIExecutor + ExternalProcessBackend
-    # instead of the legacy launch_external_process stack.
-    execution_mode: Optional[str] = None
     command: str
     framework: FrameworkType
     server_expected_format: ExchangeFormat
@@ -112,7 +108,8 @@ class FedAvgRecipe(Recipe):
         aggregator_data_kind: Data kind for aggregation (DataKind.WEIGHTS or DataKind.WEIGHT_DIFF).
             When a custom aggregator declares expected_data_kind, the declaration must match.
             Kept for backward compatibility. Defaults to DataKind.WEIGHTS.
-        launch_external_process: Whether to launch the script in external process. Defaults to False.
+        launch_external_process: Whether ClientAPIExecutor runs the script in an external
+            process. False selects in_process; True selects external_process. Defaults to False.
         command: If launch_external_process=True, command to run script (prepended to script).
             Defaults to "python3 -u".
         framework: The framework type. One of:
@@ -190,7 +187,6 @@ class FedAvgRecipe(Recipe):
         aggregator_data_kind: Optional[DataKind] = DataKind.WEIGHTS,
         # Core parameters
         launch_external_process: bool = False,
-        execution_mode: Optional[str] = None,
         command: str = "python3 -u",
         framework: FrameworkType = FrameworkType.PYTORCH,
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
@@ -240,7 +236,6 @@ class FedAvgRecipe(Recipe):
             aggregator=aggregator,
             aggregator_data_kind=aggregator_data_kind,
             launch_external_process=launch_external_process,
-            execution_mode=execution_mode,
             command=command,
             framework=framework,
             server_expected_format=server_expected_format,
@@ -280,7 +275,6 @@ class FedAvgRecipe(Recipe):
         self.aggregator = v.aggregator
         self.aggregator_data_kind = v.aggregator_data_kind
         self.launch_external_process = v.launch_external_process
-        self.execution_mode = v.execution_mode
         self.command = v.command
         self.framework = v.framework
         self.server_expected_format = v.server_expected_format
@@ -443,24 +437,7 @@ class FedAvgRecipe(Recipe):
         launch_once,
         shutdown_timeout,
     ):
-        """Build the client ScriptRunner. When execution_mode is set, route to the new
-        ClientAPIExecutor stack (external_process/in_process) instead of the legacy
-        launch_external_process launcher; framework/server_expected_format declare the
-        trainer-side Client API adaptation, so an unchanged framework client runs on either path."""
-        if self.execution_mode is not None:
-            return ScriptRunner(
-                script=script,
-                script_args=script_args,
-                execution_mode=self.execution_mode,
-                command=command,
-                framework=framework,
-                server_expected_format=server_expected_format,
-                params_transfer_type=params_transfer_type,
-                launch_once=launch_once,
-                shutdown_timeout=shutdown_timeout,
-                memory_gc_rounds=self.client_memory_gc_rounds,
-                cuda_empty_cache=self.cuda_empty_cache,
-            )
+        """Build the ClientAPIExecutor-backed ScriptRunner for the selected process mode."""
         return ScriptRunner(
             script=script,
             script_args=script_args,

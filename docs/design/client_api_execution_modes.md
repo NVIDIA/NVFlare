@@ -56,17 +56,21 @@ The new and legacy paths coexist deliberately.
 
 ### New path
 
-`ScriptRunner(execution_mode=...)` constructs `ClientAPIExecutor`:
+`ScriptRunner` constructs `ClientAPIExecutor` by default. The existing
+`launch_external_process` flag selects the backend:
 
 ```python
-ScriptRunner(script="train.py", execution_mode="in_process")
+ScriptRunner(script="train.py")  # ClientAPIExecutor(in_process)
 
 ScriptRunner(
     script="train.py",
-    execution_mode="external_process",
+    launch_external_process=True,  # ClientAPIExecutor(external_process)
     command="python3 -u",
 )
 ```
+
+`execution_mode` remains available as an explicit mode override and for future modes such as
+attach.
 
 For `external_process`, the resulting path is:
 
@@ -82,12 +86,12 @@ It does not instantiate `LauncherExecutor`, `SubprocessLauncher`, `PipeHandler`,
 
 ### Legacy path retained during migration
 
-When `ScriptRunner.execution_mode` is not set, the existing
-`launch_external_process` behavior and its legacy components remain unchanged. This includes
-the existing Launcher/Executor/Pipe classes and their specialized integrations.
+`BaseScriptRunner` remains the explicit compatibility surface for jobs that inject legacy
+executors, launchers, or pipes. For example, Swarm's optional `FilePipe` configuration continues
+to use this path. `ScriptRunner` does not silently fall back to legacy components.
 
 The legacy stack must remain until the existing subprocess examples and integration jobs have
-been validated on `ClientAPIExecutor(execution_mode="external_process")`. Removing those
+been validated on `ClientAPIExecutor(external_process)`. Removing those
 classes is a separate follow-up after the compatibility matrix is green; it is not part of this
 architecture change.
 

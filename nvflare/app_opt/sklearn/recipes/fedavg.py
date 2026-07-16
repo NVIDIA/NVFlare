@@ -134,7 +134,6 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
         aggregator: Optional[Aggregator] = None,
         aggregator_data_kind: DataKind = DataKind.WEIGHTS,
         launch_external_process: bool = False,
-        execution_mode: Optional[str] = None,
         command: str = "python3 -u",
         per_site_config: Optional[dict[str, dict]] = None,
         key_metric: str = "accuracy",
@@ -159,7 +158,6 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
             aggregator=aggregator,
             aggregator_data_kind=aggregator_data_kind,
             launch_external_process=launch_external_process,
-            execution_mode=execution_mode,
             command=command,
             framework=FrameworkType.RAW,  # sklearn uses RAW framework
             server_expected_format=ExchangeFormat.RAW,  # sklearn uses RAW exchange format

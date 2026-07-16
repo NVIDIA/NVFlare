@@ -131,9 +131,10 @@ class BaseScriptRunner:
                 server representations in ``TASK_EXCHANGE``; the trainer-side Client API adapts
                 at receive/send without constructing ParamsConverters. ``params_transfer_type``
                 is applied by the Client API model state. The
-                legacy stack args (`launch_external_process`, `executor`, `task_pipe`,
-                `launcher`, `metric_relay`, `metric_pipe`) must not be set. Defaults to None
-                (legacy behavior, unchanged).
+                legacy stack args (`executor`, `task_pipe`, `launcher`, `metric_relay`,
+                `metric_pipe`, `pipe_connect_type`) must not be set. If
+                ``launch_external_process=True``, the mode must be ``external_process``.
+                Defaults to None (legacy BaseScriptRunner behavior).
         """
         self._script = script
         self._script_args = script_args
@@ -155,15 +156,20 @@ class BaseScriptRunner:
                     f"execution_mode '{execution_mode}' is not yet available via ScriptRunner: "
                     f"supported modes are {list(_available_modes)} until the corresponding backend lands"
                 )
+            if launch_external_process and execution_mode != ExecutionMode.EXTERNAL_PROCESS:
+                raise ValueError(
+                    "launch_external_process=True requires execution_mode='external_process', "
+                    f"but got execution_mode='{execution_mode}'"
+                )
             conflicts = {
-                "launch_external_process": launch_external_process or None,
                 "executor": executor,
                 "task_pipe": task_pipe,
                 "launcher": launcher,
                 "metric_relay": metric_relay,
                 "metric_pipe": metric_pipe,
+                "pipe_connect_type": pipe_connect_type,
             }
-            set_conflicts = [name for name, value in conflicts.items() if value]
+            set_conflicts = [name for name, value in conflicts.items() if value is not None]
             if set_conflicts:
                 raise ValueError(
                     f"execution_mode is mutually exclusive with the legacy executor stack args: {set_conflicts}"
@@ -404,7 +410,7 @@ class ScriptRunner(BaseScriptRunner):
         framework: FrameworkType = FrameworkType.PYTORCH,
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
-        pipe_connect_type: PipeConnectType = PipeConnectType.VIA_CP,
+        pipe_connect_type: Optional[PipeConnectType] = None,
         task_pipe: Optional[Pipe] = None,
         launch_once: bool = True,
         shutdown_timeout: float = 0.0,
@@ -414,8 +420,8 @@ class ScriptRunner(BaseScriptRunner):
     ):
         """ScriptRunner is used with FedJob API to run or launch a script.
 
-        in-process `launch_external_process=False` uses InProcessClientAPIExecutor (default).
-        ex-process `launch_external_process=True` uses ClientAPILauncherExecutor.
+        ``launch_external_process=False`` uses ``ClientAPIExecutor(in_process)`` (default).
+        ``launch_external_process=True`` uses ``ClientAPIExecutor(external_process)``.
 
         Args:
             script (str): Script to run. For in-process must be a python script path. For ex-process can be any script support by `command`.
@@ -430,18 +436,34 @@ class ScriptRunner(BaseScriptRunner):
             server_expected_format (str): What format to exchange the parameters between server and client.
             params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
                 DIFF means that only the difference is sent. Defaults to TransferType.FULL.
-            pipe_connect_type (str): how pipe peers are to be connected
+            pipe_connect_type (str): Legacy pipe connection configuration. It is not supported
+                by ScriptRunner's ClientAPIExecutor path; use BaseScriptRunner when an explicit
+                legacy Pipe/Launcher stack is required.
             task_pipe (Optional[Pipe]): Optional Pipe instance for task exchange between
-                ClientAPILauncherExecutor and the client API. Only used if
-                `launch_external_process` is True. Defaults to None (CellPipe is created).
+                ClientAPILauncherExecutor and the client API. It is not supported by
+                ScriptRunner's ClientAPIExecutor path; use BaseScriptRunner for legacy custom
+                pipes.
             launch_once (bool): Whether the external process will be launched only once at the beginning
                 or on each task. Only used if `launch_external_process` is True. Defaults to True.
             shutdown_timeout (float): If provided, will wait for this number of seconds before shutdown.
                 Only used if `launch_external_process` is True. Defaults to 0.0.
-            execution_mode (Optional[str]): Selects the new ClientAPIExecutor instead of the
-                legacy executor stack; "in_process" and "external_process" are available. See
-                BaseScriptRunner for the full contract. Defaults to None (legacy behavior).
+            execution_mode (Optional[str]): Explicit ClientAPIExecutor mode override.
+                ``in_process`` and ``external_process`` are available. When omitted, the mode is
+                derived from ``launch_external_process``. See BaseScriptRunner for the full
+                contract.
         """
+        legacy_args = [
+            name
+            for name, value in {"task_pipe": task_pipe, "pipe_connect_type": pipe_connect_type}.items()
+            if value is not None
+        ]
+        if legacy_args:
+            raise ValueError(
+                f"ScriptRunner uses ClientAPIExecutor and does not support legacy arguments {legacy_args}; "
+                "use BaseScriptRunner for an explicit legacy Pipe/Launcher stack"
+            )
+        if execution_mode is None:
+            execution_mode = ExecutionMode.EXTERNAL_PROCESS if launch_external_process else ExecutionMode.IN_PROCESS
         super().__init__(
             script=script,
             script_args=script_args,

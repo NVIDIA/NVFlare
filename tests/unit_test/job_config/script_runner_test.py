@@ -21,7 +21,7 @@ import pytest
 
 from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
 from nvflare.client.config import ExchangeFormat, TransferType
-from nvflare.job_config.script_runner import FrameworkType, PipeConnectType, ScriptRunner
+from nvflare.job_config.script_runner import BaseScriptRunner, FrameworkType, PipeConnectType, ScriptRunner
 
 
 class TestScriptRunner:
@@ -92,15 +92,13 @@ class TestScriptRunner:
         "connect_type",
         [connect_type.value for connect_type in PipeConnectType],
     )
-    def test_valid_pipe_connect_types_accepted(self, base_script_runner_params, connect_type):
-        """All user-facing PipeConnectType strings are accepted, including VIA_ROOT."""
-        runner = ScriptRunner(launch_external_process=True, pipe_connect_type=connect_type, **base_script_runner_params)
-
-        assert runner._pipe_connect_type == connect_type
+    def test_pipe_connect_types_require_legacy_base_runner(self, base_script_runner_params, connect_type):
+        with pytest.raises(ValueError, match="use BaseScriptRunner"):
+            ScriptRunner(launch_external_process=True, pipe_connect_type=connect_type, **base_script_runner_params)
 
     def test_invalid_pipe_connect_type_rejected(self, base_script_runner_params):
         with pytest.raises(ValueError, match="invalid pipe_connect_type"):
-            ScriptRunner(
+            BaseScriptRunner(
                 launch_external_process=True, pipe_connect_type="via_carrier_pigeon", **base_script_runner_params
             )
 
@@ -169,22 +167,13 @@ class TestScriptRunner:
                 with open(client_config_path, "r") as f:
                     client_config = json.load(f)
 
-                # Find the launcher component
-                launcher_component = None
-                for component in client_config["components"]:
-                    if component["id"] == "launcher":
-                        launcher_component = component
-                        break
-
-                assert launcher_component is not None
-                assert "args" in launcher_component
-
-                # Verify the launch parameters are in the exported config
-                launcher_args = launcher_component["args"]
-                assert "launch_once" in launcher_args
-                assert launcher_args["launch_once"] is False
-                assert "shutdown_timeout" in launcher_args
-                assert launcher_args["shutdown_timeout"] == 25.0
+                assert client_config["components"] == []
+                executor = client_config["executors"][0]["executor"]
+                assert executor["path"].endswith(".ClientAPIExecutor")
+                executor_args = executor["args"]
+                assert executor_args["execution_mode"] == "external_process"
+                assert executor_args["launch_once"] is False
+                assert executor_args["shutdown_timeout"] == 25.0
         finally:
             # Clean up the temporary script file
             if os.path.exists(script_path):
@@ -214,8 +203,6 @@ class TestScriptRunner:
 
     def test_custom_launcher_passed_through(self, mock_file_system, base_script_runner_params):
         """Test that providing a custom launcher through BaseScriptRunner works."""
-        from nvflare.job_config.script_runner import BaseScriptRunner
-
         # Create a custom launcher with specific settings
         custom_launcher = SubprocessLauncher(script="custom_script.sh", launch_once=True, shutdown_timeout=5.0)
 
@@ -462,12 +449,20 @@ class TestExecutionModeSelection:
         ]
 
     def test_conflicts_with_legacy_stack_args(self):
-        with pytest.raises(ValueError, match="mutually exclusive.*launch_external_process"):
+        with pytest.raises(ValueError, match="launch_external_process=True requires"):
             ScriptRunner(script="train.py", execution_mode="in_process", launch_external_process=True)
 
-    def test_default_none_preserves_legacy_behavior(self):
+    def test_default_uses_in_process_client_api_executor(self):
         runner = ScriptRunner(script="train.py", script_args="--epochs 10", framework=FrameworkType.NUMPY)
-        assert runner._execution_mode is None
+        assert runner._execution_mode == "in_process"
+
+    def test_launch_external_process_selects_external_backend(self):
+        runner = ScriptRunner(
+            script="train.py",
+            launch_external_process=True,
+            framework=FrameworkType.NUMPY,
+        )
+        assert runner._execution_mode == "external_process"
 
     def test_add_to_fed_job_wires_client_api_executor(self):
         from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
