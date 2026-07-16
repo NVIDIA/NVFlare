@@ -7,6 +7,14 @@ What's New in FLARE v2.9.0
 Compatibility and Migration Notes
 =================================
 
+- Patched PyTorch Lightning clients now report ``NUM_STEPS_CURRENT_ROUND`` as
+  the actual per-round change in ``trainer.global_step`` instead of
+  ``trainer.estimated_stepping_batches``. This corrects cumulative aggregation
+  over-weighting in later rounds when ``update_fit_loop=True``. Because
+  ``global_step`` counts completed optimizer steps across optimizers, a
+  multi-optimizer FedAvg client reports their combined step count unless it
+  supplies ``NUM_STEPS_CURRENT_ROUND`` explicitly; explicit client metadata is
+  still preserved.
 - CellPipe cell names now keep the runtime token and pipe mode in one
   explicitly marked, ``~``-delimited FQCN leaf segment
   (``site-1.cellpipe~plain~<job-id>~active``, or

@@ -172,6 +172,11 @@ class PTScaffoldHelper(object):
         return c_global_para, c_local_para
 
     def _validate_trainable_keys(self, model):
+        if self._round_trainable_keys is None:
+            raise RuntimeError(
+                "PTScaffoldHelper.get_params() must be called at the start of each training round before updating "
+                "the model or control terms."
+            )
         current_keys = self._trainable_keys(model)
         if current_keys != self._round_trainable_keys:
             added = sorted(current_keys - self._round_trainable_keys)

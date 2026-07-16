@@ -237,3 +237,12 @@ def test_model_update_rejects_trainability_change_during_round():
 
     with pytest.raises(RuntimeError, match="changing requires_grad during a training round"):
         helper.model_update(model, 0.1, c_global_para, c_local_para)
+
+
+def test_model_update_requires_get_params_at_round_start():
+    model = torch.nn.Linear(2, 1)
+    helper = PTScaffoldHelper()
+    helper.init(model)
+
+    with pytest.raises(RuntimeError, match=r"get_params\(\).*start of each training round"):
+        helper.model_update(model, 0.1, {}, {})
