@@ -21,14 +21,13 @@ Client-API-specific payload wrapper or progress event over Pipe. Task and result
 `ViaDownloader`, and the sender observes the real `DownloadService` transactions through
 call-scoped FOBS context. The task is materialized at the trainer before its Cell handler
 runs. A result reaches the CJ as inline values and/or lazy references. `ClientRunner`
-materializes it only when an applicable CJ task-result filter consumes it; otherwise the
-downstream server/workflow pulls directly from the trainer. The trainer waits on the real
+retains its existing behavior and does not introduce a filter-driven materialization step;
+when the references remain unchanged, the downstream server/workflow pulls directly from
+the trainer. The trainer waits on the real
 `DownloadService` terminal outcome, so CJ envelope acceptance cannot end the source lifetime. The
 last accepted receiver confirmation eagerly settles a completed transaction instead of waiting
 for the periodic monitor. A terminal serve to a confirmation-disabled or legacy receiver remains
-monitor-settled so producer completion cannot overtake delivery of that terminal reply. A result
-filter changes the declared first receiver to the CJ; after
-materialization/filtering, the normal CJ-to-server result send owns the next transaction. An
+monitor-settled so producer completion cannot overtake delivery of that terminal reply. An
 orderly SHUTDOWN uses a distinct task-download cancellation signal and therefore cannot cancel an
 accepted result publication. END_RUN also waits for the active result-publication barrier's
 truthful natural exit before ClientRunner tears down streaming and the CJ Cell. This barrier covers

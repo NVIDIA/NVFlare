@@ -30,8 +30,9 @@ nvflare/client/cell/defs.py — no PipeHandler, no CellPipe, no MetricRelay:
   dead trainer tree, while the latter detects a live tree whose Cell session is wedged.
 - **Payload plane**: task and result Shareables ride directly in the Cell requests. Cell's
   FOBS encoder uses ViaDownloader for large tensors, so the existing F3 transaction is the
-  only payload lifecycle. The CJ remains a pass-through hop unless an executor-side filter
-  needs concrete data; ClientRunner materializes lazy references at that boundary only.
+  only payload lifecycle. The CJ remains a pass-through hop, preserving ClientRunner's
+  existing behavior: configured filters receive the payload representation delivered by
+  the transport rather than triggering a new materialization policy here.
 - **Teardown**: orderly stop is SHUTDOWN, a bounded wait for natural exit
   (shutdown_timeout), then SIGTERM -> stop_grace_period -> SIGKILL to the process GROUP.
   An accepted result is the one exception: teardown requests SHUTDOWN but preserves the
@@ -1050,8 +1051,8 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                 # process-death/abort detection latency
                 task.result_ready.wait(wait_time)
 
-            # RESULT_READY may carry lazy references. ClientRunner materializes them only
-            # when an executor result filter is actually configured.
+            # RESULT_READY may carry lazy references. Return the Shareable unchanged so
+            # ClientRunner retains its existing filter and forwarding semantics.
             with self._task_lock:
                 result = task.result
             if not isinstance(result, Shareable):
@@ -1318,8 +1319,8 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
     def _handle_result_ready(self, request):
         """Accept a result Shareable already decoded by Cell.
 
-        PASS_THROUGH decoding can leave large values as lazy references here. ClientRunner
-        resolves them before invoking any configured TASK_RESULT filter.
+        PASS_THROUGH decoding can leave large values as lazy references here. They remain
+        part of the Shareable returned to ClientRunner, matching the legacy subprocess path.
 
         RESULT_READY is currently sent once. Attach-mode redelivery tolerance should be
         added only as a sender-retry + receiver-dedup pair.

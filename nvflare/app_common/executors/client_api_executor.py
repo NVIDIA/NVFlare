@@ -161,8 +161,7 @@ class ClientAPIExecutor(Executor):
                 is transported to the trainer in ``TASK_EXCHANGE``; the executor does not perform
                 conversion. ``RAW`` explicitly disables representation adaptation.
             server_expected_format (ExchangeFormat): Parameter representation expected by the
-                server and by any CJ-side content filters. The declaration is transported to the
-                trainer in ``TASK_EXCHANGE``.
+                server. The declaration is transported to the trainer in ``TASK_EXCHANGE``.
             params_transfer_type (TransferType): Whether training results contain full parameters
                 or a difference from the received parameters. This is applied by the trainer-side
                 model state and is independent of framework representation conversion.
@@ -321,15 +320,6 @@ class ClientAPIExecutor(Executor):
     def execution_mode(self) -> str:
         """Read-only view of the configured mode, for validation and diagnostics."""
         return self._execution_mode
-
-    def supports_payload_pass_through(self) -> bool:
-        """Whether task and result payloads can stay lazy while traversing this executor.
-
-        Only the Cell-based external-process backend has a distinct trainer receiver. The
-        in-process backend consumes payloads inside the CJ, and attach is not implemented.
-        """
-
-        return self._execution_mode == ExecutionMode.EXTERNAL_PROCESS
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:

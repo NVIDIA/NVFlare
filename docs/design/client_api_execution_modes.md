@@ -188,18 +188,15 @@ Task direction:
 Result direction:
 
 1. The trainer sends `RESULT_READY` with per-message Cell pass-through enabled and declares the
-   receiver identities supplied with the task. Normally those are the ultimate server/workflow
-   receivers. When a CJ result filter is configured, `ClientRunner` stamps the CJ Cell instead,
-   because that filter makes the CJ the first concrete downloader.
+   receiver identities supplied with the task. Those are the ultimate server/workflow receivers
+   when the workflow supplies them.
 2. Cell/FOBS invokes the CJ handler with inline values and/or lazy `ViaDownloader` references.
 3. The CJ validates and stores that result, then returns `RESULT_ACCEPTED`; this acknowledges the
    envelope, not completion of every downstream tensor download.
-4. `ClientRunner` materializes the result before an applicable CJ task-result filter. With no
-   filter, it forwards the references, so the server/workflow downloads directly from the
-   trainer; generic observation events may therefore see lazy refs.
-5. After a CJ filter, the ordinary CJ-to-server result send owns a new payload transaction. With
-   no filter, the original trainer transaction remains end-to-end.
-6. The trainer waits for the strict terminal outcome of every created `DownloadService`
+4. `ClientRunner` retains the legacy filter behavior: events and filters receive the result as
+   delivered by the transport. It adds no automatic materialization or receiver rewrite. When
+   lazy references remain unchanged, the server/workflow downloads directly from the trainer.
+5. The trainer waits for the strict terminal outcome of every created `DownloadService`
    transaction before releasing its result resources or allowing a one-task process to exit.
    The last accepted receiver confirmation settles a completed transaction immediately; the
    waiter does not depend on the periodic expiration monitor noticing it. A legacy or
@@ -207,11 +204,12 @@ Result direction:
    path remains monitor-settled: this preserves a post-reply interval before a one-shot
    producer can observe completion and tear down its Cell.
 
-The same rule applies in the task direction at the CJ entry point: the CJ decodes only the
-`(SERVER_COMMAND, GET_TASK)` route lazily for the external-process executor, then materializes
-only if an applicable CJ task-data filter or another CJ-local executor consumes the data. Other
-topics on `SERVER_COMMAND` keep ordinary decoding. The trainer Cell always materializes the task
-before its Client API handler runs.
+In the task direction at the CJ entry point, the CJ decodes only the
+`(SERVER_COMMAND, GET_TASK)` route lazily for the external-process executor. `ClientRunner`
+retains its legacy behavior and passes that representation through its existing event/filter/
+executor sequence without adding a materialization policy. Other topics on `SERVER_COMMAND`
+keep ordinary decoding. The trainer Cell always materializes the task before its Client API
+handler runs.
 
 ### Process and session lifecycle
 
@@ -298,11 +296,10 @@ hierarchy. `RAW` explicitly means no representation adaptation.
 trainer's task-exchange metadata, and is applied by the trainer-side Client API when preparing a
 result. A DIFF is computed in the trainer-native representation before outgoing conversion.
 
-CJ task-data/task-result filters remain supported. They see the server representation, matching
-legacy ordering, but conversion itself does not force CJ materialization. A payload materializes
-at the CJ only when an applicable CJ-side filter requires concrete content (or, for incoming task
-data, when the selected executor cannot preserve lazy references). With no applicable filter, the
-external-process path remains pass-through in both directions.
+CJ task-data/task-result filter ordering is unchanged. As in the legacy subprocess path, filters
+receive the payload representation delivered by the transport, which can contain lazy references
+when pass-through is active. This execution-mode change does not make filter presence imply CJ
+materialization and does not add an executor or filter capability contract.
 
 Relocating content transformations from CJ filters to explicit send/receive endpoints is deferred
 to a separate design and change. That work must first inventory the existing privacy, HE,
@@ -350,7 +347,6 @@ API similarity. Before deleting the legacy classes, validate at least:
 - large tensor streaming and tensor disk offload;
 - abort, timeout, trainer exit, CJ loss, and process-tree cleanup;
 - both `launch_once` policies;
-- configured task-data and task-result filters.
 
 Until this matrix runs successfully in the target integration environments, the legacy path is a
 supported fallback and must not be removed.

@@ -59,15 +59,6 @@ class Executor(FLComponent, ABC):
         """
         return JobTargetType.CLIENT
 
-    def supports_payload_pass_through(self) -> bool:
-        """Whether this executor can forward lazy task and result payload references.
-
-        Executors run in the client job process by default and therefore require concrete
-        payloads. An executor whose transport preserves lazy references in both directions
-        may override this capability so the client job avoids unnecessary materialization.
-        """
-        return False
-
     def add_to_fed_job(self, job, ctx, **kwargs):
         """This method is used by Job API.
 

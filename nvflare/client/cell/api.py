@@ -30,8 +30,8 @@ and the Client API keeps the original source alive until the ultimate receiver s
 - TASK_READY handler: the trainer Cell decodes/materializes the Shareable before invoking the
   handler, which validates and queues it before returning TASK_ACCEPTED.
 - receive(): block until a materialized task is queued and return its FLModel.
-- send(): send RESULT_READY with per-message pass-through enabled. The CJ accepts a lazy
-  envelope, materializing only if it has a result filter; otherwise the server downloads
+- send(): send RESULT_READY with per-message pass-through enabled. The CJ accepts the lazy
+  envelope and can forward its references so the declared downstream receiver downloads
   directly from this trainer. send() returns only after every created transfer reaches a
   successful terminal outcome.
 - log(): send a LOG control message the executor converts to a fed analytics event.
@@ -447,8 +447,8 @@ class CellClientAPI(APISpec):
             },
         )
         # These are the ultimate result receivers declared on the incoming task (if the
-        # workflow knows them). The CJ is only an intermediate hop: with no result filter
-        # it forwards the references and never counts as a DownloadService receiver.
+        # workflow knows them). Merely accepting the lazy envelope does not make the CJ a
+        # DownloadService receiver; it remains an intermediate forwarding hop.
         result_receiver_ids = self._result_receiver_ids
 
         fobs_ctx_props = {
