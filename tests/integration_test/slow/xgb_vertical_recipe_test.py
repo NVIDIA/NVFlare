@@ -42,7 +42,7 @@ import xgboost as xgb
 
 from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
 from nvflare.app_opt.xgboost.recipes import XGBVerticalRecipe
-from nvflare.recipe import SimEnv
+from nvflare.recipe import SimEnv, set_per_site_config
 
 
 class MockVerticalDataLoader(XGBDataLoader):
@@ -114,8 +114,8 @@ class TestXGBVerticalRecipe:
                     "objective": "binary:logistic",
                     "eval_metric": "auc",
                 },
-                per_site_config=per_site_config,
             )
+            set_per_site_config(recipe, per_site_config)
 
             # Run and verify completion
             run = recipe.execute(env)
@@ -130,8 +130,8 @@ class TestXGBVerticalRecipe:
             min_clients=2,
             num_rounds=1,
             label_owner="site-1",  # Valid
-            per_site_config=_make_vertical_per_site_config(),
         )
+        set_per_site_config(recipe, _make_vertical_per_site_config())
         assert recipe.label_owner == "site-1"
         assert recipe.client_ranks["site-1"] == 0
 
@@ -142,53 +142,52 @@ class TestXGBVerticalRecipe:
                 min_clients=2,
                 num_rounds=1,
                 label_owner="client1",  # Invalid format
-                per_site_config=_make_vertical_per_site_config(),
             )
 
         # Label owner must be rank 0 for vertical XGBoost.
+        recipe = XGBVerticalRecipe(
+            name="test_invalid_rank",
+            min_clients=2,
+            num_rounds=1,
+            label_owner="site-2",
+            client_ranks={"site-1": 0, "site-2": 1},
+        )
         with pytest.raises(ValueError, match="label_owner must be assigned rank 0"):
-            XGBVerticalRecipe(
-                name="test_invalid_rank",
-                min_clients=2,
-                num_rounds=1,
-                label_owner="site-2",
-                client_ranks={"site-1": 0, "site-2": 1},
-                per_site_config=_make_vertical_per_site_config(label_owner="site-2"),
-            )
+            set_per_site_config(recipe, _make_vertical_per_site_config(label_owner="site-2"))
 
     def test_client_ranks_validation(self):
         """Test that client_ranks validation catches malformed rank mappings."""
         per_site_config = _make_vertical_per_site_config(num_clients=3)
 
+        recipe = XGBVerticalRecipe(
+            name="test_non_integer_ranks",
+            min_clients=3,
+            num_rounds=1,
+            label_owner="site-1",
+            client_ranks={"site-1": 0, "site-2": "1", "site-3": 2},
+        )
         with pytest.raises(ValueError, match="client_ranks values must be integers"):
-            XGBVerticalRecipe(
-                name="test_non_integer_ranks",
-                min_clients=3,
-                num_rounds=1,
-                label_owner="site-1",
-                client_ranks={"site-1": 0, "site-2": "1", "site-3": 2},
-                per_site_config=per_site_config,
-            )
+            set_per_site_config(recipe, per_site_config)
 
+        recipe = XGBVerticalRecipe(
+            name="test_duplicate_ranks",
+            min_clients=3,
+            num_rounds=1,
+            label_owner="site-1",
+            client_ranks={"site-1": 0, "site-2": 1, "site-3": 1},
+        )
         with pytest.raises(ValueError, match="client_ranks values must be unique and consecutive"):
-            XGBVerticalRecipe(
-                name="test_duplicate_ranks",
-                min_clients=3,
-                num_rounds=1,
-                label_owner="site-1",
-                client_ranks={"site-1": 0, "site-2": 1, "site-3": 1},
-                per_site_config=per_site_config,
-            )
+            set_per_site_config(recipe, per_site_config)
 
+        recipe = XGBVerticalRecipe(
+            name="test_non_consecutive_ranks",
+            min_clients=3,
+            num_rounds=1,
+            label_owner="site-1",
+            client_ranks={"site-1": 0, "site-2": 1, "site-3": 3},
+        )
         with pytest.raises(ValueError, match="client_ranks values must be unique and consecutive"):
-            XGBVerticalRecipe(
-                name="test_non_consecutive_ranks",
-                min_clients=3,
-                num_rounds=1,
-                label_owner="site-1",
-                client_ranks={"site-1": 0, "site-2": 1, "site-3": 3},
-                per_site_config=per_site_config,
-            )
+            set_per_site_config(recipe, per_site_config)
 
     def test_custom_xgb_params(self):
         """Test that custom XGBoost parameters are accepted."""
@@ -207,8 +206,8 @@ class TestXGBVerticalRecipe:
             num_rounds=1,
             label_owner="site-1",
             xgb_params=custom_params,
-            per_site_config=_make_vertical_per_site_config(),
         )
+        set_per_site_config(recipe, _make_vertical_per_site_config())
 
         # Verify params are stored
         assert recipe.xgb_params == custom_params
@@ -227,8 +226,8 @@ class TestXGBVerticalRecipe:
                 min_clients=num_clients,
                 num_rounds=1,
                 label_owner="site-2",  # site-2 has labels
-                per_site_config=per_site_config,
             )
+            set_per_site_config(recipe, per_site_config)
             assert recipe.client_ranks["site-2"] == 0
 
             run = recipe.execute(env)
@@ -243,8 +242,8 @@ class TestXGBVerticalRecipe:
             num_rounds=1,
             label_owner="site-1",
             in_process=True,  # Default
-            per_site_config=_make_vertical_per_site_config(),
         )
+        set_per_site_config(recipe, _make_vertical_per_site_config())
         assert recipe.in_process is True
 
         recipe2 = XGBVerticalRecipe(
@@ -253,8 +252,8 @@ class TestXGBVerticalRecipe:
             num_rounds=1,
             label_owner="site-1",
             in_process=False,
-            per_site_config=_make_vertical_per_site_config(),
         )
+        set_per_site_config(recipe2, _make_vertical_per_site_config())
         assert recipe2.in_process is False
 
     def test_model_file_name_parameter(self):
@@ -266,6 +265,6 @@ class TestXGBVerticalRecipe:
             num_rounds=1,
             label_owner="site-1",
             model_file_name=custom_name,
-            per_site_config=_make_vertical_per_site_config(),
         )
+        set_per_site_config(recipe, _make_vertical_per_site_config())
         assert recipe.model_file_name == custom_name

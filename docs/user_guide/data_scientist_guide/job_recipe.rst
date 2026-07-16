@@ -175,9 +175,9 @@ Per-Site Configuration
 ----------------------
 
 Some recipes accept site-keyed configuration so that each site can use different
-arguments, scripts, data loaders, or validators. For recipes that support this
-helper, use ``set_per_site_config`` to attach the site-keyed input after
-creating the recipe:
+arguments, scripts, or data loaders. Call ``set_per_site_config`` immediately
+after constructing the recipe, before adding client configuration, files,
+filters, components, or tracking:
 
 .. code-block:: python
 
@@ -193,35 +193,34 @@ creating the recipe:
 
    env = SimEnv(clients=recipe.configured_sites())
 
-``configured_sites()`` returns the top-level site names from
-``set_per_site_config`` when helper-provided configuration exists. Otherwise, for
-backward compatibility, it returns site names from a recipe's constructor
-``per_site_config`` when available. It does not infer sites from recipe metadata
-such as resource specs, launcher specs, or mandatory clients. It also does not
-mean those sites are currently connected, validate production enrollment, or
-replace the execution environment.
+The helper validates and stores the mapping; it does not build and then replace
+client apps. The recipe materializes its client topology once, before the first
+client-targeted customization or before export or execution. Built-in FedAvg
+recipes and ``FedEvalRecipe`` create one app per configured site directly. If
+per-site configuration is omitted, they create the default ``@ALL`` app at that
+same preparation point. XGBoost bagging, horizontal, and vertical recipes add
+the required data loader and executor components to each configured site and
+must be configured before client customization, export, or execution. The
+mapping must be non-empty and define at least ``min_clients`` sites. Reserved
+targets such as ``server`` and ``@ALL`` are not site names.
 
-``set_per_site_config`` stores the mapping and calls the recipe's per-site
-configuration hook. It does not by itself create client targets or rebuild an
-already generated job. A recipe must implement the hook for helper-provided
-per-site fields to affect generated app configuration, command-line arguments,
-data loaders, validators, or other recipe behavior.
+``configured_sites()`` returns the configured top-level site names. It does not
+infer sites from recipe metadata, indicate which clients are connected, validate
+production enrollment, or replace the execution environment.
 
 .. important::
 
-   The second argument to ``set_per_site_config`` is recipe-specific. The helper
-   validates only that it is a dictionary whose top-level keys are site names and
-   whose values are dictionaries. Users must ensure each per-site dictionary uses
-   fields that the selected recipe understands and can convert into generated app
-   configuration, command-line arguments, data loaders, validators, or other
-   recipe-specific settings.
+   Each site's dictionary is recipe-specific. FedAvg recipes support
+   ``train_script``, ``train_args``, ``launch_external_process``, ``command``,
+   ``framework``, ``server_expected_format``, ``params_transfer_type``,
+   ``launch_once``, and ``shutdown_timeout``. ``FedEvalRecipe`` supports the
+   corresponding ``eval_script`` and ``eval_args`` fields plus its launch,
+   command, and exchange-format overrides. XGBoost recipes require a
+   ``data_loader`` for every site; bagging also accepts ``lr_scale``.
 
-   For example, FedAvg's current per-site support is through the legacy
-   ``FedAvgRecipe(per_site_config=...)`` constructor argument. That constructor
-   path understands per-site values such as ``train_args``, ``train_script``,
-   and ``command``. It does not automatically interpret arbitrary keys such as
-   ``data_path`` or ``batch_size``. For FedAvg, pass those values through
-   ``train_args`` unless your recipe explicitly documents another shape.
+   The older ``per_site_config=...`` constructor argument remains temporarily
+   available for compatibility, emits ``FutureWarning``, and delegates to this
+   helper behavior. New code should use ``set_per_site_config``.
 
 No Secrets In Recipe Parameters
 -------------------------------

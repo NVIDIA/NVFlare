@@ -253,8 +253,8 @@ class TestRecipeConfigMethods:
             min_clients=2,
             train_script=temp_script,
             model={"class_path": "model.DummyModel", "args": {}},
-            per_site_config={"site-1": {}, "site-2": {}},
         )
+        set_per_site_config(recipe, {"site-1": {}, "site-2": {}})
 
         recipe.add_client_file(temp_script)
 
@@ -276,8 +276,8 @@ class TestRecipeConfigMethods:
             min_clients=2,
             train_script=temp_script,
             model={"class_path": "model.DummyModel", "args": {}},
-            per_site_config={"site-1": {}, "site-2": {}, "site-3": {}},
         )
+        set_per_site_config(recipe, {"site-1": {}, "site-2": {}, "site-3": {}})
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
             f.write("targeted file for site-2 only")
@@ -749,7 +749,34 @@ class TestRecipePerSiteConfigHelper:
         assert recipe.configured_sites() == ["site-1", "site-2"]
         assert recipe.applied_config == config
         assert recipe.applied_config is not config
-        assert recipe.applied_config["site-1"] is config["site-1"]
+        assert recipe.applied_config["site-1"] is not config["site-1"]
+
+    def test_set_per_site_config_snapshots_site_dicts_but_retains_value_objects(self):
+        from nvflare.recipe.spec import Recipe
+
+        class RecordingRecipe(Recipe):
+            def __init__(self):
+                super().__init__(FedJob(name="test_per_site_config_snapshot", min_clients=1))
+                self.per_site_config = None
+
+            def _apply_per_site_config(self, config):
+                self.per_site_config = config
+
+        data_loader = object()
+        config = {
+            "site-1": {"train_args": "--epochs 1", "data_loader": data_loader},
+            "site-2": {},
+        }
+        recipe = RecordingRecipe()
+
+        set_per_site_config(recipe, config)
+        config["site-1"]["train_args"] = "--epochs 99"
+        config["site-1"]["new_value"] = True
+        config["site-3"] = {}
+
+        assert recipe.configured_sites() == ["site-1", "site-2"]
+        assert recipe.per_site_config["site-1"] == {"train_args": "--epochs 1", "data_loader": data_loader}
+        assert recipe.per_site_config["site-1"]["data_loader"] is data_loader
 
     def test_set_per_site_config_hook_mutation_does_not_change_configured_sites(self):
         from nvflare.recipe.spec import Recipe
@@ -783,6 +810,35 @@ class TestRecipePerSiteConfigHelper:
         assert recipe.configured_sites() == ["site-1", "site-2"]
         assert recipe._job._deploy_map == {}
 
+    def test_client_apps_are_prepared_once_before_client_customization(self):
+        from nvflare.recipe.spec import Recipe
+
+        class PreparingRecipe(Recipe):
+            def __init__(self):
+                super().__init__(FedJob(name="test_prepare_per_site_apps", min_clients=1))
+                self.prepare_calls = 0
+
+            def _prepare_client_apps(self):
+                self.prepare_calls += 1
+                for site_name in self.configured_sites():
+                    self._job.to({"executor_standin": True}, site_name)
+
+        recipe = PreparingRecipe()
+        set_per_site_config(recipe, {"site-1": {}, "site-2": {}})
+
+        assert recipe.prepare_calls == 0
+        assert recipe._job.clients == []
+
+        recipe.add_client_config({"timeout": 600})
+        recipe.add_client_config({"streaming_chunk_size": 1024})
+
+        assert recipe.prepare_calls == 1
+        assert recipe._job.clients == ["site-1", "site-2"]
+        for site_name in recipe.configured_sites():
+            params = recipe._job._deploy_map[site_name].app_config.additional_params
+            assert params["timeout"] == 600
+            assert params["streaming_chunk_size"] == 1024
+
     def test_configured_sites_prefers_helper_config_over_legacy_constructor_config(self):
         from nvflare.recipe.spec import Recipe
 
@@ -798,7 +854,7 @@ class TestRecipePerSiteConfigHelper:
 
         assert recipe.configured_sites() == ["helper-1"]
 
-    def test_empty_helper_config_still_overrides_legacy_constructor_config(self):
+    def test_empty_helper_config_is_rejected_without_overriding_legacy_config(self):
         from nvflare.recipe.spec import Recipe
 
         class LegacyRecipe(Recipe):
@@ -808,9 +864,46 @@ class TestRecipePerSiteConfigHelper:
 
         recipe = LegacyRecipe()
 
-        set_per_site_config(recipe, {})
+        with pytest.raises(ValueError, match="must not be empty"):
+            set_per_site_config(recipe, {})
+
+        assert recipe.configured_sites() == ["legacy-1"]
+
+    def test_failed_recipe_hook_does_not_record_helper_config(self):
+        from nvflare.recipe.spec import Recipe
+
+        class FailingRecipe(Recipe):
+            def __init__(self):
+                super().__init__(FedJob(name="test_failed_per_site_hook", min_clients=1))
+
+            def _apply_per_site_config(self, config):
+                raise ValueError("invalid recipe-specific value")
+
+        recipe = FailingRecipe()
+
+        with pytest.raises(ValueError, match="invalid recipe-specific value"):
+            set_per_site_config(recipe, {"site-1": {}})
 
         assert recipe.configured_sites() == []
+
+    def test_per_site_config_can_only_be_applied_once(self):
+        from nvflare.recipe.spec import Recipe
+
+        recipe = Recipe(FedJob(name="test_repeated_per_site_config", min_clients=1))
+        set_per_site_config(recipe, {"site-1": {}})
+
+        with pytest.raises(RuntimeError, match="already been applied"):
+            set_per_site_config(recipe, {"site-2": {}})
+
+    def test_per_site_config_must_precede_client_customization(self):
+        from nvflare.recipe.spec import Recipe
+
+        recipe = Recipe(FedJob(name="test_late_per_site_config", min_clients=1))
+        recipe._job.to_clients({"executor_standin": True})
+        recipe.add_client_config({"timeout": 600})
+
+        with pytest.raises(RuntimeError, match="immediately after recipe construction"):
+            set_per_site_config(recipe, {"site-1": {}})
 
     def test_configured_sites_does_not_infer_from_job_meta(self):
         from nvflare.recipe.spec import Recipe
@@ -850,6 +943,23 @@ class TestRecipePerSiteConfigHelper:
 
         with pytest.raises(TypeError, match=match):
             set_per_site_config(BasicRecipe(), config)
+
+    @pytest.mark.parametrize(
+        "config, exception, match",
+        [
+            ("not-a-dict", TypeError, "per-site config must be a dict"),
+            ({}, ValueError, "per-site config must not be empty"),
+            ({1: {}}, TypeError, "per-site config key must be a str"),
+            ({"site-1": "not-a-dict"}, TypeError, "per-site config for site 'site-1' must be a dict"),
+        ],
+    )
+    def test_recipe_method_validates_generic_shape(self, config, exception, match):
+        from nvflare.recipe.spec import Recipe
+
+        recipe = Recipe(FedJob(name="test_direct_per_site_validation", min_clients=1))
+
+        with pytest.raises(exception, match=match):
+            recipe.set_per_site_config(config)
 
 
 class TestClientPlacementHardening:

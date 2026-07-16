@@ -24,7 +24,7 @@ import sys
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.client.config import ExchangeFormat, TransferType
-from nvflare.recipe import SimEnv
+from nvflare.recipe import SimEnv, set_per_site_config
 
 DEFAULT_MODEL_NAME_OR_PATH = "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16"
 DEFAULT_INITIAL_MODEL_CKPT = "./models/nemotron3_nano_4b_sft_init.pt"
@@ -201,7 +201,6 @@ def create_recipe(args):
         num_rounds=args.num_rounds,
         model_persistor=model_persistor,
         train_script=_client_script_resource("automodel_sft_client.py"),
-        per_site_config=per_site_config,
         launch_external_process=True,
         command=client_command,
         server_expected_format=ExchangeFormat.PYTORCH,
@@ -211,6 +210,7 @@ def create_recipe(args):
         client_memory_gc_rounds=1,
         cuda_empty_cache=True,
     )
+    set_per_site_config(recipe, per_site_config)
     recipe.add_client_file(_client_script_resource("automodel_sft_dataset.py"), clients=client_names)
     recipe.add_client_file(_client_script_resource("automodel_full_model_loader.py"), clients=client_names)
     recipe.add_client_file(_client_script_resource("model_checkpoint.py"), clients=client_names)

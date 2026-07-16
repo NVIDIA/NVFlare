@@ -21,7 +21,7 @@ import argparse
 from model import Net
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.recipe import SimEnv, add_experiment_tracking
+from nvflare.recipe import SimEnv, add_experiment_tracking, set_per_site_config
 
 
 def define_parser():
@@ -52,7 +52,10 @@ def main():
         train_script=train_script,
         train_args=train_args,
         launch_external_process=True,  # DDP modes require external process launch
-        per_site_config={
+    )
+    set_per_site_config(
+        recipe,
+        {
             "site-1": {
                 "command": "python3 -m torch.distributed.run --nnodes=1 --nproc_per_node=2 --master_port=7777",
             },

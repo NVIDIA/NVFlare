@@ -99,6 +99,8 @@ Key features:
 
 **Recipe-Based Approach:**
 ```python
+from nvflare.recipe import set_per_site_config
+
 # Create recipe with FedAvgRecipe
 # Model can be class instance or dict config
 # For pre-trained weights: initial_ckpt="/server/path/to/pretrained.pt"
@@ -110,7 +112,6 @@ recipe = FedAvgRecipe(
     train_script="client.py",
     server_expected_format=server_expected_format,  # "pytorch" or "numpy"
     launch_external_process=True,
-    per_site_config=per_site_config,  # Site-specific configurations
     key_metric="neg_eval_loss",
 )
 ```
@@ -133,6 +134,7 @@ per_site_config = {
                    "--nproc_per_node=2 --master_port=8888"
     }
 }
+set_per_site_config(recipe, per_site_config)
 ```
 
 **Optional Features:**
