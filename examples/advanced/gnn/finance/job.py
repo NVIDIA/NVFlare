@@ -17,7 +17,7 @@ import argparse
 from model import SAGE
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.recipe import ProdEnv, SimEnv
+from nvflare.recipe import ProdEnv, SimEnv, set_per_site_config
 
 
 def main():
@@ -124,9 +124,9 @@ def main():
         min_clients=args.num_clients,
         num_rounds=args.num_rounds,
         train_script="client.py",
-        per_site_config=per_site_config,
         key_metric="validation_auc",
     )
+    set_per_site_config(recipe, per_site_config)
 
     # Export job
     print(f"Exporting job to {args.job_dir}")

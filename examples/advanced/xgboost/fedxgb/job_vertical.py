@@ -19,7 +19,7 @@ from vertical_data_loader import VerticalDataLoader
 
 from nvflare.app_common.psi.recipes.dh_psi import DhPSIRecipe
 from nvflare.app_opt.xgboost.recipes import XGBVerticalRecipe
-from nvflare.recipe import SimEnv
+from nvflare.recipe import SimEnv, set_per_site_config
 
 
 def define_parser():
@@ -126,8 +126,8 @@ def run_training_job(args):
         label_owner=args.label_owner,
         early_stopping_rounds=args.early_stopping_rounds,
         xgb_params=xgb_params,
-        per_site_config=per_site_config,
     )
+    set_per_site_config(recipe, per_site_config)
 
     # Run training with explicit client list (required when using per_site_config)
     clients = list(per_site_config.keys())

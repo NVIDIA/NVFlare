@@ -20,7 +20,7 @@ from model import Cifar10Net
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.utils.format_check import name_check
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.recipe import ProdEnv, set_recipe_meta
+from nvflare.recipe import ProdEnv, set_per_site_config, set_recipe_meta
 
 
 def non_negative_int(value: str) -> int:
@@ -185,13 +185,16 @@ def create_recipe(args: argparse.Namespace) -> FedAvgRecipe:
         min_clients=len(client_sites),
         num_rounds=args.num_rounds,
         train_script="client.py",
-        # Explicit per-site entries target these two clients. Recipe metadata
-        # describes resources and launchers; it does not select deploy targets.
-        per_site_config={
+        key_metric="accuracy",
+    )
+    # Explicit per-site entries target these two clients. Recipe metadata
+    # describes resources and launchers; it does not select deploy targets.
+    set_per_site_config(
+        recipe,
+        {
             args.site_1_name: {"train_args": client_train_args(args, site_index=0, gpus=args.site_1_gpus)},
             args.site_2_name: {"train_args": client_train_args(args, site_index=1, gpus=args.site_2_gpus)},
         },
-        key_metric="accuracy",
     )
 
     # The client training script and the server-side PyTorch persistor both

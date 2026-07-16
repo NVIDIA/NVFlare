@@ -318,6 +318,16 @@ class TestRecipePackageExports:
 
         assert callable(set_per_site_config)
 
+    def test_set_per_site_config_delegates_validation_to_recipe(self):
+        from nvflare.recipe import set_per_site_config
+
+        recipe = MagicMock(spec=Recipe)
+        config = {"site-1": {}}
+
+        set_per_site_config(recipe, config)
+
+        recipe.set_per_site_config.assert_called_once_with(config)
+
     def test_set_recipe_meta_importable_from_recipe(self):
         """set_recipe_meta must be importable from the top-level nvflare.recipe package."""
         from nvflare.recipe import set_recipe_meta
