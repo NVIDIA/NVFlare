@@ -118,24 +118,25 @@ def export_recipe_from_job_py(recipe_dir: str, output_dir: str, recipe_args: Opt
     # Change to recipe directory so relative imports work
     os.chdir(recipe_abs_path)
 
-    # Storage for captured recipe
-    captured_recipe = {"recipe": None}
+    # Storage for the captured execute call. The public Recipe.export API later
+    # applies these arguments with the same semantics as Recipe.execute.
+    captured_execute = {
+        "recipe": None,
+        "env": None,
+        "server_exec_params": None,
+        "client_exec_params": None,
+    }
 
     def patched_execute(self, env, server_exec_params=None, client_exec_params=None):
         """Capture the recipe instead of executing.
 
-        Applies server/client exec params exactly as the real Recipe.execute does
-        (including per-site topology preservation via _add_to_client_apps) so the
-        exported job matches what a real run would produce.
+        The original arguments are forwarded to Recipe.export after job.py has
+        finished loading so the exported job matches a real execution.
         """
-        if server_exec_params:
-            self.job.to_server(server_exec_params)
-        if client_exec_params:
-            self._add_to_client_apps(client_exec_params)
-        # Match real Recipe.execute behavior so export matches runtime configuration.
-        self.process_env(env)
-
-        captured_recipe["recipe"] = self
+        captured_execute["recipe"] = self
+        captured_execute["env"] = env
+        captured_execute["server_exec_params"] = server_exec_params
+        captured_execute["client_exec_params"] = client_exec_params
 
         class MockRun:
             """Mimics the real Run interface so post-execute code in job.py doesn't break."""
@@ -173,13 +174,18 @@ def export_recipe_from_job_py(recipe_dir: str, output_dir: str, recipe_args: Opt
                 if e.code not in (None, 0):
                     raise
 
-        recipe = captured_recipe["recipe"]
+        recipe = captured_execute["recipe"]
         if recipe is None:
             raise RuntimeError("Failed to capture recipe - job.py did not call recipe.execute()")
 
         # Export the recipe to job folder
         os.makedirs(output_abs_path, exist_ok=True)
-        recipe.export(job_dir=output_abs_path)
+        recipe.export(
+            job_dir=output_abs_path,
+            server_exec_params=captured_execute["server_exec_params"],
+            client_exec_params=captured_execute["client_exec_params"],
+            env=captured_execute["env"],
+        )
         print(f"Exported recipe to: {output_abs_path}")
 
         # Copy the src/ folder if it exists (for model imports).
@@ -189,7 +195,7 @@ def export_recipe_from_job_py(recipe_dir: str, output_dir: str, recipe_args: Opt
         if src_dir is not None:
             # Copy CONTENTS of src/ directly into app/custom/ (not as a subdirectory)
             # This way imports like "from data.xxx" work with just /local/custom in PYTHONPATH
-            job_name = recipe.job.name
+            job_name = recipe.name
             job_custom_dir = os.path.join(output_abs_path, job_name, "app", "custom")
             if os.path.exists(job_custom_dir):
                 for item in os.listdir(src_dir):

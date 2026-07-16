@@ -23,6 +23,7 @@ from nvflare.app_opt.flower.recipe import FlowerRecipe
 from nvflare.client.api import ClientAPIType
 from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
 from nvflare.fuel.utils.secret_utils import PotentialSecretWarning, UnsupportedSecretRefWarning
+from nvflare.job_config.api import FedJob
 from nvflare.recipe import secret_ref
 
 
@@ -47,25 +48,25 @@ def test_flower_recipe_rejects_missing_flwr_package():
 
 @pytest.mark.parametrize("flwr_version", ["1.26.0", "1.26.1", "1.27.5"])
 def test_flower_recipe_accepts_compatible_flwr_version(flwr_version):
-    fake_job = object()
+    fake_job = FedJob(name="test_flower", min_clients=1)
     with patch("nvflare.app_opt.flower.recipe.get_package_version", return_value=flwr_version):
         with patch("nvflare.app_opt.flower.recipe._create_flower_job", return_value=fake_job) as mock_flower_job:
             recipe = FlowerRecipe(flower_content="mock_flower_content")
 
-    assert recipe.job is fake_job
+    assert recipe._job is fake_job
     kwargs = mock_flower_job.call_args.kwargs
     assert kwargs["extra_env"] == {CLIENT_API_TYPE_KEY: ClientAPIType.EX_PROCESS_API.value}
 
 
 def test_flower_recipe_forwards_run_config():
-    fake_job = object()
+    fake_job = FedJob(name="test_flower", min_clients=1)
     run_config = {"learning-rate": 0.01, "momentum": 0.9}
 
     with patch("nvflare.app_opt.flower.recipe.get_package_version", return_value="1.26.0"):
         with patch("nvflare.app_opt.flower.recipe._create_flower_job", return_value=fake_job) as mock_flower_job:
             recipe = FlowerRecipe(flower_content="mock_flower_content", run_config=run_config)
 
-    assert recipe.job is fake_job
+    assert recipe._job is fake_job
     kwargs = mock_flower_job.call_args.kwargs
     assert kwargs["run_config"] == run_config
 
@@ -78,7 +79,7 @@ def test_flower_recipe_forwards_run_config():
     ],
 )
 def test_flower_recipe_warns_on_secret_parameters(parameter, value):
-    fake_job = object()
+    fake_job = FedJob(name="test_flower", min_clients=1)
 
     with patch("nvflare.app_opt.flower.recipe.get_package_version", return_value="1.26.0"):
         with patch("nvflare.app_opt.flower.recipe._create_flower_job", return_value=fake_job):
@@ -88,7 +89,7 @@ def test_flower_recipe_warns_on_secret_parameters(parameter, value):
 
 @pytest.mark.parametrize("parameter", ["extra_env", "run_config"])
 def test_flower_recipe_warns_on_unsupported_secret_refs(parameter):
-    fake_job = object()
+    fake_job = FedJob(name="test_flower", min_clients=1)
     value = {"api_token": secret_ref("API_TOKEN")}
 
     with patch("nvflare.app_opt.flower.recipe.get_package_version", return_value="1.26.0"):
@@ -99,14 +100,14 @@ def test_flower_recipe_warns_on_unsupported_secret_refs(parameter):
 
 @pytest.mark.parametrize("flwr_version", ["1.26.0", "1.26.1", "1.27.5"])
 def test_flower_recipe_merges_extra_env(flwr_version):
-    fake_job = object()
+    fake_job = FedJob(name="test_flower", min_clients=1)
     user_env = {"MY_VAR": "123"}
 
     with patch("nvflare.app_opt.flower.recipe.get_package_version", return_value=flwr_version):
         with patch("nvflare.app_opt.flower.recipe._create_flower_job", return_value=fake_job) as mock_flower_job:
             recipe = FlowerRecipe(flower_content="mock_flower_content", extra_env=user_env)
 
-    assert recipe.job is fake_job
+    assert recipe._job is fake_job
     kwargs = mock_flower_job.call_args.kwargs
     assert kwargs["extra_env"]["MY_VAR"] == "123"
     assert kwargs["extra_env"][CLIENT_API_TYPE_KEY] == ClientAPIType.EX_PROCESS_API.value
@@ -131,12 +132,12 @@ def test_flower_recipe_rejects_extra_env_with_wrong_client_api_type(flwr_version
 
 @pytest.mark.parametrize("flwr_version", ["1.26.0", "1.26.1", "1.27.5"])
 def test_flower_recipe_with_predeployed_path(flwr_version):
-    fake_job = object()
+    fake_job = FedJob(name="test_flower", min_clients=1)
     with patch("nvflare.app_opt.flower.recipe.get_package_version", return_value=flwr_version):
         with patch("nvflare.app_opt.flower.recipe._create_flower_job", return_value=fake_job) as mock_flower_job:
             recipe = FlowerRecipe(flower_app_path="/opt/flower_apps/my_app")
 
-    assert recipe.job is fake_job
+    assert recipe._job is fake_job
     kwargs = mock_flower_job.call_args.kwargs
     assert kwargs["flower_app_path"] == "/opt/flower_apps/my_app"
     assert kwargs["flower_content"] is None

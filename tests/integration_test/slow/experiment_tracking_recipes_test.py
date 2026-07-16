@@ -87,9 +87,9 @@ class TestExperimentTrackingRecipes:
 
     def _add_model_to_apps(self, recipe, model_path=None):
         model_path = model_path or self.model_path
-        recipe.job.add_file_to_server(model_path)
+        recipe._job.add_file_to_server(model_path)
         for site_name in ("site-1", "site-2"):
-            recipe.job.add_file_to(model_path, site_name)
+            recipe._job.add_file_to(model_path, site_name)
 
     def _assert_exported_client_configs_have_executors(self, recipe, export_root: str):
         recipe.export(export_root)
