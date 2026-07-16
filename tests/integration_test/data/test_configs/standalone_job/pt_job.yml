@@ -1,53 +1,57 @@
+# PyTorch hello-world tests exported directly by the current recipe entrypoint.
+
 n_servers: 1
 n_clients: 2
-jobs_root_dir: ./data/jobs
-cleanup: True
-
+jobs_root_dir: /tmp/nvflare/recipe_jobs/pytorch
+cleanup: true
+poll_period: 1
+event_sequence_timeout: 600
 
 tests:
-  - test_name: "run hello-pt"
+  - test_name: Run current hello-pt example with synthetic data
+    setup:
+      - rm -rf /tmp/nvflare/recipe_jobs/pytorch/hello-pt
+      - /bin/sh -c "cd ../../examples/hello-world/hello-pt && python job.py --export --export-dir /tmp/nvflare/recipe_jobs/pytorch --n_clients 2 --num_rounds 1 --epochs 1 --batch_size 8 --num_workers 0 --synthetic_data --train_size 32 --test_size 16"
     event_sequence:
-      - "trigger":
-          "type": "server_log"
-          "data": "Server started"
-        "actions": [ "submit_job hello-pt" ]
-        "result":
-          "type": "job_submit_success"
-      - "trigger":
-          "type": "run_state"
-          "data": { "run_finished": True }
-        "actions": [ "ensure_current_job_done" ]
-        "result":
-          "type": "run_state"
-          "data": { "run_finished": True }
+      - trigger:
+          type: server_log
+          data: Server started
+        actions: [ "submit_job hello-pt" ]
+        result:
+          type: job_submit_success
+      - trigger:
+          type: run_state
+          data: { "run_finished": true }
+        actions: [ "ensure_current_job_done" ]
+        result:
+          type: run_state
+          data: { "run_finished": true }
+    validators:
+      - path: tests.integration_test.src.validators.PTModelValidator
+    teardown:
+      - rm -rf /tmp/nvflare/recipe_jobs/pytorch/hello-pt
+
+  - test_name: Run current hello-pt cross-site evaluation example
+    setup:
+      - rm -rf /tmp/nvflare/recipe_jobs/pytorch/hello-pt
+      - /bin/sh -c "cd ../../examples/hello-world/hello-pt && python job.py --export --export-dir /tmp/nvflare/recipe_jobs/pytorch --n_clients 2 --num_rounds 1 --epochs 1 --batch_size 8 --num_workers 0 --synthetic_data --train_size 32 --test_size 16 --cross_site_eval"
+    event_sequence:
+      - trigger:
+          type: server_log
+          data: Server started
+        actions: [ "submit_job hello-pt" ]
+        result:
+          type: job_submit_success
+      - trigger:
+          type: run_state
+          data: { "run_finished": true }
+        actions: [ "ensure_current_job_done" ]
+        result:
+          type: run_state
+          data: { "run_finished": true }
     validators:
       - path: tests.integration_test.src.validators.PTModelValidator
       - path: tests.integration_test.src.validators.CrossValResultValidator
-        args: { server_model_names: [ "server" ] }
-    setup:
-      - python tools/prepare_cifar10.py --root ~/data/site-1 --root ~/data/site-2
+        args: { server_model_names: [ "FL_global_model.pt" ] }
     teardown:
-      - rm -rf ~/data
-  - test_name: "run hello-pt-cse"
-    event_sequence:
-      - "trigger":
-          "type": "server_log"
-          "data": "Server started"
-        "actions": [ "submit_job hello-pt-cse" ]
-        "result":
-          "type": "job_submit_success"
-      - "trigger":
-          "type": "run_state"
-          "data": { "run_finished": True }
-        "actions": [ "ensure_current_job_done" ]
-        "result":
-          "type": "run_state"
-          "data": { "run_finished": True }
-    validators:
-      - path: tests.integration_test.src.validators.PTModelValidator
-    setup:
-      - mkdir -p /tmp/nvflare/data/site-1
-      - mkdir -p /tmp/nvflare/data/site-2
-      - python tools/prepare_cifar10.py --root /tmp/nvflare/data
-    teardown:
-      - rm -rf /tmp/nvflare/data
+      - rm -rf /tmp/nvflare/recipe_jobs/pytorch/hello-pt

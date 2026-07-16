@@ -1,0 +1,117 @@
+# NumPy hello-world integration tests using the current recipe-based examples.
+# Each setup invokes the example's actual job.py with the standard Recipe API
+# export flags, then submits the exported job through the integration test system.
+
+n_servers: 1
+n_clients: 2
+jobs_root_dir: /tmp/nvflare/recipe_jobs/numpy
+cleanup: true
+poll_period: 1
+event_sequence_timeout: 600
+
+tests:
+  - test_name: Run current hello-numpy example with full parameter transfer
+    setup:
+      - rm -rf /tmp/nvflare/recipe_jobs/numpy/hello-numpy
+      - /bin/sh -c "cd ../../examples/hello-world/hello-numpy && python job.py --export --export-dir /tmp/nvflare/recipe_jobs/numpy --n_clients 2 --num_rounds 1 --update_type full"
+    event_sequence:
+      - trigger:
+          type: server_log
+          data: Server started
+        actions: [ "submit_job hello-numpy" ]
+        result:
+          type: job_submit_success
+      - trigger:
+          type: run_state
+          data: { "run_finished": true }
+        actions: [ "ensure_current_job_done" ]
+        result:
+          type: run_state
+          data: { "run_finished": true }
+    validators:
+      - path: tests.integration_test.src.validators.NumpySAGResultValidator
+        args: { expected_result: [ [ 2, 3, 4 ], [ 5, 6, 7 ], [ 8, 9, 10 ] ] }
+      - path: tests.integration_test.src.validators.TBResultValidator
+        args: { require_result_on_client: false }
+    teardown:
+      - rm -rf /tmp/nvflare/recipe_jobs/numpy/hello-numpy
+
+  - test_name: Run current hello-numpy example with diff parameter transfer
+    setup:
+      - rm -rf /tmp/nvflare/recipe_jobs/numpy/hello-numpy
+      - /bin/sh -c "cd ../../examples/hello-world/hello-numpy && python job.py --export --export-dir /tmp/nvflare/recipe_jobs/numpy --n_clients 2 --num_rounds 1 --update_type diff"
+    event_sequence:
+      - trigger:
+          type: server_log
+          data: Server started
+        actions: [ "submit_job hello-numpy" ]
+        result:
+          type: job_submit_success
+      - trigger:
+          type: run_state
+          data: { "run_finished": true }
+        actions: [ "ensure_current_job_done" ]
+        result:
+          type: run_state
+          data: { "run_finished": true }
+    validators:
+      - path: tests.integration_test.src.validators.NumpySAGResultValidator
+        args: { expected_result: [ [ 2, 3, 4 ], [ 5, 6, 7 ], [ 8, 9, 10 ] ] }
+      - path: tests.integration_test.src.validators.TBResultValidator
+        args: { require_result_on_client: false }
+    teardown:
+      - rm -rf /tmp/nvflare/recipe_jobs/numpy/hello-numpy
+
+  - test_name: Run current hello-numpy-cross-val training example
+    setup:
+      - rm -rf /tmp/nvflare/recipe_jobs/numpy/hello-numpy-train-cse
+      - /bin/sh -c "cd ../../examples/hello-world/hello-numpy-cross-val && python job.py --export --export-dir /tmp/nvflare/recipe_jobs/numpy --mode training --n_clients 2 --num_rounds 1"
+    event_sequence:
+      - trigger:
+          type: server_log
+          data: Server started
+        actions: [ "submit_job hello-numpy-train-cse" ]
+        result:
+          type: job_submit_success
+      - trigger:
+          type: run_state
+          data: { "run_finished": true }
+        actions: [ "ensure_current_job_done" ]
+        result:
+          type: run_state
+          data: { "run_finished": true }
+    validators:
+      - path: tests.integration_test.src.validators.NumpySAGResultValidator
+        args: { expected_result: [ 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0 ] }
+      - path: tests.integration_test.src.validators.CrossValResultValidator
+        args: { server_model_names: [ "server" ] }
+    teardown:
+      - rm -rf /tmp/nvflare/recipe_jobs/numpy/hello-numpy-train-cse
+
+  - test_name: Run current hello-log-streaming example
+    setup:
+      - rm -rf /tmp/nvflare/recipe_jobs/numpy/hello-log-streaming
+      - /bin/sh -c "cd ../../examples/hello-world/hello-log-streaming && python job.py --export --export-dir /tmp/nvflare/recipe_jobs/numpy --n_clients 2 --num_rounds 1 --update_type full"
+    event_sequence:
+      - trigger:
+          type: server_log
+          data: Server started
+        actions: [ "submit_job hello-log-streaming" ]
+        result:
+          type: job_submit_success
+      - trigger:
+          type: run_state
+          data: { "run_finished": true }
+        actions: [ "ensure_current_job_done" ]
+        result:
+          type: run_state
+          data: { "run_finished": true }
+    validators:
+      - path: tests.integration_test.src.validators.NumpySAGResultValidator
+        args: { expected_result: [ [ 2, 3, 4 ], [ 5, 6, 7 ], [ 8, 9, 10 ] ] }
+      - path: tests.integration_test.src.validators.TBResultValidator
+        args: { require_result_on_client: false }
+      - path: tests.integration_test.src.validators.JobLogResultValidator
+        args: { required_patterns: [ "Client {client} initialized", "current_round=0" ] }
+    teardown:
+      - rm -rf /tmp/nvflare/recipe_jobs/numpy/hello-log-streaming

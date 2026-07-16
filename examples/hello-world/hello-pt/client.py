@@ -99,6 +99,7 @@ def main():
     flare.init()
     sys_info = flare.system_info()
     client_name = sys_info["site_name"]
+    last_params = None
 
     # (optional) metrics tracking
     summary_writer = SummaryWriter()
@@ -107,6 +108,16 @@ def main():
         # (4) receives FLModel from NVFlare
         input_model = flare.receive()
         print(f"site = {client_name}, current_round={input_model.current_round}")
+
+        # Cross-site evaluation requests the client's latest local model without
+        # sending model parameters in the request.
+        if flare.is_submit_model():
+            if last_params is None:
+                raise RuntimeError("submit_model called before a local model was trained")
+            print(f"site = {client_name}, submitting local model")
+            flare.send(flare.FLModel(params=last_params))
+            continue
+
         # (5) loads model from NVFlare
         model.load_state_dict(input_model.params)
         model.to(device)
@@ -148,11 +159,12 @@ def main():
         print(f"Finished Training for {client_name}")
 
         PATH = "./cifar_net.pth"
-        torch.save(model.state_dict(), PATH)
+        last_params = {name: param.detach().cpu().clone() for name, param in model.state_dict().items()}
+        torch.save(last_params, PATH)
 
         # (7) construct trained FL model
         output_model = flare.FLModel(
-            params=model.cpu().state_dict(),
+            params=last_params,
             metrics={"accuracy": accuracy},
             meta={"NUM_STEPS_CURRENT_ROUND": steps},
         )
