@@ -22,6 +22,8 @@ process singleton, so leaks would cross into later jobs in the same process), bo
 wait, and LOG routing through the executor-owned fire_log_analytics().
 """
 
+import builtins
+import sys
 import time
 from unittest.mock import MagicMock, Mock, patch
 
@@ -234,11 +236,15 @@ class TestInitializeAndFinalize:
         assert not _backend_callbacks_subscribed(clean_databus, backend)
         assert not backend._task_fn_thread.is_alive()
 
-    def test_finalize_bounded_when_trainer_stuck_in_user_code(self, tmp_path, caplog):
+    def test_finalize_bounded_when_trainer_stuck_in_user_code(self, tmp_path, caplog, capsys):
         """A trainer wedged in user code never observes TOPIC_STOP: with result_wait_timeout,
         execute() returns while the thread still runs, so finalize() must join with a bound
-        and abandon (daemon thread) instead of hanging CJ/simulator teardown forever."""
+        and abandon (daemon thread) instead of hanging CJ/simulator teardown forever. Abandoning
+        the runner must restore the process globals that TaskScriptRunner owns."""
         (tmp_path / "train.py").write_text("import time\nwhile True: time.sleep(0.5)\n")
+        original_print = builtins.print
+        original_argv = sys.argv
+        original_argv_values = list(sys.argv)
         backend, fl_ctx = _initialized_backend(str(tmp_path), result_wait_timeout=0.05)
         try:
             result = backend.execute("train", Shareable(), fl_ctx, Signal())
@@ -251,6 +257,13 @@ class TestInitializeAndFinalize:
                 backend.finalize(FLContext())
                 elapsed = time.monotonic() - start
         assert elapsed < 5.0, "finalize must not hang on a stuck trainer"
+        assert backend._task_fn_thread.is_alive()
+        assert builtins.print is original_print
+        assert sys.argv is original_argv
+        assert list(sys.argv) == original_argv_values
+        capsys.readouterr()
+        print("unrelated output")
+        assert capsys.readouterr().out == "unrelated output\n"
         assert "did not stop within" in caplog.text
 
     def test_initialize_configures_memory_management(self, custom_dir):

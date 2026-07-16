@@ -153,11 +153,18 @@ def test_nemo_peft_recipe_exports_modern_fedavg_config(tmp_path):
     with open(job_dir / "app_server" / "config" / "config_fed_server.json") as f:
         server_config = json.load(f)
 
-    launcher_args = next(c for c in client_config["components"] if c["id"] == "launcher")["args"]
-    assert "custom/automodel_peft_client.py" in launcher_args["script"]
-    assert "--backend mock" in launcher_args["script"]
-    assert "split data/alpha10.0_site-1.jsonl" in launcher_args["script"]
-    assert launcher_args["launch_once"] is False
+    executor = next(
+        entry["executor"]
+        for entry in client_config["executors"]
+        if entry["executor"]["path"].endswith(".ClientAPIExecutor")
+    )
+    executor_args = executor["args"]
+    assert executor_args["execution_mode"] == "external_process"
+    command = executor_args["command"]
+    assert "custom/automodel_peft_client.py" in command
+    assert command[command.index("--backend") + 1] == "mock"
+    assert command[command.index("--train_file") + 1].endswith("split data/alpha10.0_site-1.jsonl")
+    assert executor_args["launch_once"] is False
     assert client_config["max_resends"] == 3
     assert (job_dir / "app_site-1" / "custom" / "automodel_peft_client.py").exists()
     assert (job_dir / "app_site-1" / "custom" / "adapter_checkpoint.py").exists()
