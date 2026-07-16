@@ -118,7 +118,7 @@ metadata needed before a Cell session exists:
 
 - bootstrap schema version and execution mode;
 - Cell connect URL, CJ FQCN, and prescribed trainer FQCN;
-- launch-scoped binding token and Cell protocol version;
+- launch-scoped binding token;
 - job and site identity;
 - task-exchange and memory-management configuration needed by the trainer-side API.
 
@@ -146,13 +146,13 @@ The implemented per-task exchange is:
 CJ -> trainer : TASK_READY(task_id, task_name, Shareable)
 trainer -> CJ : TASK_ACCEPTED | TASK_FAILED
 
-trainer -> CJ : RESULT_READY(task_id, result_id, Shareable)
+trainer -> CJ : RESULT_READY(task_id, Shareable)
 CJ -> trainer : RESULT_ACCEPTED | RESULT_REJECTED
 ```
 
 `TASK_ACCEPTED`/`TASK_FAILED` and `RESULT_ACCEPTED`/`RESULT_REJECTED` are Cell request replies.
 LOG and HEARTBEAT use the same Cell connection. ABORT and SHUTDOWN provide task/session teardown.
-Task and result IDs correlate the single delivery attempt currently made in each direction.
+The task ID correlates each single task/result delivery attempt.
 There is deliberately no receiver-only dedup cache while no sender retries exist. Attach-mode
 redelivery tolerance must add sender retry and receiver deduplication together.
 
@@ -225,9 +225,10 @@ to stop, starts the natural-exit reaper, and holds END_RUN until that truthful t
 also covers inline results, whose acceptance reply can race END_RUN even though they create no
 download transaction. Teardown cannot safely return with a daemon reaper because ClientRunner
 tears down streaming and the CJ Cell immediately after END_RUN. The lower `DownloadService`
-idle/receiver policy bounds a stalled transfer; there is no independent total-duration cutoff for a
-transfer that continues making progress. Other failure/teardown paths use the bounded
-SHUTDOWN/TERM/KILL sequence immediately.
+idle/receiver policy normally bounds a stalled transfer. END_RUN also applies a final total wait
+backstop just beyond the default streaming-idle budget; if a still-connected trainer remains wedged
+past that bound, the backend force-stops its owned process tree rather than hanging job teardown.
+Other failure/teardown paths use the bounded SHUTDOWN/TERM/KILL sequence immediately.
 
 Startup waits at most `launch_timeout` for the trainer to complete its HELLO handshake. The
 default is 300 seconds, matching the legacy Client API subprocess readiness budget; callers may
@@ -289,7 +290,9 @@ The trainer-side Client API honors the declaration at its API boundary:
 
 The implementation is a small functional adapter with caller-owned state for PyTorch tensor
 shapes and non-tensor entries; it does not recreate the legacy `ParamsConverter` component
-hierarchy. `RAW` explicitly means no representation adaptation.
+hierarchy. `RAW` explicitly means no representation adaptation. If either side of a declared pair
+is `RAW`, conversion is a no-op and the payload passes unchanged; `RAW` is an adaptation off-switch,
+not a concrete representation guarantee.
 
 `params_transfer_type` is intentionally different from representation conversion. `FULL` versus
 `DIFF` describes model state. It remains in the `ClientAPIExecutor` configuration, travels in the

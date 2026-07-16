@@ -100,7 +100,6 @@ class TestDefs:
             "TASK_ID": "task_id",
             "TASK_NAME": "task_name",
             "MODEL": "model",
-            "RESULT_ID": "result_id",
             "RESULT": "result",
             "RESULT_SOURCE_LIVE": "result_source_live",
             "HEARTBEAT_INTERVAL": "heartbeat_interval",

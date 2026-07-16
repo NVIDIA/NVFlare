@@ -36,7 +36,6 @@ CONFIG = {
     BootstrapKey.CJ_FQCN: "site-1.job-1",
     BootstrapKey.TRAINER_FQCN: "site-1.job-1.client_api_trainer_1",
     BootstrapKey.LAUNCH_TOKEN: "secret-token",
-    BootstrapKey.PROTOCOL_VERSION: 1,
     BootstrapKey.JOB_ID: "job-1",
     BootstrapKey.SITE_NAME: "site-1",
     BootstrapKey.TASK_EXCHANGE: {"train_task_name": "train"},

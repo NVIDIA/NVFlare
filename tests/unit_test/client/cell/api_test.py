@@ -68,10 +68,8 @@ def _hello_accepted_reply(heartbeat_interval=0.05, heartbeat_timeout=0.0):
     )
 
 
-def _result_accepted_reply(result_id):
-    return make_cell_reply(
-        CellReturnCode.OK, body={MsgKey.REPLY_TOPIC: Topic.RESULT_ACCEPTED, MsgKey.RESULT_ID: result_id}
-    )
+def _result_accepted_reply():
+    return make_cell_reply(CellReturnCode.OK, body={MsgKey.REPLY_TOPIC: Topic.RESULT_ACCEPTED})
 
 
 class FakeCell:
@@ -124,7 +122,7 @@ class FakeCell:
                 body={MsgKey.REPLY_TOPIC: Topic.HEARTBEAT, MsgKey.SESSION_ID: SESSION_ID},
             )
         if topic == Topic.RESULT_READY:
-            return _result_accepted_reply(request.payload[MsgKey.RESULT_ID])
+            return _result_accepted_reply()
         return make_cell_reply(CellReturnCode.OK)
 
     def fire_and_forget(self, channel, topic, targets, message, **kwargs):
@@ -146,9 +144,6 @@ def bootstrap_path(tmp_path):
             BootstrapKey.CJ_FQCN: CJ_FQCN,
             BootstrapKey.TRAINER_FQCN: TRAINER_FQCN,
             BootstrapKey.LAUNCH_TOKEN: "the-token",
-            # A bootstrap value is only an instruction from the parent; HELLO must report
-            # the trainer code's compiled protocol constant instead of echoing this value.
-            BootstrapKey.PROTOCOL_VERSION: PROTOCOL_VERSION + 99,
             BootstrapKey.JOB_ID: "job-1",
             BootstrapKey.SITE_NAME: "site-1",
             BootstrapKey.TASK_EXCHANGE: {
@@ -377,7 +372,6 @@ class TestReceiveSend:
             assert target == CJ_FQCN
             assert payload[MsgKey.SESSION_ID] == SESSION_ID
             assert payload[MsgKey.TASK_ID] == task_id
-            assert payload[MsgKey.RESULT_ID]
             assert isinstance(payload[MsgKey.RESULT], Shareable)
             result_request = [m for m in env.request_messages if MsgKey.RESULT in m.payload][0]
             result_kwargs = env.request_kwargs[env.request_messages.index(result_request)]
@@ -443,7 +437,7 @@ class TestReceiveSend:
                 cb = kwargs["fobs_ctx_props"][cell_api.RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY]
                 cb(SimpleNamespace(tx_id="actual-via-tx"))
                 assert kwargs["progress_wait_cb"]() is True
-                return _result_accepted_reply(request.payload[MsgKey.RESULT_ID])
+                return _result_accepted_reply()
             return make_cell_reply(CellReturnCode.OK)
 
         env.on_request = on_request
@@ -480,7 +474,7 @@ class TestReceiveSend:
                     SimpleNamespace(tx_id="downstream-result-tx")
                 )
                 accepted.set()
-                return _result_accepted_reply(request.payload[MsgKey.RESULT_ID])
+                return _result_accepted_reply()
             return make_cell_reply(CellReturnCode.OK)
 
         env.on_request = on_request
@@ -534,7 +528,7 @@ class TestReceiveSend:
                 )
                 env.deliver(Topic.SHUTDOWN, CJ_FQCN, {MsgKey.SESSION_ID: SESSION_ID})
                 accepted.set()
-                return _result_accepted_reply(request.payload[MsgKey.RESULT_ID])
+                return _result_accepted_reply()
             return make_cell_reply(CellReturnCode.OK)
 
         env.on_request = on_request
@@ -580,7 +574,7 @@ class TestReceiveSend:
                 kwargs["fobs_ctx_props"][cell_api.RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY](
                     SimpleNamespace(tx_id="failed-result-tx")
                 )
-                return _result_accepted_reply(request.payload[MsgKey.RESULT_ID])
+                return _result_accepted_reply()
             return make_cell_reply(CellReturnCode.OK)
 
         env.on_request = on_request
@@ -611,7 +605,7 @@ class TestReceiveSend:
                 assert api._abort_signal.triggered is True
                 assert result_cancel.triggered is False
                 assert env.stopped is False, "SHUTDOWN must not close Cell while send is active"
-                return _result_accepted_reply(request.payload[MsgKey.RESULT_ID])
+                return _result_accepted_reply()
             return make_cell_reply(CellReturnCode.OK)
 
         env.on_request = on_request
@@ -671,8 +665,8 @@ class TestReceiveSend:
                 model = api.receive()
                 assert isinstance(model, FLModel)
                 api.send(FLModel(params={"w": [9.0]}, params_type=ParamsType.FULL))
-            result_ids = [p[MsgKey.RESULT_ID] for t, _, p in env.requests if t == Topic.RESULT_READY]
-            assert len(set(result_ids)) == 3
+            results = [p for t, _, p in env.requests if t == Topic.RESULT_READY]
+            assert len(results) == 3
         finally:
             api.shutdown()
 
@@ -869,7 +863,7 @@ class TestHeartbeat:
                 tx_created(SimpleNamespace(tx_id="live-result-tx"))
                 transaction_created.set()
                 release_request.wait(0.5)
-                return _result_accepted_reply(request.payload[MsgKey.RESULT_ID])
+                return _result_accepted_reply()
             return make_cell_reply(CellReturnCode.OK)
 
         env.on_request = progressing_result_request

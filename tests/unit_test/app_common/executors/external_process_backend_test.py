@@ -30,7 +30,6 @@ import signal
 import subprocess
 import threading
 import time
-import uuid
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock
 
@@ -199,7 +198,7 @@ class FakeTrainerHarness:
             payload = {
                 MsgKey.TRAINER_FQCN: config[BootstrapKey.TRAINER_FQCN],
                 MsgKey.PROOF: config[BootstrapKey.LAUNCH_TOKEN],
-                MsgKey.PROTOCOL_VERSION: config[BootstrapKey.PROTOCOL_VERSION],
+                MsgKey.PROTOCOL_VERSION: PROTOCOL_VERSION,
                 MsgKey.JOB_ID: config[BootstrapKey.JOB_ID],
                 MsgKey.SITE_NAME: config[BootstrapKey.SITE_NAME],
                 MsgKey.RANK: 0,
@@ -310,7 +309,6 @@ def _install_auto_result(env, lazy_result=False):
         result_payload = {
             MsgKey.SESSION_ID: task_payload[MsgKey.SESSION_ID],
             MsgKey.TASK_ID: task_payload[MsgKey.TASK_ID],
-            MsgKey.RESULT_ID: uuid.uuid4().hex,
             MsgKey.RESULT: result,
         }
         seen.result_replies.append(env.cell.deliver(Topic.RESULT_READY, target, result_payload))
@@ -408,7 +406,6 @@ class TestInitializeAndFinalize:
             assert config[BootstrapKey.CJ_FQCN] == CJ_FQCN
             assert config[BootstrapKey.TRAINER_FQCN] == f"{CJ_FQCN}.client_api_trainer_1"
             assert config[BootstrapKey.LAUNCH_TOKEN]
-            assert config[BootstrapKey.PROTOCOL_VERSION] == PROTOCOL_VERSION
             assert config[BootstrapKey.JOB_ID] == "job-1"
             assert config[BootstrapKey.SITE_NAME] == "site-1"
             assert config[BootstrapKey.MEMORY_GC_ROUNDS] == 3
@@ -637,6 +634,30 @@ class TestInitializeAndFinalize:
         assert finalize_done.is_set()
         assert backend._session is None
 
+    def test_finalize_bounds_connected_wedged_result_source(self, env, monkeypatch, caplog):
+        monkeypatch.setattr(ebp, "DEFAULT_STREAMING_IDLE_TIMEOUT", 0.02)
+        monkeypatch.setattr(ebp, "_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT", 0.01)
+        monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
+        backend, _ = _initialized_backend(
+            env,
+            heartbeat_timeout=0.0,
+            shutdown_timeout=0.01,
+            stop_grace_period=0.0,
+        )
+        process = env.harness.processes[0]
+        session = backend._session
+        session.result_source_live.set()
+        env.cell.on_shutdown = lambda *_args: make_cell_reply(CellReturnCode.OK, body={MsgKey.RESULT_SOURCE_LIVE: True})
+
+        start = time.monotonic()
+        backend.finalize(FLContext())
+        elapsed = time.monotonic() - start
+
+        assert elapsed < 0.5, "a connected but wedged trainer must not hang END_RUN forever"
+        assert process.returncode is not None
+        assert backend._result_reapers == set()
+        assert "forcing trainer cleanup" in caplog.text
+
     def test_zero_shutdown_live_result_uses_backend_grace_and_releases_on_truth(self, env, monkeypatch):
         monkeypatch.setattr(ebp, "_DEFAULT_SHUTDOWN_TIMEOUT", 0.1)
         monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
@@ -803,6 +824,47 @@ class TestInitializeAndFinalize:
 
         assert process.term_calls == ["terminate", "kill"]
         assert process.returncode is not None
+
+    @pytest.mark.parametrize("hard,expected_fallback", [(False, "terminate"), (True, "kill")])
+    def test_windows_taskkill_failure_uses_process_fallback(self, env, monkeypatch, hard, expected_fallback):
+        backend, _ = _initialized_backend(env)
+        process = env.harness.processes[0]
+        monkeypatch.setattr(ebp.os, "name", "nt")
+        taskkill = Mock(return_value=SimpleNamespace(returncode=1))
+        monkeypatch.setattr(ebp.subprocess, "run", taskkill)
+
+        backend._signal_process_tree(backend._session, hard=hard)
+
+        taskkill.assert_called_once()
+        assert process.term_calls == [expected_fallback]
+        backend.finalize(FLContext())
+
+    def test_windows_successful_taskkill_skips_process_fallback(self, env, monkeypatch):
+        backend, _ = _initialized_backend(env)
+        process = env.harness.processes[0]
+        monkeypatch.setattr(ebp.os, "name", "nt")
+        monkeypatch.setattr(ebp.subprocess, "run", Mock(return_value=SimpleNamespace(returncode=0)))
+
+        backend._signal_process_tree(backend._session, hard=False)
+
+        assert process.term_calls == []
+        process.exit(0)
+        backend.finalize(FLContext())
+
+    def test_windows_taskkill_exception_uses_process_fallback(self, env, monkeypatch):
+        backend, _ = _initialized_backend(env)
+        process = env.harness.processes[0]
+        monkeypatch.setattr(ebp.os, "name", "nt")
+        monkeypatch.setattr(
+            ebp.subprocess,
+            "run",
+            Mock(side_effect=subprocess.TimeoutExpired(cmd=["taskkill"], timeout=10)),
+        )
+
+        backend._signal_process_tree(backend._session, hard=False)
+
+        assert process.term_calls == ["terminate"]
+        backend.finalize(FLContext())
 
     def test_finalize_does_not_raise_when_shutdown_send_fails(self, env, caplog):
         backend, _ = _initialized_backend(env)
@@ -1060,7 +1122,6 @@ class TestHeartbeatAndOperationalLiveness:
                     {
                         MsgKey.SESSION_ID: payload[MsgKey.SESSION_ID],
                         MsgKey.TASK_ID: payload[MsgKey.TASK_ID],
-                        MsgKey.RESULT_ID: "result-after-materialization",
                         MsgKey.RESULT: _result_shareable(),
                     },
                 )
@@ -1169,7 +1230,6 @@ class TestClosedGate:
             {
                 MsgKey.SESSION_ID: session.session_id,
                 MsgKey.TASK_ID: "task-1",
-                MsgKey.RESULT_ID: "res-1",
                 MsgKey.RESULT: _result_shareable(),
             },
         )
@@ -1247,7 +1307,6 @@ class TestExecute:
                 {
                     MsgKey.SESSION_ID: payload[MsgKey.SESSION_ID],
                     MsgKey.TASK_ID: payload[MsgKey.TASK_ID],
-                    MsgKey.RESULT_ID: "result-after-prior-send",
                     MsgKey.RESULT: _result_shareable(),
                 },
             )
@@ -1282,7 +1341,6 @@ class TestExecute:
                 result_payload = {
                     MsgKey.SESSION_ID: payload[MsgKey.SESSION_ID],
                     MsgKey.TASK_ID: payload[MsgKey.TASK_ID],
-                    MsgKey.RESULT_ID: "res-async",
                     MsgKey.RESULT: _result_shareable(),
                 }
                 threading.Timer(0.05, env.cell.deliver, args=(Topic.RESULT_READY, target, result_payload)).start()
@@ -1425,7 +1483,6 @@ class TestExecute:
                 {
                     MsgKey.SESSION_ID: payload[MsgKey.SESSION_ID],
                     MsgKey.TASK_ID: payload[MsgKey.TASK_ID],
-                    MsgKey.RESULT_ID: "res-concurrent",
                     MsgKey.RESULT: _result_shareable(),
                 },
             )
@@ -1470,7 +1527,6 @@ class TestExecute:
                 {
                     MsgKey.SESSION_ID: payload[MsgKey.SESSION_ID],
                     MsgKey.TASK_ID: payload[MsgKey.TASK_ID],
-                    MsgKey.RESULT_ID: "res-busy",
                     MsgKey.RESULT: _result_shareable(),
                 },
             )
@@ -1724,7 +1780,6 @@ class TestResultReadyHandler:
         payload = {
             MsgKey.SESSION_ID: backend._session.session_id,
             MsgKey.TASK_ID: "task-1",
-            MsgKey.RESULT_ID: "res-1",
             MsgKey.RESULT: _result_shareable(),
         }
         payload.update(overrides)
@@ -1789,7 +1844,7 @@ class TestResultReadyHandler:
         assert not delivery.is_alive()
         assert reply_box["reply"].payload[MsgKey.REPLY_TOPIC] == Topic.RESULT_REJECTED
         assert reply_box["reply"].payload[MsgKey.REASON] == "backend is closed"
-        assert task.result_id is None
+        assert task.result is None
         assert not task.result_ready.is_set()
         assert not session.result_source_live.is_set()
 
@@ -1881,6 +1936,33 @@ class TestLaunchPerTask:
             assert path_1 != path_2
             assert not os.path.exists(path_1) and not os.path.exists(path_2)
         finally:
+            backend.finalize(FLContext())
+
+    def test_entry_abort_does_not_abort_previous_live_result_source(self, env):
+        backend, fl_ctx = _initialized_backend(env, launch_once=False)
+        _install_auto_result(env, lazy_result=True)
+        session = None
+        process = None
+        try:
+            first = backend.execute("train", Shareable(), fl_ctx, Signal())
+            session = backend._session
+            process = env.harness.processes[0]
+            aborts_before = len([message for message in env.cell.fired if message[0] == Topic.ABORT])
+
+            abort_signal = Signal()
+            abort_signal.trigger("cancel before launch")
+            second = backend.execute("train", Shareable(), fl_ctx, abort_signal)
+
+            assert first.get_return_code() == ReturnCode.OK
+            assert second.get_return_code() == ReturnCode.TASK_ABORTED
+            assert len(env.harness.processes) == 1, "an entry-aborted task must not launch"
+            assert len([message for message in env.cell.fired if message[0] == Topic.ABORT]) == aborts_before
+            assert session.result_source_live.is_set()
+            assert process.returncode is None
+            assert backend._abort is False
+        finally:
+            if process is not None:
+                process.exit(0)
             backend.finalize(FLContext())
 
     def test_inline_result_uses_the_send_completion_reaper(self, env):

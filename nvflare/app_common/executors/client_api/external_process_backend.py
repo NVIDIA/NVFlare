@@ -92,6 +92,7 @@ from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.streaming.download_service import DownloadService
+from nvflare.fuel.f3.streaming.transfer_progress import DEFAULT_STREAMING_IDLE_TIMEOUT
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -216,7 +217,6 @@ class _TaskContext:
         # validation and the acceptance/failure commit are one critical section (they
         # cannot interleave with teardown's clear).
         self.result_ready = threading.Event()
-        self.result_id: Optional[str] = None
         self.result: Optional[Shareable] = None
 
 
@@ -353,12 +353,16 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
         if abort_signal.triggered:
-            aborted_session = self._session
-            self._send_abort(aborted_session, f"'{task_name}' is aborted, abort_signal_triggered")
-            if aborted_session is not None:
-                # the wire ABORT ends the trainer session; launch_once tasks after this
-                # fail fast (parity with the in_process backend's abort-event latch)
-                self._latch_abort(f"'{task_name}' aborted at entry, abort_signal_triggered")
+            if context.launch_once:
+                aborted_session = self._session
+                self._send_abort(aborted_session, f"'{task_name}' is aborted, abort_signal_triggered")
+                if aborted_session is not None:
+                    # The wire ABORT ends the persistent trainer session; later tasks fail
+                    # fast (parity with the in_process backend's abort-event latch).
+                    self._latch_abort(f"'{task_name}' aborted at entry, abort_signal_triggered")
+            # In launch-per-task mode this invocation owns no session yet. self._session
+            # may still name the previous task's successful live result source, which must
+            # not be aborted by a new task that never launched.
             self._execute_gate.release()
             return make_reply(ReturnCode.TASK_ABORTED)
 
@@ -507,7 +511,6 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                     BootstrapKey.CJ_FQCN: self._cj_fqcn,
                     BootstrapKey.TRAINER_FQCN: trainer_fqcn,
                     BootstrapKey.LAUNCH_TOKEN: token,
-                    BootstrapKey.PROTOCOL_VERSION: PROTOCOL_VERSION,
                     BootstrapKey.JOB_ID: self._job_id,
                     BootstrapKey.SITE_NAME: self._site_name,
                     BootstrapKey.TASK_EXCHANGE: self._task_exchange_config(),
@@ -721,16 +724,35 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                     raise
 
     def _wait_for_result_reapers(self) -> None:
-        """Wait until every accepted result send owned by this backend is terminal."""
+        """Wait boundedly for accepted result sends, then force-clean wedged sources."""
+        wait_bound = self._result_reaper_wait_bound()
+        deadline = time.monotonic() + wait_bound
         while True:
             with self._result_reapers_lock:
-                reapers = tuple(
-                    session.reaper_thread for session in self._result_reapers if session.reaper_thread is not None
-                )
-            if not reapers:
+                sessions = tuple(self._result_reapers)
+            if not sessions:
                 return
-            for reaper in reapers:
-                reaper.join()
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            for session in sessions:
+                reaper = session.reaper_thread
+                if reaper is not None:
+                    reaper.join(timeout=max(0.0, deadline - time.monotonic()))
+
+        with self._result_reapers_lock:
+            wedged = tuple(self._result_reapers)
+        if wedged:
+            self.logger.warning(
+                f"timed out waiting {wait_bound}s for {len(wedged)} accepted result source(s); "
+                "forcing trainer cleanup"
+            )
+        for session in wedged:
+            self._stop_session(session, natural_exit_wait=0.0)
+        for session in wedged:
+            reaper = session.reaper_thread
+            if reaper is not None:
+                reaper.join(timeout=_LOG_THREAD_JOIN_TIMEOUT)
 
     def _wait_for_natural_exit_and_cleanup(self, session: _TrainerSession) -> None:
         disconnected_since = None
@@ -904,8 +926,10 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                 cmd = ["taskkill", "/T", "/PID", str(process.pid)]
                 if hard:
                     cmd.insert(1, "/F")
-                subprocess.run(cmd, capture_output=True, timeout=10)
-                return
+                completed = subprocess.run(cmd, capture_output=True, timeout=10)
+                if completed.returncode == 0 or process.poll() is not None:
+                    return
+                self.logger.debug(f"taskkill on trainer tree failed with rc={completed.returncode}")
             except Exception as e:
                 self.logger.debug(f"taskkill on trainer tree failed: {e}")
         # last resort: the launcher process itself
@@ -941,6 +965,20 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
         """
         shutdown_bound = self._shutdown_wait_bound()
         return shutdown_bound if shutdown_bound > 0 else _DEFAULT_SHUTDOWN_TIMEOUT
+
+    def _result_reaper_wait_bound(self) -> float:
+        """Return the final END_RUN backstop for an accepted result source.
+
+        Normal completion remains governed by the source transaction. This total bound is
+        only the last defense against a connected trainer that remains live forever despite
+        the transaction idle budget and orderly SHUTDOWN requests.
+        """
+        disconnect_grace = (
+            self._context.heartbeat_timeout
+            if self._context.heartbeat_timeout > 0
+            else self._result_source_disconnect_grace()
+        )
+        return DEFAULT_STREAMING_IDLE_TIMEOUT + disconnect_grace + _LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT
 
     def _unwind(self) -> None:
         """Releases partial setup after a failed initialize(). Best-effort per step."""
@@ -1337,7 +1375,6 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             return self._protocol_reply(Topic.RESULT_REJECTED, **{MsgKey.REASON: reject_reason})
 
         task_id = payload.get(MsgKey.TASK_ID)
-        result_id = payload.get(MsgKey.RESULT_ID)
         result = payload.get(MsgKey.RESULT)
         # ONE critical section for current-task validation AND the acceptance commit. The
         # _run_task finally takes this same lock to clear the task, so if teardown wins the
@@ -1352,24 +1389,23 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                 self.logger.warning(f"rejecting RESULT_READY: {reason}")
                 return self._protocol_reply(Topic.RESULT_REJECTED, **{MsgKey.REASON: reason})
 
-            if task.result_id is not None:
+            if task.result is not None:
                 return self._protocol_reply(
                     Topic.RESULT_REJECTED,
-                    **{MsgKey.REASON: f"a result ({task.result_id}) was already accepted for this task"},
+                    **{MsgKey.REASON: "a result was already accepted for this task"},
                 )
-            if not result_id or not isinstance(result, Shareable):
+            if not isinstance(result, Shareable):
                 return self._protocol_reply(
                     Topic.RESULT_REJECTED,
-                    **{MsgKey.REASON: "invalid result envelope: result_id and Shareable result required"},
+                    **{MsgKey.REASON: "invalid result envelope: Shareable result required"},
                 )
-            task.result_id = result_id
             task.result = result
             # The RESULT_ACCEPTED reply itself can race END_RUN even for inline payloads.
             # Keep every accepted result behind the same send-completion barrier; the
             # synchronized SHUTDOWN reply clears this latch when send already settled.
             session.result_source_live.set()
             task.result_ready.set()
-        return self._protocol_reply(Topic.RESULT_ACCEPTED, **{MsgKey.RESULT_ID: result_id})
+        return self._protocol_reply(Topic.RESULT_ACCEPTED)
 
     def _handle_log(self, request):
         """Routes trainer LOG data through the executor-owned fire_log_analytics().

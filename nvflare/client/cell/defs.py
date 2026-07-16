@@ -87,7 +87,6 @@ class MsgKey:
     # TASK_READY carries the task Shareable. Cell/FOBS decides whether its payload is inline
     # or represented by a ViaDownloader reference.
     MODEL = "model"
-    RESULT_ID = "result_id"
     # The task/result Shareables ride directly in their Cell requests. Cell's FOBS
     # encoder selects inline encoding or ViaDownloader references as appropriate.
     RESULT = "result"

@@ -41,9 +41,9 @@ BOOTSTRAP_FILE_ENV_VAR = "NVFLARE_CLIENT_API_BOOTSTRAP"
 # ClientAPIType.CELL_API in nvflare/client/api_context.py.
 CELL_API_TYPE = "CELL_API"
 
-# Version of the typed bootstrap-file envelope.  This is separate from PROTOCOL_VERSION:
-# the former controls how flare.init() identifies and parses this persisted rendezvous file,
-# while the latter controls messages exchanged after the Cell session is established.
+# Version of the typed bootstrap-file envelope. This controls how flare.init() identifies
+# and parses the persisted rendezvous file; the trainer's compiled protocol constant controls
+# messages exchanged after the Cell session is established.
 BOOTSTRAP_SCHEMA_VERSION = 1
 
 # Supported execution mode for this first typed bootstrap contract. Attach will use the
@@ -74,7 +74,6 @@ class BootstrapKey:
 
     # HELLO handshake material (see nvflare/client/cell/defs.py Topic.HELLO).
     LAUNCH_TOKEN = "launch_token"
-    PROTOCOL_VERSION = "protocol_version"
 
     # Job identity, echoed in HELLO and used by the trainer-side Client API meta.
     JOB_ID = "job_id"

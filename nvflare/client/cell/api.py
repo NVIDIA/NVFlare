@@ -48,7 +48,6 @@ import math
 import os
 import threading
 import time
-import uuid
 from queue import Empty, Queue
 from typing import Any, Dict, Optional
 
@@ -304,8 +303,8 @@ class CellClientAPI(APISpec):
                     {
                         MsgKey.TRAINER_FQCN: self._trainer_fqcn,
                         MsgKey.PROOF: self._config[BootstrapKey.LAUNCH_TOKEN],
-                        # Report the trainer code's actual wire version. Echoing the bootstrap
-                        # value would make an incompatible trainer appear compatible.
+                        # Report the trainer code's compiled wire version. Protocol
+                        # compatibility is negotiated by HELLO, not selected by bootstrap.
                         MsgKey.PROTOCOL_VERSION: PROTOCOL_VERSION,
                         MsgKey.JOB_ID: self._job_id,
                         MsgKey.SITE_NAME: self._site_name,
@@ -425,7 +424,6 @@ class CellClientAPI(APISpec):
             self.logger,
         )
         shareable = FLModelUtils.to_shareable(wire_model)
-        result_id = uuid.uuid4().hex
         transactions = []
 
         def _on_transaction_created(transaction):
@@ -442,7 +440,6 @@ class CellClientAPI(APISpec):
             {
                 MsgKey.SESSION_ID: self._session_id,
                 MsgKey.TASK_ID: task.get(MsgKey.TASK_ID),
-                MsgKey.RESULT_ID: result_id,
                 MsgKey.RESULT: shareable,
             },
         )
