@@ -236,7 +236,7 @@ class XGBHorizontalRecipe(Recipe):
             if site_config.get("data_loader") is None:
                 raise ValueError(f"per_site_config for {site_name!r} must include 'data_loader' key")
 
-        self.per_site_config = dict(config)
+        self.per_site_config = config
 
     def _prepare_client_apps(self) -> None:
         self._validate_before_use()

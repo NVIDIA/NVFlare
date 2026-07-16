@@ -253,7 +253,7 @@ class Recipe(ABC):
         """
         self._job = job
         self.name = job.name
-        self._helper_per_site_config = None
+        self._configured_site_names = None
         self._client_apps_prepared = False
         self._tensor_streaming_added = False
         self._cse_added = False
@@ -314,7 +314,7 @@ class Recipe(ABC):
                 raise TypeError(
                     f"per-site config for site {site_name!r} must be a dict, got {type(site_config).__name__}"
                 )
-        if self._helper_per_site_config is not None:
+        if self._configured_site_names is not None:
             raise RuntimeError("per-site config has already been applied to this recipe")
         if self._client_apps_prepared:
             raise RuntimeError(
@@ -332,9 +332,13 @@ class Recipe(ABC):
             )
         else:
             warn_on_unsupported_secret_refs(config, context="per_site_config")
-        stored_config = dict(config)
-        self._apply_per_site_config(dict(stored_config))
-        self._helper_per_site_config = stored_config
+        # Copy each site's dictionary so deferred client preparation cannot be
+        # changed by later mutation of the caller's config. Values such as data
+        # loader objects intentionally retain their identity.
+        config_snapshot = {site_name: dict(site_config) for site_name, site_config in config.items()}
+        configured_site_names = tuple(config_snapshot)
+        self._apply_per_site_config(config_snapshot)
+        self._configured_site_names = configured_site_names
 
     def _apply_per_site_config(self, config: Dict[str, Dict]) -> None:
         """Validate and store recipe-specific per-site configuration.
@@ -367,9 +371,9 @@ class Recipe(ABC):
         metadata, validate production enrollment, or indicate which clients are
         connected in the execution environment.
         """
-        helper_per_site_config = getattr(self, "_helper_per_site_config", None)
-        if helper_per_site_config is not None:
-            return list(helper_per_site_config.keys())
+        configured_site_names = getattr(self, "_configured_site_names", None)
+        if configured_site_names is not None:
+            return list(configured_site_names)
 
         legacy_per_site_config = getattr(self, "per_site_config", None)
         if isinstance(legacy_per_site_config, dict):

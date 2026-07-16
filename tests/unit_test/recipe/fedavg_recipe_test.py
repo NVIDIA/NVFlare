@@ -289,6 +289,19 @@ class TestFedAvgRecipe:
         assert get_client_executor(recipe, "site-1")._task_script_args == "--epochs 1"
         assert get_client_executor(recipe, "site-2")._task_script_args == "--epochs 10"
 
+    def test_set_per_site_config_snapshots_overrides_before_deferred_preparation(
+        self, mock_file_system, base_recipe_params, simple_model
+    ):
+        recipe = FedAvgRecipe(name="test_helper_snapshot", model=simple_model, **base_recipe_params)
+        config = {"site-1": {"train_args": "--epochs 1"}, "site-2": {}}
+
+        set_per_site_config(recipe, config)
+        config["site-1"]["train_args"] = "--epochs 99"
+
+        recipe._ensure_client_apps_prepared()
+
+        assert get_client_executor(recipe, "site-1")._task_script_args == "--epochs 1"
+
     def test_legacy_constructor_config_delegates_to_helper(self, mock_file_system, base_recipe_params, simple_model):
         config = {"site-1": {"train_args": "--epochs 1"}, "site-2": {}}
 

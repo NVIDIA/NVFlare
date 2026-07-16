@@ -313,7 +313,7 @@ class XGBVerticalRecipe(Recipe):
 
         client_ranks = self._resolve_client_ranks(config)
         self.client_ranks = client_ranks
-        self.per_site_config = dict(config)
+        self.per_site_config = config
 
     def _prepare_client_apps(self) -> None:
         self._validate_before_use()

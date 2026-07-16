@@ -749,7 +749,34 @@ class TestRecipePerSiteConfigHelper:
         assert recipe.configured_sites() == ["site-1", "site-2"]
         assert recipe.applied_config == config
         assert recipe.applied_config is not config
-        assert recipe.applied_config["site-1"] is config["site-1"]
+        assert recipe.applied_config["site-1"] is not config["site-1"]
+
+    def test_set_per_site_config_snapshots_site_dicts_but_retains_value_objects(self):
+        from nvflare.recipe.spec import Recipe
+
+        class RecordingRecipe(Recipe):
+            def __init__(self):
+                super().__init__(FedJob(name="test_per_site_config_snapshot", min_clients=1))
+                self.per_site_config = None
+
+            def _apply_per_site_config(self, config):
+                self.per_site_config = config
+
+        data_loader = object()
+        config = {
+            "site-1": {"train_args": "--epochs 1", "data_loader": data_loader},
+            "site-2": {},
+        }
+        recipe = RecordingRecipe()
+
+        set_per_site_config(recipe, config)
+        config["site-1"]["train_args"] = "--epochs 99"
+        config["site-1"]["new_value"] = True
+        config["site-3"] = {}
+
+        assert recipe.configured_sites() == ["site-1", "site-2"]
+        assert recipe.per_site_config["site-1"] == {"train_args": "--epochs 1", "data_loader": data_loader}
+        assert recipe.per_site_config["site-1"]["data_loader"] is data_loader
 
     def test_set_per_site_config_hook_mutation_does_not_change_configured_sites(self):
         from nvflare.recipe.spec import Recipe

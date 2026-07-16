@@ -396,7 +396,7 @@ class FedAvgRecipe(Recipe):
         # recoverable; actual client apps are materialized later.
         for site_config in config.values():
             self._create_client_runner(site_config)
-        self.per_site_config = dict(config)
+        self.per_site_config = config
 
     def _prepare_client_apps(self) -> None:
         if self.per_site_config is None:
