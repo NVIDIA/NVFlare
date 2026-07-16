@@ -193,12 +193,16 @@ filters, components, or tracking:
 
    env = SimEnv(clients=recipe.configured_sites())
 
-For built-in FedAvg recipes and ``FedEvalRecipe``, this replaces the default
-``@ALL`` client app with one app per configured site. For the XGBoost bagging,
-horizontal, and vertical recipes, it adds the required data loader and executor
-components to each site; XGBoost recipes must be configured before export or
-execution. The mapping must be non-empty and define at least ``min_clients``
-sites. Reserved targets such as ``server`` and ``@ALL`` are not site names.
+The helper validates and stores the mapping; it does not build and then replace
+client apps. The recipe materializes its client topology once, before the first
+client-targeted customization or before export or execution. Built-in FedAvg
+recipes and ``FedEvalRecipe`` create one app per configured site directly. If
+per-site configuration is omitted, they create the default ``@ALL`` app at that
+same preparation point. XGBoost bagging, horizontal, and vertical recipes add
+the required data loader and executor components to each configured site and
+must be configured before client customization, export, or execution. The
+mapping must be non-empty and define at least ``min_clients`` sites. Reserved
+targets such as ``server`` and ``@ALL`` are not site names.
 
 ``configured_sites()`` returns the configured top-level site names. It does not
 infer sites from recipe metadata, indicate which clients are connected, validate

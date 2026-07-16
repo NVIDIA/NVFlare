@@ -105,8 +105,9 @@ File packaging helpers:
 
 Helpers that accept ``clients`` target specific generated client apps. This
 requires per-site client apps: call ``set_per_site_config`` immediately after
-constructing a recipe that supports it, and each name in ``clients`` must match
-an existing per-site client app. With the default all-clients topology,
+constructing a recipe that supports it. The recipe prepares those apps before
+applying the first client-targeted helper, and each name in ``clients`` must
+match a configured per-site client app. With the default all-clients topology,
 targeted calls raise an error rather than silently dropping the change from the
 generated job, and unknown site names raise an error rather than deploying a
 bare app to that site.
@@ -170,8 +171,10 @@ For NVFlare 2.9, the public Recipe configuration surface also includes:
    immediately after recipe construction and before client customizations. Each
    concrete recipe interprets the site dictionaries for its own workflow.
    Built-in FedAvg, FedEval, and XGBoost recipes require at least ``min_clients``
-   entries and create their per-site client apps through this helper. Nested values
-   become part of the job definition and must not contain secret values.
+   entries. The helper validates and stores the mapping; the recipe creates its
+   client apps once, immediately before the first client customization or before
+   export or execution. Nested values become part of the job definition and must
+   not contain secret values.
 
 ``recipe.configured_sites()``
    Return top-level site names from applied per-site config. This method does

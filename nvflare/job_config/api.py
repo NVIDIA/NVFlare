@@ -252,34 +252,6 @@ class FedJob:
         if target not in self.clients:
             self.clients.append(target)
 
-    @property
-    def is_deployed(self) -> bool:
-        """Whether this job has already materialized its deployment configuration."""
-        return self._deployed
-
-    def remove_client_app(self, target: str) -> None:
-        """Remove a client app before the job is deployed.
-
-        This supports recipe builders that replace an initial all-client app with
-        explicitly targeted client apps while the job definition is still mutable.
-
-        Args:
-            target: Client target whose app should be removed.
-
-        Raises:
-            ValueError: If target is not a client target or has no client app.
-            RuntimeError: If the job has already been deployed or exported.
-        """
-        if JobTargetType.get_target_type(target) != JobTargetType.CLIENT:
-            raise ValueError(f"target {target!r} is not a client target")
-        if self._deployed:
-            raise RuntimeError("client apps cannot be removed after the job has been deployed")
-        if target not in self._deploy_map or target not in self.clients:
-            raise ValueError(f"no client app exists for target {target!r}")
-
-        self._deploy_map.pop(target)
-        self.clients.remove(target)
-
     def to(
         self,
         obj: Any,

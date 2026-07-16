@@ -160,17 +160,17 @@ def assert_recipe_basics(recipe, expected_name, expected_params):
     assert recipe.train_args == expected_params.get("train_args", "--epochs 10")
     assert recipe.min_clients == expected_params.get("min_clients", 2)
     assert recipe.num_rounds == expected_params.get("num_rounds", 5)
-    assert recipe.job is not None
-    assert recipe.job.name == expected_name
+    assert recipe._job is not None
+    assert recipe._job.name == expected_name
 
 
 def get_model_selector(recipe):
-    server_app = recipe.job._deploy_map[SERVER_SITE_NAME]
+    server_app = recipe._job._deploy_map[SERVER_SITE_NAME]
     return server_app.app_config.components.get("model_selector")
 
 
 def get_server_component(recipe, component_id):
-    server_app = recipe.job._deploy_map[SERVER_SITE_NAME]
+    server_app = recipe._job._deploy_map[SERVER_SITE_NAME]
     return server_app.app_config.components.get(component_id)
 
 
@@ -180,12 +180,12 @@ def get_server_component_from_job(job, component_id):
 
 
 def get_server_controller(recipe):
-    server_app = recipe.job._deploy_map[SERVER_SITE_NAME]
+    server_app = recipe._job._deploy_map[SERVER_SITE_NAME]
     return server_app.app_config.workflows[0].controller
 
 
 def get_client_executor(recipe, site_name):
-    client_app = recipe.job._deploy_map[site_name]
+    client_app = recipe._job._deploy_map[site_name]
     return client_app.app_config.executors[0].executor
 
 
@@ -267,19 +267,25 @@ class TestFedAvgRecipe:
         # When no aggregator is passed, built-in weighted averaging is used
         assert recipe.aggregator is None
 
-    def test_set_per_site_config_builds_site_specific_runners(self, mock_file_system, base_recipe_params, simple_model):
+    def test_set_per_site_config_prepares_site_runners_before_client_customization(
+        self, mock_file_system, base_recipe_params, simple_model
+    ):
         recipe = FedAvgRecipe(name="test_helper_per_site", model=simple_model, **base_recipe_params)
         config = {
             "site-1": {"train_args": "--epochs 1"},
             "site-2": {},
         }
 
-        assert recipe.job.clients == [ALL_SITES]
+        assert recipe._job.clients == []
         set_per_site_config(recipe, config)
 
         assert recipe.configured_sites() == ["site-1", "site-2"]
-        assert recipe.job.clients == ["site-1", "site-2"]
-        assert ALL_SITES not in recipe.job._deploy_map
+        assert recipe._job.clients == []
+
+        recipe.add_client_config({"configured": True})
+
+        assert recipe._job.clients == ["site-1", "site-2"]
+        assert ALL_SITES not in recipe._job._deploy_map
         assert get_client_executor(recipe, "site-1")._task_script_args == "--epochs 1"
         assert get_client_executor(recipe, "site-2")._task_script_args == "--epochs 10"
 
@@ -295,10 +301,12 @@ class TestFedAvgRecipe:
             )
 
         assert recipe.configured_sites() == ["site-1", "site-2"]
-        assert recipe.job.clients == ["site-1", "site-2"]
+        assert recipe._job.clients == []
+        recipe._ensure_client_apps_prepared()
+        assert recipe._job.clients == ["site-1", "site-2"]
         assert get_client_executor(recipe, "site-1")._task_script_args == "--epochs 1"
 
-    def test_failed_per_site_config_restores_default_client_app(
+    def test_failed_per_site_config_leaves_topology_unprepared_and_can_retry(
         self, mock_file_system, base_recipe_params, simple_model
     ):
         recipe = FedAvgRecipe(name="test_per_site_rollback", model=simple_model, **base_recipe_params)
@@ -306,12 +314,14 @@ class TestFedAvgRecipe:
         with pytest.raises(ValueError, match="Framework invalid unsupported"):
             set_per_site_config(recipe, {"site-1": {}, "site-2": {"framework": "invalid"}})
 
-        assert recipe.job.clients == [ALL_SITES]
+        assert recipe._job.clients == []
         assert recipe.configured_sites() == []
         assert recipe.per_site_config is None
 
         set_per_site_config(recipe, {"site-1": {}, "site-2": {}})
-        assert recipe.job.clients == ["site-1", "site-2"]
+        assert recipe._job.clients == []
+        recipe._ensure_client_apps_prepared()
+        assert recipe._job.clients == ["site-1", "site-2"]
 
     def test_tensor_disk_offload_warns_when_server_format_is_not_pytorch(
         self, mock_file_system, base_recipe_params, simple_model
@@ -496,7 +506,7 @@ class TestNumpyFedAvgRecipe:
         assert recipe.name == "test_numpy"
         assert recipe.min_clients == 2
         assert recipe.num_rounds == 3
-        assert recipe.job is not None
+        assert recipe._job is not None
 
     def test_numpy_recipe_with_early_stopping(self, mock_file_system):
         """Test NumpyFedAvgRecipe with early stopping configuration."""
@@ -590,6 +600,59 @@ class TestNumpyFedAvgRecipe:
             )
 
         assert recipe.per_site_config == per_site_config
+
+    def test_numpy_helper_config_preserves_numpy_runner_exchange_format(self, mock_file_system):
+        from nvflare.client.config import ExchangeFormat
+        from nvflare.fuel.utils.constants import FrameworkType
+
+        recipe = NumpyFedAvgRecipe(
+            name="test_numpy_helper_format",
+            model=[1.0, 2.0],
+            min_clients=2,
+            train_script="client.py",
+        )
+        set_per_site_config(recipe, {"site-1": {}, "site-2": {}})
+
+        # NumPy recipes identify as RAW to Recipe CSE utilities, but their
+        # training runners must continue exchanging NumPy parameters.
+        assert recipe.framework == FrameworkType.RAW
+        recipe._ensure_client_apps_prepared()
+
+        for site in ["site-1", "site-2"]:
+            executor = get_client_executor(recipe, site)
+            assert executor._params_exchange_format == ExchangeFormat.NUMPY
+
+    def test_numpy_cse_export_preserves_per_site_training_apps(self, tmp_path):
+        """Adding CSE must retain each per-site training executor alongside NPValidator."""
+        from nvflare.recipe.utils import add_cross_site_evaluation
+
+        train_script = tmp_path / "client.py"
+        train_script.write_text("# test client script\n")
+        sites = ["site-1", "site-2"]
+        recipe = NumpyFedAvgRecipe(
+            name="test_numpy_per_site_cse",
+            model=[1.0, 2.0],
+            min_clients=2,
+            train_script=str(train_script),
+        )
+        set_per_site_config(recipe, {site: {"train_args": f"--site {site}"} for site in sites})
+
+        add_cross_site_evaluation(recipe)
+        export_dir = tmp_path / "export"
+        recipe.export(job_dir=str(export_dir))
+
+        job_dir = export_dir / recipe.name
+        assert not (job_dir / "app").exists()
+        for site in sites:
+            with open(job_dir / f"app_{site}" / "config" / "config_fed_client.json") as f:
+                client_config = json.load(f)
+
+            executors = client_config["executors"]
+            assert any("*" in executor["tasks"] for executor in executors)
+            assert any(
+                "validate" in executor["tasks"] and executor["executor"]["path"].endswith(".NPValidator")
+                for executor in executors
+            )
 
     def test_numpy_recipe_with_none_model_raises_error(self, mock_file_system):
         """Test NumpyFedAvgRecipe with no model raises error."""
@@ -770,23 +833,15 @@ class TestFedAvgRecipeValidation:
         with pytest.raises(ValueError, match=r"defines 1 site.*min_clients=2"):
             set_per_site_config(recipe, {"site-1": {}})
 
-        assert recipe.job.clients == [ALL_SITES]
+        assert recipe._job.clients == []
 
-    def test_per_site_config_rejects_deployed_job(self, tmp_path, base_recipe_params, simple_model):
+    def test_per_site_config_rejects_after_export(self, tmp_path, base_recipe_params, simple_model):
         train_script = tmp_path / "train.py"
         train_script.write_text("print('training')\n")
         params = dict(base_recipe_params, train_script=str(train_script))
         recipe = FedAvgRecipe(name="test_deployed_per_site", model=simple_model, **params)
-        recipe.job.export_job(str(tmp_path))
-
-        with pytest.raises(RuntimeError, match="after the job has been deployed"):
-            set_per_site_config(recipe, {"site-1": {}, "site-2": {}})
-
-    def test_per_site_config_rejects_existing_low_level_client_app(
-        self, mock_file_system, base_recipe_params, simple_model
-    ):
-        recipe = FedAvgRecipe(name="test_existing_client_app", model=simple_model, **base_recipe_params)
-        recipe.job.to({"custom": True}, "site-extra")
+        recipe.export(str(tmp_path))
+        assert recipe._job.clients == [ALL_SITES]
 
         with pytest.raises(RuntimeError, match="immediately after recipe construction"):
             set_per_site_config(recipe, {"site-1": {}, "site-2": {}})
@@ -800,8 +855,9 @@ class TestFedAvgRecipeValidation:
             **base_recipe_params,
         )
         set_per_site_config(recipe, {"site-1": {"command": ""}, "site-2": {}})
+        recipe._ensure_client_apps_prepared()
 
-        site_app = recipe.job._deploy_map.get("site-1")
+        site_app = recipe._job._deploy_map.get("site-1")
         assert site_app is not None
         launcher = site_app.app_config.components.get("launcher")
         assert launcher is not None
@@ -817,10 +873,10 @@ class TestFedAvgRecipeValidation:
             **base_recipe_params,
         )
 
-        persistor_id = recipe.job.comp_ids.get("persistor_id", "")
+        persistor_id = recipe._job.comp_ids.get("persistor_id", "")
         assert persistor_id
-        assert "locator_id" not in recipe.job.comp_ids
-        server_app = recipe.job._deploy_map.get(SERVER_SITE_NAME)
+        assert "locator_id" not in recipe._job.comp_ids
+        server_app = recipe._job._deploy_map.get(SERVER_SITE_NAME)
         assert server_app is not None
         assert persistor_id in server_app.app_config.components
 
@@ -837,10 +893,10 @@ class TestFedAvgRecipeValidation:
             **base_recipe_params,
         )
 
-        assert recipe.job.comp_ids.get("persistor_id", "")
-        locator_id = recipe.job.comp_ids.get("locator_id", "")
+        assert recipe._job.comp_ids.get("persistor_id", "")
+        locator_id = recipe._job.comp_ids.get("locator_id", "")
         assert locator_id
-        server_app = recipe.job._deploy_map.get(SERVER_SITE_NAME)
+        server_app = recipe._job._deploy_map.get(SERVER_SITE_NAME)
         assert server_app is not None
         assert server_app.app_config.components.get(locator_id) is locator
 
@@ -994,7 +1050,7 @@ class TestFedAvgRecipeInitialCkpt:
         )
 
         assert recipe.initial_ckpt == "/abs/path/to/model.npy"
-        server_app = recipe.job._deploy_map[SERVER_SITE_NAME]
+        server_app = recipe._job._deploy_map[SERVER_SITE_NAME]
         persistor = server_app.app_config.components.get("persistor")
         assert isinstance(persistor, NPModelPersistor)
         assert persistor.source_ckpt_file_full_name == "/abs/path/to/model.npy"
@@ -1016,7 +1072,7 @@ class TestFedAvgRecipeInitialCkpt:
             **base_recipe_params,
         )
 
-        server_app = recipe.job._deploy_map[SERVER_SITE_NAME]
+        server_app = recipe._job._deploy_map[SERVER_SITE_NAME]
         persistor = server_app.app_config.components.get("persistor")
         assert isinstance(persistor, NPModelPersistor)
         assert persistor.model == [1.0, 2.0, 3.0]

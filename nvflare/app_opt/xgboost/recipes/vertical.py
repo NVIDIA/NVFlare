@@ -24,11 +24,7 @@ from nvflare.app_opt.xgboost.histogram_based_v2.fed_controller import XGBFedCont
 from nvflare.app_opt.xgboost.histogram_based_v2.fed_executor import FedXGBHistogramExecutor
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import Recipe
-from nvflare.recipe.utils import (
-    _apply_legacy_constructor_config,
-    _configure_per_site_clients,
-    _validate_per_site_targets,
-)
+from nvflare.recipe.utils import _apply_legacy_constructor_config, _validate_per_site_targets
 
 
 # Internal — not part of the public API
@@ -224,9 +220,9 @@ class XGBVerticalRecipe(Recipe):
         self.per_site_config = None
 
         # Configure site-independent job components first. The controller and
-        # client apps depend on the site mapping and are added by the hook.
-        self.job = self.configure()
-        Recipe.__init__(self, self.job)
+        # client apps depend on the site mapping and are prepared together later.
+        job = self.configure()
+        Recipe.__init__(self, job)
 
         if legacy_per_site_config is not None:
             _apply_legacy_constructor_config(self, legacy_per_site_config)
@@ -316,23 +312,14 @@ class XGBVerticalRecipe(Recipe):
                 raise ValueError(f"per_site_config for {site_name!r} must include 'data_loader' key")
 
         client_ranks = self._resolve_client_ranks(config)
-        controller = self._create_controller(client_ranks)
-        _configure_per_site_clients(
-            self.job,
-            config,
-            self._add_client_components,
-            replace_all_clients=False,
-        )
-        try:
-            self.job.to_server(controller, id="xgb_controller")
-        except Exception:
-            for site_name in config:
-                if site_name in self.job.clients:
-                    self.job.remove_client_app(site_name)
-            raise
-
         self.client_ranks = client_ranks
         self.per_site_config = dict(config)
+
+    def _prepare_client_apps(self) -> None:
+        self._validate_before_use()
+        self._job.to_server(self._create_controller(self.client_ranks), id="xgb_controller")
+        for site_name, site_config in self.per_site_config.items():
+            self._add_client_components(self._job, site_name, site_config)
 
     def _validate_before_use(self) -> None:
         if not self.configured_sites():

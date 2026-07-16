@@ -184,4 +184,4 @@ class SVMFedAvgRecipe(FedAvgRecipe):
 
         # Add the SVMAssembler as a component to the job
         # CollectAndAssembleModelAggregator will fetch it by ID at runtime
-        self.job.to_server(self._svm_assembler, id="svm_assembler")
+        self._job.to_server(self._svm_assembler, id="svm_assembler")

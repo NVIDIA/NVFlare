@@ -332,13 +332,13 @@ class TestRecipeMetaHelper:
         return Recipe(FedJob(name=name, **fed_job_kwargs))
 
     def _export_meta(self, recipe, tmp_path):
-        recipe.job.export_job(str(tmp_path))
-        with open(tmp_path / recipe.job.name / "meta.json") as f:
+        recipe._job.export_job(str(tmp_path))
+        with open(tmp_path / recipe._job.name / "meta.json") as f:
             return json.load(f)
 
     def test_set_recipe_meta_sets_recognized_top_level_meta_props(self, tmp_path):
         recipe = self._make_recipe("test_recipe_meta", min_clients=1, meta_props={"owner": "alice"})
-        recipe.job.to_server({"server_arg": True})
+        recipe._job.to_server({"server_arg": True})
 
         resource_spec = {
             "site-1": {"num_of_gpus": 1, "mem_per_gpu_in_GiB": 4},
@@ -354,7 +354,7 @@ class TestRecipeMetaHelper:
         set_recipe_meta(recipe, JobMetaKey.SCOPE, "private")
         set_recipe_meta(recipe, JobMetaKey.CUSTOM_PROPS, {"team": "research"})
 
-        job_config = recipe.job.job
+        job_config = recipe._job.job
         # Dedicated FedJobConfig fields are untouched by the helper.
         assert job_config.min_clients == 1
         assert job_config.mandatory_clients is None
@@ -384,16 +384,16 @@ class TestRecipeMetaHelper:
 
     def test_set_recipe_meta_warns_and_overrides_registered_resource_specs(self, tmp_path):
         recipe = self._make_recipe("test_recipe_meta_resource_conflict", min_clients=2)
-        recipe.job.job.add_resource_spec("base-site", {"num_of_gpus": 0})
-        recipe.job.to_server({"server_arg": True})
+        recipe._job.job.add_resource_spec("base-site", {"num_of_gpus": 0})
+        recipe._job.to_server({"server_arg": True})
 
         resource_spec = {"site-1": {"num_of_gpus": 1}}
         with pytest.warns(UserWarning, match="overrides the per-site resource specs"):
             set_recipe_meta(recipe, JobMetaKey.RESOURCE_SPEC, resource_spec)
 
-        assert recipe.job.job.meta_props["resource_spec"] == resource_spec
+        assert recipe._job.job.meta_props["resource_spec"] == resource_spec
         # The dedicated FedJobConfig field is never mutated by the helper.
-        assert recipe.job.job.resource_specs == {"base-site": {"num_of_gpus": 0}}
+        assert recipe._job.job.resource_specs == {"base-site": {"num_of_gpus": 0}}
 
         # meta_props is merged last, so the registered per-site spec is overridden.
         exported_meta = self._export_meta(recipe, tmp_path)
@@ -401,18 +401,18 @@ class TestRecipeMetaHelper:
 
     def test_set_recipe_meta_replaces_different_value_from_existing_meta_props(self):
         recipe = self._make_recipe("test_recipe_meta_props_conflict", min_clients=1, meta_props={"scope": "a"})
-        original_meta_props = recipe.job.job.meta_props
+        original_meta_props = recipe._job.job.meta_props
         set_recipe_meta(recipe, JobMetaKey.SCOPE, "b")
 
-        assert recipe.job.job.meta_props is original_meta_props
-        assert recipe.job.job.meta_props["scope"] == "b"
+        assert recipe._job.job.meta_props is original_meta_props
+        assert recipe._job.job.meta_props["scope"] == "b"
 
     def test_set_recipe_meta_allows_existing_meta_props_that_differ_from_generated_values(self):
         recipe = self._make_recipe("test_recipe_meta_generated_conflict", min_clients=2, meta_props={"min_clients": 5})
         set_recipe_meta(recipe, JobMetaKey.SCOPE, "private")
 
-        assert recipe.job.job.meta_props["min_clients"] == 5
-        assert recipe.job.job.meta_props["scope"] == "private"
+        assert recipe._job.job.meta_props["min_clients"] == 5
+        assert recipe._job.job.meta_props["scope"] == "private"
 
     @pytest.mark.parametrize(
         "key",
@@ -443,14 +443,14 @@ class TestRecipeMetaHelper:
         launcher_spec["site-1"]["docker"]["image"] = "changed"
         custom_props["clients"].append("site-2")
 
-        assert recipe.job.job.meta_props["launcher_spec"] == {"site-1": {"docker": {"image": "nvflare:latest"}}}
-        assert recipe.job.job.meta_props["custom_props"] == {"clients": ["site-1"]}
+        assert recipe._job.job.meta_props["launcher_spec"] == {"site-1": {"docker": {"image": "nvflare:latest"}}}
+        assert recipe._job.job.meta_props["custom_props"] == {"clients": ["site-1"]}
 
     def test_set_recipe_meta_accepts_nested_booleans(self):
         recipe = self._make_recipe("test_recipe_meta_nested_bool", min_clients=1)
         set_recipe_meta(recipe, JobMetaKey.CUSTOM_PROPS, {"enabled": True, "flags": [False, True]})
 
-        assert recipe.job.job.meta_props["custom_props"] == {"enabled": True, "flags": [False, True]}
+        assert recipe._job.job.meta_props["custom_props"] == {"enabled": True, "flags": [False, True]}
 
     def test_set_recipe_meta_normalizes_non_string_dict_keys(self):
         recipe = self._make_recipe("test_recipe_meta_key_coercion", min_clients=1)
@@ -458,17 +458,17 @@ class TestRecipeMetaHelper:
 
         # Stored value matches what meta.json will contain (keys coerced to strings),
         # so in-process consumers and reloaded-meta consumers agree.
-        assert recipe.job.job.meta_props["custom_props"] == {"1": "a"}
+        assert recipe._job.job.meta_props["custom_props"] == {"1": "a"}
 
     def test_set_recipe_meta_requires_recipe_with_fed_job(self):
-        with pytest.raises(TypeError, match="recipe must provide a FedJob through recipe.job"):
+        with pytest.raises(TypeError, match="recipe must be backed by a FedJob"):
             set_recipe_meta(object(), JobMetaKey.SCOPE, "private")
 
     def test_set_recipe_meta_rejects_wrong_typed_job_config(self):
         from types import SimpleNamespace
 
-        recipe = SimpleNamespace(job=SimpleNamespace(job=object()))
-        with pytest.raises(TypeError, match="recipe must provide a FedJob through recipe.job"):
+        recipe = SimpleNamespace(_job=SimpleNamespace(job=object()))
+        with pytest.raises(TypeError, match="recipe must be backed by a FedJob"):
             set_recipe_meta(recipe, JobMetaKey.SCOPE, "private")
 
     @pytest.mark.parametrize(
@@ -608,7 +608,7 @@ class TestFinalGlobalEvaluation:
         job = MagicMock()
         job._deploy_map = {}
         job.comp_ids = comp_ids
-        return SimpleNamespace(job=job, framework=framework or FrameworkType.PYTORCH)
+        return SimpleNamespace(_job=job, framework=framework or FrameworkType.PYTORCH)
 
     @pytest.fixture
     def recording_cross_site_eval(self, monkeypatch):
@@ -642,11 +642,11 @@ class TestFinalGlobalEvaluation:
 
         captured_kwargs, controller_type = recording_cross_site_eval
         recipe = self._make_recipe({"persistor_id": "persistor"})
-        recipe.job.to_server.side_effect = ["final_model_locator", None, None]
+        recipe._job.to_server.side_effect = ["final_model_locator", None, None]
 
         add_final_global_evaluation(recipe, participating_clients=["site-1"], validation_timeout=42)
 
-        calls = recipe.job.to_server.call_args_list
+        calls = recipe._job.to_server.call_args_list
         assert isinstance(calls[0].args[0], PTFileModelLocator)
         assert calls[0].kwargs == {"id": "final_model_locator"}
         assert isinstance(calls[1].args[0], ValidationJsonGenerator)
@@ -660,7 +660,7 @@ class TestFinalGlobalEvaluation:
                 "participating_clients": ["site-1"],
             }
         ]
-        assert recipe.job.comp_ids["locator_id"] == "final_model_locator"
+        assert recipe._job.comp_ids["locator_id"] == "final_model_locator"
         assert recipe._cse_added is True
 
     def test_reuses_existing_model_locator(self, recording_cross_site_eval):
@@ -671,8 +671,8 @@ class TestFinalGlobalEvaluation:
 
         add_final_global_evaluation(recipe)
 
-        assert recipe.job.to_server.call_count == 2
-        controller = recipe.job.to_server.call_args_list[-1].args[0]
+        assert recipe._job.to_server.call_count == 2
+        controller = recipe._job.to_server.call_args_list[-1].args[0]
         assert isinstance(controller, controller_type)
         assert captured_kwargs == [
             {
@@ -700,7 +700,7 @@ class TestFinalGlobalEvaluation:
         with pytest.raises(error_type, match="participating_clients must"):
             add_final_global_evaluation(recipe, participating_clients=participating_clients)
 
-        recipe.job.to_server.assert_not_called()
+        recipe._job.to_server.assert_not_called()
 
     def test_rejects_duplicate_configuration(self):
         from nvflare.recipe import add_final_global_evaluation
@@ -741,7 +741,7 @@ class TestFinalGlobalEvaluation:
         from nvflare.recipe import add_final_global_evaluation
 
         recipe = self._make_recipe({"persistor_id": "persistor"})
-        recipe.job.to_server.return_value = None
+        recipe._job.to_server.return_value = None
 
         with pytest.raises(RuntimeError, match="failed to register"):
             add_final_global_evaluation(recipe)
@@ -785,7 +785,7 @@ class TestAddExperimentTrackingClients:
 
         add_experiment_tracking(recipe, "mlflow")
 
-        receiver = recipe.job._deploy_map["server"].app_config.components["receiver"]
+        receiver = recipe._job._deploy_map["server"].app_config.components["receiver"]
         assert receiver.kw_args == {
             "experiment_name": "named_job-experiment",
             "run_name": "named_job-Server",
@@ -800,7 +800,7 @@ class TestAddExperimentTrackingClients:
 
         add_experiment_tracking(recipe, "mlflow", client_side=True, server_side=False)
 
-        receiver = recipe.job._deploy_map[ALL_SITES].app_config.components["client_receiver"]
+        receiver = recipe._job._deploy_map[ALL_SITES].app_config.components["client_receiver"]
         assert receiver.kw_args == {
             "experiment_name": "client_job-experiment",
             "run_name": "client_job-Client",
@@ -815,7 +815,7 @@ class TestAddExperimentTrackingClients:
 
         add_experiment_tracking(recipe, "mlflow", config)
 
-        receiver = recipe.job._deploy_map["server"].app_config.components["receiver"]
+        receiver = recipe._job._deploy_map["server"].app_config.components["receiver"]
         assert receiver.kw_args == {
             "experiment_name": "custom-experiment",
             "run_name": "named_job-Server",
@@ -830,8 +830,8 @@ class TestAddExperimentTrackingClients:
 
         add_experiment_tracking(recipe, "mlflow", client_side=True)
 
-        server_receiver = recipe.job._deploy_map["server"].app_config.components["receiver"]
-        client_receiver = recipe.job._deploy_map[ALL_SITES].app_config.components["client_receiver"]
+        server_receiver = recipe._job._deploy_map["server"].app_config.components["receiver"]
+        client_receiver = recipe._job._deploy_map[ALL_SITES].app_config.components["client_receiver"]
         assert server_receiver.kw_args["run_name"] == "both_sides-Server"
         assert client_receiver.kw_args["run_name"] == "both_sides-Client"
 
@@ -861,11 +861,11 @@ class TestAddExperimentTrackingClients:
             clients=["site-1"],
         )
 
-        receiver = recipe.job._deploy_map["site-1"].app_config.components["client_receiver"]
+        receiver = recipe._job._deploy_map["site-1"].app_config.components["client_receiver"]
         assert receiver.tracking_uri == "file:///tmp/site-1/mlruns"
         # Local (non-federated) analytics events are configured by default.
         assert receiver.events == [ANALYTIC_EVENT_TYPE]
-        assert ALL_SITES not in recipe.job._deploy_map
+        assert ALL_SITES not in recipe._job._deploy_map
 
     def test_client_side_tracking_per_site_configs(self, dummy_tracking):
         from nvflare.recipe.utils import add_experiment_tracking
@@ -874,7 +874,7 @@ class TestAddExperimentTrackingClients:
         # Real recipes have per-site client apps (e.g. from per_site_config) before
         # tracking is added; targeting only existing sites is enforced.
         for site in ("site-1", "site-2"):
-            recipe.job.to({"site_arg": site}, site)
+            recipe._job.to({"site_arg": site}, site)
         for site in ("site-1", "site-2"):
             add_experiment_tracking(
                 recipe,
@@ -886,7 +886,7 @@ class TestAddExperimentTrackingClients:
             )
 
         for site in ("site-1", "site-2"):
-            receiver = recipe.job._deploy_map[site].app_config.components["client_receiver"]
+            receiver = recipe._job._deploy_map[site].app_config.components["client_receiver"]
             assert receiver.tracking_uri == f"file:///tmp/{site}/mlruns"
 
     def test_client_side_tracking_all_clients_by_default(self, dummy_tracking):
@@ -896,7 +896,7 @@ class TestAddExperimentTrackingClients:
         recipe = self._make_recipe()
         add_experiment_tracking(recipe, dummy_tracking, {"tracking_uri": "u"}, client_side=True, server_side=False)
 
-        receiver = recipe.job._deploy_map[ALL_SITES].app_config.components["client_receiver"]
+        receiver = recipe._job._deploy_map[ALL_SITES].app_config.components["client_receiver"]
         assert receiver.tracking_uri == "u"
 
     def test_server_side_tracking_unaffected_by_clients_feature(self, dummy_tracking):
@@ -905,7 +905,7 @@ class TestAddExperimentTrackingClients:
         recipe = self._make_recipe()
         add_experiment_tracking(recipe, dummy_tracking, {"tracking_uri": "u"})
 
-        components = recipe.job._deploy_map["server"].app_config.components
+        components = recipe._job._deploy_map["server"].app_config.components
         assert components["receiver"].tracking_uri == "u"
         # Server receiver keeps federated (default) events.
         assert not hasattr(components["receiver"], "events")
@@ -938,8 +938,8 @@ class TestAddExperimentTrackingClients:
         from nvflare.recipe.utils import add_experiment_tracking
 
         recipe = self._make_recipe()
-        recipe.job.to({"site_arg": 1}, "site-1")
-        recipe.job.to({"site_arg": 2}, "site-2")
+        recipe._job.to({"site_arg": 1}, "site-1")
+        recipe._job.to({"site_arg": 2}, "site-2")
 
         with pytest.raises(ValueError, match="unknown client site"):
             add_experiment_tracking(
@@ -956,7 +956,7 @@ class TestAddExperimentTrackingClients:
 
         recipe = self._make_recipe()
         # Default recipe topology: one client app for all clients.
-        recipe.job.to_clients({"executor_standin": True})
+        recipe._job.to_clients({"executor_standin": True})
 
         with pytest.raises(ValueError, match="applies to all clients"):
             add_experiment_tracking(
@@ -972,7 +972,7 @@ class TestAddExperimentTrackingClients:
         from nvflare.recipe.utils import add_experiment_tracking
 
         recipe = self._make_recipe("test_tracking_export")
-        recipe.job.to_server({"server_arg": True})
+        recipe._job.to_server({"server_arg": True})
         add_experiment_tracking(
             recipe,
             dummy_tracking,
@@ -982,7 +982,7 @@ class TestAddExperimentTrackingClients:
             clients=["site-1"],
         )
 
-        recipe.job.export_job(str(tmp_path))
+        recipe._job.export_job(str(tmp_path))
         with open(tmp_path / "test_tracking_export" / "app_site-1" / "config" / "config_fed_client.json") as f:
             client_cfg = json.load(f)
 

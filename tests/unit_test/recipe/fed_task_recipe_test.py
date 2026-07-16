@@ -97,7 +97,7 @@ class TestFedTaskRecipe:
         assert recipe.framework == FrameworkType.RAW
         assert recipe.server_expected_format == ExchangeFormat.RAW
 
-        server_app = recipe.job._deploy_map["server"]
+        server_app = recipe._job._deploy_map["server"]
         controller = server_app.app_config.workflows[0].controller
         assert isinstance(controller, CmdTaskController)
         assert controller.task_name == "embed"
@@ -107,7 +107,7 @@ class TestFedTaskRecipe:
         assert controller.min_responses == 1
         assert controller.timeout == 10
 
-        client_app = recipe.job._deploy_map[ALL_SITES]
+        client_app = recipe._job._deploy_map[ALL_SITES]
         executor_def = client_app.app_config.executors[0]
         assert executor_def.tasks == ["embed"]
         assert temp_task_script in client_app.app_config.ext_scripts
@@ -120,7 +120,7 @@ class TestFedTaskRecipe:
             task_script=temp_task_script,
         )
 
-        controller = recipe.job._deploy_map["server"].app_config.workflows[0].controller
+        controller = recipe._job._deploy_map["server"].app_config.workflows[0].controller
         assert controller.task_data == {"task_name": "preprocess"}
         assert controller.task_meta == {"status": "request"}
 
@@ -138,7 +138,7 @@ class TestFedTaskRecipe:
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            recipe.job.export_job(tmpdir)
+            recipe._job.export_job(tmpdir)
             job_dir = os.path.join(tmpdir, "config_task")
 
             with open(os.path.join(job_dir, "app", "config", "config_fed_server.json")) as f:

@@ -158,7 +158,7 @@ class TestBaseCyclicRecipe:
             **base_recipe_params,
         )
 
-        server_app = recipe.job._deploy_map.get("server")
+        server_app = recipe._job._deploy_map.get("server")
         persistor = server_app.app_config.components.get("persistor")
         assert persistor is not None
         assert getattr(persistor, "source_ckpt_file_full_name", None) == "/abs/path/to/model.pt"
@@ -205,8 +205,8 @@ class TestCyclicRecipeControllerConfig:
             **base_recipe_params,
         )
 
-        controller = recipe.job._deploy_map["server"].app_config.workflows[0].controller
-        launcher = recipe.job._deploy_map[ALL_SITES].app_config.components["launcher"]
+        controller = recipe._job._deploy_map["server"].app_config.workflows[0].controller
+        launcher = recipe._job._deploy_map[ALL_SITES].app_config.components["launcher"]
         assert controller.task_assignment_timeout == 60
         assert controller._task_check_period == 2.0
         assert launcher._shutdown_timeout == 90.0
@@ -236,7 +236,7 @@ class TestPTCyclicRecipe:
         )
 
         assert recipe.name == "test_pt_cyclic"
-        assert recipe.job is not None
+        assert recipe._job is not None
 
     def test_pt_cyclic_with_ptmodel_wrapper_returns_persistor_id(
         self, mock_file_system, base_recipe_params, simple_model
@@ -250,7 +250,7 @@ class TestPTCyclicRecipe:
             **base_recipe_params,
         )
 
-        server_app = recipe.job._deploy_map.get("server")
+        server_app = recipe._job._deploy_map.get("server")
         assert server_app is not None
         assert "persistor" in server_app.app_config.components
 
@@ -271,4 +271,4 @@ class TestTFCyclicRecipe:
         )
 
         assert recipe.name == "test_tf_cyclic"
-        assert recipe.job is not None
+        assert recipe._job is not None

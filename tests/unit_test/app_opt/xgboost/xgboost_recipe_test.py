@@ -38,12 +38,12 @@ def _per_site_config():
 
 
 def _get_metrics_writer(recipe):
-    server_app = recipe.job._deploy_map[SERVER_SITE_NAME]
+    server_app = recipe._job._deploy_map[SERVER_SITE_NAME]
     return server_app.app_config.components.get("metrics_artifact_writer")
 
 
 def _get_server_controller(recipe, controller_id):
-    server_app = recipe.job._deploy_map[SERVER_SITE_NAME]
+    server_app = recipe._job._deploy_map[SERVER_SITE_NAME]
     return next(
         (workflow.controller for workflow in server_app.app_config.workflows if workflow.id == controller_id),
         None,
@@ -71,9 +71,13 @@ def test_xgb_recipes_apply_helper_config(recipe, tmp_path):
     set_per_site_config(recipe, config)
 
     assert recipe.configured_sites() == ["site-1", "site-2"]
-    assert recipe.job.clients == ["site-1", "site-2"]
+    assert recipe._job.clients == []
+
+    recipe.add_client_config({"configured": True})
+
+    assert recipe._job.clients == ["site-1", "site-2"]
     for site_name, site_config in config.items():
-        components = recipe.job._deploy_map[site_name].app_config.components
+        components = recipe._job._deploy_map[site_name].app_config.components
         assert components[recipe.data_loader_id] is site_config["data_loader"]
     assert _get_server_controller(recipe, "xgb_controller") is not None
     recipe._validate_before_use()
@@ -86,7 +90,9 @@ def test_xgb_legacy_constructor_config_delegates_to_helper():
         recipe = XGBBaggingRecipe(name="xgb_legacy", min_clients=2, per_site_config=config)
 
     assert recipe.configured_sites() == ["site-1", "site-2"]
-    assert recipe.job.clients == ["site-1", "site-2"]
+    assert recipe._job.clients == []
+    recipe._ensure_client_apps_prepared()
+    assert recipe._job.clients == ["site-1", "site-2"]
 
 
 def test_xgb_per_site_config_validates_client_count_and_data_loader():
@@ -103,7 +109,7 @@ def test_xgb_per_site_config_validates_client_count_and_data_loader():
             },
         )
 
-    assert recipe.job.clients == []
+    assert recipe._job.clients == []
     assert recipe.configured_sites() == []
 
 
@@ -118,6 +124,10 @@ def test_xgb_vertical_resolves_label_owner_rank_when_helper_is_applied():
     set_per_site_config(recipe, _per_site_config())
 
     assert recipe.client_ranks == {"site-2": 0, "site-1": 1}
+    assert _get_server_controller(recipe, "xgb_controller") is None
+
+    recipe._ensure_client_apps_prepared()
+
     controller = _get_server_controller(recipe, "xgb_controller")
     assert controller is not None
     assert controller.client_ranks == recipe.client_ranks

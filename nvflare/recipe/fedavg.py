@@ -27,11 +27,7 @@ from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.job_config.base_fed_job import BaseFedJob
 from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.recipe.spec import Recipe
-from nvflare.recipe.utils import (
-    _apply_legacy_constructor_config,
-    _configure_per_site_clients,
-    _validate_per_site_targets,
-)
+from nvflare.recipe.utils import _apply_legacy_constructor_config, _validate_per_site_targets
 
 
 # Internal — not part of the public API
@@ -281,6 +277,10 @@ class FedAvgRecipe(Recipe):
         self.launch_external_process = v.launch_external_process
         self.command = v.command
         self.framework = v.framework
+        # Some wrappers expose a different framework to Recipe utilities after
+        # construction (for example NumPy exposes RAW for CSE). ScriptRunner
+        # creation must retain the framework validated for client exchange.
+        self._client_runner_framework = v.framework
         self.server_expected_format = v.server_expected_format
         self.params_transfer_type = v.params_transfer_type
         self.model_persistor = v.model_persistor
@@ -363,8 +363,6 @@ class FedAvgRecipe(Recipe):
         )
         job.to_server(controller)
 
-        job.to_clients(self._create_client_runner({}))
-
         Recipe.__init__(self, job)
 
         if legacy_per_site_config is not None:
@@ -383,7 +381,7 @@ class FedAvgRecipe(Recipe):
                 site_config, "launch_external_process", self.launch_external_process
             ),
             command=self._site_value(site_config, "command", self.command),
-            framework=self._site_value(site_config, "framework", self.framework),
+            framework=self._site_value(site_config, "framework", self._client_runner_framework),
             server_expected_format=self._site_value(site_config, "server_expected_format", self.server_expected_format),
             params_transfer_type=self._site_value(site_config, "params_transfer_type", self.params_transfer_type),
             launch_once=self._site_value(site_config, "launch_once", self.launch_once),
@@ -392,18 +390,25 @@ class FedAvgRecipe(Recipe):
             cuda_empty_cache=self.cuda_empty_cache,
         )
 
-    def _add_client_runner(self, job: BaseFedJob, target: str, site_config: Dict) -> None:
-        job.to(self._create_client_runner(site_config), target)
-
     def _apply_per_site_config(self, config: Dict[str, Dict]) -> None:
         self._validate_per_site_config(config)
-        _configure_per_site_clients(
-            self.job,
-            config,
-            self._add_client_runner,
-            replace_all_clients=True,
-        )
+        # Validate every runner override while set_per_site_config() is still
+        # recoverable; actual client apps are materialized later.
+        for site_config in config.values():
+            self._create_client_runner(site_config)
         self.per_site_config = dict(config)
+
+    def _prepare_client_apps(self) -> None:
+        if self.per_site_config is None:
+            self._job.to_clients(self._create_client_runner({}))
+            return
+
+        runners = {
+            site_name: self._create_client_runner(site_config)
+            for site_name, site_config in self.per_site_config.items()
+        }
+        for site_name, runner in runners.items():
+            self._job.to(runner, site_name)
 
     @staticmethod
     def _resolve_model_filenames(best_model_filename: Optional[str], save_filename: Optional[str]) -> tuple[str, str]:

@@ -24,11 +24,7 @@ from nvflare.app_opt.xgboost.tree_based.model_persistor import XGBModelPersistor
 from nvflare.app_opt.xgboost.tree_based.shareable_generator import XGBModelShareableGenerator
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import Recipe
-from nvflare.recipe.utils import (
-    _apply_legacy_constructor_config,
-    _configure_per_site_clients,
-    _validate_per_site_targets,
-)
+from nvflare.recipe.utils import _apply_legacy_constructor_config, _validate_per_site_targets
 
 
 # Internal — not part of the public API
@@ -225,9 +221,9 @@ class XGBBaggingRecipe(Recipe):
             raise ValueError("Cyclic training requires at least 2 clients (min_clients >= 2).")
 
         # Configure site-independent job components first. Site apps are added
-        # only through the canonical per-site configuration hook.
-        self.job = self.configure()
-        Recipe.__init__(self, self.job)
+        # once per-site configuration is known.
+        job = self.configure()
+        Recipe.__init__(self, job)
 
         if legacy_per_site_config is not None:
             _apply_legacy_constructor_config(self, legacy_per_site_config)
@@ -308,13 +304,12 @@ class XGBBaggingRecipe(Recipe):
             if site_config.get("data_loader") is None:
                 raise ValueError(f"per_site_config for {site_name!r} must include 'data_loader' key")
 
-        _configure_per_site_clients(
-            self.job,
-            config,
-            self._add_client_components,
-            replace_all_clients=False,
-        )
         self.per_site_config = dict(config)
+
+    def _prepare_client_apps(self) -> None:
+        self._validate_before_use()
+        for site_name, site_config in self.per_site_config.items():
+            self._add_client_components(self._job, site_name, site_config)
 
     def _validate_before_use(self) -> None:
         if not self.configured_sites():

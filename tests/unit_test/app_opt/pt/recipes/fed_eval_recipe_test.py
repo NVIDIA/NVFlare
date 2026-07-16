@@ -72,12 +72,12 @@ def assert_recipe_basics(recipe, expected_name, expected_params):
     assert recipe.eval_script == expected_params.get("eval_script", "mock_eval_script.py")
     assert recipe.eval_args == expected_params.get("eval_args", "--batch_size 32")
     assert recipe.min_clients == expected_params.get("min_clients", 2)
-    assert recipe.job is not None
-    assert recipe.job.name == expected_name
+    assert recipe._job is not None
+    assert recipe._job.name == expected_name
 
 
 def get_client_executor(recipe, site_name):
-    return recipe.job._deploy_map[site_name].app_config.executors[0].executor
+    return recipe._job._deploy_map[site_name].app_config.executors[0].executor
 
 
 class TestFedEvalRecipe:
@@ -127,17 +127,23 @@ class TestFedEvalRecipe:
         assert recipe.validation_timeout == 6000
         assert recipe.per_site_config is None
 
-    def test_set_per_site_config_builds_site_specific_runners(self, mock_file_system, base_recipe_params, simple_model):
+    def test_set_per_site_config_prepares_site_runners_before_client_customization(
+        self, mock_file_system, base_recipe_params, simple_model
+    ):
         model, _ = simple_model
         recipe = FedEvalRecipe(name="test_helper_per_site", model=model, **base_recipe_params)
         config = {"site-1": {"eval_args": "--batch_size 8"}, "site-2": {}}
 
-        assert recipe.job.clients == [ALL_SITES]
+        assert recipe._job.clients == []
         set_per_site_config(recipe, config)
 
         assert recipe.configured_sites() == ["site-1", "site-2"]
-        assert recipe.job.clients == ["site-1", "site-2"]
-        assert ALL_SITES not in recipe.job._deploy_map
+        assert recipe._job.clients == []
+
+        recipe.add_client_config({"configured": True})
+
+        assert recipe._job.clients == ["site-1", "site-2"]
+        assert ALL_SITES not in recipe._job._deploy_map
         assert get_client_executor(recipe, "site-1")._task_script_args == "--batch_size 8"
         assert get_client_executor(recipe, "site-2")._task_script_args == "--batch_size 32"
 
@@ -147,7 +153,7 @@ class TestFedEvalRecipe:
         recipe = FedEvalRecipe(model=model, **base_recipe_params)
 
         assert recipe.name == "eval"
-        assert recipe.job.name == "eval"
+        assert recipe._job.name == "eval"
 
     def test_custom_command(self, mock_file_system, base_recipe_params, simple_model):
         """Test FedEvalRecipe with custom command."""
@@ -282,7 +288,7 @@ class TestFedEvalRecipeValidation:
         with pytest.raises(ValueError, match=r"defines 1 site.*min_clients=2"):
             set_per_site_config(recipe, {"site-1": {}})
 
-        assert recipe.job.clients == [ALL_SITES]
+        assert recipe._job.clients == []
 
     def test_invalid_eval_ckpt_raises_error(self, simple_model):
         """Test that relative eval_ckpt raises when path does not exist locally.

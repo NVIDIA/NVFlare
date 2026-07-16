@@ -21,12 +21,7 @@ from nvflare.client.config import ExchangeFormat
 from nvflare.job_config.base_fed_job import BaseFedJob
 from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 from nvflare.recipe.spec import Recipe
-from nvflare.recipe.utils import (
-    _apply_legacy_constructor_config,
-    _configure_per_site_clients,
-    _validate_per_site_targets,
-    validate_ckpt,
-)
+from nvflare.recipe.utils import _apply_legacy_constructor_config, _validate_per_site_targets, validate_ckpt
 
 
 # Internal validator
@@ -197,8 +192,6 @@ class FedEvalRecipe(Recipe):
         controller = EvalController(persistor_id=persistor_id, timeout=self.validation_timeout)
         job.to_server(controller)
 
-        job.to_clients(self._create_client_runner({}))
-
         Recipe.__init__(self, job)
 
         if legacy_per_site_config is not None:
@@ -216,15 +209,20 @@ class FedEvalRecipe(Recipe):
             cuda_empty_cache=self.cuda_empty_cache,
         )
 
-    def _add_client_runner(self, job: BaseFedJob, target: str, site_config: Dict) -> None:
-        job.to(self._create_client_runner(site_config), target)
-
     def _apply_per_site_config(self, config: Dict[str, Dict]) -> None:
         _validate_per_site_targets(config, self.min_clients)
-        _configure_per_site_clients(
-            self.job,
-            config,
-            self._add_client_runner,
-            replace_all_clients=True,
-        )
+        for site_config in config.values():
+            self._create_client_runner(site_config)
         self.per_site_config = dict(config)
+
+    def _prepare_client_apps(self) -> None:
+        if self.per_site_config is None:
+            self._job.to_clients(self._create_client_runner({}))
+            return
+
+        runners = {
+            site_name: self._create_client_runner(site_config)
+            for site_name, site_config in self.per_site_config.items()
+        }
+        for site_name, runner in runners.items():
+            self._job.to(runner, site_name)
