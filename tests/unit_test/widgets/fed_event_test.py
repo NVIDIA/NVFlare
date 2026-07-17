@@ -106,6 +106,26 @@ class TestFedEventRunner:
 
         assert len(receiver.in_events) == 2
 
+    def test_invalid_event_ids_are_rejected(self):
+        receiver = _make_receiver()
+
+        with patch.object(receiver, "log_error") as log_error:
+            for invalid_event_id in ("", 123):
+                reply = receiver._receive("fed.event", _make_incoming_event(1.0, invalid_event_id), FLContext())
+
+        assert log_error.call_count == 2
+        assert reply.get_return_code() == ReturnCode.BAD_REQUEST_DATA
+        assert receiver.in_events == []
+
+    def test_event_id_cache_evicts_oldest_entry(self):
+        receiver = _make_receiver()
+
+        with patch("nvflare.widgets.fed_event.MAX_EVENT_ID_CACHE_SIZE", 2):
+            for event_id in ("event-1", "event-2", "event-3"):
+                receiver._receive("fed.event", _make_incoming_event(1.0, event_id), FLContext())
+
+        assert list(receiver.received_event_ids["site-1"]) == ["event-2", "event-3"]
+
     def test_legacy_events_without_event_ids_are_not_timestamp_filtered(self):
         receiver = _make_receiver()
 
