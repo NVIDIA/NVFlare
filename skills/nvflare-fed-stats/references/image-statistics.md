@@ -47,13 +47,15 @@ statistic_configs = {
   unreadable files (broken headers AND broken pixel data) are counted
   before the server's first collection and the `Global` row accumulates
   them. A file failing AFTER verification (mutated or transiently
-  unreadable between rounds) fails the round closed — the template raises
-  instead of releasing a histogram whose min-count/bin-cap screening was
-  computed on counts that no longer match the readable images. Report the
-  product error and recommend a rerun; never weaken the raise to a warning
-  (the cleanser/statistics ordering question is product-side, tracked
-  with NVFlare issue #4876). Very large datasets may trade the
-  double-decode for round-2-only discovery; say so in the report.
+  unreadable between rounds) is added to `failure_count` during the
+  histogram pass, the histogram excludes that file, and the returned
+  second-round payload lets the standard min-count/bin-cap filters screen
+  the output against the honest effective count. Do not raise from the
+  statistic method for this condition: the statistics task handler catches
+  per-statistic exceptions and can otherwise return partial output. Report
+  the late failure as a data-quality finding with rerun guidance. Very
+  large datasets may trade the double-decode for round-2-only discovery;
+  say so in the report.
 - mean/sum/stddev/var/quantile/min/max over image sets are not supported by
   this skill version: report them as unsupported for image data rather than
   improvising pixel-pooled implementations.

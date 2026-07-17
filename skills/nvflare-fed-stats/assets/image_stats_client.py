@@ -13,7 +13,10 @@ Adapt this template when generating the client:
   ``failure_count`` (which must be configured explicitly to appear in
   output) is correct from the first statistics round; verification uses
   ``_load_image`` itself, so it cannot disagree with the histogram pass,
-  which remains a deduplicated backstop for transient read errors;
+  which remains a deduplicated backstop for transient read errors; if a
+  file fails later, the histogram output is computed only from still-readable
+  files and the updated ``failure_count`` lets the standard privacy filters
+  withhold output based on the honest effective count;
 - grayscale conversion is applied before histogramming; state that policy in
   the report (multi-channel per-channel statistics are not supported here);
 - parameterize the data location by site identity; do not hardcode one
@@ -105,15 +108,21 @@ class ImageIntensityStatistics(Statistics):
                 arr = self._load_image(path)
                 counts, edges = np.histogram(arr, bins=num_of_bins, range=(global_min_value, global_max_value))
                 totals += counts
-            except Exception as e:
+            except Exception:
                 # passed verification but failed now: the data changed (or a
                 # transient read error) AFTER count/failure_count were already
-                # consumed by the privacy checks, so their screening no longer
-                # covers this histogram - fail closed instead of releasing it
-                raise RuntimeError(
-                    f"{path} failed after passing verification; the counts already consumed by the "
-                    "privacy checks no longer match the readable images - rerun the job"
-                ) from e
+                # consumed by the controller. Do not raise here: the statistics
+                # task handler catches per-statistic exceptions and can return
+                # partial output. Instead update failure_count and let the
+                # standard result filters screen this histogram against the
+                # honest effective count in this second-round payload.
+                self.failed_paths.add(path)
+                self.log_warning(
+                    None,
+                    f"{path} failed after passing verification; histogram excludes it and "
+                    "failure_count was updated for privacy filtering",
+                    fire_event=False,
+                )
         if edges is None:
             # every image at this site failed: round-1 count/failure_count
             # already surface the data-quality condition, so return

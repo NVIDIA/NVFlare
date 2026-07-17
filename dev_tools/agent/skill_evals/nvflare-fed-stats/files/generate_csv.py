@@ -77,6 +77,7 @@ FEATURES = [
 ]
 
 SITE_COUNTS = {"site-1": 378, "site-2": 382, "site-3": 240}
+SMALL_SITE_ROWS = 60
 FIXTURES = (
     "patients-with-header",
     "patients-no-header",
@@ -369,10 +370,15 @@ def _write_fixture_tree(
         summary["schema-drift"] = {"site-1": len(site_rows["site-1"]), "site-2": len(site_rows["site-2"])}
 
     if _selected(fixture, "small-site"):
+        small_site_rows = site_rows["site-3"][:SMALL_SITE_ROWS]
         _write_csv(output_root / "small-site" / "site-1" / "data.csv", site_rows["site-1"])
         _write_csv(output_root / "small-site" / "site-2" / "data.csv", site_rows["site-2"])
-        _write_csv(output_root / "small-site" / "site-3" / "data.csv", site_rows["site-3"][:60])
-        summary["small-site"] = {"site-1": len(site_rows["site-1"]), "site-2": len(site_rows["site-2"]), "site-3": 60}
+        _write_csv(output_root / "small-site" / "site-3" / "data.csv", small_site_rows)
+        summary["small-site"] = {
+            "site-1": len(site_rows["site-1"]),
+            "site-2": len(site_rows["site-2"]),
+            "site-3": len(small_site_rows),
+        }
 
     return summary
 
