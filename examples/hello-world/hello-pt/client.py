@@ -113,7 +113,11 @@ def main():
         # sending model parameters in the request.
         if flare.is_submit_model():
             if last_params is None:
-                raise RuntimeError("submit_model called before a local model was trained")
+                error_msg = "submit_model called before a local model was trained"
+                print(f"ERROR: {error_msg}")
+                # TaskScriptRunner converts this exception into TOPIC_ABORT so the
+                # executor can report the task failure instead of waiting for a result.
+                raise RuntimeError(error_msg)
             print(f"site = {client_name}, submitting local model")
             flare.send(flare.FLModel(params=last_params))
             continue

@@ -36,10 +36,15 @@ class JobLogResultValidator(FinishJobResultValidator):
         workspace_root = job_result["workspace_root"]
 
         for client_prop in client_props:
-            client_log = self._find_client_log(workspace_root, client_prop.name)
+            client_name = client_prop.name
+            if not self._is_path_component(client_name):
+                self.logger.error(f"invalid client name for streamed log lookup: {client_name!r}.")
+                return False
+
+            client_log = self._find_client_log(workspace_root, client_name)
             if not client_log:
                 self.logger.error(
-                    f"streamed log {client_prop.name}/{self.log_file_name} doesn't exist under {workspace_root}."
+                    f"streamed log {client_name}/{self.log_file_name} doesn't exist under {workspace_root}."
                 )
                 return False
 
@@ -56,7 +61,7 @@ class JobLogResultValidator(FinishJobResultValidator):
 
             missing_patterns = []
             for pattern in self.required_patterns:
-                expected = pattern.replace("{client}", client_prop.name)
+                expected = pattern.replace("{client}", client_name)
                 if expected not in content:
                     missing_patterns.append(expected)
 
@@ -65,6 +70,10 @@ class JobLogResultValidator(FinishJobResultValidator):
                 return False
 
         return True
+
+    @staticmethod
+    def _is_path_component(value: str) -> bool:
+        return isinstance(value, str) and value not in {"", ".", ".."} and os.path.basename(value) == value
 
     def _find_client_log(self, workspace_root: str, client_name: str):
         expected_suffix = os.path.join(client_name, self.log_file_name)

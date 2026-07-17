@@ -50,3 +50,14 @@ def test_job_log_validator_rejects_missing_required_pattern(tmp_path):
     validator = JobLogResultValidator(required_patterns=["Client {client} initialized"])
 
     assert not validator.validate_finished_results({"workspace_root": str(workspace_root)}, clients)
+
+
+def test_job_log_validator_rejects_client_name_path_traversal(tmp_path):
+    workspace_root = tmp_path / "workspace"
+    outside_log = tmp_path / "other-workspace" / "log.json"
+    outside_log.parent.mkdir(parents=True)
+    outside_log.write_text('{"message": "outside workspace"}\n', encoding="utf-8")
+    clients = [SimpleNamespace(name="../other-workspace")]
+    validator = JobLogResultValidator()
+
+    assert not validator.validate_finished_results({"workspace_root": str(workspace_root)}, clients)

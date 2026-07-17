@@ -4,7 +4,7 @@
 
 n_servers: 1
 n_clients: 2
-jobs_root_dir: /tmp/nvflare/recipe_jobs/numpy
+jobs_root_dir: ./data/recipe_jobs/numpy
 cleanup: true
 poll_period: 1
 event_sequence_timeout: 600
@@ -12,8 +12,8 @@ event_sequence_timeout: 600
 tests:
   - test_name: Run current hello-numpy example with full parameter transfer
     setup:
-      - rm -rf /tmp/nvflare/recipe_jobs/numpy/hello-numpy
-      - /bin/sh -c "cd ../../examples/hello-world/hello-numpy && python job.py --export --export-dir /tmp/nvflare/recipe_jobs/numpy --n_clients 2 --num_rounds 1 --update_type full"
+      - rm -rf ./data/recipe_jobs/numpy/hello-numpy
+      - /bin/sh -c "cd ../../examples/hello-world/hello-numpy && python job.py --export --export-dir ../../../tests/integration_test/data/recipe_jobs/numpy --n_clients 2 --num_rounds 1 --update_type full"
     event_sequence:
       - trigger:
           type: server_log
@@ -34,12 +34,12 @@ tests:
       - path: tests.integration_test.src.validators.TBResultValidator
         args: { require_result_on_client: false }
     teardown:
-      - rm -rf /tmp/nvflare/recipe_jobs/numpy/hello-numpy
+      - rm -rf ./data/recipe_jobs/numpy/hello-numpy
 
   - test_name: Run current hello-numpy example with diff parameter transfer
     setup:
-      - rm -rf /tmp/nvflare/recipe_jobs/numpy/hello-numpy
-      - /bin/sh -c "cd ../../examples/hello-world/hello-numpy && python job.py --export --export-dir /tmp/nvflare/recipe_jobs/numpy --n_clients 2 --num_rounds 1 --update_type diff"
+      - rm -rf ./data/recipe_jobs/numpy/hello-numpy
+      - /bin/sh -c "cd ../../examples/hello-world/hello-numpy && python job.py --export --export-dir ../../../tests/integration_test/data/recipe_jobs/numpy --n_clients 2 --num_rounds 1 --update_type diff"
     event_sequence:
       - trigger:
           type: server_log
@@ -60,12 +60,12 @@ tests:
       - path: tests.integration_test.src.validators.TBResultValidator
         args: { require_result_on_client: false }
     teardown:
-      - rm -rf /tmp/nvflare/recipe_jobs/numpy/hello-numpy
+      - rm -rf ./data/recipe_jobs/numpy/hello-numpy
 
   - test_name: Run current hello-numpy-cross-val training example
     setup:
-      - rm -rf /tmp/nvflare/recipe_jobs/numpy/hello-numpy-train-cse
-      - /bin/sh -c "cd ../../examples/hello-world/hello-numpy-cross-val && python job.py --export --export-dir /tmp/nvflare/recipe_jobs/numpy --mode training --n_clients 2 --num_rounds 1"
+      - rm -rf ./data/recipe_jobs/numpy/hello-numpy-train-cse
+      - /bin/sh -c "cd ../../examples/hello-world/hello-numpy-cross-val && python job.py --export --export-dir ../../../tests/integration_test/data/recipe_jobs/numpy --mode training --n_clients 2 --num_rounds 1"
     event_sequence:
       - trigger:
           type: server_log
@@ -86,12 +86,12 @@ tests:
       - path: tests.integration_test.src.validators.CrossValResultValidator
         args: { server_model_names: [ "server" ] }
     teardown:
-      - rm -rf /tmp/nvflare/recipe_jobs/numpy/hello-numpy-train-cse
+      - rm -rf ./data/recipe_jobs/numpy/hello-numpy-train-cse
 
   - test_name: Run current hello-log-streaming example
     setup:
-      - rm -rf /tmp/nvflare/recipe_jobs/numpy/hello-log-streaming
-      - /bin/sh -c "cd ../../examples/hello-world/hello-log-streaming && python job.py --export --export-dir /tmp/nvflare/recipe_jobs/numpy --n_clients 2 --num_rounds 1 --update_type full"
+      - rm -rf ./data/recipe_jobs/numpy/hello-log-streaming
+      - /bin/sh -c "cd ../../examples/hello-world/hello-log-streaming && python job.py --export --export-dir ../../../tests/integration_test/data/recipe_jobs/numpy --n_clients 2 --num_rounds 1 --update_type full"
     event_sequence:
       - trigger:
           type: server_log
@@ -112,6 +112,8 @@ tests:
       - path: tests.integration_test.src.validators.TBResultValidator
         args: { require_result_on_client: false }
       - path: tests.integration_test.src.validators.JobLogResultValidator
+        # Verify identity and round-progress messages from client.py. These
+        # stable substrings prove that the streamed log contains live client output.
         args: { required_patterns: [ "Client {client} initialized", "current_round=0" ] }
     teardown:
-      - rm -rf /tmp/nvflare/recipe_jobs/numpy/hello-log-streaming
+      - rm -rf ./data/recipe_jobs/numpy/hello-log-streaming
