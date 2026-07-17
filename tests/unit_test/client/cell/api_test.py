@@ -427,7 +427,8 @@ class TestReceiveSend:
         waiter.wait.return_value = SimpleNamespace(
             status=TransferProgressState.COMPLETED, reason="all_receivers_succeeded"
         )
-        monkeypatch.setattr(cell_api.DownloadService, "get_transfer_waiter", lambda _tx_id: waiter)
+        get_transfer_waiter = MagicMock(return_value=waiter)
+        monkeypatch.setattr(cell_api.DownloadService, "get_transfer_waiter", get_transfer_waiter)
 
         def on_request(topic, target, request):
             if topic == Topic.HELLO:
@@ -447,6 +448,7 @@ class TestReceiveSend:
             api.receive()
             api.send(FLModel(params={"w": [2.0]}))
             waiter.done.assert_called()
+            get_transfer_waiter.assert_called_once_with("actual-via-tx")
         finally:
             api.shutdown()
 
@@ -850,7 +852,8 @@ class TestHeartbeat:
             if transfer_completed.is_set()
             else None
         )
-        monkeypatch.setattr(cell_api.DownloadService, "get_transfer_waiter", lambda _tx_id: waiter)
+        get_transfer_waiter = MagicMock(return_value=waiter)
+        monkeypatch.setattr(cell_api.DownloadService, "get_transfer_waiter", get_transfer_waiter)
 
         def progressing_result_request(topic, target, request):
             if topic == Topic.HELLO:
@@ -890,6 +893,7 @@ class TestHeartbeat:
             sender.join(timeout=0.5)
             assert not sender.is_alive()
             assert send_errors == []
+            get_transfer_waiter.assert_called_once_with("live-result-tx")
         finally:
             release_request.set()
             api.shutdown()

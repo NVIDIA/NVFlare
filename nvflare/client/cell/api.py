@@ -157,9 +157,8 @@ class CellClientAPI(APISpec):
         self._last_cj_activity: Optional[float] = None
         self._heartbeat_stop = threading.Event()
         self._heartbeat_thread: Optional[threading.Thread] = None
-        # Only a live DownloadService transaction supersedes the CJ heartbeat lease;
-        # inline serialization and a wedged RESULT_READY stay heartbeat-bounded.
-        self._result_transactions = ()
+        # send() owns transaction metadata; heartbeat only observes stable transfer handles.
+        self._result_transfer_waiters = ()
         # Under _lock, this tells SHUTDOWN whether send() still owns a live result source.
         self._result_send_active = False
         self._params_conversion_state = {}
@@ -352,10 +351,10 @@ class CellClientAPI(APISpec):
             self.logger,
         )
         shareable = FLModelUtils.to_shareable(wire_model)
-        transactions = []
 
         def _on_transaction_created(transaction):
-            transactions.append(transaction)
+            waiter = DownloadService.get_transfer_waiter(transaction.tx_id)
+            self._add_result_transfer_waiter(waiter)
 
         # The no-op callback opts into ViaDownloader transaction tracking.
         def _on_result_progress(**_kwargs):
@@ -382,22 +381,13 @@ class CellClientAPI(APISpec):
             },
         }
 
-        def _has_live_result_transfer():
-            for transaction in tuple(transactions):
-                try:
-                    if not DownloadService.get_transfer_waiter(transaction.tx_id).done():
-                        return True
-                except Exception:
-                    continue
-            return False
-
         result_accepted = False
         # Serialize publication with SHUTDOWN; an admitted send owns the transfer barrier.
         with self._lock:
             self._check_session_alive()
             self._result_send_active = True
         try:
-            self._set_result_transactions(transactions)
+            self._clear_result_transfer_waiters()
             reply = self._cell.send_request(
                 channel=CHANNEL,
                 topic=Topic.RESULT_READY,
@@ -405,7 +395,7 @@ class CellClientAPI(APISpec):
                 request=request,
                 timeout=_HELLO_TIMEOUT,
                 abort_signal=self._result_abort_signal,
-                progress_wait_cb=_has_live_result_transfer,
+                progress_wait_cb=self._has_pending_result_transfer,
                 num_receivers=len(result_receiver_ids) if result_receiver_ids else 1,
                 receiver_ids=result_receiver_ids,
                 fobs_ctx_props=fobs_ctx_props,
@@ -413,13 +403,13 @@ class CellClientAPI(APISpec):
             self._check_result_accepted(reply)
             result_accepted = True
             self._note_cj_activity()
-            self._wait_for_result_transfers(transactions)
+            self._wait_for_result_transfers(self._snapshot_result_transfer_waiters())
         except BaseException:
-            self._delete_result_transactions(transactions)
+            self._delete_result_transfers(self._snapshot_result_transfer_waiters())
             raise
         finally:
             try:
-                self._set_result_transactions(())
+                self._clear_result_transfer_waiters()
                 if clear_cache:
                     # Transfer is complete; neither submitted nor received parameters are needed.
                     model.params = None
@@ -443,30 +433,30 @@ class CellClientAPI(APISpec):
                 if should_shutdown:
                     self.shutdown()
 
-    def _wait_for_result_transfers(self, transactions) -> None:
+    def _wait_for_result_transfers(self, result_waiters) -> None:
         """Wait for strict terminal success of every result DownloadService transaction."""
-        for transaction in tuple(transactions):
-            waiter = DownloadService.get_transfer_waiter(transaction.tx_id)
+        for waiter in result_waiters:
+            transaction_id = waiter.transaction_id
             while True:
                 outcome = waiter.wait(timeout=_RECEIVE_POLL_INTERVAL)
                 if outcome is not None:
                     break
                 if waiter.done():
-                    raise TrainerSessionError(f"result transfer {transaction.tx_id} ended without a terminal outcome")
+                    raise TrainerSessionError(f"result transfer {transaction_id} ended without a terminal outcome")
                 if self._abort:
                     raise TrainerSessionError(f"session aborted while serving result: {self._abort_reason}")
                 if self._closed:
                     raise TrainerSessionError("session closed while serving result")
             if outcome.status != TransferProgressState.COMPLETED:
                 raise TrainerSessionError(
-                    f"result transfer {transaction.tx_id} failed: status={outcome.status} reason={outcome.reason}"
+                    f"result transfer {transaction_id} failed: status={outcome.status} reason={outcome.reason}"
                 )
 
     @staticmethod
-    def _delete_result_transactions(transactions) -> None:
-        for transaction in transactions:
+    def _delete_result_transfers(result_waiters) -> None:
+        for waiter in result_waiters:
             try:
-                DownloadService.delete_transaction(transaction.tx_id)
+                DownloadService.delete_transaction(waiter.transaction_id)
             except Exception:
                 # Preserve the original failure; idle timeout remains the cleanup backstop.
                 pass
@@ -737,11 +727,7 @@ class CellClientAPI(APISpec):
             except Exception as e:
                 self.logger.debug(f"heartbeat to CJ failed: {e}")
 
-            silent_for = self._cj_silent_for()
-            if silent_for > self._heartbeat_timeout and not self._has_live_result_transfer():
-                self._mark_owner_lost(
-                    f"CJ heartbeat timed out after {silent_for:.1f}s (timeout={self._heartbeat_timeout}s)"
-                )
+            if self._abort_if_cj_timed_out():
                 return
 
     def _heartbeat_reply_valid(self, reply) -> bool:
@@ -758,36 +744,40 @@ class CellClientAPI(APISpec):
         with self._heartbeat_lock:
             self._last_cj_activity = time.monotonic()
 
-    def _cj_silent_for(self) -> float:
+    def _add_result_transfer_waiter(self, waiter) -> None:
         with self._heartbeat_lock:
-            last_activity = self._last_cj_activity
-        return float("inf") if last_activity is None else max(0.0, time.monotonic() - last_activity)
+            self._result_transfer_waiters = (*self._result_transfer_waiters, waiter)
 
-    def _set_result_transactions(self, transactions) -> None:
+    def _clear_result_transfer_waiters(self) -> None:
         with self._heartbeat_lock:
-            self._result_transactions = transactions
+            self._result_transfer_waiters = ()
 
-    def _has_live_result_transfer(self) -> bool:
+    def _snapshot_result_transfer_waiters(self):
         with self._heartbeat_lock:
-            transactions = tuple(self._result_transactions)
-        for transaction in transactions:
-            try:
-                if not DownloadService.get_transfer_waiter(transaction.tx_id).done():
-                    return True
-            except Exception:
-                continue
-        return False
+            return self._result_transfer_waiters
 
-    def _mark_owner_lost(self, reason: str) -> None:
+    def _has_pending_result_transfer(self) -> bool:
+        with self._heartbeat_lock:
+            return any(not waiter.done() for waiter in self._result_transfer_waiters)
+
+    def _abort_if_cj_timed_out(self) -> bool:
         with self._heartbeat_lock:
             if self._abort or self._stopped or self._closed:
-                return
+                return False
+            last_activity = self._last_cj_activity
+            silent_for = float("inf") if last_activity is None else max(0.0, time.monotonic() - last_activity)
+            if silent_for <= self._heartbeat_timeout or any(
+                not waiter.done() for waiter in self._result_transfer_waiters
+            ):
+                return False
+            reason = f"CJ heartbeat timed out after {silent_for:.1f}s (timeout={self._heartbeat_timeout}s)"
             self._abort = True
             self._abort_reason = reason
         self._abort_signal.trigger(reason)
         self._result_abort_signal.trigger(reason)
         self._heartbeat_stop.set()
         self.logger.error(reason)
+        return True
 
     def _stop_heartbeat(self) -> None:
         self._heartbeat_stop.set()
