@@ -19,7 +19,9 @@ from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.abstract.model import make_model_learnable
 from nvflare.app_common.aggregators.weighted_aggregation_helper import (
+    AggregationStatsKey,
     WeightedAggregationHelper,
+    compute_key_match_stats,
     filter_aggregatable_metrics,
 )
 from nvflare.app_common.app_constant import AppConstants
@@ -238,6 +240,11 @@ class BaseFedAvg(ModelController):
 
         """
         self.debug("Start aggregation.")
+        # FLContext is reused across rounds. Clear the prior round's value before any
+        # aggregation work so an empty/unsupported result set or stats-computation failure
+        # cannot expose stale statistics to AFTER_AGGREGATION handlers.
+        if self.fl_ctx:
+            self._set_ctx_prop_preserving_attrs(fl_ctx=self.fl_ctx, key=AppConstants.AGGREGATION_STATS, value=None)
         self.event(AppEventType.BEFORE_AGGREGATION)
         self._check_results(results)
 
@@ -254,6 +261,19 @@ class BaseFedAvg(ModelController):
             return FLModel()
         self._results = []
         self._set_metrics_aggregation_info(aggr_result)
+
+        # Reporting stats must never break a working aggregation: params is typed Any (custom
+        # aggregate_fn callers may use ndarrays etc.), so only dict params contribute key stats
+        # and any unexpected error is swallowed.
+        try:
+            contributions = {_get_client_name(r): list(r.params.keys()) for r in results if isinstance(r.params, dict)}
+            if contributions:
+                aggr_stats = compute_key_match_stats(contributions)
+                aggr_stats[AggregationStatsKey.ROUND] = self.current_round
+                if self.fl_ctx:
+                    self.fl_ctx.set_prop(AppConstants.AGGREGATION_STATS, aggr_stats, private=True, sticky=False)
+        except Exception as e:
+            self.debug(f"unable to compute aggregation key stats: {secure_format_exception(e)}")
 
         self.fire_event_with_data(
             AppEventType.AFTER_AGGREGATION, self.fl_ctx, AppConstants.AGGREGATION_RESULT, aggr_result

@@ -20,6 +20,7 @@ from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
 from nvflare.app_common.aggregators.weighted_aggregation_helper import (
+    AggregationStatsKey,
     WeightedAggregationHelper,
     filter_aggregatable_metrics,
 )
@@ -255,12 +256,12 @@ class FedAvg(BaseFedAvg):
         finally:
             cleanup_tensor_disk_offload(engine=getattr(self, "engine", None), context=disk_offload_context)
 
-    def _aggregate_one_result(self, result: FLModel) -> None:
+    def _aggregate_one_result(self, result: FLModel) -> bool:
         """Callback: aggregate ONE client result immediately (InTime aggregation)."""
         if not result.params:
             client_name = _get_client_name(result)
             self.warning(f"Empty result from client {client_name}, skipping.")
-            return
+            return False
 
         # Store only params_type from first result (not the full model)
         if self._params_type is None:
@@ -317,6 +318,7 @@ class FedAvg(BaseFedAvg):
 
         self._received_count += 1
         self.info(f"Aggregated {self._received_count}/{self._expected_count} results")
+        return True
 
     def _get_aggregated_result(self) -> FLModel:
         """Get the final aggregated result after all clients have responded."""
@@ -332,6 +334,11 @@ class FedAvg(BaseFedAvg):
             return result
         else:
             # Use built-in InTime aggregation
+            aggr_stats = self._aggr_helper.get_aggregation_stats()
+            aggr_stats[AggregationStatsKey.ROUND] = self.current_round
+            if self.fl_ctx:
+                self.fl_ctx.set_prop(AppConstants.AGGREGATION_STATS, aggr_stats, private=True, sticky=False)
+
             aggr_params = self._aggr_helper.get_result()
             aggr_metrics = self._aggr_metrics_helper.get_result() if self._all_metrics else None
             aggr_metrics = aggr_metrics or None
