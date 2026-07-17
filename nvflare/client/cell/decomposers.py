@@ -23,21 +23,16 @@ _FRAMEWORK_DECOMPOSERS = (("nvflare.app_opt.pt.decomposers", "TensorDecomposer")
 def register_framework_decomposers(params_exchange_format, server_expected_format, logger=None) -> None:
     """Register decomposers for the declared exchange pair.
 
-    ``RAW`` registration is opportunistic because its payload type is unspecified;
-    explicitly declared PyTorch formats require registration.
+    Optional framework support is registered only when the declared pair permits
+    PyTorch tensors on the wire. RAW alone does not opt into PyTorch serialization.
     """
     params_exchange_format = ExchangeFormat(params_exchange_format)
     server_expected_format = ExchangeFormat(server_expected_format)
     formats = (params_exchange_format, server_expected_format)
-    if ExchangeFormat.RAW in formats:
-        # RAW can carry either representation.
-        should_register = True
-        required = ExchangeFormat.PYTORCH in formats
-    else:
-        # Adapted payloads cross Cell in the server representation.
-        should_register = server_expected_format == ExchangeFormat.PYTORCH
-        required = should_register
-    if not should_register:
+    pytorch_wire_format = server_expected_format == ExchangeFormat.PYTORCH or (
+        ExchangeFormat.RAW in formats and ExchangeFormat.PYTORCH in formats
+    )
+    if not pytorch_wire_format:
         return
 
     from nvflare.fuel.utils import fobs
@@ -49,10 +44,7 @@ def register_framework_decomposers(params_exchange_format, server_expected_forma
             if logger is not None:
                 logger.debug(f"registered framework decomposer {module_name}.{class_name}")
         except Exception as e:
-            if required:
-                raise RuntimeError(
-                    f"cannot register {module_name}.{class_name} required by the declared "
-                    f"{ExchangeFormat.PYTORCH.value} wire format"
-                ) from e
-            if logger is not None:
-                logger.debug(f"framework decomposer {module_name}.{class_name} not registered: {e}")
+            raise RuntimeError(
+                f"cannot register {module_name}.{class_name} required by the declared "
+                f"{ExchangeFormat.PYTORCH.value} wire format"
+            ) from e

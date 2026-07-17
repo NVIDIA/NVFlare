@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -26,6 +26,9 @@ from nvflare.client.config import ExchangeFormat
         (ExchangeFormat.NUMPY, ExchangeFormat.NUMPY),
         (ExchangeFormat.PYTORCH, ExchangeFormat.NUMPY),
         (ExchangeFormat.KERAS_LAYER_WEIGHTS, ExchangeFormat.NUMPY),
+        (ExchangeFormat.RAW, ExchangeFormat.NUMPY),
+        (ExchangeFormat.NUMPY, ExchangeFormat.RAW),
+        (ExchangeFormat.RAW, ExchangeFormat.RAW),
     ],
 )
 def test_concrete_non_native_wire_format_does_not_import_framework(params_exchange_format, server_expected_format):
@@ -59,26 +62,3 @@ def test_declared_native_wire_format_fails_fast_when_decomposer_is_unavailable(
         pytest.raises(RuntimeError, match="required by the declared pytorch wire format"),
     ):
         register_framework_decomposers(params_exchange_format, server_expected_format)
-
-
-@pytest.mark.parametrize(
-    "params_exchange_format,server_expected_format",
-    [
-        (ExchangeFormat.RAW, ExchangeFormat.NUMPY),
-        (ExchangeFormat.NUMPY, ExchangeFormat.RAW),
-        (ExchangeFormat.RAW, ExchangeFormat.RAW),
-    ],
-)
-def test_raw_wire_format_registers_opportunistically(params_exchange_format, server_expected_format):
-    logger = MagicMock()
-    real_import = __import__
-
-    def import_module(name, *args, **kwargs):
-        if name == "nvflare.app_opt.pt.decomposers":
-            raise ImportError("missing framework")
-        return real_import(name, *args, **kwargs)
-
-    with patch("builtins.__import__", side_effect=import_module):
-        register_framework_decomposers(params_exchange_format, server_expected_format, logger)
-
-    logger.debug.assert_called_once()
