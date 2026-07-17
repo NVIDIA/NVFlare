@@ -2039,7 +2039,7 @@ def probe_simulator_workspace_override_support(
 
     Returns ``supported`` as True/False when ``nvflare.recipe.sim_env`` is importable, and None when the
     probe is inconclusive (package missing, import error, timeout); ``version`` is "" when unknown.
-    ``version`` is read from the imported package's ``__version__`` so it describes the same nvflare the
+    ``version`` is read from the imported package's ``__version__`` so it describes the same package the
     capability check (and the job) resolves; distribution metadata is only a fallback when the import fails.
     """
 
