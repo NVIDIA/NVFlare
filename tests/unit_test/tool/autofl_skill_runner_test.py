@@ -834,12 +834,14 @@ def test_probe_simulator_workspace_override_support_inspects_installed_sim_env(t
     runner = _load_runner()
     sim_env = tmp_path / "nvflare" / "recipe" / "sim_env.py"
     sim_env.parent.mkdir(parents=True)
-    tmp_path.joinpath("nvflare", "__init__.py").write_text("", encoding="utf-8")
+    tmp_path.joinpath("nvflare", "__init__.py").write_text("__version__ = '2.7.0'\n", encoding="utf-8")
     sim_env.parent.joinpath("__init__.py").write_text("", encoding="utf-8")
 
     sim_env.write_text("WORKSPACE_ROOT = '/tmp/nvflare/simulation'\n", encoding="utf-8")
     probe = runner.probe_simulator_workspace_override_support(sys.executable, tmp_path)
     assert probe["supported"] is False
+    # version must describe the imported (shadowing) package, not any installed distribution's metadata
+    assert probe["version"] == "2.7.0"
 
     sim_env.write_text(
         "SIMULATOR_WORKSPACE_ROOT_ENV_VAR = 'NVFLARE_SIMULATOR_WORKSPACE_ROOT'\n",

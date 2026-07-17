@@ -2039,15 +2039,23 @@ def probe_simulator_workspace_override_support(
 
     Returns ``supported`` as True/False when ``nvflare.recipe.sim_env`` is importable, and None when the
     probe is inconclusive (package missing, import error, timeout); ``version`` is "" when unknown.
+    ``version`` is read from the imported package's ``__version__`` so it describes the same nvflare the
+    capability check (and the job) resolves; distribution metadata is only a fallback when the import fails.
     """
 
     script = (
         "import json\n"
         "try:\n"
-        "    from importlib import metadata\n"
-        "    version = metadata.version('nvflare')\n"
+        "    import nvflare\n"
+        "    version = str(getattr(nvflare, '__version__', '') or '')\n"
         "except Exception:\n"
         "    version = ''\n"
+        "if not version:\n"
+        "    try:\n"
+        "        from importlib import metadata\n"
+        "        version = metadata.version('nvflare')\n"
+        "    except Exception:\n"
+        "        version = ''\n"
         "try:\n"
         "    from nvflare.recipe import sim_env\n"
         f"    supported = getattr(sim_env, 'SIMULATOR_WORKSPACE_ROOT_ENV_VAR', '') == {SIMULATOR_WORKSPACE_ROOT_ENV_VAR!r}\n"
