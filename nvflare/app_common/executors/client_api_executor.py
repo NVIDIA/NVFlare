@@ -34,7 +34,8 @@ from nvflare.apis.utils.analytix_utils import send_analytic_dxo
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendContext, ClientAPIBackendSpec
 from nvflare.app_common.widgets.convert_to_fed_event import FED_EVENT_PREFIX
-from nvflare.client.config import ExchangeFormat, TransferType, normalize_exchange_format, validate_format_pair
+from nvflare.client.config import ExchangeFormat, TransferType, normalize_exchange_format
+from nvflare.client.converter_utils import validate_format_pair
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
 

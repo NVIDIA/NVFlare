@@ -39,12 +39,6 @@ class ExchangeFormat(str, Enum):
     KERAS_LAYER_WEIGHTS = "keras_layer_weights"
 
 
-_SUPPORTED_FORMAT_CONVERSIONS = {
-    frozenset((ExchangeFormat.NUMPY, ExchangeFormat.PYTORCH)),
-    frozenset((ExchangeFormat.NUMPY, ExchangeFormat.KERAS_LAYER_WEIGHTS)),
-}
-
-
 def normalize_exchange_format(value, name: str) -> ExchangeFormat:
     """Return a validated ExchangeFormat value for a config declaration."""
 
@@ -52,17 +46,6 @@ def normalize_exchange_format(value, name: str) -> ExchangeFormat:
         return ExchangeFormat(value)
     except (TypeError, ValueError) as e:
         raise ValueError(f"invalid {name} {value!r}: must be one of {list(ExchangeFormat)}") from e
-
-
-def validate_format_pair(params_exchange_format, server_expected_format) -> None:
-    """Validate a declared trainer/server representation pair."""
-
-    client_format = normalize_exchange_format(params_exchange_format, "params_exchange_format")
-    server_format = normalize_exchange_format(server_expected_format, "server_expected_format")
-    if client_format == server_format or ExchangeFormat.RAW in (client_format, server_format):
-        return
-    if frozenset((client_format, server_format)) not in _SUPPORTED_FORMAT_CONVERSIONS:
-        raise ValueError(f"unsupported parameter format conversion: {server_format.value} <-> {client_format.value}")
 
 
 class TransferType(str, Enum):

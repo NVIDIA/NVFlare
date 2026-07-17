@@ -15,7 +15,7 @@
 from typing import Any, MutableMapping, Optional, Tuple
 
 from nvflare.app_common.abstract.params_converter import ParamsConverter
-from nvflare.client.config import ExchangeFormat, normalize_exchange_format, validate_format_pair
+from nvflare.client.config import ExchangeFormat, normalize_exchange_format
 from nvflare.fuel.utils.import_utils import optional_import
 
 
@@ -58,6 +58,17 @@ _CONVERTER_SPECS = {
 }
 
 
+def validate_format_pair(source_format, target_format) -> None:
+    """Validate that both directions of a declared format pair are supported."""
+
+    source = normalize_exchange_format(source_format, "source_format")
+    target = normalize_exchange_format(target_format, "target_format")
+    if source == target or ExchangeFormat.RAW in (source, target):
+        return
+    if (source, target) not in _CONVERTER_SPECS or (target, source) not in _CONVERTER_SPECS:
+        raise ValueError(f"unsupported parameter format conversion: {source.value} <-> {target.value}")
+
+
 def _load_converter(module: str, name: str, format_name: str):
     converter_cls, ok = optional_import(module=module, name=name)
     if not ok:
@@ -65,10 +76,8 @@ def _load_converter(module: str, name: str, format_name: str):
     return converter_cls
 
 
-def _create_converter(source_format, target_format, supported_tasks=None) -> Optional[ParamsConverter]:
-    spec = _CONVERTER_SPECS.get((source_format, target_format))
-    if spec is None:
-        return None
+def _create_converter(source_format, target_format, supported_tasks=None) -> ParamsConverter:
+    spec = _CONVERTER_SPECS[(source_format, target_format)]
     module, name, format_name = spec
     converter_cls = _load_converter(module=module, name=name, format_name=format_name)
     return converter_cls(supported_tasks)
@@ -95,9 +104,6 @@ def convert_params(
         raise TypeError(f"PyTorch parameter conversion expects a parameter dict, got {type(params)}")
 
     converter = _create_converter(source, target)
-    if converter is None:
-        # validate_format_pair() keeps this defensive branch unreachable.
-        raise ValueError(f"unsupported parameter format conversion: {source.value} -> {target.value}")
     if logger is not None:
         converter.logger = logger
     return converter.convert(params, _ConverterContext(state))
@@ -118,6 +124,7 @@ def create_default_params_converters(
         return None, None
     server_format = ExchangeFormat.NUMPY
     client_format = ExchangeFormat(params_exchange_format)
+    validate_format_pair(server_format, client_format)
     return (
         _create_converter(server_format, client_format, [train_task_name, eval_task_name]),
         _create_converter(client_format, server_format, [train_task_name, submit_model_task_name]),

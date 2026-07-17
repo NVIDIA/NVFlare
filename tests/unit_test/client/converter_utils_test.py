@@ -17,8 +17,9 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from nvflare.client.config import ExchangeFormat, normalize_exchange_format, validate_format_pair
-from nvflare.client.converter_utils import convert_params
+from nvflare.client import converter_utils
+from nvflare.client.config import ExchangeFormat, normalize_exchange_format
+from nvflare.client.converter_utils import convert_params, validate_format_pair
 
 
 def test_identity_and_raw_declarations_are_no_ops():
@@ -35,6 +36,16 @@ def test_declarations_are_validated_without_payload_inference():
         normalize_exchange_format("unknown", "format")
     with pytest.raises(ValueError, match="unsupported parameter format conversion"):
         validate_format_pair(ExchangeFormat.PYTORCH, ExchangeFormat.KERAS_LAYER_WEIGHTS)
+
+
+def test_format_pair_requires_converters_in_both_directions(monkeypatch):
+    monkeypatch.delitem(
+        converter_utils._CONVERTER_SPECS,
+        (ExchangeFormat.PYTORCH, ExchangeFormat.NUMPY),
+    )
+
+    with pytest.raises(ValueError, match="unsupported parameter format conversion"):
+        validate_format_pair(ExchangeFormat.NUMPY, ExchangeFormat.PYTORCH)
 
 
 def test_pytorch_round_trip_preserves_tensor_shape_and_local_non_tensor_state():
