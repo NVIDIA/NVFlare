@@ -2035,10 +2035,10 @@ def changed_simulator_roots(simulator_base: Path, before: Dict[Path, int]) -> Li
 def probe_simulator_workspace_override_support(
     python: str, cwd: Path, timeout: int = DEFAULT_WORKSPACE_OVERRIDE_PROBE_TIMEOUT
 ) -> Dict[str, Any]:
-    """Ask the campaign interpreter whether its nvflare honors the simulator workspace override.
+    """Ask the campaign interpreter whether the installed package supports the simulator workspace override.
 
     Returns ``supported`` as True/False when ``nvflare.recipe.sim_env`` is importable, and None when the
-    probe is inconclusive (nvflare missing, import error, timeout); ``version`` is "" when unknown.
+    probe is inconclusive (package missing, import error, timeout); ``version`` is "" when unknown.
     """
 
     script = (
