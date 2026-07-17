@@ -132,6 +132,9 @@ class FedEventRunner(Widget):
                 self.poster = threading.Thread(target=self._post, name="fed_event_poster")
                 self.poster.start()
 
+            # Legacy senders do not provide a stable event ID. Accept their events unconditionally because
+            # timestamps are neither unique nor ordered. This avoids dropping valid events at the cost of
+            # possible duplicate processing if a legacy sender retransmits an event.
             if event_id and self._is_duplicate(peer_name, event_id):
                 return make_reply(ReturnCode.OK)
 
