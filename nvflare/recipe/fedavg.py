@@ -108,8 +108,7 @@ class FedAvgRecipe(Recipe):
         aggregator_data_kind: Data kind for aggregation (DataKind.WEIGHTS or DataKind.WEIGHT_DIFF).
             When a custom aggregator declares expected_data_kind, the declaration must match.
             Kept for backward compatibility. Defaults to DataKind.WEIGHTS.
-        launch_external_process: Whether ClientAPIExecutor runs the script in an external
-            process. False selects in_process; True selects external_process. Defaults to False.
+        launch_external_process: Whether to launch the script in external process. Defaults to False.
         command: If launch_external_process=True, command to run script (prepended to script).
             Defaults to "python3 -u".
         framework: The framework type. One of:

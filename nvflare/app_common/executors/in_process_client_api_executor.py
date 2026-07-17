@@ -123,7 +123,12 @@ class InProcessClientAPIExecutor(Executor):
 
             self._task_fn_thread = threading.Thread(target=self._task_fn_wrapper.run)
             meta = self._prepare_task_meta(fl_ctx, None)
-            self._client_api = InProcessClientAPI(task_metadata=meta, result_check_interval=self._result_pull_interval)
+            self._client_api = InProcessClientAPI(
+                task_metadata=meta,
+                result_check_interval=self._result_pull_interval,
+                from_nvflare_converter=self._from_nvflare_converter,
+                to_nvflare_converter=self._to_nvflare_converter,
+            )
             self._client_api.init()
             # Configure memory management if enabled
             if self._memory_gc_rounds > 0:
@@ -145,12 +150,10 @@ class InProcessClientAPIExecutor(Executor):
             fl_ctx.set_prop("abort_signal", abort_signal)
 
             meta = self._prepare_task_meta(fl_ctx, task_name)
-            self._client_api.set_meta(meta)
+            self._client_api.set_meta(meta, fl_ctx)
 
             shareable.set_header(FLMetaKey.JOB_ID, fl_ctx.get_job_id())
             shareable.set_header(FLMetaKey.SITE_NAME, fl_ctx.get_identity_name())
-            if self._from_nvflare_converter is not None:
-                shareable = self._from_nvflare_converter.process(task_name, shareable, fl_ctx)
 
             self.log_info(fl_ctx, "send data to peer")
 
@@ -175,8 +178,6 @@ class InProcessClientAPIExecutor(Executor):
                     current_round = shareable.get_header(AppConstants.CURRENT_ROUND)
                     if current_round is not None:
                         result.set_header(AppConstants.CURRENT_ROUND, current_round)
-                    if self._to_nvflare_converter is not None:
-                        result = self._to_nvflare_converter.process(task_name, result, fl_ctx)
                     return result
                 else:
                     self.log_debug(fl_ctx, f"waiting for result, sleep for {self._result_pull_interval} secs")

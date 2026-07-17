@@ -16,7 +16,9 @@ import unittest
 from copy import deepcopy
 
 from nvflare.apis.fl_constant import FLMetaKey
+from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.fl_model import FLModel
+from nvflare.app_common.abstract.params_converter import ParamsConverter
 from nvflare.client.config import ConfigKey
 from nvflare.client.in_process.api import (
     TOPIC_ABORT,
@@ -27,6 +29,23 @@ from nvflare.client.in_process.api import (
     InProcessClientAPI,
 )
 from nvflare.fuel.data_event.data_bus import DataBus
+
+
+class _AddOneConverter(ParamsConverter):
+    def convert(self, params, fl_ctx):
+        fl_ctx.set_prop("from_converter_called", True)
+        return {k: v + 1 for k, v in params.items()}
+
+
+class _AddTwoConverter(ParamsConverter):
+    def convert(self, params, fl_ctx):
+        assert fl_ctx.get_prop("from_converter_called")
+        return {k: v + 2 for k, v in params.items()}
+
+
+class _FailingConverter(ParamsConverter):
+    def convert(self, params, fl_ctx):
+        raise ValueError("bad conversion")
 
 
 class TestInProcessClientAPI(unittest.TestCase):
@@ -367,6 +386,55 @@ class TestInProcessClientAPI(unittest.TestCase):
             np.testing.assert_array_equal(wire_params["w"], np.asarray([2.0, 3.0]))
         finally:
             client_api.data_bus.unsubscribe(TOPIC_LOCAL_RESULT, capture)
+
+    def test_custom_converters_run_at_receive_send_boundary(self):
+        import numpy as np
+
+        meta = deepcopy(self.task_metadata)
+        meta[ConfigKey.TASK_EXCHANGE][ConfigKey.TRANSFER_TYPE] = "FULL"
+        fl_ctx = FLContext()
+        client_api = InProcessClientAPI(
+            meta,
+            from_nvflare_converter=_AddOneConverter(["train"]),
+            to_nvflare_converter=_AddTwoConverter(["train"]),
+        )
+        client_api.init()
+        client_api.set_meta(meta, fl_ctx)
+        sent = []
+
+        def capture(_topic, data, _databus):
+            sent.append(data)
+
+        client_api.data_bus.subscribe([TOPIC_LOCAL_RESULT], capture)
+        try:
+            self._fire_global_model(client_api, {"w": np.asarray([1.0])})
+            received = client_api.receive()
+            np.testing.assert_array_equal(received.params["w"], np.asarray([2.0]))
+
+            client_api.send(FLModel(params={"w": np.asarray([10.0])}), clear_cache=False)
+
+            from nvflare.apis.dxo import from_shareable
+
+            wire_params = from_shareable(sent[-1]).data
+            np.testing.assert_array_equal(wire_params["w"], np.asarray([12.0]))
+        finally:
+            client_api.data_bus.unsubscribe(TOPIC_LOCAL_RESULT, capture)
+            client_api.close()
+
+    def test_receive_surfaces_converter_failure(self):
+        client_api = InProcessClientAPI(
+            self.task_metadata,
+            result_check_interval=0.001,
+            from_nvflare_converter=_FailingConverter(),
+        )
+        client_api.init()
+        client_api.set_meta(self.task_metadata, FLContext())
+        try:
+            self._fire_global_model(client_api, {"w": 1.0})
+            with self.assertRaisesRegex(RuntimeError, "failed to receive task: bad conversion"):
+                client_api.receive(timeout=0.01)
+        finally:
+            client_api.close()
 
     def test_clear_resets_receive_guard_between_rounds(self):
         """A prior successful round must not arm send() after a later receive timeout."""

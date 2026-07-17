@@ -19,8 +19,10 @@ from typing import Any, Dict, Optional
 
 from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.apis.fl_constant import FLMetaKey
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
+from nvflare.app_common.abstract.params_converter import ParamsConverter
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.client.api_spec import APISpec
 from nvflare.client.config import ClientConfig, ConfigKey, ExchangeFormat, TransferType
@@ -40,12 +42,20 @@ TOPIC_GLOBAL_RESULT = "GLOBAL_RESULT"
 
 
 class InProcessClientAPI(APISpec):
-    def __init__(self, task_metadata: dict, result_check_interval: float = 2.0):
+    def __init__(
+        self,
+        task_metadata: dict,
+        result_check_interval: float = 2.0,
+        from_nvflare_converter: Optional[ParamsConverter] = None,
+        to_nvflare_converter: Optional[ParamsConverter] = None,
+    ):
         """Initializes the InProcessClientAPI.
 
         Args:
             task_metadata (dict): task metadata, added to client_config.
             result_check_interval (float): how often to check if result is available.
+            from_nvflare_converter: optional custom converter applied when receiving a task.
+            to_nvflare_converter: optional custom converter applied before publishing a result.
         """
         super().__init__()  # Initialize memory management from base class
 
@@ -69,6 +79,10 @@ class InProcessClientAPI(APISpec):
         self.rank = None
         self.receive_called = False  # to check if users have call received for a new model
         self._params_conversion_state = {}
+        self._from_nvflare_converter = from_nvflare_converter
+        self._to_nvflare_converter = to_nvflare_converter
+        self._converter_fl_ctx: Optional[FLContext] = None
+        self._receive_error: Optional[Exception] = None
 
     def init(self, rank: Optional[str] = None, config: Optional[Dict] = None):
         """Initializes NVFlare Client API environment.
@@ -103,8 +117,10 @@ class InProcessClientAPI(APISpec):
             client_config.config = self.meta
         self.client_config = client_config
 
-    def set_meta(self, meta: dict):
+    def set_meta(self, meta: dict, fl_ctx: Optional[FLContext] = None):
         self.meta = meta
+        self._converter_fl_ctx = fl_ctx
+        self._receive_error = None
 
     def configure_memory_management(self, gc_rounds: int = 0, cuda_empty_cache: bool = False):
         """Configure memory management settings.
@@ -146,11 +162,13 @@ class InProcessClientAPI(APISpec):
         return result
 
     def __receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
+        self._raise_receive_error()
         if self.fl_model:
             return self.fl_model
 
         start_time = time.monotonic()
         while True:
+            self._raise_receive_error()
             if not self.__continue_job():
                 break
 
@@ -186,14 +204,17 @@ class InProcessClientAPI(APISpec):
         # DIFF is computed above in the trainer-native representation. Adapt only the
         # shallow wire model so clear_cache=False leaves the user's FLModel native.
         wire_model = copy.copy(model)
-        wire_model.params = convert_params(
-            model.params,
-            self.client_config.get_exchange_format() or ExchangeFormat.RAW,
-            self.client_config.get_server_expected_format(),
-            self._params_conversion_state,
-            self.logger,
-        )
+        if self._to_nvflare_converter is None:
+            wire_model.params = convert_params(
+                model.params,
+                self.client_config.get_exchange_format() or ExchangeFormat.RAW,
+                self.client_config.get_server_expected_format(),
+                self._params_conversion_state,
+                self.logger,
+            )
         shareable = FLModelUtils.to_shareable(wire_model)
+        if self._to_nvflare_converter is not None:
+            shareable = self._apply_converter(self._to_nvflare_converter, shareable)
         self.event_manager.fire_event(TOPIC_LOCAL_RESULT, shareable)
 
         if clear_cache:
@@ -289,21 +310,38 @@ class InProcessClientAPI(APISpec):
 
         return model
 
+    def _apply_converter(self, converter: ParamsConverter, shareable: Shareable) -> Shareable:
+        if self._converter_fl_ctx is None:
+            raise RuntimeError("custom ParamsConverter requires the current task FLContext")
+        return converter.process(self.meta.get(ConfigKey.TASK_NAME), shareable, self._converter_fl_ctx)
+
+    def _raise_receive_error(self) -> None:
+        if self._receive_error is not None:
+            raise RuntimeError(f"failed to receive task: {self._receive_error}") from self._receive_error
+
     def __receive_callback(self, topic, data, databus):
+        try:
+            if topic == TOPIC_GLOBAL_RESULT and not isinstance(data, Shareable):
+                raise ValueError(f"expecting a Shareable, but got '{type(data)}'")
 
-        if topic == TOPIC_GLOBAL_RESULT and not isinstance(data, Shareable):
-            raise ValueError(f"expecting a Shareable, but got '{type(data)}'")
-
-        fl_model = FLModelUtils.from_shareable(data)
-        exchange = self.client_config.get_exchange_format() or ExchangeFormat.RAW
-        fl_model.params = convert_params(
-            fl_model.params,
-            self.client_config.get_server_expected_format(),
-            exchange,
-            self._params_conversion_state,
-            self.logger,
-        )
-        self.fl_model = fl_model
+            if self._from_nvflare_converter is not None:
+                data = self._apply_converter(self._from_nvflare_converter, data)
+                fl_model = FLModelUtils.from_shareable(data)
+            else:
+                fl_model = FLModelUtils.from_shareable(data)
+                exchange = self.client_config.get_exchange_format() or ExchangeFormat.RAW
+                fl_model.params = convert_params(
+                    fl_model.params,
+                    self.client_config.get_server_expected_format(),
+                    exchange,
+                    self._params_conversion_state,
+                    self.logger,
+                )
+            self.fl_model = fl_model
+        except Exception as e:
+            # DataBus callbacks run in a worker and publish() does not propagate their
+            # exceptions. Surface conversion failures from flare.receive() instead.
+            self._receive_error = e
 
     def __ask_to_abort(self, topic, msg, databus):
         if topic == TOPIC_ABORT:
@@ -342,6 +380,8 @@ class InProcessClientAPI(APISpec):
         teardown; idempotent.
         """
         self.closed = True
+        self._converter_fl_ctx = None
+        self._receive_error = None
         self.data_bus.unsubscribe(TOPIC_GLOBAL_RESULT, self.__receive_callback)
         self.data_bus.unsubscribe(TOPIC_ABORT, self.__ask_to_abort)
         self.data_bus.unsubscribe(TOPIC_STOP, self.__ask_to_abort)

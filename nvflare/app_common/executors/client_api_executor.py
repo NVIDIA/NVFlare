@@ -202,9 +202,8 @@ class ClientAPIExecutor(Executor):
                     "heartbeat_timeout", heartbeat_timeout, "'external_process' or 'attach'", execution_mode
                 )
 
-        # A positive send cadence and a non-negative lease are required by both Cell
-        # backends. Timeout zero retains the legacy meaning "disable heartbeat checking";
-        # otherwise at least one heartbeat must fit strictly inside the miss window.
+        # heartbeat_timeout=0 disables heartbeat timeout checking; otherwise the
+        # heartbeat interval must be strictly smaller than the timeout.
         for name, value in (
             ("heartbeat_interval", heartbeat_interval),
             ("heartbeat_timeout", heartbeat_timeout),
