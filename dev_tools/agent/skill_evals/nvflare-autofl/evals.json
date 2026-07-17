@@ -91,7 +91,7 @@
     {
       "id": "autofl-literature-batch-before-tuning",
       "prompt": "Continue my uncapped NVFLARE Auto-FL campaign on ./job.py. I just ran the literature pass you suggested and recorded the review with record --literature. The current .nvflare/autofl/campaign_state.json and results.tsv are attached. What do you run next?",
-      "expected_output": "The agent reads the code-owned campaign state, sees next_action=develop_literature_batch with required_exploration=source_backed_exploration for literature event lit-0001, and completes the remaining exploration batch — scored source-backed candidates prepared with --family and --literature-event lit-0001, composed as a faithful implementation, a tuned variant, and an ablation — before resuming argument-only tuning, treating the plateau clock as reset only when the batch completes.",
+      "expected_output": "The agent reads the code-owned campaign state, sees next_action=develop_literature_batch with required_exploration=source_backed_exploration for literature event lit-0001, and completes the remaining exploration batch — the ledger already holds the scored faithful implementation, so the agent prepares the tuned variant and the ablation with --family and --literature-event lit-0001 until 3 linked candidates have scored — before resuming argument-only tuning, treating the plateau clock as reset only when the batch completes.",
       "files": [
         "files/develop_literature_batch_state.json",
         "files/develop_literature_batch_results.tsv"
@@ -100,7 +100,7 @@
         "The agent executes the state's next_action develop_literature_batch instead of choosing its own next step or resuming argument-only tuning.",
         "The agent prepares each remaining batch candidate with prepare --family <slug> --literature-event lit-0001 so the linkage persists in the manifest and ledger.",
         "The agent gives every literature-linked candidate source edits, because the runner rejects argument-only literature-linked candidates at evaluate time.",
-        "The agent completes exploration_batch_size (3) scored source-backed candidates for lit-0001 — faithful implementation, tuned variant, and ablation — before normal candidate flow resumes.",
+        "The agent brings the lit-0001 exploration batch to its required exploration_batch_size (3) scored source-backed candidates before normal candidate flow resumes; the faithful implementation is already scored in the ledger, so the tuned variant and the ablation remain.",
         "The agent treats the plateau clock as reset when the final linked candidate scores, not when the literature review row was recorded.",
         "The agent does not produce a final campaign answer while final_response_allowed is false."
       ],
@@ -168,7 +168,7 @@
     },
     {
       "id": "autofl-diversify-after-family-repeat",
-      "prompt": "Keep optimizing ./job.py with NVFLARE Auto-FL. My last six scored candidates were all argument-only FedAvg learning-rate and batch-size tweaks, and the attached campaign state now reports diversify_candidates. What is the next candidate?",
+      "prompt": "Keep optimizing ./job.py with NVFLARE Auto-FL. My last six scored candidates were all argument-only FedAvg learning-rate, batch-size, and weight-decay tweaks, and the attached campaign state now reports diversify_candidates. What is the next candidate?",
       "expected_output": "The agent honors next_action=diversify_candidates from the code-owned campaign state: instead of a seventh same-family argument-only attempt, it switches to a different algorithm family or prepares a source-backed candidate with a workload-appropriate idea, keeping the same campaign inputs, comparison budget, and ledger.",
       "files": [
         "files/diversify_candidates_state.json",
