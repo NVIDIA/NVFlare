@@ -31,3 +31,10 @@ into states the product code would never emit.
 
 Scores, runtimes, and patch hashes are invented; hashes are fixed hex strings
 so evals stay deterministic.
+
+The `agent_instruction` strings are copied verbatim from the product
+(`campaign_guard.py`), including the literature-batch instruction whose
+trailing list ("a faithful implementation, a tuned variant, and an ablation")
+enumerates the required batch *composition*, not the remaining work — the
+remaining count is the leading "needs N more". Do not reword the fixtures to
+read more naturally; they must stay byte-identical to guard output.
