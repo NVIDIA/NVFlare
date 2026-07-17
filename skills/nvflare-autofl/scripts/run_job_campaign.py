@@ -2093,7 +2093,22 @@ def nvflare_version_predates_workspace_override(version: str) -> bool:
     return (int(match.group(1)), int(match.group(2))) < minimum
 
 
-def unresolved_result_dir_failure_reason(python: str, cwd: Path) -> str:
+def discovered_environment_name(config: Dict[str, Any]) -> str:
+    environment = config.get("environment", {})
+    discovered = environment.get("discovered", {}) if isinstance(environment, dict) else {}
+    name = discovered.get("name") if isinstance(discovered, dict) else None
+    return name if isinstance(name, str) else ""
+
+
+def unresolved_result_dir_failure_reason(python: str, cwd: Path, config: Dict[str, Any]) -> str:
+    generic_reason = (
+        "job exited successfully but no deterministic NVFlare result directory was resolved; "
+        "expose a literal job name, support --name, or print the direct simulator result directory"
+    )
+    # Only the recipe SimEnv honors the workspace override; FedJob.simulator_run and other job
+    # surfaces ignore it on every release, so the upgrade advice below would misdirect them.
+    if discovered_environment_name(config) != "SimEnv":
+        return generic_reason
     probe = probe_simulator_workspace_override_support(python, cwd)
     supported = probe["supported"]
     version = probe["version"]
@@ -2104,10 +2119,7 @@ def unresolved_result_dir_failure_reason(python: str, cwd: Path) -> str:
             f"{SIMULATOR_WORKSPACE_ROOT_ENV_VAR}, so simulator results were written outside the isolated trial "
             f"workspace; upgrade to nvflare>={SIMULATOR_WORKSPACE_OVERRIDE_MIN_NVFLARE_VERSION}"
         )
-    return (
-        "job exited successfully but no deterministic NVFlare result directory was resolved; "
-        "expose a literal job name, support --name, or print the direct simulator result directory"
-    )
+    return generic_reason
 
 
 def run_job(
@@ -2187,7 +2199,7 @@ def run_job(
             run_def.failure_reason = f"exit_code={rc}"
     elif result_dir is None:
         run_def.status = "crash"
-        run_def.failure_reason = unresolved_result_dir_failure_reason(python, cwd)
+        run_def.failure_reason = unresolved_result_dir_failure_reason(python, cwd, config)
     else:
         artifact_root = artifact_dir.parent
         evidence = extract_metric_evidence(artifact_root, metrics)

@@ -748,11 +748,11 @@ def test_run_without_deterministic_result_root_records_actionable_failure(tmp_pa
     job = tmp_path / "job.py"
     job.write_text("print('done')\n", encoding="utf-8")
     monkeypatch.setattr(runner, "run", lambda *args, **kwargs: (0, "done\n", 0.1))
-    monkeypatch.setattr(
-        runner,
-        "probe_simulator_workspace_override_support",
-        lambda *args, **kwargs: {"version": "2.9.0", "supported": True},
-    )
+
+    def probe_must_not_run(*args, **kwargs):
+        raise AssertionError("probe must not run when no SimEnv environment was discovered")
+
+    monkeypatch.setattr(runner, "probe_simulator_workspace_override_support", probe_must_not_run)
 
     record = runner.run_job(
         runner.JobRun("candidate", [], "candidate"),
@@ -796,7 +796,7 @@ def test_run_without_result_root_blames_nvflare_without_workspace_override(tmp_p
         timeout=10,
         simulator_no_progress_timeout=0,
         metrics=["accuracy"],
-        config={"job": {}},
+        config={"job": {}, "environment": {"discovered": {"name": "SimEnv", "args": {}}}},
     )
 
     assert record.status == "crash"
@@ -805,9 +805,41 @@ def test_run_without_result_root_blames_nvflare_without_workspace_override(tmp_p
     assert "print the direct simulator result directory" not in record.failure_reason
 
 
+def test_run_without_result_root_keeps_generic_diagnosis_for_fed_job(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job = tmp_path / "job.py"
+    job.write_text("print('done')\n", encoding="utf-8")
+    monkeypatch.setattr(runner, "run", lambda *args, **kwargs: (0, "done\n", 0.1))
+
+    def probe_must_not_run(*args, **kwargs):
+        raise AssertionError("probe must not run when the job does not use SimEnv")
+
+    monkeypatch.setattr(runner, "probe_simulator_workspace_override_support", probe_must_not_run)
+
+    record = runner.run_job(
+        runner.JobRun("candidate", [], "candidate"),
+        python=sys.executable,
+        job=job,
+        cwd=tmp_path,
+        help_text="",
+        fixed_args=[],
+        base_args=[],
+        output_root=tmp_path / "runs",
+        timeout=10,
+        simulator_no_progress_timeout=0,
+        metrics=["accuracy"],
+        config={"job": {"fed_job_args": {"name": {"value": "candidate_job", "confidence": "high"}}}},
+    )
+
+    assert record.status == "crash"
+    assert "no deterministic NVFlare result directory" in record.failure_reason
+    assert "upgrade to nvflare" not in record.failure_reason
+
+
 def test_unresolved_result_dir_failure_reason_uses_version_when_probe_is_inconclusive(tmp_path, monkeypatch):
     runner = _load_runner()
     probes = {}
+    sim_env_config = {"environment": {"discovered": {"name": "SimEnv", "args": {}}}}
 
     def fake_probe(*args, **kwargs):
         return probes["result"]
@@ -815,19 +847,39 @@ def test_unresolved_result_dir_failure_reason_uses_version_when_probe_is_inconcl
     monkeypatch.setattr(runner, "probe_simulator_workspace_override_support", fake_probe)
 
     probes["result"] = {"version": "2.6.2", "supported": None}
-    reason = runner.unresolved_result_dir_failure_reason(sys.executable, tmp_path)
+    reason = runner.unresolved_result_dir_failure_reason(sys.executable, tmp_path, sim_env_config)
     assert "installed nvflare (2.6.2) does not honor" in reason
     assert f"nvflare>={runner.SIMULATOR_WORKSPACE_OVERRIDE_MIN_NVFLARE_VERSION}" in reason
 
     probes["result"] = {"version": "", "supported": None}
     assert "print the direct simulator result directory" in runner.unresolved_result_dir_failure_reason(
-        sys.executable, tmp_path
+        sys.executable, tmp_path, sim_env_config
     )
 
     probes["result"] = {"version": "2.8.0", "supported": True}
     assert "print the direct simulator result directory" in runner.unresolved_result_dir_failure_reason(
-        sys.executable, tmp_path
+        sys.executable, tmp_path, sim_env_config
     )
+
+
+def test_unresolved_result_dir_failure_reason_stays_generic_without_sim_env(tmp_path, monkeypatch):
+    runner = _load_runner()
+
+    def probe_must_not_run(*args, **kwargs):
+        raise AssertionError("probe must not run when the discovered environment is not SimEnv")
+
+    monkeypatch.setattr(runner, "probe_simulator_workspace_override_support", probe_must_not_run)
+
+    for config in (
+        {"job": {}},
+        {"job": {"fed_job_args": {"name": {"value": "fraud_job", "confidence": "high"}}}},
+        {"environment": {"discovered": {"name": "PocEnv", "args": {}}}},
+        {"environment": {}},
+        {"environment": None},
+    ):
+        reason = runner.unresolved_result_dir_failure_reason(sys.executable, tmp_path, config)
+        assert "print the direct simulator result directory" in reason
+        assert "upgrade to nvflare" not in reason
 
 
 def test_probe_simulator_workspace_override_support_inspects_installed_sim_env(tmp_path):
