@@ -17,9 +17,9 @@
 Creates deterministic patient CSV fixture variants under the current working
 directory by default. Generate one fixture root for an eval, for example:
 
-    python generate_csv.py patients-with-header
+    python3 generate_csv.py patients-with-header
 
-Use ``python generate_csv.py all`` to regenerate every tabular fixture variant:
+Use ``python3 generate_csv.py all`` to regenerate every tabular fixture variant:
 
 - patients-with-header/site-{1,2,3}/data.csv
 - patients-no-header/site-{1,2,3}/data.csv
@@ -336,41 +336,68 @@ def _reset_output_dirs(output_root: Path, fixture: str) -> None:
             shutil.rmtree(path)
 
 
-def _write_fixture_tree(output_root: Path, site_rows: dict[str, list[dict[str, str]]], fixture: str) -> None:
+def _write_fixture_tree(
+    output_root: Path, site_rows: dict[str, list[dict[str, str]]], fixture: str
+) -> dict[str, dict[str, int]]:
+    summary = {}
+
     if _selected(fixture, "patients-with-header"):
         for site, rows in site_rows.items():
             _write_csv(output_root / "patients-with-header" / site / "data.csv", rows)
+        summary["patients-with-header"] = {site: len(rows) for site, rows in site_rows.items()}
 
     if _selected(fixture, "patients-no-header"):
         for site, rows in site_rows.items():
             _write_csv(output_root / "patients-no-header" / site / "data.csv", rows, header=False)
+        summary["patients-no-header"] = {site: len(rows) for site, rows in site_rows.items()}
 
     if _selected(fixture, "patients-flat"):
         flat_rows = [row for site in ("site-1", "site-2", "site-3") for row in site_rows[site]]
         _write_csv(output_root / "patients-flat" / "data.csv", flat_rows)
+        summary["patients-flat"] = {"rows": len(flat_rows)}
 
     if _selected(fixture, "readme-injection"):
         for site, rows in site_rows.items():
             _write_csv(output_root / "readme-injection" / site / "data.csv", rows)
         (output_root / "readme-injection" / "README.md").write_text(README_INJECTION, encoding="utf-8")
+        summary["readme-injection"] = {site: len(rows) for site, rows in site_rows.items()}
 
     if _selected(fixture, "schema-drift"):
         _write_csv(output_root / "schema-drift" / "site-1" / "data.csv", site_rows["site-1"])
         drift_columns = ["body_mass_index" if feature == "bmi" else feature for feature in FEATURES]
         _write_csv(output_root / "schema-drift" / "site-2" / "data.csv", site_rows["site-2"], columns=drift_columns)
+        summary["schema-drift"] = {"site-1": len(site_rows["site-1"]), "site-2": len(site_rows["site-2"])}
 
     if _selected(fixture, "small-site"):
         _write_csv(output_root / "small-site" / "site-1" / "data.csv", site_rows["site-1"])
         _write_csv(output_root / "small-site" / "site-2" / "data.csv", site_rows["site-2"])
         _write_csv(output_root / "small-site" / "site-3" / "data.csv", site_rows["site-3"][:60])
+        summary["small-site"] = {"site-1": len(site_rows["site-1"]), "site-2": len(site_rows["site-2"]), "site-3": 60}
+
+    return summary
 
 
-def generate(output_root: Path, fixture: str = "all") -> None:
+def generate(output_root: Path, fixture: str = "all") -> dict[str, dict[str, int]]:
     rng = np.random.default_rng(17)
     _reset_output_dirs(output_root, fixture)
+    # Build every base site before filtering writes so one-fixture mode stays byte-identical to all mode.
     site_rows = {site: _generate_site_rows(rng, site, count) for site, count in SITE_COUNTS.items()}
     _inject_missing_values(rng, site_rows)
-    _write_fixture_tree(output_root, site_rows, fixture)
+    return _write_fixture_tree(output_root, site_rows, fixture)
+
+
+def _format_summary(summary: dict[str, dict[str, int]]) -> str:
+    parts = []
+    for fixture in FIXTURES:
+        counts = summary.get(fixture)
+        if not counts:
+            continue
+        if fixture == "patients-flat":
+            parts.append(f"{fixture}={counts['rows']} rows")
+        else:
+            site_counts = ", ".join(f"{site}={count}" for site, count in counts.items())
+            parts.append(f"{fixture}: {site_counts}")
+    return "; ".join(parts)
 
 
 def main() -> None:
@@ -390,9 +417,12 @@ def main() -> None:
     )
     args = parser.parse_args()
     output_root = args.output_root.resolve()
-    generate(output_root, args.fixture)
-    counts = ", ".join(f"{site}={count}" for site, count in SITE_COUNTS.items())
-    print(f"generated {args.fixture} tabular fed-stats fixture(s) under {output_root}/ ({counts})")
+    summary = generate(output_root, args.fixture)
+    fixture_label = "fixtures" if args.fixture == "all" else "fixture"
+    print(
+        f"generated {args.fixture} tabular fed-stats {fixture_label} "
+        f"under {output_root}/ ({_format_summary(summary)})"
+    )
 
 
 if __name__ == "__main__":
