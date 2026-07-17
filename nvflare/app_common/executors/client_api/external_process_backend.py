@@ -894,11 +894,9 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
         if timeout is None:
             # the streaming request path requires a numeric (no-progress) timeout
             timeout = _TASK_READY_NO_PROGRESS_TIMEOUT
-        transactions = []
         transfer_waiters = []
 
         def _on_transaction_created(transaction):
-            transactions.append(transaction)
             transfer_waiters.append(DownloadService.get_transfer_waiter(transaction.tx_id))
 
         def _has_live_task_download():
@@ -936,7 +934,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             )
         except BaseException:
             cause = cancel.value
-            self._delete_transactions(transactions)
+            self._delete_task_transfers(transfer_waiters)
             if cancel.error is not None:
                 raise cancel.error
             if cause is not None:
@@ -945,18 +943,18 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
 
         cause = cancel.value
         if cancel.error is not None:
-            self._delete_transactions(transactions)
+            self._delete_task_transfers(transfer_waiters)
             raise cancel.error
         if cause is not None:
-            self._delete_transactions(transactions)
+            self._delete_task_transfers(transfer_waiters)
             return cause
         return _SEND_OK, reply
 
     @staticmethod
-    def _delete_transactions(transactions) -> None:
-        for transaction in transactions:
+    def _delete_task_transfers(transfer_waiters) -> None:
+        for waiter in transfer_waiters:
             try:
-                DownloadService.delete_transaction(transaction.tx_id)
+                DownloadService.delete_transaction(waiter.transaction_id)
             except Exception:
                 # Preserve the task's original abort/transport error. The transaction's
                 # own timeout remains the cleanup backstop if deletion itself fails.

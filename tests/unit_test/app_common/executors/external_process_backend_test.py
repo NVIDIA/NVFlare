@@ -1097,8 +1097,9 @@ class TestHeartbeatAndOperationalLiveness:
     def test_live_task_payload_transaction_suppresses_heartbeat_expiry(self, env, monkeypatch):
         monkeypatch.setattr(ebp, "_RESULT_POLL_INTERVAL", 0.01)
         transfer_settled = threading.Event()
-        waiter = SimpleNamespace(done=lambda: transfer_settled.is_set())
-        monkeypatch.setattr(ebp.DownloadService, "get_transfer_waiter", lambda _tx_id: waiter)
+        waiter = SimpleNamespace(transaction_id="task-payload-tx", done=lambda: transfer_settled.is_set())
+        get_transfer_waiter = MagicMock(return_value=waiter)
+        monkeypatch.setattr(ebp.DownloadService, "get_transfer_waiter", get_transfer_waiter)
         backend, fl_ctx = _initialized_backend(
             env,
             heartbeat_interval=0.02,
@@ -1131,6 +1132,7 @@ class TestHeartbeatAndOperationalLiveness:
             )
             result = backend.execute("train", Shareable(), fl_ctx, Signal())
             assert result.get_return_code() == ReturnCode.OK
+            get_transfer_waiter.assert_called_once_with("task-payload-tx")
         finally:
             backend.finalize(FLContext())
 
@@ -1414,7 +1416,7 @@ class TestExecute:
             backend.finalize(FLContext())
 
     def test_task_ready_cancellation_deletes_tracked_transactions(self, env, monkeypatch):
-        waiter = SimpleNamespace(done=lambda: False)
+        waiter = SimpleNamespace(transaction_id="task-payload-tx", done=lambda: False)
         deleted = []
         monkeypatch.setattr(ebp.DownloadService, "get_transfer_waiter", lambda _tx_id: waiter)
         monkeypatch.setattr(ebp.DownloadService, "delete_transaction", deleted.append)
