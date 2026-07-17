@@ -99,6 +99,8 @@ Modify `calculate_data_splits()` in `job.py` to implement different strategies:
 
 Use `per_site_config` to pass `train_args` for per-client configuration:
 ```python
+from nvflare.recipe import set_per_site_config
+
 per_site_config = {
     "site-1": {
         "train_args": "--data_path /data/cancer.csv --train_start 0 --train_end 151 ..."
@@ -108,6 +110,7 @@ per_site_config = {
     },
     # ... more sites
 }
+set_per_site_config(recipe, per_site_config)
 ```
 
 **Alternative: Using Separate Data Files**
@@ -132,6 +135,7 @@ per_site_config = {
         "train_args": "--data_path /data/site3_cancer.csv"
     }
 }
+set_per_site_config(recipe, per_site_config)
 
 # No need to pass --train_start, --train_end, etc. when using separate files
 ```
@@ -158,6 +162,7 @@ per_site_config = {
     },
     # ... more sites
 }
+set_per_site_config(recipe, per_site_config)
 ```
 
 **Note:** The default backend is `sklearn`. You only need to specify `--backend cuml` if you want GPU acceleration.

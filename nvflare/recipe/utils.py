@@ -21,10 +21,10 @@ from typing import Any, Dict, List, Optional
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.apis.dxo import DataKind
-from nvflare.apis.job_def import USER_SETTABLE_JOB_META_KEYS, JobMetaKey
+from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME, USER_SETTABLE_JOB_META_KEYS, JobMetaKey
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel.utils.secret_utils import warn_on_potential_secrets, warn_on_unsupported_secret_refs
-from nvflare.job_config.api import FedJob
+from nvflare.job_config.api import FedJob, validate_target_name
 from nvflare.job_config.fed_job_config import FedJobConfig
 from nvflare.recipe.spec import Recipe
 
@@ -265,6 +265,8 @@ def set_recipe_meta(recipe: Recipe, key: JobMetaKey, value: Any) -> None:
 def _validate_per_site_config_shape(config: Any) -> Dict[str, Dict]:
     if not isinstance(config, dict):
         raise TypeError(f"config must be a dict, got {type(config).__name__}")
+    if not config:
+        raise ValueError("config must not be empty")
 
     for site_name, site_config in config.items():
         if not isinstance(site_name, str):
@@ -278,17 +280,49 @@ def _validate_per_site_config_shape(config: Any) -> Dict[str, Dict]:
 def set_per_site_config(recipe: Recipe, config: Dict[str, Dict]) -> None:
     """Set site-keyed configuration on a recipe.
 
-    The helper only validates the generic shape:
+    Call this once, immediately after recipe construction and before adding
+    client customizations. The helper validates the generic shape:
     - top-level keys are site names
     - values are recipe-specific dictionaries
+    - the mapping is not empty
 
     Each recipe is responsible for validating and interpreting the fields inside
-    each site's dictionary. The execution environment still controls which
-    clients are present for a run. Per-site values become part of the generated
-    job definition and must never contain actual secret values; see
-    :mod:`nvflare.recipe.secrets`.
+    each site's dictionary. Supported recipes materialize client apps later,
+    before the first client customization or before export or execution. The
+    execution environment still controls which clients are present for a run.
+    Per-site values become part of the generated job definition and must never
+    contain actual secret values; see :mod:`nvflare.recipe.secrets`.
     """
-    recipe.set_per_site_config(_validate_per_site_config_shape(config))
+    recipe.set_per_site_config(config)
+
+
+def _validate_per_site_targets(config: Dict[str, Dict], min_clients: int) -> None:
+    """Validate site targets and the minimum runnable site count."""
+    reserved_targets = {SERVER_SITE_NAME, ALL_SITES}
+    for site_name in config:
+        validate_target_name(site_name)
+        if site_name in reserved_targets:
+            raise ValueError(
+                f"{site_name!r} is a reserved target name and cannot be used in per_site_config; "
+                f"reserved names: {sorted(reserved_targets)}"
+            )
+
+    if len(config) < min_clients:
+        raise ValueError(
+            f"per_site_config defines {len(config)} site(s), but min_clients={min_clients} requires at least "
+            f"{min_clients}"
+        )
+
+
+def _apply_legacy_constructor_config(recipe: Recipe, config: Dict[str, Dict]) -> None:
+    """Forward a deprecated constructor argument through the canonical setter."""
+    warnings.warn(
+        f"{type(recipe).__name__}(per_site_config=...) is deprecated; construct the recipe without "
+        "per_site_config and call set_per_site_config(recipe, config) immediately after construction",
+        FutureWarning,
+        stacklevel=3,
+    )
+    set_per_site_config(recipe, config)
 
 
 def _has_cross_site_eval_workflow(job: FedJob) -> bool:
@@ -340,7 +374,7 @@ def add_experiment_tracking(
             To give sites different receiver configs (e.g. per-site tracking_uri), call this
             function once per site with that site's tracking_config and clients=[site].
             Targeting specific clients requires the recipe's client apps to be per-site
-            (e.g. recipes constructed with the per_site_config constructor argument), and
+            (call set_per_site_config immediately after constructing a supported recipe), and
             each name must match an existing per-site client app; with the default
             all-clients topology or unknown site names, targeted placement raises ValueError.
 
