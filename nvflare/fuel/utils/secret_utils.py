@@ -568,9 +568,9 @@ def _scan_value(value: Any, location: str, findings: List[SecretFinding]) -> Non
             _scan_value(item, child_location, findings)
     elif isinstance(value, (list, tuple)):
         if value and all(isinstance(item, str) for item in value):
-            # Preserve argv adjacency: recursively scanning each item cannot associate a
-            # secret-named flag with its value in the following element. Inline assignments
-            # are still found by the per-item scan below.
+            # Commands can be stored as argv lists. Scan string sequences together so a
+            # secret-named flag and its value in the next element are not examined separately.
+            # Per-item scanning below handles inline forms such as "--password=value".
             findings.extend(_iter_flag_findings(list(value), location, include_inline=False))
         for index, item in enumerate(value):
             _scan_value(item, f"{location}[{index}]", findings)

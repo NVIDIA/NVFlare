@@ -137,12 +137,9 @@ class InProcessClientAPI(APISpec):
     def _dropped_because_closed(self, what: str) -> bool:
         """Outgoing-publication gate for a closed API.
 
-        After close(), this instance belongs to a job that has ended, but an abandoned
-        trainer thread may still hold it and resume later. Its publications must not land
-        on the singleton DataBus where a successor job's backend is now subscribed. The
-        gate DROPS (with a warning) instead of raising: an exception would propagate into
-        TaskScriptRunner's catch-all, which fires TOPIC_ABORT onto the same singleton bus
-        and would poison the successor -- the exact cross-job leak this gate prevents.
+        An abandoned trainer thread may resume after its backend has finalized. Drop its
+        publications instead of raising: an exception would reach TaskScriptRunner's
+        catch-all and turn orderly teardown into an abort event.
         """
         if not self.closed:
             return False
@@ -371,13 +368,10 @@ class InProcessClientAPI(APISpec):
     def close(self):
         """Detaches this API instance from the singleton DataBus, in both directions.
 
-        Incoming: unsubscribes its callbacks -- without this, a finished job's API stays
-        subscribed to TOPIC_GLOBAL_RESULT for the process lifetime, so every later job's
-        task publish also lands on the dead instance and pins its latest global model.
-        Outgoing: marks the instance closed so send()/log() DROP instead of publishing --
-        an abandoned trainer thread that resumes after its job ended must not feed results
-        or metrics to a successor job's backend. Called by the owning executor/backend at
-        teardown; idempotent.
+        Incoming callbacks are unsubscribed so the process-global bus does not retain this
+        API or its last model after backend teardown. The closed gate makes send()/log()
+        from an abandoned trainer thread drop instead of publishing. Called by the owning
+        executor/backend at teardown; idempotent.
         """
         self.closed = True
         self._converter_fl_ctx = None

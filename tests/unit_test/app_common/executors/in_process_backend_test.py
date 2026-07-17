@@ -18,8 +18,8 @@ Drives the real DataBus round-trip the design defines for in_process: the backen
 task on TOPIC_GLOBAL_RESULT, a fake trainer replies on TOPIC_LOCAL_RESULT, and execute()
 returns the result. Also covers the backend-contract obligations the legacy executor did not
 have: initialize() self-unwinding, finalize() idempotency + DataBus cleanup (the DataBus is a
-process singleton, so leaks would cross into later jobs in the same process), bounded result
-wait, and LOG routing through the executor-owned fire_log_analytics().
+process singleton, so cleanup must not leave dangling references), bounded result wait, and LOG
+routing through the executor-owned fire_log_analytics().
 """
 
 import builtins
@@ -41,7 +41,6 @@ from nvflare.app_common.executors.client_api import in_process_backend as ipb_mo
 from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendContext
 from nvflare.app_common.executors.client_api.in_process_backend import InProcessBackend
 from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
-from nvflare.client import api as flare_api
 from nvflare.client.api_spec import CLIENT_API_KEY
 from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType
 from nvflare.client.in_process.api import (
@@ -175,40 +174,6 @@ class TestInitializeAndFinalize:
         finally:
             backend.finalize(FLContext())
         assert not backend._task_fn_thread.is_alive()
-
-    def test_sequential_backends_rebind_module_level_client_api(self, tmp_path, monkeypatch):
-        """A later in-process job must not reuse the APIContext closed by its predecessor."""
-        (tmp_path / "train.py").write_text(
-            "import nvflare.client as flare\n" "flare.init()\n" "while flare.is_running():\n" "    pass\n"
-        )
-        monkeypatch.setattr(flare_api, "context_dict", {})
-        monkeypatch.setattr(flare_api, "default_context", None)
-        monkeypatch.setattr(flare_api, "_runtime_shutdown", False)
-
-        first, _ = _initialized_backend(str(tmp_path))
-        deadline = time.monotonic() + 2.0
-        while (flare_api.default_context is None or flare_api.default_context.api is not first._client_api) and (
-            time.monotonic() < deadline
-        ):
-            time.sleep(0.005)
-        assert flare_api.default_context is not None
-        first_context = flare_api.default_context
-        assert first_context.api is first._client_api
-        first.finalize(FLContext())
-        assert first_context.is_shutdown
-
-        second, _ = _initialized_backend(str(tmp_path))
-        try:
-            deadline = time.monotonic() + 2.0
-            while (
-                flare_api.default_context is first_context or flare_api.default_context.api is not second._client_api
-            ) and (time.monotonic() < deadline):
-                time.sleep(0.005)
-
-            assert flare_api.default_context is not first_context
-            assert flare_api.default_context.api is second._client_api
-        finally:
-            second.finalize(FLContext())
 
     def test_initialize_unwinds_on_failure(self, clean_databus, custom_dir):
         backend = InProcessBackend()
@@ -608,10 +573,8 @@ class TestClosedApiOutgoingGate:
     """A closed API must not publish onto the singleton bus (zombie-trainer containment).
 
     finalize() can abandon a still-running daemon trainer after the bounded join; that
-    thread still holds the API object and may resume later. Its send()/log() must DROP --
-    not publish (a successor job's backend is now subscribed to the same topics), and not
-    raise (an exception would hit TaskScriptRunner's catch-all, which fires TOPIC_ABORT
-    onto the singleton bus and would poison the successor)."""
+    thread still holds the API object and may resume later. Its send()/log() must drop
+    without publishing or turning normal teardown into an exception."""
 
     def test_finalize_closes_api_and_late_send_log_are_dropped(self, clean_databus, custom_dir):
         backend, _ = _initialized_backend(custom_dir)

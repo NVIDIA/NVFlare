@@ -15,7 +15,6 @@
 
 import os
 from enum import Enum
-from threading import Lock
 from typing import Optional
 
 from nvflare.client.cell.bootstrap import (
@@ -48,11 +47,9 @@ class APIContext:
         self.config_file = config_file if config_file else DEFAULT_CONFIG
         self._explicit_config_file = bool(config_file)
         self._typed_bootstrap_file = None
-        self._shutdown_lock = Lock()
-        self._closed = False
 
-        self.api_type = self._resolve_api_type()
-        self.api = self._create_client_api(self.api_type)
+        api_type = self._resolve_api_type()
+        self.api = self._create_client_api(api_type)
         self.api.init(rank=self.rank)
 
     def __enter__(self):
@@ -60,27 +57,9 @@ class APIContext:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Cleanup the client API when the context ends."""
-        self.shutdown()
-
-    @property
-    def is_shutdown(self) -> bool:
-        """Whether this context has released its Client API resources."""
-        # InProcessBackend may close its DataBus API directly at job teardown.
-        return self._closed or getattr(self.api, "closed", False) is True
-
-    def shutdown(self):
-        """Shuts down this context exactly once."""
-        with self._shutdown_lock:
-            if self._closed:
-                return None
-            self._closed = True
-            try:
-                return self.api.shutdown()
-            finally:
-                # Direct/context-manager shutdown must update the public context cache too.
-                from .api import _on_context_shutdown
-
-                _on_context_shutdown(self)
+        if self.api:
+            self.api.shutdown()
+            self.api = None
 
     def _resolve_api_type(self) -> ClientAPIType:
         """Resolve the API engine from a typed bootstrap or the legacy type environment."""

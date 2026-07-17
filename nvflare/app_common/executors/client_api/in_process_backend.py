@@ -22,16 +22,11 @@ TOPIC_GLOBAL_RESULT, and returns results over TOPIC_LOCAL_RESULT.
 
 Differences from the legacy executor (see docs/design/client_api_execution_modes.md):
 
-- No ParamsConverter components: the backend carries the declared native/server formats in
-  TASK_EXCHANGE, and the trainer-side Client API adapts at receive/send. FULL/DIFF remains a
-  trainer-side model-state setting.
 - LOG data is converted to analytics events through the executor-owned
   fire_log_analytics() (single analytics-event ownership point), not a direct
   send_analytic_dxo call.
 - initialize() self-unwinds on failure and finalize() is idempotent and
-  unsubscribes this backend's DataBus callbacks: the DataBus is a process
-  singleton, so leaked subscriptions would survive into later jobs run in the
-  same process (e.g. the simulator).
+  releases the API entry and callbacks it installed on the process-global DataBus.
 """
 
 import threading
@@ -278,15 +273,12 @@ class InProcessBackend(ClientAPIBackendSpec):
             self._unwind()
 
     def _unwind(self) -> None:
-        """Releases DataBus state so nothing leaks into later jobs (DataBus is a process singleton).
+        """Release the API and DataBus state owned by this backend.
 
         Each step is individually best-effort: a failure in one must not skip the others.
         """
-        # close the API FIRST: it detaches the API's own subscriptions (the singleton bus would
-        # otherwise keep the dead instance subscribed to TOPIC_GLOBAL_RESULT, pinning each later
-        # job's global model) and sets the closed gate that stops an abandoned trainer from
-        # publishing into a successor job -- the one step that must not be skipped by a failure
-        # elsewhere in the teardown
+        # Close the API first so it detaches its subscriptions and blocks late publications
+        # from an abandoned trainer while the remaining cleanup runs.
         if self._client_api is not None:
             try:
                 self._client_api.close()
@@ -294,7 +286,7 @@ class InProcessBackend(ClientAPIBackendSpec):
                 self.logger.error(secure_format_traceback())
             try:
                 if self._data_bus is not None and self._data_bus.get_data(CLIENT_API_KEY) is self._client_api:
-                    # only clear our own entry: a later backend may have installed its API
+                    # Clear only the entry still owned by this backend.
                     self._data_bus.put_data(CLIENT_API_KEY, None)
             except Exception:
                 self.logger.error(secure_format_traceback())

@@ -981,9 +981,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
 
     def _register_protocol_cbs(self, cell) -> None:
         # NOTE: cellnet request callbacks cannot be unregistered. The CJ cell is job-scoped
-        # (it dies with the job), a later backend re-registering overwrites these entries,
-        # and every state-mutating handler is gated on self._closed for the window in
-        # between.
+        # and every state-mutating handler is gated on self._closed after backend teardown.
         cell.register_request_cb(channel=CHANNEL, topic=Topic.HELLO, cb=self._handle_hello)
         cell.register_request_cb(channel=CHANNEL, topic=Topic.RESULT_READY, cb=self._handle_result_ready)
         cell.register_request_cb(channel=CHANNEL, topic=Topic.LOG, cb=self._handle_log)

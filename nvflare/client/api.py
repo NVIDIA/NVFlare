@@ -13,47 +13,27 @@
 # limitations under the License.
 
 import logging
-from threading import Lock, local
+from threading import Lock
 from typing import Any, Dict, Optional, Union
 
 from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.app_common.abstract.fl_model import FLModel
 
 # this import is to let existing scripts import client.api
-from .api_context import APIContext, ClientAPIType
+from .api_context import ClientAPIType  # noqa: F401
+from .api_context import APIContext
 
 global_context_lock = Lock()
 context_dict = {}
 default_context = None
-_runtime_shutdown = False
-_thread_context = local()
-
-
-def _on_context_shutdown(local_ctx: APIContext) -> None:
-    """Apply the process/cache consequence of one APIContext reaching shutdown."""
-    global default_context
-    global _runtime_shutdown
-
-    with global_context_lock:
-        if local_ctx.api_type == ClientAPIType.CELL_API:
-            # A Cell context retires the trainer's process-global F3 runtime.
-            _runtime_shutdown = True
-        else:
-            # Remove only this context: another rank/session may still be active.
-            for key, cached_ctx in tuple(context_dict.items()):
-                if cached_ctx is local_ctx:
-                    context_dict.pop(key, None)
-        if default_context is local_ctx:
-            default_context = None
 
 
 def get_context(ctx: Optional[APIContext] = None) -> APIContext:
     """Gets an APIContext.
 
     Args:
-        ctx (Optional[APIContext]): The context to use. If omitted, use the context
-            bound by ``init()`` to this thread, then the process default for an unbound
-            helper thread. Defaults to None.
+        ctx (Optional[APIContext]): The context to use,
+            if None means use default context. Defaults to None.
 
     Raises:
         RuntimeError: if can't get a valid APIContext.
@@ -61,20 +41,9 @@ def get_context(ctx: Optional[APIContext] = None) -> APIContext:
     Returns:
         An APIContext.
     """
-    if _runtime_shutdown:
-        raise RuntimeError("Client API runtime has been shut down; start a new trainer process")
-    if ctx is not None and not ctx.is_shutdown:
+    if ctx:
         return ctx
-    elif ctx is not None:
-        raise RuntimeError("APIContext has been shut down. Call flare.init() to create a new context.")
-    bound_context = getattr(_thread_context, "context", None)
-    if bound_context is not None and not bound_context.is_shutdown:
-        return bound_context
-    elif bound_context is not None:
-        # Keep the stopped binding as a tombstone. An abandoned in-process trainer
-        # thread must never fall through to a later job's process-global default.
-        raise RuntimeError("Thread-bound APIContext has been shut down. Call flare.init() to create a new context.")
-    elif default_context and not default_context.is_shutdown:
+    elif default_context:
         return default_context
     else:
         raise RuntimeError("APIContext is None. Did you call flare.init() before using the Client API?")
@@ -90,7 +59,7 @@ def init(rank: Optional[Union[str, int]] = None, config_file: Optional[str] = No
         config_file (str): client api configuration.
 
     Returns:
-        APIContext: The context, also bound to the calling thread for later API calls.
+        APIContext
     """
 
     # subsequent logic assumes rank is a string
@@ -105,31 +74,9 @@ def init(rank: Optional[Union[str, int]] = None, config_file: Optional[str] = No
     with global_context_lock:
         global context_dict
         global default_context
-        global _runtime_shutdown
-        if not _runtime_shutdown:
-            # CellClientAPI can stop itself on CJ SHUTDOWN; detect that process-wide close
-            # before a different rank/config constructs another context.
-            _runtime_shutdown = any(
-                cached_ctx.api_type == ClientAPIType.CELL_API and cached_ctx.is_shutdown
-                for cached_ctx in context_dict.values()
-            )
-        if _runtime_shutdown:
-            raise RuntimeError(
-                "Client API cannot be reinitialized after shutdown in the same process; " "start a new trainer process"
-            )
         local_ctx = context_dict.get((rank, config_file))
 
         if local_ctx is None:
-            local_ctx = APIContext(rank=rank, config_file=config_file)
-            context_dict[(rank, config_file)] = local_ctx
-            default_context = local_ctx
-        elif local_ctx.is_shutdown:
-            if local_ctx.api_type == ClientAPIType.CELL_API:
-                raise RuntimeError(
-                    "Cell Client API context has been shut down and cannot be reinitialized in the same process; "
-                    "start a new trainer process"
-                )
-            # Non-Cell contexts are reusable across sequential jobs in the same process.
             local_ctx = APIContext(rank=rank, config_file=config_file)
             context_dict[(rank, config_file)] = local_ctx
             default_context = local_ctx
@@ -137,7 +84,6 @@ def init(rank: Optional[Union[str, int]] = None, config_file: Optional[str] = No
             logging.warning(
                 "Warning: called init() more than once with same parameters." "The subsequence calls are ignored"
             )
-        _thread_context.context = local_ctx
         return local_ctx
 
 
@@ -289,26 +235,6 @@ def clear(ctx: Optional[APIContext] = None):
 
 
 def shutdown(ctx: Optional[APIContext] = None):
-    """Release the explicit or calling-thread Client API context and stop its operation.
-
-    For an external-process Cell Client API, this also retires process-global F3
-    streaming services; no later Cell Client API session can run in that interpreter.
-    """
-    global default_context
-    # Unlike other API calls, shutdown accepts stale or missing contexts so cleanup remains
-    # idempotent across finally/context-manager paths.
-    if ctx is not None:
-        local_ctx = ctx
-    else:
-        # A stopped thread binding prevents late cleanup from targeting a successor job's
-        # process default; unbound helper threads retain the compatibility fallback.
-        local_ctx = getattr(_thread_context, "context", None)
-        if local_ctx is None:
-            local_ctx = default_context
-    if local_ctx is None:
-        return None
-    try:
-        return local_ctx.shutdown()
-    finally:
-        # APIContext invokes the same hook when shut down directly.
-        _on_context_shutdown(local_ctx)
+    """Releases all threads and resources used by the API and stops operation."""
+    local_ctx = get_context(ctx)
+    return local_ctx.api.shutdown()
