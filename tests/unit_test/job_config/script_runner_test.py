@@ -220,6 +220,69 @@ class TestScriptRunner:
         assert runner._shutdown_timeout == 100.0
         assert runner._launcher is custom_launcher
 
+    def test_legacy_external_process_command_preserves_argv_boundaries(self):
+        from nvflare.job_config.api import FedJob
+
+        with patch("os.path.isfile", return_value=True), patch("os.path.exists", return_value=True):
+            job = FedJob(name="legacy-spaced-command")
+            runner = BaseScriptRunner(
+                script="train model.py",
+                script_args='--label "two words" --empty ""',
+                launch_external_process=True,
+                command="python3 -u",
+                framework=FrameworkType.NUMPY,
+                execution_mode=None,
+            )
+            job.to(runner, "site-1", tasks=["train"])
+
+        launcher = job._deploy_map["site-1"].app_config.components["launcher"]
+        assert isinstance(launcher, SubprocessLauncher)
+        assert launcher._script == [
+            "python3",
+            "-u",
+            "custom/train model.py",
+            "--label",
+            "two words",
+            "--empty",
+            "",
+        ]
+
+    def test_legacy_external_process_command_argv_is_serialized(self, tmp_path, monkeypatch):
+        from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
+        from nvflare.job_config.api import FedJob
+
+        monkeypatch.chdir(tmp_path)
+        script = tmp_path / "train model.py"
+        script.write_text("# test trainer\n")
+        job = FedJob(name="legacy-spaced-command-export")
+        job.to_server(ScatterAndGather(min_clients=1, num_rounds=1, wait_time_after_min_received=0))
+        job.to_clients(
+            BaseScriptRunner(
+                script=script.name,
+                script_args='--label "two words" --empty ""',
+                launch_external_process=True,
+                command="python3 -u",
+                framework=FrameworkType.NUMPY,
+                execution_mode=None,
+            )
+        )
+
+        export_dir = tmp_path / "export"
+        job.export_job(str(export_dir))
+        config_path = export_dir / job.name / "app" / "config" / "config_fed_client.json"
+        config = json.loads(config_path.read_text())
+        launcher = next(component for component in config["components"] if component["id"] == "launcher")
+
+        assert launcher["args"]["script"] == [
+            "python3",
+            "-u",
+            "custom/train model.py",
+            "--label",
+            "two words",
+            "--empty",
+            "",
+        ]
+
 
 class TestScriptRunnerMemoryManagement:
     """Test cases for ScriptRunner memory management parameters."""

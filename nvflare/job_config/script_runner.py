@@ -309,15 +309,17 @@ class BaseScriptRunner:
             task_pipe_id = job.add_component("pipe", task_pipe, ctx)
             comp_ids["pipe_id"] = task_pipe_id
 
-            launcher = (
-                self._launcher
-                if self._launcher
-                else SubprocessLauncher(
-                    script=self._command + " custom/" + self._script + " " + self._script_args,
+            if self._launcher:
+                launcher = self._launcher
+            else:
+                command = split_command_preserving_secret_refs(self._command, posix=True)
+                command.append(f"custom/{self._script}")
+                command.extend(split_command_preserving_secret_refs(self._script_args, posix=True))
+                launcher = SubprocessLauncher(
+                    script=command,
                     launch_once=self._launch_once,
                     shutdown_timeout=self._shutdown_timeout,
                 )
-            )
             launcher_id = job.add_component("launcher", launcher, ctx)
             comp_ids["launcher_id"] = launcher_id
 

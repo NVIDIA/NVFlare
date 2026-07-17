@@ -16,7 +16,7 @@ import os
 import signal
 import subprocess
 from threading import Lock, Thread
-from typing import Optional
+from typing import Optional, Sequence, Union
 
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
@@ -31,7 +31,7 @@ from nvflare.utils.process_utils import log_subprocess_output, prepare_subproces
 class SubprocessLauncher(Launcher):
     def __init__(
         self,
-        script: str,
+        script: Union[str, Sequence[str]],
         launch_once: Optional[bool] = True,
         clean_up_script: Optional[str] = None,
         shutdown_timeout: Optional[float] = 0.0,
@@ -39,7 +39,7 @@ class SubprocessLauncher(Launcher):
         """Initializes the SubprocessLauncher.
 
         Args:
-            script (str): Script to be launched using subprocess.
+            script: Command to launch, either as a command string or an argv sequence.
             launch_once (bool): Whether the external process will be launched only once at the beginning or on each task.
             clean_up_script (Optional[str]): Optional clean up script to be run after the main script execution.
             shutdown_timeout (float): If provided, will wait for this number of seconds before shutdown.
@@ -48,7 +48,7 @@ class SubprocessLauncher(Launcher):
 
         self._app_dir = None
         self._process = None
-        self._script = script
+        self._script = script if isinstance(script, str) else list(script)
         self._launch_once = launch_once
         self._clean_up_script = clean_up_script
         self._shutdown_timeout = shutdown_timeout
@@ -89,9 +89,10 @@ class SubprocessLauncher(Launcher):
                 app_custom_folder = workspace.get_app_custom_dir(job_id)
                 add_custom_dir_to_path(app_custom_folder, env)
 
-                # Resolve ${secret:ENV_VAR} references from this site's environment after shlex
-                # splitting, so injected values never re-tokenize. References in supported nested
-                # shell command strings are rejected because those strings are parsed again.
+                # Resolve ${secret:ENV_VAR} references from this site's environment after argv
+                # boundaries are established, so injected values never re-tokenize. References
+                # in supported nested shell command strings are rejected because those strings
+                # are parsed again.
                 # Resolved values exist only in the subprocess argv and must never be logged.
                 command_seq = prepare_subprocess_command(command)
                 self._process = subprocess.Popen(

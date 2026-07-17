@@ -159,6 +159,28 @@ class TestSubprocessLauncher:
         assert popen_calls[0]["kwargs"]["start_new_session"] is True
         assert launcher._process is not None
 
+    def test_start_external_process_preserves_argv_sequence(self, monkeypatch, tmp_path):
+        popen_calls = []
+
+        class _Proc:
+            pid = 1234
+            stdout = BufferedReader(BytesIO(b""))
+
+            def __init__(self, *args, **kwargs):
+                popen_calls.append({"args": args, "kwargs": kwargs})
+
+        monkeypatch.setattr("nvflare.app_common.launchers.subprocess_launcher.subprocess.Popen", _Proc)
+        command = ["python3", "custom/train model.py", "--label", "two words", "--empty", ""]
+        launcher = SubprocessLauncher(command, launch_once=False)
+        launcher._app_dir = str(tmp_path)
+
+        launcher.launch_task(
+            "__test_task", DXO(DataKind.WEIGHTS, {}).to_shareable(), self._make_fl_ctx(str(tmp_path)), Signal()
+        )
+        launcher._log_thread.join()
+
+        assert popen_calls[0]["args"][0] == command
+
     def test_start_external_process_resolves_secret_refs(self, monkeypatch, tmp_path):
         popen_calls = []
 
