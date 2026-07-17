@@ -12,20 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Endpoint resolution for cells whose FQCN parent is not their physical parent.
-
-CellPipe cells are named <site>.<token>.<mode> but physically connect to the
-site's CP, a relay, or the server root rather than to their literal FQCN
-parent (the job cell). _try_find_ep must fall through to generic path
-resolution (target's ancestor chain, then the server root) when the FQCN
-parent is not connected.
-"""
+"""Endpoint resolution for topology-shaped CellPipe FQCNs."""
 
 import logging
 
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FqcnInfo
 from nvflare.fuel.f3.endpoint import Endpoint
+from nvflare.fuel.f3.message import Message
 
 
 class _FakeAgent:
@@ -42,11 +37,18 @@ def _routing_cell(fqcn, connected):
 
 
 def test_pipe_cell_reaches_peer_through_connected_cp():
-    # The pipe cell connects to the CP ("site-1"), not to its FQCN parent
-    # ("site-1.job-123"); the peer must be routed through the CP.
-    cell = _routing_cell("site-1.job-123.active", ["site-1"])
+    cell = _routing_cell("site-1.cellpipe~plain~job-123~active", ["site-1"])
 
-    ep = cell._try_find_ep("site-1.job-123.passive", None)
+    ep = cell._try_find_ep("site-1.cellpipe~plain~job-123~passive", None)
+
+    assert ep is not None
+    assert ep.name == "site-1"
+
+
+def test_pipe_cell_reaches_server_job_through_connected_cp():
+    cell = _routing_cell("site-1.cellpipe~plain~job-123~active", ["site-1"])
+
+    ep = cell._try_find_ep("server.job-123", None)
 
     assert ep is not None
     assert ep.name == "site-1"
@@ -55,16 +57,119 @@ def test_pipe_cell_reaches_peer_through_connected_cp():
 def test_pipe_cell_reaches_peer_through_server_root():
     # With pipe_connect_type VIA_ROOT the pipe cell connects only to the
     # server root; the same-family peer must be routed through it.
-    cell = _routing_cell("site-1.job-123.active", ["server"])
+    cell = _routing_cell("site-1.cellpipe~plain~job-123~active", ["server"])
 
-    ep = cell._try_find_ep("site-1.job-123.passive", None)
+    ep = cell._try_find_ep("site-1.cellpipe~plain~job-123~passive", None)
 
     assert ep is not None
     assert ep.name == "server"
 
 
+def test_cp_routes_to_root_connected_pipe_cell_through_server_root():
+    # A VIA_ROOT pipe cell is named under the site but connects only to the
+    # server root, so its FQCN parent (the CP) has no direct agent for it.
+    # The CP must fall through to the server root instead of dropping the
+    # message with "no connection to child". The connected CJ is not on the
+    # target's FQCN path and must not be picked.
+    cell = _routing_cell("site-1", ["server", "site-1.job-123"])
+
+    ep = cell._try_find_ep("site-1.cellpipe~plain~job-123~active", None)
+
+    assert ep is not None
+    assert ep.name == "server"
+
+
+def test_cp_routes_to_root_connected_pipe_cell_with_dotted_token_through_server_root():
+    # Dots are supported in VIA_ROOT tokens. They split the CellPipe name into
+    # multiple FQCN segments, but the first descendant segment still carries
+    # the explicit CellPipe marker and must receive the same root fall-through.
+    cell = _routing_cell("site-1", ["server", "site-1.job-123"])
+
+    ep = cell._try_find_ep("site-1.cellpipe~plain~agent.v2~active", None)
+
+    assert ep is not None
+    assert ep.name == "server"
+
+
+def test_cj_routes_to_root_connected_pipe_cell_via_cp():
+    # First leg of the same path: the CJ ships the message to its connected
+    # FQCN parent (the CP); the CP then hops to the server root.
+    cell = _routing_cell("site-1.job-123", ["site-1", "server"])
+
+    ep = cell._try_find_ep("site-1.cellpipe~plain~job-123~active", None)
+
+    assert ep is not None
+    assert ep.name == "site-1"
+
+
+def test_cj_routes_to_root_connected_pipe_cell_with_dotted_token_via_cp():
+    cell = _routing_cell("site-1.job-123", ["site-1", "server"])
+
+    ep = cell._try_find_ep("site-1.cellpipe~plain~agent.v2~active", None)
+
+    assert ep is not None
+    assert ep.name == "site-1"
+
+
+def test_ancestor_path_miss_for_regular_cell_does_not_fall_back_to_server_root():
+    # A deeper ordinary descendant also keeps the original behavior when no
+    # cell on its path is connected. The VIA_ROOT exception is only for a
+    # descendant whose first segment carries the explicit CellPipe marker.
+    cell = _routing_cell("site-1", ["server"])
+
+    ep = cell._try_find_ep("site-1.job-dead.worker", None)
+
+    assert ep is None
+
+
+def test_regular_child_without_connection_does_not_fall_back_to_server_root():
+    # Ordinary direct children still fail at their FQCN parent. Only a plain
+    # CellPipe child may intentionally connect through the server root.
+    cell = _routing_cell("site-1", ["server"])
+
+    ep = cell._try_find_ep("site-1.job-dead", None)
+
+    assert ep is None
+
+
+def test_relay_alias_pipe_cell_reaches_peer_through_connected_relay():
+    # A pipe cell behind a relay is named <relay>.cellpipe~alias~<site>~<token>~<mode>: its
+    # FQCN parent is the connected relay, so normal parent routing applies.
+    cell = _routing_cell("relay-1.cellpipe~alias~site-1~job-123~active", ["relay-1"])
+
+    ep = cell._try_find_ep("relay-1.cellpipe~alias~site-1~job-123~passive", None)
+
+    assert ep is not None
+    assert ep.name == "relay-1"
+
+
+def test_relay_alias_pipe_cell_reaches_server_job_through_connected_relay():
+    cell = _routing_cell("relay-1.cellpipe~alias~site-1~job-123~active", ["relay-1"])
+
+    ep = cell._try_find_ep("server.job-123", None)
+
+    assert ep is not None
+    assert ep.name == "relay-1"
+
+
+def test_server_routes_to_pipe_cell_through_cp_not_cj():
+    # NVBug 6423409: the server holds direct agents for both the site CP and
+    # the CJ. A message addressed to the site's pipe cell (e.g. a swarm
+    # cross-site download to the training subprocess) must route to the CP,
+    # which the pipe cell actually connects to. Under the #4801 hierarchical
+    # name site-1.job-123.active, longest-prefix resolution picked the CJ
+    # (site-1.job-123), which has no connection to the pipe cell and dropped
+    # the request.
+    cell = _routing_cell("server", ["site-1", "site-1.job-123"])
+
+    ep = cell._try_find_ep("site-1.cellpipe~plain~job-123~active", None)
+
+    assert ep is not None
+    assert ep.name == "site-1"
+
+
 def test_pipe_cell_reaches_site_ancestor_through_connected_cp():
-    cell = _routing_cell("site-1.job-123.active", ["site-1"])
+    cell = _routing_cell("site-1.cellpipe~plain~job-123~active", ["site-1"])
 
     ep = cell._try_find_ep("site-1", None)
 
@@ -83,6 +188,33 @@ def test_same_family_routing_still_prefers_fqcn_parent():
 
 
 def test_pipe_cell_with_no_connection_is_unreachable():
-    cell = _routing_cell("site-1.job-123.active", [])
+    cell = _routing_cell("site-1.cellpipe~plain~job-123~active", [])
 
-    assert cell._try_find_ep("site-1.job-123.passive", None) is None
+    assert cell._try_find_ep("site-1.cellpipe~plain~job-123~passive", None) is None
+
+
+def test_find_endpoint_refuses_next_leg_already_on_route():
+    # Loop guard: resolution is deterministic, so forwarding to a cell that
+    # already handled this message would bounce it forever (e.g. CP -> server
+    # -> CP for a disconnected pipe cell). The hop is refused and the message
+    # fails cleanly with TARGET_UNREACHABLE.
+    cell = _routing_cell("server", ["site-1"])
+    msg = Message(headers={MessageHeaderKey.ROUTE: [("site-1", 0.0)]})
+
+    rc, ep = cell._find_endpoint("site-1.cellpipe~plain~job-dead~active", msg)
+
+    assert ep is None
+    assert rc == ReturnCode.TARGET_UNREACHABLE
+
+
+def test_find_endpoint_allows_final_destination_on_route():
+    # Delivery to the final destination is never refused, even when that cell
+    # is on the route - a reply legitimately goes back to its origin.
+    cell = _routing_cell("site-1", ["server"])
+    msg = Message(headers={MessageHeaderKey.ROUTE: [("server", 0.0)]})
+
+    rc, ep = cell._find_endpoint("server", msg)
+
+    assert rc == ""
+    assert ep is not None
+    assert ep.name == "server"

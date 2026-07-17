@@ -26,6 +26,10 @@ from nvflare.recipe.fedavg import FedAvgRecipe as UnifiedFedAvgRecipe
 class FedAvgRecipe(UnifiedFedAvgRecipe):
     """A recipe for implementing Federated Averaging (FedAvg) for PyTorch.
 
+    Recipe parameters, including ``train_args`` and nested ``per_site_config`` values,
+    must never contain actual secrets. Read secrets from site environment variables or mounted
+    files; references are supported only where documented in :mod:`nvflare.recipe.secrets`.
+
     FedAvg is a fundamental federated learning algorithm that aggregates model updates
     from multiple clients by computing a weighted average based on the amount of local
     training data. This recipe sets up a complete federated learning workflow with
@@ -53,16 +57,18 @@ class FedAvgRecipe(UnifiedFedAvgRecipe):
         aggregator: Custom aggregator (ModelAggregator) for combining client model updates.
             Must implement accept_model(), aggregate_model(), reset_stats() methods.
             If None, uses built-in memory-efficient weighted averaging.
-        aggregator_data_kind: Data kind to use for the aggregator. Defaults to DataKind.WEIGHTS.
-            Kept for backward compatibility.
+        aggregator_data_kind: Data kind to use for the aggregator. When a custom aggregator
+            declares expected_data_kind, the declaration must match. Defaults to DataKind.WEIGHTS.
         launch_external_process (bool): Whether to launch the script in external process. Defaults to False.
         command (str): If launch_external_process=True, command to run script (prepended to script). Defaults to "python3 -u".
         server_expected_format (str): What format to exchange the parameters between server and client.
-        params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
-            DIFF means that only the difference is sent. Defaults to TransferType.FULL.
+        params_transfer_type (str): How to transfer the parameters. DIFF enables automatic difference
+            calculation for full-model client results. A client's FLModel.params_type remains authoritative.
+            Defaults to TransferType.FULL.
         model_persistor: Custom model persistor. If None, PTFileModelPersistor will be used.
         model_locator: Custom model locator. If None, PTFileModelLocator will be used.
-        per_site_config: Per-site configuration for the federated learning job.
+        per_site_config: Deprecated constructor form. New code should call
+            ``set_per_site_config(recipe, config)`` immediately after construction.
         launch_once: Whether external process is launched once or per task. Defaults to True.
         shutdown_timeout: Seconds to wait before shutdown. Defaults to 0.0.
         key_metric: Metric used to determine if the model is globally best. Defaults to "accuracy".

@@ -234,6 +234,7 @@ class TestStaticFileBuilder:
             resource_template = template[resource_key]
             assert "{~~class_allow_list~~}" in resource_template
             assert _extract_class_allow_list(resource_template) == expected_paths
+            assert '"class_list_enforcement_mode": "enforce"' in resource_template
 
     def test_master_template_class_allow_list_has_no_package_prefixes(self):
         """Package prefixes (entries ending in '.') broaden authorization to every class under that package.

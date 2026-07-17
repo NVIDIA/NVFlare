@@ -18,7 +18,6 @@ from typing import Any, Dict, Optional, Union
 from pydantic import BaseModel
 
 from nvflare.apis.dxo import DataKind
-from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.app_constant import DefaultCheckpointFileName
@@ -28,6 +27,7 @@ from nvflare.fuel.utils.constants import FrameworkType
 from nvflare.job_config.base_fed_job import BaseFedJob
 from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.recipe.spec import Recipe
+from nvflare.recipe.utils import _apply_legacy_constructor_config, _validate_per_site_targets
 
 
 # Internal — not part of the public API
@@ -96,11 +96,17 @@ class FedAvgRecipe(Recipe):
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
         train_script: Path to the training script that will be executed on each client.
-        train_args: Command line arguments to pass to the training script.
+        train_args: Command line arguments to pass to the training script. Written in clear
+            text into the generated job config, so it must never contain actual secret values
+            (a PotentialSecretWarning is emitted if it looks like it does). To pass a secret,
+            use :func:`nvflare.recipe.secrets.secret_ref` for a site environment variable or
+            :func:`nvflare.recipe.secrets.secret_file_ref` for a mounted secret file. The
+            executing site resolves the placeholder at runtime.
         aggregator: Custom aggregator (ModelAggregator) for combining client model updates.
             Must implement accept_model(), aggregate_model(), reset_stats() methods.
             If None, uses built-in memory-efficient weighted averaging. Defaults to None.
         aggregator_data_kind: Data kind for aggregation (DataKind.WEIGHTS or DataKind.WEIGHT_DIFF).
+            When a custom aggregator declares expected_data_kind, the declaration must match.
             Kept for backward compatibility. Defaults to DataKind.WEIGHTS.
         launch_external_process: Whether to launch the script in external process. Defaults to False.
         command: If launch_external_process=True, command to run script (prepended to script).
@@ -113,11 +119,13 @@ class FedAvgRecipe(Recipe):
         server_expected_format: What format to exchange the parameters between server and client.
             Defaults to ExchangeFormat.NUMPY.
         params_transfer_type: How to transfer the parameters. FULL means the whole model parameters
-            are sent. DIFF means that only the difference is sent. Defaults to TransferType.FULL.
+            are sent. DIFF enables automatic difference calculation for full-model client results.
+            A client's FLModel.params_type remains authoritative. Defaults to TransferType.FULL.
         model_persistor: Custom model persistor for any framework. If None, uses the
             framework's default persistor when one is available.
-        per_site_config: Per-site configuration for the federated learning job. Dictionary mapping
-            site names to configuration dicts. Each config dict can contain optional overrides:
+        per_site_config: Deprecated constructor form of per-site configuration. New code should call
+            ``set_per_site_config(recipe, config)`` immediately after construction. Each config dict can
+            contain optional overrides:
             - train_script (str): Training script path
             - train_args (str): Script arguments
             - launch_external_process (bool): Whether to launch external process
@@ -128,6 +136,9 @@ class FedAvgRecipe(Recipe):
             - launch_once (bool): Whether to launch external process once or per task
             - shutdown_timeout (float): Shutdown timeout in seconds
             If not provided, the same configuration will be used for all clients.
+            Like train_args, per-site values are written in clear text into the generated job
+            config and must never contain actual secret values; see
+            :mod:`nvflare.recipe.secrets` for how to pass secrets safely.
         launch_once: Whether the external process will be launched only once at the beginning
             or on each task. Only used if `launch_external_process` is True. Defaults to True.
         shutdown_timeout: If provided, will wait for this number of seconds before shutdown.
@@ -158,6 +169,8 @@ class FedAvgRecipe(Recipe):
         If you want to use a custom aggregator, you can pass it in the aggregator parameter.
         The custom aggregator must be a subclass of the Aggregator class.
     """
+
+    _SUPPORTED_PER_SITE_SECRET_REF_KEYS = frozenset({"command", "train_args"})
 
     def __init__(
         self,
@@ -264,11 +277,16 @@ class FedAvgRecipe(Recipe):
         self.launch_external_process = v.launch_external_process
         self.command = v.command
         self.framework = v.framework
+        # Some wrappers expose a different framework to Recipe utilities after
+        # construction (for example NumPy exposes RAW for CSE). ScriptRunner
+        # creation must retain the framework validated for client exchange.
+        self._client_runner_framework = v.framework
         self.server_expected_format = v.server_expected_format
         self.params_transfer_type = v.params_transfer_type
         self.model_persistor = v.model_persistor
-        self.per_site_config = v.per_site_config
-        self._validate_per_site_config(self.per_site_config)
+        legacy_per_site_config = v.per_site_config
+        self.per_site_config = None
+        self._validate_aggregator_data_kind()
         self.launch_once = v.launch_once
         self.shutdown_timeout = v.shutdown_timeout
         self.key_metric = v.key_metric
@@ -345,74 +363,52 @@ class FedAvgRecipe(Recipe):
         )
         job.to_server(controller)
 
-        if self.per_site_config is not None:
-            for site_name, site_config in self.per_site_config.items():
-                # Use site-specific config or fall back to defaults
-                script = (
-                    site_config.get("train_script")
-                    if site_config.get("train_script") is not None
-                    else self.train_script
-                )
-                script_args = (
-                    site_config.get("train_args") if site_config.get("train_args") is not None else self.train_args
-                )
-                launch_external = (
-                    site_config.get("launch_external_process")
-                    if site_config.get("launch_external_process") is not None
-                    else self.launch_external_process
-                )
-                command = site_config.get("command") if site_config.get("command") is not None else self.command
-                framework = site_config.get("framework") if site_config.get("framework") is not None else self.framework
-                expected_format = (
-                    site_config.get("server_expected_format")
-                    if site_config.get("server_expected_format") is not None
-                    else self.server_expected_format
-                )
-                transfer_type = (
-                    site_config.get("params_transfer_type")
-                    if site_config.get("params_transfer_type") is not None
-                    else self.params_transfer_type
-                )
-                launch_once = (
-                    site_config.get("launch_once") if site_config.get("launch_once") is not None else self.launch_once
-                )
-                shutdown_timeout = (
-                    site_config.get("shutdown_timeout")
-                    if site_config.get("shutdown_timeout") is not None
-                    else self.shutdown_timeout
-                )
-
-                executor = ScriptRunner(
-                    script=script,
-                    script_args=script_args,
-                    launch_external_process=launch_external,
-                    command=command,
-                    framework=framework,
-                    server_expected_format=expected_format,
-                    params_transfer_type=transfer_type,
-                    launch_once=launch_once,
-                    shutdown_timeout=shutdown_timeout,
-                    memory_gc_rounds=self.client_memory_gc_rounds,
-                    cuda_empty_cache=self.cuda_empty_cache,
-                )
-                job.to(executor, site_name)
-        else:
-            executor = ScriptRunner(
-                script=self.train_script,
-                script_args=self.train_args,
-                launch_external_process=self.launch_external_process,
-                command=self.command,
-                framework=self.framework,
-                server_expected_format=self.server_expected_format,
-                params_transfer_type=self.params_transfer_type,
-                launch_once=self.launch_once,
-                shutdown_timeout=self.shutdown_timeout,
-                memory_gc_rounds=self.client_memory_gc_rounds,
-                cuda_empty_cache=self.cuda_empty_cache,
-            )
-            job.to_clients(executor)
-
         Recipe.__init__(self, job)
+
+        if legacy_per_site_config is not None:
+            _apply_legacy_constructor_config(self, legacy_per_site_config)
+
+    @staticmethod
+    def _site_value(site_config: Dict, key: str, default: Any) -> Any:
+        value = site_config.get(key)
+        return default if value is None else value
+
+    def _create_client_runner(self, site_config: Dict) -> ScriptRunner:
+        return ScriptRunner(
+            script=self._site_value(site_config, "train_script", self.train_script),
+            script_args=self._site_value(site_config, "train_args", self.train_args),
+            launch_external_process=self._site_value(
+                site_config, "launch_external_process", self.launch_external_process
+            ),
+            command=self._site_value(site_config, "command", self.command),
+            framework=self._site_value(site_config, "framework", self._client_runner_framework),
+            server_expected_format=self._site_value(site_config, "server_expected_format", self.server_expected_format),
+            params_transfer_type=self._site_value(site_config, "params_transfer_type", self.params_transfer_type),
+            launch_once=self._site_value(site_config, "launch_once", self.launch_once),
+            shutdown_timeout=self._site_value(site_config, "shutdown_timeout", self.shutdown_timeout),
+            memory_gc_rounds=self.client_memory_gc_rounds,
+            cuda_empty_cache=self.cuda_empty_cache,
+        )
+
+    def _apply_per_site_config(self, config: Dict[str, Dict]) -> None:
+        self._validate_per_site_config(config)
+        # Validate every runner override while set_per_site_config() is still
+        # recoverable; actual client apps are materialized later.
+        for site_config in config.values():
+            self._create_client_runner(site_config)
+        self.per_site_config = config
+
+    def _prepare_client_apps(self) -> None:
+        if self.per_site_config is None:
+            self._job.to_clients(self._create_client_runner({}))
+            return
+
+        runners = {
+            site_name: self._create_client_runner(site_config)
+            for site_name, site_config in self.per_site_config.items()
+        }
+        for site_name, runner in runners.items():
+            self._job.to(runner, site_name)
 
     @staticmethod
     def _resolve_model_filenames(best_model_filename: Optional[str], save_filename: Optional[str]) -> tuple[str, str]:
@@ -432,22 +428,18 @@ class FedAvgRecipe(Recipe):
         )
         return save_filename, save_filename
 
-    @staticmethod
-    def _validate_per_site_config(per_site_config: Optional[Dict[str, Dict]]) -> None:
-        if per_site_config is None:
-            return
+    def _validate_per_site_config(self, per_site_config: Dict[str, Dict]) -> None:
+        _validate_per_site_targets(per_site_config, self.min_clients)
 
-        reserved_targets = {SERVER_SITE_NAME, ALL_SITES}
-        for site_name, site_config in per_site_config.items():
-            if not isinstance(site_name, str):
-                raise ValueError(f"per_site_config key must be str, got {type(site_name).__name__}")
-            if site_name in reserved_targets:
-                raise ValueError(
-                    f"'{site_name}' is a reserved target name and cannot be used in per_site_config. "
-                    f"Reserved names: {sorted(reserved_targets)}"
-                )
-            if not isinstance(site_config, dict):
-                raise ValueError(f"per_site_config['{site_name}'] must be a dict, got {type(site_config).__name__}")
+    def _validate_aggregator_data_kind(self) -> None:
+        from nvflare.recipe.utils import validate_aggregator_data_kind
+
+        validate_aggregator_data_kind(
+            data_kind=self.aggregator_data_kind,
+            recipe_name=type(self).__name__,
+            aggregator=self.aggregator,
+            require_data_kind=self.aggregator is None,
+        )
 
     def _get_model_params(self) -> Optional[Dict]:
         """Convert model to dict of params.

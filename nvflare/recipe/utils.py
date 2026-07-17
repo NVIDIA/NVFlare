@@ -20,9 +20,11 @@ import warnings
 from typing import Any, Dict, List, Optional
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
-from nvflare.apis.job_def import USER_SETTABLE_JOB_META_KEYS, JobMetaKey
+from nvflare.apis.dxo import DataKind
+from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME, USER_SETTABLE_JOB_META_KEYS, JobMetaKey
 from nvflare.fuel.utils.import_utils import optional_import
-from nvflare.job_config.api import FedJob
+from nvflare.fuel.utils.secret_utils import warn_on_potential_secrets, warn_on_unsupported_secret_refs
+from nvflare.job_config.api import FedJob, validate_target_name
 from nvflare.job_config.fed_job_config import FedJobConfig
 from nvflare.recipe.spec import Recipe
 
@@ -65,6 +67,103 @@ MODEL_LOCATOR_REGISTRY = {
 
 # User-settable keys whose values are dicts keyed by site name with dict values.
 _SITE_KEYED_META_KEYS = frozenset({JobMetaKey.RESOURCE_SPEC, JobMetaKey.JOB_LAUNCHER_SPEC})
+
+
+def validate_aggregator_data_kind(
+    *,
+    data_kind: Optional[DataKind],
+    recipe_name: str,
+    data_kind_arg: str = "aggregator_data_kind",
+    aggregator: Any = None,
+    require_data_kind: bool = False,
+    fixed_data_kind: bool = False,
+) -> None:
+    """Validate recipe-owned server aggregation data-kind settings.
+
+    ``fixed_data_kind`` is for recipes such as FedOpt that do not expose the update-kind
+    settings. Its error guidance tells users to replace or reconfigure their custom
+    aggregator instead of suggesting recipe arguments they cannot change.
+
+    This intentionally does not infer the client result kind from ``TransferType``.
+    ``FLModel.params_type`` is the authoritative description of a client result, and a
+    recipe cannot inspect an arbitrary training script at construction time.
+    """
+    declared_kind = getattr(aggregator, "expected_data_kind", None)
+    if declared_kind is None:
+        assembler = getattr(aggregator, "assembler", None)
+        get_expected_data_kind = getattr(assembler, "get_expected_data_kind", None)
+        if callable(get_expected_data_kind):
+            declared_kind = get_expected_data_kind()
+
+    if isinstance(declared_kind, dict):
+        if len(declared_kind) != 1:
+            raise ValueError(
+                f"{recipe_name} cannot validate aggregator {type(aggregator).__name__}: "
+                f"expected_data_kind declares {len(declared_kind)} entries, but the recipe expects a single "
+                "model-update DataKind. Configure the aggregator with one expected_data_kind entry."
+            )
+        declared_kind = next(iter(declared_kind.values()))
+
+    if declared_kind is not None:
+        declared_kind = DataKind(declared_kind)
+    if data_kind is not None:
+        data_kind = DataKind(data_kind)
+    else:
+        data_kind = declared_kind
+
+    if data_kind is None:
+        if require_data_kind:
+            raise ValueError(
+                f"{recipe_name} requires {data_kind_arg} to be DataKind.WEIGHTS or DataKind.WEIGHT_DIFF "
+                "when using its built-in aggregator."
+            )
+        return
+
+    if data_kind not in (DataKind.WEIGHTS, DataKind.WEIGHT_DIFF):
+        raise ValueError(
+            f"{recipe_name} does not support {data_kind_arg}=DataKind.{data_kind.name}; "
+            "use DataKind.WEIGHTS or DataKind.WEIGHT_DIFF."
+        )
+
+    if declared_kind not in (None, DataKind.WEIGHTS, DataKind.WEIGHT_DIFF):
+        raise ValueError(
+            f"{recipe_name} cannot use aggregator {type(aggregator).__name__}: it declares "
+            f"expected_data_kind=DataKind.{declared_kind.name}, but the recipe supports only "
+            "DataKind.WEIGHTS or DataKind.WEIGHT_DIFF. Configure the aggregator for a supported model-update kind."
+        )
+
+    if declared_kind is None or declared_kind == data_kind:
+        return
+
+    if fixed_data_kind:
+        raise ValueError(
+            f"{recipe_name} requires a custom aggregator configured with "
+            f"expected_data_kind=DataKind.{data_kind.name}, but {type(aggregator).__name__} declares "
+            f"expected_data_kind=DataKind.{declared_kind.name}. Configure the custom aggregator for "
+            f"DataKind.{data_kind.name}, or omit it to use the built-in aggregator."
+        )
+    raise ValueError(
+        f"{recipe_name} has incompatible server aggregation settings: "
+        f"{data_kind_arg}=DataKind.{data_kind.name}, but aggregator "
+        f"{type(aggregator).__name__} declares expected_data_kind=DataKind.{declared_kind.name}. "
+        f"Use an aggregator configured for DataKind.{data_kind.name}, or set "
+        f"{data_kind_arg}=DataKind.{declared_kind.name}."
+    )
+
+
+def merge_config_overrides(defaults: Dict[str, Any], overrides: Optional[Dict[str, Any]], name: str) -> Dict[str, Any]:
+    """Return a shallow merge of recipe defaults and user overrides."""
+    if overrides is None:
+        return dict(defaults)
+    if not isinstance(overrides, dict):
+        raise TypeError(f"{name} must be a dict, but got {type(overrides).__name__}")
+    for key in overrides:
+        if not isinstance(key, str):
+            raise TypeError(f"{name} keys must be strings, but got {type(key).__name__}")
+
+    result = dict(defaults)
+    result.update(overrides)
+    return result
 
 
 def _normalize_recipe_meta_key(key: Any) -> str:
@@ -112,10 +211,10 @@ def _normalize_recipe_meta_value(key: JobMetaKey, key_str: str, value: Any) -> A
 
 
 def _get_recipe_job_config(recipe: Recipe) -> FedJobConfig:
-    job = getattr(recipe, "job", None)
+    job = getattr(recipe, "_job", None)
     job_config = getattr(job, "job", None)
     if not isinstance(job_config, FedJobConfig):
-        raise TypeError("recipe must provide a FedJob through recipe.job")
+        raise TypeError("recipe must be backed by a FedJob")
     return job_config
 
 
@@ -136,10 +235,13 @@ def set_recipe_meta(recipe: Recipe, key: JobMetaKey, value: Any) -> None:
     completely JSON-serializable, cannot contain non-finite floats, and have
     their keys coerced to strings as they will appear in ``meta.json``. The
     value is stored in ``meta_props`` and replaces any existing ``meta_props``
-    value for that key.
+    value for that key. Metadata is emitted in clear text in ``meta.json`` and
+    must never contain actual secret values; see :mod:`nvflare.recipe.secrets`.
     """
     key_str = _normalize_recipe_meta_key(key)
     normalized_value = _normalize_recipe_meta_value(key, key_str, value)
+    warn_on_potential_secrets(normalized_value, context=f"recipe metadata '{key_str}'")
+    warn_on_unsupported_secret_refs(normalized_value, context=f"recipe metadata '{key_str}'")
     job_config = _get_recipe_job_config(recipe)
 
     # RESOURCE_SPEC also has a dedicated FedJobConfig field (populated via
@@ -163,6 +265,8 @@ def set_recipe_meta(recipe: Recipe, key: JobMetaKey, value: Any) -> None:
 def _validate_per_site_config_shape(config: Any) -> Dict[str, Dict]:
     if not isinstance(config, dict):
         raise TypeError(f"config must be a dict, got {type(config).__name__}")
+    if not config:
+        raise ValueError("config must not be empty")
 
     for site_name, site_config in config.items():
         if not isinstance(site_name, str):
@@ -176,15 +280,49 @@ def _validate_per_site_config_shape(config: Any) -> Dict[str, Dict]:
 def set_per_site_config(recipe: Recipe, config: Dict[str, Dict]) -> None:
     """Set site-keyed configuration on a recipe.
 
-    The helper only validates the generic shape:
+    Call this once, immediately after recipe construction and before adding
+    client customizations. The helper validates the generic shape:
     - top-level keys are site names
     - values are recipe-specific dictionaries
+    - the mapping is not empty
 
     Each recipe is responsible for validating and interpreting the fields inside
-    each site's dictionary. The execution environment still controls which
-    clients are present for a run.
+    each site's dictionary. Supported recipes materialize client apps later,
+    before the first client customization or before export or execution. The
+    execution environment still controls which clients are present for a run.
+    Per-site values become part of the generated job definition and must never
+    contain actual secret values; see :mod:`nvflare.recipe.secrets`.
     """
-    recipe.set_per_site_config(_validate_per_site_config_shape(config))
+    recipe.set_per_site_config(config)
+
+
+def _validate_per_site_targets(config: Dict[str, Dict], min_clients: int) -> None:
+    """Validate site targets and the minimum runnable site count."""
+    reserved_targets = {SERVER_SITE_NAME, ALL_SITES}
+    for site_name in config:
+        validate_target_name(site_name)
+        if site_name in reserved_targets:
+            raise ValueError(
+                f"{site_name!r} is a reserved target name and cannot be used in per_site_config; "
+                f"reserved names: {sorted(reserved_targets)}"
+            )
+
+    if len(config) < min_clients:
+        raise ValueError(
+            f"per_site_config defines {len(config)} site(s), but min_clients={min_clients} requires at least "
+            f"{min_clients}"
+        )
+
+
+def _apply_legacy_constructor_config(recipe: Recipe, config: Dict[str, Dict]) -> None:
+    """Forward a deprecated constructor argument through the canonical setter."""
+    warnings.warn(
+        f"{type(recipe).__name__}(per_site_config=...) is deprecated; construct the recipe without "
+        "per_site_config and call set_per_site_config(recipe, config) immediately after construction",
+        FutureWarning,
+        stacklevel=3,
+    )
+    set_per_site_config(recipe, config)
 
 
 def _has_cross_site_eval_workflow(job: FedJob) -> bool:
@@ -214,6 +352,7 @@ def add_experiment_tracking(
     tracking_config: Optional[dict] = None,
     client_side: bool = False,
     server_side: bool = True,
+    clients: Optional[List[str]] = None,
 ):
     """Add experiment tracking to a recipe.
 
@@ -222,26 +361,70 @@ def add_experiment_tracking(
     Args:
         recipe: Recipe instance to augment with experiment tracking.
         tracking_type: Type of tracking to enable ("mlflow", "tensorboard", or "wandb").
-        tracking_config: Optional configuration dict for the tracking receiver.
-        client_side: If True, add tracking to all clients (each client tracks locally).
+        tracking_config: Optional configuration dict for the tracking receiver. For MLflow,
+            omitting this uses a local file store and derives ``experiment_name`` and
+            ``run_name`` from the recipe name. The configuration becomes part of the
+            generated job definition and must never contain actual credentials; configure
+            authentication through the executing site's environment or a mounted secret
+            instead.
+        client_side: If True, add tracking to clients (each client tracks locally).
         server_side: If True, add tracking to server (aggregates metrics from all clients). Default: True.
+        clients: Optional list of client names for client-side tracking. If None, the
+            client-side receiver is added to all clients. Only valid with client_side=True.
+            To give sites different receiver configs (e.g. per-site tracking_uri), call this
+            function once per site with that site's tracking_config and clients=[site].
+            Targeting specific clients requires the recipe's client apps to be per-site
+            (call set_per_site_config immediately after constructing a supported recipe), and
+            each name must match an existing per-site client app; with the default
+            all-clients topology or unknown site names, targeted placement raises ValueError.
 
     Examples:
-        # Server-side tracking (default - federated metrics)
-        add_experiment_tracking(recipe, "mlflow", {"tracking_uri": "..."})
+        # Server-side MLflow tracking with local storage and recipe-derived names
+        add_experiment_tracking(recipe, "mlflow")
 
         # Client-side tracking only (each client tracks independently)
-        add_experiment_tracking(recipe, "mlflow", {...}, client_side=True, server_side=False)
+        add_experiment_tracking(recipe, "mlflow", client_side=True, server_side=False)
 
         # Both server and client tracking
         add_experiment_tracking(recipe, "mlflow", {...}, client_side=True, server_side=True)
+
+        # Per-site client tracking configs (one call per site)
+        add_experiment_tracking(
+            recipe, "mlflow", {"tracking_uri": "file:///tmp/site-1/mlruns"},
+            client_side=True, server_side=False, clients=["site-1"],
+        )
+        add_experiment_tracking(
+            recipe, "mlflow", {"tracking_uri": "file:///tmp/site-2/mlruns"},
+            client_side=True, server_side=False, clients=["site-2"],
+        )
     """
     tracking_config = tracking_config or {}
+    warn_on_potential_secrets(tracking_config, context="tracking_config")
+    warn_on_unsupported_secret_refs(tracking_config, context="tracking_config")
     if tracking_type not in TRACKING_REGISTRY:
         raise ValueError(f"Invalid tracking type: {tracking_type}")
 
+    tracking_config = copy.deepcopy(tracking_config) if tracking_config else {}
+    if tracking_type == "mlflow":
+        kw_args = tracking_config.get("kw_args")
+        if kw_args is None:
+            kw_args = {}
+            tracking_config["kw_args"] = kw_args
+        elif not isinstance(kw_args, dict):
+            raise TypeError(f"MLflow kw_args must be a dict, got {type(kw_args).__name__}")
+        recipe_name = getattr(recipe, "name", None) or getattr(recipe._job, "name", None) or "nvflare"
+        kw_args.setdefault("experiment_name", f"{recipe_name}-experiment")
+
     if not server_side and not client_side:
         raise ValueError("At least one of server_side or client_side must be True")
+
+    if clients is not None:
+        if not client_side:
+            raise ValueError("clients is only used for client-side tracking; set client_side=True")
+        if not isinstance(clients, list) or not all(isinstance(c, str) for c in clients):
+            raise TypeError(f"clients must be a list of str, got {clients!r}")
+        if not clients:
+            raise ValueError("clients must not be empty; omit it to add tracking to all clients")
 
     _, flag = optional_import(TRACKING_REGISTRY[tracking_type]["package"])
     if not flag:
@@ -254,20 +437,98 @@ def add_experiment_tracking(
 
     # Add server-side tracking
     if server_side:
-        receiver = receiver_class(**tracking_config)
-        recipe.job.to_server(receiver, "receiver")
+        server_config = copy.deepcopy(tracking_config)
+        if tracking_type == "mlflow":
+            server_config["kw_args"].setdefault("run_name", f"{recipe_name}-Server")
+        receiver = receiver_class(**server_config)
+        recipe._job.to_server(receiver, "receiver")
 
     # Add client-side tracking
     if client_side:
         # For client-side tracking, need to configure local events
         # Deep copy to avoid shared mutable state (tracking_config may contain nested dicts)
         client_config = copy.deepcopy(tracking_config)
+        if tracking_type == "mlflow":
+            client_config["kw_args"].setdefault("run_name", f"{recipe_name}-Client")
         # Override events to track local analytics (not federated)
         if "events" not in client_config:
             client_config["events"] = [ANALYTIC_EVENT_TYPE]
 
         client_receiver = receiver_class(**client_config)
-        recipe.job.to_clients(client_receiver, id="client_receiver")
+        # Route through the recipe placement layer so existing per-site client apps
+        # are preserved (to_clients would target ALL_SITES even when per-site apps exist).
+        recipe._add_to_client_apps(client_receiver, clients=clients, id="client_receiver")
+
+
+def add_final_global_evaluation(
+    recipe: Recipe,
+    participating_clients: Optional[List[str]] = None,
+    validation_timeout: int = 6000,
+) -> None:
+    """Evaluate a PyTorch recipe's final global model on selected clients.
+
+    Unlike full cross-site evaluation, this helper does not ask clients to
+    submit their local models. It locates the recipe's persisted global model
+    and sends only that model for validation after training.
+
+    Args:
+        recipe: PyTorch recipe to augment with final global model evaluation.
+        participating_clients: Optional client names to run validation. If not
+            provided, all clients connected when the controller starts are used.
+        validation_timeout: Timeout in seconds for validation tasks. Defaults to
+            6000, matching ``CrossSiteModelEval``'s existing default.
+
+    Raises:
+        TypeError: If ``participating_clients`` is not a list of strings.
+        ValueError: If ``participating_clients`` is empty, the recipe is not
+            PyTorch, or the recipe has no model persistor.
+        RuntimeError: If a cross-site evaluation workflow is already configured.
+    """
+    from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
+    from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
+    from nvflare.app_opt.pt.file_model_locator import PTFileModelLocator
+    from nvflare.job_config.script_runner import FrameworkType
+
+    if getattr(recipe, "_cse_added", False) or _has_cross_site_eval_workflow(recipe._job):
+        raise RuntimeError("a cross-site evaluation workflow is already configured for this recipe")
+
+    if getattr(recipe, "framework", None) != FrameworkType.PYTORCH:
+        raise ValueError("final global evaluation currently supports PyTorch recipes only")
+
+    if participating_clients is not None:
+        if not isinstance(participating_clients, list) or not all(
+            isinstance(client, str) for client in participating_clients
+        ):
+            raise TypeError(f"participating_clients must be a list of str, got {participating_clients!r}")
+        if not participating_clients:
+            raise ValueError("participating_clients must not be empty; use None to evaluate on all clients")
+
+    comp_ids = getattr(recipe._job, "comp_ids", None)
+    if not isinstance(comp_ids, dict):
+        raise ValueError("final global evaluation requires a recipe that tracks component IDs")
+
+    model_locator_id = comp_ids.get("locator_id", "")
+    if not model_locator_id:
+        persistor_id = comp_ids.get("persistor_id", "")
+        if not persistor_id:
+            raise ValueError("final global evaluation requires a PyTorch model persistor")
+        model_locator_id = recipe._job.to_server(
+            PTFileModelLocator(pt_persistor_id=persistor_id), id="final_model_locator"
+        )
+        if not isinstance(model_locator_id, str) or not model_locator_id:
+            raise RuntimeError("failed to register the final global model locator")
+        comp_ids["locator_id"] = model_locator_id
+
+    recipe._job.to_server(ValidationJsonGenerator())
+    recipe._job.to_server(
+        CrossSiteModelEval(
+            model_locator_id=model_locator_id,
+            submit_model_task_name="",
+            validation_timeout=validation_timeout,
+            participating_clients=participating_clients,
+        )
+    )
+    recipe._cse_added = True
 
 
 def add_cross_site_evaluation(
@@ -287,9 +548,9 @@ def add_cross_site_evaluation(
 
     **For standalone CSE without training**, use `NumpyCrossSiteEvalRecipe` instead.
 
-    **Note**: This utility is designed for adding CSE to training recipes. If you call it on
-    a CSE-only recipe (e.g., `NumpyCrossSiteEvalRecipe`), it will detect this and skip
-    adding duplicate validators automatically.
+    **Note**: This utility is designed for adding CSE to training recipes. Standalone CSE
+    recipes such as `NumpyCrossSiteEvalRecipe` already configure their CSE workflow;
+    calling this utility on them raises `RuntimeError` through the idempotency check.
 
     **WARNING**: Do not call this function multiple times on the same recipe instance.
     This function is idempotent and will raise a RuntimeError if called more than once
@@ -357,23 +618,9 @@ def add_cross_site_evaluation(
         add_cross_site_evaluation(recipe)
         ```
 
-    Example (TensorFlow - Component-based alternative):
-        ```python
-        from nvflare.app_opt.tf.recipes import FedAvgRecipe
-        from nvflare.app_opt.tf.tf_validator import TFValidator
-        from nvflare.recipe.utils import add_cross_site_evaluation
-
-        recipe = FedAvgRecipe(
-            name="my-job", min_clients=2, num_rounds=3,
-            model=MyTFModel(), train_script="client.py"
-        )
-
-        add_cross_site_evaluation(recipe)
-
-        # Optional: manually add TFValidator for component-based validation
-        validator = TFValidator(model=my_model, data_loader=test_loader)
-        recipe.job.to_clients(validator, tasks=["validate"])
-        ```
+    TensorFlow component-based validators are executors, not plain components.
+    Use the lower-level Job API when explicit ``TFValidator`` placement is required;
+    Recipe-based jobs should use the Client API pattern above.
 
     Args:
         recipe: Recipe instance to augment with cross-site evaluation.
@@ -389,9 +636,8 @@ def add_cross_site_evaluation(
     Note:
         - Currently supports PyTorch, NumPy, and TensorFlow frameworks.
         - **NumPy recipes using `NumpyFedAvgRecipe`**: Validators (NPValidator) are automatically
-          added to clients to handle validation tasks. The function intelligently detects if validators
-          are already configured by checking for executors handling TASK_VALIDATION, avoiding duplicates
-          for CSE-only recipes (like `NumpyCrossSiteEvalRecipe`).
+          added to clients to handle validation tasks. The idempotency check prevents duplicate
+          CSE augmentation and validator registration.
         - **Unified `FedAvgRecipe` with `framework=FrameworkType.NUMPY`**: Uses the same Client API
           validation pattern as PyTorch and TensorFlow. Your client script should handle
           `flare.is_evaluate()` and return metrics for validation tasks.
@@ -408,7 +654,7 @@ def add_cross_site_evaluation(
     # Idempotency check: prevent multiple calls on the same recipe.
     # Keep the explicit flag fast-path, but also verify server workflow state so
     # protection remains effective even if dynamic attributes are lost.
-    if getattr(recipe, "_cse_added", False) or _has_cross_site_eval_workflow(recipe.job):
+    if getattr(recipe, "_cse_added", False) or _has_cross_site_eval_workflow(recipe._job):
         name = recipe.name if hasattr(recipe, "name") else "cross-site-evaluation job"
         raise RuntimeError(
             f"Cross-site evaluation has already been added to recipe '{name}'. "
@@ -459,12 +705,12 @@ def add_cross_site_evaluation(
     locator_kwargs = {}
     if locator_config["persistor_param"] is not None:
         # For frameworks requiring persistor_id (PyTorch, TensorFlow), get it from comp_ids
-        if hasattr(recipe.job, "comp_ids"):
-            persistor_id = recipe.job.comp_ids.get("persistor_id", "")
+        if hasattr(recipe._job, "comp_ids"):
+            persistor_id = recipe._job.comp_ids.get("persistor_id", "")
             if not persistor_id:
                 raise ValueError(
                     f"Cross-site evaluation requires a persistor for {framework_to_locator[framework]} recipes, "
-                    f"but no persistor_id found in recipe.job.comp_ids. "
+                    "but no persistor_id was found in the generated job. "
                     f"Ensure your recipe includes a model to create a persistor."
                 )
             locator_kwargs[locator_config["persistor_param"]] = persistor_id
@@ -475,10 +721,10 @@ def add_cross_site_evaluation(
             )
 
     model_locator = locator_class(**locator_kwargs)
-    model_locator_id = recipe.job.to_server(model_locator)
+    model_locator_id = recipe._job.to_server(model_locator)
 
     # Add validation JSON generator
-    recipe.job.to_server(ValidationJsonGenerator())
+    recipe._job.to_server(ValidationJsonGenerator())
 
     # Create and add cross-site evaluation controller
     eval_controller = CrossSiteModelEval(
@@ -487,7 +733,7 @@ def add_cross_site_evaluation(
         validation_timeout=validation_timeout,
         participating_clients=participating_clients,
     )
-    recipe.job.to_server(eval_controller)
+    recipe._job.to_server(eval_controller)
 
     # Let recipe handle framework-specific validator setup if needed
     # NumPy recipes implement add_cse_validator_if_needed() to add NPValidator automatically
@@ -498,64 +744,6 @@ def add_cross_site_evaluation(
 
     # Mark that CSE has been added to prevent duplicate calls
     recipe._cse_added = True
-
-
-def _has_task_executor(job, task_name: str) -> bool:
-    """Check if any executor is already configured for the specified task.
-
-    This function inspects the job's internal structure to determine if a validator
-    or executor is already handling the specified task. It uses defensive programming
-    to handle potential variations in the internal API structure.
-
-    IMPORTANT: This function accesses the private attribute job._deploy_map because:
-    1. No public API exists in FedJob to query configured executors
-    2. This check is necessary to avoid adding duplicate validators for CSE
-    3. Without this, we'd rely on fragile string matching on recipe class names
-
-    The implementation uses defensive programming (hasattr checks, try-except) to
-    minimize fragility. If FedJob's internal structure changes, this function will
-    gracefully return False rather than crashing.
-
-    Future improvement: FedJob could provide a public method like get_executors(target)
-    to make this check safer and more maintainable.
-
-    Args:
-        job: FedJob instance to check
-        task_name: Task name to check for (e.g., AppConstants.TASK_VALIDATION)
-
-    Returns:
-        True if an executor is already configured for this task, False otherwise
-    """
-    # Access _deploy_map (private attribute) - see docstring for justification
-    # Defensive check: ensure _deploy_map exists before accessing
-    if not hasattr(job, "_deploy_map"):
-        return False
-
-    for target, app in job._deploy_map.items():
-        # Skip server apps, only check client apps
-        if target == "server":
-            continue
-
-        # Get the client app configuration
-        if hasattr(app, "app_config"):
-            app_config = app.app_config
-            # Check if it's a ClientAppConfig with executors
-            if hasattr(app_config, "executors"):
-                for executor_def in app_config.executors:
-                    # Defensive check: ensure executor_def has tasks attribute
-                    if not hasattr(executor_def, "tasks"):
-                        continue
-
-                    try:
-                        # Check if this executor handles the task
-                        # Wildcard executors (["*"]) can handle any task
-                        if "*" in executor_def.tasks or task_name in executor_def.tasks:
-                            return True
-                    except (TypeError, AttributeError):
-                        # Handle case where tasks is not iterable or comparable
-                        # This could happen if tasks has an unexpected type
-                        continue
-    return False
 
 
 def collect_non_local_scripts(job: FedJob) -> List[str]:

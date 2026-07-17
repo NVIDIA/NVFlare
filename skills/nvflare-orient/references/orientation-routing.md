@@ -5,10 +5,9 @@ turn project evidence and user intent into one narrow next action.
 
 ## Evidence Sources
 
-- `nvflare agent inspect <path> --format json` for framework, FLARE usage,
-  conversion state, safety findings, and recommended skills.
-- `nvflare agent doctor --format json` for local CLI, skill bundle, startup-kit,
-  POC, and optional online readiness.
+- `nvflare agent inspect <path> --format json` for framework routing, FLARE
+  usage, conversion state, safety findings, local readiness, and recommended
+  skills.
 - User-provided target files, job folders, logs, or stated deployment context.
 
 ## Routing Rules
@@ -30,7 +29,8 @@ Summaries should name:
 - target path inspected;
 - strongest evidence found;
 - recommended next skill or no-skill decision;
-- validation or approval boundary before any mutating follow-up.
+- unresolved semantic prerequisites and the validation expected in the next
+  workflow.
 
 Do not turn routing into implementation. Once the next skill is clear, hand off
 instead of continuing with broad advice.

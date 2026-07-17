@@ -66,6 +66,7 @@ readme_fs: |
 local_client_resources: |
   {
     "format_version": 2,
+    "class_list_enforcement_mode": "enforce",
     "class_allow_list": {~~class_allow_list~~},
     "allow_log_streaming": {~~allow_log_streaming~~},
     "client": {
@@ -186,6 +187,7 @@ sample_privacy: |
 local_server_resources: |
   {
       "format_version": 2,
+      "class_list_enforcement_mode": "enforce",
       "class_allow_list": {~~class_allow_list~~},
       "servers": [
           {

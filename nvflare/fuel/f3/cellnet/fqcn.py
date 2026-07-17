@@ -11,11 +11,108 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from typing import Optional, Tuple
+
 from nvflare.fuel.common.fqn import FQN
 
 
 class FQCN(FQN):
-    pass
+    VALID_PATTERN = "^[A-Za-z0-9_.~-]*$"
+
+
+# CellPipe cells use "~"-delimited, explicitly marked leaf segments so pipe
+# names can never be confused with other cell names or with each other. "~"
+# is reserved inside CellPipe fields and is safe for site names such as
+# "site-1" and tokens such as "ext_trainer":
+#   - plain leaf "cellpipe~plain~<token>~<mode>" for pipes connected to the server
+#     root or to the site's own CP;
+#   - alias leaf "cellpipe~alias~<owner>~<token>~<mode>" for pipes connected
+#     through another cell (e.g. a relay). The alias maps the cell to the
+#     owning site for mTLS identity resolution and stream message
+#     authentication. Both directions of the alias grammar live here so they
+#     cannot drift apart.
+#
+# CellPipe cell-name schemes, in historical order:
+#   1. legacy (through 2.8): a bare "<site>_<token>_<mode>" leaf. Root-connected
+#      pipes use it as the whole FQCN; CP/relay-connected pipes nest it under
+#      the connected cell ("<parent_fqcn>.<site>_<token>_<mode>").
+#   2. hierarchical (#4801, never released): "<site>.<token>.<mode>". Replaced
+#      because the extra segments created unconnected FQCN parents that broke
+#      routing (NVBug 6371056).
+#   3. topology (current): a single prefixed leaf segment under the FQCN of
+#      the cell the pipe actually connects to,
+#      "<parent>.cellpipe~plain~<token>~<mode>", or
+#      "<relay_fqcn>.cellpipe~alias~<owner>~<token>~<mode>" when connected
+#      through another cell.
+# Mixed-version notes: only scheme-1 whole-FQCN aliases are still accepted by
+# identity resolution and stream auth. Nested bare aliases are intentionally
+# unsupported because an unmarked leaf inside a longer FQCN is indistinguishable
+# from a real cell of that name. The two ends of one pipe pair must run the same
+# scheme - each end derives the peer's name from its own code, so a CJ and a
+# training subprocess on different schemes fail with "peer FQCN mismatch".
+CELL_PIPE_SEPARATOR = "~"
+CELL_PIPE_PREFIX = f"cellpipe{CELL_PIPE_SEPARATOR}"
+CELL_PIPE_LEAF_PREFIX = f"{CELL_PIPE_PREFIX}plain{CELL_PIPE_SEPARATOR}"
+CELL_PIPE_ALIAS_PREFIX = f"{CELL_PIPE_PREFIX}alias{CELL_PIPE_SEPARATOR}"
+CELL_PIPE_ALIAS_MODES = ("active", "passive")
+
+
+def make_cell_pipe_leaf(runtime_id: str, mode: str) -> str:
+    return CELL_PIPE_SEPARATOR.join(("cellpipe", "plain", runtime_id, mode))
+
+
+def make_cell_pipe_alias(owner: str, runtime_id: str, mode: str) -> str:
+    return CELL_PIPE_SEPARATOR.join(("cellpipe", "alias", owner, runtime_id, mode))
+
+
+def parse_cell_pipe_alias(segment: str) -> Optional[Tuple[str, str, str]]:
+    """Parse a CellPipe alias leaf segment into (owner, runtime_id, mode).
+
+    Two shapes are accepted:
+      - the current explicit form
+        "cellpipe~alias~<owner>~<runtime_id>~<mode>";
+      - the bare legacy form "<owner>_<runtime_id>_<mode>" used by pre-2.9
+        flat CellPipe names, where the whole FQCN is the alias. Callers decide
+        where the bare form is acceptable; it is normally restricted to
+        single-segment FQCNs so an unmarked "<token>_<mode>" leaf inside a
+        longer FQCN is never misread as an alias.
+
+    The explicit form accepts "-" and "_" in both owner and runtime_id because
+    "~" is its only field separator. The legacy form is parsed from the right,
+    so its runtime_id must not contain "." or "_".
+
+    Returns None if the segment is not a valid alias.
+    """
+    if segment.startswith(CELL_PIPE_ALIAS_PREFIX):
+        parts = segment.split(CELL_PIPE_SEPARATOR)
+        if len(parts) != 5:
+            return None
+
+        owner, runtime_id, mode = parts[2:]
+        if not owner or not runtime_id or "." in owner or "." in runtime_id:
+            return None
+        if mode not in CELL_PIPE_ALIAS_MODES:
+            return None
+        return owner, runtime_id, mode
+
+    # Legacy flat alias grammar. No pre-2.9 FQCN segment can contain the
+    # reserved "~" separator (it was added to FQCN.VALID_PATTERN by the topology
+    # scheme), so a "~"-bearing segment is never a legacy alias. Rejecting it
+    # here also guarantees a current "~"-delimited leaf can never bare-parse.
+    if CELL_PIPE_SEPARATOR in segment:
+        return None
+
+    head, sep, mode = segment.rpartition("_")
+    if not sep or mode not in CELL_PIPE_ALIAS_MODES:
+        return None
+
+    # rpartition splits on the last "_", so runtime_id can never contain "_";
+    # only the "." constraint needs an explicit check.
+    owner, sep, runtime_id = head.rpartition("_")
+    if not sep or not owner or not runtime_id or "." in runtime_id:
+        return None
+
+    return owner, runtime_id, mode
 
 
 class FqcnInfo:

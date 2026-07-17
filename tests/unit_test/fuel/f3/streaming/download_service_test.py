@@ -13,8 +13,8 @@
 # limitations under the License.
 
 import threading
-import weakref
-from typing import Any, Tuple
+import time
+from typing import Any
 from unittest.mock import Mock, patch
 
 import pytest
@@ -24,57 +24,23 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.streaming.download_service import (
     Consumer,
-    Downloadable,
     DownloadService,
     DownloadStatus,
     ProduceRC,
     TransactionDoneStatus,
 )
+from nvflare.fuel.f3.streaming.transfer_outcome import compute_transfer_outcome
 from nvflare.fuel.utils.network_utils import get_open_ports
+from tests.unit_test.fuel.f3.streaming.download_test_utils import (
+    MockDownloadable,
+    make_isolated_download_service,
+    run_monitor_once,
+)
 
-
-class MockDownloadable(Downloadable):
-    """Mock downloadable for testing."""
-
-    def __init__(self, data_chunks: list, fail_on_chunk: int = -1):
-        super().__init__(data_chunks)
-        self.data_chunks = data_chunks
-        self.fail_on_chunk = fail_on_chunk
-        self.current_chunk = 0
-        self.downloaded_to_one_calls = []
-        self.downloaded_to_all_called = False
-        self.downloaded_to_all_call_count = 0
-        self.transaction_done_calls = []
-        self.tx_id = None
-        self.ref_id = None
-
-    def set_transaction(self, tx_id: str, ref_id: str):
-        self.tx_id = tx_id
-        self.ref_id = ref_id
-
-    def produce(self, state: dict, requester: str) -> Tuple[str, Any, dict]:
-        if not state:
-            chunk_idx = 0
-        else:
-            chunk_idx = state.get("chunk_idx", 0)
-
-        if self.fail_on_chunk >= 0 and chunk_idx == self.fail_on_chunk:
-            return ProduceRC.ERROR, None, {}
-
-        if chunk_idx >= len(self.data_chunks):
-            return ProduceRC.EOF, None, {}
-
-        return ProduceRC.OK, self.data_chunks[chunk_idx], {"chunk_idx": chunk_idx + 1}
-
-    def downloaded_to_one(self, to_receiver: str, status: str):
-        self.downloaded_to_one_calls.append((to_receiver, status))
-
-    def downloaded_to_all(self):
-        self.downloaded_to_all_called = True
-        self.downloaded_to_all_call_count += 1
-
-    def transaction_done(self, transaction_id: str, status: str):
-        self.transaction_done_calls.append((transaction_id, status))
+# local aliases: the helpers moved to download_test_utils so isolated-service
+# state stays defined in one place
+_make_isolated_download_service = make_isolated_download_service
+_run_monitor_once = run_monitor_once
 
 
 class MockConsumer(Consumer):
@@ -103,51 +69,11 @@ class MockConsumer(Consumer):
         self.failure_reason = reason
 
 
-def _make_isolated_download_service():
-    class IsolatedDownloadService(DownloadService):
-        _tx_table = {}
-        _ref_table = {}
-        _finished_refs = {}
-        _logger = Mock()
-        _tx_lock = threading.Lock()
-        _initialized_cells = weakref.WeakKeyDictionary()
-
-    return IsolatedDownloadService
-
-
 def _make_download_request(ref_id: str, requester: str, state: dict = None):
     payload = {"ref_id": ref_id}
     if state is not None:
         payload["state"] = state
     return new_cell_message(headers={MessageHeaderKey.ORIGIN: requester}, payload=payload)
-
-
-def _run_monitor_once(service_cls, now):
-    from nvflare.fuel.f3.streaming import download_service as download_service_module
-
-    class MonitorIterationDone(Exception):
-        pass
-
-    monitor_thread = threading.current_thread()
-    real_time = download_service_module.time.time
-    real_sleep = download_service_module.time.sleep
-
-    def test_thread_time():
-        if threading.current_thread() is monitor_thread:
-            return now
-        return real_time()
-
-    def test_thread_sleep(seconds):
-        if threading.current_thread() is monitor_thread:
-            raise MonitorIterationDone
-        real_sleep(seconds)
-
-    with (
-        patch.object(download_service_module.time, "time", side_effect=test_thread_time),
-        patch.object(download_service_module.time, "sleep", side_effect=test_thread_sleep),
-    ):
-        with pytest.raises(MonitorIterationDone):
-            service_cls._monitor_tx()
 
 
 class TestDownloadService:
@@ -551,6 +477,101 @@ class TestDownloadService:
         service.shutdown()
 
         assert list(service._initialized_cells.keys()) == []
+
+    def test_new_transaction_takes_ownership_before_monitor_visible(self):
+        """A tx must own its outcome slot before it appears in _tx_table.
+
+        The monitor discovers transactions through _tx_table. If a tx were inserted
+        there first, a monitor tick landing in the window before ownership is taken
+        could terminate it: its terminal outcome would be dropped by the owner guard
+        (a terminated-but-unknown gap), and new_transaction would then register a
+        dead owner entry that nothing ever pops.
+        """
+        service = _make_isolated_download_service()
+        service._tx_monitor = object()  # avoid starting a real monitor thread
+
+        registered_at_insert = []
+
+        class MonitorVisibilityDict(dict):
+            def __setitem__(self, key, value):
+                registered_at_insert.append(key in service._outcome_owners)
+                super().__setitem__(key, value)
+
+        service._tx_table = MonitorVisibilityDict()
+
+        tx_id = service.new_transaction(cell=Mock(), timeout=10.0, num_receivers=1)
+
+        assert registered_at_insert == [True]
+        assert service._outcome_owners[tx_id] is service._tx_table[tx_id]
+
+    def test_stale_outcome_dropped_after_ownership_cleared(self):
+        """A terminal outcome for a transaction that no longer owns its tx_id must drop.
+
+        This is the invariant that closes the cross-lifecycle stale-outcome race:
+        _record_outcome() records only for the transaction that owns the outcome slot.
+        A recorder that blocked on _outcome_lock while shutdown() cleared the tables can
+        win the lock after a subsequent _initialize(); no longer owning the slot, its
+        pre-shutdown outcome drops instead of repopulating the cleared table.
+        """
+        service = _make_isolated_download_service()
+
+        old_tx = Mock()
+        old_tx.tid = "tx-old"
+        old_outcome = Mock()
+        old_outcome.tx_id = "tx-old"
+        old_outcome.expired.return_value = False
+
+        # shutdown() cleared ownership; recording is gated by owner identity alone
+        service._outcome_owners.clear()
+
+        # the late callback for the old, now-unregistered transaction must be dropped
+        service._record_outcome(old_outcome, tx=old_tx)
+        assert service.get_transaction_outcome("tx-old") is None
+
+        # sanity: the owning transaction still records (guard does not over-drop)
+        live_tx = Mock()
+        live_tx.tid = "tx-live"
+        live_outcome = compute_transfer_outcome("tx-live", TransactionDoneStatus.FINISHED, 1, [], time.time())
+        service._outcome_owners["tx-live"] = live_tx
+        service._record_outcome(live_outcome, tx=live_tx)
+        recorded = service.get_transaction_outcome("tx-live")
+        # recording re-stamps the receipt (TTL starts at recording), so compare identity-free
+        assert recorded is not None and recorded.tx_id == "tx-live" and recorded.done_status == live_outcome.done_status
+
+    def test_raising_download_callbacks_do_not_break_serving_path(self):
+        """Raising downloaded_to_one/downloaded_to_all must not propagate into serving.
+
+        A raising downloaded_to_one on the chunk-serving path would lose the EOF reply
+        for that attempt, and -- because the _downloaded_to_all_called latch is set
+        before the callbacks run and is never retried -- would permanently skip
+        downloaded_to_all. Both callbacks are guarded like the terminal callbacks in
+        transaction_done: the exception is logged, serving and the all-receivers-done
+        notification proceed.
+        """
+        service = _make_isolated_download_service()
+        service._tx_monitor = object()  # avoid starting a real monitor thread
+
+        calls = []
+
+        class RaisingDownloadable(MockDownloadable):
+            def downloaded_to_one(self, to_receiver: str, status: str):
+                calls.append(("one", to_receiver, status))
+                raise RuntimeError("user callback failure")
+
+            def downloaded_to_all(self):
+                calls.append(("all",))
+                raise RuntimeError("user callback failure")
+
+        tx_id = service.new_transaction(cell=Mock(), timeout=10.0, num_receivers=1)
+        obj = RaisingDownloadable([b"chunk"])
+        rid = service.add_object(tx_id, obj)
+        ref = service._ref_table[rid]
+
+        # must not raise; downloaded_to_all still fires after downloaded_to_one raised
+        ref.obj_downloaded("r1", DownloadStatus.SUCCESS)
+
+        assert calls == [("one", "r1", DownloadStatus.SUCCESS), ("all",)]
+        assert ref.snapshot_receiver_statuses() == {"r1": DownloadStatus.SUCCESS}
 
     def test_get_transaction_id_from_ref_id(self, cell):
         """Test retrieving transaction ID from reference ID."""

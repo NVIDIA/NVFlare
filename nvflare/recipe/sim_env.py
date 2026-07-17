@@ -13,7 +13,8 @@
 # limitations under the License.
 
 import json
-import os.path
+import os
+import warnings
 from typing import Optional
 
 from pydantic import BaseModel, model_validator
@@ -27,6 +28,7 @@ from .spec import ExecEnv
 from .utils import collect_non_local_scripts
 
 WORKSPACE_ROOT = "/tmp/nvflare/simulation"
+SIMULATOR_WORKSPACE_ROOT_ENV_VAR = "NVFLARE_SIMULATOR_WORKSPACE_ROOT"
 
 
 # Internal — not part of the public API
@@ -78,6 +80,7 @@ class SimEnv(ExecEnv):
             gpu_config (str, optional): GPU configuration string. Defaults to None.
             log_config (str, optional): Log configuration string. Defaults to None.
             workspace_root (str, optional): Root directory for simulation workspace. Defaults to WORKSPACE_ROOT.
+                The process-level NVFLARE_SIMULATOR_WORKSPACE_ROOT orchestration setting takes precedence when set.
             extra: extra env config info
         """
         super().__init__(extra)
@@ -97,7 +100,15 @@ class SimEnv(ExecEnv):
         self.gpu_config = v.gpu_config
         self.log_config = v.log_config
         self.clients = v.clients
-        self.workspace_root = v.workspace_root
+        workspace_override = os.environ.get(SIMULATOR_WORKSPACE_ROOT_ENV_VAR)
+        if workspace_override and workspace_override != v.workspace_root:
+            warnings.warn(
+                f"{SIMULATOR_WORKSPACE_ROOT_ENV_VAR} overrides SimEnv workspace_root "
+                f"from {v.workspace_root!r} to {workspace_override!r}; unset it to use the constructor value",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+        self.workspace_root = workspace_override or v.workspace_root
         self.last_run_failed = False
 
     def deploy(self, job: FedJob):
