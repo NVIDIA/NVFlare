@@ -29,6 +29,7 @@ tests:
           data: { "run_finished": true }
     validators:
       - path: tests.integration_test.src.validators.TFModelValidator
+        args: { model_file_name: "tf_model.weights.h5" }
     teardown:
       - rm -rf ./data/recipe_jobs/tensorflow/cyclic
       - rm -f ~/.keras/datasets/mnist.npz
@@ -54,6 +55,7 @@ tests:
           data: { "run_finished": true }
     validators:
       - path: tests.integration_test.src.validators.TFModelValidator
+        args: { model_file_name: "tf_model.weights.h5" }
       - path: tests.integration_test.src.validators.TBResultValidator
         args: { require_result_on_client: false }
     teardown:
