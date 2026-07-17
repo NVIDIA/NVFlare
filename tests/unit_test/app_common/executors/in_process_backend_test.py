@@ -241,30 +241,41 @@ class TestInitializeAndFinalize:
         execute() returns while the thread still runs, so finalize() must join with a bound
         and abandon (daemon thread) instead of hanging CJ/simulator teardown forever. Abandoning
         the runner must restore the process globals that TaskScriptRunner owns."""
-        (tmp_path / "train.py").write_text("import time\nwhile True: time.sleep(0.5)\n")
+        release_key = "test.release_stuck_in_process_trainer"
+        (tmp_path / "train.py").write_text(
+            "import time\n"
+            "from nvflare.fuel.data_event.data_bus import DataBus\n"
+            f"while not DataBus().get_data('{release_key}'):\n"
+            "    time.sleep(0.5)\n"
+        )
         original_print = builtins.print
         original_argv = sys.argv
         original_argv_values = list(sys.argv)
         backend, fl_ctx = _initialized_backend(str(tmp_path), result_wait_timeout=0.05)
         try:
-            result = backend.execute("train", Shareable(), fl_ctx, Signal())
-            assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
-            assert backend._task_fn_thread.is_alive()  # the reachable-hang precondition
-            assert backend._task_fn_thread.daemon  # a wedged trainer cannot block process exit
+            try:
+                result = backend.execute("train", Shareable(), fl_ctx, Signal())
+                assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+                assert backend._task_fn_thread.is_alive()  # the reachable-hang precondition
+                assert backend._task_fn_thread.daemon  # a wedged trainer cannot block process exit
+            finally:
+                with patch.object(ipb_module, "_TRAINER_STOP_JOIN_TIMEOUT", 0.5):
+                    start = time.monotonic()
+                    backend.finalize(FLContext())
+                    elapsed = time.monotonic() - start
+            assert elapsed < 5.0, "finalize must not hang on a stuck trainer"
+            assert backend._task_fn_thread.is_alive()
+            assert builtins.print is original_print
+            assert sys.argv is original_argv
+            assert list(sys.argv) == original_argv_values
+            capsys.readouterr()
+            print("unrelated output")
+            assert capsys.readouterr().out == "unrelated output\n"
+            assert "did not stop within" in caplog.text
         finally:
-            with patch.object(ipb_module, "_TRAINER_STOP_JOIN_TIMEOUT", 0.5):
-                start = time.monotonic()
-                backend.finalize(FLContext())
-                elapsed = time.monotonic() - start
-        assert elapsed < 5.0, "finalize must not hang on a stuck trainer"
-        assert backend._task_fn_thread.is_alive()
-        assert builtins.print is original_print
-        assert sys.argv is original_argv
-        assert list(sys.argv) == original_argv_values
-        capsys.readouterr()
-        print("unrelated output")
-        assert capsys.readouterr().out == "unrelated output\n"
-        assert "did not stop within" in caplog.text
+            DataBus().put_data(release_key, True)
+            backend._task_fn_thread.join(timeout=2.0)
+        assert not backend._task_fn_thread.is_alive()
 
     def test_initialize_configures_memory_management(self, custom_dir):
         backend, _ = _initialized_backend(custom_dir, memory_gc_rounds=3, cuda_empty_cache=True)
@@ -454,7 +465,7 @@ class TestExecute:
                 [TOPIC_GLOBAL_RESULT], lambda t, d, b: clean_databus.publish([TOPIC_LOCAL_RESULT], _result_shareable())
             )
             for round_num in (0, 1, 2):
-                task = Shareable()
+                task = _result_shareable()
                 task.set_header(AppConstants.CURRENT_ROUND, round_num)
                 result = backend.execute("train", task, fl_ctx, Signal())
                 assert result.get_return_code() == ReturnCode.OK
