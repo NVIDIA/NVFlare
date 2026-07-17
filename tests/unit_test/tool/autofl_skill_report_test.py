@@ -719,6 +719,73 @@ def test_report_reads_best_candidate_manifest_when_available(tmp_path, monkeypat
     assert summary["best_manifest"]["budget_sha256"] == "d" * 64
     assert summary["best_manifest"]["candidate_kind"] == "argument_only"
     assert summary["best_manifest"]["literature_event_id"] == "lit-0001"
+    assert summary["best_manifest"]["recorded_path"] == (
+        ".nvflare/autofl/candidates/inherited_tuning/candidate_manifest.json"
+    )
+    assert summary["best_manifest"]["resolved_path"] == str(manifest_path.resolve())
+    assert summary["best_manifest"]["resolution"] == "recorded"
+
+
+def test_report_resolves_relocated_best_candidate_manifest(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    rows = _write_campaign(tmp_path)
+    recorded_path = "/workspace/job/.nvflare/autofl/candidates/inherited_tuning/candidate_manifest.json"
+    rows[4]["candidate_manifest"] = recorded_path
+    _write_rows(tmp_path, rows)
+    manifest_path = tmp_path / ".nvflare/autofl/candidates/inherited_tuning/candidate_manifest.json"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "nvflare.autofl.candidate.v1",
+                "candidate_id": "inherited_tuning",
+                "fixed_budget_sha256": "d" * 64,
+                "status": "keep",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    summary = _generate(reporter, tmp_path, monkeypatch)
+
+    assert summary["best_manifest"]["available"] is True
+    assert summary["best_manifest"]["candidate_id"] == "inherited_tuning"
+    assert summary["best_manifest"]["budget_sha256"] == "d" * 64
+    assert summary["best_manifest"]["recorded_path"] == recorded_path
+    assert summary["best_manifest"]["resolved_path"] == str(manifest_path.resolve())
+    assert summary["best_manifest"]["path"] == str(manifest_path.resolve())
+    assert summary["best_manifest"]["resolution"] == "campaign_local"
+    report = tmp_path.joinpath("autofl_final_report.md").read_text(encoding="utf-8")
+    assert recorded_path in report
+    assert str(manifest_path.resolve()) in report
+
+
+def test_report_rejects_relocated_manifest_with_mismatched_candidate_id(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    rows = _write_campaign(tmp_path)
+    rows[4]["candidate_manifest"] = "/workspace/job/.nvflare/autofl/candidates/inherited_tuning/candidate_manifest.json"
+    _write_rows(tmp_path, rows)
+    manifest_path = tmp_path / ".nvflare/autofl/candidates/inherited_tuning/candidate_manifest.json"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "nvflare.autofl.candidate.v1",
+                "candidate_id": "different_candidate",
+                "fixed_budget_sha256": "d" * 64,
+                "status": "keep",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    summary = _generate(reporter, tmp_path, monkeypatch)
+
+    assert summary["best_manifest"]["available"] is False
+    assert summary["best_manifest"]["resolution"] == "campaign_local"
+    assert summary["best_manifest"]["resolved_path"] == str(manifest_path.resolve())
+    assert "candidate manifest ID mismatch" in summary["best_manifest"]["error"]
+    assert "budget_sha256" not in summary["best_manifest"]
 
 
 @pytest.mark.parametrize("invalid_content", [None, b"not a png"])

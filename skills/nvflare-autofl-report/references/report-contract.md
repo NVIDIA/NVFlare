@@ -39,6 +39,13 @@ its `base_candidate`. Follow `base_candidate` links back to baseline and union
 changed files across the chain. Mark lineage partial when an ancestor row or
 manifest is unavailable.
 
+Ledger paths may refer to the container or host where a candidate ran. When a
+recorded manifest path is unavailable, the reporter checks the campaign-local
+`.nvflare/autofl/candidates/<candidate_id>/candidate_manifest.json` path and
+accepts it only when the manifest `candidate_id` exactly matches the ledger
+candidate name. The JSON summary preserves `recorded_path`, `resolved_path`,
+and whether resolution used the recorded or campaign-local path.
+
 ## Literature Evidence
 
 A `literature` row opens a checkpoint and records a `literature_event_id`.

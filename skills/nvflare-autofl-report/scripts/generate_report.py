@@ -460,21 +460,70 @@ def inferred_candidate_kind(record: RunRecord) -> str:
     return "source_edit" if changed and changed != "none" else "argument_only"
 
 
+def campaign_local_manifest_path(campaign_root: Path, candidate_id: str) -> Optional[Path]:
+    candidate_id = candidate_id.strip()
+    if (
+        not candidate_id
+        or candidate_id in {".", ".."}
+        or Path(candidate_id).name != candidate_id
+        or "/" in candidate_id
+        or "\\" in candidate_id
+    ):
+        return None
+    return campaign_root / ".nvflare" / "autofl" / "candidates" / candidate_id / "candidate_manifest.json"
+
+
 def manifest_summary(record: Optional[RunRecord], campaign_root: Path) -> Dict[str, Any]:
     if record is None or not record.candidate_manifest:
         return {}
-    path = resolve_path(campaign_root, record.candidate_manifest)
+    recorded_path = record.candidate_manifest
+    path = resolve_path(campaign_root, recorded_path)
+    resolution = "recorded"
     if not path.is_file():
-        return {"path": str(path), "available": False}
+        local_path = campaign_local_manifest_path(campaign_root, record.name)
+        if local_path is None:
+            return {
+                "path": str(path),
+                "recorded_path": recorded_path,
+                "resolved_path": None,
+                "resolution": "unavailable",
+                "available": False,
+                "error": f"candidate name is not a safe manifest identifier: {record.name!r}",
+            }
+        if not local_path.is_file():
+            return {
+                "path": str(path),
+                "recorded_path": recorded_path,
+                "resolved_path": None,
+                "resolution": "unavailable",
+                "available": False,
+            }
+        path = local_path
+        resolution = "campaign_local"
+
+    resolved_path = str(path.resolve())
+    provenance = {
+        "path": resolved_path,
+        "recorded_path": recorded_path,
+        "resolved_path": resolved_path,
+        "resolution": resolution,
+    }
     try:
         manifest = load_json(path)
     except ValueError as exc:
-        return {"path": str(path), "available": False, "error": str(exc)}
+        return {**provenance, "available": False, "error": str(exc)}
+    manifest_candidate_id = str(manifest.get("candidate_id") or "")
+    if manifest_candidate_id != record.name:
+        return {
+            **provenance,
+            "available": False,
+            "error": (f"candidate manifest ID mismatch: expected {record.name!r}, " f"found {manifest_candidate_id!r}"),
+        }
     return {
-        "path": str(path.resolve()),
+        **provenance,
         "available": True,
         "schema_version": manifest.get("schema_version"),
-        "candidate_id": manifest.get("candidate_id"),
+        "candidate_id": manifest_candidate_id,
         "base_candidate": manifest.get("base_candidate"),
         "hypothesis": manifest.get("hypothesis"),
         "run_args": manifest.get("run_args") or [],
@@ -1201,7 +1250,10 @@ def report_markdown(summary: Dict[str, Any], records: Sequence[RunRecord]) -> st
                 f"- Status: `{best['status']}`",
                 f"- Base lineage: `{compact_lineage(summary['best_lineage']['candidates']) or 'unavailable'}`",
                 f"- Cumulative changed files: `{', '.join(summary['best_lineage']['changed_files']) or 'none recorded'}`",
-                f"- Candidate manifest: `{best['candidate_manifest'] or 'not recorded'}`",
+                f"- Candidate manifest (recorded): `{best['candidate_manifest'] or 'not recorded'}`",
+                f"- Candidate manifest (resolved): "
+                f"`{summary['best_manifest'].get('resolved_path') or 'not available'}`",
+                f"- Manifest resolution: `{summary['best_manifest'].get('resolution') or 'not available'}`",
                 f"- Manifest available: `{summary['best_manifest'].get('available', False)}`",
                 f"- Manifest budget SHA-256: `{summary['best_manifest'].get('budget_sha256') or 'not recorded'}`",
                 f"- Patch SHA-256: `{best['patch_sha256'] or 'not recorded'}`",
