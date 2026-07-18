@@ -52,10 +52,11 @@ statistic_configs = {
   second-round payload lets the standard min-count/bin-cap filters screen
   the output against the honest effective count. Do not raise from the
   statistic method for this condition: the statistics task handler catches
-  per-statistic exceptions and can otherwise return partial output. Report
-  the late failure as a data-quality finding with rerun guidance. Very
-  large datasets may trade the double-decode for round-2-only discovery;
-  say so in the report.
+  per-statistic exceptions and can otherwise return partial output. This
+  product-side exception/filter ordering is tracked with NVFlare issue
+  #4876. Report the late failure as a data-quality finding with rerun
+  guidance. Very large datasets may trade the double-decode for
+  round-2-only discovery; say so in the report.
 - mean/sum/stddev/var/quantile/min/max over image sets are not supported by
   this skill version: report them as unsupported for image data rather than
   improvising pixel-pooled implementations.
