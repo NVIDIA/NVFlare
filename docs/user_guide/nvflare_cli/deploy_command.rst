@@ -11,11 +11,12 @@ site deployment runtime. The first supported subcommand is
 ``deploy prepare`` does not create identities, certificates, startup kits, or
 Kubernetes clusters. Use ``nvflare provision`` or the distributed
 ``nvflare cert`` / ``nvflare package`` workflow first, then run
-``deploy prepare`` on each server or client kit that should run in Docker or
-Kubernetes.
+``deploy prepare`` on each server or client kit that should run in Docker,
+Kubernetes, or Slurm.
 
-For Kubernetes deployment workflow, see :ref:`helm_chart`. For job-level Docker
-and Kubernetes image settings, see :ref:`launcher_spec`.
+For Kubernetes deployment workflow, see :ref:`helm_chart`. For the Slurm
+deployment workflow and security checklist, see :ref:`slurm_job_launcher`. For
+job-level runtime settings, see :ref:`launcher_spec`.
 
 *****
 Usage
@@ -39,9 +40,10 @@ Default convention:
 
 Put the runtime config in the startup kit as ``config.yaml``, then run
 ``nvflare deploy prepare <startup-kit-dir>``. The command reads ``runtime`` from
-that config and writes the prepared copy to ``<startup-kit-dir>/prepared/docker``
-or ``<startup-kit-dir>/prepared/k8s``. Use ``--config`` to read a config file
-from another path, and use ``--output`` to write the prepared kit somewhere else.
+that config and writes the prepared copy to
+``<startup-kit-dir>/prepared/<runtime>`` (for example, ``docker``, ``k8s``, or
+``slurm``). Use ``--config`` to read a config file from another path, and use
+``--output`` to write the prepared kit somewhere else.
 
 Admin startup kits are not supported by ``deploy prepare`` because admin kits do
 not run parent server or client processes.
@@ -190,6 +192,7 @@ Top-level keys:
   registry Secret names to ``meta.json``.
 - ``job_pod_security_context``: security context passed to dynamically
   launched job pods.
+
 Study-specific Pod templates are not launcher arguments. Configure them per
 study in ``local/study_runtime.yaml`` (``studies.<study>.pod_template``, inline
 or as a path relative to ``local/``). Matching studies use the template with
@@ -272,13 +275,22 @@ The command requires Kubernetes CLI access to the target cluster. It uses
 ``kubectl`` by default; set ``--kubectl oc`` or ``KUBECTL=oc`` when staging into
 OpenShift with ``oc``. It:
 
-- creates or updates a ConfigMap containing every file under prepared ``local/``
-- creates or updates a Secret containing every file under prepared ``startup/``
+- creates a ConfigMap containing every file under prepared ``local/``, or
+  resource-version-replaces it only when it has this prepared kit's owner token
+- creates a Secret containing every file under prepared ``startup/``, with the
+  same ownership check
 - patches ``helm_chart/values.yaml`` so the parent pod mounts the ConfigMap at
   ``workspace_mount_path/local`` and the Secret at
   ``workspace_mount_path/startup``
+- patches the prepared ``K8sJobLauncher`` to the effective stage namespace so
+  its child Pods use the same namespace as the parent and Helm RBAC
 - records the resolved namespace and object names so they can be removed by
   ``nvflare deploy k8s unstage``
+
+Each prepared chart has a random staging-owner token. Both objects carry it as
+a label and annotation. Stage refuses to modify a same-named object owned by
+another prepared kit, including when a concurrent change invalidates the
+resource version.
 
 The resource names default to ``nvflare-local-<site>`` and
 ``nvflare-startup-<site>``. Override them with ``--local-configmap`` and
@@ -309,33 +321,59 @@ not left in the cluster:
    nvflare deploy k8s unstage ./site-1-k8s
 
 ``unstage`` reads the exact namespace and resource names recorded by the most
-recent ``stage`` command, deletes the Secret and ConfigMap, and
-clears their references from ``helm_chart/values.yaml``. Deletion uses exact
-names and is safe when either object has already been removed.
+recent ``stage`` command, verifies both owner tokens before deleting either
+object, deletes only objects matching the recorded name and owner, and clears
+their references from ``helm_chart/values.yaml``. It is safe when either object
+has already been removed and refuses to delete a foreign replacement.
 
 Run ``unstage`` before replacing the same prepared output with another
 ``nvflare deploy prepare`` command. Prepare refuses to overwrite a chart that
 still records staged resources because doing so would lose their cleanup
 targets.
 
-For a kit staged by an older NVFlare version that did not record its namespace,
-pass the original namespace explicitly:
-
-.. code-block:: shell
-
-   nvflare deploy k8s unstage ./site-1-k8s --namespace nvflare
-
-You can also pass ``--local-configmap`` and ``--startup-secret`` to clean up
-legacy or partially staged resources whose names are not recorded. Use
+For a current prepared kit, you can pass ``--namespace``,
+``--local-configmap``, and ``--startup-secret`` to clean up partially staged
+resources from the same owner whose targets are not recorded. Use
 ``--kubectl oc`` or ``KUBECTL=oc`` for OpenShift. Run ``unstage`` only after
 the Helm release has been uninstalled; an installed parent pod still depends
 on these volumes.
+
+************
+Slurm Config
+************
+
+The Slurm backend requires a stable shared workspace and a launcher policy. A
+minimal ``slurm.yaml`` is:
+
+.. code-block:: yaml
+
+   runtime: slurm
+   workspace_path: /lustre/proj123/nvflare/site-1
+   job_launcher:
+     sandbox: apptainer
+     image: /lustre/images/nvflare-prod.sif
+     python_path: /usr/bin/python3
+     parent_host: nvflare-site1.internal
+
+Prepare, stage, and start the parent:
+
+.. code-block:: shell
+
+   nvflare deploy prepare ./site-1 --config slurm.yaml --output ./site-1-slurm
+   nvflare deploy slurm stage ./site-1-slurm
+   ./site-1-slurm/startup/start_slurm.sh
+
+Staging installs the prepared kit in ``workspace_path`` and binds that workspace
+to one site. A client kit can optionally generate ``startup/parent.slurm``;
+prepare prints the direct ``sbatch`` command that runs it in an allocation. See
+:ref:`slurm_job_launcher` for the complete configuration, prerequisites, and
+operations guide.
 
 **********
 Job Images
 **********
 
-Docker and Kubernetes jobs must specify a job image in ``meta.json``. The
+Docker, Kubernetes, and Slurm jobs can select a job image in ``meta.json``. The
 preferred form is ``launcher_spec``:
 
 .. code-block:: json
@@ -344,7 +382,8 @@ preferred form is ``launcher_spec``:
      "launcher_spec": {
        "default": {
          "docker": {"image": "registry.example.com/nvflare-job:2.8"},
-         "k8s": {"image": "registry.example.com/nvflare-job:2.8"}
+         "k8s": {"image": "registry.example.com/nvflare-job:2.8"},
+         "slurm": {"image": "/shared/images/nvflare-job.sif"}
        },
        "site-1": {
          "docker": {"shm_size": "8g"}
@@ -361,6 +400,12 @@ preferred form is ``launcher_spec``:
 ``launcher_spec[site][mode]`` overrides the default for one site. Keep resource
 requests such as ``num_of_gpus`` in ``resource_spec``.
 
+A job-supplied image is executable content and requires the site's normal BYOC
+authorization. Slurm resolves the effective image as job, then study
+``container.image``, then site ``job_launcher.image``. Unlike registry image
+names used by Docker/Kubernetes, a Slurm image must be an absolute,
+site-visible existing file; see :ref:`slurm_job_launcher`.
+
 ***********
 Exit Status
 ***********
@@ -374,3 +419,6 @@ causes include:
 - invalid ``resources.json.default``
 - reserved Docker launcher kwargs
 - ``--output`` pointing at or inside the input kit
+- a Slurm ``workspace_path`` that overlaps the input or output kit
+- a missing/non-executable Slurm parent CLI, invalid sandbox/image, or
+  unsupported Slurm ``connection_security`` or server ``parent`` configuration

@@ -545,7 +545,9 @@ In process mode `PARENT_URL = tcp://localhost:port`. In Docker mode it must be t
 |---|---|
 | `nvflare/app_opt/job_launcher/docker_launcher.py` | `DockerJobHandle`, `DockerJobLauncher`, `ClientDockerJobLauncher`, `ServerDockerJobLauncher` |
 | `nvflare/tool/deploy/deploy_cli.py` | CLI entry point for `nvflare deploy prepare` |
-| `nvflare/tool/deploy/deploy_commands.py` | Docker runtime validation, resource mutation, and `start_docker.sh` generation |
+| `nvflare/tool/deploy/deploy_commands.py` | Runtime-neutral prepare orchestration and backend dispatch |
+| `nvflare/tool/deploy/docker_deploy.py` | Docker validation, resource mutation, and startup-template rendering |
+| `nvflare/tool/deploy/templates/docker/start_docker.sh` | Checked-in parent-container startup template |
 
 ### Docker SDK import
 

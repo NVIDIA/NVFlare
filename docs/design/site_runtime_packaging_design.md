@@ -3,7 +3,7 @@
 ## Goal
 
 Allow each site to prepare an already provisioned startup kit for a deployment
-runtime such as Docker or Kubernetes.
+runtime such as Docker, Kubernetes, or Slurm.
 
 This design separates two concerns:
 
@@ -436,8 +436,8 @@ Expected behavior:
   container on the Docker network
 - use `local/study_data.yaml` to resolve study data host paths
 - switch `resource_manager` to `PassthroughResourceManager`, which replaces
-  CPU/GPU resource scheduling with a no-op resource manager for Docker/K8s
-  launcher-based execution
+  local resource scheduling with a no-op resource manager for launcher-based
+  execution
 - remove `resource_consumer`
 - report the correct next step, such as `./startup/start_docker.sh`
 
@@ -460,8 +460,8 @@ Expected behavior:
   through the generated Kubernetes Service
 - use `local/study_data.yaml` to resolve study data PVC names
 - switch `resource_manager` to `PassthroughResourceManager`, which replaces
-  CPU/GPU resource scheduling with a no-op resource manager for Docker/K8s
-  launcher-based execution
+  local resource scheduling with a no-op resource manager for launcher-based
+  execution
 - remove `resource_consumer`
 - report the correct next step, such as a Helm install/upgrade command
 
@@ -538,10 +538,10 @@ runtime dataset mapping examples, see
 
 ## Job Python, GPU, and Resource Handling
 
-Job-image-specific settings for Docker and K8s job containers should continue
+Job-image-specific settings for Docker, Kubernetes, and Slurm should continue
 to use job launcher metadata instead of deployment-prepare-only configuration
-fields. Resource requests, including `num_of_gpus`, stay in `resource_spec` as
-they did before container launchers.
+fields. Portable resource requests, including `num_of_gpus`, stay in
+`resource_spec`.
 
 For Docker job containers, `DockerJobLauncher` uses job metadata for settings
 that belong to the selected job image and container runtime:
@@ -639,7 +639,7 @@ command overwrites runtime-managed files and sections without requiring
 `--force`, including generated Docker scripts, generated K8s Helm chart
 content, and launcher/resource components in `local/resources.json.default`.
 
-For Docker and K8s runtimes, deployment preparation always replaces
+For Docker, K8s, and Slurm runtimes, deployment preparation always replaces
 process-mode resource scheduling with `PassthroughResourceManager`, a no-op
 resource manager used for launcher-based execution, and removes
 `resource_consumer`. This is runtime policy, not a user-facing config option.
@@ -650,12 +650,19 @@ The runtime mutation logic should live outside the provisioning `Builder`
 contract. A possible internal structure:
 
 - `nvflare.tool.deploy.deploy_cli`: CLI parsing and command registration.
-- `nvflare.tool.deploy.deploy_commands`: command orchestration, validation,
-  output copy handling, and dispatch to the selected runtime preparer.
-- `nvflare.tool.deploy.runtime.docker`: Docker-specific script generation and
-  resource/config mutation.
-- `nvflare.tool.deploy.runtime.k8s`: K8s-specific Helm chart generation and
-  resource/config mutation.
+- `nvflare.tool.deploy.deploy_commands`: command orchestration, temporary-kit copying, existing-output
+  replacement, and dispatch to the selected runtime preparer.
+- `nvflare.tool.deploy.deploy_common`: shared kit validation, launcher/resource
+  replacement, and study-template copying.
+- `nvflare.tool.deploy.docker_deploy`: Docker validation, resource/config
+  mutation, and rendering of the checked-in Docker startup template.
+- `nvflare.tool.deploy.k8s_deploy`: K8s validation, resource/config mutation,
+  and Helm chart generation from the checked-in chart templates.
+- `nvflare.tool.deploy.k8s_stage`: K8s ConfigMap/Secret staging and cleanup.
+- `nvflare.tool.deploy.slurm_deploy`: Slurm validation, workspace isolation,
+  resource/config mutation, and rendering of checked-in Slurm templates.
+- `nvflare.tool.deploy.slurm_stage`: explicit installation of a prepared Slurm
+  kit and its runtime deployment identity into the configured workspace.
 
 Shared helpers can handle:
 
@@ -667,7 +674,7 @@ Shared helpers can handle:
 - reporting next steps
 
 Runtime preparation should not depend on provisioning `Builder` classes or
-`lighter` templates. Docker and K8s deployment preparation is owned by
+`lighter` templates. Runtime deployment preparation is owned by
 `nvflare deploy prepare`; startup kits stay runtime-neutral until each site
 runs that command with its local runtime config.
 

@@ -450,9 +450,7 @@ class DockerJobLauncher(JobLauncherSpec):
                 f"study runtime file '{runtime_file}' cannot be combined with the legacy study data file "
                 f"'{legacy_file}'; migrate all studies to study_runtime.yaml and remove the v1 file."
             )
-        runtime_map = load_study_runtime_file(
-            runtime_file, allow_pod_template=False, allow_secret_mount_items=False, logger=self.logger
-        )
+        runtime_map = load_study_runtime_file(runtime_file, launcher_mode="docker", logger=self.logger)
         study_runtime = resolve_study_runtime(runtime_map, study, runtime_file, logger=self.logger)
         self._validate_docker_kwargs_keys(study_runtime.docker_kwargs, runtime_file)
         return study_runtime

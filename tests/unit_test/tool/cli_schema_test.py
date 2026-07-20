@@ -392,6 +392,21 @@ class TestSchemaWithMissingRequiredArgs:
         assert args_by_name["--profile"]["required"] is True
         assert "error" not in captured.err.lower()
 
+    def test_slurm_stage_schema_routes_through_top_level_cli(self, capsys, monkeypatch):
+        import sys
+
+        from nvflare.cli import parse_args
+        from nvflare.tool.deploy.deploy_cli import handle_deploy_cmd
+
+        monkeypatch.setattr(sys, "argv", ["nvflare", "deploy", "slurm", "stage", "--schema"])
+        _parser, args, _ = parse_args("nvflare")
+        with pytest.raises(SystemExit) as exc_info:
+            handle_deploy_cmd(args)
+
+        assert exc_info.value.code == 0
+        schema = json.loads(capsys.readouterr().out)
+        assert schema["command"] == "nvflare deploy slurm stage"
+
 
 class TestHandleSchemaNoneParser:
     """handle_schema_flag with parser=None emits a valid minimal schema."""

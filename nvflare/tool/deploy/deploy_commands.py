@@ -24,10 +24,11 @@ from typing import Any, Protocol
 import yaml
 
 from nvflare.tool.cli_output import output_ok
-from nvflare.tool.deploy import deploy_common, docker_deploy, k8s_deploy
+from nvflare.tool.deploy import deploy_common, docker_deploy, k8s_deploy, slurm_deploy
 from nvflare.tool.deploy.k8s_stage import reject_replacing_staged_k8_output, stage_k8_deployment, unstage_k8_deployment
+from nvflare.tool.deploy.slurm_stage import stage_slurm_deployment
 
-__all__ = ["prepare_deployment", "stage_k8_deployment", "unstage_k8_deployment"]
+__all__ = ["prepare_deployment", "stage_k8_deployment", "stage_slurm_deployment", "unstage_k8_deployment"]
 
 
 class _DeployBackend(Protocol):
@@ -43,7 +44,13 @@ def _get_backend(runtime: str) -> _DeployBackend:
         return docker_deploy
     if runtime == deploy_common.RUNTIME_K8S:
         return k8s_deploy
-    deploy_common._fail("INVALID_CONFIG", f"Unsupported runtime: {runtime}", "Use runtime: docker or runtime: k8s.")
+    if runtime == deploy_common.RUNTIME_SLURM:
+        return slurm_deploy
+    deploy_common._fail(
+        "INVALID_CONFIG",
+        f"Unsupported runtime: {runtime}",
+        "Use runtime: docker, runtime: k8s, or runtime: slurm.",
+    )
     raise AssertionError("unreachable")
 
 
@@ -176,11 +183,15 @@ def _load_config(config_path: Path) -> dict[str, Any]:
         deploy_common._fail("INVALID_CONFIG", f"Failed to parse config file: {ex}", "Ensure the file is valid YAML.")
     if not isinstance(config, dict):
         deploy_common._fail(
-            "INVALID_CONFIG", "Runtime config must be a YAML mapping.", "Add runtime: docker or runtime: k8s."
+            "INVALID_CONFIG",
+            "Runtime config must be a YAML mapping.",
+            "Add runtime: docker, runtime: k8s, or runtime: slurm.",
         )
     runtime = config.get("runtime")
-    if runtime not in {deploy_common.RUNTIME_DOCKER, deploy_common.RUNTIME_K8S}:
+    if runtime not in {deploy_common.RUNTIME_DOCKER, deploy_common.RUNTIME_K8S, deploy_common.RUNTIME_SLURM}:
         deploy_common._fail(
-            "INVALID_CONFIG", "Config must contain runtime: docker or runtime: k8s.", "Set a supported runtime."
+            "INVALID_CONFIG",
+            "Config must contain runtime: docker, runtime: k8s, or runtime: slurm.",
+            "Set a supported runtime.",
         )
     return config

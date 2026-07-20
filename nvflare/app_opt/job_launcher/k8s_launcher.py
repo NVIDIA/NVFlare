@@ -890,7 +890,7 @@ class K8sJobLauncher(JobLauncherSpec):
                 f"study runtime file '{runtime_file}' cannot be combined with the legacy study data "
                 f"file(s) {conflicts}; migrate all studies to study_runtime.yaml and delete the v1 file."
             )
-        runtime_map = load_study_runtime_file(runtime_file, allow_docker_kwargs=False, logger=self.logger)
+        runtime_map = load_study_runtime_file(runtime_file, launcher_mode="k8s", logger=self.logger)
         return resolve_study_runtime(runtime_map, study, runtime_file, logger=self.logger)
 
     def _ensure_startup_secret(self, site_name: str, startup_dir: str) -> str:

@@ -88,9 +88,9 @@ Additional optional configuration parameters:
 
     - stats_pool_config: configure statistics pool saving for post-job analysis
     - launcher_spec: launcher-specific job execution settings such as Docker
-      or Kubernetes job image, Python executable, and container options. Keep
-      resource requests such as ``num_of_gpus`` in ``resource_spec``. See
-      :ref:`launcher_spec`.
+      or Kubernetes container settings and Slurm topology, memory, CPU, time,
+      and pending timeout. Keep portable resource requests such as
+      ``num_of_gpus`` in ``resource_spec``. See :ref:`launcher_spec`.
 
 The system also keeps additional information about the job such as:
 
@@ -112,7 +112,7 @@ framework for resource definition and interpretation.
 Launcher-Specific Execution Settings
 ====================================
 
-Docker and Kubernetes launchers read job runtime settings from
+Docker, Kubernetes, and Slurm launchers read job runtime settings from
 ``launcher_spec`` in ``meta.json``. Launcher selection is site policy, configured
 in the site's prepared startup kit. A job can carry settings for multiple
 launcher modes without choosing which mode a site uses.
@@ -129,6 +129,11 @@ launcher modes without choosing which mode a site uses.
                     "image": "registry.example.com/nvflare-job:2.8",
                     "cpu": "2",
                     "memory": "8Gi"
+                },
+                "slurm": {
+                    "image": "/shared/images/nvflare-job.sif",
+                    "time": "02:00:00",
+                    "pending_timeout": 300
                 }
             },
             "site-1": {
@@ -137,6 +142,10 @@ launcher modes without choosing which mode a site uses.
                 },
                 "k8s": {
                     "ephemeral_storage": "8Gi"
+                },
+                "slurm": {
+                    "cpus_per_node": 16,
+                    "mem_per_node": 131072
                 }
             }
         },
@@ -149,9 +158,22 @@ launcher modes without choosing which mode a site uses.
 
 Use ``launcher_spec["default"][mode]`` for shared settings and
 ``launcher_spec[site][mode]`` for site-specific overrides. Keep
-``resource_spec`` for scheduler-facing resource requirements such as
-``num_of_gpus``. Docker and Kubernetes launchers use those resource requests
-when they need to request GPUs for a launched container or pod.
+``resource_spec`` for portable scheduler-facing resource requirements such as
+``num_of_gpus``. Docker and Kubernetes translate that value into a container or
+pod GPU request. Slurm translates it to a one-node GPU request unless the
+``slurm`` block supplies explicit topology.
+
+The Slurm job block accepts ``image``, ``nodes``, ``gpus_per_node``,
+``cpus_per_node``, ``mem_per_node`` (MiB), ``time``, and
+``pending_timeout``. A job cannot select a Slurm partition, account, QOS,
+sandbox, setup command, or raw scheduler flags; those are site-owned and may
+be overridden per study. A job image requires BYOC authorization and overrides
+study/site image defaults. It must be an absolute site-visible existing file.
+``pending_timeout`` may only reduce the site's configured value. Multi-node
+jobs require effective ``sandbox: none`` and must omit ``image``. A positive
+multi-node ``num_of_gpus`` requires explicit ``gpus_per_node``; whenever both
+are supplied, ``num_of_gpus`` must equal ``nodes * gpus_per_node``. See
+:ref:`slurm_job_launcher` for the deployment contract.
 
 .. _deploy_map:
 

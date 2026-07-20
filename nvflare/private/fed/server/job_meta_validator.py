@@ -271,7 +271,7 @@ class JobMetaValidator(JobMetaValidatorSpec):
                 if not isinstance(resource_spec[k], dict):
                     raise ValueError(f"value for key {k} in resource spec is expecting a dictionary")
 
-    _VALID_LAUNCHER_MODES = {"process", "docker", "k8s"}
+    _VALID_LAUNCHER_MODES = {"process", "docker", "k8s", "slurm"}
 
     @staticmethod
     def _validate_launcher_spec(job_name: str, meta: dict) -> None:
