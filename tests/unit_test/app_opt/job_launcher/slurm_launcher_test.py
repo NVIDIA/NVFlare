@@ -24,7 +24,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.apis.job_launcher_spec import JobProcessArgs
+from nvflare.apis.job_launcher_spec import JobProcessArgs, JobProcessEnv
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.slurm.config import (
     DEPLOYMENT_FILE,
@@ -78,6 +78,9 @@ def _fl_ctx(workspace, module="ignored.by.slurm"):
             JobProcessArgs.JOB_ID: ("-n", "job-1"),
             JobProcessArgs.PARENT_URL: ("-p", "tcp://old-host:8102"),
             JobProcessArgs.PARENT_CONN_SEC: ("--parent_conn_sec", "clear"),
+            JobProcessArgs.AUTH_TOKEN: ("-t", "secret-token"),
+            JobProcessArgs.TOKEN_SIGNATURE: ("-ts", "secret-signature"),
+            JobProcessArgs.SSID: ("-d", "secret-ssid"),
         },
         private=True,
         sticky=False,
@@ -164,6 +167,10 @@ def test_launch_plan_uses_fixed_worker_and_one_resolved_job_spec(tmp_path):
     assert plan.exe_module == ClientSlurmJobLauncher.EXE_MODULE
     parent_url_index = plan.module_args.index("-p") + 1
     assert plan.module_args[parent_url_index] == "tcp://compute.example:8102"
+    assert "secret-token" not in plan.module_args
+    assert plan.study_secret_env[JobProcessEnv.AUTH_TOKEN] == "secret-token"
+    assert plan.study_secret_env[JobProcessEnv.TOKEN_SIGNATURE] == "secret-signature"
+    assert plan.study_secret_env[JobProcessEnv.SSID] == "secret-ssid"
     assert plan.resources.nodes == 1
 
 
@@ -178,7 +185,7 @@ def test_concrete_launchers_select_client_and_server_module_arguments(tmp_path):
     client_args = _launcher(tmp_path, workspace).get_module_args(job_args)
     server_args = _launcher(tmp_path, workspace, launcher_class=ServerSlurmJobLauncher).get_module_args(job_args)
 
-    assert client_args == ("-t", "client-token", "--set", "alpha=1", "message=two words")
+    assert client_args == ("--set", "alpha=1", "message=two words")
     assert server_args == ("-r", "server-root", "--set", "alpha=1", "message=two words")
 
 

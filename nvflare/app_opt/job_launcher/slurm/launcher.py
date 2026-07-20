@@ -55,7 +55,12 @@ from nvflare.app_opt.job_launcher.study_runtime import (
     resolve_study_runtime,
     study_runtime_file_path,
 )
-from nvflare.utils.job_launcher_utils import get_client_job_args, get_job_launcher_spec, get_server_job_args
+from nvflare.utils.job_launcher_utils import (
+    get_client_job_args,
+    get_credential_env,
+    get_job_launcher_spec,
+    get_server_job_args,
+)
 
 
 def _validate_run_dir(workspace_path: str, run_dir: str) -> str:
@@ -371,6 +376,7 @@ class SlurmJobLauncher(JobLauncherSpec):
             spec=job_spec,
         )
         study_env, secret_env = self._study_environment(runtime)
+        secret_env.update(get_credential_env(job_args))
         mounts = self._study_mounts(runtime) if sandbox != "none" else ()
         return LaunchPlan(
             job_id=job_id,

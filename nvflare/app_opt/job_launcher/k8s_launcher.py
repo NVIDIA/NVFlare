@@ -44,7 +44,12 @@ from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
     ENV_WORKSPACE_TRANSFER_TOKEN,
     WorkspaceTransferManager,
 )
-from nvflare.utils.job_launcher_utils import get_client_job_args, get_job_launcher_spec, get_server_job_args
+from nvflare.utils.job_launcher_utils import (
+    get_client_job_args,
+    get_credential_env,
+    get_job_launcher_spec,
+    get_server_job_args,
+)
 
 
 class JobState(Enum):
@@ -83,19 +88,6 @@ JOB_RETURN_CODE_MAPPING = {
     JobState.RUNNING: JobReturnCode.UNKNOWN,
     JobState.TERMINATED: JobReturnCode.ABORTED,
     JobState.UNKNOWN: JobReturnCode.UNKNOWN,
-}
-
-DEFAULT_CONTAINER_ARGS_MODULE_ARGS_DICT = {
-    "-m": None,
-    "-w": None,
-    "-t": None,
-    "-d": None,
-    "-n": None,
-    "-c": None,
-    "-p": None,
-    "-g": None,
-    "-scheme": None,
-    "-s": None,
 }
 
 DEFAULT_NAMESPACE = "default"
@@ -365,6 +357,7 @@ class K8sJobHandle(JobHandleSpec):
         workspace_job_id: str = "",
         pod_name: str = None,
         pod_manifest_template: dict = None,
+        credential_secret_name: str = None,
     ):
         super().__init__()
         self.job_id = job_id
@@ -374,6 +367,7 @@ class K8sJobHandle(JobHandleSpec):
         self.terminal_return_code = None
         self.workspace_transfer = workspace_transfer
         self.workspace_job_id = workspace_job_id
+        self.credential_secret_name = credential_secret_name
         self.api_instance = api_instance
         self.namespace = namespace
         self.pending_timeout = _normalize_pending_timeout(pending_timeout)
@@ -433,10 +427,7 @@ class K8sJobHandle(JobHandleSpec):
             self.container_args_module_args_sets = list()
         else:
             self.container_args_module_args_sets = ["--set"] + set_list
-        if job_config.get("module_args") is None:
-            self.container_args_module_args_dict = DEFAULT_CONTAINER_ARGS_MODULE_ARGS_DICT.copy()
-        else:
-            self.container_args_module_args_dict = job_config.get("module_args")
+        self.container_args_module_args_dict = job_config.get("module_args") or {}
         self.container_args_module_args_dict_as_list = list()
         for k, v in self.container_args_module_args_dict.items():
             if v is None:
@@ -526,17 +517,38 @@ class K8sJobHandle(JobHandleSpec):
                 return True
             elif pod_phase in [PodPhase.FAILED.value, PodPhase.SUCCEEDED.value]:  # terminal state
                 self.terminal_state = POD_STATE_MAPPING.get(pod_phase, JobState.UNKNOWN)
-                self._remove_workspace_job()
+                self._release_job_resources()
                 return False
             elif self.timeout is not None and now - starting_time >= self.timeout:
                 self._terminate_for_timeout(f"timed out waiting for pod to enter {job_states_to_enter}")
                 return False
             time.sleep(POLL_INTERVAL)
 
-    def _remove_workspace_job(self) -> None:
+    def _release_job_resources(self) -> None:
         if self.workspace_transfer and self.workspace_job_id:
             self.workspace_transfer.remove_job(self.workspace_job_id)
             self.workspace_job_id = ""
+        self._delete_credential_secret()
+
+    def _delete_credential_secret(self) -> None:
+        """Delete the per-job credential Secret once the job is terminal.
+
+        Completed pods are not deleted, so ownerReference GC alone would leave the
+        Secret alive after a successful job; GC remains the backstop for paths where
+        the handle never observes a terminal state (e.g. parent crash).
+        """
+        if not self.credential_secret_name:
+            return
+        from kubernetes.client.rest import ApiException
+
+        try:
+            self.api_instance.delete_namespaced_secret(name=self.credential_secret_name, namespace=self.namespace)
+        except ApiException as e:
+            if getattr(e, "status", None) != 404:
+                self.logger.warning(f"failed to delete credential Secret {self.credential_secret_name}: {e}")
+        except Exception as e:
+            self.logger.warning(f"failed to delete credential Secret {self.credential_secret_name}: {e}")
+        self.credential_secret_name = None
 
     def terminate(self):
         from kubernetes.client.rest import ApiException
@@ -561,7 +573,7 @@ class K8sJobHandle(JobHandleSpec):
         except Exception as e:
             self.logger.error(f"unexpected error terminating job {self.job_id} pod {self.pod_name}: {e}")
             self.terminal_state = JobState.TERMINATED
-        self._remove_workspace_job()
+        self._release_job_resources()
         return None
 
     def _terminate_for_timeout(self, reason: str):
@@ -589,7 +601,7 @@ class K8sJobHandle(JobHandleSpec):
         job_state = POD_STATE_MAPPING.get(pod_phase, JobState.UNKNOWN)
         if job_state in (JobState.SUCCEEDED, JobState.TERMINATED):
             self.terminal_state = job_state
-            self._remove_workspace_job()
+            self._release_job_resources()
         return self._get_return_code(job_state)
 
     def _query_pod(self):
@@ -603,7 +615,7 @@ class K8sJobHandle(JobHandleSpec):
                     f"job {self.job_id} pod {self.pod_name} not found during querying; assuming terminated"
                 )
                 self.terminal_state = JobState.TERMINATED
-                self._remove_workspace_job()
+                self._release_job_resources()
             else:
                 self.logger.warning(f"failed to query pod for job {self.job_id} pod {self.pod_name}: {e}")
             return None
@@ -830,7 +842,7 @@ class K8sJobHandle(JobHandleSpec):
             job_state = POD_STATE_MAPPING.get(pod_phase, JobState.UNKNOWN)
             if job_state in (JobState.SUCCEEDED, JobState.TERMINATED):
                 self.terminal_state = job_state  # persist so poll() stays accurate
-                self._remove_workspace_job()
+                self._release_job_resources()
                 return
             time.sleep(POLL_INTERVAL)
 
@@ -893,14 +905,42 @@ class K8sJobLauncher(JobLauncherSpec):
         runtime_map = load_study_runtime_file(runtime_file, launcher_mode="k8s", logger=self.logger)
         return resolve_study_runtime(runtime_map, study, runtime_file, logger=self.logger)
 
+    def _create_or_replace_secret(self, secret_name: str, contents: dict) -> str:
+        """Upsert an Opaque Secret; replaces any existing Secret of the same name.
+
+        contents must be the Secret payload mapping only: {"data": ...} or {"stringData": ...}.
+        """
+        from kubernetes.client.rest import ApiException
+
+        secret_body = {
+            "apiVersion": "v1",
+            "kind": "Secret",
+            "metadata": {"name": secret_name, "namespace": self.namespace},
+            "type": "Opaque",
+            **contents,
+        }
+        try:
+            self.core_v1.create_namespaced_secret(namespace=self.namespace, body=secret_body)
+            self.logger.debug("created Secret %s", secret_name)
+        except ApiException as e:
+            if getattr(e, "status", None) != 409:
+                raise
+            try:
+                self.core_v1.replace_namespaced_secret(name=secret_name, namespace=self.namespace, body=secret_body)
+                self.logger.debug("replaced Secret %s", secret_name)
+            except ApiException as e2:
+                # 409 -> (GC deletes the old Secret) -> replace 404: recreate.
+                if getattr(e2, "status", None) != 404:
+                    raise
+                self.core_v1.create_namespaced_secret(namespace=self.namespace, body=secret_body)
+                self.logger.debug("recreated Secret %s after concurrent deletion", secret_name)
+        return secret_name
+
     def _ensure_startup_secret(self, site_name: str, startup_dir: str) -> str:
         """Create or update a k8s Secret containing the site startup kit.
 
         Returns the Secret name.
         """
-        from kubernetes.client.rest import ApiException
-
-        secret_name = f"nvflare-startup-{site_name_to_rfc1123(site_name)}"
         data = {}
         if os.path.isdir(startup_dir):
             for fname in os.listdir(startup_dir):
@@ -911,23 +951,40 @@ class K8sJobLauncher(JobLauncherSpec):
                     with open(fpath, "rb") as f:
                         data[fname] = base64.b64encode(f.read()).decode()
 
-        secret_body = {
-            "apiVersion": "v1",
-            "kind": "Secret",
-            "metadata": {"name": secret_name, "namespace": self.namespace},
-            "type": "Opaque",
-            "data": data,
-        }
+        return self._create_or_replace_secret(f"nvflare-startup-{site_name_to_rfc1123(site_name)}", {"data": data})
+
+    def _ensure_job_credential_secret(self, pod_name: str, credential_env: dict) -> str:
+        """Create (or replace) the per-job Secret carrying bootstrap credentials.
+
+        Lifecycle: the job handle deletes it when the job reaches a terminal state; a
+        launch failure before pod creation deletes it immediately; the pod ownerReference
+        set after pod creation makes Kubernetes GC the backstop if the parent dies first.
+        """
+        return self._create_or_replace_secret(f"nvflare-cred-{pod_name}", {"stringData": credential_env})
+
+    def _delete_secret(self, secret_name: str) -> None:
+        from kubernetes.client.rest import ApiException
+
         try:
-            self.core_v1.create_namespaced_secret(namespace=self.namespace, body=secret_body)
-            self.logger.debug("Created startup Secret %s", secret_name)
+            self.core_v1.delete_namespaced_secret(name=secret_name, namespace=self.namespace)
         except ApiException as e:
-            if getattr(e, "status", None) == 409:
-                self.core_v1.replace_namespaced_secret(name=secret_name, namespace=self.namespace, body=secret_body)
-                self.logger.debug("Updated startup Secret %s", secret_name)
-            else:
-                raise
-        return secret_name
+            if getattr(e, "status", None) != 404:
+                self.logger.warning(f"failed to delete Secret {secret_name}: {e}")
+        except Exception as e:
+            self.logger.warning(f"failed to delete Secret {secret_name}: {e}")
+
+    def _own_credential_secret(self, secret_name: str, pod_name: str, pod) -> None:
+        """Patch the credential Secret with an ownerReference to its pod so K8s GC deletes it."""
+        try:
+            owner = {"apiVersion": "v1", "kind": "Pod", "name": pod_name, "uid": pod.metadata.uid}
+            self.core_v1.patch_namespaced_secret(
+                name=secret_name, namespace=self.namespace, body={"metadata": {"ownerReferences": [owner]}}
+            )
+        except Exception as e:
+            self.logger.warning(
+                f"failed to set ownerReference on Secret {secret_name}: {e}; "
+                f"it will be deleted when the job handle reaches a terminal state"
+            )
 
     def _replace_pod_manifest_template_namespace(self, pod_manifest: dict) -> None:
         metadata = _ensure_manifest_mapping(pod_manifest, "metadata", "pod manifest metadata")
@@ -1050,11 +1107,18 @@ class K8sJobLauncher(JobLauncherSpec):
 
         workspace_transfer = WorkspaceTransferManager.get_or_create(owner_cell)
         workspace_transfer_token = workspace_transfer.add_job(raw_job_id, workspace_root)
+        credential_secret_name = None
+        created_pod = None
         try:
             startup_secret_name = self._ensure_startup_secret(site_name, startup_dir)
 
+            # The transfer token rides the credential Secret too: a literal env value
+            # would be readable in the pod object by anyone with pods/get.
+            credential_env = get_credential_env(job_args)
+            credential_env[ENV_WORKSPACE_TRANSFER_TOKEN] = workspace_transfer_token
+            credential_secret_name = self._ensure_job_credential_secret(pod_name, credential_env)
+
             env[ENV_WORKSPACE_OWNER_FQCN] = workspace_transfer.owner_fqcn
-            env[ENV_WORKSPACE_TRANSFER_TOKEN] = workspace_transfer_token
 
             volume_list = [
                 {"name": "workspace-job", "emptyDir": {"sizeLimit": job_ephemeral_storage}},
@@ -1097,19 +1161,18 @@ class K8sJobLauncher(JobLauncherSpec):
                 "module_args": self.get_module_args(job_id, fl_ctx),
                 "env": env,
             }
+            secret_env_refs = [{"name": name, "source": credential_secret_name, "key": name} for name in credential_env]
             if study_runtime is not None:
                 if study_runtime.secret_env:
-                    job_config["secret_env"] = [
+                    secret_env_refs.extend(
                         {"name": ref.name, "source": ref.source, "key": ref.key} for ref in study_runtime.secret_env
-                    ]
-                if pod_manifest_template is not None and (
-                    data_mounts
-                    or study_runtime.env
-                    or study_runtime.secret_env
-                    or study_runtime.secret_mounts
-                    or study_runtime.container_image
-                ):
+                    )
+                if pod_manifest_template is not None:
+                    # Credential secretKeyRefs attach to every job, so a multi-container
+                    # template must always name its main container.
                     job_config["require_main_container"] = True
+            if secret_env_refs:
+                job_config["secret_env"] = secret_env_refs
             if self.image_pull_secrets:
                 job_config["image_pull_secrets"] = self.image_pull_secrets
             if args is not None and getattr(args, "set", None) is not None:
@@ -1149,6 +1212,7 @@ class K8sJobLauncher(JobLauncherSpec):
                 workspace_job_id=raw_job_id,
                 pod_name=pod_name,
                 pod_manifest_template=pod_manifest_template,
+                credential_secret_name=credential_secret_name,
             )
             pod_manifest = job_handle.get_manifest()
             if pod_manifest_template is not None:
@@ -1159,9 +1223,14 @@ class K8sJobLauncher(JobLauncherSpec):
                 self.namespace,
                 job_image,
             )
-            self.core_v1.create_namespaced_pod(body=pod_manifest, namespace=self.namespace)
+            created_pod = self.core_v1.create_namespaced_pod(body=pod_manifest, namespace=self.namespace)
+            if credential_secret_name:
+                self._own_credential_secret(credential_secret_name, pod_name, created_pod)
         except Exception as e:
             workspace_transfer.remove_job(raw_job_id)
+            if credential_secret_name and created_pod is None:
+                # No pod means no ownerReference, so GC would never collect the Secret.
+                self._delete_secret(credential_secret_name)
             if "job_handle" in locals():
                 self.logger.error(f"failed to launch job {job_id}: {e}")
                 job_handle.terminal_state = JobState.TERMINATED

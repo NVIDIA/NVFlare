@@ -45,7 +45,12 @@ from nvflare.app_opt.job_launcher.study_runtime import (
     load_study_runtime_file,
     resolve_study_runtime,
 )
-from nvflare.utils.job_launcher_utils import get_client_job_args, get_job_launcher_spec, get_server_job_args
+from nvflare.utils.job_launcher_utils import (
+    get_client_job_args,
+    get_credential_env,
+    get_job_launcher_spec,
+    get_server_job_args,
+)
 
 
 # Docker container status strings
@@ -593,6 +598,7 @@ class DockerJobLauncher(JobLauncherSpec):
             "USER": os.environ.get("USER", "nvflare"),
             "HOME": os.environ.get("HOME", "/tmp"),
         }
+        environment.update(get_credential_env(job_args))
         workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         if workspace_obj is not None:
             python_paths = []

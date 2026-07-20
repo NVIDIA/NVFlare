@@ -14,6 +14,7 @@
 
 import pytest
 
+from nvflare.apis.job_launcher_spec import JobProcessEnv
 from nvflare.app_opt.job_launcher.slurm.batch import _render_batch_script, _render_secret_file, _submission_argv
 from nvflare.app_opt.job_launcher.slurm.config import BindMount, JobResources, LaunchPlan, SlurmConfig
 
@@ -48,14 +49,19 @@ def _plan(tmp_path, sandbox="none", resources=None, mounts=()):
         job_id="job-1",
         run_dir=str(run_dir),
         exe_module="worker.module",
-        module_args=("-n", "job-1", "-t", "secret-token", "-ts", "secret-signature", "-d", "secret-ssid"),
+        module_args=("-n", "job-1"),
         resources=resources or JobResources(),
         directives={},
         sandbox=sandbox,
         image=None if sandbox == "none" else "/images/python.sif",
         setup="",
         study_env={"PLAIN": "value"},
-        study_secret_env={"STUDY_SECRET": "hidden"},
+        study_secret_env={
+            "STUDY_SECRET": "hidden",
+            JobProcessEnv.AUTH_TOKEN: "secret-token",
+            JobProcessEnv.TOKEN_SIGNATURE: "secret-signature",
+            JobProcessEnv.SSID: "secret-ssid",
+        },
         mounts=mounts,
         python_path="/usr/bin/python3",
         python_env="/custom",
@@ -72,11 +78,12 @@ def test_bare_renderer_has_no_slurm_exit_file_or_compute_preflight(tmp_path):
     assert "exit_code" not in script
     assert "command -v" not in script
     assert "set -a" not in script
-    assert secrets == {"STUDY_SECRET": "hidden"}
+    assert secrets["STUDY_SECRET"] == "hidden"
+    assert secrets[JobProcessEnv.AUTH_TOKEN] == "secret-token"
 
 
 @pytest.mark.parametrize("sandbox", ["none", "apptainer", "pyxis"])
-def test_renderer_uses_standard_worker_arguments(tmp_path, sandbox):
+def test_renderer_delivers_credentials_through_environment(tmp_path, sandbox):
     plan = _plan(tmp_path, sandbox=sandbox)
 
     script, secrets = _render_batch_script(
@@ -86,13 +93,17 @@ def test_renderer_uses_standard_worker_arguments(tmp_path, sandbox):
     )
     secret_file = _render_secret_file(secrets)
 
-    assert "hidden" not in script
+    for value in ("hidden", "secret-token", "secret-signature", "secret-ssid"):
+        assert value not in script
     assert "worker.module" in script
     command_line = next(line for line in script.splitlines() if line.startswith("_nvfl_command="))
-    assert "-t secret-token" in command_line
-    assert "-ts secret-signature" in command_line
-    assert "-d secret-ssid" in command_line
+    assert "-t" not in command_line
+    assert "-ts" not in command_line
+    assert "-d" not in command_line
     assert "export STUDY_SECRET=hidden" in secret_file
+    assert f"export {JobProcessEnv.AUTH_TOKEN}=secret-token" in secret_file
+    assert f"export {JobProcessEnv.TOKEN_SIGNATURE}=secret-signature" in secret_file
+    assert f"export {JobProcessEnv.SSID}=secret-ssid" in secret_file
 
 
 def test_apptainer_renderer_keeps_isolation_contract(tmp_path):

@@ -178,8 +178,9 @@ any in-progress submission boundary; it does not perform a second cancellation s
 | `pyxis` | read-only Pyxis/Enroot `srun` step | trusted container packaging | no |
 
 Every backend uses `--export=NIL`, refuses requeue, and passes the standard NVFlare worker arguments without shell
-re-parsing. Study `secret_env` values are written to a mode-0600 file, sourced with tracing disabled, and deleted
-before the worker starts.
+re-parsing. Bootstrap credentials and study `secret_env` values are written to a mode-0600 file, sourced with tracing
+disabled, and deleted before the worker starts. Bootstrap credentials are delivered to the job process through the
+shared `JobProcessEnv` contract and do not appear in its command line.
 
 Container mounts have normalized absolute destinations, protected launcher paths cannot be shadowed, and secret
 mounts are read-only. Apptainer uses the accepted containment and mount restrictions; Pyxis uses a read-only image,

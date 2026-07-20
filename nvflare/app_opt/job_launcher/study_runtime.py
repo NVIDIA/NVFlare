@@ -30,6 +30,7 @@ from typing import Optional
 
 import yaml
 
+from nvflare.apis.job_launcher_spec import JobProcessEnv
 from nvflare.app_opt.job_launcher.study_data import MODE_RO, MODE_RW, StudyDatasetMount
 
 STUDY_RUNTIME_FILE = "local/study_runtime.yaml"
@@ -58,10 +59,20 @@ _VALID_LAUNCHER_MODES = {"process", "docker", "k8s", "slurm"}
 _VALID_NAME = re.compile(r"^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$")
 _VALID_POSIX_ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
-# Env names the launchers own at job launch (PYTHONPATH and the workspace-transfer
-# variables from workspace_cell_transfer). A study value would be silently overridden
-# or break workspace transfer, so both env and secret_env reject them up front.
-_RESERVED_ENV_NAMES = frozenset({"PYTHONPATH", "NVFL_WORKSPACE_OWNER_FQCN", "NVFL_WORKSPACE_TRANSFER_TOKEN"})
+# Env names the launchers own at job launch (PYTHONPATH, the workspace-transfer
+# variables from workspace_cell_transfer, and the job bootstrap credentials). A study
+# value would silently override or be overridden by the launcher-supplied one, so both
+# env and secret_env reject them up front.
+_RESERVED_ENV_NAMES = frozenset(
+    {
+        "PYTHONPATH",
+        "NVFL_WORKSPACE_OWNER_FQCN",
+        "NVFL_WORKSPACE_TRANSFER_TOKEN",
+        JobProcessEnv.AUTH_TOKEN,
+        JobProcessEnv.TOKEN_SIGNATURE,
+        JobProcessEnv.SSID,
+    }
+)
 SLURM_RESERVED_ENV_NAMES = _RESERVED_ENV_NAMES.union(
     {"BASHOPTS", "EUID", "SHELLOPTS", "UID", "NVFL_APPTAINER", "NVFL_SRUN"}
 )
