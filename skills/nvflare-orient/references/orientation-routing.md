@@ -14,6 +14,10 @@ turn project evidence and user intent into one narrow next action.
 
 - Existing PyTorch training loop needing FLARE conversion:
   `nvflare-convert-pytorch`.
+- Statistics, data summaries, histograms, or quantiles across sites, or an
+  inspect result with `target_type` `tabular_dataset`/`image_dataset`
+  (data-only targets recommend `nvflare-fed-stats` directly):
+  `nvflare-fed-stats`.
 - Generic "help me use FLARE here" with no clear workflow: inspect first, then
   recommend the narrowest skill.
 - Existing FLARE job that fails or produces suspicious logs:
