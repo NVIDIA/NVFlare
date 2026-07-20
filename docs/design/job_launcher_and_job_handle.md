@@ -231,9 +231,10 @@ Wraps a `ProcessAdapter` that manages a `subprocess.Popen` or a PID.
 | Step | Action |
 |------|--------|
 | 1 | Copy `os.environ`. If `app_custom_folder` is non-empty, call `add_custom_dir_to_path()`. |
-| 2 | Call `self.get_command(job_meta, fl_ctx)` (abstract). |
-| 3 | `shlex.split(command)`, spawn via `spawn_process(argv, new_env)`. |
-| 4 | Return `ProcessHandle`. |
+| 2 | Merge `get_credential_env(JOB_PROCESS_ARGS)` into the child env — bootstrap credentials travel in the environment, never in argv (see `job_process_credential_transport_design.md`). |
+| 3 | Call `self.get_command(job_meta, fl_ctx)` (abstract). |
+| 4 | `shlex.split(command)`, spawn via `spawn_process(argv, new_env)`. |
+| 5 | Return `ProcessHandle`. |
 
 **Event registration** — unconditionally registers:
 
@@ -298,7 +299,7 @@ Launch sequence:
 |------|--------|
 | 1 | Read `job_image` from `get_job_launcher_spec(job_meta, site_name, "docker").get("image")`. Raise `RuntimeError` if absent. |
 | 2 | Override `PARENT_URL`: replace `localhost` with the site container name so SJ/CJ connects back via Docker DNS. |
-| 3 | Build `command = [python_path, "-u", "-m", exe_module] + module_args`, using `launcher_spec[site][docker].python_path` when present and `default_python_path` otherwise. |
+| 3 | Build `command = [python_path, "-u", "-m", exe_module] + module_args`, using `launcher_spec[site][docker].python_path` when present and `default_python_path` otherwise. Module args exclude bootstrap credentials, which are merged into the container `environment` via `get_credential_env(job_args)` — never into the command. |
 | 4 | Resolve `num_of_gpus` from the flat `resource_spec[site]` GPU resource requirement. |
 | 5 | Merge `default_job_container_kwargs` with job-level `launcher_spec` keys (job wins). Set `device_requests` from `num_of_gpus` if not already in merged kwargs. |
 | 6 | `docker_client.containers.run(job_image, command=..., network=..., volumes=..., **merged_kwargs)`. |
@@ -391,10 +392,11 @@ Launch sequence:
 | 1 | Sanitize job ID via `uuid4_to_rfc1123`. Extract `site_name`, `job_image` from `get_job_launcher_spec(job_meta, site_name, "k8s")`. Raise if `WORKSPACE_OBJECT` missing. |
 | 2 | Read `JOB_PROCESS_ARGS`; raise if absent or `EXE_MODULE` missing. If `<workspace>/local/study_runtime.yaml` exists, parse it (strict v2) and resolve the job study's datasets, env, secret_env, secret_mounts, container name, and pod template from it; coexistence with a v1 study data file is a hard error. Otherwise resolve dataset PVC mounts from `study_data_pvc_file_path` when configured and the YAML file contains entries for the job study. |
 | 3 | Build `job_config`: name, image, args from `get_module_args()`. Use `launcher_spec[site][k8s].python_path` for the pod command when present, falling back to `default_python_path`. Mount the job workspace at `workspace_mount_path`, mount the startup-kit Secret at `<workspace_mount_path>/startup`, and set custom-code `PYTHONPATH` under `workspace_mount_path`. Add the workspace `emptyDir.sizeLimit` and `resources.requests/limits["ephemeral-storage"]` from `launcher_spec[site][k8s].ephemeral_storage` when present, falling back to the launcher default. Add K8s CPU and memory limits from `launcher_spec`; add GPU limits from the flat `resource_spec[site].num_of_gpus` GPU resource requirement. Apply `launcher_spec[site][k8s].pending_timeout` when present. Missing study entries skip data PVC mounts and log a warning. If a pod template is resolved, preserve template pod fields and sidecars while replacing NVFlare-owned fields such as pod name, job container image/command/args, workspace mounts, transfer env vars, image pull secrets, and resources. |
-| 4 | Create `K8sJobHandle`. |
-| 5 | `core_v1.create_namespaced_pod()`. On any exception: set `terminal_state = TERMINATED`, preserve `EXCEPTION` as the return code, and return handle. |
+| 3.5 | Create the per-job credential Secret `nvflare-cred-<pod_name>` (bootstrap credentials plus the workspace transfer token) and reference it from the job container via `env[].valueFrom.secretKeyRef` — credential values never appear in the pod object. |
+| 4 | Create `K8sJobHandle` (carries the credential Secret name). |
+| 5 | `core_v1.create_namespaced_pod()`, then patch the credential Secret with an ownerReference to the created pod (GC backstop). On any exception: delete the credential Secret if the pod was never created, set `terminal_state = TERMINATED`, preserve `EXCEPTION` as the return code, and return handle. |
 | 6 | `job_handle.enter_states([RUNNING])`. On any `BaseException`: `terminate()` then re-raise. |
-| 7 | Return handle. |
+| 7 | Return handle. The handle deletes the credential Secret when the job reaches a terminal state (completed pods are not deleted, so ownerReference GC alone would not fire on success). |
 
 The K8s launcher loads the v1 `study_data_pvc_file_path` file once per launcher
 instance; restart the parent site process to pick up hand edits. The v2
