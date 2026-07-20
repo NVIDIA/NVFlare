@@ -38,7 +38,14 @@ import pytest
 RECIPE_LIST_ENTRY_CONTRACT = {"name", "framework", "algorithm", "aggregation", "state_exchange", "privacy"}
 RECIPE_SHOW_DETAIL_CONTRACT = {"name", "framework", "parameters"}
 RECIPE_SHOW_PARAMETER_CONTRACT = {"name", "type", "required", "default"}
-AGENT_INSPECT_TOP_CONTRACT = {"frameworks", "conversion_state", "skill_selection", "schema_version", "static_only"}
+AGENT_INSPECT_TOP_CONTRACT = {
+    "frameworks",
+    "conversion_state",
+    "skill_selection",
+    "schema_version",
+    "static_only",
+    "dataset",
+}
 AGENT_INSPECT_SKILL_SELECTION_CONTRACT = {"detected_framework", "conversion_state", "recommended_skills"}
 
 _SAMPLE_CATALOG = [

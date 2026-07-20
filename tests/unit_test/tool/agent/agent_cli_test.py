@@ -50,6 +50,20 @@ def _parse_for_agent_parser():
     return sub_cmd_parsers["agent"]
 
 
+def test_inspect_rejects_non_positive_walk_limits():
+    import pytest
+
+    agent_parser = _parse_for_agent_parser()
+    inspect_parser = _subparser_choices(agent_parser)["inspect"]
+
+    with pytest.raises(SystemExit):
+        inspect_parser.parse_args(["some/path", "--max-files", "-5"])
+    with pytest.raises(SystemExit):
+        inspect_parser.parse_args(["some/path", "--max-file-bytes", "0"])
+    args = inspect_parser.parse_args(["some/path", "--max-files", "400"])
+    assert args.max_files == 400
+
+
 def _subparser_choices(parser):
     for action in parser._actions:
         if isinstance(action, argparse._SubParsersAction):
