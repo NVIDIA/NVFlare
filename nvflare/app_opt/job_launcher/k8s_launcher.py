@@ -906,7 +906,10 @@ class K8sJobLauncher(JobLauncherSpec):
         return resolve_study_runtime(runtime_map, study, runtime_file, logger=self.logger)
 
     def _create_or_replace_secret(self, secret_name: str, contents: dict) -> str:
-        """Upsert an Opaque Secret; replaces any existing Secret of the same name."""
+        """Upsert an Opaque Secret; replaces any existing Secret of the same name.
+
+        contents must be the Secret payload mapping only: {"data": ...} or {"stringData": ...}.
+        """
         from kubernetes.client.rest import ApiException
 
         secret_body = {
@@ -1164,13 +1167,9 @@ class K8sJobLauncher(JobLauncherSpec):
                     secret_env_refs.extend(
                         {"name": ref.name, "source": ref.source, "key": ref.key} for ref in study_runtime.secret_env
                     )
-                if pod_manifest_template is not None and (
-                    secret_env_refs
-                    or data_mounts
-                    or study_runtime.env
-                    or study_runtime.secret_mounts
-                    or study_runtime.container_image
-                ):
+                if pod_manifest_template is not None:
+                    # Credential secretKeyRefs attach to every job, so a multi-container
+                    # template must always name its main container.
                     job_config["require_main_container"] = True
             if secret_env_refs:
                 job_config["secret_env"] = secret_env_refs
