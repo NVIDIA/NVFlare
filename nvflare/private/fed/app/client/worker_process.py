@@ -20,6 +20,7 @@ import sys
 import threading
 
 from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, JobConstants, SiteType, SystemConfigs
+from nvflare.apis.job_launcher_spec import JobProcessEnv, pop_credential_env
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.workspace_cell_transfer import download_workspace, upload_results_safely
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
@@ -146,12 +147,20 @@ def main(args):
 
 def parse_arguments():
     """Worker process start program."""
+    # Credentials may arrive via the environment; a CLI-supplied value wins.
+    creds = pop_credential_env()
+    token = creds[JobProcessEnv.AUTH_TOKEN]
+    ts = creds[JobProcessEnv.TOKEN_SIGNATURE]
+    ssid = creds[JobProcessEnv.SSID]
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
     parser.add_argument("--startup", "-w", type=str, help="startup folder", required=True)
-    parser.add_argument("--token", "-t", type=str, help="auth token", required=True)
-    parser.add_argument("--token_signature", "-ts", type=str, help="auth token signature", required=True)
-    parser.add_argument("--ssid", "-d", type=str, help="ssid", required=True)
+    parser.add_argument("--token", "-t", type=str, help="auth token", default=token, required=token is None)
+    parser.add_argument(
+        "--token_signature", "-ts", type=str, help="auth token signature", default=ts, required=ts is None
+    )
+    parser.add_argument("--ssid", "-d", type=str, help="ssid", default=ssid, required=ssid is None)
     parser.add_argument("--job_id", "-n", type=str, help="job_id", required=True)
     parser.add_argument("--client_name", "-c", type=str, help="client name", required=True)
     # parser.add_argument("--listen_port", "-p", type=str, help="listen port", required=True)
