@@ -203,9 +203,7 @@ class ClientManager:
             client = self.clients.pop(token, None)
             if client:
                 self.name_to_clients.pop(client.name, None)
-                self.logger.info(
-                    "Client Name:{} \tToken: {} left.  Total clients: {}".format(client.name, token, len(self.clients))
-                )
+                self.logger.info("Client Name:{} left.  Total clients: {}".format(client.name, len(self.clients)))
             else:
                 self.logger.warning("remove_client: unknown token")
             return client
