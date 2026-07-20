@@ -198,6 +198,23 @@ def best_score(rows: List[Dict[str, str]], mode: str) -> Optional[float]:
     return best
 
 
+def scored_baseline_score(rows: List[Dict[str, str]]) -> Optional[float]:
+    for row in rows:
+        if not is_baseline(row):
+            continue
+        score = parse_score(row.get("score", ""))
+        if score is not None:
+            return score
+    return None
+
+
+def improvement_over_baseline(baseline: Optional[float], best: Optional[float], mode: str) -> Optional[float]:
+    """Best-vs-baseline delta, sign-adjusted so a positive value always means better for the campaign mode."""
+    if baseline is None or best is None:
+        return None
+    return baseline - best if mode == "min" else best - baseline
+
+
 def plateau_status(
     rows: List[Dict[str, str]],
     threshold: int,
@@ -350,7 +367,12 @@ def guard_state_for_rows(
         next_action = "run_literature_loop"
 
     if final_response_allowed:
-        instruction = "Final report is allowed because authoritative campaign state reached a stop condition."
+        instruction = (
+            "Final report is allowed because authoritative campaign state reached a stop condition. "
+            "Finalize results.tsv, progress.png, and the refreshed autofl_report.md, then produce a final "
+            "answer summarizing baseline vs best score with metric source, failures, friction, commands, "
+            "and absolute artifact paths."
+        )
     elif next_action == "abandon_candidate":
         instruction = (
             "Manual stop requested. Do not execute the pending candidate. Run the runner abandon action, "
@@ -381,6 +403,8 @@ def guard_state_for_rows(
     else:
         instruction = "Do not produce a final answer. Propose and prepare the next same-budget candidate now."
 
+    retained_best = best_score(rows, mode)
+    baseline = scored_baseline_score(rows)
     return {
         "schema_version": "nvflare.autofl.campaign_state.v1",
         "updated_at": utc_now(),
@@ -392,9 +416,13 @@ def guard_state_for_rows(
         "candidate_cap": cap,
         "candidate_cap_source": cap_source,
         "candidate_attempts": len(attempts),
+        "remaining_candidates": cap - len(attempts) if cap is not None else None,
         "pending_candidates": pending_count,
         "scored_attempts": len(scored_attempts_with_index(rows)),
-        "best_score": best_score(rows, mode),
+        "best_score": retained_best,
+        "baseline_status": "complete" if baseline is not None else "pending",
+        "baseline_score": baseline,
+        "improvement": improvement_over_baseline(baseline, retained_best, mode),
         "stop_files": stop_file_hits,
         "plateau": plateau,
         "exploration_batch": active_batch or (batches[-1] if batches else None),
@@ -442,9 +470,13 @@ def print_text(state: Dict[str, Any]) -> None:
         "candidate_cap",
         "candidate_cap_source",
         "candidate_attempts",
+        "remaining_candidates",
         "pending_candidates",
         "scored_attempts",
         "best_score",
+        "baseline_status",
+        "baseline_score",
+        "improvement",
         "agent_instruction",
     ]:
         value = state.get(key)

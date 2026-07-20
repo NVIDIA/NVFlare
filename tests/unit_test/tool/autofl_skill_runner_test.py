@@ -1516,6 +1516,10 @@ def test_runner_state_finalizes_after_explicit_candidate_cap(tmp_path):
     assert state["next_action"] == "final_report"
     assert state["final_response_allowed"] is True
     assert state["candidate_cap_source"] == "explicit"
+    assert state["remaining_candidates"] == 0
+    assert state["abandoned_candidates"] == 0
+    for deliverable in ("autofl_report.md", "results.tsv", "progress.png", "baseline vs best"):
+        assert deliverable in state["agent_instruction"]
 
 
 def test_runner_state_ignores_ambient_candidate_cap(tmp_path, monkeypatch):
@@ -2196,6 +2200,24 @@ def test_abandon_candidate_clears_pending_draft_without_touching_best(tmp_path, 
     assert state["pending_candidate_manifest"] is None
 
 
+def test_abandoned_candidate_counts_in_state_but_never_as_attempt(tmp_path, monkeypatch, capsys):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    assert runner.main(["prepare", str(job), "--name", "abandoned", "--hypothesis", "temporary idea"]) == 0
+    draft = tmp_path / ".nvflare/autofl/candidates/abandoned/source/client.py"
+    draft.write_text("ALGORITHM = 'temporary'\n", encoding="utf-8")
+    capsys.readouterr()
+
+    assert runner.main(["abandon", str(job)]) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    state = json.loads(tmp_path.joinpath(".nvflare/autofl/campaign_state.json").read_text(encoding="utf-8"))
+    assert state["abandoned_candidates"] == 1
+    assert state["candidate_attempts"] == 0
+    assert payload["abandoned_candidates"] == 1
+    assert payload["candidate_attempts"] == 0
+
+
 def test_abandon_rejects_agent_modified_manifest_paths(tmp_path, monkeypatch):
     runner = _load_runner()
     job, client, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
@@ -2523,6 +2545,50 @@ def test_explicit_mutable_campaign_settings_persist_and_uncapped_removes_cap(tmp
     assert runner.main(["status", str(job), "--uncapped"]) == 0
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     assert metadata["settings"]["max_candidates"] is None
+
+
+def test_effective_cap_changes_append_audit_records_to_campaign_metadata(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch)
+    metadata_path = tmp_path / ".nvflare/autofl/campaign.json"
+
+    assert runner.main(["status", str(job), "--timeout", "123"]) == 0
+    assert "cap_changes" not in json.loads(metadata_path.read_text(encoding="utf-8"))
+
+    assert runner.main(["status", str(job), "--max-candidates", "7"]) == 0
+    assert runner.main(["status", str(job), "--max-candidates", "7"]) == 0
+    assert runner.main(["status", str(job), "--uncapped"]) == 0
+
+    cap_changes = json.loads(metadata_path.read_text(encoding="utf-8"))["cap_changes"]
+    assert [(entry["old"], entry["new"], entry["source"]) for entry in cap_changes] == [
+        (None, 7, "explicit"),
+        (7, None, "uncapped"),
+    ]
+    assert all(entry["changed_at"] for entry in cap_changes)
+
+
+def test_runner_state_reports_budget_and_baseline_accounting(tmp_path, monkeypatch):
+    runner = _load_runner()
+    job, _, _ = _initialize_fake_campaign(runner, tmp_path, monkeypatch, baseline_score=1.0, mode="min")
+    state_path = tmp_path / ".nvflare/autofl/campaign_state.json"
+
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert state["remaining_candidates"] is None
+    assert state["baseline_status"] == "complete"
+    assert state["baseline_score"] == pytest.approx(1.0)
+    assert state["improvement"] == pytest.approx(0.0)
+    assert state["abandoned_candidates"] == 0
+
+    results_path = tmp_path / "results.tsv"
+    records = runner.load_results(results_path)
+    records.append(runner.RunRecord("keep", "lower_loss", 0.8, 1.0, "none", "lower loss", "python job.py", ""))
+    runner.write_results(results_path, records)
+
+    assert runner.main(["status", str(job), "--max-candidates", "3"]) == 0
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert state["remaining_candidates"] == 2
+    # mode=min: positive improvement means the loss went down against the baseline.
+    assert state["improvement"] == pytest.approx(0.2)
 
 
 def test_status_reuses_persisted_guard_settings(tmp_path, monkeypatch):
