@@ -253,7 +253,8 @@ class Recipe(ABC):
         """
         self._job = job
         self.name = job.name
-        self._helper_per_site_config = None
+        self._configured_site_names = None
+        self._client_apps_prepared = False
         self._tensor_streaming_added = False
         self._cse_added = False
         warn_on_potential_secrets(getattr(job, "name", None), context="recipe parameter 'name'")
@@ -295,11 +296,32 @@ class Recipe(ABC):
         The generic helper validates only the site-keyed shape. Recipes that
         need to map fields into generated app config, command arguments, data
         loaders, or validators should override ``_apply_per_site_config``.
+        Client topology is prepared later, before the first client-targeted
+        customization or before export or execution.
 
         Per-site config values end up in the generated job configuration in clear
         text and must never contain actual secret values; see the Recipe class
         docstring for the recommended alternatives.
         """
+        if not isinstance(config, dict):
+            raise TypeError(f"per-site config must be a dict, got {type(config).__name__}")
+        if not config:
+            raise ValueError("per-site config must not be empty")
+        for site_name, site_config in config.items():
+            if not isinstance(site_name, str):
+                raise TypeError(f"per-site config key must be a str, got {type(site_name).__name__}")
+            if not isinstance(site_config, dict):
+                raise TypeError(
+                    f"per-site config for site {site_name!r} must be a dict, got {type(site_config).__name__}"
+                )
+        if self._configured_site_names is not None:
+            raise RuntimeError("per-site config has already been applied to this recipe")
+        if self._client_apps_prepared:
+            raise RuntimeError(
+                "per-site config must be applied immediately after recipe construction and before client "
+                "configuration, files, filters, or components are added"
+            )
+
         warn_on_potential_secrets(config, context="per_site_config")
         if self._SUPPORTED_PER_SITE_SECRET_REF_KEYS is not None:
             warn_on_unsupported_secret_refs_outside_keys(
@@ -310,11 +332,36 @@ class Recipe(ABC):
             )
         else:
             warn_on_unsupported_secret_refs(config, context="per_site_config")
-        self._helper_per_site_config = dict(config)
-        self._apply_per_site_config(dict(self._helper_per_site_config))
+        # Copy each site's dictionary so deferred client preparation cannot be
+        # changed by later mutation of the caller's config. Values such as data
+        # loader objects intentionally retain their identity.
+        config_snapshot = {site_name: dict(site_config) for site_name, site_config in config.items()}
+        configured_site_names = tuple(config_snapshot)
+        self._apply_per_site_config(config_snapshot)
+        self._configured_site_names = configured_site_names
 
     def _apply_per_site_config(self, config: Dict[str, Dict]) -> None:
-        """Recipe-specific hook for helper-provided per-site configuration."""
+        """Validate and store recipe-specific per-site configuration.
+
+        Client apps must not be added here. Recipes with configurable client
+        topology should create them in ``_prepare_client_apps`` instead.
+        """
+        pass
+
+    def _prepare_client_apps(self) -> None:
+        """Create this recipe's client apps before client customization or use."""
+        pass
+
+    def _ensure_client_apps_prepared(self) -> None:
+        """Prepare client apps once, after per-site configuration is known."""
+        if self._client_apps_prepared:
+            return
+
+        self._prepare_client_apps()
+        self._client_apps_prepared = True
+
+    def _validate_before_use(self) -> None:
+        """Validate recipe state immediately before export or execution."""
         pass
 
     def configured_sites(self) -> List[str]:
@@ -324,9 +371,9 @@ class Recipe(ABC):
         metadata, validate production enrollment, or indicate which clients are
         connected in the execution environment.
         """
-        helper_per_site_config = getattr(self, "_helper_per_site_config", None)
-        if helper_per_site_config is not None:
-            return list(helper_per_site_config.keys())
+        configured_site_names = getattr(self, "_configured_site_names", None)
+        if configured_site_names is not None:
+            return list(configured_site_names)
 
         legacy_per_site_config = getattr(self, "per_site_config", None)
         if isinstance(legacy_per_site_config, dict):
@@ -436,6 +483,19 @@ class Recipe(ABC):
         from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
         from nvflare.job_config.defs import JobTargetType
 
+        # Validate the selector before materializing topology so an invalid call
+        # does not close the set_per_site_config() configuration window.
+        if clients is not None:
+            if not isinstance(clients, list):
+                raise TypeError(f"clients must be a list of client names, got {type(clients).__name__}")
+            if not clients:
+                raise ValueError("clients must not be empty; omit it to apply to all clients")
+            for client in clients:
+                if not isinstance(client, str) or client in (ALL_SITES, SERVER_SITE_NAME):
+                    raise ValueError(f"invalid client name {client!r}: client names must name specific client sites")
+
+        self._ensure_client_apps_prepared()
+
         # FedJob has no public API to list per-site deploy targets, so we inspect
         # private deploy map to preserve existing per-site client topology.
         deploy_map = getattr(self._job, "_deploy_map", {})
@@ -452,14 +512,6 @@ class Recipe(ABC):
             else:
                 self._job.to_clients(obj, **kwargs)
         else:
-            # A bare string would iterate per character; an empty list would be a silent no-op.
-            if not isinstance(clients, list):
-                raise TypeError(f"clients must be a list of client names, got {type(clients).__name__}")
-            if not clients:
-                raise ValueError("clients must not be empty; omit it to apply to all clients")
-            for client in clients:
-                if not isinstance(client, str) or client in (ALL_SITES, SERVER_SITE_NAME):
-                    raise ValueError(f"invalid client name {client!r}: client names must name specific client sites")
             if ALL_SITES in deploy_map:
                 # The generated job has one client app deployed to all clients. Exporting
                 # both an all-clients app and per-site apps is not expressible (the
@@ -467,8 +519,8 @@ class Recipe(ABC):
                 # instead of silently losing the placement.
                 raise ValueError(
                     "cannot target specific clients: this recipe's client app applies to all clients. "
-                    "Construct the recipe with per-site client apps (e.g. the per_site_config constructor "
-                    "argument on recipes that support it) or omit clients to apply to all clients."
+                    "Call set_per_site_config immediately after constructing a recipe that supports it, "
+                    "or omit clients to apply to all clients."
                 )
             if existing_client_sites:
                 # Targeting a site with no app would create a bare, executor-less app for
@@ -794,6 +846,8 @@ class Recipe(ABC):
         Returns: None
 
         """
+        self._validate_before_use()
+        self._ensure_client_apps_prepared()
         self._warn_potential_secrets_in_params()
         with self._temporary_exec_params(server_exec_params=server_exec_params, client_exec_params=client_exec_params):
             if env is not None:
@@ -814,6 +868,8 @@ class Recipe(ABC):
         Returns: Run to get job ID and execution results
 
         """
+        self._validate_before_use()
+        self._ensure_client_apps_prepared()
         self._warn_potential_secrets_in_params()
         with self._temporary_exec_params(server_exec_params=server_exec_params, client_exec_params=client_exec_params):
             self.process_env(env)

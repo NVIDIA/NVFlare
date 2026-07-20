@@ -56,10 +56,9 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
         launch_external_process: Whether to launch the script in external process. Defaults to False.
         command: If launch_external_process=True, command to run script (prepended to script).
             Defaults to "python3 -u".
-        per_site_config: Per-site configuration for the federated learning job. Dictionary mapping
-            site names to configuration dicts. If not provided, the same configuration will be used
-            for all clients. Nested values become part of the generated job definition and must not
-            contain secrets.
+        per_site_config: Deprecated constructor form of per-site configuration. New code should call
+            ``set_per_site_config(recipe, config)`` immediately after construction. Nested values become
+            part of the generated job definition and must not contain secrets.
         key_metric: Metric used to determine if the model is globally best. If validation metrics are
             a dict, key_metric selects the metric used for global model selection. Defaults to "accuracy".
         launch_once: Whether the external process will be launched only once at the beginning
@@ -97,6 +96,7 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
 
         ```python
         from nvflare.app_opt.sklearn import SklearnFedAvgRecipe
+        from nvflare.recipe import set_per_site_config
 
         recipe = SklearnFedAvgRecipe(
             name="sklearn_linear",
@@ -104,7 +104,10 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
             num_rounds=50,
             model_params={"n_classes": 2, "learning_rate": "constant", "eta0": 1e-4},
             train_script="client.py",
-            per_site_config={
+        )
+        set_per_site_config(
+            recipe,
+            {
                 "site-1": {"train_args": "--data_path /tmp/data/site1.csv"},
                 "site-2": {"train_args": "--data_path /tmp/data/site2.csv"},
                 "site-3": {"train_args": "--data_path /tmp/data/site3.csv"},
