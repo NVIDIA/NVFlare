@@ -148,6 +148,40 @@ def test_id_accounting_rejects_a_different_allocation():
     assert not any(arg.startswith(("--starttime=", "--endtime=", "--name=")) for arg in argv)
 
 
+def test_id_accounting_parses_one_owned_allocation():
+    adapter = _adapter()
+    adapter._runner = Runner(_result(f"\n42|job-name|{adapter.user}|COMPLETED|7:9\n"))
+
+    result = adapter.accounting_by_id("42", "job-name", 1)
+
+    assert result.status == LookupStatus.FOUND
+    assert result.records[0].job_id == "42"
+    assert result.records[0].state == "COMPLETED"
+    assert result.records[0].exit_status == 7
+    assert result.records[0].exit_signal == 9
+
+
+@pytest.mark.parametrize(
+    "command, expected",
+    [
+        (_result(returncode=1, stderr="accounting unavailable"), LookupStatus.UNAVAILABLE),
+        (_result(), LookupStatus.NOT_FOUND),
+    ],
+)
+def test_id_accounting_distinguishes_unavailable_from_not_found(command, expected):
+    result = _adapter(Runner(command)).accounting_by_id("42", "job-name", 1)
+
+    assert result.status == expected
+
+
+def test_id_accounting_rejects_malformed_exit_code():
+    adapter = _adapter()
+    adapter._runner = Runner(_result(f"42|job-name|{adapter.user}|FAILED|invalid\n"))
+
+    with pytest.raises(SlurmProtocolError, match="numeric field"):
+        adapter.accounting_by_id("42", "job-name", 1)
+
+
 @pytest.mark.parametrize(
     "row",
     [

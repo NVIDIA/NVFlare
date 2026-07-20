@@ -34,6 +34,7 @@ from nvflare.app_opt.job_launcher.slurm.config import (
     QueryResult,
     SlurmConfig,
     SlurmLauncherError,
+    SlurmProtocolError,
     SlurmRecord,
     SubmissionResult,
     _validate_uuid,
@@ -244,15 +245,17 @@ def test_submit_exception_fails_and_cleans_artifacts(tmp_path):
     assert not manager._handles
 
 
-def test_cluster_suffix_is_cancelled_once_and_fails_launch(tmp_path):
+@pytest.mark.parametrize("cancel_error", [None, RuntimeError("controller unavailable")])
+def test_cluster_suffix_is_cancelled_once_and_fails_launch(tmp_path, cancel_error):
     adapter = Adapter()
     adapter.submission = SubmissionResult(_command(stdout="42;remote\n"), "42", "remote")
+    adapter.cancel_suffix = MagicMock(side_effect=cancel_error, return_value=adapter.cancel_result)
     manager = _manager(tmp_path, adapter)
 
     with pytest.raises(SlurmLauncherError, match="multi-cluster"):
         manager.launch(_plan(tmp_path))
 
-    assert [call[:3] for call in adapter.calls if call[0] == "cancel_suffix"] == [("cancel_suffix", "42", "remote")]
+    adapter.cancel_suffix.assert_called_once_with("42", "remote", timeout=10.0)
     assert not os.listdir(manager.jobs_dir)
     assert not manager._handles
 
@@ -318,6 +321,15 @@ def test_terminal_accounting_cleans_job_artifacts_and_leaves_generic_rc_file(tmp
     assert not os.path.exists(handle.job_dir)
     assert not manager._handles
     assert rc_file.read_text(encoding="utf-8") == "0\n"
+
+
+def test_infrastructure_terminal_state_is_an_exception(tmp_path):
+    adapter = Adapter()
+    adapter.live = _query(LookupStatus.NOT_FOUND)
+    adapter.accounting_id = _query(LookupStatus.FOUND, _record(state="TIMEOUT"))
+    handle = _manager(tmp_path, adapter).launch(_plan(tmp_path))
+
+    assert handle.poll() == ProcessExitCode.EXCEPTION
 
 
 def test_terminal_cleanup_restores_access_to_pyxis_mount_directories(tmp_path, monkeypatch):
@@ -458,6 +470,39 @@ def test_scheduler_outage_never_synthesizes_terminal_state(tmp_path):
 
     assert handle.poll() == JobReturnCode.UNKNOWN
     assert manager._handles[handle.nvflare_job_id] is handle
+
+
+def test_accounting_outage_does_not_consume_healthy_miss_budget(tmp_path):
+    adapter = Adapter()
+    adapter.live = _query(LookupStatus.NOT_FOUND)
+    adapter.accounting_id = _query(LookupStatus.UNAVAILABLE)
+    handle = _manager(tmp_path, adapter).launch(_plan(tmp_path))
+
+    assert handle.poll() == JobReturnCode.UNKNOWN
+    assert handle.accounting_misses == 0
+
+
+def test_poll_protocol_error_leaves_handle_non_terminal(tmp_path):
+    adapter = Adapter()
+    manager = _manager(tmp_path, adapter)
+    handle = manager.launch(_plan(tmp_path))
+    adapter.active_by_id = MagicMock(side_effect=SlurmProtocolError("malformed squeue row"))
+
+    assert handle.poll() == JobReturnCode.UNKNOWN
+    assert handle.terminal_result is None
+
+
+def test_wait_polls_until_accounting_reports_terminal(tmp_path):
+    adapter = Adapter()
+    adapter.live = [
+        _query(LookupStatus.FOUND, _record()),
+        _query(LookupStatus.NOT_FOUND),
+    ]
+    adapter.accounting_id = _query(LookupStatus.FOUND, _record(state="COMPLETED"))
+    handle = _manager(tmp_path, adapter).launch(_plan(tmp_path))
+
+    assert handle.wait() is None
+    assert handle.terminal_result == JobReturnCode.SUCCESS
 
 
 def test_five_spaced_healthy_accounting_misses_are_infrastructure_failure(tmp_path):

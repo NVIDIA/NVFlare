@@ -42,7 +42,7 @@ def _config(tmp_path, sandbox="none"):
     )
 
 
-def _plan(tmp_path, sandbox="none", resources=None, mounts=()):
+def _plan(tmp_path, sandbox="none", resources=None, mounts=(), forward_env=()):
     run_dir = tmp_path / "workspace" / "job-1"
     run_dir.mkdir(parents=True, exist_ok=True)
     return LaunchPlan(
@@ -65,7 +65,7 @@ def _plan(tmp_path, sandbox="none", resources=None, mounts=()):
         mounts=mounts,
         python_path="/usr/bin/python3",
         python_env="/custom",
-        forward_env=(),
+        forward_env=forward_env,
     )
 
 
@@ -107,13 +107,15 @@ def test_renderer_delivers_credentials_through_environment(tmp_path, sandbox):
 
 
 def test_apptainer_renderer_keeps_isolation_contract(tmp_path):
-    plan = _plan(tmp_path, sandbox="apptainer", resources=JobResources(gpus_per_node=1))
+    mount = BindMount("/data/source", "/data/study/data", "ro")
+    plan = _plan(tmp_path, sandbox="apptainer", resources=JobResources(gpus_per_node=1), mounts=(mount,))
 
     script, _ = _render_batch_script(plan, _job_dir(tmp_path), _config(tmp_path, "apptainer"))
 
     for option in ("--userns", "--containall", "--no-privs", "--nv"):
         assert option in script
     assert "NVFL_APPTAINER=apptainer" in script
+    assert "/data/source:/data/study/data:ro" in script
 
 
 def test_pyxis_renderer_keeps_read_only_no_home_contract(tmp_path):
@@ -126,6 +128,22 @@ def test_pyxis_renderer_keeps_read_only_no_home_contract(tmp_path):
     assert "--no-container-mount-home" in script
     assert "--no-container-entrypoint" in script
     assert "/data/source:/data/study/data:ro" in script
+
+
+@pytest.mark.parametrize(
+    "sandbox, expected",
+    [
+        ("none", "then export FORWARD_ME; fi"),
+        ("apptainer", 'then export APPTAINERENV_FORWARD_ME="${FORWARD_ME}"; fi'),
+        ("pyxis", 'then _nvfl_container_env="${_nvfl_container_env},FORWARD_ME"; fi'),
+    ],
+)
+def test_renderer_forwards_selected_environment_for_each_backend(tmp_path, sandbox, expected):
+    plan = _plan(tmp_path, sandbox=sandbox, forward_env=("FORWARD_ME",))
+
+    script, _ = _render_batch_script(plan, _job_dir(tmp_path), _config(tmp_path, sandbox))
+
+    assert expected in script
 
 
 def test_submission_argv_is_structured_and_resource_complete(tmp_path):
