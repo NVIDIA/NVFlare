@@ -24,9 +24,7 @@ def main():
     args = parser.parse_args()
 
     model = CheckpointNetwork()
-    # This source call is intentionally unsafe. The conversion must replace it
-    # with weight-only loading rather than copying unrestricted pickle loading.
-    model.load_state_dict(torch.load(args.checkpoint, weights_only=False))
+    model.load_state_dict(torch.load(args.checkpoint, weights_only=True))
 
 
 if __name__ == "__main__":
