@@ -56,7 +56,9 @@ design doc's step tables document the new step.
 
 ## Threat notes
 
-Protects against command-line inspection and log/telemetry capture. Does not protect against:
+Protects against command-line inspection and log/telemetry capture. As a ride-along, the
+token value is also redacted from server/client/relay log messages (registration,
+re-activation, heartbeat, removal, relay auth) — issue #4858 item 2. Does not protect against:
 root/admins, code inside the job process, same-UID readers of `/proc/<pid>/environ` (the
 exec-time snapshot persists for the process lifetime regardless of `os.environ.pop`), or
 credential reuse after theft (the per-job-credentials PR's job).
