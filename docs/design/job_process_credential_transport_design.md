@@ -61,12 +61,16 @@ root/admins, code inside the job process, same-UID readers of `/proc/<pid>/envir
 exec-time snapshot persists for the process lifetime regardless of `os.environ.pop`), or
 credential reuse after theft (the per-job-credentials PR's job).
 
-## Code touch
+## Code touch (as implemented)
 
-`job_launcher_spec.py` (+5), CJ/SJ parsers (~+10 each), `job_launcher_utils.py` (split
-credential args from module args, ~+15), the four launchers (Process/Docker ~10 each; K8s
-~40 for the Secret + ownerReference; Slurm ~−40 net including `worker_entry` deletion),
-Slurm rev-11 doc/QA ride-along (batch-script contract, code-touch list, SEC-04).
+`job_launcher_spec.py` (`JobProcessEnv` + `pop_credential_env`, ~+25), CJ/SJ parsers (~+10
+each), `job_launcher_utils.py` (split credential args from module args, `get_credential_env`
+with empty-value guard, ~+15), Process/Docker launchers (~5 each), K8s launcher (~+120:
+Secret + ownerReference, terminal-state and failure-path Secret deletion, replace-404
+fallback, transfer token moved into the Secret, main-container guard armed by credential
+refs), `study_runtime.py` (reserve the `NVFLARE_JOB_*` env names), helm role templates
+(`patch`/`delete` on secrets) and admin-guide RBAC docs. Slurm (~−40 net including
+`worker_entry` deletion) rides the Slurm launcher PR.
 
 ## Tests
 
