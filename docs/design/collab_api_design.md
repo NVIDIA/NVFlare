@@ -24,7 +24,7 @@ works in BOTH in-process and subprocess modes**.
 ┌─────────────────────────────────────────────────────────────────────────────────────┐
 │                                   USER CODE LAYER                                    │
 │                                                                                      │
-│   @collab.main, @collab.publish, @collab.init decorators                                      │
+│   @collab.main / @collab.publish / @collab.init / @collab.final                    │
 │   User's training logic, aggregation functions                                       │
 └─────────────────────────────────────────────────────────────────────────────────────┘
                                           │
@@ -143,8 +143,14 @@ works in BOTH in-process and subprocess modes**.
 | Decorator | Purpose | Location |
 |-----------|---------|----------|
 | `@collab.main` | Marks server-side orchestration methods | Server module |
-| `@collab.publish` | Marks client-side collaborative methods | Client module |
+| `@collab.publish` | Exposes a function for remote calls | Server or client module |
 | `@collab.init` | Marks one-time initialization methods | Both |
+| `@collab.final` | Marks finalization methods that run after the main workflow | Both |
+
+Decorators work on class methods and on plain module functions. When a recipe
+or runner receives a module (including the caller's module by default),
+`ModuleWrapper` discovers its decorated functions automatically. The function
+form therefore needs no application classes or manual registration.
 
 ### Two API Patterns
 
@@ -158,24 +164,36 @@ Collab supports two distinct API patterns for client-side training:
 ### Collab API Example
 
 ```python
-# Server-side (aggregation)
-@collab.main
-def fed_avg(self):
-    weights = self.model.state_dict()
-    for round in range(self.num_rounds):
-        results = collab.clients.train(weights)  # Parallel client calls
-        weights = weighted_avg(results)
-    return weights
+import numpy as np
 
-# Client-side (training)
+from nvflare.collab import CollabRecipe, collab
+
+
+# Client-side function: remotely callable by the server
 @collab.publish
-def train(self, weights=None):
-    model = SimpleModel()
-    if weights:
-        model.load_state_dict(weights)
-    # ... training loop ...
-    return model.state_dict(), len(dataset)
+def train(model):
+    return model + 1
+
+# Server-side function: the main workflow
+@collab.main
+def fed_avg():
+    model = np.array([1.0, 2.0, 3.0])
+    num_rounds = collab.get_app_prop("num_rounds", 3)
+    for current_round in range(num_rounds):
+        # One ordinary-looking call fans out to all clients in parallel.
+        results = collab.clients.train(model)
+        model = np.mean([client_model for _, client_model in results], axis=0)
+    return model
+
+# With no explicit server/client objects, the caller's module is auto-wrapped.
+recipe = CollabRecipe(job_name="fedavg", min_clients=2)
+recipe.set_server_prop("num_rounds", 3)
 ```
+
+The same decorators can be placed on methods when persistent application state
+belongs naturally in server or client classes. Distribution does not change
+the function signature: arguments and return values are ordinary Python
+objects, while the selected backend handles transport and serialization.
 
 ### Client API Example
 
@@ -231,8 +249,8 @@ recipe = CollabRecipe(
     max_call_threads_for_client=100,
 )
 
-# Client API (explicit training_module for subprocess)
-from nvflare.collab.runtime.client_api import CollabClientAPI
+# Client API bridge
+from nvflare.collab import CollabClientAPI
 
 recipe = CollabRecipe(
     job_name="fedavg",
@@ -260,7 +278,7 @@ recipe = CollabRecipe(
 
 **Key Responsibilities:**
 - Wrap the server/client objects or modules into `ServerApp` / `ClientApp` (via `ModuleWrapper`)
-- Discover the `@collab.main` / `@collab.publish` / `@collab.init` methods
+- Discover the `@collab.main` / `@collab.publish` / `@collab.init` / `@collab.final` methods
 - Generate the FLARE job configuration (`CollabController` + `CollabExecutor` components)
 
 #### ModuleWrapper (`nvflare/collab/api/module_wrapper.py`)
@@ -299,23 +317,31 @@ App
 Remote callable abstraction.
 
 ```python
-# Single proxy - represents one remote target
-proxy = Proxy(backend, target_name="site-1", call_opt=CallOption())
-result = proxy.train(weights)  # Calls train() on site-1
+# Select named client proxies, as used by the split-learning example.
+image_site, label_site = collab.get_clients(["site-1", "site-2"])
 
-# ProxyList - represents multiple targets
-clients = ProxyList([proxy1, proxy2, proxy3])
-results = clients.train(weights)  # Parallel calls to all clients
+# A Proxy represents one target. Calling it first configures call options.
+sample_ids, activations = image_site(timeout=60.0).forward()
+
+# collab.clients is a ProxyList. A method call fans out in parallel and
+# returns (site_name, result) entries.
+results = collab.clients(timeout=60.0).train(weights)
 ```
+
+Applications obtain proxies from the `collab` facade; they do not construct
+`Proxy` or `ProxyList` directly.
 
 #### Group (`nvflare/collab/api/group.py`)
 
 Handles parallel invocation of methods on proxy lists.
 
 ```python
-group = Group(targets, backend, call_opt)
-results = group.train(weights)  # Returns list of results
+group = collab.clients(timeout=60.0, parallel=2)
+results = group.train(weights)
 ```
+
+`parallel=0` (the default) allows calls to all selected clients concurrently.
+Positive values cap the number of outgoing calls in flight.
 
 #### CallOption (`nvflare/collab/api/call_opt.py`)
 
@@ -327,9 +353,14 @@ call_opt = CallOption(
     blocking=True,         # Synchronous call
     timeout=60.0,          # Call timeout
     secure=False,          # Use secure channel
+    optional=False,        # Treat a missing target as an error
+    target=None,           # Optional named child collab object
     parallel=0,            # Parallelism level
 )
 ```
+
+User code normally expresses these options with proxy call syntax, such as
+`collab.clients(timeout=60.0, parallel=2).train(weights)`.
 
 #### CollabClientAPI (`nvflare/collab/runtime/client_api.py`)
 
@@ -516,9 +547,16 @@ Multi-process **local** execution using POC infrastructure.
 
 ```python
 class Backend:
-    def call(self, target, func_name, *args, **kwargs) -> Any:
-        """Call a method on a target"""
-        pass
+    def call_target(
+        self, context, target_name, call_opt, func_name, *args, **kwargs
+    ):
+        """Invoke one target and return its result."""
+        ...
+
+    @abstractmethod
+    def call_target_in_group(self, group_call_context, func_name, *args, **kwargs):
+        """Start one invocation that belongs to a group call."""
+        ...
 ```
 
 ### LocalBackend (`nvflare/collab/runtime/local/local_backend.py`)
@@ -1136,14 +1174,17 @@ Runnable examples live at the repository top level under `examples/collab/`
 and are grouped into core and advanced/integration sections (see
 `examples/collab/README.md`). `hello_collab` uses the local in-process runner
 directly, and `hello_numpy_collab` mirrors the Recipe API/`SimEnv` flow of the
-original `hello-numpy`. The remaining core examples build a recipe whose
-execution environment is a `--runtime` option (`in_process | multi_process |
-prod | export`). They import each other via the `collab.*` package path, so
-run them as modules from the `examples/` directory:
+original `hello-numpy`. `split_learning` is a computation-equivalent rewrite
+of the original CIFAR-10 SplitNN workflow using direct calls between two named
+sites. The remaining core examples build a recipe whose execution environment
+is a `--runtime` option (`in_process | multi_process | prod | export`). They
+import each other via the `collab.*` package path, so run them as modules from
+the `examples/` directory:
 
 ```bash
 cd examples
 python -m collab.hello_fedavg.hello_fedavg
+python -m collab.split_learning.split_learning
 python -m collab.call_patterns.call_patterns --pattern cyclic --runtime multi_process
 ```
 
@@ -1158,9 +1199,42 @@ examples/collab/
 ├── async_filters_metrics/  # in-time aggregation, filter chains, metrics
 ├── swarm_events/           # decentralized swarm with client-to-client calls
 ├── workflow_composition/   # chained workflows, resource dirs, artifacts
+├── split_learning/         # CIFAR-10 SplitNN with direct calls between two named sites
 ├── client_api/             # advanced/integration: existing Client API training code
 └── client_api_ddp/         # advanced/integration: torchrun/DDP Client API training
 ```
+
+### Split learning: direct calls instead of transport plumbing
+
+The original vertical-federated-learning example manually constructs `DXO`
+and `Shareable` objects, serializes tensors, sets message headers, sends
+auxiliary requests, and decodes replies. The Collab rewrite publishes the
+site-local operations and expresses the same delayed-gradient training order
+as three ordinary calls:
+
+```python
+image_proxy, label_proxy = collab.get_clients(["site-1", "site-2"])
+image_site = image_proxy(timeout=call_timeout)
+label_site = label_proxy(timeout=call_timeout)
+
+gradient = None
+for current_round in range(num_rounds):
+    if gradient is not None:
+        image_site.backward(gradient)
+    sample_ids, activations = image_site.forward()
+    gradient, loss, accuracy = label_site.compute_gradient(
+        sample_ids, activations
+    )
+```
+
+`site-1` owns the images and convolutional model half; `site-2` owns the labels
+and fully connected half. The rewrite preserves the original model, data
+transforms, seed, optimizer, minibatch selection, FP16 training transfer,
+FP32 validation transfer, and delayed image-side update order. Only transport
+and runtime plumbing are replaced. See
+`examples/collab/split_learning/README.md` for equivalence details and run
+options. The example requires exactly two clients named `site-1` and `site-2`
+and depends on PyTorch and torchvision.
 
 ---
 
