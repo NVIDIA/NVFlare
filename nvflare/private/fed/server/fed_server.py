@@ -233,8 +233,8 @@ class BaseServer(ABC):
         for token in delete:
             client = self.logout_client(token)
             self.logger.info(
-                "Remove the dead Client. Name: {}\t Token: {}.  Total clients: {}".format(
-                    client.name, token, len(self.client_manager.get_clients())
+                "Remove the dead Client. Name: {}.  Total clients: {}".format(
+                    client.name, len(self.client_manager.get_clients())
                 )
             )
 
