@@ -40,6 +40,7 @@ from nvflare.app_opt.job_launcher.slurm.launcher import (
     _rewrite_parent_url,
 )
 from nvflare.app_opt.job_launcher.slurm.manager import _job_key
+from nvflare.app_opt.job_launcher.study_runtime import SecretEnvRef, StudyRuntime
 
 
 def _workspace(tmp_path):
@@ -148,6 +149,30 @@ def test_parent_url_rewrite_is_shallow_and_preserves_other_entries():
     assert args[JobProcessArgs.PARENT_URL][1] == "tcp://old:8102"
 
 
+def test_parent_url_rewrite_formats_ipv6_host():
+    args = {JobProcessArgs.PARENT_URL: ("-p", "tcp://[2001:db8::1]:8102")}
+
+    rewritten = _rewrite_parent_url(args, "2001:db8::2", 8102)
+
+    assert rewritten[JobProcessArgs.PARENT_URL][1] == "tcp://[2001:db8::2]:8102"
+
+
+@pytest.mark.parametrize(
+    "entry, message",
+    [
+        (None, "missing or malformed"),
+        (("-p", "tcp://old:not-a-port"), "malformed parent URL"),
+        (("-p", "http://old:8102"), "must use tcp"),
+        (("-p", "tcp://old:9000"), "configured internal_port"),
+    ],
+)
+def test_parent_url_rewrite_rejects_malformed_or_incompatible_value(entry, message):
+    args = {} if entry is None else {JobProcessArgs.PARENT_URL: entry}
+
+    with pytest.raises(SlurmLauncherError, match=message):
+        _rewrite_parent_url(args, "new-host", 8102)
+
+
 @pytest.mark.parametrize("path", ["relative", "//double", "/tmp/../bad", "/proc/value", "/sys"])
 def test_mount_destination_rejects_unsafe_shapes(path):
     with pytest.raises(SlurmLauncherError):
@@ -197,6 +222,15 @@ def test_launch_plan_rejects_job_id_with_trailing_newline(tmp_path):
         launcher._build_launch_plan({JobConstants.JOB_ID: "job-1\n"}, _fl_ctx(workspace))
 
 
+def test_launch_plan_rejects_different_context_workspace(tmp_path):
+    configured_workspace = _workspace(tmp_path / "configured")
+    context_workspace = _workspace(tmp_path / "context")
+    launcher = _launcher(tmp_path, configured_workspace)
+
+    with pytest.raises(SlurmLauncherError, match="workspace does not match"):
+        launcher._build_launch_plan({JobConstants.JOB_ID: "job-1"}, _fl_ctx(context_workspace))
+
+
 def test_non_clear_internal_connection_is_rejected(tmp_path):
     workspace = _workspace(tmp_path)
     launcher = _launcher(tmp_path, workspace)
@@ -205,6 +239,28 @@ def test_non_clear_internal_connection_is_rejected(tmp_path):
 
     with pytest.raises(SlurmLauncherError, match="requires clear"):
         launcher._build_launch_plan({JobConstants.JOB_ID: "job-1"}, context)
+
+
+def test_study_environment_requires_secret_source(tmp_path, monkeypatch):
+    workspace = _workspace(tmp_path)
+    launcher = _launcher(tmp_path, workspace)
+    monkeypatch.delenv("MISSING_STUDY_SECRET", raising=False)
+    runtime = StudyRuntime(
+        study="study-a",
+        secret_env=[SecretEnvRef(name="DB_PASSWORD", source="MISSING_STUDY_SECRET")],
+    )
+
+    with pytest.raises(SlurmLauncherError, match="requires parent environment variable"):
+        launcher._study_environment(runtime)
+
+
+def test_legacy_study_data_file_is_rejected(tmp_path):
+    workspace = _workspace(tmp_path)
+    (workspace / "local" / "study_data.yaml").write_text("studies: {}\n", encoding="utf-8")
+    launcher = _launcher(tmp_path, workspace)
+
+    with pytest.raises(SlurmLauncherError, match="legacy study data file"):
+        launcher._load_study_runtime(None)
 
 
 def test_job_image_overrides_study_and_site_after_byoc_authorization(tmp_path):

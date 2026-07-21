@@ -267,6 +267,43 @@ def test_deployment_identity_requires_uuid4():
         _validate_uuid(str(uuid.uuid1()))
 
 
+def test_deployment_identity_rejects_site_mismatch(tmp_path):
+    identity = tmp_path / DEPLOYMENT_FILE
+    identity.write_text(
+        '{"schema_version": 1, "deployment_uuid": "%s", "site": "site-1"}' % uuid.uuid4(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(UnsafeComponentError, match="site mismatch"):
+        SlurmJobManager._read_identity(str(identity), expected_site="site-2")
+
+
+def test_deployment_identity_rejects_oversize_file(tmp_path):
+    identity = tmp_path / DEPLOYMENT_FILE
+    identity.write_text("x" * 4097, encoding="utf-8")
+
+    with pytest.raises(UnsafeComponentError, match="too large"):
+        SlurmJobManager._read_identity(str(identity))
+
+
+def test_deployment_identity_rejects_symlink(tmp_path):
+    target = tmp_path / "identity-target.json"
+    target.write_text("{}", encoding="utf-8")
+    identity = tmp_path / DEPLOYMENT_FILE
+    identity.symlink_to(target)
+
+    with pytest.raises(UnsafeComponentError, match="regular file"):
+        SlurmJobManager._read_identity(str(identity))
+
+
+def test_deployment_identity_rejects_malformed_json(tmp_path):
+    identity = tmp_path / DEPLOYMENT_FILE
+    identity.write_text("{", encoding="utf-8")
+
+    with pytest.raises(UnsafeComponentError, match="malformed"):
+        SlurmJobManager._read_identity(str(identity))
+
+
 def test_launch_returns_handle_with_deterministic_identity(tmp_path):
     adapter = Adapter()
     manager = _manager(tmp_path, adapter)
@@ -372,6 +409,7 @@ def test_running_allocation_remains_unknown(tmp_path):
     handle = _manager(tmp_path, adapter).launch(_plan(tmp_path))
 
     assert handle.poll() == JobReturnCode.UNKNOWN
+    assert not any(call[0] == "accounting_id" for call in adapter.calls)
 
 
 def test_handle_monitors_only_its_returned_id_when_job_name_is_shared(tmp_path):
@@ -438,7 +476,7 @@ def test_infrastructure_terminal_state_is_an_exception(tmp_path):
     assert handle.poll() == ProcessExitCode.EXCEPTION
 
 
-def test_terminal_cleanup_restores_access_to_pyxis_mount_directories(tmp_path, monkeypatch):
+def test_terminal_cleanup_restores_access_to_pyxis_mount_directories(tmp_path):
     adapter = Adapter()
     adapter.live = _query(LookupStatus.NOT_FOUND)
     adapter.accounting_id = _query(LookupStatus.FOUND, _record(state="COMPLETED"))
@@ -449,8 +487,6 @@ def test_terminal_cleanup_restores_access_to_pyxis_mount_directories(tmp_path, m
         mount_dir = sandbox_root / name
         mount_dir.mkdir()
         os.chmod(mount_dir, 0)
-    chmod = os.chmod
-    monkeypatch.setattr("nvflare.app_opt.job_launcher.slurm.manager.os.chmod", lambda path, mode: chmod(path, mode))
 
     assert handle.poll() == JobReturnCode.SUCCESS
     assert not os.path.exists(handle.job_dir)

@@ -21,4 +21,6 @@ python /shared/NVFlare/examples/advanced/slurm/slurm_torchrun_node.py \
 `auto` uses `SLURM_GPUS_ON_NODE`, then PyTorch's visible CUDA device count, then one process when no
 GPU is visible. PyTorch must be importable when `SLURM_GPUS_ON_NODE` is unavailable. The optional
 `--rdzv-port-base` and `--rdzv-port-span` select the deterministic rendezvous-port range; `torchrun`
-reports any port collision. Sites may instead use their own trusted multi-node launcher.
+reports any port collision. The helper uses the hyphenated option names supported by current PyTorch
+releases; update older installations that accept only underscore spellings. Sites may instead use
+their own trusted multi-node launcher.

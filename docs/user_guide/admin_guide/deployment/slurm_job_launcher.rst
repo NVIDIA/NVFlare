@@ -229,6 +229,9 @@ re-read for every launch:
          partition: fl-gpu-large
          account: pathology-project
 
+Each dataset is mounted at ``/data/<study>/<dataset>`` inside the container;
+the example above mounts ``slides`` at ``/data/pathology/slides``.
+
 A study can override the site sandbox, setup, partition, account, and QOS. It
 can also provide an image, environment, dataset mounts, secret environment, and
 read-only secret mounts. A Slurm ``secret_env`` source names a variable in the

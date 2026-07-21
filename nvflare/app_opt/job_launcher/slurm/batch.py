@@ -42,6 +42,7 @@ def _common_environment(plan: LaunchPlan, config: SlurmConfig) -> list[str]:
         lines.extend(["export SLURM_EXPORT_ENV=ALL", plan.setup])
     lines.extend(
         [
+            # Restore this after trusted setup in case setup changed it.
             "export SLURM_EXPORT_ENV=ALL",
             "set +x",
             'source "${_nvfl_secret}"',
