@@ -767,6 +767,8 @@ _PT_CONFIG_CLIENT_CONF = textwrap.dedent(
               launch_once = false
               stop_grace_period = 5.0
               train_with_evaluation = true
+              params_exchange_format = "raw"
+              server_expected_format = "pytorch"
             }
           }
         }
@@ -868,14 +870,12 @@ _DIFF_SERVER_CONF = _PT_CONFIG_SERVER_CONF.replace(
     "diff_aggregator.DiffAssertingAggregator",
 ).replace('expected_data_kind = "WEIGHTS"', 'expected_data_kind = "WEIGHT_DIFF"')
 
-_DIFF_CLIENT_CONF = _PT_CONFIG_CLIENT_CONF.replace(
-    "train_with_evaluation = true",
-    (
-        "train_with_evaluation = true\n"
-        '              params_transfer_type = "DIFF"\n'
-        '              params_exchange_format = "pytorch"\n'
-        '              server_expected_format = "numpy"'
-    ),
+_DIFF_CLIENT_CONF = (
+    _PT_CONFIG_CLIENT_CONF.replace(
+        "train_with_evaluation = true", 'train_with_evaluation = true\n              params_transfer_type = "DIFF"'
+    )
+    .replace('params_exchange_format = "raw"', 'params_exchange_format = "pytorch"')
+    .replace('server_expected_format = "pytorch"', 'server_expected_format = "numpy"')
 )
 
 _DIFF_META_CONF = _PT_CONFIG_META_CONF.replace(
