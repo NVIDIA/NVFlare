@@ -12,6 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import subprocess
+from dataclasses import replace
+from pathlib import Path
+
 import pytest
 
 from nvflare.apis.job_launcher_spec import JobProcessEnv
@@ -104,6 +108,30 @@ def test_renderer_delivers_credentials_through_environment(tmp_path, sandbox):
     assert f"export {JobProcessEnv.AUTH_TOKEN}=secret-token" in secret_file
     assert f"export {JobProcessEnv.TOKEN_SIGNATURE}=secret-signature" in secret_file
     assert f"export {JobProcessEnv.SSID}=secret-ssid" in secret_file
+
+
+@pytest.mark.parametrize("worker_exists", [True, False])
+def test_rendered_batch_propagates_final_exec_status_and_removes_secret(tmp_path, worker_exists):
+    worker = tmp_path / "worker"
+    if worker_exists:
+        worker.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+        worker.chmod(0o700)
+    plan = replace(_plan(tmp_path), python_path=str(worker))
+    job_dir = Path(_job_dir(tmp_path))
+    script, secrets = _render_batch_script(plan, str(job_dir), _config(tmp_path))
+    secret_path = job_dir / "secret.env"
+    secret_path.write_text(_render_secret_file(secrets), encoding="utf-8")
+    batch_path = job_dir / "batch.sh"
+    batch_path.write_text(script, encoding="utf-8")
+    batch_path.chmod(0o700)
+
+    completed = subprocess.run([str(batch_path)], capture_output=True, text=True)
+
+    if worker_exists:
+        assert completed.returncode == 0
+    else:
+        assert completed.returncode != 0
+    assert not secret_path.exists()
 
 
 def test_apptainer_renderer_keeps_isolation_contract(tmp_path):

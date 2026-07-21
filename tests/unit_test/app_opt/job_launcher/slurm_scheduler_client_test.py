@@ -69,6 +69,11 @@ def test_scheduler_environment_removes_cli_overrides(monkeypatch):
     monkeypatch.setenv("SBATCH_CLUSTERS", "remote")
     monkeypatch.setenv("SLURM_CLUSTERS", "remote")
     monkeypatch.setenv("SLURM_HINT", "nomultithread")
+    monkeypatch.setenv("SLURM_MEM_PER_CPU", "1024")
+    monkeypatch.setenv("SLURM_MEM_PER_GPU", "2048")
+    monkeypatch.setenv("SLURM_MEM_PER_NODE", "4096")
+    monkeypatch.setenv("SLURM_CONF", "/etc/slurm/slurm.conf")
+    monkeypatch.setenv("SLURM_CONF_SERVER", "controller.example")
     monkeypatch.setenv("SQUEUE_FORMAT", "bad")
     monkeypatch.setenv("KEEP_ME", "yes")
 
@@ -79,6 +84,11 @@ def test_scheduler_environment_removes_cli_overrides(monkeypatch):
     assert "SBATCH_CLUSTERS" not in env
     assert "SLURM_CLUSTERS" not in env
     assert "SLURM_HINT" not in env
+    assert "SLURM_MEM_PER_CPU" not in env
+    assert "SLURM_MEM_PER_GPU" not in env
+    assert "SLURM_MEM_PER_NODE" not in env
+    assert env["SLURM_CONF"] == "/etc/slurm/slurm.conf"
+    assert env["SLURM_CONF_SERVER"] == "controller.example"
     assert "SQUEUE_FORMAT" not in env
 
 
@@ -263,6 +273,7 @@ def test_subprocess_runner_clamps_timeout_and_uses_scrubbed_environment(monkeypa
         return scheduler_client.subprocess.CompletedProcess(argv, 0, b"42\n", b"warning\n")
 
     monkeypatch.setenv("SBATCH_CLUSTERS", "remote")
+    monkeypatch.setenv("SLURM_MEM_PER_CPU", "1024")
     monkeypatch.setattr(scheduler_client.subprocess, "run", run)
     adapter = _adapter()
 
@@ -274,6 +285,7 @@ def test_subprocess_runner_clamps_timeout_and_uses_scrubbed_environment(monkeypa
     assert captured["capture_output"] is True
     assert captured["timeout"] == 0.001
     assert "SBATCH_CLUSTERS" not in captured["env"]
+    assert "SLURM_MEM_PER_CPU" not in captured["env"]
 
 
 def test_subprocess_runner_discards_partial_output_on_timeout(monkeypatch):

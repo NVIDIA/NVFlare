@@ -47,6 +47,8 @@ def _common_environment(plan: LaunchPlan, config: SlurmConfig) -> list[str]:
             "set +x",
             'source "${_nvfl_secret}"',
             'rm -f -- "${_nvfl_secret}"',
+            # Bash reports status 0 to an EXIT trap when exec itself fails.
+            "trap - EXIT",
             f"export PYTHONPATH={shlex.quote(plan.python_env)}",
             f"export {SLURM_CHILD_PROCESS_ENV}=1",
         ]

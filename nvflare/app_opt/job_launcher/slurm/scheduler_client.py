@@ -56,7 +56,15 @@ def _scheduler_env() -> dict:
     for name, value in os.environ.items():
         if name.startswith(("SBATCH_", "SQUEUE_", "SACCT_", "SCANCEL_")):
             continue
-        if name in {"SLURM_EXPORT_ENV", "SLURM_CLUSTERS", "SLURM_HINT", "LC_ALL"}:
+        if name in {
+            "SLURM_CLUSTERS",
+            "SLURM_EXPORT_ENV",
+            "SLURM_HINT",
+            "SLURM_MEM_PER_CPU",
+            "SLURM_MEM_PER_GPU",
+            "SLURM_MEM_PER_NODE",
+            "LC_ALL",
+        }:
             continue
         result[name] = value
     result["LC_ALL"] = "C"
