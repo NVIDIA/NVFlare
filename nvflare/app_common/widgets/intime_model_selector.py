@@ -42,8 +42,10 @@ class IntimeModelSelector(Widget):
             validation_metric_name (str, optional): key used to save initial validation metric in the
                 DXO meta properties (defaults to MetaKey.INITIAL_METRICS).
             key_metric: if metrics are a `dict`, `key_metric` can select the metric used for global model selection.
-                Defaults to "val_accuracy".
-            negate_key_metric: Whether to invert the key metric. Should be used if key metric is a loss. Defaults to `False`.
+                Defaults to "val_accuracy". Higher values are treated as better unless `negate_key_metric` is set.
+            negate_key_metric: Whether to invert the key metric. Must be `True` if the key metric is
+                lower-is-better (e.g., a loss); otherwise the model with the worst metric would be selected
+                as the global best. Defaults to `False`.
         """
         super().__init__()
 
@@ -54,6 +56,14 @@ class IntimeModelSelector(Widget):
         self.aggregation_weights = aggregation_weights or {}
         self.key_metric = key_metric
         self.negate_key_metric = negate_key_metric
+
+        if not self.negate_key_metric and any(hint in self.key_metric.lower() for hint in ("loss", "err")):
+            self.logger.warning(
+                f"key_metric '{self.key_metric}' looks like a lower-is-better metric, but model selection "
+                f"treats higher values as better. If lower values indicate a better model, set "
+                f"negate_key_metric=True or report a negated metric from the client (e.g., "
+                f"'neg_{self.key_metric}'); otherwise the worst global model will be selected as the best."
+            )
 
         self.logger.info(f"model selection weights control: {aggregation_weights}")
         self._reset_stats()
