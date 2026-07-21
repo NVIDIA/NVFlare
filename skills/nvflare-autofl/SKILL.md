@@ -165,7 +165,7 @@ If the user provides an `N`-candidate budget, pass it only through the runner's 
 argument; the cap counts comparable evaluated candidate attempts (keep/discard/crash) after and excluding the
 baseline. Never infer a cap from an inherited environment variable. Do not count import, validation, smoke
 runs, plotting, reporting, baseline, or infrastructure-only retries; count a real candidate crash after
-execution starts. State must report `candidate_cap_source=explicit` or `uncapped`, plus `remaining_candidates`,
+execution starts. Runner state must report `candidate_cap_source=explicit` or `uncapped`, plus `remaining_candidates`,
 `baseline_status`, `baseline_score`, `improvement`, and `abandoned_candidates`; cap changes append to `cap_changes` in campaign metadata.
 
 Treat plateau as a decision checkpoint, not an automatic stop: summarize it in

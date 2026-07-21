@@ -1570,6 +1570,44 @@ def test_runner_state_marks_infrastructure_retry_non_final(tmp_path):
     assert "log output" in state["agent_instruction"]
 
 
+def test_runner_state_infrastructure_retry_keeps_capped_budget_consistent_with_guard(tmp_path):
+    runner = _load_runner()
+    records = [
+        runner.RunRecord("baseline", "baseline", 0.5, 1.0, "none", "baseline", "run", "/tmp/baseline"),
+        runner.RunRecord("keep", "candidate_1", 0.6, 1.0, "none", "candidate", "run", "/tmp/c1"),
+        runner.RunRecord("discard", "candidate_2", 0.4, 1.0, "none", "candidate", "run", "/tmp/c2"),
+        runner.RunRecord("crash", "candidate_3", None, 1.0, "none", "candidate", "run", "/tmp/c3"),
+        runner.RunRecord(
+            runner.INFRASTRUCTURE_RETRY,
+            "candidate_4",
+            None,
+            1.0,
+            "none",
+            "candidate",
+            "python job.py",
+            "/tmp/c4",
+        ),
+    ]
+    results_path = tmp_path / "results.tsv"
+    state_path = tmp_path / "state.json"
+    runner.write_results(results_path, records)
+
+    state = runner.write_state(state_path, results_path, records, 5)
+    guard_state = runner.load_campaign_guard().guard_state(results_path, max_candidates=5)
+
+    assert state["decision"] == "retry_infrastructure"
+    assert state["final_response_allowed"] is False
+    assert state["candidate_cap"] == 5
+    assert state["candidate_attempts"] == 3
+    assert state["remaining_candidates"] == 2
+    assert state["remaining_candidates"] == state["candidate_cap"] - state["candidate_attempts"]
+    assert state["candidate_attempts"] == guard_state["candidate_attempts"]
+    assert state["remaining_candidates"] == guard_state["remaining_candidates"]
+    persisted = json.loads(state_path.read_text(encoding="utf-8"))
+    assert persisted["candidate_attempts"] == 3
+    assert persisted["remaining_candidates"] == 2
+
+
 def test_initialize_socket_failure_returns_75_without_counting_candidate(tmp_path, monkeypatch):
     runner = _load_runner()
     job = tmp_path / "job.py"

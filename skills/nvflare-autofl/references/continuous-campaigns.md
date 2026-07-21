@@ -21,7 +21,10 @@ always means better for the campaign `--mode`) report baseline-versus-best
 progress, and `abandoned_candidates` counts abandoned candidate manifests,
 which never count as candidate attempts. Changing the effective candidate cap
 between invocations appends `{changed_at, old, new, source}` to `cap_changes`
-in `.nvflare/autofl/campaign.json` so budget changes stay auditable.
+in `.nvflare/autofl/campaign.json` so budget changes stay auditable. External
+judges should treat `cap_changes` as evidence for runner-mediated cap changes
+only: `campaign.json` carries no integrity hash, so direct metadata edits are
+not detectable.
 
 Only one lifecycle action may own a job workspace at a time. A concurrent
 command exits with code 2 and an in-use message; wait for the active action to
