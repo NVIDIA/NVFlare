@@ -30,12 +30,13 @@ Choose an execution backend with ``job_launcher.sandbox``:
 Prerequisites
 =============
 
-Before preparing a kit, verify:
+Before starting a parent, verify:
 
 - Slurm 23.02 or later provides working ``sbatch``, ``squeue``, ``sacct``, and
-  ``scancel`` commands on the parent host. Version 23.02 is the minimum because
-  the launcher uses ``sbatch --export=NIL``. Production sites should run a
-  Slurm release that is still supported by SchedMD.
+  ``scancel`` commands on the runtime parent host. Parent bootstrap resolves
+  these commands and verifies the version; 23.02 is the minimum because the
+  launcher uses ``sbatch --export=NIL``. Production sites should run a Slurm
+  release that is still supported by SchedMD.
 - ``slurmdbd`` accounting is enabled and ``sacct`` responds. The default
   ``AccountingStoreFlags`` is sufficient.
 - The cluster is not federated, and submission plugins do not redirect jobs to
@@ -65,6 +66,12 @@ eligible nodes and ensure ``srun`` is available after ``setup``.
 
 Container images must contain a compatible NVFlare installation and job
 dependencies at the configured ``python_path``.
+
+The prepare, submission, and runtime parent hosts may differ. The prepare host
+does not need Slurm commands. The submission host that runs the generated
+``submit_command`` needs ``sbatch`` on ``PATH``. The runtime parent host needs
+all four parent commands after its service environment or
+``parent.environment_setup`` has run.
 
 Configure the Site
 ==================
@@ -122,7 +129,8 @@ Important keys are:
      - Environment names whose post-``setup`` values should reach the worker.
    * - ``executables``
      - Optional explicit paths for Slurm and backend commands. Parent-side
-       commands are resolved and frozen during prepare.
+       paths are preserved in the kit, then resolved and validated on the
+       runtime parent host.
    * - ``internal_port``
      - Worker-to-parent port; default ``8102``.
    * - ``poll_interval``
@@ -172,14 +180,21 @@ block and omit ``job_launcher.parent_host``:
      environment_setup: |
        source /lustre/proj123/venv/bin/activate
 
-Then stage normally and run the ``submit_command`` printed by prepare. It has
-this form (the resolved ``sbatch`` path is site-specific):
+Then stage normally and run the ``submit_command`` printed by prepare on a
+submission host where ``sbatch`` is on ``PATH``. It has this form:
 
 .. code-block:: shell
 
    sbatch --parsable \
        --output=/opt/nvflare/prepared/site-1-slurm/parent-slurm-%j.out \
        /opt/nvflare/prepared/site-1-slurm/startup/parent.slurm
+
+The parent script runs ``parent.environment_setup`` before starting NVFlare.
+Parent bootstrap then resolves ``sbatch``, ``squeue``, ``sacct``, and
+``scancel`` once and keeps their canonical paths in memory for that process.
+An explicitly configured path may therefore point to a cluster-managed stable
+symlink such as ``.../slurm/current/bin/sbatch``; a restarted parent resolves a
+new target after a cluster upgrade without re-preparing the kit.
 
 An explicit ``parent_host`` always wins. Otherwise an allocated parent uses
 ``SLURMD_NODENAME``. A parent outside an allocation without ``parent_host``

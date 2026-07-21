@@ -146,6 +146,9 @@ class _SlurmCliAdapter:
             timeout,
         )
 
+    def version_probe(self, timeout: float) -> CommandResult:
+        return self._run([self.executables["sbatch"], "--version"], timeout)
+
     def _warn_stray_row(self, job_name: str, job_id: str) -> None:
         now = self._monotonic()
         with self._warning_lock:

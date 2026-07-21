@@ -18,17 +18,13 @@ from __future__ import annotations
 
 import re
 import shlex
-import shutil
 from pathlib import Path
 from typing import Any
 
 from nvflare.app_opt.job_launcher.slurm.config import (
     SCHEMA_VERSION,
-    SLURM_COMPUTE_EXECUTABLES,
-    SLURM_PARENT_EXECUTABLES,
     SlurmLauncherError,
     normalize_slurm_directives,
-    normalize_slurm_executables,
     normalize_slurm_launcher_settings,
     normalize_slurm_workspace_path,
 )
@@ -75,9 +71,8 @@ def prepare(kit_info: KitInfo, final_output: Path, config: dict[str, Any]) -> di
     workspace_path = config["workspace_path"]
     job_launcher = config["job_launcher"]
 
-    executables = _resolve_executables(job_launcher.get("executables") or {})
     launcher_path = SLURM_SERVER_LAUNCHER if kit_info.role == ROLE_SERVER else SLURM_CLIENT_LAUNCHER
-    launcher_args = _normalize_job_launcher(job_launcher, workspace_path, executables)
+    launcher_args = _normalize_job_launcher(job_launcher, workspace_path)
     launcher_args["prepared_path"] = str(final_output)
     _patch_resources(kit_info.kit_dir, "slurm_launcher", launcher_path, launcher_args)
     _patch_comm_config(kit_info.kit_dir, port=launcher_args["internal_port"])
@@ -118,7 +113,7 @@ def prepare(kit_info: KitInfo, final_output: Path, config: dict[str, Any]) -> di
     if config.get("parent") is not None:
         result["submit_command"] = shlex.join(
             [
-                executables["sbatch"],
+                "sbatch",
                 "--parsable",
                 f"--output={final_output}/parent-slurm-%j.out",
                 str(final_output / "startup" / SLURM_PARENT_SH),
@@ -148,31 +143,6 @@ def _validate_workspace_location(workspace_text: str, kit: Path, output: Path) -
                 "Use an exclusive shared workspace outside both the provisioned kit and prepared output.",
             )
     return str(workspace)
-
-
-def _resolve_executables(configured: dict[str, str | None]) -> dict[str, str | None]:
-    try:
-        configured = normalize_slurm_executables(configured, require_parent=False)
-    except SlurmLauncherError as ex:
-        _fail("INVALID_CONFIG", str(ex), "Fix job_launcher.executables.")
-    resolved: dict[str, str | None] = {}
-    for name in SLURM_PARENT_EXECUTABLES:
-        candidate = configured.get(name) or shutil.which(name)
-        if not candidate:
-            _fail(
-                "INVALID_CONFIG",
-                f"Could not resolve required Slurm executable: {name}",
-                f"Install {name}, add it to PATH, or configure job_launcher.executables.{name}.",
-            )
-        try:
-            path = Path(candidate).resolve(strict=True)
-        except (OSError, RuntimeError) as ex:
-            _fail("INVALID_CONFIG", f"Cannot resolve Slurm executable {name}: {ex}", "Fix the executable path.")
-        resolved[name] = str(path)
-
-    for name in SLURM_COMPUTE_EXECUTABLES:
-        resolved[name] = configured.get(name)
-    return resolved
 
 
 def validate_config(config: dict[str, Any]) -> None:
@@ -237,17 +207,13 @@ def _optional_shell_text(data: dict[str, Any], key: str, where: str) -> str | No
 def _normalize_job_launcher(
     job_launcher: dict[str, Any],
     workspace_path: str,
-    executables: dict[str, str | None] | None = None,
 ) -> dict:
-    require_parent_executables = executables is not None
-    if executables is None:
-        executables = job_launcher.get("executables") or {}
     try:
         return normalize_slurm_launcher_settings(
             workspace_path=workspace_path,
             sandbox=job_launcher.get("sandbox"),
             python_path=job_launcher.get("python_path"),
-            executables=executables,
+            executables=job_launcher.get("executables") or {},
             image=job_launcher.get("image"),
             internal_port=job_launcher.get("internal_port", 8102),
             sbatch_directives=job_launcher.get("sbatch_directives"),
@@ -256,7 +222,6 @@ def _normalize_job_launcher(
             parent_host=job_launcher.get("parent_host"),
             poll_interval=job_launcher.get("poll_interval", 10),
             pending_timeout=job_launcher.get("pending_timeout", 600),
-            require_parent_executables=require_parent_executables,
             require_image_file=True,
         )
     except SlurmLauncherError as ex:

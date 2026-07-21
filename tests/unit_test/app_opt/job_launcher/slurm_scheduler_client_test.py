@@ -247,6 +247,14 @@ def test_accounting_probe_is_trivial():
     ]
 
 
+def test_version_probe_uses_runtime_resolved_sbatch():
+    runner = Runner(_result("slurm 23.02.5\n"))
+    adapter = _adapter(runner)
+
+    assert adapter.version_probe(1).available
+    assert runner.calls[0][0] == ["/usr/bin/sbatch", "--version"]
+
+
 def test_subprocess_runner_clamps_timeout_and_uses_scrubbed_environment(monkeypatch):
     captured = {}
 

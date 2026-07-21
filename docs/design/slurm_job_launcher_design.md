@@ -52,6 +52,12 @@ parent in the foreground. An external service manager may perform the same opera
 Prepare can also create an optional `parent.slurm` script for running a client parent in a Slurm allocation. Server
 parents run on a service or login host with a stable public endpoint.
 
+The prepare host does not resolve scheduler commands. It preserves optional configured absolute paths in the kit,
+and generated parent-submission guidance uses `sbatch` from the submission host's `PATH`. After the parent reaches
+its actual runtime host and trusted environment setup has run, bootstrap resolves `sbatch`, `squeue`, `sacct`, and
+`scancel`, verifies Slurm 23.02 or later, and freezes canonical paths in memory for that parent process. A restart
+therefore follows changes to a cluster-managed stable symlink without requiring a new prepare.
+
 Staging binds the workspace to one site. On first staging it creates a deployment UUID that remains stable across
 updates. The UUID namespaces scheduler comments and job artifacts. Separate NVFlare deployments that use the same
 Slurm user and cluster therefore retain distinct live-job ownership markers.
@@ -189,8 +195,8 @@ accepted by the site.
 
 ## Required environment
 
-The deployment requires Slurm 23.02 or later because it uses `sbatch --export=NIL`. It also requires working
-`sbatch`, `squeue`, `sacct`, and `scancel` commands and working `slurmdbd` accounting. Default
+The runtime parent requires Slurm 23.02 or later because the launcher uses `sbatch --export=NIL`. Parent bootstrap
+requires working `sbatch`, `squeue`, `sacct`, and `scancel` commands and working `slurmdbd` accounting. Default
 `AccountingStoreFlags` is sufficient. It targets a single, non-federated cluster, and site plugins must preserve
 local submission routing. Apptainer or Pyxis/Enroot must be installed on eligible nodes when selected; Pyxis also
 requires `srun`. Production sites should use a Slurm release that is still supported by SchedMD.

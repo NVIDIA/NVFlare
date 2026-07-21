@@ -152,6 +152,52 @@ def test_prepare_slurm_generates_identity_free_runtime_artifacts(tmp_path, capsy
     assert "already a prepared Slurm kit" in capsys.readouterr().err
 
 
+def test_prepare_slurm_does_not_require_scheduler_commands_on_prepare_host(tmp_path, capsys, monkeypatch):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-slurm"
+    config = _slurm_config(tmp_path, executables={})
+    monkeypatch.setenv("PATH", "")
+
+    _run_prepare(kit, output, config)
+    capsys.readouterr()
+
+    resources = json.loads((output / "local" / "resources.json.default").read_text())
+    executables = _component(resources, "slurm_launcher")["args"]["executables"]
+    assert executables == {
+        "sbatch": None,
+        "squeue": None,
+        "sacct": None,
+        "scancel": None,
+        "apptainer": None,
+        "srun": None,
+    }
+
+
+def test_prepare_slurm_preserves_explicit_stable_executable_paths(tmp_path, capsys):
+    kit = _make_client_kit(tmp_path)
+    output = tmp_path / "site-1-slurm"
+    target_dir = tmp_path / "slurm-23.02" / "bin"
+    stable_dir = tmp_path / "slurm-current" / "bin"
+    target_dir.mkdir(parents=True)
+    stable_dir.mkdir(parents=True)
+    configured = {}
+    for name in ("sbatch", "squeue", "sacct", "scancel"):
+        target = target_dir / name
+        target.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+        target.chmod(0o700)
+        stable = stable_dir / name
+        stable.symlink_to(target)
+        configured[name] = str(stable)
+    config = _slurm_config(tmp_path, executables=configured)
+
+    _run_prepare(kit, output, config)
+    capsys.readouterr()
+
+    resources = json.loads((output / "local" / "resources.json.default").read_text())
+    persisted = _component(resources, "slurm_launcher")["args"]["executables"]
+    assert {name: persisted[name] for name in configured} == configured
+
+
 def test_stage_slurm_installs_kit_and_start_script_uses_workspace_entrypoint(tmp_path, capsys):
     kit = _make_client_kit(tmp_path)
     marker = tmp_path / "parent-started"
@@ -192,7 +238,7 @@ def test_prepare_slurm_rejects_configurable_connection_security(tmp_path, capsys
     assert "Unknown keys" in capsys.readouterr().err
 
 
-def test_prepare_slurm_client_parent_scripts_use_validated_frozen_values(tmp_path, capsys):
+def test_prepare_slurm_client_parent_scripts_use_validated_values(tmp_path, capsys):
     kit = _make_client_kit(tmp_path)
     output = tmp_path / "site-1-slurm"
     config = _slurm_config(tmp_path)
@@ -216,7 +262,8 @@ def test_prepare_slurm_client_parent_scripts_use_validated_frozen_values(tmp_pat
     submit = output / "startup" / "submit_parent.sh"
     assert not submit.exists()
     assert "submit_command:" in prepare_output
-    assert str((tmp_path / "bin" / "sbatch").resolve()) in prepare_output
+    assert "submit_command: sbatch --parsable" in prepare_output
+    assert str(tmp_path / "bin" / "sbatch") not in prepare_output
     assert f"--output={output}/parent-slurm-%j.out" in prepare_output
     subprocess.run(["bash", "-n", str(output / "startup" / "start_slurm.sh")], check=True)
     subprocess.run(["bash", "-n", str(output / "startup" / "parent.slurm")], check=True)

@@ -25,7 +25,9 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.job_launcher_spec import JobReturnCode
+from nvflare.app_opt.job_launcher.slurm import manager as manager_module
 from nvflare.app_opt.job_launcher.slurm.config import (
+    DEPLOYMENT_FILE,
     SANDBOX_ROOT,
     CommandResult,
     JobResources,
@@ -67,6 +69,7 @@ class Adapter:
         self.live = _query(LookupStatus.NOT_FOUND)
         self.accounting_id = _query(LookupStatus.NOT_FOUND)
         self.cancel_result = _query(LookupStatus.FOUND)
+        self.version_result = _command(stdout="slurm 23.02.0\n")
         self.probes = [_command(stdout="")]
         self.calls = []
 
@@ -98,6 +101,10 @@ class Adapter:
     def accounting_probe(self, timeout):
         self.calls.append(("probe", timeout))
         return self._take(self.probes)
+
+    def version_probe(self, timeout):
+        self.calls.append(("version", timeout))
+        return self.version_result
 
 
 def _record(job_id="42", state="RUNNING", **kwargs):
@@ -154,6 +161,105 @@ def _plan(tmp_path, pending_timeout=5, setup="", sandbox="none"):
         python_env="",
         forward_env=(),
     )
+
+
+def _runtime_workspace(tmp_path):
+    workspace = tmp_path / "workspace"
+    kit = workspace / "kit"
+    (kit / "startup").mkdir(parents=True)
+    (kit / "local").mkdir()
+    (workspace / "startup").symlink_to("kit/startup")
+    (workspace / "local").symlink_to("kit/local")
+    control = workspace / ".nvflare_slurm"
+    control.mkdir()
+    (control / DEPLOYMENT_FILE).write_text(
+        '{"schema_version": 1, "deployment_uuid": "%s", "site": "site-1"}' % uuid.uuid4(),
+        encoding="utf-8",
+    )
+    return workspace
+
+
+def _make_slurm_commands(path):
+    path.mkdir(parents=True)
+    commands = {}
+    for name in ("sbatch", "squeue", "sacct", "scancel"):
+        command = path / name
+        command.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+        command.chmod(0o700)
+        commands[name] = str(command)
+    return commands
+
+
+def _runtime_config(workspace, executables):
+    return SlurmConfig(
+        workspace_path=str(workspace),
+        prepared_path=str(workspace / "prepared"),
+        sandbox="none",
+        python_path="/usr/bin/python3",
+        executables=executables,
+    )
+
+
+def _bootstrap_adapter(monkeypatch):
+    adapter = MagicMock()
+    adapter.version_probe.return_value = _command(stdout="slurm 23.02.5\n")
+    adapter.accounting_probe.return_value = _command(stdout="")
+    factory = MagicMock(return_value=adapter)
+    monkeypatch.setattr(manager_module, "_SlurmCliAdapter", factory)
+    return factory
+
+
+def test_initialize_resolves_runtime_path_once(tmp_path, monkeypatch):
+    workspace = _runtime_workspace(tmp_path)
+    commands = _make_slurm_commands(tmp_path / "runtime-bin")
+    monkeypatch.setenv("PATH", str(tmp_path / "runtime-bin"))
+    factory = _bootstrap_adapter(monkeypatch)
+    configured = {name: None for name in commands}
+    manager = SlurmJobManager(_runtime_config(workspace, configured), logging.getLogger("runtime-resolution"))
+
+    manager.initialize()
+    manager.initialize()
+
+    factory.assert_called_once()
+    assert manager.config.executables == commands
+
+
+@pytest.mark.parametrize("configured", [None, "not_executable"])
+def test_initialize_rejects_missing_or_non_executable_runtime_command(tmp_path, monkeypatch, configured):
+    workspace = _runtime_workspace(tmp_path)
+    monkeypatch.setenv("PATH", "")
+    executables = {name: None for name in ("sbatch", "squeue", "sacct", "scancel")}
+    if configured is not None:
+        command = tmp_path / configured
+        command.write_text("not executable", encoding="utf-8")
+        executables["sbatch"] = str(command)
+    manager = SlurmJobManager(_runtime_config(workspace, executables), logging.getLogger("runtime-resolution"))
+
+    message = "not found on the parent runtime PATH" if configured is None else "not an executable regular file"
+    with pytest.raises(UnsafeComponentError, match=message):
+        manager.initialize()
+
+
+def test_parent_restart_reresolves_cluster_managed_symlink(tmp_path, monkeypatch):
+    workspace = _runtime_workspace(tmp_path)
+    version_one = _make_slurm_commands(tmp_path / "slurm-23.02")
+    version_two = _make_slurm_commands(tmp_path / "slurm-24.11")
+    current = tmp_path / "current"
+    current.symlink_to(tmp_path / "slurm-23.02", target_is_directory=True)
+    configured = {name: str(current / name) for name in version_one}
+    factory = _bootstrap_adapter(monkeypatch)
+    config = _runtime_config(workspace, configured)
+
+    first = SlurmJobManager(config, logging.getLogger("runtime-resolution-v1"))
+    first.initialize()
+    current.unlink()
+    current.symlink_to(tmp_path / "slurm-24.11", target_is_directory=True)
+    second = SlurmJobManager(config, logging.getLogger("runtime-resolution-v2"))
+    second.initialize()
+
+    assert first.config.executables == version_one
+    assert second.config.executables == version_two
+    assert factory.call_count == 2
 
 
 def test_deployment_identity_requires_uuid4():
@@ -553,3 +659,20 @@ def test_accounting_probe_is_required_and_briefly_retried(tmp_path, monkeypatch,
     else:
         with pytest.raises(UnsafeComponentError, match="slurmdbd"):
             manager._require_accounting()
+
+
+@pytest.mark.parametrize("version", ["slurm 23.02.0\n", "slurm 26.05.1\n"])
+def test_supported_slurm_version_passes_bootstrap_check(tmp_path, version):
+    adapter = Adapter()
+    adapter.version_result = _command(stdout=version)
+
+    _manager(tmp_path, adapter)._require_slurm_version()
+
+
+@pytest.mark.parametrize("result", [_command(stdout="slurm 22.05.9\n"), _command(stdout="unexpected\n"), _command(1)])
+def test_unsupported_or_unreadable_slurm_version_fails_bootstrap(tmp_path, result):
+    adapter = Adapter()
+    adapter.version_result = result
+
+    with pytest.raises(UnsafeComponentError, match="23.02 or later"):
+        _manager(tmp_path, adapter)._require_slurm_version()

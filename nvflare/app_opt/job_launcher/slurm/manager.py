@@ -19,6 +19,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import shutil
 import threading
 import time
@@ -47,6 +48,7 @@ from nvflare.app_opt.job_launcher.slurm.config import (
     SlurmProtocolError,
     SlurmRecord,
     _validate_uuid,
+    resolve_slurm_parent_executables,
 )
 from nvflare.app_opt.job_launcher.slurm.scheduler_client import _command_diagnostic, _SlurmCliAdapter
 from nvflare.fuel.common.exit_codes import ProcessExitCode
@@ -54,6 +56,8 @@ from nvflare.fuel.common.exit_codes import ProcessExitCode
 _HEALTHY_MISSES = 5
 _ACCOUNTING_RETRY_INTERVAL = 6.0
 _COMMAND_TIMEOUT = 10.0
+_MIN_SLURM_VERSION = (23, 2)
+_SLURM_VERSION_RE = re.compile(r"^slurm\s+(\d+)\.(\d+)", re.IGNORECASE)
 
 
 def _job_key(job_id: str) -> str:
@@ -187,11 +191,28 @@ class SlurmJobManager:
             for path in (deployment_root, jobs_dir):
                 _ensure_dir(path)
             if self.adapter is None:
-                self.adapter = _SlurmCliAdapter(self.config.executables, os.getuid(), self.logger)
+                try:
+                    executables = resolve_slurm_parent_executables(self.config.executables)
+                except SlurmLauncherError as e:
+                    raise UnsafeComponentError(str(e)) from e
+                adapter = _SlurmCliAdapter(executables, os.getuid(), self.logger)
+                self._require_slurm_version(adapter)
+                self.config = replace(self.config, executables=executables)
+                self.adapter = adapter
             self._require_accounting()
             self.deployment_uuid = deployment_uuid
             self.jobs_dir = jobs_dir
             self._initialized = True
+
+    def _require_slurm_version(self, adapter=None) -> None:
+        message = "Slurm 23.02 or later is required"
+        result = (adapter or self.adapter).version_probe(timeout=2.0)
+        match = _SLURM_VERSION_RE.match(result.stdout.strip()) if result.available else None
+        if match and tuple(map(int, match.groups())) >= _MIN_SLURM_VERSION:
+            return
+        detail = _command_diagnostic(result) if not result.available else f"unexpected version output={result.stdout!r}"
+        self.logger.error("%s: %s", message, detail)
+        raise UnsafeComponentError(message)
 
     def _require_accounting(self) -> None:
         message = "Slurm accounting (slurmdbd) is required"

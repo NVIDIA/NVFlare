@@ -18,6 +18,7 @@ from __future__ import annotations
 import math
 import os
 import re
+import shutil
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
@@ -262,7 +263,7 @@ def normalize_slurm_directives(value: Optional[dict], label: str = "sbatch_direc
     return result
 
 
-def normalize_slurm_executables(value: dict, require_parent: bool = True) -> dict[str, Optional[str]]:
+def normalize_slurm_executables(value: dict) -> dict[str, Optional[str]]:
     if not isinstance(value, dict):
         raise SlurmLauncherError("executables must be a mapping")
     unknown = set(value).difference(SLURM_PARENT_EXECUTABLES, SLURM_COMPUTE_EXECUTABLES)
@@ -271,17 +272,32 @@ def normalize_slurm_executables(value: dict, require_parent: bool = True) -> dic
     result = {}
     for name in SLURM_PARENT_EXECUTABLES:
         path = value.get(name)
-        if path is None and not require_parent:
-            result[name] = None
-            continue
-        path = _validate_absolute_path(path, f"executables.{name}")
-        real_path = os.path.realpath(path)
-        result[name] = real_path
+        result[name] = None if path is None else _validate_absolute_path(path, f"executables.{name}")
     for name in SLURM_COMPUTE_EXECUTABLES:
         path = value.get(name)
         if path is not None:
             path = _require_string(path, f"executables.{name}")
         result[name] = path
+    return result
+
+
+def resolve_slurm_parent_executables(value: dict) -> dict:
+    """Resolve parent-side Slurm commands once on the host running the parent."""
+    result = dict(value)
+    for name in SLURM_PARENT_EXECUTABLES:
+        configured = value.get(name)
+        candidate = configured or shutil.which(name)
+        if not candidate:
+            raise SlurmLauncherError(f"required Slurm executable '{name}' was not found on the parent runtime PATH")
+        if configured is not None:
+            _validate_absolute_path(configured, f"executables.{name}")
+        resolved = os.path.realpath(os.path.abspath(candidate))
+        if not os.path.isfile(resolved) or not os.access(resolved, os.X_OK):
+            raise SlurmLauncherError(
+                f"required Slurm executable '{name}' is not an executable regular file on the parent runtime host: "
+                f"{candidate}"
+            )
+        result[name] = resolved
     return result
 
 
@@ -326,7 +342,6 @@ def normalize_slurm_launcher_settings(
     parent_host: Optional[str],
     poll_interval: float,
     pending_timeout: float,
-    require_parent_executables: bool = True,
     require_image_file: bool = False,
 ) -> dict:
     workspace_path = normalize_slurm_workspace_path(workspace_path)
@@ -347,7 +362,7 @@ def normalize_slurm_launcher_settings(
         "workspace_path": workspace_path,
         "sandbox": sandbox,
         "python_path": python_path,
-        "executables": normalize_slurm_executables(executables, require_parent=require_parent_executables),
+        "executables": normalize_slurm_executables(executables),
         "image": normalize_slurm_image(image, sandbox, require_file=require_image_file),
         "internal_port": internal_port,
         "sbatch_directives": normalize_slurm_directives(sbatch_directives),
