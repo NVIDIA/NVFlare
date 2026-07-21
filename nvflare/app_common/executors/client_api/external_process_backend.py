@@ -128,7 +128,7 @@ class _TaskReadyCancelSignal(Signal):
             return super().triggered
 
 
-class _TrainerLaunch:
+class _TrainerSession:
     """One launched trainer process and its (at most one) authenticated protocol session."""
 
     def __init__(self, token: str, trainer_fqcn: str):
@@ -195,7 +195,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
         self._site_name: Optional[str] = None
         self._app_dir: Optional[str] = None
         self._custom_dir: Optional[str] = None
-        self._active_launch: Optional[_TrainerLaunch] = None
+        self._active_launch: Optional[_TrainerSession] = None
         self._launch_lock = threading.Lock()
         # Completed per-task launches can keep serving lazy results and remain owned through END_RUN.
         self._result_reapers = set()
@@ -368,7 +368,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
 
     # ------------------------------------------------------------------ trainer management
 
-    def _launch_trainer(self, timeout: Optional[float], abort_signal: Optional[Signal] = None) -> _TrainerLaunch:
+    def _launch_trainer(self, timeout: Optional[float], abort_signal: Optional[Signal] = None) -> _TrainerSession:
         """Launch a trainer and establish its authenticated session, unwinding on failure."""
         token = secrets.token_urlsafe(32)
         with self._launch_lock:
@@ -377,7 +377,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             self._launch_seq += 1
             seq = self._launch_seq
             trainer_fqcn = FQCN.join([self._cj_fqcn, f"{_TRAINER_LEAF_PREFIX}_{seq}"])
-            trainer = _TrainerLaunch(token, trainer_fqcn)
+            trainer = _TrainerSession(token, trainer_fqcn)
             self._active_launch = trainer
         try:
             bootstrap_path = os.path.join(self._app_dir, bootstrap_file_name(seq))
@@ -445,7 +445,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             raise
 
     def _wait_for_hello(
-        self, trainer: _TrainerLaunch, timeout: Optional[float], abort_signal: Optional[Signal] = None
+        self, trainer: _TrainerSession, timeout: Optional[float], abort_signal: Optional[Signal] = None
     ) -> None:
         """Wait for an accepted HELLO, bounded by launch, process, abort, and close state."""
         deadline = None if timeout is None else time.monotonic() + timeout
@@ -462,7 +462,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             if deadline is not None and time.monotonic() >= deadline:
                 raise RuntimeError(f"trainer did not complete the HELLO handshake within launch_timeout={timeout}s")
 
-    def _stop_trainer(self, trainer: _TrainerLaunch, natural_exit_wait: float) -> None:
+    def _stop_trainer(self, trainer: _TrainerSession, natural_exit_wait: float) -> None:
         """Stop a trainer gracefully, then terminate its process tree; idempotent and non-raising."""
         with trainer._stop_lock:
             if trainer._cleaned:
@@ -497,7 +497,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                 self.logger.error(secure_format_traceback())
             self._cleanup_trainer(trainer)
 
-    def _request_trainer_shutdown(self, trainer: _TrainerLaunch, wait_timeout: float) -> None:
+    def _request_trainer_shutdown(self, trainer: _TrainerSession, wait_timeout: float) -> None:
         """Send at most one orderly SHUTDOWN without taking ownership of process death."""
         with trainer._shutdown_request_lock:
             if trainer.shutdown_requested.is_set():
@@ -546,7 +546,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             except Exception:
                 self.logger.error(secure_format_traceback())
 
-    def _reap_trainer_after_result(self, trainer: _TrainerLaunch) -> None:
+    def _reap_trainer_after_result(self, trainer: _TrainerSession) -> None:
         """Reap a successful one-task trainer after it finishes serving its result."""
         with trainer._cleanup_lock:
             if trainer._cleaned or (trainer.reaper_thread is not None and trainer.reaper_thread.is_alive()):
@@ -598,7 +598,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             if reaper is not None:
                 reaper.join(timeout=_LOG_THREAD_JOIN_TIMEOUT)
 
-    def _wait_for_natural_exit_and_cleanup(self, trainer: _TrainerLaunch) -> None:
+    def _wait_for_natural_exit_and_cleanup(self, trainer: _TrainerSession) -> None:
         disconnected_since = None
         disconnect_grace = (
             self._context.heartbeat_timeout
@@ -632,7 +632,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             with self._result_reapers_lock:
                 self._result_reapers.discard(trainer)
 
-    def _cleanup_trainer(self, trainer: _TrainerLaunch) -> None:
+    def _cleanup_trainer(self, trainer: _TrainerSession) -> None:
         """Release launch-scoped state after the process group is gone. Idempotent."""
         with trainer._cleanup_lock:
             if trainer._cleaned:
@@ -663,7 +663,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
         self._pass_through_route = None
         self._owns_pass_through_route = False
 
-    def _process_group_alive(self, trainer: _TrainerLaunch) -> bool:
+    def _process_group_alive(self, trainer: _TrainerSession) -> bool:
         """Return group liveness even when a launcher exits before its workers."""
         process = trainer.process
         if os.name != "posix" or trainer.pgid is None:
@@ -680,7 +680,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             self.logger.debug(f"cannot probe trainer process group {trainer.pgid}: {e}")
             return True
 
-    def _trainer_liveness_error(self, trainer: _TrainerLaunch) -> Optional[str]:
+    def _trainer_liveness_error(self, trainer: _TrainerSession) -> Optional[str]:
         """Returns why an established trainer is unavailable, or None while it is live."""
         if not self._process_group_alive(trainer):
             rc = trainer.process.poll() if trainer.process else None
@@ -692,7 +692,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                 return f"trainer heartbeat timed out after {silent_for:.1f}s " f"(timeout={heartbeat_timeout}s)"
         return None
 
-    def _await_group_exit(self, trainer: _TrainerLaunch, timeout: float) -> bool:
+    def _await_group_exit(self, trainer: _TrainerSession, timeout: float) -> bool:
         """Waits (bounded) for the whole process group to exit; reaps the leader."""
         deadline = time.monotonic() + timeout
         process = trainer.process
@@ -708,7 +708,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                 return False
             time.sleep(0.1)
 
-    def _terminate_process_tree(self, trainer: _TrainerLaunch, grace: float) -> None:
+    def _terminate_process_tree(self, trainer: _TrainerSession, grace: float) -> None:
         """Apply SIGTERM, bounded grace, then SIGKILL to the owned process tree."""
         if not self._process_group_alive(trainer):
             return
@@ -721,7 +721,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
         if not self._await_group_exit(trainer, _LOG_THREAD_JOIN_TIMEOUT):
             self.logger.error(f"trainer process group (pgid={trainer.pgid}) did not die after SIGKILL")
 
-    def _signal_process_tree(self, trainer: _TrainerLaunch, hard: bool) -> None:
+    def _signal_process_tree(self, trainer: _TrainerSession, hard: bool) -> None:
         """Soft (SIGTERM/terminate) or hard (SIGKILL/kill) signal to the trainer's tree."""
         if os.name == "posix" and trainer.pgid is not None:
             try:
@@ -792,7 +792,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
     # ------------------------------------------------------------------ task execution
 
     def _run_task(
-        self, trainer: _TrainerLaunch, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal
+        self, trainer: _TrainerSession, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal
     ) -> Shareable:
         context = self._context
         executor = context.executor
@@ -888,7 +888,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                 if self._current_task is task:
                     self._current_task = None
 
-    def _send_task_ready(self, trainer: _TrainerLaunch, task_message: dict, abort_signal: Signal) -> Tuple[str, Any]:
+    def _send_task_ready(self, trainer: _TrainerSession, task_message: dict, abort_signal: Signal) -> Tuple[str, Any]:
         """Send TASK_READY with native cancellation for abort and liveness failures."""
         timeout = self._context.task_wait_timeout
         if timeout is None:
@@ -1068,13 +1068,13 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             },
         )
 
-    def _hello_reject(self, trainer: Optional[_TrainerLaunch], origin: str, reason: str, latch: bool):
+    def _hello_reject(self, trainer: Optional[_TrainerSession], origin: str, reason: str, latch: bool):
         self.logger.warning(f"rejecting HELLO from {origin!r}: {reason}")
         if latch and trainer is not None and not trainer.ready.is_set() and trainer.reject_reason is None:
             trainer.reject_reason = reason
         return self._protocol_reply(Topic.HELLO_REJECTED, **{MsgKey.REASON: reason})
 
-    def _validate_session_msg(self, request, payload) -> Tuple[Optional[_TrainerLaunch], Optional[str]]:
+    def _validate_session_msg(self, request, payload) -> Tuple[Optional[_TrainerSession], Optional[str]]:
         """Binds a post-HELLO message to the current authenticated session."""
         trainer = self._active_launch
         if trainer is None or not trainer.ready.is_set() or trainer.session_id is None:
@@ -1165,7 +1165,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
 
     # ------------------------------------------------------------------ helpers
 
-    def _send_abort(self, trainer: Optional[_TrainerLaunch], reason: str) -> None:
+    def _send_abort(self, trainer: Optional[_TrainerSession], reason: str) -> None:
         if trainer is None or trainer.session_id is None:
             return
         try:

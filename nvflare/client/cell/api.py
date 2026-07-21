@@ -635,9 +635,7 @@ class CellClientAPI(APISpec):
         with self._lock:
             terminal_reason = self._session_end_reason()
             if terminal_reason is None:
-                self._task_queue.put(
-                    {"task": payload, "model": model, "result_receiver_ids": result_receiver_ids}
-                )
+                self._task_queue.put({"task": payload, "model": model, "result_receiver_ids": result_receiver_ids})
         if terminal_reason:
             return self._reply(
                 Topic.TASK_FAILED,

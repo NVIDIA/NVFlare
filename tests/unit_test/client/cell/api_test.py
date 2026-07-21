@@ -953,9 +953,7 @@ class TestControlValidation:
             (Topic.SHUTDOWN, {}),
         ],
     )
-    def test_task_ready_after_session_end_is_rejected(
-        self, bootstrap_path, env, terminal_topic, terminal_fields
-    ):
+    def test_task_ready_after_session_end_is_rejected(self, bootstrap_path, env, terminal_topic, terminal_fields):
         api = _init_api(bootstrap_path, env)
         try:
             terminal_payload = {MsgKey.SESSION_ID: SESSION_ID, **terminal_fields}

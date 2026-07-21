@@ -21,7 +21,7 @@ import pytest
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.executors.in_process_client_api_executor import InProcessClientAPIExecutor
-from nvflare.client.config import ExchangeFormat, TransferType
+from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType
 
 
 class TestInProcessClientAPIExecutorMemory:
@@ -118,3 +118,14 @@ def test_execute_delegates_conversion_to_client_api():
     assert args[1] is fl_ctx
     executor._from_nvflare_converter.process.assert_not_called()
     executor._to_nvflare_converter.process.assert_not_called()
+
+
+def test_prepare_task_meta_preserves_server_expected_format():
+    executor = InProcessClientAPIExecutor(task_script_path="train.py", server_expected_format=ExchangeFormat.PYTORCH)
+    fl_ctx = Mock()
+    fl_ctx.get_job_id.return_value = "job-1"
+    fl_ctx.get_identity_name.return_value = "site-1"
+
+    meta = executor._prepare_task_meta(fl_ctx, "train")
+
+    assert meta[ConfigKey.TASK_EXCHANGE][ConfigKey.SERVER_EXPECTED_FORMAT] == ExchangeFormat.PYTORCH
