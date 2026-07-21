@@ -114,7 +114,13 @@ def test_renderer_delivers_credentials_through_environment(tmp_path, sandbox):
 def test_rendered_batch_propagates_final_exec_status_and_removes_secret(tmp_path, worker_exists):
     worker = tmp_path / "worker"
     if worker_exists:
-        worker.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+        worker.write_text(
+            "#!/usr/bin/env bash\n"
+            "[[ $NVFLARE_JOB_AUTH_TOKEN == secret-token ]]\n"
+            "[[ $NVFLARE_JOB_TOKEN_SIGNATURE == secret-signature ]]\n"
+            "[[ $NVFLARE_JOB_SSID == secret-ssid ]]\n",
+            encoding="utf-8",
+        )
         worker.chmod(0o700)
     plan = replace(_plan(tmp_path), python_path=str(worker))
     job_dir = Path(_job_dir(tmp_path))

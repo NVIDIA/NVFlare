@@ -64,8 +64,10 @@ eligible nodes. Validate its filesystem, process, cgroup, and GPU isolation on
 the production cluster. For Pyxis, install and configure Pyxis/Enroot on all
 eligible nodes and ensure ``srun`` is available after ``setup``.
 
-Container images must contain a compatible NVFlare installation and job
-dependencies at the configured ``python_path``.
+The environment selected by ``python_path`` must contain a compatible NVFlare
+installation and the job dependencies. This applies to the host environment in
+bare mode and to the image for Apptainer and Pyxis. A ``PYTHONPATH`` override
+used only to start the parent does not install NVFlare in the worker environment.
 
 The prepare, submission, and runtime parent hosts may differ. The prepare host
 does not need Slurm commands. The submission host that runs the generated
@@ -116,7 +118,7 @@ Important keys are:
        bare mode.
    * - ``python_path``
      - Required absolute worker interpreter path in the selected execution
-       environment.
+       environment, with a compatible NVFlare installation.
    * - ``parent_host``
      - Compute-reachable parent host. Required when the parent is not in a Slurm
        allocation.

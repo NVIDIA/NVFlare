@@ -201,5 +201,9 @@ requires working `sbatch`, `squeue`, `sacct`, and `scancel` commands and working
 local submission routing. Apptainer or Pyxis/Enroot must be installed on eligible nodes when selected; Pyxis also
 requires `srun`. Production sites should use a Slurm release that is still supported by SchedMD.
 
+The environment selected by `python_path` must contain a compatible NVFlare installation. The launcher sets the
+worker `PYTHONPATH` to the resolved job and site custom directories, so a source overlay used only by the parent is
+not a worker installation.
+
 The parent address comes from explicit `parent_host`, which always wins, or `SLURMD_NODENAME` when the parent itself
 runs inside a Slurm allocation. A parent outside an allocation therefore requires `parent_host`.
