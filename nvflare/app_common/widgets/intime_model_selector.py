@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import re
+
 import numpy as np
 
 from nvflare.apis.dxo import DataKind, MetaKey, from_shareable
@@ -23,6 +25,19 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.widget import Widget
+
+# Best-effort heuristic for lower-is-better metric names; not exhaustive.
+# Substring hints catch compound names like "val_loss" or "error_rate"; token hints
+# catch short names such as "mse" that are unsafe to match as substrings ("dice" contains "ce").
+_LOWER_IS_BETTER_SUBSTRING_HINTS = ("loss", "err")
+_LOWER_IS_BETTER_TOKEN_HINTS = {"bce", "ce", "cer", "mae", "mse", "nll", "perplexity", "ppl", "rmse", "wer"}
+
+
+def _looks_lower_is_better(metric_name: str) -> bool:
+    name = metric_name.lower()
+    if any(hint in name for hint in _LOWER_IS_BETTER_SUBSTRING_HINTS):
+        return True
+    return any(token in _LOWER_IS_BETTER_TOKEN_HINTS for token in re.split(r"[^a-z0-9]+", name))
 
 
 class IntimeModelSelector(Widget):
@@ -57,7 +72,7 @@ class IntimeModelSelector(Widget):
         self.key_metric = key_metric
         self.negate_key_metric = negate_key_metric
 
-        if not self.negate_key_metric and any(hint in self.key_metric.lower() for hint in ("loss", "err")):
+        if not self.negate_key_metric and _looks_lower_is_better(self.key_metric):
             self.logger.warning(
                 f"key_metric '{self.key_metric}' looks like a lower-is-better metric, but model selection "
                 f"treats higher values as better. If lower values indicate a better model, set "

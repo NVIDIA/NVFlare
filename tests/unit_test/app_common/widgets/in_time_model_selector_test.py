@@ -96,8 +96,13 @@ class TestInTimeModelSelector:
         [
             ("val_loss", False, True),
             ("error_rate", False, True),
+            ("val_mse", False, True),
+            ("rmse", False, True),
+            ("val_ce", False, True),
+            ("perplexity", False, True),
             ("val_loss", True, False),
             ("val_accuracy", False, False),
+            ("dice", False, False),
         ],
     )
     def test_loss_like_key_metric_warning(self, caplog, key_metric, negate_key_metric, expect_warning):
