@@ -279,8 +279,7 @@ Multi-node jobs require effective ``sandbox: none`` and must not specify an
 image. A positive multi-node ``num_of_gpus`` requires ``gpus_per_node``;
 whenever both are supplied, ``num_of_gpus`` must equal
 ``nodes * gpus_per_node``.
-The :github_nvflare_link:`multi-node PyTorch example
-<examples/advanced/slurm/>` shows application-owned fan-out.
+The application owns any multi-node process fan-out.
 
 Security and Operations
 =======================
