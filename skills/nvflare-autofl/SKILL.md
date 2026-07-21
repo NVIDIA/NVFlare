@@ -2,7 +2,7 @@
 name: nvflare-autofl
 description: "Optimize an existing NVFLARE job.py through an agent-assisted Auto-FL campaign that preserves FLARE execution, policy, artifacts, and reproducibility."
 license: Apache-2.0
-version: "0.1.0"
+version: "0.1.0" # NVSkills CI bootstrap: no behavior change.
 compatibility: "Requires NVFLARE 2.8.0+, Python, and permission to run NVFLARE jobs in the selected environment."
 metadata:
   author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
