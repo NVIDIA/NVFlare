@@ -128,7 +128,7 @@ class _TaskReadyCancelSignal(Signal):
             return super().triggered
 
 
-class _TrainerSession:
+class _TrainerLaunch:
     """One launched trainer process and its (at most one) authenticated protocol session."""
 
     def __init__(self, token: str, trainer_fqcn: str):
@@ -195,9 +195,9 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
         self._site_name: Optional[str] = None
         self._app_dir: Optional[str] = None
         self._custom_dir: Optional[str] = None
-        self._session: Optional[_TrainerSession] = None
-        self._session_lock = threading.Lock()
-        # Per-task result sources can outlive self._session and must remain owned through END_RUN.
+        self._active_launch: Optional[_TrainerLaunch] = None
+        self._launch_lock = threading.Lock()
+        # Completed per-task launches can keep serving lazy results and remain owned through END_RUN.
         self._result_reapers = set()
         self._result_reapers_lock = threading.Lock()
         self._launch_seq = 0
@@ -256,7 +256,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             context.executor.set_analytics_fire_fed_event(True)
 
             if context.launch_once:
-                self._start_session(timeout=context.launch_timeout)
+                self._launch_trainer(timeout=context.launch_timeout)
         except BaseException:
             self._unwind()
             raise
@@ -270,28 +270,28 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             executor.log_error(fl_ctx, f"backend is closed; failing task '{task_name}'")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-        # DO_TASK and CCWF can invoke the same executor concurrently; one session admits one task.
+        # DO_TASK and CCWF can invoke the same executor concurrently; this backend admits one task at a time.
         if not self._execute_gate.acquire(blocking=False):
             if abort_signal.triggered:
                 return make_reply(ReturnCode.TASK_ABORTED)
             executor.log_error(
                 fl_ctx,
                 f"a task is already executing on this external_process backend; rejecting concurrent "
-                f"task '{task_name}' (one active task per session)",
+                f"task '{task_name}' (one active task per trainer)",
             )
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
         if abort_signal.triggered:
             if context.launch_once:
-                aborted_session = self._session
-                self._send_abort(aborted_session, f"'{task_name}' is aborted, abort_signal_triggered")
-                if aborted_session is not None:
+                aborted_trainer = self._active_launch
+                self._send_abort(aborted_trainer, f"'{task_name}' is aborted, abort_signal_triggered")
+                if aborted_trainer is not None:
                     self._latch_abort(f"'{task_name}' aborted at entry, abort_signal_triggered")
             self._execute_gate.release()
             return make_reply(ReturnCode.TASK_ABORTED)
 
         launch_once = context.launch_once
-        session = self._session
+        trainer = self._active_launch
         try:
             if launch_once:
                 if self._abort:
@@ -301,17 +301,17 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                         f"failing task '{task_name}'",
                     )
                     return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-                if session is None or not session.ready.is_set():
+                if trainer is None or not trainer.ready.is_set():
                     executor.log_error(fl_ctx, f"no established trainer session; failing task '{task_name}'")
                     return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-                liveness_error = self._session_liveness_error(session)
+                liveness_error = self._trainer_liveness_error(trainer)
                 if liveness_error:
                     self._latch_abort(liveness_error)
                     executor.log_error(fl_ctx, f"{liveness_error}; failing task '{task_name}'")
                     return make_reply(ReturnCode.EXECUTION_EXCEPTION)
             else:
                 try:
-                    session = self._start_session(timeout=context.launch_timeout, abort_signal=abort_signal)
+                    trainer = self._launch_trainer(timeout=context.launch_timeout, abort_signal=abort_signal)
                 except _LaunchAborted:
                     executor.log_info(fl_ctx, f"'{task_name}' aborted while launching the trainer")
                     return make_reply(ReturnCode.TASK_ABORTED)
@@ -319,7 +319,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                     executor.log_error(fl_ctx, f"per-task trainer launch failed: {secure_format_traceback()}")
                     return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-            return self._run_task(session, task_name, shareable, fl_ctx, abort_signal)
+            return self._run_task(trainer, task_name, shareable, fl_ctx, abort_signal)
         except UnsafeJobError:
             raise
         except Exception:
@@ -328,12 +328,12 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
         finally:
             try:
                 if not launch_once:
-                    stale = session
-                    if stale is not None:
-                        if stale.result_source_live.is_set():
-                            self._reap_session_after_result(stale)
+                    completed_trainer = trainer
+                    if completed_trainer is not None:
+                        if completed_trainer.result_source_live.is_set():
+                            self._reap_trainer_after_result(completed_trainer)
                         else:
-                            self._stop_session(stale, natural_exit_wait=self._shutdown_wait_bound())
+                            self._stop_trainer(completed_trainer, natural_exit_wait=self._shutdown_wait_bound())
             except Exception:
                 self.logger.error(secure_format_traceback())
             finally:
@@ -346,18 +346,18 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
         # Serialize close with RESULT_READY's acceptance commit.
         with self._task_lock:
             self._closed = True
-        # The same gate orders END_RUN against the session-install-to-Popen window.
+        # The same gate orders END_RUN against the launch-install-to-Popen window.
         admitted = self._execute_gate.acquire(timeout=self._shutdown_wait_bound())
         try:
-            with self._session_lock:
-                session = self._session
-            if session is not None:
-                if session.result_source_live.is_set():
+            with self._launch_lock:
+                trainer = self._active_launch
+            if trainer is not None:
+                if trainer.result_source_live.is_set():
                     # END_RUN must preserve CJ/F3 until the trainer's send barrier settles.
-                    self._request_session_shutdown(session, wait_timeout=_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT)
-                    self._reap_session_after_result(session)
+                    self._request_trainer_shutdown(trainer, wait_timeout=_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT)
+                    self._reap_trainer_after_result(trainer)
                 else:
-                    self._stop_session(session, natural_exit_wait=self._shutdown_wait_bound())
+                    self._stop_trainer(trainer, natural_exit_wait=self._shutdown_wait_bound())
             self._wait_for_result_reapers()
         except Exception:
             self.logger.error(secure_format_traceback())
@@ -366,22 +366,22 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             if admitted:
                 self._execute_gate.release()
 
-    # ------------------------------------------------------------------ session management
+    # ------------------------------------------------------------------ trainer management
 
-    def _start_session(self, timeout: Optional[float], abort_signal: Optional[Signal] = None) -> _TrainerSession:
+    def _launch_trainer(self, timeout: Optional[float], abort_signal: Optional[Signal] = None) -> _TrainerLaunch:
         """Launch a trainer and establish its authenticated session, unwinding on failure."""
         token = secrets.token_urlsafe(32)
-        with self._session_lock:
+        with self._launch_lock:
             if self._closed:
                 raise RuntimeError("backend is closed; not launching a trainer")
             self._launch_seq += 1
             seq = self._launch_seq
             trainer_fqcn = FQCN.join([self._cj_fqcn, f"{_TRAINER_LEAF_PREFIX}_{seq}"])
-            session = _TrainerSession(token, trainer_fqcn)
-            self._session = session
+            trainer = _TrainerLaunch(token, trainer_fqcn)
+            self._active_launch = trainer
         try:
             bootstrap_path = os.path.join(self._app_dir, bootstrap_file_name(seq))
-            session.bootstrap_path = bootstrap_path
+            trainer.bootstrap_path = bootstrap_path
             write_bootstrap_config(
                 bootstrap_path,
                 {
@@ -404,78 +404,78 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             env.pop(CLIENT_API_TYPE_KEY, None)
             add_custom_dir_to_path(self._custom_dir, env)
 
-            # finalize() may close the backend after session installation but before Popen.
+            # finalize() may close the backend after trainer installation but before Popen.
             if self._closed:
                 raise RuntimeError("backend closed before trainer launch")
 
             # Never log the configured command: legacy/hand-written jobs may contain literal
             # credentials rather than site-resolved secret references.
             self.logger.info(f"launching external trainer (launch {seq})")
-            session.process = subprocess.Popen(
+            trainer.process = subprocess.Popen(
                 self._split_command(self._context.command),
                 shell=False,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 cwd=self._app_dir,
                 env=env,
-                # own process group/session so orderly stop can signal the whole tree
+                # own process group so orderly stop can signal the whole tree
                 start_new_session=(os.name == "posix"),
             )
             if os.name == "posix":
                 # start_new_session made the child its own group leader (pgid == pid)
-                session.pgid = session.process.pid
-            session.log_thread = threading.Thread(
+                trainer.pgid = trainer.process.pid
+            trainer.log_thread = threading.Thread(
                 target=log_subprocess_output,
-                args=(session.process, self.logger),
+                args=(trainer.process, self.logger),
                 name=f"client_api_trainer_log_{seq}",
                 daemon=True,
             )
-            session.log_thread.start()
+            trainer.log_thread.start()
 
             if self._closed:
                 raise RuntimeError("backend closed during trainer launch")
 
-            self._wait_for_hello(session, timeout, abort_signal)
+            self._wait_for_hello(trainer, timeout, abort_signal)
             self.logger.info(
-                f"trainer session established: launch={seq} fqcn={trainer_fqcn} session_id={session.session_id}"
+                f"trainer session established: launch={seq} fqcn={trainer_fqcn} session_id={trainer.session_id}"
             )
-            return session
+            return trainer
         except Exception:
-            self._stop_session(session, natural_exit_wait=0.0)
+            self._stop_trainer(trainer, natural_exit_wait=0.0)
             raise
 
     def _wait_for_hello(
-        self, session: _TrainerSession, timeout: Optional[float], abort_signal: Optional[Signal] = None
+        self, trainer: _TrainerLaunch, timeout: Optional[float], abort_signal: Optional[Signal] = None
     ) -> None:
         """Wait for an accepted HELLO, bounded by launch, process, abort, and close state."""
         deadline = None if timeout is None else time.monotonic() + timeout
-        while not session.ready.wait(_HELLO_POLL_INTERVAL):
+        while not trainer.ready.wait(_HELLO_POLL_INTERVAL):
             if abort_signal is not None and abort_signal.triggered:
                 raise _LaunchAborted("task aborted while waiting for the trainer HELLO")
             if self._closed:
                 raise RuntimeError("backend closed while waiting for the trainer HELLO")
-            if session.reject_reason:
-                raise RuntimeError(f"trainer HELLO was rejected: {session.reject_reason}")
-            if not self._process_group_alive(session):
-                rc = session.process.poll() if session.process else None
+            if trainer.reject_reason:
+                raise RuntimeError(f"trainer HELLO was rejected: {trainer.reject_reason}")
+            if not self._process_group_alive(trainer):
+                rc = trainer.process.poll() if trainer.process else None
                 raise RuntimeError(f"trainer process group exited (rc={rc}) before completing the HELLO handshake")
             if deadline is not None and time.monotonic() >= deadline:
                 raise RuntimeError(f"trainer did not complete the HELLO handshake within launch_timeout={timeout}s")
 
-    def _stop_session(self, session: _TrainerSession, natural_exit_wait: float) -> None:
-        """Stop a session orderly, then terminate its process tree; idempotent and non-raising."""
-        with session._stop_lock:
-            if session._cleaned:
+    def _stop_trainer(self, trainer: _TrainerLaunch, natural_exit_wait: float) -> None:
+        """Stop a trainer gracefully, then terminate its process tree; idempotent and non-raising."""
+        with trainer._stop_lock:
+            if trainer._cleaned:
                 return
             natural_exit_wait = max(0.0, natural_exit_wait)
             natural_exit_deadline = time.monotonic() + natural_exit_wait
             try:
                 remaining = max(0.0, natural_exit_deadline - time.monotonic())
-                self._request_session_shutdown(session, wait_timeout=remaining)
+                self._request_trainer_shutdown(trainer, wait_timeout=remaining)
             except Exception:
                 self.logger.error(secure_format_traceback())
             try:
-                process = session.process
+                process = trainer.process
                 remaining = max(0.0, natural_exit_deadline - time.monotonic())
                 if process is not None and remaining > 0:
                     leader_exited = process.poll() is not None
@@ -486,35 +486,35 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                         except subprocess.TimeoutExpired:
                             pass
                     remaining = max(0.0, natural_exit_deadline - time.monotonic())
-                    if leader_exited and os.name == "posix" and session.pgid is not None and remaining > 0:
+                    if leader_exited and os.name == "posix" and trainer.pgid is not None and remaining > 0:
                         # Launcher exit does not imply its worker group has exited.
-                        self._await_group_exit(session, remaining)
+                        self._await_group_exit(trainer, remaining)
             except Exception:
                 self.logger.error(secure_format_traceback())
             try:
-                self._terminate_process_tree(session, grace=self._context.stop_grace_period)
+                self._terminate_process_tree(trainer, grace=self._context.stop_grace_period)
             except Exception:
                 self.logger.error(secure_format_traceback())
-            self._cleanup_session(session)
+            self._cleanup_trainer(trainer)
 
-    def _request_session_shutdown(self, session: _TrainerSession, wait_timeout: float) -> None:
+    def _request_trainer_shutdown(self, trainer: _TrainerLaunch, wait_timeout: float) -> None:
         """Send at most one orderly SHUTDOWN without taking ownership of process death."""
-        with session._shutdown_request_lock:
-            if session.shutdown_requested.is_set():
+        with trainer._shutdown_request_lock:
+            if trainer.shutdown_requested.is_set():
                 return
             now = time.monotonic()
-            if now < session._next_shutdown_retry:
+            if now < trainer._next_shutdown_retry:
                 return
-            session._next_shutdown_retry = now + _SHUTDOWN_RETRY_INTERVAL
-            if session.session_id is None or not self._process_group_alive(session):
+            trainer._next_shutdown_retry = now + _SHUTDOWN_RETRY_INTERVAL
+            if trainer.session_id is None or not self._process_group_alive(trainer):
                 return
-            request = new_cell_message({}, {MsgKey.SESSION_ID: session.session_id, MsgKey.REASON: "shutdown requested"})
+            request = new_cell_message({}, {MsgKey.SESSION_ID: trainer.session_id, MsgKey.REASON: "shutdown requested"})
             try:
                 if wait_timeout > 0:
                     reply = self._cell.send_request(
                         channel=CHANNEL,
                         topic=Topic.SHUTDOWN,
-                        target=session.trainer_fqcn,
+                        target=trainer.trainer_fqcn,
                         request=request,
                         timeout=wait_timeout,
                         optional=True,
@@ -527,44 +527,44 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                     if isinstance(body, dict):
                         source_live = body.get(MsgKey.RESULT_SOURCE_LIVE)
                         if source_live is True:
-                            session.result_source_live.set()
+                            trainer.result_source_live.set()
                         elif source_live is False:
-                            session.result_source_live.clear()
+                            trainer.result_source_live.clear()
                 else:
                     send_errors = self._cell.fire_and_forget(
                         channel=CHANNEL,
                         topic=Topic.SHUTDOWN,
-                        targets=[session.trainer_fqcn],
+                        targets=[trainer.trainer_fqcn],
                         message=request,
                         optional=True,
                     )
-                    send_error = send_errors.get(session.trainer_fqcn) if isinstance(send_errors, dict) else None
+                    send_error = send_errors.get(trainer.trainer_fqcn) if isinstance(send_errors, dict) else None
                     if send_error:
                         self.logger.warning(f"trainer SHUTDOWN was not delivered: {send_error}")
                         return
-                session.shutdown_requested.set()
+                trainer.shutdown_requested.set()
             except Exception:
                 self.logger.error(secure_format_traceback())
 
-    def _reap_session_after_result(self, session: _TrainerSession) -> None:
+    def _reap_trainer_after_result(self, trainer: _TrainerLaunch) -> None:
         """Reap a successful one-task trainer after it finishes serving its result."""
-        with session._cleanup_lock:
-            if session._cleaned or (session.reaper_thread is not None and session.reaper_thread.is_alive()):
+        with trainer._cleanup_lock:
+            if trainer._cleaned or (trainer.reaper_thread is not None and trainer.reaper_thread.is_alive()):
                 return
-            session.reaper_thread = threading.Thread(
+            trainer.reaper_thread = threading.Thread(
                 target=self._wait_for_natural_exit_and_cleanup,
-                args=(session,),
-                name=f"client_api_trainer_reaper_{session.trainer_fqcn.rsplit('.', 1)[-1]}",
+                args=(trainer,),
+                name=f"client_api_trainer_reaper_{trainer.trainer_fqcn.rsplit('.', 1)[-1]}",
                 daemon=True,
             )
             with self._result_reapers_lock:
-                self._result_reapers.add(session)
+                self._result_reapers.add(trainer)
                 try:
                     # Registration and start are atomic to finalize(), which joins registered threads.
-                    session.reaper_thread.start()
+                    trainer.reaper_thread.start()
                 except BaseException:
-                    self._result_reapers.discard(session)
-                    session.reaper_thread = None
+                    self._result_reapers.discard(trainer)
+                    trainer.reaper_thread = None
                     raise
 
     def _wait_for_result_reapers(self) -> None:
@@ -573,14 +573,14 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
         deadline = time.monotonic() + wait_bound
         while True:
             with self._result_reapers_lock:
-                sessions = tuple(self._result_reapers)
-            if not sessions:
+                trainers = tuple(self._result_reapers)
+            if not trainers:
                 return
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 break
-            for session in sessions:
-                reaper = session.reaper_thread
+            for trainer in trainers:
+                reaper = trainer.reaper_thread
                 if reaper is not None:
                     reaper.join(timeout=max(0.0, deadline - time.monotonic()))
 
@@ -591,14 +591,14 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                 f"timed out waiting {wait_bound}s for {len(wedged)} accepted result source(s); "
                 "forcing trainer cleanup"
             )
-        for session in wedged:
-            self._stop_session(session, natural_exit_wait=0.0)
-        for session in wedged:
-            reaper = session.reaper_thread
+        for trainer in wedged:
+            self._stop_trainer(trainer, natural_exit_wait=0.0)
+        for trainer in wedged:
+            reaper = trainer.reaper_thread
             if reaper is not None:
                 reaper.join(timeout=_LOG_THREAD_JOIN_TIMEOUT)
 
-    def _wait_for_natural_exit_and_cleanup(self, session: _TrainerSession) -> None:
+    def _wait_for_natural_exit_and_cleanup(self, trainer: _TrainerLaunch) -> None:
         disconnected_since = None
         disconnect_grace = (
             self._context.heartbeat_timeout
@@ -606,54 +606,54 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             else self._result_source_disconnect_grace()
         )
         try:
-            while self._process_group_alive(session):
+            while self._process_group_alive(trainer):
                 now = time.monotonic()
-                if self._cell.is_cell_connected(session.trainer_fqcn):
+                if self._cell.is_cell_connected(trainer.trainer_fqcn):
                     disconnected_since = None
                 elif disconnected_since is None:
                     disconnected_since = now
                 elif now - disconnected_since >= disconnect_grace:
-                    # Allow one session lease for a transient reconnect.
-                    self._stop_session(session, natural_exit_wait=0.0)
+                    # Allow one reconnect lease for a transient reconnect.
+                    self._stop_trainer(trainer, natural_exit_wait=0.0)
                     return
                 if self._closed:
-                    if not session.result_source_live.is_set():
-                        self._stop_session(session, natural_exit_wait=self._result_source_disconnect_grace())
+                    if not trainer.result_source_live.is_set():
+                        self._stop_trainer(trainer, natural_exit_wait=self._result_source_disconnect_grace())
                         return
                     # SHUTDOWN cannot preempt an accepted result source still inside send().
-                    self._request_session_shutdown(session, wait_timeout=_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT)
+                    self._request_trainer_shutdown(trainer, wait_timeout=_LIVE_RESULT_SHUTDOWN_ACK_TIMEOUT)
                 time.sleep(_NATURAL_EXIT_REAP_INTERVAL)
-            self._cleanup_session(session)
+            self._cleanup_trainer(trainer)
         except BaseException:
             self.logger.error(secure_format_traceback())
         finally:
-            if not session._cleaned:
-                self._stop_session(session, natural_exit_wait=0.0)
+            if not trainer._cleaned:
+                self._stop_trainer(trainer, natural_exit_wait=0.0)
             with self._result_reapers_lock:
-                self._result_reapers.discard(session)
+                self._result_reapers.discard(trainer)
 
-    def _cleanup_session(self, session: _TrainerSession) -> None:
+    def _cleanup_trainer(self, trainer: _TrainerLaunch) -> None:
         """Release launch-scoped state after the process group is gone. Idempotent."""
-        with session._cleanup_lock:
-            if session._cleaned:
+        with trainer._cleanup_lock:
+            if trainer._cleaned:
                 return
-            session._cleaned = True
+            trainer._cleaned = True
         try:
-            log_thread = session.log_thread
+            log_thread = trainer.log_thread
             if log_thread is not None and log_thread.is_alive():
                 log_thread.join(timeout=_LOG_THREAD_JOIN_TIMEOUT)
         except Exception:
             self.logger.error(secure_format_traceback())
-        session.token = ""
-        session.session_id = None
+        trainer.token = ""
+        trainer.session_id = None
         try:
-            if session.bootstrap_path and os.path.exists(session.bootstrap_path):
-                os.remove(session.bootstrap_path)
+            if trainer.bootstrap_path and os.path.exists(trainer.bootstrap_path):
+                os.remove(trainer.bootstrap_path)
         except Exception as e:
-            self.logger.debug(f"failed to remove {session.bootstrap_path}: {e}")
-        with self._session_lock:
-            if self._session is session:
-                self._session = None
+            self.logger.debug(f"failed to remove {trainer.bootstrap_path}: {e}")
+        with self._launch_lock:
+            if self._active_launch is trainer:
+                self._active_launch = None
 
     def _disable_task_pass_through(self) -> None:
         cell = self._cell
@@ -663,75 +663,75 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
         self._pass_through_route = None
         self._owns_pass_through_route = False
 
-    def _process_group_alive(self, session: _TrainerSession) -> bool:
+    def _process_group_alive(self, trainer: _TrainerLaunch) -> bool:
         """Return group liveness even when a launcher exits before its workers."""
-        process = session.process
-        if os.name != "posix" or session.pgid is None:
+        process = trainer.process
+        if os.name != "posix" or trainer.pgid is None:
             return process is not None and process.poll() is None
         if process is not None:
             process.poll()
         try:
-            os.killpg(session.pgid, 0)
+            os.killpg(trainer.pgid, 0)
             return True
         except ProcessLookupError:
             return False
         except Exception as e:
             # Probe failure must not let teardown abandon an owned group.
-            self.logger.debug(f"cannot probe trainer process group {session.pgid}: {e}")
+            self.logger.debug(f"cannot probe trainer process group {trainer.pgid}: {e}")
             return True
 
-    def _session_liveness_error(self, session: _TrainerSession) -> Optional[str]:
-        """Returns why an established session is unavailable, or None while it is live."""
-        if not self._process_group_alive(session):
-            rc = session.process.poll() if session.process else None
+    def _trainer_liveness_error(self, trainer: _TrainerLaunch) -> Optional[str]:
+        """Returns why an established trainer is unavailable, or None while it is live."""
+        if not self._process_group_alive(trainer):
+            rc = trainer.process.poll() if trainer.process else None
             return f"trainer process group exited (rc={rc})"
         heartbeat_timeout = self._context.heartbeat_timeout
-        if heartbeat_timeout > 0 and session.ready.is_set():
-            silent_for = session.peer_silent_for()
+        if heartbeat_timeout > 0 and trainer.ready.is_set():
+            silent_for = trainer.peer_silent_for()
             if silent_for is not None and silent_for > heartbeat_timeout:
                 return f"trainer heartbeat timed out after {silent_for:.1f}s " f"(timeout={heartbeat_timeout}s)"
         return None
 
-    def _await_group_exit(self, session: _TrainerSession, timeout: float) -> bool:
+    def _await_group_exit(self, trainer: _TrainerLaunch, timeout: float) -> bool:
         """Waits (bounded) for the whole process group to exit; reaps the leader."""
         deadline = time.monotonic() + timeout
-        process = session.process
+        process = trainer.process
         while True:
             if process is not None and process.poll() is None:
                 try:
                     process.wait(timeout=0.1)
                 except subprocess.TimeoutExpired:
                     pass
-            if not self._process_group_alive(session):
+            if not self._process_group_alive(trainer):
                 return True
             if time.monotonic() >= deadline:
                 return False
             time.sleep(0.1)
 
-    def _terminate_process_tree(self, session: _TrainerSession, grace: float) -> None:
+    def _terminate_process_tree(self, trainer: _TrainerLaunch, grace: float) -> None:
         """Apply SIGTERM, bounded grace, then SIGKILL to the owned process tree."""
-        if not self._process_group_alive(session):
+        if not self._process_group_alive(trainer):
             return
-        self.logger.info(f"terminating trainer process tree (pgid={session.pgid}, grace={grace}s)")
-        self._signal_process_tree(session, hard=False)
-        if self._await_group_exit(session, grace):
+        self.logger.info(f"terminating trainer process tree (pgid={trainer.pgid}, grace={grace}s)")
+        self._signal_process_tree(trainer, hard=False)
+        if self._await_group_exit(trainer, grace):
             return
-        self.logger.warning(f"trainer process tree (pgid={session.pgid}) survived SIGTERM grace; killing")
-        self._signal_process_tree(session, hard=True)
-        if not self._await_group_exit(session, _LOG_THREAD_JOIN_TIMEOUT):
-            self.logger.error(f"trainer process group (pgid={session.pgid}) did not die after SIGKILL")
+        self.logger.warning(f"trainer process tree (pgid={trainer.pgid}) survived SIGTERM grace; killing")
+        self._signal_process_tree(trainer, hard=True)
+        if not self._await_group_exit(trainer, _LOG_THREAD_JOIN_TIMEOUT):
+            self.logger.error(f"trainer process group (pgid={trainer.pgid}) did not die after SIGKILL")
 
-    def _signal_process_tree(self, session: _TrainerSession, hard: bool) -> None:
+    def _signal_process_tree(self, trainer: _TrainerLaunch, hard: bool) -> None:
         """Soft (SIGTERM/terminate) or hard (SIGKILL/kill) signal to the trainer's tree."""
-        if os.name == "posix" and session.pgid is not None:
+        if os.name == "posix" and trainer.pgid is not None:
             try:
-                os.killpg(session.pgid, signal.SIGKILL if hard else signal.SIGTERM)
+                os.killpg(trainer.pgid, signal.SIGKILL if hard else signal.SIGTERM)
                 return
             except ProcessLookupError:
                 return
             except Exception as e:
                 self.logger.debug(f"failed to signal trainer process group: {e}")
-        process = session.process
+        process = trainer.process
         if process is None or process.poll() is not None:
             return
         if os.name == "nt":
@@ -781,9 +781,9 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
         """Releases partial setup after a failed initialize(). Best-effort per step."""
         self._closed = True
         try:
-            session = self._session
-            if session is not None:
-                self._stop_session(session, natural_exit_wait=0.0)
+            trainer = self._active_launch
+            if trainer is not None:
+                self._stop_trainer(trainer, natural_exit_wait=0.0)
         except Exception:
             self.logger.error(secure_format_traceback())
         finally:
@@ -792,7 +792,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
     # ------------------------------------------------------------------ task execution
 
     def _run_task(
-        self, session: _TrainerSession, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal
+        self, trainer: _TrainerLaunch, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal
     ) -> Shareable:
         context = self._context
         executor = context.executor
@@ -807,15 +807,15 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             self._current_task = task
         try:
             task_message = {
-                MsgKey.SESSION_ID: session.session_id,
+                MsgKey.SESSION_ID: trainer.session_id,
                 MsgKey.TASK_ID: task.task_id,
                 MsgKey.TASK_NAME: task_name,
                 MsgKey.MODEL: shareable,
             }
-            executor.log_info(fl_ctx, f"sending TASK_READY for '{task_name}' to trainer {session.trainer_fqcn}")
-            send_status, reply = self._send_task_ready(session, task_message, abort_signal)
+            executor.log_info(fl_ctx, f"sending TASK_READY for '{task_name}' to trainer {trainer.trainer_fqcn}")
+            send_status, reply = self._send_task_ready(trainer, task_message, abort_signal)
             if send_status == _SEND_ABORTED:
-                self._send_abort(session, f"'{task_name}' is aborted, abort_signal_triggered")
+                self._send_abort(trainer, f"'{task_name}' is aborted, abort_signal_triggered")
                 self._latch_abort(f"task '{task_name}' aborted during TASK_READY")
                 return make_reply(ReturnCode.TASK_ABORTED)
             if send_status == _SEND_PROCESS_DEAD:
@@ -842,16 +842,16 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             executor.log_info(fl_ctx, "waiting for result from external trainer")
             while True:
                 if abort_signal.triggered or (launch_once and self._abort):
-                    self._send_abort(session, f"'{task_name}' is aborted, abort_signal_triggered")
+                    self._send_abort(trainer, f"'{task_name}' is aborted, abort_signal_triggered")
                     self._latch_abort(f"task '{task_name}' aborted")
                     return make_reply(ReturnCode.TASK_ABORTED)
 
                 if task.result_ready.is_set():
                     break
 
-                liveness_error = self._session_liveness_error(session)
+                liveness_error = self._trainer_liveness_error(trainer)
                 if liveness_error:
-                    self._send_abort(session, liveness_error)
+                    self._send_abort(trainer, liveness_error)
                     self._latch_abort(liveness_error)
                     executor.log_error(fl_ctx, f"{liveness_error} before task '{task_name}' produced a result")
                     return make_reply(ReturnCode.EXECUTION_EXCEPTION)
@@ -859,7 +859,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                 now = time.monotonic()
                 if wait_deadline is not None and now >= wait_deadline:
                     self._send_abort(
-                        session, f"'{task_name}' timed out after {result_wait_timeout}s waiting for result"
+                        trainer, f"'{task_name}' timed out after {result_wait_timeout}s waiting for result"
                     )
                     self._latch_abort(f"result wait timed out for task '{task_name}'")
                     executor.log_error(
@@ -888,7 +888,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                 if self._current_task is task:
                     self._current_task = None
 
-    def _send_task_ready(self, session: _TrainerSession, task_message: dict, abort_signal: Signal) -> Tuple[str, Any]:
+    def _send_task_ready(self, trainer: _TrainerLaunch, task_message: dict, abort_signal: Signal) -> Tuple[str, Any]:
         """Send TASK_READY with native cancellation for abort and liveness failures."""
         timeout = self._context.task_wait_timeout
         if timeout is None:
@@ -907,11 +907,11 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                 return _SEND_ABORTED, None
             if self._closed:
                 return _SEND_CLOSED, None
-            if not self._process_group_alive(session):
+            if not self._process_group_alive(trainer):
                 return _SEND_PROCESS_DEAD, None
             # Transfer progress supersedes heartbeat expiry while materialization is active.
             if not _has_live_task_download():
-                liveness_error = self._session_liveness_error(session)
+                liveness_error = self._trainer_liveness_error(trainer)
                 if liveness_error:
                     return _SEND_SESSION_DEAD, liveness_error
             return None
@@ -921,12 +921,12 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             reply = self._cell.send_request(
                 channel=CHANNEL,
                 topic=Topic.TASK_READY,
-                target=session.trainer_fqcn,
+                target=trainer.trainer_fqcn,
                 request=new_cell_message({}, task_message),
                 timeout=timeout,
                 abort_signal=cancel,
                 progress_wait_cb=_has_live_task_download,
-                receiver_ids=(session.trainer_fqcn,),
+                receiver_ids=(trainer.trainer_fqcn,),
                 fobs_ctx_props={
                     FOBSContextKey.STREAM_PROGRESS_CB: lambda **_kwargs: None,
                     RESULT_UPLOAD_TX_CREATED_CB_CTX_KEY: _on_transaction_created,
@@ -1003,15 +1003,15 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             return make_cell_reply(CellReturnCode.INVALID_REQUEST, error="HELLO payload must be a dict")
 
         origin = request.get_header(MessageHeaderKey.ORIGIN) or ""
-        session = self._session
-        if session is None:
-            return self._hello_reject(session, origin, "no active trainer launch", latch=False)
+        trainer = self._active_launch
+        if trainer is None:
+            return self._hello_reject(trainer, origin, "no active trainer launch", latch=False)
 
         # A foreign identity is not evidence that the prescribed trainer failed.
         claimed_fqcn = payload.get(MsgKey.TRAINER_FQCN)
-        if origin != session.trainer_fqcn or claimed_fqcn != session.trainer_fqcn:
+        if origin != trainer.trainer_fqcn or claimed_fqcn != trainer.trainer_fqcn:
             return self._hello_reject(
-                session,
+                trainer,
                 origin,
                 f"unexpected trainer identity (origin={origin!r}, claimed={claimed_fqcn!r})",
                 latch=False,
@@ -1021,25 +1021,25 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
         proof = payload.get(MsgKey.PROOF)
         if (
             not isinstance(proof, str)
-            or not session.token
-            or not secrets.compare_digest(proof.encode("utf-8"), session.token.encode("utf-8"))
+            or not trainer.token
+            or not secrets.compare_digest(proof.encode("utf-8"), trainer.token.encode("utf-8"))
         ):
-            return self._hello_reject(session, origin, "launch token mismatch", latch=True)
+            return self._hello_reject(trainer, origin, "launch token mismatch", latch=True)
 
         if payload.get(MsgKey.PROTOCOL_VERSION) != PROTOCOL_VERSION:
             return self._hello_reject(
-                session,
+                trainer,
                 origin,
                 f"unsupported protocol version {payload.get(MsgKey.PROTOCOL_VERSION)!r} (expect {PROTOCOL_VERSION})",
                 latch=True,
             )
 
         if payload.get(MsgKey.JOB_ID) != self._job_id:
-            return self._hello_reject(session, origin, f"job id mismatch: {payload.get(MsgKey.JOB_ID)!r}", latch=True)
+            return self._hello_reject(trainer, origin, f"job id mismatch: {payload.get(MsgKey.JOB_ID)!r}", latch=True)
 
         if payload.get(MsgKey.SITE_NAME) != self._site_name:
             return self._hello_reject(
-                session,
+                trainer,
                 origin,
                 f"site name mismatch: {payload.get(MsgKey.SITE_NAME)!r}",
                 latch=True,
@@ -1048,19 +1048,19 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
         # A nonzero rank does not latch rejection because rank zero may still connect.
         rank = payload.get(MsgKey.RANK)
         if str(rank) != "0":
-            return self._hello_reject(session, origin, f"only rank 0 may connect (got rank {rank!r})", latch=False)
+            return self._hello_reject(trainer, origin, f"only rank 0 may connect (got rank {rank!r})", latch=False)
 
         # Concurrent duplicate HELLOs must receive the same session id.
-        with self._session_lock:
-            if not session.ready.is_set():
-                session.session_id = uuid.uuid4().hex
-                session.ready.set()
-                self.logger.info(f"HELLO accepted from {origin} (session_id={session.session_id})")
-            session.touch_peer_activity()
+        with self._launch_lock:
+            if not trainer.ready.is_set():
+                trainer.session_id = uuid.uuid4().hex
+                trainer.ready.set()
+                self.logger.info(f"HELLO accepted from {origin} (session_id={trainer.session_id})")
+            trainer.touch_peer_activity()
         return self._protocol_reply(
             Topic.HELLO_ACCEPTED,
             **{
-                MsgKey.SESSION_ID: session.session_id,
+                MsgKey.SESSION_ID: trainer.session_id,
                 MsgKey.JOB_ID: self._job_id,
                 MsgKey.SITE_NAME: self._site_name,
                 MsgKey.HEARTBEAT_INTERVAL: self._context.heartbeat_interval,
@@ -1068,24 +1068,24 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             },
         )
 
-    def _hello_reject(self, session: Optional[_TrainerSession], origin: str, reason: str, latch: bool):
+    def _hello_reject(self, trainer: Optional[_TrainerLaunch], origin: str, reason: str, latch: bool):
         self.logger.warning(f"rejecting HELLO from {origin!r}: {reason}")
-        if latch and session is not None and not session.ready.is_set() and session.reject_reason is None:
-            session.reject_reason = reason
+        if latch and trainer is not None and not trainer.ready.is_set() and trainer.reject_reason is None:
+            trainer.reject_reason = reason
         return self._protocol_reply(Topic.HELLO_REJECTED, **{MsgKey.REASON: reason})
 
-    def _validate_session_msg(self, request, payload) -> Tuple[Optional[_TrainerSession], Optional[str]]:
+    def _validate_session_msg(self, request, payload) -> Tuple[Optional[_TrainerLaunch], Optional[str]]:
         """Binds a post-HELLO message to the current authenticated session."""
-        session = self._session
-        if session is None or not session.ready.is_set() or session.session_id is None:
+        trainer = self._active_launch
+        if trainer is None or not trainer.ready.is_set() or trainer.session_id is None:
             return None, "no active trainer session"
         origin = request.get_header(MessageHeaderKey.ORIGIN) or ""
-        if origin != session.trainer_fqcn:
+        if origin != trainer.trainer_fqcn:
             return None, f"unexpected origin {origin!r}"
-        if payload.get(MsgKey.SESSION_ID) != session.session_id:
+        if payload.get(MsgKey.SESSION_ID) != trainer.session_id:
             return None, "stale or unknown session id"
-        session.touch_peer_activity()
-        return session, None
+        trainer.touch_peer_activity()
+        return trainer, None
 
     def _handle_result_ready(self, request):
         """Accept a possibly lazy result; attach retries require paired receiver deduplication."""
@@ -1095,7 +1095,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
         if not isinstance(payload, dict):
             return make_cell_reply(CellReturnCode.INVALID_REQUEST, error="RESULT_READY payload must be a dict")
 
-        session, reject_reason = self._validate_session_msg(request, payload)
+        trainer, reject_reason = self._validate_session_msg(request, payload)
         if reject_reason:
             self.logger.warning(f"rejecting RESULT_READY: {reject_reason}")
             return self._protocol_reply(Topic.RESULT_REJECTED, **{MsgKey.REASON: reject_reason})
@@ -1124,7 +1124,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
                 )
             task.result = result
             # Acceptance precedes send settlement, even for an inline result.
-            session.result_source_live.set()
+            trainer.result_source_live.set()
             task.result_ready.set()
         return self._protocol_reply(Topic.RESULT_ACCEPTED)
 
@@ -1137,7 +1137,7 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
             if not isinstance(payload, dict):
                 self.logger.error(f"invalid LOG data format, expecting Dict, but got {type(payload)}")
                 return None
-            session, reject_reason = self._validate_session_msg(request, payload)
+            trainer, reject_reason = self._validate_session_msg(request, payload)
             if reject_reason:
                 self.logger.warning(f"dropping LOG data: {reject_reason}")
                 return None
@@ -1157,23 +1157,23 @@ class ExternalProcessBackend(ClientAPIBackendSpec):
         payload = request.payload
         if not isinstance(payload, dict):
             return make_cell_reply(CellReturnCode.INVALID_REQUEST, error="HEARTBEAT payload must be a dict")
-        session, reject_reason = self._validate_session_msg(request, payload)
+        trainer, reject_reason = self._validate_session_msg(request, payload)
         if reject_reason:
             self.logger.warning(f"rejecting HEARTBEAT: {reject_reason}")
             return self._protocol_reply(Topic.ERROR, **{MsgKey.REASON: reject_reason})
-        return self._protocol_reply(Topic.HEARTBEAT, **{MsgKey.SESSION_ID: session.session_id})
+        return self._protocol_reply(Topic.HEARTBEAT, **{MsgKey.SESSION_ID: trainer.session_id})
 
     # ------------------------------------------------------------------ helpers
 
-    def _send_abort(self, session: Optional[_TrainerSession], reason: str) -> None:
-        if session is None or session.session_id is None:
+    def _send_abort(self, trainer: Optional[_TrainerLaunch], reason: str) -> None:
+        if trainer is None or trainer.session_id is None:
             return
         try:
             self._cell.fire_and_forget(
                 channel=CHANNEL,
                 topic=Topic.ABORT,
-                targets=[session.trainer_fqcn],
-                message=new_cell_message({}, {MsgKey.SESSION_ID: session.session_id, MsgKey.REASON: reason}),
+                targets=[trainer.trainer_fqcn],
+                message=new_cell_message({}, {MsgKey.SESSION_ID: trainer.session_id, MsgKey.REASON: reason}),
                 optional=True,
             )
         except Exception:

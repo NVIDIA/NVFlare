@@ -330,10 +330,10 @@ class TestInitializeAndFinalize:
         executor = MagicMock()
         backend, _ = _initialized_backend(env, executor=executor)
         try:
-            session = backend._session
-            assert session is not None and session.ready.is_set()
-            assert session.session_id
-            assert session.trainer_fqcn == f"{CJ_FQCN}.client_api_trainer_1"
+            trainer = backend._active_launch
+            assert trainer is not None and trainer.ready.is_set()
+            assert trainer.session_id
+            assert trainer.trainer_fqcn == f"{CJ_FQCN}.client_api_trainer_1"
             assert env.cell.internal_listener_made
             assert (CellChannel.SERVER_COMMAND, ServerCommandNames.GET_TASK) in env.cell.decode_pass_through_topics
             assert CellChannel.SERVER_COMMAND not in env.cell.decode_pass_through_channels
@@ -349,7 +349,7 @@ class TestInitializeAndFinalize:
             assert "CLIENT_API_TYPE" not in process.kwargs["env"]
         finally:
             backend.finalize(FLContext())
-        assert not backend._session
+        assert not backend._active_launch
         assert (CellChannel.SERVER_COMMAND, ServerCommandNames.GET_TASK) not in env.cell.decode_pass_through_topics
         # launch-token file is removed after teardown
         assert not os.path.exists(os.path.join(env.app_dir, bootstrap_file_name(1)))
@@ -417,7 +417,7 @@ class TestInitializeAndFinalize:
         # contract: self-unwinding - the launched process tree must not leak
         process = env.harness.processes[0]
         assert process.returncode is not None, "unwind must terminate the launched trainer"
-        assert backend._session is None
+        assert backend._active_launch is None
 
     def test_initialize_fails_fast_when_trainer_exits_before_hello(self, env):
         env.harness.auto_hello = False
@@ -446,7 +446,7 @@ class TestInitializeAndFinalize:
     def test_finalize_idempotent_and_stops_process_tree(self, env):
         backend, _ = _initialized_backend(env)
         process = env.harness.processes[0]
-        session = backend._session
+        trainer = backend._active_launch
 
         backend.finalize(FLContext())
         backend.finalize(FLContext())  # contract: idempotent, must not raise
@@ -455,8 +455,8 @@ class TestInitializeAndFinalize:
         assert len(shutdowns) == 1, "idempotency means no repeated side effects"
         assert process.returncode is not None
         # launch-scoped token invalidation
-        assert session.token == "" and session.session_id is None
-        assert backend._session is None
+        assert trainer.token == "" and trainer.session_id is None
+        assert backend._active_launch is None
 
     def test_finalize_prefers_natural_exit_over_termination(self, env):
         backend, _ = _initialized_backend(env)
@@ -478,8 +478,8 @@ class TestInitializeAndFinalize:
     def test_finalize_does_not_kill_an_accepted_lazy_result_source(self, env):
         backend, _ = _initialized_backend(env, shutdown_timeout=0.2)
         process = env.harness.processes[0]
-        session = backend._session
-        session.result_source_live.set()
+        trainer = backend._active_launch
+        trainer.result_source_live.set()
         env.cell.on_shutdown = lambda *_args: make_cell_reply(CellReturnCode.OK, body={MsgKey.RESULT_SOURCE_LIVE: True})
 
         finalize_done = threading.Event()
@@ -492,9 +492,9 @@ class TestInitializeAndFinalize:
         finalize_thread.start()
 
         deadline = time.monotonic() + 1.0
-        while session.reaper_thread is None and time.monotonic() < deadline:
+        while trainer.reaper_thread is None and time.monotonic() < deadline:
             time.sleep(0.005)
-        assert session.reaper_thread is not None
+        assert trainer.reaper_thread is not None
         assert not finalize_done.wait(0.03), "END_RUN must preserve the CJ while the accepted result source is live"
 
         assert process.returncode is None
@@ -506,14 +506,14 @@ class TestInitializeAndFinalize:
         process.exit(0)
         finalize_thread.join(timeout=1.0)
         assert finalize_done.is_set()
-        assert backend._session is None
-        assert session.token == ""
+        assert backend._active_launch is None
+        assert trainer.token == ""
 
     def test_finalize_stops_source_when_shutdown_ack_says_send_already_settled(self, env):
         backend, _ = _initialized_backend(env, shutdown_timeout=0.2)
         process = env.harness.processes[0]
-        session = backend._session
-        session.result_source_live.set()
+        trainer = backend._active_launch
+        trainer.result_source_live.set()
 
         def settled_shutdown(topic, target, message):
             if topic == Topic.SHUTDOWN:
@@ -523,16 +523,16 @@ class TestInitializeAndFinalize:
         env.cell.on_shutdown = settled_shutdown
         backend.finalize(FLContext())
 
-        assert not session.result_source_live.is_set()
+        assert not trainer.result_source_live.is_set()
         assert process.returncode is not None
-        assert backend._session is None
-        assert session.token == ""
+        assert backend._active_launch is None
+        assert trainer.token == ""
 
     def test_settled_ack_still_allows_user_thread_natural_exit_grace(self, env):
         backend, _ = _initialized_backend(env, shutdown_timeout=0.0)
         process = env.harness.processes[0]
-        session = backend._session
-        session.result_source_live.set()
+        trainer = backend._active_launch
+        trainer.result_source_live.set()
         wait_entered = threading.Event()
         release_exit = threading.Event()
 
@@ -562,14 +562,14 @@ class TestInitializeAndFinalize:
         finalize_thread.join(timeout=2.0)
         assert not finalize_thread.is_alive()
         assert env.harness.signals_sent() == []
-        assert backend._session is None
+        assert backend._active_launch is None
 
     @pytest.mark.skipif(os.name != "posix", reason="process-group semantics are POSIX")
     def test_settled_ack_graces_workers_after_launcher_exit(self, env):
         backend, _ = _initialized_backend(env, shutdown_timeout=0.2)
         process = env.harness.processes[0]
-        session = backend._session
-        session.result_source_live.set()
+        trainer = backend._active_launch
+        trainer.result_source_live.set()
         process.exit(0)
         process.extra_group_members = True
         env.cell.on_shutdown = lambda *_args: make_cell_reply(
@@ -590,13 +590,13 @@ class TestInitializeAndFinalize:
         finalize_thread.join(timeout=1.0)
         assert not finalize_thread.is_alive()
         assert env.harness.signals_sent() == []
-        assert backend._session is None
+        assert backend._active_launch is None
 
     def test_shutdown_timeout_does_not_cut_off_accepted_result_source(self, env):
         backend, _ = _initialized_backend(env, shutdown_timeout=0.03)
         process = env.harness.processes[0]
-        session = backend._session
-        session.result_source_live.set()
+        trainer = backend._active_launch
+        trainer.result_source_live.set()
         env.cell.on_shutdown = lambda *_args: make_cell_reply(CellReturnCode.OK, body={MsgKey.RESULT_SOURCE_LIVE: True})
         finalize_done = threading.Event()
 
@@ -609,13 +609,13 @@ class TestInitializeAndFinalize:
 
         assert not finalize_done.wait(0.08), "ordinary shutdown_timeout must not cut off a live result source"
         assert process.returncode is None
-        assert session.reaper_thread is not None and session.reaper_thread.is_alive()
+        assert trainer.reaper_thread is not None and trainer.reaper_thread.is_alive()
         assert env.harness.signals_sent() == []
 
         process.exit(0)
         finalize_thread.join(timeout=1.0)
         assert finalize_done.is_set()
-        assert backend._session is None
+        assert backend._active_launch is None
 
     def test_finalize_bounds_connected_wedged_result_source(self, env, monkeypatch, caplog):
         monkeypatch.setattr(ebp, "DEFAULT_STREAMING_IDLE_TIMEOUT", 0.02)
@@ -628,8 +628,8 @@ class TestInitializeAndFinalize:
             stop_grace_period=0.0,
         )
         process = env.harness.processes[0]
-        session = backend._session
-        session.result_source_live.set()
+        trainer = backend._active_launch
+        trainer.result_source_live.set()
         env.cell.on_shutdown = lambda *_args: make_cell_reply(CellReturnCode.OK, body={MsgKey.RESULT_SOURCE_LIVE: True})
 
         start = time.monotonic()
@@ -646,8 +646,8 @@ class TestInitializeAndFinalize:
         monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
         backend, _ = _initialized_backend(env, shutdown_timeout=0.0)
         process = env.harness.processes[0]
-        session = backend._session
-        session.result_source_live.set()
+        trainer = backend._active_launch
+        trainer.result_source_live.set()
         env.cell.on_shutdown = lambda *_args: make_cell_reply(CellReturnCode.OK, body={MsgKey.RESULT_SOURCE_LIVE: True})
         finalize_done = threading.Event()
 
@@ -663,17 +663,17 @@ class TestInitializeAndFinalize:
         finalize_thread.join(timeout=1.0)
         assert finalize_done.is_set()
         assert env.harness.signals_sent() == []
-        assert backend._session is None
+        assert backend._active_launch is None
 
     def test_zero_heartbeat_and_shutdown_do_not_make_disconnect_immediately_terminal(self, env, monkeypatch):
         monkeypatch.setattr(ebp, "_DEFAULT_SHUTDOWN_TIMEOUT", 0.06)
         monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
         backend, _ = _initialized_backend(env, heartbeat_timeout=0.0, shutdown_timeout=0.0)
         process = env.harness.processes[0]
-        session = backend._session
-        session.result_source_live.set()
+        trainer = backend._active_launch
+        trainer.result_source_live.set()
         env.cell.on_shutdown = lambda *_args: make_cell_reply(CellReturnCode.OK, body={MsgKey.RESULT_SOURCE_LIVE: True})
-        env.cell.disconnected.add(session.trainer_fqcn)
+        env.cell.disconnected.add(trainer.trainer_fqcn)
 
         finalize_thread = threading.Thread(target=backend.finalize, args=(FLContext(),))
         finalize_thread.start()
@@ -681,25 +681,25 @@ class TestInitializeAndFinalize:
 
         # Reconnecting inside the nonzero source grace resets disconnect evidence. END_RUN
         # remains blocked because the source is still live, regardless of shutdown_timeout.
-        env.cell.disconnected.discard(session.trainer_fqcn)
+        env.cell.disconnected.discard(trainer.trainer_fqcn)
         time.sleep(0.08)
         assert finalize_thread.is_alive()
         assert process.returncode is None
-        assert session.reaper_thread is not None and session.reaper_thread.is_alive()
+        assert trainer.reaper_thread is not None and trainer.reaper_thread.is_alive()
         assert env.harness.signals_sent() == []
 
         process.exit(0)
         finalize_thread.join(timeout=1.0)
         assert not finalize_thread.is_alive()
-        assert backend._session is None
+        assert backend._active_launch is None
 
     def test_lazy_result_reaper_retries_shutdown_then_requires_sustained_disconnect(self, env, monkeypatch, caplog):
         monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
         monkeypatch.setattr(ebp, "_SHUTDOWN_RETRY_INTERVAL", 0.01)
         backend, _ = _initialized_backend(env, heartbeat_timeout=0.03, shutdown_timeout=0.01)
         process = env.harness.processes[0]
-        session = backend._session
-        session.result_source_live.set()
+        trainer = backend._active_launch
+        trainer.result_source_live.set()
         attempts = []
 
         def flaky_shutdown(topic, target, message):
@@ -710,7 +710,7 @@ class TestInitializeAndFinalize:
                 return None
             # The retry reaches the trainer. It closes Cell after its terminal result
             # waiter; the reaper still requires a sustained disconnect before stopping.
-            env.cell.disconnected.add(session.trainer_fqcn)
+            env.cell.disconnected.add(trainer.trainer_fqcn)
             return make_cell_reply(CellReturnCode.OK)
 
         env.cell.on_shutdown = flaky_shutdown
@@ -725,10 +725,10 @@ class TestInitializeAndFinalize:
         # A first disconnected sample is not terminal.
         time.sleep(0.01)
         assert process.returncode is None
-        env.cell.disconnected.discard(session.trainer_fqcn)
+        env.cell.disconnected.discard(trainer.trainer_fqcn)
         time.sleep(0.04)
         assert process.returncode is None, "reconnect must reset the disconnect grace"
-        env.cell.disconnected.add(session.trainer_fqcn)
+        env.cell.disconnected.add(trainer.trainer_fqcn)
         deadline = time.monotonic() + 1.0
         while process.returncode is None and time.monotonic() < deadline:
             time.sleep(0.01)
@@ -831,7 +831,7 @@ class TestInitializeAndFinalize:
         taskkill = Mock(return_value=SimpleNamespace(returncode=1))
         monkeypatch.setattr(ebp.subprocess, "run", taskkill)
 
-        backend._signal_process_tree(backend._session, hard=hard)
+        backend._signal_process_tree(backend._active_launch, hard=hard)
 
         taskkill.assert_called_once()
         assert process.term_calls == [expected_fallback]
@@ -843,7 +843,7 @@ class TestInitializeAndFinalize:
         monkeypatch.setattr(ebp.os, "name", "nt")
         monkeypatch.setattr(ebp.subprocess, "run", Mock(return_value=SimpleNamespace(returncode=0)))
 
-        backend._signal_process_tree(backend._session, hard=False)
+        backend._signal_process_tree(backend._active_launch, hard=False)
 
         assert process.term_calls == []
         process.exit(0)
@@ -859,7 +859,7 @@ class TestInitializeAndFinalize:
             Mock(side_effect=subprocess.TimeoutExpired(cmd=["taskkill"], timeout=10)),
         )
 
-        backend._signal_process_tree(backend._session, hard=False)
+        backend._signal_process_tree(backend._active_launch, hard=False)
 
         assert process.term_calls == ["terminate"]
         backend.finalize(FLContext())
@@ -917,14 +917,14 @@ class TestHello:
     def test_stale_process_hello_is_rejected_without_failing_session(self, env):
         backend, _ = _initialized_backend(env)
         try:
-            session = backend._session
+            trainer = backend._active_launch
             stale_fqcn = f"{CJ_FQCN}.client_api_trainer_99"
             reply = env.cell.deliver(
                 Topic.HELLO,
                 stale_fqcn,
                 {
                     MsgKey.TRAINER_FQCN: stale_fqcn,
-                    MsgKey.PROOF: session.token,
+                    MsgKey.PROOF: trainer.token,
                     MsgKey.PROTOCOL_VERSION: PROTOCOL_VERSION,
                     MsgKey.JOB_ID: "job-1",
                     MsgKey.SITE_NAME: "site-1",
@@ -933,19 +933,19 @@ class TestHello:
             )
             assert reply.payload[MsgKey.REPLY_TOPIC] == Topic.HELLO_REJECTED
             # the current, already-authenticated session is untouched
-            assert session.ready.is_set() and session.reject_reason is None
+            assert trainer.ready.is_set() and trainer.reject_reason is None
         finally:
             backend.finalize(FLContext())
 
     def test_duplicate_hello_is_idempotent(self, env):
         backend, _ = _initialized_backend(env)
         try:
-            session = backend._session
-            first_session_id = session.session_id
+            trainer = backend._active_launch
+            first_session_id = trainer.session_id
             config = env.harness.bootstrap_configs[0]
             reply = env.cell.deliver(
                 Topic.HELLO,
-                session.trainer_fqcn,
+                trainer.trainer_fqcn,
                 {
                     MsgKey.TRAINER_FQCN: config[BootstrapKey.TRAINER_FQCN],
                     MsgKey.PROOF: config[BootstrapKey.LAUNCH_TOKEN],
@@ -1004,7 +1004,7 @@ class TestHello:
         env.harness.popen = popen_with_two_hellos
         backend, _ = _initialized_backend(env, launch_timeout=5.0)
         try:
-            assert backend._session.ready.is_set()
+            assert backend._active_launch.ready.is_set()
         finally:
             backend.finalize(FLContext())
 
@@ -1033,7 +1033,7 @@ class TestHello:
             },
         )
         assert reply.payload[MsgKey.REPLY_TOPIC] == Topic.HELLO_REJECTED
-        # by the _closed gate specifically, not merely because the session is gone
+        # by the _closed gate specifically, not merely because the trainer is gone
         assert reply.payload[MsgKey.REASON] == "backend is closed"
 
 
@@ -1050,28 +1050,28 @@ class TestHeartbeatAndOperationalLiveness:
     def test_heartbeat_is_bound_to_origin_and_session(self, env):
         backend, _ = _initialized_backend(env)
         try:
-            session = backend._session
-            with session._activity_lock:
-                session._last_peer_activity = time.monotonic() - 5.0
+            trainer = backend._active_launch
+            with trainer._activity_lock:
+                trainer._last_peer_activity = time.monotonic() - 5.0
 
             rejected = env.cell.deliver(
                 Topic.HEARTBEAT,
                 "foreign.cell",
-                {MsgKey.SESSION_ID: session.session_id},
+                {MsgKey.SESSION_ID: trainer.session_id},
             )
             assert rejected.payload[MsgKey.REPLY_TOPIC] == Topic.ERROR
-            assert session.peer_silent_for() >= 4.0
+            assert trainer.peer_silent_for() >= 4.0
 
             accepted = env.cell.deliver(
                 Topic.HEARTBEAT,
-                session.trainer_fqcn,
-                {MsgKey.SESSION_ID: session.session_id},
+                trainer.trainer_fqcn,
+                {MsgKey.SESSION_ID: trainer.session_id},
             )
             assert accepted.payload == {
                 MsgKey.REPLY_TOPIC: Topic.HEARTBEAT,
-                MsgKey.SESSION_ID: session.session_id,
+                MsgKey.SESSION_ID: trainer.session_id,
             }
-            assert session.peer_silent_for() < 0.5
+            assert trainer.peer_silent_for() < 0.5
         finally:
             backend.finalize(FLContext())
 
@@ -1183,30 +1183,30 @@ class TestHeartbeatAndOperationalLiveness:
 
 
 class TestClosedGate:
-    """Isolate _closed by restoring session state after callback teardown."""
+    """Isolate _closed by restoring trainer state after callback teardown."""
 
     @staticmethod
-    def _resurrect_session(backend, session, token, session_id):
-        session.token = token
-        session.session_id = session_id
-        backend._session = session
+    def _restore_launch(backend, trainer, token, session_id):
+        trainer.token = token
+        trainer.session_id = session_id
+        backend._active_launch = trainer
 
-    def _finalized_backend_with_session(self, env, executor=None):
+    def _finalized_backend_with_launch(self, env, executor=None):
         backend, _ = _initialized_backend(env, executor=executor)
-        session = backend._session
-        token, session_id = session.token, session.session_id
+        trainer = backend._active_launch
+        token, session_id = trainer.token, trainer.session_id
         backend.finalize(FLContext())
-        self._resurrect_session(backend, session, token, session_id)
-        return backend, session
+        self._restore_launch(backend, trainer, token, session_id)
+        return backend, trainer
 
     def test_closed_gate_rejects_authenticated_hello(self, env):
-        backend, session = self._finalized_backend_with_session(env)
+        backend, trainer = self._finalized_backend_with_launch(env)
         reply = env.cell.deliver(
             Topic.HELLO,
-            session.trainer_fqcn,
+            trainer.trainer_fqcn,
             {
-                MsgKey.TRAINER_FQCN: session.trainer_fqcn,
-                MsgKey.PROOF: session.token,
+                MsgKey.TRAINER_FQCN: trainer.trainer_fqcn,
+                MsgKey.PROOF: trainer.token,
                 MsgKey.PROTOCOL_VERSION: PROTOCOL_VERSION,
                 MsgKey.JOB_ID: "job-1",
                 MsgKey.RANK: 0,
@@ -1216,15 +1216,15 @@ class TestClosedGate:
         assert reply.payload[MsgKey.REASON] == "backend is closed"
 
     def test_closed_gate_rejects_valid_result_ready(self, env):
-        backend, session = self._finalized_backend_with_session(env)
+        backend, trainer = self._finalized_backend_with_launch(env)
         task = ebp._TaskContext(task_id="task-1")
         backend._current_task = task
 
         reply = env.cell.deliver(
             Topic.RESULT_READY,
-            session.trainer_fqcn,
+            trainer.trainer_fqcn,
             {
-                MsgKey.SESSION_ID: session.session_id,
+                MsgKey.SESSION_ID: trainer.session_id,
                 MsgKey.TASK_ID: "task-1",
                 MsgKey.RESULT: _result_shareable(),
             },
@@ -1235,14 +1235,14 @@ class TestClosedGate:
 
     def test_closed_gate_drops_log(self, env):
         executor = MagicMock()
-        backend, session = self._finalized_backend_with_session(env, executor=executor)
+        backend, trainer = self._finalized_backend_with_launch(env, executor=executor)
         executor.fire_log_analytics.reset_mock()
 
         env.cell.deliver(
             Topic.LOG,
-            session.trainer_fqcn,
+            trainer.trainer_fqcn,
             {
-                MsgKey.SESSION_ID: session.session_id,
+                MsgKey.SESSION_ID: trainer.session_id,
                 "key": "accuracy",
                 "value": 0.9,
                 "data_type": AnalyticsDataType.SCALAR,
@@ -1268,18 +1268,18 @@ class TestExecute:
 
             # TASK_READY carried the full correlation envelope
             topic, target, payload = seen.task_payloads[0]
-            session = backend._session
-            assert topic == Topic.TASK_READY and target == session.trainer_fqcn
+            trainer = backend._active_launch
+            assert topic == Topic.TASK_READY and target == trainer.trainer_fqcn
             # the streaming request path requires a numeric timeout: the default
             # task_wait_timeout=None must be normalized, never passed through
             assert env.cell.sent[0][3] == ebp._TASK_READY_NO_PROGRESS_TIMEOUT
-            assert payload[MsgKey.SESSION_ID] == session.session_id
+            assert payload[MsgKey.SESSION_ID] == trainer.session_id
             assert payload[MsgKey.TASK_NAME] == "train"
             assert payload[MsgKey.TASK_ID]
             assert payload[MsgKey.MODEL] is task
             # Call-scoped FOBS metadata tells Cell/ViaDownloader who must materialize
             # the direct task Shareable; there is no second payload-attempt envelope.
-            assert env.cell.sent_kwargs[0]["receiver_ids"] == (session.trainer_fqcn,)
+            assert env.cell.sent_kwargs[0]["receiver_ids"] == (trainer.trainer_fqcn,)
             assert "fobs_ctx_props" in env.cell.sent_kwargs[0]
             assert task.get_header(FLMetaKey.JOB_ID) == "job-1"
             assert task.get_header(FLMetaKey.SITE_NAME) == "site-1"
@@ -1290,12 +1290,12 @@ class TestExecute:
 
     def test_next_task_does_not_clear_a_prior_send_barrier(self, env):
         backend, fl_ctx = _initialized_backend(env)
-        session = backend._session
-        session.result_source_live.set()  # prior round accepted; trainer send still settling
+        trainer = backend._active_launch
+        trainer.result_source_live.set()  # prior round accepted; trainer send still settling
         barrier_seen = []
 
         def handler(topic, target, request):
-            barrier_seen.append(session.result_source_live.is_set())
+            barrier_seen.append(trainer.result_source_live.is_set())
             payload = request.payload
             env.cell.deliver(
                 Topic.RESULT_READY,
@@ -1544,7 +1544,7 @@ class TestExecute:
             aborted.trigger("stop")
             second = backend.execute("evaluate", Shareable(), fl_ctx, aborted)
             assert second.get_return_code() == ReturnCode.TASK_ABORTED
-            # the active task's session was untouched: no ABORT was sent for the rejected call
+            # the active task's trainer was untouched: no ABORT was sent for the rejected call
             assert backend._current_task is active_task
 
             let_first_finish.set()
@@ -1556,16 +1556,16 @@ class TestExecute:
     def test_raising_per_task_stop_still_releases_the_gate(self, env, monkeypatch):
         backend, fl_ctx = _initialized_backend(env, launch_once=False)
         _install_auto_result(env)
-        real_stop = backend._stop_session
+        real_stop = backend._stop_trainer
         calls = {"n": 0}
 
-        def raising_stop(session, natural_exit_wait):
+        def raising_stop(trainer, natural_exit_wait):
             calls["n"] += 1
             if calls["n"] == 1:
                 raise RuntimeError("stop boom")
-            return real_stop(session, natural_exit_wait)
+            return real_stop(trainer, natural_exit_wait)
 
-        monkeypatch.setattr(backend, "_stop_session", raising_stop)
+        monkeypatch.setattr(backend, "_stop_trainer", raising_stop)
         try:
             first = backend.execute("train", Shareable(), fl_ctx, Signal())
             assert first.get_return_code() == ReturnCode.OK  # a raising stop must not mask the result
@@ -1594,7 +1594,7 @@ class TestExecute:
             target=lambda: box.__setitem__("r", backend.execute("train", Shareable(), fl_ctx, Signal()))
         )
         t.start()
-        assert in_write.wait(5.0), "execute did not reach the bootstrap write (session installed, pre-Popen)"
+        assert in_write.wait(5.0), "execute did not reach the bootstrap write (trainer installed, pre-Popen)"
 
         f = threading.Thread(target=lambda: backend.finalize(FLContext()))
         f.start()
@@ -1771,7 +1771,7 @@ class TestResultReadyHandler:
 
     def _payload(self, backend, **overrides):
         payload = {
-            MsgKey.SESSION_ID: backend._session.session_id,
+            MsgKey.SESSION_ID: backend._active_launch.session_id,
             MsgKey.TASK_ID: "task-1",
             MsgKey.RESULT: _result_shareable(),
         }
@@ -1782,7 +1782,7 @@ class TestResultReadyHandler:
         backend, _ = _initialized_backend(env)
         try:
             task = self._task(backend)
-            origin = backend._session.trainer_fqcn
+            origin = backend._active_launch.trainer_fqcn
             first = env.cell.deliver(Topic.RESULT_READY, origin, self._payload(backend))
             second = env.cell.deliver(Topic.RESULT_READY, origin, self._payload(backend))
 
@@ -1797,7 +1797,7 @@ class TestResultReadyHandler:
         """Finalize winning after validation must prevent a newly live result source."""
         backend, _ = _initialized_backend(env, shutdown_timeout=0.0, stop_grace_period=0.0)
         task = self._task(backend)
-        session = backend._session
+        trainer = backend._active_launch
         validation_done = threading.Event()
         release_validation = threading.Event()
         reply_box = {}
@@ -1817,7 +1817,7 @@ class TestResultReadyHandler:
                 "reply",
                 env.cell.deliver(
                     Topic.RESULT_READY,
-                    session.trainer_fqcn,
+                    trainer.trainer_fqcn,
                     self._payload(backend, **{MsgKey.RESULT: result}),
                 ),
             )
@@ -1834,7 +1834,7 @@ class TestResultReadyHandler:
         assert reply_box["reply"].payload[MsgKey.REASON] == "backend is closed"
         assert task.result is None
         assert not task.result_ready.is_set()
-        assert not session.result_source_live.is_set()
+        assert not trainer.result_source_live.is_set()
 
     def test_accepted_result_marks_the_trainer_send_as_pending(self, env):
         backend, _ = _initialized_backend(env)
@@ -1842,15 +1842,15 @@ class TestResultReadyHandler:
             self._task(backend)
             reply = env.cell.deliver(
                 Topic.RESULT_READY,
-                backend._session.trainer_fqcn,
+                backend._active_launch.trainer_fqcn,
                 self._payload(backend),
             )
 
             assert reply.payload[MsgKey.REPLY_TOPIC] == Topic.RESULT_ACCEPTED
-            assert backend._session.result_source_live.is_set()
+            assert backend._active_launch.result_source_live.is_set()
         finally:
             # This test does not model the trainer's send-completion acknowledgement.
-            backend._session.result_source_live.clear()
+            backend._active_launch.result_source_live.clear()
             backend.finalize(FLContext())
 
     @pytest.mark.parametrize(
@@ -1867,7 +1867,7 @@ class TestResultReadyHandler:
         backend, _ = _initialized_backend(env)
         try:
             task = self._task(backend)
-            origin = origin_override or backend._session.trainer_fqcn
+            origin = origin_override or backend._active_launch.trainer_fqcn
             reply = env.cell.deliver(Topic.RESULT_READY, origin, self._payload(backend, **payload_overrides))
 
             assert reply.payload[MsgKey.REPLY_TOPIC] == Topic.RESULT_REJECTED
@@ -1882,7 +1882,7 @@ class TestLaunchPerTask:
         backend, _ = _initialized_backend(env, launch_once=False)
         try:
             assert env.harness.processes == []
-            assert backend._session is None
+            assert backend._active_launch is None
         finally:
             backend.finalize(FLContext())
 
@@ -1898,16 +1898,16 @@ class TestLaunchPerTask:
             assert first_process.returncode is None, "CJ must not kill a trainer that still owns lazy result refs"
             first_process.exit(0)  # trainer exits itself after its result transfer settles
             deadline = time.monotonic() + 1.0
-            while backend._session is not None and time.monotonic() < deadline:
+            while backend._active_launch is not None and time.monotonic() < deadline:
                 time.sleep(0.01)
-            assert backend._session is None
+            assert backend._active_launch is None
 
             second = backend.execute("train", Shareable(), fl_ctx, Signal())
             assert second.get_return_code() == ReturnCode.OK
             assert len(env.harness.processes) == 2
             env.harness.processes[1].exit(0)
             deadline = time.monotonic() + 1.0
-            while backend._session is not None and time.monotonic() < deadline:
+            while backend._active_launch is not None and time.monotonic() < deadline:
                 time.sleep(0.01)
 
             config_1, config_2 = env.harness.bootstrap_configs
@@ -1929,11 +1929,11 @@ class TestLaunchPerTask:
     def test_entry_abort_does_not_abort_previous_live_result_source(self, env):
         backend, fl_ctx = _initialized_backend(env, launch_once=False)
         _install_auto_result(env, lazy_result=True)
-        session = None
+        trainer = None
         process = None
         try:
             first = backend.execute("train", Shareable(), fl_ctx, Signal())
-            session = backend._session
+            trainer = backend._active_launch
             process = env.harness.processes[0]
             aborts_before = len([message for message in env.cell.fired if message[0] == Topic.ABORT])
 
@@ -1945,7 +1945,7 @@ class TestLaunchPerTask:
             assert second.get_return_code() == ReturnCode.TASK_ABORTED
             assert len(env.harness.processes) == 1, "an entry-aborted task must not launch"
             assert len([message for message in env.cell.fired if message[0] == Topic.ABORT]) == aborts_before
-            assert session.result_source_live.is_set()
+            assert trainer.result_source_live.is_set()
             assert process.returncode is None
             assert backend._abort is False
         finally:
@@ -1959,53 +1959,53 @@ class TestLaunchPerTask:
         try:
             result = backend.execute("train", Shareable(), fl_ctx, Signal())
             process = env.harness.processes[0]
-            session = backend._session
+            trainer = backend._active_launch
 
             assert result.get_return_code() == ReturnCode.OK
             assert process.returncode is None
-            assert session.reaper_thread is not None and session.reaper_thread.is_alive()
+            assert trainer.reaper_thread is not None and trainer.reaper_thread.is_alive()
 
             # Even an inline result can still be returning through RESULT_ACCEPTED when
             # execute() finishes. The real trainer exits after send() returns; model that
             # truthful completion instead of expecting the CJ to kill it synchronously.
             process.exit(0)
             deadline = time.monotonic() + 1.0
-            while backend._session is not None and time.monotonic() < deadline:
+            while backend._active_launch is not None and time.monotonic() < deadline:
                 time.sleep(0.01)
-            assert backend._session is None
+            assert backend._active_launch is None
         finally:
             backend.finalize(FLContext())
 
-    def test_finalize_stops_retired_per_task_launch_replaced_by_next_session(self, env, monkeypatch):
+    def test_finalize_stops_retired_per_task_launch_replaced_by_next_launch(self, env, monkeypatch):
         monkeypatch.setattr(ebp, "_NATURAL_EXIT_REAP_INTERVAL", 0.005)
         backend, fl_ctx = _initialized_backend(env, launch_once=False, heartbeat_timeout=0.03)
         _install_auto_result(env, lazy_result=True)
 
         first = backend.execute("train", Shareable(), fl_ctx, Signal())
-        retired_session = backend._session
+        retired_trainer = backend._active_launch
         second = backend.execute("train", Shareable(), fl_ctx, Signal())
-        current_session = backend._session
+        current_trainer = backend._active_launch
         assert first.get_return_code() == ReturnCode.OK
         assert second.get_return_code() == ReturnCode.OK
         assert len(env.harness.processes) == 2
         assert all(process.returncode is None for process in env.harness.processes)
-        assert retired_session is not current_session
+        assert retired_trainer is not current_trainer
 
         finalize_thread = threading.Thread(target=backend.finalize, args=(FLContext(),), daemon=True)
         finalize_thread.start()
         try:
             deadline = time.monotonic() + 1.0
             while (
-                retired_session.reaper_thread is None or current_session.reaper_thread is None
+                retired_trainer.reaper_thread is None or current_trainer.reaper_thread is None
             ) and time.monotonic() < deadline:
                 time.sleep(0.005)
-            assert retired_session.reaper_thread is not None
-            assert current_session.reaper_thread is not None
+            assert retired_trainer.reaper_thread is not None
+            assert current_trainer.reaper_thread is not None
             assert finalize_thread.is_alive(), "END_RUN must wait for every owned result source"
 
             # Terminal truth for only the newest source is insufficient: the older
-            # launch is no longer in backend._session but still owns download refs.
-            env.cell.disconnected.add(current_session.trainer_fqcn)
+            # launch is no longer in backend._active_launch but still owns download refs.
+            env.cell.disconnected.add(current_trainer.trainer_fqcn)
             deadline = time.monotonic() + 1.0
             while env.harness.processes[1].returncode is None and time.monotonic() < deadline:
                 time.sleep(0.005)
@@ -2013,13 +2013,13 @@ class TestLaunchPerTask:
             assert env.harness.processes[0].returncode is None
             assert finalize_thread.is_alive()
 
-            env.cell.disconnected.add(retired_session.trainer_fqcn)
+            env.cell.disconnected.add(retired_trainer.trainer_fqcn)
             finalize_thread.join(timeout=1.0)
             assert not finalize_thread.is_alive()
             assert all(process.returncode is not None for process in env.harness.processes)
             assert backend._result_reapers == set()
         finally:
-            env.cell.disconnected.update((retired_session.trainer_fqcn, current_session.trainer_fqcn))
+            env.cell.disconnected.update((retired_trainer.trainer_fqcn, current_trainer.trainer_fqcn))
             finalize_thread.join(timeout=1.0)
 
     def test_abort_during_per_task_launch_returns_task_aborted(self, env):
@@ -2073,7 +2073,7 @@ class TestLaunchPerTask:
             backend.finalize(FLContext())
 
     def test_task_timeout_does_not_poison_next_task(self, env):
-        """The abort latch only fail-fasts launch_once sessions."""
+        """The abort latch only fail-fasts persistent trainer launches."""
         backend, fl_ctx = _initialized_backend(env, launch_once=False, result_wait_timeout=0.05)
         try:
             # task 1: trainer accepts but never sends a result -> timeout
@@ -2100,7 +2100,7 @@ class TestLaunchPerTask:
 class TestLogRouting:
     def _log_payload(self, backend, **overrides):
         payload = {
-            MsgKey.SESSION_ID: backend._session.session_id,
+            MsgKey.SESSION_ID: backend._active_launch.session_id,
             "key": "accuracy",
             "value": 0.9,
             "data_type": AnalyticsDataType.SCALAR,
@@ -2112,7 +2112,7 @@ class TestLogRouting:
         executor = MagicMock()
         backend, _ = _initialized_backend(env, executor=executor)
         try:
-            env.cell.deliver(Topic.LOG, backend._session.trainer_fqcn, self._log_payload(backend))
+            env.cell.deliver(Topic.LOG, backend._active_launch.trainer_fqcn, self._log_payload(backend))
 
             assert executor.fire_log_analytics.call_count == 1
             dxo = executor.fire_log_analytics.call_args[0][1]
@@ -2127,7 +2127,7 @@ class TestLogRouting:
         try:
             env.cell.deliver(
                 Topic.LOG,
-                backend._session.trainer_fqcn,
+                backend._active_launch.trainer_fqcn,
                 self._log_payload(backend, **{MsgKey.SESSION_ID: "stale-session"}),
             )
             executor.fire_log_analytics.assert_not_called()
@@ -2139,7 +2139,7 @@ class TestLogRouting:
         executor = MagicMock()
         backend, _ = _initialized_backend(env, executor=executor)
         try:
-            env.cell.deliver(Topic.LOG, backend._session.trainer_fqcn, None)
+            env.cell.deliver(Topic.LOG, backend._active_launch.trainer_fqcn, None)
             executor.fire_log_analytics.assert_not_called()
             assert "invalid LOG data format" in caplog.text
         finally:
@@ -2150,7 +2150,7 @@ class TestLogRouting:
         executor.fire_log_analytics.side_effect = RuntimeError("analytics failed")
         backend, _ = _initialized_backend(env, executor=executor)
         try:
-            env.cell.deliver(Topic.LOG, backend._session.trainer_fqcn, self._log_payload(backend))
+            env.cell.deliver(Topic.LOG, backend._active_launch.trainer_fqcn, self._log_payload(backend))
             assert "failed to process trainer LOG data" in caplog.text
         finally:
             backend.finalize(FLContext())

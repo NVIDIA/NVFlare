@@ -28,7 +28,7 @@ CELL_API_TYPE = "CELL_API"
 # Bootstrap schema version is independent of the post-connection Cell protocol version.
 BOOTSTRAP_SCHEMA_VERSION = 1
 
-# Typed schema currently accepts launched external-process sessions only.
+# Typed schema currently accepts launched external-process mode only.
 EXTERNAL_PROCESS_EXECUTION_MODE = "external_process"
 
 # Limit exposure of the launch token to the file owner.
@@ -42,7 +42,7 @@ class BootstrapKey:
     SCHEMA_VERSION = "schema_version"
     EXECUTION_MODE = "execution_mode"
 
-    # Launch-scoped FQCNs prevent stale trainers from colliding with a later session.
+    # Launch-scoped FQCNs prevent stale trainers from colliding with a later launch.
     CONNECT_URL = "connect_url"
     CJ_FQCN = "cj_fqcn"
     TRAINER_FQCN = "trainer_fqcn"

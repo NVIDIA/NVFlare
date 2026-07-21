@@ -252,6 +252,10 @@ def test_shutdown_f3_streaming_attempts_every_stage_and_can_retry(monkeypatch):
     assert calls == ["download", "retry", "stream", "download", "retry", "stream"]
 
 
+def test_trainer_session_error_is_runtime_error():
+    assert issubclass(TrainerSessionError, RuntimeError)
+
+
 class TestInit:
     def test_init_does_hello_handshake(self, bootstrap_path, env):
         api = _init_api(bootstrap_path, env)
@@ -284,11 +288,16 @@ class TestInit:
 
     def test_non_control_rank_has_passive_api(self, bootstrap_path, env):
         api = CellClientAPI(bootstrap_file=bootstrap_path)
-        api.init(rank="1")
-        # rank != 0 opens no session (rank contract): no cell built, receive None, not running
-        assert not env.started
-        assert api.receive() is None
-        assert api.is_running() is False
+        try:
+            api.init(rank="1")
+            # rank != 0 opens no session (rank contract): no cell built, receive None, not running
+            assert not env.started
+            assert api.receive() is None
+            assert api.is_running() is False
+            with pytest.raises(RuntimeError, match="only rank 0 can call log"):
+                api.log("accuracy", 0.9, AnalyticsDataType.SCALAR)
+        finally:
+            api.shutdown()
 
 
 class TestReceiveSend:
@@ -305,6 +314,25 @@ class TestReceiveSend:
             assert api.is_train() is True and api.is_evaluate() is False
             # Cell decoded the Shareable before invoking TASK_READY; there is no second
             # payload protocol or acknowledgement.
+        finally:
+            api.shutdown()
+
+    def test_clear_removes_all_task_scoped_state(self, bootstrap_path, env):
+        api = _init_api(bootstrap_path, env)
+        try:
+            _deliver_task(env, result_receiver_ids=("server",))
+            api.receive()
+
+            api.clear()
+
+            assert api._result_receiver_ids is None
+            assert api.is_train() is False
+            assert api.is_evaluate() is False
+            assert api.is_submit_model() is False
+            with pytest.raises(RuntimeError, match="no current task"):
+                api.get_task_name()
+            with pytest.raises(RuntimeError, match='"receive" needs to be called'):
+                api.send(FLModel(params={"w": [2.0]}))
         finally:
             api.shutdown()
 
@@ -900,6 +928,46 @@ class TestHeartbeat:
 
 
 class TestControlValidation:
+    def test_task_ready_before_hello_is_rejected(self, bootstrap_path):
+        api = CellClientAPI(bootstrap_file=bootstrap_path)
+        shareable = FLModelUtils.to_shareable(FLModel(params={"w": [1.0]}))
+        reply = api._handle_task_ready(
+            new_cell_message(
+                {MessageHeaderKey.ORIGIN: CJ_FQCN},
+                {
+                    MsgKey.TASK_ID: "t1",
+                    MsgKey.TASK_NAME: "train",
+                    MsgKey.MODEL: shareable,
+                },
+            )
+        )
+
+        assert reply.payload[MsgKey.REPLY_TOPIC] == Topic.TASK_FAILED
+        assert reply.payload[MsgKey.REASON] == "no active trainer session"
+        assert api._task_queue.empty()
+
+    @pytest.mark.parametrize(
+        "terminal_topic, terminal_fields",
+        [
+            (Topic.ABORT, {MsgKey.REASON: "controller abort"}),
+            (Topic.SHUTDOWN, {}),
+        ],
+    )
+    def test_task_ready_after_session_end_is_rejected(
+        self, bootstrap_path, env, terminal_topic, terminal_fields
+    ):
+        api = _init_api(bootstrap_path, env)
+        try:
+            terminal_payload = {MsgKey.SESSION_ID: SESSION_ID, **terminal_fields}
+            env.deliver(terminal_topic, CJ_FQCN, terminal_payload)
+
+            _, reply = _deliver_task(env)
+
+            assert reply.payload[MsgKey.REPLY_TOPIC] == Topic.TASK_FAILED
+            assert api._task_queue.empty()
+        finally:
+            api.shutdown()
+
     def test_get_config_preserves_legacy_shape_without_bootstrap_secret(self, bootstrap_path, env):
         api = _init_api(bootstrap_path, env)
         try:

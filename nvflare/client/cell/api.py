@@ -64,12 +64,12 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 
 _HELLO_TIMEOUT = 30.0
 _HELLO_RETRY_INTERVAL = 1.0
-# Queue reads wake immediately; this bounds abort/stop detection latency.
+# Queue polling bounds abort/stop detection latency.
 _RECEIVE_POLL_INTERVAL = 0.5
 _HEARTBEAT_JOIN_TIMEOUT = 1.0
 
 
-class TrainerSessionError(Exception):
+class TrainerSessionError(RuntimeError):
     """The trainer's Client API session ended (SHUTDOWN, ABORT, or CJ/cell loss)."""
 
 
@@ -104,7 +104,11 @@ def _to_python_scalar(v: Any) -> Any:
 
 
 class CellClientAPI(APISpec):
-    """Client API implementation that speaks the external_process Cell protocol to the CJ."""
+    """Client API implementation that speaks the external_process Cell protocol to the CJ.
+
+    The control-rank task-state API is single-threaded: ``receive()``, ``send()``, and
+    ``clear()`` must not be called concurrently.
+    """
 
     def __init__(self, bootstrap_file: Optional[str] = None):
         """Create the API from an explicit bootstrap path or the launch environment."""
@@ -151,7 +155,7 @@ class CellClientAPI(APISpec):
         self._closed = False
         self._lock = threading.Lock()
         self._shutdown_lock = threading.Lock()
-        self._heartbeat_lock = threading.Lock()
+        self._liveness_lock = threading.Lock()
         self._heartbeat_interval = 0.0
         self._heartbeat_timeout = 0.0
         self._last_cj_activity: Optional[float] = None
@@ -164,11 +168,6 @@ class CellClientAPI(APISpec):
         self._params_conversion_state = {}
 
     # ------------------------------------------------------------------ lifecycle
-
-    @property
-    def closed(self) -> bool:
-        """Whether this Cell API has been shut down."""
-        return self._closed
 
     def init(self, rank: Optional[str] = None):
         self._rank = rank if rank is not None else os.environ.get("RANK", "0")
@@ -492,10 +491,9 @@ class CellClientAPI(APISpec):
     # ------------------------------------------------------------------ log / info
 
     def log(self, key: str, value: Any, data_type: AnalyticsDataType, **kwargs):
-        if self._closed or not self._is_control_rank:
+        if self._closed:
             return
-        if str(self._rank) != "0":
-            raise RuntimeError("only rank 0 can call log!")
+        self._require_control_rank("log")
         try:
             self._cell.fire_and_forget(
                 channel=CHANNEL,
@@ -570,13 +568,18 @@ class CellClientAPI(APISpec):
     def clear(self):
         self._fl_model = None
         self._receive_called = False
+        self._current_task = None
+        self._result_receiver_ids = None
 
     def shutdown(self):
         """Stop this one-session trainer and its process-global F3 runtime."""
         with self._shutdown_lock:
-            if not self._closed:
-                self._closed = True
-                self._stopped = True
+            with self._lock:
+                close_resources = not self._closed
+                if close_resources:
+                    self._closed = True
+                    self._stopped = True
+            if close_resources:
                 self._abort_signal.trigger("client api shutdown")
                 self._result_abort_signal.trigger("client api shutdown")
                 self._stop_heartbeat()
@@ -596,8 +599,15 @@ class CellClientAPI(APISpec):
         reject_reason = self._validate_cj_control(request, payload)
         if reject_reason:
             return self._reply(Topic.TASK_FAILED, **{MsgKey.REASON: reject_reason})
-        self._note_cj_activity()
         task_id = payload.get(MsgKey.TASK_ID)
+        with self._lock:
+            terminal_reason = self._session_end_reason()
+        if terminal_reason:
+            return self._reply(
+                Topic.TASK_FAILED,
+                **{MsgKey.TASK_ID: task_id, MsgKey.REASON: terminal_reason},
+            )
+        self._note_cj_activity()
         shareable = payload.get(MsgKey.MODEL)
         if not isinstance(shareable, Shareable):
             return self._reply(
@@ -622,7 +632,17 @@ class CellClientAPI(APISpec):
                 **{MsgKey.TASK_ID: task_id, MsgKey.REASON: f"invalid task model: {e}"},
             )
         result_receiver_ids = self._normalize_result_receiver_ids(shareable.get_header(FOBSContextKey.RECEIVER_IDS))
-        self._task_queue.put({"task": payload, "model": model, "result_receiver_ids": result_receiver_ids})
+        with self._lock:
+            terminal_reason = self._session_end_reason()
+            if terminal_reason is None:
+                self._task_queue.put(
+                    {"task": payload, "model": model, "result_receiver_ids": result_receiver_ids}
+                )
+        if terminal_reason:
+            return self._reply(
+                Topic.TASK_FAILED,
+                **{MsgKey.TASK_ID: task_id, MsgKey.REASON: terminal_reason},
+            )
         return self._reply(Topic.TASK_ACCEPTED, **{MsgKey.TASK_ID: task_id})
 
     def _handle_abort(self, request):
@@ -631,8 +651,9 @@ class CellClientAPI(APISpec):
         if reject_reason:
             return make_cell_reply(CellReturnCode.INVALID_REQUEST, error=reject_reason)
         self._note_cj_activity()
-        self._abort = True
-        self._abort_reason = str(payload.get(MsgKey.REASON))
+        with self._lock:
+            self._abort = True
+            self._abort_reason = str(payload.get(MsgKey.REASON))
         self._abort_signal.trigger(self._abort_reason)
         self._result_abort_signal.trigger(self._abort_reason)
         self.logger.error(f"session aborted by CJ: {self._abort_reason}")
@@ -676,15 +697,23 @@ class CellClientAPI(APISpec):
         return normalized or None
 
     def _check_session_alive(self) -> None:
+        reason = self._session_end_reason()
+        if reason:
+            raise TrainerSessionError(reason)
+
+    def _session_end_reason(self) -> Optional[str]:
         if self._abort:
-            raise TrainerSessionError(f"session aborted: {self._abort_reason}")
+            return f"session aborted: {self._abort_reason}"
         if self._stopped or self._closed:
-            raise TrainerSessionError("session stopped")
+            return "session stopped"
+        return None
 
     def _validate_cj_control(self, request, payload: dict) -> Optional[str]:
         origin = request.get_header(MessageHeaderKey.ORIGIN) or ""
         if origin != self._cj_fqcn:
             return f"unexpected CJ origin {origin!r}"
+        if not self._session_id:
+            return "no active trainer session"
         if payload.get(MsgKey.SESSION_ID) != self._session_id:
             return "stale or unknown session id"
         return None
@@ -741,38 +770,41 @@ class CellClientAPI(APISpec):
         )
 
     def _note_cj_activity(self) -> None:
-        with self._heartbeat_lock:
+        with self._liveness_lock:
             self._last_cj_activity = time.monotonic()
 
     def _add_result_transfer_waiter(self, waiter) -> None:
-        with self._heartbeat_lock:
+        with self._liveness_lock:
             self._result_transfer_waiters = (*self._result_transfer_waiters, waiter)
 
     def _clear_result_transfer_waiters(self) -> None:
-        with self._heartbeat_lock:
+        with self._liveness_lock:
             self._result_transfer_waiters = ()
 
     def _snapshot_result_transfer_waiters(self):
-        with self._heartbeat_lock:
+        with self._liveness_lock:
             return self._result_transfer_waiters
 
     def _has_pending_result_transfer(self) -> bool:
-        with self._heartbeat_lock:
+        with self._liveness_lock:
             return any(not waiter.done() for waiter in self._result_transfer_waiters)
 
     def _abort_if_cj_timed_out(self) -> bool:
-        with self._heartbeat_lock:
-            if self._abort or self._stopped or self._closed:
-                return False
-            last_activity = self._last_cj_activity
-            silent_for = float("inf") if last_activity is None else max(0.0, time.monotonic() - last_activity)
-            if silent_for <= self._heartbeat_timeout or any(
-                not waiter.done() for waiter in self._result_transfer_waiters
-            ):
-                return False
-            reason = f"CJ heartbeat timed out after {silent_for:.1f}s (timeout={self._heartbeat_timeout}s)"
-            self._abort = True
-            self._abort_reason = reason
+        # Use the task-state lock before the liveness lock everywhere both are needed.
+        # This makes heartbeat expiry atomic with TASK_READY admission.
+        with self._lock:
+            with self._liveness_lock:
+                if self._session_end_reason():
+                    return False
+                last_activity = self._last_cj_activity
+                silent_for = float("inf") if last_activity is None else max(0.0, time.monotonic() - last_activity)
+                if silent_for <= self._heartbeat_timeout or any(
+                    not waiter.done() for waiter in self._result_transfer_waiters
+                ):
+                    return False
+                reason = f"CJ heartbeat timed out after {silent_for:.1f}s (timeout={self._heartbeat_timeout}s)"
+                self._abort = True
+                self._abort_reason = reason
         self._abort_signal.trigger(reason)
         self._result_abort_signal.trigger(reason)
         self._heartbeat_stop.set()
