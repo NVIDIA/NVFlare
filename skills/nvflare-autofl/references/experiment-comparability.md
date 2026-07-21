@@ -26,6 +26,21 @@ comparable unless the user asks to tune them. Report a small results table with
 recipe, settings, metric value, command, status, and result path. If a candidate
 cannot run, report the blocker instead of silently dropping it.
 
+## Run-To-Run Variance
+
+A pinned `--seed` argument only makes runs comparable when the job itself seeds
+every process: the `job.py` process and each per-client simulator subprocess
+must seed Python's `random`, NumPy, and the ML framework (for PyTorch also
+`torch.manual_seed` plus DataLoader worker seeding). Unseeded fixtures can show
+a large baseline spread even under identical settings, and streaming (in-time)
+server aggregation applies results in arrival order, so bitwise reproducibility
+is not guaranteed for two or more clients.
+
+Seed in job code rather than relying on the campaign `--seed` argument alone.
+When a job is noisy, re-run the unmodified baseline a few times to measure the
+observed run-to-run spread, and treat candidate score differences within that
+spread as noise rather than real improvement when reporting results.
+
 ## Data Distribution Experiments
 
 When the user asks to compare IID and heterogeneous data splits, define the split
