@@ -22,8 +22,9 @@ DEFAULT_FOLDERS = ("nvflare", "examples", "tests", "integration", "research", "s
 PUBLIC_DOMAIN_MARKER = "This file is released into the public domain."
 EXCLUDED_FILE_NAMES = {"modeling_roberta.py"}
 
-# Skill files are loaded into LLM context at runtime, so they use the compact
-# SPDX header instead of the full boilerplate to reduce per-invocation token cost.
+# Skill files loaded into LLM context may use the compact SPDX header to reduce
+# per-invocation token cost, but helper scripts under skills/ can also use the
+# standard project boilerplate.
 SPDX_HEADER_FOLDER = "skills"
 
 LICENSE_HEADER_PATTERN = re.compile(
@@ -77,7 +78,7 @@ def has_valid_license_header(file_path: Path, file_text: str) -> bool:
     if PUBLIC_DOMAIN_MARKER in file_text[:512]:
         return True
     if file_path.parts and file_path.parts[0] == SPDX_HEADER_FOLDER:
-        return bool(SPDX_HEADER_PATTERN.match(file_text))
+        return bool(SPDX_HEADER_PATTERN.match(file_text) or LICENSE_HEADER_PATTERN.match(file_text))
     return bool(LICENSE_HEADER_PATTERN.match(file_text))
 
 

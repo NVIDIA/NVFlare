@@ -271,7 +271,9 @@ class FederatedClientBase:
 
                 if self.token is not None:
                     self.fl_ctx.set_prop(FLContextKey.CLIENT_NAME, self.client_name, private=False)
-                    self.logger.info(f"Successfully registered client {self.client_name} for project {project_name}.")
+                    self.logger.info(
+                        "Successfully registered client:{} for project {}.".format(self.client_name, project_name)
+                    )
 
             except FLCommunicationError:
                 self.communicator.heartbeat_done = True
