@@ -82,7 +82,8 @@ class SVMFedAvgRecipe(FedAvgRecipe):
             ``set_per_site_config(recipe, config)`` immediately after construction. Nested values become
             part of the generated job definition and must not contain secrets.
         key_metric: Metric used to determine if the model is globally best. If validation metrics are
-            a dict, key_metric selects the metric used for global model selection. Defaults to "AUC"
+            a dict, key_metric selects the metric used for global model selection. Higher values must
+            indicate a better model. Defaults to "AUC"
             (which corresponds to the ROC AUC score sent by the SVM client in round 1).
 
     Example:
