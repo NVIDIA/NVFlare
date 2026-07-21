@@ -83,7 +83,8 @@ class KMeansFedAvgRecipe(FedAvgRecipe):
             ``set_per_site_config(recipe, config)`` immediately after construction. Nested values become
             part of the generated job definition and must not contain secrets.
         key_metric: Metric used to determine if the model is globally best. If validation metrics are
-            a dict, key_metric selects the metric used for global model selection. Defaults to "metrics"
+            a dict, key_metric selects the metric used for global model selection. Higher values must
+            indicate a better model. Defaults to "metrics"
             (which corresponds to the homogeneity score sent by the K-Means client).
 
     Example:
