@@ -18,9 +18,14 @@ import argparse
 import re
 from pathlib import Path
 
-DEFAULT_FOLDERS = ("nvflare", "examples", "tests", "integration", "research")
+DEFAULT_FOLDERS = ("nvflare", "examples", "tests", "integration", "research", "skills")
 PUBLIC_DOMAIN_MARKER = "This file is released into the public domain."
 EXCLUDED_FILE_NAMES = {"modeling_roberta.py"}
+
+# Skill files loaded into LLM context may use the compact SPDX header to reduce
+# per-invocation token cost, but helper scripts under skills/ can also use the
+# standard project boilerplate.
+SPDX_HEADER_FOLDER = "skills"
 
 LICENSE_HEADER_PATTERN = re.compile(
     r"\A"
@@ -42,6 +47,16 @@ LICENSE_HEADER_PATTERN = re.compile(
     r"# limitations under the License\.\n"
 )
 
+SPDX_HEADER_PATTERN = re.compile(
+    r"\A"
+    r"(?:#!.*\n)?"
+    r"(?:#.*coding[:=].*\n)?"
+    r"(?:\n)*"
+    r"# SPDX-FileCopyrightText: Copyright \(c\) \d{4}(?:-\d{4})? NVIDIA CORPORATION & AFFILIATES\. "
+    r"All rights reserved\.\n"
+    r"# SPDX-License-Identifier: Apache-2\.0\n"
+)
+
 
 def iter_python_files(folders: list[str]) -> list[Path]:
     files = []
@@ -59,9 +74,11 @@ def iter_python_files(folders: list[str]) -> list[Path]:
     return sorted(files)
 
 
-def has_valid_license_header(file_text: str) -> bool:
+def has_valid_license_header(file_path: Path, file_text: str) -> bool:
     if PUBLIC_DOMAIN_MARKER in file_text[:512]:
         return True
+    if file_path.parts and file_path.parts[0] == SPDX_HEADER_FOLDER:
+        return bool(SPDX_HEADER_PATTERN.match(file_text) or LICENSE_HEADER_PATTERN.match(file_text))
     return bool(LICENSE_HEADER_PATTERN.match(file_text))
 
 
@@ -73,7 +90,7 @@ def main() -> int:
     files_with_bad_headers = []
     for file_path in iter_python_files(args.folders):
         file_text = file_path.read_text(encoding="utf-8", errors="ignore")
-        if not has_valid_license_header(file_text):
+        if not has_valid_license_header(file_path, file_text):
             files_with_bad_headers.append(file_path)
 
     if files_with_bad_headers:
