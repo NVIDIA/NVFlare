@@ -2094,6 +2094,7 @@ def probe_simulator_workspace_override_support(
                 cwd,
                 timeout,
                 Path(probe_dir) / "probe.log",
+                env=simulator_child_env(Path(probe_dir)),
                 simulator_no_progress_timeout=0,
             )
         if rc != 0:

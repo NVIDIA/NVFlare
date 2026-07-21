@@ -906,6 +906,31 @@ def test_probe_simulator_workspace_override_support_inspects_installed_sim_env(t
     assert probe == {"version": "", "supported": None}
 
 
+def test_probe_simulator_workspace_override_support_uses_sanitized_env(tmp_path, monkeypatch):
+    runner = _load_runner()
+    captured = {}
+
+    monkeypatch.setenv("PATH", "/safe/bin")
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path / "pythonpath"))
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "secret")
+    monkeypatch.setenv("AUTOFL_TEST_TOKEN", "secret")
+
+    def fake_run(*args, **kwargs):
+        captured["env"] = kwargs["env"]
+        return 0, '{"version": "2.9.0", "supported": true}\n', 0.1
+
+    monkeypatch.setattr(runner, "run", fake_run)
+
+    probe = runner.probe_simulator_workspace_override_support(sys.executable, tmp_path)
+
+    assert probe == {"version": "2.9.0", "supported": True}
+    assert captured["env"]["PATH"] == "/safe/bin"
+    assert captured["env"]["PYTHONPATH"] == str(tmp_path / "pythonpath")
+    assert runner.SIMULATOR_WORKSPACE_ROOT_ENV_VAR in captured["env"]
+    assert "AWS_SECRET_ACCESS_KEY" not in captured["env"]
+    assert "AUTOFL_TEST_TOKEN" not in captured["env"]
+
+
 def test_nvflare_version_predates_workspace_override():
     runner = _load_runner()
 
