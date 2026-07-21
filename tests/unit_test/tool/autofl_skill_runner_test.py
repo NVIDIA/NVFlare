@@ -918,6 +918,28 @@ def test_nvflare_version_predates_workspace_override():
     assert not runner.nvflare_version_predates_workspace_override("unknown")
 
 
+def test_simulator_child_env_uses_allowlisted_runtime_context(tmp_path, monkeypatch):
+    runner = _load_runner()
+    simulator_base = tmp_path / "simulation"
+    venv = tmp_path / "venv"
+    pythonpath = tmp_path / "pythonpath"
+
+    monkeypatch.setenv("PATH", "/safe/bin")
+    monkeypatch.setenv("PYTHONPATH", str(pythonpath))
+    monkeypatch.setenv("VIRTUAL_ENV", str(venv))
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "secret")
+    monkeypatch.setenv("AUTOFL_TEST_TOKEN", "secret")
+
+    env = runner.simulator_child_env(simulator_base)
+
+    assert env["PATH"] == "/safe/bin"
+    assert env["PYTHONPATH"] == str(pythonpath)
+    assert env["VIRTUAL_ENV"] == str(venv)
+    assert env[runner.SIMULATOR_WORKSPACE_ROOT_ENV_VAR] == str(simulator_base)
+    assert "AWS_SECRET_ACCESS_KEY" not in env
+    assert "AUTOFL_TEST_TOKEN" not in env
+
+
 def test_run_discovers_and_persists_printed_unnamed_simulator_root(tmp_path, monkeypatch):
     runner = _load_runner()
     job = tmp_path / "job.py"

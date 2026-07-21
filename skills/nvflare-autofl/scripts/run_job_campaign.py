@@ -130,6 +130,30 @@ SIMULATOR_WORKSPACE_ROOT_ENV_VAR = "NVFLARE_SIMULATOR_WORKSPACE_ROOT"
 SIMULATOR_WORKSPACE_OVERRIDE_MIN_NVFLARE_VERSION = "2.9.0"
 DEFAULT_WORKSPACE_OVERRIDE_PROBE_TIMEOUT = 30
 CAMPAIGN_LOCK_PATH = ".nvflare/autofl/campaign.lock"
+SIMULATOR_ENV_ALLOWLIST = (
+    "PATH",
+    "PYTHONPATH",
+    "PYTHONHOME",
+    "VIRTUAL_ENV",
+    "CONDA_PREFIX",
+    "CONDA_DEFAULT_ENV",
+    "PYENV_VERSION",
+    "HOME",
+    "TMPDIR",
+    "TEMP",
+    "TMP",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "CUDA_VISIBLE_DEVICES",
+    "NVIDIA_VISIBLE_DEVICES",
+    "LD_LIBRARY_PATH",
+    "DYLD_LIBRARY_PATH",
+    "SYSTEMROOT",
+    "WINDIR",
+    "COMSPEC",
+    "PATHEXT",
+)
 
 FIXED_BUDGET_TO_CLI = {
     "num_clients": "n_clients",
@@ -2064,15 +2088,17 @@ def probe_simulator_workspace_override_support(
         "print(json.dumps({'version': version, 'supported': supported}))\n"
     )
     try:
-        completed = subprocess.run(
-            [python, "-c", script],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=True,
-        )
-        payload = json.loads(completed.stdout.strip().splitlines()[-1])
+        with tempfile.TemporaryDirectory(prefix="nvflare-autofl-probe-") as probe_dir:
+            rc, stdout, _runtime = run(
+                [python, "-c", script],
+                cwd,
+                timeout,
+                Path(probe_dir) / "probe.log",
+                simulator_no_progress_timeout=0,
+            )
+        if rc != 0:
+            return {"version": "", "supported": None}
+        payload = json.loads(stdout.strip().splitlines()[-1])
     except (OSError, subprocess.SubprocessError, ValueError, IndexError):
         return {"version": "", "supported": None}
     if not isinstance(payload, dict):
@@ -2122,6 +2148,16 @@ def unresolved_result_dir_failure_reason(python: str, cwd: Path, config: Dict[st
     return generic_reason
 
 
+def simulator_child_env(simulator_base: Path) -> Dict[str, str]:
+    run_env: Dict[str, str] = {}
+    for name in SIMULATOR_ENV_ALLOWLIST:
+        value = os.environ.get(name)
+        if value is not None:
+            run_env[name] = value
+    run_env[SIMULATOR_WORKSPACE_ROOT_ENV_VAR] = str(simulator_base)
+    return run_env
+
+
 def run_job(
     run_def: JobRun,
     *,
@@ -2148,8 +2184,7 @@ def run_job(
         simulator_roots = expected_simulator_roots(
             config, run_name if name_args else None, cwd, simulator_base=simulator_base
         )
-        run_env = os.environ.copy()
-        run_env[SIMULATOR_WORKSPACE_ROOT_ENV_VAR] = str(simulator_base)
+        run_env = simulator_child_env(simulator_base)
         unnamed_root_snapshot = simulator_root_snapshot(simulator_base) if not simulator_roots else {}
         rc, stdout, runtime = run(
             command,
