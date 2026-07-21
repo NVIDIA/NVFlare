@@ -93,6 +93,9 @@ class AnalyticsData:
             sender (LogWriterName): Type of sender for syntax such as Tensorboard or MLflow
             kwargs (optional, dict): additional arguments to be passed.
         """
+        step = kwargs.get(TrackConst.GLOBAL_STEP_KEY, None)
+        if step is not None:
+            kwargs[TrackConst.GLOBAL_STEP_KEY] = self._normalize_global_step(step)
         value = self._validate_data_types(data_type, key, value, **kwargs)
         self.tag = key
         self.value = value
@@ -172,12 +175,6 @@ class AnalyticsData:
             raise TypeError(f"expect data_type to be an instance of AnalyticsDataType, but got {type(data_type)}.")
         if kwargs and not isinstance(kwargs, dict):
             raise TypeError(f"expect kwargs to be an instance of dict, but got {type(kwargs)}.")
-        step = kwargs.get(TrackConst.GLOBAL_STEP_KEY, None)
-        if step:
-            if not isinstance(step, int):
-                raise TypeError(f"expect step to be an instance of int, but got {type(step)}.")
-            if step < 0:
-                raise ValueError(f"expect step to be non-negative int, but got {step}.")
         path = kwargs.get(TrackConst.PATH_KEY, None)
         if path is not None and not isinstance(path, str):
             raise TypeError(f"expect path to be an instance of str, but got {type(path)}.")
@@ -214,6 +211,14 @@ class AnalyticsData:
                 f"expect '{key}' data type expects value to be an instance of dict, but got '{type(value)}'"
             )
         return value
+
+    def _normalize_global_step(self, step):
+        is_numeric_scalar, normalized_step = self._normalize_numeric_scalar(step)
+        if not is_numeric_scalar or not isinstance(normalized_step, int):
+            raise TypeError(f"expect step to be an instance of int, but got {type(step)}.")
+        if normalized_step < 0:
+            raise ValueError(f"expect step to be non-negative int, but got {normalized_step}.")
+        return normalized_step
 
     @staticmethod
     def _normalize_numeric_scalar(value):

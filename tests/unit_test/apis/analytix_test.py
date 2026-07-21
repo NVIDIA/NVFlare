@@ -166,6 +166,18 @@ class TestAnalytix:
         assert data.value == 1.25
         assert isinstance(data.value, float)
 
+    @pytest.mark.parametrize("shape", [(1,), (1, 1), (2,)])
+    def test_non_scalar_shape_is_rejected(self, shape):
+        class NonScalarLike:
+            def __init__(self, value_shape):
+                self.shape = value_shape
+
+            def item(self):
+                raise AssertionError("item() must not be called for a non-scalar shape")
+
+        with pytest.raises(TypeError, match="expect 'loss' value to be a numeric scalar"):
+            AnalyticsData(key="loss", value=NonScalarLike(shape), data_type=AnalyticsDataType.SCALAR)
+
     @pytest.mark.parametrize("path", [1, 0])
     def test_invalid_path_error_reports_path_type(self, path):
         with pytest.raises(TypeError, match="expect path to be an instance of str, but got <class 'int'>."):
@@ -199,6 +211,35 @@ class TestAnalytix:
                 key="losses",
                 value={"train": "bad_string"},
                 data_type=data_type,
+            )
+
+    @pytest.mark.parametrize("step", [0, 10])
+    def test_numpy_integer_step_is_normalized(self, step):
+        np = pytest.importorskip("numpy")
+
+        data = AnalyticsData(
+            key="loss",
+            value=np.float32(1.25),
+            data_type=AnalyticsDataType.SCALAR,
+            global_step=np.int64(step),
+        )
+        dxo = data.to_dxo()
+
+        assert data.step == step
+        assert type(data.step) is int
+        assert type(data.kwargs[TrackConst.GLOBAL_STEP_KEY]) is int
+        assert type(dxo.data[TrackConst.GLOBAL_STEP_KEY]) is int
+        assert type(dxo.data[TrackConst.KWARGS_KEY][TrackConst.GLOBAL_STEP_KEY]) is int
+
+    def test_numpy_float_step_is_rejected(self):
+        np = pytest.importorskip("numpy")
+
+        with pytest.raises(TypeError, match="expect step to be an instance of int"):
+            AnalyticsData(
+                key="loss",
+                value=1.25,
+                data_type=AnalyticsDataType.SCALAR,
+                global_step=np.float64(1.0),
             )
 
     def test_numpy_numeric_values_are_normalized(self):
