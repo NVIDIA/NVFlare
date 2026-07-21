@@ -1003,8 +1003,8 @@ def atomic_write_text(path: Path, text: str) -> None:
         with tempfile.NamedTemporaryFile(
             "w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False
         ) as f:
-            f.write(text)
             temp_path = Path(f.name)
+            f.write(text)
         os.replace(temp_path, path)
     finally:
         if temp_path and temp_path.exists():

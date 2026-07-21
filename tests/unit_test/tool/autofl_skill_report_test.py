@@ -197,6 +197,38 @@ def _generate(reporter, tmp_path, monkeypatch, *extra):
     return reporter.generate(args)
 
 
+def test_atomic_write_text_removes_temp_file_after_write_failure(tmp_path, monkeypatch):
+    reporter = _load_reporter()
+    named_temporary_file = reporter.tempfile.NamedTemporaryFile
+    created_paths = []
+
+    class FailingTemporaryFile:
+        def __init__(self, *args, **kwargs):
+            self._file = named_temporary_file(*args, **kwargs)
+            self.name = self._file.name
+            created_paths.append(Path(self.name))
+
+        def __enter__(self):
+            self._file.__enter__()
+            return self
+
+        def __exit__(self, *args):
+            return self._file.__exit__(*args)
+
+        def write(self, text):
+            raise OSError("injected write failure")
+
+    monkeypatch.setattr(reporter.tempfile, "NamedTemporaryFile", FailingTemporaryFile)
+    output_path = tmp_path / "report.md"
+
+    with pytest.raises(OSError, match="injected write failure"):
+        reporter.atomic_write_text(output_path, "report")
+
+    assert not output_path.exists()
+    assert created_paths
+    assert all(not path.exists() for path in created_paths)
+
+
 def test_report_refuses_active_campaign_without_confirmation(tmp_path, monkeypatch):
     reporter = _load_reporter()
     _write_campaign(tmp_path, active=True)
