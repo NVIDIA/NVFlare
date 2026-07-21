@@ -79,7 +79,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.apis.job_launcher_spec import JobProcessArgs, JobReturnCode
+from nvflare.apis.job_launcher_spec import JobProcessArgs, JobProcessEnv, JobReturnCode
 from nvflare.app_opt.job_launcher.docker_launcher import (
     ClientDockerJobLauncher,
     DockerJobHandle,
@@ -1159,6 +1159,38 @@ class TestGetModuleArgs:
         launcher = _make_launcher(cls=ServerDockerJobLauncher)
         result = launcher.get_module_args({})
         assert isinstance(result, dict)
+
+
+# ---------------------------------------------------------------------------
+# DockerJobLauncher — credential transport (env, never argv)
+# ---------------------------------------------------------------------------
+
+
+class TestDockerCredentialTransport:
+    def test_credentials_in_env_not_command(self):
+        launcher = _make_launcher()
+        dc = launcher._docker_client
+        container = MagicMock()
+        container.id = "abc123"
+        dc.containers.run.return_value = container
+        dc.containers.get.return_value = _make_container("running")
+
+        fl_ctx, job_args = _make_fl_ctx()
+        job_args.update(
+            {
+                JobProcessArgs.AUTH_TOKEN: ("-t", "secret-token"),
+                JobProcessArgs.TOKEN_SIGNATURE: ("-ts", "secret-signature"),
+                JobProcessArgs.SSID: ("-d", "secret-ssid"),
+            }
+        )
+        launcher.launch_job(_make_job_meta(), fl_ctx)
+
+        run_kwargs = dc.containers.run.call_args[1]
+        environment = run_kwargs["environment"]
+        assert environment[JobProcessEnv.AUTH_TOKEN] == "secret-token"
+        assert environment[JobProcessEnv.TOKEN_SIGNATURE] == "secret-signature"
+        assert environment[JobProcessEnv.SSID] == "secret-ssid"
+        assert "secret-" not in " ".join(str(a) for a in run_kwargs["command"])
 
 
 # ---------------------------------------------------------------------------

@@ -182,6 +182,9 @@ class TestLoadStudyRuntimeFile:
             ("env", "NVFL_WORKSPACE_TRANSFER_TOKEN: site-value"),
             ("secret_env", "NVFL_WORKSPACE_TRANSFER_TOKEN: {source: study-db, key: token}"),
             ("secret_env", "NVFL_WORKSPACE_OWNER_FQCN: {source: study-db, key: fqcn}"),
+            ("env", "NVFLARE_JOB_AUTH_TOKEN: site-value"),
+            ("secret_env", "NVFLARE_JOB_TOKEN_SIGNATURE: {source: study-db, key: sig}"),
+            ("secret_env", "NVFLARE_JOB_SSID: {source: study-db, key: ssid}"),
         ],
     )
     def test_launcher_owned_env_names_rejected(self, tmp_path, section, entry):

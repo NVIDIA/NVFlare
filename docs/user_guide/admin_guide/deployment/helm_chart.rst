@@ -956,12 +956,15 @@ The generated chart creates a ServiceAccount and namespace-scoped
 Role/RoleBinding by default. The launcher needs permission to:
 
 * create, delete, get, list, and watch pods;
-* create, get, and update Secrets.
+* create, get, update, patch, and delete Secrets.
 
 The Secret permission is required because the launcher creates or updates a
-per-site startup-kit Secret for dynamically launched job pods. Job pods mount
-that Secret read-only at ``<workspace_mount_path>/startup``. The Secret name
-uses this pattern:
+per-site startup-kit Secret for dynamically launched job pods, and a per-job
+credential Secret (``nvflare-cred-<pod-name>``) delivering the job bootstrap
+credentials as env vars via ``secretKeyRef``. The credential Secret is patched
+with an ownerReference to its pod and deleted when the job ends. Job pods mount
+the startup-kit Secret read-only at ``<workspace_mount_path>/startup``. The
+startup-kit Secret name uses this pattern:
 
 .. code-block:: text
 
@@ -984,7 +987,8 @@ For example, inspect startup-kit Secrets with:
 If your cluster operator disables ``serviceAccount.create`` or ``rbac.create``
 in chart values, provide equivalent API access in the same namespace before job
 submission. The parent pod must run with a ServiceAccount that can create job
-pods and create or update startup-kit Secrets.
+pods and create, update, patch, and delete the startup-kit and per-job
+credential Secrets.
 
 Configure Kubernetes Job Pods
 =============================
