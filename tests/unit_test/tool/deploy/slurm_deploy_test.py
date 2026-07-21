@@ -219,6 +219,7 @@ def test_stage_slurm_installs_kit_and_start_script_uses_workspace_entrypoint(tmp
     stage_slurm_deployment(argparse.Namespace(kit=str(output), kit_flag=None))
     stage_output = capsys.readouterr().out
     workspace = tmp_path / "shared" / "site-1"
+    assert "stop every parent using this workspace" in stage_output
     assert "staged" in stage_output
     assert (workspace / "kit" / "startup" / "sub_start.sh").is_file()
     assert os.readlink(workspace / "startup") == "kit/startup"

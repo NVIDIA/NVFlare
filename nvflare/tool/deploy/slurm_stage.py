@@ -27,7 +27,7 @@ from pathlib import Path
 
 from nvflare.app_opt.job_launcher.slurm.config import CONTROL_DIR, DEPLOYMENT_FILE, SCHEMA_VERSION
 from nvflare.tool.cli_output import output_ok
-from nvflare.tool.deploy.deploy_common import SLURM_STAGE_MANIFEST, SLURM_START_SH, _fail, _paths_overlap
+from nvflare.tool.deploy.deploy_common import SLURM_STAGE_MANIFEST, SLURM_START_SH, _fail, _paths_overlap, _warn
 
 KIT_DIR = "kit"
 NEXT_KIT_DIR = "kit.next"
@@ -42,6 +42,10 @@ def stage_slurm_deployment(args) -> None:
 
     try:
         prepared = _resolve_prepared_kit(args)
+        _warn(
+            "staging replaces the runtime kit; stop every parent using this workspace before continuing because "
+            "this command does not detect a running parent"
+        )
         prepared, workspace, identity = stage_prepared_kit(prepared)
     except (OSError, SlurmStageError) as ex:
         _fail(
