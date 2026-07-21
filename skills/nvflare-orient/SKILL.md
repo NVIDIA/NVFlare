@@ -57,7 +57,8 @@ directly rather than invoking orient first.
 - Must report the evidence used for routing.
 - Must prefer a specific workflow skill over broad FLARE advice.
 - Must say when no FLARE skill should trigger.
-- Must not edit files, start POC systems, submit jobs, or read private keys.
+- Must not edit files, start POC systems, submit jobs, or inspect credential
+  material.
 
 Load `references/orientation-routing.md` when routing is ambiguous or when the
 inspect output names multiple possible workflow families.

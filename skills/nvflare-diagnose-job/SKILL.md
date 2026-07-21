@@ -79,8 +79,8 @@ Python debugging without NVFLARE job context.
   or model paths.
 - Must keep log evidence bounded and report truncation or missing site logs.
 - Must avoid confident root-cause claims when required site evidence is missing.
-- Must not read private key contents, mutate jobs/configs/runtime state, or run
-  unbounded scans.
+- Must not inspect credential material, mutate jobs/configs/runtime state, or
+  run unbounded scans.
 
 ## Output Shape
 
