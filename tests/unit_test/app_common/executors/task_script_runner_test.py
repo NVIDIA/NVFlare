@@ -16,6 +16,7 @@ import os
 import shutil
 import sys
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -367,3 +368,32 @@ class TestTaskScriptRunner(unittest.TestCase):
         with pytest.raises(Exception):
             script_args = "--batch_size 4"
             wrapper = TaskScriptRunner(custom_dir=self.nvflare_root, script_path="", script_args=script_args)
+
+
+def test_print_redirection_is_scoped_to_runner_thread(tmp_path, capsys):
+    (tmp_path / "train.py").write_text("")
+    runner = TaskScriptRunner(custom_dir=str(tmp_path), script_path="train.py")
+    trainer_started = threading.Event()
+    release_trainer = threading.Event()
+
+    def run_path(*args, **kwargs):
+        print("trainer output")
+        trainer_started.set()
+        release_trainer.wait(timeout=5.0)
+
+    with (
+        patch("nvflare.app_common.executors.task_script_runner.runpy.run_path", side_effect=run_path),
+        patch.object(TaskScriptRunner.logger, "info") as log_info,
+    ):
+        trainer_thread = threading.Thread(target=runner.run)
+        trainer_thread.start()
+        try:
+            assert trainer_started.wait(timeout=2.0)
+            print("main-thread output")
+            assert capsys.readouterr().out == "main-thread output\n"
+            log_info.assert_any_call("trainer output")
+        finally:
+            release_trainer.set()
+            trainer_thread.join(timeout=2.0)
+
+    assert not trainer_thread.is_alive()
