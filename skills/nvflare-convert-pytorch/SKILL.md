@@ -2,7 +2,7 @@
 name: nvflare-convert-pytorch
 description: "Convert existing PyTorch training code into an NVFLARE federated job using Client API model exchange, local validation, and job export; do not use for other frameworks, deployment, POC/production lifecycle, or experiment workflows."
 license: Apache-2.0
-version: "0.2.0"
+version: "0.2.0" # NVSkills CI bootstrap: no behavior change.
 metadata:
   author: "NVIDIA FLARE Team <federatedlearning@nvidia.com>"
   min_flare_version: "2.8.0"
@@ -35,9 +35,9 @@ horizontal FL with a supported PyTorch recipe, Client API model exchange with
 ## Do Not Use When
 
 Do not use for PyTorch Lightning (route to `nvflare-convert-lightning`),
-Hugging Face Trainer, TensorFlow, XGBoost, scikit-learn, a failed existing job
-(route to `nvflare-diagnose-job`), or generic PyTorch debugging that does not
-ask for FLARE conversion. Out of conversion scope: production deployment,
+Hugging Face Trainer, TensorFlow, XGBoost, scikit-learn, a failed job (route
+to `nvflare-diagnose-job`), federated statistics without training (route to
+`nvflare-fed-stats`), or generic PyTorch debugging without FLARE intent. Out of conversion scope: production deployment,
 Kubernetes, POC lifecycle, deployment privacy/security policy design, controller
 or workflow rewrites outside product recipe or Job APIs, experiment search across
 recipes, and data distribution experiments beyond minimal local validation setup.
