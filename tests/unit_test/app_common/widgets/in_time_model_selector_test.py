@@ -106,7 +106,8 @@ class TestInTimeModelSelector:
         ],
     )
     def test_loss_like_key_metric_warning(self, caplog, key_metric, negate_key_metric, expect_warning):
-        with caplog.at_level(logging.WARNING):
+        logger_name = f"{IntimeModelSelector.__module__}.{IntimeModelSelector.__qualname__}"
+        with caplog.at_level(logging.WARNING, logger=logger_name):
             IntimeModelSelector(key_metric=key_metric, negate_key_metric=negate_key_metric)
         warned = any("looks like a lower-is-better metric" in record.getMessage() for record in caplog.records)
         assert warned == expect_warning
