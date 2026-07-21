@@ -6,10 +6,6 @@ Please make sure you set up a virtual environment and install JupyterLab followi
 
 Please also install "./requirements.txt" in each example folder.
 
-## Deployment and execution
-
-* [Multi-node PyTorch with the NVFlare Slurm launcher](./slurm/README.md)
-
 ## FL algorithms
 * [Federated Learning with CIFAR-10](./cifar10/README.md)
   * [Simulated Federated Learning with CIFAR-10](./cifar10/pt/cifar10-sim/README.md)
