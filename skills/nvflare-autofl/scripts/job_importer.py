@@ -97,6 +97,7 @@ class CallInfo:
     assignments: Dict[str, ast.AST]
     source: str
     function_name: Optional[str] = None
+    branch_conditions: Tuple[Tuple[ast.AST, bool], ...] = ()
 
 
 class JobImportError(ValueError):
@@ -172,7 +173,7 @@ class DeterministicJobImporter:
             raise JobImportError(f"failed to parse {source_path}: {e}") from e
 
         parser_args, reachable_functions = _reachable_parser_args(tree, index, job_args or [])
-        job_call = index.first_job_call(reachable_functions)
+        job_call = index.first_job_call(reachable_functions, parser_args)
         env_call = index.first_env_call(reachable_functions)
         train_script = self._resolve_train_script(
             source_path, job_call, index, parser_args, source_text, reachable_functions
@@ -572,6 +573,7 @@ class _ImportIndex(ast.NodeVisitor):
         self.module_assignments: Dict[str, ast.AST] = {}
         self._local_assignments_stack: List[Dict[str, ast.AST]] = []
         self._function_stack: List[str] = []
+        self._branch_conditions: List[Tuple[ast.AST, bool]] = []
         self._argparse_parser_names: Set[Tuple[Optional[str], str]] = set()
         self._argparse_subparser_names: Set[Tuple[Optional[str], str]] = set()
         self.job_calls: List[CallInfo] = []
@@ -585,8 +587,12 @@ class _ImportIndex(ast.NodeVisitor):
         index.visit(tree)
         return index
 
-    def first_job_call(self, reachable_functions: Optional[Set[str]] = None) -> Optional[CallInfo]:
-        return _first_reachable_call(self.job_calls, reachable_functions)
+    def first_job_call(
+        self,
+        reachable_functions: Optional[Set[str]] = None,
+        parser_args: Optional[Dict[str, ArgSpec]] = None,
+    ) -> Optional[CallInfo]:
+        return _first_reachable_call(self.job_calls, reachable_functions, parser_args)
 
     def first_env_call(self, reachable_functions: Optional[Set[str]] = None) -> Optional[CallInfo]:
         return _first_reachable_call(self.env_calls, reachable_functions)
@@ -651,6 +657,17 @@ class _ImportIndex(ast.NodeVisitor):
             self._current_assignments()[node.target.id] = node
         self.generic_visit(node)
 
+    def visit_If(self, node: ast.If) -> None:
+        self.visit(node.test)
+        self._visit_conditional_branch(node.body, node.test, True)
+        self._visit_conditional_branch(node.orelse, node.test, False)
+
+    def _visit_conditional_branch(self, statements: Sequence[ast.stmt], condition: ast.AST, expected: bool) -> None:
+        self._branch_conditions.append((condition, expected))
+        for statement in statements:
+            self.visit(statement)
+        self._branch_conditions.pop()
+
     def visit_Call(self, node: ast.Call) -> None:
         call_name = _call_name(node.func)
         if self._is_argparse_add_argument_call(call_name):
@@ -672,6 +689,7 @@ class _ImportIndex(ast.NodeVisitor):
                 assignments=self._resolution_assignments(),
                 source=_source_segment(self.source_text, node),
                 function_name=self._function_stack[-1] if self._function_stack else None,
+                branch_conditions=tuple(self._branch_conditions),
             )
             if is_environment:
                 self.env_calls.append(call_info)
@@ -726,15 +744,29 @@ class _ImportIndex(ast.NodeVisitor):
         return assignments
 
 
-def _first_reachable_call(calls: Sequence[CallInfo], reachable_functions: Optional[Set[str]]) -> Optional[CallInfo]:
+def _first_reachable_call(
+    calls: Sequence[CallInfo],
+    reachable_functions: Optional[Set[str]],
+    parser_args: Optional[Dict[str, ArgSpec]] = None,
+) -> Optional[CallInfo]:
     if not calls:
         return None
-    if reachable_functions is None:
-        return calls[0]
+    arg_values = {name: spec.default for name, spec in (parser_args or {}).items() if not spec.default_unresolved}
     reachable_calls = [
-        call for call in calls if call.function_name is None or call.function_name in reachable_functions
+        call
+        for call in calls
+        if (reachable_functions is None or call.function_name is None or call.function_name in reachable_functions)
+        and _matches_static_branch_conditions(call, arg_values)
     ]
     return reachable_calls[0] if reachable_calls else None
+
+
+def _matches_static_branch_conditions(call: CallInfo, arg_values: Dict[str, Any]) -> bool:
+    for condition, expected in call.branch_conditions:
+        value = _static_condition_value(condition, arg_values)
+        if value is not None and value != expected:
+            return False
+    return True
 
 
 def _arg_spec_signature(spec: ArgSpec) -> Tuple[Any, ...]:
