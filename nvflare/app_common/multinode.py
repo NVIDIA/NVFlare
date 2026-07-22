@@ -30,11 +30,25 @@ ENV_MASTER_ADDR = "NVFL_MASTER_ADDR"
 ENV_MASTER_PORT = "NVFL_MASTER_PORT"
 ENV_RUN_ID = "NVFL_RUN_ID"
 
+CONTRACT_ENV_NAMES = (ENV_NNODES, ENV_NODE_RANK, ENV_MASTER_ADDR, ENV_MASTER_PORT, ENV_RUN_ID)
+
+# Job-spec vocabulary shared by every launcher that adopts the contract: a
+# launcher-mode block requests a node group with JOB_SPEC_NODES > 1, and
+# JOB_SPEC_NODE_COMMAND is the worker command for the non-zero node ranks.
+JOB_SPEC_NODES = "nodes"
+JOB_SPEC_NODE_COMMAND = "node_command"
+
 DEFAULT_MASTER_PORT = 29400
 
 
 class NodeGroupError(RuntimeError):
     """A deterministic node-group configuration failure."""
+
+
+def is_multi_node_env(environ: dict) -> bool:
+    """Cheap presence check for a multi-node contract; full validation is from_env's job."""
+    value = environ.get(ENV_NNODES)
+    return bool(value) and value != "1"
 
 
 def _positive_int(value: Optional[str], name: str, default: int) -> int:

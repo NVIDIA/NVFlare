@@ -26,6 +26,7 @@ from tempfile import TemporaryDirectory
 from typing import Dict, List
 
 from nvflare.apis.job_def import ALL_SITES, JobMetaKey
+from nvflare.app_common.multinode import JOB_SPEC_NODE_COMMAND, JOB_SPEC_NODES
 from nvflare.fuel.utils.class_utils import get_component_init_parameters
 from nvflare.fuel.utils.job_secret_scanner import warn_on_potential_secrets_in_job_dir
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -34,6 +35,7 @@ from nvflare.job_config.base_app_config import BaseAppConfig
 from nvflare.job_config.fed_app_config import FedAppConfig
 from nvflare.private.fed.app.fl_conf import FL_PACKAGES
 from nvflare.private.fed.app.utils import kill_child_processes
+from nvflare.utils.job_launcher_utils import LAUNCHER_MODE_KEYS, LAUNCHER_SPEC_DEFAULT_KEY
 
 CONFIG = "config"
 CUSTOM = "custom"
@@ -146,6 +148,19 @@ class FedJobConfig:
             json_dump = json.dumps(meta_json, indent=4)
             outfile.write(json_dump)
 
+    @staticmethod
+    def _fillable_mode_keys(site_spec) -> list:
+        if not isinstance(site_spec, dict):
+            return []
+        return [
+            mode
+            for mode in LAUNCHER_MODE_KEYS.intersection(site_spec)
+            if isinstance(site_spec[mode], dict)
+            and isinstance(site_spec[mode].get(JOB_SPEC_NODES), int)
+            and site_spec[mode][JOB_SPEC_NODES] > 1
+            and JOB_SPEC_NODE_COMMAND not in site_spec[mode]
+        ]
+
     def _fill_node_commands(self, meta_json):
         """Fill launcher_spec node_command for multi-node sites from the site's SubprocessLauncher.
 
@@ -157,29 +172,21 @@ class FedJobConfig:
         launcher_spec = meta_json.get(JobMetaKey.JOB_LAUNCHER_SPEC.value)
         if not isinstance(launcher_spec, dict):
             return
+        candidates = {
+            site_name: self._fillable_mode_keys(site_spec)
+            for site_name, site_spec in launcher_spec.items()
+            if site_name != LAUNCHER_SPEC_DEFAULT_KEY
+        }
+        if not any(candidates.values()):
+            return
         filled = copy.deepcopy(launcher_spec)
-        changed = False
-        for site_name, site_spec in filled.items():
-            if not isinstance(site_spec, dict):
-                continue
-            blocks = [
-                block
-                for block in site_spec.values()
-                if isinstance(block, dict)
-                and isinstance(block.get("nodes"), int)
-                and block["nodes"] > 1
-                and "node_command" not in block
-            ]
-            if not blocks:
-                continue
-            script = self._site_external_launch_script(site_name)
+        for site_name, mode_keys in candidates.items():
+            script = self._site_external_launch_script(site_name) if mode_keys else None
             if not script:
                 continue
-            for block in blocks:
-                block["node_command"] = script
-            changed = True
-        if changed:
-            meta_json[JobMetaKey.JOB_LAUNCHER_SPEC.value] = filled
+            for mode in mode_keys:
+                filled[site_name][mode][JOB_SPEC_NODE_COMMAND] = script
+        meta_json[JobMetaKey.JOB_LAUNCHER_SPEC.value] = filled
 
     def _site_external_launch_script(self, site_name):
         from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
@@ -190,10 +197,10 @@ class FedJobConfig:
         if client_app is None:
             return None
         launchers = [comp for comp in client_app.components.values() if isinstance(comp, SubprocessLauncher)]
-        scripts = {launcher._script for launcher in launchers}
+        scripts = {launcher.script for launcher in launchers}
         if len(scripts) != 1:
             return None
-        if not all(launcher._launch_once for launcher in launchers):
+        if not all(launcher.launch_once for launcher in launchers):
             raise RuntimeError(
                 f"multi-node job for site '{site_name}' requires the external launcher to use launch_once=True"
             )

@@ -31,6 +31,7 @@ from typing import Optional
 import yaml
 
 from nvflare.apis.job_launcher_spec import JobProcessEnv
+from nvflare.app_common.multinode import CONTRACT_ENV_NAMES
 from nvflare.app_opt.job_launcher.study_data import MODE_RO, MODE_RW, StudyDatasetMount
 
 STUDY_RUNTIME_FILE = "local/study_runtime.yaml"
@@ -74,19 +75,8 @@ _RESERVED_ENV_NAMES = frozenset(
     }
 )
 SLURM_RESERVED_ENV_NAMES = _RESERVED_ENV_NAMES.union(
-    {
-        "BASHOPTS",
-        "EUID",
-        "SHELLOPTS",
-        "UID",
-        "NVFL_APPTAINER",
-        "NVFL_SRUN",
-        "NVFL_NNODES",
-        "NVFL_NODE_RANK",
-        "NVFL_MASTER_ADDR",
-        "NVFL_MASTER_PORT",
-        "NVFL_RUN_ID",
-    }
+    {"BASHOPTS", "EUID", "SHELLOPTS", "UID", "NVFL_APPTAINER", "NVFL_SRUN"},
+    CONTRACT_ENV_NAMES,
 )
 SLURM_RESERVED_ENV_PREFIXES = (
     "SLURM_",

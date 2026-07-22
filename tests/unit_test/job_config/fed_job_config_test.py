@@ -329,6 +329,14 @@ class TestFillNodeCommands:
         with pytest.raises(RuntimeError, match="launch_once=True"):
             job_config._fill_node_commands(meta)
 
+    def test_reserved_default_key_is_not_treated_as_a_site(self):
+        job_config = self._job_config()
+        meta = {"launcher_spec": {"default": {"slurm": {"nodes": 2}}}}
+
+        job_config._fill_node_commands(meta)
+
+        assert "node_command" not in meta["launcher_spec"]["default"]["slurm"]
+
     def test_site_without_subprocess_launcher_is_left_alone(self):
         job_config = self._job_config(with_launcher=False)
         meta = {"launcher_spec": {"site-1": {"slurm": {"nodes": 2}}}}

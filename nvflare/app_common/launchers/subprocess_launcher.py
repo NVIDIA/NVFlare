@@ -24,7 +24,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.launcher import Launcher, LauncherRunStatus
-from nvflare.app_common.multinode import ENV_NNODES
+from nvflare.app_common.multinode import is_multi_node_env
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.secret_utils import has_secret_refs, resolve_secret_refs, split_command_preserving_secret_refs
 from nvflare.utils.job_launcher_utils import add_custom_dir_to_path
@@ -233,9 +233,17 @@ class SubprocessLauncher(Launcher):
         self._lock = Lock()
         self.logger = get_obj_logger(self)
 
+    @property
+    def script(self) -> str:
+        """The external command; job export reads this to fill a multi-node node_command."""
+        return self._script
+
+    @property
+    def launch_once(self) -> bool:
+        return self._launch_once
+
     def initialize(self, fl_ctx: FLContext):
-        nnodes = os.environ.get(ENV_NNODES)
-        if nnodes and nnodes != "1" and not self._launch_once:
+        if not self._launch_once and is_multi_node_env(os.environ):
             raise RuntimeError("multi-node node groups require launch_once=True")
         self._app_dir = self.get_app_dir(fl_ctx)
         if self._launch_once:

@@ -18,16 +18,17 @@ from __future__ import annotations
 import os
 import shlex
 
-from nvflare.apis.job_launcher_spec import JobProcessEnv
-from nvflare.app_common.multinode import ENV_MASTER_ADDR as MULTINODE_ENV_MASTER_ADDR
-from nvflare.app_common.multinode import ENV_MASTER_PORT as MULTINODE_ENV_MASTER_PORT
-from nvflare.app_common.multinode import ENV_NNODES as MULTINODE_ENV_NNODES
-from nvflare.app_common.multinode import ENV_NODE_RANK as MULTINODE_ENV_NODE_RANK
-from nvflare.app_common.multinode import ENV_RUN_ID as MULTINODE_ENV_RUN_ID
+from nvflare.apis.job_launcher_spec import CREDENTIAL_ENV_NAMES
+from nvflare.app_common.multinode import (
+    CONTRACT_ENV_NAMES,
+    ENV_MASTER_ADDR,
+    ENV_MASTER_PORT,
+    ENV_NNODES,
+    ENV_NODE_RANK,
+    ENV_RUN_ID,
+)
 from nvflare.app_opt.job_launcher.slurm.config import (
     BATCH_FILE,
-    MULTINODE_PORT_BASE,
-    MULTINODE_PORT_SPAN,
     NODE_FILE,
     SECRET_FILE,
     SLURM_CHILD_PROCESS_ENV,
@@ -112,15 +113,8 @@ def _apptainer_parts(plan: LaunchPlan, config: SlurmConfig, worker_words: list[s
     return _apptainer_environment(plan, config), _apptainer_exec_words(plan, plan.run_dir) + worker_words
 
 
-_MULTINODE_BATCH_ENV = (
-    MULTINODE_ENV_NNODES,
-    MULTINODE_ENV_MASTER_ADDR,
-    MULTINODE_ENV_MASTER_PORT,
-    MULTINODE_ENV_RUN_ID,
-)
-# Bootstrap credentials are for the rank-0 CJ only (JobProcessEnv contract); the
-# non-zero branch of node.sh unsets them before executing user code.
-_CREDENTIAL_ENV = (JobProcessEnv.AUTH_TOKEN, JobProcessEnv.TOKEN_SIGNATURE, JobProcessEnv.SSID)
+# ENV_NODE_RANK is exported per task by node.sh; the rest are batch-level.
+_MULTINODE_BATCH_ENV = tuple(name for name in CONTRACT_ENV_NAMES if name != ENV_NODE_RANK)
 
 
 def _multinode_srun_words(plan: LaunchPlan) -> list[str]:
@@ -139,19 +133,16 @@ def _multinode_srun_words(plan: LaunchPlan) -> list[str]:
 
 
 def _multinode_parts(plan: LaunchPlan, job_dir: str, config: SlurmConfig) -> tuple[list[str], list[str]]:
-    if config.multi_node_port_range:
-        port_start, port_end = config.multi_node_port_range
-        port_count = port_end - port_start + 1
-    else:
-        port_start, port_count = MULTINODE_PORT_BASE, MULTINODE_PORT_SPAN
+    port_start, port_end = config.multi_node_port_range
+    port_count = port_end - port_start + 1
     environment = [
         _tool_assignment("NVFL_SRUN", config.executables.get("srun"), "srun"),
         '[[ "${SLURM_JOB_ID:-}" =~ ^[0-9]+$ ]] || { echo "invalid SLURM_JOB_ID" >&2; exit 102; }',
-        f'export {MULTINODE_ENV_NNODES}="${{SLURM_JOB_NUM_NODES:?}}"',
+        f'export {ENV_NNODES}="${{SLURM_JOB_NUM_NODES:?}}"',
         # The batch script always executes on the first node of the allocation.
-        f'export {MULTINODE_ENV_MASTER_ADDR}="${{SLURMD_NODENAME:?}}"',
-        f'export {MULTINODE_ENV_MASTER_PORT}="$(({port_start} + 10#${{SLURM_JOB_ID}} % {port_count}))"',
-        f'export {MULTINODE_ENV_RUN_ID}="${{SLURM_JOB_ID}}"',
+        f'export {ENV_MASTER_ADDR}="${{SLURMD_NODENAME:?}}"',
+        f'export {ENV_MASTER_PORT}="$(({port_start} + 10#${{SLURM_JOB_ID}} % {port_count}))"',
+        f'export {ENV_RUN_ID}="${{SLURM_JOB_ID}}"',
     ]
     node_script = shlex.quote(os.path.join(job_dir, NODE_FILE))
     if plan.sandbox == "apptainer":
@@ -182,17 +173,18 @@ def _render_node_script(plan: LaunchPlan, config: SlurmConfig) -> str:
         f'[[ "${{SLURM_JOB_NUM_NODES:-}}" == "{nodes}" && "${{SLURM_NODEID:-}}" =~ ^[0-9]+$ ]] '
         '|| { echo "node group topology mismatch" >&2; exit 103; }',
         f'(( 10#${{SLURM_NODEID}} < {nodes} )) || {{ echo "node rank outside node group" >&2; exit 103; }}',
-        f'export {MULTINODE_ENV_NODE_RANK}="${{SLURM_NODEID}}"',
+        f'export {ENV_NODE_RANK}="${{SLURM_NODEID}}"',
     ]
     if plan.sandbox == "apptainer":
-        unset_names = _CREDENTIAL_ENV + tuple(
-            f"{prefix}{name}" for prefix in ("APPTAINERENV_", "SINGULARITYENV_") for name in _CREDENTIAL_ENV
+        # Bootstrap credentials are for the rank-0 CJ only (JobProcessEnv contract).
+        unset_names = CREDENTIAL_ENV_NAMES + tuple(
+            f"{prefix}{name}" for prefix in ("APPTAINERENV_", "SINGULARITYENV_") for name in CREDENTIAL_ENV_NAMES
         )
         lines.extend(
             [
                 _tool_assignment("NVFL_APPTAINER", config.executables.get("apptainer"), "apptainer"),
-                f'export APPTAINERENV_{MULTINODE_ENV_NODE_RANK}="${{{MULTINODE_ENV_NODE_RANK}}}"',
-                f'if [[ "${{{MULTINODE_ENV_NODE_RANK}}}" == "0" ]]; then',
+                f'export APPTAINERENV_{ENV_NODE_RANK}="${{{ENV_NODE_RANK}}}"',
+                f'if [[ "${{{ENV_NODE_RANK}}}" == "0" ]]; then',
                 f"  _nvfl_command=({' '.join(_apptainer_exec_words(plan, plan.run_dir) + worker_words)})",
                 "else",
                 f"  unset {' '.join(unset_names)}",
@@ -203,10 +195,10 @@ def _render_node_script(plan: LaunchPlan, config: SlurmConfig) -> str:
     else:
         lines.extend(
             [
-                f'if [[ "${{{MULTINODE_ENV_NODE_RANK}}}" == "0" ]]; then',
+                f'if [[ "${{{ENV_NODE_RANK}}}" == "0" ]]; then',
                 f"  _nvfl_command=({' '.join(worker_words)})",
                 "else",
-                f"  unset {' '.join(_CREDENTIAL_ENV)}",
+                f"  unset {' '.join(CREDENTIAL_ENV_NAMES)}",
                 f"  cd {shlex.quote(plan.node_app_dir)}",
                 f"  _nvfl_command=({' '.join(node_words)})",
                 "fi",

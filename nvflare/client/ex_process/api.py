@@ -166,8 +166,9 @@ class ExProcessClientAPI(APISpec):
                 return
 
             dict_config = conf.to_dict()
-            _downgrade_rotating_handlers(dict_config)
-            if rank != "0":
+            if rank == "0":
+                _downgrade_rotating_handlers(dict_config)
+            else:
                 _remove_file_handlers(dict_config)
             apply_log_config(dict_config, workspace_dir)
         except Exception as e:
