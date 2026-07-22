@@ -906,6 +906,32 @@ def test_probe_simulator_workspace_override_support_inspects_installed_sim_env(t
     assert probe == {"version": "", "supported": None}
 
 
+def test_probe_simulator_workspace_override_support_uses_sanitized_env(tmp_path, monkeypatch):
+    runner = _load_runner()
+    captured = {}
+
+    monkeypatch.setenv("PATH", "/safe/bin")
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path / "pythonpath"))
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "secret")
+    monkeypatch.setenv("AUTOFL_TEST_TOKEN", "secret")
+
+    def fake_run(*args, **kwargs):
+        captured["env"] = kwargs["env"]
+        return 0, 'native warning\n{"version": "2.9.0", "supported": true}\nlate stderr warning\n', 0.1
+
+    monkeypatch.setattr(runner, "run", fake_run)
+
+    probe = runner.probe_simulator_workspace_override_support(sys.executable, tmp_path)
+
+    assert probe == {"version": "2.9.0", "supported": True}
+    assert captured["env"]["PATH"] == "/safe/bin"
+    assert captured["env"]["PYTHONPATH"] == str(tmp_path / "pythonpath")
+    assert runner.SIMULATOR_WORKSPACE_ROOT_ENV_VAR in captured["env"]
+    assert set(captured["env"]) <= set(runner.SIMULATOR_ENV_ALLOWLIST) | {runner.SIMULATOR_WORKSPACE_ROOT_ENV_VAR}
+    assert "AWS_SECRET_ACCESS_KEY" not in captured["env"]
+    assert "AUTOFL_TEST_TOKEN" not in captured["env"]
+
+
 def test_nvflare_version_predates_workspace_override():
     runner = _load_runner()
 
@@ -916,6 +942,78 @@ def test_nvflare_version_predates_workspace_override():
     assert not runner.nvflare_version_predates_workspace_override("3.0.0")
     assert not runner.nvflare_version_predates_workspace_override("")
     assert not runner.nvflare_version_predates_workspace_override("unknown")
+
+
+def test_simulator_child_env_uses_allowlisted_runtime_context(tmp_path, monkeypatch):
+    runner = _load_runner()
+    simulator_base = tmp_path / "simulation"
+    venv = tmp_path / "venv"
+    pythonpath = tmp_path / "pythonpath"
+
+    monkeypatch.setenv("PATH", "/safe/bin")
+    monkeypatch.setenv("PYTHONPATH", str(pythonpath))
+    monkeypatch.setenv("VIRTUAL_ENV", str(venv))
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.example")
+    monkeypatch.setenv("no_proxy", "localhost")
+    monkeypatch.setenv("REQUESTS_CA_BUNDLE", str(tmp_path / "ca.pem"))
+    monkeypatch.setenv("SSL_CERT_FILE", str(tmp_path / "cert.pem"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "Users" / "tester"))
+    monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "secret")
+    monkeypatch.setenv("AUTOFL_TEST_TOKEN", "secret")
+
+    env = runner.simulator_child_env(simulator_base)
+
+    assert env["PATH"] == "/safe/bin"
+    assert env["PYTHONPATH"] == str(pythonpath)
+    assert env["VIRTUAL_ENV"] == str(venv)
+    assert env["HTTPS_PROXY"] == "http://proxy.example"
+    assert env["no_proxy"] == "localhost"
+    assert env["REQUESTS_CA_BUNDLE"] == str(tmp_path / "ca.pem")
+    assert env["SSL_CERT_FILE"] == str(tmp_path / "cert.pem")
+    assert env["USERPROFILE"] == str(tmp_path / "Users" / "tester")
+    assert env["APPDATA"] == str(tmp_path / "AppData" / "Roaming")
+    assert env["LOCALAPPDATA"] == str(tmp_path / "AppData" / "Local")
+    assert env[runner.SIMULATOR_WORKSPACE_ROOT_ENV_VAR] == str(simulator_base)
+    assert set(env) <= set(runner.SIMULATOR_ENV_ALLOWLIST) | {runner.SIMULATOR_WORKSPACE_ROOT_ENV_VAR}
+    assert "AWS_SECRET_ACCESS_KEY" not in env
+    assert "AUTOFL_TEST_TOKEN" not in env
+
+
+def test_simulator_child_env_uses_configured_passthrough(tmp_path, monkeypatch):
+    runner = _load_runner()
+    simulator_base = tmp_path / "simulation"
+    custom_path = tmp_path / "dataset"
+    config = {"environment": {runner.SIMULATOR_ENV_PASSTHROUGH_CONFIG_KEY: ["DATASET_DIR", "OMP_NUM_THREADS"]}}
+
+    monkeypatch.setenv("DATASET_DIR", str(custom_path))
+    monkeypatch.setenv("OMP_NUM_THREADS", "4")
+
+    extra_names = runner.simulator_env_passthrough_names(config)
+    env = runner.simulator_child_env(simulator_base, extra_names)
+
+    assert extra_names == ["DATASET_DIR", "OMP_NUM_THREADS"]
+    assert env["DATASET_DIR"] == str(custom_path)
+    assert env["OMP_NUM_THREADS"] == "4"
+    assert set(env) <= set(runner.SIMULATOR_ENV_ALLOWLIST) | set(extra_names) | {
+        runner.SIMULATOR_WORKSPACE_ROOT_ENV_VAR
+    }
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        "DATASET_DIR",
+        ["BAD-NAME"],
+        [3],
+    ],
+)
+def test_simulator_env_passthrough_names_rejects_invalid_values(values):
+    runner = _load_runner()
+
+    with pytest.raises(ValueError, match="simulator_env_passthrough"):
+        runner.simulator_env_passthrough_names({"environment": {runner.SIMULATOR_ENV_PASSTHROUGH_CONFIG_KEY: values}})
 
 
 def test_run_discovers_and_persists_printed_unnamed_simulator_root(tmp_path, monkeypatch):

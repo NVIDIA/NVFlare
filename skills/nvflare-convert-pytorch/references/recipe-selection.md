@@ -26,6 +26,7 @@ from nvflare.recipe.sim_env import SimEnv
 
 model_args = {"input_size": input_size, "num_classes": num_classes}
 recipe_model = {"class_path": "model.ModelClass", "args": model_args}
+metric_name = "accuracy"  # use a source higher-is-better key, or "neg_loss" for loss-like metrics
 
 recipe = FedAvgRecipe(
     name=job_name,
@@ -34,6 +35,7 @@ recipe = FedAvgRecipe(
     model=recipe_model,
     train_script="client.py",
     train_args=train_args,
+    key_metric=metric_name,
     server_expected_format=ExchangeFormat.PYTORCH,
     enable_tensor_disk_offload=True,
 )
@@ -61,6 +63,14 @@ the same architecture. If the model constructor needs dimensions, class counts,
 dropout settings, embedding sizes, or other architecture arguments, pass the
 same values on both sides. Prefer a small shared constant, JSON/config file, or
 explicit `train_args` values over hard-coded divergent defaults.
+
+The recipe's `key_metric` must match the metric key sent by `client.py` in
+`FLModel.metrics`. Preserve higher-is-better metric names on both sides: if
+`client.py` sends `metrics={"f1": f1}`, construct `FedAvgRecipe(...,
+key_metric="f1", ...)`. For loss-like metrics, higher values still select the
+best model; send a negated scalar such as `metrics={"neg_loss": -loss}` and use
+`key_metric="neg_loss"`. Do not rely on the recipe default unless the client
+really reports `accuracy`.
 
 Use these portable imports when writing custom Job API code:
 
